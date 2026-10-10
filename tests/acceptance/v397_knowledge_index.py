@@ -106,6 +106,7 @@ check("G1 the `index` tool is declared + dispatched", '"index":' in registry and
 check("G2 config/tools.yaml enables the index tool", "index:" in toolsyaml and "knowledge index" in toolsyaml)
 check("G3 the API exposes /api/index/* + embed-test",
       "/api/index/build" in apiv02 and "/api/index/search" in apiv02 and "/api/index/docs" in apiv02
+      and "/api/index/files" in apiv02 and "def index_files(" in apiv02
       and "/api/index/embed-test" in apiv02)
 check("G4 the CLI has `forge index`", "def cmd_index(" in forge and 'sub.add_parser("index")' in forge)
 check("G5 embeddings module offers provider refs", "SUGGESTED" in embedpy and "def embed_texts(" in embedpy and "def probe(" in embedpy)
@@ -113,6 +114,20 @@ check("G6 the WebUI has the Knowledge section + embedding picker",
       'data-insp="index"' in webui and ">Knowledge</button>" in webui
       and 'id="embedModel"' in webui and "function indexBuild(" in webui and "async function loadEmbedModel(" in webui)
 check("G7 the index dir is a paths constant (overridable)", hasattr(paths, "INDEX_DIR") and paths.INDEX_DIR.endswith("index"))
+check("G8 the Knowledge panel lists the indexed files + shows the scope",
+      'id="indexFilesBox"' in webui and "async function indexFiles(" in webui and "scope:" in webui)
+check("G9 the slash menu is keyboard-navigable",
+      "let _slashItems" in webui and "#slashMenu .slashrow.hl" in webui
+      and 'e.key === "ArrowDown"' in webui and "_paintSlashHi()" in webui)
+check("G10 providers start collapsed (click to expand)",
+      "modelsBox.hidden = true" in webui and "caret.textContent" in webui)
+
+# list_files on a real index (fixture rebuilt at the end)
+idx.build(ws)
+lf = idx.list_files(ws)
+check("H1 list_files reports the indexed files with chunk counts",
+      lf["files"] and all("path" in f and "chunks" in f for f in lf["files"]),
+      lf.get("files", [])[:2])
 
 print("----")
 print("%d/%d PASS" % (sum(results), len(results)))

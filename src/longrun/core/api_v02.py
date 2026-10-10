@@ -889,6 +889,8 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, index_status(qs))
         if path == "/api/index/docs":
             return _r(handler, 200, index_docs(qs))
+        if path == "/api/index/files":
+            return _r(handler, 200, index_files(qs))
         if path == "/api/index/config":
             return _r(handler, 200, index_config_get())
         if path == "/api/index/embed-models":
@@ -1811,6 +1813,12 @@ def index_docs(qs=None):
     """GET /api/index/docs — the documentation sources indexed in this workspace."""
     from longrun.memory import index as _index
     return {"sources": _index.list_sources(_index_ws(qs))}
+
+
+def index_files(qs=None):
+    """GET /api/index/files — the indexed files (path, language, chunk count)."""
+    from longrun.memory import index as _index
+    return _index.list_files(_index_ws(qs))
 
 
 def index_config_get():

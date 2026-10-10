@@ -465,6 +465,7 @@
     padding: 4px; z-index: 40; background: var(--menubg); }
   /* JAG-396: no see-through menus — the slash popup uses .card, force it opaque. */
   #slashMenu { background: var(--menubg); }
+  #slashMenu .slashrow.hl { background: var(--hl); outline: 1px solid var(--acc); }
   #moreMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%; height: auto;
     min-height: 0; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
     background: transparent; color: var(--txt); font-size: 12px; font-weight: 500; }
@@ -838,17 +839,17 @@
     color-scheme: dark;
   }
   html[data-theme="sand"] {
-    --bg: #d9c49c; --panel: rgba(226,212,182,.95); --panel2: rgba(216,201,169,.97);
-    --line: rgba(120,92,52,.30); --txt: #382f21; --dim: #665639;
-    --acc: #9c5f24; --acc2: #a9853f; --ok: #3c8556; --warn: #9c7018; --err: #a8482f;
-    --accent: #9c5f24; --you: #3a648f; --info: #3a767d;
-    --bg-2: #d2bd94; --bg-3: #cbb588; --line-2: #c2ad84; --ink: #453b2c; --muted: #665639;
-    --bg2: #d2bd94; --grad-a: #ddc9a3; --grad-b: #d6c4a6; --hdr: rgba(222,208,178,.95);
-    --aside: #e6d6b2; --composer: rgba(226,212,182,.82);
-    --hover: rgba(156,95,36,.12); --sel: rgba(156,95,36,.18);
-    --hl: rgba(156,95,36,.2); --menubg: #ddcba6;
-    --menuline: rgba(156,95,36,.32); --chipbg: rgba(156,95,36,.12);
-    --chipbd: rgba(156,95,36,.26); --scroll: rgba(156,95,36,.45);
+    --bg: #c8bda2; --panel: rgba(206,197,173,.96); --panel2: rgba(196,186,160,.97);
+    --line: rgba(86,74,52,.30); --txt: #3a3327; --dim: #5e5541;
+    --acc: #8a5a2a; --acc2: #9a7c42; --ok: #467a55; --warn: #8c671d; --err: #97452f;
+    --accent: #8a5a2a; --you: #3f6288; --info: #3a7278;
+    --bg-2: #c1b69d; --bg-3: #b9ae8b; --line-2: #ada082; --ink: #3e3628; --muted: #5e5541;
+    --bg2: #c1b69d; --grad-a: #ccc2a8; --grad-b: #c3b89f; --hdr: rgba(203,194,169,.95);
+    --aside: #ccc2a8; --composer: rgba(206,197,173,.85);
+    --hover: rgba(122,96,58,.12); --sel: rgba(122,96,58,.18);
+    --hl: rgba(122,96,58,.2); --menubg: #cec5ac;
+    --menuline: rgba(122,96,58,.32); --chipbg: rgba(122,96,58,.12);
+    --chipbd: rgba(122,96,58,.26); --scroll: rgba(122,96,58,.45);
     color-scheme: light;
   }
   html[data-theme="midnight"] {
@@ -1334,6 +1335,7 @@
             <button class="ghost" onclick="indexBuild(false)" title="index new/changed files (incremental)">⚡ build</button>
             <button class="ghost" onclick="indexBuild(true)" title="re-index everything from scratch">↻ rebuild</button>
             <button class="ghost" onclick="indexStatus()" title="refresh the counts">status</button>
+            <button class="ghost" onclick="indexFiles()" title="which files are indexed / embedded">files</button>
             <button class="ghost" onclick="indexClear()" title="delete this workspace's index">clear</button>
           </div>
           <div style="display:flex;gap:6px;margin-top:8px">
@@ -1341,6 +1343,7 @@
             <button class="ghost" onclick="indexSearch()">search</button>
           </div>
           <div id="indexResults" style="margin-top:6px"></div>
+          <div id="indexFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
         </div>
         <h2>Docs · sources</h2>
         <div class="card">
@@ -1486,9 +1489,10 @@
           <div class="remaining" style="margin:0 0 6px">Vectors for semantic retrieval over the codebase + docs. Leave empty for keyword-only (bm25) search.</div>
           <input id="embedModel" class="inp" list="embedSuggest" placeholder="provider:model — e.g. openrouter:openai/text-embedding-3-small" style="width:100%;padding:6px 10px;font-size:12px">
           <datalist id="embedSuggest"></datalist>
-          <div style="display:flex;gap:8px;margin-top:8px">
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
             <button class="ghost" onclick="saveEmbedModel()">save</button>
             <button class="ghost" onclick="testEmbedModel()" title="send one probe text through the configured embeddings endpoint">test</button>
+            <button class="ghost" onclick="closeSettings();openPanel('index')" title="build the index, search the code/docs, add doc sources">open Knowledge panel →</button>
           </div>
           <div class="remaining" id="embedResult" style="margin-top:6px"></div>
         </div>
@@ -4498,13 +4502,17 @@ async function loadProviders() {
       row.className = "card";
       row.style.cssText = "padding:6px 8px;margin-bottom:6px";
       const head = document.createElement("div");
-      head.style.cssText = "display:flex;gap:8px;align-items:center";
+      head.style.cssText = "display:flex;gap:8px;align-items:center;cursor:pointer";
+      head.title = "expand / collapse the model list";
+      const caret = document.createElement("span"); caret.textContent = "▸";
+      caret.style.cssText = "flex:0 0 auto;width:12px;text-align:center;color:var(--dim)";
       const dot = document.createElement("span"); dot.textContent = p.available ? "🟢" : "🟠";
       const name = document.createElement("div"); name.style.cssText = "flex:1;min-width:0";
       const t = document.createElement("div"); t.style.fontWeight = "600";
       t.textContent = p.id + (p.local ? " · local" : "");
       const sub = document.createElement("div"); sub.className = "remaining";
-      sub.textContent = (p.name || "") + " · " + (p.kind || "") + " · " + (p.base_url || "");
+      sub.textContent = (p.name || "") + " · " + (p.kind || "") + " · " + (p.base_url || "") +
+        "  (" + (p.models || []).length + " models)";
       name.append(t, sub);
       const edit = document.createElement("button"); edit.className = "ghost"; edit.textContent = "✎";
       edit.title = "load into form";
@@ -4516,8 +4524,10 @@ async function loadProviders() {
         $("provResult").textContent = r.error ? ("error: " + r.error) : ("removed: " + p.id);
         loadProviders();
       };
-      head.append(dot, name, edit, del);
-      row.appendChild(head);
+      head.append(caret, dot, name, edit, del);
+      // JAG-398: providers start COLLAPSED — click the row to reveal its models.
+      const modelsBox = document.createElement("div");
+      modelsBox.hidden = true;
       (p.models || []).forEach(m => {
         const ml = document.createElement("div");
         ml.className = "remaining";
@@ -4540,8 +4550,15 @@ async function loadProviders() {
           loadProviders();
         };
         ml.append(mid, setdef, rmdel);
-        row.appendChild(ml);
+        modelsBox.appendChild(ml);
       });
+      head.onclick = (e) => {
+        if (e.target.closest("button")) return;   // edit/delete keep their own action
+        modelsBox.hidden = !modelsBox.hidden;
+        caret.textContent = modelsBox.hidden ? "▸" : "▾";
+      };
+      row.appendChild(head);
+      row.appendChild(modelsBox);
       box.appendChild(row);
     });
   } catch (e) { $("provSummary").textContent = "error: " + e; }
@@ -4810,9 +4827,16 @@ const SLASH_COMMANDS = [
   { cmd: "skills", hint: "open the Skills panel" },
   { cmd: "compact", hint: "compact this session's context now" },
 ];
+let _slashItems = [], _slashHi = 0;   // JAG-398: keyboard-navigable slash menu
+function _paintSlashHi() {
+  _slashItems.forEach((it, i) => it.el.classList.toggle("hl", i === _slashHi));
+  const cur = _slashItems[_slashHi];
+  if (cur && cur.el.scrollIntoView) cur.el.scrollIntoView({ block: "nearest" });
+}
 function skillsAutocomplete() {
   const inp = $("inp"); if (!inp) return;
   const box = $("slashMenu");
+  _slashItems = []; _slashHi = 0;
   const v = inp.value;
   if (!v.startsWith("/") || v.includes(" ")) { box.hidden = true; return; }
   const q = v.slice(1).toLowerCase();
@@ -4822,10 +4846,13 @@ function skillsAutocomplete() {
   box.innerHTML = "";
   const addRow = (label, hint, onPick) => {
     const li = document.createElement("div");
+    li.className = "slashrow";
     li.style.cssText = "padding:6px 10px;cursor:pointer;font-size:12px";
     li.innerHTML = esc(label) + (hint ? ' <span class="remaining">· ' + esc(hint) + "</span>" : "");
     li.onclick = onPick;
+    li.onmouseenter = () => { _slashHi = _slashItems.findIndex(x => x.el === li); _paintSlashHi(); };
     box.appendChild(li);
+    _slashItems.push({ el: li, pick: onPick });
   };
   if (cmds.length) {
     const h = document.createElement("div");
@@ -4845,6 +4872,8 @@ function skillsAutocomplete() {
       inp.value = "/" + s.name + " "; box.hidden = true; inp.focus();
     }));
   }
+  _slashHi = Math.min(_slashHi, Math.max(0, _slashItems.length - 1));
+  _paintSlashHi();
   box.hidden = false;
 }
 
@@ -5089,16 +5118,36 @@ function _idxQS() { return sessionId ? ("?session=" + encodeURIComponent(session
 async function indexStatus() {
   try {
     const s = await api("GET", "/api/index/status" + _idxQS());
+    let cfg = {};
+    try { cfg = (await api("GET", "/api/index/config")).config || {}; } catch (e) {}
+    const ign = (cfg.ignore || []).join(", ");
+    const scope = "<br>scope: <b title=\"" + _attr(s.workspace) + "\">" + esc(_short(s.workspace)) +
+      "</b> — code + docs" + (ign ? (" · skip: " + esc(ign)) : "");
     const meta = $("indexMeta");
-    if (meta) meta.innerHTML = s.exists
+    if (meta) meta.innerHTML = (s.exists
       ? ("<b>" + (s.files || 0) + "</b> files · <b>" + (s.chunks || 0) + "</b> chunks · " +
          (s.docs || 0) + " doc sources · " + _fmtSize((s.size_kb || 0) * 1024) +
          "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : ""))
-      : "not built yet — press build.";
+      : "not built yet — press build.") + scope;
     const st = $("indexStat"); if (st) st.textContent = s.exists ? ((s.chunks || 0) + " chunks") : "empty";
     loadIndexDocs();
     return s;
   } catch (e) { const meta = $("indexMeta"); if (meta) meta.textContent = "error: " + e; }
+}
+async function indexFiles() {
+  const box = $("indexFilesBox"); if (!box) return;
+  box.innerHTML = '<div class="remaining">loading…</div>';
+  try {
+    const r = await api("GET", "/api/index/files" + _idxQS());
+    const rows = r.files || [];
+    box.innerHTML = rows.length
+      ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files indexed / embedded</div>" +
+         rows.map(f => '<div style="display:flex;gap:6px;font-size:11px;align-items:center">' +
+           '<span data-open="' + _attr(f.path) + '" style="flex:1;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="open ' + _attr(f.path) + '">' +
+           esc(f.path) + '</span><span class="cn">' + (f.chunks || 0) + "</span></div>").join(""))
+      : '<div class="remaining">nothing indexed yet — press build</div>';
+    box.querySelectorAll("[data-open]").forEach(el => el.onclick = () => openInEditor(el.getAttribute("data-open")));
+  } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
 async function indexBuild(force) {
   const meta = $("indexMeta"); if (meta) meta.textContent = "indexing…";
@@ -6177,7 +6226,13 @@ $("log").addEventListener("scroll", () => { _stick = _nearBottom(); updateJump()
 $("jumpBtn").onclick = () => { _stick = true; const l = $("log"); l.scrollTop = l.scrollHeight; updateJump(); };
 ["nsTitle", "nsWs"].forEach(id => { const el = $(id); if (el) el.addEventListener("keydown", e => { if (e.key === "Enter") createNewSession(); }); });
 $("inp").addEventListener("keydown", e => {
-  if (e.key === "Escape" && $("slashMenu")) $("slashMenu").hidden = true;
+  const menu = $("slashMenu");
+  if (menu && !menu.hidden && _slashItems.length) {
+    if (e.key === "ArrowDown") { e.preventDefault(); _slashHi = Math.min(_slashHi + 1, _slashItems.length - 1); _paintSlashHi(); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); _slashHi = Math.max(_slashHi - 1, 0); _paintSlashHi(); return; }
+    if (e.key === "Enter") { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }
+  }
+  if (e.key === "Escape" && menu) menu.hidden = true;
 });
 $("taskInp").addEventListener("keydown", e => { if (e.key === "Enter") addTask(); });
 $("sessInp").addEventListener("keydown", e => { if (e.key === "Enter") newSession(); });

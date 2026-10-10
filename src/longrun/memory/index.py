@@ -707,6 +707,21 @@ def status(workspace):
         db.close()
 
 
+def list_files(workspace):
+    """The indexed files (rel path, language, chunk count), biggest first."""
+    workspace = os.path.realpath(str(workspace))
+    db = _connect(workspace)
+    try:
+        _init(db)
+        rows = db.execute(
+            "SELECT f.path AS path, f.lang AS lang, count(c.id) AS chunks "
+            "FROM files f LEFT JOIN chunks c ON c.path = f.path "
+            "GROUP BY f.path ORDER BY chunks DESC, f.path").fetchall()
+        return {"workspace": workspace, "files": [dict(r) for r in rows]}
+    finally:
+        db.close()
+
+
 def clear(workspace):
     workspace = os.path.realpath(str(workspace))
     with LOCK:
