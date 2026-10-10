@@ -273,33 +273,36 @@
   .ctxrow { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--dim); }
   /* JAG-267: Context-panel category breakdown (session-scoped).
      JAG-269: clickable items (open in the editor) + a per-category token meter. */
-  .ctxmeter { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
-    font-size: 11px; color: var(--dim); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .ctxmeter { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px;
+    font-size: 11px; color: var(--dim); border-bottom: 1px solid var(--line); padding-bottom: 5px; }
   .ctxmeter b { color: var(--txt); font-weight: 600; }
   /* JAG-355: the context breakdown is a DONUT (part-to-whole) + a compact legend,
      replacing the old stacked micro-bar with its 12-row wrapping legend. */
-  .ctxdonut { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
-  .ctxdonut svg { flex: 0 0 auto; width: 102px; height: 102px; }
+  .ctxsplit { display: flex; align-items: flex-start; gap: 10px; margin-top: 5px; }
+  .ctxsplit .ctxdonut, .ctxsplit .ctxbd { margin-top: 0; }
+  .ctxsplit .ctxbd { flex: 1; min-width: 0; }
+  .ctxdonut { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 5px; }
+  .ctxdonut svg { flex: 0 0 auto; width: 72px; height: 72px; }
   .ctxdonut .seg { transition: opacity .12s; }
   .ctxdonut .seg:hover { opacity: .72; }
   .ctxdonut .dc { fill: var(--txt); font-size: 9px; font-weight: 600; }
   .ctxdonut .dl { fill: var(--dim); font-size: 6.2px; letter-spacing: .04em; }
   /* JAG-364: the breakdown is a list of HORIZONTAL bars (coloured like the donut
      segments, sorted big -> small) instead of a wrapping legend of words. */
-  .ctxbd { display: flex; flex-direction: column; gap: 4px; margin-top: 9px; }
-  .ctxbd .bdbar { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--dim); }
-  .ctxbd .bdbar .bl { flex: 0 0 auto; width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ctxbd .bdbar .bt { flex: 1; height: 8px; border-radius: 5px; background: var(--line); overflow: hidden; }
+  .ctxbd { display: flex; flex-direction: column; gap: 1px; margin-top: 5px; }
+  .ctxbd .bdbar { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--dim); line-height: 1.35; }
+  .ctxbd .bdbar .bl { flex: 0 0 auto; width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctxbd .bdbar .bt { flex: 1; height: 6px; border-radius: 5px; background: var(--line); overflow: hidden; }
   .ctxbd .bdbar .bt > i { display: block; height: 100%; border-radius: 5px; transition: width .3s; }
   .ctxbd .bdbar b { color: var(--txt); font-weight: 600; min-width: 30px; text-align: right; }
   .ctxbd .bdbar .cn { min-width: 34px; text-align: right; }
-  .ctxchips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .ctxchips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
   .ctxchip { background: transparent; border: 1px solid var(--line); color: var(--dim);
     font-size: 11px; padding: 3px 9px; border-radius: 999px; cursor: pointer; font-weight: 400; }
   .ctxchip.on { color: var(--txt); border-color: var(--acc); }
   .ctxchip .cn { color: var(--acc2); font-size: 10px; }
   .ctxchip .ct { color: var(--dim); font-size: 10px; opacity: .8; }
-  .ctxlist { margin-top: 7px; max-height: 220px; overflow-y: auto; }
+  .ctxlist { margin-top: 5px; max-height: 220px; overflow-y: auto; }
   .ctxitem { display: block; width: 100%; box-sizing: border-box; text-align: left;
     background: transparent; border: 0; border-radius: 0; box-shadow: none; cursor: default;
     font-family: inherit; font-size: 11.5px; font-weight: 400; color: var(--dim);
@@ -994,6 +997,7 @@
   .rpath { font-size: 10.5px; color: var(--dim); word-break: break-all; margin: 4px 0 5px; }
   .rrow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   .rwho { font-size: 11px; color: var(--dim); margin-bottom: 6px; line-height: 1.4; }
+  #inspector button.ghost.dirty { color: var(--acc); border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
   .rwho.agent { color: var(--txt); }
 </style>
 <script>
@@ -1102,21 +1106,6 @@
         </div>
         </div>
       </section>
-      <section data-insp="context" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('context')">Context</button>
-        <div class="insp-body">
-        <div class="card">
-          <div class="ctxhead">
-            <span id="ctxPct" class="ctxpct">–</span>
-            <div class="meter"><i id="ctxBar" style="width:0%;min-width:0"></i></div>
-            <span id="ctxState" class="ctxstate">–</span>
-            <button class="ghost" id="compactBtn" title="summarize this session's transcript now to free up context">🗜 compact</button>
-          </div>
-          <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
-        </div>
-        <div id="ctxCats"></div>
-        </div>
-      </section>
       <section data-insp="cost" class="insp-open">
         <button class="insp-hd" onclick="toggleInsp('cost')">Cost</button>
         <div class="insp-body">
@@ -1131,19 +1120,8 @@
         <div id="costList" class="costlist"></div>
         </div>
       </section>
-      <section data-insp="rules" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('rules')">Rules</button>
-        <div class="insp-body">
-        <div class="card">
-          <div class="remaining" style="margin-bottom:4px">Every file that feeds the system prompt, with its real path. The text
-            is already loaded, so edit it here. A later section wins on conflict.</div>
-          <div id="rulesWho" class="rwho"></div>
-          <div id="rulesList"></div>
-        </div>
-        </div>
-      </section>
       <section data-insp="plan" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('plan')">Plan / Tasks</button>
+        <button class="insp-hd" onclick="toggleInsp('plan')">Plan</button>
         <div class="insp-body">
         <h2>TASK LIST (persistent) <span id="taskCount" class="remaining"></span></h2>
         <div class="card">
@@ -1163,6 +1141,30 @@
           </div>
           <div id="taskDetail" class="remaining" style="margin-top:8px"></div>
           <div id="remaining" class="remaining" style="margin-top:8px"></div>
+        </div>
+        </div>
+      </section>
+      <section data-insp="context" class="insp-open">
+        <button class="insp-hd" onclick="toggleInsp('context')">Context</button>
+        <div class="insp-body">
+        <div class="card">
+          <div class="ctxhead">
+            <span id="ctxPct" class="ctxpct">–</span>
+            <div class="meter"><i id="ctxBar" style="width:0%;min-width:0"></i></div>
+            <span id="ctxState" class="ctxstate">–</span>
+            <button class="ghost" id="compactBtn" title="summarize this session's transcript now to free up context">🗜 compact</button>
+          </div>
+          <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
+        </div>
+        <div id="ctxCats"></div>
+        </div>
+      </section>
+      <section data-insp="rules" class="insp-open">
+        <button class="insp-hd" onclick="toggleInsp('rules')">Rules</button>
+        <div class="insp-body">
+        <div class="card">
+          <div id="rulesWho" class="rwho"></div>
+          <div id="rulesList"></div>
         </div>
         </div>
       </section>
@@ -1288,7 +1290,7 @@
         </div>
       </div>
       <section data-insp="files" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('files')">Files &amp; changes</button>
+        <button class="insp-hd" onclick="toggleInsp('files')">Files</button>
         <div class="insp-body">
         <h2>Files · workspace</h2>
         <div class="card">
@@ -2640,13 +2642,14 @@ async function openSessMenu(row, s, ag) {
   const m = document.createElement("div");
   m.className = "sess-menu";
   const pinned = _pinned().includes(s.id);
-  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="clear">Clear chat + tasks</button><button data-a="del" class="danger">Delete session</button>`;
+  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="role">Edit role (ROLE.md)</button><button data-a="clear">Clear chat + tasks</button><button data-a="del" class="danger">Delete session</button>`;
   row.appendChild(m);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
     if (a === "pin") { _togglePin(s.id); }
     if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
+    if (a === "role") { let rp = null; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; } catch (e) {} if (!rp) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp); return; }
     if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
       if (ag) { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
@@ -2903,12 +2906,10 @@ function ctxNa(reason) {
   const _cp = $("ctxPctTop"); if (_cp) _cp.textContent = "–";
   const _cr = $("ctxRing"); if (_cr) _cr.style.strokeDashoffset = "100";
 }
-/* JAG-361: ONE complete Rules panel. Every prompt source is listed with its real
-   absolute path and edited in place — the per-session role (roles.py), the global
-   RULES.md (all projects) and the project RULES.md (this workspace). Within a scope
-   AGENTS.md is ALSO loaded (additive) and is shown next to the path. The identity
-   and the policy sections (server.py constants) are code, not files, so they are
-   not listed here; the order below is the order they enter the prompt. */
+/* JAG-361: this panel shows the ONE editable, per-session prompt source — the agent
+   role (ROLE.md, via roles.py), opened at its real absolute path and edited in place.
+   Global/project RULES.md live in Settings > Rules; the identity and policy sections
+   (server.py constants) are code, not files. */
 async function loadRole() { return loadRulesPanel(); }   // JAG-361: kept as an alias
 async function loadRulesPanel() {
   const box = $("rulesList"); if (!box) return;
@@ -2940,14 +2941,10 @@ async function loadRulesPanel() {
       : "ad-hoc session (not designated as an agent) \u2014 the role text below is this session's ROLE.md";
     wbox.className = "rwho" + (who ? " agent" : "");
   }
-  const g = d.global || {}, p = d.project || {};
   const rows = [];
   if (sessionId) rows.push(_rulesRow("role", "session role", (role && role.path) || "(no session)",
                                      (role && role.text) || "", "ROLE.md", !!(role && role.text), true));
-  rows.push(_rulesRow("global", "global rules (all projects)", g.path || "?",
-                      g.text || "", (g.files || []).join(" + ") || "(no file yet)", !!g.exists, false));
-  rows.push(_rulesRow("project", "project rules (this workspace)", p.path || "?",
-                      p.text || "", (p.files || []).join(" + ") || "(no file yet)", !!p.exists, false));
+  else rows.push('<div class="remaining">open a session to see its ROLE.md</div>');
   box.innerHTML = rows.join("");
 }
 function _rulesRow(kind, label, path, text, filesNote, ok, open) {
@@ -2956,12 +2953,13 @@ function _rulesRow(kind, label, path, text, filesNote, ok, open) {
     + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (ok ? " ok" : "") + '">'
     + esc(filesNote) + '</span></summary>'
     + '<div class="rpath" title="' + esc(path) + '">' + esc(path) + '</div>'
-    + '<textarea class="inp" id="' + id + '" style="width:100%;min-height:120px;font-size:12px;'
+    + '<textarea class="inp" id="' + id + '" oninput="markRuleDirty(\'' + kind + '\')" style="width:100%;min-height:120px;font-size:12px;'
     + 'font-family:ui-monospace,monospace">' + esc(text) + '</textarea>'
-    + '<div class="rrow"><button class="ghost" onclick="saveRuleSource(\'' + kind
+    + '<div class="rrow"><button class="ghost" id="' + id + '_save" onclick="saveRuleSource(\'' + kind
     + '\')" title="write this file to disk now">save</button>'
     + '<span class="remaining" id="' + id + '_res"></span></div></details>';
 }
+function markRuleDirty(kind) { const b = $("rule_" + kind + "_save"); if (b) b.classList.add("dirty"); }
 async function saveRuleSource(kind) {
   const el = $("rule_" + kind); if (!el) return;
   const res = $("rule_" + kind + "_res");
@@ -3119,8 +3117,8 @@ function renderCtxItems() {
       '<span class="bl">' + esc(_shortLabel(x.label)) + '</span>' +
       '<span class="bt"><i style="width:' + Math.max(x.pct, 1) + "%;background:" + x.col + '"></i></span>' +
       '<b>' + x.pct + '%</b><span class="cn">' + _fmtTok(x.tokens) + "</span></div>").join("");
-    bdHtml = '<div class="ctxdonut">' + _ctxDonut(bd, total) + "</div>" +
-             '<div class="ctxbd">' + bars + "</div>";
+    bdHtml = '<div class="ctxsplit"><div class="ctxdonut">' + _ctxDonut(bd, total) + "</div>" +
+             '<div class="ctxbd">' + bars + "</div></div>";
   }
   const chips = nonEmpty.map(([k, label]) => {
     const n = (_ctxItems[k] || []).length;
@@ -4081,7 +4079,9 @@ function renderTools(el, d) {
   // JAG-127c: global approval policy (persisted server-side in the overlay).
   const pol = (d && d.policy) || {};
   const mode = pol.mode || "normal";
-  const mk = (k, v, cur, extra) => `<button class="ghost" data-pol="${k}" data-val="${v}" style="${cur === v ? "color:var(--ok);border-color:rgba(74,222,128,.5)" : ""}">${extra || v}</button>`;
+  const mk = (k, v, cur, extra) => { const on = cur === v; const danger = v === "full";
+    const c = on ? (danger ? "color:var(--err);border-color:rgba(248,113,113,.65)" : "color:var(--ok);border-color:rgba(74,222,128,.5)") : "";
+    return `<button class="ghost" data-pol="${k}" data-val="${v}" style="${c}">${extra || v}</button>`; };
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
        <div style="font-weight:600;margin-bottom:6px">🔓 Global approval policy</div>
@@ -4784,7 +4784,7 @@ function skillsAutocomplete() {
 
 /* JAG-150: movable settings window (non-blocking). */
 const SETTINGS_CATS = [
-  ["appearance", "Appearance"], ["models", "Models"], ["keys", "Keys & Token"],
+  ["appearance", "Appearance"], ["models", "Models"], ["keys", "Keys"],
   ["mcp", "MCP"], ["skills", "Skills"],
   ["rules", "Rules"], ["harness", "Harness"], ["tools", "Tool policy"], ["info", "\u24D8 Info"],
 ];
@@ -4983,6 +4983,16 @@ function toggleInsp(name) {
   body.hidden = !body.hidden;
   sec.classList.toggle("insp-open", !body.hidden);
   localStorage.setItem("sf_insp_" + name, body.hidden ? "0" : "1");
+  if (!body.hidden) _loadInspector(name);   // populate on open (no manual ↻)
+}
+function _loadInspector(name) {
+  const key = ({ graph: "plan", plan: "plan" })[name] || name;
+  if (key === "plan") { loadPlan(); loadGraph(); }
+  else if (key === "context") { loadCtx(); }
+  else if (key === "cost") { loadCosts(); }
+  else if (key === "rules") { loadRulesPanel(); }
+  else if (key === "approvals") { loadApprovals(); }
+  else if (key === "files") { loadFiles(); loadEdits(); }
 }
 function focusInsp(name) {
   const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", feed: "feed" };
@@ -4994,12 +5004,7 @@ function focusInsp(name) {
     requestAnimationFrame(function () { sec.scrollIntoView({ block: "start" }); });
   }
   localStorage.setItem("sf_insp_" + key, "1");
-  if (key === "plan") { loadPlan(); loadGraph(); }
-  else if (key === "context") { loadCtx(); }
-  else if (key === "cost") { loadCosts(); }
-  else if (key === "rules") { loadRulesPanel(); }
-  else if (key === "approvals") { loadApprovals(); }
-  else if (key === "files") { loadFiles(); loadEdits(); }
+  _loadInspector(key);
 }
 function restoreInspector() {
   document.querySelectorAll("#inspector section").forEach(s => {
@@ -5583,7 +5588,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["plan", "Plan / Tasks"], ["context", "Context"], ["rules", "Rules"], ["files", "Files & changes"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
+  [["approvals", "Approvals"], ["plan", "Plan"], ["context", "Context"], ["rules", "Rules"], ["files", "Files"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }
@@ -6017,6 +6022,9 @@ $("compactBtn").onclick = compactNow;
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
   loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts();
+  // auto-open the workspace tree of a restored-open Files panel (no manual ↻)
+  { const _fs = document.querySelector('#inspector section[data-insp="files"]');
+    if (_fs && _fs.classList.contains("insp-open")) { loadFiles(); loadEdits(); } }
 
 /* JAG-362: a long-lived tab must notice that the app on disk was updated. The
    server serves the SPA with no-store, but an OPEN tab never re-fetches

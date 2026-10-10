@@ -34,10 +34,9 @@ def check(name, cond, extra=""):
 check("A1 the inspector Rules section replaces the Role-only pane",
       '<section data-insp="rules"' in HTML and 'data-insp="role"' not in HTML
       and "toggleInsp('rules')" in HTML, "")
-check("A2 it lists every prompt source it can edit",
+check("A2 it lists the per-session role it can edit",
       'id="rulesList"' in HTML and "function loadRulesPanel" in HTML
-      and '"session role"' in HTML and '"global rules (all projects)"' in HTML
-      and '"project rules (this workspace)"' in HTML, "")
+      and '"session role"' in HTML, "")
 check("A3 every row shows the real path + a save handler",
       '"rpath"' in HTML and "function _rulesRow" in HTML and "function saveRuleSource" in HTML, "")
 check("A4 saving writes the right backend (roles vs rules) for the scope",
@@ -47,8 +46,9 @@ check("A5 the panel reads both APIs and keeps loadRole as an alias",
       'api("GET", "/api/rules?" + params.toString())' in HTML
       and 'api("GET", "/api/roles?session="' in HTML
       and "async function loadRole() { return loadRulesPanel(); }" in HTML, "")
-check("A6 the AGENTS.md addenda that are ALSO loaded are shown",
-      '(g.files || []).join(" + ")' in HTML and 'AGENTS.md' in HTML, "")
+check("A6 the panel is role-only (global/project rules moved to Settings)",
+      '"global rules (all projects)"' not in HTML
+      and '"project rules (this workspace)"' not in HTML, "")
 
 # --- C: my duplicate-id regression + the interface polish --------------------
 check("C1 the topbar element no longer shadows the inspector #ctxPct",

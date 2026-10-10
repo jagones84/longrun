@@ -143,8 +143,16 @@ Copy-Item .env.template .env
 ```
 
 Open **`http://127.0.0.1:8790`** for the main app, or **`http://127.0.0.1:8790/orbit`**
-for the mission-control deck. Auth (optional but recommended) is a bearer token:
-`--token <t>` then `Authorization: Bearer <t>`.
+for the mission-control deck (**Bridge**).
+
+**Token — optional, recommended.** There is **no token by default**: every route is
+open. That is fine on localhost, but risky once you expose the port on LAN/Tailscale.
+To require one, start with `--token <your-token>` (any string you choose; the always-on
+service reads `LONGRUN_TOKEN` from its env file instead). With a token set, every
+request needs it: the WebUI takes it from the URL (`?token=<your-token>`), the CLI and
+the raw API from the header `Authorization: Bearer <your-token>`. You never have to
+build the URL by hand — **the server prints the ready WebUI URL, token included, at
+startup** (see below).
 
 **Always-on (Linux, systemd user unit):**
 
@@ -179,6 +187,68 @@ then "Add to Home screen".
 
 > Sandbox is optional: install `docker`, `bubblewrap` or `nsjail` for real isolation;
 > otherwise shell commands run on the host and the topbar shows `sandbox: none (!)`.
+
+---
+
+## API & integration
+
+Everything the WebUI does is a plain HTTP call, so you can drive the harness from
+any other tool, script or agent:
+
+- **REST API** — `http://<host>:8790/api/*` (JSON). Gated by `Authorization: Bearer
+  <token>` when a token is set. [docs/CLI.md](docs/CLI.md) is the full endpoint
+  reference: every route, with the matching CLI command.
+- **MCP server** — register `mcp_server.py` with any MCP client (Claude Code, another
+  harness, …) and the harness's tools become callable there; it forwards each call to
+  the running instance over HTTP. Config snippet in the module docstring.
+- **ACP** — `acp.py` lets an external agent drive sessions over the same API.
+- **CLI** (`forge.py`) — a thin stdlib client over the *same* REST API (no duplicated
+  logic): scripted/terminal control and a live reference for the endpoints.
+- **WebUI / mobile** — the same API in the browser (see *Mobile*, above).
+
+### Calling it from outside
+
+**A call with no session id creates a NEW session for you** and returns its id — you
+do not have to prepare anything:
+
+```bash
+curl -s -X POST http://127.0.0.1:8790/api/chat \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"message":"hello"}'
+# -> {"session":"ad499f57669e","run_id":"…","reply":"…","messages":4,"error":false}
+```
+
+**To target a specific session, pass it** — one id is one conversation/agent, so every
+call with the same id reuses the same transcript, workspace and plan:
+
+```bash
+curl -s -X POST http://127.0.0.1:8790/api/agent/run \
+  -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"goal":"fix the failing test","session":"my-run-42",
+       "model":"deepseek:deepseek-chat","max_steps":8}'
+```
+
+Want to pin the workspace? Create the session up-front with
+`POST /api/sessions {"title":"…","workspace":"/abs/path"}` (returns the id). Otherwise a
+new session inherits the **global default workspace** (Settings ▸ workspace; default =
+the repo root). "Designate" a session as an org agent with `POST /api/agents
+{session,name,role,reports_to}` — a session *is* an agent.
+
+### Run a benchmark, per task
+
+Drive any benchmark by calling the agent loop once per task, each with its own session,
+then score the reply:
+
+```bash
+# 1) the built-in gold tasks (eval/gold_tasks.json):
+curl -s -X POST http://127.0.0.1:8790/api/eval/run -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' -d '{"model":"NEX","max_steps":8}'
+
+# 2) your own (SWE-style): one POST /api/agent/run per instance,
+#    with session="swe-<instance_id>", then read the result back:
+curl -s 'http://127.0.0.1:8790/api/history?session=swe-django-1234&token=<token>'
+curl -s 'http://127.0.0.1:8790/api/runs/<run_id>/trace?token=<token>'
+```
 
 ---
 

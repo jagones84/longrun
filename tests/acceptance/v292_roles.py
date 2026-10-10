@@ -104,7 +104,7 @@ check("the CLI exposes roles/agents/jobs",
       and 'add_parser("jobs")' in cli and "def cmd_roles" in cli)
 with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
     gui = f.read()
-check("the primary WebUI has the Rules panel (role + global/project rules)",
+check("the primary WebUI has the Rules panel (per-session role)",
       'data-insp="rules"' in gui and "async function loadRole()" in gui
       and "/api/roles" in gui and "/api/rules" in gui)
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as f:

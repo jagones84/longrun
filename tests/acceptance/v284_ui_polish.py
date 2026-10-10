@@ -36,7 +36,7 @@ check("Approvals is the first inspector section",
       ui.index('data-insp="approvals"') < ui.index('data-insp="context"')
       and ui.index('data-insp="approvals"') < ui.index('data-insp="plan"'))
 check("Approvals is the first inspector entry in the command palette",
-      '[["approvals", "Approvals"], ["plan", "Plan / Tasks"], ["context", "Context"]' in ui)
+      '[["approvals", "Approvals"], ["plan", "Plan"], ["context", "Context"]' in ui)
 
 # --- 2) Context: hide empty categories, explain when empty -------------------
 check("context chips only render non-empty categories (no always-empty 'Other')",
