@@ -910,6 +910,26 @@ def handle(handler, method, path, qs, body):
         if path == "/api/index/embed-test":
             from longrun.model import embed as _embed
             return _r(handler, 200, _embed.probe(qs.get("model")))
+        # JAG-403: embedding model catalogue + cost log
+        if path == "/api/embedding/models":
+            from longrun.memory import embedcfg as _ec
+            return _r(handler, 200, {"models": _ec.all_models(),
+                                     "active": _ec.active_model()})
+        if path == "/api/embedding/active":
+            from longrun.memory import embedcfg as _ec
+            return _r(handler, 200, {"active": _ec.active_model()})
+        if path == "/api/embedding/costs":
+            from longrun.memory import costlog as _cl
+            return _r(handler, 200, _cl.aggregate(qs.get("scope"), qs.get("scope_id")))
+        if path == "/api/embedding/costs.csv":
+            from longrun.memory import costlog as _cl
+            handler.send_response(200)
+            handler.send_header("Content-Type", "text/csv; charset=utf-8")
+            handler.send_header("Content-Disposition",
+                                "attachment; filename=embedding-costs.csv")
+            handler.end_headers()
+            handler.wfile.write(_cl.export_csv().encode("utf-8"))
+            return True
 
         return False
 
@@ -960,9 +980,33 @@ def handle(handler, method, path, qs, body):
         if path == "/api/knowledge/clear":
             from longrun.memory import knowledge as _kb
             return _r(handler, 200, _kb.clear())
+        # JAG-403b: research agent — discover + iterative summarisation + import.
+        if path == "/api/knowledge/research":
+            from longrun.research import executor as _rs
+            b = body or {}
+            return _r(handler, 200, _rs.run(
+                query=b.get("q") or b.get("query") or "",
+                notebook=b.get("notebook") or "default",
+                depth=b.get("depth") or "shallow",
+                n=int(b.get("n") or 5),
+                max_rounds=int(b.get("max_rounds") or 4),
+            ))
+        # JAG-403b: pick / inspect the active research LLM.
+        if path == "/api/research/model":
+            from longrun.research import researchcfg as _rc
+            b = body or {}
+            if b.get("model"):
+                return _r(handler, 200, _rc.set_active(str(b.get("model") or "")))
+            return _r(handler, 200, {"active": _rc.active_model(),
+                                     "models": _rc.all_models()})
         if path == "/api/index/config":
             from longrun.memory import indexcfg as _cfg
             return _r(handler, 200, _cfg.save_config(body or {}))
+        # JAG-403: switch the active embedding model
+        if path == "/api/embedding/active":
+            from longrun.memory import embedcfg as _ec
+            b = body or {}
+            return _r(handler, 200, _ec.set_active(str(b.get("model") or "")))
         if path == "/api/term/exec":  # JAG-281: real terminal — send a command line
             return _r(handler, 200, term_exec(body))
         if path == "/api/term/reset":  # JAG-281: kill the session's shell

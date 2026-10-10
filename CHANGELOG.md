@@ -7,6 +7,35 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Multi-embedding model catalogue + COST tracking (JAG-403a).** The user can now
+  pick from 18 known embedding models (OpenAI `text-embedding-3-small/large`, Voyage
+  `voyage-3-large`, Cohere `embed-english-v3.0`, Jina `jina-embeddings-v3`, OpenRouter
+  pass-throughs and local BGE/E5/Nomic) or save custom ones via overlay. Embedding costs
+  are recorded per batch in `data/codebase/costs.db` with the EXACT USD reported by
+  OpenRouter (`usage.cost`) and a best-effort estimate for every other provider. New
+  inspector **Embedding** in the WebUI shows the active model, lets the user test the
+  endpoint, view total + per-model + per-day costs, and export CSV. CLI:
+  `forge embedding models|active|set|costs|cost-test`. API: `GET /api/embedding/models`,
+  `GET/POST /api/embedding/active`, `GET /api/embedding/costs`, `GET /api/embedding/costs.csv`.
+  v401 26/26; battery 127 → 128.
+- **Research agent (JAG-403b) — discover + iterative summarisation + import.** The user can
+  launch a *deep research* run from the chat Settings (Knowledge ▸ Research · agent) or
+  from the CLI (`forge knowledge research <q> --notebook --depth --max-rounds`). The
+  research LLM is configurable separately from the chat LLM: catalogue ships Perplexity
+  Sonar Pro/Sonar (web-grounded, recommended), OpenRouter `gpt-4o-mini-search-preview` /
+  `perplexity/sonar-pro`, and the local rllm router (`local:default`). Depth controls
+  rounds + sources per round (shallow=1×5, medium=2×5, deep=3×6, capped at max_rounds).
+  Each round: web search → fetch top URLs → ingest as notebook sources (deduped,
+  budgeted) → final LLM summary stored as a text source alongside the URLs. New
+  `/api/knowledge/research` (POST) and `/api/research/model` (GET/POST); v402 25/25;
+  battery 128 → 129.
+
+### Fixed
+- Pre-existing `NameError: name 'embed' is not defined` in `codeindex.search` (line 208)
+  triggered when an embedding model was configured: `from longrun.model import embed as
+  _embed` added and the new `(vecs, usage)` tuple from `embed_texts` unpacked.
+
+### Added
 - **The WebUI is installable as an app — PWA scaffolding (JAG-390).** Adds a web app
   manifest (`webui/manifest.webmanifest`: standalone, 192/512 + maskable icons), a minimal
   service worker (`webui/sw.js`: network-first shell cache that NEVER intercepts `/api`, so

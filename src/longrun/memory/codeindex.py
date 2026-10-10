@@ -16,6 +16,7 @@ import time
 from longrun.memory import chunk as _chunk
 from longrun.memory import indexcfg as _cfg
 from longrun.memory import vectors as _vec
+from longrun.model import embed as _embed
 from longrun.util import paths
 
 LOCK = threading.RLock()
@@ -146,7 +147,8 @@ def build(ws, force=False):
             em = _cfg.embed_model()
             if em:
                 rows = [(r["id"], r["text"]) for r in db.execute("SELECT id, text FROM chunks WHERE vec IS NULL")]
-                _embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32))
+                _embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                              scope="codebase", scope_id=str(ws), op="build")
             db.commit()
             _set_meta(db, {"built_at": time.time(), "embed_model": em, "dim": _dim(db),
                            "fts": bool(fts), "workspace": ws})
@@ -204,7 +206,8 @@ def search(ws, query, k=8, kind=None, embed_model=None):
             return out
         ref = embed_model if embed_model is not None else _cfg.embed_model()
         if ref and rows:
-            qv = embed.embed_texts([query], model=ref)
+            qv_out = _embed.embed_texts([query], model=ref)
+            qv = qv_out[0] if qv_out else None
             if qv:
                 marks = ",".join("?" * len(rows))
                 cand = {r["id"]: _blob_vec(x["vec"]) for x in db.execute(

@@ -239,7 +239,9 @@ def add_source(notebook, ref):
             if em and n:
                 rows = [(r["id"], r["text"]) for r in db.execute(
                     "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
-                _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32))
+                _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                                  scope="notebook", scope_id=str(notebook),
+                                  op="add_source")
             db.commit()
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
                     "ref": ref, "chunks": n, "title": ref if kind == "url" else base}
@@ -285,6 +287,40 @@ def add_sources(notebook, values):
     ok = [x for x in results if x.get("ok")]
     return {"ok": bool(ok) and len(ok) == len(refs), "added": len(ok), "total": len(refs),
             "chunks": sum(x.get("chunks", 0) for x in ok), "results": results}
+
+
+def add_source_text(notebook, ref, text, title=None):
+    """Ingest pre-fetched text as a URL source. Used by the research executor
+    so the same body is NOT re-fetched."""
+    notebook = notebook or DEFAULT_ID
+    ref = str(ref or "").strip()
+    text = str(text or "")
+    if not ref or not text.strip():
+        return {"ok": False, "error": "ref and text required"}
+    cfg = _cfg.load_config()
+    with LOCK:
+        db = _connect()
+        try:
+            fts = _init(db)
+            if not _notebook_exists(db, notebook):
+                return {"ok": False, "error": "no such notebook: %s" % notebook}
+            sid = "src:" + uuid.uuid4().hex[:10]
+            cl = int(cfg.get("chunk_lines") or 60)
+            ov = int(cfg.get("overlap_lines") or 8)
+            n = _ingest(db, sid, notebook, "url", ref, title or ref,
+                        _chunk.chunk_doc(text, cl, ov), "markdown", ref, cfg, fts)
+            em = _cfg.embed_model()
+            if em and n:
+                rows = [(r["id"], r["text"]) for r in db.execute(
+                    "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
+                _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                                  scope="notebook", scope_id=str(notebook),
+                                  op="add_source")
+            db.commit()
+            return {"ok": True, "source_id": sid, "notebook": notebook, "kind": "url",
+                    "ref": ref, "chunks": n, "title": title or ref}
+        finally:
+            db.close()
 
 
 def list_sources(notebook=None):

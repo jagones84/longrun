@@ -1,4 +1,4 @@
-"""Embeddings for the knowledge index (JAG-397).
+"""Embeddings for the knowledge index (JAG-397 / JAG-403).
 
 Stdlib-only and OpenAI-compatible. A batch of texts is embedded through, in order:
 
@@ -8,6 +8,12 @@ Stdlib-only and OpenAI-compatible. A batch of texts is embedded through, in orde
 
 Every failure is non-fatal: callers fall back to lexical (bm25) retrieval, so the
 index works with no embedding model at all.
+
+JAG-403: ``embed_texts`` now returns ``(vecs, usage)`` where ``usage`` is a dict
+with at least ``tokens`` (the API-reported prompt_tokens, or an estimate) and
+optionally ``cost_usd`` (the EXACT USD cost reported by OpenRouter in
+``usage.cost``). Callers (``vectors.embed_chunks``) feed the cost into the
+embedding cost log.
 """
 import json
 import urllib.request
@@ -56,14 +62,27 @@ def _post(url, headers, model, texts, timeout):
             out[i] = [float(x) for x in vec]
     if any(v is None for v in out):
         return None
-    return out
+    usage = data.get("usage") or {}
+    if not isinstance(usage, dict):
+        usage = {}
+    out_usage = {
+        "tokens": int(usage.get("prompt_tokens") or usage.get("total_tokens") or 0),
+        # OpenRouter returns `usage.cost` in USD — the EXACT cost for this call.
+        "cost_usd": (float(usage["cost"]) if isinstance(usage.get("cost"),
+                                                       (int, float)) else None),
+    }
+    return out, out_usage
 
 
 def embed_texts(texts, model=None, timeout=TIMEOUT):
-    """Embed a batch -> list of float vectors, or None when unavailable."""
+    """Embed a batch -> (list of float vectors, usage dict) or (None, {}).
+
+    Backward-compatible shape: a non-None ``vecs`` indicates success. The
+    ``usage`` dict carries ``tokens`` and (for OpenRouter) the EXACT ``cost_usd``.
+    """
     texts = [t for t in (texts or []) if isinstance(t, str) and t.strip()]
     if not texts:
-        return []
+        return [], {"tokens": 0, "cost_usd": None}
     ref = (model if model is not None else model_ref()) or ""
     if ref:
         try:
@@ -75,22 +94,26 @@ def embed_texts(texts, model=None, timeout=TIMEOUT):
             p, mid = hit
             base = (p.get("base_url") or "").rstrip("/")
             if base:
-                return _post(base + "/embeddings", providers.headers(p), mid, texts, timeout)
+                out = _post(base + "/embeddings", providers.headers(p), mid, texts, timeout)
+                if out is not None:
+                    return out
     try:
         from longrun.model import rllm
         base = (getattr(rllm, "ROUTER_BASE", "") or "").rstrip("/")
     except Exception:  # noqa: BLE001
         base = ""
     if base:
-        return _post(base + "/v1/embeddings", {"Content-Type": "application/json"},
-                     "default", texts, timeout)
-    return None
+        out = _post(base + "/v1/embeddings", {"Content-Type": "application/json"},
+                    "default", texts, timeout)
+        if out is not None:
+            return out
+    return None, {"tokens": 0, "cost_usd": None}
 
 
 def probe(model=None, timeout=TIMEOUT):
     """One test embedding -> {'ok', 'model', 'dim'|'error'} (for the UI / Model Test)."""
     ref = model if model is not None else model_ref()
-    vec = embed_texts(["dimension probe"], model=ref, timeout=timeout)
+    vec, _ = embed_texts(["dimension probe"], model=ref, timeout=timeout)
     if not vec:
         return {"ok": False, "model": ref or "(local default)",
                 "error": "no embeddings endpoint answered"}

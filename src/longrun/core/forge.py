@@ -540,7 +540,74 @@ def cmd_knowledge(args):
         print(json.dumps(req("POST", "/api/knowledge/import", {"notebook": nb, "urls": urls}),
                          indent=2, ensure_ascii=False))
         return
+    if action == "research":
+        body = {"q": args.value or "", "notebook": nb or "default",
+                "depth": args.depth or "shallow", "n": args.limit,
+                "max_rounds": args.max_rounds}
+        print(json.dumps(req("POST", "/api/knowledge/research", body),
+                         indent=2, ensure_ascii=False))
+        return
     print(json.dumps(req("GET", "/api/knowledge/status"), indent=2, ensure_ascii=False))
+
+
+def cmd_research(args):
+    """Research model selection (JAG-403b). `set` / `ls` / `active`."""
+    action = getattr(args, "action", "active") or "active"
+    if action == "ls":
+        out = req("GET", "/api/research/model")
+        for m in out.get("models", []):
+            print("  %-50s %-12s %s" % (m.get("id"), m.get("provider", ""), m.get("label", "")))
+        print("\nactive: %s" % (out.get("active") or "(none)"))
+        return
+    if action == "set":
+        print(json.dumps(req("POST", "/api/research/model", {"model": args.value or ""}),
+                         indent=2, ensure_ascii=False))
+        return
+    print(json.dumps(req("GET", "/api/research/model"), indent=2, ensure_ascii=False))
+
+
+def cmd_embedding(args):
+    """Embedding models + cost log (JAG-403): models/active/costs/cost-test."""
+    action = getattr(args, "action", "active") or "active"
+    if action == "models":
+        out = req("GET", "/api/embedding/models")
+        for m in out.get("models", []):
+            local = " (local, free)" if (m.get("price_per_mtok") or 0) == 0 else (
+                " $%s/1Mt" % m.get("price_per_mtok"))
+            print("%-48s %-6d dim  %-12s%s  %s" % (
+                m.get("id"), m.get("dim", 0), m.get("provider", ""), local,
+                m.get("label", "")))
+        print("\nactive: %s" % (out.get("active") or "(none — lexical only)"))
+        return
+    if action == "active":
+        out = req("GET", "/api/embedding/active")
+        print("active: %s" % (out.get("active") or "(none — lexical only)"))
+        return
+    if action == "set":
+        print(json.dumps(req("POST", "/api/embedding/active",
+                             {"model": args.value or ""}),
+                         indent=2, ensure_ascii=False))
+        return
+    if action == "costs":
+        out = req("GET", "/api/embedding/costs")
+        print("total cost so far: $%.6f   total tokens: %d" % (
+            out.get("total_cost_usd", 0.0), out.get("total_tokens", 0)))
+        print("by model:")
+        for m in out.get("by_model", []):
+            real = "  (real: $%.6f from OR)" % m["real_cost_usd"] if m.get("real_n") else ""
+            print("  %-44s  $%0.6f   %d tokens%s" % (
+                m["model"], m["total_cost_usd"], m["tokens"], real))
+        if out.get("by_day"):
+            print("last 30 days:")
+            for d in out["by_day"]:
+                print("  %s  $%0.6f  %d tokens" % (d["day"], d["cost_usd"], d["tokens"]))
+        return
+    if action == "cost-test":
+        from longrun.model import embed as _embed
+        print(json.dumps(_embed.probe(args.value or None), indent=2,
+                         ensure_ascii=False))
+        return
+    print("(unknown action; use: models|active|set|costs|cost-test)")
 
 
 def cmd_feed(_):
@@ -879,9 +946,14 @@ def main():
     p = sub.add_parser("index"); p.add_argument("action", nargs="?", default="status", choices=["status", "build", "search"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--limit", type=int, default=8); \
         p.add_argument("--force", action="store_true"); p.set_defaults(fn=cmd_index)
-    p = sub.add_parser("knowledge"); p.add_argument("action", nargs="?", default="status", choices=["status", "notebooks", "create", "add", "search", "discover", "import"]); \
+    p = sub.add_parser("knowledge"); p.add_argument("action", nargs="?", default="status", choices=["status", "notebooks", "create", "add", "search", "discover", "import", "research"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--notebook"); p.add_argument("--limit", type=int, default=8); \
+        p.add_argument("--depth", choices=["shallow", "medium", "deep"]); p.add_argument("--max-rounds", type=int, default=4); \
         p.set_defaults(fn=cmd_knowledge)
+    p = sub.add_parser("research"); p.add_argument("action", nargs="?", default="active", choices=["ls", "set", "active"]); \
+        p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_research)
+    p = sub.add_parser("embedding"); p.add_argument("action", nargs="?", default="active", choices=["models", "active", "set", "costs", "cost-test"]); \
+        p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_embedding)
     sub.add_parser("feed").set_defaults(fn=cmd_feed)
     p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge"]); \
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \

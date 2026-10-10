@@ -282,6 +282,37 @@ check("H6 render_todos shows ONLY the current plan",
       _rt.splitlines()[0] if _rt else "")
 
 
+# ---- scenario I: a final answer with OPEN todos is REJECTED (JAG-402) -------
+# The model writes a todo list, then tries to give a final answer WITHOUT
+# closing the steps. Before JAG-402 the answer was accepted and the todos
+# stayed open forever. Now the harness REJECTS the final answer and forces the
+# model to close every step (done / superseded) before its reply reaches the
+# user. Stale plans from a previous turn (JAG-189 pivot) are still allowed.
+_I_PLAN = '{"action":"write_todos","todos":[{"label":"do thing one"},{"label":"do thing two"}]}'
+_I_DONE0 = '{"action":"update_todos","steps":[{"index":0,"status":"done","evidence":"ran cmd X"}]}'
+_I_DONE1 = '{"action":"update_todos","steps":[{"index":1,"status":"done","evidence":"ran cmd Y"}]}'
+
+
+def script_close_todos(n):
+    seq = (_I_PLAN, "finito, tutto fatto.", _I_DONE0, _I_DONE1, "tutto chiuso, risultato finale.")
+    return seq[n] if n < len(seq) else "tutto chiuso, risultato finale."
+
+
+ev_i, _ = run_turn("v183i", script_close_todos, gated_ok)
+_rej = [d for k, d in ev_i if k == "harness.inject"
+        and "REJECTED" in (d.get("text") or "")]
+check("I1 final answer with open todos is REJECTED (JAG-402)",
+      len(_rej) >= 1, "rejected_injects=%d" % len(_rej))
+_si = (server.load_session("v183i") or {}).get("messages", [{}])[-1]
+check("I2 the accepted final answer comes AFTER the todos were closed",
+      _si.get("role") == "assistant" and "tutto chiuso" in (_si.get("content") or ""),
+      "%r" % (_si.get("content") or "")[:50])
+_gi = _tg.load("v183i") or {}
+_open_i = [n for n in _tg.plan_nodes(_gi) if n.get("status") in _tg.OPEN_STATUSES]
+check("I3 no todo is left open at the end of the turn",
+      len(_open_i) == 0, "open=%d" % len(_open_i))
+
+
 print("\n==== %d/%d checks passed ====" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
 

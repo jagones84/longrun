@@ -22,4 +22,6 @@ WEBUI_DIR = os.path.join(REPO_ROOT, "webui")
 # Both are overridable so tests run against a scratch dir.
 CODEBASE_DIR = os.environ.get("LONGRUN_CODEBASE_DIR") or os.path.join(DATA_DIR, "codebase")
 KNOWLEDGE_DIR = os.environ.get("LONGRUN_KNOWLEDGE_DIR") or os.path.join(DATA_DIR, "knowledge")
+# JAG-403: per-batch embedding cost log (separate small DB, append-only).
+EMBEDDING_DIR = os.environ.get("LONGRUN_EMBEDDING_DIR") or os.path.join(DATA_DIR, "embedding")
 

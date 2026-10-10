@@ -1544,6 +1544,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _kg_stop_reason = None
     _kg_prev = None
     _kg_stale = 0
+    # JAG-402: dedicated budget for CLOSING open todos before a final answer is
+    # accepted. The model must not stop with open todos: every step must be
+    # marked done (with evidence) or superseded (with a reason) before the
+    # final prose answer reaches the user.
+    _close_todo_rounds = 0
+    _close_todo_max = 4
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
     _last_tool_hash = None  # JAG-178: detect a repeated identical call
     _tool_repeat = 0
@@ -2064,8 +2070,24 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if (_open and _dec.get("reason") != "pivot_sync"
                     and not bool((_kg.cfg(_kg_override) or {}).get("autocontinue", True))):
                 _dec = {"continue": False, "reason": "need_input"}
+            # JAG-402: the model must NOT stop with open todos IT OWNS this turn.
+            # A final prose answer while steps are still open is REJECTED: the
+            # model is forced to close every step (done with evidence, or
+            # superseded with a reason) before its answer reaches the user.
+            # This overrides the normal keepgoing stop reasons (budget /
+            # no_progress) up to a small dedicated budget so a weak model cannot
+            # "escape" by emitting a final answer and leaving the list dangling.
+            # EXCEPTION (JAG-189): a stale plan from a PREVIOUS turn
+            # (`_user_pivot` still True = model never re-engaged the list this
+            # turn) may be answered directly — the user's new request supersedes
+            # the old plan and the model is not forced to close it.
+            if (_open and not _user_pivot and not _is_aborted(sess["id"])
+                    and _close_todo_rounds < _close_todo_max):
+                _dec = {"continue": True, "reason": "close_todos"}
             if _dec["continue"]:
                 _kg_rounds += 1
+                if _dec.get("reason") == "close_todos":
+                    _close_todo_rounds += 1
                 _kg_prev = _cur
                 for _s in drain_steer(sess["id"]):
                     msgs.append({"role": "user", "content":
@@ -2076,6 +2098,18 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 if _dec.get("reason") == "pivot_sync":
                     _inject(_pivot_sync_text(len(_open), _open_todo_brief(sess)[1]), "pivot")
+                elif _dec.get("reason") == "close_todos":
+                    _inject(
+                        "STOP — your final answer was REJECTED because your TASK LIST "
+                        "still has %d open step(s). You MUST close every step BEFORE "
+                        "you can answer the user. For each open step do ONE of: "
+                        "(a) mark it 'done' with the concrete evidence (the command "
+                        "you ran and its result); or (b) ONLY if it is PERMANENTLY "
+                        "unneeded, mark it 'superseded' with a SPECIFIC reason saying "
+                        "WHY. Use update_todos for EVERY open step — do not skip any. "
+                        "When the list is fully closed (0 open), your next message will "
+                        "be accepted as the final answer. Open now:\n%s"
+                        % (len(_open), _open_todo_brief(sess)[1]), "continue")
                 else:
                     _inject(
                         "CONTINUE — your TASK LIST still has %d open step(s), and it is "

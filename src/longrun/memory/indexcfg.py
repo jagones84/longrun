@@ -24,6 +24,11 @@ DEFAULT_CONFIG = {
     "ignore": ["*.min.js", "*.min.css", "*.map", "*.lock", "*.svg", "*.ipynb"],
     "embed_model": "",
     "embed_batch": 32,
+    # JAG-403: user-added embedding models (provider/id/dim/price_per_mtok).
+    "custom_models": [],
+    # JAG-403b: the active research model id (``perplexity:sonar-pro`` by default).
+    "research_model": "",
+    "research_active": "",
 }
 
 

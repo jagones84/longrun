@@ -1359,6 +1359,32 @@
         </div>
         </div>
       </section>
+      <section data-insp="embedding" class="insp-open">
+        <button class="insp-hd" onclick="toggleInsp('embedding')">Embedding</button>
+        <div class="insp-body">
+        <h2>Embedding model · <span id="emActive" class="remaining"></span></h2>
+        <div class="card">
+          <div class="remaining" id="emMeta">Pick the model that will embed new chunks (codebase + knowledge). Free local models cost $0. OpenRouter returns the exact USD cost per call.</div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
+            <select id="emModel" class="inp" style="padding:6px 10px;font-size:12px;min-width:280px"></select>
+            <button class="ghost" onclick="emSetActive()" title="save the active model">set</button>
+            <button class="ghost" onclick="emTest()" title="probe the model (one test embedding)">test</button>
+            <button class="ghost" onclick="emRefresh()" title="reload the catalogue">refresh</button>
+          </div>
+          <div id="emTestOut" class="remaining" style="margin-top:6px"></div>
+        </div>
+        <h2>Embedding costs</h2>
+        <div class="card">
+          <div class="remaining" id="emCostTotal">—</div>
+          <div id="emCostByModel" style="margin-top:6px;max-height:200px;overflow:auto"></div>
+          <div id="emCostByDay" style="margin-top:6px;max-height:140px;overflow:auto"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="ghost" onclick="emCosts()">refresh</button>
+            <button class="ghost" onclick="emExportCsv()">export CSV</button>
+          </div>
+        </div>
+        </div>
+      </section>
       <section data-insp="browser" class="insp-open">
         <button class="insp-hd" onclick="toggleInsp('browser')">Browser</button>
         <div class="insp-body">
@@ -1509,6 +1535,7 @@
         </div>
       </div>
       <div class="sw-cat" data-cat="knowledge" hidden>
+        <div data-insp="knowledge">
         <h2>Knowledge · global <span id="indexStat" class="remaining"></span></h2>
         <div class="card">
           <div class="remaining" id="indexMeta">Global knowledge base — notebooks of sources (URLs, files, pasted text). Separate from the per-workspace <b>Codebase</b> index (right rail ▸ Codebase).</div>
@@ -1545,6 +1572,28 @@
           </div>
           <div id="kbCandidates" style="margin-top:6px"></div>
         </div>
+        <h2>Research · agent</h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">Iterative web discovery + summarisation, then <b>import</b> into the selected notebook. The research LLM is configurable (Perplexity Sonar recommended, or any local model).</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <select id="researchModel" class="inp" style="flex:2;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
+            <select id="researchDepth" class="inp" style="flex:0 0 110px;padding:6px 10px;font-size:12px" title="how many rounds and sources per round">
+              <option value="shallow">shallow</option>
+              <option value="medium" selected>medium</option>
+              <option value="deep">deep</option>
+            </select>
+            <input id="researchN" type="number" min="1" max="20" value="5" class="inp" style="flex:0 0 60px;padding:6px 10px;font-size:12px" title="sources per round">
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <input id="researchQ" class="inp" placeholder="research topic (e.g. kubernetes operator patterns)…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbStartResearch()">
+            <button class="ghost" onclick="kbStartResearch()">🧬 research</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <button class="ghost" onclick="researchModelLs()" title="refresh research models">↻ models</button>
+            <button class="ghost" onclick="researchSetActive()" title="save the selected research model as the default">save model</button>
+          </div>
+          <div id="researchLog" style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11px"></div>
+        </div>
         <h2>Search knowledge</h2>
         <div class="card">
           <div style="display:flex;gap:6px">
@@ -1553,6 +1602,7 @@
           </div>
           <div id="kbResults" style="margin-top:6px"></div>
         </div>
+        </div><!-- /data-insp=knowledge -->
       </div>
       <div class="sw-cat" data-cat="appearance" hidden>
         <h2>Theme</h2>
@@ -4981,7 +5031,7 @@ function settingsCategory(name) {
     if (typeof loadProviders === "function") loadProviders();
     if (typeof loadEmbedModel === "function") loadEmbedModel();
   }
-  else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSources(); }
+  else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSources(); researchModelLs(); }
   else if (name === "appearance") {
     renderThemeGrid();
     const bc = $("boldText");
@@ -5132,9 +5182,10 @@ function _loadInspector(name) {
   else if (key === "approvals") { loadApprovals(); }
   else if (key === "files") { loadFiles(); loadEdits(); loadRules(); }
   else if (key === "codebase") { cbStatus(); }
+  else if (key === "embedding") { emRefresh(); emCosts(); }
 }
 function focusInsp(name) {
-  const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", feed: "feed" };
+  const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", embedding: "embedding", feed: "feed" };
   const key = map[name] || name;
   const sec = document.querySelector('#inspector section[data-insp="' + key + '"]');
   if (sec) {
@@ -5215,6 +5266,86 @@ async function cbSearch() {
 async function cbClear() {
   if (typeof confirmDelete === "function" && !(await confirmDelete("delete THIS workspace's codebase index?"))) return;
   try { await api("POST", "/api/codebase/clear", { session: sessionId || undefined }); cbStatus(); } catch (e) {}
+}
+
+/* ---- JAG-403: EMBEDDING model catalogue + cost log ---- */
+let emCatalogue = [];
+async function emRefresh() {
+  try {
+    const r = await api("GET", "/api/embedding/models");
+    emCatalogue = r.models || [];
+    const sel = $("emModel");
+    const cur = r.active || "";
+    if (sel) {
+      sel.innerHTML = '<option value="">(no model — lexical only)</option>' +
+        emCatalogue.map(m => {
+          const price = (m.price_per_mtok || 0) === 0
+            ? " (free)" : (" $" + m.price_per_mtok + "/1Mt");
+          return '<option value="' + _attr(m.id) + '">' + esc(m.label) +
+                 " · " + m.dim + "d" + esc(price) + "</option>";
+        }).join("");
+      sel.value = cur;
+    }
+    const a = $("emActive");
+    if (a) a.textContent = cur || "(lexical only)";
+  } catch (e) { /* ignore */ }
+}
+async function emSetActive() {
+  const sel = $("emModel");
+  if (!sel) return;
+  const v = sel.value;
+  try {
+    const r = await api("POST", "/api/embedding/active", { model: v });
+    const a = $("emActive");
+    if (a) a.textContent = (r.embed_model || v) || "(lexical only)";
+    if (typeof toast === "function") toast("active embedding: " + (v || "(lexical only)"), "ok");
+    emCosts();
+  } catch (e) { if (typeof toast === "function") toast("set failed: " + e, "err"); }
+}
+async function emTest() {
+  const sel = $("emModel");
+  const out = $("emTestOut");
+  if (!sel || !out) return;
+  const m = sel.value;
+  out.textContent = "probing " + m + "…";
+  try {
+    const r = await api("GET", "/api/index/embed-test?model=" + encodeURIComponent(m));
+    out.textContent = r.ok ? ("OK · " + r.dim + "d · " + r.model) :
+      ("FAIL · " + (r.error || "no endpoint"));
+  } catch (e) { out.textContent = "error: " + e; }
+}
+async function emCosts() {
+  try {
+    const r = await api("GET", "/api/embedding/costs");
+    const t = $("emCostTotal");
+    if (t) t.textContent = "total so far: $" + (r.total_cost_usd || 0).toFixed(6) +
+      "   total tokens: " + (r.total_tokens || 0);
+    const bm = $("emCostByModel");
+    if (bm) bm.innerHTML = (r.by_model || []).length
+      ? ("<table class='ctx-mini' style='width:100%;font-size:12px'>" +
+         "<tr><th align='left'>model</th><th align='right'>tokens</th><th align='right'>$ est+real</th><th align='right'>$ real (OR)</th></tr>" +
+         r.by_model.map(m =>
+           "<tr><td>" + esc(m.model) + "</td><td align='right'>" + m.tokens + "</td>" +
+           "<td align='right'>$" + m.total_cost_usd.toFixed(6) + "</td>" +
+           "<td align='right'>$" + (m.real_cost_usd || 0).toFixed(6) + "</td></tr>"
+         ).join("") + "</table>")
+      : '<div class="remaining">no embedding batches logged yet</div>';
+    const bd = $("emCostByDay");
+    if (bd) bd.innerHTML = (r.by_day || []).length
+      ? ("<table class='ctx-mini' style='width:100%;font-size:12px'>" +
+         "<tr><th align='left'>day</th><th align='right'>tokens</th><th align='right'>$</th></tr>" +
+         r.by_day.map(d =>
+           "<tr><td>" + esc(d.day) + "</td><td align='right'>" + d.tokens + "</td>" +
+           "<td align='right'>$" + d.cost_usd.toFixed(6) + "</td></tr>"
+         ).join("") + "</table>")
+      : '';
+  } catch (e) { /* ignore */ }
+}
+function emExportCsv() {
+  // The API serves text/csv with Content-Disposition; we trigger a download.
+  const u = (window.SF_BASE || "") + "/api/embedding/costs.csv";
+  const w = window.open(u, "_blank");
+  if (!w && typeof toast === "function") toast("popup blocked — use the CLI: forge embedding costs", "warn");
 }
 
 /* ---- JAG-401: KNOWLEDGE base — GLOBAL notebooks of sources ---- */
@@ -5370,6 +5501,41 @@ async function kbSearch() {
 async function kbClear() {
   if (typeof confirmDelete === "function" && !(await confirmDelete("delete the WHOLE knowledge base?"))) return;
   try { await api("POST", "/api/knowledge/clear", {}); kbLoadNotebooks(); kbLoadSources(); kbStatus(); } catch (e) {}
+}
+async function researchModelLs() {
+  const sel = $("researchModel"); if (!sel) return;
+  try {
+    const r = await api("GET", "/api/research/model");
+    const active = r.active || "";
+    sel.innerHTML = (r.models || []).map(m =>
+      '<option value="' + _attr(m.id) + '"' + (m.id === active ? " selected" : "") + '>' +
+      esc(m.label || m.id) + "  · " + esc(m.provider || "") + '</option>').join("");
+  } catch (e) { sel.innerHTML = '<option value="">(load failed)</option>'; }
+}
+async function researchSetActive() {
+  const sel = $("researchModel"); if (!sel || !sel.value) return;
+  try {
+    const r = await api("POST", "/api/research/model", { model: sel.value });
+    if (r && r.ok) toast("research model: " + r.active);
+  } catch (e) { toast("failed: " + String(e)); }
+}
+async function kbStartResearch() {
+  const q = $("researchQ") ? $("researchQ").value.trim() : "";
+  const depth = $("researchDepth") ? $("researchDepth").value : "shallow";
+  const n = parseInt(($("researchN") && $("researchN").value) || "5", 10);
+  const log = $("researchLog"); if (log) log.innerHTML = "";
+  if (!q) { if (log) log.innerHTML = '<div class="remaining">enter a topic first.</div>'; return; }
+  const append = (s) => { if (log) { log.innerHTML += s + "<br>"; log.scrollTop = log.scrollHeight; } };
+  append("▸ starting research: " + q + "  [depth=" + depth + ", n=" + n + "]");
+  try {
+    const r = await api("POST", "/api/knowledge/research",
+      { q: q, notebook: kbState.notebook || "default", depth: depth, n: n, max_rounds: 4 });
+    append("✓ rounds=" + (r.rounds || 0) + ", sources_added=" + (r.sources_added || 0));
+    (r.sources || []).forEach((s, i) => append("  " + (i + 1) + ". " + (s.kind || "?") + " · " + (s.url || s.ref || s.title || "")));
+    if (r.plan) append("▸ plan: " + JSON.stringify(r.plan));
+    toast("research done — " + (r.sources_added || 0) + " sources imported");
+    kbLoadNotebooks(); kbLoadSources(); kbStatus();
+  } catch (e) { append("✗ error: " + String(e)); }
 }
 async function loadEmbedModel() {
   try {
