@@ -33,7 +33,7 @@ that built this.
 ## The one command that matters
 
 ```bash
-bash tests/battery.sh     # 127/127 GREEN required before any commit
+bash tests/battery.sh     # 130/130 GREEN required before any commit
 ```
 
 ## Non-negotiables

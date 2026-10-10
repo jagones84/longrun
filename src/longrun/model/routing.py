@@ -4,17 +4,16 @@
 The llama.cpp router on :8080 exposes a roster of models (some loaded, some
 unloaded). Routing picks the model per *role* (chat, planner, agent, subagent,
 summarizer) by matching configured alias patterns against the live roster,
-preferring loaded models, then falling back through a chain that ends with the
-DeepSeek alias.
+preferring loaded models. There are NO implicit fallbacks: a role resolves to a
+single model via its `pattern` unless the user configures explicit `fallbacks`.
 
 Config: `config/routing.yaml` (edited via POST /api/routing):
 
     roles:
-      chat:     {pattern: "nex-n25-mini", fallbacks: ["qwen", "glm", "deepseek"]}
-      planner:  {pattern: "qwen", fallbacks: ["nex", "glm", "deepseek"]}
+      chat:     {pattern: "nex-n25-mini", fallbacks: []}
+      planner:  {pattern: "qwen", fallbacks: []}
       ...
-    default_fallbacks: ["nex", "qwen", "glm", "deepseek"]
-    deepseek_fallback: "deepseek"
+    default_fallbacks: []          # empty by default — never decided for you
 
 Matching is a case-insensitive substring match on the roster alias, in the
 order the patterns appear. `pick()` returns None only if the roster itself is
@@ -31,14 +30,17 @@ REPO = registry.REPO
 CONFIG_PATH = os.path.join(REPO, "config", "routing.yaml")
 
 DEFAULT_CONFIG = {
+    # JAG-403: NO hardcoded fallback chains. Each role picks its model by
+    # `pattern` (substring match on the live roster) only. A user who wants a
+    # failover chain can add `fallbacks` per role (CLI/UI or config/routing.yaml).
     "roles": {
-        "chat": {"pattern": "nex", "fallbacks": ["qwen", "glm", "deepseek"]},
-        "planner": {"pattern": "qwen", "fallbacks": ["nex", "glm", "deepseek"]},
-        "agent": {"pattern": "nex", "fallbacks": ["qwen", "glm", "deepseek"]},
-        "subagent": {"pattern": "glm", "fallbacks": ["nex", "qwen", "deepseek"]},
-        "summarizer": {"pattern": "glm", "fallbacks": ["nex", "qwen", "deepseek"]},
+        "chat": {"pattern": "nex", "fallbacks": []},
+        "planner": {"pattern": "qwen", "fallbacks": []},
+        "agent": {"pattern": "nex", "fallbacks": []},
+        "subagent": {"pattern": "glm", "fallbacks": []},
+        "summarizer": {"pattern": "glm", "fallbacks": []},
     },
-    "default_fallbacks": ["nex", "qwen", "glm", "deepseek"],
+    "default_fallbacks": [],
 }
 
 _lock = threading.RLock()
@@ -123,6 +125,7 @@ def pick(role, preferred=None):
 
     Order: explicit `preferred` (if present in the roster) → role pattern
     (loaded first) → role fallbacks → default fallbacks → any loaded model.
+    With no configured fallbacks this resolves to the role pattern only.
     Returns None if the roster is empty (caller keeps its own default).
     """
     cfg = load_config()
@@ -155,7 +158,7 @@ def fallback_chain(role):
     """Full alias candidates for a role, resolved against the roster.
 
     Used for live-call fallback: when the primary model fails, the caller
-    retries down this chain. The DeepSeek alias always terminates the chain.
+    retries down this chain. Empty unless the user configured fallbacks.
     """
     cfg = load_config()
     roster = _roster()

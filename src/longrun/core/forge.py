@@ -588,6 +588,19 @@ def cmd_embedding(args):
                              {"model": args.value or ""}),
                          indent=2, ensure_ascii=False))
         return
+    if action == "add":
+        try:
+            spec = json.loads(args.value) if args.value else {}
+        except json.JSONDecodeError as e:
+            print("bad json model spec:", e, file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(req("POST", "/api/embedding/models", {"add": spec}),
+                         indent=2, ensure_ascii=False))
+        return
+    if action == "remove":
+        print(json.dumps(req("POST", "/api/embedding/models", {"remove": args.value or ""}),
+                         indent=2, ensure_ascii=False))
+        return
     if action == "costs":
         out = req("GET", "/api/embedding/costs")
         print("total cost so far: $%.6f   total tokens: %d" % (
@@ -952,7 +965,7 @@ def main():
         p.set_defaults(fn=cmd_knowledge)
     p = sub.add_parser("research"); p.add_argument("action", nargs="?", default="active", choices=["ls", "set", "active"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_research)
-    p = sub.add_parser("embedding"); p.add_argument("action", nargs="?", default="active", choices=["models", "active", "set", "costs", "cost-test"]); \
+    p = sub.add_parser("embedding"); p.add_argument("action", nargs="?", default="active", choices=["models", "active", "set", "add", "remove", "costs", "cost-test"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_embedding)
     sub.add_parser("feed").set_defaults(fn=cmd_feed)
     p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge"]); \

@@ -1,37 +1,18 @@
 roles:
   chat:
     pattern: qwen
-    fallbacks:
-    - qwen
-    - glm
-    - deepseek
+    fallbacks: []
   planner:
     pattern: qwen
-    fallbacks:
-    - nex
-    - glm
-    - deepseek
+    fallbacks: []
   agent:
     pattern: qwen
-    fallbacks:
-    - nex
-    - glm
-    - deepseek
+    fallbacks: []
   subagent:
     pattern: glm
-    fallbacks:
-    - nex
-    - qwen
-    - deepseek
+    fallbacks: []
   summarizer:
     pattern: glm
-    fallbacks:
-    - nex
-    - qwen
-    - deepseek
+    fallbacks: []
     model: openrouter:deepseek/deepseek-v4-flash-0731
-default_fallbacks:
-- nex
-- qwen
-- glm
-- deepseek
+default_fallbacks: []

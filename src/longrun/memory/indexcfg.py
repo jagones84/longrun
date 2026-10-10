@@ -26,6 +26,8 @@ DEFAULT_CONFIG = {
     "embed_batch": 32,
     # JAG-403: user-added embedding models (provider/id/dim/price_per_mtok).
     "custom_models": [],
+    # JAG-403: catalogue entries the user hid in the personal config.
+    "disabled_models": [],
     # JAG-403b: the active research model id (``perplexity:sonar-pro`` by default).
     "research_model": "",
     "research_active": "",

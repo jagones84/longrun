@@ -17,6 +17,7 @@ import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 tmp = tempfile.mkdtemp(prefix="v402-")
+os.environ["LONGRUN_DATA_DIR"] = os.path.join(tmp, "data")
 os.environ["LONGRUN_CODEBASE_DIR"] = os.path.join(tmp, "codebase")
 os.environ["LONGRUN_KNOWLEDGE_DIR"] = os.path.join(tmp, "knowledge")
 os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(tmp, "sessions")
@@ -145,8 +146,8 @@ HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 CLI = open(os.path.join(REPO, "src", "longrun", "core", "forge.py"), encoding="utf-8").read()
 
 check("D1 API exposes /api/knowledge/research", "/api/knowledge/research" in API, "")
-check("D2 API also exposes /api/research/model to set/inspect the research LLM",
-      "/api/research/model" in API, "")
+check("D2 API exposes /api/research/model for GET (inspect) + POST (set)",
+      API.count('"/api/research/model"') >= 2, "")
 check("D3 CLI exposes `forge knowledge research`",
       "research" in CLI and "def cmd_knowledge" in CLI, "")
 check("D4 the WebUI Knowledge inspector has a Research section",

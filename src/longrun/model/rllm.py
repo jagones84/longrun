@@ -413,8 +413,10 @@ def _reasoning_effort():
     return None
 
 
-def _completion_body(model_id, messages, stream, max_tokens=None):
-    """Single place that builds the OpenAI-compatible request body (JAG-111)."""
+def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=False):
+    """Single place that builds the OpenAI-compatible request body (JAG-111).
+    JAG-403: `no_reasoning=True` omits `reasoning_effort` (retry path for a
+    model that rejects the field)."""
     # JAG-167: strip harness-only metadata (e.g. the per-message `node` used to
     # rebuild the in-chat tree) so ONLY wire-valid fields reach the provider.
     clean = []
@@ -431,9 +433,10 @@ def _completion_body(model_id, messages, stream, max_tokens=None):
         body["stream_options"] = {"include_usage": True}
     if max_tokens:
         body["max_tokens"] = int(max_tokens)
-    effort = _reasoning_effort()
-    if effort:
-        body["reasoning_effort"] = effort
+    if not no_reasoning:
+        effort = _reasoning_effort()
+        if effort:
+            body["reasoning_effort"] = effort
     return body
 
 
@@ -464,7 +467,7 @@ def _reachable(url, timeout=None):
 
 
 def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=None,
-                   cancel=None):
+                   cancel=None, no_reasoning=False):
     """POST /chat/completions with stream=true; feed deltas to on_delta.
 
     on_delta(channel, text) with channel in {think, answer}. Returns the
@@ -474,6 +477,9 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
     for its real token accounting (`stream_options.include_usage`) and copy the
     final `usage` object into it — so the ctx meter can show the model's own
     prompt_tokens instead of the ~4-chars/token proxy.
+
+    JAG-403: `no_reasoning=True` omits `reasoning_effort` from the body (retry
+    path when a non-thinking model rejects the field).
     """
     url, headers, model_id = _chat_endpoint(model)
     # JAG-217: fail fast on an UNREACHABLE provider, BEFORE the blocking open, so
@@ -482,7 +488,8 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
     if not _reachable(url):
         raise urllib.error.URLError("provider unreachable: %s" % url)
     body = json.dumps(_completion_body(model_id, messages, True,
-                                       MAX_TOKENS or None)).encode("utf-8")
+                                       MAX_TOKENS or None,
+                                       no_reasoning=no_reasoning)).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers)
     answer, think = [], []
     rg = _RepetitionGuard() if (guard if guard is not None else REPEAT_GUARD) else None
@@ -569,7 +576,8 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
             return "".join(answer), "".join(think)
         # non-streaming fallback
         body = json.dumps(_completion_body(model_id, messages, False,
-                                           MAX_TOKENS or None)).encode("utf-8")
+                                           MAX_TOKENS or None,
+                                           no_reasoning=no_reasoning)).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers=headers)
         with _open_with_retry(req, timeout) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")

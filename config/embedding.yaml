@@ -1,0 +1,133 @@
+# Embedding model catalogue (JAG-403).
+#
+# This is the PERSONAL config for the embedding models offered in
+# Settings ▸ Models. Edit this file directly, or add/remove models from the UI
+# (personal additions persist in data/index.overlay.yaml::custom_models, which
+# OVERRIDES this file on an id collision).
+#
+# Fields:
+#   id               <provider>:<model>  (the exact ref sent to the API)
+#   provider         openai | voyage | cohere | jina | openrouter | local | custom
+#   label            user-facing name shown in the picker
+#   dim              vector dimension (approximate; the API may report its own)
+#   price_per_mtok   USD per 1,000,000 tokens (0 = free / local)
+#   notes            optional one-liner
+#
+# Cost source: OpenRouter returns the EXACT USD cost per call (`usage.cost`);
+# every other provider is ESTIMATED from `price_per_mtok`.
+
+models:
+  # --- OpenAI (direct) ---
+  - id: openai:text-embedding-3-small
+    provider: openai
+    label: OpenAI text-embedding-3-small
+    dim: 1536
+    price_per_mtok: 0.02
+    notes: Cheap, solid, 1536d (truncatable to 256/512/1024).
+  - id: openai:text-embedding-3-large
+    provider: openai
+    label: OpenAI text-embedding-3-large
+    dim: 3072
+    price_per_mtok: 0.13
+    notes: Best OpenAI quality, large, expensive.
+  - id: openai:text-embedding-ada-002
+    provider: openai
+    label: OpenAI text-embedding-ada-002
+    dim: 1536
+    price_per_mtok: 0.10
+    notes: Legacy, still widely used.
+  # --- Voyage AI ---
+  - id: voyage:voyage-3
+    provider: voyage
+    label: Voyage 3
+    dim: 1024
+    price_per_mtok: 0.06
+    notes: Strong general-purpose.
+  - id: voyage:voyage-3-lite
+    provider: voyage
+    label: Voyage 3 Lite
+    dim: 512
+    price_per_mtok: 0.02
+    notes: Cheap, smaller, fast.
+  - id: voyage:voyage-code-3
+    provider: voyage
+    label: Voyage Code 3
+    dim: 1024
+    price_per_mtok: 0.06
+    notes: Optimised for source code.
+  # --- Cohere ---
+  - id: cohere:embed-english-v3.0
+    provider: cohere
+    label: Cohere embed-english-v3.0
+    dim: 1024
+    price_per_mtok: 0.10
+    notes: English only.
+  - id: cohere:embed-multilingual-v3.0
+    provider: cohere
+    label: Cohere embed-multilingual-v3.0
+    dim: 1024
+    price_per_mtok: 0.10
+    notes: Multilingual.
+  # --- Jina ---
+  - id: jina:jina-embeddings-v3
+    provider: jina
+    label: Jina embeddings v3
+    dim: 1024
+    price_per_mtok: 0.02
+    notes: Multilingual, Matryoshka.
+  # --- OpenRouter (cost returned by OR — recorded as REAL) ---
+  - id: openrouter:openai/text-embedding-3-small
+    provider: openrouter
+    label: OpenRouter · OpenAI 3-small
+    dim: 1536
+    price_per_mtok: 0.02
+    notes: OpenRouter returns the exact USD cost.
+  - id: openrouter:openai/text-embedding-3-large
+    provider: openrouter
+    label: OpenRouter · OpenAI 3-large
+    dim: 3072
+    price_per_mtok: 0.13
+    notes: OpenRouter returns the exact USD cost.
+  - id: openrouter:qwen/qwen3-embedding-8b
+    provider: openrouter
+    label: OpenRouter · Qwen3 Embedding 8B
+    dim: 4096
+    price_per_mtok: 0.05
+    notes: Qwen, multilingual.
+  - id: openrouter:google/gemini-embedding-001
+    provider: openrouter
+    label: OpenRouter · Gemini Embedding 001
+    dim: 3072
+    price_per_mtok: 0.025
+    notes: Google Gemini embeddings.
+  # --- Local / self-hosted — FREE ---
+  - id: local:BAAI/bge-small-en-v1.5
+    provider: local
+    label: BGE small EN v1.5 (local)
+    dim: 384
+    price_per_mtok: 0.0
+    notes: Local, free, 384d, English.
+  - id: local:BAAI/bge-large-en-v1.5
+    provider: local
+    label: BGE large EN v1.5 (local)
+    dim: 1024
+    price_per_mtok: 0.0
+    notes: Local, free, 1024d, English.
+  - id: local:BAAI/bge-m3
+    provider: local
+    label: BGE-M3 (local, multilingual)
+    dim: 1024
+    price_per_mtok: 0.0
+    notes: Local, free, multilingual + code.
+  - id: local:intfloat/e5-large-v2
+    provider: local
+    label: E5 large v2 (local)
+    dim: 1024
+    price_per_mtok: 0.0
+    notes: Local, free, English.
+  - id: local:nomic-ai/nomic-embed-text-v1.5
+    provider: local
+    label: Nomic Embed v1.5 (local)
+    dim: 768
+    price_per_mtok: 0.0
+    notes: Local, free, long context.

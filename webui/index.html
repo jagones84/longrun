@@ -1359,32 +1359,6 @@
         </div>
         </div>
       </section>
-      <section data-insp="embedding" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('embedding')">Embedding</button>
-        <div class="insp-body">
-        <h2>Embedding model · <span id="emActive" class="remaining"></span></h2>
-        <div class="card">
-          <div class="remaining" id="emMeta">Pick the model that will embed new chunks (codebase + knowledge). Free local models cost $0. OpenRouter returns the exact USD cost per call.</div>
-          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
-            <select id="emModel" class="inp" style="padding:6px 10px;font-size:12px;min-width:280px"></select>
-            <button class="ghost" onclick="emSetActive()" title="save the active model">set</button>
-            <button class="ghost" onclick="emTest()" title="probe the model (one test embedding)">test</button>
-            <button class="ghost" onclick="emRefresh()" title="reload the catalogue">refresh</button>
-          </div>
-          <div id="emTestOut" class="remaining" style="margin-top:6px"></div>
-        </div>
-        <h2>Embedding costs</h2>
-        <div class="card">
-          <div class="remaining" id="emCostTotal">—</div>
-          <div id="emCostByModel" style="margin-top:6px;max-height:200px;overflow:auto"></div>
-          <div id="emCostByDay" style="margin-top:6px;max-height:140px;overflow:auto"></div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button class="ghost" onclick="emCosts()">refresh</button>
-            <button class="ghost" onclick="emExportCsv()">export CSV</button>
-          </div>
-        </div>
-        </div>
-      </section>
       <section data-insp="browser" class="insp-open">
         <button class="insp-hd" onclick="toggleInsp('browser')">Browser</button>
         <div class="insp-body">
@@ -1507,22 +1481,46 @@
         </div>
         <h2>Embedding model · knowledge index</h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Vectors for semantic retrieval over the codebase + docs. Leave empty for keyword-only (bm25) search.</div>
-          <input id="embedModel" class="inp" list="embedSuggest" placeholder="provider:model — e.g. openrouter:openai/text-embedding-3-small" style="width:100%;padding:6px 10px;font-size:12px">
-          <datalist id="embedSuggest"></datalist>
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            <button class="ghost" onclick="saveEmbedModel()">save</button>
-            <button class="ghost" onclick="testEmbedModel()" title="send one probe text through the configured embeddings endpoint">test</button>
-            <button class="ghost" onclick="openSettings('knowledge')" title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
+          <div class="remaining" style="margin:0 0 6px">Vectors for semantic retrieval over the codebase + docs. Leave empty for keyword-only (bm25) search. The catalogue is your PERSONAL config (<code>config/embedding.yaml</code>); add your own below.</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <select id="emModel" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
+            <button class="ghost" onclick="emSetActive()" title="save the active model">set</button>
+            <button class="ghost" onclick="emTest()" title="probe the model (one test embedding)">test</button>
+            <button class="ghost" onclick="emRefresh()" title="reload the catalogue">refresh</button>
           </div>
-          <div class="remaining" id="embedResult" style="margin-top:6px"></div>
+          <div class="remaining" style="margin-top:6px">active: <b id="emActive"></b></div>
+          <div id="emTestOut" class="remaining" style="margin-top:4px"></div>
+          <button class="ghost" onclick="openSettings('knowledge')" style="margin-top:8px" title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
+        </div>
+        <h2>Embedding models · personal</h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">Add a model (id, dimension, USD per 1M tokens) — saved in your personal config, no hardcoding — or remove one from the list.</div>
+          <input id="emNewId" class="inp" placeholder="id — provider:model (e.g. openrouter:openai/text-embedding-3-small) *" style="width:100%;padding:6px 10px;font-size:12px">
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <input id="emNewDim" type="number" class="inp" placeholder="dim" style="flex:0 0 90px;padding:6px 10px;font-size:12px">
+            <input id="emNewPrice" type="number" step="0.001" class="inp" placeholder="USD / 1M tok" style="flex:0 0 130px;padding:6px 10px;font-size:12px">
+            <input id="emNewLabel" class="inp" placeholder="label (optional)" style="flex:1;padding:6px 10px;font-size:12px">
+          </div>
+          <button class="ghost" onclick="emAddModel()" style="margin-top:6px">+ add model</button>
+          <div id="emModelList" style="margin-top:8px;max-height:220px;overflow:auto"></div>
+        </div>
+        <h2>Embedding costs</h2>
+        <div class="card">
+          <div class="remaining" id="emCostTotal">—</div>
+          <div id="emCostByModel" style="margin-top:6px;max-height:200px;overflow:auto"></div>
+          <div id="emCostByDay" style="margin-top:6px;max-height:140px;overflow:auto"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="ghost" onclick="emCosts()">refresh</button>
+            <button class="ghost" onclick="emExportCsv()">export CSV</button>
+          </div>
         </div>
         <h2>Thinking effort</h2>
         <div class="card">
+          <div class="remaining" style="margin:0 0 6px">Saved automatically. When enabled, the harness sends <code>reasoning_effort</code> to the model; a model that does not support the field is retried without it, so a non-thinking model never crashes the turn.</div>
           <div class="hrow">
-            <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox"></label>
+            <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" onchange="saveReasoning()"></label>
             <label title="Depth of reasoning requested from the model.">effort
-              <select id="reEffort">
+              <select id="reEffort" onchange="saveReasoning()">
                 <option value="minimal">minimal</option>
                 <option value="low">low</option>
                 <option value="medium">medium</option>
@@ -1530,7 +1528,6 @@
               </select>
             </label>
           </div>
-          <button class="ghost" onclick="saveReasoning()" title="save the thinking-effort setting">save thinking effort</button>
           <div class="remaining" id="reResult" style="margin-top:6px"></div>
         </div>
       </div>
@@ -5029,7 +5026,7 @@ function settingsCategory(name) {
   else if (name === "models") {
     if (typeof loadRouting === "function") loadRouting();
     if (typeof loadProviders === "function") loadProviders();
-    if (typeof loadEmbedModel === "function") loadEmbedModel();
+    if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
   }
   else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSources(); researchModelLs(); }
   else if (name === "appearance") {
@@ -5146,9 +5143,11 @@ async function loadRouting() {
       const match = models.find(m => m.ref.toLowerCase().includes(pat) || m.id.toLowerCase().includes(pat));
       if (match) sel.value = match.ref;
     }
+    const fb = ((d.config || {}).default_fallbacks || []);
     const box = $("modelsList");
-    if (box) box.innerHTML = '<div class="remaining">models available: <b>' + models.length +
-      '</b> · fallback: <b>' + ((d.config || {}).default_fallbacks || []).slice(0, 4).join(" › ") + '</b></div>';
+    if (box) box.innerHTML = '<div class="remaining">models available: <b>' + models.length + '</b>' +
+      (fb.length ? (' · fallback (you configured): <b>' + fb.slice(0, 6).join(" › ") + '</b>')
+                 : ' · no fallback chain (the selected model is used as-is)') + '</div>';
   } catch (e) { if ($("compactionResult")) $("compactionResult").textContent = "error: " + e; }
 }
 async function saveCompactionModel() {
@@ -5182,10 +5181,9 @@ function _loadInspector(name) {
   else if (key === "approvals") { loadApprovals(); }
   else if (key === "files") { loadFiles(); loadEdits(); loadRules(); }
   else if (key === "codebase") { cbStatus(); }
-  else if (key === "embedding") { emRefresh(); emCosts(); }
 }
 function focusInsp(name) {
-  const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", embedding: "embedding", feed: "feed" };
+  const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", feed: "feed" };
   const key = map[name] || name;
   const sec = document.querySelector('#inspector section[data-insp="' + key + '"]');
   if (sec) {
@@ -5288,6 +5286,7 @@ async function emRefresh() {
     }
     const a = $("emActive");
     if (a) a.textContent = cur || "(lexical only)";
+    emRenderList();
   } catch (e) { /* ignore */ }
 }
 async function emSetActive() {
@@ -5409,20 +5408,61 @@ async function kbDeleteNotebook(id) {
     kbLoadNotebooks(); kbLoadSources(); kbStatus();
   } catch (e) {}
 }
+/* A source row: URLs become real hyperlinks (open in a new tab); file paths open
+   in the editor (images in the image window, PDFs in the browser viewer). */
+function _kbSourceRow(s) {
+  const kind = esc(s.kind || "");
+  const ref = s.ref || "";
+  const title = s.title || ref;
+  const chunks = '<span class="cn">' + (s.chunks || 0) + "</span>";
+  let label;
+  if (/^https?:\/\//i.test(ref)) {
+    label = '<a href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
+      'style="color:var(--acc);flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
+  } else if (s.kind === "url" && ref) {
+    label = '<a href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
+      'style="color:var(--acc);flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
+  } else if (ref) {
+    label = '<a href="#" class="kbopen" data-ref="' + _attr(ref) + '" ' +
+      'style="flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
+  } else {
+    label = '<span class="remaining" style="flex:1;word-break:break-all">' + esc(title) + "</span>";
+  }
+  return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+    '<span class="cn">' + kind + "</span>" + label + chunks +
+    '<button class="ghost" style="padding:2px 6px" data-sid="' + _attr(s.id) + '">✕</button></div>';
+}
+function _kbOpenRef(ref) {
+  if (!ref) return;
+  if (/^https?:\/\//i.test(ref)) { window.open(ref, "_blank", "noopener"); return; }
+  if (_isImage(ref)) { showImage(_rawUrl(ref)); return; }
+  if (/\.pdf$/i.test(ref)) { window.open(_rawUrl(ref), "_blank"); return; }
+  openInEditor(ref);
+}
+function _kbWireSources(box) {
+  box.querySelectorAll("[data-sid]").forEach(el =>
+    el.onclick = () => kbRemoveSource(el.getAttribute("data-sid")));
+  box.querySelectorAll(".kbopen").forEach(el =>
+    el.onclick = (e) => { e.preventDefault(); _kbOpenRef(el.getAttribute("data-ref")); });
+}
 async function kbLoadSources() {
   const box = $("kbSources"); if (!box) return;
   box.innerHTML = '<div class="remaining">loading…</div>';
   try {
     const r = await api("GET", "/api/knowledge/sources?notebook=" + encodeURIComponent(kbState.notebook));
     const rows = r.sources || [];
-    box.innerHTML = rows.length
-      ? rows.map(s => '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
-          '<span class="cn">' + esc(s.kind || "") + '</span>' +
-          '<span class="remaining" style="flex:1;word-break:break-all" title="' + _attr(s.ref) + '">' +
-          esc(s.title || s.ref) + " <span class='cn'>" + (s.chunks || 0) + "</span></span>" +
-          '<button class="ghost" style="padding:2px 6px" data-sid="' + _attr(s.id) + '">✕</button></div>').join("")
-      : '<div class="remaining">no sources in this notebook</div>';
-    box.querySelectorAll("[data-sid]").forEach(el => el.onclick = () => kbRemoveSource(el.getAttribute("data-sid")));
+    if (!rows.length) { box.innerHTML = '<div class="remaining">no sources in this notebook</div>'; return; }
+    // A bounded, scrollable window — a 100-URL import must not blow up the panel.
+    const LIMIT = 200;
+    const shown = rows.slice(0, LIMIT);
+    const head = rows.length > LIMIT
+      ? ('<div class="remaining" style="margin-bottom:4px">showing <b>' + shown.length +
+         "</b> of <b>" + rows.length + "</b> sources</div>")
+      : ('<div class="remaining" style="margin-bottom:4px"><b>' + rows.length +
+         "</b> source" + (rows.length > 1 ? "s" : "") + "</div>");
+    box.innerHTML = head + '<div style="max-height:320px;overflow:auto;padding-right:4px">' +
+      shown.map(_kbSourceRow).join("") + "</div>";
+    _kbWireSources(box);
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
 async function kbAddSource() {
@@ -5537,27 +5577,41 @@ async function kbStartResearch() {
     kbLoadNotebooks(); kbLoadSources(); kbStatus();
   } catch (e) { append("✗ error: " + String(e)); }
 }
-async function loadEmbedModel() {
+async function emAddModel() {
+  const id = $("emNewId") ? $("emNewId").value.trim() : "";
+  if (!id) { toast("a model id is required"); return; }
+  const dim = parseInt(($("emNewDim") && $("emNewDim").value) || "0", 10) || 0;
+  const price = parseFloat(($("emNewPrice") && $("emNewPrice").value) || "0") || 0;
+  const label = ($("emNewLabel") && $("emNewLabel").value.trim()) || id;
+  const provider = id.indexOf(":") > 0 ? id.split(":")[0] : "custom";
   try {
-    const r = await api("GET", "/api/index/config");
-    const inp = $("embedModel"); if (inp) inp.value = (r.config && r.config.embed_model) || "";
-    const dl = $("embedSuggest");
-    if (dl) dl.innerHTML = (r.suggested || []).map(s => '<option value="' + _attr(s) + '">').join("");
-  } catch (e) {}
+    const r = await api("POST", "/api/embedding/models",
+      { add: { id: id, dim: dim, price_per_mtok: price, label: label, provider: provider } });
+    if (r && r.ok) {
+      toast("model added: " + id, "ok");
+      ["emNewId", "emNewDim", "emNewPrice", "emNewLabel"].forEach(k => { if ($(k)) $(k).value = ""; });
+      emRefresh();
+    } else { toast("add failed: " + ((r && r.error) || "?"), "err"); }
+  } catch (e) { toast("add failed: " + e, "err"); }
 }
-async function saveEmbedModel() {
-  const v = $("embedModel") ? $("embedModel").value.trim() : "";
-  try { const r = await api("POST", "/api/index/config", { embed_model: v });
-    if ($("embedResult")) $("embedResult").textContent = "saved: " + (r.embed_model || "(bm25 only)"); }
-  catch (e) { if ($("embedResult")) $("embedResult").textContent = "error: " + e; }
+async function emRemoveModel(id) {
+  try {
+    await api("POST", "/api/embedding/models", { remove: id });
+    toast("model removed: " + id, "ok");
+    emRefresh();
+  } catch (e) { toast("remove failed: " + e, "err"); }
 }
-async function testEmbedModel() {
-  const v = $("embedModel") ? $("embedModel").value.trim() : "";
-  if ($("embedResult")) $("embedResult").textContent = "testing…";
-  try { const r = await api("GET", "/api/index/embed-test?model=" + encodeURIComponent(v));
-    $("embedResult").textContent = r.ok ? ("ok · dim " + r.dim + " · " + r.model)
-                                        : ("failed: " + (r.error || "?") + " · " + r.model); }
-  catch (e) { if ($("embedResult")) $("embedResult").textContent = "error: " + e; }
+function emRenderList() {
+  const box = $("emModelList"); if (!box) return;
+  box.innerHTML = emCatalogue.length
+    ? emCatalogue.map(m => '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+        '<span class="remaining" style="flex:1;word-break:break-all">' +
+        esc(m.label || m.id) + ' <span class="cn">' + (m.dim || 0) + 'd · $' +
+        (m.price_per_mtok || 0) + '/1Mt</span></span>' +
+        '<button class="ghost" style="padding:2px 6px" data-emid="' + _attr(m.id) + '">✕</button></div>').join("")
+    : '<div class="remaining">no models — add one above</div>';
+  box.querySelectorAll("[data-emid]").forEach(el =>
+    el.onclick = () => emRemoveModel(el.getAttribute("data-emid")));
 }
 
 /* ---- JAG-124: workspace file tree + editor ---- */

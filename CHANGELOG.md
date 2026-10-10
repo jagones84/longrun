@@ -10,14 +10,15 @@ All notable changes to Longrun are documented here. The format follows
 - **Multi-embedding model catalogue + COST tracking (JAG-403a).** The user can now
   pick from 18 known embedding models (OpenAI `text-embedding-3-small/large`, Voyage
   `voyage-3-large`, Cohere `embed-english-v3.0`, Jina `jina-embeddings-v3`, OpenRouter
-  pass-throughs and local BGE/E5/Nomic) or save custom ones via overlay. Embedding costs
-  are recorded per batch in `data/codebase/costs.db` with the EXACT USD reported by
-  OpenRouter (`usage.cost`) and a best-effort estimate for every other provider. New
-  inspector **Embedding** in the WebUI shows the active model, lets the user test the
-  endpoint, view total + per-model + per-day costs, and export CSV. CLI:
-  `forge embedding models|active|set|costs|cost-test`. API: `GET /api/embedding/models`,
-  `GET/POST /api/embedding/active`, `GET /api/embedding/costs`, `GET /api/embedding/costs.csv`.
-  v401 26/26; battery 127 → 128.
+  pass-throughs and local BGE/E5/Nomic) — the catalogue lives in the PERSONAL config file
+  `config/embedding.yaml` (not hardcoded in Python) and personal additions/removals persist
+  in the overlay. Embedding costs are recorded per batch in `data/codebase/costs.db` with the
+  EXACT USD reported by OpenRouter (`usage.cost`) and a best-effort estimate for every other
+  provider. The **Settings ▸ Models** section shows the active model, lets the user test the
+  endpoint, add/remove models, view total + per-model + per-day costs, and export CSV. CLI:
+  `forge embedding models|active|set|add|remove|costs|cost-test`. API: `GET/POST
+  /api/embedding/models`, `GET/POST /api/embedding/active`, `GET /api/embedding/costs`,
+  `GET /api/embedding/costs.csv`. v401 26/26; battery 127 → 128.
 - **Research agent (JAG-403b) — discover + iterative summarisation + import.** The user can
   launch a *deep research* run from the chat Settings (Knowledge ▸ Research · agent) or
   from the CLI (`forge knowledge research <q> --notebook --depth --max-rounds`). The
@@ -30,10 +31,28 @@ All notable changes to Longrun are documented here. The format follows
   `/api/knowledge/research` (POST) and `/api/research/model` (GET/POST); v402 25/25;
   battery 128 → 129.
 
+### Changed
+- **Embedding UI moves out of the right-hand panel into Settings ▸ Models (JAG-403c).** The
+  duplicate `Embedding` inspector section is gone; the model picker, the personal-model
+  manager and the cost log now live together under **Settings ▸ Models**. `config/routing.yaml`
+  and the routing defaults ship EMPTY fallback chains — a role resolves to a single model via
+  its `pattern`, and the Models panel no longer prints an unexplained "fallback: …" chain
+  ("the selected model is used as-is"). The knowledge **sources** list now renders URLs as
+  real hyperlinks (open in a new tab), opens files in the editor — images in the image window,
+  **PDFs in the browser viewer** — and is a bounded, scrollable window (`LIMIT=200`,
+  "showing X of Y"). **Thinking effort** now auto-saves on change (the manual button is gone).
+  v403 22/22; battery 129 → 130.
+
 ### Fixed
 - Pre-existing `NameError: name 'embed' is not defined` in `codeindex.search` (line 208)
   triggered when an embedding model was configured: `from longrun.model import embed as
   _embed` added and the new `(vecs, usage)` tuple from `embed_texts` unpacked.
+- **Thinking effort never persisted (JAG-403c).** `tools/registry._diff_overlay`/`_merge_into`
+  did not include the `reasoning` key, so the saved effort was dropped from the overlay and
+  silently reset on every restart. `reasoning` is now a known config key (persisted + merged).
+  Also, a non-thinking model that rejects `reasoning_effort` no longer crashes the turn:
+  `_completion_body`/`_router_stream` accept a `no_reasoning` flag and `stream_with_fallback`
+  retries the same model once without the field before failing over.
 
 ### Added
 - **The WebUI is installable as an app — PWA scaffolding (JAG-390).** Adds a web app

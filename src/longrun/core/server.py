@@ -165,21 +165,30 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
     if not primary:
         primary = default_model()
     chain = [primary] + [a for a in routing.fallback_chain(role) if a != primary]
+    # JAG-403: a non-thinking model may reject `reasoning_effort`. When thinking
+    # effort is ON, retry the SAME model once with the field OMITTED before
+    # failing over — a model without reasoning must never crash the turn.
+    reasoning_on = bool(_reasoning_effort())
+    attempts = (False, True) if reasoning_on else (False,)
     last_err = None
     for i, alias in enumerate(chain):
-        try:
-            if usage is not None:
-                usage.clear()  # a failed attempt must not leave stale numbers
-            answer, think = _router_stream(messages, alias, on_delta, timeout, usage,
-                                           guard, cancel)
-            if i > 0:
-                publish("model.fallback", role=role, from_model=chain[0],
-                        to_model=alias)
-            return answer, think, alias
-        except Exception as e:  # noqa: BLE001
-            last_err = e
-            publish("model.failover", role=role, failed=alias,
-                    next_model=chain[i + 1] if i + 1 < len(chain) else None)
+        for no_reasoning in attempts:
+            try:
+                if usage is not None:
+                    usage.clear()  # a failed attempt must not leave stale numbers
+                answer, think = _router_stream(messages, alias, on_delta, timeout,
+                                               usage, guard, cancel,
+                                               no_reasoning=no_reasoning)
+                if i > 0:
+                    publish("model.fallback", role=role, from_model=chain[0],
+                            to_model=alias)
+                return answer, think, alias
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if no_reasoning:
+                    break  # already retried without the field
+        publish("model.failover", role=role, failed=alias,
+                next_model=chain[i + 1] if i + 1 < len(chain) else None)
     raise last_err if last_err else RuntimeError("no router model available")
 
 

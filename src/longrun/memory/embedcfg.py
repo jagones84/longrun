@@ -1,17 +1,18 @@
 """Embedding models catalogue + cost math (JAG-403) — stdlib only.
 
-The catalogue ships with KNOWN embedding models from common providers
-(OpenAI, Voyage, Cohere, Jina, OpenRouter) with per-1M-token pricing in USD.
-Local models (BGE, e5, nomic via llama.cpp / Ollama / TEI) are FREE
-(``price_per_mtok = 0``). Users may add custom models via the overlay
-(``data/index.overlay.yaml::custom_models``).
+The catalogue ships as a PERSONAL, editable config file (``config/embedding.yaml``),
+NOT hardcoded in Python. A tiny built-in fallback (``BASIC``) is used only when
+that file is missing, so the app still works out of the box. Personal additions
+and removals persist in the index overlay
+(``data/index.overlay.yaml::custom_models`` / ``::disabled_models``), which
+OVERRIDES the tracked catalogue on an id collision.
 
 Cost source:
   - Direct providers (OpenAI, Voyage, Cohere, Jina) -> ESTIMATED from the
-    declared price (no per-call USD in the response).
+    declared ``price_per_mtok`` (no per-call USD in the response).
   - OpenRouter -> EXACT (``usage.cost`` is returned in USD in the response).
   - Local / custom-free -> 0.
-  - Unknown model -> 0 (logged with a `unknown` flag for triage).
+  - Unknown model -> 0 (recorded with an `unknown` flag for triage).
 """
 import os
 import threading
@@ -21,85 +22,94 @@ from longrun.util import paths
 
 LOCK = threading.RLock()
 
-# Known catalogue. `dim` is approximate (the model may report a different
-# dim if sliced, e.g. text-embedding-3-* supports Matryoshka). `notes` are
-# user-facing, English only.
-MODELS = [
-    # OpenAI direct
+CATALOGUE_PATH = os.path.join(paths.REPO_ROOT, "config", "embedding.yaml")
+
+# Last-resort fallback ONLY when config/embedding.yaml is missing. The user
+# asked for "no hardcoded models except the basics" — this is that minimum.
+BASIC = [
     {"id": "openai:text-embedding-3-small", "provider": "openai",
-     "label": "OpenAI text-embedding-3-small", "dim": 1536,
-     "price_per_mtok": 0.02, "notes": "Cheap, solid, 1536d (truncatable to 256/512/1024)."},
-    {"id": "openai:text-embedding-3-large", "provider": "openai",
-     "label": "OpenAI text-embedding-3-large", "dim": 3072,
-     "price_per_mtok": 0.13, "notes": "Best OpenAI quality, large, expensive."},
-    {"id": "openai:text-embedding-ada-002", "provider": "openai",
-     "label": "OpenAI text-embedding-ada-002", "dim": 1536,
-     "price_per_mtok": 0.10, "notes": "Legacy, still widely used."},
-    # Voyage AI
-    {"id": "voyage:voyage-3", "provider": "voyage",
-     "label": "Voyage 3", "dim": 1024,
-     "price_per_mtok": 0.06, "notes": "Strong general-purpose."},
-    {"id": "voyage:voyage-3-lite", "provider": "voyage",
-     "label": "Voyage 3 Lite", "dim": 512,
-     "price_per_mtok": 0.02, "notes": "Cheap, smaller, fast."},
-    {"id": "voyage:voyage-code-3", "provider": "voyage",
-     "label": "Voyage Code 3", "dim": 1024,
-     "price_per_mtok": 0.06, "notes": "Optimised for source code."},
-    # Cohere
-    {"id": "cohere:embed-english-v3.0", "provider": "cohere",
-     "label": "Cohere embed-english-v3.0", "dim": 1024,
-     "price_per_mtok": 0.10, "notes": "English only."},
-    {"id": "cohere:embed-multilingual-v3.0", "provider": "cohere",
-     "label": "Cohere embed-multilingual-v3.0", "dim": 1024,
-     "price_per_mtok": 0.10, "notes": "Multilingual."},
-    # Jina
-    {"id": "jina:jina-embeddings-v3", "provider": "jina",
-     "label": "Jina embeddings v3", "dim": 1024,
-     "price_per_mtok": 0.02, "notes": "Multilingual, Matryoshka."},
-    # OpenRouter (cost returned by OR — recorded as REAL)
-    {"id": "openrouter:openai/text-embedding-3-small", "provider": "openrouter",
-     "label": "OpenRouter · OpenAI 3-small", "dim": 1536,
-     "price_per_mtok": 0.02, "notes": "OpenRouter returns the exact USD cost."},
-    {"id": "openrouter:openai/text-embedding-3-large", "provider": "openrouter",
-     "label": "OpenRouter · OpenAI 3-large", "dim": 3072,
-     "price_per_mtok": 0.13, "notes": "OpenRouter returns the exact USD cost."},
-    {"id": "openrouter:qwen/qwen3-embedding-8b", "provider": "openrouter",
-     "label": "OpenRouter · Qwen3 Embedding 8B", "dim": 4096,
-     "price_per_mtok": 0.05, "notes": "Qwen, multilingual."},
-    {"id": "openrouter:google/gemini-embedding-001", "provider": "openrouter",
-     "label": "OpenRouter · Gemini Embedding 001", "dim": 3072,
-     "price_per_mtok": 0.025, "notes": "Google Gemini embeddings."},
-    # Local / self-hosted — FREE.
+     "label": "OpenAI text-embedding-3-small", "dim": 1536, "price_per_mtok": 0.02,
+     "notes": "Basic fallback entry."},
     {"id": "local:BAAI/bge-small-en-v1.5", "provider": "local",
-     "label": "BGE small EN v1.5 (local)", "dim": 384,
-     "price_per_mtok": 0.0, "notes": "Local, free, 384d, English."},
-    {"id": "local:BAAI/bge-large-en-v1.5", "provider": "local",
-     "label": "BGE large EN v1.5 (local)", "dim": 1024,
-     "price_per_mtok": 0.0, "notes": "Local, free, 1024d, English."},
-    {"id": "local:BAAI/bge-m3", "provider": "local",
-     "label": "BGE-M3 (local, multilingual)", "dim": 1024,
-     "price_per_mtok": 0.0, "notes": "Local, free, multilingual + code."},
-    {"id": "local:intfloat/e5-large-v2", "provider": "local",
-     "label": "E5 large v2 (local)", "dim": 1024,
-     "price_per_mtok": 0.0, "notes": "Local, free, English."},
-    {"id": "local:nomic-ai/nomic-embed-text-v1.5", "provider": "local",
-     "label": "Nomic Embed v1.5 (local)", "dim": 768,
-     "price_per_mtok": 0.0, "notes": "Local, free, long context."},
+     "label": "BGE small EN v1.5 (local)", "dim": 384, "price_per_mtok": 0.0,
+     "notes": "Basic fallback entry (local, free)."},
 ]
 
 
-def all_models():
-    """Catalogue + custom models from the overlay (if any)."""
-    base = list(MODELS)
+def _yaml_load(text):
     try:
-        custom = indexcfg.load_config().get("custom_models") or []
-        if isinstance(custom, list):
-            for m in custom:
-                if isinstance(m, dict) and m.get("id"):
-                    base.append(dict(m))
+        import yaml
+        return yaml.safe_load(text)
     except Exception:  # noqa: BLE001
-        pass
-    return base
+        import json
+        try:
+            return json.loads(text)
+        except Exception:  # noqa: BLE001
+            return None
+
+
+def _clean(m):
+    """Keep only well-formed catalogue entries."""
+    if not isinstance(m, dict) or not m.get("id"):
+        return None
+    out = {"id": str(m["id"]), "provider": str(m.get("provider") or "custom"),
+           "label": str(m.get("label") or m["id"])}
+    try:
+        out["dim"] = int(m.get("dim") or 0)
+    except (TypeError, ValueError):
+        out["dim"] = 0
+    try:
+        out["price_per_mtok"] = float(m.get("price_per_mtok") or 0.0)
+    except (TypeError, ValueError):
+        out["price_per_mtok"] = 0.0
+    if m.get("notes"):
+        out["notes"] = str(m["notes"])
+    return out
+
+
+def _load_catalogue():
+    """Read config/embedding.yaml -> list of models (BASIC if it is missing)."""
+    models = []
+    try:
+        if os.path.isfile(CATALOGUE_PATH):
+            raw = _yaml_load(open(CATALOGUE_PATH, encoding="utf-8").read())
+            items = raw.get("models") if isinstance(raw, dict) else raw
+            if isinstance(items, list):
+                models = [c for c in (_clean(x) for x in items) if c]
+    except Exception:  # noqa: BLE001
+        models = []
+    return models or [dict(b) for b in BASIC]
+
+
+# Module-level snapshot (introspection + tests). Live reads use all_models().
+MODELS = _load_catalogue()
+
+
+def _overlay():
+    try:
+        return indexcfg.load_config()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def all_models():
+    """Catalogue + personal overlay: custom entries win by id; disabled hidden."""
+    cfg = _overlay()
+    by_id = {}
+    order = []
+    for m in _load_catalogue():
+        by_id[m["id"]] = m
+        order.append(m["id"])
+    custom = cfg.get("custom_models") or []
+    if isinstance(custom, list):
+        for raw in custom:
+            c = _clean(raw)
+            if c:
+                if c["id"] not in by_id:
+                    order.append(c["id"])
+                by_id[c["id"]] = c
+    disabled = set(cfg.get("disabled_models") or [])
+    return [by_id[i] for i in order if i not in disabled]
 
 
 def find(model_id):
@@ -133,6 +143,40 @@ def save_config(patch):
 def set_active(model_id):
     """Persist the new active model into the overlay."""
     return indexcfg.save_config({"embed_model": model_id or ""})
+
+
+def _shipped_ids():
+    return [m["id"] for m in _load_catalogue()]
+
+
+def add_model(spec):
+    """Add (or re-enable) a personal embedding model in the overlay."""
+    c = _clean(spec)
+    if not c:
+        return {"ok": False, "error": "a model id is required"}
+    cfg = _overlay()
+    custom = [x for x in (cfg.get("custom_models") or []) if isinstance(x, dict)
+              and x.get("id") != c["id"]]
+    custom.append(c)
+    disabled = [i for i in (cfg.get("disabled_models") or []) if i != c["id"]]
+    indexcfg.save_config({"custom_models": custom, "disabled_models": disabled})
+    return {"ok": True, "model": c}
+
+
+def remove_model(model_id):
+    """Remove a model: drop it from the overlay, else hide a shipped entry."""
+    model_id = str(model_id or "").strip()
+    if not model_id:
+        return {"ok": False, "error": "a model id is required"}
+    cfg = _overlay()
+    custom = [x for x in (cfg.get("custom_models") or []) if isinstance(x, dict)
+              and x.get("id") != model_id]
+    removed_custom = len(custom) != len(cfg.get("custom_models") or [])
+    disabled = [i for i in (cfg.get("disabled_models") or []) if i != model_id]
+    if not removed_custom and model_id in _shipped_ids():
+        disabled.append(model_id)
+    indexcfg.save_config({"custom_models": custom, "disabled_models": disabled})
+    return {"ok": True, "removed": model_id}
 
 
 def estimate_cost(model_id, tokens):

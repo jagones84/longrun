@@ -20,6 +20,7 @@ import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 tmp = tempfile.mkdtemp(prefix="v401-")
+os.environ["LONGRUN_DATA_DIR"] = os.path.join(tmp, "data")
 os.environ["LONGRUN_CODEBASE_DIR"] = os.path.join(tmp, "codebase")
 os.environ["LONGRUN_KNOWLEDGE_DIR"] = os.path.join(tmp, "knowledge")
 os.environ["LONGRUN_EMBEDDING_DIR"] = os.path.join(tmp, "embedding")
@@ -161,12 +162,20 @@ check("E3 the API exposes /api/embedding/active (GET + POST)",
 check("E3b the API exposes /api/embedding/costs.csv (download)",
       '"/api/embedding/costs.csv"' in api_src)
 
-# WebUI has the Embedding section in the inspector
+# WebUI: the embedding UI now lives in Settings ▸ Models (JAG-403), no duplicate
+# right-hand panel.
 html = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
-check("E4 the WebUI has the Embedding inspector section",
-      "data-insp=\"embedding\"" in html)
+check("E4 the embedding UI lives in Settings ▸ Models (no duplicate RH panel)",
+      'id="emModel"' in html and 'data-insp="embedding"' not in html
+      and 'data-cat="models"' in html)
 check("E4b the WebUI Embedding section shows the model select + cost log",
       "emActive" in html and "emCostTotal" in html and "emCostByModel" in html)
+check("E4c the WebUI lets the user add/remove a PERSONAL embedding model",
+      "emAddModel" in html and "emRemoveModel" in html and "/api/embedding/models" in html)
+
+# The catalogue is a PERSONAL config file, not a hardcoded Python list (JAG-403).
+check("E6 the catalogue ships as config/embedding.yaml",
+      os.path.isfile(os.path.join(REPO, "config", "embedding.yaml")))
 
 # CLI: `forge embedding` exposes the actions
 from longrun.core import forge  # noqa: E402

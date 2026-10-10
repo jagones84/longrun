@@ -901,6 +901,12 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, knowledge_files(qs))
         if path == "/api/knowledge/search":
             return _r(handler, 200, knowledge_search(qs))
+        # JAG-403b: inspect the active research LLM + catalogue (GET)
+        if path == "/api/research/model":
+            from longrun.research import researchcfg as _rc
+            return _r(handler, 200, {"active": _rc.active_model(),
+                                     "models": _rc.all_models(),
+                                     "depths": ["shallow", "medium", "deep"]})
         # shared index config + embedding picker (used by BOTH stores)
         if path == "/api/index/config":
             return _r(handler, 200, index_config_get())
@@ -1007,6 +1013,15 @@ def handle(handler, method, path, qs, body):
             from longrun.memory import embedcfg as _ec
             b = body or {}
             return _r(handler, 200, _ec.set_active(str(b.get("model") or "")))
+        # JAG-403: add/remove a PERSONAL embedding model (persisted in the overlay)
+        if path == "/api/embedding/models":
+            from longrun.memory import embedcfg as _ec
+            b = body or {}
+            if b.get("remove"):
+                return _r(handler, 200, _ec.remove_model(b.get("remove")))
+            if b.get("add"):
+                return _r(handler, 200, _ec.add_model(b.get("add")))
+            return _r(handler, 400, {"error": "add or remove required"})
         if path == "/api/term/exec":  # JAG-281: real terminal — send a command line
             return _r(handler, 200, term_exec(body))
         if path == "/api/term/reset":  # JAG-281: kill the session's shell
