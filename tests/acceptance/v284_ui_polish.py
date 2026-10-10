@@ -36,7 +36,16 @@ check("Approvals is the first inspector section",
       ui.index('data-insp="approvals"') < ui.index('data-insp="context"')
       and ui.index('data-insp="approvals"') < ui.index('data-insp="plan"'))
 check("Approvals is the first inspector entry in the command palette",
-      '[["approvals", "Approvals"], ["plan", "Plan"], ["context", "Context"]' in ui)
+      '[["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"]' in ui)
+
+# --- 1b) JAG-395: Context above Plan; the section is titled "Roles" ----------
+check("the Context inspector section sits above Plan",
+      ui.index('data-insp="context"') < ui.index('data-insp="plan"'))
+check("the per-session role section is titled Roles (not Rules)",
+      'toggleInsp(\'rules\')">Roles</button>' in ui)
+check("clicking a donut slice highlights its bar (seg + bar share a data-i key)",
+      'class="seg" data-i="' in ui and 'class="bdbar" data-i="' in ui
+      and 'querySelectorAll(".ctxdonut .seg")' in ui and 'classList.toggle("hl"' in ui)
 
 # --- 2) Context: hide empty categories, explain when empty -------------------
 check("context chips only render non-empty categories (no always-empty 'Other')",

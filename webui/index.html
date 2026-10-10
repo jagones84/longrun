@@ -283,7 +283,7 @@
   .ctxsplit .ctxbd { flex: 1; min-width: 0; }
   .ctxdonut { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 5px; }
   .ctxdonut svg { flex: 0 0 auto; width: 72px; height: 72px; }
-  .ctxdonut .seg { transition: opacity .12s; }
+  .ctxdonut .seg { transition: opacity .12s; cursor: pointer; }
   .ctxdonut .seg:hover { opacity: .72; }
   .ctxdonut .dc { fill: var(--txt); font-size: 9px; font-weight: 600; }
   .ctxdonut .dl { fill: var(--dim); font-size: 6.2px; letter-spacing: .04em; }
@@ -296,6 +296,10 @@
   .ctxbd .bdbar .bt > i { display: block; height: 100%; border-radius: 5px; transition: width .3s; }
   .ctxbd .bdbar b { color: var(--txt); font-weight: 600; min-width: 30px; text-align: right; }
   .ctxbd .bdbar .cn { min-width: 34px; text-align: right; }
+  /* JAG-395: highlight the bar a clicked donut slice points at */
+  .ctxbd .bdbar.hl { color: var(--txt); }
+  .ctxbd .bdbar.hl .bl { color: var(--txt); font-weight: 700; }
+  .ctxbd .bdbar.hl .bt { box-shadow: 0 0 0 1px var(--accent); }
   .ctxchips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
   .ctxchip { background: transparent; border: 1px solid var(--line); color: var(--dim);
     font-size: 11px; padding: 3px 9px; border-radius: 999px; cursor: pointer; font-weight: 400; }
@@ -1120,6 +1124,21 @@
         <div id="costList" class="costlist"></div>
         </div>
       </section>
+      <section data-insp="context" class="insp-open">
+        <button class="insp-hd" onclick="toggleInsp('context')">Context</button>
+        <div class="insp-body">
+        <div class="card">
+          <div class="ctxhead">
+            <span id="ctxPct" class="ctxpct">–</span>
+            <div class="meter"><i id="ctxBar" style="width:0%;min-width:0"></i></div>
+            <span id="ctxState" class="ctxstate">–</span>
+            <button class="ghost" id="compactBtn" title="summarize this session's transcript now to free up context">🗜 compact</button>
+          </div>
+          <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
+        </div>
+        <div id="ctxCats"></div>
+        </div>
+      </section>
       <section data-insp="plan" class="insp-open">
         <button class="insp-hd" onclick="toggleInsp('plan')">Plan</button>
         <div class="insp-body">
@@ -1144,23 +1163,8 @@
         </div>
         </div>
       </section>
-      <section data-insp="context" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('context')">Context</button>
-        <div class="insp-body">
-        <div class="card">
-          <div class="ctxhead">
-            <span id="ctxPct" class="ctxpct">–</span>
-            <div class="meter"><i id="ctxBar" style="width:0%;min-width:0"></i></div>
-            <span id="ctxState" class="ctxstate">–</span>
-            <button class="ghost" id="compactBtn" title="summarize this session's transcript now to free up context">🗜 compact</button>
-          </div>
-          <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
-        </div>
-        <div id="ctxCats"></div>
-        </div>
-      </section>
       <section data-insp="rules" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('rules')">Rules</button>
+        <button class="insp-hd" onclick="toggleInsp('rules')">Roles</button>
         <div class="insp-body">
         <div class="card">
           <div id="rulesWho" class="rwho"></div>
@@ -2649,7 +2653,7 @@ async function openSessMenu(row, s, ag) {
     if (!a) return;
     if (a === "pin") { _togglePin(s.id); }
     if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
-    if (a === "role") { let rp = null; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; } catch (e) {} if (!rp) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp); return; }
+    if (a === "role") { let rp = null; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; } catch (e) {} if (!rp) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
     if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
       if (ag) { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
@@ -2697,7 +2701,13 @@ async function loadSessions() {
       if (e.target.closest && e.target.closest(".sess-menu")) return;
       selectSession(s);
     };
-    // menu wired via openSessMenu
+    // JAG-395: right-click opens THIS row's ⋯ menu — the session under the cursor,
+    // not the active one — so you can act on any session without switching to it.
+    d.oncontextmenu = e => {
+      if (e.target.closest && e.target.closest(".sess-menu")) return;
+      e.preventDefault(); e.stopPropagation();
+      openSessMenu(d, s, ag);
+    };
         box.appendChild(d);
   });
   if (!(out.sessions || []).length) box.innerHTML = '<div class="remaining">no sessions yet</div>';
@@ -3072,7 +3082,7 @@ function _ctxDonut(bd, total) {
   bd.forEach((x, i) => {
     const pct = (x.tokens / total) * 100;
     const col = CTX_COLS[i % CTX_COLS.length];
-    segs += '<circle class="seg" cx="21" cy="21" r="' + R + '" fill="none" stroke="' + col +
+    segs += '<circle class="seg" data-i="' + i + '" cx="21" cy="21" r="' + R + '" fill="none" stroke="' + col +
       '" stroke-width="6" stroke-dasharray="' + pct.toFixed(3) + " " + (C - pct).toFixed(3) +
       '" stroke-dashoffset="' + (25 - off).toFixed(3) + '"><title>' + esc(x.label) + ": " +
       _fmtTok(x.tokens) + " tok \u00b7 " + Math.round(pct) + "%</title></circle>";
@@ -3108,12 +3118,12 @@ function renderCtxItems() {
     // the donut segments, sorted big -> small, with short labels so the bars get
     // the width instead of the words.
     const items = bd.map((x, i) => ({
-      label: x.label, tokens: x.tokens || 0,
+      label: x.label, tokens: x.tokens || 0, idx: i,
       pct: Math.round((x.tokens || 0) / total * 100),
       col: CTX_COLS[i % CTX_COLS.length],
     })).sort((a, b) => b.tokens - a.tokens);
     const bars = items.map(x =>
-      '<div class="bdbar" title="' + esc(x.label) + " \u00b7 " + _fmtTok(x.tokens) + " tok \u00b7 " + x.pct + '%">' +
+      '<div class="bdbar" data-i="' + x.idx + '" title="' + esc(x.label) + " \u00b7 " + _fmtTok(x.tokens) + " tok \u00b7 " + x.pct + '%">' +
       '<span class="bl">' + esc(_shortLabel(x.label)) + '</span>' +
       '<span class="bt"><i style="width:' + Math.max(x.pct, 1) + "%;background:" + x.col + '"></i></span>' +
       '<b>' + x.pct + '%</b><span class="cn">' + _fmtTok(x.tokens) + "</span></div>").join("");
@@ -3152,6 +3162,15 @@ function renderCtxItems() {
     copyText(b.getAttribute("data-url")).then(ok => toast(ok ? "URL copied" : "copy failed", ok ? "ok" : "err"));
   });
   box.querySelectorAll(".ctxchip").forEach(b => b.onclick = () => { _ctxCat = b.dataset.c; renderCtxItems(); });
+  // JAG-395: clicking a donut slice highlights the matching bar (and names it).
+  box.querySelectorAll(".ctxdonut .seg").forEach(s => s.onclick = () => {
+    const i = s.getAttribute("data-i");
+    box.querySelectorAll(".ctxbd .bdbar").forEach(b => {
+      const on = b.getAttribute("data-i") === i;
+      b.classList.toggle("hl", on);
+      if (on) b.scrollIntoView({ block: "nearest" });
+    });
+  });
   box.querySelectorAll(".ctxitem[data-open]").forEach(b => b.onclick = () => {
     if (!window.SparkEditor) return;
     if (SparkEditor.ensureOpen) SparkEditor.ensureOpen();
@@ -5075,9 +5094,9 @@ function _renderDir(container, d, depth) {
   });
 }
 
-async function openFile(path) {
+async function openFile(path, opts) {
   _openFile = { path: path };
-  if (window.SparkEditor) { window.SparkEditor.open(path); return; }
+  if (window.SparkEditor) { window.SparkEditor.open(path, opts); return; }
   if ($("fileMsg")) $("fileMsg").textContent = "editor not available";
 }
 
@@ -5298,10 +5317,10 @@ function _readable(p) {
 function _isImage(u) {
   return /\.(png|jpe?g|gif|svg|webp|bmp|avif|ico)(\?|#|$)/i.test(String(u || ""));
 }
-async function openInEditor(path) {
+async function openInEditor(path, opts) {
   openPanel("files");
   try { await loadFiles(); } catch (e) {}
-  await openFile(path);
+  await openFile(path, opts);
 }
 function showImage(url) {
   $("imgEl").src = url; $("imgCap").textContent = url;
@@ -5588,7 +5607,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["plan", "Plan"], ["context", "Context"], ["rules", "Rules"], ["files", "Files"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
+  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }

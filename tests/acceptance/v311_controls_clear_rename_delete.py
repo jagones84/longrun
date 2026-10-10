@@ -105,6 +105,11 @@ check("the main app clears the log on a remote clear", 'es.addEventListener("ses
 check("a compaction notice is shown in the chat feed", 'es.addEventListener("context.compact"' in gui and 'es.addEventListener("context.auto_compact"' in gui)
 check("the composer bar has a VISIBLE reset button", 'id="resetBtn"' in gui and 'onclick="clearSession()"' in gui)
 check("the overflow menu offers reset session", "reset session" in gui)
+# JAG-395: right-click opens that row's own menu; Edit role opens code mode.
+check("right-click on ANY session row opens its own ⋯ menu",
+      "d.oncontextmenu" in gui and "openSessMenu(d, s, ag)" in gui)
+check("Edit role opens ROLE.md in the editor's CODE mode (not render)",
+      'openInEditor(rp, { mode: "code" })' in gui)
 
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as f:
     orb = f.read()

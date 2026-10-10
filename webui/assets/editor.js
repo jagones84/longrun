@@ -519,11 +519,18 @@ function onDocUpdate(u) {
   updateStatus();
 }
 
-async function open(path) {
+async function open(path, opts) {
   if (!path) return;
   buildDock();
+  const wantMode = opts && opts.mode;   // JAG-395: force a viewer mode (e.g. "code" for ROLE.md)
   const existing = state.tabs.findIndex((t) => t.path === path);
-  if (existing >= 0) { activate(existing); show(); return; }
+  if (existing >= 0) {
+    if (wantMode) state.tabs[existing].mode = wantMode;
+    activate(existing);
+    if (existing === state.active) renderActive();   // activate() no-ops on the already-active tab
+    show();
+    return;
+  }
   let d;
   try { d = await jget("/api/fs/read?path=" + encodeURIComponent(path) + sessionQS()); }
   catch (e) { show(); setStatus("error: " + e); return; }
@@ -532,7 +539,7 @@ async function open(path) {
   const tab = {
     path: d.path, viewer,
     lang: langOf(d.path),
-    mode: "render",
+    mode: wantMode || "render",
     saved: d.text || "", value: d.text || "",
     dirty: false,
     readonly: !!d.truncated || viewer === "binary",
@@ -824,7 +831,7 @@ function openTempImage(name, url) {
 }
 
 window.SparkEditor = {
-  open: (p) => { open(p); },
+  open: (p, opts) => { open(p, opts); },
   save,
   refresh,
   refreshAll,
