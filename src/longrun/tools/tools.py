@@ -920,22 +920,18 @@ def _sessions(args, run_id):
 
 
 def _index(args, run_id):
-    """JAG-397: workspace knowledge index (codebase + docs).
+    """JAG-397/JAG-399: the GLOBAL knowledge index (codebase + docs sources).
 
-    action=search -> top chunks as path:line + snippet. action=reindex -> rebuild
-    now. action=status -> counts. bm25 always; semantic when an embed model is set.
+    action=search -> top chunks as path:line + snippet. action=reindex -> rebuild all
+    sources. action=status -> counts. bm25 always; semantic when an embed model is set.
     """
     from longrun.memory import index as index_mod
     args = args or {}
-    ws = args.get("workspace")
-    if not ws:
-        from longrun.memory import rules as rules_mod
-        ws = rules_mod.resolve_workspace(None)
     action = (args.get("action") or "search").lower()
     if action == "status":
-        return {"ok": True, "exit_code": 0, "stdout": "index: %s" % index_mod.status(ws)}
+        return {"ok": True, "exit_code": 0, "stdout": "index: %s" % index_mod.status()}
     if action in ("reindex", "build"):
-        st = index_mod.build(ws, force=bool(args.get("force")))
+        st = index_mod.build(force=bool(args.get("force")))
         return {"ok": True, "exit_code": 0, "files": st.get("files"), "chunks": st.get("chunks"),
                 "stdout": "indexed %s files / %s chunks" % (st.get("files"), st.get("chunks"))}
     query = args.get("query") or args.get("q") or ""
@@ -945,7 +941,7 @@ def _index(args, run_id):
         k = int(args.get("k") or 8)
     except (TypeError, ValueError):
         k = 8
-    res = index_mod.search(ws, query, k=k, kind=args.get("kind"))
+    res = index_mod.search(query, k=k, kind=args.get("kind"))
     lines = ["%s:%s  %s" % (r["path"], r["start"],
                             (r.get("snippet") or "").replace("\n", " ")[:200])
              for r in res.get("results", [])]

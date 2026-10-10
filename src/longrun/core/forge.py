@@ -481,39 +481,33 @@ def cmd_models(args):
 
 
 def cmd_index(args):
-    """Knowledge index (JAG-397): status / build / search / docs."""
+    """Knowledge index (JAG-397/399): status / build / search / docs — GLOBAL, no session."""
     action = getattr(args, "action", "status") or "status"
-    sid = getattr(args, "session", None)
-    qs = ("?session=" + _q(sid)) if sid else ""
     if action == "build":
-        body = {"force": bool(getattr(args, "force", False))}
-        if sid:
-            body["session"] = sid
-        print(json.dumps(req("POST", "/api/index/build", body), indent=2, ensure_ascii=False))
+        print(json.dumps(req("POST", "/api/index/build",
+                             {"force": bool(getattr(args, "force", False))}),
+                         indent=2, ensure_ascii=False))
         return
     if action == "search":
-        out = req("GET", "/api/index/search?k=%d&q=%s%s" % (args.limit, _q(args.value or ""),
-                  ("&session=" + _q(sid)) if sid else ""))
+        out = req("GET", "/api/index/search?k=%d&q=%s" % (args.limit, _q(args.value or "")))
         for r in out.get("results", []):
             print("%s:%s  [%s]  %s" % (r.get("path"), r.get("start"), out.get("mode"),
-                                        (r.get("snippet") or "").replace("\n", " ")[:160]))
+                                       (r.get("snippet") or "").replace("\n", " ")[:160]))
         if not out.get("results"):
             print("(no matches)")
         return
     if action == "docs":
         if args.value:
-            body = {"ref": args.value}
-            if sid:
-                body["session"] = sid
-            print(json.dumps(req("POST", "/api/index/docs", body), indent=2, ensure_ascii=False))
+            print(json.dumps(req("POST", "/api/index/docs", {"refs": args.value}),
+                             indent=2, ensure_ascii=False))
             return
-        out = req("GET", "/api/index/docs" + qs)
+        out = req("GET", "/api/index/docs")
         for s in out.get("sources", []):
             print("%s  %s  (%s chunks)" % (s.get("id"), s.get("ref"), s.get("chunks")))
         if not out.get("sources"):
-            print("(no doc sources)")
+            print("(no sources)")
         return
-    print(json.dumps(req("GET", "/api/index/status" + qs), indent=2, ensure_ascii=False))
+    print(json.dumps(req("GET", "/api/index/status"), indent=2, ensure_ascii=False))
 
 
 def cmd_feed(_):
@@ -850,7 +844,7 @@ def main():
     p = sub.add_parser("models"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "ensure"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_models)
     p = sub.add_parser("index"); p.add_argument("action", nargs="?", default="status", choices=["status", "build", "search", "docs"]); \
-        p.add_argument("value", nargs="?"); p.add_argument("--session"); p.add_argument("--limit", type=int, default=8); \
+        p.add_argument("value", nargs="?"); p.add_argument("--limit", type=int, default=8); \
         p.add_argument("--force", action="store_true"); p.set_defaults(fn=cmd_index)
     sub.add_parser("feed").set_defaults(fn=cmd_feed)
     p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge"]); \

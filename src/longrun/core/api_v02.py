@@ -901,7 +901,7 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, _embed.probe(qs.get("model")))
         if path == "/api/index/search":
             from longrun.memory import index as _index
-            return _r(handler, 200, _index.search(_index_ws(qs), qs.get("q") or qs.get("query"),
+            return _r(handler, 200, _index.search(qs.get("q") or qs.get("query"),
                                                   _int(qs.get("k", 8), 8), qs.get("kind")))
 
         return False
@@ -925,28 +925,27 @@ def handle(handler, method, path, qs, body):
         # JAG-397: knowledge index (codebase + documentation)
         if path == "/api/index/build":
             from longrun.memory import index as _index
-            ws = _index_ws(body)
-            _publish("index.progress", phase="start", workspace=ws)
-            res = _index.build(ws, force=bool((body or {}).get("force")))
-            _publish("index.done", workspace=ws, files=res.get("files"), chunks=res.get("chunks"))
+            _publish("index.progress", phase="start")
+            res = _index.build(force=bool((body or {}).get("force")))
+            _publish("index.done", files=res.get("files"), chunks=res.get("chunks"))
             return _r(handler, 200, res)
         if path == "/api/index/search":
             from longrun.memory import index as _index
             b = body or {}
-            return _r(handler, 200, _index.search(_index_ws(b), b.get("q") or b.get("query"),
+            return _r(handler, 200, _index.search(b.get("q") or b.get("query"),
                                                   _int(b.get("k", 8), 8), b.get("kind")))
         if path == "/api/index/docs":
             from longrun.memory import index as _index
             b = body or {}
-            ws = _index_ws(b)
             if b.get("remove") or b.get("source"):
-                return _r(handler, 200, _index.remove_source(ws, b.get("remove") or b.get("source")))
-            res = _index.add_source(ws, b.get("ref") or b.get("url") or b.get("path"))
-            _publish("index.docs", workspace=ws, ok=bool(res.get("ok")), ref=b.get("ref"))
+                return _r(handler, 200, _index.remove_source(b.get("remove") or b.get("source")))
+            # JAG-399: a multi-line block of URLs / paths is indexed all at once.
+            res = _index.add_sources(b.get("refs") or b.get("ref") or b.get("url") or b.get("path") or "")
+            _publish("index.docs", ok=bool(res.get("ok")), added=res.get("added"))
             return _r(handler, 200, res)
         if path == "/api/index/clear":
             from longrun.memory import index as _index
-            return _r(handler, 200, _index.clear(_index_ws(body)))
+            return _r(handler, 200, _index.clear())
         if path == "/api/index/config":
             from longrun.memory import index as _index
             return _r(handler, 200, _index.save_config(body or {}))
@@ -1797,28 +1796,22 @@ def _session_ws(session_id):
     return _RULES.resolve_workspace(sess), sess
 
 
-def _index_ws(src):
-    """Workspace for the knowledge-index routes (session's folder, else default)."""
-    ws, _ = _session_ws((src or {}).get("session"))
-    return ws
-
-
 def index_status(qs=None):
-    """GET /api/index/status — files/chunks/size/embed model of the workspace index."""
+    """GET /api/index/status — the GLOBAL knowledge index (files/chunks/size/embed)."""
     from longrun.memory import index as _index
-    return _index.status(_index_ws(qs))
+    return _index.status()
 
 
 def index_docs(qs=None):
-    """GET /api/index/docs — the documentation sources indexed in this workspace."""
+    """GET /api/index/docs — the knowledge-base sources (URLs / paths)."""
     from longrun.memory import index as _index
-    return {"sources": _index.list_sources(_index_ws(qs))}
+    return {"sources": _index.list_sources()}
 
 
 def index_files(qs=None):
-    """GET /api/index/files — the indexed files (path, language, chunk count)."""
+    """GET /api/index/files — every indexed file (path, language, chunk count)."""
     from longrun.memory import index as _index
-    return _index.list_files(_index_ws(qs))
+    return _index.list_files()
 
 
 def index_config_get():

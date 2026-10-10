@@ -1,17 +1,16 @@
-"""Codebase + documentation knowledge index (JAG-397) — stdlib only.
+"""GLOBAL knowledge index — codebase + documentation (JAG-397/JAG-399) — stdlib only.
 
-Design (mirrors how the big IDEs do it):
+The index is a SINGLE, global sqlite database (``data/index/knowledge.db``), kept in
+the app data dir — never inside a project (same convention as VS Code / Cursor). It is
+NOT tied to a session: it is a knowledge base you build once and the agent queries.
 
-* the index is ONE sqlite database per workspace, kept OUTSIDE the project, in
-  the app data dir (``data/index/<slug>.db``), keyed by the workspace path — the
-  same convention VS Code / Cursor use (``workspaceStorage`` / ``globalStorage``);
-* retrieval is SQLite **FTS5** with ``bm25()`` + ``snippet()`` — built into
-  CPython's sqlite3, so zero dependencies, fast and transactional;
-* chunks are AST-aware for Python (the ``ast`` module) and heading/paragraph-aware
-  for documents; a line-window is the fallback for other languages;
-* vectors are OPTIONAL: when an embedding model is configured
-  (``model.embed``) the chunk vectors are stored and retrieval becomes hybrid
-  (bm25 + cosine, fused with Reciprocal Rank Fusion). No model -> bm25 only.
+You add SOURCES: a URL, a file, or a folder (codebase). Each source is chunked and
+indexed; ``build`` re-indexes them all. Retrieval is SQLite **FTS5** with ``bm25()`` +
+``snippet()`` (built into CPython, zero dependencies). Chunks are AST-aware for Python
+(the ``ast`` module) and heading/paragraph-aware for documents; a line-window is the
+fallback for other languages. Vectors are OPTIONAL: when an embedding model is
+configured (``model.embed``) the chunk vectors are stored and retrieval becomes hybrid
+(bm25 + cosine, fused with Reciprocal Rank Fusion). No model -> bm25 only.
 """
 import ast
 import hashlib
@@ -30,6 +29,7 @@ LOCK = threading.RLock()
 
 CONFIG_PATH = os.path.join(paths.REPO_ROOT, "config", "index.yaml")
 OVERLAY_PATH = os.path.join(paths.DATA_DIR, "index.overlay.yaml")
+DB_NAME = "knowledge.db"
 
 DEFAULT_CONFIG = {
     "enabled": True,
@@ -136,17 +136,14 @@ def save_config(patch):
 
 
 # ---------------------------------------------------------------------- paths --
-def _slug(workspace):
-    return hashlib.sha1(os.path.realpath(str(workspace)).encode("utf-8")).hexdigest()[:16]
-
-
-def db_path(workspace):
+def db_path():
+    """The GLOBAL index DB (app data dir, gitignored — never inside a project)."""
     os.makedirs(paths.INDEX_DIR, exist_ok=True)
-    return os.path.join(paths.INDEX_DIR, _slug(workspace) + ".db")
+    return os.path.join(paths.INDEX_DIR, DB_NAME)
 
 
-def _connect(workspace):
-    db = sqlite3.connect(db_path(workspace), timeout=30)
+def _connect():
+    db = sqlite3.connect(db_path(), timeout=30)
     db.row_factory = sqlite3.Row
     try:
         db.execute("PRAGMA journal_mode=WAL")
@@ -159,7 +156,7 @@ def _init(db):
     db.executescript(
         """
         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
-        CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime REAL, size INTEGER, hash TEXT, lang TEXT);
+        CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime REAL, size INTEGER, hash TEXT, lang TEXT, source TEXT);
         CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY, kind TEXT, ref TEXT, added REAL, chunks INTEGER);
         CREATE TABLE IF NOT EXISTS chunks(
             id INTEGER PRIMARY KEY, path TEXT, lang TEXT, kind TEXT, name TEXT,
@@ -200,10 +197,10 @@ def _get_meta(db, key, default=None):
 
 
 # -------------------------------------------------------------------- scanner --
-def _load_gitignore(workspace):
+def _load_gitignore(root):
     rules = []
     try:
-        with open(os.path.join(workspace, ".gitignore"), encoding="utf-8", errors="replace") as f:
+        with open(os.path.join(root, ".gitignore"), encoding="utf-8", errors="replace") as f:
             for raw in f:
                 line = raw.strip()
                 if not line or line.startswith("#") or line.startswith("!"):
@@ -247,12 +244,12 @@ def _extra_ignored(name, rel, globs):
     return any(fnmatch(name, g) or fnmatch(rel, g) for g in (globs or []))
 
 
-def _walk(workspace, cfg):
-    """Yield rel paths of indexable files under `workspace`."""
-    gi = _load_gitignore(workspace)
+def _walk(root, cfg):
+    """Yield (rel, abspath, lang, kind) for indexable files under `root`."""
+    gi = _load_gitignore(root)
     globs = cfg.get("ignore") or []
     maxb = int(cfg.get("max_file_kb") or 512) * 1024
-    root = os.path.realpath(workspace)
+    root = os.path.realpath(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames
                        if d not in _SKIP_DIRS and not d.startswith(".")]
@@ -368,7 +365,7 @@ def _chunk_file(text, lang, kind, cfg):
     return out
 
 
-# --------------------------------------------------------------------- build ---
+# ------------------------------------------------------------------- storage ---
 def _vec_blob(vec):
     import array
     return array.array("f", vec).tobytes()
@@ -379,6 +376,11 @@ def _blob_vec(blob):
     a = array.array("f")
     a.frombytes(blob)
     return list(a)
+
+
+def _dim(db):
+    row = db.execute("SELECT vec FROM chunks WHERE vec IS NOT NULL LIMIT 1").fetchone()
+    return len(_blob_vec(row["vec"])) if row and row["vec"] else 0
 
 
 def _embed_chunks(db, rows, ref, batch):
@@ -396,59 +398,6 @@ def _embed_chunks(db, rows, ref, batch):
         done += len(part)
     db.commit()
     return done
-
-
-def build(workspace, force=False):
-    """Index (or refresh) the workspace. Returns a stats dict."""
-    workspace = os.path.realpath(str(workspace))
-    cfg = load_config()
-    ref = str(cfg.get("embed_model") or "").strip()
-    batch = int(cfg.get("embed_batch") or 32)
-    t0 = time.time()
-    with LOCK:
-        db = _connect(workspace)
-        try:
-            fts = _init(db)
-            known = {r["path"]: (r["mtime"], r["size"]) for r in db.execute("SELECT path, mtime, size FROM files")}
-            seen, files_n, chunks_n, embedded = set(), 0, 0, 0
-            for rel, abspath, lang, kind in _walk(workspace, cfg):
-                seen.add(rel)
-                try:
-                    st = os.stat(abspath)
-                except OSError:
-                    continue
-                prev = known.get(rel)
-                if not force and prev and abs(prev[0] - st.st_mtime) < 1e-6 and prev[1] == st.st_size:
-                    continue
-                text = _read_text(abspath, cfg.get("max_file_kb") or 512)
-                if text is None:
-                    continue
-                _drop_path(db, rel)
-                pieces = _chunk_file(text, lang, kind, cfg)
-                ids = _insert_chunks(db, rel, lang, kind, pieces, source=None, fts=fts)
-                db.execute("INSERT OR REPLACE INTO files(path, mtime, size, hash, lang) VALUES(?,?,?,?,?)",
-                           (rel, st.st_mtime, st.st_size,
-                            hashlib.sha1(text.encode("utf-8", "replace")).hexdigest(), lang))
-                files_n += 1
-                chunks_n += len(ids)
-                if ref:
-                    embedded += _embed_chunks(db, [(cid, p["text"]) for cid, p in zip(ids, pieces)], ref, batch)
-            # drop files that vanished
-            for rel in set(known) - seen:
-                _drop_path(db, rel)
-                db.execute("DELETE FROM files WHERE path=?", (rel,))
-            db.commit()
-            dim = _dim(db)
-            _set_meta(db, {"workspace": workspace, "built_at": time.time(),
-                           "embed_model": ref, "dim": dim, "fts": bool(fts)})
-            return status(workspace)
-        finally:
-            db.close()
-
-
-def _dim(db):
-    row = db.execute("SELECT vec FROM chunks WHERE vec IS NOT NULL LIMIT 1").fetchone()
-    return len(_blob_vec(row["vec"])) if row and row["vec"] else 0
 
 
 def _drop_path(db, path):
@@ -477,6 +426,95 @@ def _insert_chunks(db, path, lang, kind, pieces, source, fts):
     return ids
 
 
+def _remove_source_chunks(db, sid):
+    if _has_fts(db):
+        ids = [r["id"] for r in db.execute("SELECT id FROM chunks WHERE source=?", (sid,))]
+        for i in ids:
+            db.execute("DELETE FROM chunks_fts WHERE rowid=?", (i,))
+    db.execute("DELETE FROM chunks WHERE source=?", (sid,))
+    # A file row is shared while ANY source still has chunks for that path
+    # (e.g. a doc indexed both standalone and as part of a folder source):
+    # drop the orphaned rows, re-point the survivors at a remaining source.
+    db.execute("DELETE FROM files WHERE source=? AND path NOT IN (SELECT DISTINCT path FROM chunks)", (sid,))
+    db.execute("UPDATE files SET source=(SELECT c.source FROM chunks c WHERE c.path=files.path LIMIT 1) "
+               "WHERE source=?", (sid,))
+
+
+# --------------------------------------------------------------------- build ---
+def _index_source(db, ref, cfg, fts):
+    """(Re)index ONE source (URL, file or folder) into `db`.
+
+    Returns (chunks, files, error). Everything is stored with source id 'src:<ref>'.
+    """
+    sid = "src:" + ref
+    _remove_source_chunks(db, sid)
+    cl = int(cfg.get("chunk_lines") or 60)
+    ov = int(cfg.get("overlap_lines") or 8)
+    items = []  # (path, lang, kind, pieces, mtime, size, hash)
+    if ref.startswith("http://") or ref.startswith("https://"):
+        try:
+            text = _fetch_url(ref)
+        except Exception as e:  # noqa: BLE001
+            return 0, 0, "fetch failed: %s" % e
+        items.append((ref, "markdown", "doc", _chunk_doc(text, cl, ov), 0.0, 0, ""))
+    else:
+        ap = os.path.realpath(os.path.expanduser(ref))
+        if not os.path.exists(ap):
+            return 0, 0, "path not found: %s" % ref
+        if os.path.isdir(ap):
+            targets = [abs_ for _rel, abs_, _l, _k in _walk(ap, cfg)]
+        else:
+            lang, kind = _lang_for(ap)
+            targets = [ap] if lang else []
+        for fp in targets:
+            text = _read_text(fp, cfg.get("max_file_kb") or 512)
+            if text is None:
+                continue
+            lang, kind = _lang_for(fp)
+            lang = lang or "text"
+            kind = kind or "doc"
+            try:
+                st = os.stat(fp)
+                mt, sz = st.st_mtime, st.st_size
+            except OSError:
+                mt, sz = 0.0, 0
+            items.append((fp, lang, kind, _chunk_file(text, lang, kind, cfg), mt, sz,
+                          hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()))
+    n = 0
+    for path, lang, kind, pieces, mt, sz, h in items:
+        ids = _insert_chunks(db, path, lang, kind, pieces, source=sid, fts=fts)
+        db.execute("INSERT OR REPLACE INTO files(path, mtime, size, hash, lang, source) "
+                   "VALUES(?,?,?,?,?,?)", (path, mt, sz, h, lang, sid))
+        n += len(ids)
+    db.execute("INSERT OR REPLACE INTO sources(id, kind, ref, added, chunks) VALUES(?,?,?,?,?)",
+               (sid, "url" if ref[:4] == "http" else "path", ref, time.time(), n))
+    return n, len(items), None
+
+
+def build(force=False):
+    """(Re)index EVERY registered source. Returns the status dict."""
+    cfg = load_config()
+    em = str(cfg.get("embed_model") or "").strip()
+    batch = int(cfg.get("embed_batch") or 32)
+    with LOCK:
+        db = _connect()
+        try:
+            fts = _init(db)
+            refs = [r["ref"] for r in db.execute("SELECT ref FROM sources ORDER BY added")]
+            for ref in refs:
+                _index_source(db, ref, cfg, fts)
+            if em:
+                rows = [(r["id"], r["text"]) for r in db.execute(
+                    "SELECT id, text FROM chunks WHERE vec IS NULL")]
+                _embed_chunks(db, rows, em, batch)
+            db.commit()
+            _set_meta(db, {"built_at": time.time(), "embed_model": em,
+                           "dim": _dim(db), "fts": bool(fts)})
+            return status()
+        finally:
+            db.close()
+
+
 # -------------------------------------------------------------------- search ---
 def _cos(a, b):
     if not a or not b or len(a) != len(b):
@@ -491,15 +529,13 @@ def _cos(a, b):
     return dot / ((na ** 0.5) * (nb ** 0.5))
 
 
-def search(workspace, query, k=8, kind=None, embed_model=None):
-    """Return the top-k chunks for `query`. bm25 only, or bm25+cosine (RRF) when
-    an embedding model is configured and vectors exist."""
-    workspace = os.path.realpath(str(workspace))
+def search(query, k=8, kind=None, embed_model=None):
+    """Top-k chunks for `query`. bm25 only, or bm25+cosine (RRF) with embeddings."""
     query = str(query or "").strip()
     out = {"query": query, "results": [], "mode": "bm25"}
     if not query:
         return out
-    db = _connect(workspace)
+    db = _connect()
     try:
         _init(db)
         if not db.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
@@ -523,7 +559,8 @@ def search(workspace, query, k=8, kind=None, embed_model=None):
         elif terms:
             like = " OR ".join(["text LIKE ?"] * len(terms))
             args = ["%" + t + "%" for t in terms]
-            sql = "SELECT id, path, lang, kind, name, start, end, text, 0 AS rank, substr(text,1,160) AS snip FROM chunks WHERE " + like
+            sql = ("SELECT id, path, lang, kind, name, start, end, text, 0 AS rank, "
+                   "substr(text,1,160) AS snip FROM chunks WHERE " + like)
             if kind:
                 sql += " AND kind=?"
                 args.append(kind)
@@ -540,7 +577,7 @@ def search(workspace, query, k=8, kind=None, embed_model=None):
                 if cand:
                     K = 60
                     lex = {r["id"]: i for i, r in enumerate(rows)}
-                    sem = sorted((( _cos(qv[0], v), cid) for cid, v in cand.items()), reverse=True)
+                    sem = sorted(((_cos(qv[0], v), cid) for cid, v in cand.items()), reverse=True)
                     sem_rank = {cid: i for i, (_, cid) in enumerate(sem)}
                     for r in rows:
                         r["rrf"] = 1.0 / (K + lex[r["id"]]) + 1.0 / (K + sem_rank.get(r["id"], 10 ** 6))
@@ -569,7 +606,7 @@ def _load_vecs(db, ids):
     return out
 
 
-# --------------------------------------------------------------- docs sources --
+# -------------------------------------------------------------------- sources --
 def _strip_html(html):
     html = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", html or "")
     text = re.sub(r"(?s)<[^>]+>", " ", html)
@@ -593,99 +630,76 @@ def _fetch_url(url, timeout=20):
     return text
 
 
-def add_source(workspace, ref):
-    """Index a doc source (URL or filesystem file/dir) as kind='doc'.
-
-    Returns {'ok', 'source', 'chunks', 'error'}.
-    """
-    workspace = os.path.realpath(str(workspace))
+def add_source(ref):
+    """Index ONE source (URL / file / folder) now. Returns a per-source result dict."""
     ref = str(ref or "").strip()
     if not ref:
-        return {"ok": False, "error": "ref required"}
+        return {"ok": False, "error": "empty source", "ref": ref}
     cfg = load_config()
-    db = _connect(workspace)
-    try:
-        fts = _init(db)
-        sid = "doc:" + ref
-        _remove_source_rows(db, sid)
-        items = []  # (path, lang, kind, pieces)
-        if ref.startswith("http://") or ref.startswith("https://"):
-            try:
-                text = _fetch_url(ref)
-            except Exception as e:  # noqa: BLE001
-                return {"ok": False, "error": "fetch failed: %s" % e}
-            items.append((ref, "markdown", "doc", _chunk_doc(text, int(cfg.get("chunk_lines") or 60),
-                                                             int(cfg.get("overlap_lines") or 8))))
-        else:
-            ap = os.path.realpath(os.path.expanduser(ref))
-            if not os.path.exists(ap):
-                return {"ok": False, "error": "path not found: %s" % ref}
-            files = []
-            if os.path.isdir(ap):
-                for dp, dns, fns in os.walk(ap):
-                    dns[:] = [d for d in dns if d not in _SKIP_DIRS and not d.startswith(".")]
-                    for fn in fns:
-                        files.append(os.path.join(dp, fn))
-            else:
-                files.append(ap)
-            for fp in files:
-                text = _read_text(fp, cfg.get("max_file_kb") or 512)
-                if text is None:
-                    continue
-                items.append((fp, "markdown", "doc",
-                              _chunk_doc(text, int(cfg.get("chunk_lines") or 60),
-                                         int(cfg.get("overlap_lines") or 8))))
-        n = 0
-        for path, lang, kind, pieces in items:
-            ids = _insert_chunks(db, path, lang, kind, pieces, source=sid, fts=fts)
-            n += len(ids)
-        db.execute("INSERT OR REPLACE INTO sources(id, kind, ref, added, chunks) VALUES(?,?,?,?,?)",
-                   (sid, "url" if ref[:4] in ("http",) else "path", ref, time.time(), n))
-        db.commit()
-        return {"ok": True, "source": sid, "chunks": n}
-    finally:
-        db.close()
+    em = str(cfg.get("embed_model") or "").strip()
+    batch = int(cfg.get("embed_batch") or 32)
+    with LOCK:
+        db = _connect()
+        try:
+            fts = _init(db)
+            n, nf, err = _index_source(db, ref, cfg, fts)
+            if err:
+                db.commit()
+                return {"ok": False, "error": err, "ref": ref}
+            if em and n:
+                rows = [(r["id"], r["text"]) for r in db.execute(
+                    "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", ("src:" + ref,))]
+                _embed_chunks(db, rows, em, batch)
+            db.commit()
+            return {"ok": True, "source": "src:" + ref, "ref": ref, "chunks": n, "files": nf}
+        finally:
+            db.close()
 
 
-def _remove_source_rows(db, sid):
-    if _has_fts(db):
-        ids = [r["id"] for r in db.execute("SELECT id FROM chunks WHERE source=?", (sid,))]
-        for i in ids:
-            db.execute("DELETE FROM chunks_fts WHERE rowid=?", (i,))
-    db.execute("DELETE FROM chunks WHERE source=?", (sid,))
-    db.execute("DELETE FROM sources WHERE id=?", (sid,))
+def add_sources(values):
+    """Index MANY sources: a multi-line string (one URL/path per line) or a list."""
+    if isinstance(values, str):
+        refs = [ln.strip() for ln in values.splitlines()]
+    else:
+        refs = [str(v).strip() for v in (values or [])]
+    refs = [r for r in dict.fromkeys(refs) if r]   # dedupe, keep order, drop blanks
+    results = [add_source(r) for r in refs]
+    ok = [x for x in results if x.get("ok")]
+    return {"ok": bool(ok) and len(ok) == len(refs), "added": len(ok), "total": len(refs),
+            "chunks": sum(x.get("chunks", 0) for x in ok), "results": results}
 
 
-def list_sources(workspace):
-    db = _connect(workspace)
+def list_sources():
+    db = _connect()
     try:
         _init(db)
-        return [dict(r) for r in db.execute("SELECT id, kind, ref, added, chunks FROM sources ORDER BY added DESC")]
+        return [dict(r) for r in db.execute(
+            "SELECT id, kind, ref, added, chunks FROM sources ORDER BY added DESC")]
     finally:
         db.close()
 
 
-def remove_source(workspace, sid):
-    db = _connect(workspace)
-    try:
-        _init(db)
-        _remove_source_rows(db, sid)
-        db.commit()
-        return {"ok": True, "removed": sid}
-    finally:
-        db.close()
+def remove_source(sid):
+    with LOCK:
+        db = _connect()
+        try:
+            _init(db)
+            _remove_source_chunks(db, sid)
+            db.execute("DELETE FROM sources WHERE id=?", (sid,))
+            db.commit()
+            return {"ok": True, "removed": sid}
+        finally:
+            db.close()
 
 
 # -------------------------------------------------------------------- status ---
-def status(workspace):
-    workspace = os.path.realpath(str(workspace))
+def status():
     cfg = load_config()
-    p = db_path(workspace)
+    p = db_path()
     out = {
-        "enabled": bool(cfg.get("enabled", True)), "workspace": workspace, "db": p,
-        "exists": os.path.isfile(p), "automatic": bool(cfg.get("automatic")),
-        "embed_model": str(cfg.get("embed_model") or ""), "files": 0, "chunks": 0,
-        "docs": 0, "dim": 0, "built_at": None, "fts": False, "size_kb": 0,
+        "enabled": bool(cfg.get("enabled", True)), "db": p, "exists": os.path.isfile(p),
+        "automatic": bool(cfg.get("automatic")), "embed_model": str(cfg.get("embed_model") or ""),
+        "files": 0, "chunks": 0, "docs": 0, "dim": 0, "built_at": None, "fts": False, "size_kb": 0,
     }
     if not out["exists"]:
         return out
@@ -693,7 +707,7 @@ def status(workspace):
         out["size_kb"] = round(os.path.getsize(p) / 1024.0, 1)
     except OSError:
         pass
-    db = _connect(workspace)
+    db = _connect()
     try:
         _init(db)
         out["files"] = db.execute("SELECT count(*) c FROM files").fetchone()["c"]
@@ -707,25 +721,23 @@ def status(workspace):
         db.close()
 
 
-def list_files(workspace):
-    """The indexed files (rel path, language, chunk count), biggest first."""
-    workspace = os.path.realpath(str(workspace))
-    db = _connect(workspace)
+def list_files():
+    """Every indexed file: path, language, source, chunk count."""
+    db = _connect()
     try:
         _init(db)
         rows = db.execute(
-            "SELECT f.path AS path, f.lang AS lang, count(c.id) AS chunks "
+            "SELECT f.path AS path, f.lang AS lang, f.source AS source, count(c.id) AS chunks "
             "FROM files f LEFT JOIN chunks c ON c.path = f.path "
             "GROUP BY f.path ORDER BY chunks DESC, f.path").fetchall()
-        return {"workspace": workspace, "files": [dict(r) for r in rows]}
+        return {"files": [dict(r) for r in rows]}
     finally:
         db.close()
 
 
-def clear(workspace):
-    workspace = os.path.realpath(str(workspace))
+def clear():
     with LOCK:
-        db = _connect(workspace)
+        db = _connect()
         try:
             for t in ("chunks", "chunks_fts", "files", "sources", "meta"):
                 try:

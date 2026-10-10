@@ -1304,6 +1304,16 @@
       <section data-insp="files" class="insp-open">
         <button class="insp-hd" onclick="toggleInsp('files')">Files</button>
         <div class="insp-body">
+        <h2>Workspace · folder (this session)</h2>
+        <div class="card">
+          <div class="remaining" id="wsCurrent">loading…</div>
+          <input id="wsPath" class="inp" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+            <label class="remaining" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
+            <button class="ghost" onclick="setWorkspace()">use this folder</button>
+          </div>
+          <div id="wsResult" class="remaining" style="margin-top:6px"></div>
+        </div>
         <h2>Files · workspace</h2>
         <div class="card">
           <div style="display:flex;gap:6px;align-items:center">
@@ -1322,37 +1332,6 @@
             <button class="ghost" onclick="approveEdits(null)" title="keep every changed file as written, clear the list">✓ approve all</button>
             <button class="ghost" onclick="rejectEdits(null)" title="restore every changed file to its pre-image">↩ reject all</button>
           </div>
-        </div>
-        </div>
-      </section>
-      <section data-insp="index" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('index')">Knowledge</button>
-        <div class="insp-body">
-        <h2>Index · codebase + docs <span id="indexStat" class="remaining"></span></h2>
-        <div class="card">
-          <div class="remaining" id="indexMeta">build the index so the agent can find the right code and docs by relevance.</div>
-          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-            <button class="ghost" onclick="indexBuild(false)" title="index new/changed files (incremental)">⚡ build</button>
-            <button class="ghost" onclick="indexBuild(true)" title="re-index everything from scratch">↻ rebuild</button>
-            <button class="ghost" onclick="indexStatus()" title="refresh the counts">status</button>
-            <button class="ghost" onclick="indexFiles()" title="which files are indexed / embedded">files</button>
-            <button class="ghost" onclick="indexClear()" title="delete this workspace's index">clear</button>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <input id="indexQuery" class="inp" placeholder="search code + docs…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')indexSearch()">
-            <button class="ghost" onclick="indexSearch()">search</button>
-          </div>
-          <div id="indexResults" style="margin-top:6px"></div>
-          <div id="indexFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
-        </div>
-        <h2>Docs · sources</h2>
-        <div class="card">
-          <div style="display:flex;gap:6px">
-            <input id="indexDocRef" class="inp" placeholder="URL or local path" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')indexAddDoc()">
-            <button class="ghost" onclick="indexAddDoc()">+ add</button>
-            <button class="ghost" onclick="loadIndexDocs()" title="reload sources">↻</button>
-          </div>
-          <div id="indexDocs" style="margin-top:6px"><div class="remaining">no doc sources</div></div>
         </div>
         </div>
       </section>
@@ -1398,14 +1377,6 @@
         </div>
       </section>
       <div class="sw-cat" data-cat="rules" hidden>
-        <h2>Workspace · folder</h2>
-        <div class="card">
-          <div class="remaining" id="wsCurrent">loading…</div>
-          <input id="wsPath" class="inp" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
-          <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
-          <button class="ghost" onclick="setWorkspace()" style="margin-top:8px">use this folder</button>
-          <div id="wsResult" class="remaining" style="margin-top:6px"></div>
-        </div>
         <h2>Rules · global</h2>
         <div class="card">
           <div class="remaining" id="rulesGlobalPath">…</div>
@@ -1492,7 +1463,7 @@
           <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
             <button class="ghost" onclick="saveEmbedModel()">save</button>
             <button class="ghost" onclick="testEmbedModel()" title="send one probe text through the configured embeddings endpoint">test</button>
-            <button class="ghost" onclick="closeSettings();openPanel('index')" title="build the index, search the code/docs, add doc sources">open Knowledge panel →</button>
+            <button class="ghost" onclick="openSettings('knowledge')" title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
           </div>
           <div class="remaining" id="embedResult" style="margin-top:6px"></div>
         </div>
@@ -1511,6 +1482,37 @@
           </div>
           <button class="ghost" onclick="saveReasoning()" title="save the thinking-effort setting">save thinking effort</button>
           <div class="remaining" id="reResult" style="margin-top:6px"></div>
+        </div>
+      </div>
+      <div class="sw-cat" data-cat="knowledge" hidden>
+        <h2>Knowledge · global index <span id="indexStat" class="remaining"></span></h2>
+        <div class="card">
+          <div class="remaining" id="indexMeta">Add sources below (URLs or local paths), then <b>build</b>. The agent searches this knowledge base by relevance.</div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="ghost" onclick="indexBuild(false)" title="re-index every source">⚡ build</button>
+            <button class="ghost" onclick="indexFiles()" title="which files are indexed / embedded">files</button>
+            <button class="ghost" onclick="indexStatus()" title="refresh the counts">status</button>
+            <button class="ghost" onclick="indexClear()" title="delete the whole knowledge index">clear</button>
+          </div>
+          <div id="indexFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
+        </div>
+        <h2>Sources · URLs &amp; paths</h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">One per line — a URL, a file, or a folder (codebase). Everything is indexed and embedded together.</div>
+          <textarea id="indexDocRefs" style="width:100%;min-height:96px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/projects/myapp&#10;/home/me/notes/architecture.md"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="ghost" onclick="indexAddDoc()">+ add + index</button>
+            <button class="ghost" onclick="loadIndexDocs()" title="reload sources">↻</button>
+          </div>
+          <div id="indexDocs" style="margin-top:6px"><div class="remaining">no sources yet</div></div>
+        </div>
+        <h2>Search</h2>
+        <div class="card">
+          <div style="display:flex;gap:6px">
+            <input id="indexQuery" class="inp" placeholder="search the knowledge base…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')indexSearch()">
+            <button class="ghost" onclick="indexSearch()">search</button>
+          </div>
+          <div id="indexResults" style="margin-top:6px"></div>
         </div>
       </div>
       <div class="sw-cat" data-cat="appearance" hidden>
@@ -4879,7 +4881,7 @@ function skillsAutocomplete() {
 
 /* JAG-150: movable settings window (non-blocking). */
 const SETTINGS_CATS = [
-  ["appearance", "Appearance"], ["models", "Models"], ["keys", "Keys"],
+  ["appearance", "Appearance"], ["models", "Models"], ["knowledge", "Knowledge"], ["keys", "Keys"],
   ["mcp", "MCP"], ["skills", "Skills"],
   ["rules", "Rules"], ["harness", "Harness"], ["tools", "Tool policy"], ["info", "\u24D8 Info"],
 ];
@@ -4940,6 +4942,7 @@ function settingsCategory(name) {
     if (typeof loadProviders === "function") loadProviders();
     if (typeof loadEmbedModel === "function") loadEmbedModel();
   }
+  else if (name === "knowledge") { indexStatus(); }
   else if (name === "appearance") {
     renderThemeGrid();
     const bc = $("boldText");
@@ -5088,8 +5091,7 @@ function _loadInspector(name) {
   else if (key === "cost") { loadCosts(); }
   else if (key === "rules") { loadRulesPanel(); }
   else if (key === "approvals") { loadApprovals(); }
-  else if (key === "files") { loadFiles(); loadEdits(); }
-  else if (key === "index") { indexStatus(); }
+  else if (key === "files") { loadFiles(); loadEdits(); loadRules(); }
 }
 function focusInsp(name) {
   const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", feed: "feed" };
@@ -5113,16 +5115,15 @@ function restoreInspector() {
 restoreInspector();
 function openPanel(name) { focusInsp(name); }
 
-/* ---- JAG-397: knowledge index (codebase + docs) ---- */
-function _idxQS() { return sessionId ? ("?session=" + encodeURIComponent(sessionId)) : ""; }
+/* ---- JAG-397 / JAG-399: GLOBAL knowledge index (codebase + docs) ---- */
 async function indexStatus() {
   try {
-    const s = await api("GET", "/api/index/status" + _idxQS());
+    const s = await api("GET", "/api/index/status");
     let cfg = {};
     try { cfg = (await api("GET", "/api/index/config")).config || {}; } catch (e) {}
     const ign = (cfg.ignore || []).join(", ");
-    const scope = "<br>scope: <b title=\"" + _attr(s.workspace) + "\">" + esc(_short(s.workspace)) +
-      "</b> — code + docs" + (ign ? (" · skip: " + esc(ign)) : "");
+    const scope = "<br>scope: <b>global</b> — " + (s.sources || 0) + " sources (URLs, files, folders)" +
+      (ign ? (" · skip: " + esc(ign)) : "");
     const meta = $("indexMeta");
     if (meta) meta.innerHTML = (s.exists
       ? ("<b>" + (s.files || 0) + "</b> files · <b>" + (s.chunks || 0) + "</b> chunks · " +
@@ -5138,7 +5139,7 @@ async function indexFiles() {
   const box = $("indexFilesBox"); if (!box) return;
   box.innerHTML = '<div class="remaining">loading…</div>';
   try {
-    const r = await api("GET", "/api/index/files" + _idxQS());
+    const r = await api("GET", "/api/index/files");
     const rows = r.files || [];
     box.innerHTML = rows.length
       ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files indexed / embedded</div>" +
@@ -5152,7 +5153,7 @@ async function indexFiles() {
 async function indexBuild(force) {
   const meta = $("indexMeta"); if (meta) meta.textContent = "indexing…";
   try {
-    const r = await api("POST", "/api/index/build", { session: sessionId || undefined, force: !!force });
+    const r = await api("POST", "/api/index/build", { force: !!force });
     if (typeof toast === "function") toast("index: " + (r.files || 0) + " files / " + (r.chunks || 0) + " chunks", r.error ? "err" : "ok");
     indexStatus();
   } catch (e) { if (meta) meta.textContent = "error: " + e; }
@@ -5163,7 +5164,7 @@ async function indexSearch() {
   if (!q) { if (box) box.innerHTML = ""; return; }
   if (box) box.innerHTML = '<div class="remaining">searching…</div>';
   try {
-    const r = await api("POST", "/api/index/search", { session: sessionId || undefined, q: q, k: 12 });
+    const r = await api("POST", "/api/index/search", { q: q, k: 12 });
     const rows = r.results || [];
     box.innerHTML = rows.length
       ? ('<div class="remaining" style="margin-bottom:4px">' + esc(r.mode || "bm25") + " · " + rows.length + " hits</div>" +
@@ -5178,7 +5179,7 @@ async function indexSearch() {
 async function loadIndexDocs() {
   const box = $("indexDocs"); if (!box) return;
   try {
-    const r = await api("GET", "/api/index/docs" + _idxQS());
+    const r = await api("GET", "/api/index/docs");
     const rows = r.sources || [];
     box.innerHTML = rows.length
       ? rows.map(s => '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
@@ -5190,22 +5191,22 @@ async function loadIndexDocs() {
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
 async function indexAddDoc() {
-  const ref = $("indexDocRef") ? $("indexDocRef").value.trim() : "";
-  if (!ref) return;
+  const refs = $("indexDocRefs") ? $("indexDocRefs").value.trim() : "";
+  if (!refs) return;
   const box = $("indexDocs"); if (box) box.innerHTML = '<div class="remaining">fetching…</div>';
   try {
-    const r = await api("POST", "/api/index/docs", { session: sessionId || undefined, ref: ref });
+    const r = await api("POST", "/api/index/docs", { refs: refs });
     if (r.error) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(r.error) + "</div>"; return; }
-    if ($("indexDocRef")) $("indexDocRef").value = "";
+    if ($("indexDocRefs")) $("indexDocRefs").value = "";
     loadIndexDocs(); indexStatus();
   } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
 async function indexRemoveDoc(sid) {
-  try { await api("POST", "/api/index/docs", { session: sessionId || undefined, remove: sid }); loadIndexDocs(); indexStatus(); } catch (e) {}
+  try { await api("POST", "/api/index/docs", { remove: sid }); loadIndexDocs(); indexStatus(); } catch (e) {}
 }
 async function indexClear() {
-  if (typeof confirmDelete === "function" && !(await confirmDelete("delete this workspace's index?"))) return;
-  try { await api("POST", "/api/index/clear", { session: sessionId || undefined }); indexStatus(); } catch (e) {}
+  if (typeof confirmDelete === "function" && !(await confirmDelete("delete the whole GLOBAL knowledge index?"))) return;
+  try { await api("POST", "/api/index/clear", {}); indexStatus(); } catch (e) {}
 }
 async function loadEmbedModel() {
   try {
@@ -5802,7 +5803,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["index", "Knowledge"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
+  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }

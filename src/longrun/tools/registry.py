@@ -156,12 +156,11 @@ TOOL_SCHEMAS = {
         },
     },
     "index": {
-        "description": ("Knowledge index over the workspace (codebase + docs). "
-                        "action=search -> the top matching chunks as path:line + a "
-                        "snippet, so you read the RIGHT code instead of scanning the "
-                        "whole tree. action=reindex -> rebuild it now. action=status "
-                        "-> counts. Lexical (bm25) always; semantic when an embedding "
-                        "model is configured."),
+        "description": ("GLOBAL knowledge base (codebase + docs sources the user added). "
+                        "action=search -> the top matching chunks as path:line + a snippet, "
+                        "so you read the RIGHT code/docs instead of scanning the whole tree. "
+                        "action=reindex -> rebuild all sources now. action=status -> counts. "
+                        "Lexical (bm25) always; semantic when an embedding model is set."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["search", "reindex", "status"],

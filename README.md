@@ -254,34 +254,42 @@ curl -s 'http://127.0.0.1:8790/api/runs/<run_id>/trace?token=<token>'
 
 ## Knowledge index — codebase + docs
 
-The agent can search your workspace **by relevance** instead of scanning the whole
-tree. One sqlite database per workspace, kept **outside the project** in the app
-data dir (`data/index/<workspace>.db`) — the same convention VS Code / Cursor use
+The agent can search a **knowledge base by relevance** instead of scanning the whole
+tree. It is a **single, global** sqlite database kept **outside the project** in the
+app data dir (`data/index/knowledge.db`) — the same convention VS Code / Cursor use
 (`workspaceStorage` / `globalStorage`), so nothing is ever written into your repo.
+The index is **not tied to a session**: you add sources once, and every session (and
+the agent's `index` tool) queries the same base.
+
+A **source** is a URL, a file, or a folder (your codebase). All sources are chunked,
+indexed and (optionally) embedded **together** — add a list of URLs one per line, mix
+in file and folder paths, and everything lands in the same knowledge base.
 
 - **Retrieval** is SQLite **FTS5** (`bm25()` + `snippet()`) — built into Python's
   `sqlite3`, so it runs with **zero dependencies**.
 - **Chunking** is AST-aware for Python (one chunk per function / method / class)
   and heading/paragraph-aware for Markdown; a line window is the fallback for other
   languages. `.gitignore` and common vendor dirs (`.git`, `node_modules`, …) are skipped.
-- **Incremental**: only new/changed files are re-embedded on each build.
-- **Docs**: add extra sources (a URL or a local file/folder) as a separate `doc`
-  tier, searchable alongside the code.
+- **Docs / URLs**: add any number of sources; each is indexed as its own tier and is
+  searchable alongside the code.
 
 ### Use it
-WebUI → **Knowledge** section (right rail): build, search, add docs. Or from the
-agent, the CLI, or the API:
+WebUI → **Settings ▸ Knowledge**: add sources (one URL/path per line), build,
+inspect the indexed files, search. The per-session workspace folder lives in the
+right-rail **Files** inspector. Or use the agent, the CLI, or the API:
 
 ```bash
-forge index build                       # index the session's workspace
+forge index build                       # (re)index every source
 forge index search "parse config"       # top chunks as path:line + snippet
 forge index docs https://docs.example.com/guide
 ```
 
 ```bash
 curl -s -X POST http://127.0.0.1:8790/api/index/build \
-  -H 'Content-Type: application/json' -d '{"session":"<id>"}'
-curl -s 'http://127.0.0.1:8790/api/index/search?q=parse+config&k=8&session=<id>'
+  -H 'Content-Type: application/json' -d '{"force":false}'
+curl -s -X POST http://127.0.0.1:8790/api/index/docs \
+  -H 'Content-Type: application/json' -d '{"refs":"https://docs.example.com/guide\n/home/me/app"}'
+curl -s 'http://127.0.0.1:8790/api/index/search?q=parse+config&k=8'
 ```
 
 The agent has a matching **`index`** tool (`action=search|reindex|status`), so it
