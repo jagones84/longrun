@@ -146,9 +146,14 @@ def build(ws, force=False):
                     _drop_path(db, r["path"])
             em = _cfg.embed_model()
             if em:
-                rows = [(r["id"], r["text"]) for r in db.execute("SELECT id, text FROM chunks WHERE vec IS NULL")]
-                _embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
-                              scope="codebase", scope_id=str(ws), op="build")
+                # JAG-403j: a failing embedder (missing key / no local server) must
+                # NEVER break the build — degrade to bm25-only.
+                try:
+                    rows = [(r["id"], r["text"]) for r in db.execute("SELECT id, text FROM chunks WHERE vec IS NULL")]
+                    _embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                                  scope="codebase", scope_id=str(ws), op="build")
+                except Exception:  # noqa: BLE001
+                    pass
             db.commit()
             _set_meta(db, {"built_at": time.time(), "embed_model": em, "dim": _dim(db),
                            "fts": bool(fts), "workspace": ws})

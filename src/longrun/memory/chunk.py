@@ -9,6 +9,8 @@ import os
 import re
 from fnmatch import fnmatch
 
+from longrun.memory import docio
+
 # direct children of a root never scanned
 SKIP_DIRS = {
     ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv", "env",
@@ -39,6 +41,9 @@ def lang_for(rel):
         return CODE_EXT[ext], "code"
     if ext in DOC_EXT:
         return DOC_EXT[ext], "doc"
+    if ext in docio.BINARY_DOC_EXT:
+        # JAG-403j: PDF/DOCX/… are extracted to text by ``docio`` (see read_text).
+        return "doc", "doc"
     if name in EXTLESS:
         return EXTLESS[name], "code"
     return None, None
@@ -82,6 +87,7 @@ def walk(root, cfg):
     gi = load_gitignore(root)
     globs = cfg.get("ignore") or []
     maxb = int(cfg.get("max_file_kb") or 512) * 1024
+    docmax = int(cfg.get("doc_max_kb") or 25600) * 1024   # JAG-403j: docs are bigger
     root = os.path.realpath(root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
@@ -102,7 +108,7 @@ def walk(root, cfg):
                 continue
             abspath = os.path.join(dirpath, fn)
             try:
-                if os.path.getsize(abspath) > maxb:
+                if os.path.getsize(abspath) > (docmax if docio.supported(fn) else maxb):
                     continue
             except OSError:
                 continue
@@ -110,7 +116,14 @@ def walk(root, cfg):
 
 
 def read_text(abspath, max_kb):
-    """Decoded text, or None for binary/unreadable files."""
+    """Decoded text, or None for binary/unreadable files.
+
+    JAG-403j: binary DOCUMENTS (PDF/DOCX/PPTX/…) are extracted to text/markdown
+    via ``docio`` so they can be chunked + embedded like any other source.
+    """
+    if docio.supported(abspath):
+        text, _engine = docio.extract(abspath, max_kb=max(1024, int(max_kb or 512)))
+        return text
     try:
         with open(abspath, "rb") as f:
             data = f.read(int(max_kb) * 1024 + 1)

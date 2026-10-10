@@ -101,6 +101,20 @@ All notable changes to Longrun are documented here. The format follows
   one place. The Workspace inspector panel no longer prints the redundant
   `session ▸ … · N chars of rules` line nor the `default ▸ …` echo (the path is already
   in the input box); `setWorkspace` reports via a toast. v407 10/10; battery 133 → 134.
+- **Document ingestion: PDF / Office / OCR now embed into the knowledge base (JAG-403j).**
+  A new `longrun.memory.docio` layer turns BINARY documents into text before chunking +
+  embedding, in this order: `markitdown` (if installed — best PDF/DOCX/PPTX/XLSX fidelity),
+  else the system tools `pdftotext` (with OCR via `pdftoppm` + `tesseract` for scanned PDFs)
+  and `libreoffice --headless --convert-to txt`. `chunk.lang_for`/`read_text` route PDF/DOCX/
+  PPTX/XLSX/ODT/… through it, so a knowledge source can now be a URL, a folder **or a PDF**
+  (`*.pdf` was removed from the codebase ignore list too). A failing embedder now degrades to
+  bm25 instead of breaking a build/ingest. A **default embedding model ships**
+  (`cohere:embed-multilingual-v3.0`) so a fresh clone is not left empty. New `requirements.txt`
+  documents the optional `markitdown` dependency. The knowledge status shows which extractors
+  are installed. v408 15/15; battery 134 → 135.
+- **UI polish (JAG-403j).** The composer toolbar is now a FLAT strip (no per-button frames —
+  only *send* keeps its button shape). The Notebooks list is a collapsible `<details>` menu
+  whose summary shows the active notebook + its source count.
 
 ### Fixed
 - **Deleting the WHOLE knowledge base always asks (JAG-403e).** `confirmDelete` gained a

@@ -178,7 +178,7 @@ check("F3b the auto options are revealed only in auto mode",
       'id="kbAutoOpts" hidden' in HTML and "function kbResearchMode(" in HTML)
 # F4: "Search knowledge" sits right below "Knowledge · global".
 check("F4 Search knowledge is above Notebooks in the markup order",
-      0 <= HTML.index("<h2>Search knowledge</h2>") < HTML.index("<h2>Notebooks</h2>"))
+      0 <= HTML.index("<h2>Search knowledge</h2>") < HTML.index('<details class="card" id="kbNbBox">'))
 # F5: a skill opens in the EDITOR (not a separate modal).
 check("F5 skills open in the file editor",
       "function openSkillInEditor(" in HTML and "openInEditor(d.abspath" in HTML

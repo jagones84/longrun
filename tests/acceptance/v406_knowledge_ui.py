@@ -45,7 +45,7 @@ check("3 a `text` source is shown as plain text (no false file link)",
 
 # ------------------------------------------------------------------ 4) notebooks bounded
 check("4 the notebooks list is a bounded scroll window",
-      'id="kbNotebooks" style="max-height:200px;overflow:auto"' in HTML)
+      'id="kbNotebooks" style="max-height:200px;overflow:auto' in HTML)
 
 # ------------------------------------------------------------------ 5) research options
 check("5a depth + max-sources are ALWAYS visible (before the auto-only block)",

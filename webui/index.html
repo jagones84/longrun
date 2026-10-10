@@ -469,6 +469,16 @@
   #composerBar .cb-right .model-wrap { flex: 0 1 auto; min-width: 0; }
   #composerBar .cb-right .model-wrap > button { max-width: 190px; min-width: 96px; flex: 0 1 auto; }
   #composerBar .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* JAG-403j: the composer toolbar reads as ONE flat strip — the per-control frames
+     (boxed ".ghost" borders) looked noisy. Only "send" keeps its button shape. */
+  #composerBar .cb-left > button, #composerBar .cb-right > button,
+  #composerBar .cb-right .model-wrap > button, #composerBar .more-wrap > button {
+    background: transparent; border: 0; box-shadow: none; color: var(--dim); }
+  #composerBar .cb-left > button:hover, #composerBar .cb-right > button:hover,
+  #composerBar .cb-right .model-wrap > button:hover, #composerBar .more-wrap > button:hover {
+    color: var(--txt); background: rgba(127,127,127,.14); }
+  #composerBar .cb-left > select { border: 0; background: transparent; color: var(--dim); }
+  #composerBar .cb-left > select:hover { color: var(--txt); }
   #composerBar #sendBtn { flex: 0 0 auto; font-weight: 700; }
   #composerBar #sendBtn .kbd { opacity: .65; font-weight: 400; margin-left: 2px; }
   /* JAG-284: secondary actions live behind a "⋯" overflow menu so the toolbar stays
@@ -1552,18 +1562,18 @@
           </div>
           <div id="kbResults" style="margin-top:6px"></div>
         </div>
-        <h2>Notebooks</h2>
-        <div class="card">
-          <div id="kbNotebooks" style="max-height:200px;overflow:auto"><div class="remaining">loading…</div></div>
+        <details class="card" id="kbNbBox">
+          <summary class="remaining" style="cursor:pointer">Notebooks <span id="kbNbActive" style="color:var(--txt)"></span></summary>
+          <div id="kbNotebooks" style="max-height:200px;overflow:auto;margin-top:8px"><div class="remaining">loading…</div></div>
           <div style="display:flex;gap:6px;margin-top:8px">
             <input id="kbNewName" class="inp" placeholder="new notebook name…" style="flex:1;padding:6px 10px;font-size:12px">
             <button class="ghost" onclick="kbCreateNotebook()">+ create</button>
           </div>
-        </div>
+        </details>
         <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">One per line — a URL, a file, or a folder. Everything is indexed (and embedded, if a model is set) in the selected notebook.</div>
-          <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md"></textarea>
+          <div class="remaining" style="margin:0 0 6px">One per line — a URL, a file, or a folder. URLs are fetched and embedded; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs) then embedded with the active model.</div>
+          <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
             <button class="ghost" onclick="kbAddSource()">+ add + index</button>
             <button class="ghost" onclick="kbFiles()" title="which files are in this notebook">files</button>
@@ -5422,10 +5432,14 @@ async function kbStatus() {
   try {
     const s = await api("GET", "/api/knowledge/status");
     const meta = $("indexMeta");
+    const ex = s.extractors || {};
+    const exTxt = Object.keys(ex).filter(k => ex[k]).join(", ") || "none";
     if (meta) meta.innerHTML = (s.exists
       ? ("<b>" + (s.notebooks || 0) + "</b> notebooks · <b>" + (s.sources || 0) + "</b> sources · <b>" +
          (s.chunks || 0) + "</b> chunks · " + _fmtSize((s.size_kb || 0) * 1024) +
-         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : ""))
+         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : "") +
+         "<br>doc extractors: <b>" + esc(exTxt) + "</b>" +
+         (ex.markitdown ? "" : " — install <code>markitdown</code> for the best PDF/DOCX fidelity"))
       : "empty — create a notebook and add sources.");
     const st = $("indexStat"); if (st) st.textContent = s.exists ? ((s.sources || 0) + " sources") : "empty";
     return s;
@@ -5436,6 +5450,9 @@ async function kbLoadNotebooks() {
   try {
     const r = await api("GET", "/api/knowledge/notebooks");
     const rows = r.notebooks || [];
+    // JAG-403j: the collapsed summary shows the ACTIVE notebook + its source count.
+    const act = rows.find(n => n.id === kbState.notebook) || rows[0];
+    if ($("kbNbActive")) $("kbNbActive").textContent = act ? ("\u00b7 " + act.name + " (" + (act.sources || 0) + ")") : "";
     box.innerHTML = rows.map(n => {
       const sel = n.id === kbState.notebook;
       return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +

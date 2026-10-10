@@ -19,10 +19,14 @@ OVERLAY_PATH = os.path.join(paths.DATA_DIR, "index.overlay.yaml")
 DEFAULT_CONFIG = {
     "enabled": True,
     "max_file_kb": 512,
+    # JAG-403j: binary documents (PDF/DOCX/…) may be much larger than code files.
+    "doc_max_kb": 25600,
     "chunk_lines": 60,
     "overlap_lines": 8,
     "ignore": ["*.min.js", "*.min.css", "*.map", "*.lock", "*.svg", "*.ipynb"],
-    "embed_model": "",
+    # JAG-403j: a SHIPPED default so a fresh clone has a working embedding model
+    # (not an empty field). The overlay still overrides it — set "" to force bm25-only.
+    "embed_model": "cohere:embed-multilingual-v3.0",
     "embed_batch": 32,
     # JAG-403: user-added embedding models (provider/id/dim/price_per_mtok).
     "custom_models": [],

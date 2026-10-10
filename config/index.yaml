@@ -21,6 +21,5 @@ ignore:                   # extra globs on top of the built-in ignores (.git, no
   - "*.jpg"
   - "*.jpeg"
   - "*.gif"
-  - "*.pdf"
-embed_model: ""           # provider ref, e.g. "openrouter:openai/text-embedding-3-small"; "" = lexical only
+embed_model: "cohere:embed-multilingual-v3.0"   # provider ref; set "" for lexical-only (bm25)
 embed_batch: 32

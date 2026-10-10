@@ -1,0 +1,17 @@
+# Longrun dependencies.
+#
+# The harness CORE is stdlib-only + PyYAML. Everything below is either required
+# (PyYAML) or OPTIONAL — it unlocks extra capabilities. Install what you need:
+#
+#     pip install -r requirements.txt
+
+PyYAML>=6.0
+
+# --- Document ingestion for the knowledge base (JAG-403j) --------------------
+# Converts PDF / DOCX / PPTX / XLSX / HTML to Markdown (best fidelity, pure
+# Python, MIT). It is OPTIONAL: without it the harness still extracts
+#   * PDFs   via the system `pdftotext`, with OCR (`pdftoppm` + `tesseract`)
+#            for scanned PDFs, and
+#   * Office files via `libreoffice --headless --convert-to txt`,
+# when those binaries exist on the host.
+markitdown[pdf,docx,pptx,xlsx]>=0.0.1

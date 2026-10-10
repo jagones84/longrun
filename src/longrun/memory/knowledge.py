@@ -19,6 +19,7 @@ import time
 import uuid
 
 from longrun.memory import chunk as _chunk
+from longrun.memory import docio as _docio
 from longrun.memory import indexcfg as _cfg
 from longrun.memory import vectors as _vec
 from longrun.util import paths
@@ -237,11 +238,16 @@ def add_source(notebook, ref):
                 kind = "path"
             em = _cfg.embed_model()
             if em and n:
-                rows = [(r["id"], r["text"]) for r in db.execute(
-                    "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
-                _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
-                                  scope="notebook", scope_id=str(notebook),
-                                  op="add_source")
+                # JAG-403j: a failing embedder must never break the ingest — the
+                # source is still indexed (bm25) even if the vectors cannot be built.
+                try:
+                    rows = [(r["id"], r["text"]) for r in db.execute(
+                        "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
+                    _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                                      scope="notebook", scope_id=str(notebook),
+                                      op="add_source")
+                except Exception:  # noqa: BLE001
+                    pass
             db.commit()
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
                     "ref": ref, "chunks": n, "title": ref if kind == "url" else base}
@@ -460,7 +466,8 @@ def status():
     p = db_path()
     out = {"db": p, "exists": os.path.isfile(p), "embed_model": _cfg.embed_model(),
            "notebooks": 0, "sources": 0, "files": 0, "chunks": 0, "dim": 0,
-           "built_at": None, "fts": False, "size_kb": 0}
+           "built_at": None, "fts": False, "size_kb": 0,
+           "extractors": _docio.available()}
     if not out["exists"]:
         return out
     try:
