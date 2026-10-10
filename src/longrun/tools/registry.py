@@ -155,6 +155,23 @@ TOOL_SCHEMAS = {
             "name": {"type": "string", "description": "skill name (for action=read)"},
         },
     },
+    "index": {
+        "description": ("Knowledge index over the workspace (codebase + docs). "
+                        "action=search -> the top matching chunks as path:line + a "
+                        "snippet, so you read the RIGHT code instead of scanning the "
+                        "whole tree. action=reindex -> rebuild it now. action=status "
+                        "-> counts. Lexical (bm25) always; semantic when an embedding "
+                        "model is configured."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["search", "reindex", "status"],
+                       "default": "search"},
+            "query": {"type": "string", "description": "what to look for (action=search)"},
+            "k": {"type": "integer", "default": 8, "description": "max results (action=search)"},
+            "kind": {"type": "string", "enum": ["code", "doc"],
+                     "description": "restrict to code or docs (action=search)"},
+        },
+    },
     "sessions": {
         "description": ("Inspect OTHER sessions' chats to understand why a "
                         "teammate (e.g. 'coder 1') is failing, and help it. "

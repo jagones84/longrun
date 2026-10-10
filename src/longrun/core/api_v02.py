@@ -884,6 +884,23 @@ def handle(handler, method, path, qs, body):
             from longrun.model import costs
             return _r(handler, 200, costs.summary(qs.get("session"),
                                                   _int(qs.get("tail", 60), 60)))
+        # JAG-397: knowledge index (codebase + documentation)
+        if path == "/api/index/status":
+            return _r(handler, 200, index_status(qs))
+        if path == "/api/index/docs":
+            return _r(handler, 200, index_docs(qs))
+        if path == "/api/index/config":
+            return _r(handler, 200, index_config_get())
+        if path == "/api/index/embed-models":
+            from longrun.model import embed as _embed
+            return _r(handler, 200, {"suggested": _embed.SUGGESTED, "current": _embed.model_ref()})
+        if path == "/api/index/embed-test":
+            from longrun.model import embed as _embed
+            return _r(handler, 200, _embed.probe(qs.get("model")))
+        if path == "/api/index/search":
+            from longrun.memory import index as _index
+            return _r(handler, 200, _index.search(_index_ws(qs), qs.get("q") or qs.get("query"),
+                                                  _int(qs.get("k", 8), 8), qs.get("kind")))
 
         return False
 
@@ -903,6 +920,34 @@ def handle(handler, method, path, qs, body):
         if path == "/api/costs/reset":  # JAG-355: clear this session's ledger
             from longrun.model import costs
             return _r(handler, 200, costs.reset((body or {}).get("session")))
+        # JAG-397: knowledge index (codebase + documentation)
+        if path == "/api/index/build":
+            from longrun.memory import index as _index
+            ws = _index_ws(body)
+            _publish("index.progress", phase="start", workspace=ws)
+            res = _index.build(ws, force=bool((body or {}).get("force")))
+            _publish("index.done", workspace=ws, files=res.get("files"), chunks=res.get("chunks"))
+            return _r(handler, 200, res)
+        if path == "/api/index/search":
+            from longrun.memory import index as _index
+            b = body or {}
+            return _r(handler, 200, _index.search(_index_ws(b), b.get("q") or b.get("query"),
+                                                  _int(b.get("k", 8), 8), b.get("kind")))
+        if path == "/api/index/docs":
+            from longrun.memory import index as _index
+            b = body or {}
+            ws = _index_ws(b)
+            if b.get("remove") or b.get("source"):
+                return _r(handler, 200, _index.remove_source(ws, b.get("remove") or b.get("source")))
+            res = _index.add_source(ws, b.get("ref") or b.get("url") or b.get("path"))
+            _publish("index.docs", workspace=ws, ok=bool(res.get("ok")), ref=b.get("ref"))
+            return _r(handler, 200, res)
+        if path == "/api/index/clear":
+            from longrun.memory import index as _index
+            return _r(handler, 200, _index.clear(_index_ws(body)))
+        if path == "/api/index/config":
+            from longrun.memory import index as _index
+            return _r(handler, 200, _index.save_config(body or {}))
         if path == "/api/term/exec":  # JAG-281: real terminal — send a command line
             return _r(handler, 200, term_exec(body))
         if path == "/api/term/reset":  # JAG-281: kill the session's shell
@@ -1748,6 +1793,32 @@ def _session_ws(session_id):
     _lazy('rules')
     sess = _srv().load_session(session_id) if session_id else None
     return _RULES.resolve_workspace(sess), sess
+
+
+def _index_ws(src):
+    """Workspace for the knowledge-index routes (session's folder, else default)."""
+    ws, _ = _session_ws((src or {}).get("session"))
+    return ws
+
+
+def index_status(qs=None):
+    """GET /api/index/status — files/chunks/size/embed model of the workspace index."""
+    from longrun.memory import index as _index
+    return _index.status(_index_ws(qs))
+
+
+def index_docs(qs=None):
+    """GET /api/index/docs — the documentation sources indexed in this workspace."""
+    from longrun.memory import index as _index
+    return {"sources": _index.list_sources(_index_ws(qs))}
+
+
+def index_config_get():
+    """GET /api/index/config — the merged index config + embedding suggestions."""
+    from longrun.memory import index as _index
+    from longrun.model import embed as _embed
+    return {"config": _index.load_config(), "embed_model": _embed.model_ref(),
+            "suggested": _embed.SUGGESTED}
 
 
 def rules_status(qs=None):

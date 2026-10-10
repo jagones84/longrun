@@ -215,6 +215,12 @@ tools:
     enabled: true
     approval: auto
 
+  # knowledge index (JAG-397): search the workspace codebase + docs. Read-only
+  # over the project; the index DB lives in the app data dir, never in the repo.
+  index:
+    enabled: true
+    approval: auto
+
   # session inspection (JAG-350): let the coordinator/Master READ other sessions'
   # full transcripts (messages + tool calls + harness injections) to understand
   # WHY a teammate is failing and help it. Read-only, safe.

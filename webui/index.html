@@ -1324,6 +1324,35 @@
         </div>
         </div>
       </section>
+      <section data-insp="index" class="insp-open">
+        <button class="insp-hd" onclick="toggleInsp('index')">Knowledge</button>
+        <div class="insp-body">
+        <h2>Index · codebase + docs <span id="indexStat" class="remaining"></span></h2>
+        <div class="card">
+          <div class="remaining" id="indexMeta">build the index so the agent can find the right code and docs by relevance.</div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="ghost" onclick="indexBuild(false)" title="index new/changed files (incremental)">⚡ build</button>
+            <button class="ghost" onclick="indexBuild(true)" title="re-index everything from scratch">↻ rebuild</button>
+            <button class="ghost" onclick="indexStatus()" title="refresh the counts">status</button>
+            <button class="ghost" onclick="indexClear()" title="delete this workspace's index">clear</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <input id="indexQuery" class="inp" placeholder="search code + docs…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')indexSearch()">
+            <button class="ghost" onclick="indexSearch()">search</button>
+          </div>
+          <div id="indexResults" style="margin-top:6px"></div>
+        </div>
+        <h2>Docs · sources</h2>
+        <div class="card">
+          <div style="display:flex;gap:6px">
+            <input id="indexDocRef" class="inp" placeholder="URL or local path" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')indexAddDoc()">
+            <button class="ghost" onclick="indexAddDoc()">+ add</button>
+            <button class="ghost" onclick="loadIndexDocs()" title="reload sources">↻</button>
+          </div>
+          <div id="indexDocs" style="margin-top:6px"><div class="remaining">no doc sources</div></div>
+        </div>
+        </div>
+      </section>
       <section data-insp="browser" class="insp-open">
         <button class="insp-hd" onclick="toggleInsp('browser')">Browser</button>
         <div class="insp-body">
@@ -1451,6 +1480,17 @@
           <select id="compactionModel" class="inp" style="width:100%;padding:6px 10px;font-size:12px"></select>
           <button class="ghost" onclick="saveCompactionModel()" style="margin-top:8px">save</button>
           <div class="remaining" id="compactionResult" style="margin-top:6px"></div>
+        </div>
+        <h2>Embedding model · knowledge index</h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">Vectors for semantic retrieval over the codebase + docs. Leave empty for keyword-only (bm25) search.</div>
+          <input id="embedModel" class="inp" list="embedSuggest" placeholder="provider:model — e.g. openrouter:openai/text-embedding-3-small" style="width:100%;padding:6px 10px;font-size:12px">
+          <datalist id="embedSuggest"></datalist>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="ghost" onclick="saveEmbedModel()">save</button>
+            <button class="ghost" onclick="testEmbedModel()" title="send one probe text through the configured embeddings endpoint">test</button>
+          </div>
+          <div class="remaining" id="embedResult" style="margin-top:6px"></div>
         </div>
         <h2>Thinking effort</h2>
         <div class="card">
@@ -4869,6 +4909,7 @@ function settingsCategory(name) {
   else if (name === "models") {
     if (typeof loadRouting === "function") loadRouting();
     if (typeof loadProviders === "function") loadProviders();
+    if (typeof loadEmbedModel === "function") loadEmbedModel();
   }
   else if (name === "appearance") {
     renderThemeGrid();
@@ -5019,6 +5060,7 @@ function _loadInspector(name) {
   else if (key === "rules") { loadRulesPanel(); }
   else if (key === "approvals") { loadApprovals(); }
   else if (key === "files") { loadFiles(); loadEdits(); }
+  else if (key === "index") { indexStatus(); }
 }
 function focusInsp(name) {
   const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", feed: "feed" };
@@ -5041,6 +5083,103 @@ function restoreInspector() {
 }
 restoreInspector();
 function openPanel(name) { focusInsp(name); }
+
+/* ---- JAG-397: knowledge index (codebase + docs) ---- */
+function _idxQS() { return sessionId ? ("?session=" + encodeURIComponent(sessionId)) : ""; }
+async function indexStatus() {
+  try {
+    const s = await api("GET", "/api/index/status" + _idxQS());
+    const meta = $("indexMeta");
+    if (meta) meta.innerHTML = s.exists
+      ? ("<b>" + (s.files || 0) + "</b> files · <b>" + (s.chunks || 0) + "</b> chunks · " +
+         (s.docs || 0) + " doc sources · " + _fmtSize((s.size_kb || 0) * 1024) +
+         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : ""))
+      : "not built yet — press build.";
+    const st = $("indexStat"); if (st) st.textContent = s.exists ? ((s.chunks || 0) + " chunks") : "empty";
+    loadIndexDocs();
+    return s;
+  } catch (e) { const meta = $("indexMeta"); if (meta) meta.textContent = "error: " + e; }
+}
+async function indexBuild(force) {
+  const meta = $("indexMeta"); if (meta) meta.textContent = "indexing…";
+  try {
+    const r = await api("POST", "/api/index/build", { session: sessionId || undefined, force: !!force });
+    if (typeof toast === "function") toast("index: " + (r.files || 0) + " files / " + (r.chunks || 0) + " chunks", r.error ? "err" : "ok");
+    indexStatus();
+  } catch (e) { if (meta) meta.textContent = "error: " + e; }
+}
+async function indexSearch() {
+  const q = $("indexQuery") ? $("indexQuery").value.trim() : "";
+  const box = $("indexResults");
+  if (!q) { if (box) box.innerHTML = ""; return; }
+  if (box) box.innerHTML = '<div class="remaining">searching…</div>';
+  try {
+    const r = await api("POST", "/api/index/search", { session: sessionId || undefined, q: q, k: 12 });
+    const rows = r.results || [];
+    box.innerHTML = rows.length
+      ? ('<div class="remaining" style="margin-bottom:4px">' + esc(r.mode || "bm25") + " · " + rows.length + " hits</div>" +
+         rows.map(x => '<div class="ctxitem" data-open="' + _attr(x.path) + '" title="open ' + _attr(x.path) + '">' +
+           "<b>" + esc(_short(x.path)) + ":" + (x.start || "") + "</b> " + esc(x.name || "") +
+           '</div><div class="remaining" style="margin:0 0 6px 4px">' +
+           esc((x.snippet || "").replace(/\n/g, " ").slice(0, 220)) + "</div>").join(""))
+      : '<div class="remaining">no matches</div>';
+    box.querySelectorAll("[data-open]").forEach(el => el.onclick = () => openInEditor(el.getAttribute("data-open")));
+  } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+async function loadIndexDocs() {
+  const box = $("indexDocs"); if (!box) return;
+  try {
+    const r = await api("GET", "/api/index/docs" + _idxQS());
+    const rows = r.sources || [];
+    box.innerHTML = rows.length
+      ? rows.map(s => '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+          '<span class="remaining" style="flex:1;word-break:break-all" title="' + _attr(s.ref) + '">' +
+          esc(s.ref) + " <span class='cn'>" + (s.chunks || 0) + "</span></span>" +
+          '<button class="ghost" style="padding:2px 6px" data-sid="' + _attr(s.id) + '">✕</button></div>').join("")
+      : '<div class="remaining">no doc sources</div>';
+    box.querySelectorAll("[data-sid]").forEach(el => el.onclick = () => indexRemoveDoc(el.getAttribute("data-sid")));
+  } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+async function indexAddDoc() {
+  const ref = $("indexDocRef") ? $("indexDocRef").value.trim() : "";
+  if (!ref) return;
+  const box = $("indexDocs"); if (box) box.innerHTML = '<div class="remaining">fetching…</div>';
+  try {
+    const r = await api("POST", "/api/index/docs", { session: sessionId || undefined, ref: ref });
+    if (r.error) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(r.error) + "</div>"; return; }
+    if ($("indexDocRef")) $("indexDocRef").value = "";
+    loadIndexDocs(); indexStatus();
+  } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+async function indexRemoveDoc(sid) {
+  try { await api("POST", "/api/index/docs", { session: sessionId || undefined, remove: sid }); loadIndexDocs(); indexStatus(); } catch (e) {}
+}
+async function indexClear() {
+  if (typeof confirmDelete === "function" && !(await confirmDelete("delete this workspace's index?"))) return;
+  try { await api("POST", "/api/index/clear", { session: sessionId || undefined }); indexStatus(); } catch (e) {}
+}
+async function loadEmbedModel() {
+  try {
+    const r = await api("GET", "/api/index/config");
+    const inp = $("embedModel"); if (inp) inp.value = (r.config && r.config.embed_model) || "";
+    const dl = $("embedSuggest");
+    if (dl) dl.innerHTML = (r.suggested || []).map(s => '<option value="' + _attr(s) + '">').join("");
+  } catch (e) {}
+}
+async function saveEmbedModel() {
+  const v = $("embedModel") ? $("embedModel").value.trim() : "";
+  try { const r = await api("POST", "/api/index/config", { embed_model: v });
+    if ($("embedResult")) $("embedResult").textContent = "saved: " + (r.embed_model || "(bm25 only)"); }
+  catch (e) { if ($("embedResult")) $("embedResult").textContent = "error: " + e; }
+}
+async function testEmbedModel() {
+  const v = $("embedModel") ? $("embedModel").value.trim() : "";
+  if ($("embedResult")) $("embedResult").textContent = "testing…";
+  try { const r = await api("GET", "/api/index/embed-test?model=" + encodeURIComponent(v));
+    $("embedResult").textContent = r.ok ? ("ok · dim " + r.dim + " · " + r.model)
+                                        : ("failed: " + (r.error || "?") + " · " + r.model); }
+  catch (e) { if ($("embedResult")) $("embedResult").textContent = "error: " + e; }
+}
 
 /* ---- JAG-124: workspace file tree + editor ---- */
 let _filesRoot = null, _openFile = null;
@@ -5614,7 +5753,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
+  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["index", "Knowledge"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }

@@ -919,11 +919,46 @@ def _sessions(args, run_id):
             "count": len(rows), "backend": "host", "sandboxed": False}
 
 
+def _index(args, run_id):
+    """JAG-397: workspace knowledge index (codebase + docs).
+
+    action=search -> top chunks as path:line + snippet. action=reindex -> rebuild
+    now. action=status -> counts. bm25 always; semantic when an embed model is set.
+    """
+    from longrun.memory import index as index_mod
+    args = args or {}
+    ws = args.get("workspace")
+    if not ws:
+        from longrun.memory import rules as rules_mod
+        ws = rules_mod.resolve_workspace(None)
+    action = (args.get("action") or "search").lower()
+    if action == "status":
+        return {"ok": True, "exit_code": 0, "stdout": "index: %s" % index_mod.status(ws)}
+    if action in ("reindex", "build"):
+        st = index_mod.build(ws, force=bool(args.get("force")))
+        return {"ok": True, "exit_code": 0, "files": st.get("files"), "chunks": st.get("chunks"),
+                "stdout": "indexed %s files / %s chunks" % (st.get("files"), st.get("chunks"))}
+    query = args.get("query") or args.get("q") or ""
+    if not str(query).strip():
+        return {"ok": False, "exit_code": 1, "error": "query required for action=search"}
+    try:
+        k = int(args.get("k") or 8)
+    except (TypeError, ValueError):
+        k = 8
+    res = index_mod.search(ws, query, k=k, kind=args.get("kind"))
+    lines = ["%s:%s  %s" % (r["path"], r["start"],
+                            (r.get("snippet") or "").replace("\n", " ")[:200])
+             for r in res.get("results", [])]
+    return {"ok": True, "exit_code": 0, "stdout": "\n".join(lines) or "(no matches)",
+            "results": res.get("results", []), "mode": res.get("mode"),
+            "count": len(res.get("results", []))}
+
+
 _DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
              "fs.edit": _fs_edit, "diff": _diff,
              "git": _git, "http": _http, "browser": _browser, "self": _self,
              "skills": _skills, "memory": _memory, "web": _web, "improve": _improve,
-             "reconcile": _reconcile, "sessions": _sessions}
+             "reconcile": _reconcile, "sessions": _sessions, "index": _index}
 
 
 def _dispatch_execute(tool, args, run_id=None):

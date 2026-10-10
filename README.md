@@ -3,7 +3,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#install--run)
-[![tests](https://img.shields.io/badge/battery-125%2F125%20green-success.svg)](#the-quality-gate)
+[![tests](https://img.shields.io/badge/battery-126%2F126%20green-success.svg)](#the-quality-gate)
 [![CI](https://github.com/jagones84/longrun/actions/workflows/ci.yml/badge.svg)](https://github.com/jagones84/longrun/actions/workflows/ci.yml)
 
 **Longrun is a single agent harness — one engine that drives one LLM
@@ -252,13 +252,57 @@ curl -s 'http://127.0.0.1:8790/api/runs/<run_id>/trace?token=<token>'
 
 ---
 
+## Knowledge index — codebase + docs
+
+The agent can search your workspace **by relevance** instead of scanning the whole
+tree. One sqlite database per workspace, kept **outside the project** in the app
+data dir (`data/index/<workspace>.db`) — the same convention VS Code / Cursor use
+(`workspaceStorage` / `globalStorage`), so nothing is ever written into your repo.
+
+- **Retrieval** is SQLite **FTS5** (`bm25()` + `snippet()`) — built into Python's
+  `sqlite3`, so it runs with **zero dependencies**.
+- **Chunking** is AST-aware for Python (one chunk per function / method / class)
+  and heading/paragraph-aware for Markdown; a line window is the fallback for other
+  languages. `.gitignore` and common vendor dirs (`.git`, `node_modules`, …) are skipped.
+- **Incremental**: only new/changed files are re-embedded on each build.
+- **Docs**: add extra sources (a URL or a local file/folder) as a separate `doc`
+  tier, searchable alongside the code.
+
+### Use it
+WebUI → **Knowledge** section (right rail): build, search, add docs. Or from the
+agent, the CLI, or the API:
+
+```bash
+forge index build                       # index the session's workspace
+forge index search "parse config"       # top chunks as path:line + snippet
+forge index docs https://docs.example.com/guide
+```
+
+```bash
+curl -s -X POST http://127.0.0.1:8790/api/index/build \
+  -H 'Content-Type: application/json' -d '{"session":"<id>"}'
+curl -s 'http://127.0.0.1:8790/api/index/search?q=parse+config&k=8&session=<id>'
+```
+
+The agent has a matching **`index`** tool (`action=search|reindex|status`), so it
+finds the right code without reading the whole repository.
+
+### Semantic (optional)
+Keyword search needs no setup. To add **vector** search, set an embedding model in
+**Settings ▸ Models ▸ Embedding model** (e.g. `openrouter:openai/text-embedding-3-small`),
+or leave it empty for bm25-only. With a model configured, retrieval becomes hybrid
+(bm25 + cosine, fused with Reciprocal Rank Fusion); the vector size is detected from
+the first embed and stored in the same DB.
+
+---
+
 ## The quality gate
 
 The **only** regression gate is one deterministic, fully-isolated battery — it points
 every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live state:
 
 ```bash
-bash tests/battery.sh        # → === battery: 125/125 GREEN ===
+bash tests/battery.sh        # → === battery: 126/126 GREEN ===
 ```
 
 CI runs the same battery on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
