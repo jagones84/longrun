@@ -161,6 +161,39 @@ finally:
     REG.OVERLAY_YAML = _orig_overlay
     REG.load_config(reload=True)
 
+# ------------------------------------------------------------------ F) UI polish
+# F1: "clear whole knowledge base" ALWAYS asks (force), even with the skip flag set.
+check("F1 the whole-KB clear always confirms (force=true)",
+      'confirmDelete("Delete the WHOLE knowledge base' in HTML and ", true))) return;" in HTML
+      and "function confirmDelete(message, force)" in HTML)
+# F2: knowledge headings use the SAME style as every other settings tab.
+check("F2 the settings h2 selector is descendant (wrappers don't break it)",
+      "#settingsWin .sw-main .sw-cat h2 {" in HTML
+      and "#settingsWin .sw-main .sw-cat > h2" not in HTML)
+# F3: one merged research bar with an auto/manual checkbox.
+check("F3 discover + research merged into ONE topic bar + auto checkbox",
+      'id="kbDiscoverQ"' in HTML and 'id="kbAutoMode"' in HTML
+      and "function kbResearchGo(" in HTML and 'id="researchQ"' not in HTML)
+check("F3b the auto options are revealed only in auto mode",
+      'id="kbAutoOpts" hidden' in HTML and "function kbResearchMode(" in HTML)
+# F4: "Search knowledge" sits right below "Knowledge · global".
+check("F4 Search knowledge is above Notebooks in the markup order",
+      0 <= HTML.index("<h2>Search knowledge</h2>") < HTML.index("<h2>Notebooks</h2>"))
+# F5: a skill opens in the EDITOR (not a separate modal).
+check("F5 skills open in the file editor",
+      "function openSkillInEditor(" in HTML and "openInEditor(d.abspath" in HTML
+      and "skillView" not in HTML and "closeSkillView" not in HTML)
+_skl = open(os.path.join(REPO, "src", "longrun", "memory", "skills.py"), encoding="utf-8").read()
+check("F5b the skills API exposes an absolute path for the editor",
+      '"abspath": sp' in _skl)
+# F6: knowledge search results are clickable (URLs open in a tab, files in the editor).
+check("F6 knowledge search results are wired to _kbOpenRef",
+      'class="ctxitem kbopen"' in HTML and 'box.querySelectorAll(".kbopen")' in HTML)
+# F7: the files list is clickable + bounded like the sources list.
+check("F7 the notebook files list is clickable + bounded",
+      'class="kbopen" data-ref="\' + _attr(f.path)' in HTML
+      and "max-height:320px;overflow:auto" in HTML)
+
 print("---")
 ok = sum(results)
 print("%d/%d checks passed" % (ok, len(results)))

@@ -141,6 +141,7 @@ def list_skills(reload=False):
                     title, desc = _parse_skill_md(text, name)
                     skills.append({"name": name, "category": cat,
                                    "path": os.path.relpath(sp, REPO),
+                                   "abspath": sp,
                                    "title": title, "description": desc,
                                    "local": cat == LOCAL_CATEGORY})
     _cache.update(sig=sig, skills=skills)

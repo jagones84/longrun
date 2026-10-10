@@ -47,6 +47,23 @@ All notable changes to Longrun are documented here. The format follows
   provider** (grouped by provider in the select), and the executor resolves a saved model
   through the normal provider path (`rllm._chat_endpoint`) — plus a `local:<alias>` path for
   the local router. New `GET /api/research/model` companion to the POST setter. v402 28/28.
+- **Knowledge panel polish + skills open in the editor (JAG-403e).** The *Discover* and
+  *Research* sections are merged into ONE **"Research · web → notebook"** card: a single topic
+  bar plus an **auto (agent)** checkbox that switches manual discover ↔ the automated agent.
+  *Search knowledge* moved to the top, right under *Knowledge · global*. The Knowledge tab's
+  `<h2>` headings now use the SAME style as every other settings tab (the `.sw-cat > h2` rule
+  became descendant so a wrapper no longer breaks it). Clicking a **skill** opens its `SKILL.md`
+  in the **file editor** (the separate modal was removed; the skills API now returns an
+  `abspath`). Fixed: knowledge **search results** and the **notebook files** list are now
+  clickable (URLs open in a tab, files in the editor) and the files list is bounded/scrollable.
+  v403 31/31; battery 130/130.
+
+### Fixed
+- **Deleting the WHOLE knowledge base always asks (JAG-403e).** `confirmDelete` gained a
+  `force` flag so the "don't ask again (until reload)" suppression can never skip the
+  whole-knowledge-base confirmation.
+- Removed a dangling `closeSkillView()` call on Escape (undefined after the skill modal was
+  removed) that would have thrown on every Escape press.
 
 ### Fixed
 - Pre-existing `NameError: name 'embed' is not defined` in `codeindex.search` (line 208)

@@ -637,15 +637,7 @@
     font-size: 12px; padding: 8px; border-radius: 8px; border: 1px solid var(--line);
     background: var(--bg2); color: var(--txt); }
   #fileText:disabled { opacity: .6; }
-  /* JAG-126: skill viewer — click a skill to read its SKILL.md */
-  #skillBackdrop { position: fixed; inset: 0; z-index: 43; background: rgba(0,0,0,.5); }
-  #skillBackdrop[hidden] { display: none; }
-  #skillView { position: fixed; z-index: 44; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    width: min(780px, 94vw); max-height: 86vh; padding: 16px; background: var(--menubg);
-    display: flex; flex-direction: column; }
-  #skillView[hidden] { display: none; }
-  #skillViewBody { white-space: pre-wrap; word-break: break-word; font-size: 12px;
-    overflow: auto; margin: 0; }
+  /* JAG-403e: skills open in the file editor (see openSkillInEditor). */
   .skillrow { cursor: pointer; }
   .skillrow:hover { border-color: var(--accent); }
   /* JAG-127: IDE-style change summary + side-by-side diff (green add / red del) */
@@ -744,9 +736,9 @@
     #settingsWin .sw-main { padding: 12px; }
   }
   #settingsWin .sw-main { flex: 1; min-width: 0; overflow-y: auto; padding: 14px; }
-  #settingsWin .sw-main .sw-cat > h2 { font-size: 11px; letter-spacing: .16em; color: var(--dim);
+  #settingsWin .sw-main .sw-cat h2 { font-size: 11px; letter-spacing: .16em; color: var(--dim);
     margin: 16px 0 8px; text-transform: uppercase; }
-  #settingsWin .sw-main .sw-cat > h2:first-child { margin-top: 0; }
+  #settingsWin .sw-main .sw-cat h2:first-child { margin-top: 0; }
   #settingsWin .sw-cat[hidden] { display: none; }
   /* JAG-159: Harness + Tool-policy cards, restyled with the archify design tokens
      (slate panel, accent dot header, compact inline labels). */
@@ -988,7 +980,7 @@
   /* JAG-361: interface polish (audit H2/H4/H6 + M6/M7/L5). Placed last so these
      win their specificity ties without re-ordering the sheet. */
   #nowbar[hidden] { display: none; }                       /* H2: stale sticky bar */
-  .smodal, #skillView, #diffView { border: 1px solid var(--line); border-radius: var(--radius);
+  .smodal, #diffView { border: 1px solid var(--line); border-radius: var(--radius);
     box-shadow: 0 24px 70px rgba(0,0,0,.55); }             /* H4: matching modal chrome */
   a.ghost { background: transparent; border: 1px solid var(--line); color: var(--dim);
     padding: 8px 14px; border-radius: var(--radius); text-decoration: none; cursor: pointer; } /* H6 */
@@ -1541,6 +1533,14 @@
             <button class="ghost" onclick="kbClear()" title="delete the whole knowledge base">clear</button>
           </div>
         </div>
+        <h2>Search knowledge</h2>
+        <div class="card">
+          <div style="display:flex;gap:6px">
+            <input id="kbQuery" class="inp" placeholder="search the knowledge base…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbSearch()">
+            <button class="ghost" onclick="kbSearch()">search</button>
+          </div>
+          <div id="kbResults" style="margin-top:6px"></div>
+        </div>
         <h2>Notebooks</h2>
         <div class="card">
           <div id="kbNotebooks"><div class="remaining">loading…</div></div>
@@ -1560,44 +1560,34 @@
           </div>
           <div id="kbSources" style="margin-top:6px"></div>
         </div>
-        <h2>Discover · web → notebook</h2>
+        <h2>Research · web → notebook</h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Search the web (NotebookLM-style) and import the URLs you pick into the selected notebook.</div>
+          <div class="remaining" style="margin:0 0 6px">One topic bar, two modes. <b>Manual</b>: search the web and pick the URLs to import. <b>Auto (agent)</b>: search, fetch, summarise with the research LLM and import automatically.</div>
           <div style="display:flex;gap:6px">
-            <input id="kbDiscoverQ" class="inp" placeholder="research topic…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbDiscover()">
-            <button class="ghost" onclick="kbDiscover()">🔎 discover</button>
+            <input id="kbDiscoverQ" class="inp" placeholder="research topic…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbResearchGo()">
+            <button class="ghost" id="kbResearchBtn" onclick="kbResearchGo()">🔎 discover</button>
+          </div>
+          <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:8px;cursor:pointer">
+            <input type="checkbox" id="kbAutoMode" onchange="kbResearchMode()">
+            <span><b>auto (agent)</b> — search + fetch + summarise + import (uses the research LLM)</span>
+          </label>
+          <div id="kbAutoOpts" hidden>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
+              <select id="researchModel" class="inp" style="flex:2;min-width:220px;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
+              <select id="researchDepth" class="inp" style="flex:0 0 110px;padding:6px 10px;font-size:12px" title="how many rounds and sources per round">
+                <option value="shallow">shallow</option>
+                <option value="medium" selected>medium</option>
+                <option value="deep">deep</option>
+              </select>
+              <input id="researchN" type="number" min="1" max="20" value="5" class="inp" style="flex:0 0 60px;padding:6px 10px;font-size:12px" title="sources per round">
+            </div>
+            <div style="display:flex;gap:6px;margin-top:4px">
+              <button class="ghost" onclick="researchModelLs()" title="refresh research models">↻ models</button>
+              <button class="ghost" onclick="researchSetActive()" title="save the selected research model as the default">save model</button>
+            </div>
+            <div id="researchLog" style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11px"></div>
           </div>
           <div id="kbCandidates" style="margin-top:6px"></div>
-        </div>
-        <h2>Research · agent</h2>
-        <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Iterative web discovery + summarisation, then <b>import</b> into the selected notebook. The research LLM is configurable — Perplexity Sonar (web-grounded) or <b>any model you saved in your providers</b>.</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            <select id="researchModel" class="inp" style="flex:2;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
-            <select id="researchDepth" class="inp" style="flex:0 0 110px;padding:6px 10px;font-size:12px" title="how many rounds and sources per round">
-              <option value="shallow">shallow</option>
-              <option value="medium" selected>medium</option>
-              <option value="deep">deep</option>
-            </select>
-            <input id="researchN" type="number" min="1" max="20" value="5" class="inp" style="flex:0 0 60px;padding:6px 10px;font-size:12px" title="sources per round">
-          </div>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <input id="researchQ" class="inp" placeholder="research topic (e.g. kubernetes operator patterns)…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbStartResearch()">
-            <button class="ghost" onclick="kbStartResearch()">🧬 research</button>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:4px">
-            <button class="ghost" onclick="researchModelLs()" title="refresh research models">↻ models</button>
-            <button class="ghost" onclick="researchSetActive()" title="save the selected research model as the default">save model</button>
-          </div>
-          <div id="researchLog" style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11px"></div>
-        </div>
-        <h2>Search knowledge</h2>
-        <div class="card">
-          <div style="display:flex;gap:6px">
-            <input id="kbQuery" class="inp" placeholder="search the knowledge base…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbSearch()">
-            <button class="ghost" onclick="kbSearch()">search</button>
-          </div>
-          <div id="kbResults" style="margin-top:6px"></div>
         </div>
         </div><!-- /data-insp=knowledge -->
       </div>
@@ -1666,15 +1656,6 @@
     <button class="ghost" onclick="pickCurrentDir()">use this folder</button>
   </div>
   <div id="dirResult" class="remaining" style="margin-top:6px"></div>
-</div>
-<div id="skillBackdrop" hidden onclick="closeSkillView()"></div>
-<div id="skillView" hidden>
-  <div style="display:flex;align-items:center;gap:8px">
-    <div id="skillViewName" style="font-weight:600;flex:1"></div>
-    <button class="ghost" onclick="closeSkillView()">✕ close</button>
-  </div>
-  <div class="remaining" id="skillViewPath" style="word-break:break-all;margin:4px 0 8px"></div>
-  <pre id="skillViewBody"></pre>
 </div>
 <div id="pickBackdrop" class="smback" hidden onclick="closePick()"></div>
 <div id="pickModal" class="smodal" hidden role="dialog" aria-modal="true" aria-labelledby="pickTitle">
@@ -4188,8 +4169,8 @@ function closeAside() { _closeDrawers(); _setTabbarActive("chat"); }
  * needed this. Elements are built with the DOM API so a session title is never
  * injected as HTML. */
 let _skipDeleteConfirm = false;
-function confirmDelete(message) {
-  if (_skipDeleteConfirm) return Promise.resolve(true);
+function confirmDelete(message, force) {
+  if (_skipDeleteConfirm && !force) return Promise.resolve(true);
   return new Promise(resolve => {
     const ov = document.createElement("div");
     ov.id = "sfConfirm";
@@ -4521,8 +4502,8 @@ async function loadSkills() {
       const row = document.createElement("div");
       row.className = "card skillrow";
       row.style.cssText = "padding:6px 8px;margin-bottom:6px;display:flex;gap:8px;align-items:center";
-      row.title = "click to view SKILL.md";
-      row.onclick = () => viewSkill(s.name);
+      row.title = "click to open SKILL.md in the editor";
+      row.onclick = () => openSkillInEditor(s.name);
       const dot = document.createElement("span"); dot.textContent = s.local ? "🟢" : "🏠";
       const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
       const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = s.name;
@@ -4547,19 +4528,15 @@ async function loadSkills() {
     });
   } catch (e) { $("skillsSummary").textContent = "error: " + e; }
 }
-/* JAG-126: click a skill to read its SKILL.md in a modal viewer */
-async function viewSkill(name) {
+/* JAG-403e: a skill opens in the FILE EDITOR (like any other file), not a
+   separate modal window. */
+async function openSkillInEditor(name) {
   try {
     const d = await api("GET", "/api/skills/" + encodeURIComponent(name));
-    if (!d || d.error || !d.name) { $("skillViewName").textContent = "error: " + ((d && d.error) || name); return; }
-    $("skillViewName").textContent = d.name + (d.category ? "  ·  " + d.category : "");
-    $("skillViewPath").textContent = d.path || "";
-    $("skillViewBody").textContent = d.content || "(empty)";
-    $("skillBackdrop").hidden = false;
-    $("skillView").hidden = false;
-  } catch (e) { $("skillViewName").textContent = "error: " + e; }
+    if (!d || d.error || !d.name) { toast("cannot open skill: " + ((d && d.error) || name)); return; }
+    openInEditor(d.abspath || d.path, { mode: "code" });
+  } catch (e) { toast("error: " + e); }
 }
-function closeSkillView() { $("skillBackdrop").hidden = true; $("skillView").hidden = true; }
 async function installSkillZip() {
   const f = $("skillZip").files && $("skillZip").files[0];
   if (!f) { $("skillResult").textContent = "choose a .zip file"; return; }
@@ -5028,7 +5005,7 @@ function settingsCategory(name) {
     if (typeof loadProviders === "function") loadProviders();
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
   }
-  else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSources(); researchModelLs(); }
+  else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSources(); researchModelLs(); kbResearchMode(); }
   else if (name === "appearance") {
     renderThemeGrid();
     const bc = $("boldText");
@@ -5487,10 +5464,29 @@ async function kbFiles() {
     const rows = r.files || [];
     box.innerHTML = rows.length
       ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files in this notebook</div>" +
-         rows.map(f => '<div style="display:flex;gap:6px;font-size:11px"><span class="remaining" style="flex:1;word-break:break-all">' +
-           esc(f.path) + '</span><span class="cn">' + (f.chunks || 0) + "</span></div>").join(""))
+         '<div style="max-height:320px;overflow:auto;padding-right:4px">' +
+         rows.map(f => '<div style="display:flex;gap:6px;font-size:11px">' +
+           '<a href="#" class="kbopen" data-ref="' + _attr(f.path) + '" style="flex:1;word-break:break-all">' + esc(f.path) + '</a>' +
+           '<span class="cn">' + (f.chunks || 0) + "</span></div>").join("") + '</div>')
       : '<div class="remaining">no files in this notebook</div>';
+    box.querySelectorAll(".kbopen").forEach(el =>
+      el.onclick = (e) => { e.preventDefault(); _kbOpenRef(el.getAttribute("data-ref")); });
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+/* Merged "Research · web → notebook": ONE topic bar; the "auto (agent)" checkbox
+   switches between manual discover and the automated research agent. */
+function kbResearchMode() {
+  const auto = !!($("kbAutoMode") && $("kbAutoMode").checked);
+  const opts = $("kbAutoOpts"); if (opts) opts.hidden = !auto;
+  const btn = $("kbResearchBtn"); if (btn) btn.innerHTML = auto ? "🧬 research" : "🔎 discover";
+  const q = $("kbDiscoverQ");
+  if (q) q.placeholder = auto ? "research topic (e.g. kubernetes operator patterns)…" : "research topic…";
+  if (auto) { const c = $("kbCandidates"); if (c) c.innerHTML = ""; }
+  else { const log = $("researchLog"); if (log) log.innerHTML = ""; }
+}
+function kbResearchGo() {
+  if ($("kbAutoMode") && $("kbAutoMode").checked) kbStartResearch();
+  else kbDiscover();
 }
 async function kbDiscover() {
   const q = $("kbDiscoverQ") ? $("kbDiscoverQ").value.trim() : "";
@@ -5531,15 +5527,20 @@ async function kbSearch() {
     const rows = r.results || [];
     box.innerHTML = rows.length
       ? ('<div class="remaining" style="margin-bottom:4px">' + esc(r.mode || "bm25") + " · " + rows.length + " hits</div>" +
-         rows.map(x => '<div class="ctxitem" data-open="' + _attr(x.ref || x.path) + '">' +
+         rows.map(x => '<div class="ctxitem kbopen" data-ref="' + _attr(x.ref || x.path) + '">' +
            "<b>" + esc(x.title || x.ref || _short(x.path)) + ":" + (x.start || "") + "</b>" +
            '</div><div class="remaining" style="margin:0 0 6px 4px">' +
            esc((x.snippet || "").replace(/\n/g, " ").slice(0, 220)) + "</div>").join(""))
       : '<div class="remaining">no matches</div>';
+    box.querySelectorAll(".kbopen").forEach(el =>
+      el.onclick = () => _kbOpenRef(el.getAttribute("data-ref")));
   } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
 async function kbClear() {
-  if (typeof confirmDelete === "function" && !(await confirmDelete("delete the WHOLE knowledge base?"))) return;
+  // JAG-403e: nuking the WHOLE knowledge base ALWAYS asks (never suppressed by
+  // the "don't ask again" flag).
+  if (typeof confirmDelete === "function" &&
+      !(await confirmDelete("Delete the WHOLE knowledge base? Every notebook and every source will be lost.", true))) return;
   try { await api("POST", "/api/knowledge/clear", {}); kbLoadNotebooks(); kbLoadSources(); kbStatus(); } catch (e) {}
 }
 async function researchModelLs() {
@@ -5568,7 +5569,7 @@ async function researchSetActive() {
   } catch (e) { toast("failed: " + String(e)); }
 }
 async function kbStartResearch() {
-  const q = $("researchQ") ? $("researchQ").value.trim() : "";
+  const q = $("kbDiscoverQ") ? $("kbDiscoverQ").value.trim() : "";
   const depth = $("researchDepth") ? $("researchDepth").value : "shallow";
   const n = parseInt(($("researchN") && $("researchN").value) || "5", 10);
   const log = $("researchLog"); if (log) log.innerHTML = "";
@@ -6604,7 +6605,7 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && !$("mcpJsonWin").hidden) { closeMcpJson(); return; }
   if (e.key === "Escape" && settingsWin() && !settingsWin().hidden) { closeSettings(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); openPalette(); }
-  if (e.key === "Escape") { closePalette(); closeNewSess(); closeDirPicker(); closeSkillView(); closeImage(); }
+  if (e.key === "Escape") { closePalette(); closeNewSess(); closeDirPicker(); closeImage(); }
 });
 /* JAG-121c: Enter = newline, Ctrl/Cmd+Enter = send (chat textarea) */
 $("inp").addEventListener("keydown", e => {
