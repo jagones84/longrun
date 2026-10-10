@@ -481,33 +481,66 @@ def cmd_models(args):
 
 
 def cmd_index(args):
-    """Knowledge index (JAG-397/399): status / build / search / docs — GLOBAL, no session."""
+    """Codebase index (JAG-400): status / build / search — the workspace's code/docs."""
     action = getattr(args, "action", "status") or "status"
     if action == "build":
-        print(json.dumps(req("POST", "/api/index/build",
+        print(json.dumps(req("POST", "/api/codebase/build",
                              {"force": bool(getattr(args, "force", False))}),
                          indent=2, ensure_ascii=False))
         return
     if action == "search":
-        out = req("GET", "/api/index/search?k=%d&q=%s" % (args.limit, _q(args.value or "")))
+        out = req("GET", "/api/codebase/search?k=%d&q=%s" % (args.limit, _q(args.value or "")))
         for r in out.get("results", []):
             print("%s:%s  [%s]  %s" % (r.get("path"), r.get("start"), out.get("mode"),
                                        (r.get("snippet") or "").replace("\n", " ")[:160]))
         if not out.get("results"):
             print("(no matches)")
         return
-    if action == "docs":
-        if args.value:
-            print(json.dumps(req("POST", "/api/index/docs", {"refs": args.value}),
-                             indent=2, ensure_ascii=False))
-            return
-        out = req("GET", "/api/index/docs")
-        for s in out.get("sources", []):
-            print("%s  %s  (%s chunks)" % (s.get("id"), s.get("ref"), s.get("chunks")))
-        if not out.get("sources"):
-            print("(no sources)")
+    print(json.dumps(req("GET", "/api/codebase/status"), indent=2, ensure_ascii=False))
+
+
+def cmd_knowledge(args):
+    """Knowledge base (JAG-401): GLOBAL notebooks — status/notebooks/add/search/discover/import."""
+    action = getattr(args, "action", "status") or "status"
+    nb = getattr(args, "notebook", None)
+    if action == "notebooks":
+        out = req("GET", "/api/knowledge/notebooks")
+        for n in out.get("notebooks", []):
+            print("%-14s %-24s (%s sources)" % (n.get("id"), n.get("name"), n.get("sources")))
         return
-    print(json.dumps(req("GET", "/api/index/status"), indent=2, ensure_ascii=False))
+    if action == "create":
+        print(json.dumps(req("POST", "/api/knowledge/notebooks",
+                             {"action": "create", "name": args.value or ""}),
+                         indent=2, ensure_ascii=False))
+        return
+    if action == "add":
+        body = {"notebook": nb, "refs": args.value or ""}
+        print(json.dumps(req("POST", "/api/knowledge/sources", body), indent=2, ensure_ascii=False))
+        return
+    if action == "search":
+        qs = "/api/knowledge/search?k=%d&q=%s" % (args.limit, _q(args.value or ""))
+        if nb:
+            qs += "&notebook=" + _q(nb)
+        out = req("GET", qs)
+        for r in out.get("results", []):
+            print("%s:%s  [%s]  %s" % (r.get("ref") or r.get("path"), r.get("start"),
+                                       out.get("mode"), (r.get("snippet") or "").replace("\n", " ")[:160]))
+        if not out.get("results"):
+            print("(no matches)")
+        return
+    if action == "discover":
+        out = req("POST", "/api/knowledge/discover", {"q": args.value or "", "n": args.limit})
+        for c in out.get("candidates", []):
+            print("%s\n  %s" % (c.get("title"), c.get("url")))
+        if not out.get("candidates"):
+            print("(no results)")
+        return
+    if action == "import":
+        urls = [u.strip() for u in (args.value or "").replace(",", "\n").splitlines() if u.strip()]
+        print(json.dumps(req("POST", "/api/knowledge/import", {"notebook": nb, "urls": urls}),
+                         indent=2, ensure_ascii=False))
+        return
+    print(json.dumps(req("GET", "/api/knowledge/status"), indent=2, ensure_ascii=False))
 
 
 def cmd_feed(_):
@@ -843,9 +876,12 @@ def main():
     sub.add_parser("status").set_defaults(fn=cmd_status)
     p = sub.add_parser("models"); p.add_argument("action", nargs="?", default="ls", choices=["ls", "ensure"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_models)
-    p = sub.add_parser("index"); p.add_argument("action", nargs="?", default="status", choices=["status", "build", "search", "docs"]); \
+    p = sub.add_parser("index"); p.add_argument("action", nargs="?", default="status", choices=["status", "build", "search"]); \
         p.add_argument("value", nargs="?"); p.add_argument("--limit", type=int, default=8); \
         p.add_argument("--force", action="store_true"); p.set_defaults(fn=cmd_index)
+    p = sub.add_parser("knowledge"); p.add_argument("action", nargs="?", default="status", choices=["status", "notebooks", "create", "add", "search", "discover", "import"]); \
+        p.add_argument("value", nargs="?"); p.add_argument("--notebook"); p.add_argument("--limit", type=int, default=8); \
+        p.set_defaults(fn=cmd_knowledge)
     sub.add_parser("feed").set_defaults(fn=cmd_feed)
     p = sub.add_parser("memory"); p.add_argument("action", choices=["store", "search", "forget", "purge"]); \
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \

@@ -26,8 +26,8 @@ TIMEOUT = 30
 def model_ref():
     """The configured embedding model ref ('' = lexical only)."""
     try:
-        from longrun.memory import index as _index
-        return str((_index.load_config() or {}).get("embed_model") or "").strip()
+        from longrun.memory import indexcfg
+        return indexcfg.embed_model()
     except Exception:  # noqa: BLE001
         return ""
 

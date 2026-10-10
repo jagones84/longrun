@@ -1335,6 +1335,30 @@
         </div>
         </div>
       </section>
+      <section data-insp="codebase" class="insp-open">
+        <button class="insp-hd" onclick="toggleInsp('codebase')">Codebase</button>
+        <div class="insp-body">
+        <h2>Codebase index · <span id="cbStat" class="remaining"></span></h2>
+        <div class="card">
+          <div class="remaining" id="cbMeta">Search THIS workspace's code + docs (per path, like project rules). Build once, then query.</div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="ghost" onclick="cbBuild(false)" title="re-index this workspace's code + docs">⚡ build</button>
+            <button class="ghost" onclick="cbFiles()" title="which files are indexed">files</button>
+            <button class="ghost" onclick="cbStatus()" title="refresh the counts">status</button>
+            <button class="ghost" onclick="cbClear()" title="delete this workspace's codebase index">clear</button>
+          </div>
+          <div id="cbFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
+        </div>
+        <h2>Search codebase</h2>
+        <div class="card">
+          <div style="display:flex;gap:6px">
+            <input id="cbQuery" class="inp" placeholder="search this workspace…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')cbSearch()">
+            <button class="ghost" onclick="cbSearch()">search</button>
+          </div>
+          <div id="cbResults" style="margin-top:6px"></div>
+        </div>
+        </div>
+      </section>
       <section data-insp="browser" class="insp-open">
         <button class="insp-hd" onclick="toggleInsp('browser')">Browser</button>
         <div class="insp-body">
@@ -1485,34 +1509,49 @@
         </div>
       </div>
       <div class="sw-cat" data-cat="knowledge" hidden>
-        <h2>Knowledge · global index <span id="indexStat" class="remaining"></span></h2>
+        <h2>Knowledge · global <span id="indexStat" class="remaining"></span></h2>
         <div class="card">
-          <div class="remaining" id="indexMeta">Add sources below (URLs or local paths), then <b>build</b>. The agent searches this knowledge base by relevance.</div>
+          <div class="remaining" id="indexMeta">Global knowledge base — notebooks of sources (URLs, files, pasted text). Separate from the per-workspace <b>Codebase</b> index (right rail ▸ Codebase).</div>
           <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-            <button class="ghost" onclick="indexBuild(false)" title="re-index every source">⚡ build</button>
-            <button class="ghost" onclick="indexFiles()" title="which files are indexed / embedded">files</button>
-            <button class="ghost" onclick="indexStatus()" title="refresh the counts">status</button>
-            <button class="ghost" onclick="indexClear()" title="delete the whole knowledge index">clear</button>
+            <button class="ghost" onclick="kbStatus()" title="refresh the counts">status</button>
+            <button class="ghost" onclick="kbClear()" title="delete the whole knowledge base">clear</button>
           </div>
-          <div id="indexFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
         </div>
-        <h2>Sources · URLs &amp; paths</h2>
+        <h2>Notebooks</h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">One per line — a URL, a file, or a folder (codebase). Everything is indexed and embedded together.</div>
-          <textarea id="indexDocRefs" style="width:100%;min-height:96px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/projects/myapp&#10;/home/me/notes/architecture.md"></textarea>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button class="ghost" onclick="indexAddDoc()">+ add + index</button>
-            <button class="ghost" onclick="loadIndexDocs()" title="reload sources">↻</button>
+          <div id="kbNotebooks"><div class="remaining">loading…</div></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <input id="kbNewName" class="inp" placeholder="new notebook name…" style="flex:1;padding:6px 10px;font-size:12px">
+            <button class="ghost" onclick="kbCreateNotebook()">+ create</button>
           </div>
-          <div id="indexDocs" style="margin-top:6px"><div class="remaining">no sources yet</div></div>
         </div>
-        <h2>Search</h2>
+        <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">One per line — a URL, a file, or a folder. Everything is indexed (and embedded, if a model is set) in the selected notebook.</div>
+          <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <button class="ghost" onclick="kbAddSource()">+ add + index</button>
+            <button class="ghost" onclick="kbFiles()" title="which files are in this notebook">files</button>
+            <button class="ghost" onclick="kbLoadSources()" title="reload sources">↻</button>
+          </div>
+          <div id="kbSources" style="margin-top:6px"></div>
+        </div>
+        <h2>Discover · web → notebook</h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">Search the web (NotebookLM-style) and import the URLs you pick into the selected notebook.</div>
+          <div style="display:flex;gap:6px">
+            <input id="kbDiscoverQ" class="inp" placeholder="research topic…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbDiscover()">
+            <button class="ghost" onclick="kbDiscover()">🔎 discover</button>
+          </div>
+          <div id="kbCandidates" style="margin-top:6px"></div>
+        </div>
+        <h2>Search knowledge</h2>
         <div class="card">
           <div style="display:flex;gap:6px">
-            <input id="indexQuery" class="inp" placeholder="search the knowledge base…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')indexSearch()">
-            <button class="ghost" onclick="indexSearch()">search</button>
+            <input id="kbQuery" class="inp" placeholder="search the knowledge base…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbSearch()">
+            <button class="ghost" onclick="kbSearch()">search</button>
           </div>
-          <div id="indexResults" style="margin-top:6px"></div>
+          <div id="kbResults" style="margin-top:6px"></div>
         </div>
       </div>
       <div class="sw-cat" data-cat="appearance" hidden>
@@ -4942,7 +4981,7 @@ function settingsCategory(name) {
     if (typeof loadProviders === "function") loadProviders();
     if (typeof loadEmbedModel === "function") loadEmbedModel();
   }
-  else if (name === "knowledge") { indexStatus(); }
+  else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSources(); }
   else if (name === "appearance") {
     renderThemeGrid();
     const bc = $("boldText");
@@ -5092,9 +5131,10 @@ function _loadInspector(name) {
   else if (key === "rules") { loadRulesPanel(); }
   else if (key === "approvals") { loadApprovals(); }
   else if (key === "files") { loadFiles(); loadEdits(); loadRules(); }
+  else if (key === "codebase") { cbStatus(); }
 }
 function focusInsp(name) {
-  const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", feed: "feed" };
+  const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", feed: "feed" };
   const key = map[name] || name;
   const sec = document.querySelector('#inspector section[data-insp="' + key + '"]');
   if (sec) {
@@ -5115,56 +5155,52 @@ function restoreInspector() {
 restoreInspector();
 function openPanel(name) { focusInsp(name); }
 
-/* ---- JAG-397 / JAG-399: GLOBAL knowledge index (codebase + docs) ---- */
-async function indexStatus() {
+/* ---- JAG-400: CODEBASE index — PER WORKSPACE (like project rules) ---- */
+function _cbQS() { return sessionId ? ("?session=" + encodeURIComponent(sessionId)) : ""; }
+async function cbStatus() {
   try {
-    const s = await api("GET", "/api/index/status");
-    let cfg = {};
-    try { cfg = (await api("GET", "/api/index/config")).config || {}; } catch (e) {}
-    const ign = (cfg.ignore || []).join(", ");
-    const scope = "<br>scope: <b>global</b> — " + (s.sources || 0) + " sources (URLs, files, folders)" +
-      (ign ? (" · skip: " + esc(ign)) : "");
-    const meta = $("indexMeta");
+    const s = await api("GET", "/api/codebase/status" + _cbQS());
+    const ws = "<b title=\"" + _attr(s.workspace) + "\">" + esc(_short(s.workspace)) + "</b>";
+    const meta = $("cbMeta");
     if (meta) meta.innerHTML = (s.exists
       ? ("<b>" + (s.files || 0) + "</b> files · <b>" + (s.chunks || 0) + "</b> chunks · " +
-         (s.docs || 0) + " doc sources · " + _fmtSize((s.size_kb || 0) * 1024) +
+         _fmtSize((s.size_kb || 0) * 1024) + "<br>workspace: " + ws +
          "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : ""))
-      : "not built yet — press build.") + scope;
-    const st = $("indexStat"); if (st) st.textContent = s.exists ? ((s.chunks || 0) + " chunks") : "empty";
-    loadIndexDocs();
+      : ("workspace: " + ws + " — not built yet, press build."));
+    const st = $("cbStat"); if (st) st.textContent = s.exists ? ((s.chunks || 0) + " chunks") : "empty";
     return s;
-  } catch (e) { const meta = $("indexMeta"); if (meta) meta.textContent = "error: " + e; }
+  } catch (e) { const meta = $("cbMeta"); if (meta) meta.textContent = "error: " + e; }
 }
-async function indexFiles() {
-  const box = $("indexFilesBox"); if (!box) return;
+async function cbFiles() {
+  const box = $("cbFilesBox"); if (!box) return;
   box.innerHTML = '<div class="remaining">loading…</div>';
   try {
-    const r = await api("GET", "/api/index/files");
+    const r = await api("GET", "/api/codebase/files" + _cbQS());
     const rows = r.files || [];
     box.innerHTML = rows.length
-      ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files indexed / embedded</div>" +
+      ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files indexed</div>" +
          rows.map(f => '<div style="display:flex;gap:6px;font-size:11px;align-items:center">' +
            '<span data-open="' + _attr(f.path) + '" style="flex:1;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="open ' + _attr(f.path) + '">' +
-           esc(f.path) + '</span><span class="cn">' + (f.chunks || 0) + "</span></div>").join(""))
+           esc(_short(f.path)) + '</span><span class="cn">' + (f.chunks || 0) + "</span></div>").join(""))
       : '<div class="remaining">nothing indexed yet — press build</div>';
     box.querySelectorAll("[data-open]").forEach(el => el.onclick = () => openInEditor(el.getAttribute("data-open")));
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
-async function indexBuild(force) {
-  const meta = $("indexMeta"); if (meta) meta.textContent = "indexing…";
+async function cbBuild(force) {
+  const meta = $("cbMeta"); if (meta) meta.textContent = "indexing…";
   try {
-    const r = await api("POST", "/api/index/build", { force: !!force });
-    if (typeof toast === "function") toast("index: " + (r.files || 0) + " files / " + (r.chunks || 0) + " chunks", r.error ? "err" : "ok");
-    indexStatus();
+    const r = await api("POST", "/api/codebase/build", { session: sessionId || undefined, force: !!force });
+    if (typeof toast === "function") toast("codebase: " + (r.files || 0) + " files / " + (r.chunks || 0) + " chunks", r.error ? "err" : "ok");
+    cbStatus();
   } catch (e) { if (meta) meta.textContent = "error: " + e; }
 }
-async function indexSearch() {
-  const q = $("indexQuery") ? $("indexQuery").value.trim() : "";
-  const box = $("indexResults");
+async function cbSearch() {
+  const q = $("cbQuery") ? $("cbQuery").value.trim() : "";
+  const box = $("cbResults");
   if (!q) { if (box) box.innerHTML = ""; return; }
   if (box) box.innerHTML = '<div class="remaining">searching…</div>';
   try {
-    const r = await api("POST", "/api/index/search", { q: q, k: 12 });
+    const r = await api("POST", "/api/codebase/search", { session: sessionId || undefined, q: q, k: 12 });
     const rows = r.results || [];
     box.innerHTML = rows.length
       ? ('<div class="remaining" style="margin-bottom:4px">' + esc(r.mode || "bm25") + " · " + rows.length + " hits</div>" +
@@ -5176,37 +5212,164 @@ async function indexSearch() {
     box.querySelectorAll("[data-open]").forEach(el => el.onclick = () => openInEditor(el.getAttribute("data-open")));
   } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
-async function loadIndexDocs() {
-  const box = $("indexDocs"); if (!box) return;
+async function cbClear() {
+  if (typeof confirmDelete === "function" && !(await confirmDelete("delete THIS workspace's codebase index?"))) return;
+  try { await api("POST", "/api/codebase/clear", { session: sessionId || undefined }); cbStatus(); } catch (e) {}
+}
+
+/* ---- JAG-401: KNOWLEDGE base — GLOBAL notebooks of sources ---- */
+let kbState = { notebook: "default" };
+function _kbNb(name) { const e = $("kbNbName"); if (e) e.textContent = name || "Default"; }
+async function kbStatus() {
   try {
-    const r = await api("GET", "/api/index/docs");
+    const s = await api("GET", "/api/knowledge/status");
+    const meta = $("indexMeta");
+    if (meta) meta.innerHTML = (s.exists
+      ? ("<b>" + (s.notebooks || 0) + "</b> notebooks · <b>" + (s.sources || 0) + "</b> sources · <b>" +
+         (s.chunks || 0) + "</b> chunks · " + _fmtSize((s.size_kb || 0) * 1024) +
+         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : ""))
+      : "empty — create a notebook and add sources.");
+    const st = $("indexStat"); if (st) st.textContent = s.exists ? ((s.sources || 0) + " sources") : "empty";
+    return s;
+  } catch (e) { const meta = $("indexMeta"); if (meta) meta.textContent = "error: " + e; }
+}
+async function kbLoadNotebooks() {
+  const box = $("kbNotebooks"); if (!box) return;
+  try {
+    const r = await api("GET", "/api/knowledge/notebooks");
+    const rows = r.notebooks || [];
+    box.innerHTML = rows.map(n => {
+      const sel = n.id === kbState.notebook;
+      return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+        '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
+        '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this notebook">' + (sel ? "●" : "○") + '</button>' +
+        '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px">' +
+        '<span class="cn">' + (n.sources || 0) + '</span>' +
+        '<button class="ghost" style="padding:2px 6px" data-save="' + _attr(n.id) + '" title="rename">✓</button>' +
+        (n.id === "default" ? "" : '<button class="ghost" style="padding:2px 6px" data-del="' + _attr(n.id) + '" title="delete notebook">🗑</button>') +
+        '</div>';
+    }).join("") || '<div class="remaining">no notebooks</div>';
+    box.querySelectorAll("[data-use]").forEach(el => el.onclick = () => kbSelect(el.getAttribute("data-use"), el.getAttribute("data-name")));
+    box.querySelectorAll("[data-save]").forEach(el => el.onclick = () => kbRenameNotebook(el.getAttribute("data-save")));
+    box.querySelectorAll("[data-del]").forEach(el => el.onclick = () => kbDeleteNotebook(el.getAttribute("data-del")));
+  } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+function kbSelect(id, name) { kbState.notebook = id; _kbNb(name); kbLoadSources(); kbLoadNotebooks(); }
+async function kbCreateNotebook() {
+  const name = $("kbNewName") ? $("kbNewName").value.trim() : "";
+  if (!name) return;
+  try { const r = await api("POST", "/api/knowledge/notebooks", { action: "create", name: name });
+    if ($("kbNewName")) $("kbNewName").value = "";
+    if (r && r.id) { kbState.notebook = r.id; _kbNb(r.name); }
+    kbLoadNotebooks(); kbLoadSources(); kbStatus();
+  } catch (e) {}
+}
+async function kbRenameNotebook(id) {
+  const inp = document.querySelector('[data-unn="' + id + '"]');
+  if (!inp) return;
+  try { await api("POST", "/api/knowledge/notebooks", { action: "rename", id: id, name: inp.value.trim() });
+    kbLoadNotebooks();
+  } catch (e) {}
+}
+async function kbDeleteNotebook(id) {
+  if (typeof confirmDelete === "function" && !(await confirmDelete("delete this notebook and its sources?"))) return;
+  try { await api("POST", "/api/knowledge/notebooks", { action: "delete", id: id });
+    if (kbState.notebook === id) { kbState.notebook = "default"; _kbNb("Default"); }
+    kbLoadNotebooks(); kbLoadSources(); kbStatus();
+  } catch (e) {}
+}
+async function kbLoadSources() {
+  const box = $("kbSources"); if (!box) return;
+  box.innerHTML = '<div class="remaining">loading…</div>';
+  try {
+    const r = await api("GET", "/api/knowledge/sources?notebook=" + encodeURIComponent(kbState.notebook));
     const rows = r.sources || [];
     box.innerHTML = rows.length
       ? rows.map(s => '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+          '<span class="cn">' + esc(s.kind || "") + '</span>' +
           '<span class="remaining" style="flex:1;word-break:break-all" title="' + _attr(s.ref) + '">' +
-          esc(s.ref) + " <span class='cn'>" + (s.chunks || 0) + "</span></span>" +
+          esc(s.title || s.ref) + " <span class='cn'>" + (s.chunks || 0) + "</span></span>" +
           '<button class="ghost" style="padding:2px 6px" data-sid="' + _attr(s.id) + '">✕</button></div>').join("")
-      : '<div class="remaining">no doc sources</div>';
-    box.querySelectorAll("[data-sid]").forEach(el => el.onclick = () => indexRemoveDoc(el.getAttribute("data-sid")));
+      : '<div class="remaining">no sources in this notebook</div>';
+    box.querySelectorAll("[data-sid]").forEach(el => el.onclick = () => kbRemoveSource(el.getAttribute("data-sid")));
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
-async function indexAddDoc() {
-  const refs = $("indexDocRefs") ? $("indexDocRefs").value.trim() : "";
+async function kbAddSource() {
+  const refs = $("kbRefs") ? $("kbRefs").value.trim() : "";
   if (!refs) return;
-  const box = $("indexDocs"); if (box) box.innerHTML = '<div class="remaining">fetching…</div>';
+  const box = $("kbSources"); if (box) box.innerHTML = '<div class="remaining">fetching…</div>';
   try {
-    const r = await api("POST", "/api/index/docs", { refs: refs });
-    if (r.error) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(r.error) + "</div>"; return; }
-    if ($("indexDocRefs")) $("indexDocRefs").value = "";
-    loadIndexDocs(); indexStatus();
+    const r = await api("POST", "/api/knowledge/sources", { notebook: kbState.notebook, refs: refs });
+    if (r && r.error) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(r.error) + "</div>"; return; }
+    if ($("kbRefs")) $("kbRefs").value = "";
+    kbLoadSources(); kbStatus();
   } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
-async function indexRemoveDoc(sid) {
-  try { await api("POST", "/api/index/docs", { remove: sid }); loadIndexDocs(); indexStatus(); } catch (e) {}
+async function kbRemoveSource(sid) {
+  try { await api("POST", "/api/knowledge/sources", { remove: sid }); kbLoadSources(); kbStatus(); } catch (e) {}
 }
-async function indexClear() {
-  if (typeof confirmDelete === "function" && !(await confirmDelete("delete the whole GLOBAL knowledge index?"))) return;
-  try { await api("POST", "/api/index/clear", {}); indexStatus(); } catch (e) {}
+async function kbFiles() {
+  const box = $("kbSources"); if (!box) return;
+  box.innerHTML = '<div class="remaining">loading…</div>';
+  try {
+    const r = await api("GET", "/api/knowledge/files?notebook=" + encodeURIComponent(kbState.notebook));
+    const rows = r.files || [];
+    box.innerHTML = rows.length
+      ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files in this notebook</div>" +
+         rows.map(f => '<div style="display:flex;gap:6px;font-size:11px"><span class="remaining" style="flex:1;word-break:break-all">' +
+           esc(f.path) + '</span><span class="cn">' + (f.chunks || 0) + "</span></div>").join(""))
+      : '<div class="remaining">no files in this notebook</div>';
+  } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+async function kbDiscover() {
+  const q = $("kbDiscoverQ") ? $("kbDiscoverQ").value.trim() : "";
+  const box = $("kbCandidates"); if (!box) return;
+  if (!q) { box.innerHTML = ""; return; }
+  box.innerHTML = '<div class="remaining">searching the web…</div>';
+  try {
+    const r = await api("POST", "/api/knowledge/discover", { q: q, n: 6 });
+    const cs = r.candidates || [];
+    if (!cs.length) { box.innerHTML = '<div class="remaining">' + esc(r.error || "no results") + "</div>"; return; }
+    box.innerHTML = '<div class="remaining" style="margin-bottom:4px">' + esc(r.engine || "") + " · " + cs.length + " candidates</div>" +
+      cs.map((c, i) => '<label style="display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;font-size:11px">' +
+        '<input type="checkbox" data-url="' + _attr(c.url) + '" checked>' +
+        '<span style="flex:1;word-break:break-all"><b>' + esc(c.title || c.url) + '</b><br>' +
+        '<a href="' + _attr(c.url) + '" target="_blank" rel="noopener" style="color:var(--acc)">' + esc(c.url) + '</a><br>' +
+        '<span class="remaining">' + esc((c.snippet || "").slice(0, 180)) + "</span></span></label>").join("") +
+      '<button class="ghost" onclick="kbImport()">⤓ import selected → ' + esc(($("kbNbName") ? $("kbNbName").textContent : "notebook")) + '</button>';
+  } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+async function kbImport() {
+  const urls = Array.from(document.querySelectorAll('#kbCandidates [data-url]'))
+    .filter(el => el.checked).map(el => el.getAttribute("data-url"));
+  if (!urls.length) return;
+  const box = $("kbCandidates"); if (box) box.innerHTML = '<div class="remaining">importing ' + urls.length + "…</div>";
+  try {
+    const r = await api("POST", "/api/knowledge/import", { notebook: kbState.notebook, urls: urls });
+    if (box) box.innerHTML = '<div class="remaining">imported ' + ((r && r.added) || 0) + " / " + urls.length + "</div>";
+    kbLoadSources(); kbStatus();
+  } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+async function kbSearch() {
+  const q = $("kbQuery") ? $("kbQuery").value.trim() : "";
+  const box = $("kbResults");
+  if (!q) { if (box) box.innerHTML = ""; return; }
+  if (box) box.innerHTML = '<div class="remaining">searching…</div>';
+  try {
+    const r = await api("POST", "/api/knowledge/search", { q: q, notebook: kbState.notebook, k: 12 });
+    const rows = r.results || [];
+    box.innerHTML = rows.length
+      ? ('<div class="remaining" style="margin-bottom:4px">' + esc(r.mode || "bm25") + " · " + rows.length + " hits</div>" +
+         rows.map(x => '<div class="ctxitem" data-open="' + _attr(x.ref || x.path) + '">' +
+           "<b>" + esc(x.title || x.ref || _short(x.path)) + ":" + (x.start || "") + "</b>" +
+           '</div><div class="remaining" style="margin:0 0 6px 4px">' +
+           esc((x.snippet || "").replace(/\n/g, " ").slice(0, 220)) + "</div>").join(""))
+      : '<div class="remaining">no matches</div>';
+  } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+async function kbClear() {
+  if (typeof confirmDelete === "function" && !(await confirmDelete("delete the WHOLE knowledge base?"))) return;
+  try { await api("POST", "/api/knowledge/clear", {}); kbLoadNotebooks(); kbLoadSources(); kbStatus(); } catch (e) {}
 }
 async function loadEmbedModel() {
   try {
@@ -5803,7 +5966,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
+  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["codebase", "Codebase"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }

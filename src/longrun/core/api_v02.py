@@ -884,13 +884,24 @@ def handle(handler, method, path, qs, body):
             from longrun.model import costs
             return _r(handler, 200, costs.summary(qs.get("session"),
                                                   _int(qs.get("tail", 60), 60)))
-        # JAG-397: knowledge index (codebase + documentation)
-        if path == "/api/index/status":
-            return _r(handler, 200, index_status(qs))
-        if path == "/api/index/docs":
-            return _r(handler, 200, index_docs(qs))
-        if path == "/api/index/files":
-            return _r(handler, 200, index_files(qs))
+        # JAG-400: CODEBASE index (per workspace) + KNOWLEDGE base (global notebooks)
+        if path == "/api/codebase/status":
+            return _r(handler, 200, codebase_status(qs))
+        if path == "/api/codebase/files":
+            return _r(handler, 200, codebase_files(qs))
+        if path == "/api/codebase/search":
+            return _r(handler, 200, codebase_search(qs))
+        if path == "/api/knowledge/status":
+            return _r(handler, 200, knowledge_status())
+        if path == "/api/knowledge/notebooks":
+            return _r(handler, 200, knowledge_notebooks())
+        if path == "/api/knowledge/sources":
+            return _r(handler, 200, knowledge_sources(qs))
+        if path == "/api/knowledge/files":
+            return _r(handler, 200, knowledge_files(qs))
+        if path == "/api/knowledge/search":
+            return _r(handler, 200, knowledge_search(qs))
+        # shared index config + embedding picker (used by BOTH stores)
         if path == "/api/index/config":
             return _r(handler, 200, index_config_get())
         if path == "/api/index/embed-models":
@@ -899,10 +910,6 @@ def handle(handler, method, path, qs, body):
         if path == "/api/index/embed-test":
             from longrun.model import embed as _embed
             return _r(handler, 200, _embed.probe(qs.get("model")))
-        if path == "/api/index/search":
-            from longrun.memory import index as _index
-            return _r(handler, 200, _index.search(qs.get("q") or qs.get("query"),
-                                                  _int(qs.get("k", 8), 8), qs.get("kind")))
 
         return False
 
@@ -922,33 +929,40 @@ def handle(handler, method, path, qs, body):
         if path == "/api/costs/reset":  # JAG-355: clear this session's ledger
             from longrun.model import costs
             return _r(handler, 200, costs.reset((body or {}).get("session")))
-        # JAG-397: knowledge index (codebase + documentation)
-        if path == "/api/index/build":
-            from longrun.memory import index as _index
+        # JAG-400: CODEBASE index (per workspace) + KNOWLEDGE base (global notebooks)
+        if path == "/api/codebase/build":
+            from longrun.memory import codeindex as _ci
+            ws, _ = _session_ws((body or {}).get("session"))
             _publish("index.progress", phase="start")
-            res = _index.build(force=bool((body or {}).get("force")))
+            res = _ci.build(ws, force=bool((body or {}).get("force")))
             _publish("index.done", files=res.get("files"), chunks=res.get("chunks"))
             return _r(handler, 200, res)
-        if path == "/api/index/search":
-            from longrun.memory import index as _index
+        if path == "/api/codebase/search":
+            return _r(handler, 200, codebase_search(body or {}))
+        if path == "/api/codebase/clear":
+            from longrun.memory import codeindex as _ci
+            ws, _ = _session_ws((body or {}).get("session"))
+            return _r(handler, 200, _ci.clear(ws))
+        if path == "/api/knowledge/notebooks":
+            return _r(handler, 200, knowledge_notebook_action(body or {}))
+        if path == "/api/knowledge/sources":
+            return _r(handler, 200, knowledge_source_action(body or {}))
+        if path == "/api/knowledge/search":
+            return _r(handler, 200, knowledge_search(body or {}))
+        if path == "/api/knowledge/discover":
+            from longrun.memory import knowledge as _kb
             b = body or {}
-            return _r(handler, 200, _index.search(b.get("q") or b.get("query"),
-                                                  _int(b.get("k", 8), 8), b.get("kind")))
-        if path == "/api/index/docs":
-            from longrun.memory import index as _index
+            return _r(handler, 200, _kb.discover(b.get("q") or b.get("query"), b.get("n", 5)))
+        if path == "/api/knowledge/import":
+            from longrun.memory import knowledge as _kb
             b = body or {}
-            if b.get("remove") or b.get("source"):
-                return _r(handler, 200, _index.remove_source(b.get("remove") or b.get("source")))
-            # JAG-399: a multi-line block of URLs / paths is indexed all at once.
-            res = _index.add_sources(b.get("refs") or b.get("ref") or b.get("url") or b.get("path") or "")
-            _publish("index.docs", ok=bool(res.get("ok")), added=res.get("added"))
-            return _r(handler, 200, res)
-        if path == "/api/index/clear":
-            from longrun.memory import index as _index
-            return _r(handler, 200, _index.clear())
+            return _r(handler, 200, _kb.import_candidates(b.get("notebook"), b.get("urls") or b.get("refs")))
+        if path == "/api/knowledge/clear":
+            from longrun.memory import knowledge as _kb
+            return _r(handler, 200, _kb.clear())
         if path == "/api/index/config":
-            from longrun.memory import index as _index
-            return _r(handler, 200, _index.save_config(body or {}))
+            from longrun.memory import indexcfg as _cfg
+            return _r(handler, 200, _cfg.save_config(body or {}))
         if path == "/api/term/exec":  # JAG-281: real terminal — send a command line
             return _r(handler, 200, term_exec(body))
         if path == "/api/term/reset":  # JAG-281: kill the session's shell
@@ -1796,29 +1810,87 @@ def _session_ws(session_id):
     return _RULES.resolve_workspace(sess), sess
 
 
-def index_status(qs=None):
-    """GET /api/index/status — the GLOBAL knowledge index (files/chunks/size/embed)."""
-    from longrun.memory import index as _index
-    return _index.status()
+def codebase_status(qs=None):
+    """GET /api/codebase/status — the CODEBASE index for the session's workspace."""
+    from longrun.memory import codeindex as _ci
+    ws, _ = _session_ws((qs or {}).get("session"))
+    return _ci.status(ws)
 
 
-def index_docs(qs=None):
-    """GET /api/index/docs — the knowledge-base sources (URLs / paths)."""
-    from longrun.memory import index as _index
-    return {"sources": _index.list_sources()}
+def codebase_files(qs=None):
+    """GET /api/codebase/files — every file indexed for the session's workspace."""
+    from longrun.memory import codeindex as _ci
+    ws, _ = _session_ws((qs or {}).get("session"))
+    return _ci.list_files(ws)
 
 
-def index_files(qs=None):
-    """GET /api/index/files — every indexed file (path, language, chunk count)."""
-    from longrun.memory import index as _index
-    return _index.list_files()
+def codebase_search(src):
+    """GET/POST /api/codebase/search — search THIS workspace's codebase index."""
+    from longrun.memory import codeindex as _ci
+    ws, _ = _session_ws(src.get("session"))
+    return _ci.search(ws, src.get("q") or src.get("query"), _int(src.get("k", 8), 8), src.get("kind"))
+
+
+def knowledge_status():
+    """GET /api/knowledge/status — the GLOBAL knowledge base counts."""
+    from longrun.memory import knowledge as _kb
+    return _kb.status()
+
+
+def knowledge_notebooks():
+    """GET /api/knowledge/notebooks — the notebooks (with a source count each)."""
+    from longrun.memory import knowledge as _kb
+    return {"notebooks": _kb.list_notebooks()}
+
+
+def knowledge_sources(qs=None):
+    """GET /api/knowledge/sources — sources, optionally for one notebook."""
+    from longrun.memory import knowledge as _kb
+    return {"sources": _kb.list_sources((qs or {}).get("notebook"))}
+
+
+def knowledge_files(qs=None):
+    """GET /api/knowledge/files — indexed files, optionally for one notebook."""
+    from longrun.memory import knowledge as _kb
+    return _kb.list_files((qs or {}).get("notebook"))
+
+
+def knowledge_search(src):
+    """GET/POST /api/knowledge/search — search the knowledge base (optional notebook)."""
+    from longrun.memory import knowledge as _kb
+    return _kb.search(src.get("q") or src.get("query"), src.get("notebook"),
+                      _int(src.get("k", 8), 8), src.get("kind"))
+
+
+def knowledge_notebook_action(body):
+    """POST /api/knowledge/notebooks — create / rename / delete a notebook."""
+    from longrun.memory import knowledge as _kb
+    action = (body.get("action") or "create").lower()
+    if action == "rename":
+        return _kb.rename_notebook(body.get("id"), body.get("name"))
+    if action == "delete":
+        return _kb.delete_notebook(body.get("id"))
+    return _kb.create_notebook(body.get("name"))
+
+
+def knowledge_source_action(body):
+    """POST /api/knowledge/sources — add / add-text / remove a source."""
+    from longrun.memory import knowledge as _kb
+    if body.get("remove") or body.get("source"):
+        return _kb.remove_source(body.get("remove") or body.get("source"))
+    if body.get("text"):
+        return _kb.add_text(body.get("notebook"), body.get("title"), body.get("text"))
+    res = _kb.add_sources(body.get("notebook"),
+                          body.get("refs") or body.get("ref") or body.get("url") or body.get("path") or "")
+    _publish("knowledge.docs", ok=bool(res.get("ok")), added=res.get("added"))
+    return res
 
 
 def index_config_get():
-    """GET /api/index/config — the merged index config + embedding suggestions."""
-    from longrun.memory import index as _index
+    """GET /api/index/config — the SHARED index config + embedding suggestions."""
+    from longrun.memory import indexcfg as _cfg
     from longrun.model import embed as _embed
-    return {"config": _index.load_config(), "embed_model": _embed.model_ref(),
+    return {"config": _cfg.load_config(), "embed_model": _embed.model_ref(),
             "suggested": _embed.SUGGESTED}
 
 

@@ -3,7 +3,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#install--run)
-[![tests](https://img.shields.io/badge/battery-126%2F126%20green-success.svg)](#the-quality-gate)
+[![tests](https://img.shields.io/badge/battery-127%2F127%20green-success.svg)](#the-quality-gate)
 [![CI](https://github.com/jagones84/longrun/actions/workflows/ci.yml/badge.svg)](https://github.com/jagones84/longrun/actions/workflows/ci.yml)
 
 **Longrun is a single agent harness — one engine that drives one LLM
@@ -252,48 +252,52 @@ curl -s 'http://127.0.0.1:8790/api/runs/<run_id>/trace?token=<token>'
 
 ---
 
-## Knowledge index — codebase + docs
+## Two searchable stores: codebase index + knowledge base
 
-The agent can search a **knowledge base by relevance** instead of scanning the whole
-tree. It is a **single, global** sqlite database kept **outside the project** in the
-app data dir (`data/index/knowledge.db`) — the same convention VS Code / Cursor use
-(`workspaceStorage` / `globalStorage`), so nothing is ever written into your repo.
-The index is **not tied to a session**: you add sources once, and every session (and
-the agent's `index` tool) queries the same base.
+There are **two separate stores**, different files and different lifetimes — do not
+confuse them:
 
-A **source** is a URL, a file, or a folder (your codebase). All sources are chunked,
-indexed and (optionally) embedded **together** — add a list of URLs one per line, mix
-in file and folder paths, and everything lands in the same knowledge base.
+| Store | Scope | DB | Where |
+|---|---|---|---|
+| **Codebase index** | **per workspace** (per path, like project rules) | `data/codebase/<hash>.db` | right rail ▸ **Codebase** |
+| **Knowledge base** | **global** (notebooks of sources) | `data/knowledge/knowledge.db` | **Settings ▸ Knowledge** |
 
-- **Retrieval** is SQLite **FTS5** (`bm25()` + `snippet()`) — built into Python's
-  `sqlite3`, so it runs with **zero dependencies**.
-- **Chunking** is AST-aware for Python (one chunk per function / method / class)
-  and heading/paragraph-aware for Markdown; a line window is the fallback for other
-  languages. `.gitignore` and common vendor dirs (`.git`, `node_modules`, …) are skipped.
-- **Docs / URLs**: add any number of sources; each is indexed as its own tier and is
-  searchable alongside the code.
+Both live **outside the project** in the app data dir — the same convention VS Code /
+Cursor use (`workspaceStorage` / `globalStorage`) — so nothing is ever written into
+your repo. Retrieval is SQLite **FTS5** (`bm25()` + `snippet()`) — built into Python's
+`sqlite3`, so it runs with **zero dependencies**.
+
+- **Codebase index** — chunking is AST-aware for Python (one chunk per function /
+  method / class) and heading/paragraph-aware for Markdown; a line window is the
+  fallback. `.gitignore` and vendor dirs are skipped, rebuilds are incremental. Two
+  workspaces have two fully isolated indexes. Query it with the **`index`** tool
+  (`action=search|reindex|status`).
+- **Knowledge base** — organised in **notebooks**; each notebook holds **sources**
+  (a URL, a local file/folder, or pasted text). `discover` runs a **web search** and
+  returns candidate URLs (NotebookLM-style); `import` feeds the ones you pick through
+  the same ingestion pipeline into the chosen notebook. Query it with the **`knowledge`**
+  tool (`action=search|list_notebooks|add_source|add_text|discover|import|status`).
 
 ### Use it
-WebUI → **Settings ▸ Knowledge**: add sources (one URL/path per line), build,
-inspect the indexed files, search. The per-session workspace folder lives in the
-right-rail **Files** inspector. Or use the agent, the CLI, or the API:
+WebUI → **Settings ▸ Knowledge** (notebooks, sources, discover, search) and the right
+rail ▸ **Codebase** (build/search the workspace). Or the CLI / API:
 
 ```bash
-forge index build                       # (re)index every source
+forge index build                       # rebuild THIS workspace's codebase index
 forge index search "parse config"       # top chunks as path:line + snippet
-forge index docs https://docs.example.com/guide
+forge knowledge notebooks               # list notebooks (global knowledge base)
+forge knowledge add --notebook nb_x "https://docs.example.com/guide"
+forge knowledge discover "kubernetes rollout strategies"
+forge knowledge import --notebook nb_x "https://a.example,https://b.example"
 ```
 
 ```bash
-curl -s -X POST http://127.0.0.1:8790/api/index/build \
-  -H 'Content-Type: application/json' -d '{"force":false}'
-curl -s -X POST http://127.0.0.1:8790/api/index/docs \
-  -H 'Content-Type: application/json' -d '{"refs":"https://docs.example.com/guide\n/home/me/app"}'
-curl -s 'http://127.0.0.1:8790/api/index/search?q=parse+config&k=8'
+curl -s -X POST http://127.0.0.1:8790/api/codebase/build -d '{"force":false}'
+curl -s 'http://127.0.0.1:8790/api/codebase/search?q=parse+config&k=8'
+curl -s 'http://127.0.0.1:8790/api/knowledge/notebooks'
+curl -s -X POST http://127.0.0.1:8790/api/knowledge/discover -d '{"q":"kubernetes","n":5}'
+curl -s -X POST http://127.0.0.1:8790/api/knowledge/import -d '{"notebook":"default","urls":["https://example.com"]}'
 ```
-
-The agent has a matching **`index`** tool (`action=search|reindex|status`), so it
-finds the right code without reading the whole repository.
 
 ### Semantic (optional)
 Keyword search needs no setup. To add **vector** search, set an embedding model in
@@ -310,7 +314,7 @@ The **only** regression gate is one deterministic, fully-isolated battery — it
 every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live state:
 
 ```bash
-bash tests/battery.sh        # → === battery: 126/126 GREEN ===
+bash tests/battery.sh        # → === battery: 127/127 GREEN ===
 ```
 
 CI runs the same battery on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).

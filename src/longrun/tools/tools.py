@@ -920,19 +920,24 @@ def _sessions(args, run_id):
 
 
 def _index(args, run_id):
-    """JAG-397/JAG-399: the GLOBAL knowledge index (codebase + docs sources).
+    """JAG-400: the CODEBASE index for the CURRENT workspace (per path).
 
-    action=search -> top chunks as path:line + snippet. action=reindex -> rebuild all
-    sources. action=status -> counts. bm25 always; semantic when an embed model is set.
+    action=search -> top chunks as path:line + snippet. action=reindex -> rebuild the
+    workspace index. action=status -> counts. bm25 always; semantic when an embed model
+    is set. Scoped to the workspace folder (like project rules), never global.
     """
-    from longrun.memory import index as index_mod
+    from longrun.memory import codeindex as ci
+    from longrun.memory import rules as rules_mod
     args = args or {}
+    ws = args.get("workspace") or rules_mod.get_workspace()
     action = (args.get("action") or "search").lower()
     if action == "status":
-        return {"ok": True, "exit_code": 0, "stdout": "index: %s" % index_mod.status()}
+        return {"ok": True, "exit_code": 0, "workspace": ws,
+                "stdout": "codebase[%s]: %s" % (ws, ci.status(ws))}
     if action in ("reindex", "build"):
-        st = index_mod.build(force=bool(args.get("force")))
-        return {"ok": True, "exit_code": 0, "files": st.get("files"), "chunks": st.get("chunks"),
+        st = ci.build(ws, force=bool(args.get("force")))
+        return {"ok": True, "exit_code": 0, "workspace": ws, "files": st.get("files"),
+                "chunks": st.get("chunks"),
                 "stdout": "indexed %s files / %s chunks" % (st.get("files"), st.get("chunks"))}
     query = args.get("query") or args.get("q") or ""
     if not str(query).strip():
@@ -941,8 +946,57 @@ def _index(args, run_id):
         k = int(args.get("k") or 8)
     except (TypeError, ValueError):
         k = 8
-    res = index_mod.search(query, k=k, kind=args.get("kind"))
+    res = ci.search(ws, query, k=k, kind=args.get("kind"))
     lines = ["%s:%s  %s" % (r["path"], r["start"],
+                            (r.get("snippet") or "").replace("\n", " ")[:200])
+             for r in res.get("results", [])]
+    return {"ok": True, "exit_code": 0, "workspace": ws,
+            "stdout": "\n".join(lines) or "(no matches)",
+            "results": res.get("results", []), "mode": res.get("mode"),
+            "count": len(res.get("results", []))}
+
+
+def _knowledge(args, run_id):
+    """JAG-401: the GLOBAL knowledge base (notebooks of sources).
+
+    action=list_notebooks | create_notebook | add_source | add_text | search |
+    discover (web -> candidate URLs) | import (URLs -> a notebook) | status.
+    """
+    from longrun.memory import knowledge as kb
+    args = args or {}
+    action = (args.get("action") or "search").lower()
+    if action in ("status", "info"):
+        return {"ok": True, "exit_code": 0, "stdout": "knowledge: %s" % kb.status()}
+    if action in ("notebooks", "list_notebooks"):
+        nbs = kb.list_notebooks()
+        return {"ok": True, "exit_code": 0, "notebooks": nbs,
+                "stdout": "\n".join("%s  (%s sources)" % (n["name"], n["sources"]) for n in nbs)}
+    if action == "create_notebook":
+        r = kb.create_notebook(args.get("name"))
+        return {"ok": bool(r.get("ok")), "notebooks": kb.list_notebooks(),
+                "stdout": "notebook %s" % r.get("name"), **r}
+    if action == "add_text":
+        r = kb.add_text(args.get("notebook"), args.get("title"), args.get("text") or args.get("content"))
+        return {"ok": bool(r.get("ok")), "stdout": "stored %s chunk(s)" % r.get("chunks"), **r}
+    if action in ("add_source", "add"):
+        vals = args.get("refs") or args.get("ref") or args.get("url") or args.get("query") or ""
+        r = kb.add_sources(args.get("notebook"), vals)
+        return {"ok": bool(r.get("ok")), "added": r.get("added"), "chunks": r.get("chunks"),
+                "stdout": "added %s/%s source(s), %s chunk(s)" % (r.get("added"), r.get("total"), r.get("chunks")),
+                **r}
+    if action == "discover":
+        return kb.discover(args.get("query") or args.get("q"), args.get("n", 5))
+    if action == "import":
+        return kb.import_candidates(args.get("notebook"), args.get("urls") or args.get("refs"))
+    query = args.get("query") or args.get("q") or ""
+    if not str(query).strip():
+        return {"ok": False, "exit_code": 1, "error": "query required for action=search"}
+    try:
+        k = int(args.get("k") or 8)
+    except (TypeError, ValueError):
+        k = 8
+    res = kb.search(query, args.get("notebook"), k=k, kind=args.get("kind"))
+    lines = ["%s:%s  %s" % (r.get("ref") or r.get("path"), r.get("start"),
                             (r.get("snippet") or "").replace("\n", " ")[:200])
              for r in res.get("results", [])]
     return {"ok": True, "exit_code": 0, "stdout": "\n".join(lines) or "(no matches)",
@@ -954,7 +1008,8 @@ _DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
              "fs.edit": _fs_edit, "diff": _diff,
              "git": _git, "http": _http, "browser": _browser, "self": _self,
              "skills": _skills, "memory": _memory, "web": _web, "improve": _improve,
-             "reconcile": _reconcile, "sessions": _sessions, "index": _index}
+             "reconcile": _reconcile, "sessions": _sessions, "index": _index,
+             "knowledge": _knowledge}
 
 
 def _dispatch_execute(tool, args, run_id=None):

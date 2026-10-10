@@ -91,8 +91,10 @@ check("F5 search without a query fails gracefully",
 
 # ---- G: prompt budget — no truncated dump, no disabled-tools wall (JAG-202) ----
 # JAG-350: the registry gained a native tool (`sessions`), so the ceiling moved
-# from 17k to 18k. It still guards against a runaway dump / disabled-tools wall.
-check("G1 composed system prompt is bounded (<18k chars)", len(sp) < 18000, "chars=%d" % len(sp))
+# from 17k to 18k. JAG-401 added the `knowledge` tool (GLOBAL notebooks + web
+# discover), so the ceiling moves to 19k. It still guards against a runaway dump /
+# disabled-tools wall.
+check("G1 composed system prompt is bounded (<19k chars)", len(sp) < 19000, "chars=%d" % len(sp))
 _idx = skills.skills_context(max_chars=2600)
 check("G2 the always-on skills index is bounded", len(_idx) <= 2760, "len=%d" % len(_idx))
 check("G3 the disabled-tools wall is compact",

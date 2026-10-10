@@ -156,11 +156,12 @@ TOOL_SCHEMAS = {
         },
     },
     "index": {
-        "description": ("GLOBAL knowledge base (codebase + docs sources the user added). "
-                        "action=search -> the top matching chunks as path:line + a snippet, "
-                        "so you read the RIGHT code/docs instead of scanning the whole tree. "
-                        "action=reindex -> rebuild all sources now. action=status -> counts. "
-                        "Lexical (bm25) always; semantic when an embedding model is set."),
+        "description": ("CODEBASE index for the CURRENT workspace (per path, like project "
+                        "rules) — NOT global. action=search -> the top matching chunks as "
+                        "path:line + a snippet, so you read the RIGHT code instead of scanning "
+                        "the tree. action=reindex -> rebuild THIS workspace's index now. "
+                        "action=status -> counts. Lexical (bm25) always; semantic when an "
+                        "embedding model is set."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["search", "reindex", "status"],
@@ -169,6 +170,29 @@ TOOL_SCHEMAS = {
             "k": {"type": "integer", "default": 8, "description": "max results (action=search)"},
             "kind": {"type": "string", "enum": ["code", "doc"],
                      "description": "restrict to code or docs (action=search)"},
+        },
+    },
+    "knowledge": {
+        "description": ("GLOBAL knowledge base (separate from the workspace codebase index), "
+                        "organised in NOTEBOOKS of sources (URLs / files / pasted text). "
+                        "action=list_notebooks | create_notebook | add_source | add_text | "
+                        "search | discover (web search -> candidate URLs) | import (URLs -> a "
+                        "notebook) | status."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string",
+                       "enum": ["search", "list_notebooks", "create_notebook", "add_source",
+                                "add_text", "discover", "import", "status"],
+                       "default": "search"},
+            "notebook": {"type": "string", "description": "target notebook id (default notebook if omitted)"},
+            "name": {"type": "string", "description": "notebook name (action=create_notebook)"},
+            "query": {"type": "string", "description": "search text / discovery query"},
+            "refs": {"type": "string", "description": "one URL/path per line (action=add_source)"},
+            "title": {"type": "string", "description": "note title (action=add_text)"},
+            "text": {"type": "string", "description": "pasted note body (action=add_text)"},
+            "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs (action=import)"},
+            "k": {"type": "integer", "default": 8, "description": "max results (action=search)"},
+            "n": {"type": "integer", "default": 5, "description": "max web hits (action=discover)"},
         },
     },
     "sessions": {

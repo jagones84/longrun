@@ -215,10 +215,16 @@ tools:
     enabled: true
     approval: auto
 
-  # knowledge index (JAG-397/399): search the GLOBAL knowledge base (codebase +
-  # docs sources the user added). Read-only; the index DB lives in the app data
-  # dir, never in the repo.
+  # codebase index (JAG-400): search the CURRENT workspace's code/docs. Scoped to
+  # the workspace PATH (like project rules), never global. The per-workspace DB
+  # lives in the app data dir, never in the repo.
   index:
+    enabled: true
+    approval: auto
+
+  # knowledge base (JAG-401): GLOBAL notebooks of sources (URLs/files/text), plus
+  # web discovery. Separate store from the codebase index.
+  knowledge:
     enabled: true
     approval: auto
 
