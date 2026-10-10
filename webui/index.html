@@ -1571,7 +1571,7 @@
         </div>
         <h2>Research · agent</h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Iterative web discovery + summarisation, then <b>import</b> into the selected notebook. The research LLM is configurable (Perplexity Sonar recommended, or any local model).</div>
+          <div class="remaining" style="margin:0 0 6px">Iterative web discovery + summarisation, then <b>import</b> into the selected notebook. The research LLM is configurable — Perplexity Sonar (web-grounded) or <b>any model you saved in your providers</b>.</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <select id="researchModel" class="inp" style="flex:2;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
             <select id="researchDepth" class="inp" style="flex:0 0 110px;padding:6px 10px;font-size:12px" title="how many rounds and sources per round">
@@ -5547,9 +5547,17 @@ async function researchModelLs() {
   try {
     const r = await api("GET", "/api/research/model");
     const active = r.active || "";
-    sel.innerHTML = (r.models || []).map(m =>
-      '<option value="' + _attr(m.id) + '"' + (m.id === active ? " selected" : "") + '>' +
-      esc(m.label || m.id) + "  · " + esc(m.provider || "") + '</option>').join("");
+    const models = r.models || [];
+    const groups = {};
+    models.forEach(m => { const g = m.group || m.provider || "other"; (groups[g] = groups[g] || []).push(m); });
+    sel.innerHTML = Object.keys(groups).map(g =>
+      '<optgroup label="' + _attr(g) + '">' + groups[g].map(m =>
+        '<option value="' + _attr(m.id) + '"' + (m.id === active ? " selected" : "") + '>' +
+        esc(m.label || m.id) + '</option>').join("") + '</optgroup>').join("");
+    if (active && !models.some(m => m.id === active)) {
+      sel.insertAdjacentHTML("afterbegin", '<option value="' + _attr(active) + '" selected>' +
+        esc(active) + ' (current)</option>');
+    }
   } catch (e) { sel.innerHTML = '<option value="">(load failed)</option>'; }
 }
 async function researchSetActive() {

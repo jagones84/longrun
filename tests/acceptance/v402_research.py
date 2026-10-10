@@ -51,6 +51,18 @@ check("A6 depth shallow/medium/deep have a default budget per round",
       rc.depth_budget("shallow")["rounds"] == 1
       and rc.depth_budget("medium")["rounds"] >= 2
       and rc.depth_budget("deep")["rounds"] >= rc.depth_budget("medium")["rounds"])
+# JAG-403d: the picker must include the user's SAVED provider models, not only a
+# hardcoded list.
+_pm = rc.provider_models()
+check("A7 provider_models() lists the configured providers' models (grouped)",
+      isinstance(_pm, list) and all({"id", "provider", "label", "group"} <= set(m) for m in _pm))
+check("A8 all_models() is the catalogue + providers (every entry has a group)",
+      all("group" in m for m in rc.all_models())
+      and len(rc.all_models()) >= len(rc.MODELS))
+_rpy = open(os.path.join(REPO, "src", "longrun", "research", "research.py"),
+            encoding="utf-8").read()
+check("A8b the executor resolves provider-saved models via rllm._chat_endpoint",
+      "rllm._chat_endpoint" in _rpy)
 
 # --------------------------------------------------------------------------- B
 from longrun.research import research as rs  # noqa: E402

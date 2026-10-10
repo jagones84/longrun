@@ -42,6 +42,11 @@ All notable changes to Longrun are documented here. The format follows
   **PDFs in the browser viewer** — and is a bounded, scrollable window (`LIMIT=200`,
   "showing X of Y"). **Thinking effort** now auto-saves on change (the manual button is gone).
   v403 22/22; battery 129 → 130.
+- **The research-model picker now offers your SAVED models (JAG-403d).** `researchcfg.all_models()`
+  merges the web-grounded catalogue (Perplexity Sonar) with **every model of every configured
+  provider** (grouped by provider in the select), and the executor resolves a saved model
+  through the normal provider path (`rllm._chat_endpoint`) — plus a `local:<alias>` path for
+  the local router. New `GET /api/research/model` companion to the POST setter. v402 28/28.
 
 ### Fixed
 - Pre-existing `NameError: name 'embed' is not defined` in `codeindex.search` (line 208)

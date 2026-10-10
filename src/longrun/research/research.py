@@ -30,18 +30,8 @@ SEARCH = _kb.SEARCH                       # (query, n) -> ([{title,url,snippet}]
 fetch_text = _chunk.fetch_url             # url -> text (markdown-ish)
 
 
-def _default_llm(prompt, model, timeout=30):
-    """Minimal OpenAI-compatible chat call. Honours provider base_url+key.
-
-    Perplexity/OpenRouter/local: ``POST {base}/chat/completions`` with
-    ``{model, messages:[{role:user, content:prompt}]}`` and the right auth
-    header. Returns ``{"summary": <content>, "queries": []}`` — the ``queries``
-    list is empty because follow-up expansion is done by ``make_plan`` for
-    deterministic iteration, not by the LLM.
-    """
-    cfg, mid = _rc.resolve(model)
-    if not cfg or not cfg.get("base_url"):
-        return None
+def _catalogue_headers(cfg):
+    """Bearer headers for a web-grounded catalogue entry (Perplexity/OpenRouter)."""
     env_key = cfg.get("env_key") or ""
     key = ""
     if env_key:
@@ -50,16 +40,49 @@ def _default_llm(prompt, model, timeout=30):
             key = _keys.read_secret(env_key) or os.environ.get(env_key, "")
         except Exception:  # noqa: BLE001
             key = os.environ.get(env_key, "")
-    headers = {"Content-Type": "application/json"}
+    h = {"Content-Type": "application/json"}
     if key:
-        headers["Authorization"] = "Bearer " + key
+        h["Authorization"] = "Bearer " + key
+    return h
+
+
+def _default_llm(prompt, model, timeout=30):
+    """OpenAI-compatible chat call for the research summary.
+
+    Resolution:
+      1. a web-grounded catalogue entry with a ``base_url`` (Perplexity Sonar /
+         OpenRouter pass-through) -> that endpoint + its env key;
+      2. ``local:<alias>`` -> the local llama.cpp router;
+      3. anything else -> the normal provider resolution, so **any model the user
+         saved in their providers** (OpenRouter, a custom openai-compatible, …)
+         works too.
+
+    Returns ``{"summary": <content>, "queries": []}`` — the ``queries`` list is
+    empty because follow-up expansion is done by ``make_plan`` (deterministic),
+    not by the LLM. Never raises: any failure returns None.
+    """
+    ref = str(model or _rc.active_model())
+    url, headers, mid = "", None, ref
+
+    cfg, cmid = _rc.resolve(ref)          # only returns entries WITH a base_url
+    if cfg and cfg.get("base_url"):
+        url = cfg["base_url"].rstrip("/") + "/chat/completions"
+        headers, mid = _catalogue_headers(cfg), cmid
+    else:
+        from longrun.model import rllm
+        if ref.startswith("local:"):
+            mid = ref.split(":", 1)[1] or "default"
+            url = rllm.ROUTER_BASE.rstrip("/") + "/v1/chat/completions"
+            headers = {"Content-Type": "application/json"}
+        else:
+            url, headers, mid = rllm._chat_endpoint(ref)
+
     body = json.dumps({
         "model": mid,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
     }).encode("utf-8")
-    req = urllib.request.Request(cfg["base_url"].rstrip("/") + "/chat/completions",
-                                 data=body, headers=headers)
+    req = urllib.request.Request(url, data=body, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8", "replace"))

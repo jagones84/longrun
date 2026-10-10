@@ -1,20 +1,24 @@
-"""RESEARCH configuration (JAG-403b) — stdlib only.
+"""RESEARCH configuration (JAG-403b / JAG-403d) — stdlib only.
 
-The research LLM is configurable separately from the chat LLM. Models are listed
-with id+provider+label so the UI/CLI can show a dropdown. Depth controls how
-many rounds + sources per round the executor uses.
+The research LLM is configurable separately from the chat LLM. The picker offers,
+IN ORDER:
 
-Resolution order for a model id ``provider:model``:
-  1. ``<provider>`` is ``perplexity`` -> Perplexity's OpenAI-compatible API
-  2. ``<provider>`` is ``openrouter`` -> OpenRouter's chat completions
-  3. ``<provider>`` is ``local`` / ``rllm`` -> the local llama.cpp router
-  4. fall back to the active chat provider
+  1. the web-grounded catalogue (Perplexity Sonar — a search-integrated model);
+  2. your personal custom models (index overlay);
+  3. **every model of every CONFIGURED provider** — so the research agent can use
+     the same roster you already saved (OpenRouter models, the local router, …).
+
+Resolution for a call (see ``research._default_llm``):
+  * a catalogue entry with a ``base_url`` (Perplexity / OpenRouter pass-through)
+    -> that endpoint with its env key;
+  * ``local:<alias>`` -> the local llama.cpp router;
+  * anything else -> the normal provider resolution (``rllm._chat_endpoint``).
 """
 from longrun.memory import indexcfg as _base
 
 
-# Catalogue of well-known research models. Custom models are layered via
-# ``indexcfg.save_config({..., "custom_models": [...]})``.
+# Web-grounded catalogue. These carry the endpoint + env key so they work even
+# when the provider is not configured as a general provider.
 MODELS = [
     {"id": "perplexity:sonar-pro", "provider": "perplexity",
      "label": "Perplexity Sonar Pro (web-grounded, recommended)",
@@ -29,18 +33,60 @@ MODELS = [
      "label": "OpenRouter Perplexity Sonar Pro",
      "env_key": "OPENROUTER_API_KEY", "base_url": "https://openrouter.ai/api/v1"},
     {"id": "local:default", "provider": "local",
-     "label": "Local router (rllm)", "env_key": "", "base_url": ""},
+     "label": "Local router (default model)", "env_key": "", "base_url": ""},
 ]
+
+WEB_GROUNDED_GROUP = "web-grounded (search)"
+
+
+def provider_models():
+    """Every model of every CONFIGURED provider, as pickable research refs.
+
+    This is what makes the research picker show the user's SAVED models, not just
+    a hardcoded list. Never raises (a broken provider config yields []).
+    """
+    out = []
+    try:
+        from longrun.model import providers
+        for p in providers.providers():
+            pid = p.get("id")
+            if not pid:
+                continue
+            pname = p.get("name") or pid
+            for m in (p.get("models") or []):
+                mid = m.get("id") if isinstance(m, dict) else m
+                if not mid:
+                    continue
+                out.append({
+                    "id": "%s:%s" % (pid, mid), "provider": pid,
+                    "label": "%s · %s" % (mid, pname),
+                    "group": pname, "local": bool(p.get("local")),
+                })
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def all_models():
-    """Catalogue + custom overlay."""
-    base = list(MODELS)
+    """Catalogue + personal overlay + every configured provider model (deduped)."""
+    out, seen = [], set()
+
+    def _add(m):
+        mid = m.get("id")
+        if not mid or mid in seen:
+            return
+        seen.add(mid)
+        out.append(m)
+
+    for m in MODELS:
+        _add({**m, "group": WEB_GROUNDED_GROUP})
     cfg = _base.load_config()
     for m in (cfg.get("custom_models") or []):
         if isinstance(m, dict) and m.get("id"):
-            base.append({**m, "custom": True})
-    return base
+            _add({**m, "custom": True, "group": m.get("provider") or "custom"})
+    for m in provider_models():
+        _add(m)
+    return out
 
 
 def find(model_id):
@@ -58,7 +104,7 @@ def active_model():
 
 def set_active(model_id):
     """Persist the active research model. Idempotent. Always returns ok=True
-    when the id is a string (custom models are accepted)."""
+    when the id is a string (custom / provider models are accepted)."""
     if not isinstance(model_id, str) or not model_id.strip():
         return {"ok": False, "error": "model id required"}
     _base.save_config({"research_model": model_id.strip()})
@@ -86,11 +132,10 @@ def depth_budget(depth):
 
 
 def resolve(model_id):
-    """Return (cfg-dict, model_name) or (None, model_id) when not in the catalogue.
-
-    The executor falls back to the local router if credentials are missing.
+    """Return (catalogue-entry, model_name) for a web-grounded entry (with a
+    ``base_url``), else (None, model_id) so the caller uses provider resolution.
     """
     m = find(model_id or active_model())
-    if not m:
+    if not m or not m.get("base_url"):
         return None, model_id
     return m, m["id"].split(":", 1)[1] if ":" in m["id"] else m["id"]
