@@ -110,7 +110,7 @@
   #modelMenu .mi .bg { margin-left: auto; font-size: 10px; color: var(--dim); }
   /* JAG-278: the "+" attach menu (TRAE-style: attach / insert). */
   #plusMenu { position: absolute; bottom: 46px; left: 8px; width: 264px; z-index: 31; padding: 6px;
-    background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
+    background: var(--menubg); border: 1px solid var(--line); border-radius: 12px;
     box-shadow: 0 14px 34px rgba(0,0,0,.55); }
   #plusMenu[hidden] { display: none; }
   #plusMenu .mi { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
@@ -238,7 +238,7 @@
   .sess .menu-btn { color: var(--dim); font-size: 14px; flex-shrink: 0; padding: 2px 6px; border-radius: 6px; opacity: 0; }
   .sess:hover .menu-btn, .sess.menu-open .menu-btn { opacity: .8; }
   .sess .menu-btn:hover { opacity: 1; background: var(--hover); }
-  .sess-menu { position: absolute; z-index: 50; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .sess-menu { position: absolute; z-index: 50; background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
   .sess-menu button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--txt); padding: 7px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; }
   .sess-menu button:hover { background: var(--hover); }
   .sess-menu button.danger { color: var(--err); }
@@ -266,6 +266,11 @@
   /* JAG-278: one horizontal row — % + bar + state + compact — to save vertical space. */
   .ctxhead { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .ctxhead .meter { flex: 1; margin: 0; }
+  /* JAG-396: a prominent compact action, sitting right above the context donut. */
+  #inspector #compactBtn { display: block; width: 100%; margin: 2px 0 8px; padding: 8px 12px;
+    font-size: 12px; font-weight: 700; color: var(--acc); background: transparent;
+    border: 1px solid var(--acc); border-radius: 9px; cursor: pointer; }
+  #inspector #compactBtn:hover { background: var(--sel); color: var(--txt); }
   .ctxpct { font-size: 18px; font-weight: 700; letter-spacing: -.5px; color: var(--txt); font-variant-numeric: tabular-nums; }
   .ctxstate { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
   .ctxstate.near { color: var(--warn); }
@@ -435,7 +440,7 @@
      the editor dock is open) the right group wraps right-aligned — never clipped. */
   #composerBar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
   #composerBar .cb-left, #composerBar .cb-right { display: flex; align-items: center;
-    gap: 6px; flex-wrap: nowrap; min-width: 0; }
+    gap: 6px; flex-wrap: wrap; min-width: 0; }
   #composerBar .cb-right { margin-left: auto; justify-content: flex-end; }
   /* one uniform control height: the bar reads as a single toolbar, not mismatched pills */
   #composerBar .cb-left > button, #composerBar .cb-left > select,
@@ -449,7 +454,7 @@
   #composerBar .cb-left > select { flex: 0 0 auto; padding: 0 6px; background: transparent;
     color: var(--txt); border: 1px solid var(--line); font-weight: 400; }
   #composerBar .cb-right .model-wrap { flex: 0 1 auto; min-width: 0; }
-  #composerBar .cb-right .model-wrap > button { max-width: 190px; min-width: 0; flex: 0 1 auto; }
+  #composerBar .cb-right .model-wrap > button { max-width: 190px; min-width: 96px; flex: 0 1 auto; }
   #composerBar .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #composerBar #sendBtn { flex: 0 0 auto; font-weight: 700; }
   #composerBar #sendBtn .kbd { opacity: .65; font-weight: 400; margin-left: 2px; }
@@ -457,7 +462,9 @@
      a single tidy row; the menu opens upward, right-aligned. */
   #composerBar .more-wrap { position: relative; display: flex; flex: 0 0 auto; }
   #moreMenu { position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 178px;
-    padding: 4px; z-index: 40; }
+    padding: 4px; z-index: 40; background: var(--menubg); }
+  /* JAG-396: no see-through menus — the slash popup uses .card, force it opaque. */
+  #slashMenu { background: var(--menubg); }
   #moreMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%; height: auto;
     min-height: 0; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
     background: transparent; color: var(--txt); font-size: 12px; font-weight: 500; }
@@ -1132,10 +1139,10 @@
             <span id="ctxPct" class="ctxpct">–</span>
             <div class="meter"><i id="ctxBar" style="width:0%;min-width:0"></i></div>
             <span id="ctxState" class="ctxstate">–</span>
-            <button class="ghost" id="compactBtn" title="summarize this session's transcript now to free up context">🗜 compact</button>
           </div>
           <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
         </div>
+        <button id="compactBtn" title="summarize this session's transcript now to free up context">🗜 Compact context</button>
         <div id="ctxCats"></div>
         </div>
       </section>
@@ -3236,9 +3243,9 @@ if ($("costRefresh")) $("costRefresh").onclick = async () => {
 };
 async function compactNow() {
   if (!sessionId) { alert("no active session"); return; }
-  const btn = $("compactBtn"); btn.textContent = "compacting…";
+  const btn = $("compactBtn"); btn.textContent = "🗜 compacting…";
   const r = await api("POST", "/api/context/compact", { session: sessionId });
-  btn.textContent = "🗜 compact";
+  btn.textContent = "🗜 Compact context";
   if (r.error) { alert(r.error); return; }
   const kind = r.summary === "llm" ? ("llm:" + (r.summarizer || "?")) : (r.summary || "—");
   const afterN = (r.messages_after != null ? r.messages_after : (r.input_messages - r.compacted));

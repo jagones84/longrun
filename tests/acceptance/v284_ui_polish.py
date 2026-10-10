@@ -47,6 +47,19 @@ check("clicking a donut slice highlights its bar (seg + bar share a data-i key)"
       'class="seg" data-i="' in ui and 'class="bdbar" data-i="' in ui
       and 'querySelectorAll(".ctxdonut .seg")' in ui and 'classList.toggle("hl"' in ui)
 
+# --- 1c) JAG-396: opaque menus, prominent compact, composer keeps the model ----
+check("floating menus are opaque (sessions / attach / overflow / slash)",
+      '.sess-menu { position: absolute; z-index: 50; background: var(--menubg);' in ui
+      and 'background: var(--menubg); border: 1px solid var(--line); border-radius: 12px;' in ui
+      and 'padding: 4px; z-index: 40; background: var(--menubg); }' in ui
+      and '#slashMenu { background: var(--menubg); }' in ui)
+check("the compact action is a full-width accent button above the donut",
+      'id="compactBtn"' in ui and '#inspector #compactBtn' in ui
+      and 'width: 100%; margin: 2px 0 8px; padding: 8px 12px;' in ui)
+check("the composer never collapses the model picker when narrowed",
+      '.cb-right .model-wrap > button { max-width: 190px; min-width: 96px;' in ui
+      and 'gap: 6px; flex-wrap: wrap; min-width: 0; }' in ui)
+
 # --- 2) Context: hide empty categories, explain when empty -------------------
 check("context chips only render non-empty categories (no always-empty 'Other')",
       "const chips = nonEmpty.map(" in ui
@@ -66,8 +79,9 @@ check("the more-menu opens upward, right-aligned",
       "#moreMenu { position: absolute; right: 0; bottom: calc(100% + 8px)" in ui)
 check("the mic sits before the model picker (compact right cluster)",
       ui.index('id="micBtn"') < ui.index('id="model-btn"'))
-check("the right cluster is a single nowrap row (the model absorbs the squeeze)",
-      "gap: 6px; flex-wrap: nowrap; min-width: 0; }" in ui)
+check("the right cluster wraps instead of collapsing the model picker (JAG-396)",
+      "gap: 6px; flex-wrap: wrap; min-width: 0; }" in ui
+      and ".cb-right .model-wrap > button { max-width: 190px; min-width: 96px;" in ui)
 
 # --- 4) voice input guidance --------------------------------------------------
 check("voice help explains the OS-dictation route (Win+H / Fn Fn)",

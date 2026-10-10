@@ -102,8 +102,10 @@ check("the policy forbids a still-open 'superseded' reason",
       "remains open" in S.TASK_POLICY and "REJECTED" in S.TASK_POLICY)
 
 # --- 5) composer + context panel (JAG-278 UI) ---------------------------------
-check("the context panel packs %/bar/state/compact on one row",
+check("the context panel keeps %/bar/state on one row (compact moved above the donut)",
       'class="ctxhead"' in ui and "ctxbig" not in ui)
+check("the compact action sits directly above the context breakdown",
+      ui.index('id="compactBtn"') < ui.index('id="ctxCats"'))
 check("the model picker moved OUT of the header into the composer",
       ui.index('id="model-btn"') > ui.index('<div id="composerBar">'))
 check("the composer has a + attach menu",
