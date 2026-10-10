@@ -92,6 +92,15 @@ All notable changes to Longrun are documented here. The format follows
   `run` id (older ledger rows, non-turn callers) are now folded into a SINGLE collapsed
   bucket ("older calls (no run id)") instead of one row each — the 60-row tail used to
   fill the panel. Real turns stay one collapsible row per run.
+- **Settings ▸ Models reordered + Workspace panel trimmed (JAG-403i).** The Models tab
+  now reads top-to-bottom: **Thinking effort → Compaction model → Embedding → Add/edit
+  provider → Providers → Available models**. The three separate embedding sections
+  (model, personal catalogue, costs) are merged into ONE **Embedding · knowledge index**
+  card, with *add a model* and *Embedding costs* behind collapsible `<details>` (less
+  clutter). Removing a *shipped* catalogue entry and adding your own is now described in
+  one place. The Workspace inspector panel no longer prints the redundant
+  `session ▸ … · N chars of rules` line nor the `default ▸ …` echo (the path is already
+  in the input box); `setWorkspace` reports via a toast. v407 10/10; battery 133 → 134.
 
 ### Fixed
 - **Deleting the WHOLE knowledge base always asks (JAG-403e).** `confirmDelete` gained a

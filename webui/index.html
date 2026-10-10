@@ -1325,13 +1325,11 @@
         <div class="insp-body">
         <h2>Workspace · folder (this session)</h2>
         <div class="card">
-          <div class="remaining" id="wsCurrent">loading…</div>
-          <input id="wsPath" class="inp" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
+          <input id="wsPath" class="inp" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)" style="width:100%;padding:6px 10px;font-size:12px">
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
             <label class="remaining" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
             <button class="ghost" onclick="setWorkspace()">use this folder</button>
           </div>
-          <div id="wsResult" class="remaining" style="margin-top:6px"></div>
         </div>
         <h2>Files · workspace</h2>
         <div class="card">
@@ -1449,6 +1447,62 @@
     <nav class="sw-nav" id="swNav"></nav>
     <div class="sw-main" id="swMain">
       <div class="sw-cat" data-cat="models" hidden>
+        <h2>Thinking effort</h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">Saved automatically. When enabled, the harness sends <code>reasoning_effort</code> to the model; a model that does not support the field is retried without it, so a non-thinking model never crashes the turn.</div>
+          <div class="hrow">
+            <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" onchange="saveReasoning()"></label>
+            <label title="Depth of reasoning requested from the model.">effort
+              <select id="reEffort" onchange="saveReasoning()">
+                <option value="minimal">minimal</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+          </div>
+          <div class="remaining" id="reResult" style="margin-top:6px"></div>
+        </div>
+        <h2>Compaction model</h2>
+        <div class="card">
+          <select id="compactionModel" class="inp" style="width:100%;padding:6px 10px;font-size:12px"></select>
+          <button class="ghost" onclick="saveCompactionModel()" style="margin-top:8px">save</button>
+          <div class="remaining" id="compactionResult" style="margin-top:6px"></div>
+        </div>
+        <h2>Embedding · knowledge index</h2>
+        <div class="card">
+          <div class="remaining" style="margin:0 0 6px">Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (<b>bm25</b>). The catalogue lives in your PERSONAL config (<code>config/embedding.yaml</code>) — the shipped entries are editable, and you can add your own below.</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <select id="emModel" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
+            <button class="ghost" onclick="emSetActive()" title="save the active model">set</button>
+            <button class="ghost" onclick="emTest()" title="probe the model (one test embedding)">test</button>
+            <button class="ghost" onclick="emRefresh()" title="reload the catalogue">refresh</button>
+          </div>
+          <div class="remaining" style="margin-top:6px">active: <b id="emActive"></b></div>
+          <div id="emTestOut" class="remaining" style="margin-top:4px"></div>
+          <div id="emModelList" style="margin-top:8px;max-height:220px;overflow:auto"></div>
+          <details style="margin-top:8px">
+            <summary class="remaining" style="cursor:pointer">＋ add a model to the catalogue</summary>
+            <input id="emNewId" class="inp" placeholder="id — provider:model (e.g. openrouter:openai/text-embedding-3-small) *" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <input id="emNewDim" type="number" class="inp" placeholder="dim" style="flex:0 0 90px;padding:6px 10px;font-size:12px">
+              <input id="emNewPrice" type="number" step="0.001" class="inp" placeholder="USD / 1M tok" style="flex:0 0 130px;padding:6px 10px;font-size:12px">
+              <input id="emNewLabel" class="inp" placeholder="label (optional)" style="flex:1;padding:6px 10px;font-size:12px">
+            </div>
+            <button class="ghost" onclick="emAddModel()" style="margin-top:6px">+ add model</button>
+          </details>
+          <details style="margin-top:8px">
+            <summary class="remaining" style="cursor:pointer">Embedding costs</summary>
+            <div class="remaining" id="emCostTotal" style="margin-top:6px">—</div>
+            <div id="emCostByModel" style="margin-top:6px;max-height:160px;overflow:auto"></div>
+            <div id="emCostByDay" style="margin-top:6px;max-height:120px;overflow:auto"></div>
+            <div style="display:flex;gap:6px;margin-top:8px">
+              <button class="ghost" onclick="emCosts()">refresh</button>
+              <button class="ghost" onclick="emExportCsv()">export CSV</button>
+            </div>
+          </details>
+          <button class="ghost" onclick="openSettings('knowledge')" style="margin-top:8px" title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
+        </div>
         <h2>Add / edit provider</h2>
         <div class="card">
           <input id="provId" class="inp" placeholder="id (e.g. openrouter) *" style="width:100%;padding:6px 10px;font-size:12px">
@@ -1475,63 +1529,6 @@
         </div>
         <h2>Available models</h2>
         <div class="card" id="modelsList"><div class="remaining">loading…</div></div>
-        <h2>Compaction model</h2>
-        <div class="card">
-          <select id="compactionModel" class="inp" style="width:100%;padding:6px 10px;font-size:12px"></select>
-          <button class="ghost" onclick="saveCompactionModel()" style="margin-top:8px">save</button>
-          <div class="remaining" id="compactionResult" style="margin-top:6px"></div>
-        </div>
-        <h2>Embedding model · knowledge index</h2>
-        <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Vectors for semantic retrieval over the codebase + docs. Leave empty for keyword-only (bm25) search. The catalogue is your PERSONAL config (<code>config/embedding.yaml</code>); add your own below.</div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <select id="emModel" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
-            <button class="ghost" onclick="emSetActive()" title="save the active model">set</button>
-            <button class="ghost" onclick="emTest()" title="probe the model (one test embedding)">test</button>
-            <button class="ghost" onclick="emRefresh()" title="reload the catalogue">refresh</button>
-          </div>
-          <div class="remaining" style="margin-top:6px">active: <b id="emActive"></b></div>
-          <div id="emTestOut" class="remaining" style="margin-top:4px"></div>
-          <button class="ghost" onclick="openSettings('knowledge')" style="margin-top:8px" title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
-        </div>
-        <h2>Embedding models · personal</h2>
-        <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Add a model (id, dimension, USD per 1M tokens) — saved in your personal config, no hardcoding — or remove one from the list.</div>
-          <input id="emNewId" class="inp" placeholder="id — provider:model (e.g. openrouter:openai/text-embedding-3-small) *" style="width:100%;padding:6px 10px;font-size:12px">
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <input id="emNewDim" type="number" class="inp" placeholder="dim" style="flex:0 0 90px;padding:6px 10px;font-size:12px">
-            <input id="emNewPrice" type="number" step="0.001" class="inp" placeholder="USD / 1M tok" style="flex:0 0 130px;padding:6px 10px;font-size:12px">
-            <input id="emNewLabel" class="inp" placeholder="label (optional)" style="flex:1;padding:6px 10px;font-size:12px">
-          </div>
-          <button class="ghost" onclick="emAddModel()" style="margin-top:6px">+ add model</button>
-          <div id="emModelList" style="margin-top:8px;max-height:220px;overflow:auto"></div>
-        </div>
-        <h2>Embedding costs</h2>
-        <div class="card">
-          <div class="remaining" id="emCostTotal">—</div>
-          <div id="emCostByModel" style="margin-top:6px;max-height:200px;overflow:auto"></div>
-          <div id="emCostByDay" style="margin-top:6px;max-height:140px;overflow:auto"></div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button class="ghost" onclick="emCosts()">refresh</button>
-            <button class="ghost" onclick="emExportCsv()">export CSV</button>
-          </div>
-        </div>
-        <h2>Thinking effort</h2>
-        <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Saved automatically. When enabled, the harness sends <code>reasoning_effort</code> to the model; a model that does not support the field is retried without it, so a non-thinking model never crashes the turn.</div>
-          <div class="hrow">
-            <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" onchange="saveReasoning()"></label>
-            <label title="Depth of reasoning requested from the model.">effort
-              <select id="reEffort" onchange="saveReasoning()">
-                <option value="minimal">minimal</option>
-                <option value="low">low</option>
-                <option value="medium">medium</option>
-                <option value="high">high</option>
-              </select>
-            </label>
-          </div>
-          <div class="remaining" id="reResult" style="margin-top:6px"></div>
-        </div>
       </div>
       <div class="sw-cat" data-cat="knowledge" hidden>
         <div data-insp="knowledge">
@@ -4945,8 +4942,6 @@ async function loadRules() {
     const g = d.global || {}, p = d.project || {};
     _rulePathGlobal = g.path || null;
     _rulePathProject = p.path || null;
-    $("wsCurrent").textContent = (d.source === "session" ? "session ▸ " : "default ▸ ") +
-      (d.workspace || "—") + " · " + (d.total_chars || 0) + " chars of rules";
     $("wsPath").value = d.workspace || "";
     _isum("sWorkspace", _base(d.workspace), "");
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
@@ -4957,7 +4952,7 @@ async function loadRules() {
     (g.files || []).forEach(f => files.push("G " + f));
     (p.files || []).forEach(f => files.push("P " + f));
     $("rulesFiles").textContent = files.length ? files.join("  ·  ") : "no rule files";
-  } catch (e) { $("wsCurrent").textContent = "error: " + e; }
+  } catch (e) { if (typeof toast === "function") toast("rules load error: " + e, "err"); }
 }
 async function saveRules(scope) {
   const content = $(scope === "global" ? "rulesGlobalText" : "rulesProjectText").value;
@@ -4969,13 +4964,16 @@ async function saveRules(scope) {
 }
 async function setWorkspace() {
   const path = $("wsPath").value.trim();
-  if (!path) { $("wsResult").textContent = "folder path required"; return; }
+  if (!path) { if (typeof toast === "function") toast("folder path required", "err"); return; }
   const body = { path };
   if ($("wsDefault").checked || !sessionId) { /* default globale */ }
   else { body.session = sessionId; }
   const r = await api("POST", "/api/workspace", body);
-  $("wsResult").textContent = r.error ? ("error: " + r.error)
-    : (r.scope === "session" ? ("session → " + r.workspace) : ("default → " + r.workspace));
+  if (typeof toast === "function") {
+    toast(r.error ? ("workspace error: " + r.error)
+                  : ("workspace " + (r.scope === "session" ? "session" : "default") + ": " + (r.workspace || "")),
+          r.error ? "err" : "ok");
+  }
   if (!r.error) { loadRules(); loadSessions(); }
 }
 /* JAG-127: slash menu shows COMMANDS first (/goal, /skills, /compact) then skills. */
