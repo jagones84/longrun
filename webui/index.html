@@ -331,6 +331,19 @@
   .costrow .cm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .costrow .ct { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
   .costrow .cu { font-weight: 600; color: var(--txt); min-width: 52px; text-align: right; }
+  /* JAG-403f: calls are grouped PER RUN (one user turn). Each run is a collapsed
+     row with its own total; click the header to expand the individual calls. */
+  .runrow { border-bottom: 1px solid var(--line); }
+  .runhd { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim);
+    padding: 5px 2px; cursor: pointer; }
+  .runhd:hover { color: var(--txt); }
+  .runhd .caret { width: 9px; color: var(--muted); flex: none; }
+  .runhd .rt { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
+  .runhd .rm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runhd .rn { color: var(--muted); font-size: 10px; }
+  .runhd .cu { font-weight: 700; color: var(--txt); min-width: 52px; text-align: right; }
+  .runbody { padding-left: 14px; border-left: 1px solid var(--line); margin-left: 3px; }
+  .runbody .costrow:last-child { border-bottom: 0; }
 
   /* approvals */
   button { background: linear-gradient(90deg, var(--acc), var(--acc2)); border: 0; color: #fff;
@@ -705,6 +718,19 @@
      body font with 8/14px padding). Compact them so the inspector reads denser. */
   #inspector button.ghost { font-size: 11px; padding: 4px 9px; border-radius: 8px; line-height: 1.5; }
   #inspector .insp-hd { padding: 7px 8px; }
+  /* JAG-403g: an ordered one-line SUMMARY beside each inspector tab, so cost / ctx%
+     / pending / plan counts are visible WITHOUT expanding the tab. The header is a
+     wrapping flex row: when the rail is narrow the summary drops onto its own line
+     (right-aligned) instead of forcing an expand, and ellipsizes if even that is tight. */
+  #inspector .insp-hd { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; }
+  #inspector .insp-hd::before { content: "\25B8"; }
+  #inspector section.insp-open .insp-hd::before { content: "\25BE"; }
+  #inspector .ihd-s { margin-left: auto; flex: 0 1 auto; min-width: 0; max-width: 100%;
+    color: var(--dim); font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none;
+    text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+  #inspector .ihd-s.warn { color: var(--warn); }
+  #inspector .ihd-s.ok { color: var(--ok); }
+  #inspector .ihd-s.hot { color: var(--err); }
   /* JAG-275: small date+time stamp next to each chat turn / tool card / harness msg. */
   .mts { font-size: 9.5px; color: var(--dim); opacity: .8; font-weight: 400; letter-spacing: .02em; }
   /* JAG-150: movable, non-blocking settings window */
@@ -975,6 +1001,7 @@
   html:not(.bold-text) .mts,
   html:not(.bold-text) button.primary { font-weight: 500; }
   html:not(.bold-text) .costtot,
+  html:not(.bold-text) .runhd .cu,
   html:not(.bold-text) .ctxpct { font-weight: 600; }
 
   /* JAG-361: interface polish (audit H2/H4/H6 + M6/M7/L5). Placed last so these
@@ -1102,7 +1129,7 @@
   <aside id="rail" data-col="context">
     <div id="inspector">
       <section data-insp="approvals" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('approvals')">Approvals <span id="apprCount" class="remaining"></span></button>
+        <button class="insp-hd" onclick="toggleInsp('approvals')">Approvals<span id="apprCount" class="ihd-s"></span></button>
         <div class="insp-body">
         <div class="card">
           <div id="approvals" class="remaining">no pending approvals</div>
@@ -1111,7 +1138,7 @@
         </div>
       </section>
       <section data-insp="cost" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('cost')">Cost</button>
+        <button class="insp-hd" onclick="toggleInsp('cost')">Cost<span class="ihd-s" id="sCost"></span></button>
         <div class="insp-body">
         <div class="card">
           <div class="costhead">
@@ -1125,7 +1152,7 @@
         </div>
       </section>
       <section data-insp="context" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('context')">Context</button>
+        <button class="insp-hd" onclick="toggleInsp('context')">Context<span class="ihd-s" id="sContext"></span></button>
         <div class="insp-body">
         <div class="card">
           <div class="ctxhead">
@@ -1140,7 +1167,7 @@
         </div>
       </section>
       <section data-insp="plan" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('plan')">Plan</button>
+        <button class="insp-hd" onclick="toggleInsp('plan')">Plan<span class="ihd-s" id="sPlan"></span></button>
         <div class="insp-body">
         <h2>TASK LIST (persistent) <span id="taskCount" class="remaining"></span></h2>
         <div class="card">
@@ -1164,7 +1191,7 @@
         </div>
       </section>
       <section data-insp="rules" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('rules')">Roles</button>
+        <button class="insp-hd" onclick="toggleInsp('rules')">Roles<span class="ihd-s" id="sRoles"></span></button>
         <div class="insp-body">
         <div class="card">
           <div id="rulesWho" class="rwho"></div>
@@ -1294,7 +1321,7 @@
         </div>
       </div>
       <section data-insp="files" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('files')">Files</button>
+        <button class="insp-hd" onclick="toggleInsp('files')">Workspace<span class="ihd-s" id="sWorkspace"></span></button>
         <div class="insp-body">
         <h2>Workspace · folder (this session)</h2>
         <div class="card">
@@ -1328,7 +1355,7 @@
         </div>
       </section>
       <section data-insp="codebase" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('codebase')">Codebase</button>
+        <button class="insp-hd" onclick="toggleInsp('codebase')">Codebase<span class="ihd-s" id="sCodebase"></span></button>
         <div class="insp-body">
         <h2>Codebase index · <span id="cbStat" class="remaining"></span></h2>
         <div class="card">
@@ -1351,25 +1378,8 @@
         </div>
         </div>
       </section>
-      <section data-insp="browser" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('browser')">Browser</button>
-        <div class="insp-body">
-        <div class="card">
-          <input id="browserInp" class="inp" placeholder="url or search…" style="width:100%;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')browserGo('fetch')">
-          <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
-            <button class="ghost" onclick="browserGo('fetch')" title="read the page (public internet)">↗ open</button>
-            <button class="ghost" onclick="browserGo('search')" title="web search">🔎 search</button>
-            <span class="remaining" id="browserMsg" style="flex:1;text-align:right"></span>
-          </div>
-          <div id="browserTools" style="display:none;justify-content:flex-end;margin-top:6px">
-            <button type="button" class="ctxcopy" id="browserCopy" title="copy every URL found in the result, one per line — ready to paste as sources">⧉ copy all URLs</button>
-          </div>
-          <div id="browserOut" class="remaining" style="margin-top:8px;max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11.5px"></div>
-        </div>
-        </div>
-      </section>
       <section data-insp="terminal" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('terminal')">Terminal</button>
+        <button class="insp-hd" onclick="toggleInsp('terminal')">Terminal<span class="ihd-s" id="sTerm"></span></button>
         <div class="insp-body">
         <div class="card">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
@@ -1387,7 +1397,7 @@
         </div>
       </section>
       <section data-insp="feed" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('feed')">Feed</button>
+        <button class="insp-hd" onclick="toggleInsp('feed')">Feed<span class="ihd-s" id="sFeed"></span></button>
         <div class="insp-body">
         <div class="card" id="feed" style="font-size:11px;color:var(--dim);max-height:220px;overflow-y:auto">connecting…</div>
         </div>
@@ -1527,10 +1537,14 @@
         <div data-insp="knowledge">
         <h2>Knowledge · global <span id="indexStat" class="remaining"></span></h2>
         <div class="card">
-          <div class="remaining" id="indexMeta">Global knowledge base — notebooks of sources (URLs, files, pasted text). Separate from the per-workspace <b>Codebase</b> index (right rail ▸ Codebase).</div>
-          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-            <button class="ghost" onclick="kbStatus()" title="refresh the counts">status</button>
-            <button class="ghost" onclick="kbClear()" title="delete the whole knowledge base">clear</button>
+          <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+            <div class="remaining" id="indexMeta" style="flex:1;min-width:180px">Global knowledge base — notebooks of sources (URLs, files, pasted text). Separate from the per-workspace <b>Codebase</b> index (right rail ▸ Codebase).</div>
+            <!-- JAG-403h: status/clear sit to the RIGHT of the counts (they wrapped under
+                 and ate vertical space); they drop below only when the panel is narrow. -->
+            <div style="display:flex;gap:6px;flex:0 0 auto">
+              <button class="ghost" onclick="kbStatus()" title="refresh the counts">status</button>
+              <button class="ghost" onclick="kbClear()" title="delete the whole knowledge base">clear</button>
+            </div>
           </div>
         </div>
         <h2>Search knowledge</h2>
@@ -1543,7 +1557,7 @@
         </div>
         <h2>Notebooks</h2>
         <div class="card">
-          <div id="kbNotebooks"><div class="remaining">loading…</div></div>
+          <div id="kbNotebooks" style="max-height:200px;overflow:auto"><div class="remaining">loading…</div></div>
           <div style="display:flex;gap:6px;margin-top:8px">
             <input id="kbNewName" class="inp" placeholder="new notebook name…" style="flex:1;padding:6px 10px;font-size:12px">
             <button class="ghost" onclick="kbCreateNotebook()">+ create</button>
@@ -1571,15 +1585,24 @@
             <input type="checkbox" id="kbAutoMode" onchange="kbResearchMode()">
             <span><b>auto (agent)</b> — search + fetch + summarise + import (uses the research LLM)</span>
           </label>
-          <div id="kbAutoOpts" hidden>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
-              <select id="researchModel" class="inp" style="flex:2;min-width:220px;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
-              <select id="researchDepth" class="inp" style="flex:0 0 110px;padding:6px 10px;font-size:12px" title="how many rounds and sources per round">
+          <!-- JAG-403h: depth + max sources are ALWAYS visible — they apply to BOTH
+               the manual discover count and the auto research rounds, so hiding them
+               behind the auto checkbox made them look gone. -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
+            <label class="remaining" style="display:flex;gap:6px;align-items:center">depth
+              <select id="researchDepth" class="inp" style="width:auto;padding:6px 10px;font-size:12px" title="research rounds: shallow = 1, medium = 2, deep = 3">
                 <option value="shallow">shallow</option>
                 <option value="medium" selected>medium</option>
                 <option value="deep">deep</option>
               </select>
-              <input id="researchN" type="number" min="1" max="20" value="5" class="inp" style="flex:0 0 60px;padding:6px 10px;font-size:12px" title="sources per round">
+            </label>
+            <label class="remaining" style="display:flex;gap:6px;align-items:center">max sources
+              <input id="researchN" type="number" min="1" max="20" value="5" class="inp" style="width:66px;padding:6px 10px;font-size:12px" title="sources per round (manual discover: number of candidates)">
+            </label>
+          </div>
+          <div id="kbAutoOpts" hidden>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
+              <select id="researchModel" class="inp" style="flex:2;min-width:220px;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
             </div>
             <div style="display:flex;gap:6px;margin-top:4px">
               <button class="ghost" onclick="researchModelLs()" title="refresh research models">↻ models</button>
@@ -2726,7 +2749,7 @@ function selectSession(s) {
   // JAG-167: never carry another session's run graph into this one.
   curRunId = null; localStorage.removeItem("sf_run"); graph = null;
   if (window.SparkEditor && SparkEditor.onSessionChange) SparkEditor.onSessionChange();
-  loadSessions(); loadHistory(); loadCtx(); loadRole(); loadRules(); loadPlan(); loadCosts();
+  loadSessions(); loadHistory(); loadCtx(); loadRole(); loadRules(); loadPlan(); loadCosts(); cbStatus();
   modelLabel(); closeAside();
   attachIfRunning(sessionId);   // JAG-181: resume following a still-running turn
   // JAG-127: the open panel must follow the session switch — its folder
@@ -3031,6 +3054,7 @@ function ctxNa(reason) {
   $("ctxBudget").textContent = "n/d";
   $("ctxBudget").className = "";
   $("ctxBudget").style.color = "var(--dim)";
+  _isum("sContext", "");
   $("ctxBar").style.width = "0%"; $("ctxBar").style.minWidth = "0px"; $("ctxBar").className = "";
   const _cm = $("ctx-meter"); _cm.className = "pill meter"; _cm.title = "context tokens / budget";
   const _cp = $("ctxPctTop"); if (_cp) _cp.textContent = "–";
@@ -3071,6 +3095,7 @@ async function loadRulesPanel() {
       : "ad-hoc session (not designated as an agent) \u2014 the role text below is this session's ROLE.md";
     wbox.className = "rwho" + (who ? " agent" : "");
   }
+  _isum("sRoles", who ? ((who.id || "") + (who.name ? " " + who.name : "")).trim() : "ad-hoc", who ? "ok" : "");
   const rows = [];
   if (sessionId) rows.push(_rulesRow("role", "session role", (role && role.path) || "(no session)",
                                      (role && role.text) || "", "ROLE.md", !!(role && role.text), true));
@@ -3133,6 +3158,8 @@ async function loadCtx() {
     $("ctxMsgs").textContent = d.messages || "n/d";
     $("ctxBudget").textContent = d.budget || "n/d";
     $("ctxBudget").style.color = state === "over" ? "var(--err)" : "var(--dim)";
+    _isum("sContext", (d.pct != null ? d.pct : 0) + "% \u00b7 " + (d.tokens || "?") + "/" + (d.budget || "?"),
+          state === "over" ? "hot" : (state === "near" ? "warn" : ""));
     const st = $("ctxState");
     st.textContent = state === "over" ? "above threshold"
       : state === "near" ? "near threshold" : "normal";
@@ -3301,15 +3328,57 @@ function renderCtxItems() {
    The server folds the provider's REAL usage into the ledger and pushes a
    `cost.usage` event, so this updates mid-run. Prices are per 1M tokens. */
 let _cost = null;
+let _costOpen = {};   // JAG-403f: run id -> expanded (survives the live re-render)
 function _usd(v) { return v == null ? "\u2014" : ("$" + (v < 0.01 ? v.toFixed(4) : v.toFixed(2))); }
 function _shortModel(m) { m = String(m || "?"); return m.length > 26 ? "\u2026" + m.slice(-25) : m; }
 function _hhmmss(ts) { try { return new Date((ts || 0) * 1000).toLocaleTimeString(); } catch (e) { return ""; } }
+/* JAG-403g: the one-line summary beside an inspector tab (see #inspector .ihd-s). */
+function _isum(id, text, cls) {
+  const el = $(id); if (!el) return;
+  el.textContent = (text == null || text === "") ? "" : String(text);
+  el.className = "ihd-s" + (cls ? " " + cls : "");
+}
+function _base(p) { p = String(p || "").replace(/[\/\\]+$/, ""); const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")); return i >= 0 ? p.slice(i + 1) : p; }
+/* JAG-403f: one row per API call inside an expanded run. */
+function _costCallsHtml(calls) {
+  return calls.map(r =>
+    '<div class="costrow"><span class="cm" title="' + _attr(r.model || "") + '">' + esc(_shortModel(r.model)) + "</span>" +
+    '<span class="ct">' + esc(_hhmmss(r.ts)) + "</span>" +
+    '<span class="ct">' + _fmtTok(r.prompt) + "\u2192" + _fmtTok(r.completion) + "</span>" +
+    '<span class="cu" title="' + (r.src === "provider" ? "exact \u2014 charged by the provider"
+      : (r.src === "estimate" ? "estimated from the real token counts \u00d7 rates" : "no price known for this model")) + '">'
+      + (r.src === "estimate" ? "\u2248" : "") + _usd(r.usd) + "</span></div>").join("");
+}
+/* JAG-403f: one COLLAPSED row per run — its total, call count and model(s). */
+function _costRunHtml(g) {
+  const open = !!_costOpen[g.key];
+  const n = g.calls.length;
+  const models = [...new Set(g.calls.map(r => _shortModel(r.model)))];
+  const mtxt = g.key === "~norun"
+    ? "older calls (no run id)"
+    : (models.length === 1 ? models[0] : (models.length + " models"));
+  const money = g.usd == null ? (g.unpriced ? "\u2014" : "$0") : _usd(g.usd);
+  const unp = g.unpriced ? ' <span class="rn">\u00b7 ' + g.unpriced + " unpriced</span>" : "";
+  return '<div class="runrow">' +
+    '<div class="runhd" data-k="' + _attr(g.key) + '" title="' + (open ? "collapse" : "expand") + ' this run">' +
+      '<span class="caret">' + (open ? "\u25be" : "\u25b8") + "</span>" +
+      '<span class="rt">' + esc(_hhmmss(g.ts)) + "</span>" +
+      '<span class="rm">' + esc(mtxt) + "</span>" +
+      '<span class="rn">' + n + " call" + (n === 1 ? "" : "s") + unp + "</span>" +
+      '<span class="cu">' + money + "</span>" +
+    "</div>" +
+    (open ? '<div class="runbody">' + _costCallsHtml(g.calls) + "</div>" : "") +
+    "</div>";
+}
 function renderCosts() {
   const box = $("costList"); if (!box) return;
   const c = _cost;
   const total = $("costTotal"), sub = $("costSub");
-  if (!c) { if (total) total.textContent = "$0"; if (sub) sub.textContent = ""; box.innerHTML = '<div class="remaining">no calls yet</div>'; return; }
+  if (!c) { if (total) total.textContent = "$0"; if (sub) sub.textContent = ""; _isum("sCost", ""); box.innerHTML = '<div class="remaining">no calls yet</div>'; return; }
   if (total) total.textContent = (c.priced || (c.calls && !c.unknown_calls)) ? _usd(c.total_usd) : (c.calls ? "\u2014" : "$0");
+  _isum("sCost", c.calls
+    ? (((c.priced || !c.unknown_calls) ? _usd(c.total_usd) : "\u2014") + " \u00b7 " + c.calls + " call" + (c.calls === 1 ? "" : "s"))
+    : "", c.calls && c.unknown_calls && !c.priced ? "warn" : "");
   // JAG-361: state whether the money is EXACT (the provider reported the charge
   // itself) or estimated from the real token counts x the rate table.
   const _exact = (c.recent || []).filter(r => r.src === "provider").length;
@@ -3321,14 +3390,19 @@ function renderCosts() {
   if ($("costCalls")) $("costCalls").textContent = (c.calls || 0) + " calls";
   if ($("costIn")) $("costIn").textContent = _fmtTok(c.tokens_in) + " in";
   if ($("costOut")) $("costOut").textContent = _fmtTok(c.tokens_out) + " out";
-  const rows = (c.recent || []).map(r =>
-    '<div class="costrow"><span class="cm" title="' + _attr(r.model || "") + '">' + esc(_shortModel(r.model)) + "</span>" +
-    '<span class="ct">' + esc(_hhmmss(r.ts)) + "</span>" +
-    '<span class="ct">' + _fmtTok(r.prompt) + "\u2192" + _fmtTok(r.completion) + "</span>" +
-    '<span class="cu" title="' + (r.src === "provider" ? "exact \u2014 charged by the provider"
-      : (r.src === "estimate" ? "estimated from the real token counts \u00d7 rates" : "no price known for this model")) + '">'
-      + (r.src === "estimate" ? "\u2248" : "") + _usd(r.usd) + "</span></div>").join("");
-  box.innerHTML = rows || '<div class="remaining">no calls yet</div>';
+  // JAG-403h: group the (newest-first) calls by run. A call WITHOUT a run id (older
+  // ledger rows, non-turn callers) is folded into ONE bucket — before, each became
+  // its own row and 60 single-call rows flooded the panel.
+  const groups = [], idx = {};
+  (c.recent || []).forEach(r => {
+    const key = r.run || "~norun";
+    let g = idx[key];
+    if (!g) { g = { key: key, calls: [], usd: null, unpriced: 0, ts: r.ts }; idx[key] = g; groups.push(g); }
+    g.calls.push(r);
+    if (r.usd == null) g.unpriced++; else g.usd = (g.usd || 0) + r.usd;
+  });
+  box.innerHTML = groups.map(_costRunHtml).join("") || '<div class="remaining">no calls yet</div>';
+  box.querySelectorAll(".runhd").forEach(h => { h.onclick = () => { _costOpen[h.dataset.k] = !_costOpen[h.dataset.k]; renderCosts(); }; });
 }
 async function loadCosts() {
   if (!sessionId) { _cost = null; renderCosts(); return; }
@@ -3406,9 +3480,22 @@ let graphFresh = null;   // node id to highlight on the next render
 function listRunId() { return (graph && graph.run_id) || curRunId || null; }
 
 function countNodes(nodes) {
-  const c = { todo: 0, doing: 0, done: 0, blocked: 0, cancelled: 0 };
+  const c = { todo: 0, doing: 0, done: 0, blocked: 0, cancelled: 0, superseded: 0 };
   (nodes || []).forEach(n => c[n.status] = (c[n.status] || 0) + 1);
   return c;
+}
+/* JAG-403g: the Plan tab's one-line summary — status counts in a fixed order
+   (done · superseded · doing · todo · blocked) plus the run id. */
+function planSummary(c, runId) {
+  const parts = [];
+  if (c.done) parts.push(c.done + " done");
+  if (c.superseded) parts.push(c.superseded + " super");
+  if (c.cancelled) parts.push(c.cancelled + " canc");
+  if (c.doing) parts.push(c.doing + " doing");
+  if (c.todo) parts.push(c.todo + " todo");
+  if (c.blocked) parts.push(c.blocked + " blocked");
+  const run = String(runId || "").slice(0, 8);
+  return (parts.join(" \u00b7 ") || "empty") + (run ? " \u00b7 run " + run : "");
 }
 function setRun(id) {
   if (!id || id === curRunId) return;
@@ -3458,6 +3545,7 @@ function renderGraph() {
   if (!graph) {
     box.innerHTML = '<div class="remaining">no run graph yet — send a request</div>';
     $("graphHead").textContent = _jid + "run graph: —"; $("taskCount").textContent = "";
+    _isum("sPlan", "");
     return;
   }
   // JAG-194: the graph keeps EVERY plan's nodes (so the transcript can resolve
@@ -3476,6 +3564,7 @@ function renderGraph() {
     _nodes.length + " nodes · " + (c.done || 0) + " done" +
     (graph.goal ? " · " + graph.goal.slice(0, 40) : "");
   $("taskCount").textContent = (c.done || 0) + "/" + _nodes.length;
+  _isum("sPlan", planSummary(c, graph.run_id), (c.todo || c.doing || c.blocked) ? "" : "ok");
   box.innerHTML = taskTree(_nodes);
   box.querySelectorAll(".task").forEach(el => {
     const n = _nodes.find(x => String(x.id) === el.dataset.id);
@@ -3742,7 +3831,7 @@ async function loadApprovals() {
   catch (e) { return; }   // polled every 4s: a transient failure must not spam unhandled rejections
   const box = $("approvals"); box.innerHTML = "";
   const pend = out.approvals || [];
-  $("apprCount").textContent = pend.length ? `(${pend.length} pending)` : "";
+  _isum("apprCount", pend.length ? (pend.length + " pending") : "none", pend.length ? "warn" : "");
   if (!pend.length) { box.textContent = "no pending approvals"; return; }
   pend.forEach(a => {
     const d = document.createElement("div"); d.className = "card";
@@ -4026,12 +4115,14 @@ function runAgent(goal) {
 }
 
 /* ---- feed ---- */
+let _feedN = 0;   // JAG-403g: feed events seen (drives the Feed tab summary)
 function connectFeed() {
   const es = new EventSource("/api/feed" + (authQS() ? "?" + authQS() : ""));
   const push = line => {
     const f = $("feed"); const d = document.createElement("div");
     d.textContent = line; f.appendChild(d); f.scrollTop = f.scrollHeight;
     while (f.children.length > 60) f.removeChild(f.firstChild);
+    _feedN++; _isum("sFeed", _feedN + " events", "");   // JAG-403g: live feed counter
   };
   es.addEventListener("backlog", e => {
     let arr = []; try { arr = JSON.parse(e.data) || []; } catch (_) {}
@@ -4857,6 +4948,7 @@ async function loadRules() {
     $("wsCurrent").textContent = (d.source === "session" ? "session ▸ " : "default ▸ ") +
       (d.workspace || "—") + " · " + (d.total_chars || 0) + " chars of rules";
     $("wsPath").value = d.workspace || "";
+    _isum("sWorkspace", _base(d.workspace), "");
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
     $("rulesProjectPath").textContent = "file: " + (p.path || "—") + (p.exists ? "" : " (does not exist)");
     $("rulesGlobalText").value = g.text || "";
@@ -5194,6 +5286,7 @@ async function cbStatus() {
          "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : ""))
       : ("workspace: " + ws + " — not built yet, press build."));
     const st = $("cbStat"); if (st) st.textContent = s.exists ? ((s.chunks || 0) + " chunks") : "empty";
+    _isum("sCodebase", s.exists ? ((s.files || 0) + " files \u00b7 " + (s.chunks || 0) + " chunks") : "empty", s.exists ? "" : "warn");
     return s;
   } catch (e) { const meta = $("cbMeta"); if (meta) meta.textContent = "error: " + e; }
 }
@@ -5399,6 +5492,12 @@ function _kbSourceRow(s) {
   } else if (s.kind === "url" && ref) {
     label = '<a href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
       'style="color:var(--acc);flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
+  } else if (s.kind === "text") {
+    // JAG-403h: a pasted-text / research-summary source has NO file — its `ref`
+    // IS the title. Rendering it as a link produced a FALSE reference (the editor
+    // tried to open a file named after the title and failed). Show it as text.
+    label = '<span style="flex:1;word-break:break-all" title="indexed text (no file) — find it with Search knowledge">' +
+      esc(title) + "</span>";
   } else if (ref) {
     label = '<a href="#" class="kbopen" data-ref="' + _attr(ref) + '" ' +
       'style="flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
@@ -5494,7 +5593,8 @@ async function kbDiscover() {
   if (!q) { box.innerHTML = ""; return; }
   box.innerHTML = '<div class="remaining">searching the web…</div>';
   try {
-    const r = await api("POST", "/api/knowledge/discover", { q: q, n: 6 });
+    const n = Math.max(1, Math.min(10, parseInt(($("researchN") && $("researchN").value) || "6", 10) || 6));
+    const r = await api("POST", "/api/knowledge/discover", { q: q, n: n });
     const cs = r.candidates || [];
     if (!cs.length) { box.innerHTML = '<div class="remaining">' + esc(r.error || "no results") + "</div>"; return; }
     box.innerHTML = '<div class="remaining" style="margin-bottom:4px">' + esc(r.engine || "") + " · " + cs.length + " candidates</div>" +
@@ -5642,6 +5742,7 @@ async function loadFiles() {
     if (d.error) { tree.innerHTML = '<div class="remaining">' + esc(d.error) + '</div>'; return; }
     _filesRoot = d.path;
     $("filesRoot").textContent = d.path;
+    _isum("sWorkspace", _base(d.path), "");
     tree.innerHTML = "";
     _renderDir(tree, d, 0);
     if (!d.count) tree.innerHTML = '<div class="remaining">empty folder</div>';
@@ -6022,35 +6123,6 @@ function linkifyFiles(bubble) { linkifyNodes(bubble); }
 function linkifyAll() {
   document.querySelectorAll("#log .msg .bubble").forEach(linkifyFiles);
 }
-/* JAG-154: Browser panel — read the public web through the harness `web` tool. */
-/* JAG-281: the Browser panel also offers a one-click copy of every URL in the
-   result (search hits / a page's links), stacked one per line for a source list. */
-let _browserUrls = [];
-function _renderBrowserUrls(text) {
-  _browserUrls = Array.from(new Set((text || "").match(/https?:\/\/[^\s)>\]}"'`]+/g) || []));
-  const tools = $("browserTools"), btn = $("browserCopy");
-  if (tools) tools.style.display = _browserUrls.length ? "flex" : "none";
-  if (btn) btn.textContent = _browserUrls.length ? ("⧉ copy all URLs (" + _browserUrls.length + ")") : "⧉ copy all URLs";
-}
-$("browserCopy").onclick = () => copyText(_browserUrls.join("\n")).then(
-  ok => toast(ok ? (_browserUrls.length + " URLs copied") : "copy failed", ok ? "ok" : "err"));
-async function browserGo(kind) {
-  const q = ($("browserInp").value || "").trim();
-  const out = $("browserOut"), msg = $("browserMsg");
-  if (!q) { msg.textContent = "url/search required"; return; }
-  msg.textContent = "…"; out.textContent = ""; _renderBrowserUrls("");
-  const args = kind === "search" ? { action: "search", query: q } : { action: "fetch", url: q };
-  try {
-    const r = await api("POST", "/api/tools/call", { tool: "web", args: args, session: sessionId });
-    if (r && r.status && r.status !== "executed") { msg.textContent = "blocked: " + (r.reason || r.status); return; }
-    const res = r && r.result;
-    if (!res || !res.ok) { msg.textContent = "error: " + ((res && res.error) || "?"); return; }
-    msg.textContent = [(res.via || ""), (res.engine || ""), (res.url || "")].filter(Boolean).join(" · ");
-    out.textContent = (res.stdout || "(empty)").trim();
-    linkifyNodes(out);
-    _renderBrowserUrls(out.textContent || "");
-  } catch (e) { msg.textContent = "error: " + e; }
-}
 /* JAG-281: real terminal — a PERSISTENT per-session shell (term.py). Each Enter
    sends one line to the same long-lived bash (cd/env survive), output streams
    live by polling, ↑/↓ recalls history. The agent's `shell` tool is separate. */
@@ -6078,7 +6150,7 @@ async function termSend() {
   _termLine("$ " + cmd, "tcmd");
   const r = await api("POST", "/api/term/exec", { session: sessionId, cmd: cmd });
   if (!r || r.error || r.ok === false) { _termLine("⛔ " + ((r && r.error) || "error")); return; }
-  if (r.cwd) { const c = $("termCwd"); if (c) c.textContent = r.cwd; }
+  if (r.cwd) { const c = $("termCwd"); if (c) c.textContent = r.cwd; _isum("sTerm", _base(r.cwd), ""); }
   _termTick();
 }
 function termKey(e) {
@@ -6112,7 +6184,7 @@ async function _termTick() {
       else if (ev.kind === "exit") _termLine("[shell exited]", "remaining");
     });
     if (typeof d.cursor === "number") _termCursor = d.cursor;
-    if (d.cwd) { const c = $("termCwd"); if (c) c.textContent = d.cwd; }
+    if (d.cwd) { const c = $("termCwd"); if (c) c.textContent = d.cwd; _isum("sTerm", _base(d.cwd), ""); }
   } catch (e) { /* transient */ }
 }
 function _termStart() { if (!_termTimer) _termTimer = setInterval(_termTick, 700); }
@@ -6195,7 +6267,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Files"], ["codebase", "Codebase"], ["browser", "Browser"], ["terminal", "Terminal"], ["feed", "Feed"]]
+  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Workspace"], ["codebase", "Codebase"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }
@@ -6634,7 +6706,7 @@ $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
-  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts();
+  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus();
   // auto-open the workspace tree of a restored-open Files panel (no manual ↻)
   { const _fs = document.querySelector('#inspector section[data-insp="files"]');
     if (_fs && _fs.classList.contains("insp-open")) { loadFiles(); loadEdits(); } }

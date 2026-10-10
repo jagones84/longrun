@@ -57,6 +57,41 @@ All notable changes to Longrun are documented here. The format follows
   `abspath`). Fixed: knowledge **search results** and the **notebook files** list are now
   clickable (URLs open in a tab, files in the editor) and the files list is bounded/scrollable.
   v403 31/31; battery 130/130.
+- **Cost panel grouped per run + Bridge org UX (JAG-403f).** The right-hand **Cost** panel now
+  groups the session's API calls **per run** (one user turn): each run is a collapsed row with
+  its time, model(s), call count and **total**; click to expand the individual calls. Every
+  ledger record now carries the turn's `run` id (tagged by `chat_once` from the chat `RunTrace`).
+  In the **Bridge**, the AGENTS table is content-sized and packed to the LEFT (explicit `<col>`
+  widths, no full-width stretch) instead of spread across the panel, and the "+ new agent"
+  inputs are no longer full-width. The **org chart** keeps click = preview (constellation) and
+  double-click = open the agent's session in the main app, and gains a **right-click** quick
+  action menu (Constellation / Open session / Edit prompt / Reset) that reuses existing stores
+  and endpoints only. v404 17/17; battery 130 → 131.
+- **Ordered live summary beside every inspector tab (JAG-403g).** Each RH tab now
+  shows a one-line summary — Cost → session `$` + calls, Context → `pct% · used/budget`,
+  Approvals → `N pending` / `none`, Plan → `done · super · doing · todo · blocked · run`
+  (counts in a fixed order), Roles → the agent id + name (or `ad-hoc`), **Workspace**
+  (the tab formerly named *Files*) → the folder name, Codebase → `files · chunks`,
+  Browser → the last `web` action, Terminal → the shell cwd, Feed → a live event
+  counter. All update in real time from the renderers that already run on every
+  update; the header is a wrapping flex row so the summary drops under the label
+  (or ellipsizes) when the rail is narrowed — no need to expand the tab. v405 30/30;
+  battery 131 → 132.
+- **Knowledge + Bridge cleanups; the duplicate Browser tab is gone (JAG-403h).** The
+  RH **Browser** panel was removed — its `search` half was the SAME backend as
+  Knowledge ▸ Discover, and the agent still has the `web` tool. In the Bridge org
+  chart, a **single click** now only previews the constellation (it no longer yanks
+  the AGENTS table around). In Knowledge: a **`text` source** (pasted note / research
+  summary) is no longer rendered as a false file link (it has no file — its `ref` is
+  the title); the **Notebooks** list is a bounded scroll window; **depth + max
+  sources** are now ALWAYS visible in the Research card (they drive both the manual
+  discover count and the auto research rounds) instead of being hidden behind the
+  auto checkbox; and the **status/clear** buttons sit to the RIGHT of the counts
+  (they wrap under only when the panel is narrow). v406 11/11; battery 132 → 133.
+- **Cost panel no longer floods with one-call rows (JAG-403h).** Calls that carry no
+  `run` id (older ledger rows, non-turn callers) are now folded into a SINGLE collapsed
+  bucket ("older calls (no run id)") instead of one row each — the 60-row tail used to
+  fill the panel. Real turns stay one collapsible row per run.
 
 ### Fixed
 - **Deleting the WHOLE knowledge base always asks (JAG-403e).** `confirmDelete` gained a

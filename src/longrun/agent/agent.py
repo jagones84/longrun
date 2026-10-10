@@ -1508,7 +1508,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # ledger, and push it so the Cost panel updates mid-run.
         try:
             from longrun.model import costs as _costs
-            _call = _costs.record(sess["id"], model, chat_usage)
+            # JAG-403f: tag every call of this turn with the turn's run id, so the
+            # UI can group the ledger "per run" (one collapsible row per turn).
+            _call = _costs.record(sess["id"], model, chat_usage,
+                                  run=getattr(trace, "id", None))
             if _call:
                 on_event("cost.usage", session=sess["id"], call=_call)
         except Exception:  # noqa: BLE001 — accounting must never break a turn

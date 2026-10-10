@@ -49,7 +49,13 @@
   .muted{color:var(--dim)} .small{font-size:11px}
   .empty{padding:14px;color:var(--dim);font-size:12px}
   /* agents table */
-  table.at{width:100%;border-collapse:collapse;font-size:12px}
+  /* JAG-403f: the table is CONTENT-SIZED and packed to the LEFT (width:auto +
+     table-layout:fixed + explicit <col> widths). A full-width table spread the
+     columns across the whole panel and left a dead gap on the right. */
+  table.at{width:auto;table-layout:fixed;border-collapse:collapse;font-size:12px}
+  table.at col.c-id{width:60px} table.at col.c-name{width:172px} table.at col.c-role{width:140px}
+  table.at col.c-model{width:188px} table.at col.c-rep{width:172px} table.at col.c-file{width:94px}
+  table.at col.c-act{width:112px}
   table.at th{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);text-align:left;
     padding:5px 8px;border-bottom:1px solid var(--line);font-weight:500}
   table.at td{padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -82,6 +88,12 @@
   .node .nid{font-family:ui-monospace,monospace;color:var(--acc2);font-size:10px}
   .node .nnm{font-size:12px}
   .node .nrl{font-size:9px;color:var(--dim)}
+  /* JAG-403f: right-click quick actions on an org-chart node. */
+  .ctxmenu{position:fixed;z-index:90;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:4px;min-width:186px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px}
+  .ctxmenu div{padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
+  .ctxmenu div:hover{background:var(--brief);color:#fff}
+  .ctxmenu .sep{height:1px;background:var(--line);margin:4px 2px;padding:0}
   /* constellation — a DOCKED panel in the page grid (JAG-297) */
   .panel.cpanel .cbody{position:relative;height:48vh;min-height:360px;background:#060912}
   .csvg{display:block;width:100%;height:100%}
@@ -189,14 +201,18 @@
     <!-- Agents: available agents, creatable with +, each with a model + reports-to -->
     <section class="panel ag">
       <h2>Agents <span class="n" id="agCount">—</span></h2>
-      <div class="pad row" style="gap:6px;border-bottom:1px solid var(--line)">
-        <input class="inp" id="agNewName" placeholder="new agent — name…">
-        <input class="inp" id="agNewRole" placeholder="role (optional)" style="max-width:170px">
+      <div class="pad row" style="gap:6px;border-bottom:1px solid var(--line);justify-content:flex-start">
+        <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
+        <input class="inp" id="agNewRole" placeholder="role (optional)" style="width:170px;flex:none">
         <button class="btn primary" id="agNew">＋ new agent</button>
         <button class="btn" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
       <div class="scroll">
         <table class="at">
+          <colgroup>
+            <col class="c-id"><col class="c-name"><col class="c-role">
+            <col class="c-model"><col class="c-rep"><col class="c-file"><col class="c-act">
+          </colgroup>
           <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Role.md</th><th></th></tr></thead>
           <tbody id="agBody"></tbody>
         </table>
@@ -221,7 +237,7 @@
   <div class="grid2 oc">
     <!-- Org chart: boxes + connectors from reports_to -->
     <section class="panel">
-      <h2>Org chart <span class="n">who reports to whom</span></h2>
+      <h2>Org chart <span class="n">who reports to whom · click = preview · dbl-click = open · right-click = actions</span></h2>
       <div class="orgwrap" id="orgtree"></div>
     </section>
 
@@ -428,7 +444,7 @@ class OrgChartView {
       seen[a.id] = 1;
       this.bySid[a.session] = a;
       const kids = (by[a.id] || []).map(node).join("");
-      return '<li><div class="node" data-sid="' + esc(a.session) + '" title="click = constellation · double-click = open in main app"><span class="nid">' + esc(a.id) + '</span>' +
+      return '<li><div class="node" data-sid="' + esc(a.session) + '" title="click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the main app \u00b7 right-click = more actions"><span class="nid">' + esc(a.id) + '</span>' +
         '<span class="nnm">' + esc(a.name||"") + '</span>' + (a.role ? '<span class="nrl">' + esc(a.role) + '</span>' : '') +
         '</div>' + (kids ? '<ul>' + kids + '</ul>' : "") + '</li>';
     };
@@ -437,15 +453,50 @@ class OrgChartView {
     box.innerHTML = '<ul>' + roots.map(node).join("") + '</ul>';
     box.querySelectorAll(".node").forEach(n => { n.onclick = () => {
       box.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x === n));
-      const row = document.querySelector('#agBody tr[data-sid="' + n.dataset.sid + '"]');
-      if (row) row.scrollIntoView({block: "nearest"});
+      // JAG-403h: single click ONLY previews the constellation — no jumping the
+      // AGENTS table around (that scroll was pointless and disorienting).
       if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);
     };
     n.ondblclick = () => { if (this.onGoTo) this.onGoTo(this.bySid[n.dataset.sid]); };
+    // JAG-403f: right-click = quick actions. All of them reuse EXISTING stores
+    // and endpoints (no third synced data entry is created).
+    n.oncontextmenu = (ev) => { ev.preventDefault();
+      box.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x === n));
+      this.menu(ev, this.bySid[n.dataset.sid]); };
     });
     // JAG-342: no transform-pan — the panel scrolls natively, so the whole chart is
     // reachable and the page itself never scrolls sideways.
   }
+  menu(ev, a){ if (!a) return; this.closeMenu();
+    const m = document.createElement("div"); m.className = "ctxmenu";
+    m.innerHTML =
+      '<div data-a="const">\uD83D\uDD2D Constellation</div>' +
+      '<div data-a="open">\u2197 Open session in main app</div>' +
+      '<div data-a="prompt">\u270E Edit prompt (ROLE.md)</div>' +
+      '<div class="sep"></div>' +
+      '<div data-a="reset">\u21BA Reset session\u2026</div>';
+    document.body.appendChild(m);
+    m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - 208)) + "px";
+    m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - 150)) + "px";
+    m.querySelector('[data-a="const"]').onclick = () => { this.closeMenu(); if (this.onPick) this.onPick(a); };
+    m.querySelector('[data-a="open"]').onclick = () => { this.closeMenu(); if (this.onGoTo) this.onGoTo(a); };
+    m.querySelector('[data-a="prompt"]').onclick = () => { this.closeMenu(); this.openPrompt(a); };
+    m.querySelector('[data-a="reset"]').onclick = () => { this.closeMenu();
+      if (confirm("Reset " + a.id + " " + (a.name || "") + " \u2014 wipe its chat and task list (the agent stays)?"))
+        clearOrbitSession(a.session); };
+    this._menu = m;
+    const h = (e) => { if (!m.contains(e.target)) this.closeMenu(); };
+    const k = (e) => { if (e.key === "Escape") this.closeMenu(); };
+    m.__h = h; m.__k = k;
+    setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
+  }
+  closeMenu(){ const m = this._menu; if (!m) return;
+    if (m.__h) document.removeEventListener("mousedown", m.__h);
+    if (m.__k) document.removeEventListener("keydown", m.__k);
+    m.remove(); this._menu = null; }
+  openPrompt(a){ const row = document.querySelector('#agBody tr[data-sid="' + a.session + '"]');
+    const btn = row && row.querySelector("[data-brief]");
+    if (btn){ btn.click(); row.scrollIntoView({block: "center"}); } }
 }
 
 /* ----------------------------------------------- Constellation (JAG-296) --- */

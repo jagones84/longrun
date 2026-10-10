@@ -293,12 +293,15 @@ def _summarise(led):
             "priced_calls": priced, "unknown_calls": unknown, "by_model": by_model}
 
 
-def record(session, model, usage):
+def record(session, model, usage, run=None):
     """Price ONE LLM call from its real `usage` and append it to the ledger.
 
     The provider's OWN charge wins when it reports one (``src: "provider"``,
     exact); otherwise the real token counts are priced against the rate table
     (``src: "estimate"``). An unknown price yields ``usd: null``.
+
+    ``run`` is an optional turn/run id: every LLM call made inside the SAME
+    user turn shares it, so the UI can group calls "per run" and collapse them.
 
     Returns the call record (with the running session total) or None when the
     usage carried no token counts.
@@ -314,7 +317,7 @@ def record(session, model, usage):
         src = "estimate" if usd is not None else None
     rec = {"ts": round(time.time(), 3), "model": str(model or ""),
            "prompt": pt or 0, "completion": ct or 0, "cached": cached or 0,
-           "usd": usd, "src": src}
+           "usd": usd, "src": src, "run": (run or None)}
     with _lock:
         led = _load(session)
         led.append(rec)

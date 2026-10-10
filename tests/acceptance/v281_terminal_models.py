@@ -127,9 +127,9 @@ check("the model popover is anchored above its own button",
 check("the model popover is opaque (not translucent)",
       "background: var(--menubg)" in ui and "--menubg: #0f1320" in ui
       and "position: fixed; bottom: 92px" not in ui)
-check("the Browser panel copies all stacked URLs",
-      'id="browserCopy"' in ui and "function _renderBrowserUrls" in ui
-      and "_browserUrls.join" in ui)
+check("the duplicate Browser panel is gone (JAG-403h)",
+      'data-insp="browser"' not in ui and "function browserGo" not in ui
+      and "function _renderBrowserUrls" not in ui)
 check("the terminal uses exec/poll/reset (persistent shell)",
       "function termSend" in ui and "/api/term/exec" in ui
       and "/api/term/poll" in ui and "function termReset" in ui)
