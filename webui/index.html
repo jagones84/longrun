@@ -1097,8 +1097,8 @@
 <header id="topbar">
   <span class="logo">⚡ LONGRUN</span>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
-    <a class="ttab active" href="/" aria-current="page">Session</a>
-    <a class="ttab" href="/orbit" onclick="location.href='/orbit';return false;">Control</a>
+    <a class="ttab active" href="/" onclick="goSession();return false;" aria-current="page">Session</a>
+    <a class="ttab" href="/orbit" onclick="goControl();return false;">Control</a>
   </nav>
   <span class="sub">agent harness · self-hosted · any OS</span>
   <span class="sessbadge" id="sessBadge" hidden></span>
@@ -6525,6 +6525,11 @@ function saveToken() {
 }
 
 $("palette-open").onclick = openPalette;
+/* JAG-416: the top-level tabs must carry the token in the URL, otherwise the target
+   page prompts for it (or 401s) whenever its own localStorage lookup is unavailable.
+   Kept as standalone functions so the tab handlers stay declarative. */
+function goControl() { location.href='/orbit' + (TOKEN ? ('?token=' + encodeURIComponent(TOKEN)) : ''); }
+function goSession() { location.href='/' + (TOKEN ? ('?token=' + encodeURIComponent(TOKEN)) : ''); }
 /* JAG-415: topbar "☰" app menu (settings · bridge · sandbox). */
 (function () {
   const btn = $("appmenuBtn"), menu = $("appMenu");
