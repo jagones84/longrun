@@ -2951,21 +2951,26 @@ async function openSessMenu(row, s, ag) {
    belongs to several teams — or is pinned — is DRAWN once per group: a purely
    GRAPHICAL duplication (same id, same click handlers, same everything). The
    underlying session is single; nothing is duplicated in the substrate. */
-function _collapsedGroups() {
-  try { return JSON.parse(localStorage.getItem("sf_collapsed_groups") || "[]"); }
-  catch (e) { return []; }
+/* JAG-424e: the rail's group state is an EXPLICIT "open" list — any group NOT in it is
+   collapsed. So the first run (and any brand-new team) opens COLLAPSED, and only the
+   active session's own group is auto-opened. */
+function _openGroups() {
+  try { const v = localStorage.getItem("sf_open_groups");
+    return v === null ? null : (JSON.parse(v) || []); }
+  catch (e) { return null; }
+}
+function _setOpenGroups(list) {
+  try { localStorage.setItem("sf_open_groups", JSON.stringify(list)); } catch (e) {}
 }
 function _toggleGroup(key) {
-  let c = _collapsedGroups();
-  c = c.includes(key) ? c.filter(x => x !== key) : c.concat(key);
-  localStorage.setItem("sf_collapsed_groups", JSON.stringify(c));
+  const open = _openGroups() || [];
+  _setOpenGroups(open.includes(key) ? open.filter(x => x !== key) : open.concat(key));
   loadSessions();
 }
 let _lastGroupKeys = [];   // JAG-2.1: the group keys the current rail render produced
 /* JAG-2.1: collapse / expand EVERY group at once (all group keys). */
 function _setAllGroups(collapse) {
-  const keys = _lastGroupKeys || [];
-  localStorage.setItem("sf_collapsed_groups", JSON.stringify(collapse ? keys.slice() : []));
+  _setOpenGroups(collapse ? [] : (_lastGroupKeys || []).slice());
   loadSessions();
 }
 /* JAG-415: rank every org agent by a DEPTH-FIRST walk of the reports_to tree, so
@@ -3054,12 +3059,17 @@ async function loadSessions() {
     // JAG-415: expand the active session's own team group ONLY on a redirect or a
     // selection (never on a plain re-render — else the user could not collapse the
     // group of their own active session).
-    let collapsed = _collapsedGroups();
+    let open = _openGroups();
+    if (open === null) {   // first run: everything collapsed except the active session's group
+      const at = sessionId ? teamsOf({ id: sessionId }) : [];   // team IDS this session is in
+      open = sessionId ? (at.length ? at : ["__none__"]) : [];
+      _setOpenGroups(open);
+    }
     if (_forceExpandActive && sessionId) {
       const actTeams = teamsOf({ id: sessionId });   // team IDS this session belongs to
       const actGroups = actTeams.length ? actTeams : ["__none__"];
-      const kept = collapsed.filter(k => actGroups.indexOf(k) < 0);
-      if (kept.length !== collapsed.length) { collapsed = kept; localStorage.setItem("sf_collapsed_groups", JSON.stringify(kept)); }
+      const missing = actGroups.filter(k => open.indexOf(k) < 0);
+      if (missing.length) { open = open.concat(missing); _setOpenGroups(open); }
       _forceExpandActive = false;
     }
     const groups = [];
@@ -3074,7 +3084,7 @@ async function loadSessions() {
     });
     _lastGroupKeys = groups.map(g => g.key);
     groups.forEach(g => {
-      const isCol = collapsed.includes(g.key);
+      const isCol = open.indexOf(g.key) < 0;
       const sec = document.createElement("div");
       sec.className = "sgroup" + (isCol ? " collapsed" : "");
       if (g.col) sec.style.setProperty("--tcol", g.col);

@@ -72,6 +72,8 @@
   /* JAG-424: one uniform toolbar row (compact controls, aligned height) so the agent
      panel does not look like mismatched oversized pills. */
   .toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 8px;border-bottom:1px solid var(--line)}
+  .toolbar[hidden]{display:none}
+  .toolbar.addbar{background:var(--panel2)}
   .toolbar>.inp,.toolbar>.btn{height:30px;min-height:30px;padding:0 10px;border-radius:8px;font-size:12px}
   .toolbar>.inp{background:var(--panel);border:1px solid var(--line);color:var(--txt)}
   .toolbar>.inp:focus{border-color:var(--acc);outline:none}
@@ -285,10 +287,9 @@
           <button class="btn ghost mini" id="agExpandAll" title="expand all groups">▼</button>
         </span></h2>
       <div class="toolbar">
-        <span class="lbl">scope:</span>
+        <span class="lbl">scope</span>
         <select class="inp" id="teamSel" title="filter + focus the WHOLE board on one team — agents · routines · jobs · org chart · constellation" style="max-width:210px;width:auto"></select>
-        <span class="sp"></span>
-        <span class="lbl">sort:</span>
+        <span class="lbl">sort</span>
         <select class="inp" id="agSort" title="sort agents" style="max-width:210px;width:auto">
           <option value="default">default (id)</option>
           <option value="name">name (A→Z)</option>
@@ -298,18 +299,24 @@
           <option value="org">org chart (leadership first)</option>
           <option value="running">running first</option>
         </select>
-      </div>
-      <div class="toolbar">
-        <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
-        <input class="inp" id="agNewRole" placeholder="role (optional)" style="width:170px;flex:none">
-        <button class="btn primary" id="agNew">＋ new agent</button>
+        <span class="sp"></span>
+        <button class="btn primary" id="agNewBtn" aria-expanded="false">＋ new agent</button>
+        <button class="btn" id="tmNewBtn" aria-expanded="false">＋ new team</button>
         <button class="btn ghost" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
-      <div class="toolbar">
-        <span class="lbl">team:</span>
+      <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
+      <div class="toolbar addbar" id="agAddBar" hidden>
+        <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
+        <input class="inp" id="agNewRole" placeholder="role (optional)" style="width:170px;flex:none">
+        <button class="btn primary" id="agNew">create agent</button>
+        <button class="btn ghost" id="agAddCancel" type="button">cancel</button>
+      </div>
+      <div class="toolbar addbar" id="tmAddBar" hidden>
+        <span class="lbl">new team</span>
         <input class="inp" id="tmNewName" placeholder="new team — name…" style="width:180px;flex:none">
         <input class="inp" id="tmNewSymbol" placeholder="symbol/emoji (optional)" style="width:150px;flex:none">
-        <button class="btn" id="tmNew">＋ team</button>
+        <button class="btn" id="tmNew">create team</button>
+        <button class="btn ghost" id="tmAddCancel" type="button">cancel</button>
       </div>
       <div class="scroll" id="agTableWrap">
         <table class="at">
@@ -329,7 +336,7 @@
     <section class="panel">
       <h2>Routines <span class="n" id="routineCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="rtGoal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px"></textarea>
+        <textarea class="inp" id="rtGoal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px;max-height:110px;resize:vertical"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
           <select class="inp" id="rtAgent"><option value="">agent…</option></select>
           <input class="inp" id="rtEvery" type="number" min="30" value="300" title="every N seconds" style="max-width:100px">
@@ -343,7 +350,7 @@
     <section class="panel">
       <h2>Jobs <span class="n" id="jobsCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="jobGoal" placeholder="job goal — the coordinator decomposes it and its team executes…" style="min-height:52px"></textarea>
+        <textarea class="inp" id="jobGoal" placeholder="job goal — the coordinator decomposes it and its team executes…" style="min-height:52px;max-height:120px;resize:vertical"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
           <select class="inp" id="jobTo"><option value="">assign to…</option></select>
           <button class="btn primary" id="jobCreate">＋ create job</button>
@@ -430,7 +437,8 @@ const fillSelect = (sel, agents, ph) => {
 class AgentsView {
   constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
     this.models = []; this.teams = []; this.open = null; this.running = new Set();
-    this.sort = "default"; this._tmmenu = null; this.closed = new Set(); this._groupIds = []; }
+    this.sort = "default"; this._tmmenu = null; this.closed = new Set(); this._groupIds = [];
+    this._seen = new Set(); }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams){
     if (tree) this.agents = tree.agents || [];
@@ -441,6 +449,9 @@ class AgentsView {
     // JAG-2.1: ONE list — the editable table grouped by team (collapsible header rows).
     const groups = this.groupsOf(this._sorted(this.agents));
     this._groupIds = groups.map(g => g.id);
+    // JAG-424e: team groups start COLLAPSED — the board opens as tidy header rows. A
+    // group seen for the first time is also collapsed; an expand sticks until toggled back.
+    groups.forEach(g => { if (!this._seen.has(g.id)) { this._seen.add(g.id); this.closed.add(g.id); } });
     const body = $("agBody");
     // JAG-295-fix: this table is rebuilt by the 5s auto-poll. Rebuilding while the
     // user is mid-edit (a focused text field) or has unsaved text in the ROLE.md
@@ -750,6 +761,7 @@ class OrgChartView {
     // JAG-424d: JS layout — sibling rows WRAP at MAXROW, so a wide fan-out grows DOWN
     // instead of stretching the tree to thousands of px. Fixed node box (132×62).
     const NW = 132, NH = 62, GX = 16, GY = 34, MAXROW = 1180, PAD = 16;
+    const GUT = 22, V1 = 16, V2 = 16;   // left trunk gutter + parent→bus / bus→child gaps
     const measure = (a, seen) => {
       if (seen[a.id]) return {w: NW, h: NH};
       seen[a.id] = 1;
@@ -762,28 +774,47 @@ class OrgChartView {
       if (cur.length) rows.push(cur);
       const rowsW = rows.map(r => r.reduce((s, k, i) => s + k.m.w + (i ? GX : 0), 0));
       const rowsH = rows.map(r => Math.max.apply(null, r.map(k => k.m.h)));
-      const w = Math.max(NW, Math.max.apply(null, rowsW));
-      const h = NH + GY + rowsH.reduce((s, x) => s + x, 0) + (rows.length - 1) * GY;
-      return {w: w, h: h, rows: rows, rowsW: rowsW, rowsH: rowsH};
+      // A lone single-child row just needs a straight drop; anything wider uses a LEFT
+      // TRUNK + a per-row bus, so a wrapped row-2 line never crosses — and never LOOKS
+      // like an edge to — the row-1 nodes above it (the A20/A21 illusion).
+      const bus = !(rows.length === 1 && rows[0].length === 1);
+      const w = Math.max(NW, Math.max.apply(null, rowsW)) + (bus ? GUT : 0);
+      const h = NH + V1 + V2 + rowsH.reduce((s, x) => s + x, 0) + (rows.length - 1) * GY;
+      return {w: w, h: h, rows: rows, rowsW: rowsW, rowsH: rowsH, bus: bus};
     };
     const pos = {}, edges = [];
     const place = (a, m, x, y) => {
-      const cx = x + m.w / 2;
-      pos[a.id] = {cx: cx, top: y};
+      const top = y, areaX = x + (m.bus ? GUT : 0), areaW = m.w - (m.bus ? GUT : 0);
+      const cx = areaX + areaW / 2;
+      pos[a.id] = {cx: cx, top: top};
       this.bySid[a.session] = a;
       if (!m.rows) return;
-      let ry = y + NH + GY;
+      const firstTop = top + NH + V1 + V2;
+      if (!m.bus){                                   // lone child: a straight vertical drop
+        const kx = areaX + (areaW - m.rowsW[0]) / 2;
+        edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + firstTop.toFixed(1));
+        place(m.rows[0][0].a, m.rows[0][0].m, kx, firstTop);
+        return;
+      }
+      const trunkX = x + GUT / 2;
+      let ry = firstTop, lastBus = top + NH + V1;
       m.rows.forEach((row, ri) => {
-        let rx = x + (m.w - m.rowsW[ri]) / 2;
-        const rh = m.rowsH[ri];
-        row.forEach(k => {
-          const kcx = rx + k.m.w / 2, ktop = ry + (rh - k.m.h) / 2;
-          edges.push({x1: cx, y1: y + NH, x2: kcx, y2: ktop});
-          place(k.a, k.m, rx, ktop);
-          rx += k.m.w + GX;
+        let rx = areaX + (areaW - m.rowsW[ri]) / 2;
+        const rh = m.rowsH[ri], busY = ry - V2;
+        lastBus = busY;
+        const cs = [];
+        row.forEach(k => { cs.push({k: k, cx: rx + k.m.w / 2, top: ry + (rh - k.m.h) / 2, x: rx}); rx += k.m.w + GX; });
+        const right = Math.max.apply(null, cs.map(c => c.cx));
+        edges.push("M" + trunkX.toFixed(1) + " " + busY.toFixed(1) + " H" + right.toFixed(1));
+        cs.forEach(c => {
+          edges.push("M" + c.cx.toFixed(1) + " " + busY.toFixed(1) + " V" + c.top.toFixed(1));
+          place(c.k.a, c.k.m, c.x, c.top);
         });
         ry += rh + GY;
       });
+      // parent stem → left trunk (drops only in the gutter, never through a node column)
+      edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + (top + NH + V1).toFixed(1) +
+        " H" + trunkX.toFixed(1) + " V" + lastBus.toFixed(1));
     };
     const roots = (by[""] || []).slice();
     agents.forEach(a => { if (a.reports_to && !agents.some(x => x.id === a.reports_to)) roots.push(a); });
@@ -798,8 +829,7 @@ class OrgChartView {
     agents.forEach(a => { const p = pos[a.id]; if (!p) return;
       nodes += '<div class="node" data-sid="' + esc(a.session) + '" style="left:' + p.cx.toFixed(1) + 'px;top:' + p.top.toFixed(1) + 'px" title="click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the Sessions tab \u00b7 right-click = more actions"><span class="nid">' + esc(a.id) + '</span>' +
         '<span class="nnm">' + esc(a.name||"") + '</span>' + (a.role ? '<span class="nrl">' + esc(a.role) + '</span>' : '') + '</div>'; });
-    edges.forEach(e => { const my = (e.y1 + e.y2) / 2;
-      links += '<path class="oedge" d="M' + e.x1.toFixed(1) + ' ' + e.y1.toFixed(1) + ' V' + my.toFixed(1) + ' H' + e.x2.toFixed(1) + ' V' + e.y2.toFixed(1) + '"/>'; });
+    edges.forEach(d => { links += '<path class="oedge" d="' + d + '"/>'; });
     box.innerHTML = '<div class="orgcanvas" style="width:' + cw + 'px;height:' + ch + 'px">' +
       '<svg class="orgsvg" width="' + cw + '" height="' + ch + '">' + links + '</svg>' + nodes + '</div>';
     this.canvas = box.firstElementChild;
@@ -1293,6 +1323,14 @@ class OrbitApp {
     $("jobCreate").onclick = () => this.createJob();
     $("rtCreate").onclick = () => this.routines.create();
     $("teamSel").onchange = () => { this.team = $("teamSel").value; this.tac.data = null; this.tac.focus = null; this.refresh(); };
+    // JAG-424e: the create forms are revealed on demand, so the toolbar stays ONE tidy row.
+    const addBar = (bar, btn, focus) => { const b = $(bar), t = $(btn); const show = b.hidden;
+      b.hidden = !show; if (t) t.setAttribute("aria-expanded", show ? "true" : "false");
+      if (show && focus) $(focus).focus(); };
+    $("agNewBtn").onclick = () => addBar("agAddBar", "agNewBtn", "agNewName");
+    $("tmNewBtn").onclick = () => addBar("tmAddBar", "tmNewBtn", "tmNewName");
+    $("agAddCancel").onclick = () => addBar("agAddBar", "agNewBtn");
+    $("tmAddCancel").onclick = () => addBar("tmAddBar", "tmNewBtn");
   }
   renderTeams(){
     const sel = $("teamSel");

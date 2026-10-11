@@ -82,6 +82,16 @@ All notable changes to Longrun are documented here. The format follows
   straight lines slicing through clusters), a junction dot at each dependency's source, rounded
   caps, and a clearer legend with the arrow semantics. Guards v285/v328 updated to the new
   connectors/edges (same intent).
+- **Control deck: tidy toolbar, correct org-chart routing, collapsed defaults (JAG-424e).** The
+  AGENTS toolbar is now ONE ordered row — `scope · sort … ＋ new agent · ＋ new team · ⚙ model
+  policy` — with the create inputs revealed on demand (they no longer clutter the panel). The org
+  chart routes wrapped rows through a **left trunk + per-row bus**, so a row-2 child's line can no
+  longer pass through — and look like an edge to — a row-1 node (the "Reality Checker → Growth
+  Hacker" illusion; they are siblings, both reporting to A12). The Routines/Jobs goal textareas are
+  capped (`max-height` + vertical resize) so the ＋ buttons can no longer be pushed out of the panel.
+  **Default view is COLLAPSED**: the Control AGENTS team groups and the Sessions rail groups both
+  open collapsed (the rail keeps only the active session's own group open); the rail stores an
+  explicit "open" list, so a brand-new team also starts collapsed.
 - **Settings: auto-save everywhere, general default model, Knowledge polish (JAG-423).** Every model
   picker saves on change — the **Compaction model** and **Research model** `save` buttons are gone
   (`onchange`) — consistent with the embedding picker. The verbose "Saved automatically …" helper under
