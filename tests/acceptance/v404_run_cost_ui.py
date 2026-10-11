@@ -74,7 +74,7 @@ check("B1 the agents table is content-sized + packed left (not full width)",
       "table.at{width:auto;table-layout:fixed" in ORBIT)
 check("B2 the table declares explicit, left-packed column widths",
       '<col class="c-id">' in ORBIT and '<col class="c-model">' in ORBIT
-      and "table.at col.c-name{width:172px}" in ORBIT)
+      and "table.at col.c-name{width:190px}" in ORBIT)
 check("B3 the new-agent inputs are no longer full-width",
       'id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none"' in ORBIT)
 

@@ -46,7 +46,7 @@ check("a narrow (phone) toolbar WRAPS — no nowrap override that overlaps .cb-l
       "#composerBar { flex-wrap: wrap; }" in ui
       and "#composerBar { flex-wrap: nowrap" not in ui)
 check("the model picker is the flexible element and truncates",
-      "#composerBar .cb-right .model-wrap > button { max-width: 190px" in ui
+      "#composerBar .cb-right .model-wrap > button { max-width: 160px" in ui
       and "#composerBar .mname" in ui)
 check("the model label targets .mname (robust, keeps the caret)",
       'b.querySelector(".mname")' in ui and 'class="mname"' in ui)

@@ -79,8 +79,22 @@
     stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset .3s, stroke .3s; }
   .pill.meter.hot .mfill { stroke: var(--err); }
   .pill.meter.hot b { color: var(--err); }
+  /* JAG-424: the ctx meter is now a TINY ring in the Sessions rail header (moved off the
+     banner), beside the collapse/expand icons — circular part only, no % label. */
+  #ctx-meter { margin-left: 8px; padding: 0; gap: 4px; background: transparent; border: 0; }
+  #ctx-meter .mring { width: 15px; height: 15px; }
+  #ctx-meter b { display: none; }
   .pill.sbox { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
     padding: 3px 11px; }
+  /* JAG-424: on a phone the banner keeps only the sandbox DOT (no word) and drops the
+     LONGRUN wordmark, so the header never overflows / forces a horizontal scrollbar. */
+  @media (max-width: 640px) {
+    #sbxTxt { display: none; } #sbxPill { padding: 3px 7px; }
+    #topbar { padding: 8px 10px; gap: 8px; }
+    #topbar .logo { font-size: 0; }
+    #topbar .logo svg { width: 20px; height: 20px; vertical-align: middle; }
+    .topTabs .ttab { padding: 0 10px; }
+  }
   .pill.sbox.ok, .pill.sbox.warn { color: var(--dim); }
   .sdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--dim); opacity: .8; }
   #sbxPill.ok .sdot { background: var(--ok); opacity: 1; box-shadow: 0 0 7px var(--ok); }
@@ -478,7 +492,7 @@
   #composerBar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
   #composerBar .cb-left, #composerBar .cb-right { display: flex; align-items: center;
     gap: 6px; flex-wrap: wrap; min-width: 0; }
-  #composerBar .cb-right { margin-left: auto; justify-content: flex-end; }
+  #composerBar .cb-right { margin-left: auto; justify-content: flex-end; gap: 4px; }
   /* one uniform control height: the bar reads as a single toolbar, not mismatched pills */
   #composerBar .cb-left > button, #composerBar .cb-left > select,
   #composerBar .cb-right > button, #composerBar .cb-right .model-wrap > button,
@@ -490,8 +504,11 @@
   #composerBar .more-wrap > button { flex: 0 0 auto; }
   #composerBar .cb-left > select { flex: 0 0 auto; padding: 0 6px; background: transparent;
     color: var(--txt); border: 1px solid var(--line); font-weight: 400; }
+  /* JAG-424: the bar stays ONE row — every control is auto-narrow, the model button is
+     the only flexible one and shrinks to a compact label. */
+  #composerBar .cb-left, #composerBar .cb-right { flex-wrap: nowrap; }
   #composerBar .cb-right .model-wrap { flex: 0 1 auto; min-width: 0; }
-  #composerBar .cb-right .model-wrap > button { max-width: 190px; min-width: 96px; flex: 0 1 auto; }
+  #composerBar .cb-right .model-wrap > button { max-width: 160px; min-width: 96px; flex: 0 1 auto; padding: 0 8px; }
   #composerBar .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* JAG-403j: the composer toolbar reads as ONE flat strip — the per-control frames
      (boxed ".ghost" borders) looked noisy. Only "send" keeps its button shape. */
@@ -510,8 +527,10 @@
   #composerBar #sendBtn:hover { filter: brightness(1.12); }
   #composerBar #sendBtn:disabled { opacity: .5; cursor: default; }
   #composerBar #sendBtn .kbd { display: none; }
-  /* JAG-415: stop is a compact square ICON — a symbol, not a word, to save space. */
-  #composerBar #stopBtn { flex: 0 0 auto; min-width: 34px; padding: 0 7px; font-size: 14px; }
+  /* JAG-424: the SAME button IS "stop" while the active session runs — a red square.
+     This removes the separate stop control so the toolbar fits one row. */
+  #composerBar #sendBtn.stop { background: var(--err); color: #fff; border-radius: 10px; font-size: 14px; }
+  #composerBar #sendBtn.stop:hover { filter: brightness(1.1); }
   /* JAG-416: keep the composer toolbar on ONE line as the window narrows — shrink the
      model label and tighten the gaps (stop · ⋯ · send) BEFORE anything wraps. */
   @media (max-width: 1400px) { #composerBar .cb-right .model-wrap > button { max-width: 150px; } }
@@ -847,6 +866,15 @@
     margin: 16px 0 8px; text-transform: uppercase; }
   #settingsWin .sw-main .sw-cat h2:first-child { margin-top: 0; }
   #settingsWin .sw-cat[hidden] { display: none; }
+  /* JAG-422: uniform, prettier rows for the Knowledge lists (notebooks, sources,
+     files) — one visual language instead of scattered inline styles. */
+  #swMain .kb-row { display: flex; gap: 8px; align-items: center; padding: 6px 8px;
+    margin-bottom: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
+  #swMain .kb-row:hover { border-color: var(--acc); }
+  #swMain .kb-row .cn { flex: 0 0 auto; min-width: 22px; text-align: center;
+    color: var(--acc2); font-size: 10px; }
+  #swMain .kb-list { max-height: 320px; overflow: auto; padding-right: 4px; }
+  #swMain .kb-empty { padding: 10px; color: var(--dim); font-size: 12px; }
   /* JAG-159: Harness + Tool-policy cards, restyled with the archify design tokens
      (slate panel, accent dot header, compact inline labels). */
   #swMain .sw-cat[data-cat="harness"] > .card,
@@ -1130,15 +1158,13 @@
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
   <span style="flex:1"></span>
-  <span class="pill meter" id="ctx-meter" title="context tokens / budget"><svg class="mring"
-      viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle><circle
-      class="mfill" id="ctxRing" cx="18" cy="18" r="15.9155"></circle></svg><b id="ctxPctTop">…</b></span>
-  <button class="ghost" id="settingsBtn" title="settings" onclick="openSettings()">⚙</button>
+  <!-- JAG-424: the sandbox pill moved OUT of the ☰ menu onto the banner line. -->
+  <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
+      id="sbxTxt">…</span></span>
+  <button class="ghost" id="settingsBtn" title="settings" onclick="toggleSettings()">⚙</button>
   <div class="appmenu-wrap">
-    <button class="ghost" id="appmenuBtn" title="more — sandbox · command palette" aria-haspopup="true" aria-expanded="false">☰</button>
+    <button class="ghost" id="appmenuBtn" title="more — command palette" aria-haspopup="true" aria-expanded="false">☰</button>
     <div id="appMenu" class="card" hidden>
-      <div class="amline"><span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
-          id="sbxTxt">…</span></span></div>
       <button class="ghost mi" id="palette-open" title="command palette (Cmd/Ctrl+K)">⌘K command palette</button>
     </div>
   </div>
@@ -1151,7 +1177,7 @@
 <main id="app">
   <aside id="aside" data-col="sessions">
     <section>
-      <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
+      <h2>Sessions<span class="pill meter" id="ctx-meter" title="context tokens / budget"><svg class="mring" viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle><circle class="mfill" id="ctxRing" cx="18" cy="18" r="15.9155"></circle></svg><b id="ctxPctTop">…</b></span><span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
       <div style="display:flex;gap:6px;margin-bottom:6px">
         <input id="sessInp" class="inp" placeholder="new session title…" style="flex:1;padding:6px 10px;font-size:12px">
         <button class="ghost" onclick="newSession()">+ new</button>
@@ -1174,7 +1200,7 @@
       <div id="plusMenu" hidden></div>
       <div id="attachRow" hidden></div>
       <input type="file" id="attachInput" multiple hidden>
-      <textarea id="inp" rows="1" placeholder="message the agent…   (Ctrl+⏎ send · / commands · ＋ attach)" autofocus></textarea>
+      <textarea id="inp" rows="1" placeholder="Message the agent…   (⏎ send)" autofocus></textarea>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
         <div class="cb-left">
@@ -1190,7 +1216,6 @@
           <button class="ghost model-btn" id="model-btn" title="choose the LLM for this chat"><span class="mname">model</span> <span class="mc">▾</span></button>
           <div id="modelMenu" hidden></div>
           </div>
-          <button class="ghost" id="stopBtn" onclick="stopRun()" title="stop agent / chat" aria-label="stop">■</button>
           <div class="more-wrap">
             <button class="ghost" id="moreBtn" title="more actions" aria-haspopup="true" aria-expanded="false">⋯</button>
             <div id="moreMenu" class="card" hidden>
@@ -1201,7 +1226,7 @@
               <button class="ghost mi" onclick="newSession()" title="start a new session">＋ new session</button>
             </div>
           </div>
-          <button id="sendBtn" onclick="send()" title="send (Ctrl+Enter)" aria-label="send">↑</button>
+          <button id="sendBtn" onclick="sendOrStop()" title="send (Ctrl+Enter)" aria-label="send">↑</button>
         </div>
       </div>
     </div>
@@ -1540,7 +1565,6 @@
       <div class="sw-cat" data-cat="models" hidden>
         <h2>Thinking effort</h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Saved automatically. When enabled, the harness sends <code>reasoning_effort</code> to the model; a model that does not support the field is retried without it, so a non-thinking model never crashes the turn.</div>
           <div class="hrow">
             <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" onchange="saveReasoning()"></label>
             <label title="Depth of reasoning requested from the model.">effort
@@ -1556,22 +1580,23 @@
         </div>
         <h2>Compaction model</h2>
         <div class="card">
-          <select id="compactionModel" class="inp" style="width:100%;padding:6px 10px;font-size:12px"></select>
-          <button class="ghost" onclick="saveCompactionModel()" style="margin-top:8px">save</button>
+          <select id="compactionModel" onchange="saveCompactionModel()" class="inp" style="width:100%;padding:6px 10px;font-size:12px"></select>
           <div class="remaining" id="compactionResult" style="margin-top:6px"></div>
         </div>
         <h2>Embedding · knowledge index</h2>
         <div class="card">
           <div class="remaining" style="margin:0 0 6px">Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (<b>bm25</b>). The catalogue lives in your PERSONAL config (<code>config/embedding.yaml</code>) — the shipped entries are editable, and you can add your own below.</div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <select id="emModel" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
-            <button class="ghost" onclick="emSetActive()" title="save the active model">set</button>
+            <select id="emModel" onchange="emSetActive()" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
             <button class="ghost" onclick="emTest()" title="probe the model (one test embedding)">test</button>
             <button class="ghost" onclick="emRefresh()" title="reload the catalogue">refresh</button>
           </div>
           <div class="remaining" style="margin-top:6px">active: <b id="emActive"></b></div>
           <div id="emTestOut" class="remaining" style="margin-top:4px"></div>
-          <div id="emModelList" style="margin-top:8px;max-height:220px;overflow:auto"></div>
+          <details style="margin-top:8px">
+            <summary class="remaining" style="cursor:pointer">catalogue · models available</summary>
+            <div id="emModelList" style="margin-top:8px;max-height:220px;overflow:auto"></div>
+          </details>
           <details style="margin-top:8px">
             <summary class="remaining" style="cursor:pointer">＋ add a model to the catalogue</summary>
             <input id="emNewId" class="inp" placeholder="id — provider:model (e.g. openrouter:openai/text-embedding-3-small) *" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
@@ -1595,7 +1620,8 @@
           <button class="ghost" onclick="openSettings('knowledge')" style="margin-top:8px" title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
         </div>
         <h2>Add / edit provider</h2>
-        <div class="card">
+        <details class="card">
+          <summary class="remaining" style="cursor:pointer">＋ add or edit a provider</summary>
           <input id="provId" class="inp" placeholder="id (e.g. openrouter) *" style="width:100%;padding:6px 10px;font-size:12px">
           <input id="provName" class="inp" placeholder="name" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
           <select id="provKind" class="inp" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
@@ -1612,7 +1638,7 @@
           <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="provLocal"> local (no key)</label>
           <button class="ghost" onclick="saveProvider()" style="margin-top:8px">save provider</button>
           <div id="provResult" class="remaining" style="margin-top:6px"></div>
-        </div>
+        </details>
         <h2>Providers</h2>
         <div class="card">
           <div class="remaining" id="provSummary">loading…</div>
@@ -1658,7 +1684,7 @@
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
             <button class="ghost" onclick="kbAddSource()">+ add + index</button>
             <button class="ghost" onclick="kbReembed()" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
-            <button class="ghost" onclick="kbFiles()" title="which files are in this notebook">files</button>
+            <button class="ghost" onclick="kbFiles()" title="which sources are in this notebook">sources</button>
             <button class="ghost" onclick="kbLoadSources()" title="reload sources">↻</button>
           </div>
           <div id="kbSources" style="margin-top:6px"></div>
@@ -1691,11 +1717,10 @@
           </div>
           <div id="kbAutoOpts" hidden>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
-              <select id="researchModel" class="inp" style="flex:2;min-width:220px;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
+              <select id="researchModel" onchange="researchSetActive()" class="inp" style="flex:2;min-width:220px;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
             </div>
             <div style="display:flex;gap:6px;margin-top:4px">
               <button class="ghost" onclick="researchModelLs()" title="refresh research models">↻ models</button>
-              <button class="ghost" onclick="researchSetActive()" title="save the selected research model as the default">save model</button>
             </div>
             <div id="researchLog" style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11px"></div>
           </div>
@@ -2868,6 +2893,7 @@ function selectSession(s) {
   // changed, so a stale workspace/tree would be shown otherwise.
   const filesSec = document.querySelector('#inspector section[data-insp="files"]');
   if (filesSec && filesSec.classList.contains("insp-open")) { loadFiles(); loadEdits(); }
+  refreshSendBtn();   // JAG-424: the button mirrors THIS session's running state
 }
 let _agents = {};   // JAG-287: session id -> org-agent record (empty if none)
 let _teamsById = {};   // JAG-339: team id -> team record (symbol/name/colour)
@@ -3791,10 +3817,39 @@ function renderGraph() {
     // JAG-274: clicking a todo shows its detail AND jumps the chat to that step's
     // section (so you can see where that node is in the conversation).
     el.onclick = () => { if (!n) return; showNodeDetail(n); _scrollToNode(n.id); };
+    // JAG-424: right-click a todo → a menu to circle it in the Control constellation.
+    el.oncontextmenu = (e) => { e.preventDefault(); if (n) _todoCtx(e, n); };
     if (n) el.title = "click to show details and jump the chat to this step";
     if (n && n.id === graphFresh) el.classList.add("fresh");
   });
   $("remaining").innerHTML = "";
+}
+/* JAG-424: right-click menu on a todo — "Show in constellation" circles that task in
+   the Control deck's constellation panel (crosses into the iframe via postMessage). */
+function _closeTodoCtx() { const m = document.getElementById("todoCtx"); if (m) m.remove(); }
+function _todoCtx(ev, n) {
+  _closeTodoCtx();
+  const m = document.createElement("div");
+  m.id = "todoCtx"; m.className = "card";
+  m.style.cssText = "position:fixed;z-index:200;padding:4px;min-width:200px";
+  m.innerHTML = '<button class="ghost mi">\u25ce Show in constellation</button>';
+  document.body.appendChild(m);
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(4, Math.min(ev.clientX, innerWidth - r.width - 8)) + "px";
+  m.style.top = Math.max(4, Math.min(ev.clientY, innerHeight - r.height - 8)) + "px";
+  m.querySelector("button").onclick = () => { _closeTodoCtx(); _showInConstellation(n); };
+  setTimeout(() => document.addEventListener("mousedown", _closeTodoCtx, { once: true }), 0);
+}
+function _showInConstellation(n) {
+  const id = n && n.id; if (!id) return;
+  showControl();
+  // the iframe boots on first open — post the message a few times so it lands.
+  const f = document.getElementById("controlFrame");
+  let n2 = 0;
+  const iv = setInterval(() => {
+    try { f.contentWindow.postMessage({ type: "longrun-focus-node", id: String(id) }, "*"); } catch (e) {}
+    if (++n2 >= 8) clearInterval(iv);
+  }, 300);
 }
 function showNodeDetail(n) {
   n = n || {};
@@ -4203,7 +4258,21 @@ function setRunning(sid, on) {
   // JAG-414: a session may be drawn in several team groups — update EVERY copy.
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
     row => row.classList.toggle("running", !!on));
+  refreshSendBtn();   // JAG-424: the send button becomes STOP while the ACTIVE turn runs
 }
+/* JAG-424: ONE composer button. Normally ↑ = send; while the ACTIVE session has a
+   running turn it becomes a red ■ = stop. Replaces the separate stop control so the
+   toolbar fits a single row. */
+function composerBusy() { return !!(sessionId && (turnSSE[sessionId] || runningSessions[sessionId])); }
+function refreshSendBtn() {
+  const b = $("sendBtn"); if (!b) return;
+  const busy = composerBusy();
+  b.classList.toggle("stop", busy);
+  b.textContent = busy ? "■" : "↑";
+  b.title = busy ? "stop agent / chat" : "send (Ctrl+Enter)";
+  b.setAttribute("aria-label", busy ? "stop" : "send");
+}
+function sendOrStop() { if (composerBusy()) stopRun(); else send(); }
 /* JAG-218: a turn that finished while you were NOT looking at that session gets
    a bell marker on its rail row + a toast, so a background job that completes is
    never missed. Cleared as soon as you open that session. */
@@ -5321,6 +5390,10 @@ function settingsCategory(name) {
     api("GET", "/api/tools").then(d => renderTools($("configPanel"), d)).catch(e => json_pre($("configPanel"), { error: String(e) }));
   }
   else if (name === "models") {
+    // JAG-422: Thinking effort lives in the Models category — load its saved
+    // state HERE (it was only loaded by the "harness" branch, so the checkbox /
+    // effort select showed stale defaults and looked like "the change did not save").
+    if (typeof loadReasoning === "function") loadReasoning();
     if (typeof loadRouting === "function") loadRouting();
     if (typeof loadProviders === "function") loadProviders();
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
@@ -5359,6 +5432,13 @@ function openSettings(cat) {
   settingsCategory(known ? saved : "models");
 }
 function closeSettings() { settingsWin().hidden = true; }
+/* JAG-422: the ⚙ button toggles — a second click (or a click while it is open)
+   closes the settings window instead of re-opening/re-focusing it. */
+function toggleSettings() {
+  const w = settingsWin();
+  if (w && !w.hidden) { closeSettings(); return; }
+  openSettings();
+}
 /* JAG-3xx: pointer events (not mouse) so the settings window can be dragged and
    resized on a phone/tablet; and every move is clamped INSIDE the viewport so a
    position saved on a wide desktop can never leave the window off-screen. */
@@ -5686,7 +5766,7 @@ async function kbLoadNotebooks() {
     if ($("kbNbActive")) $("kbNbActive").textContent = act ? ("\u00b7 " + act.name + " (" + (act.sources || 0) + ")") : "";
     box.innerHTML = rows.map(n => {
       const sel = n.id === kbState.notebook;
-      return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+      return '<div class="kb-row">' +
         '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
         '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this notebook">' + (sel ? "●" : "○") + '</button>' +
         '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px">' +
@@ -5750,7 +5830,7 @@ function _kbSourceRow(s) {
   } else {
     label = '<span class="remaining" style="flex:1;word-break:break-all">' + esc(title) + "</span>";
   }
-  return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px">' +
+  return '<div class="kb-row">' +
     '<span class="cn">' + kind + "</span>" + label + chunks +
     '<button class="ghost" style="padding:2px 6px" data-sid="' + _attr(s.id) + '">✕</button></div>';
 }
@@ -5782,7 +5862,7 @@ async function kbLoadSources() {
          "</b> of <b>" + rows.length + "</b> sources</div>")
       : ('<div class="remaining" style="margin-bottom:4px"><b>' + rows.length +
          "</b> source" + (rows.length > 1 ? "s" : "") + "</div>");
-    box.innerHTML = head + '<div style="max-height:320px;overflow:auto;padding-right:4px">' +
+    box.innerHTML = head + '<div class="kb-list">' +
       shown.map(_kbSourceRow).join("") + "</div>";
     _kbWireSources(box);
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
@@ -5821,8 +5901,8 @@ async function kbFiles() {
     const rows = r.files || [];
     box.innerHTML = rows.length
       ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files in this notebook</div>" +
-         '<div style="max-height:320px;overflow:auto;padding-right:4px">' +
-         rows.map(f => '<div style="display:flex;gap:6px;font-size:11px">' +
+         '<div class="kb-list">' +
+         rows.map(f => '<div class="kb-row">' +
            '<a href="#" class="kbopen" data-ref="' + _attr(f.path) + '" style="flex:1;word-break:break-all">' + esc(f.path) + '</a>' +
            '<span class="cn">' + (f.chunks || 0) + "</span></div>").join("") + '</div>')
       : '<div class="remaining">no files in this notebook</div>';
@@ -6590,7 +6670,15 @@ $("palette-open").onclick = openPalette;
 /* JAG-420: the Control deck is now an IN-PAGE sub-view (an embedded frame) so the top
    tabs swap sub-views of the SAME page and the banner never changes between tabs.
    A full-page fallback (goControlDetached) still exists. */
-function _tabTop() { const h = document.getElementById("topbar"); return h ? Math.round(h.getBoundingClientRect().height) : 44; }
+/* JAG-424: the topbar height to offset the Control view by. getBoundingClientRect()
+   returns ZOOMED pixels, but `top:` is a CSS value that the html `zoom` scales AGAIN
+   (JAG-283) — dividing by the live zoom keeps the deck flush with the banner. */
+function _tabTop() {
+  const h = document.getElementById("topbar");
+  if (!h) return 44;
+  const z = (typeof _zoom === "number" && _zoom > 0) ? _zoom : 1;
+  return Math.round(h.getBoundingClientRect().height / z);
+}
 function _setTabs(which) {
   const s = document.getElementById("tabSessions"), c = document.getElementById("tabControl");
   if (s) { const on = which === "sessions"; s.classList.toggle("active", on); on ? s.setAttribute("aria-current", "page") : s.removeAttribute("aria-current"); }
@@ -6953,7 +7041,15 @@ function applyZoom() {
   document.documentElement.style.setProperty("--zoom", String(_zoom));
   try { localStorage.setItem("sf_zoom", String(_zoom)); } catch (e) {}
   _settleHandles();    // JAG-358: a zoom change rescales the page — re-glue the handles
+  // JAG-424: the Control view is offset by the topbar height in CSS px — recompute it
+  // whenever the zoom changes while the deck is open, or the anchor drifts.
+  const cv = document.getElementById("controlView");
+  if (cv && cv.classList.contains("on")) cv.style.top = _tabTop() + "px";
 }
+window.addEventListener("resize", () => {
+  const cv = document.getElementById("controlView");
+  if (cv && cv.classList.contains("on")) cv.style.top = _tabTop() + "px";
+});
 function zoomBy(d) {
   _zoom = Math.min(1.6, Math.max(0.7, Math.round((_zoom + d) * 100) / 100));
   applyZoom();
@@ -7015,7 +7111,7 @@ $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
-  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg();
+  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); refreshSendBtn();
   // auto-open the workspace tree of a restored-open Files panel (no manual ↻)
   { const _fs = document.querySelector('#inspector section[data-insp="files"]');
     if (_fs && _fs.classList.contains("insp-open")) { loadFiles(); loadEdits(); } }
