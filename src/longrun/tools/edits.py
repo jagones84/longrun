@@ -21,6 +21,7 @@ import re
 import threading
 import time
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 MAX_ENTRIES = 500
 MAX_TEXT = 200_000     # cap the pre/post image kept per edit
@@ -48,12 +49,7 @@ def _load(key):
 
 
 def _save(key, entries):
-    d = _dir()
-    os.makedirs(d, exist_ok=True)
-    tmp = _key_file(key) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(entries, f, ensure_ascii=False)
-    os.replace(tmp, _key_file(key))
+    write_json(_key_file(key), entries, indent=None)
 
 
 def _counts(before, after):

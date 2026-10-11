@@ -13,8 +13,8 @@ import json
 import os
 import threading
 import time
-import uuid
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 from .attention import AttentionFeed
@@ -37,11 +37,7 @@ def _load():
 
 
 def _save(d):
-    os.makedirs(os.path.dirname(FILE), exist_ok=True)
-    tmp = "%s.%s.tmp" % (FILE, uuid.uuid4().hex[:12])
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, FILE)
+    write_json(FILE, d)
 
 
 class DecisionQueue:

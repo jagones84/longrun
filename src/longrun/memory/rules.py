@@ -18,6 +18,7 @@ import json
 import os
 import re
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 MAX_BYTES = int(os.environ.get("LONGRUN_RULES_MAX", str(32 * 1024)))
 
@@ -50,12 +51,7 @@ def _read_config():
 
 def _write_config(cfg):
     """Atomically persist config.json."""
-    cfg_dir = _config_dir()
-    os.makedirs(cfg_dir, exist_ok=True)
-    tmp = _config_file() + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, _config_file())
+    write_json(_config_file(), cfg)
 
 
 def get_workspace():

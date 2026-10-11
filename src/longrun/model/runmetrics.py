@@ -8,6 +8,7 @@ import json
 import os
 import time
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 RUNS_DIR = os.environ.get("LONGRUN_RUNS_DIR", os.path.join(REPO, "data", "runs"))
 _START = {}
@@ -50,11 +51,7 @@ def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=
 
 
 def _write(key, rec):
-    os.makedirs(RUNS_DIR, exist_ok=True)
-    tmp = _path(key) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(rec, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, _path(key))
+    write_json(_path(key), rec)
 
 
 def get(key):

@@ -10,6 +10,7 @@ import os
 import re
 import json
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 PROPOSAL_DIR = os.path.join(REPO, "data", "proposals")
 
@@ -63,8 +64,7 @@ def propose(scope, content, reason="", target_path="", ws=None):
     rec = {"id": pid, "ts": time.time(), "scope": scope,
            "content": str(content)[:8000], "reason": str(reason)[:500],
            "target_path": target_path, "status": "pending", "ws": ws}
-    with open(_path(pid), "w", encoding="utf-8") as f:
-        json.dump(rec, f, ensure_ascii=False, indent=2)
+    write_json(_path(pid), rec)
     return rec
 
 
@@ -90,8 +90,7 @@ def list_proposals():
 
 
 def _save(rec):
-    with open(_path(rec["id"]), "w", encoding="utf-8") as f:
-        json.dump(rec, f, ensure_ascii=False, indent=2)
+    write_json(_path(rec["id"]), rec)
     return rec
 
 

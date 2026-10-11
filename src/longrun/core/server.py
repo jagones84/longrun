@@ -74,7 +74,7 @@ from longrun.util.evals import (EVAL_DIR, GOLD_PATH, EVAL_RESULTS_DIR, eval_list
                     _is_subsequence, eval_score, eval_run)
 from longrun.util.paths import (DATA_DIR, SESSIONS_DIR, WEBUI_DIR, _JOBSEQ_FILE,
                     REPO_ROOT as REPO)
-from longrun.memory.stores import (_ensure_dirs, _read_json, _write_json, _store_path, load_plan,
+from longrun.memory.stores import (_ensure_dirs, _store_path, load_plan,
                      save_plan, load_tasks, save_tasks, _SID_RE, _valid_sid,
                      load_session, _DELETED_SESSIONS, _deleted_lock, _TOMBSTONE_FILE,
                      _load_tombstones, _persist_tombstones, save_session,

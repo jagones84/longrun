@@ -22,6 +22,7 @@ import time
 import uuid
 
 from longrun.tools import registry
+from longrun.util.fswrite import read_json, write_json
 
 REPO = registry.REPO
 CKPT_DIR = os.path.join(REPO, "data", "checkpoints")
@@ -42,32 +43,16 @@ def _publish(kind, **data):
         return None
 
 
-def _read_json(path, default):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
-
-
-def _atomic_write(path, obj):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, path)
-
-
 def _index_path():
     return os.path.join(CKPT_DIR, "index.json")
 
 
 def _load_index():
-    return _read_json(_index_path(), [])
+    return read_json(_index_path(), [])
 
 
 def _save_index(entries):
-    _atomic_write(_index_path(), entries)
+    write_json(_index_path(), entries)
 
 
 def _snapshot_path(cp_id):
@@ -112,7 +97,7 @@ def create(label=None, session_id=None, idempotency_key=None, by="api"):
             },
             "rolled_back": False,
         }
-        _atomic_write(_snapshot_path(cp_id), payload)
+        write_json(_snapshot_path(cp_id), payload)
         entries = _load_index()
         entries.insert(0, manifest)
         _save_index(entries[:MAX_CHECKPOINTS])
@@ -222,7 +207,7 @@ def purge_session(session_id):
 
 
 def load_payload(cp_id):
-    return _read_json(_snapshot_path(cp_id), None)
+    return read_json(_snapshot_path(cp_id), None)
 
 
 # ---------------------------------------------------------------- rollback ----

@@ -15,6 +15,7 @@ import os
 import re
 import time
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 DEFAULTS = {
@@ -102,8 +103,7 @@ def draft(pattern, support, out_dir, note=""):
                     "support": int(support), "created": round(time.time(), 3),
                     "note": note,
                     "next": "verify in sandbox, then archive to skills/"}
-        with open(os.path.join(d, "proposal.json"), "w", encoding="utf-8") as f:
-            json.dump(proposal, f, ensure_ascii=False, indent=2)
+        write_json(os.path.join(d, "proposal.json"), proposal)
         steps = "\n".join("%d. `%s`" % (i + 1, t) for i, t in enumerate(pattern))
         md = ("# Proposed skill: %s\n\n"
               "Detected automatically across **%d run(s)** (JAG-133). Tool sequence:\n\n"
@@ -157,11 +157,7 @@ def record(key, tools, path=None):
         if len(data) > 500:
             for k in sorted(data, key=lambda x: data[x].get("ts", 0))[:len(data) - 500]:
                 data.pop(k, None)
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        tmp = p + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, p)
+        write_json(p, data)
         return True
     except OSError:
         return False
@@ -198,9 +194,7 @@ STAGE2_DEFAULTS = {
 
 def _write_json(path, obj):
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(obj, f, ensure_ascii=False, indent=2)
+        write_json(path, obj)
         return True
     except OSError:
         return False

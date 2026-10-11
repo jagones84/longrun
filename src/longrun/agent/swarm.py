@@ -33,6 +33,7 @@ import time
 import uuid
 
 from longrun.tools import registry
+from longrun.util.fswrite import write_json
 
 REPO = registry.REPO
 DATA_DIR = os.path.join(REPO, "data", "blackboard")
@@ -71,11 +72,7 @@ def _load():
 
 def _save():
     path = _ensure_file()
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"entries": _entries[-_max_entries:]}, f, indent=2,
-                  ensure_ascii=False)
-    os.replace(tmp, path)
+    write_json(path, {"entries": _entries[-_max_entries:]})
 
 
 def post(topic, content, tags=None, parent=None, author=None, run_id=None):

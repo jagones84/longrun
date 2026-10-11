@@ -15,8 +15,8 @@ import json
 import os
 import threading
 import time
-import uuid
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -35,11 +35,7 @@ def _load():
 
 
 def _save(d):
-    os.makedirs(os.path.dirname(AGENTS_FILE), exist_ok=True)
-    tmp = "%s.%s.tmp" % (AGENTS_FILE, uuid.uuid4().hex[:12])
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, AGENTS_FILE)
+    write_json(AGENTS_FILE, d)
 
 
 class AgentRegistry:

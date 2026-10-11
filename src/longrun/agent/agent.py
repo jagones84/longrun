@@ -29,7 +29,8 @@ from longrun.util.paths import DATA_DIR, SESSIONS_DIR, WEBUI_DIR
 from longrun.util.paths import REPO_ROOT as REPO
 from longrun.model.rllm import ROUTER_BASE, _router_stream, context_budget, default_model
 from longrun.util.steering import _is_aborted, clear_abort, drain_steer, has_steer
-from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event, _write_json,
+from longrun.util.fswrite import write_json
+from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event,
                      append_message, load_plan, load_tasks, persist_inject,
                      persist_tool_card, save_plan, save_session, save_tasks)
 from longrun.util.textkit import extract_json
@@ -2319,7 +2320,7 @@ def generate_plan(goal, model=None):
         steps = [{"id": uuid.uuid4().hex[:6], "title": str(data["title"])[:120],
                   "detail": str(data.get("detail", ""))[:300], "done": False}]
     plan = {"goal": goal, "steps": steps, "updated": round(time.time(), 3)}
-    _write_json(_store_path("plan.json"), plan)
+    write_json(_store_path("plan.json"), plan)
     publish("plan.update", goal=goal, steps=steps, generated=True)
     trace.finish("done")
     return plan, answer, think, trace.id

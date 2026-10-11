@@ -27,8 +27,8 @@ import os
 import re
 import threading
 import time
-import uuid
 
+from longrun.util.fswrite import read_json, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 GRAPH_DIR = os.path.join(os.environ.get("LONGRUN_GRAPH_DIR", os.path.join(REPO, "data")),
                          "graphs")
@@ -83,41 +83,14 @@ def _path(key):
     return os.path.join(GRAPH_DIR, _safe_id(key) + ".json")
 
 
-def _read_json(path, default=None):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:  # noqa: BLE001
-        return default
-
-
-def _write_json(path, obj):
-    # JAG-287: a UNIQUE temp name per write. Up to three writers can touch the same
-    # session graph (the turn worker, the background planner, the UI node endpoint);
-    # a fixed "<path>.tmp" let the first os.replace() rename it away and the second
-    # raise FileNotFoundError. Mirrors the JAG-201 fix for session transcripts.
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = "%s.%s.tmp" % (path, uuid.uuid4().hex[:12])
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(obj, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-
-
 def load(key):
     """Load the graph for `key` (a session id = a task, or a run id) or None."""
-    return _read_json(_path(key), None)
+    return read_json(_path(key), None)
 
 
 def save(graph):
     graph["updated"] = round(time.time(), 3)
-    _write_json(_path(graph.get("key") or graph.get("run_id")), graph)
+    write_json(_path(graph.get("key") or graph.get("run_id")), graph)
     return graph
 
 

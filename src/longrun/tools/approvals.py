@@ -18,6 +18,7 @@ import time
 import uuid
 
 from longrun.tools import registry
+from longrun.util.fswrite import write_json
 
 DATA_DIR = os.path.join(registry.REPO, "data")
 # Distinct file name: another harness build may own data/approvals.json.
@@ -47,11 +48,7 @@ def _load():
 
 
 def _persist():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_load(), f, indent=2, ensure_ascii=False)
-    os.replace(tmp, PATH)
+    write_json(PATH, _load())
 
 
 def _summarize(tool, args):

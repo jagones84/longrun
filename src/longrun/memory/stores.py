@@ -14,6 +14,7 @@ import uuid
 from longrun.plan import taskgraph
 from longrun.core.events import (_ACTIVE_CHAT, _ACTIVE_CHAT_LOCK, _TURN_LOCKS,
                      _TURN_LOCKS_GUARD, publish)
+from longrun.util.fswrite import read_json, write_json
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR, REPO_ROOT as REPO, _JOBSEQ_FILE
 from longrun.util.steering import STEER_INBOX, _steer_lock, clear_abort, push_abort
 from longrun.util.tracing import _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
@@ -26,54 +27,27 @@ def _ensure_dirs():
     os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 
-def _read_json(path, default):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
-
-
-def _write_json(path, obj):
-    # JAG-201: a UNIQUE temp name per write. A fixed "<path>.tmp" collides when
-    # two threads write the same file at once: the first os.replace() renames the
-    # tmp away, so the second fails with FileNotFoundError — which used to escape
-    # do_POST and drop the whole request (connection closed, turn lost).
-    tmp = "%s.%s.tmp" % (path, uuid.uuid4().hex)
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(obj, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
 def _store_path(name):
     return os.path.join(DATA_DIR, name)
 
 
 def load_plan():
-    return _read_json(_store_path("plan.json"), {"goal": "", "steps": [], "updated": None})
+    return read_json(_store_path("plan.json"), {"goal": "", "steps": [], "updated": None})
 
 
 def save_plan(plan):
     plan["updated"] = round(time.time(), 3)
-    _write_json(_store_path("plan.json"), plan)
+    write_json(_store_path("plan.json"), plan)
     publish("plan.update", goal=plan.get("goal", ""), steps=plan.get("steps", []))
 
 
 def load_tasks():
-    return _read_json(_store_path("tasks.json"), {"tasks": [], "updated": None})
+    return read_json(_store_path("tasks.json"), {"tasks": [], "updated": None})
 
 
 def save_tasks(store):
     store["updated"] = round(time.time(), 3)
-    _write_json(_store_path("tasks.json"), store)
+    write_json(_store_path("tasks.json"), store)
     publish("tasks.update", tasks=store.get("tasks", []))
 
 
@@ -94,7 +68,7 @@ def _valid_sid(sid):
 def load_session(sid):
     if not _valid_sid(sid):
         return None
-    return _read_json(os.path.join(SESSIONS_DIR, sid + ".json"), None)
+    return read_json(os.path.join(SESSIONS_DIR, sid + ".json"), None)
 
 
 # JAG-222: a session deleted WHILE its turn is running used to be RESURRECTED —
@@ -144,7 +118,7 @@ def save_session(sess):
     with _deleted_lock:
         if sid in _DELETED_SESSIONS:
             return  # JAG-222: the session was deleted — never resurrect it
-    _write_json(os.path.join(SESSIONS_DIR, sid + ".json"), sess)
+    write_json(os.path.join(SESSIONS_DIR, sid + ".json"), sess)
 
 
 def _purge_session_artifacts(sid):
@@ -280,7 +254,7 @@ def list_sessions():
     try:
         for fn in sorted(os.listdir(SESSIONS_DIR)):
             if fn.endswith(".json"):
-                s = _read_json(os.path.join(SESSIONS_DIR, fn), None)
+                s = read_json(os.path.join(SESSIONS_DIR, fn), None)
                 if not s:
                     continue
                 msgs = s.get("messages", [])
@@ -317,7 +291,7 @@ def _max_job():
     try:
         for fn in os.listdir(SESSIONS_DIR):
             if fn.endswith(".json"):
-                s = _read_json(os.path.join(SESSIONS_DIR, fn), None) or {}
+                s = read_json(os.path.join(SESSIONS_DIR, fn), None) or {}
                 try:
                     best = max(best, int(s.get("job") or 0))
                 except (TypeError, ValueError):
@@ -387,7 +361,7 @@ def backfill_session_workspaces():
         for fn in sorted(os.listdir(SESSIONS_DIR)):
             if not fn.endswith(".json"):
                 continue
-            s = _read_json(os.path.join(SESSIONS_DIR, fn), None)
+            s = read_json(os.path.join(SESSIONS_DIR, fn), None)
             if s and ensure_session_workspace(s):
                 save_session(s)
                 n += 1
@@ -403,7 +377,7 @@ def backfill_jobs():
         for fn in sorted(os.listdir(SESSIONS_DIR)):
             if not fn.endswith(".json"):
                 continue
-            s = _read_json(os.path.join(SESSIONS_DIR, fn), None)
+            s = read_json(os.path.join(SESSIONS_DIR, fn), None)
             if s and ensure_job(s):
                 save_session(s)
                 n += 1

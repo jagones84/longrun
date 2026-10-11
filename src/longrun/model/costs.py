@@ -34,6 +34,7 @@ import os
 import threading
 import time
 
+from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR
 
 COSTS_DIR = os.environ.get("LONGRUN_COSTS_DIR", os.path.join(DATA_DIR, "costs"))
@@ -278,12 +279,7 @@ def _load(session):
 
 
 def _save(session, led):
-    os.makedirs(COSTS_DIR, exist_ok=True)
-    p = _path(session)
-    tmp = p + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(led[-MAX_CALLS:], f, ensure_ascii=False)
-    os.replace(tmp, p)
+    write_json(_path(session), led[-MAX_CALLS:], indent=None)
 
 
 def _summarise(led):
@@ -417,11 +413,7 @@ def refresh_openrouter(url=None, timeout=12):
             row["request"] = rq
         table[str(mid)] = row
     try:
-        os.makedirs(os.path.dirname(_CACHE_JSON), exist_ok=True)
-        tmp = _CACHE_JSON + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(table, f, ensure_ascii=False, sort_keys=True)
-        os.replace(tmp, _CACHE_JSON)
+        write_json(_CACHE_JSON, table, indent=None, sort_keys=True)
     except OSError as e:
         return {"ok": False, "error": "cache write failed: %s" % e}
     with _lock:
