@@ -88,8 +88,8 @@ FAKE_GREEN = True
 p_ok = make_proposal("candy")
 res2 = selfevolve.promote(p_ok, skills_dir=os.path.join(tmp, "skills"))
 check("D1 promote ok at green gate", res2.get("ok"), str(res2)[:100])
-check("D2 archived to skills/<cat>/<name>",
-      os.path.isdir(os.path.join(tmp, "skills", "auto", "candy")), "")
+check("D2 archived to skills/created/<name>",
+      os.path.isdir(os.path.join(tmp, "skills", "created", "candy")), "")
 
 # ---- F: gate ignores a manipulated LOCAL check.py ----
 p_fake = make_proposal("candz")

@@ -76,7 +76,9 @@ selfevolve:
   min_len: 2                # lunghezza minima della sequenza (n. tool)
   min_count: 3              # su quante run diverse deve ripetersi
   max_len: 6                # lunghezza massima cercata
-  category: auto            # skills/<category>/<nome> alla promozione
+  # JAG-426: auto-generated skills are confined to skills/created/ (the built-in
+  # skills/core library is immutable and can never be written by the miner).
+  category: created         # skills/<category>/<name> at promotion time
   verify_timeout: 60        # timeout del check in sandbox
 
 # ---- tool registry -----------------------------------------------------------
@@ -244,6 +246,31 @@ tools:
   improve:
     enabled: true
     approval: auto
+
+  # ---- JAG-426: baseline tools every standard harness ships ------------------
+  # Native Python execution (previously only reachable via the pmcp MCP client,
+  # so a host without pmcp had NO way to run a snippet). Arbitrary code = the
+  # same approval class as `shell`.
+  python:
+    enabled: true
+    approval: required
+
+  # Process list / terminate (Linux /proc, stdlib only). Listing is read-only and
+  # auto-approved; terminating needs approval. The tool itself refuses pid<=1 and
+  # its own pid.
+  process:
+    enabled: true
+    approval: required
+    auto_approve:
+      - "^list$"
+
+  # Structured file listing (read-only), inside the same roots as fs.read.
+  glob:
+    enabled: true
+    approval: auto
+    roots:
+      - "."
+      - "/home/jagones/Repositories"
 
   # external MCP tools appear as <client>__<tool> (config/mcp_clients.yaml);
   # default policy is approval=required. Read-only pmcp gateway probes are

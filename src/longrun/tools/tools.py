@@ -73,6 +73,119 @@ def _shell(args, run_id):
     return res
 
 
+# --------------------------------------------------- JAG-426 baseline tools ---
+# Three primitives every standard harness ships that Longrun was missing natively
+# (python was only reachable through the external pmcp MCP client).
+
+def _python(args, run_id):
+    """Run a Python snippet in the sandbox (native REPL substitute).
+
+    The code is written to a file inside the sandbox workspace and executed as
+    `python3 <file>` — no inline quoting, so it works identically under the
+    docker and `none` backends (the workspace is /work or the host dir).
+    """
+    code = str((args or {}).get("code") or "")
+    if not code.strip():
+        return {"ok": False, "error": "code required"}
+    try:
+        ws = sandbox.workspace_for(run_id)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": "no sandbox workspace: %s" % e}
+    name = "_repl_%s.py" % os.urandom(4).hex()
+    path = os.path.join(ws, name)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(code)
+        res = sandbox.run("python3 " + name, run_id=run_id,
+                          timeout=args.get("timeout_secs"), workspace=ws)
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    res["ok"] = res.get("exit_code") == 0
+    return res
+
+
+def _process(args, run_id):
+    """List or terminate processes (Linux /proc; stdlib only)."""
+    import signal
+    action = str((args or {}).get("action") or "list").lower()
+    if not os.path.isdir("/proc"):
+        return {"ok": False, "error": "process management needs /proc (Linux only)"}
+    if action in ("kill", "stop", "terminate"):
+        try:
+            pid = int((args or {}).get("pid"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "pid (int) required for action=kill"}
+        if pid <= 1:
+            return {"ok": False, "error": "refusing to signal pid %d" % pid}
+        if pid == os.getpid():
+            return {"ok": False, "error": "refusing to signal the harness itself"}
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as e:
+            return {"ok": False, "error": "kill failed: %s" % e}
+        return {"ok": True, "exit_code": 0, "stdout": "sent SIGTERM to %d" % pid,
+                "backend": "host", "sandboxed": False}
+    # action=list
+    match = str((args or {}).get("match") or "").lower()
+    try:
+        limit = max(1, min(int((args or {}).get("limit") or 40), 500))
+    except (TypeError, ValueError):
+        limit = 40
+    rows = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        try:
+            with open("/proc/%d/cmdline" % pid, "rb") as f:
+                cmd = f.read().replace(b"\x00", b" ").decode("utf-8", "replace").strip()
+            with open("/proc/%d/statm" % pid, "r", encoding="utf-8") as f:
+                rss_pages = int(f.read().split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        if not cmd or (match and match not in cmd.lower()):
+            continue
+        rows.append({"pid": pid, "cmd": cmd[:180], "rss_mb": round(rss_pages * 4096 / 1e6, 1)})
+    rows.sort(key=lambda r: -r["rss_mb"])
+    lines = ["%7d %8.1f MB  %s" % (r["pid"], r["rss_mb"], r["cmd"]) for r in rows[:limit]]
+    return {"ok": True, "exit_code": 0, "count": len(rows), "processes": rows[:limit],
+            "stdout": "\n".join(lines) or "(no match)", "backend": "host", "sandboxed": False}
+
+
+def _glob(args, run_id):
+    """List files matching a glob pattern, inside the allowed roots (read-only)."""
+    import glob as _g
+    pattern = str((args or {}).get("pattern") or "").strip()
+    if not pattern:
+        return {"ok": False, "error": "pattern required"}
+    try:
+        roots = registry.tool_spec("glob")["roots"]
+    except Exception:  # noqa: BLE001
+        roots = ["."]
+    root, err = registry.resolve_path(str((args or {}).get("root") or "."), roots,
+                                      base=(args or {}).get("workspace"))
+    if err:
+        return {"ok": False, "error": err}
+    if os.path.isfile(root):
+        root = os.path.dirname(root)
+    try:
+        cap = max(1, min(int((args or {}).get("limit") or 200), 2000))
+    except (TypeError, ValueError):
+        cap = 200
+    hits = []
+    for m in _g.iglob(os.path.join(root, pattern), recursive=True):
+        if os.path.isfile(m):
+            hits.append(os.path.relpath(m, root))
+            if len(hits) >= cap:
+                break
+    files = sorted(hits)
+    return {"ok": True, "exit_code": 0, "root": root, "count": len(files), "files": files,
+            "stdout": "\n".join(files) or "(no match)", "backend": "host", "sandboxed": False}
+
+
 # ------------------------------------------------------------------- fs ------
 
 def _fs_read(args, run_id):
@@ -497,8 +610,13 @@ def _skills(args, run_id):
 
 
 def _self(args, run_id):
-    """v0.5 self-knowledge: paths, config, docs, systemd state, extension recipe."""
+    """v0.5 self-knowledge: paths, config, docs, systemd state, extension recipe.
+
+    JAG-426: `action` (default "info") adds DYNAMIC self-diagnosis with no new
+    tool name and no PMC dependency — diagnose | logs | context | tools.
+    """
     import subprocess as sp
+    action = str((args or {}).get("action", "info") or "info").strip().lower()
     # JAG-347: report the LIVE version, not a stale hardcoded string - a wrong
     # self-report is exactly the kind of misleading guidance this review targets.
     try:
@@ -555,6 +673,23 @@ def _self(args, run_id):
             info["service"]["active"] = "n/a (no systemd on this host)"
     except Exception:
         info["service"]["active"] = "unknown"
+    # JAG-426: on-demand dynamic diagnosis. Every branch is additive: the static
+    # info above always ships, so the model never loses the paths/recipe it had.
+    if action not in ("info", ""):
+        from longrun.tools import diag as diag_mod
+        if action in ("diagnose", "health"):
+            info["diagnose"] = diag_mod.health()
+        elif action in ("logs", "log", "history"):
+            info["logs"] = diag_mod.log_tail(session=(args or {}).get("session") or run_id,
+                                             limit=(args or {}).get("limit") or 100,
+                                             kind=(args or {}).get("kind"))
+        elif action in ("context", "ctx"):
+            info["context"] = diag_mod.context((args or {}).get("session") or run_id)
+        elif action in ("tools", "tooling"):
+            info["tools"] = diag_mod.tools_report()
+        else:
+            info["error"] = ("unknown action %r — use info|diagnose|logs|context|tools" % action)
+    info["action"] = action
     return info
 
 
@@ -1014,7 +1149,9 @@ _DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
              "git": _git, "http": _http, "browser": _browser, "self": _self,
              "skills": _skills, "memory": _memory, "web": _web, "improve": _improve,
              "reconcile": _reconcile, "sessions": _sessions, "index": _index,
-             "knowledge": _knowledge}
+             "knowledge": _knowledge,
+             # JAG-426: baseline tools every standard harness ships
+             "python": _python, "process": _process, "glob": _glob}
 
 
 def _dispatch_execute(tool, args, run_id=None):

@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Native self-diagnosis helpers (JAG-426 · Domain 1).
+
+The harness must be able to inspect ITSELF without depending on any external
+process/performance manager (PMC). Everything here uses only the Python stdlib
+plus core system primitives (`/proc`, `shutil`, `socket`, `subprocess`), and
+every probe DEGRADES to a partial result instead of raising, so a missing tool
+(no nvidia-smi, no systemd, no /proc) can never break a diagnosis.
+
+Consumed by the `self` tool (action=diagnose|logs|context|tools). Pure module:
+no dependency on the server at import time (lazy imports only).
+"""
+
+import os
+import shutil
+import socket
+import sys
+import time
+
+from longrun.util.paths import REPO_ROOT as REPO
+
+
+def _safe(fn, default=None):
+    """Run a probe and swallow any failure into `default` (never raise)."""
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001 — a probe must never break the diagnosis
+        return default
+
+
+# ------------------------------------------------------------------ health ----
+
+def _meminfo():
+    """(total_mb, available_mb) from /proc/meminfo, or (None, None)."""
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            rows = {}
+            for line in f:
+                k, _, v = line.partition(":")
+                rows[k.strip()] = v.strip()
+        tot = int(rows["MemTotal"].split()[0]) // 1024
+        avail = int(rows.get("MemAvailable", "0").split()[0]) // 1024
+        return tot, avail
+    except Exception:  # noqa: BLE001 — non-Linux / restricted /proc
+        return None, None
+
+
+def _loadavg():
+    try:
+        return [round(x, 2) for x in os.getloadavg()]
+    except (OSError, AttributeError):
+        return None
+
+
+def _disk(root=REPO):
+    try:
+        u = shutil.disk_usage(root)
+        return {"path": root, "total_gb": round(u.total / 1e9, 1),
+                "free_gb": round(u.free / 1e9, 1),
+                "used_pct": round(100.0 * (u.total - u.free) / u.total, 1)}
+    except OSError:
+        return None
+
+
+def _gpu():
+    """Best-effort GPU line via nvidia-smi; None when absent (graceful)."""
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        return None
+    import subprocess as sp
+    try:
+        out = sp.run([exe, "--query-gpu=name,utilization.gpu,temperature.gpu,memory.used,memory.total",
+                      "--format=csv,noheader,nounits"],
+                     capture_output=True, text=True, timeout=4)
+        line = (out.stdout or "").strip().splitlines()
+        if not line:
+            return None
+        parts = [p.strip() for p in line[0].split(",")]
+        return {"name": parts[0], "util_pct": parts[1] if len(parts) > 1 else None,
+                "temp_c": parts[2] if len(parts) > 2 else None,
+                "mem_used_mb": parts[3] if len(parts) > 3 else None,
+                "mem_total_mb": parts[4] if len(parts) > 4 else None}
+    except Exception:  # noqa: BLE001 — no driver / timeout
+        return None
+
+
+def _port_open(host, port, timeout=0.3):
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _service(name="longrun.service"):
+    from longrun.util import osutil
+    state = "n/a"
+    if getattr(osutil, "IS_POSIX", False) and shutil.which("systemctl"):
+        import subprocess as sp
+        try:
+            state = (sp.run(["systemctl", "--user", "is-active", name],
+                            capture_output=True, text=True, timeout=4).stdout or "").strip() or "unknown"
+        except Exception:  # noqa: BLE001
+            state = "unknown"
+    return {"unit": name, "active": state, "restart": osutil.service_hint()}
+
+
+def health(host="127.0.0.1", port=8790) -> dict:
+    """A one-shot health snapshot. Always returns a dict; probes may be None."""
+    tot, avail = _meminfo()
+    try:
+        from longrun.core import server as _srv
+        version = str(getattr(_srv, "VERSION", "unknown"))
+    except Exception:  # noqa: BLE001
+        version = "unknown"
+    return {
+        "ok": True,
+        "ts": round(time.time(), 3),
+        "version": version,
+        "python": sys.version.split()[0],
+        "host": host,
+        "cpu": {"count": os.cpu_count(), "loadavg": _loadavg()},
+        "memory_mb": ({"total": tot, "available": avail} if tot else None),
+        "disk": _disk(),
+        "gpu": _gpu(),
+        "service": _service(),
+        "ports": {str(port): _port_open(host, port), str(port + 1): _port_open(host, port + 1)},
+        "router": os.environ.get("LONGRUN_ROUTER", "http://127.0.0.1:8080"),
+        "sandbox": _safe(lambda: __import__("longrun.tools.sandbox", fromlist=["probe"]).probe()),
+    }
+
+
+# -------------------------------------------------------------------- logs ----
+
+def log_tail(session=None, limit=100, kind=None) -> dict:
+    """The harness's own execution history, from the durable event log.
+
+    There is no plain-text log file: the event store (`data/events.db`) IS the
+    structured log (every turn, tool call, approval, error). Newest first.
+    """
+    try:
+        from longrun.core import events
+        rows = events.query_events(session=session, kind=kind, limit=int(limit or 100))
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": "event log unavailable: %s" % e, "lines": []}
+    lines = []
+    for r in rows:
+        t = time.strftime("%H:%M:%S", time.localtime(r.get("ts") or 0))
+        extra = {k: v for k, v in r.items() if k not in ("id", "ts", "kind")}
+        lines.append("%s %-22s %s" % (t, r.get("kind"), extra if extra else ""))
+    return {"ok": True, "source": "events.db", "count": len(lines),
+            "session": session, "lines": lines}
+
+
+# ----------------------------------------------------------------- context ----
+
+def context(session) -> dict:
+    """How full is THIS session's context window (dry-run, no LLM call)."""
+    if not session:
+        return {"ok": False, "error": "session id required"}
+    try:
+        from longrun.model import context_engine
+        st = context_engine.preview(session)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": "context preview failed: %s" % e}
+    if isinstance(st, dict) and st.get("error"):
+        return {"ok": False, "error": st["error"]}
+    return {"ok": True, "session": session, "context": st}
+
+
+# ------------------------------------------------------------------- tools ----
+
+def tools_report() -> dict:
+    """What the harness can do right now: native tools + their policy + MCP."""
+    try:
+        from longrun.tools import registry
+        cat = registry.catalog()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": "registry unavailable: %s" % e}
+    native, external, enabled = [], [], []
+    for t in cat:
+        name = t.get("name")
+        if not name:
+            continue
+        (external if "__" in name else native).append(name)
+        if t.get("enabled", True):
+            enabled.append(name)
+    return {"ok": True, "count": len(native), "external_count": len(external),
+            "native": sorted(native), "external": sorted(external),
+            "enabled_count": len(enabled),
+            "tools": {t["name"]: {"enabled": t.get("enabled", True),
+                                  "approval": t.get("approval"),
+                                  "description": (t.get("description") or "")[:120]}
+                      for t in cat if t.get("name")}}

@@ -124,11 +124,24 @@ TOOL_SCHEMAS = {
         "subject": "url",
     },
     "self": {
-        "description": ("Self-knowledge: where the harness is installed (repo, data, "
-                        "config paths), how to install a skill/MCP server, and the "
-                        "systemd service state. Read-only, always safe."),
+        "description": ("Self-knowledge + native self-diagnosis (JAG-426). action=info "
+                        "(default): where the harness is installed (repo, data, config "
+                        "paths), how to install a skill/MCP server, the systemd service "
+                        "state. action=diagnose: live health (cpu/mem/disk/gpu/service/"
+                        "ports). action=logs: this session's event history. "
+                        "action=context: how full this session's context window is. "
+                        "action=tools: the tools enabled right now + their policy. "
+                        "Read-only, always safe, no external dependency."),
         "type": "object",
-        "properties": {},
+        "properties": {
+            "action": {"type": "string",
+                       "enum": ["info", "diagnose", "logs", "context", "tools"],
+                       "description": "what to report (default: info)"},
+            "session": {"type": "string",
+                        "description": "session id for action=logs|context (default: this run's session)"},
+            "limit": {"type": "integer", "description": "max log rows for action=logs (default 100)"},
+            "kind": {"type": "string", "description": "event kind filter for action=logs"},
+        },
     },
     "reconcile": {
         "description": ("Recover a stalled/abandoned session: close any session "
@@ -294,6 +307,45 @@ TOOL_SCHEMAS = {
         },
         "required": [],
         "subject": "a",
+    },
+    # --- JAG-426: baseline tools every standard harness ships -----------------
+    "python": {
+        "description": ("Execute a Python snippet in the sandbox and return its "
+                        "stdout/stderr + exit code (a REPL substitute; no host "
+                        "filesystem beyond the sandbox workspace)."),
+        "type": "object",
+        "properties": {
+            "code": {"type": "string", "description": "the Python source to run"},
+            "timeout_secs": {"type": "integer", "description": "optional timeout override"},
+        },
+        "required": ["code"],
+        "subject": "code",
+    },
+    "process": {
+        "description": ("List running processes (pid, RSS, cmdline) or send SIGTERM "
+                        "to one. action=list (optional `match` substring + `limit`); "
+                        "action=kill requires `pid`. Never signals pid<=1 or the harness."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["list", "kill"], "default": "list"},
+            "match": {"type": "string", "description": "cmdline substring filter (action=list)"},
+            "limit": {"type": "integer", "default": 40},
+            "pid": {"type": "integer", "description": "target pid (action=kill)"},
+        },
+        "required": [],
+        "subject": "action",
+    },
+    "glob": {
+        "description": ("List files matching a glob pattern under an allowed root "
+                        "(read-only, capped). e.g. {\"pattern\": \"**/*.py\", \"root\": \".\"}."),
+        "type": "object",
+        "properties": {
+            "pattern": {"type": "string", "description": "glob pattern (supports **)"},
+            "root": {"type": "string", "description": "directory to search (default: the workspace/repo)"},
+            "limit": {"type": "integer", "default": 200},
+        },
+        "required": ["pattern"],
+        "subject": "pattern",
     },
 }
 

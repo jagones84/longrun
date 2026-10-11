@@ -102,7 +102,10 @@ def draft(pattern, support, out_dir, note=""):
                     "pattern": list(pattern), "length": len(pattern),
                     "support": int(support), "created": round(time.time(), 3),
                     "note": note,
-                    "next": "verify in sandbox, then archive to skills/"}
+                    # JAG-426: provenance — a machine-mined proposal is 'auto', so
+                    # promote() can enforce the skills/created/ box on it only.
+                    "origin": "auto",
+                    "next": "verify in sandbox, then archive to skills/created/"}
         write_json(os.path.join(d, "proposal.json"), proposal)
         steps = "\n".join("%d. `%s`" % (i + 1, t) for i, t in enumerate(pattern))
         md = ("# Proposed skill: %s\n\n"
@@ -187,9 +190,26 @@ def mine_history(out_dir, c=None, path=None, note=""):
 # the cycle is safe: synthesize -> verify -> archive.
 
 STAGE2_DEFAULTS = {
-    "category": "auto",     # skills/<category>/<name> during promotion
+    # JAG-426: auto-generated skills land under skills/created/ — a dedicated,
+    # clearly-labelled box, so the built-in library (skills/core) and the user's
+    # own categories stay untouched and auditable.
+    "category": "created",  # skills/<category>/<name> during promotion
     "verify_timeout": 60,   # timeout of the check in the sandbox
 }
+
+# JAG-426: a hard ceiling on machine-created skills. An unbounded auto-library
+# pollutes retrieval and can steer future runs; 25 is plenty for a personal harness.
+AUTO_SKILL_CAP = 25
+
+
+def _under(path, root):
+    """True iff `path` is inside `root` (both resolved)."""
+    try:
+        path = os.path.realpath(path)
+        root = os.path.realpath(root)
+        return os.path.commonpath([path, root]) == root
+    except (ValueError, OSError):
+        return False
 
 
 def _write_json(path, obj):
@@ -376,7 +396,23 @@ def promote(proposal_dir, skills_dir=None, c=None):
                     "error": "held-out gate not green (%s)" % g.get("reason")}
     name = prop.get("name") or os.path.basename(proposal_dir)
     root = skills_dir or os.path.join(REPO, "skills")
-    target = os.path.join(root, str(c.get("category") or "auto"), name)
+    category = str(c.get("category") or "created")
+    target = os.path.join(root, category, name)
+    # JAG-426 safety boundary 1: the built-in library is IMMUTABLE — an auto skill
+    # may never land in (or overwrite) skills/core/**.
+    if _under(target, os.path.join(root, "core")):
+        return {"ok": False, "error": "refusing to write into skills/core (built-in skills are immutable)"}
+    # JAG-426 safety boundary 2: a machine-generated skill may ONLY live under
+    # skills/created/, and only within the quota.
+    if prop.get("origin") == "auto":
+        box = os.path.join(root, "created")
+        if not _under(target, box):
+            return {"ok": False,
+                    "error": "an auto-generated skill must be promoted under skills/created (got category %r)" % category}
+        existing = [d for d in os.listdir(box)] if os.path.isdir(box) else []
+        if len(existing) >= AUTO_SKILL_CAP:
+            return {"ok": False,
+                    "error": "skills/created quota reached (%d) — prune before promoting" % AUTO_SKILL_CAP}
     if os.path.exists(target):
         return {"ok": False, "error": "target already exists: %s" % target}
     try:

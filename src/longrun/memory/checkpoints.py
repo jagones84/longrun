@@ -106,12 +106,50 @@ def create(label=None, session_id=None, idempotency_key=None, by="api"):
         return manifest
 
 
+# ------------------------------------------------------- JAG-426 turn anchor ---
+
+def _feed_seq():
+    """High-water mark of the durable event log, for turn-anchored rewind."""
+    try:
+        from longrun.core import events
+        return int(events.feed_seq())
+    except Exception:  # noqa: BLE001 — an anchor must never break a turn
+        return 0
+
+
+def _stamp(cp_id, extra):
+    """Merge extra fields into a checkpoint manifest."""
+    with _lock:
+        entries = _load_index()
+        for m in entries:
+            if m.get("id") == cp_id:
+                m.update(extra)
+        _save_index(entries)
+    return get(cp_id)
+
+
+def create_turn(session_id, msg_index, label=None, by="chat"):
+    """Snapshot the PRE-turn state, anchored to a USER message index (JAG-426).
+
+    `msg_index` is the index of the user message in the session transcript (the
+    value `stores.session_mark()` captured just BEFORE it was appended), so a
+    later rewind to this message restores exactly the state the turn started
+    from. Idempotent per (session, message): a retried request re-uses the same
+    checkpoint instead of piling up duplicates.
+    """
+    cp = create(label=label or ("turn %s" % msg_index), session_id=session_id,
+                idempotency_key="turn:%s:%s" % (session_id, msg_index), by=by)
+    if cp.get("error"):
+        return cp
+    return _stamp(cp["id"], {"kind": "turn", "msg_index": int(msg_index),
+                             "events_upto": _feed_seq()})
+
+
 def get_by_idempotency_key(key):
     for m in _load_index():
         if m.get("idempotency_key") == key:
             return m
     return None
-
 
 def get(cp_id):
     for m in _load_index():

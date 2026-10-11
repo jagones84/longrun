@@ -103,9 +103,11 @@ rep = E.verify(d, runner=lambda pd, cmd: (True, "green"))
 check("verify marks a green proposal 'verified'",
       rep["green"] is True and _status(d) == "verified")
 
-arch = E.promote(d, skills_dir=skills_root, c=E.cfg({"category": "auto"}))
+arch = E.promote(d, skills_dir=skills_root)
 check("promote archives a verified proposal",
       arch.get("ok") is True and os.path.isdir(arch.get("path") or ""))
+check("JAG-426: an auto-generated skill archives under skills/created/",
+      "/created/" in (arch.get("path") or "").replace(os.sep, "/"))
 check("the archived proposal is marked 'archived'", _status(d) == "archived")
 
 d2 = E.draft(["shell", "git"], 2, out)
