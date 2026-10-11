@@ -80,8 +80,11 @@ def voice_stt(wav_path):
                              capture_output=True, text=True, timeout=300)
                 stem = os.path.splitext(os.path.basename(wav_path))[0] + ".txt"
                 txt = os.path.join(outdir, stem)
-                text = open(txt, encoding="utf-8").read().strip() \
-                    if os.path.isfile(txt) else (out.stdout or "").strip()
+                if os.path.isfile(txt):
+                    with open(txt, encoding="utf-8") as _f:
+                        text = _f.read().strip()
+                else:
+                    text = (out.stdout or "").strip()
         else:
             out = sp.run([WHISPER_BIN, "-m", WHISPER_MODEL, "-nt", "-f", wav_path],
                          capture_output=True, text=True, timeout=120)

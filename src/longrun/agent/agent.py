@@ -2226,8 +2226,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if _extra:
             sess.setdefault("messages", []).extend(_extra)
             save_session(sess)
-    except Exception:  # noqa: BLE001 — persistence must never break a turn
-        pass
+    except Exception as _exc:  # noqa: BLE001 — persistence must never break a turn
+        publish("graph.error", kind="transcript.persist", error=str(_exc))
     reply = append_message(sess, "assistant", content, reasoning=think.strip() or None,
                            meta=meta)
     try:

@@ -35,7 +35,8 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS, AUTOCOMPACT_PCT, AUTO
                      _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS, _deleted_lock,
                      _ensure_dirs, _forget_session_runtime, _is_aborted, _local_ref,
                      _orbit_handle, _orbit_page, _persist_tombstones,
-                     _purge_session_artifacts, _set_session_model, _sse_queues,
+                     _purge_session_artifacts, _set_session_model, _sse_lock,
+                     _sse_queues,
                      _start_event_pruning, _turn_lock, _valid_sid, agent_run,
                      append_message, backfill_jobs, backfill_session_workspaces,
                      chat_once, clear_session, context_budget, default_model,
@@ -395,7 +396,8 @@ def agent_stream_gen(goal, max_steps, model, workspace=None):
 
 def feed_gen(since=0):
     q = queue.Queue()
-    _sse_queues.add(q)
+    with _sse_lock:
+        _sse_queues.add(q)
     try:
         backlog = events_since(since, limit=FEED_REPLAY_MAX)
         if backlog:
@@ -410,7 +412,8 @@ def feed_gen(since=0):
                 idle += 1
                 yield ": ping\n\n"
     finally:
-        _sse_queues.discard(q)
+        with _sse_lock:
+            _sse_queues.discard(q)
 
 
 def telemetry_summary():

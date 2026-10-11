@@ -224,11 +224,12 @@ def stats():
 
 def _notify(entry):
     payload = "event: blackboard.post\ndata: %s\n\n" % json.dumps(entry, ensure_ascii=False)
-    for q in list(_watchers):
-        try:
-            q.put_nowait(payload)
-        except Exception:
-            _watchers.discard(q)
+    with _lock:
+        for q in list(_watchers):
+            try:
+                q.put_nowait(payload)
+            except Exception:
+                _watchers.discard(q)
 
 
 def watch_gen(since_version=0):
@@ -237,7 +238,8 @@ def watch_gen(since_version=0):
     Yields backlog from version N, then live updates.
     """
     q = queue.Queue()
-    _watchers.add(q)
+    with _lock:
+        _watchers.add(q)
     try:
         with _lock:
             backlog = [e for e in _entries if e.get("version", 0) > since_version]
@@ -253,7 +255,8 @@ def watch_gen(since_version=0):
                 idle += 1
                 yield ": ping\n\n"
     finally:
-        _watchers.discard(q)
+        with _lock:
+            _watchers.discard(q)
 
 
 # ------------------------------------------------------------ coordinator ---

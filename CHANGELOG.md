@@ -157,6 +157,24 @@ All notable changes to Longrun are documented here. The format follows
     embeds and reports `embedded`/`embed_error` consistently.
   - *Silent embed failure in `add_source_text`*: the research executor's ingest path used
     `except Exception: pass` instead of recording the error; now reports `embed_error`.
+- **Bugfinder sweep round 2 (JAG-411): seven more bugs fixed, battery 136/136, live turn verified.**
+  - *SSE subscriber set race* (`events.publish` + `httpapi.feed_gen`): `_sse_queues` was mutated
+    (`add`/`discard`) by request threads while `publish` iterated a snapshot with no lock —
+    a size change during iteration raises `RuntimeError` and silently drops a fresh subscriber.
+    New `_sse_lock` guards add/discard/snapshot (re-exported through `server`).
+  - *Blackboard watcher set race* (`swarm._notify`/`watch_gen`): same shape on `_watchers`;
+    now guarded by the module `_lock`.
+  - *MCP reader-thread TOCTOU* (`mcp_client._reader`): check-then-`put` on `._pending` outside
+    the lock could raise `KeyError` (killing the reader loop) when `_send_raw` popped the entry
+    concurrently. Now a lock-guarded `.get()`.
+  - *Silent transcript loss* (`agent`): the agentic turn transcript was persisted under
+    `except Exception: pass` with no signal — a failure dropped the model's tool calls/observations
+    silently. Now publishes `graph.error kind=transcript.persist`.
+  - *Silent checkpoint downgrade* (`api_v02`): a failed run-start checkpoint set `_CHECKPOINTS_START=None`
+    with no record, leaving the run unrollback-able and unobserved. Now publishes `checkpoint.error`.
+  - *File handle leaks*: `open()` without `with` in `routing.load_config` and `voice` STT read.
+  - Fixed a self-introduced circular-import regression (`_sse_lock` must be re-exported by
+    `server` before `httpapi` imports it); caught by the battery, 136/136 after the fix.
 
 ### Fixed
 - Pre-existing `NameError: name 'embed' is not defined` in `codeindex.search` (line 208)

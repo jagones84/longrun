@@ -81,7 +81,8 @@ def load_config(reload=False):
         if _cache is not None and not reload:
             return _cache
         if os.path.isfile(CONFIG_PATH):
-            cfg = _yaml_load(open(CONFIG_PATH, encoding="utf-8").read()) or {}
+            with open(CONFIG_PATH, encoding="utf-8") as _f:
+                cfg = _yaml_load(_f.read()) or {}
         else:
             cfg = dict(DEFAULT_CONFIG)
             save_config(cfg)

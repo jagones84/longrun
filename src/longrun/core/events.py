@@ -110,6 +110,7 @@ _feed_lock = threading.Lock()
 _feed = deque(maxlen=MAX_FEED_EVENTS)
 _feed_seq = 0
 _sse_queues = set()  # each: queue.Queue of str chunks
+_sse_lock = threading.Lock()  # guards _sse_queues add/discard/snapshot (SSE fan-out)
 # JAG-181: per-session registry of chat turns that are STILL running. The worker
 # thread is independent of the HTTP request, so a page refresh/session switch does
 # NOT stop the turn — it only drops the browser's SSE channel. This lets the WebUI
@@ -166,11 +167,12 @@ def publish(kind, **data):
         payload = "id: {id}\nevent: {kind}\ndata: {data}\n\n".format(
             id=event["id"], kind=kind, data=json.dumps(event, ensure_ascii=False)
         )
-    for q in list(_sse_queues):
-        try:
-            q.put_nowait(payload)
-        except Exception:
-            pass
+    with _sse_lock:
+        for q in list(_sse_queues):
+            try:
+                q.put_nowait(payload)
+            except Exception:
+                pass
     return event
 
 

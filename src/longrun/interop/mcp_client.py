@@ -133,8 +133,11 @@ class MCPSession:
                     except json.JSONDecodeError:
                         continue
                     mid = msg.get("id")
-                    if mid is not None and mid in self._pending:
-                        self._pending[mid].put(msg)
+                    if mid is not None:
+                        with self._lock:
+                            q = self._pending.get(mid)
+                        if q is not None:
+                            q.put(msg)
                     elif msg.get("method") and msg.get("params"):
                         pass  # server-initiated notification — ignore for now
             except Exception:

@@ -43,8 +43,8 @@ from longrun.plan import taskgraph  # v0.6: per-run LLM task graph (write_todos,
 from longrun.agent.bridge import _orbit_handle, _orbit_page
 from longrun.core.events import (DB_PATH, EVENTS_KEEP, MAX_FEED_EVENTS, PRUNE_BATCH,
                      PRUNE_INTERVAL_S, _ACTIVE_CHAT, _ACTIVE_CHAT_LOCK, _TURN_LOCKS,
-                     _TURN_LOCKS_GUARD, _db_lock, _feed, _sse_queues, db, events_since,
-                     feed_seq, prune_events, publish, query_events,
+                     _TURN_LOCKS_GUARD, _db_lock, _feed, _sse_lock, _sse_queues, db,
+                     events_since, feed_seq, prune_events, publish, query_events,
                      _start_event_pruning, _turn_lock, turn_begin, turn_end)
 from longrun.model.keys import ENV_FILE, KNOWN_ENV_KEYS, keys_status, reveal_key, set_key
 from longrun.core.sse import (CHAT_THINK_FLUSH_S, CHAT_THINK_LIVE_CAP, ThinkCoalescer,

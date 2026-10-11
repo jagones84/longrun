@@ -366,8 +366,9 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
             label="agent run %s" % st.id, idempotency_key="agent-run:" + st.id,
             by="agent-loop")
         on_event("checkpoint.created", run=st.id, id=_CHECKPOINTS_START.get("id"))
-    except Exception:
+    except Exception as _exc:
         _CHECKPOINTS_START = None
+        on_event("checkpoint.error", run=st.id, error=str(_exc))
     probe = sandbox.probe()
     on_event("agent.start", run=st.id, goal=goal, max_steps=max_steps,
              scripted=script is not None, sandbox=probe["backend"], isolated=probe["isolated"])
