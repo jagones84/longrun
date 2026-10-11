@@ -1486,9 +1486,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # JAG-86: the model's REAL token accounting for this turn (from the router's
     # `usage`), so the ctx meter stops being a pure chars/4 proxy.
     chat_usage = {}
+    _total_prompt = 0
+    _total_completion = 0
 
     def _record_usage():
+        nonlocal _total_prompt, _total_completion
         pt = chat_usage.get("prompt_tokens")
+        _total_prompt += int(pt or 0)
+        _total_completion += int(chat_usage.get("completion_tokens") or 0)
         if pt:
             try:
                 _REAL_PROMPT_TOKENS[sess["id"]] = int(pt)
@@ -2234,10 +2239,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         runmetrics.finish(sess["id"], outcome=("user_abort" if _is_aborted(sess["id"]) else "done"),
                           stop_reason=_kg_stop_reason, iterations=_kg_rounds,
                           steps=work_steps,
-                          prompt_tokens=int(chat_usage.get("prompt_tokens") or 0),
-                          completion_tokens=int(chat_usage.get("completion_tokens") or 0),
-                          tokens=int(chat_usage.get("prompt_tokens") or 0)
-                                 + int(chat_usage.get("completion_tokens") or 0),
+                          prompt_tokens=_total_prompt,
+                      completion_tokens=_total_completion,
+                      tokens=_total_prompt + _total_completion,
                           model=model, difficulty=_diff_level)
         publish("run.metrics", session=sess["id"], metrics=runmetrics.get(sess["id"]))
     except Exception:  # noqa: BLE001 — metrics must never break a turn

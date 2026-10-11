@@ -258,7 +258,7 @@ def _context_call(a):
 def _routing_call(a):
     try:
         from longrun.model import routing as rt
-        if a.get("roles") or "default_fallbacks" in a:
+        if "roles" in a or "default_fallbacks" in a:
             return _text(rt.update(a))
         return _text(rt.status())
     except Exception as e:
@@ -473,6 +473,9 @@ class HttpApi:
     def approvals(self, a):
         action = a.get("action", "list")
         if action == "decide":
-            return self._req("POST", "/api/approvals/" + str(a.get("id")),
+            aid = a.get("id")
+            if not aid:
+                return _error_text("approval id required")
+            return self._req("POST","/api/approvals/" + str(aid),
                              {"decision": a.get("decision"), "by": a.get("by", "mcp")})
         return self._req("GET", "/api/approvals")

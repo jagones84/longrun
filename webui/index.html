@@ -2740,6 +2740,7 @@ function send(text, display) {
 async function api(method, path, body) {
   const r = await fetch(path, { method, headers: {...authHeaders(), "Content-Type": "application/json"},
                                 body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) { try { const ee = await r.json(); return ee; } catch(e) { return { error: r.status + " " + r.statusText }; } }
   return r.json();
 }
 
@@ -4126,6 +4127,7 @@ function runAgent(goal) {
 let _feedN = 0;   // JAG-403g: feed events seen (drives the Feed tab summary)
 function connectFeed() {
   const es = new EventSource("/api/feed" + (authQS() ? "?" + authQS() : ""));
+  es.addEventListener("error", () => { es.close(); setTimeout(connectFeed, 5000); });
   const push = line => {
     const f = $("feed"); const d = document.createElement("div");
     d.textContent = line; f.appendChild(d); f.scrollTop = f.scrollHeight;
@@ -6249,7 +6251,7 @@ async function loadMemories() {
 function memKindsInit(kinds) {
   const sel = $("memKind"); if (!sel || sel.options.length) return;
   const list = (kinds && kinds.length) ? kinds : ["memory.store"];
-  sel.innerHTML = list.map(k => '<option value="' + k + '">' + k + "</option>").join("");
+  sel.innerHTML = list.map(k => '<option value="' + esc(k) + '">' + esc(k) + "</option>").join("");
   if (list.indexOf("memory.store") >= 0) sel.value = "memory.store";
 }
 async function memoryAdd() {

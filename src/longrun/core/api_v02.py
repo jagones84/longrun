@@ -999,8 +999,8 @@ def handle(handler, method, path, qs, body):
                 query=b.get("q") or b.get("query") or "",
                 notebook=b.get("notebook") or "default",
                 depth=b.get("depth") or "shallow",
-                n=int(b.get("n") or 5),
-                max_rounds=int(b.get("max_rounds") or 4),
+                n=_int(b.get("n"), 5),
+                max_rounds=_int(b.get("max_rounds"), 4),
             ))
         # JAG-403b: pick / inspect the active research LLM.
         if path == "/api/research/model":
