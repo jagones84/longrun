@@ -91,7 +91,7 @@
   /* JAG-342 + JAG-342-zoom: the panel is a fixed viewport; a transform (scale+pan)
      on the inner canvas fits the whole tree and zooms it. overflow:hidden keeps the
      page free of a horizontal scrollbar. */
-  .orgwrap{position:relative;overflow:hidden;max-height:72vh;min-height:240px}
+  .orgwrap{position:relative;overflow:hidden;flex:1 1 auto;min-height:240px}
   .orgcanvas{position:absolute;left:0;top:0;transform-origin:0 0;width:max-content;padding:14px 10px;will-change:transform}
   .orgwrap ul{position:relative;padding-top:16px;display:flex;justify-content:center;list-style:none;margin:0}
   .orgwrap li{position:relative;padding:16px 8px 0;text-align:center;list-style:none}
@@ -230,7 +230,7 @@
 <body>
 <script>if(window.self!==window.top||/[?&]embed=1/.test(location.search))document.documentElement.classList.add("embed");</script>
 <header>
-  <span class="logo">⚡ LONGRUN</span>
+  <span class="logo"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" style="vertical-align:-2px"><circle cx="15.2" cy="4" r="2.2"/><path d="M11.5 7.2 9 12.2l3.2 1.4L14 20.4h-2.2l-1.5-5.3-2.6-1.1L6 18.4H3.9l2.5-6.2-1.4-2.9-2.1 1-.9-1.7 3.2-1.6 2 1.6 3.2-1z"/></svg> LONGRUN</span>
   <nav class="topTabs" aria-label="top-level sections">
     <a class="ttab" href="/">Sessions</a>
     <span class="ttab active" aria-current="page">Control</span>
@@ -684,8 +684,8 @@ class OrgChartView {
     const vw = box.clientWidth, vh = box.clientHeight;
     const cw = cv.scrollWidth, ch = cv.scrollHeight;
     if (!vw || !vh || !cw || !ch) return;
-    // fit width AND height; never scale a small tree UP beyond 1x.
-    this.k = Math.max(0.1, Math.min(1, Math.min(vw / cw, vh / ch)));
+    // fit width AND height; allow UP-scaling so a small tree fills the panel.
+    this.k = Math.max(0.1, Math.min(4, Math.min(vw / cw, vh / ch)));
     this.tx = (vw - cw * this.k) / 2;
     this.ty = (vh - ch * this.k) / 2;
     this.apply();
@@ -1132,6 +1132,7 @@ class OrbitApp {
     this.teams = [];
     this.tac = new Constellation(this.api);
     this.org = new OrgChartView((a) => this.tac.open(a, "agent"), (a) => this.tac.gotoAgent(a));
+    if (window.ResizeObserver) new ResizeObserver(() => { try { this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.routines = new RoutinesView(this.api, () => this.refresh());
     this.feed = new FeedView(this.api);

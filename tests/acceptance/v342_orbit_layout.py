@@ -32,8 +32,8 @@ check("A1 the page rows are a single column (mobile-style)",
 # single-column — the two-column track is scoped to `.grid2.ab` only.
 check("A2 the resizable two-column grid spans the Agents and Org rows",
       ".grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax" in HTML)
-check("A3 the org chart scrolls inside its panel",
-      ".orgwrap{" in HTML and "overflow:auto" in HTML and "max-height:72vh" in HTML)
+check("A3 the org chart fits inside its panel (no page scrollbar)",
+      ".orgwrap{" in HTML and "overflow:hidden" in HTML)
 check("A4 the transform pan is removed (no scroll/pan fight)", "_panzoom" not in HTML)
 check("A5 the org chart keeps node selection + open-in-app",
       "onclick" in HTML and "ondblclick" in HTML and "this.onGoTo" in HTML)

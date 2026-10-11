@@ -557,11 +557,13 @@
   .topTabs .ttab:hover { color: var(--txt); background: var(--hover); }
   .topTabs .ttab.active { color: var(--txt); background: var(--sel); box-shadow: inset 0 0 0 1px var(--acc); }
   /* JAG-420: Control deck as an IN-PAGE view (top tabs swap sub-views, banner stays constant). */
-  #topbar { position: sticky; top: 0; z-index: 100; }
+  #topbar { position: sticky; top: 0; z-index: 25; }
   #controlView { position: fixed; left: 0; right: 0; top: 44px; bottom: 0; z-index: 20;
     background: var(--bg); display: none; }
   #controlView.on { display: block; }
   #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+  /* the session/inspector edge handles make no sense on the Control view */
+  body.control-on .edge-handle { display: none !important; }
   #composer #inp { width: 100%; }
   #inp, .inp { background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
     border-radius: var(--radius); padding: 12px 16px; font: inherit; outline: none; }
@@ -1121,7 +1123,7 @@
 </head>
 <body>
 <header id="topbar">
-  <span class="logo">⚡ LONGRUN</span>
+  <span class="logo"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" style="vertical-align:-2px"><circle cx="15.2" cy="4" r="2.2"/><path d="M11.5 7.2 9 12.2l3.2 1.4L14 20.4h-2.2l-1.5-5.3-2.6-1.1L6 18.4H3.9l2.5-6.2-1.4-2.9-2.1 1-.9-1.7 3.2-1.6 2 1.6 3.2-1z"/></svg> LONGRUN</span>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
     <a class="ttab active" id="tabSessions" href="#sessions" onclick="showSessions();return false;" aria-current="page">Sessions</a>
     <a class="ttab" id="tabControl" href="#control" onclick="showControl();return false;">Control</a>
@@ -6600,11 +6602,12 @@ function showControl() {
   const f = document.getElementById("controlFrame");
   if (f && !f.getAttribute("src")) f.setAttribute("src", "/orbit?embed=1&theme=" + encodeURIComponent(localStorage.getItem("sf_theme") || "indigo"));
   else { try { if (f && f.contentDocument) f.contentDocument.documentElement.dataset.theme = (localStorage.getItem("sf_theme") || "indigo"); } catch (_) {} }
-  cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); _setTabs("control");
+  cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); document.body.classList.add("control-on"); _setTabs("control");
   try { history.replaceState(null, "", location.pathname + location.search + "#control"); } catch (_) {}
 }
 function showSessions() {
   const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
+  document.body.classList.remove("control-on");
   _setTabs("sessions");
   try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}
 }
