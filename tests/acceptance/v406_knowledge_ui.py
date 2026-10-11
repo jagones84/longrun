@@ -60,11 +60,13 @@ check("5d the deep/shallow depth select is present",
 
 # ------------------------------------------------------------------ 6) status/clear right
 check("6a the Knowledge counts + buttons share one wrapping flex row",
+      # JAG-425: the repeated inline style became utility classes (u-df u-g6 u-f0a).
       'id="indexMeta" style="flex:1;min-width:180px"' in HTML
-      and 'style="display:flex;gap:6px;flex:0 0 auto"' in HTML)
+      and ('style="display:flex;gap:6px;flex:0 0 auto"' in HTML
+           or 'class="u-df u-g6 u-f0a"' in HTML))
 check("6b status/clear no longer sit in their own row below",
-      'onclick="kbStatus()" title="refresh the counts">status</button>' in HTML
-      and 'margin-top:8px;flex-wrap:wrap">\n            <button class="ghost" onclick="kbStatus()"' not in HTML)
+      'title="refresh the counts">status</button>' in HTML
+      and 'onclick="kbStatus()"' not in HTML)
 
 print("---")
 ok = sum(results)

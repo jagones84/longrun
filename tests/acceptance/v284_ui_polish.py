@@ -42,7 +42,10 @@ check("Approvals is the first inspector entry in the command palette",
 check("the Context inspector section sits above Plan",
       ui.index('data-insp="context"') < ui.index('data-insp="plan"'))
 check("the per-session role section is titled Role (singular, not Rules)",
-      'toggleInsp(\'rules\')">Role<span class="ihd-s"' in ui and ">Rules<" not in ui)
+      # JAG-425: the inline handler became a delegated data-call attribute — assert
+      # the INTENT (the Role section title) without locking the binding syntax.
+      '>Role<span class="ihd-s"' in ui and ">Rules<" not in ui
+      and 'data-insp="rules"' in ui)
 check("clicking a donut slice highlights its bar (seg + bar share a data-i key)",
       'class="seg" data-i="' in ui and 'class="bdbar" data-i="' in ui
       and 'querySelectorAll(".ctxdonut .seg")' in ui and 'classList.toggle("hl"' in ui)

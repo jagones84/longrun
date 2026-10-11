@@ -32,8 +32,10 @@ def check(name, cond, extra=""):
 
 # --- A: ONE complete Rules panel --------------------------------------------
 check("A1 the inspector Rules section replaces the Role-only pane",
+      # JAG-425: the toggle moved from an inline onclick to a delegated data-call attr.
       '<section data-insp="rules"' in HTML and 'data-insp="role"' not in HTML
-      and "toggleInsp('rules')" in HTML, "")
+      and ("toggleInsp('rules')" in HTML
+           or 'data-call="toggleInsp" data-args=\'["rules"]\'' in HTML), "")
 check("A2 it lists the per-session role it can edit",
       'id="rulesList"' in HTML and "function loadRulesPanel" in HTML
       and '"session role"' in HTML, "")

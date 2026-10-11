@@ -104,7 +104,8 @@ check("the command palette offers Clear session", "Clear session (wipe chat + ta
 check("the main app clears the log on a remote clear", 'es.addEventListener("session.cleared"' in gui)
 check("a compaction notice is shown in the chat feed", 'es.addEventListener("context.compact"' in gui and 'es.addEventListener("context.auto_compact"' in gui)
 check("reset lives in the composer ⋯ menu, not as a bar button (JAG-415)",
-      'id="resetBtn"' not in gui and '↺ reset session' in gui and 'onclick="clearSession()"' in gui)
+      # JAG-425: the binding moved to a delegated data-call attribute.
+      'id="resetBtn"' not in gui and '↺ reset session' in gui and 'data-call="clearSession"' in gui)
 check("the overflow menu offers reset session", "reset session" in gui)
 # JAG-395: right-click opens that row's own menu; Edit role opens code mode.
 check("right-click on ANY session row opens its own ⋯ menu",

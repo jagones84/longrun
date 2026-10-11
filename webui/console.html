@@ -186,6 +186,13 @@
   @media (prefers-reduced-motion: reduce){
     .spin,.led.on{animation:none !important} #stars{display:none}
   }
+  /* JAG-425 (#7): the standalone deck is LEGACY — say so, and point at the
+     maintained in-app Control view. */
+  .legacy-note{position:relative; z-index:3; margin:10px auto 0; max-width:1600px;
+    padding:8px 14px; border:1px solid var(--line2); border-left:3px solid var(--amber);
+    border-radius:var(--r); background:rgba(255,180,84,.08); color:var(--muted);
+    font-family:var(--mono); font-size:11px; letter-spacing:.04em}
+  .legacy-note a{color:var(--ice)}
 </style>
 </head>
 <body>
@@ -193,6 +200,12 @@
 <div class="scan" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
 <div id="offline" class="offline" hidden>offline · demo telemetry</div>
+<!-- JAG-425 (#7): this standalone deck is the LEGACY surface. The maintained control
+     view is the in-app Control tab (which embeds /orbit). Kept routed for direct
+     links + its regression tests, but flagged here so it is a deliberate decision. -->
+<div class="legacy-note" role="note">⚠ Legacy deck — the maintained control view is the
+  <b>Control</b> tab in the Longrun app (<a href="/">open</a>) or the embedded deck at
+  <a href="/orbit">/orbit</a>.</div>
 
 <div class="wrap">
   <header class="hud">

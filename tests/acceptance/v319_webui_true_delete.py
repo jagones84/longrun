@@ -22,8 +22,10 @@ def check(name, ok, detail=""):
 
 ui = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 
-check("E1 the memories panel has a purge button", 'onclick="memoryPurge()"' in ui)
-check("E2 the approvals panel has a clear-decided button", 'onclick="approvalsClear()"' in ui)
+check("E1 the memories panel has a purge button",
+      'data-call="memoryPurge"' in ui)          # JAG-425: was onclick="memoryPurge()"
+check("E2 the approvals panel has a clear-decided button",
+      'data-call="approvalsClear"' in ui)        # JAG-425: was onclick="approvalsClear()"
 check("E3 memoryForget is defined", "async function memoryForget(mid)" in ui)
 check("E4 memoryPurge is defined", "async function memoryPurge()" in ui)
 check("E5 approvalsClear is defined", "async function approvalsClear()" in ui)

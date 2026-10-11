@@ -93,7 +93,11 @@
   /* JAG-424: on a phone the banner keeps only the sandbox DOT (no word) and drops the
      LONGRUN wordmark, so the header never overflows / forces a horizontal scrollbar. */
   @media (max-width: 640px) {
-    #sbxTxt { display: none; } #sbxPill { padding: 3px 7px; }
+    /* JAG-425 (#4): the sandbox word is VISUALLY hidden on a phone but stays in the
+       a11y tree, so the state is never conveyed by colour alone. */
+    #sbxTxt { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
+              clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+    #sbxPill { padding: 3px 7px; }
     #topbar { padding: 8px 10px; gap: 8px; }
     #topbar .logo { font-size: 0; }
     #topbar .logo svg { width: 20px; height: 20px; vertical-align: middle; }
@@ -970,11 +974,14 @@
     color-scheme: dark;
   }
   html[data-theme="sand"] {
+    /* JAG-425 (#10): the sand theme is the only LIGHT one; its secondary text and
+       link colours sat around 3.9–4.2:1 on the panel background. Darkened to clear
+       WCAG AA (4.5:1) for normal text while keeping the warm hue. */
     --bg: #c8bda2; --panel: rgba(206,197,173,.96); --panel2: rgba(196,186,160,.97);
-    --line: rgba(86,74,52,.30); --txt: #3a3327; --dim: #5e5541;
-    --acc: #8a5a2a; --acc2: #9a7c42; --ok: #467a55; --warn: #8c671d; --err: #97452f;
-    --accent: #8a5a2a; --you: #3f6288; --info: #3a7278;
-    --bg-2: #c1b69d; --bg-3: #b9ae8b; --line-2: #ada082; --ink: #3e3628; --muted: #5e5541;
+    --line: rgba(86,74,52,.30); --txt: #3a3327; --dim: #514730;
+    --acc: #6f4519; --acc2: #9a7c42; --ok: #1f5a37; --warn: #66440a; --err: #8a2f1c;
+    --accent: #6f4519; --you: #3f6288; --info: #3a7278;
+    --bg-2: #c1b69d; --bg-3: #b9ae8b; --line-2: #ada082; --ink: #3e3628; --muted: #514730;
     --bg2: #c1b69d; --grad-a: #ccc2a8; --grad-b: #c3b89f; --hdr: rgba(203,194,169,.95);
     --aside: #ccc2a8; --composer: rgba(206,197,173,.85);
     --hover: rgba(122,96,58,.12); --sel: rgba(122,96,58,.18);
@@ -1143,6 +1150,61 @@
   .rwho { font-size: 11px; color: var(--dim); margin-bottom: 6px; line-height: 1.4; }
   #inspector button.ghost.dirty { color: var(--acc); border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
   .rwho.agent { color: var(--txt); }
+  /* ==== JAG-425: frontend-review fixes ==== */
+  /* (#3) visually-hidden helper — keeps text in the a11y tree without showing it. */
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+        overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+  /* (#1) the tool-card header is a disclosure: show where focus is. */
+  .toolcard-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+  /* (#8) `#log` is `overflow-y:auto`, which forces overflow-x to `auto` as well — a
+     single wide <pre> then added a nested horizontal scrollbar on a phone. Clip the
+     axis and let each code/table block scroll on its own. */
+  #log { overflow-x: hidden; }
+  .bubble.md-content { overflow-wrap: break-word; }
+  .bubble.md-content pre, .bubble.md-content table { max-width: 100%; overflow-x: auto; }
+  /* (#9) honour the OS "reduce motion" preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important; scroll-behavior: auto !important;
+    }
+  }
+  /* JAG-425 (#5): utility classes extracted from repeated inline styles. */
+  .u-df{display:flex !important}
+  .u-dif{display:inline-flex !important}
+  .u-db{display:block !important}
+  .u-aic{align-items:center !important}
+  .u-aifs{align-items:flex-start !important}
+  .u-jcfe{justify-content:flex-end !important}
+  .u-jcsb{justify-content:space-between !important}
+  .u-jcc{justify-content:center !important}
+  .u-fww{flex-wrap:wrap !important}
+  .u-f1{flex:1 !important}
+  .u-f2{flex:2 !important}
+  .u-f0a{flex:0 0 auto !important}
+  .u-g4{gap:4px !important}
+  .u-g6{gap:6px !important}
+  .u-g8{gap:8px !important}
+  .u-g10{gap:10px !important}
+  .u-g12{gap:12px !important}
+  .u-mt4{margin-top:4px !important}
+  .u-mt6{margin-top:6px !important}
+  .u-mt8{margin-top:8px !important}
+  .u-mt10{margin-top:10px !important}
+  .u-mt12{margin-top:12px !important}
+  .u-mb4{margin-bottom:4px !important}
+  .u-mb6{margin-bottom:6px !important}
+  .u-mr6{margin-right:6px !important}
+  .u-m006{margin:0 0 6px !important}
+  .u-w100{width:100% !important}
+  .u-ptr{cursor:pointer !important}
+  .u-p610{padding:6px 10px !important}
+  .u-fs12{font-size:12px !important}
+  .u-fs11{font-size:11px !important}
+  .u-fs10{font-size:10px !important}
+  .u-fs115{font-size:11.5px !important}
+  .u-wba{word-break:break-all !important}
+  .u-oa{overflow:auto !important}
 </style>
 <script>
 /* JAG-352: apply the saved theme + text-weight before first paint (no flash). */
@@ -1155,17 +1217,17 @@
 </head>
 <body>
 <header id="topbar">
-  <span class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</span>
+  <h1 class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</h1>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
-    <a class="ttab active" id="tabSessions" href="#sessions" onclick="showSessions();return false;" aria-current="page">Sessions</a>
-    <a class="ttab" id="tabControl" href="#control" onclick="showControl();return false;">Control</a>
+    <a class="ttab active" id="tabSessions" href="#sessions" data-call="showSessions" aria-current="page">Sessions</a>
+    <a class="ttab" id="tabControl" href="#control" data-call="showControl">Control</a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
-  <span style="flex:1"></span>
+  <span class="u-f1"></span>
   <!-- JAG-424: the sandbox pill moved OUT of the ☰ menu onto the banner line. -->
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
       id="sbxTxt">…</span></span>
-  <button class="ghost" id="settingsBtn" title="settings" onclick="toggleSettings()">⚙</button>
+  <button class="ghost" id="settingsBtn" title="settings" data-call="toggleSettings">⚙</button>
   <div class="appmenu-wrap">
     <button class="ghost" id="appmenuBtn" title="more — command palette" aria-haspopup="true" aria-expanded="false">☰</button>
     <div id="appMenu" class="card" hidden>
@@ -1182,12 +1244,12 @@
   <aside id="aside" data-col="sessions">
     <section>
       <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
-      <div style="display:flex;gap:6px;margin-bottom:6px">
-        <input id="sessInp" class="inp" placeholder="new session title…" style="flex:1;padding:6px 10px;font-size:12px">
-        <button class="ghost" onclick="newSession()">+ new</button>
+      <div class="u-df u-g6 u-mb6">
+        <input id="sessInp" class="inp u-f1 u-p610 u-fs12" placeholder="new session title…">
+        <button class="ghost" data-call="newSession">+ new</button>
       </div>
-      <input id="session-search" class="inp" placeholder="search sessions…" style="width:100%;margin-bottom:6px;padding:6px 10px;font-size:12px">
-      <label class="remaining" style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><input type="checkbox" id="hide-empty"> hide empty</label>
+      <input id="session-search" class="inp u-w100 u-mb6 u-p610 u-fs12" placeholder="search sessions…">
+      <label class="remaining u-df u-aic u-g6 u-mb6"><input type="checkbox" id="hide-empty"> hide empty</label>
       <div class="card">
         <div id="sessions"></div>
       </div>
@@ -1224,38 +1286,38 @@
             <button class="ghost" id="moreBtn" title="more actions" aria-haspopup="true" aria-expanded="false">⋯</button>
             <div id="moreMenu" class="card" hidden>
               <button class="ghost mi" id="agentBtn" title="run the agent loop on the current plan">⚡ run agent</button>
-              <button class="ghost mi" id="dockBtn" onclick="SparkEditorToggle()" title="open/close the editor (next to the chat)">🗔 editor</button>
-              <button class="ghost mi" onclick="compactNow()" title="summarize this session now to free up context">🗜 compact</button>
-              <button class="ghost mi" onclick="clearSession()" title="reset this session: wipe chat history + task list">↺ reset session</button>
-              <button class="ghost mi" onclick="newSession()" title="start a new session">＋ new session</button>
+              <button class="ghost mi" id="dockBtn" data-call="SparkEditorToggle" title="open/close the editor (next to the chat)">🗔 editor</button>
+              <button class="ghost mi" data-call="compactNow" title="summarize this session now to free up context">🗜 compact</button>
+              <button class="ghost mi" data-call="clearSession" title="reset this session: wipe chat history + task list">↺ reset session</button>
+              <button class="ghost mi" data-call="newSession" title="start a new session">＋ new session</button>
             </div>
           </div>
-          <button id="sendBtn" onclick="sendOrStop()" title="send (Ctrl+Enter)" aria-label="send">↑</button>
+          <button id="sendBtn" data-call="sendOrStop" title="send (Ctrl+Enter)" aria-label="send">↑</button>
         </div>
       </div>
     </div>
     <div id="tabbar">
-      <button data-tab="chat" class="active" onclick="openTab('chat')">💬 chat</button>
-      <button data-tab="sessions" onclick="openTab('sessions')">🗂 sessions</button>
-      <button data-tab="tasks" onclick="openTab('tasks')">✅ tasks</button>
-      <button data-tab="context" onclick="openTab('context')">📊 context</button>
-      <button data-tab="feed" onclick="openTab('feed')">📡 feed</button>
+      <button data-tab="chat" class="active" data-call="openTab" data-args='["chat"]'>💬 chat</button>
+      <button data-tab="sessions" data-call="openTab" data-args='["sessions"]'>🗂 sessions</button>
+      <button data-tab="tasks" data-call="openTab" data-args='["tasks"]'>✅ tasks</button>
+      <button data-tab="context" data-call="openTab" data-args='["context"]'>📊 context</button>
+      <button data-tab="feed" data-call="openTab" data-args='["feed"]'>📡 feed</button>
     </div>
   </div>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
   <aside id="rail" data-col="context">
     <div id="inspector">
       <section data-insp="approvals" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('approvals')">Approvals<span id="apprCount" class="ihd-s"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["approvals"]'>Approvals<span id="apprCount" class="ihd-s"></span></button>
         <div class="insp-body">
         <div class="card">
           <div id="approvals" class="remaining">no pending approvals</div>
-          <div style="margin-top:6px"><button class="ghost" onclick="approvalsClear()" title="delete decided approvals (pending are kept)">clear decided</button></div>
+          <div class="u-mt6"><button class="ghost" data-call="approvalsClear" title="delete decided approvals (pending are kept)">clear decided</button></div>
         </div>
         </div>
       </section>
       <section data-insp="cost" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('cost')">Cost<span class="ihd-s" id="sCost"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["cost"]'>Cost<span class="ihd-s" id="sCost"></span></button>
         <div class="insp-body">
         <div class="card">
           <div class="costhead">
@@ -1263,13 +1325,13 @@
             <span id="costSub" class="remaining"></span>
           </div>
           <div class="ctxrow"><span id="costCalls">–</span><span id="costIn">–</span><span id="costOut">–</span></div>
-          <div style="margin-top:6px"><button class="ghost" id="costRefresh" title="fetch real per-1M prices from OpenRouter's public model list (no key needed) and cache them">↻ prices</button></div>
+          <div class="u-mt6"><button class="ghost" id="costRefresh" title="fetch real per-1M prices from OpenRouter's public model list (no key needed) and cache them">↻ prices</button></div>
         </div>
         <div id="costList" class="costlist"></div>
         </div>
       </section>
       <section data-insp="context" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('context')">Context<span class="ihd-s" id="sContext"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["context"]'>Context<span class="ihd-s" id="sContext"></span></button>
         <div class="insp-body">
         <div class="card">
           <div class="ctxhead">
@@ -1284,31 +1346,31 @@
         </div>
       </section>
       <section data-insp="plan" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('plan')">Plan<span class="ihd-s" id="sPlan"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["plan"]'>Plan<span class="ihd-s" id="sPlan"></span></button>
         <div class="insp-body">
         <h2>TASK LIST (persistent) <span id="taskCount" class="remaining"></span></h2>
         <div class="card">
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <input id="planInp" class="inp" placeholder="goal…" style="flex:1;padding:6px 10px;font-size:12px">
-            <button class="ghost" onclick="planGoal()" title="same as typing /goal in chat: plans AND runs to completion">▶ goal</button>
-            <button class="ghost" onclick="clearSession()" title="clear chat + tasks">clear</button>
-            <button class="ghost" onclick="resetPlan()" title="clear this session's task list (start a new task)">reset</button>
+          <div class="u-df u-g6 u-mt8">
+            <input id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal…">
+            <button class="ghost" data-call="planGoal" title="same as typing /goal in chat: plans AND runs to completion">▶ goal</button>
+            <button class="ghost" data-call="clearSession" title="clear chat + tasks">clear</button>
+            <button class="ghost" data-call="resetPlan" title="clear this session's task list (start a new task)">reset</button>
           </div>
           <div id="graphHead" class="remaining">run graph: — (send a request to generate it)</div>
           <div id="tasks"></div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <input id="taskInp" class="inp" placeholder="add a graph node…" style="flex:1;padding:6px 10px;font-size:12px">
-            <button class="ghost" onclick="addTask()" title="POST /graph/nodes {action:add}">+</button>
-            <button class="ghost" onclick="replanGraph()" title="incremental re-plan">↻ replan</button>
-            <button class="ghost" onclick="resetRunGraph()" title="clear the current run graph">reset</button>
+          <div class="u-df u-g6 u-mt8">
+            <input id="taskInp" class="inp u-f1 u-p610 u-fs12" placeholder="add a graph node…">
+            <button class="ghost" data-call="addTask" title="POST /graph/nodes {action:add}">+</button>
+            <button class="ghost" data-call="replanGraph" title="incremental re-plan">↻ replan</button>
+            <button class="ghost" data-call="resetRunGraph" title="clear the current run graph">reset</button>
           </div>
-          <div id="taskDetail" class="remaining" style="margin-top:8px"></div>
-          <div id="remaining" class="remaining" style="margin-top:8px"></div>
+          <div id="taskDetail" class="remaining u-mt8"></div>
+          <div id="remaining" class="remaining u-mt8"></div>
         </div>
         </div>
       </section>
       <section data-insp="rules" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('rules')">Role<span class="ihd-s" id="sRoles"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["rules"]'>Role<span class="ihd-s" id="sRoles"></span></button>
         <div class="insp-body">
         <div class="card">
           <div id="rulesWho" class="rwho"></div>
@@ -1320,7 +1382,7 @@
         <h2>Harness · agent behaviour</h2>
         <div class="card hcard" style="--hc:#22d3ee">
           <div class="hcard-hd"><span class="dot"></span><b>Runtime</b><span class="hc-sub">continuation rounds</span></div>
-          <div class="remaining" style="margin:0 0 6px">How many times the agent may continue on its own before stopping: it keeps long jobs alive without getting stuck forever.</div>
+          <div class="remaining u-m006">How many times the agent may continue on its own before stopping: it keeps long jobs alive without getting stuck forever.</div>
           <div class="hrow">
             <label title="Maximum number of automatic continuations after the first reply (0 = disabled).">max continuations <input id="rtKgMax" type="number" min="0" value="8"></label>
             <label title="After how many consecutive rounds without progress the agent stops (0 = never).">rounds without progress <input id="rtNoProg" type="number" min="0" value="2"></label>
@@ -1328,32 +1390,32 @@
             <label title="How many levels of sub-agents an agent may spawn (0 = none).">sub-agent levels <input id="rtDepth" type="number" min="0" value="2"></label>
             <label title="If enabled the harness keeps going on its own until the todos are closed, then asks you. If disabled, as soon as steps remain open it hands over to the human (HUMAN IN THE LOOP).">autocontinue <input id="rtAuto" type="checkbox" checked></label>
           </div>
-          <button class="ghost" onclick="saveRuntime()" title="save the runtime settings">save runtime</button>
+          <button class="ghost" data-call="saveRuntime" title="save the runtime settings">save runtime</button>
         </div>
         <div class="card hcard" style="--hc:#34d399">
           <div class="hcard-hd"><span class="dot"></span><b>Verifier</b><span class="hc-sub">apply only if green</span></div>
-          <div class="remaining" style="margin:0 0 6px">After the changes it runs a verification command (e.g. the tests) and applies them only if it passes: if it fails, it reverts.</div>
+          <div class="remaining u-m006">After the changes it runs a verification command (e.g. the tests) and applies them only if it passes: if it fails, it reverts.</div>
           <div class="hrow">
             <label title="Enable the check before applying the agent's changes.">enabled <input id="vfOn" type="checkbox"></label>
             <label title="Command run to verify (e.g. python3 -m pytest -q).">verify command <input id="vfCmd" type="text" placeholder="python3 -m pytest -q"></label>
             <label title="Maximum seconds to wait for the verify command.">timeout (s) <input id="vfTimeout" type="number" min="0" value="120"></label>
             <label title="Limit the verification to these paths, comma-separated (empty = the whole workspace).">checked paths <input id="vfPaths" type="text" placeholder="optional"></label>
           </div>
-          <button class="ghost" onclick="saveVerifier()" title="save the verifier settings">save verifier</button>
+          <button class="ghost" data-call="saveVerifier" title="save the verifier settings">save verifier</button>
         </div>
         <div class="card hcard" style="--hc:#fbbf24">
           <div class="hcard-hd"><span class="dot"></span><b>Best-of-N</b><span class="hc-sub">more answers, the best one</span></div>
-          <div class="remaining" style="margin:0 0 6px">Generates N independent answers and keeps the best one: more reliable, but slower and more expensive.</div>
+          <div class="remaining u-m006">Generates N independent answers and keeps the best one: more reliable, but slower and more expensive.</div>
           <div class="hrow">
             <label title="Enable sampling of multiple answers.">enabled <input id="bnOn" type="checkbox"></label>
             <label title="How many answers to generate (1 = no best-of-N).">number of answers N <input id="bnN" type="number" min="1" max="16" value="1"></label>
             <label title="Minimum score (0..1) an answer must have to be accepted.">minimum score <input id="bnMin" type="number" step="0.05" value="0"></label>
           </div>
-          <button class="ghost" onclick="saveBestofn()" title="save the best-of-N settings">save best-of-N</button>
+          <button class="ghost" data-call="saveBestofn" title="save the best-of-N settings">save best-of-N</button>
         </div>
         <div class="card hcard" style="--hc:#a78bfa">
           <div class="hcard-hd"><span class="dot"></span><b>Difficulty</b><span class="hc-sub">adaptive effort</span></div>
-          <div class="remaining" style="margin:0 0 6px">Adapts how many attempts to make based on how hard the task is: few if it is easy, more if it is complex.</div>
+          <div class="remaining u-m006">Adapts how many attempts to make based on how hard the task is: few if it is easy, more if it is complex.</div>
           <div class="hrow">
             <label title="Enable automatic difficulty estimation.">enabled <input id="dfOn" type="checkbox"></label>
             <label title="Number of attempts for easy tasks.">attempts · easy <input id="dfEasy" type="number" min="1" max="16" value="1"></label>
@@ -1362,18 +1424,18 @@
             <label title="Difficulty threshold (0..1) above which the task is considered medium.">threshold → medium <input id="dfMedAt" type="number" step="0.05" value="0.35"></label>
             <label title="Difficulty threshold (0..1) above which the task is considered hard.">threshold → hard <input id="dfHardAt" type="number" step="0.05" value="0.65"></label>
           </div>
-          <button class="ghost" onclick="saveDifficulty()" title="save the difficulty settings">save difficulty</button>
+          <button class="ghost" data-call="saveDifficulty" title="save the difficulty settings">save difficulty</button>
         </div>
         <div class="card hcard" style="--hc:#fb923c">
           <div class="hcard-hd"><span class="dot"></span><b>Self-evolving</b><span class="hc-sub">new skills</span></div>
-          <div class="remaining" style="margin:0 0 6px">Recognizes recurring patterns in your tasks and proposes saving them as reusable skills.</div>
+          <div class="remaining u-m006">Recognizes recurring patterns in your tasks and proposes saving them as reusable skills.</div>
           <div class="hrow">
             <label title="Minimum length (in lines) for a pattern to become a skill.">minimum length <input id="seMinLen" type="number" min="1" value="2"></label>
             <label title="How many times a pattern must recur before becoming a skill.">minimum occurrences <input id="seMinCount" type="number" min="2" value="3"></label>
             <label title="Maximum length (in lines) of a synthesized skill.">maximum length <input id="seMaxLen" type="number" min="2" value="6"></label>
             <label title="Category in which to save generated skills (auto = decided by the agent).">category <input id="seCat" type="text" value="auto"></label>
           </div>
-          <button class="ghost" onclick="saveSelfevolve()" title="save the self-evolving settings">save selfevolve</button>
+          <button class="ghost" data-call="saveSelfevolve" title="save the self-evolving settings">save selfevolve</button>
         </div>
       </div>
       <div class="sw-cat" data-cat="tools" hidden>
@@ -1388,34 +1450,34 @@
         <h2>Keys · secrets</h2>
         <div class="card">
           <div class="remaining" id="keysSummary">loading…</div>
-          <div id="keysList" style="margin-top:8px"></div>
-          <div class="remaining" id="keysFile" style="margin-top:8px">Values are never in the repo: set them here and they are written to the gitignored <code>.env</code>. Providers and MCP reference a key by NAME only.</div>
+          <div id="keysList" class="u-mt8"></div>
+          <div class="remaining u-mt8" id="keysFile">Values are never in the repo: set them here and they are written to the gitignored <code>.env</code>. Providers and MCP reference a key by NAME only.</div>
         </div>
         <h2>GitHub access</h2>
         <div class="card">
-          <button class="ghost" onclick="openSettings('mcp')">open MCP settings</button>
+          <button class="ghost" data-call="openSettings" data-args='["mcp"]'>open MCP settings</button>
         </div>
         <h2>API token</h2>
         <div class="card">
-          <div style="display:flex;gap:6px;align-items:center">
-            <input id="token-input" class="inp" type="password" placeholder="LONGRUN_TOKEN" style="flex:1;padding:6px 10px;font-size:12px">
-            <button class="ghost" id="tokenEye" onclick="revealToken()" title="show/hide">👁</button>
-            <button class="ghost" onclick="copyToken()" title="copy">⧉ copy</button>
-            <button class="ghost" onclick="saveToken()">save</button>
+          <div class="u-df u-g6 u-aic">
+            <input id="token-input" class="inp u-f1 u-p610 u-fs12" type="password" placeholder="LONGRUN_TOKEN">
+            <button class="ghost" id="tokenEye" data-call="revealToken" title="show/hide">👁</button>
+            <button class="ghost" data-call="copyToken" title="copy">⧉ copy</button>
+            <button class="ghost" data-call="saveToken">save</button>
           </div>
         </div>
       </div>
       <div class="sw-cat" data-cat="mcp" hidden>
         <h2>MCP · external servers</h2>
         <div class="card">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <div class="remaining" id="mcpSummary" style="flex:1">loading…</div>
-            <button class="ghost" onclick="openMcpFile()" title="open config/mcp_clients.local.json in the editor and edit it by hand">✎ Edit mcp.json</button>
-            <button class="ghost" onclick="openMcpJson()" title="paste a server's mcpServers snippet and press confirm">⧉ MCP JSON</button>
-            <button class="ghost" onclick="reloadMcp()" title="reload all MCP servers from the file">↻ reload</button>
+          <div class="u-df u-aic u-g8 u-fww">
+            <div class="remaining u-f1" id="mcpSummary">loading…</div>
+            <button class="ghost" data-call="openMcpFile" title="open config/mcp_clients.local.json in the editor and edit it by hand">✎ Edit mcp.json</button>
+            <button class="ghost" data-call="openMcpJson" title="paste a server's mcpServers snippet and press confirm">⧉ MCP JSON</button>
+            <button class="ghost" data-call="reloadMcp" title="reload all MCP servers from the file">↻ reload</button>
           </div>
-          <div id="mcpList" style="margin-top:8px"></div>
-          <div id="mcpResult" class="remaining" style="margin-top:6px"></div>
+          <div id="mcpList" class="u-mt8"></div>
+          <div id="mcpResult" class="remaining u-mt6"></div>
         </div>
         <h2>Catalog · add in one click</h2>
         <div class="card">
@@ -1425,97 +1487,97 @@
       <div class="sw-cat" data-cat="skills" hidden>
         <h2>Install from zip</h2>
         <div class="card">
-          <input type="file" id="skillZip" accept=".zip" style="font-size:12px">
-          <input id="skillName" class="inp" placeholder="name (optional · from file)" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
-          <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="skillOverwrite"> overwrite if exists</label>
-          <button class="ghost" onclick="installSkillZip()" style="margin-top:8px">install</button>
-          <div id="skillResult" class="remaining" style="margin-top:6px"></div>
+          <input type="file" id="skillZip" accept=".zip" class="u-fs12">
+          <input id="skillName" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="name (optional · from file)">
+          <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="skillOverwrite"> overwrite if exists</label>
+          <button class="ghost u-mt8" data-call="installSkillZip">install</button>
+          <div id="skillResult" class="remaining u-mt6"></div>
         </div>
         <h2>Skills · installed</h2>
         <div class="card">
           <div class="remaining" id="skillsSummary">loading…</div>
-          <div id="skillsList" style="margin-top:8px"></div>
+          <div id="skillsList" class="u-mt8"></div>
         </div>
       </div>
       <section data-insp="files" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('files')">Workspace<span class="ihd-s" id="sWorkspace"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["files"]'>Workspace<span class="ihd-s" id="sWorkspace"></span></button>
         <div class="insp-body">
         <h2>Workspace · folder (this session)</h2>
         <div class="card">
-          <input id="wsPath" class="inp" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)" style="width:100%;padding:6px 10px;font-size:12px">
-          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
-            <label class="remaining" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
-            <button class="ghost" onclick="setWorkspace()">use this folder</button>
+          <input id="wsPath" class="inp u-w100 u-p610 u-fs12" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)">
+          <div class="u-df u-g8 u-aic u-mt6 u-fww">
+            <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
+            <button class="ghost" data-call="setWorkspace">use this folder</button>
           </div>
         </div>
         <h2>Files · workspace</h2>
         <div class="card">
-          <div style="display:flex;gap:6px;align-items:center">
-            <span class="remaining" id="filesRoot" style="flex:1;word-break:break-all">…</span>
+          <div class="u-df u-g6 u-aic">
+            <span class="remaining u-f1 u-wba" id="filesRoot">…</span>
             <button class="ghost" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock (CodeMirror; markdown/images preview)">🗔 editor</button>
-            <button class="ghost" onclick="loadFiles()" title="reload tree">↻</button>
+            <button class="ghost" data-call="loadFiles" title="reload tree">↻</button>
           </div>
-          <div id="fileTree" style="margin-top:6px"><div class="remaining">open a session first</div></div>
-          <div class="remaining" id="fileMsg" style="margin-top:4px"></div>
+          <div id="fileTree" class="u-mt6"><div class="remaining">open a session first</div></div>
+          <div class="remaining u-mt4" id="fileMsg"></div>
         </div>
         <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
         <div class="card">
           <div id="editsList"><div class="remaining">open a session, then ↻</div></div>
-          <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
-            <button class="ghost" onclick="loadEdits()" title="reload the pending changes">↻ refresh</button>
-            <button class="ghost" onclick="approveEdits(null)" title="keep every changed file as written, clear the list">✓ approve all</button>
-            <button class="ghost" onclick="rejectEdits(null)" title="restore every changed file to its pre-image">↩ reject all</button>
+          <div class="u-df u-g6 u-mt6 u-aic u-fww">
+            <button class="ghost" data-call="loadEdits" title="reload the pending changes">↻ refresh</button>
+            <button class="ghost" data-call="approveEdits" data-args='[null]' title="keep every changed file as written, clear the list">✓ approve all</button>
+            <button class="ghost" data-call="rejectEdits" data-args='[null]' title="restore every changed file to its pre-image">↩ reject all</button>
           </div>
         </div>
         </div>
       </section>
       <section data-insp="codebase" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('codebase')">Codebase<span class="ihd-s" id="sCodebase"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["codebase"]'>Codebase<span class="ihd-s" id="sCodebase"></span></button>
         <div class="insp-body">
         <h2>Codebase index · <span id="cbStat" class="remaining"></span></h2>
         <div class="card">
           <div class="remaining" id="cbMeta">Search THIS workspace's code + docs (per path, like project rules). Build once, then query.</div>
-          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-            <button class="ghost" onclick="cbBuild(false)" title="re-index this workspace's code + docs">⚡ build</button>
-            <button class="ghost" onclick="cbFiles()" title="which files are indexed">files</button>
-            <button class="ghost" onclick="cbStatus()" title="refresh the counts">status</button>
-            <button class="ghost" onclick="cbClear()" title="delete this workspace's codebase index">clear</button>
+          <div class="u-df u-g6 u-mt8 u-fww">
+            <button class="ghost" data-call="cbBuild" data-args='[false]' title="re-index this workspace's code + docs">⚡ build</button>
+            <button class="ghost" data-call="cbFiles" title="which files are indexed">files</button>
+            <button class="ghost" data-call="cbStatus" title="refresh the counts">status</button>
+            <button class="ghost" data-call="cbClear" title="delete this workspace's codebase index">clear</button>
           </div>
-          <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:8px"
+          <label class="remaining u-df u-g6 u-aic u-mt8"
                  title="Before an agent searches this workspace, run a quick INCREMENTAL re-index and make the agent WAIT for it — so it never queries a stale or half-built index. Safe with several agents on one workspace.">
             <input type="checkbox" id="cbAutoIndex"> auto-index before an agent searches</label>
           <div id="cbFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
         </div>
         <h2>Search codebase</h2>
         <div class="card">
-          <div style="display:flex;gap:6px">
-            <input id="cbQuery" class="inp" placeholder="search this workspace…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')cbSearch()">
-            <button class="ghost" onclick="cbSearch()">search</button>
+          <div class="u-df u-g6">
+            <input id="cbQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search this workspace…" data-key="Enter" data-key-fn="cbSearch">
+            <button class="ghost" data-call="cbSearch">search</button>
           </div>
-          <div id="cbResults" style="margin-top:6px"></div>
+          <div id="cbResults" class="u-mt6"></div>
         </div>
         </div>
       </section>
       <section data-insp="terminal" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('terminal')">Terminal<span class="ihd-s" id="sTerm"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["terminal"]'>Terminal<span class="ihd-s" id="sTerm"></span></button>
         <div class="insp-body">
         <div class="card">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <div class="u-df u-aic u-g6 u-mb6">
             <span class="remaining" id="termCwd" style="flex:1;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="the shell's working directory">…</span>
-            <button class="ghost" onclick="termClear()" title="clear the screen (keeps the shell)">⌫ clear</button>
-            <button class="ghost" onclick="termReset()" title="kill the shell and start a fresh one">⟲ reset</button>
+            <button class="ghost" data-call="termClear" title="clear the screen (keeps the shell)">⌫ clear</button>
+            <button class="ghost" data-call="termReset" title="kill the shell and start a fresh one">⟲ reset</button>
           </div>
           <div id="termLog" style="max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11.5px;font-family:ui-monospace,monospace;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--txt)"></div>
-          <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+          <div class="u-df u-g6 u-mt6 u-aic">
             <span style="font-family:ui-monospace,monospace;color:var(--acc)">$</span>
             <input id="termInp" class="inp" placeholder="command…  (↑↓ history · ⏎ run)" style="flex:1;padding:6px 10px;font-size:12px;font-family:ui-monospace,monospace" autocomplete="off" spellcheck="false">
-            <button class="ghost" onclick="termSend()" title="run">▶</button>
+            <button class="ghost" data-call="termSend" title="run">▶</button>
           </div>
         </div>
         </div>
       </section>
       <section data-insp="feed" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('feed')">Feed<span class="ihd-s" id="sFeed"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["feed"]'>Feed<span class="ihd-s" id="sFeed"></span></button>
         <div class="insp-body">
         <div class="card" id="feed" style="font-size:11px;color:var(--dim);max-height:220px;overflow-y:auto">connecting…</div>
         </div>
@@ -1525,43 +1587,43 @@
         <div class="card">
           <div class="remaining" id="rulesGlobalPath">…</div>
           <textarea id="rulesGlobalText" style="width:100%;min-height:120px;margin-top:6px;font-size:12px;font-family:monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)"></textarea>
-          <button class="ghost" onclick="saveRules('global')" style="margin-top:8px">save global</button>
-          <button class="ghost" onclick="openRule('global')" style="margin-top:8px" title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
+          <button class="ghost u-mt8" data-call="saveRules" data-args='["global"]'>save global</button>
+          <button class="ghost u-mt8" data-call="openRule" data-args='["global"]' title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
         </div>
         <h2>Rules · project</h2>
         <div class="card">
           <div class="remaining" id="rulesProjectPath">…</div>
           <textarea id="rulesProjectText" style="width:100%;min-height:120px;margin-top:6px;font-size:12px;font-family:monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)"></textarea>
-          <button class="ghost" onclick="saveRules('project')" style="margin-top:8px">save project</button>
-          <button class="ghost" onclick="openRule('project')" style="margin-top:8px" title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
-          <div id="rulesResult" class="remaining" style="margin-top:6px"></div>
+          <button class="ghost u-mt8" data-call="saveRules" data-args='["project"]'>save project</button>
+          <button class="ghost u-mt8" data-call="openRule" data-args='["project"]' title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
+          <div id="rulesResult" class="remaining u-mt6"></div>
         </div>
         <h2>Uploaded files</h2>
         <div class="card"><div id="rulesFiles" class="remaining"></div></div>
         <h2>Memories · <span id="memStats" class="remaining">…</span></h2>
         <div class="card">
-          <div style="display:flex;gap:6px">
-            <input id="memQuery" class="inp" placeholder="search memory…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')loadMemories()">
-            <button class="ghost" onclick="loadMemories()" title="search">🔎</button>
+          <div class="u-df u-g6">
+            <input id="memQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search memory…" data-key="Enter" data-key-fn="loadMemories">
+            <button class="ghost" data-call="loadMemories" title="search">🔎</button>
           </div>
           <div id="memList" class="remaining" style="margin-top:8px;max-height:220px;overflow:auto"></div>
-          <div style="display:flex;gap:6px;margin-top:8px">
+          <div class="u-df u-g6 u-mt8">
             <select id="memKind" class="inp" style="flex:0 0 140px;padding:6px 8px;font-size:12px"></select>
-            <input id="memContent" class="inp" placeholder="new memory…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')memoryAdd()">
-            <button class="ghost" onclick="memoryAdd()" title="add">＋</button>
-            <button class="ghost" onclick="memoryPurge()" title="purge invalidated/expired memories">🧹</button>
+            <input id="memContent" class="inp u-f1 u-p610 u-fs12" placeholder="new memory…" data-key="Enter" data-key-fn="memoryAdd">
+            <button class="ghost" data-call="memoryAdd" title="add">＋</button>
+            <button class="ghost" data-call="memoryPurge" title="purge invalidated/expired memories">🧹</button>
           </div>
-          <div id="memResult" class="remaining" style="margin-top:6px"></div>
+          <div id="memResult" class="remaining u-mt6"></div>
         </div>
       </div>
     </div>
   </aside>
 </main>
-<div class="backdrop" id="backdrop" onclick="closeAside()"></div>
+<div class="backdrop" id="backdrop" data-call="closeAside"></div>
 <div id="settingsWin" hidden>
   <div class="sw-head">
     <span class="grip">⠿</span><span class="sw-title">⚙ Settings</span><span class="sp"></span>
-    <button class="ghost" onclick="closeSettings()" title="close (Esc)">✕</button>
+    <button class="ghost" data-call="closeSettings" title="close (Esc)">✕</button>
   </div>
   <div class="sw-body">
     <nav class="sw-nav" id="swNav"></nav>
@@ -1570,9 +1632,9 @@
         <h2>Thinking effort</h2>
         <div class="card">
           <div class="hrow">
-            <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" onchange="saveReasoning()"></label>
+            <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" data-change="saveReasoning"></label>
             <label title="Depth of reasoning requested from the model.">effort
-              <select id="reEffort" onchange="saveReasoning()">
+              <select id="reEffort" data-change="saveReasoning">
                 <option value="minimal">minimal</option>
                 <option value="low">low</option>
                 <option value="medium">medium</option>
@@ -1580,55 +1642,55 @@
               </select>
             </label>
           </div>
-          <div class="remaining" id="reResult" style="margin-top:6px"></div>
+          <div class="remaining u-mt6" id="reResult"></div>
         </div>
         <h2>Compaction model</h2>
         <div class="card">
-          <select id="compactionModel" onchange="saveCompactionModel()" class="inp" style="width:100%;padding:6px 10px;font-size:12px"></select>
-          <div class="remaining" id="compactionResult" style="margin-top:6px"></div>
+          <select id="compactionModel" data-change="saveCompactionModel" class="inp u-w100 u-p610 u-fs12"></select>
+          <div class="remaining u-mt6" id="compactionResult"></div>
         </div>
         <h2>Embedding · knowledge index</h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (<b>bm25</b>). The catalogue lives in your PERSONAL config (<code>config/embedding.yaml</code>) — the shipped entries are editable, and you can add your own below.</div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <select id="emModel" onchange="emSetActive()" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
-            <button class="ghost" onclick="emTest()" title="probe the model (one test embedding)">test</button>
-            <button class="ghost" onclick="emRefresh()" title="reload the catalogue">refresh</button>
+          <div class="remaining u-m006">Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (<b>bm25</b>). The catalogue lives in your PERSONAL config (<code>config/embedding.yaml</code>) — the shipped entries are editable, and you can add your own below.</div>
+          <div class="u-df u-g6 u-aic u-fww">
+            <select id="emModel" data-change="emSetActive" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
+            <button class="ghost" data-call="emTest" title="probe the model (one test embedding)">test</button>
+            <button class="ghost" data-call="emRefresh" title="reload the catalogue">refresh</button>
           </div>
-          <div class="remaining" style="margin-top:6px">active: <b id="emActive"></b></div>
-          <div id="emTestOut" class="remaining" style="margin-top:4px"></div>
-          <details style="margin-top:8px">
-            <summary class="remaining" style="cursor:pointer">catalogue · models available</summary>
+          <div class="remaining u-mt6">active: <b id="emActive"></b></div>
+          <div id="emTestOut" class="remaining u-mt4"></div>
+          <details class="u-mt8">
+            <summary class="remaining u-ptr">catalogue · models available</summary>
             <div id="emModelList" style="margin-top:8px;max-height:220px;overflow:auto"></div>
           </details>
-          <details style="margin-top:8px">
-            <summary class="remaining" style="cursor:pointer">＋ add a model to the catalogue</summary>
-            <input id="emNewId" class="inp" placeholder="id — provider:model (e.g. openrouter:openai/text-embedding-3-small) *" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
-            <div style="display:flex;gap:6px;margin-top:6px">
+          <details class="u-mt8">
+            <summary class="remaining u-ptr">＋ add a model to the catalogue</summary>
+            <input id="emNewId" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="id — provider:model (e.g. openrouter:openai/text-embedding-3-small) *">
+            <div class="u-df u-g6 u-mt6">
               <input id="emNewDim" type="number" class="inp" placeholder="dim" style="flex:0 0 90px;padding:6px 10px;font-size:12px">
               <input id="emNewPrice" type="number" step="0.001" class="inp" placeholder="USD / 1M tok" style="flex:0 0 130px;padding:6px 10px;font-size:12px">
-              <input id="emNewLabel" class="inp" placeholder="label (optional)" style="flex:1;padding:6px 10px;font-size:12px">
+              <input id="emNewLabel" class="inp u-f1 u-p610 u-fs12" placeholder="label (optional)">
             </div>
-            <button class="ghost" onclick="emAddModel()" style="margin-top:6px">+ add model</button>
+            <button class="ghost u-mt6" data-call="emAddModel">+ add model</button>
           </details>
-          <details style="margin-top:8px">
-            <summary class="remaining" style="cursor:pointer">Embedding costs</summary>
-            <div class="remaining" id="emCostTotal" style="margin-top:6px">—</div>
+          <details class="u-mt8">
+            <summary class="remaining u-ptr">Embedding costs</summary>
+            <div class="remaining u-mt6" id="emCostTotal">—</div>
             <div id="emCostByModel" style="margin-top:6px;max-height:160px;overflow:auto"></div>
             <div id="emCostByDay" style="margin-top:6px;max-height:120px;overflow:auto"></div>
-            <div style="display:flex;gap:6px;margin-top:8px">
-              <button class="ghost" onclick="emCosts()">refresh</button>
-              <button class="ghost" onclick="emExportCsv()">export CSV</button>
+            <div class="u-df u-g6 u-mt8">
+              <button class="ghost" data-call="emCosts">refresh</button>
+              <button class="ghost" data-call="emExportCsv">export CSV</button>
             </div>
           </details>
-          <button class="ghost" onclick="openSettings('knowledge')" style="margin-top:8px" title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
+          <button class="ghost u-mt8" data-call="openSettings" data-args='["knowledge"]' title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
         </div>
         <h2>Add / edit provider</h2>
         <details class="card">
-          <summary class="remaining" style="cursor:pointer">＋ add or edit a provider</summary>
-          <input id="provId" class="inp" placeholder="id (e.g. openrouter) *" style="width:100%;padding:6px 10px;font-size:12px">
-          <input id="provName" class="inp" placeholder="name" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
-          <select id="provKind" class="inp" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
+          <summary class="remaining u-ptr">＋ add or edit a provider</summary>
+          <input id="provId" class="inp u-w100 u-p610 u-fs12" placeholder="id (e.g. openrouter) *">
+          <input id="provName" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="name">
+          <select id="provKind" class="inp u-w100 u-p610 u-fs12 u-mt6">
             <option value="openai">openai-compatible</option>
             <option value="llamacpp">llama.cpp</option>
             <option value="openrouter">openrouter</option>
@@ -1636,17 +1698,17 @@
             <option value="anthropic">anthropic</option>
             <option value="custom">custom</option>
           </select>
-          <input id="provUrl" class="inp" placeholder="base_url (https://…/v1)" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
-          <input id="provKeyEnv" class="inp" placeholder="api_key_env = VAR name (not the key)" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
-          <input id="provModels" class="inp" placeholder="models (comma-separated; id or id:context_length)" style="width:100%;padding:6px 10px;font-size:12px;margin-top:6px">
-          <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="provLocal"> local (no key)</label>
-          <button class="ghost" onclick="saveProvider()" style="margin-top:8px">save provider</button>
-          <div id="provResult" class="remaining" style="margin-top:6px"></div>
+          <input id="provUrl" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="base_url (https://…/v1)">
+          <input id="provKeyEnv" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="api_key_env = VAR name (not the key)">
+          <input id="provModels" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="models (comma-separated; id or id:context_length)">
+          <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="provLocal"> local (no key)</label>
+          <button class="ghost u-mt8" data-call="saveProvider">save provider</button>
+          <div id="provResult" class="remaining u-mt6"></div>
         </details>
         <h2>Providers</h2>
         <div class="card">
           <div class="remaining" id="provSummary">loading…</div>
-          <div id="provList" style="margin-top:8px"></div>
+          <div id="provList" class="u-mt8"></div>
         </div>
         <h2>Available models</h2>
         <div class="card" id="modelsList"><div class="remaining">loading…</div></div>
@@ -1655,80 +1717,80 @@
         <div data-insp="knowledge">
         <h2>Knowledge · global <span id="indexStat" class="remaining"></span></h2>
         <div class="card">
-          <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+          <div class="u-df u-g10 u-aifs u-fww">
             <div class="remaining" id="indexMeta" style="flex:1;min-width:180px">Global knowledge base — notebooks of sources (URLs, files, pasted text). Separate from the per-workspace <b>Codebase</b> index (right rail ▸ Codebase).</div>
             <!-- JAG-403h: status/clear sit to the RIGHT of the counts (they wrapped under
                  and ate vertical space); they drop below only when the panel is narrow. -->
-            <div style="display:flex;gap:6px;flex:0 0 auto">
-              <button class="ghost" onclick="kbStatus()" title="refresh the counts">status</button>
-              <button class="ghost" onclick="kbClear()" title="delete the whole knowledge base">clear</button>
+            <div class="u-df u-g6 u-f0a">
+              <button class="ghost" data-call="kbStatus" title="refresh the counts">status</button>
+              <button class="ghost" data-call="kbClear" title="delete the whole knowledge base">clear</button>
             </div>
           </div>
         </div>
         <h2>Search knowledge</h2>
         <div class="card">
-          <div style="display:flex;gap:6px">
-            <input id="kbQuery" class="inp" placeholder="search the knowledge base…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbSearch()">
-            <button class="ghost" onclick="kbSearch()">search</button>
+          <div class="u-df u-g6">
+            <input id="kbQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search the knowledge base…" data-key="Enter" data-key-fn="kbSearch">
+            <button class="ghost" data-call="kbSearch">search</button>
           </div>
-          <div id="kbResults" style="margin-top:6px"></div>
+          <div id="kbResults" class="u-mt6"></div>
         </div>
         <details class="card" id="kbNbBox">
-          <summary class="remaining" style="cursor:pointer">Notebooks <span id="kbNbActive" style="color:var(--txt)"></span></summary>
+          <summary class="remaining u-ptr">Notebooks <span id="kbNbActive" style="color:var(--txt)"></span></summary>
           <div id="kbNotebooks" style="max-height:200px;overflow:auto;margin-top:8px"><div class="remaining">loading…</div></div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <input id="kbNewName" class="inp" placeholder="new notebook name…" style="flex:1;padding:6px 10px;font-size:12px">
-            <button class="ghost" onclick="kbCreateNotebook()">+ create</button>
+          <div class="u-df u-g6 u-mt8">
+            <input id="kbNewName" class="inp u-f1 u-p610 u-fs12" placeholder="new notebook name…">
+            <button class="ghost" data-call="kbCreateNotebook">+ create</button>
           </div>
         </details>
         <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">One per line — a URL, a file, or a folder. URLs are fetched and embedded; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs) then embedded with the active model.</div>
+          <div class="remaining u-m006">One per line — a URL, a file, or a folder. URLs are fetched and embedded; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs) then embedded with the active model.</div>
           <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
-          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-            <button class="ghost" onclick="kbAddSource()">+ add + index</button>
-            <button class="ghost" onclick="kbReembed()" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
-            <button class="ghost" onclick="kbFiles()" title="which sources are in this notebook">sources</button>
-            <button class="ghost" onclick="kbLoadSources()" title="reload sources">↻</button>
+          <div class="u-df u-g6 u-mt6 u-fww">
+            <button class="ghost" data-call="kbAddSource">+ add + index</button>
+            <button class="ghost" data-call="kbReembed" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
+            <button class="ghost" data-call="kbFiles" title="which sources are in this notebook">sources</button>
+            <button class="ghost" data-call="kbLoadSources" title="reload sources">↻</button>
           </div>
-          <div id="kbSources" style="margin-top:6px"></div>
+          <div id="kbSources" class="u-mt6"></div>
         </div>
         <h2>Research · web → notebook</h2>
         <div class="card">
-          <div class="remaining" style="margin:0 0 6px">One topic bar, two modes. <b>Manual</b>: search the web and pick the URLs to import. <b>Auto (agent)</b>: search, fetch, summarise with the research LLM and import automatically.</div>
-          <div style="display:flex;gap:6px">
-            <input id="kbDiscoverQ" class="inp" placeholder="research topic…" style="flex:1;padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')kbResearchGo()">
-            <button class="ghost" id="kbResearchBtn" onclick="kbResearchGo()">🔎 discover</button>
+          <div class="remaining u-m006">One topic bar, two modes. <b>Manual</b>: search the web and pick the URLs to import. <b>Auto (agent)</b>: search, fetch, summarise with the research LLM and import automatically.</div>
+          <div class="u-df u-g6">
+            <input id="kbDiscoverQ" class="inp u-f1 u-p610 u-fs12" placeholder="research topic…" data-key="Enter" data-key-fn="kbResearchGo">
+            <button class="ghost" id="kbResearchBtn" data-call="kbResearchGo">🔎 discover</button>
           </div>
-          <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:8px;cursor:pointer">
-            <input type="checkbox" id="kbAutoMode" onchange="kbResearchMode()">
+          <label class="remaining u-df u-g6 u-aic u-mt8 u-ptr">
+            <input type="checkbox" id="kbAutoMode" data-change="kbResearchMode">
             <span><b>auto (agent)</b> — search + fetch + summarise + import (uses the research LLM)</span>
           </label>
           <!-- JAG-403h: depth + max sources are ALWAYS visible — they apply to BOTH
                the manual discover count and the auto research rounds, so hiding them
                behind the auto checkbox made them look gone. -->
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">
-            <label class="remaining" style="display:flex;gap:6px;align-items:center">depth
+          <div class="u-df u-g10 u-fww u-aic u-mt8">
+            <label class="remaining u-df u-g6 u-aic">depth
               <select id="researchDepth" class="inp" style="width:auto;padding:6px 10px;font-size:12px" title="research rounds: shallow = 1, medium = 2, deep = 3">
                 <option value="shallow">shallow</option>
                 <option value="medium" selected>medium</option>
                 <option value="deep">deep</option>
               </select>
             </label>
-            <label class="remaining" style="display:flex;gap:6px;align-items:center">max sources
+            <label class="remaining u-df u-g6 u-aic">max sources
               <input id="researchN" type="number" min="1" max="20" value="5" class="inp" style="width:66px;padding:6px 10px;font-size:12px" title="sources per round (manual discover: number of candidates)">
             </label>
           </div>
           <div id="kbAutoOpts" hidden>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
-              <select id="researchModel" onchange="researchSetActive()" class="inp" style="flex:2;min-width:220px;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
+            <div class="u-df u-g6 u-fww u-aic u-mt6">
+              <select id="researchModel" data-change="researchSetActive" class="inp" style="flex:2;min-width:220px;padding:6px 10px;font-size:12px" title="research LLM (provider:model)"></select>
             </div>
-            <div style="display:flex;gap:6px;margin-top:4px">
-              <button class="ghost" onclick="researchModelLs()" title="refresh research models">↻ models</button>
+            <div class="u-df u-g6 u-mt4">
+              <button class="ghost" data-call="researchModelLs" title="refresh research models">↻ models</button>
             </div>
             <div id="researchLog" style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11px"></div>
           </div>
-          <div id="kbCandidates" style="margin-top:6px"></div>
+          <div id="kbCandidates" class="u-mt6"></div>
         </div>
         </div><!-- /data-insp=knowledge -->
       </div>
@@ -1739,8 +1801,8 @@
         </div>
         <h2>Text</h2>
         <div class="card">
-          <label class="hrow" style="gap:8px;cursor:pointer">
-            <input type="checkbox" id="boldText" onchange="applyBold(this.checked)">
+          <label class="hrow u-g8 u-ptr">
+            <input type="checkbox" id="boldText" data-change="applyBold" data-arg-node="checked">
             <span>Bolder text — heavier weights on messages, labels and headings, easier to scan.</span>
           </label>
         </div>
@@ -1757,91 +1819,91 @@
 </div>
 <div id="mcpJsonWin" hidden>
   <div class="mj-card">
-    <div class="mj-head"><b>MCP JSON · configure manually</b><span style="flex:1"></span>
-      <button class="ghost" onclick="closeMcpJson()" title="close (Esc)">✕</button></div>
+    <div class="mj-head"><b>MCP JSON · configure manually</b><span class="u-f1"></span>
+      <button class="ghost" data-call="closeMcpJson" title="close (Esc)">✕</button></div>
     <div class="remaining" style="margin:10px 0 8px"><code>mcpServers</code> — paste one <b>server</b> snippet and press <b>confirm</b>; written to <code>config/mcp_clients.local.json</code>.</div>
     <textarea id="mcpJsonText" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-    <div id="mcpJsonMsg" class="remaining" style="margin-top:6px"></div>
-    <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
-      <button class="ghost" onclick="copyMcpJson()">⧉ copy</button>
-      <button class="ghost" onclick="closeMcpJson()">cancel</button>
-      <button class="ghost" onclick="applyMcpJson()">confirm</button>
+    <div id="mcpJsonMsg" class="remaining u-mt6"></div>
+    <div class="u-df u-g6 u-mt10 u-jcfe">
+      <button class="ghost" data-call="copyMcpJson">⧉ copy</button>
+      <button class="ghost" data-call="closeMcpJson">cancel</button>
+      <button class="ghost" data-call="applyMcpJson">confirm</button>
     </div>
   </div>
 </div>
-<div id="nsBackdrop" hidden onclick="closeNewSess()"></div>
+<div id="nsBackdrop" hidden data-call="closeNewSess"></div>
 <div id="newSessDlg" class="card" hidden>
   <h2 style="margin:0 0 10px">New session</h2>
   <label class="remaining" for="nsTitle">title</label>
-  <input id="nsTitle" class="inp" style="width:100%;padding:6px 10px;font-size:12px;margin-top:4px">
-  <label class="remaining" for="nsWs" style="display:block;margin-top:10px">folder (local workspace)</label>
-  <div style="display:flex;gap:6px;margin-top:4px">
-    <input id="nsWs" class="inp" placeholder="/home/jagones/Repositories/…" style="flex:1;padding:6px 10px;font-size:12px">
-    <button class="ghost" onclick="openDirPicker()" title="browse folders">📁 browse…</button>
+  <input id="nsTitle" class="inp u-w100 u-p610 u-fs12 u-mt4">
+  <label class="remaining u-db u-mt10" for="nsWs">folder (local workspace)</label>
+  <div class="u-df u-g6 u-mt4">
+    <input id="nsWs" class="inp u-f1 u-p610 u-fs12" placeholder="/home/jagones/Repositories/…">
+    <button class="ghost" data-call="openDirPicker" title="browse folders">📁 browse…</button>
   </div>
-  <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
-    <button class="ghost" onclick="closeNewSess()">cancel</button>
-    <button class="ghost" onclick="createNewSession()">create</button>
+  <div class="u-df u-g8 u-mt12 u-jcfe">
+    <button class="ghost" data-call="closeNewSess">cancel</button>
+    <button class="ghost" data-call="createNewSession">create</button>
   </div>
-  <div id="nsResult" class="remaining" style="margin-top:8px"></div>
+  <div id="nsResult" class="remaining u-mt8"></div>
 </div>
-<div id="dirBackdrop" hidden onclick="closeDirPicker()"></div>
+<div id="dirBackdrop" hidden data-call="closeDirPicker"></div>
 <div id="dirPicker" class="card" hidden>
-  <div style="display:flex;align-items:center;gap:8px">
-    <button class="ghost" id="dirUp" onclick="dirUp()" title="parent folder" aria-label="parent folder">↑</button>
-    <div id="dirPath" class="remaining" style="flex:1;word-break:break-all"></div>
+  <div class="u-df u-aic u-g8">
+    <button class="ghost" id="dirUp" data-call="dirUp" title="parent folder" aria-label="parent folder">↑</button>
+    <div id="dirPath" class="remaining u-f1 u-wba"></div>
   </div>
   <div id="dirList" style="margin-top:8px;max-height:46vh;overflow:auto"></div>
-  <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
-    <button class="ghost" onclick="closeDirPicker()">cancel</button>
-    <button class="ghost" onclick="pickCurrentDir()">use this folder</button>
+  <div class="u-df u-g8 u-mt10 u-jcfe">
+    <button class="ghost" data-call="closeDirPicker">cancel</button>
+    <button class="ghost" data-call="pickCurrentDir">use this folder</button>
   </div>
-  <div id="dirResult" class="remaining" style="margin-top:6px"></div>
+  <div id="dirResult" class="remaining u-mt6"></div>
 </div>
-<div id="pickBackdrop" class="smback" hidden onclick="closePick()"></div>
+<div id="pickBackdrop" class="smback" hidden data-call="closePick"></div>
 <div id="pickModal" class="smodal" hidden role="dialog" aria-modal="true" aria-labelledby="pickTitle">
   <div class="pick-hd">
     <b id="pickTitle">pick</b>
     <span id="pickHint" class="remaining"></span>
-    <button class="ghost" onclick="closePick()" aria-label="close">✕</button>
+    <button class="ghost" data-call="closePick" aria-label="close">✕</button>
   </div>
   <input id="pickQuery" class="inp" placeholder="filter…  (type to narrow · ⏎ picks the first)" autocomplete="off" aria-label="filter">
   <div id="pickList" class="pick-list" role="listbox"></div>
 </div>
-<div id="textBackdrop" class="smback" hidden onclick="closeTextModal()"></div>
+<div id="textBackdrop" class="smback" hidden data-call="closeTextModal"></div>
 <div id="textModal" class="smodal" hidden role="dialog" aria-modal="true" aria-labelledby="textModalTitle">
   <div class="pick-hd"><b id="textModalTitle">📝 Paste text as context</b>
-    <button class="ghost" onclick="closeTextModal()" aria-label="close">✕</button></div>
+    <button class="ghost" data-call="closeTextModal" aria-label="close">✕</button></div>
   <textarea id="textModalArea" rows="8" placeholder="paste or type the text to attach" style="resize:vertical;font-family:inherit"></textarea>
-  <div style="display:flex;justify-content:flex-end;gap:8px">
-    <button class="ghost" onclick="closeTextModal()">cancel</button>
-    <button class="ghost" onclick="confirmTextModal()">attach</button>
+  <div class="u-df u-jcfe u-g8">
+    <button class="ghost" data-call="closeTextModal">cancel</button>
+    <button class="ghost" data-call="confirmTextModal">attach</button>
   </div>
 </div>
-<div id="voiceBackdrop" class="smback" hidden onclick="closeVoiceHelp()"></div>
+<div id="voiceBackdrop" class="smback" hidden data-call="closeVoiceHelp"></div>
 <div id="voiceHelp" class="smodal" hidden role="dialog" aria-modal="true" aria-labelledby="voiceHelpTitle">
   <div class="pick-hd"><b id="voiceHelpTitle">🎙 Voice input — how to enable it</b>
-    <button class="ghost" onclick="closeVoiceHelp()" aria-label="close">✕</button></div>
+    <button class="ghost" data-call="closeVoiceHelp" aria-label="close">✕</button></div>
   <div id="voiceHelpBody" class="pick-list" style="font-size:12.5px;line-height:1.55"></div>
 </div>
-<div id="diffBackdrop" hidden onclick="closeDiff()"></div>
+<div id="diffBackdrop" hidden data-call="closeDiff"></div>
 <div id="diffView" hidden>
-  <div style="display:flex;align-items:center;gap:8px">
+  <div class="u-df u-aic u-g8">
     <div id="diffTitle" style="font-weight:600;flex:1;word-break:break-all">diff</div>
     <span id="diffStat" class="remaining"></span>
-    <button class="ghost" id="diffApprove" onclick="approveDiff()" title="keep this file as written, clear it from the pending list">✓ approve</button>
-    <button class="ghost" id="diffUndo" onclick="undoDiff()" title="restore this file to its pre-image">↩ reject</button>
-    <button class="ghost" onclick="closeDiff()">✕ close</button>
+    <button class="ghost" id="diffApprove" data-call="approveDiff" title="keep this file as written, clear it from the pending list">✓ approve</button>
+    <button class="ghost" id="diffUndo" data-call="undoDiff" title="restore this file to its pre-image">↩ reject</button>
+    <button class="ghost" data-call="closeDiff">✕ close</button>
   </div>
   <div class="remaining" id="diffSub" style="margin:4px 0 8px"></div>
   <div id="diffBody"></div>
 </div>
-<div id="imgBackdrop" hidden onclick="closeImage()"></div>
+<div id="imgBackdrop" hidden data-call="closeImage"></div>
 <div id="imgView" hidden>
-  <div style="display:flex;align-items:center;gap:8px">
+  <div class="u-df u-aic u-g8">
     <div style="font-weight:600;flex:1">🖼 image</div>
     <a id="imgOpen" class="ghost" href="#" target="_blank" rel="noopener noreferrer" style="text-decoration:none">↗ open in new tab</a>
-    <button class="ghost" onclick="closeImage()">✕ close</button>
+    <button class="ghost" data-call="closeImage">✕ close</button>
   </div>
   <img id="imgEl" alt="preview">
   <div class="cap" id="imgCap"></div>
@@ -2070,10 +2132,15 @@ function toolCard(tool, args, ts) {
   const id = "tc" + Math.random().toString(36).slice(2, 8);
   const wrap = document.createElement("div");
   wrap.innerHTML = `<div class="toolcard" data-tool="${esc(name)}">` +
-    `<div class="toolcard-head" onclick="toggleTool('${id}')"><span class="tc-ic">🔧</span>` +
+    `<div class="toolcard-head" role="button" tabindex="0" aria-expanded="false" aria-controls="${id}"><span class="tc-ic">🔧</span>` +
     `<span class="tc-name">${esc(name)}</span>${_tsSpan(ts)}<span class="tc-meta">running…</span><span class="tc-chev">▾</span></div>` +
     `<div class="toolcard-body" id="${id}"><pre class="tc-args"></pre><pre class="tc-out"></pre></div></div>`;
   const d = wrap.firstElementChild;
+  // JAG-425 (#1): the header toggles the card — make it a real keyboard-accessible
+  // disclosure (Enter/Space) instead of a click-only <div>.
+  const _head = d.querySelector(".toolcard-head");
+  _head.addEventListener("click", () => toggleTool(id));
+  _head.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleTool(id); } });
   if (args) {
     const a = d.querySelector(".tc-args");
     if (a) a.textContent = "input: " + (typeof args === "string" ? args : JSON.stringify(args));
@@ -2089,7 +2156,14 @@ function toolCard(tool, args, ts) {
   curThink = null;
   scroll(); return d;
 }
-function toggleTool(id) { const el = document.getElementById(id); if (el) el.parentElement.classList.toggle("expanded"); }
+function toggleTool(id) {
+  const el = document.getElementById(id); if (!el) return;
+  const card = el.parentElement;
+  const open = card.classList.toggle("expanded");
+  // JAG-425 (#1): keep the disclosure state in sync for assistive tech.
+  const head = card.querySelector(".toolcard-head");
+  if (head) head.setAttribute("aria-expanded", String(open));
+}
 function updateToolCard(data) {
   const tool = data.tool || "tool";
   const cards = Array.from($("log").querySelectorAll(".toolcard.pending"));
@@ -2282,6 +2356,8 @@ function hitlCard(d) {
   d = d || {};
   const card = document.createElement("div"); card.className = "msg ai";
   const open = (d.open || []).filter(Boolean).map(t => "• " + (t.label || t.id || "") + (t.id ? "  (" + t.id + ")" : "")).join("\n");
+  // JAG-425 (#2): the two free-text fields carry a `name` (Chrome flagged the missing
+  // one) and an aria-label — a placeholder alone is not an accessible name.
   card.innerHTML =
     '<div class="who">HUMAN IN THE LOOP</div><div class="bubble"><div class="hitl">' +
     '<div class="hitl-title">⏸ Stopped with ' + ((d.open || []).length) + ' open steps (' + esc(d.reason || "stop") + '). How should I proceed?</div>' +
@@ -2292,8 +2368,8 @@ function hitlCard(d) {
       '<button class="ghost" data-a="replan">♻ Re-plan</button>' +
       '<button class="ghost" data-a="stop">⏹ Stop</button>' +
     '</div>' +
-    '<input class="hitl-other" placeholder="Other: what should I do? (optional)">' +
-    '<input class="hitl-note" placeholder="additional info for the agent (optional)">' +
+    '<input class="hitl-other" name="hitl-other" aria-label="Other: what should I do? (optional)" placeholder="Other: what should I do? (optional)">' +
+    '<input class="hitl-note" name="hitl-note" aria-label="Additional info for the agent (optional)" placeholder="additional info for the agent (optional)">' +
     '<button class="hitl-send">send choice</button></div></div>';
   card.querySelector(".hitl-open").textContent = open;
   const build = (a) => {
@@ -7182,6 +7258,38 @@ document.addEventListener("visibilitychange", function () {
 });
 setInterval(loadStatus, 5000);
 setInterval(loadApprovals, 4000);
+/* JAG-425 (#6): ONE delegated dispatcher drives every control converted out of an
+   inline handler (static markup now carries data-call / data-change / data-key-fn).
+   The target name is resolved on the global object and MUST be a function — no eval,
+   and a mis-typed name simply does nothing instead of throwing. */
+function _bindInlineActions() {
+  const invoke = (name, el, args) => {
+    const fn = window[name];
+    if (typeof fn === "function") fn.apply(el, args || []);
+  };
+  const closest = (t, sel) => (t && t.closest) ? t.closest(sel) : null;
+  document.addEventListener("click", e => {
+    const el = closest(e.target, "[data-call]");
+    if (!el || el.disabled) return;
+    e.preventDefault();
+    let a = []; try { a = JSON.parse(el.dataset.args || "[]"); } catch (_) {}
+    invoke(el.dataset.call, el, a);
+  });
+  document.addEventListener("change", e => {
+    const el = closest(e.target, "[data-change]");
+    if (!el || el.disabled) return;
+    const a = el.dataset.argNode ? [el[el.dataset.argNode]] : [];
+    invoke(el.dataset.change, el, a);
+  });
+  document.addEventListener("keydown", e => {
+    const el = closest(e.target, "[data-key-fn]");
+    if (!el || !e.key) return;
+    if (e.key.toLowerCase() !== (el.dataset.key || "enter").toLowerCase()) return;
+    e.preventDefault();
+    invoke(el.dataset.keyFn, el, []);
+  });
+}
+_bindInlineActions();
 </script>
 <script src="/assets/vendor/marked.min.js"></script>
 <script src="/assets/vendor/purify.min.js"></script>

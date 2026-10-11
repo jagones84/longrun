@@ -112,8 +112,9 @@ srv_src = open(os.path.join(REPO, "src", "longrun", "core", "server.py"), encodi
 check("D4 stream_with_fallback retries the same model without reasoning_effort",
       "no_reasoning" in srv_src and "attempts = (False, True)" in srv_src)
 check("D5 the WebUI auto-saves thinking effort (no manual button)",
-      'id="reOn" type="checkbox" onchange="saveReasoning()"' in HTML
-      and 'id="reEffort" onchange="saveReasoning()"' in HTML
+      # JAG-425: onchange -> the delegated data-change binding.
+      'id="reOn" type="checkbox" data-change="saveReasoning"' in HTML
+      and 'id="reEffort" data-change="saveReasoning"' in HTML
       and "save thinking effort" not in HTML)
 
 # D6: behavioural — a model rejecting reasoning_effort must NOT crash the turn.

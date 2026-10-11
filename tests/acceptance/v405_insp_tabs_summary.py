@@ -44,7 +44,9 @@ check("B2 the summary is right-aligned and ellipsizes when tight",
 
 # ------------------------------------------------------------------ C) Workspace
 check("C1 the tab label is 'Workspace' (not 'Files')",
-      'toggleInsp(\'files\')">Workspace<span class="ihd-s"' in HTML)
+      # JAG-425: the binding is a delegated data-call attribute now; assert the label
+      # plus the (unchanged) internal key that the section still targets.
+      '>Workspace<span class="ihd-s"' in HTML and 'data-insp="files"' in HTML)
 check("C2 the internal data-insp key stays 'files' (JS + tests depend on it)",
       'data-insp="files"' in HTML and 'files: "files"' in HTML)
 
