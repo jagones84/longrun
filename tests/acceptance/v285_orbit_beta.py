@@ -170,7 +170,9 @@ check("the UI drives the deck + orchestration endpoints",
       "/api/orbit/models" in ui and "/api/orbit/sessions" in ui
       and "/api/agents/tree" in ui and "/api/jobs" in ui)
 check("the UI renders a graphical org chart with node boxes + connectors",
-      'id="orgtree"' in ui and 'class="node"' in ui and ".orgwrap li::before" in ui)
+      # JAG-424d: connectors are now SVG elbows (.oedge) from the JS wrapped layout,
+      # not the old one-row CSS tree's li::before borders.
+      'id="orgtree"' in ui and 'class="node"' in ui and 'class="oedge"' in ui)
 
 print("---")
 passed = sum(results)

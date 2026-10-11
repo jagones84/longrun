@@ -32,7 +32,10 @@ check("A3 a member is still reached through its SUBJOB edge",
 check("A4 a fan-out job (no coordinator) draws no false job->agent edge",
       "const aid = j.coordinator; if (!aid) return;" in o)
 check("A5 the coordinator edge still uses the job->agent style",
-      "const b = box[a.session], g = this._seg(jpos[j.id]" in o)
+      # JAG-424d: the assign edge is now a curved <path> (this._curve) instead of a
+      # straight <line> (this._seg), but it keeps the same "clink assign" style.
+      "const b = box[a.session], d = this._curve(jpos[j.id]" in o
+      and 'class="clink assign"' in o)
 
 print("---")
 ok = sum(1 for r in results if r)

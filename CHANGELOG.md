@@ -72,6 +72,16 @@ All notable changes to Longrun are documented here. The format follows
   no longer says "Bridge" or "the main app": the two top-level views are **Sessions** (`/`) and
   **Control** (`/orbit`), and every user-facing hint (Control job/constellation detail, org-chart menu,
   ROLE.md editor note) now points at the "Sessions tab". README Interfaces + quickstart updated.
+- **Control deck: compact org chart + interactive constellation (JAG-424d).** The org chart is no
+  longer a one-row CSS tree that stretched a wide fan-out to thousands of px — it is laid out in JS
+  with sibling rows that **wrap** (fixed 132×62 node boxes, agent **names wrap to two lines**), so a
+  big team grows DOWN in the panel and the `fit()` zoom stays legible; connectors are SVG elbows
+  (`.oedge`). In the Constellation, **job and subjob pills are now clickable** like a task: click =
+  a metadata popover (goal/status/coordinator/blocked_by/subjobs, or assignment/deps/todos),
+  double-click = open the related session. Junctions improved: curved cross-board edges (instead of
+  straight lines slicing through clusters), a junction dot at each dependency's source, rounded
+  caps, and a clearer legend with the arrow semantics. Guards v285/v328 updated to the new
+  connectors/edges (same intent).
 - **Settings: auto-save everywhere, general default model, Knowledge polish (JAG-423).** Every model
   picker saves on change — the **Compaction model** and **Research model** `save` buttons are gone
   (`onchange`) — consistent with the embedding picker. The verbose "Saved automatically …" helper under
