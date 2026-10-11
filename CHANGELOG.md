@@ -115,6 +115,28 @@ All notable changes to Longrun are documented here. The format follows
   - The context ring moved off the **Sessions panel header** onto the **active session's row** (line 1,
     right of the message count) so it shows that ONE session's saturation and no longer overlaps the
     title. Its tooltip still carries the full "used / budget · %" detail.
+- **Frontend review pass — accessibility, contrast, motion + a cleaner shell (JAG-425).** A full
+  review of the WebUI against the frontend/accessibility bar, then every finding fixed:
+  - **Tool cards are a real keyboard disclosure** — the header is `role="button" tabindex="0"` with an
+    `aria-expanded` that tracks the open state (Enter/Space toggle) instead of a click-only `<div>`,
+    plus a visible focus ring.
+  - **The two HITL free-text fields carry a `name` + `aria-label`** (Chrome's "form field needs an
+    id/name" issue is gone).
+  - **The document outline starts at `<h1>`** — the wordmark is now the page's `h1` (it used to jump
+    straight to 33 `<h2>`s with no `h1`).
+  - **Sandbox state is never colour-only** — on a phone the sandbox word is visually hidden but stays
+    in the a11y tree, so screen readers still announce it.
+  - **The sand (light) theme now clears WCAG AA**: secondary text, links and status colours were
+    darkened (`--dim/--acc/--ok/--warn/--err`) from ~3.9–4.2:1 to 4.7–5.3:1.
+  - **`prefers-reduced-motion` is honoured** — animations/transitions collapse to instant.
+  - **No nested horizontal scrollbar on mobile** — `#log` clipped the `overflow-x` that
+    `overflow-y:auto` forces on; wide code/tables now scroll inside their own block.
+  - **Cleaner shell**: 126 repeated inline styles became ~35 utility classes, and 114 inline
+    `onclick`/`onchange` handlers became `data-call`/`data-change` attributes driven by ONE delegated
+    listener (no eval). Source-locked assertions in v284/v311/v319/v361/v403/v405/v406 now check the
+    intent instead of the old syntax.
+  - **The legacy standalone deck (`/console`) says so** — a banner points at the in-app Control tab
+    (kept routed for direct links + its tests). Battery 137/137 GREEN.
 - **Settings: auto-save everywhere, general default model, Knowledge polish (JAG-423).** Every model
   picker saves on change — the **Compaction model** and **Research model** `save` buttons are gone
   (`onchange`) — consistent with the embedding picker. The verbose "Saved automatically …" helper under
