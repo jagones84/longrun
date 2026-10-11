@@ -17,6 +17,9 @@ from longrun.util import paths
 DB_PATH = os.path.join(paths.EMBEDDING_DIR, "costs.db")
 LOCK = threading.RLock()
 
+# JAG-415: keep at most one month of the embedding cost log (space bound).
+RETENTION_DAYS = 30
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS batches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +35,7 @@ CREATE TABLE IF NOT EXISTS batches (
 );
 CREATE INDEX IF NOT EXISTS batches_model_ts ON batches(model, ts);
 CREATE INDEX IF NOT EXISTS batches_scope ON batches(scope, scope_id);
+CREATE INDEX IF NOT EXISTS batches_ts ON batches(ts);
 """
 
 
@@ -65,6 +69,9 @@ def record(model, provider=None, tokens=0, est_cost_usd=None,
              est_cost_usd, real_cost_usd, str(scope or ""), str(scope_id or ""),
              str(op or "")),
         )
+        # JAG-415: drop rows older than the retention window (space bound).
+        c.execute("DELETE FROM batches WHERE ts < ?",
+                  (time.time() - RETENTION_DAYS * 86400,))
         c.close()
 
 

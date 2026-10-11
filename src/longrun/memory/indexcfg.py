@@ -19,6 +19,12 @@ OVERLAY_PATH = os.path.join(paths.DATA_DIR, "index.overlay.yaml")
 DEFAULT_CONFIG = {
     "enabled": True,
     "max_file_kb": 512,
+    # JAG-415: before an agent searches a workspace, run a quick INCREMENTAL
+    # re-index and make the caller WAIT for it (see codeindex.ensure_fresh). This
+    # keeps the index fresh without a background "indexing…" state that would block
+    # a second agent — several agents on one workspace simply serialize on the
+    # build lock, and the refresh is cheap when nothing changed.
+    "auto_index": True,
     # JAG-403j: binary documents (PDF/DOCX/…) may be much larger than code files.
     "doc_max_kb": 25600,
     "chunk_lines": 60,
@@ -114,3 +120,11 @@ def save_config(patch):
 def embed_model():
     """The configured embedding model ref ('' = lexical only)."""
     return str(load_config().get("embed_model") or "").strip()
+
+
+def auto_index():
+    """True when an agent's codebase search must refresh the index first (JAG-415).
+
+    Defaults to True; a user can turn it off from the Codebase panel checkbox.
+    """
+    return bool(load_config().get("auto_index", True))

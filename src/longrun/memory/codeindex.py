@@ -172,6 +172,24 @@ _embed_chunks = _vec.embed_chunks
 _cos = _vec.cos
 
 
+def ensure_fresh(ws):
+    """JAG-415: incrementally refresh the workspace index, WAITING for any build
+    already in flight (even one started by another agent or thread).
+
+    Called by the agent's ``index`` tool right before a search, so a search never
+    runs against a stale or half-built index: concurrent agents on the same
+    workspace serialize on ``build``'s lock. A no-op when auto-index is disabled.
+    A build failure must NEVER break the search — it degrades to the existing
+    index (the caller searches whatever is there).
+    """
+    if not _cfg.auto_index():
+        return None
+    try:
+        return build(ws)
+    except Exception:  # noqa: BLE001 — the search must still run on the old index
+        return None
+
+
 def search(ws, query, k=8, kind=None, embed_model=None):
     """Top-k chunks for `query` in THIS workspace. bm25, or bm25+cosine (RRF)."""
     query = str(query or "").strip()

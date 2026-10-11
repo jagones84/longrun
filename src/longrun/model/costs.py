@@ -42,6 +42,9 @@ _PRICES_JSON = os.path.join(REPO, "config", "prices.json")
 _CACHE_JSON = os.environ.get("LONGRUN_PRICES_FILE", os.path.join(DATA_DIR, "prices.json"))
 OPENROUTER_MODELS = "https://openrouter.ai/api/v1/models"
 MAX_CALLS = 2000
+# JAG-415: keep at most one month of the per-session ledger (space bound). Older
+# calls are dropped on read, so the file shrinks the next time a call is recorded.
+RETENTION_DAYS = 30
 
 _lock = threading.RLock()
 _prices = None
@@ -253,9 +256,13 @@ def _load(session):
     try:
         with open(_path(session), encoding="utf-8") as f:
             d = json.load(f)
-        return d if isinstance(d, list) else []
     except (OSError, ValueError):
         return []
+    if not isinstance(d, list):
+        return []
+    # JAG-415: bound the ledger to the last month so the file cannot grow forever.
+    cutoff = time.time() - RETENTION_DAYS * 86400
+    return [c for c in d if isinstance(c, dict) and float(c.get("ts") or 0) >= cutoff]
 
 
 def _save(session, led):

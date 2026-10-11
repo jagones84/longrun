@@ -946,6 +946,9 @@ def _index(args, run_id):
         k = int(args.get("k") or 8)
     except (TypeError, ValueError):
         k = 8
+    # JAG-415: refresh the index first (incremental; waits for any build already
+    # running) so the agent searches fresh code and never a half-built index.
+    ci.ensure_fresh(ws)
     res = ci.search(ws, query, k=k, kind=args.get("kind"))
     lines = ["%s:%s  %s" % (r["path"], r["start"],
                             (r.get("snippet") or "").replace("\n", " ")[:200])

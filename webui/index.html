@@ -500,6 +500,11 @@
   #composerBar .cb-left > select:hover { color: var(--txt); }
   #composerBar #sendBtn { flex: 0 0 auto; font-weight: 700; }
   #composerBar #sendBtn .kbd { opacity: .65; font-weight: 400; margin-left: 2px; }
+  /* JAG-415: stop is a compact square ICON — a symbol, not a word, to save space. */
+  #composerBar #stopBtn { flex: 0 0 auto; min-width: 34px; padding: 0 7px; font-size: 14px; }
+  /* JAG-415: as the window narrows, the LLM selector shrinks gracefully (never
+     forces an early wrap or squeezes to a sliver). */
+  @media (max-width: 1200px) { #composerBar .cb-right .model-wrap > button, #composerBar .cb-left .model-wrap > button { max-width: 132px; } }
   /* JAG-284: secondary actions live behind a "⋯" overflow menu so the toolbar stays
      a single tidy row; the menu opens upward, right-aligned. */
   #composerBar .more-wrap { position: relative; display: flex; flex: 0 0 auto; }
@@ -512,11 +517,21 @@
     min-height: 0; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
     background: transparent; color: var(--txt); font-size: 12px; font-weight: 500; }
   #moreMenu .mi:hover { background: var(--hover); }
+  /* JAG-415: topbar app menu — settings / bridge / sandbox moved off the bar itself
+     into a single tidy "☰" so the header reads as one clean row. */
+  .appmenu-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+  #appMenu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 216px;
+    padding: 4px; z-index: 60; background: var(--menubg); }
+  #appMenu .amline { padding: 6px 10px 8px; }
+  #appMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 8px 10px; border: 0; border-radius: 8px; background: transparent;
+    color: var(--txt); font-size: 12px; font-weight: 500; }
+  #appMenu .mi:hover { background: var(--hover); }
   #composer #inp { width: 100%; }
   #inp, .inp { background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
     border-radius: var(--radius); padding: 12px 16px; font: inherit; outline: none; }
-  #inp { flex: 1; resize: none; max-height: 160px; overflow-y: auto; line-height: 1.45;
-    font-size: 13px; }  /* JAG-269: the composer inherits 14px from body — too big */
+  #inp { flex: 0 0 auto; resize: none; max-height: 160px; overflow-y: hidden; line-height: 1.4;
+    font-size: 12.5px; min-height: 38px; }  /* JAG-415: grows with the text to 160px, then scrolls */
   /* JAG-127b: queued/steer messages typed while a turn is still running */
   #queueBar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px 0; }
   #queueBar[hidden] { display: none; }
@@ -1078,11 +1093,16 @@
   <span class="pill meter" id="ctx-meter" title="context tokens / budget"><svg class="mring"
       viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle><circle
       class="mfill" id="ctxRing" cx="18" cy="18" r="15.9155"></circle></svg><b id="ctxPctTop">…</b></span>
-  <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
-      id="sbxTxt">…</span></span>
-  <button class="ghost" id="settingsBtn" title="settings" onclick="openSettings()">⚙</button>
-  <button class="ghost" id="deck-open" title="Bridge — agent orchestration deck (beta)" onclick="location.href='/orbit'">🛰 Bridge</button>
-  <button class="ghost" id="palette-open" title="command palette (Cmd/Ctrl+K)">⌘K</button>
+  <div class="appmenu-wrap">
+    <button class="ghost" id="appmenuBtn" title="app menu — settings · bridge · sandbox" aria-haspopup="true" aria-expanded="false">☰</button>
+    <div id="appMenu" class="card" hidden>
+      <div class="amline"><span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
+          id="sbxTxt">…</span></span></div>
+      <button class="ghost mi" id="settingsBtn" title="settings" onclick="openSettings()">⚙ settings</button>
+      <button class="ghost mi" id="deck-open" title="Bridge — agent orchestration deck (beta)" onclick="location.href='/orbit'">🛰 Bridge</button>
+      <button class="ghost mi" id="palette-open" title="command palette (Cmd/Ctrl+K)">⌘K command palette</button>
+    </div>
+  </div>
 </header>
 <button class="edge-handle" id="handle-left" type="button"
         title="collapse / expand the sessions panel" aria-label="toggle sessions panel">◀</button>
@@ -1123,19 +1143,18 @@
             <option value="queue">＋ queue</option>
             <option value="steer">⇢ steer</option>
           </select>
-        </div>
-        <div class="cb-right">
           <button class="ghost" id="micBtn" title="voice input — browser speech-to-text (Chrome/Edge; needs a microphone + permission)">🎙</button>
           <div class="model-wrap">
           <button class="ghost model-btn" id="model-btn" title="choose the LLM for this chat"><span class="mname">model</span> <span class="mc">▾</span></button>
           <div id="modelMenu" hidden></div>
           </div>
-          <button class="ghost" id="agentBtn" title="run the agent loop">⚡ agent</button>
-          <button class="ghost" id="stopBtn" onclick="stopRun()" title="stop agent / chat">⏹ stop</button>
-          <button class="ghost" id="resetBtn" onclick="clearSession()" title="reset this session: wipe chat history + task list (the session stays)">↺ reset</button>
+        </div>
+        <div class="cb-right">
+          <button class="ghost" id="stopBtn" onclick="stopRun()" title="stop agent / chat" aria-label="stop">■</button>
           <div class="more-wrap">
             <button class="ghost" id="moreBtn" title="more actions" aria-haspopup="true" aria-expanded="false">⋯</button>
             <div id="moreMenu" class="card" hidden>
+              <button class="ghost mi" id="agentBtn" title="run the agent loop on the current plan">⚡ run agent</button>
               <button class="ghost mi" id="dockBtn" onclick="SparkEditorToggle()" title="open/close the editor (next to the chat)">🗔 editor</button>
               <button class="ghost mi" onclick="compactNow()" title="summarize this session now to free up context">🗜 compact</button>
               <button class="ghost mi" onclick="clearSession()" title="reset this session: wipe chat history + task list">↺ reset session</button>
@@ -1393,6 +1412,9 @@
             <button class="ghost" onclick="cbStatus()" title="refresh the counts">status</button>
             <button class="ghost" onclick="cbClear()" title="delete this workspace's codebase index">clear</button>
           </div>
+          <label class="remaining" style="display:flex;gap:6px;align-items:center;margin-top:8px"
+                 title="Before an agent searches this workspace, run a quick INCREMENTAL re-index and make the agent WAIT for it — so it never queries a stale or half-built index. Safe with several agents on one workspace.">
+            <input type="checkbox" id="cbAutoIndex"> auto-index before an agent searches</label>
           <div id="cbFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
         </div>
         <h2>Search codebase</h2>
@@ -1852,7 +1874,7 @@ async function ensureToken() {
     // agent session and jumps to the exact task section (same tab). Stash the node;
     // `loadHistory` applies it once the transcript is rebuilt.
     const sq = u.searchParams.get("session");
-    if (sq) { sessionId = sq; localStorage.setItem("sf_session", sessionId); }
+    if (sq) { sessionId = sq; localStorage.setItem("sf_session", sessionId); _forceExpandActive = true; }
     window._deepNode = u.searchParams.get("node") || null;
     if (qt || sq) return TOKEN;
   } catch (e) {}
@@ -2769,6 +2791,7 @@ async function api(method, path, body) {
 function selectSession(s) {
   if (!s || !s.id) return;
   sessionId = s.id; localStorage.setItem("sf_session", sessionId);
+  _forceExpandActive = true;   // JAG-415: reveal this session's team group in the rail
   clearDone(s.id);   // JAG-218: opening a session clears its "finished" bell
   curJob = _agentNum(s) || _sessJob[s.id] || null;   // JAG-290: agent id (not session seq)
   _sessModel[s.id] = s.model || _sessModel[s.id] || "";
@@ -2851,6 +2874,21 @@ function _toggleGroup(key) {
   localStorage.setItem("sf_collapsed_groups", JSON.stringify(c));
   loadSessions();
 }
+/* JAG-415: rank every org agent by a DEPTH-FIRST walk of the reports_to tree, so
+   the rail lists orchestrators first, in ORG order — never "last used". Agents not
+   wired into the tree fall back to their id order; non-agents keep server order. */
+function _orgRankMap() {
+  const agents = Object.values(_agents).filter(a => a && a.session);
+  const byId = {}; agents.forEach(a => { byId[a.id] = a; });
+  const by = {};   // reports_to id ("" = root) -> [agent]
+  agents.forEach(a => { const p = a.reports_to || ""; (by[p] = by[p] || []).push(a); });
+  const rank = {}; const seen = {}; let i = 0;
+  const walk = a => { if (!a || seen[a.id]) return; seen[a.id] = 1; rank[a.session] = i++; (by[a.id] || []).forEach(walk); };
+  (by[""] || []).slice().forEach(walk);
+  agents.forEach(a => { if (a.reports_to && !byId[a.reports_to] && !seen[a.id]) walk(a); });
+  agents.forEach(a => { if (!seen[a.id]) walk(a); });
+  return rank;
+}
 /* One rail row for a session. Called once PER GROUP the session belongs to. */
 function _sessRowEl(s, pinnedIds, ag) {
   const d = document.createElement("div");
@@ -2879,6 +2917,7 @@ function _sessRowEl(s, pinnedIds, ag) {
   };
   return d;
 }
+let _forceExpandActive = false;   // JAG-415: set on a redirect/selection, consumed once
 async function loadSessions() {
   const [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
   const box = $("sessions"); box.innerHTML = "";
@@ -2902,21 +2941,42 @@ async function loadSessions() {
   visible.sort((a, b) => (pinnedIds.includes(b.id) ? 1 : 0) - (pinnedIds.includes(a.id) ? 1 : 0));
   const teamsOf = s => { const ag = _agents[s.id]; return ag ? (ag.teams || []).filter(t => _teamsById[t]) : []; };
   const teams = Object.values(_teamsById).sort((a, b) => (a.n || 0) - (b.n || 0));
+  // JAG-415: within a group, orchestrators (org agents) come FIRST, in ORG-tree
+  // order — a depth-first walk of reports_to, never "last used".
+  const orgRank = _orgRankMap();
+  const _ord = (a, b) => {
+    const ra = orgRank[a.id], rb = orgRank[b.id];
+    const ha = ra === undefined ? 1 : 0, hb = rb === undefined ? 1 : 0;
+    if (ha !== hb) return ha - hb;
+    if (!ha && ra !== rb) return ra - rb;
+    return 0;   // stable: keep the server's order for ties
+  };
 
   // No teams configured -> keep the flat, header-less list (backward compatible).
   if (!teams.length) {
-    visible.forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
+    visible.slice().sort(_ord).forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
   } else {
+    // JAG-415: expand the active session's own team group ONLY on a redirect or a
+    // selection (never on a plain re-render — else the user could not collapse the
+    // group of their own active session).
+    let collapsed = _collapsedGroups();
+    if (_forceExpandActive && sessionId) {
+      const actTeams = teamsOf({ id: sessionId });   // team IDS this session belongs to
+      const actGroups = actTeams.length ? actTeams : ["__none__"];
+      const kept = collapsed.filter(k => actGroups.indexOf(k) < 0);
+      if (kept.length !== collapsed.length) { collapsed = kept; localStorage.setItem("sf_collapsed_groups", JSON.stringify(kept)); }
+      _forceExpandActive = false;
+    }
     const groups = [];
-    const pinGroup = visible.filter(s => isPinned(s.id));
+    const pinGroup = visible.filter(s => isPinned(s.id)).sort(_ord);
     if (pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
+    // JAG-415: "No team" sits right BELOW Pinned, before the teams.
+    const adhoc = visible.filter(s => teamsOf(s).length === 0).sort(_ord);
+    if (adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
     teams.forEach(t => {
-      const ss = visible.filter(s => teamsOf(s).includes(t.id));
+      const ss = visible.filter(s => teamsOf(s).includes(t.id)).sort(_ord);
       if (ss.length) groups.push({ key: t.id, symbol: t.symbol || "•", name: t.name || t.id, id: t.id, col: t.color || "var(--acc)", sessions: ss });
     });
-    const adhoc = visible.filter(s => teamsOf(s).length === 0);
-    if (adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
-    const collapsed = _collapsedGroups();
     groups.forEach(g => {
       const isCol = collapsed.includes(g.key);
       const sec = document.createElement("div");
@@ -3132,15 +3192,17 @@ function splitThinkTail(content) {
 function ctxNa(reason) {
   // v1.6.3 (JAG-55): no session (or a session the server cannot measure) → the
   // indicator must read n/d, never a fake "budget 6000 / 0 messages".
-  $("ctxPct").textContent = "–";
-  $("ctxState").textContent = reason || "n/d"; $("ctxState").className = "ctxstate";
-  $("ctxTok").textContent = "n/d";
-  $("ctxMsgs").textContent = reason || "no session";
-  $("ctxBudget").textContent = "n/d";
-  $("ctxBudget").className = "";
-  $("ctxBudget").style.color = "var(--dim)";
+  // JAG-415: the Context inspector section is gone, so panel updates are optional.
+  const _p = $("ctxPct"); if (_p) _p.textContent = "–";
+  const _s = $("ctxState");
+  if (_s) { _s.textContent = reason || "n/d"; _s.className = "ctxstate"; }
+  const _t = $("ctxTok"); if (_t) _t.textContent = "n/d";
+  const _m = $("ctxMsgs"); if (_m) _m.textContent = reason || "no session";
+  const _b = $("ctxBudget");
+  if (_b) { _b.textContent = "n/d"; _b.className = ""; _b.style.color = "var(--dim)"; }
   _isum("sContext", "");
-  $("ctxBar").style.width = "0%"; $("ctxBar").style.minWidth = "0px"; $("ctxBar").className = "";
+  const _bar = $("ctxBar");
+  if (_bar) { _bar.style.width = "0%"; _bar.style.minWidth = "0px"; _bar.className = ""; }
   const _cm = $("ctx-meter"); _cm.className = "pill meter"; _cm.title = "context tokens / budget";
   const _cp = $("ctxPctTop"); if (_cp) _cp.textContent = "–";
   const _cr = $("ctxRing"); if (_cr) _cr.style.strokeDashoffset = "100";
@@ -3238,20 +3300,23 @@ async function loadCtx() {
     if (c.available === false) { ctxNa("session not found"); return; }
     const d = c.display || {};
     const state = d.state || "na";
-    $("ctxPct").textContent = (d.pct != null ? d.pct : 0) + "%";
-    $("ctxTok").textContent = d.tokens || "n/d";
-    $("ctxMsgs").textContent = d.messages || "n/d";
-    $("ctxBudget").textContent = d.budget || "n/d";
-    $("ctxBudget").style.color = state === "over" ? "var(--err)" : "var(--dim)";
+    // JAG-415: the Context inspector section was removed (the % now lives only in
+    // the topbar ring), so every panel update below is optional.
+    const _pct = $("ctxPct"); if (_pct) _pct.textContent = (d.pct != null ? d.pct : 0) + "%";
+    const _tok = $("ctxTok"); if (_tok) _tok.textContent = d.tokens || "n/d";
+    const _msgc = $("ctxMsgs"); if (_msgc) _msgc.textContent = d.messages || "n/d";
+    const _bud = $("ctxBudget");
+    if (_bud) { _bud.textContent = d.budget || "n/d"; _bud.style.color = state === "over" ? "var(--err)" : "var(--dim)"; }
     _isum("sContext", (d.pct != null ? d.pct : 0) + "% \u00b7 " + (d.tokens || "?") + "/" + (d.budget || "?"),
           state === "over" ? "hot" : (state === "near" ? "warn" : ""));
     const st = $("ctxState");
-    st.textContent = state === "over" ? "above threshold"
+    if (st) { st.textContent = state === "over" ? "above threshold"
       : state === "near" ? "near threshold" : "normal";
-    st.className = "ctxstate " + state;
-    const bar = $("ctxBar"); bar.style.width = (d.bar_pct != null ? d.bar_pct : 0) + "%";
-    bar.style.minWidth = (d.bar_pct > 0 ? 6 : 0) + "px";
-    bar.className = d.bar_hot ? "hot" : (state === "near" ? "near" : "");
+      st.className = "ctxstate " + state; }
+    const bar = $("ctxBar");
+    if (bar) { bar.style.width = (d.bar_pct != null ? d.bar_pct : 0) + "%";
+      bar.style.minWidth = (d.bar_pct > 0 ? 6 : 0) + "px";
+      bar.className = d.bar_hot ? "hot" : (state === "near" ? "near" : ""); }
     // JAG-359: the topbar ctx indicator is a small ring + % (red from 70% up); the
     // full "used / budget · %" string moves to the tooltip instead of the label.
     const pct = (d.pct != null ? d.pct : 0);
@@ -3515,9 +3580,9 @@ if ($("costRefresh")) $("costRefresh").onclick = async () => {
 };
 async function compactNow() {
   if (!sessionId) { alert("no active session"); return; }
-  const btn = $("compactBtn"); btn.textContent = "🗜 compacting…";
+  const btn = $("compactBtn"); if (btn) btn.textContent = "🗜 compacting…";
   const r = await api("POST", "/api/context/compact", { session: sessionId });
-  btn.textContent = "🗜 Compact context";
+  if (btn) btn.textContent = "🗜 Compact context";
   if (r.error) { alert(r.error); return; }
   const kind = r.summary === "llm" ? ("llm:" + (r.summarizer || "?")) : (r.summary || "—");
   const afterN = (r.messages_after != null ? r.messages_after : (r.input_messages - r.compacted));
@@ -4241,6 +4306,10 @@ function connectFeed() {
   es.addEventListener("chat.done", e => {
     let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
     setRunning(d.session, false);   // JAG-323: any session's turn ended -> clear its busy marker
+    // JAG-415: a turn that ended while the user was on ANOTHER session gets the
+    // "finished" bell + toast (same mechanism as in-tab turns), so a background
+    // agent/team turn is never silently missed.
+    if (d.session && d.session !== sessionId) markDone(d.session);
     push("💬 chat done"); loadCtx();
     // Not already streaming it (the attached turn reloads itself on `done`): pull
     // the persisted reply so an off-screen turn's answer is never left unrendered.
@@ -5337,7 +5406,7 @@ function _loadInspector(name) {
   else if (key === "rules") { loadRulesPanel(); }
   else if (key === "approvals") { loadApprovals(); }
   else if (key === "files") { loadFiles(); loadEdits(); loadRules(); }
-  else if (key === "codebase") { cbStatus(); }
+  else if (key === "codebase") { cbStatus(); loadIndexCfg(); }
 }
 function focusInsp(name) {
   const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", feed: "feed" };
@@ -5425,6 +5494,14 @@ async function cbClear() {
   if (typeof confirmDelete === "function" && !(await confirmDelete("delete THIS workspace's codebase index?"))) return;
   try { await api("POST", "/api/codebase/clear", { session: sessionId || undefined }); cbStatus(); } catch (e) {}
 }
+/* JAG-415: the "auto-index before an agent searches" flag (shared index config). */
+async function loadIndexCfg() {
+  try { const c = await api("GET", "/api/index/config"); const cfg = (c && c.config) || c || {}; const el = $("cbAutoIndex"); if (el) el.checked = cfg.auto_index !== false; } catch (e) {}
+}
+{ const el = $("cbAutoIndex"); if (el) el.onchange = async () => {
+    const r = await api("POST", "/api/index/config", { auto_index: el.checked });
+    if (typeof toast === "function") toast("auto-index " + ((r && r.auto_index) ? "on" : "off"), "ok");
+  }; }
 
 /* ---- JAG-403: EMBEDDING model catalogue + cost log ---- */
 let emCatalogue = [];
@@ -6436,6 +6513,13 @@ function saveToken() {
 }
 
 $("palette-open").onclick = openPalette;
+/* JAG-415: topbar "☰" app menu (settings · bridge · sandbox). */
+(function () {
+  const btn = $("appmenuBtn"), menu = $("appMenu");
+  if (!btn || !menu) return;
+  btn.onclick = (e) => { e.stopPropagation(); const open = menu.hidden; menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
+  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".appmenu-wrap")) menu.hidden = true; });
+})();
 
 /* ---- v0.8.1 resizable columns + panel toggles ---- */
 /* JAG-361: the centre column's floor, in CSS px. A side panel may never grow so
@@ -6810,13 +6894,23 @@ $("inp").addEventListener("keydown", e => {
   if (e.key === "Escape" && menu) menu.hidden = true;
 });
 $("taskInp").addEventListener("keydown", e => { if (e.key === "Enter") addTask(); });
+/* JAG-415: the composer textarea auto-grows with its content up to 160px, then
+   scrolls. Reset to auto first so it can also SHRINK when text is deleted. */
+function _growInp() {
+  const el = $("inp"); if (!el) return;
+  const max = 160;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, max) + "px";
+  el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+}
+$("inp").addEventListener("input", _growInp);
 $("sessInp").addEventListener("keydown", e => { if (e.key === "Enter") newSession(); });
 $("agentBtn").onclick = () => { const g = $("inp").value.trim() || "make progress on the current plan"; $("inp").value = ""; $("inp").style.height = ""; runAgent(g); };
 $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
-  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus();
+  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg();
   // auto-open the workspace tree of a restored-open Files panel (no manual ↻)
   { const _fs = document.querySelector('#inspector section[data-insp="files"]');
     if (_fs && _fs.classList.contains("insp-open")) { loadFiles(); loadEdits(); } }

@@ -125,6 +125,23 @@ All notable changes to Longrun are documented here. The format follows
 - **UI polish (JAG-403j).** The composer toolbar is now a FLAT strip (no per-button frames —
   only *send* keeps its button shape). The Notebooks list is a collapsible `<details>` menu
   whose summary shows the active notebook + its source count.
+- **Composer + session rail redesign, and a 1-month cost cap (JAG-415).** Seven WebUI changes.
+  **Composer:** the textarea now **auto-grows** with the text up to 160 px then scrolls; the
+  font is smaller (12.5 px); the button row is decluttered — **reset** moved into the **⋯**
+  overflow menu, **run agent** too, and **stop** is a compact **■** icon. **Session rail:** the
+  **◇ No team** group now sits right BELOW **📌 Pinned** (before the teams), and rows inside
+  every group are ordered by the **ORG tree** (orchestrators first, a depth-first `reports_to`
+  walk) instead of "last used". A **redirect** (rail click or an Orbit double-click on a
+  constellation/task node) now **expands** the target session's team group if it was collapsed
+  (and only then — a plain re-render never fights the user's own collapse). A turn that
+  **finished while you were on another session** now raises the same bell + toast as an in-tab
+  turn. **Inspector:** **settings / Bridge / command palette / sandbox** moved off the topbar
+  into a single **☰** app menu (the Context tab is UNCHANGED and stays).
+  **Codebase:** a new **"auto-index before an agent searches"** checkbox (shared index config,
+  default ON) makes the agent's `index` search run a quick incremental rebuild first and
+  **wait** for it — concurrent agents serialize on the build lock, so the index is never queried
+  stale or half-built. **Cost:** both ledgers (per-session model calls and the embedding log)
+  now keep at most **one month** of history. Battery 137/137.
 
 ### Fixed
 - **Embeddings were silently never stored — the semantic layer was dead (JAG-403k).** The
