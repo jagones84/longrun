@@ -1170,7 +1170,7 @@
             <option value="queue">＋ queue</option>
             <option value="steer">⇢ steer</option>
           </select>
-          <button class="ghost" id="micBtn" title="voice input — browser speech-to-text (Chrome/Edge; needs a microphone + permission)">🎙</button>
+          <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence">🎙</button>
         </div>
         <div class="cb-right">
           <div class="model-wrap">
@@ -2616,6 +2616,8 @@ function confirmTextModal() {
    microphone + permission; over a plain-HTTP LAN origin the browser blocks it,
    so instead of failing silently we explain exactly how to enable it. */
 let _rec = null, _recOn = false;
+// JAG-416: after this much silence with no new speech, the mic closes by itself.
+const VOICE_SILENCE_MS = 3000;
 function voiceHelp(reason) {
   const secure = !!window.isSecureContext;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2644,23 +2646,33 @@ function voiceHelp(reason) {
   }
   if (secure && SR) {
     rows.push("When you click the mic, the browser asks for permission the first time. Grant it from the address-bar icon (🔒/⚙ → Microphone → Allow). It needs a real microphone on the machine running the browser.");
+    rows.push("Press <b>Alt+X</b> to start/stop. The mic closes by itself after <b>3 s of silence</b>; the text lands in the message bar for you to review and send.");
   }
   rows.push('<span class="remaining">On a host with no microphone (e.g. the DGX server itself) voice is unavailable — open the UI on the machine that has the mic.</span>');
   $("voiceHelpBody").innerHTML = rows.map(r => '<div style="margin:3px 0">' + r + "</div>").join("");
   $("voiceBackdrop").hidden = false; $("voiceHelp").hidden = false;
 }
 function closeVoiceHelp() { $("voiceBackdrop").hidden = true; $("voiceHelp").hidden = true; }
+/* JAG-416: stop the recognizer (called on toggle, on the silence timer, and on end). */
+let _recSilence = null;
+function _recSilenceStop() {
+  if (_recSilence) { clearTimeout(_recSilence); _recSilence = null; }
+  if (_recOn && _rec) { try { _rec.stop(); } catch (e) {} }
+}
 function micToggle() {
   const mic = $("micBtn");
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!window.isSecureContext) { voiceHelp("Voice input is blocked on an insecure origin."); return; }
   if (!SR) { voiceHelp("The browser Speech API is not available."); return; }
-  if (_recOn) { try { _rec.stop(); } catch (e) {} return; }
+  if (_recOn) { _recSilenceStop(); return; }
   try {
     _rec = new SR();
     _rec.lang = navigator.language || "en-US";
     _rec.continuous = true; _rec.interimResults = true;
     const inp = $("inp"); let base = inp.value ? inp.value.replace(/\s*$/, " ") : "";
+    // JAG-416: reset the silence timer on every result, so a natural pause closes the
+    // mic and the transcript stays in the message bar for the user to review + send.
+    const _bump = () => { if (_recSilence) clearTimeout(_recSilence); _recSilence = setTimeout(_recSilenceStop, VOICE_SILENCE_MS); };
     _rec.onresult = (ev) => {
       let fin = "", itr = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -2670,14 +2682,16 @@ function micToggle() {
       base += fin;
       inp.value = base + itr;
       inp.dispatchEvent(new Event("input"));
+      _bump();
     };
     _rec.onerror = (ev) => {
       _recOn = false; if (mic) mic.classList.remove("rec");
+      if (_recSilence) { clearTimeout(_recSilence); _recSilence = null; }
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") voiceHelp("Microphone permission was denied.");
       else if (ev.error === "audio-capture") voiceHelp("No microphone was found on this device.");
     };
-    _rec.onend = () => { _recOn = false; if (mic) mic.classList.remove("rec"); };
-    _rec.start(); _recOn = true; if (mic) mic.classList.add("rec");
+    _rec.onend = () => { _recOn = false; if (mic) mic.classList.remove("rec"); if (_recSilence) { clearTimeout(_recSilence); _recSilence = null; } };
+    _rec.start(); _recOn = true; if (mic) mic.classList.add("rec"); _bump();
   } catch (e) { _recOn = false; if (mic) mic.classList.remove("rec"); voiceHelp("Could not start voice input."); }
 }
 $("micBtn").onclick = micToggle;
@@ -6910,6 +6924,8 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && !$("mcpJsonWin").hidden) { closeMcpJson(); return; }
   if (e.key === "Escape" && settingsWin() && !settingsWin().hidden) { closeSettings(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); openPalette(); }
+  // JAG-416: Alt+X toggles voice input (start / stop).
+  if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "x" || e.key === "X")) { e.preventDefault(); micToggle(); }
   if (e.key === "Escape") { closePalette(); closeNewSess(); closeDirPicker(); closeImage(); }
 });
 /* JAG-121c: Enter = newline, Ctrl/Cmd+Enter = send (chat textarea) */
