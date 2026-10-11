@@ -223,22 +223,21 @@
 </head>
 <body>
 <header>
-  <span class="led" id="led"></span>
   <span class="logo">⚡ LONGRUN</span>
   <nav class="topTabs" aria-label="top-level sections">
     <a class="ttab" href="/">Sessions</a>
     <span class="ttab active" aria-current="page">Control</span>
   </nav>
   <span class="spacer"></span>
-  <button class="btn ghost mini" id="rzReset" title="reset panel sizes">reset layout</button>
 </header>
 
 <main class="wrap">
   <div class="grid2 ab">
     <!-- Agents: available agents, creatable with +, each with a model + reports-to -->
     <section class="panel ag">
-      <h2>Agents <span class="n" id="agCount">—</span>
+      <h2><span class="led" id="led" title="feed connected"></span> Agents <span class="n" id="agCount">—</span>
         <span class="ctools">
+          <button class="btn ghost mini" id="rzReset" title="reset panel sizes">reset layout</button>
           <button class="btn ghost mini" id="agCollapseAll" title="collapse all groups">▲</button>
           <button class="btn ghost mini" id="agExpandAll" title="expand all groups">▼</button>
         </span></h2>
