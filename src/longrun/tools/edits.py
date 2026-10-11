@@ -89,6 +89,25 @@ def record(key, path, before, after, action="modified"):
     return {"ok": True, "add": add, "del": dele, "action": entry["action"]}
 
 
+def entries(key):
+    """JAG-426: the raw journal entries for a key (oldest first), read-only."""
+    return _load(key)
+
+
+def drop_after(key, upto_ts):
+    """JAG-426: drop the entries a rewind just unwound (ts > upto_ts).
+
+    The journal is append-only, so a time-bounded cut is the correct way to keep
+    the pre-rewind history while clearing what the rewind invalidated. Returns the
+    number of entries kept.
+    """
+    with _lock:
+        rows = _load(key)
+        keep = [e for e in rows if float(e.get("ts") or 0) <= float(upto_ts or 0)]
+        _save(key, keep)
+        return len(keep)
+
+
 def summary(key):
     """Per-file aggregate + totals for an IDE-style change summary.
 

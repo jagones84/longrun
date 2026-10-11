@@ -127,6 +127,25 @@ def prune_events(keep=None):
             return removed
 
 
+def truncate(session=None, upto_id=None):
+    """JAG-426: drop the events a rewind invalidated (session-scoped, id > upto_id).
+
+    Session filtering mirrors `query_events` — the session id lives inside the JSON
+    `data` blob, there is no dedicated column. Returns the number of rows removed.
+    """
+    if not session or upto_id is None:
+        return 0
+    try:
+        cut = int(upto_id)
+    except (TypeError, ValueError):
+        return 0
+    with _db_lock:
+        cur = db().execute("DELETE FROM events WHERE id > ? AND data LIKE ?",
+                           (cut, '%"session": "' + str(session) + '"%'))
+        db().commit()
+        return cur.rowcount
+
+
 def _start_event_pruning():
     """JAG-300: prune once at start, then every PRUNE_INTERVAL_S (daemon thread)."""
     def loop():

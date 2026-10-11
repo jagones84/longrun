@@ -1250,6 +1250,16 @@ class Handler(BaseHTTPRequestHandler):
                 session=qs.get("session"), kind=qs.get("kind"),
                 since=qs.get("since"), until=qs.get("until"),
                 limit=_int_arg(qs, "limit", 200))})
+        if path == "/api/checkpoints":
+            # JAG-426: this session's rewind points (turn anchors) + every checkpoint.
+            from longrun.memory import rewind as _rewind
+            from longrun.memory import checkpoints as _ck
+            sid = qs.get("session")
+            if not sid:
+                return self._send(400, {"error": "session required"})
+            allc = [c for c in _ck.list_checkpoints(500) if c.get("session_id") == sid]
+            return self._send(200, {"session": sid, "marks": _rewind.marks(sid),
+                                    "checkpoints": allc})
         if path == "/api/chat/live":
             # JAG-181: which sessions currently have a chat turn running (for the
             # WebUI to re-attach after a refresh / session switch).
@@ -1398,6 +1408,12 @@ class Handler(BaseHTTPRequestHandler):
                 # JAG-157: explicit model wins, else the session's own model.
                 sess = prepare_session_for_turn(sess, body.get("model") or sess.get("model"))  # JAG-70: auto-compact @75%
                 mark = session_mark(sess)  # JAG-51: boundary of this request
+                # JAG-426: anchor this turn for rewind (same rule as the stream path).
+                try:
+                    from longrun.memory import rewind as _rewind
+                    _rewind.mark(sess["id"], mark, label="turn %s" % mark)
+                except Exception:  # noqa: BLE001
+                    pass
                 append_message(sess, "user", message)
                 publish("chat.user", session=sess["id"], text=message)
                 # JAG-325: bracket this turn in the active-turn registry too — the
@@ -1595,6 +1611,30 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session not found"})
             ref = _set_session_model(sid, body.get("model"))
             return self._send(200, {"ok": True, "session": sid, "model": ref})
+        if path == "/api/checkpoints":
+            # JAG-426: create a manual restore point (the anchor for a later rewind).
+            from longrun.memory import checkpoints as _ck
+            sid = body.get("session") or None
+            r = _ck.create(label=body.get("label"), session_id=sid, by="api")
+            return self._send(200 if not r.get("error") else 400, r)
+        if path == "/api/checkpoints/restore":
+            # JAG-426: generic restore of one checkpoint (the non-turn-aware primitive).
+            from longrun.memory import checkpoints as _ck
+            cid = body.get("id")
+            if not cid:
+                return self._send(400, {"error": "id required"})
+            r = _ck.rollback(cid)
+            return self._send(200 if r.get("ok") else 400, r)
+        if path == "/api/rewind":
+            # JAG-426: restore a session to the state before user message `msg_index`.
+            from longrun.memory import rewind as _rewind
+            sid = body.get("session")
+            if not sid:
+                return self._send(400, {"error": "session required"})
+            if body.get("msg_index") is None:
+                return self._send(400, {"error": "msg_index required"})
+            r = _rewind.rewind(sid, body.get("msg_index"), by="api")
+            return self._send(200 if r.get("ok") else 400, r)
         if path == "/api/eval/run":
             return self._send(200, eval_run(body.get("model"), _as_int(body.get("max_steps", 6), 6),
                                             body.get("task_id"), body.get("save", True)))
