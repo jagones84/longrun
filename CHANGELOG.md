@@ -7,6 +7,22 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Harness audit + six upgrades (JAG-426).** A six-domain "harness maxing" pass, shipped in three
+  waves and pinned by `v414`-`v421` (battery 137 → 145). (1) **Native self-diagnosis** —
+  `tools/diag.py` (`health`/`log_tail`/`context`/`tools_report`) exposed through the `self` tool
+  (`action: info|diagnose|logs|context|tools`); every probe degrades gracefully and none depends on
+  PMC. (2) **Per-turn checkpoint & rewind** — `memory/rewind.py` anchors a rewind point on every user
+  turn (both chat paths) and `POST /api/rewind` restores the plan, task list, transcript, workspace
+  files **and** truncates the event log to that turn; `POST /api/checkpoints[/restore]` +
+  `GET /api/checkpoints` expose the restore points. (3) **Benchmark adapter + runners** —
+  `benchmarks/` ships a harness-agnostic `HarnessAdapter` protocol (Claw-SWE-Bench style), a
+  REST-only Longrun adapter, a generic `runner.py` (emits `predictions.jsonl` + `summary.json` with
+  provenance) and a HumanEval runner that uses each task's OWN functional test (scoring is never
+  re-implemented). (4) **Autonomous skills confined** — self-evolve now defaults to
+  `skills/created/` with a core-immutable guard and a creation cap, tagging provenance `origin:auto`.
+  (5) **Baseline toolset** — native `python`, `process` (`list`) and `glob` tools. (6) **Local
+  decision layer** — `model/decision.py` (Protocol + null/heuristic models, fail-open) with
+  `config/decisions.yaml` (disabled by default) and hooks for speculative reads and route hints.
 - **Vision input — image attachments now reach the model (JAG-417).** An image attached in the
   composer is sent to vision-capable LLMs as an OpenAI `image_url` content block (base64 data URL),
   not just a text note, so the model actually sees the image. `config/providers.yaml` flags the DGX

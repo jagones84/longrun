@@ -358,6 +358,16 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
         except Exception:
             model = srv.default_model()
     st.model = model
+    # JAG-426 (Domain 6): let the local decision layer override the step model
+    # (route hint). `mode: null` returns an empty hint, so this is a no-op by default.
+    try:
+        from longrun.model import decision as _decision
+        _hint = _decision.get().route(_decision.StepCtx(role="agent", goal=goal))
+        if getattr(_hint, "model", ""):
+            model = _hint.model
+            st.model = model
+    except Exception:  # noqa: BLE001 — a routing hint must never break a run
+        pass
     # v0.3 checkpoint at run start (idempotent per run) so plan/tasks/transcript
     # survive a restart and can be rolled back after a bad run.
     try:

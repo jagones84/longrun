@@ -1,0 +1,22 @@
+# Longrun local decision-model hooks — JAG-426 (Domain 6)
+#
+# A pluggable layer in front of the agent loop so a cheap LOCAL model (or the pure
+# heuristic) can take the high-frequency decisions: which model takes the step
+# (route), which candidate actions are worth trying (prune), and which action is
+# futile/denied BEFORE the approval round-trip (validate). Pattern: NVIDIA NeMo
+# Switchyard — "plans route up to the frontier, execution routes down to Lightning".
+#
+# Default OFF: `mode: null` is a strict no-op, so the harness behaves exactly as
+# before. Every hook FAILS OPEN — a decision error never blocks a valid action.
+
+enabled: false          # master switch
+mode: null              # null | heuristic | local   (a deployment may add 'local')
+
+# Speculative execution: predict the next tool call and prefetch its result.
+# OFF by default on purpose — on a single-GPU box the prefetch competes with the
+# real turn, so it only pays with a genuine predictor. Restricted to read-only
+# tools when enabled, and never routed through the approval gate or the hooks.
+speculative:
+  enabled: false
+  k: 2                  # how many next tools to predict
+  readonly_only: true   # never prefetch a mutating tool

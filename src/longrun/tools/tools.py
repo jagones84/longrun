@@ -1195,6 +1195,18 @@ def execute(tool, args, run_id=None):
         return {"ok": False, "tool": tool, "args": args or {}, "exit_code": 126,
                 "hook_blocked": True,
                 "error": "blocked by PreToolUse hook: %s" % pre.get("reason")}
+    # JAG-426 (Domain 6): the local decision layer may reject a futile/denied action
+    # BEFORE the approval round-trip. `mode: null` is a no-op and every error fails
+    # OPEN, so this can never block a legitimate call.
+    try:
+        from longrun.model import decision as _decision
+        _v = _decision.pre_tool(tool, args)
+        if not _v.get("ok", True):
+            return {"ok": False, "tool": tool, "args": args or {}, "exit_code": 127,
+                    "decision_blocked": True, "decision_model": _v.get("model"),
+                    "error": "blocked by the decision layer: %s" % _v.get("reason")}
+    except Exception:  # noqa: BLE001 — the decision layer must never break a tool
+        pass
     res = None
     try:
         res = _dispatch_execute(tool, args, run_id=run_id)
