@@ -52,6 +52,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS, AUTOCOMPACT_PCT, AUTO
                      selfcheck_payload, session_mark, sse_pump, sse_response,
                      start_run_graph, state_block, stream_with_fallback, system_prompt,
                      turn_begin, turn_end, voice_status, voice_stt, voice_tts)
+from longrun.orbit.api import WEB as ORBIT_WEB
 
 
 # ------------------------------------------------------------------ HTTP ----
@@ -1144,13 +1145,18 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build":
-            # JAG-362: a cheap fingerprint of the served SPA so a long-lived tab
+            # JAG-362: a cheap fingerprint of the served UIs so a long-lived tab
             # can notice that the app was updated and reload itself — the reason
-            # a freshly-fixed UI could keep looking stale in an open tab.
+            # a freshly-fixed UI could keep looking stale in an open tab. It MUST
+            # cover EVERY self-contained shell: index.html (main SPA) AND the
+            # Control deck's orbit.html. Fingerprinting only index.html left an
+            # open tab blind to an orbit.html change (e.g. a new resize bar), so
+            # the Control iframe stayed stale until a manual reload.
+            _uif = (os.path.join(WEBUI_DIR, "index.html"),
+                    os.path.join(ORBIT_WEB, "orbit.html"))
             try:
-                _b = "%d-%d" % tuple(int(x) for x in (
-                    os.stat(os.path.join(WEBUI_DIR, "index.html")).st_mtime,
-                    os.stat(os.path.join(WEBUI_DIR, "index.html")).st_size))
+                _b = "-".join("%d-%d" % (int(os.stat(p).st_mtime), os.stat(p).st_size)
+                              for p in _uif)
             except OSError:
                 _b = ""
             return self._send(200, {"build": _b})

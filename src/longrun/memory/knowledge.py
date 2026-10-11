@@ -253,6 +253,10 @@ def add_source(notebook, ref):
             db.commit()
             embedded = db.execute("SELECT count(*) c FROM chunks WHERE source=? AND vec IS NOT NULL",
                                   (sid,)).fetchone()["c"]
+            if em and n and embedded == 0 and not embed_err:
+                # the embedder ran but stored nothing (endpoint/key/model unavailable) —
+                # surface it instead of silently shipping a lexical-only source.
+                embed_err = "embedding produced no vectors (endpoint, key or model unavailable)"
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
                     "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
                     "title": ref if kind == "url" else base}
