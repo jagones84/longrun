@@ -12,7 +12,7 @@ mobile-ready HTTP API — all from one process on `:8790`.
               │  SSE  ▲  │ HTTP          │  SSE ▲                │ SSE ▲         │
               ▼       │  ▼               ▼      │                ▼     │         ▼
         ┌───────────────────────────────────────────────────────────────────────────┐
-        │                         server.py  (:8790)                                  │
+        │                  server.py  (:8790 http · :8791 https)                      │
         │   chat (stream)   │   agent loop   │   jobs/orchestration   │   teams         │
         │   ────────────────┼────────────────┼────────────────────────┼──────────────   │
         │   taskgraph       │   tools+registry│  providers/routing    │   memory         │
@@ -81,18 +81,22 @@ bus and persisted, so a reload rebuilds the transcript and the task graph.
 | `orchestrate/` | `jobs.py`, `orchestration.py`, `teams.py`, `routines.py`, `roles.py` |
 | `plan/` | `taskgraph.py`, `keepgoing.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py` |
 | `tools/` | `tools.py`, `registry.py`, `approvals.py`, `sandbox.py`, `hooks.py`, `edits.py`, `term.py` |
-| `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py` |
-| `memory/` | `memory.py`, `skills.py`, `rules.py`, `checkpoints.py`, `stores.py` |
+| `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py`, `embed.py` |
+| `memory/` | `memory.py`, `skills.py`, `rules.py`, `checkpoints.py`, `stores.py`, `knowledge.py`, `codeindex.py`, `vectors.py`, `embedcfg.py`, `indexcfg.py`, `chunk.py`, `costlog.py`, `docio.py` |
 | `interop/` | `mcp.py`, `mcp_client.py`, `mcp_server.py`, `acp.py` |
 | `util/` | `osutil.py`, `paths.py`, `textkit.py`, `steering.py`, `tracing.py`, `voice.py`, `evals.py`, `meta.py`, `selfevolve.py`, `improve.py` |
-| `orbit/` | the mission-control deck (`/orbit`) |
+| `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
+| `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |
 
 ## Data stores (`data/`, gitignored)
 
 `sessions/` (transcripts) · `graphs/` (per-session task graphs) · `runs/` (traces +
 token/cost) · `edits/` (diff journal) · `memory/` · `checkpoints/` · `offload/` (oversized
-observations spilled to files) · `agents.json` · `teams.json` · `jobs.json` ·
-`events.db` (durable SSE feed). Writes are atomic (`tmp` + `os.replace`).
+observations spilled to files) · `codebase/` (per-workspace FTS+vector index) ·
+`knowledge/` + `embedding/` (global notebook index + its cost log) · `costs/` (per-session
+model-call ledger) · `prices.json` · `tls/` (auto self-signed cert for HTTPS) ·
+`agents.json` · `teams.json` · `jobs.json` · `events.db` (durable SSE feed). Writes are
+atomic (`tmp` + `os.replace`).
 
 ## Safety model
 
@@ -108,7 +112,9 @@ or `bwrap` / `nsjail`) so the agent never touches the host. Hard-denied patterns
 - **Orbit** `src/longrun/orbit/` — optional command deck at `/orbit`: org chart,
   constellation, job create/dispatch, team selector, model policy.
 - **CLI** `forge.py` — chat, agent runs, tasks, models, MCP.
-- **HTTP API** — see [CLI.md](CLI.md); optional bearer auth (`--token`).
+- **HTTP API** — see [CLI.md](CLI.md); optional bearer auth (`--token`). The server also
+  listens over **HTTPS** on `--port + 1` (self-signed cert auto-generated in `data/tls/`,
+  `LONGRUN_TLS=0` to disable) so the page is a *secure context* and browser voice input works.
 
 ## Entry points
 
