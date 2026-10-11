@@ -161,6 +161,12 @@ def _glob(args, run_id):
     pattern = str((args or {}).get("pattern") or "").strip()
     if not pattern:
         return {"ok": False, "error": "pattern required"}
+    # An ABSOLUTE pattern makes os.path.join discard `root`, so `{"pattern":
+    # "/etc/*"}` listed the whole filesystem regardless of the allow-list. Reject
+    # it up front; a `../` pattern is caught by the confinement filter below.
+    if os.path.isabs(pattern):
+        return {"ok": False,
+                "error": "pattern must be RELATIVE to the root (absolute paths escape the allow-list)"}
     try:
         roots = registry.tool_spec("glob")["roots"]
     except Exception:  # noqa: BLE001
@@ -176,8 +182,12 @@ def _glob(args, run_id):
     except (TypeError, ValueError):
         cap = 200
     hits = []
+    root_real = os.path.realpath(root)
     for m in _g.iglob(os.path.join(root, pattern), recursive=True):
-        if os.path.isfile(m):
+        # Confinement: a `../` (or otherwise escaping) pattern may expand outside
+        # `root`; keep only real paths that stay inside it. The tool is read-only,
+        # but the roots are the advertised boundary — same rule as fs.read.
+        if os.path.isfile(m) and registry._under(os.path.realpath(m), root_real):
             hits.append(os.path.relpath(m, root))
             if len(hits) >= cap:
                 break

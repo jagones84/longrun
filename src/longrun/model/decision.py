@@ -143,6 +143,11 @@ class HeuristicDecision:
 _DEFAULTS = {"enabled": False, "mode": "null",
              "speculative": {"enabled": False, "k": 2, "readonly_only": True}}
 
+# JAG-426-fix: `pre_tool` runs on EVERY tool call, and it used to re-read + re-parse
+# `config/decisions.yaml` on each one (twice). Memoise on (path, mtime, size) so the
+# no-op layer costs nothing on the hot path while an edited config still applies.
+_cfg_cache = {"key": None, "cfg": None}
+
 
 def _path():
     global CONFIG_PATH
@@ -156,11 +161,25 @@ def _path():
     return CONFIG_PATH
 
 
+def _stat_key(path):
+    try:
+        st = os.stat(path)
+        return (path, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (path, None, None)
+
+
 def load_config():
+    # Absent file / bad stat -> a cacheable "missing" key, so a later appearance
+    # of the file still invalidates the entry.
+    path = _path()
+    key = _stat_key(path)
+    if _cfg_cache["key"] == key and _cfg_cache["cfg"] is not None:
+        return dict(_cfg_cache["cfg"])
     cfg = {"speculative": dict(_DEFAULTS["speculative"])}
     cfg.update({k: v for k, v in _DEFAULTS.items() if k != "speculative"})
     try:
-        with open(_path(), encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             raw = f.read()
         try:
             import yaml
@@ -176,7 +195,9 @@ def load_config():
                     cfg["speculative"].update(v)
     except OSError:
         pass
-    return cfg
+    _cfg_cache["key"] = key
+    _cfg_cache["cfg"] = cfg
+    return dict(cfg)
 
 
 def get():
@@ -201,7 +222,8 @@ def speculative(cfg=None):
 def pre_tool(tool, args, ctx=None):
     """Guard a tool call BEFORE the approval round-trip. FAIL-OPEN by design."""
     try:
-        v = get().validate(ctx or StepCtx(), {"tool": tool, "args": args or {}})
-        return {"ok": bool(v.ok), "reason": v.reason, "model": get().name}
+        d = get()
+        v = d.validate(ctx or StepCtx(), {"tool": tool, "args": args or {}})
+        return {"ok": bool(v.ok), "reason": v.reason, "model": d.name}
     except Exception:  # noqa: BLE001 — a decision must never block a valid action
         return {"ok": True, "reason": "", "model": "null"}

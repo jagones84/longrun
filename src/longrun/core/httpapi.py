@@ -135,14 +135,6 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     q = queue.Queue()
     done = {"flag": False}
     since = mark if mark is not None else max(0, session_mark(sess) - 1)
-    # JAG-426: anchor this turn so it can be rewound. `since` is the index of the
-    # user message in the transcript, so the snapshot captures the state the turn
-    # STARTED from; idempotent, and it can never break the turn.
-    try:
-        from longrun.memory import rewind as _rewind
-        _rewind.mark(sess["id"], since, label="turn %s" % since)
-    except Exception:  # noqa: BLE001
-        pass
     # JAG-181: register this turn as ACTIVE for its session, capturing the feed id
     # at turn start, so a re-attaching client can replay the whole turn.
     # JAG-299: a unique token per turn — the worker must only clear the
@@ -186,6 +178,16 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                 sess = _fresh
             sess = prepare_session_for_turn(sess, model or sess.get("model"))
             since = session_mark(sess)
+            # JAG-426: anchor this turn so it can be rewound. It MUST run INSIDE the
+            # turn lock and AFTER the authoritative `since` is known (JAG-201): a
+            # mark created in the request thread raced a concurrent turn on the same
+            # session and reused an idempotency key, so the anchor pointed at the
+            # wrong message (or the wrong snapshot). Same rule as the sync path.
+            try:
+                from longrun.memory import rewind as _rewind
+                _rewind.mark(sess["id"], since, label="turn %s" % since)
+            except Exception:  # noqa: BLE001 — an anchor must never break the turn
+                pass
             append_message(sess, "user", message,
                            meta=({"sender": sender, "subjob": subjob}
                                  if (sender or subjob) else None))

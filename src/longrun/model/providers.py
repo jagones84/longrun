@@ -13,6 +13,7 @@ No secret is ever written to the repository: a provider only names its
 `api_key_env`, and the value is read from the environment / .env file.
 """
 
+import atexit
 import json
 import os
 import re
@@ -30,6 +31,46 @@ DEFAULTS = {"version": "1", "env_files": [".env", "~/.hermes/.env"],
 
 _cache = {"ts": None, "cfg": None}
 _env_loaded = False
+
+# JAG-426-fix: the metadata refreshes below run in background threads and do
+# network I/O (`urlopen` -> SSL -> libcrypto). A daemon thread still executing
+# inside libcrypto when the interpreter unloads its shared libraries (`_dl_fini`
+# in `exit()`) segfaults the whole process. Reproduced: `context_budget()` ->
+# `local_contexts()` spawned such a thread and ~80% of short-lived runs (the
+# acceptance tests) died with SIGSEGV AFTER printing their results. Fix: keep a
+# handle on every such thread and JOIN it from an atexit hook (which runs during
+# finalisation, BEFORE the .so files are unloaded), bounded by the fetch timeouts.
+_BG_LOCK = threading.Lock()
+_BG_THREADS = set()
+_BG_JOIN_TIMEOUT = 15.0
+
+
+def _spawn_bg(target, name="lr-bg"):
+    """Start a tracked background thread that is joined at interpreter exit."""
+    def _wrap():
+        try:
+            target()
+        finally:
+            with _BG_LOCK:
+                _BG_THREADS.discard(t)
+    t = threading.Thread(target=_wrap, daemon=True, name=name)
+    with _BG_LOCK:
+        _BG_THREADS.add(t)
+    t.start()
+    return t
+
+
+def _join_bg():
+    with _BG_LOCK:
+        threads = list(_BG_THREADS)
+    for t in threads:
+        try:
+            t.join(timeout=_BG_JOIN_TIMEOUT)
+        except Exception:  # noqa: BLE001 — shutdown must never raise
+            pass
+
+
+atexit.register(_join_bg)
 
 
 def _to_int(x, default=0):
@@ -561,8 +602,8 @@ def local_contexts(pid, block=False):
         return cur
     if not block:
         if cur is None or (time.time() - ts) >= _LOCAL_CTX_TTL:
-            threading.Thread(target=lambda: local_contexts(pid, block=True),
-                             daemon=True).start()
+            # JAG-426-fix: tracked spawner (joined at exit) — not a bare daemon.
+            _spawn_bg(lambda: local_contexts(pid, block=True), name="lr-ctx")
         return cur or {}
     p = get(pid)
     if not p:
@@ -590,7 +631,8 @@ def warm():
                     local_contexts(p.get("id"), block=True)
                 except Exception:  # noqa: BLE001
                     pass
-    threading.Thread(target=_run, daemon=True).start()
+    # JAG-426-fix: tracked spawner (joined at exit) — this thread does HTTPS.
+    _spawn_bg(_run, name="lr-warm")
 
 
 def _local_live_ctx(pid, mid):

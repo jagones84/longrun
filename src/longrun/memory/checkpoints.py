@@ -141,8 +141,14 @@ def create_turn(session_id, msg_index, label=None, by="chat"):
                 idempotency_key="turn:%s:%s" % (session_id, msg_index), by=by)
     if cp.get("error"):
         return cp
-    return _stamp(cp["id"], {"kind": "turn", "msg_index": int(msg_index),
-                             "events_upto": _feed_seq()})
+    extra = {"kind": "turn", "msg_index": int(msg_index)}
+    # JAG-426-fix: a DUPLICATE mark (same session+message, e.g. a retried request)
+    # must keep the anchor's ORIGINAL event high-water. Re-stamping it with the
+    # current feed id moved the cut ABOVE the turn's own events, so a later rewind
+    # silently failed to truncate them. Only stamp it when it is not already set.
+    if cp.get("events_upto") is None:
+        extra["events_upto"] = _feed_seq()
+    return _stamp(cp["id"], extra)
 
 
 def get_by_idempotency_key(key):

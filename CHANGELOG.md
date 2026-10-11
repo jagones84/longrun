@@ -328,6 +328,25 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
+- **Harness-audit bug fixes (JAG-426 follow-up), battery 147/147.** Five defects found by auditing the
+  freshly shipped JAG-426 code, each pinned by a new acceptance test (`v422`, `v423`). (1) `glob`
+  escaped its allow-list through an **absolute** or `../` pattern — `os.path.join(root, "/etc/*")`
+  discards `root`, so it listed the whole filesystem regardless of policy; absolute patterns are now
+  rejected and every match is confined to the resolved root. (2) `events.feed_seq()` returned a
+  **process-local** counter that reset to 0 on restart, so a turn anchor stamped right after a boot
+  could carry an event cut BELOW the session history and a rewind would then drop far too many
+  events; it now reads the durable `MAX(id)`. (3) `checkpoints.create_turn` re-stamped `events_upto`
+  on an idempotent **duplicate** mark, moving the cut above the turn's own events (a rewind then
+  failed to truncate them); the original cut is now preserved. (4) `decision.pre_tool` built the
+  decision model twice and re-read/re-parsed `config/decisions.yaml` on **every** tool call; the
+  config is now memoised on `(path, mtime, size)`. (5) the streaming chat path anchored the rewind
+  point **outside** the turn lock with a stale message index (racing concurrent turns onto a shared
+  idempotency key); the anchor now lives inside the worker, like the sync path. Also fixed a
+  long-standing **exit-time SIGSEGV**: `context_budget()` -> `providers.local_contexts()` spawned a
+  bare `daemon=True` thread doing `urlopen` (SSL/libcrypto); at `sys.exit()` the interpreter's
+  `_dl_fini` unloaded libcrypto while that thread was still inside it (~80% of short-lived `v258`
+  runs died with exit 139 after printing 7/7). These refreshes now go through a tracked spawner that
+  is joined from an `atexit` hook, so the battery is deterministically green.
 - **Voice input over HTTPS, Role tab, composer fit (JAG-416c).** The server now also listens over
   **HTTPS** on a second port (`--port + 1`, self-signed certificate auto-generated into `data/tls/`,
   **on by default**; disable with `LONGRUN_TLS=0` or choose the port with `--tls-port`). Opening

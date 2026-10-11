@@ -180,7 +180,21 @@ _TURN_LOCKS_GUARD = threading.Lock()
 
 
 def feed_seq():
-    """Current monotonic feed id (a live read — `publish` rebinds the global)."""
+    """Current monotonic feed id — the DURABLE high-water mark.
+
+    JAG-426-fix: `_feed_seq` is a process-local counter that resets to 0 on every
+    restart, so an anchor stamped from it right after a boot could carry a cut
+    BELOW the session's history and a rewind would then drop far too many events.
+    Read the durable MAX(id) instead; fall back to the in-memory counter only if
+    the store is momentarily unavailable.
+    """
+    try:
+        with _db_lock:
+            mx = db().execute("SELECT MAX(id) FROM events").fetchone()[0]
+        if mx is not None:
+            return int(mx)
+    except Exception:  # noqa: BLE001 — never break a caller over the log
+        pass
     return _feed_seq
 
 
