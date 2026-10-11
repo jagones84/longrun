@@ -20,6 +20,8 @@ from longrun.model import embed as _embed
 from longrun.util import paths
 
 LOCK = threading.RLock()
+# JAG-415b: minimum age before an auto-index refresh re-walks the whole workspace.
+FRESH_WINDOW_S = 15
 
 
 def _slug(ws):
@@ -130,7 +132,9 @@ def build(ws, force=False):
                 except OSError:
                     continue
                 row = db.execute("SELECT mtime, size FROM files WHERE path=?", (abspath,)).fetchone()
-                if row and not force and abs(int(row["mtime"]) - int(st.st_mtime)) < 1 and row["size"] == st.st_size:
+                # JAG-415b: compare the RAW mtimes (float), not int()-truncated seconds,
+                # or a sub-second edit is missed and stale chunks survive.
+                if row and not force and abs(float(row["mtime"]) - st.st_mtime) < 1e-6 and row["size"] == st.st_size:
                     continue
                 text = _chunk.read_text(abspath, maxk)
                 if text is None:
@@ -184,6 +188,15 @@ def ensure_fresh(ws):
     """
     if not _cfg.auto_index():
         return None
+    # JAG-415b: cheap debounce. ``build`` walks the WHOLE workspace tree, so a burst
+    # of searches must not re-walk it every time; skip a rebuild that ran moments ago.
+    try:
+        st = status(ws)
+        built = st.get("built_at")
+        if built and (time.time() - float(built)) < FRESH_WINDOW_S:
+            return st
+    except Exception:  # noqa: BLE001 — a bad status must not block the build
+        pass
     try:
         return build(ws)
     except Exception:  # noqa: BLE001 — the search must still run on the old index

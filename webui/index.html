@@ -498,8 +498,13 @@
     color: var(--txt); background: rgba(127,127,127,.14); }
   #composerBar .cb-left > select { border: 0; background: transparent; color: var(--dim); }
   #composerBar .cb-left > select:hover { color: var(--txt); }
-  #composerBar #sendBtn { flex: 0 0 auto; font-weight: 700; }
-  #composerBar #sendBtn .kbd { opacity: .65; font-weight: 400; margin-left: 2px; }
+  /* JAG-416: send is a green CIRCULAR icon button (↑), Trae-style — icon only. */
+  #composerBar #sendBtn { flex: 0 0 auto; width: 34px; height: 34px; min-width: 34px; padding: 0;
+    border-radius: 50%; background: var(--ok); color: #05130b; font-size: 17px; font-weight: 800;
+    border: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  #composerBar #sendBtn:hover { filter: brightness(1.12); }
+  #composerBar #sendBtn:disabled { opacity: .5; cursor: default; }
+  #composerBar #sendBtn .kbd { display: none; }
   /* JAG-415: stop is a compact square ICON — a symbol, not a word, to save space. */
   #composerBar #stopBtn { flex: 0 0 auto; min-width: 34px; padding: 0 7px; font-size: 14px; }
   /* JAG-415: as the window narrows, the LLM selector shrinks gracefully (never
@@ -1097,7 +1102,7 @@
 <header id="topbar">
   <span class="logo">⚡ LONGRUN</span>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
-    <a class="ttab active" href="/" onclick="goSession();return false;" aria-current="page">Session</a>
+    <a class="ttab active" href="/" onclick="goSession();return false;" aria-current="page">Sessions</a>
     <a class="ttab" href="/orbit" onclick="goControl();return false;">Control</a>
   </nav>
   <span class="sub">agent harness · self-hosted · any OS</span>
@@ -1156,12 +1161,12 @@
             <option value="steer">⇢ steer</option>
           </select>
           <button class="ghost" id="micBtn" title="voice input — browser speech-to-text (Chrome/Edge; needs a microphone + permission)">🎙</button>
+        </div>
+        <div class="cb-right">
           <div class="model-wrap">
           <button class="ghost model-btn" id="model-btn" title="choose the LLM for this chat"><span class="mname">model</span> <span class="mc">▾</span></button>
           <div id="modelMenu" hidden></div>
           </div>
-        </div>
-        <div class="cb-right">
           <button class="ghost" id="stopBtn" onclick="stopRun()" title="stop agent / chat" aria-label="stop">■</button>
           <div class="more-wrap">
             <button class="ghost" id="moreBtn" title="more actions" aria-haspopup="true" aria-expanded="false">⋯</button>
@@ -1173,7 +1178,7 @@
               <button class="ghost mi" onclick="newSession()" title="start a new session">＋ new session</button>
             </div>
           </div>
-          <button id="sendBtn" onclick="send()" title="send (Ctrl+Enter)">send<span class="kbd">⏎</span></button>
+          <button id="sendBtn" onclick="send()" title="send (Ctrl+Enter)" aria-label="send">↑</button>
         </div>
       </div>
     </div>
@@ -2614,7 +2619,10 @@ function voiceHelp(reason) {
   if (!secure) {
     rows.push("This page is served over plain HTTP (<code>" + esc(location.origin) +
       "</code>). Browsers only allow the microphone on <b>HTTPS</b> or <b>localhost</b>, so it is blocked here.");
-    rows.push("<b>Fix A — easiest:</b> open the UI through a tunnel and use localhost:<br><code>ssh -L 8790:localhost:8790 dgx</code><br>then open <code>http://localhost:8790</code>.");
+    rows.push("<b>Fix A — easiest (Windows, one click):</b> run <code>scripts\\open-ui-voice.bat</code> " +
+      "(or <code>scripts\\open-ui-voice.ps1</code>) — it opens a localhost tunnel to the server and the browser, " +
+      "so the origin becomes secure and the 🎙 mic works. Manual equivalent:<br>" +
+      "<code>ssh -L 8790:localhost:8790 dgx</code><br>then open <code>http://localhost:8790</code>.");
     rows.push("<b>Fix B — Chrome/Edge flag:</b> open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, add <code>" +
       esc(location.origin) + "</code>, set <b>Enabled</b>, then relaunch the browser.");
   } else if (!SR) {
@@ -2910,7 +2918,7 @@ function _sessRowEl(s, pinnedIds, ag) {
   const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
   const _anum = _agentNum(s);
   const jid = _anum ? `<span class="jid" title="${ag ? "agent id " + esc(ag.id) : "session sequence"}">A${_anum}</span>` : "";
-  const agtag = ag ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + ag.reports.join(", ") : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
+  const agtag = ag ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + esc(ag.reports.join(", ")) : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
   // JAG-339: the team symbol(s) this agent belongs to (may be several).
   const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];
     return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
@@ -6894,8 +6902,6 @@ addEventListener("keydown", e => {
 $("inp").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
 });
-function _growInp() { const el = $("inp"); if (!el) return; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
-$("inp").addEventListener("input", _growInp);
 $("inp").addEventListener("input", skillsAutocomplete);
 /* JAG-116: track whether the reader is pinned to the bottom + the jump arrow */
 $("log").addEventListener("scroll", () => { _stick = _nearBottom(); updateJump(); });

@@ -151,6 +151,19 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
+- **UI follow-ups + bug fixes (JAG-416b).** Composer: the send action is now a **green circular
+  icon button (↑)** in the toolbar (Trae-style) instead of a "send ⏎" text button, and the model
+  selector moved to the right group. The first tab is labelled **Sessions** (plural). Voice input:
+  a new one-click Windows helper (**`scripts/open-ui-voice.ps1`** / **`.bat`**) opens a localhost
+  tunnel so the browser origin is a *secure context* and the Web Speech API (🎙) works from the
+  LAN; the in-app help points at it. Bugs fixed: a duplicate `_growInp` binding (the textarea
+  auto-grow ran twice per keystroke); an unescaped `ag.reports` in a session-row `title`
+  attribute (HTML-attribute injection); `costs._load` now DROPS (never crashes on) a malformed
+  ledger `ts` — one bad row used to break every subsequent cost record; the auto-index refresh is
+  debounced (15 s) so a burst of agent searches no longer re-walks the whole workspace each time;
+  the incremental index now compares RAW mtimes (a sub-second edit used to be missed); and
+  `index` search with no workspace returns a clear error instead of an opaque tool failure.
+  Battery 137/137.
 - **Embeddings were silently never stored — the semantic layer was dead (JAG-403k).** The
   embedding catalogue referenced providers (`cohere:`, `voyage:`, `jina:`) that were **not
   declared** in `config/providers.yaml`, so `providers.resolve()` returned `None`, the batch

@@ -261,8 +261,20 @@ def _load(session):
     if not isinstance(d, list):
         return []
     # JAG-415: bound the ledger to the last month so the file cannot grow forever.
+    # A malformed `ts` (truncated/corrupt write) must be DROPPED, never crash the
+    # caller — `record()` calls this on every LLM call.
     cutoff = time.time() - RETENTION_DAYS * 86400
-    return [c for c in d if isinstance(c, dict) and float(c.get("ts") or 0) >= cutoff]
+    out = []
+    for c in d:
+        if not isinstance(c, dict):
+            continue
+        try:
+            ts = float(c.get("ts") or 0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if ts >= cutoff:
+            out.append(c)
+    return out
 
 
 def _save(session, led):

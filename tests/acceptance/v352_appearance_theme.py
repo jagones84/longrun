@@ -106,11 +106,11 @@ check("G2 Sand gives the composer a light background; dark themes stay dark",
       "--composer: rgba(206,197,173,.85)" in HTML and "--composer: rgba(23,18,12,.7)" in HTML, "")
 
 # --- H: the deck is renamed Control (top-level tabs) ------------------------
-check("H1 the WebUI has top-level Session + Control tabs",
-      ">Session</a>" in HTML and ">Control</a>" in HTML and "location.href='/orbit'" in HTML, "")
+check("H1 the WebUI has top-level Sessions + Control tabs",
+      ">Sessions</a>" in HTML and ">Control</a>" in HTML and "location.href='/orbit'" in HTML, "")
 check("H2 the Control page title + its active tab",
       "<title>Control · Longrun beta</title>" in ORBIT and ">Control</span>" in ORBIT
-      and ">Session</a>" in ORBIT, "")
+      and ">Sessions</a>" in ORBIT, "")
 check("H3 the API fallback page says Control",
       "Control beta" in API, "")
 

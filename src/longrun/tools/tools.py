@@ -946,6 +946,8 @@ def _index(args, run_id):
         k = int(args.get("k") or 8)
     except (TypeError, ValueError):
         k = 8
+    if not ws:
+        return {"ok": False, "exit_code": 1, "error": "no workspace set for this session"}
     # JAG-415: refresh the index first (incremental; waits for any build already
     # running) so the agent searches fresh code and never a half-built index.
     ci.ensure_fresh(ws)
