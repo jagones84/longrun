@@ -507,9 +507,19 @@
   #composerBar #sendBtn .kbd { display: none; }
   /* JAG-415: stop is a compact square ICON — a symbol, not a word, to save space. */
   #composerBar #stopBtn { flex: 0 0 auto; min-width: 34px; padding: 0 7px; font-size: 14px; }
-  /* JAG-415: as the window narrows, the LLM selector shrinks gracefully (never
-     forces an early wrap or squeezes to a sliver). */
-  @media (max-width: 1200px) { #composerBar .cb-right .model-wrap > button, #composerBar .cb-left .model-wrap > button { max-width: 132px; } }
+  /* JAG-416: keep the composer toolbar on ONE line as the window narrows — shrink the
+     model label and tighten the gaps (stop · ⋯ · send) BEFORE anything wraps. */
+  @media (max-width: 1400px) { #composerBar .cb-right .model-wrap > button { max-width: 150px; } }
+  @media (max-width: 1200px) {
+    #composerBar .cb-right .model-wrap > button { max-width: 118px; min-width: 64px; }
+    #composerBar { gap: 5px 6px; }
+    #composerBar .cb-left, #composerBar .cb-right { gap: 4px; }
+  }
+  @media (max-width: 1040px) {
+    #composerBar .cb-right .model-wrap > button { max-width: 92px; min-width: 54px; }
+    #composerBar .cb-left, #composerBar .cb-right { gap: 2px; }
+    #composerBar .cb-left > select { padding: 0 4px; }
+  }
   /* JAG-284: secondary actions live behind a "⋯" overflow menu so the toolbar stays
      a single tidy row; the menu opens upward, right-aligned. */
   #composerBar .more-wrap { position: relative; display: flex; flex: 0 0 auto; }
@@ -1151,7 +1161,7 @@
       <div id="plusMenu" hidden></div>
       <div id="attachRow" hidden></div>
       <input type="file" id="attachInput" multiple hidden>
-      <textarea id="inp" rows="1" placeholder="command the forge…  (⏎ send · / commands &amp; skills · ＋ attach)" autofocus></textarea>
+      <textarea id="inp" rows="1" placeholder="message the agent…   (Ctrl+⏎ send · / commands · ＋ attach)" autofocus></textarea>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
         <div class="cb-left">
@@ -1256,7 +1266,7 @@
         </div>
       </section>
       <section data-insp="rules" class="insp-open">
-        <button class="insp-hd" onclick="toggleInsp('rules')">Roles<span class="ihd-s" id="sRoles"></span></button>
+        <button class="insp-hd" onclick="toggleInsp('rules')">Role<span class="ihd-s" id="sRoles"></span></button>
         <div class="insp-body">
         <div class="card">
           <div id="rulesWho" class="rwho"></div>
@@ -2619,11 +2629,15 @@ function voiceHelp(reason) {
   if (!secure) {
     rows.push("This page is served over plain HTTP (<code>" + esc(location.origin) +
       "</code>). Browsers only allow the microphone on <b>HTTPS</b> or <b>localhost</b>, so it is blocked here.");
-    rows.push("<b>Fix A — easiest (Windows, one click):</b> run <code>scripts\\open-ui-voice.bat</code> " +
+    const _tlsPort = (location.port ? (Number(location.port) + 1) : 443);
+    rows.push("<b>Option A — automatic HTTPS (recommended):</b> the server also listens over TLS " +
+      "(self-signed, generated automatically). Open <code>https://" + esc(location.hostname) + ":" + _tlsPort +
+      "/</code> once, accept the certificate warning, and the 🎙 mic works — no tunnel, no flag.");
+    rows.push("<b>Option B — Windows, one click (localhost tunnel):</b> run <code>scripts\\open-ui-voice.bat</code> " +
       "(or <code>scripts\\open-ui-voice.ps1</code>) — it opens a localhost tunnel to the server and the browser, " +
-      "so the origin becomes secure and the 🎙 mic works. Manual equivalent:<br>" +
+      "so the origin becomes secure. Manual equivalent:<br>" +
       "<code>ssh -L 8790:localhost:8790 dgx</code><br>then open <code>http://localhost:8790</code>.");
-    rows.push("<b>Fix B — Chrome/Edge flag:</b> open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, add <code>" +
+    rows.push("<b>Option C — Chrome/Edge flag:</b> open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, add <code>" +
       esc(location.origin) + "</code>, set <b>Enabled</b>, then relaunch the browser.");
   } else if (!SR) {
     rows.push("This browser has no <b>Web Speech API</b>. Use desktop <b>Chrome</b> or <b>Edge</b>.");
@@ -6474,7 +6488,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Roles"], ["files", "Workspace"], ["codebase", "Codebase"], ["terminal", "Terminal"], ["feed", "Feed"]]
+  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Role"], ["files", "Workspace"], ["codebase", "Codebase"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }

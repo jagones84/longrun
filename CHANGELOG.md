@@ -151,6 +151,16 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
+- **Voice input over HTTPS, Role tab, composer fit (JAG-416c).** The server now also listens over
+  **HTTPS** on a second port (`--port + 1`, self-signed certificate auto-generated into `data/tls/`,
+  **on by default**; disable with `LONGRUN_TLS=0` or choose the port with `--tls-port`). Opening
+  `https://<host>:<port+1>/` makes the origin a **secure context**, so the Web Speech API (🎙) works
+  on the LAN with **no tunnel and no browser flag** (accept the self-signed certificate once). The
+  in-app voice help offers this as **Option A** (tunnel and Chrome flag remain as B/C). The inspector
+  tab is renamed **Role** (singular — a session is per agent), the composer placeholder is shorter
+  and *truthful* (`Ctrl+⏎ send` — Enter is a newline), and the composer toolbar now shrinks the model
+  label and tightens the stop / ⋯ / send gaps so it stays on ONE line as the window narrows. Battery
+  137/137.
 - **UI follow-ups + bug fixes (JAG-416b).** Composer: the send action is now a **green circular
   icon button (↑)** in the toolbar (Trae-style) instead of a "send ⏎" text button, and the model
   selector moved to the right group. The first tab is labelled **Sessions** (plural). Voice input:

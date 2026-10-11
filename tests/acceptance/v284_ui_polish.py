@@ -38,11 +38,11 @@ check("Approvals is the first inspector section",
 check("Approvals is the first inspector entry in the command palette",
       '[["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"]' in ui)
 
-# --- 1b) JAG-395: Context above Plan; the section is titled "Roles" ----------
+# --- 1b) JAG-415/416: Context above Plan; the section is titled "Role" -------
 check("the Context inspector section sits above Plan",
       ui.index('data-insp="context"') < ui.index('data-insp="plan"'))
-check("the per-session role section is titled Roles (not Rules)",
-      'toggleInsp(\'rules\')">Roles<span class="ihd-s"' in ui and ">Rules<" not in ui)
+check("the per-session role section is titled Role (singular, not Rules)",
+      'toggleInsp(\'rules\')">Role<span class="ihd-s"' in ui and ">Rules<" not in ui)
 check("clicking a donut slice highlights its bar (seg + bar share a data-i key)",
       'class="seg" data-i="' in ui and 'class="bdbar" data-i="' in ui
       and 'querySelectorAll(".ctxdonut .seg")' in ui and 'classList.toggle("hl"' in ui)

@@ -14,6 +14,8 @@ import json
 import os
 import queue
 import re
+import ssl
+import subprocess
 import threading
 import time
 import uuid
@@ -1676,6 +1678,48 @@ def _lan_ipv4s():
     return ips
 
 
+def _start_tls(args):
+    """JAG-416: serve the SAME handler over HTTPS on a second port.
+
+    Why: the browser only allows the microphone (Web Speech API / getUserMedia) on a
+    SECURE CONTEXT (https or localhost). On a plain-HTTP LAN origin voice input can
+    never work — so the server also listens over TLS, making voice "just work" for
+    anyone who opens the https URL (they accept the self-signed cert once). Fully
+    best-effort: any failure disables HTTPS and prints the reason.
+    """
+    cert = args.tls_cert or os.path.join(DATA_DIR, "tls", "cert.pem")
+    key = args.tls_key or os.path.join(DATA_DIR, "tls", "key.pem")
+    port = int(args.tls_port or (args.port + 1))
+    try:
+        if not (os.path.isfile(cert) and os.path.isfile(key)):
+            os.makedirs(os.path.dirname(cert), exist_ok=True)
+            sans = ",".join(["DNS:localhost", "IP:127.0.0.1"] +
+                            ["IP:%s" % ip for ip in _lan_ipv4s()])
+            subprocess.run(
+                ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                 "-keyout", key, "-out", cert, "-days", "3650", "-subj", "/CN=longrun",
+                 "-addext", "subjectAltName=" + sans],
+                check=True, capture_output=True)
+        srv = ThreadingHTTPServer((args.host, port), Handler)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(cert, key)
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        srv.host, srv.port = args.host, port
+    except Exception as e:  # noqa: BLE001 — voice stays disabled, nothing else breaks
+        print("Longrun: HTTPS not started (%s: %s) — voice input stays blocked on plain HTTP."
+              % (type(e).__name__, e), flush=True)
+        return None
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    print("Longrun: HTTPS (secure context — voice-ready) on https://%s:%d" % (args.host, port), flush=True)
+    if args.host == "0.0.0.0":
+        from urllib.parse import quote
+        tok = ("?token=" + quote(args.token)) if args.token else ""
+        for ip in _lan_ipv4s():
+            print("Voice-ready (accept the self-signed cert once): https://%s:%d/%s" % (ip, port, tok),
+                  flush=True)
+    return srv
+
+
 def main():
     global AUTH_TOKEN
     ap = argparse.ArgumentParser(description="Longrun harness server")
@@ -1683,6 +1727,12 @@ def main():
                     help="bind host (0.0.0.0 to expose to Tailscale/mobile)")
     ap.add_argument("--port", type=int, default=8790)
     ap.add_argument("--token", default=None, help="require Authorization: Bearer <token>")
+    # JAG-416: an HTTPS listener makes the origin a SECURE CONTEXT so voice input
+    # works; on by default (set LONGRUN_TLS=0 to disable).
+    ap.add_argument("--tls", action="store_true", help="also serve HTTPS (secure context → voice)")
+    ap.add_argument("--tls-cert", default=None, help="TLS cert path (self-signed generated if missing)")
+    ap.add_argument("--tls-key", default=None, help="TLS key path")
+    ap.add_argument("--tls-port", type=int, default=None, help="HTTPS port (default: --port + 1)")
     args = ap.parse_args()
     AUTH_TOKEN = args.token
     _sf_server.AUTH_TOKEN = args.token  # JAG-379: keep the re-exported copy in sync
@@ -1739,5 +1789,8 @@ def main():
         for ip in _lan_ipv4s():
             print("Open on your phone: http://%s:%d/%s" % (ip, args.port, tok),
                   flush=True)
+    # JAG-416: optionally bring up HTTPS (secure context → voice input works).
+    if args.tls or os.environ.get("LONGRUN_TLS", "1") != "0":
+        _start_tls(args)
     server.serve_forever()
 
