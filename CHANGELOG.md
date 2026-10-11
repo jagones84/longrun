@@ -32,6 +32,17 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Changed
+- **Voice input auto-stop + `Alt+X` shortcut (JAG-416e).** The 🎙 mic closes by itself after
+  3 s of silence and the transcript lands in the message bar for the user to review and send
+  manually (no auto-send); `Alt+X` toggles recording from the keyboard.
+- **Atomic JSON store dedup (JAG-416e).** A single `src/longrun/util/fswrite.py` (`read_json` /
+  `write_json`, race-free unique-temp + `os.replace`) now backs 18 stores, removing 6 duplicated
+  helpers (~34 call sites) and fixing the latent fixed-`.tmp` race in modules that had not yet
+  received the JAG-201/JAG-287 fix. Battery 137/137.
+- **Architecture docs refresh (JAG-416e).** `docs/ARCHITECTURE.md` and
+  `docs/diagrams/longrun-architecture.architecture.json` updated to the real
+  `src/longrun/<subpackage>/` layout and translated to English, with the missing
+  orbit / research / knowledge / orchestration components added.
 - **Session rail groups by TEAM, collapsible (JAG-414).** The left-hand session panel now
   renders one collapsible group per team (symbol, name, member count) plus a **📌 Pinned** group
   and a **◇ No team** group. A session whose agent belongs to SEVERAL teams — or that is pinned
