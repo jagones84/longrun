@@ -43,6 +43,13 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Changed
+- **Control deck UX: unified agents table, sorting, collapse/expand-all (JAG-418).** The AGENTS pane is
+  now ONE editable table grouped by team (collapsible group rows + editable agent rows) instead of two
+  separate `table` / `by team` views. A **sort** selector orders agents (id, name, role, model, team,
+  org-chart leadership, running first); **collapse all / expand all** buttons act on every group. The
+  `beta · detachable` badge is removed and the team selector moved out of the header into the panel
+  toolbar; **Job** now sits beside **Agents**. The main-app session rail gained matching
+  collapse-all / expand-all controls.
 - **Voice input auto-stop + `Alt+X` shortcut (JAG-416e).** The 🎙 mic closes by itself after
   3 s of silence and the transcript lands in the message bar for the user to review and send
   manually (no auto-send); `Alt+X` toggles recording from the keyboard.

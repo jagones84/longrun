@@ -43,7 +43,10 @@
      clipped wide panels (ORG CHART) and forced a page-level horizontal scrollbar. */
   .wrap{display:flex;flex-direction:column;gap:10px;padding:10px;max-width:1680px;margin:0 auto}
   .grid2{display:flex;flex-direction:column;gap:10px}
-  .grid2.ab,.grid2.oc,.grid2.rf{display:flex;flex-direction:column;gap:10px}
+  .grid2.oc,.grid2.rf{display:flex;flex-direction:column;gap:10px}
+  /* JAG-2.1: Agents + Job side by side on wide screens, stacking on narrow ones. */
+  .grid2.ab{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:start}
+  @media (max-width:1000px){ .grid2.ab{grid-template-columns:1fr} }
   .col{display:flex;flex-direction:column;gap:10px;min-width:0}
   .row{display:flex;align-items:center;gap:8px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -110,17 +113,15 @@
   .tmmenu label.tmopt{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
   .tmmenu label.tmopt:hover{background:var(--brief);color:#fff}
   .tmmenu label.tmopt input{accent-color:var(--acc)}
-  .grp{border-bottom:1px solid var(--line)}
-  .grp-h{display:flex;align-items:center;gap:7px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--txt);user-select:none}
-  .grp-h:hover{background:rgba(108,140,255,.05)}
-  .grp-h .caret{display:inline-block;width:12px;transition:transform .12s;color:var(--dim)}
-  .grp.closed .caret{transform:rotate(-90deg)}
-  .grp.closed .grp-b{display:none}
-  .grp-h .gc{margin-left:auto;font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:0 7px}
-  .grp-b{padding:2px 0}
-  .grp-row{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 30px;font-size:12px}
-  .grp-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .grp-row .teams{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* JAG-2.1: ONE agents list — the editable table grouped by team with collapsible
+     group header rows (the separate "table / by team" views are gone). */
+  tr.grp-head td{padding:0;border-bottom:1px solid var(--line);background:var(--brief)}
+  tr.grp-head .grp-h{display:flex;align-items:center;gap:7px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--txt);user-select:none}
+  tr.grp-head .grp-h:hover{background:rgba(108,140,255,.05)}
+  tr.grp-head .caret{display:inline-block;width:12px;transition:transform .12s;color:var(--dim)}
+  tr.grp-head .gc{margin-left:auto;font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:0 7px}
+  tr.grp-empty td{padding:0;border-bottom:1px solid var(--line)}
+  tr[hidden]{display:none}
   /* constellation — a DOCKED panel in the page grid (JAG-297) */
   .panel.cpanel .cbody{position:relative;height:48vh;min-height:360px;background:#060912}
   .csvg{display:block;width:100%;height:100%}
@@ -219,10 +220,6 @@
     <a class="ttab" href="/">Sessions</a>
     <span class="ttab active" aria-current="page">Control</span>
   </nav>
-  <span class="tag beta">beta · detachable</span>
-  <span class="tag" id="agTag">agents —</span>
-  <select class="inp" id="teamSel" title="team — scope the whole board"
-          style="max-width:210px;width:auto"></select>
   <span class="spacer"></span>
 </header>
 
@@ -232,9 +229,23 @@
     <section class="panel ag">
       <h2>Agents <span class="n" id="agCount">—</span>
         <span class="ctools">
-          <button class="btn ghost mini" id="agViewTable" title="agents as a table">table</button>
-          <button class="btn ghost mini" id="agViewGroups" title="agents grouped by team">by team</button>
+          <button class="btn ghost mini" id="agCollapseAll" title="collapse all groups">▲</button>
+          <button class="btn ghost mini" id="agExpandAll" title="expand all groups">▼</button>
         </span></h2>
+      <div class="pad row" style="gap:6px;border-bottom:1px solid var(--line);justify-content:flex-start">
+        <span class="muted small" style="flex:none">scope:</span>
+        <select class="inp" id="teamSel" title="team — scope the whole board" style="max-width:210px;width:auto"></select>
+        <span class="muted small" style="flex:none;margin-left:auto">sort:</span>
+        <select class="inp" id="agSort" title="sort agents" style="max-width:210px;width:auto">
+          <option value="default">default (id)</option>
+          <option value="name">name (A→Z)</option>
+          <option value="role">role</option>
+          <option value="model">model</option>
+          <option value="team">team</option>
+          <option value="org">org chart (leadership first)</option>
+          <option value="running">running first</option>
+        </select>
+      </div>
       <div class="pad row" style="gap:6px;border-bottom:1px solid var(--line);justify-content:flex-start">
         <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
         <input class="inp" id="agNewRole" placeholder="role (optional)" style="width:170px;flex:none">
@@ -257,7 +268,6 @@
           <tbody id="agBody"></tbody>
         </table>
       </div>
-      <div class="scroll" id="agGroupsWrap" hidden></div>
     </section>
 
     <!-- Job: goal + who you give it to (its reports are the team) -->
@@ -361,7 +371,7 @@ const fillSelect = (sel, agents, ph) => {
 class AgentsView {
   constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
     this.models = []; this.teams = []; this.open = null; this.running = new Set();
-    this.viewMode = "table"; this._tmmenu = null; this.closed = new Set(); }
+    this.sort = "default"; this._tmmenu = null; this.closed = new Set(); this._groupIds = []; }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams){
     if (tree) this.agents = tree.agents || [];
@@ -369,14 +379,9 @@ class AgentsView {
     if (running) this.running = running;
     if (teams) this.teams = teams;
     $("agCount").textContent = this.agents.length ? this.agents.length + " agents" : "—";
-    $("agTag").textContent = "agents — " + this.agents.length;
-    // JAG-2.0: the same agent list in two views — a table (editable) and a
-    // collapsible per-team grouping mirroring the main app's session rail.
-    $("agTableWrap").hidden = this.viewMode !== "table";
-    $("agGroupsWrap").hidden = this.viewMode !== "groups";
-    $("agViewTable").classList.toggle("on", this.viewMode === "table");
-    $("agViewGroups").classList.toggle("on", this.viewMode === "groups");
-    this.renderGroups();
+    // JAG-2.1: ONE list — the editable table grouped by team (collapsible header rows).
+    const groups = this.groupsOf(this._sorted(this.agents));
+    this._groupIds = groups.map(g => g.id);
     const body = $("agBody");
     // JAG-295-fix: this table is rebuilt by the 5s auto-poll. Rebuilding while the
     // user is mid-edit (a focused text field) or has unsaved text in the ROLE.md
@@ -392,8 +397,8 @@ class AgentsView {
     const roleTA = body.querySelector("textarea[data-p='role']");
     const roleDirty = !!(roleTA && this.openText != null && roleTA.value !== this.openText);
     if (editing || roleDirty) return;
-    body.innerHTML = this.agents.length
-      ? this.agents.map(a => this.row(a)).join("")
+    body.innerHTML = groups.length
+      ? groups.map(g => this.groupHtml(g)).join("")
       : '<tr><td colspan="8" class="empty">no agents — create one with ＋ above.</td></tr>';
     this.bind();
     fillSelect($("jobTo"), this.agents, "assign to…");
@@ -409,7 +414,8 @@ class AgentsView {
     const ids = a.teams || [];
     return ids.map(id => { const t = this.teamById(id); return t ? (t.name || id) : id; }).join(", ") || "assign to teams";
   }
-  row(a){
+  row(a, grp){
+    const hid = (grp != null && this.closed.has(grp)) ? ' hidden' : '';
     const mopts = '<option value=""' + (a.model ? "" : " selected") + '>default</option>' +
       this.models.map(m => '<option value="' + esc(m.ref) + '"' + (a.model === m.ref ? " selected" : "") + '>' + esc(m.label) + '</option>').join("");
     const ropts = '<option value="">— none —</option>' +
@@ -417,12 +423,12 @@ class AgentsView {
     const open = this.open === a.session;
     const run = this.running.has(a.session) ? '<span class="dotr" title="running"></span>' : "";
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
-    const brief = open ? '<tr class="brief"><td></td><td colspan="7">' +
+    const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="7">' +
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the main app (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
       '<textarea class="inp" data-p="role" placeholder="Role: API designer&#10;- answer only with the endpoint list and JSON schema">' + roleText + '</textarea>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button class="btn primary" data-save="' + esc(a.session) + '">save prompt</button>' +
       '<button class="btn ghost" data-close="1">close</button></div></td></tr>' : "";
-    return '<tr data-sid="' + esc(a.session) + '">' +
+    return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid">' + esc(a.id) + run + '</td>' +
       '<td><input class="inp mini" data-f="name" value="' + esc(a.name||"") + '"></td>' +
       '<td><input class="inp mini" data-f="role" value="' + esc(a.role||"") + '"></td>' +
@@ -435,6 +441,14 @@ class AgentsView {
   }
   bind(){
     const body = $("agBody");
+    // JAG-2.1: collapsible group header rows inside the SAME table.
+    body.querySelectorAll("tr.grp-head .grp-h").forEach(h => {
+      h.onclick = () => {
+        const id = h.closest("tr.grp-head").getAttribute("data-grp");
+        if (this.closed.has(id)) this.closed.delete(id); else this.closed.add(id);
+        this._applyGroupState(id);
+      };
+    });
     body.querySelectorAll("select[data-f],input[data-f]").forEach(el => {
       el.onchange = () => { const sid = el.closest("tr").dataset.sid; this.save(sid, {[el.dataset.f]: el.value}); };
     });
@@ -484,10 +498,48 @@ class AgentsView {
       if (this.onChanged) this.onChanged();
     }; });
   }
-  /* JAG-2.0: collapsible per-team grouping of the (already team-scoped) agent list. */
-  renderGroups(){
-    const wrap = $("agGroupsWrap"); if (!wrap) return;
-    const agents = this.agents || [];
+  /* JAG-2.1: team label used by the "team" sort option. */
+  _teamLabel(a){
+    const ids = a.teams || [];
+    if (!ids.length) return "";
+    const t = this.teamById(ids[0]);
+    return t ? (t.name || t.id) : ids[0];
+  }
+  /* JAG-2.1: depth-first reports_to walk, so orchestrators rank before their reports. */
+  _orgRank(agents){
+    const byId = {}; agents.forEach(a => { byId[a.id] = a; });
+    const by = {}; agents.forEach(a => { const p = a.reports_to || ""; (by[p] = by[p] || []).push(a); });
+    const rank = {}; const seen = {}; let i = 0;
+    const walk = a => { if (!a || seen[a.id]) return; seen[a.id] = 1; rank[a.session] = i++; (by[a.id] || []).forEach(walk); };
+    (by[""] || []).slice().forEach(walk);
+    agents.forEach(a => { if (a.reports_to && !byId[a.reports_to] && !seen[a.id]) walk(a); });
+    agents.forEach(a => { if (!seen[a.id]) walk(a); });
+    return rank;
+  }
+  /* JAG-2.1: sort the (already team-scoped) agent list by the chosen criterion. */
+  _sorted(agents){
+    const list = agents.slice();
+    const k = this.sort || "default";
+    if (k === "name") list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    else if (k === "role") list.sort((a, b) => (a.role || "").localeCompare(b.role || ""));
+    else if (k === "model") list.sort((a, b) => (a.model || "").localeCompare(b.model || ""));
+    else if (k === "team") list.sort((a, b) => this._teamLabel(a).localeCompare(this._teamLabel(b)) || ((a.n || 0) - (b.n || 0)));
+    else if (k === "org"){
+      const r = this._orgRank(list);
+      list.sort((a, b) => {
+        const ra = r[a.session], rb = r[b.session];
+        const ha = ra === undefined ? 1 : 0, hb = rb === undefined ? 1 : 0;
+        if (ha !== hb) return ha - hb;
+        if (!ha && ra !== rb) return ra - rb;
+        return (a.n || 0) - (b.n || 0);
+      });
+    }
+    else if (k === "running") list.sort((a, b) => (this.running.has(b.session) ? 1 : 0) - (this.running.has(a.session) ? 1 : 0) || ((a.n || 0) - (b.n || 0)));
+    else list.sort((a, b) => (a.n || 0) - (b.n || 0));
+    return list;
+  }
+  /* JAG-2.1: one collapsible group per team (plus stray teams and "No team"). */
+  groupsOf(agents){
     const groups = [];
     (this.teams || []).forEach(t => {
       const ms = agents.filter(a => (a.teams || []).includes(t.id));
@@ -497,28 +549,33 @@ class AgentsView {
     const stray = {};
     agents.forEach(a => (a.teams || []).forEach(id => { if (!this.teamById(id)) (stray[id] = stray[id] || []).push(a); }));
     Object.keys(stray).sort().forEach(id => groups.push({id, name: id, symbol: "", ms: stray[id]}));
-    groups.push({id: "", name: "No team", symbol: "", ms: agents.filter(a => !(a.teams || []).length)});
-    wrap.innerHTML = groups.length
-      ? groups.map(g => {
-          const rows = (g.ms || []).map(a =>
-            '<div class="grp-row" data-sid="' + esc(a.session) + '" title="' + esc(a.id) + ' ' + esc(a.name || "") + '">' +
-            '<span class="aid">' + esc(a.id) + '</span>' +
-            '<span class="nm">' + esc(a.name || "") + '</span>' +
-            (a.role ? '<span class="rl">' + esc(a.role) + '</span>' : '') +
-            ((a.teams || []).length ? '<span class="teams muted small">' + this.teamCell(a) + '</span>' : '') +
-            '</div>').join("");
-          return '<div class="grp' + (this.closed.has(g.id) ? ' closed' : '') + '" data-t="' + esc(g.id) + '">' +
-            '<div class="grp-h"><span class="caret">▸</span>' + (g.symbol ? esc(g.symbol) + ' ' : '') +
-            '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span></div>' +
-            '<div class="grp-b">' + (rows || '<div class="empty">no agents in this group.</div>') + '</div></div>';
-        }).join("")
-      : '<div class="empty">no agents yet.</div>';
-    wrap.querySelectorAll(".grp-h").forEach(h => { h.onclick = () => {
-      const grp = h.parentElement, id = grp.dataset.t;
-      grp.classList.toggle("closed");
-      if (grp.classList.contains("closed")) this.closed.add(id); else this.closed.delete(id);
-    }; });
+    groups.push({id: "__none__", name: "No team", symbol: "", ms: agents.filter(a => !(a.teams || []).length)});
+    return groups;
   }
+  groupHtml(g){
+    const closed = this.closed.has(g.id);
+    const hid = closed ? ' hidden' : '';
+    const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="8">' +
+      '<div class="grp-h"><span class="caret">' + (closed ? '▸' : '▾') + '</span>' +
+      (g.symbol ? '<span>' + esc(g.symbol) + '</span>' : '') +
+      '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span></div></td></tr>';
+    const rows = (g.ms || []).length
+      ? (g.ms || []).map(a => this.row(a, g.id)).join("")
+      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="8" class="empty">no agents in this group.</td></tr>';
+    return head + rows;
+  }
+  /* JAG-2.1: show/hide a group's rows in place (keeps any in-progress edit alive). */
+  _applyGroupState(id){
+    const body = $("agBody"); if (!body) return;
+    const closed = this.closed.has(id);
+    const head = [...body.querySelectorAll("tr.grp-head")].find(tr => tr.getAttribute("data-grp") === id);
+    if (head){ const c = head.querySelector(".caret"); if (c) c.textContent = closed ? "▸" : "▾"; }
+    [...body.querySelectorAll("tr[data-grp]")].forEach(tr => {
+      if (tr !== head && tr.getAttribute("data-grp") === id) tr.hidden = closed;
+    });
+  }
+  collapseAll(){ this._groupIds.forEach(id => this.closed.add(id)); this._groupIds.forEach(id => this._applyGroupState(id)); }
+  expandAll(){ this._groupIds.forEach(id => this.closed.delete(id)); this._groupIds.forEach(id => this._applyGroupState(id)); }
   /* JAG-2.0: checkbox popover that adds/removes the agent from teams one by one. */
   openTeamPicker(ev, a){
     this.closeTeamPicker();
@@ -1060,8 +1117,9 @@ class OrbitApp {
     $("agNew").onclick = () => this.agents.create();
     $("agPolicy").onclick = () => this.applyModelPolicy();
     $("tmNew").onclick = () => this.createTeam();
-    $("agViewTable").onclick = () => { this.agents.viewMode = "table"; this.refresh(); };
-    $("agViewGroups").onclick = () => { this.agents.viewMode = "groups"; this.refresh(); };
+    $("agCollapseAll").onclick = () => this.agents.collapseAll();
+    $("agExpandAll").onclick = () => this.agents.expandAll();
+    $("agSort").onchange = () => { this.agents.sort = $("agSort").value; this.agents.render(null, null); };
     $("jobCreate").onclick = () => this.createJob();
     $("rtCreate").onclick = () => this.routines.create();
     $("teamSel").onchange = () => { this.team = $("teamSel").value; this.tac.data = null; this.tac.focus = null; this.refresh(); };

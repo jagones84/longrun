@@ -27,8 +27,12 @@ def check(name, ok, detail=""):
 
 check("A1 the page rows are a single column (mobile-style)",
       ".grid2{display:flex;flex-direction:column" in HTML)
-check("A2 the old two-column grid tracks are gone",
-      "grid-template-columns:minmax" not in HTML)
+# JAG-2.1: the Agents + Job row is now a TWO-column grid (side by side on wide
+# screens), but the wide panels (org chart / constellation, routines / feed) stay
+# single-column — the two-column track is scoped to `.grid2.ab` only.
+check("A2 the two-column grid is scoped to the Agents+Job row (others stay single column)",
+      ".grid2.ab{display:grid;grid-template-columns:minmax" in HTML
+      and ".grid2.oc,.grid2.rf{display:flex;flex-direction:column" in HTML)
 check("A3 the org chart scrolls inside its panel",
       ".orgwrap{" in HTML and "overflow:auto" in HTML and "max-height:72vh" in HTML)
 check("A4 the transform pan is removed (no scroll/pan fight)", "_panzoom" not in HTML)

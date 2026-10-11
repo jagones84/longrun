@@ -263,6 +263,11 @@
     text-transform: none; letter-spacing: 0; }
   .sgroup-b { padding-left: 5px; margin-left: 4px; border-left: 2px solid var(--tcol, var(--line)); }
   .sgroup.collapsed .sgroup-b { display: none; }
+  /* JAG-2.1: collapse / expand ALL groups in the session rail header. */
+  .srail-tools { margin-left: auto; display: inline-flex; gap: 4px; }
+  .srail-tools button { background: transparent; border: 1px solid var(--line); color: var(--dim);
+    border-radius: 6px; padding: 0 7px; font-size: 10px; line-height: 18px; cursor: pointer; }
+  .srail-tools button:hover { color: var(--txt); border-color: var(--acc); }
   /* JAG-218: toast shown when a background session finishes while you're away. */
   .done-toast { position: fixed; right: 16px; bottom: 16px; z-index: 9999;
     background: var(--menubg); color: var(--txt);
@@ -1138,7 +1143,7 @@
 <main id="app">
   <aside id="aside" data-col="sessions">
     <section>
-      <h2>Sessions</h2>
+      <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
       <div style="display:flex;gap:6px;margin-bottom:6px">
         <input id="sessInp" class="inp" placeholder="new session title…" style="flex:1;padding:6px 10px;font-size:12px">
         <button class="ghost" onclick="newSession()">+ new</button>
@@ -2922,6 +2927,13 @@ function _toggleGroup(key) {
   localStorage.setItem("sf_collapsed_groups", JSON.stringify(c));
   loadSessions();
 }
+let _lastGroupKeys = [];   // JAG-2.1: the group keys the current rail render produced
+/* JAG-2.1: collapse / expand EVERY group at once (all group keys). */
+function _setAllGroups(collapse) {
+  const keys = _lastGroupKeys || [];
+  localStorage.setItem("sf_collapsed_groups", JSON.stringify(collapse ? keys.slice() : []));
+  loadSessions();
+}
 /* JAG-415: rank every org agent by a DEPTH-FIRST walk of the reports_to tree, so
    the rail lists orchestrators first, in ORG order — never "last used". Agents not
    wired into the tree fall back to their id order; non-agents keep server order. */
@@ -3002,6 +3014,7 @@ async function loadSessions() {
 
   // No teams configured -> keep the flat, header-less list (backward compatible).
   if (!teams.length) {
+    _lastGroupKeys = [];
     visible.slice().sort(_ord).forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
   } else {
     // JAG-415: expand the active session's own team group ONLY on a redirect or a
@@ -3025,6 +3038,7 @@ async function loadSessions() {
       const ss = visible.filter(s => teamsOf(s).includes(t.id)).sort(_ord);
       if (ss.length) groups.push({ key: t.id, symbol: t.symbol || "•", name: t.name || t.id, id: t.id, col: t.color || "var(--acc)", sessions: ss });
     });
+    _lastGroupKeys = groups.map(g => g.key);
     groups.forEach(g => {
       const isCol = collapsed.includes(g.key);
       const sec = document.createElement("div");
@@ -6886,6 +6900,8 @@ $("palette-input").addEventListener("keydown", paletteKey);
 $("palette").addEventListener("click", e => { if (e.target.id === "palette") closePalette(); });
 $("mcpJsonWin").addEventListener("click", e => { if (e.target.id === "mcpJsonWin") closeMcpJson(); });
 $("session-search").addEventListener("input", loadSessions);
+$("railCollapseAll").onclick = () => _setAllGroups(true);
+$("railExpandAll").onclick = () => _setAllGroups(false);
 { const _qm = $("qmode");
   if (_qm) { _qm.value = localStorage.getItem("sf_qmode") || "queue";
     _qm.onchange = () => localStorage.setItem("sf_qmode", _qm.value); } }
