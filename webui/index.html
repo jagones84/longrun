@@ -557,7 +557,8 @@
   .topTabs .ttab:hover { color: var(--txt); background: var(--hover); }
   .topTabs .ttab.active { color: var(--txt); background: var(--sel); box-shadow: inset 0 0 0 1px var(--acc); }
   /* JAG-420: Control deck as an IN-PAGE view (top tabs swap sub-views, banner stays constant). */
-  #controlView { position: fixed; left: 0; right: 0; top: 44px; bottom: 0; z-index: 60;
+  #topbar { position: sticky; top: 0; z-index: 100; }
+  #controlView { position: fixed; left: 0; right: 0; top: 44px; bottom: 0; z-index: 20;
     background: var(--bg); display: none; }
   #controlView.on { display: block; }
   #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
@@ -5295,6 +5296,7 @@ function renderThemeGrid() {
 function applyTheme(id) {
   document.documentElement.dataset.theme = id;
   localStorage.setItem("sf_theme", id);
+  try { const f = document.getElementById("controlFrame"); if (f && f.contentDocument) f.contentDocument.documentElement.dataset.theme = id; } catch (_) {}
   renderThemeGrid();
 }
 function applyBold(on) {
@@ -6596,7 +6598,8 @@ function showControl() {
   const cv = document.getElementById("controlView"); if (!cv) return;
   cv.style.top = _tabTop() + "px";
   const f = document.getElementById("controlFrame");
-  if (f && !f.getAttribute("src")) f.setAttribute("src", "/orbit?embed=1");
+  if (f && !f.getAttribute("src")) f.setAttribute("src", "/orbit?embed=1&theme=" + encodeURIComponent(localStorage.getItem("sf_theme") || "indigo"));
+  else { try { if (f && f.contentDocument) f.contentDocument.documentElement.dataset.theme = (localStorage.getItem("sf_theme") || "indigo"); } catch (_) {} }
   cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); _setTabs("control");
   try { history.replaceState(null, "", location.pathname + location.search + "#control"); } catch (_) {}
 }
