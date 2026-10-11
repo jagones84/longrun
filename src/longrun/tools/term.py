@@ -84,11 +84,11 @@ class Shell:
             return {"ok": False, "error": "invalid command"}
         with self._lock:
             alive = self.proc.poll() is None
-        if not alive:
-            return {"ok": False, "error": "shell exited"}
-        if self.busy:
-            return {"ok": False, "error": "busy — wait for the current command"}
-        self.busy = True
+            if not alive:
+                return {"ok": False, "error": "shell exited"}
+            if self.busy:
+                return {"ok": False, "error": "busy — wait for the current command"}
+            self.busy = True
         self._emit("cmd", text=cmd)
         try:
             payload = cmd + "\nprintf '\\n" + _MARK + "%d\\036\\n' $?\n"

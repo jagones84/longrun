@@ -375,7 +375,7 @@ def default_ref():
     if d:
         return d
     for p in providers():
-        if p["models"] and api_key(p):
+        if p["models"] and not p.get("embed_only") and api_key(p):
             return "%s:%s" % (p["id"], p["models"][0]["id"])
     return None
 
@@ -630,6 +630,10 @@ def catalog(loaded_aliases=None):
     loaded = set(loaded_aliases or [])
     out = []
     for p in providers():
+        # JAG-403k: embedding-only endpoints carry no chat models — never list
+        # them in the chat catalogue (they would be empty rows / clutter).
+        if p.get("embed_only"):
+            continue
         avail = available(p)
         models = []
         for m in p["models"]:

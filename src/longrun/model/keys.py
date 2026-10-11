@@ -97,11 +97,12 @@ def reveal_key(name):
     if not val and os.path.isfile(ENV_FILE):
         prefix = name + "="
         try:
-            for ln in open(ENV_FILE, encoding="utf-8"):
-                ln = ln.rstrip("\n")
-                if ln.startswith(prefix):
-                    val = ln[len(prefix):]
-                    break
+            with open(ENV_FILE, encoding="utf-8") as f:
+                for ln in f:
+                    ln = ln.rstrip("\n")
+                    if ln.startswith(prefix):
+                        val = ln[len(prefix):]
+                        break
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
     return {"name": name, "value": val or "", "set": bool(val)}
@@ -139,10 +140,11 @@ def keys_status():
         # JAG-161: any NAME already present in the repo .env is a known key too,
         # so a value the user sets here shows up (and can be cleared) again.
         if os.path.isfile(ENV_FILE):
-            for ln in open(ENV_FILE, encoding="utf-8"):
-                ln = ln.strip()
-                if ln and not ln.startswith("#") and "=" in ln:
-                    _bump(ln.split("=", 1)[0].strip(), "env:.env")
+            with open(ENV_FILE, encoding="utf-8") as f:
+                for ln in f:
+                    ln = ln.strip()
+                    if ln and not ln.startswith("#") and "=" in ln:
+                        _bump(ln.split("=", 1)[0].strip(), "env:.env")
     except Exception:  # noqa: BLE001
         pass
     for env, where in KNOWN_ENV_KEYS.items():

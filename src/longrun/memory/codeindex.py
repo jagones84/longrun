@@ -145,18 +145,21 @@ def build(ws, force=False):
                 if r["path"] not in seen:
                     _drop_path(db, r["path"])
             em = _cfg.embed_model()
+            embed_err = None
             if em:
                 # JAG-403j: a failing embedder (missing key / no local server) must
                 # NEVER break the build — degrade to bm25-only.
+                # JAG-403k: but the failure is RECORDED (meta) instead of silently
+                # swallowed, so `status()`/the UI can show that vectors are missing.
                 try:
                     rows = [(r["id"], r["text"]) for r in db.execute("SELECT id, text FROM chunks WHERE vec IS NULL")]
                     _embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
                                   scope="codebase", scope_id=str(ws), op="build")
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    embed_err = "%s: %s" % (type(e).__name__, e)
             db.commit()
             _set_meta(db, {"built_at": time.time(), "embed_model": em, "dim": _dim(db),
-                           "fts": bool(fts), "workspace": ws})
+                           "fts": bool(fts), "workspace": ws, "embed_error": embed_err})
             return status(ws)
         finally:
             db.close()
@@ -215,9 +218,12 @@ def search(ws, query, k=8, kind=None, embed_model=None):
             qv = qv_out[0] if qv_out else None
             if qv:
                 marks = ",".join("?" * len(rows))
-                cand = {r["id"]: _blob_vec(x["vec"]) for x in db.execute(
+                # JAG-403k: `row` (not `r`) — `r` is a function-local from the
+                # `for r in rows[:k]` loop below, so using it here raised
+                # UnboundLocalError the first time the hybrid path actually ran.
+                cand = {row["id"]: _blob_vec(row["vec"]) for row in db.execute(
                     "SELECT id, vec FROM chunks WHERE id IN (%s) AND vec IS NOT NULL" % marks,
-                    [r["id"] for r in rows])}
+                    [x["id"] for x in rows])}
                 if cand:
                     K = 60
                     lex = {r["id"]: i for i, r in enumerate(rows)}
@@ -243,8 +249,8 @@ def search(ws, query, k=8, kind=None, embed_model=None):
 def status(ws):
     p = db_path(ws)
     out = {"workspace": os.path.realpath(ws), "db": p, "exists": os.path.isfile(p),
-           "embed_model": _cfg.embed_model(), "files": 0, "chunks": 0, "dim": 0,
-           "built_at": None, "fts": False, "size_kb": 0}
+           "embed_model": _cfg.embed_model(), "files": 0, "chunks": 0, "embedded": 0,
+           "dim": 0, "built_at": None, "fts": False, "size_kb": 0, "embed_error": None}
     if not out["exists"]:
         return out
     try:
@@ -256,9 +262,11 @@ def status(ws):
         _init(db)
         out["files"] = db.execute("SELECT count(*) c FROM files").fetchone()["c"]
         out["chunks"] = db.execute("SELECT count(*) c FROM chunks").fetchone()["c"]
+        out["embedded"] = db.execute("SELECT count(*) c FROM chunks WHERE vec IS NOT NULL").fetchone()["c"]
         out["dim"] = _dim(db)
         out["built_at"] = _get_meta(db, "built_at")
         out["fts"] = bool(_get_meta(db, "fts", _has_fts(db)))
+        out["embed_error"] = _get_meta(db, "embed_error")
         return out
     finally:
         db.close()

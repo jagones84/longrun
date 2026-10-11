@@ -72,7 +72,8 @@ def _load_catalogue():
     models = []
     try:
         if os.path.isfile(CATALOGUE_PATH):
-            raw = _yaml_load(open(CATALOGUE_PATH, encoding="utf-8").read())
+            with open(CATALOGUE_PATH, encoding="utf-8") as f:
+                raw = _yaml_load(f.read())
             items = raw.get("models") if isinstance(raw, dict) else raw
             if isinstance(items, list):
                 models = [c for c in (_clean(x) for x in items) if c]

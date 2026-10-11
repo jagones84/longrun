@@ -63,8 +63,8 @@ check("1f docs get a larger size budget than code files",
 check("1g a default embedding model ships (cohere) so a clone is not empty",
       indexcfg.DEFAULT_CONFIG.get("embed_model") == "cohere:embed-multilingual-v3.0"
       and embedcfg.active_model() == "cohere:embed-multilingual-v3.0", embedcfg.active_model())
-check("1h the embedding build degrades to bm25 if the embedder fails",
-      "except Exception:  # noqa: BLE001\n                    pass" in open(
+check("1h the embedding build degrades to bm25 if the embedder fails (records, never raises)",
+      'except Exception as e:  # noqa: BLE001\n                    embed_err = "%s: %s"' in open(
           os.path.join(REPO, "src", "longrun", "memory", "codeindex.py"), encoding="utf-8").read())
 
 # requirements documents the optional ingestion dependency.

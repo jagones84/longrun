@@ -1576,6 +1576,7 @@
           <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
             <button class="ghost" onclick="kbAddSource()">+ add + index</button>
+            <button class="ghost" onclick="kbReembed()" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
             <button class="ghost" onclick="kbFiles()" title="which files are in this notebook">files</button>
             <button class="ghost" onclick="kbLoadSources()" title="reload sources">↻</button>
           </div>
@@ -5291,7 +5292,9 @@ async function cbStatus() {
     if (meta) meta.innerHTML = (s.exists
       ? ("<b>" + (s.files || 0) + "</b> files · <b>" + (s.chunks || 0) + "</b> chunks · " +
          _fmtSize((s.size_kb || 0) * 1024) + "<br>workspace: " + ws +
-         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : ""))
+         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" +
+         (s.embed_model ? (" · " + (s.embedded || 0) + "/" + (s.chunks || 0) + " embedded" + (s.dim ? (" · dim " + s.dim) : "")) : "") +
+         (s.embed_error ? ("<br>⚠ embed failed: " + esc(s.embed_error)) : ""))
       : ("workspace: " + ws + " — not built yet, press build."));
     const st = $("cbStat"); if (st) st.textContent = s.exists ? ((s.chunks || 0) + " chunks") : "empty";
     _isum("sCodebase", s.exists ? ((s.files || 0) + " files \u00b7 " + (s.chunks || 0) + " chunks") : "empty", s.exists ? "" : "warn");
@@ -5437,7 +5440,8 @@ async function kbStatus() {
     if (meta) meta.innerHTML = (s.exists
       ? ("<b>" + (s.notebooks || 0) + "</b> notebooks · <b>" + (s.sources || 0) + "</b> sources · <b>" +
          (s.chunks || 0) + "</b> chunks · " + _fmtSize((s.size_kb || 0) * 1024) +
-         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" + (s.dim ? (" · dim " + s.dim) : "") +
+         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" +
+         (s.embed_model ? (" · " + (s.embedded || 0) + "/" + (s.chunks || 0) + " embedded" + (s.dim ? (" · dim " + s.dim) : "")) : "") +
          "<br>doc extractors: <b>" + esc(exTxt) + "</b>" +
          (ex.markitdown ? "" : " — install <code>markitdown</code> for the best PDF/DOCX fidelity"))
       : "empty — create a notebook and add sources.");
@@ -5569,6 +5573,18 @@ async function kbAddSource() {
 }
 async function kbRemoveSource(sid) {
   try { await api("POST", "/api/knowledge/sources", { remove: sid }); kbLoadSources(); kbStatus(); } catch (e) {}
+}
+async function kbReembed() {
+  const box = $("kbSources");
+  if (box) box.innerHTML = '<div class="remaining">embedding pending chunks…</div>';
+  try {
+    const r = await api("POST", "/api/knowledge/reembed", {});
+    if (typeof toast === "function") {
+      toast(r.ok ? ("re-embed: " + (r.embedded || 0) + "/" + (r.chunks || 0) + " vectors")
+                 : ("re-embed failed: " + (r.error || "unknown")), r.ok ? "ok" : "err");
+    }
+    kbStatus(); kbLoadSources();
+  } catch (e) { if (box) box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
 async function kbFiles() {
   const box = $("kbSources"); if (!box) return;

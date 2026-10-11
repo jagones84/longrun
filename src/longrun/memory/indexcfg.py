@@ -62,7 +62,8 @@ def base_config():
     cfg = dict(DEFAULT_CONFIG)
     try:
         if os.path.isfile(CONFIG_PATH):
-            raw = _yaml_load(open(CONFIG_PATH, encoding="utf-8").read())
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                raw = _yaml_load(f.read())
             if isinstance(raw, dict):
                 cfg.update(raw)
     except Exception:  # noqa: BLE001
@@ -76,7 +77,8 @@ def load_config():
         cfg = base_config()
         try:
             if os.path.isfile(OVERLAY_PATH):
-                raw = _yaml_load(open(OVERLAY_PATH, encoding="utf-8").read())
+                with open(OVERLAY_PATH, encoding="utf-8") as f:
+                    raw = _yaml_load(f.read())
                 if isinstance(raw, dict):
                     cfg.update(raw)
         except Exception:  # noqa: BLE001
@@ -91,7 +93,8 @@ def save_config(patch):
         try:
             cur = {}
             if os.path.isfile(OVERLAY_PATH):
-                cur = _yaml_load(open(OVERLAY_PATH, encoding="utf-8").read()) or {}
+                with open(OVERLAY_PATH, encoding="utf-8") as f:
+                    cur = _yaml_load(f.read()) or {}
             if not isinstance(cur, dict):
                 cur = {}
         except Exception:  # noqa: BLE001

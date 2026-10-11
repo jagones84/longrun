@@ -155,8 +155,20 @@ class MCPSession:
             if not is_notification:
                 req["id"] = mid
             if self.proc and self.proc.stdin:
-                self.proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
-                self.proc.stdin.flush()
+                # JAG-bugfinder: a dead child keeps a non-None proc/stdin, but
+                # writing raises BrokenPipeError. Check liveness and guard the
+                # write so a crashed MCP server returns None instead of raising.
+                if self.proc.poll() is not None:
+                    self._pending.pop(mid, None)
+                    self._connected = False
+                    return None
+                try:
+                    self.proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
+                    self.proc.stdin.flush()
+                except (BrokenPipeError, OSError, ValueError):
+                    self._pending.pop(mid, None)
+                    self._connected = False
+                    return None
             elif self._http_base:
                 resp = self._http_call(req, timeout)
                 self._pending.pop(mid, None)

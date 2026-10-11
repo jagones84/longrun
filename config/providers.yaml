@@ -139,3 +139,30 @@ providers:
       - {id: gemini-3.8-flash, context_length: 1048576}
       - {id: gemini-3.1-pro-preview, context_length: 1048576}
       - {id: gemini-3.1-flash-lite, context_length: 1048576}
+
+  # ---- EMBEDDING-ONLY providers (JAG-403k) ---------------------------------
+  # OpenAI-compatible `/embeddings` endpoints referenced by the embedding
+  # catalogue (config/embedding.yaml, `<provider>:<model>` refs). They carry NO
+  # chat models and are flagged `embed_only` so they never clutter the chat
+  # model picker — `providers.resolve()` still finds them for embeddings.
+  - id: cohere
+    name: Cohere (embeddings)
+    kind: openai
+    base_url: https://api.cohere.ai/compatibility/v1
+    api_key_env: COHERE_API_KEY
+    embed_only: true
+    models: []
+  - id: voyage
+    name: Voyage AI (embeddings)
+    kind: openai
+    base_url: https://api.voyageai.com/v1
+    api_key_env: VOYAGE_API_KEY
+    embed_only: true
+    models: []
+  - id: jina
+    name: Jina AI (embeddings)
+    kind: openai
+    base_url: https://api.jina.ai/v1
+    api_key_env: JINA_API_KEY
+    embed_only: true
+    models: []

@@ -237,20 +237,25 @@ def add_source(notebook, ref):
                            "VALUES(?,?,?,?,?,?,?)", (sid, notebook, "path", ref, base, time.time(), n))
                 kind = "path"
             em = _cfg.embed_model()
+            embed_err = None
             if em and n:
                 # JAG-403j: a failing embedder must never break the ingest — the
                 # source is still indexed (bm25) even if the vectors cannot be built.
+                # JAG-403k: the failure is REPORTED back in the result, not swallowed.
                 try:
                     rows = [(r["id"], r["text"]) for r in db.execute(
                         "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
                     _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
                                       scope="notebook", scope_id=str(notebook),
                                       op="add_source")
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    embed_err = "%s: %s" % (type(e).__name__, e)
             db.commit()
+            embedded = db.execute("SELECT count(*) c FROM chunks WHERE source=? AND vec IS NOT NULL",
+                                  (sid,)).fetchone()["c"]
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
-                    "ref": ref, "chunks": n, "title": ref if kind == "url" else base}
+                    "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
+                    "title": ref if kind == "url" else base}
         finally:
             db.close()
 
@@ -275,9 +280,23 @@ def add_text(notebook, title, text):
             n = _ingest(db, sid, notebook, "text", title, title,
                         _chunk.chunk_doc(text, cl, ov), "markdown", title, cfg, fts)
             db.execute("UPDATE sources SET chunks=? WHERE id=?", (n, sid))
+            em = _cfg.embed_model()
+            embed_err = None
+            if em and n:
+                try:
+                    rows = [(r["id"], r["text"]) for r in db.execute(
+                        "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
+                    _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                                      scope="notebook", scope_id=str(notebook),
+                                      op="add_text")
+                except Exception as e:  # noqa: BLE001
+                    embed_err = "%s: %s" % (type(e).__name__, e)
             db.commit()
+            embedded = db.execute("SELECT count(*) c FROM chunks WHERE source=? AND vec IS NOT NULL",
+                                  (sid,)).fetchone()["c"]
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": "text",
-                    "ref": title, "chunks": n, "title": title}
+                    "ref": title, "chunks": n, "embedded": embedded, "embed_error": embed_err,
+                    "title": title}
         finally:
             db.close()
 
@@ -316,15 +335,22 @@ def add_source_text(notebook, ref, text, title=None):
             n = _ingest(db, sid, notebook, "url", ref, title or ref,
                         _chunk.chunk_doc(text, cl, ov), "markdown", ref, cfg, fts)
             em = _cfg.embed_model()
+            embed_err = None
             if em and n:
                 rows = [(r["id"], r["text"]) for r in db.execute(
                     "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
-                _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
-                                  scope="notebook", scope_id=str(notebook),
-                                  op="add_source")
+                try:
+                    _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                                      scope="notebook", scope_id=str(notebook),
+                                      op="add_source")
+                except Exception as e:  # noqa: BLE001 — never break ingest on an embed failure
+                    embed_err = "%s: %s" % (type(e).__name__, e)
             db.commit()
+            embedded = db.execute("SELECT count(*) c FROM chunks WHERE source=? AND vec IS NOT NULL",
+                                  (sid,)).fetchone()["c"]
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": "url",
-                    "ref": ref, "chunks": n, "title": title or ref}
+                    "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
+                    "title": title or ref}
         finally:
             db.close()
 
@@ -357,6 +383,31 @@ def remove_source(sid):
 
 
 # --------------------------------------------------------------------- search --
+def reembed():
+    """Embed EVERY chunk that has no vector yet (JAG-403k).
+
+    Durable fix for indexes built while the embedding model was unavailable:
+    instead of deleting + re-adding every source, this back-fills the vectors
+    for all pending chunks with the active model.
+    """
+    em = _cfg.embed_model()
+    if not em:
+        return {"ok": False, "error": "no embedding model active"}
+    cfg = _cfg.load_config()
+    with LOCK:
+        db = _connect()
+        try:
+            _init(db)
+            rows = [(r["id"], r["text"]) for r in db.execute("SELECT id, text FROM chunks WHERE vec IS NULL")]
+            _vec.embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
+                              scope="notebook", op="reembed")
+            embedded = db.execute("SELECT count(*) c FROM chunks WHERE vec IS NOT NULL").fetchone()["c"]
+            total = db.execute("SELECT count(*) c FROM chunks").fetchone()["c"]
+            return {"ok": True, "model": em, "pending": len(rows), "embedded": embedded, "chunks": total}
+        finally:
+            db.close()
+
+
 def search(query, notebook=None, k=8, kind=None, embed_model=None):
     """Top-k chunks. Optionally scoped to ONE notebook. bm25, or bm25+cosine (RRF)."""
     query = str(query or "").strip()
@@ -407,9 +458,12 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None):
             qv = _embed_texts_query(ref, query)
             if qv:
                 marks = ",".join("?" * len(rows))
-                cand = {r["id"]: _vec.blob_vec(x["vec"]) for x in db.execute(
+                # JAG-403k: `row` (not `r`) — `r` is a function-local from the
+                # `for r in rows[:k]` loop below, so using it here raised
+                # UnboundLocalError the first time the hybrid path actually ran.
+                cand = {row["id"]: _vec.blob_vec(row["vec"]) for row in db.execute(
                     "SELECT id, vec FROM chunks WHERE id IN (%s) AND vec IS NOT NULL" % marks,
-                    [r["id"] for r in rows])}
+                    [x["id"] for x in rows])}
                 if cand:
                     K = 60
                     lex = {r["id"]: i for i, r in enumerate(rows)}
@@ -465,7 +519,7 @@ def import_candidates(notebook, urls):
 def status():
     p = db_path()
     out = {"db": p, "exists": os.path.isfile(p), "embed_model": _cfg.embed_model(),
-           "notebooks": 0, "sources": 0, "files": 0, "chunks": 0, "dim": 0,
+           "notebooks": 0, "sources": 0, "files": 0, "chunks": 0, "embedded": 0, "dim": 0,
            "built_at": None, "fts": False, "size_kb": 0,
            "extractors": _docio.available()}
     if not out["exists"]:
@@ -481,6 +535,7 @@ def status():
         out["sources"] = db.execute("SELECT count(*) c FROM sources").fetchone()["c"]
         out["files"] = db.execute("SELECT count(*) c FROM (SELECT DISTINCT source,path FROM chunks)").fetchone()["c"]
         out["chunks"] = db.execute("SELECT count(*) c FROM chunks").fetchone()["c"]
+        out["embedded"] = db.execute("SELECT count(*) c FROM chunks WHERE vec IS NOT NULL").fetchone()["c"]
         out["dim"] = _vec.dim(db)
         try:
             row = db.execute("SELECT value FROM meta WHERE key='built_at'").fetchone()

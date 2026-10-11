@@ -986,6 +986,10 @@ def handle(handler, method, path, qs, body):
         if path == "/api/knowledge/clear":
             from longrun.memory import knowledge as _kb
             return _r(handler, 200, _kb.clear())
+        # JAG-403k: back-fill vectors for chunks indexed with no embedding model.
+        if path == "/api/knowledge/reembed":
+            from longrun.memory import knowledge as _kb
+            return _r(handler, 200, _kb.reembed())
         # JAG-403b: research agent — discover + iterative summarisation + import.
         if path == "/api/knowledge/research":
             from longrun.research import executor as _rs

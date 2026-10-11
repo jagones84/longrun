@@ -43,6 +43,12 @@ def embed_chunks(db, rows, ref, batch, scope=None, scope_id=None, op=None):
     est_tokens = 0
     for i in range(0, len(rows), max(1, batch)):
         part = rows[i:i + max(1, batch)]
+        # embed_texts() drops empty/non-string inputs, so filter here too to
+        # keep zip() lengths aligned (otherwise a mismatch silently skips
+        # vectors for the trailing chunks while `done` overcounts them).
+        part = [(cid, t) for cid, t in part if isinstance(t, str) and t.strip()]
+        if not part:
+            continue
         out = embed.embed_texts([t for _, t in part], model=ref)
         if not out:
             return done

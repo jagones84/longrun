@@ -117,11 +117,46 @@ All notable changes to Longrun are documented here. The format follows
   whose summary shows the active notebook + its source count.
 
 ### Fixed
+- **Embeddings were silently never stored — the semantic layer was dead (JAG-403k).** The
+  embedding catalogue referenced providers (`cohere:`, `voyage:`, `jina:`) that were **not
+  declared** in `config/providers.yaml`, so `providers.resolve()` returned `None`, the batch
+  fell back to the local router (which has no embedding models) and **0 vectors** were written —
+  while the UI still showed an active model. Fixed by declaring the three providers as
+  **embedding-only endpoints** (`embed_only: true`, no chat models, so the model picker stays
+  clean): Cohere `https://api.cohere.ai/compatibility/v1`, Voyage `https://api.voyageai.com/v1`,
+  Jina `https://api.jina.ai/v1`. A second, latent bug surfaced once vectors existed: the HYBRID
+  retrieval path (`codeindex.search`/`knowledge.search`) raised `UnboundLocalError` (a
+  comprehension reused `r`, made function-local by the `for r in rows` loop below) — the branch
+  had never run before. Embed build/ingest failures are no longer swallowed: they are recorded
+  (`meta.embed_error`) and reported (`embedded` count + error) through `/api/codebase/status`
+  and `/api/knowledge/status`, and the UI shows **"N/M embedded"** with a warning on failure.
+  `knowledge.reembed()` (API `POST /api/knowledge/reembed`, UI **"⟳ re-embed"**) back-fills
+  vectors for indexes built while no model was available. Verified on the DGX: codebase
+  116/116 and knowledge 76/76 chunks embedded (dim 1024); a real 2.2 MB arXiv PDF extracted via
+  `pdftotext` (61,642 chars) → 18/18 embedded with hybrid search. v409 17/17; README 135 → 136.
 - **Deleting the WHOLE knowledge base always asks (JAG-403e).** `confirmDelete` gained a
   `force` flag so the "don't ask again (until reload)" suppression can never skip the
   whole-knowledge-base confirmation.
 - Removed a dangling `closeSkillView()` call on Escape (undefined after the skill modal was
   removed) that would have thrown on every Escape press.
+- **Bugfinder sweep (JAG-410): six latent bugs fixed, battery still 136/136.**
+  - *File handle leaks*: `open()` without `with` in `indexcfg.py` (3), `keys.py` (2),
+    `embedcfg.py` (1) — a long-running server under load could exhaust file descriptors.
+  - *Silent embedding truncation* (`vectors.embed_chunks`): `embed_texts()` filters out empty
+    strings, but `zip(part, vecs)` silently truncated when a batch had any — trailing chunks
+    got no vector while `done` overcounted them. `part` is now pre-filtered to match.
+  - *TOCTOU race in the persistent terminal* (`term.Shell.run`): the `busy` flag was checked
+    then set outside the lock, so two concurrent calls could both write to stdin. The
+    check-and-set is now atomic under `self._lock`.
+  - *BrokenPipeError on a dead MCP child* (`mcp_client._send_raw`): a crashed stdio MCP server
+    left a non-None `proc`/`stdin`, so `stdin.write()` raised `BrokenPipeError` and propagated
+    to callers. The write now checks `proc.poll()` and catches pipe errors, returning `None`
+    and marking the client disconnected.
+  - *Pasted text was never embedded* (`knowledge.add_text`): unlike `add_source` (URL/path),
+    `add_text` skipped the embedding step entirely, so notebook text was bm25-only. It now
+    embeds and reports `embedded`/`embed_error` consistently.
+  - *Silent embed failure in `add_source_text`*: the research executor's ingest path used
+    `except Exception: pass` instead of recording the error; now reports `embed_error`.
 
 ### Fixed
 - Pre-existing `NameError: name 'embed' is not defined` in `codeindex.search` (line 208)
