@@ -50,6 +50,11 @@
   .grid2.ab .panel,.grid2.oc .panel{display:flex;flex-direction:column;min-height:0}
   .grid2.ab .panel>.scroll,.grid2.oc .panel>.scroll{flex:1 1 auto;max-height:none;min-height:0}
   .grid2.ab .col,.grid2.ab .col>.panel{min-height:0}
+  /* JAG-2.4: fill the right column so the Job panel's bottom is anchored to the
+     Constellation top below it. */
+  .grid2.ab .col{height:100%}
+  .grid2.ab .col>.panel:last-child{flex:1 1 auto;min-height:0}
+  .grid2.ab .col>.panel:last-child>.scroll{flex:1 1 auto;max-height:none;min-height:0}
   .col{gap:0}
   @media (max-width:1100px){ .grid2.ab,.grid2.oc{display:flex;flex-direction:column;gap:0} .rz-cols{display:none} }
   .panel{position:relative}
@@ -655,6 +660,7 @@ class AgentsView {
 class OrgChartView {
   constructor(onPick, onGoTo){ this.onPick = onPick; this.onGoTo = onGoTo; this.bySid = {};
     this.box = $("orgtree"); this.canvas = null; this.k = 1; this.tx = 0; this.ty = 0;
+    this.auto = true;   // true while in "fit" mode; a manual zoom/pan turns it off
     this._sig = null; this.drag = null; this._bindControls(); }
   /* JAG-342-zoom: fit / zoom / pan on a transform-scaled inner canvas. */
   _bindControls(){
@@ -674,9 +680,10 @@ class OrgChartView {
     window.addEventListener("mousemove", (ev) => { if (!this.drag) return;
       this.tx = this.drag.tx + (ev.clientX - this.drag.x);
       this.ty = this.drag.ty + (ev.clientY - this.drag.y);
+      this.auto = false;
       this.apply(); });
     window.addEventListener("mouseup", () => { if (this.drag){ this.drag = null; box.style.cursor = "default"; } });
-    window.addEventListener("resize", () => this.fit());
+    window.addEventListener("resize", () => { if (this.auto) this.fit(); });
   }
   fit(){
     const box = this.box, cv = this.canvas;
@@ -688,9 +695,11 @@ class OrgChartView {
     this.k = Math.max(0.1, Math.min(4, Math.min(vw / cw, vh / ch)));
     this.tx = (vw - cw * this.k) / 2;
     this.ty = (vh - ch * this.k) / 2;
+    this.auto = true;
     this.apply();
   }
   zoomAt(mx, my, f){
+    this.auto = false;
     const nk = Math.max(0.1, Math.min(3, this.k * f));
     if (Math.abs(nk - this.k) < 1e-4) return;
     const px = (mx - this.tx) / this.k, py = (my - this.ty) / this.k;
@@ -1132,7 +1141,7 @@ class OrbitApp {
     this.teams = [];
     this.tac = new Constellation(this.api);
     this.org = new OrgChartView((a) => this.tac.open(a, "agent"), (a) => this.tac.gotoAgent(a));
-    if (window.ResizeObserver) new ResizeObserver(() => { try { this.org.fit(); } catch (_) {} }).observe($("orgtree"));
+    if (window.ResizeObserver) new ResizeObserver(() => { try { if (this.org.auto) this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.routines = new RoutinesView(this.api, () => this.refresh());
     this.feed = new FeedView(this.api);
