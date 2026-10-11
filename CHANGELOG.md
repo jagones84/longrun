@@ -92,6 +92,29 @@ All notable changes to Longrun are documented here. The format follows
   **Default view is COLLAPSED**: the Control AGENTS team groups and the Sessions rail groups both
   open collapsed (the rail keeps only the active session's own group open); the rail stores an
   explicit "open" list, so a brand-new team also starts collapsed.
+- **Control/Sessions fixes: persistent zoom, correct org chart, tidy create rows, legible logo (JAG-424f).**
+  - The Constellation now **keeps your zoom/pan across the 5s refresh**: `draw()` only re-fits when the
+    content box really changed. It used to reset the `viewBox` on EVERY poll, so zooming "snapped back"
+    to the default unpredictably.
+  - The org chart's wrapped rows are **top-aligned**. Siblings were vertically CENTRED by subtree height,
+    so a shallow sibling sat lower than a deep one and read as its child (the "Reality Checker → Growth
+    Hacker" illusion — they are siblings, both `reports_to A12`). Verified: 0 node overlaps, every child
+    below its parent.
+  - The Routines/Jobs **create rows** no longer push the ＋ button out of frame: a full-width `<select>`
+    with long options refused to shrink; now the select flexes (`min-width:0`) and the button stays put
+    and never wraps.
+  - The topbar logo is a **legible bold running-man** (the old 24px glyph turned to mush at 15px).
+- **Control/Sessions: real org-chart centring, tab isolation, ctx ring on the session row (JAG-424g).**
+  - The org chart **centres every parent over its children** (midpoint of the children's true centres),
+    not over the block width. With uneven subtrees the two differ, so a parent's stem missed the bus
+    centre (e.g. "Growth Hacker" hung over "Social Media Strategist" instead of between its two kids).
+    Wrapped rows are **left-aligned off one short trunk** in a narrow gutter, so a lone child is never
+    centred under its parent (a fake parent→child chain) and no connector crosses a node.
+  - The Control tab **fully captures the mouse/keyboard**: `#app` (the Sessions page) is set `inert`
+    while Control is up and released on return, so nothing behind the overlay is hoverable/clickable.
+  - The context ring moved off the **Sessions panel header** onto the **active session's row** (line 1,
+    right of the message count) so it shows that ONE session's saturation and no longer overlaps the
+    title. Its tooltip still carries the full "used / budget · %" detail.
 - **Settings: auto-save everywhere, general default model, Knowledge polish (JAG-423).** Every model
   picker saves on change — the **Compaction model** and **Research model** `save` buttons are gone
   (`onchange`) — consistent with the embedding picker. The verbose "Saved automatically …" helper under

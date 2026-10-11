@@ -56,6 +56,9 @@
   }
   header .logo { font-weight: 700; letter-spacing: .06em; font-size: 16px;
     background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  /* JAG-424g: the wordmark is gradient-clipped text (color:transparent), so the mark's
+     `stroke="currentColor"` came out INVISIBLE. Give the svg its own visible colour. */
+  header .logo svg { color: var(--acc); }
   header .sub { color: var(--dim); font-size: 11px; }
   /* JAG-357: the active session's name, shown in the topbar when the left panel is
      collapsed — you hide the PANEL, never the fact of which session you are in. */
@@ -79,10 +82,11 @@
     stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset .3s, stroke .3s; }
   .pill.meter.hot .mfill { stroke: var(--err); }
   .pill.meter.hot b { color: var(--err); }
-  /* JAG-424: the ctx meter is now a TINY ring in the Sessions rail header (moved off the
-     banner), beside the collapse/expand icons — circular part only, no % label. */
-  #ctx-meter { margin-left: 8px; padding: 0; gap: 4px; background: transparent; border: 0; }
-  #ctx-meter .mring { width: 15px; height: 15px; }
+  /* JAG-424g: the context ring is per-SESSION — it sits on the ACTIVE session's row
+     (its own context saturation), not on the shared Sessions panel header. */
+  .sess-ctx { margin-left: 6px; flex: 0 0 auto; display: inline-flex; align-items: center; }
+  #ctx-meter { margin: 0; padding: 0; gap: 4px; background: transparent; border: 0; }
+  #ctx-meter .mring { width: 14px; height: 14px; }
   #ctx-meter b { display: none; }
   .pill.sbox { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
     padding: 3px 11px; }
@@ -1151,7 +1155,7 @@
 </head>
 <body>
 <header id="topbar">
-  <span class="logo"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" style="vertical-align:-2px"><circle cx="15.2" cy="4" r="2.2"/><path d="M11.5 7.2 9 12.2l3.2 1.4L14 20.4h-2.2l-1.5-5.3-2.6-1.1L6 18.4H3.9l2.5-6.2-1.4-2.9-2.1 1-.9-1.7 3.2-1.6 2 1.6 3.2-1z"/></svg> LONGRUN</span>
+  <span class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</span>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
     <a class="ttab active" id="tabSessions" href="#sessions" onclick="showSessions();return false;" aria-current="page">Sessions</a>
     <a class="ttab" id="tabControl" href="#control" onclick="showControl();return false;">Control</a>
@@ -1177,7 +1181,7 @@
 <main id="app">
   <aside id="aside" data-col="sessions">
     <section>
-      <h2>Sessions<span class="pill meter" id="ctx-meter" title="context tokens / budget"><svg class="mring" viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle><circle class="mfill" id="ctxRing" cx="18" cy="18" r="15.9155"></circle></svg><b id="ctxPctTop">…</b></span><span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
+      <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
       <div style="display:flex;gap:6px;margin-bottom:6px">
         <input id="sessInp" class="inp" placeholder="new session title…" style="flex:1;padding:6px 10px;font-size:12px">
         <button class="ghost" onclick="newSession()">+ new</button>
@@ -2988,6 +2992,24 @@ function _orgRankMap() {
   agents.forEach(a => { if (!seen[a.id]) walk(a); });
   return rank;
 }
+/* JAG-424g: the context ring belongs to ONE session — it is drawn on the ACTIVE session's
+   row (its own saturation), once per render (the active session may be drawn in several
+   team groups). The state is re-applied after every rail render. */
+let _ctxRingPlaced = false, _ctxPct = null, _ctxTitle = "context tokens / budget";
+function _ctxRingHtml(s) {
+  if (s.id !== sessionId || _ctxRingPlaced) return "";
+  _ctxRingPlaced = true;
+  return '<span class="sess-ctx"><span class="pill meter" id="ctx-meter" title="context tokens / budget">'
+    + '<svg class="mring" viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle>'
+    + '<circle class="mfill" id="ctxRing" cx="18" cy="18" r="15.9155"></circle></svg><b id="ctxPctTop">…</b></span></span>';
+}
+function _repaintCtx() {
+  const pill = $("ctx-meter");
+  if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (_ctxPct >= 70 ? " hot" : ""); }
+  const p = $("ctxPctTop"); if (p) p.textContent = (_ctxPct == null ? "–" : _ctxPct + "%");
+  const ring = $("ctxRing");
+  if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, _ctxPct || 0)));
+}
 /* One rail row for a session. Called once PER GROUP the session belongs to. */
 function _sessRowEl(s, pinnedIds, ag) {
   const d = document.createElement("div");
@@ -3002,7 +3024,9 @@ function _sessRowEl(s, pinnedIds, ag) {
   const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];
     return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
   const pin = pinnedIds.includes(s.id) ? '<span class="pin" title="pinned session">📌</span>' : "";
-  d.innerHTML = `${pin}${agtag}${jid}${tchips}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span><span class="t">${esc(s.title || s.id)}</span>`;
+  // JAG-424g: the ctx ring sits on LINE 1 of the active row (before the full-width
+  // title, which always wraps to its own line) so it never lands under the title text.
+  d.innerHTML = `${pin}${agtag}${jid}${tchips}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span>${_ctxRingHtml(s)}<span class="t">${esc(s.title || s.id)}</span>`;
   d.onclick = e => {
     if (e.target.classList.contains("menu-btn")) { openSessMenu(d, s, ag); return; }
     if (e.target.closest && e.target.closest(".sess-menu")) return;
@@ -3052,6 +3076,7 @@ async function loadSessions() {
   };
 
   // No teams configured -> keep the flat, header-less list (backward compatible).
+  _ctxRingPlaced = false;   // JAG-424g: one ctx ring per render, on the active row
   if (!teams.length) {
     _lastGroupKeys = [];
     visible.slice().sort(_ord).forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
@@ -3106,6 +3131,7 @@ async function loadSessions() {
   }
   if (!visible.length) box.innerHTML = '<div class="remaining">no sessions yet</div>';
   updateSessBadge();   // JAG-357: keep the topbar badge in sync with the active session
+  _repaintCtx();   // JAG-424g: re-apply the context ring on the freshly rendered active row
   modelLabel();   // JAG-157: reflect the active session's model once the cache is filled
 }
 /* JAG-117: creating a session asks which local folder to open it in. */
@@ -3309,7 +3335,8 @@ function ctxNa(reason) {
   _isum("sContext", "");
   const _bar = $("ctxBar");
   if (_bar) { _bar.style.width = "0%"; _bar.style.minWidth = "0px"; _bar.className = ""; }
-  const _cm = $("ctx-meter"); _cm.className = "pill meter"; _cm.title = "context tokens / budget";
+  _ctxPct = null; _ctxTitle = "context tokens / budget";   // JAG-424g: the ring lives on the row
+  const _cm = $("ctx-meter"); if (_cm) { _cm.className = "pill meter"; _cm.title = _ctxTitle; }
   const _cp = $("ctxPctTop"); if (_cp) _cp.textContent = "–";
   const _cr = $("ctxRing"); if (_cr) _cr.style.strokeDashoffset = "100";
 }
@@ -3426,9 +3453,9 @@ async function loadCtx() {
     // JAG-359: the topbar ctx indicator is a small ring + % (red from 70% up); the
     // full "used / budget · %" string moves to the tooltip instead of the label.
     const pct = (d.pct != null ? d.pct : 0);
+    _ctxPct = pct; _ctxTitle = d.detail || d.short || "context tokens / budget";
     const pill = $("ctx-meter");
-    pill.title = d.detail || d.short || "context tokens / budget";
-    pill.className = "pill meter" + (pct >= 70 ? " hot" : "");
+    if (pill) { pill.title = _ctxTitle; pill.className = "pill meter" + (pct >= 70 ? " hot" : ""); }
     const pctEl = $("ctxPctTop"); if (pctEl) pctEl.textContent = pct + "%";
     const ring = $("ctxRing");
     if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, pct)));
@@ -6701,10 +6728,14 @@ function showControl() {
   if (f && !f.getAttribute("src")) f.setAttribute("src", "/orbit?embed=1&theme=" + encodeURIComponent(localStorage.getItem("sf_theme") || "indigo"));
   else { try { if (f && f.contentDocument) f.contentDocument.documentElement.dataset.theme = (localStorage.getItem("sf_theme") || "indigo"); } catch (_) {} }
   cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); document.body.classList.add("control-on"); _setTabs("control");
+  // JAG-424g: while Control is up, the Sessions page must not receive mouse OR keyboard —
+  // `inert` removes it from hit-testing, focus and the a11y tree in one shot.
+  const app = document.getElementById("app"); if (app) app.setAttribute("inert", "");
   try { history.replaceState(null, "", location.pathname + location.search + "#control"); } catch (_) {}
 }
 function showSessions() {
   const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
+  const app = document.getElementById("app"); if (app) app.removeAttribute("inert");
   document.body.classList.remove("control-on");
   _setTabs("sessions");
   try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}

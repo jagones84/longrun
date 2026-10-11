@@ -89,6 +89,12 @@
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
   .panel > h2 .n{margin-left:auto;color:var(--ice);font-size:10px}
   .pad{padding:8px}
+  /* JAG-424f: the Routines/Jobs create rows must keep the ＋ button IN the frame — a
+     full-width <select> with long options (agent names) would otherwise refuse to shrink
+     and push the button past the panel edge. */
+  .pad>.row>.inp{flex:1 1 auto;width:auto;min-width:0}
+  .pad>.row>.inp[type="number"]{flex:0 0 92px}
+  .pad>.row>.btn{flex:0 0 auto;white-space:nowrap}
   .scroll{max-height:44vh;overflow:auto}
   .muted{color:var(--dim)} .small{font-size:11px}
   .empty{padding:14px;color:var(--dim);font-size:12px}
@@ -268,7 +274,7 @@
 <body>
 <script>if(window.self!==window.top||/[?&]embed=1/.test(location.search))document.documentElement.classList.add("embed");</script>
 <header>
-  <span class="logo"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" style="vertical-align:-2px"><circle cx="15.2" cy="4" r="2.2"/><path d="M11.5 7.2 9 12.2l3.2 1.4L14 20.4h-2.2l-1.5-5.3-2.6-1.1L6 18.4H3.9l2.5-6.2-1.4-2.9-2.1 1-.9-1.7 3.2-1.6 2 1.6 3.2-1z"/></svg> LONGRUN</span>
+  <span class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</span>
   <nav class="topTabs" aria-label="top-level sections">
     <a class="ttab" href="/">Sessions</a>
     <span class="ttab active" aria-current="page">Control</span>
@@ -760,8 +766,12 @@ class OrgChartView {
     agents.forEach(a => { const p = a.reports_to || ""; (by[p] = by[p] || []).push(a); });
     // JAG-424d: JS layout — sibling rows WRAP at MAXROW, so a wide fan-out grows DOWN
     // instead of stretching the tree to thousands of px. Fixed node box (132×62).
-    const NW = 132, NH = 62, GX = 16, GY = 34, MAXROW = 1180, PAD = 16;
-    const GUT = 22, V1 = 16, V2 = 16;   // left trunk gutter + parent→bus / bus→child gaps
+    const NW = 132, NH = 62, GX = 16, GY = 30, PAD = 16;
+    const GUT = 18, V2 = 16;   // trunk gutter (wrapped rows only) + parent→bus gap
+    // The wrap width follows the panel: a wide deck keeps the tree FLAT (few rows),
+    // a narrow one wraps sooner. A tree that fits one row is never touched.
+    const boxW = (box && box.clientWidth) || 1200;
+    const MAXROW = Math.round(Math.max(1000, Math.min(2100, boxW * 1.5)));
     const measure = (a, seen) => {
       if (seen[a.id]) return {w: NW, h: NH};
       seen[a.id] = 1;
@@ -774,47 +784,61 @@ class OrgChartView {
       if (cur.length) rows.push(cur);
       const rowsW = rows.map(r => r.reduce((s, k, i) => s + k.m.w + (i ? GX : 0), 0));
       const rowsH = rows.map(r => Math.max.apply(null, r.map(k => k.m.h)));
-      // A lone single-child row just needs a straight drop; anything wider uses a LEFT
-      // TRUNK + a per-row bus, so a wrapped row-2 line never crosses — and never LOOKS
-      // like an edge to — the row-1 nodes above it (the A20/A21 illusion).
-      const bus = !(rows.length === 1 && rows[0].length === 1);
-      const w = Math.max(NW, Math.max.apply(null, rowsW)) + (bus ? GUT : 0);
-      const h = NH + V1 + V2 + rowsH.reduce((s, x) => s + x, 0) + (rows.length - 1) * GY;
-      return {w: w, h: h, rows: rows, rowsW: rowsW, rowsH: rowsH, bus: bus};
+      // ONLY a wrapped (>1 row) subtree keeps the trunk gutter. A single row uses a
+      // clean CENTRED elbow (stem → bus → drops), which is far less noisy.
+      const wide = rows.length > 1;
+      const w = Math.max(NW, Math.max.apply(null, rowsW)) + (wide ? GUT : 0);
+      const h = NH + V2 + rowsH.reduce((s, x) => s + x, 0) + (rows.length - 1) * GY;
+      return {w: w, h: h, rows: rows, rowsW: rowsW, rowsH: rowsH, wide: wide};
     };
     const pos = {}, edges = [];
     const place = (a, m, x, y) => {
-      const top = y, areaX = x + (m.bus ? GUT : 0), areaW = m.w - (m.bus ? GUT : 0);
-      const cx = areaX + areaW / 2;
-      pos[a.id] = {cx: cx, top: top};
+      const top = y;
       this.bySid[a.session] = a;
-      if (!m.rows) return;
-      const firstTop = top + NH + V1 + V2;
-      if (!m.bus){                                   // lone child: a straight vertical drop
-        const kx = areaX + (areaW - m.rowsW[0]) / 2;
-        edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + firstTop.toFixed(1));
-        place(m.rows[0][0].a, m.rows[0][0].m, kx, firstTop);
+      if (!m.rows){ pos[a.id] = {cx: x + NW / 2, top: top}; return; }   // leaf
+      const areaX = x + (m.wide ? GUT : 0), areaW = m.w - (m.wide ? GUT : 0);
+      const gap = Math.round(V2 / 2), childTop = top + NH + V2, busY = childTop - gap;
+      // Lay the rows out first, then CENTRE THE PARENT over the midpoint of its
+      // children's centres (not over the block width): with uneven subtrees the two
+      // differ, and a stem that misses the bus centre is what made the chart look wrong.
+      let ry = childTop;
+      const rows = m.rows.map((row, ri) => {
+        let rx = m.wide ? areaX : areaX + (areaW - m.rowsW[ri]) / 2;
+        const cs = row.map(k => { const c = {k: k, x: rx, cx: rx + k.m.w / 2}; rx += k.m.w + GX; return c; });
+        const info = {top: ry, busY: ry - gap, cs: cs};
+        ry += m.rowsH[ri] + GY;
+        return info;
+      });
+      rows.forEach(info => info.cs.forEach(c => place(c.k.a, c.k.m, c.x, info.top)));
+      // Read back each child's TRUE centre (its own children may have pulled it off the
+      // block centre); the bus, the drops and the parent must agree with that value.
+      rows.forEach(info => info.cs.forEach(c => { c.cx = pos[c.k.a.id].cx; }));
+      let left = Infinity, right = -Infinity;
+      rows.forEach(info => info.cs.forEach(c => { if (c.cx < left) left = c.cx; if (c.cx > right) right = c.cx; }));
+      const cx = (left + right) / 2;
+      pos[a.id] = {cx: cx, top: top};
+      if (!m.wide){                                  // one row → classic centred elbow
+        if (right - left > 1){
+          edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + busY.toFixed(1));
+          edges.push("M" + left.toFixed(1) + " " + busY.toFixed(1) + " H" + right.toFixed(1));
+          rows[0].cs.forEach(c => { if (Math.abs(c.cx - cx) > 1)
+            edges.push("M" + c.cx.toFixed(1) + " " + busY.toFixed(1) + " V" + childTop.toFixed(1)); });
+        } else {
+          edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + childTop.toFixed(1));
+        }
         return;
       }
+      // wrapped: rows are LEFT-aligned and hang off ONE short trunk in the gutter, so
+      // a lone child is never centred under the parent (that reads as a fake chain)
+      // and no connector ever crosses — or passes through — a node.
       const trunkX = x + GUT / 2;
-      let ry = firstTop, lastBus = top + NH + V1;
-      m.rows.forEach((row, ri) => {
-        let rx = areaX + (areaW - m.rowsW[ri]) / 2;
-        const rh = m.rowsH[ri], busY = ry - V2;
-        lastBus = busY;
-        const cs = [];
-        row.forEach(k => { cs.push({k: k, cx: rx + k.m.w / 2, top: ry + (rh - k.m.h) / 2, x: rx}); rx += k.m.w + GX; });
-        const right = Math.max.apply(null, cs.map(c => c.cx));
-        edges.push("M" + trunkX.toFixed(1) + " " + busY.toFixed(1) + " H" + right.toFixed(1));
-        cs.forEach(c => {
-          edges.push("M" + c.cx.toFixed(1) + " " + busY.toFixed(1) + " V" + c.top.toFixed(1));
-          place(c.k.a, c.k.m, c.x, c.top);
-        });
-        ry += rh + GY;
+      rows.forEach(info => {
+        const r = Math.max.apply(null, info.cs.map(c => c.cx));
+        edges.push("M" + trunkX.toFixed(1) + " " + info.busY.toFixed(1) + " H" + r.toFixed(1));
+        info.cs.forEach(c => edges.push("M" + c.cx.toFixed(1) + " " + info.busY.toFixed(1) + " V" + info.top.toFixed(1)));
       });
-      // parent stem → left trunk (drops only in the gutter, never through a node column)
-      edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + (top + NH + V1).toFixed(1) +
-        " H" + trunkX.toFixed(1) + " V" + lastBus.toFixed(1));
+      edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + busY.toFixed(1));
+      edges.push("M" + trunkX.toFixed(1) + " " + busY.toFixed(1) + " V" + rows[rows.length - 1].busY.toFixed(1));
     };
     const roots = (by[""] || []).slice();
     agents.forEach(a => { if (a.reports_to && !agents.some(x => x.id === a.reports_to)) roots.push(a); });
@@ -846,10 +870,10 @@ class OrgChartView {
       box.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x === n));
       this.menu(ev, this.bySid[n.dataset.sid]); };
     });
-    // JAG-342-zoom: re-fit only when the tree shape changed; a 5s poll re-render
-    // must NOT reset an in-progress zoom/pan (the canvas element is recreated, so
-    // the stored transform is re-applied instead).
-    const sig = agents.map(a => a.id + ":" + (a.reports_to || "")).join("|");
+    // JAG-342-zoom: re-fit only when the tree shape (or its wrap width) changed; a 5s
+    // poll re-render must NOT reset an in-progress zoom/pan (the canvas element is
+    // recreated, so the stored transform is re-applied instead).
+    const sig = agents.map(a => a.id + ":" + (a.reports_to || "")).join("|") + "@" + MAXROW;
     if (sig !== this._sig){ this._sig = sig; this.fit(); }
     else this.apply();
   }
@@ -980,9 +1004,14 @@ class Constellation {
     if (!this.data){ svg.innerHTML = ""; $("constDetail").textContent = "no data yet"; return; }
     const vb = (this.mode === "all") ? this._drawAll() : this._drawAgent();
     if (!vb){ svg.innerHTML = ""; return; }
-    svg.setAttribute("viewBox", "0 0 " + vb.w + " " + vb.h);
+    const base = "0 0 " + vb.w + " " + vb.h;
+    // JAG-424f: keep the user's zoom/pan across a plain redraw (the 5s poll) — re-fit ONLY
+    // when the CONTENT box really changed (mode switch, or a different graph size).
+    const keep = (svg.__baseVB === base) ? svg.getAttribute("viewBox") : null;
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
     svg.innerHTML = vb.body;
+    svg.setAttribute("viewBox", keep || base);
+    svg.__baseVB = base;
     this._wire(svg);
     this._zoomPan(svg);
   }

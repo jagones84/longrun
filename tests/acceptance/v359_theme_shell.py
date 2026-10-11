@@ -48,7 +48,9 @@ check("B3 the ctx CSS turns the ring AND the % red when hot",
       ".pill.meter.hot .mfill { stroke: var(--err); }" in HTML
       and ".pill.meter.hot b { color: var(--err); }" in HTML, "")
 check("B4 the ctx tooltip carries the full used/budget detail",
-      "pill.title = d.detail || d.short" in HTML, "")
+      # JAG-424g: the ring moved off the panel header onto the active session ROW, so the
+      # detail now flows through the shared _ctxTitle (still "used / budget · %").
+      "_ctxTitle = d.detail || d.short" in HTML, "")
 check("B5 the sandbox pill is a status dot + one short word",
       'class="pill sbox" id="sbxPill"' in HTML and 'class="sdot" id="sbxDot"' in HTML
       and 'id="sbxTxt"' in HTML, "")
