@@ -556,6 +556,11 @@
     text-decoration: none; white-space: nowrap; transition: background .15s, color .15s; }
   .topTabs .ttab:hover { color: var(--txt); background: var(--hover); }
   .topTabs .ttab.active { color: var(--txt); background: var(--sel); box-shadow: inset 0 0 0 1px var(--acc); }
+  /* JAG-420: Control deck as an IN-PAGE view (top tabs swap sub-views, banner stays constant). */
+  #controlView { position: fixed; left: 0; right: 0; top: 44px; bottom: 0; z-index: 60;
+    background: var(--bg); display: none; }
+  #controlView.on { display: block; }
+  #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
   #composer #inp { width: 100%; }
   #inp, .inp { background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
     border-radius: var(--radius); padding: 12px 16px; font: inherit; outline: none; }
@@ -1117,8 +1122,8 @@
 <header id="topbar">
   <span class="logo">⚡ LONGRUN</span>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
-    <a class="ttab active" href="/" onclick="goSession();return false;" aria-current="page">Sessions</a>
-    <a class="ttab" href="/orbit" onclick="goControl();return false;">Control</a>
+    <a class="ttab active" id="tabSessions" href="#sessions" onclick="showSessions();return false;" aria-current="page">Sessions</a>
+    <a class="ttab" id="tabControl" href="#control" onclick="showControl();return false;">Control</a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
   <span style="flex:1"></span>
@@ -1135,6 +1140,7 @@
     </div>
   </div>
 </header>
+<div id="controlView" aria-hidden="true"><iframe id="controlFrame" title="Control deck"></iframe></div>
 <button class="edge-handle" id="handle-left" type="button"
         title="collapse / expand the sessions panel" aria-label="toggle sessions panel">◀</button>
 <button class="edge-handle" id="handle-right" type="button"
@@ -6577,8 +6583,33 @@ $("palette-open").onclick = openPalette;
 /* JAG-416: the top-level tabs must carry the token in the URL, otherwise the target
    page prompts for it (or 401s) whenever its own localStorage lookup is unavailable.
    Kept as standalone functions so the tab handlers stay declarative. */
-function goControl() { location.href='/orbit' + (TOKEN ? ('?token=' + encodeURIComponent(TOKEN)) : ''); }
-function goSession() { location.href='/' + (TOKEN ? ('?token=' + encodeURIComponent(TOKEN)) : ''); }
+/* JAG-420: the Control deck is now an IN-PAGE sub-view (an embedded frame) so the top
+   tabs swap sub-views of the SAME page and the banner never changes between tabs.
+   A full-page fallback (goControlDetached) still exists. */
+function _tabTop() { const h = document.getElementById("topbar"); return h ? Math.round(h.getBoundingClientRect().height) : 44; }
+function _setTabs(which) {
+  const s = document.getElementById("tabSessions"), c = document.getElementById("tabControl");
+  if (s) { const on = which === "sessions"; s.classList.toggle("active", on); on ? s.setAttribute("aria-current", "page") : s.removeAttribute("aria-current"); }
+  if (c) { const on = which === "control"; c.classList.toggle("active", on); on ? c.setAttribute("aria-current", "page") : c.removeAttribute("aria-current"); }
+}
+function showControl() {
+  const cv = document.getElementById("controlView"); if (!cv) return;
+  cv.style.top = _tabTop() + "px";
+  const f = document.getElementById("controlFrame");
+  if (f && !f.getAttribute("src")) f.setAttribute("src", "/orbit?embed=1");
+  cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); _setTabs("control");
+  try { history.replaceState(null, "", location.pathname + location.search + "#control"); } catch (_) {}
+}
+function showSessions() {
+  const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
+  _setTabs("sessions");
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}
+}
+/* full-page fallback: open the deck detached (kept for direct linking). */
+function goControlDetached() { location.href='/orbit' + (TOKEN ? ('?token=' + encodeURIComponent(TOKEN)) : ''); }
+function goControl() { showControl(); }
+function goSession() { showSessions(); }
+window.addEventListener("DOMContentLoaded", () => { if (location.hash === "#control") showControl(); });
 /* JAG-415: topbar "☰" app menu (settings · bridge · sandbox). */
 (function () {
   const btn = $("appmenuBtn"), menu = $("appMenu");

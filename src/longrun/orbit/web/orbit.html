@@ -219,9 +219,14 @@
   .btn:hover{color:var(--txt)}
   .btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
   .btn.on{background:var(--brief);color:var(--txt)}
+  /* JAG-420: embedded in the main page (Control tab) — hide the deck's own banner so the
+     parent page's single banner is the only one. */
+  html.embed header{display:none!important}
+  html.embed .wrap{padding-top:10px}
 </style>
 </head>
 <body>
+<script>if(window.self!==window.top||/[?&]embed=1/.test(location.search))document.documentElement.classList.add("embed");</script>
 <header>
   <span class="logo">⚡ LONGRUN</span>
   <nav class="topTabs" aria-label="top-level sections">
