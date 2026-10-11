@@ -361,7 +361,7 @@ const fillSelect = (sel, agents, ph) => {
 class AgentsView {
   constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
     this.models = []; this.teams = []; this.open = null; this.running = new Set();
-    this.viewMode = "table"; this._tmmenu = null; }
+    this.viewMode = "table"; this._tmmenu = null; this.closed = new Set(); }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams){
     if (tree) this.agents = tree.agents || [];
@@ -507,13 +507,17 @@ class AgentsView {
             (a.role ? '<span class="rl">' + esc(a.role) + '</span>' : '') +
             ((a.teams || []).length ? '<span class="teams muted small">' + this.teamCell(a) + '</span>' : '') +
             '</div>').join("");
-          return '<div class="grp" data-t="' + esc(g.id) + '">' +
+          return '<div class="grp' + (this.closed.has(g.id) ? ' closed' : '') + '" data-t="' + esc(g.id) + '">' +
             '<div class="grp-h"><span class="caret">▸</span>' + (g.symbol ? esc(g.symbol) + ' ' : '') +
             '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span></div>' +
             '<div class="grp-b">' + (rows || '<div class="empty">no agents in this group.</div>') + '</div></div>';
         }).join("")
       : '<div class="empty">no agents yet.</div>';
-    wrap.querySelectorAll(".grp-h").forEach(h => { h.onclick = () => h.parentElement.classList.toggle("closed"); });
+    wrap.querySelectorAll(".grp-h").forEach(h => { h.onclick = () => {
+      const grp = h.parentElement, id = grp.dataset.t;
+      grp.classList.toggle("closed");
+      if (grp.classList.contains("closed")) this.closed.add(id); else this.closed.delete(id);
+    }; });
   }
   /* JAG-2.0: checkbox popover that adds/removes the agent from teams one by one. */
   openTeamPicker(ev, a){
