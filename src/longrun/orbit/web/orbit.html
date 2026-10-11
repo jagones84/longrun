@@ -60,7 +60,8 @@
      columns across the whole panel and left a dead gap on the right. */
   table.at{width:auto;table-layout:fixed;border-collapse:collapse;font-size:12px}
   table.at col.c-id{width:60px} table.at col.c-name{width:172px} table.at col.c-role{width:140px}
-  table.at col.c-model{width:188px} table.at col.c-rep{width:172px} table.at col.c-file{width:94px}
+  table.at col.c-model{width:188px} table.at col.c-rep{width:172px} table.at col.c-teams{width:132px}
+  table.at col.c-file{width:94px}
   table.at col.c-act{width:112px}
   table.at th{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);text-align:left;
     padding:5px 8px;border-bottom:1px solid var(--line);font-weight:500}
@@ -73,9 +74,11 @@
   .rl{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 7px;white-space:nowrap}
   .dotr{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc2);box-shadow:0 0 6px currentColor;margin-left:5px;vertical-align:middle}
   /* org chart */
-  /* JAG-342: the org chart scrolls natively inside its panel (no transform pan, which
-     fought the scrollbar and clipped wide trees). Tall enough to show the whole chart. */
-  .orgwrap{padding:14px 10px;overflow:auto;max-height:72vh;min-height:240px}
+  /* JAG-342 + JAG-342-zoom: the panel is a fixed viewport; a transform (scale+pan)
+     on the inner canvas fits the whole tree and zooms it. overflow:hidden keeps the
+     page free of a horizontal scrollbar. */
+  .orgwrap{position:relative;overflow:hidden;max-height:72vh;min-height:240px}
+  .orgcanvas{position:absolute;left:0;top:0;transform-origin:0 0;width:max-content;padding:14px 10px;will-change:transform}
   .orgwrap ul{position:relative;padding-top:16px;display:flex;justify-content:center;list-style:none;margin:0}
   .orgwrap li{position:relative;padding:16px 8px 0;text-align:center;list-style:none}
   .orgwrap li::before,.orgwrap li::after{content:"";position:absolute;top:0;right:50%;border-top:1px solid var(--line);width:50%;height:16px}
@@ -86,7 +89,7 @@
   .orgwrap li:last-child::before{border-right:1px solid var(--line);border-radius:0 5px 0 0}
   .orgwrap li:first-child::after{border-radius:5px 0 0 0}
   .orgwrap ul ul::before{content:"";position:absolute;top:0;left:50%;border-left:1px solid var(--line);width:0;height:16px}
-  .orgwrap > ul{padding-top:0}
+  .orgcanvas > ul{padding-top:0}
   .node{display:inline-flex;flex-direction:column;gap:1px;border:1px solid var(--line);border-radius:9px;
     padding:6px 11px;background:var(--panel2);cursor:pointer;min-width:98px}
   .node:hover{border-color:var(--acc)}
@@ -100,6 +103,24 @@
   .ctxmenu div{padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
   .ctxmenu div:hover{background:var(--brief);color:#fff}
   .ctxmenu .sep{height:1px;background:var(--line);margin:4px 2px;padding:0}
+  /* JAG-2.0: agents grouped by team + per-agent team picker + org-chart hint/tools. */
+  .panel > h2 .hint{margin-left:8px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:10px;color:var(--dim);text-transform:none;letter-spacing:0;font-weight:400}
+  .tmbtn{max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+  .tmmenu label.tmopt{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
+  .tmmenu label.tmopt:hover{background:var(--brief);color:#fff}
+  .tmmenu label.tmopt input{accent-color:var(--acc)}
+  .grp{border-bottom:1px solid var(--line)}
+  .grp-h{display:flex;align-items:center;gap:7px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--txt);user-select:none}
+  .grp-h:hover{background:rgba(108,140,255,.05)}
+  .grp-h .caret{display:inline-block;width:12px;transition:transform .12s;color:var(--dim)}
+  .grp.closed .caret{transform:rotate(-90deg)}
+  .grp.closed .grp-b{display:none}
+  .grp-h .gc{margin-left:auto;font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:0 7px}
+  .grp-b{padding:2px 0}
+  .grp-row{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 30px;font-size:12px}
+  .grp-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .grp-row .teams{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* constellation — a DOCKED panel in the page grid (JAG-297) */
   .panel.cpanel .cbody{position:relative;height:48vh;min-height:360px;background:#060912}
   .csvg{display:block;width:100%;height:100%}
@@ -209,23 +230,34 @@
   <div class="grid2 ab">
     <!-- Agents: available agents, creatable with +, each with a model + reports-to -->
     <section class="panel ag">
-      <h2>Agents <span class="n" id="agCount">—</span></h2>
+      <h2>Agents <span class="n" id="agCount">—</span>
+        <span class="ctools">
+          <button class="btn ghost mini" id="agViewTable" title="agents as a table">table</button>
+          <button class="btn ghost mini" id="agViewGroups" title="agents grouped by team">by team</button>
+        </span></h2>
       <div class="pad row" style="gap:6px;border-bottom:1px solid var(--line);justify-content:flex-start">
         <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
         <input class="inp" id="agNewRole" placeholder="role (optional)" style="width:170px;flex:none">
         <button class="btn primary" id="agNew">＋ new agent</button>
         <button class="btn" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
-      <div class="scroll">
+      <div class="pad row" style="gap:6px;border-bottom:1px solid var(--line);justify-content:flex-start">
+        <span class="muted small" style="flex:none">team:</span>
+        <input class="inp" id="tmNewName" placeholder="new team — name…" style="width:180px;flex:none">
+        <input class="inp" id="tmNewSymbol" placeholder="symbol/emoji (optional)" style="width:150px;flex:none">
+        <button class="btn" id="tmNew">＋ team</button>
+      </div>
+      <div class="scroll" id="agTableWrap">
         <table class="at">
           <colgroup>
             <col class="c-id"><col class="c-name"><col class="c-role">
-            <col class="c-model"><col class="c-rep"><col class="c-file"><col class="c-act">
+            <col class="c-model"><col class="c-rep"><col class="c-teams"><col class="c-file"><col class="c-act">
           </colgroup>
-          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Role.md</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Teams</th><th>Role.md</th><th></th></tr></thead>
           <tbody id="agBody"></tbody>
         </table>
       </div>
+      <div class="scroll" id="agGroupsWrap" hidden></div>
     </section>
 
     <!-- Job: goal + who you give it to (its reports are the team) -->
@@ -246,7 +278,13 @@
   <div class="grid2 oc">
     <!-- Org chart: boxes + connectors from reports_to -->
     <section class="panel">
-      <h2>Org chart <span class="n">who reports to whom · click = preview · dbl-click = open · right-click = actions</span></h2>
+      <h2>Org chart
+        <span class="hint">who reports to whom · click = preview · dbl-click = open · right-click = actions · wheel = zoom · drag = pan</span>
+        <span class="ctools">
+          <button class="btn ghost mini" id="orgOut" title="zoom out">−</button>
+          <button class="btn ghost mini" id="orgIn" title="zoom in">＋</button>
+          <button class="btn ghost mini" id="orgFit" title="fit to panel">⤢</button>
+        </span></h2>
       <div class="orgwrap" id="orgtree"></div>
     </section>
 
@@ -321,13 +359,24 @@ const fillSelect = (sel, agents, ph) => {
 
 /* ----------------------------------------------------- Agents (table) ---- */
 class AgentsView {
-  constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = []; this.models = []; this.open = null; this.running = new Set(); }
-  render(tree, models, running){
+  constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
+    this.models = []; this.teams = []; this.open = null; this.running = new Set();
+    this.viewMode = "table"; this._tmmenu = null; }
+  teamById(id){ return (this.teams || []).find(t => t.id === id); }
+  render(tree, models, running, teams){
     if (tree) this.agents = tree.agents || [];
     if (models && models.length) this.models = models;
     if (running) this.running = running;
+    if (teams) this.teams = teams;
     $("agCount").textContent = this.agents.length ? this.agents.length + " agents" : "—";
     $("agTag").textContent = "agents — " + this.agents.length;
+    // JAG-2.0: the same agent list in two views — a table (editable) and a
+    // collapsible per-team grouping mirroring the main app's session rail.
+    $("agTableWrap").hidden = this.viewMode !== "table";
+    $("agGroupsWrap").hidden = this.viewMode !== "groups";
+    $("agViewTable").classList.toggle("on", this.viewMode === "table");
+    $("agViewGroups").classList.toggle("on", this.viewMode === "groups");
+    this.renderGroups();
     const body = $("agBody");
     // JAG-295-fix: this table is rebuilt by the 5s auto-poll. Rebuilding while the
     // user is mid-edit (a focused text field) or has unsaved text in the ROLE.md
@@ -345,10 +394,20 @@ class AgentsView {
     if (editing || roleDirty) return;
     body.innerHTML = this.agents.length
       ? this.agents.map(a => this.row(a)).join("")
-      : '<tr><td colspan="7" class="empty">no agents — create one with ＋ above.</td></tr>';
+      : '<tr><td colspan="8" class="empty">no agents — create one with ＋ above.</td></tr>';
     this.bind();
     fillSelect($("jobTo"), this.agents, "assign to…");
     fillSelect($("rtAgent"), this.agents, "agent…");
+  }
+  teamCell(a){
+    const ids = a.teams || [];
+    if (!ids.length) return '<span class="muted">+ teams</span>';
+    return ids.map(id => { const t = this.teamById(id); return t ? esc(t.symbol || t.name) : esc(id); }).join(" ") +
+      ' <span class="muted small">(' + ids.length + ')</span>';
+  }
+  teamCellTitle(a){
+    const ids = a.teams || [];
+    return ids.map(id => { const t = this.teamById(id); return t ? (t.name || id) : id; }).join(", ") || "assign to teams";
   }
   row(a){
     const mopts = '<option value=""' + (a.model ? "" : " selected") + '>default</option>' +
@@ -358,7 +417,7 @@ class AgentsView {
     const open = this.open === a.session;
     const run = this.running.has(a.session) ? '<span class="dotr" title="running"></span>' : "";
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
-    const brief = open ? '<tr class="brief"><td></td><td colspan="6">' +
+    const brief = open ? '<tr class="brief"><td></td><td colspan="7">' +
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the main app (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
       '<textarea class="inp" data-p="role" placeholder="Role: API designer&#10;- answer only with the endpoint list and JSON schema">' + roleText + '</textarea>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button class="btn primary" data-save="' + esc(a.session) + '">save prompt</button>' +
@@ -369,6 +428,7 @@ class AgentsView {
       '<td><input class="inp mini" data-f="role" value="' + esc(a.role||"") + '"></td>' +
       '<td><select class="inp mini" data-f="model">' + mopts + '</select></td>' +
       '<td><select class="inp mini" data-f="reports_to">' + ropts + '</select></td>' +
+      '<td><button class="btn ghost mini tmbtn" data-aid="' + esc(a.id) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
       '<td><button class="btn ghost" data-brief="1" title="role + behaviour notes (ROLE.md)">✎ prompt</button></td>' +
       '<td><button class="btn ghost" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)">\u21BA reset</button> ' +
       '<button class="btn ghost no" data-del="1" title="release agent">×</button></td></tr>' + brief;
@@ -378,6 +438,12 @@ class AgentsView {
     body.querySelectorAll("select[data-f],input[data-f]").forEach(el => {
       el.onchange = () => { const sid = el.closest("tr").dataset.sid; this.save(sid, {[el.dataset.f]: el.value}); };
     });
+    // JAG-2.0: the Teams cell opens a checkbox picker (one or more teams per agent).
+    body.querySelectorAll("[data-tm]").forEach(b => { b.onclick = (ev) => {
+      ev.stopPropagation();
+      const a = this.agents.find(x => x.id === b.dataset.aid);
+      if (a) this.openTeamPicker(ev, a);
+    }; });
     body.querySelectorAll("[data-brief]").forEach(b => { b.onclick = async () => {
       const sid = b.closest("tr").dataset.sid;
       if (this.open === sid){ this.open = null; this.openText = null; this.render(null, null); return; }
@@ -418,6 +484,71 @@ class AgentsView {
       if (this.onChanged) this.onChanged();
     }; });
   }
+  /* JAG-2.0: collapsible per-team grouping of the (already team-scoped) agent list. */
+  renderGroups(){
+    const wrap = $("agGroupsWrap"); if (!wrap) return;
+    const agents = this.agents || [];
+    const groups = [];
+    (this.teams || []).forEach(t => {
+      const ms = agents.filter(a => (a.teams || []).includes(t.id));
+      if (ms.length) groups.push({id: t.id, name: t.name, symbol: t.symbol, ms});
+    });
+    // agents in a team id the deck does not know about (defensive: never hide them).
+    const stray = {};
+    agents.forEach(a => (a.teams || []).forEach(id => { if (!this.teamById(id)) (stray[id] = stray[id] || []).push(a); }));
+    Object.keys(stray).sort().forEach(id => groups.push({id, name: id, symbol: "", ms: stray[id]}));
+    groups.push({id: "", name: "No team", symbol: "", ms: agents.filter(a => !(a.teams || []).length)});
+    wrap.innerHTML = groups.length
+      ? groups.map(g => {
+          const rows = (g.ms || []).map(a =>
+            '<div class="grp-row" data-sid="' + esc(a.session) + '" title="' + esc(a.id) + ' ' + esc(a.name || "") + '">' +
+            '<span class="aid">' + esc(a.id) + '</span>' +
+            '<span class="nm">' + esc(a.name || "") + '</span>' +
+            (a.role ? '<span class="rl">' + esc(a.role) + '</span>' : '') +
+            ((a.teams || []).length ? '<span class="teams muted small">' + this.teamCell(a) + '</span>' : '') +
+            '</div>').join("");
+          return '<div class="grp" data-t="' + esc(g.id) + '">' +
+            '<div class="grp-h"><span class="caret">▸</span>' + (g.symbol ? esc(g.symbol) + ' ' : '') +
+            '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span></div>' +
+            '<div class="grp-b">' + (rows || '<div class="empty">no agents in this group.</div>') + '</div></div>';
+        }).join("")
+      : '<div class="empty">no agents yet.</div>';
+    wrap.querySelectorAll(".grp-h").forEach(h => { h.onclick = () => h.parentElement.classList.toggle("closed"); });
+  }
+  /* JAG-2.0: checkbox popover that adds/removes the agent from teams one by one. */
+  openTeamPicker(ev, a){
+    this.closeTeamPicker();
+    const m = document.createElement("div"); m.className = "ctxmenu tmmenu";
+    m.innerHTML = (this.teams && this.teams.length)
+      ? this.teams.map(t => {
+          const on = (a.teams || []).includes(t.id);
+          return '<label class="tmopt"><input type="checkbox" data-tid="' + esc(t.id) + '"' + (on ? " checked" : "") + '> ' +
+            esc(t.symbol || "") + ' ' + esc(t.name) + '</label>';
+        }).join("")
+      : '<div class="muted small" style="padding:6px 10px">no teams yet — create one above.</div>';
+    document.body.appendChild(m);
+    m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - 240)) + "px";
+    m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - 220)) + "px";
+    m.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.onchange = () => this.setTeamMembership(a.id, cb.dataset.tid, cb.checked);
+    });
+    this._tmmenu = m;
+    const h = (e) => { if (!m.contains(e.target)) this.closeTeamPicker(); };
+    const k = (e) => { if (e.key === "Escape") this.closeTeamPicker(); };
+    m.__h = h; m.__k = k;
+    setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
+  }
+  closeTeamPicker(){ const m = this._tmmenu; if (!m) return;
+    if (m.__h) document.removeEventListener("mousedown", m.__h);
+    if (m.__k) document.removeEventListener("keydown", m.__k);
+    m.remove(); this._tmmenu = null; }
+  async setTeamMembership(aid, tid, add){
+    const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/members",
+      {agent: aid, action: add ? "add" : "remove"});
+    if (!r || r.ok === false){ alert((r && r.error) || "membership update failed"); return; }
+    this.closeTeamPicker();
+    if (this.onChanged) this.onChanged();
+  }
   async save(sid, patch){
     const r = await this.api.post("/api/agents", Object.assign({session: sid}, patch));
     if (!r || !r.ok){ alert((r && r.error) || "save failed"); return; }
@@ -439,12 +570,57 @@ class AgentsView {
 
 /* ------------------------------------------------------ Org chart -------- */
 class OrgChartView {
-  constructor(onPick, onGoTo){ this.onPick = onPick; this.onGoTo = onGoTo; this.bySid = {}; }
+  constructor(onPick, onGoTo){ this.onPick = onPick; this.onGoTo = onGoTo; this.bySid = {};
+    this.box = $("orgtree"); this.canvas = null; this.k = 1; this.tx = 0; this.ty = 0;
+    this._sig = null; this.drag = null; this._bindControls(); }
+  /* JAG-342-zoom: fit / zoom / pan on a transform-scaled inner canvas. */
+  _bindControls(){
+    const box = this.box;
+    const zoomCenter = (f) => { const r = box.getBoundingClientRect(); this.zoomAt(r.width / 2, r.height / 2, f); };
+    if ($("orgOut")) $("orgOut").onclick = () => zoomCenter(0.8);
+    if ($("orgIn")) $("orgIn").onclick = () => zoomCenter(1.25);
+    if ($("orgFit")) $("orgFit").onclick = () => this.fit();
+    box.addEventListener("wheel", (ev) => { ev.preventDefault();
+      const r = box.getBoundingClientRect();
+      this.zoomAt(ev.clientX - r.left, ev.clientY - r.top, ev.deltaY < 0 ? 1.12 : 0.9); }, {passive: false});
+    // drag the background to pan; a drag started on a node still hits the node.
+    box.addEventListener("mousedown", (ev) => { if (ev.button !== 0) return;
+      if (ev.target.closest && ev.target.closest(".node")) return;
+      this.drag = {x: ev.clientX, y: ev.clientY, tx: this.tx, ty: this.ty};
+      box.style.cursor = "grabbing"; ev.preventDefault(); });
+    window.addEventListener("mousemove", (ev) => { if (!this.drag) return;
+      this.tx = this.drag.tx + (ev.clientX - this.drag.x);
+      this.ty = this.drag.ty + (ev.clientY - this.drag.y);
+      this.apply(); });
+    window.addEventListener("mouseup", () => { if (this.drag){ this.drag = null; box.style.cursor = "default"; } });
+    window.addEventListener("resize", () => this.fit());
+  }
+  fit(){
+    const box = this.box, cv = this.canvas;
+    if (!box || !cv) return;
+    const vw = box.clientWidth, vh = box.clientHeight;
+    const cw = cv.scrollWidth, ch = cv.scrollHeight;
+    if (!vw || !vh || !cw || !ch) return;
+    // fit width AND height; never scale a small tree UP beyond 1x.
+    this.k = Math.max(0.1, Math.min(1, Math.min(vw / cw, vh / ch)));
+    this.tx = (vw - cw * this.k) / 2;
+    this.ty = (vh - ch * this.k) / 2;
+    this.apply();
+  }
+  zoomAt(mx, my, f){
+    const nk = Math.max(0.1, Math.min(3, this.k * f));
+    if (Math.abs(nk - this.k) < 1e-4) return;
+    const px = (mx - this.tx) / this.k, py = (my - this.ty) / this.k;
+    this.tx = mx - px * nk; this.ty = my - py * nk; this.k = nk;
+    this.apply();
+  }
+  apply(){ if (this.canvas) this.canvas.style.transform =
+    "translate(" + this.tx + "px," + this.ty + "px) scale(" + this.k + ")"; }
   render(tree){
     const agents = (tree && tree.agents) || [];
-    const box = $("orgtree");
+    const box = this.box;
     this.bySid = {};
-    if (!agents.length){ box.innerHTML = '<div class="empty">no agents yet.</div>'; return; }
+    if (!agents.length){ this.canvas = null; box.innerHTML = '<div class="empty">no agents yet.</div>'; return; }
     const by = {};
     agents.forEach(a => { const p = a.reports_to || ""; (by[p] = by[p] || []).push(a); });
     const seen = {};
@@ -459,7 +635,8 @@ class OrgChartView {
     };
     const roots = (by[""] || []).slice();
     agents.forEach(a => { if (a.reports_to && !agents.some(x => x.id === a.reports_to)) roots.push(a); });
-    box.innerHTML = '<ul>' + roots.map(node).join("") + '</ul>';
+    box.innerHTML = '<div class="orgcanvas"><ul>' + roots.map(node).join("") + '</ul></div>';
+    this.canvas = box.firstElementChild;
     box.querySelectorAll(".node").forEach(n => { n.onclick = () => {
       box.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x === n));
       // JAG-403h: single click ONLY previews the constellation — no jumping the
@@ -473,8 +650,12 @@ class OrgChartView {
       box.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x === n));
       this.menu(ev, this.bySid[n.dataset.sid]); };
     });
-    // JAG-342: no transform-pan — the panel scrolls natively, so the whole chart is
-    // reachable and the page itself never scrolls sideways.
+    // JAG-342-zoom: re-fit only when the tree shape changed; a 5s poll re-render
+    // must NOT reset an in-progress zoom/pan (the canvas element is recreated, so
+    // the stored transform is re-applied instead).
+    const sig = agents.map(a => a.id + ":" + (a.reports_to || "")).join("|");
+    if (sig !== this._sig){ this._sig = sig; this.fit(); }
+    else this.apply();
   }
   menu(ev, a){ if (!a) return; this.closeMenu();
     const m = document.createElement("div"); m.className = "ctxmenu";
@@ -874,6 +1055,9 @@ class OrbitApp {
     this.tac.mount();
     $("agNew").onclick = () => this.agents.create();
     $("agPolicy").onclick = () => this.applyModelPolicy();
+    $("tmNew").onclick = () => this.createTeam();
+    $("agViewTable").onclick = () => { this.agents.viewMode = "table"; this.refresh(); };
+    $("agViewGroups").onclick = () => { this.agents.viewMode = "groups"; this.refresh(); };
     $("jobCreate").onclick = () => this.createJob();
     $("rtCreate").onclick = () => this.routines.create();
     $("teamSel").onchange = () => { this.team = $("teamSel").value; this.tac.data = null; this.tac.focus = null; this.refresh(); };
@@ -897,6 +1081,16 @@ class OrbitApp {
       } else { msg.push(tid + ": " + ((r && r.error) || "failed")); }
     }
     alert("model policy\n" + msg.join("\n"));
+    this.refresh();
+  }
+  async createTeam(){
+    // JAG-2.0: create a team from the deck, persisted via the teams backend.
+    const name = $("tmNewName").value.trim();
+    if (!name){ alert("give the team a name"); return; }
+    const symbol = $("tmNewSymbol").value.trim();
+    const r = await this.api.post("/api/teams", {name, symbol: symbol || undefined});
+    if (!r || !r.ok){ alert((r && r.error) || "could not create team"); return; }
+    $("tmNewName").value = ""; $("tmNewSymbol").value = "";
     this.refresh();
   }
   openAgent(aid){
@@ -924,7 +1118,7 @@ class OrbitApp {
       acc.concat((p.models || []).map(m => ({ref: m.ref || (p.id + ":" + m.id), label: m.id}))), []) : [];
     const running = new Set(((sess && sess.sessions) || []).filter(s => s.running).map(s => s.id));
     if (fTree) this.lastAgents = fTree.agents || [];
-    if (fTree) this.agents.render(fTree, list, running);
+    if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null);
     if (fTree) this.org.render(fTree);
     if (fJobs) this.jobs.render(fJobs.jobs);
     if (routines) this.routines.render(routines.routines);
