@@ -527,6 +527,15 @@
     padding: 8px 10px; border: 0; border-radius: 8px; background: transparent;
     color: var(--txt); font-size: 12px; font-weight: 500; }
   #appMenu .mi:hover { background: var(--hover); }
+  /* JAG-416: top-level section tabs (Session / Control) — a segmented control, the
+     primary navigation. Session = this app; Control = the agent control deck. */
+  .topTabs { display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+    border: 1px solid var(--line); border-radius: 11px; background: var(--panel2); flex: 0 0 auto; }
+  .topTabs .ttab { display: inline-flex; align-items: center; height: 26px; padding: 0 14px;
+    border-radius: 8px; color: var(--dim); font-size: 12px; font-weight: 600;
+    text-decoration: none; white-space: nowrap; transition: background .15s, color .15s; }
+  .topTabs .ttab:hover { color: var(--txt); background: var(--hover); }
+  .topTabs .ttab.active { color: var(--txt); background: var(--sel); box-shadow: inset 0 0 0 1px var(--acc); }
   #composer #inp { width: 100%; }
   #inp, .inp { background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
     border-radius: var(--radius); padding: 12px 16px; font: inherit; outline: none; }
@@ -1087,19 +1096,22 @@
 <body>
 <header id="topbar">
   <span class="logo">⚡ LONGRUN</span>
+  <nav id="topTabs" class="topTabs" aria-label="top-level sections">
+    <a class="ttab active" href="/" aria-current="page">Session</a>
+    <a class="ttab" href="/orbit" onclick="location.href='/orbit';return false;">Control</a>
+  </nav>
   <span class="sub">agent harness · self-hosted · any OS</span>
   <span class="sessbadge" id="sessBadge" hidden></span>
   <span style="flex:1"></span>
   <span class="pill meter" id="ctx-meter" title="context tokens / budget"><svg class="mring"
       viewBox="0 0 36 36" aria-hidden="true"><circle class="mtrk" cx="18" cy="18" r="15.9155"></circle><circle
       class="mfill" id="ctxRing" cx="18" cy="18" r="15.9155"></circle></svg><b id="ctxPctTop">…</b></span>
+  <button class="ghost" id="settingsBtn" title="settings" onclick="openSettings()">⚙</button>
   <div class="appmenu-wrap">
-    <button class="ghost" id="appmenuBtn" title="app menu — settings · bridge · sandbox" aria-haspopup="true" aria-expanded="false">☰</button>
+    <button class="ghost" id="appmenuBtn" title="more — sandbox · command palette" aria-haspopup="true" aria-expanded="false">☰</button>
     <div id="appMenu" class="card" hidden>
       <div class="amline"><span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
           id="sbxTxt">…</span></span></div>
-      <button class="ghost mi" id="settingsBtn" title="settings" onclick="openSettings()">⚙ settings</button>
-      <button class="ghost mi" id="deck-open" title="Bridge — agent orchestration deck (beta)" onclick="location.href='/orbit'">🛰 Bridge</button>
       <button class="ghost mi" id="palette-open" title="command palette (Cmd/Ctrl+K)">⌘K command palette</button>
     </div>
   </div>

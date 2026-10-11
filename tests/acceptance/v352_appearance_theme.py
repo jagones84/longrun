@@ -105,13 +105,14 @@ check("G1 the composer background is token-driven",
 check("G2 Sand gives the composer a light background; dark themes stay dark",
       "--composer: rgba(206,197,173,.85)" in HTML and "--composer: rgba(23,18,12,.7)" in HTML, "")
 
-# --- H: the deck is renamed Bridge -----------------------------------------
-check("H1 the WebUI entry is labelled Bridge",
-      "🛰 Bridge" in HTML and "Bridge — agent orchestration deck" in HTML, "")
-check("H2 the Bridge page title + h1 are renamed",
-      "<title>Bridge · Longrun beta</title>" in ORBIT and "<h1>Bridge</h1>" in ORBIT, "")
-check("H3 the API fallback page says Bridge",
-      "Bridge beta" in API, "")
+# --- H: the deck is renamed Control (top-level tabs) ------------------------
+check("H1 the WebUI has top-level Session + Control tabs",
+      ">Session</a>" in HTML and ">Control</a>" in HTML and "location.href='/orbit'" in HTML, "")
+check("H2 the Control page title + its active tab",
+      "<title>Control · Longrun beta</title>" in ORBIT and ">Control</span>" in ORBIT
+      and ">Session</a>" in ORBIT, "")
+check("H3 the API fallback page says Control",
+      "Control beta" in API, "")
 
 # --- I: Bridge is themed too ------------------------------------------------
 check("I1 Bridge carries the per-theme token override blocks",

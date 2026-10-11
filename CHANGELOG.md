@@ -142,6 +142,13 @@ All notable changes to Longrun are documented here. The format follows
   **wait** for it — concurrent agents serialize on the build lock, so the index is never queried
   stale or half-built. **Cost:** both ledgers (per-session model calls and the embedding log)
   now keep at most **one month** of history. Battery 137/137.
+- **Top-level Session / Control tabs; the deck is renamed Control (JAG-416).** The app now has a
+  segmented **tab bar** in the header — **Session** (this chat app) and **Control** (the agent
+  control deck, formerly "Bridge"). Both tabs are styled as a rounded segmented control and
+  carry the token across, so switching lands authenticated. The deck is renamed everywhere the
+  user can see it: page `<title>`, the header tab and the `orbit/api.py` fallback page now say
+  **Control**. **Settings** is now a plain, always-visible ⚙ in the header (it is fundamental);
+  the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
 - **Embeddings were silently never stored — the semantic layer was dead (JAG-403k).** The

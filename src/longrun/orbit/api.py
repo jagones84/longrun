@@ -141,8 +141,8 @@ def serve_page(handler, path):
         with open(os.path.join(WEB, "orbit.html"), "r", encoding="utf-8") as fh:
             html = fh.read()
     except OSError:
-        html = ("<!doctype html><meta charset=utf-8><title>Bridge</title>"
-                "<h1>Bridge beta</h1><p>The UI file <code>web/orbit.html</code> "
+        html = ("<!doctype html><meta charset=utf-8><title>Control</title>"
+                "<h1>Control beta</h1><p>The UI file <code>web/orbit.html</code> "
                 "is missing from the beta package.</p>")
     handler._send(200, html, ctype="text/html; charset=utf-8")
     return True
