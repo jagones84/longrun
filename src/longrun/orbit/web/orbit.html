@@ -41,15 +41,17 @@
   .inp.mini{padding:3px 6px;border-radius:6px;font-size:11px}
   /* JAG-342: one panel per row, top-to-bottom (mobile-style) — the two-column grid
      clipped wide panels (ORG CHART) and forced a page-level horizontal scrollbar. */
-  .wrap{display:flex;flex-direction:column;gap:10px;padding:10px}
-  .grid2{display:flex;flex-direction:column;gap:10px}
-  /* JAG-2.2: three resizable two-column rows (Agents|Job, Org|Constellation,
-     Routines|Feed). Middle splitter drags the widths; --cA/--cB persist. Stacks
-     into one column on narrow screens. */
-  .grid2.ab,.grid2.oc,.grid2.rf{display:grid;grid-template-columns:var(--cA,minmax(0,1fr)) 7px var(--cB,minmax(0,1fr));gap:8px;align-items:stretch}
-  .grid2.ab .panel,.grid2.oc .panel,.grid2.rf .panel{display:flex;flex-direction:column;min-height:0}
-  .grid2.ab .panel>.scroll,.grid2.oc .panel>.scroll,.grid2.rf .panel>.scroll{flex:1 1 auto;max-height:none;min-height:0}
-  @media (max-width:1100px){ .grid2.ab,.grid2.oc,.grid2.rf{display:flex;flex-direction:column;gap:10px} .rz-cols{display:none} }
+  .wrap{display:flex;flex-direction:column;gap:0;padding:6px}
+  .grid2{display:flex;flex-direction:column;gap:0}
+  /* JAG-2.3: two resizable two-column rows (Agents|Job/Routines, Org|Constellation),
+     anchored edge-to-edge. Middle splitter drags the widths; --cA/--cB persist.
+     Stacks into one column on narrow screens. */
+  .grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax(0,1fr)) 7px var(--cB,minmax(0,1fr));gap:6px;align-items:stretch}
+  .grid2.ab .panel,.grid2.oc .panel{display:flex;flex-direction:column;min-height:0}
+  .grid2.ab .panel>.scroll,.grid2.oc .panel>.scroll{flex:1 1 auto;max-height:none;min-height:0}
+  .grid2.ab .col,.grid2.ab .col>.panel{min-height:0}
+  .col{gap:0}
+  @media (max-width:1100px){ .grid2.ab,.grid2.oc{display:flex;flex-direction:column;gap:0} .rz-cols{display:none} }
   .panel{position:relative}
   .rz-cols,.rz-b{touch-action:none}
   .rz-cols{align-self:stretch;cursor:ew-resize;border-radius:3px;background:var(--line)}
@@ -132,7 +134,7 @@
   tr.grp-empty td{padding:0;border-bottom:1px solid var(--line)}
   tr[hidden]{display:none}
   /* constellation — a DOCKED panel in the page grid (JAG-297) */
-  .panel.cpanel .cbody{position:relative;height:48vh;min-height:360px;background:#060912}
+  .panel.cpanel .cbody{position:relative;height:48vh;min-height:360px;background:var(--cbody,#060912)}
   .csvg{display:block;width:100%;height:100%}
   .ctools{display:flex;gap:5px;margin-left:auto}
   .btn.mini{padding:2px 8px;font-size:11px}
@@ -286,6 +288,20 @@
 
     <div class="rz-cols" title="drag to resize columns"></div>
 
+    <div class="col">
+    <section class="panel">
+      <h2>Routines <span class="n" id="routineCount">—</span></h2>
+      <div class="pad" style="border-bottom:1px solid var(--line)">
+        <textarea class="inp" id="rtGoal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px"></textarea>
+        <div class="row" style="gap:6px;margin-top:6px">
+          <select class="inp" id="rtAgent"><option value="">agent…</option></select>
+          <input class="inp" id="rtEvery" type="number" min="30" value="300" title="every N seconds" style="max-width:100px">
+          <button class="btn" id="rtCreate">＋ add</button>
+        </div>
+      </div>
+      <div class="scroll" id="routines" style="max-height:22vh"></div>
+    </section>
+
     <!-- Job: goal + who you give it to (its reports are the team) -->
     <section class="panel">
       <h2>Job <span class="n" id="jobsCount">—</span></h2>
@@ -299,6 +315,7 @@
       </div>
       <div class="scroll" id="jobs"></div>
     </section>
+    </div>
   </div>
 
   <div class="grid2 oc">
@@ -340,21 +357,6 @@
   </div>
 
   <div class="grid2 rf">
-    <section class="panel">
-      <h2>Routines <span class="n" id="routineCount">—</span></h2>
-      <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="rtGoal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px"></textarea>
-        <div class="row" style="gap:6px;margin-top:6px">
-          <select class="inp" id="rtAgent"><option value="">agent…</option></select>
-          <input class="inp" id="rtEvery" type="number" min="30" value="300" title="every N seconds" style="max-width:100px">
-          <button class="btn" id="rtCreate">＋ add</button>
-        </div>
-      </div>
-      <div class="scroll" id="routines" style="max-height:22vh"></div>
-    </section>
-
-    <div class="rz-cols" title="drag to resize columns"></div>
-
     <section class="panel">
       <h2>Feed</h2>
       <div id="feed"></div>
@@ -1267,7 +1269,9 @@ function initPanels(){
       e.preventDefault();
       try { grip.setPointerCapture(e.pointerId); } catch (_) {}
       const y0 = e.clientY, h0 = p.getBoundingClientRect().height;
-      const move = (ev) => { const h = Math.max(120, h0 + (ev.clientY - y0)); p.style.height = h + "px"; saved[key] = Math.round(h); };
+      const inGrid = p.parentElement && p.parentElement.classList.contains("grid2");
+      const sibs = inGrid ? [...p.parentElement.children].filter(el => el.classList && (el.classList.contains("panel") || el.classList.contains("col"))) : [p];
+      const move = (ev) => { const h = Math.max(120, h0 + (ev.clientY - y0)); sibs.forEach(s => { s.style.height = h + "px"; }); saved[key] = Math.round(h); };
       const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); persist(); refit(); };
       grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up);
     });
