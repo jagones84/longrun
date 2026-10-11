@@ -43,6 +43,66 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Changed
+- **Composer one-row + send⇄stop, Control anchor fix, team scope, todo→constellation (JAG-424).**
+  The composer toolbar is now a single row: the LLM model picker compresses (max-width 160px, min 96px)
+  and every control no longer wraps on desktop; the separate **stop button is removed** — while the
+  ACTIVE session runs the green **↑ becomes a red ■ (stop)** (`sendOrStop()`), so send/⋯ stay close and
+  no space is wasted. The placeholder is compact again. **Control tab anchor FIXED for real**: the deck
+  was pushed down by the app zoom — `_tabTop()` returned the ZOOMED topbar height but assigned it as a
+  CSS `top` that the html `zoom` scaled AGAIN; it now divides by the live zoom (and re-applies on
+  zoom/resize), so the deck sits flush under the banner at any zoom. **Right-click a todo** in the RH
+  Plan panel → "◎ Show in constellation": the Control deck circles that task (pulsing ring) for a few
+  seconds and scrolls it into view (crosses into the iframe via postMessage). **Team scope** now filters
+  the whole board — routines were the last panel not scoped (agents/jobs/org/constellation already were).
+  The Control agent-panel toolbars (scope/sort, new-agent, team) use one uniform `.toolbar` row.
+  Guards updated to the intended design: v282/v284 model-picker width.
+- **Header/Control polish + mobile (JAG-424b).** The **sandbox pill** moved out of the ☰ app menu
+  onto the banner line; the **context meter** left the banner and now sits as a **tiny circular ring**
+  (no % label) in the Sessions rail header, beside the collapse/expand icons. On phones (≤640px) the
+  banner drops the LONGRUN wordmark and keeps only the sandbox dot, so it never overflows. **Control
+  deck panel titles are uniform** — just the panel name (+ count + tools); the Org-chart usage hint
+  moved into its `title` tooltip, and **Job → Jobs**. The agents toolbar is split into three tidy rows
+  (scope/sort · new-agent · team) instead of the crammed single row, and the per-agent actions cell is
+  compacted so **↺ reset** and **✕** sit on ONE line (`white-space:nowrap`). Verified live at a true
+  390px mobile viewport (Session + Control): no horizontal overflow anywhere.
+- **Brand icon = running man; Sessions/Control naming (JAG-424c).** The PWA/app icons
+  (`webui/assets/icon-192/512/maskable-512.png`, `apple-touch-icon.png`) are regenerated from the
+  real Longrun mark — a stylized **running man** — instead of the old bolt (`webui/assets/make-icons.py`
+  redrawn); `assets/icon.svg` is the source-of-truth repo icon and now heads the README. The UI copy
+  no longer says "Bridge" or "the main app": the two top-level views are **Sessions** (`/`) and
+  **Control** (`/orbit`), and every user-facing hint (Control job/constellation detail, org-chart menu,
+  ROLE.md editor note) now points at the "Sessions tab". README Interfaces + quickstart updated.
+- **Settings: auto-save everywhere, general default model, Knowledge polish (JAG-423).** Every model
+  picker saves on change — the **Compaction model** and **Research model** `save` buttons are gone
+  (`onchange`) — consistent with the embedding picker. The verbose "Saved automatically …" helper under
+  Thinking effort is removed. **The shipped default model is now GENERAL**: `openrouter:openrouter/auto`
+  (the cloud auto-router), not a local DGX model. `providers.default_ref()` prefers the user's persisted
+  `★` choice and otherwise falls back to an AVAILABLE cloud provider (never a local model while a cloud
+  key exists); `rllm.default_model()` now honours it, so a bare/absent request uses the general default
+  instead of "whatever local model happens to be loaded". The user's choice persists across restarts
+  (`providers.local.yaml`). The Knowledge settings rows (notebooks, sources, files) are restyled with a
+  shared `.kb-row` (bordered, hover, count badge) instead of scattered inline styles. The embedded
+  Control deck is anchored flush to the banner (`html.embed .wrap{padding-top:0}`) — no more strip of
+  the Sessions view showing above the Agents/Routines panes.
+- **Settings ▸ Models cleanup + thinking-effort fixes (JAG-422).** The Models page is decluttered: the
+  18-model embedding catalogue, the "add a model" form, the embedding costs and the "add / edit
+  provider" form are now collapsible `<details>` (less scroll). The embedding **"set" button is gone** —
+  picking a model in the dropdown applies it immediately (`onchange`). **Thinking effort now loads its
+  saved value**: it lives in the Models category but only the "harness" category called
+  `loadReasoning()`, so the checkbox/effort select showed stale defaults and looked like "the change
+  did not save". **⚙ Settings now toggles** — clicking it while the window is open closes it.
+  Backend: `_router_stream` retries once WITHOUT `reasoning_effort` when a provider rejects the field
+  (400/404/422 naming it), so the DIRECT callers (compaction, planning, lessons) are now fail-safe too,
+  not just the main chat/agent path (`stream_with_fallback`).
+- **Control deck: one row-resize bar + stale-tab fix + knowledge "sources" + embedding-error surfacing
+  (JAG-421).** The per-panel bottom grips are replaced by ONE horizontal bar per row that resizes the
+  whole row (`Agents + Job` together); the bar moves the row height directly, so the old per-panel grip
+  that a `flex:1` panel ignored is gone. `GET /api/build` now fingerprints BOTH `webui/index.html` AND
+  `orbit/web/orbit.html` — previously only `index.html` was hashed, so an `orbit.html` change left an
+  already-open tab's Control iframe stale until a manual reload (fingerprint `mtime-size[-mtime-size]`).
+  The Knowledge panel's third button is renamed `files` → `sources`. `knowledge.add_source` now returns
+  `embed_error` when the embedder produced ZERO vectors (endpoint/429/quota), instead of silently
+  shipping a lexical-only source. Battery 137/137.
 - **Control deck layout: full-width + resizable panels (JAG-419).** The deck now fills the window
   (the old 1680px cap that left huge side margins on wide screens is gone). Three rows sit side by
   side — Agents|Job, Org chart|Constellation, Routines|Feed — each with a draggable column splitter;

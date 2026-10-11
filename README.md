@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.svg" alt="Longrun" width="112" height="112"></p>
+
 <img src="assets/banner.svg" alt="Longrun — the agent harness built to DRIVE the LLM" width="100%">
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
@@ -91,8 +93,8 @@ cloud models, and the strongest (still cheap) cloud goes to the leads.
 - 🧬 **Subagents** (in-loop delegation), **swarm/blackboard**, **ACP** interop — experimental.
 
 **Interfaces**
-- 🖥️ **WebUI** (`/`) — dark glassmorphism, live CoT, task graph, sessions labelled with their team.
-- 🛰️ **Bridge** (`/orbit`) — the mission-control deck: **org chart, live constellation, job create/dispatch, team selector, model policy**, one column, mobile-style.
+- 🖥️ **Sessions** (`/`) — dark glassmorphism, live CoT, task graph, sessions labelled with their team.
+- 🛰️ **Control** (`/orbit`) — the mission-control deck: **org chart, live constellation, job create/dispatch, team selector, model policy**, one column, mobile-style.
 - ⌨️ **CLI** (`forge.py`) and a **mobile-ready HTTP API** — command the DGX from your phone over Tailscale.
 - 🔌 **Bidirectional MCP** — use Longrun *from* any MCP client, and connect *external* MCP servers as native tools.
 
@@ -142,8 +144,8 @@ Copy-Item .env.template .env
 .\run.ps1                      # WebUI + API on http://127.0.0.1:8790
 ```
 
-Open **`http://127.0.0.1:8790`** for the main app, or **`http://127.0.0.1:8790/orbit`**
-for the mission-control deck (**Bridge**).
+Open **`http://127.0.0.1:8790`** for the **Sessions** view, or
+**`http://127.0.0.1:8790/orbit`** for the mission-control deck (**Control**).
 
 **Token — optional, recommended.** There is **no token by default**: every route is
 open. That is fine on localhost, but risky once you expose the port on LAN/Tailscale.

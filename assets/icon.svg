@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"
+     role="img" aria-labelledby="lt ld">
+  <title id="lt">Longrun</title>
+  <desc id="ld">The Longrun mark: a stylized running man on a rounded dark tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0e1a"/><stop offset="1" stop-color="#16233f"/>
+    </linearGradient>
+    <linearGradient id="run" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7cf6ff"/><stop offset="0.5" stop-color="#6ea8ff"/>
+      <stop offset="1" stop-color="#b388ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#tile)"
+        stroke="#2a3a63" stroke-width="4"/>
+
+  <!-- stylized running man: torso + limbs as round-capped strokes, head as a disc -->
+  <g transform="translate(26.6 32.65) scale(230.46)" fill="none" stroke="url(#run)"
+     stroke-width="0.075" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0.545 0.26 L0.44 0.55"/>
+    <path d="M0.545 0.27 L0.70 0.35 L0.78 0.26"/>
+    <path d="M0.545 0.27 L0.40 0.39 L0.26 0.31"/>
+    <path d="M0.44 0.55 L0.63 0.56 L0.71 0.73"/>
+    <path d="M0.44 0.55 L0.26 0.68 L0.10 0.58"/>
+  </g>
+  <circle cx="26.6" cy="32.65" r="0" fill="none"/>
+  <circle transform="translate(26.6 32.65) scale(230.46)" cx="0.585" cy="0.145" r="0.085"
+          fill="url(#run)"/>
+</svg>
