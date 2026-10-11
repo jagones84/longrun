@@ -20,8 +20,11 @@ env_files:
   - .env
   - ~/.hermes/.env
 
-# The model a bare/absent request falls back to.
-default: dgx:qwen-3.8-27b-uncensored-q8
+# The model a bare/absent request falls back to. A GENERAL cloud model, never a
+# local one: the OpenRouter auto-router picks the best general model per request.
+# The user's own choice (Settings ▸ Models ▸ ★) persists in providers.local.yaml
+# and always wins over this shipped default.
+default: openrouter:openrouter/auto
 
 providers:
   # ---- local: llama.cpp router on the DGX Spark -----------------------------

@@ -369,14 +369,28 @@ def get(provider_id):
 
 
 def default_ref():
-    """The configured default model reference (or the first available model)."""
+    """The configured default model reference, else a GENERAL available model.
+
+    JAG-422: the user's own choice (persisted by `set_default`) always wins. If no
+    default is configured — or its provider is unavailable (no key) — fall back to
+    the first AVAILABLE *cloud* provider (a general model), then any available one.
+    A local router model is never picked while a cloud key exists.
+    """
     load_env()
     d = load().get("default")
     if d:
-        return d
-    for p in providers():
-        if p["models"] and not p.get("embed_only") and api_key(p):
-            return "%s:%s" % (p["id"], p["models"][0]["id"])
+        hit = resolve(d)
+        if hit and available(hit[0]):
+            return d
+    pool = providers()
+    for want_cloud in (True, False):
+        for p in pool:
+            if not p.get("models") or p.get("embed_only"):
+                continue
+            if want_cloud and p.get("local"):
+                continue
+            if available(p):
+                return "%s:%s" % (p["id"], p["models"][0]["id"])
     return None
 
 

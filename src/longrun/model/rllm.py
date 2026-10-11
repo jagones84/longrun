@@ -150,6 +150,16 @@ def _local_ref(model):
 
 
 def default_model():
+    # JAG-422: the GENERAL default is the configured one (persisted user choice, or
+    # the shipped cloud auto-router) — NOT "whatever local model happens to be
+    # loaded". Only fall back to the local router roster when no default resolves.
+    try:
+        from longrun.model import providers
+        ref = providers.default_ref()
+        if ref:
+            return ref
+    except Exception:  # noqa: BLE001 — the catalogue must never break the default
+        pass
     models = router_models()
     for m in models:
         if m["loaded"]:
@@ -452,6 +462,24 @@ def _reasoning_effort():
     return None
 
 
+def _is_reasoning_rejection(err):
+    """True when a provider rejected the request BECAUSE OF `reasoning_effort`.
+
+    JAG-422: a non-thinking model may answer 400/404/422 naming the unsupported
+    field. Detect that so `_router_stream` can retry once WITHOUT the field.
+    """
+    code = getattr(err, "code", None)
+    if code not in (400, 404, 422):
+        return False
+    try:
+        body = err.read().decode("utf-8", "replace").lower()
+    except Exception:  # noqa: BLE001
+        body = ""
+    if not body:
+        body = str(err).lower()
+    return "reasoning" in body or "effort" in body
+
+
 def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=False):
     """Single place that builds the OpenAI-compatible request body (JAG-111).
     JAG-403: `no_reasoning=True` omits `reasoning_effort` (retry path for a
@@ -605,7 +633,14 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
                     if clean:
                         answer.append(clean)
                         on_delta("answer", clean)
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        # JAG-422: a model that does not support `reasoning_effort` may answer 400.
+        # Retry ONCE with the field OMITTED so thinking-effort can never break a turn.
+        # This covers the DIRECT _router_stream callers (compaction, planning, lessons)
+        # that do NOT pass through stream_with_fallback's own retry loop.
+        if not no_reasoning and _reasoning_effort() and _is_reasoning_rejection(e):
+            return _router_stream(messages, model, on_delta, timeout, usage, guard,
+                                  cancel, no_reasoning=True)
         # JAG-197: an abort must never enter the blocking non-streaming fallback.
         # That fallback re-issues the WHOLE generation, ignores Stop, and can hold
         # the run — and a single-slot router — hostage for the full timeout.
