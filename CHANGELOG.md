@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Vision input — image attachments now reach the model (JAG-417).** An image attached in the
+  composer is sent to vision-capable LLMs as an OpenAI `image_url` content block (base64 data URL),
+  not just a text note, so the model actually sees the image. `config/providers.yaml` flags the DGX
+  vision models; `rllm.model_supports_vision()` checks the flag then the router's live
+  `input_modalities`; `agent.assemble_turn` upgrades ONLY the current user turn (8 MB cap, safe
+  degrade to text). Verified end to end: the model describes real screenshots. Text-only models keep
+  the previous behavior.
+- **Control deck — team management + org-chart fit/zoom (JAG-418).** In the Control tab the AGENTS
+  pane can now create teams, assign each agent to one or more teams (a Teams column), and list
+  agents grouped by team (a `table` / `by team` toggle). The org chart auto-fits and centers the
+  whole tree by default with `−`/`＋` buttons and wheel-zoom + drag-pan.
 - **Multi-embedding model catalogue + COST tracking (JAG-403a).** The user can now
   pick from 18 known embedding models (OpenAI `text-embedding-3-small/large`, Voyage
   `voyage-3-large`, Cohere `embed-english-v3.0`, Jina `jina-embeddings-v3`, OpenRouter
