@@ -31,13 +31,13 @@ providers:
     base_url: http://127.0.0.1:8080/v1
     local: true
     models:
-      - {id: qwen-3.8-27b-uncensored-q8, context_length: 262144}
-      - {id: qwen-3.8-27b-uncensored-q4, context_length: 262144}
-      - {id: glm-5.3-flash-iq2, context_length: 262144}
+      - {id: qwen-3.8-27b-uncensored-q8, context_length: 262144, vision: true}
+      - {id: qwen-3.8-27b-uncensored-q4, context_length: 262144, vision: true}
+      - {id: glm-5.3-flash-iq2, context_length: 262144, vision: true}
       - {id: deepseek-v4-flash-uncensored-q2-0731, context_length: 262144}
-      - {id: nex-n25-mini-uncensored-q8, context_length: 262144}
-      - {id: qwen-3.8-flash-next-iq3, context_length: 131072}
-      - {id: qwen-3.8-flash-next-uncensored-iq3, context_length: 131072}
+      - {id: nex-n25-mini-uncensored-q8, context_length: 262144, vision: true}
+      - {id: qwen-3.8-flash-next-iq3, context_length: 131072, vision: true}
+      - {id: qwen-3.8-flash-next-uncensored-iq3, context_length: 131072, vision: true}
 
   # ---- local: llama.cpp on the Windows PC (Tailscale) -----------------------
   - id: win

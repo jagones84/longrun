@@ -165,6 +165,45 @@ def model_loaded(alias):
     return False, None
 
 
+def model_supports_vision(alias):
+    """True when `alias` can accept multimodal image content blocks.
+
+    Signal order: an explicit `vision: true` in the provider catalogue, then the
+    live llama.cpp roster's `architecture.input_modalities` (the router reports
+    the loaded mmproj). Conservative: any doubt returns False, so a text-only
+    model never receives image blocks it cannot use.
+    """
+    if not alias:
+        return False
+    provider = None
+    mid = alias
+    try:
+        from longrun.model import providers
+        hit = providers.resolve(alias)
+        if hit is not None:
+            provider, mid = hit
+            for m in (provider.get("models") or []):
+                if m.get("id") == mid and m.get("vision"):
+                    return True
+    except Exception:  # noqa: BLE001 — capability must never break a turn
+        provider = None
+    # Remote providers carry no router roster; only the catalogue flag (checked
+    # above) can grant vision there.
+    if provider is not None and not provider.get("local"):
+        return False
+    try:
+        with urllib.request.urlopen(ROUTER_BASE + "/v1/models", timeout=6) as r:
+            data = json.loads(r.read().decode("utf-8") or "{}")
+        for m in data.get("data", []):
+            if m.get("id") != mid:
+                continue
+            arch = (m.get("meta") or {}).get("architecture") or {}
+            return "image" in (arch.get("input_modalities") or [])
+    except Exception:  # noqa: BLE001 — fall back to text-only
+        pass
+    return False
+
+
 def router_ping(timeout=3):
     """GET the router /health; returns {reachable, latency_ms, status}."""
     t0 = time.time()

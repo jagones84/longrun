@@ -13,7 +13,9 @@ in ``httpapi`` and are re-exported by ``server``). They are read through the mod
 object (``server.<name>``) so test monkeypatches on ``server.<name>`` keep taking
 effect. Everything else is stdlib or a sibling module.
 """
+import base64
 import json
+import mimetypes
 import os
 import re
 import time
@@ -28,6 +30,7 @@ from longrun.core.events import publish
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR, WEBUI_DIR
 from longrun.util.paths import REPO_ROOT as REPO
 from longrun.model.rllm import ROUTER_BASE, _router_stream, context_budget, default_model
+from longrun.model.rllm import model_supports_vision
 from longrun.util.steering import _is_aborted, clear_abort, drain_steer, has_steer
 from longrun.util.fswrite import write_json
 from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event,
@@ -1220,6 +1223,85 @@ def _apply_skill_slash(message):
             "%s%s\n\n---\nUSER: %s" % (token, hint, body, rest.strip()))
 
 
+# JAG-417: image attachments. The composer serializes an image attachment as a
+# `- file: <absolute path>` line inside the user message; a vision model never
+# saw the pixels (only the path). Detect those lines, read+base64 the real image
+# files, and turn the CURRENT user turn into OpenAI multimodal content blocks.
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _extract_image_paths(text):
+    """Absolute local image paths named on `- file: <path>` / `- <path>` lines."""
+    out = []
+    if not isinstance(text, str):
+        return out
+    for line in text.splitlines():
+        s = line.strip()
+        if not s.startswith("-"):
+            continue
+        s = s[1:].strip()
+        if s.startswith("file:"):
+            s = s[len("file:"):].strip()
+        if not s or not os.path.isabs(s):
+            continue
+        if os.path.splitext(s)[1].lower() not in _IMAGE_EXTS:
+            continue
+        if os.path.isfile(s) and s not in out:
+            out.append(s)
+    return out
+
+
+def _image_content_blocks(text, paths):
+    """[text block] + one image_url block per readable, in-budget image path."""
+    blocks = [{"type": "text", "text": text}]
+    for p in paths:
+        try:
+            if os.path.getsize(p) > _IMAGE_MAX_BYTES:
+                continue
+            mime = mimetypes.guess_type(p)[0] or ""
+            if not mime.startswith("image/"):
+                continue
+            with open(p, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            continue
+        blocks.append({"type": "image_url",
+                       "image_url": {"url": "data:%s;base64,%s" % (mime, b64)}})
+    return blocks
+
+
+def _inject_vision_blocks(msgs, model):
+    """Give the CURRENT user message multimodal blocks when the model can see.
+
+    Conservative on every axis: no image paths, a text-only model, or any bad
+    file leaves `msgs` untouched (the plain-text note still reaches the model).
+    """
+    if not msgs:
+        return msgs
+    last = msgs[-1]
+    if not isinstance(last, dict) or last.get("role") != "user":
+        return msgs
+    text = last.get("content")
+    if not isinstance(text, str):
+        return msgs
+    paths = _extract_image_paths(text)
+    if not paths:
+        return msgs
+    try:
+        eff_model = model or routing.pick("chat") or default_model()
+        if not model_supports_vision(eff_model):
+            return msgs
+    except Exception:  # noqa: BLE001 — never block a turn on vision detection
+        return msgs
+    blocks = _image_content_blocks(text, paths)
+    if len(blocks) <= 1:  # every image was skipped (size/mime/read error)
+        return msgs
+    msgs = list(msgs)
+    msgs[-1] = dict(last, content=blocks)
+    return msgs
+
+
 def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     """Assemble the exact message list SENT to the router for one chat turn.
 
@@ -1253,13 +1335,13 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
         from longrun.model import context_engine
         msgs, ctx_stats = context_engine.build(
             sys, transcript, eff_message, budget_tokens=context_budget(model))
-        return msgs, ctx_stats
+        return _inject_vision_blocks(msgs, model), ctx_stats
     except Exception:  # noqa: BLE001 — never block a turn on the context engine
         msgs = [{"role": "system", "content": sys}]
         msgs += [{"role": m["role"], "content": m["content"]}
                  for m in transcript[-20:]]
         msgs.append({"role": "user", "content": eff_message})
-        return msgs, None
+        return _inject_vision_blocks(msgs, model), None
 
 
 _HARNESS_ACTION_NAMES = ("write_todos", "update_todos", "replan_todos", "subagent",
