@@ -20,6 +20,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -35,6 +36,23 @@ _probe_cache = None
 #   job_id -> {"proc": Popen, "argv": [...], "started": ts, "cancelled": bool}
 _RUNNING = {}
 _RUN_LOCK = threading.Lock()
+
+# JAG-413: cap the bytes read back from a sandboxed command so a process that
+# spews gigabytes cannot exhaust the server's memory (output goes to temp files,
+# not pipes, and we only pull MAX_OUTPUT_BYTES per stream).
+MAX_OUTPUT_BYTES = int(os.environ.get("LONGRUN_SANDBOX_MAX_OUTPUT",
+                                      str(2 * 1024 * 1024)))
+
+
+def _read_capped(fh, cap=MAX_OUTPUT_BYTES):
+    """Read at most `cap` bytes from a temp file (from offset 0) and decode it,
+    appending a truncation marker when the stream was longer."""
+    fh.seek(0)
+    data = fh.read(cap + 1)
+    if len(data) > cap:
+        return (data[:cap].decode("utf-8", "replace")
+                + "\n...[output truncated at %d bytes]" % cap)
+    return data.decode("utf-8", "replace")
 
 
 def running():
@@ -77,15 +95,26 @@ def cancel(job_id):
 
 
 def _run_tracked(argv, timeout=None, cwd=None, env=None, job_id=None):
-    """Popen + process-group tracking so the job can be cancelled mid-flight."""
+    """Popen + process-group tracking so the job can be cancelled mid-flight.
+
+    stdout/stderr are redirected to TEMP FILES, not pipes (JAG-413): a command
+    that spews gigabytes cannot exhaust the server's memory or deadlock on a full
+    pipe buffer — we read back at most MAX_OUTPUT_BYTES per stream.
+    """
     t0 = time.time()
+    out_f = tempfile.TemporaryFile()
+    err_f = tempfile.TemporaryFile()
     try:
-        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, cwd=cwd, env=env, **osutil.popen_kwargs())
+        proc = subprocess.Popen(argv, stdout=out_f, stderr=err_f,
+                                cwd=cwd, env=env, **osutil.popen_kwargs())
     except FileNotFoundError as e:
+        out_f.close()
+        err_f.close()
         return {"exit_code": 127, "stdout": "", "stderr": "not found: %s" % e,
                 "duration_ms": 0}
     except Exception as e:  # noqa: BLE001
+        out_f.close()
+        err_f.close()
         return {"exit_code": 125, "stdout": "", "stderr": "exec error: %s" % e,
                 "duration_ms": 0}
     entry = {"proc": proc, "argv": argv, "started": t0, "cancelled": False}
@@ -94,17 +123,21 @@ def _run_tracked(argv, timeout=None, cwd=None, env=None, job_id=None):
             _RUNNING[job_id] = entry
     why = None
     try:
-        out, err = proc.communicate(timeout=timeout)
+        proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         why = "timeout"
         _kill(entry)
-        out, err = proc.communicate()
+        proc.communicate()
     finally:
         if job_id:
             with _RUN_LOCK:
                 _RUNNING.pop(job_id, None)
     if entry["cancelled"]:
         why = "cancelled"
+    out = _read_capped(out_f)
+    err = _read_capped(err_f)
+    out_f.close()
+    err_f.close()
     res = {"exit_code": proc.returncode, "stdout": out or "", "stderr": err or "",
            "duration_ms": int((time.time() - t0) * 1000)}
     if why == "timeout":
@@ -117,22 +150,40 @@ def _run_tracked(argv, timeout=None, cwd=None, env=None, job_id=None):
 
 
 def _run(argv, timeout=None, cwd=None, env=None):
+    """Blocking run for probes; output is written to temp files and read back
+    capped so a chatty command cannot exhaust memory (JAG-413)."""
     t0 = time.time()
+    out_f = tempfile.TemporaryFile()
+    err_f = tempfile.TemporaryFile()
     try:
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                           cwd=cwd, env=env)
-        return {"exit_code": p.returncode, "stdout": p.stdout, "stderr": p.stderr,
-                "duration_ms": int((time.time() - t0) * 1000)}
-    except subprocess.TimeoutExpired as e:
-        return {"exit_code": 124, "stdout": (e.stdout or "") if isinstance(e.stdout, str) else "",
-                "stderr": "timeout after %ss" % timeout,
-                "duration_ms": int((time.time() - t0) * 1000), "timeout": True}
+        p = subprocess.Popen(argv, stdout=out_f, stderr=err_f, cwd=cwd, env=env)
     except FileNotFoundError as e:
+        out_f.close()
+        err_f.close()
         return {"exit_code": 127, "stdout": "", "stderr": "not found: %s" % e,
                 "duration_ms": int((time.time() - t0) * 1000)}
     except Exception as e:  # noqa: BLE001
+        out_f.close()
+        err_f.close()
         return {"exit_code": 125, "stdout": "", "stderr": "exec error: %s" % e,
                 "duration_ms": int((time.time() - t0) * 1000)}
+    timed_out = False
+    try:
+        p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        p.kill()
+        p.communicate()
+    out = _read_capped(out_f)
+    err = _read_capped(err_f)
+    out_f.close()
+    err_f.close()
+    res = {"exit_code": p.returncode, "stdout": out, "stderr": err,
+           "duration_ms": int((time.time() - t0) * 1000)}
+    if timed_out:
+        res.update({"exit_code": 124, "timeout": True,
+                    "stderr": err + "\ntimeout after %ss" % timeout})
+    return res
 
 
 # ----------------------------------------------------------------- probing ---

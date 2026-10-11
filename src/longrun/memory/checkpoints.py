@@ -191,6 +191,36 @@ def prune(keep=MAX_CHECKPOINTS):
     return {"ok": True, "removed": removed}
 
 
+def purge_session(session_id):
+    """JAG-413: drop every checkpoint belonging to `session_id`.
+
+    Deleting a session must not leave its checkpoints behind: a later rollback
+    would try to restore a session that no longer exists (its transcript is
+    tombstoned), silently applying only the plan/tasks half. Returns the number
+    of checkpoints removed.
+    """
+    sid = str(session_id or "")
+    if not sid:
+        return 0
+    with _lock:
+        entries = _load_index()
+        victims = [m for m in entries if m.get("session_id") == sid]
+        if not victims:
+            return 0
+        _save_index([m for m in entries if m.get("session_id") != sid])
+        for m in victims:
+            cid = m.get("id")
+            if not cid:
+                continue
+            for suffix in ("", ".tmp"):
+                try:
+                    os.remove(_snapshot_path(cid) + suffix)
+                except OSError:
+                    pass
+    _publish("checkpoint.session_purged", session=sid, removed=len(victims))
+    return len(victims)
+
+
 def load_payload(cp_id):
     return _read_json(_snapshot_path(cp_id), None)
 

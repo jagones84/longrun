@@ -52,12 +52,29 @@ def _has_markitdown():
         return False
 
 
+_MAX_OUTPUT = int(os.environ.get("LONGRUN_DOC_MAX_OUTPUT") or (64 * 1024 * 1024))
+
+
 def _run(cmd, timeout=None):
+    """Run a helper binary, capturing stdout/stderr to TEMP FILES (JAG-413): a
+    runaway converter cannot exhaust memory — we read back at most _MAX_OUTPUT."""
+    out_f = tempfile.TemporaryFile()
+    err_f = tempfile.TemporaryFile()
     try:
-        p = subprocess.run(cmd, capture_output=True, timeout=timeout or _TIMEOUT)
-        return p.returncode, p.stdout or b"", p.stderr or b""
+        p = subprocess.Popen(cmd, stdout=out_f, stderr=err_f)
+        try:
+            p.communicate(timeout=timeout or _TIMEOUT)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.communicate()
+        out_f.seek(0)
+        err_f.seek(0)
+        return p.returncode, out_f.read(_MAX_OUTPUT), err_f.read(_MAX_OUTPUT)
     except Exception as e:  # noqa: BLE001
         return 1, b"", str(e).encode("utf-8", "replace")
+    finally:
+        out_f.close()
+        err_f.close()
 
 
 def _cap(text, max_kb):
@@ -88,6 +105,14 @@ def _pdftotext(path):
     return None
 
 
+def _page_index(name):
+    """Numeric page index for a pdftoppm output file (page-1.png -> 1) so pages
+    sort naturally (page-2 < page-10) instead of lexicographically (JAG-413)."""
+    stem = name.rsplit(".", 1)[0]
+    tail = stem.rsplit("-", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
 def _ocr_pdf(path, max_pages=40):
     if not (shutil.which("pdftoppm") and shutil.which("tesseract")):
         return None
@@ -98,7 +123,7 @@ def _ocr_pdf(path, max_pages=40):
         if rc != 0:
             return None
         parts = []
-        for img in sorted(os.listdir(td)):
+        for img in sorted(os.listdir(td), key=_page_index):
             if not img.endswith(".png"):
                 continue
             rc2, out2, _ = _run(["tesseract", os.path.join(td, img), "stdout", "-l", langs])
@@ -142,6 +167,9 @@ def extract(path, max_kb=25600):
         return None, "not a binary document"
     if not os.path.isfile(path):
         return None, "not a file"
+    path = os.path.abspath(path)  # JAG-413: a "-x.pdf" name must not read as a flag
+    if os.path.getsize(path) == 0:
+        return None, "empty file"
 
     text = _markitdown(path)                       # richest output when available
     if text:

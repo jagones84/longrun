@@ -33,33 +33,68 @@ PRUNE_INTERVAL_S = float(os.environ.get("LONGRUN_EVENTS_PRUNE_S", "900"))
 PRUNE_BATCH = 50000
 
 
+_EVENTS_DDL = """CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL)"""
+_RUNS_DDL = """CREATE TABLE IF NOT EXISTS runs (
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL, goal TEXT,
+            model TEXT, ts REAL NOT NULL, tokens_in INTEGER DEFAULT 0,
+            tokens_out INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0.0,
+            status TEXT DEFAULT 'running', spans TEXT DEFAULT '[]')"""
+
+
+def _connect_events():
+    """Open the events DB with WAL/NORMAL pragmas + schema.
+
+    Raises ``sqlite3.DatabaseError`` when the file is not a valid database, so
+    :func:`db` can quarantine it and start fresh instead of crashing the server.
+
+    JAG-300: the events log writes ONE ROW PER STREAMING DELTA (hundreds of
+    thousands per session) under a global lock. With the default rollback
+    journal + synchronous=FULL every publish did an fsync — measured at
+    6.0 ms/call, throttling every token of every turn. WAL turns commits into
+    appends and NORMAL drops the per-commit fsync. Still crash-safe (WAL +
+    NORMAL); only a power loss can drop the last few transactions of this
+    REPLAY log — the session transcripts are the source of truth for messages.
+    """
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=5.0)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.Error:
+        # Exotic filesystems may reject WAL — fall back to the default journal.
+        pass
+    try:
+        conn.execute(_EVENTS_DDL)
+        conn.execute(_RUNS_DDL)
+        conn.commit()
+    except sqlite3.DatabaseError:
+        conn.close()
+        raise
+    return conn
+
+
 def db():
     global _db
     if _db is None:
         os.makedirs(DATA_DIR, exist_ok=True)
-        _db = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=5.0)
-        # JAG-300: the events log writes ONE ROW PER STREAMING DELTA (hundreds of
-        # thousands per session) under a global lock. With the default rollback
-        # journal + synchronous=FULL every publish did an fsync — measured at
-        # 6.0 ms/call, throttling every token of every turn. WAL turns commits into
-        # appends and NORMAL drops the per-commit fsync. Still crash-safe (WAL +
-        # NORMAL); only a power loss can drop the last few transactions of this
-        # REPLAY log — the session transcripts are the source of truth for messages.
         try:
-            _db.execute("PRAGMA journal_mode=WAL")
-            _db.execute("PRAGMA synchronous=NORMAL")
-            _db.execute("PRAGMA busy_timeout=5000")
-        except sqlite3.Error:
-            pass
-        _db.execute("""CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL)""")
-        _db.execute("""CREATE TABLE IF NOT EXISTS runs (
-            id TEXT PRIMARY KEY, kind TEXT NOT NULL, goal TEXT,
-            model TEXT, ts REAL NOT NULL, tokens_in INTEGER DEFAULT 0,
-            tokens_out INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0.0,
-            status TEXT DEFAULT 'running', spans TEXT DEFAULT '[]')""")
-        _db.commit()
+            _db = _connect_events()
+        except sqlite3.DatabaseError:
+            # JAG-413: a corrupted events.db (bad header after a power loss or
+            # kill -9) otherwise crashes the server on the very first event. This
+            # log is a REPLAY buffer, not the source of truth (session transcripts
+            # are), so quarantine the bad file and its WAL sidecars and start fresh
+            # rather than fail to boot.
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.replace(DB_PATH + suffix,
+                               DB_PATH + ".corrupt-" + stamp + suffix)
+                except OSError:
+                    pass
+            _db = _connect_events()
     return _db
 
 

@@ -180,6 +180,11 @@ def _purge_session_artifacts(sid):
         bases.append(roles_mod.path_for(sid))   # JAG-314: the per-session ROLE.md
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from longrun.memory import checkpoints
+        checkpoints.purge_session(sid)          # JAG-413: drop session checkpoints
+    except Exception:  # noqa: BLE001
+        pass
     removed = []
     for base in bases:
         for f in glob.glob(glob.escape(base) + "*"):

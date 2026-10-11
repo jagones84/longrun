@@ -175,6 +175,40 @@ All notable changes to Longrun are documented here. The format follows
   - *File handle leaks*: `open()` without `with` in `routing.load_config` and `voice` STT read.
   - Fixed a self-introduced circular-import regression (`_sse_lock` must be re-exported by
     `server` before `httpapi` imports it); caught by the battery, 136/136 after the fix.
+- **Bugfinder sweep round 3 (JAG-412): seven bugs fixed — input validation, token accounting, WebUI.**
+  - *Crash on malformed numeric input* (`api_v02` research executor): raw `int()` without try/except
+    on `n`/`max_rounds` raised and dropped the connection; now uses `_int()`.
+  - *Token undercount per run* (`agent`): `runmetrics.finish()` reported only the LAST LLM call's
+    tokens; a turn with retries/tool loops was materially undercounted. Totals now accumulate in
+    `_record_usage()` via nonlocal counters.
+  - *Operator-precedence bug* (`mcp._routing_call`): `a.get("roles") or "x" in a` silently ignored
+    a valid `{"roles": {}}` payload; now a key-presence check.
+  - *Null approval id* (`mcp.HttpApi.approvals`): `decide` with a missing id built
+    `/api/approvals/None`; now returns a clean error.
+  - *WebUI: unchecked `response.ok`* (`api()`): a non-JSON 5xx threw in `r.json()`; now returns a
+    synthesized `{error}`.
+  - *WebUI: dead feed* (`connectFeed`): the feed EventSource had no error handler, so a dropped
+    SSE connection killed the panel permanently; now reconnects after 5 s.
+  - *WebUI: XSS* (`memKindsInit`): server-provided memory kind names were injected into innerHTML
+    without `esc()`.
+- **Bugfinder sweep round 4 (JAG-413): resilience fixes, battery 136/136, live server clean.**
+  - *Corrupted `events.db` crashed the whole server* (`events.db`): a bad SQLite header (power loss
+    / `kill -9`) raised on the first event with no recovery. `db()` now quarantines the file (and
+    its `-wal`/`-shm` sidecars) as `events.db.corrupt-<ts>` and starts a fresh log — it is a REPLAY
+    buffer, not the source of truth.
+  - *Sandbox OOM* (`sandbox._run`/`_run_tracked`): `communicate()` read ALL stdout/stderr into
+    memory, so a command spewing gigabytes exhausted the host. Output now goes to temp files and
+    only `MAX_OUTPUT_BYTES` (2 MB, `LONGRUN_SANDBOX_MAX_OUTPUT`) per stream is read back.
+  - *Document-extraction OOM* (`docio._run`): same pattern on `pdftotext`/`soffice`/`tesseract`;
+    output is captured to temp files and capped at `LONGRUN_DOC_MAX_OUTPUT` (64 MB).
+  - *OCR page order* (`docio._ocr_pdf`): `sorted(os.listdir)` reordered a 10+ page scan
+    lexicographically (`page-1, page-10, page-2`); now sorted by numeric page index.
+  - *Leading-dash paths read as flags* (`docio.extract`): a `-x.pdf` name was passed to the
+    converters as an option; now resolved with `os.path.abspath`.
+  - *Empty-file guard* (`docio.extract`): a 0-byte document no longer spawns OCR/converters.
+  - *Orphaned checkpoints* (`stores._purge_session_artifacts`): deleting a session left its
+    checkpoints behind, so a later rollback half-applied to a tombstoned session; new
+    `checkpoints.purge_session()` sweeps them.
 
 ### Fixed
 - Pre-existing `NameError: name 'embed' is not defined` in `codeindex.search` (line 208)
