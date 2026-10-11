@@ -32,6 +32,16 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Changed
+- **Session rail groups by TEAM, collapsible (JAG-414).** The left-hand session panel now
+  renders one collapsible group per team (symbol, name, member count) plus a **📌 Pinned** group
+  and a **◇ No team** group. A session whose agent belongs to SEVERAL teams — or that is pinned
+  and also in a team — is DRAWN once per group: a purely **graphical** duplication (same session
+  id, same click handlers, same transcript, same everything). Nothing is duplicated in the
+  substrate; the session stays single, and the Bridge page (`/orbit`) is unaffected. The
+  running / finished / active markers now update EVERY copy of a session (the rail helpers used
+  a singular `querySelector`, now `querySelectorAll`). Collapse state persists per group in
+  `localStorage.sf_collapsed_groups`; pinned sessions still sort first within their group. When
+  no teams exist the rail keeps the previous flat, header-less list (backward compatible).
 - **Embedding UI moves out of the right-hand panel into Settings ▸ Models (JAG-403c).** The
   duplicate `Embedding` inspector section is gone; the model picker, the personal-model
   manager and the cost log now live together under **Settings ▸ Models**. `config/routing.yaml`

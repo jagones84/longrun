@@ -244,6 +244,25 @@
   .sess-menu button.danger { color: var(--err); }
   .sess { position: relative; }
   .sess .del:hover { opacity: 1; background: rgba(248,113,113,.12); }
+  /* JAG-414: collapsible TEAM groups in the session rail. A session that belongs
+     to several teams (or is pinned) is DRAWN once per group — a purely graphical
+     duplication: one session id, one set of functions; only the row appears more
+     than once. The coloured bar + symbol carry the team identity. */
+  .sgroup { margin: 3px 0 5px; }
+  .sgroup-h { display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+    border-radius: 8px; cursor: pointer; user-select: none; font-size: 10.5px;
+    font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--dim); }
+  .sgroup-h:hover { background: var(--hover); color: var(--txt); }
+  .sgroup-h .chev { font-size: 9px; width: 9px; text-align: center; opacity: .75; }
+  .sgroup-h .gsym { font-size: 13px; line-height: 1; color: var(--tcol, var(--dim)); }
+  .sgroup-h .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sgroup-h .gid { color: var(--dim); font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .sgroup-h .gcount { color: var(--dim); font-weight: 600; background: var(--hover);
+    border-radius: 999px; padding: 0 7px; min-width: 16px; text-align: center;
+    text-transform: none; letter-spacing: 0; }
+  .sgroup-b { padding-left: 5px; margin-left: 4px; border-left: 2px solid var(--tcol, var(--line)); }
+  .sgroup.collapsed .sgroup-b { display: none; }
   /* JAG-218: toast shown when a background session finishes while you're away. */
   .done-toast { position: fixed; right: 16px; bottom: 16px; z-index: 9999;
     background: var(--menubg); color: var(--txt);
@@ -2818,6 +2837,48 @@ async function openSessMenu(row, s, ag) {
   };
   setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
 }
+/* JAG-414: the session rail groups rows by TEAM (collapsible). A session that
+   belongs to several teams — or is pinned — is DRAWN once per group: a purely
+   GRAPHICAL duplication (same id, same click handlers, same everything). The
+   underlying session is single; nothing is duplicated in the substrate. */
+function _collapsedGroups() {
+  try { return JSON.parse(localStorage.getItem("sf_collapsed_groups") || "[]"); }
+  catch (e) { return []; }
+}
+function _toggleGroup(key) {
+  let c = _collapsedGroups();
+  c = c.includes(key) ? c.filter(x => x !== key) : c.concat(key);
+  localStorage.setItem("sf_collapsed_groups", JSON.stringify(c));
+  loadSessions();
+}
+/* One rail row for a session. Called once PER GROUP the session belongs to. */
+function _sessRowEl(s, pinnedIds, ag) {
+  const d = document.createElement("div");
+  d.className = "sess" + (pinnedIds.includes(s.id) ? " pinned" : "") + (s.id === sessionId ? " active" : "") + (runningSessions[s.id] ? " running" : "") + (doneSessions[s.id] && s.id !== sessionId ? " done" : "");
+  d.dataset.sid = s.id;   // JAG-168: lets setRunning() toggle the busy marker (ALL copies)
+  const age = s.age ? (" · " + s.age) : "";
+  const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
+  const _anum = _agentNum(s);
+  const jid = _anum ? `<span class="jid" title="${ag ? "agent id " + esc(ag.id) : "session sequence"}">A${_anum}</span>` : "";
+  const agtag = ag ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + ag.reports.join(", ") : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
+  // JAG-339: the team symbol(s) this agent belongs to (may be several).
+  const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];
+    return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
+  const pin = pinnedIds.includes(s.id) ? '<span class="pin" title="pinned session">📌</span>' : "";
+  d.innerHTML = `${pin}${agtag}${jid}${tchips}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span><span class="t">${esc(s.title || s.id)}</span>`;
+  d.onclick = e => {
+    if (e.target.classList.contains("menu-btn")) { openSessMenu(d, s, ag); return; }
+    if (e.target.closest && e.target.closest(".sess-menu")) return;
+    selectSession(s);
+  };
+  // JAG-395: right-click opens THIS row's ⋯ menu — the session under the cursor.
+  d.oncontextmenu = e => {
+    if (e.target.closest && e.target.closest(".sess-menu")) return;
+    e.preventDefault(); e.stopPropagation();
+    openSessMenu(d, s, ag);
+  };
+  return d;
+}
 async function loadSessions() {
   const [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
   const box = $("sessions"); box.innerHTML = "";
@@ -2825,8 +2886,8 @@ async function loadSessions() {
   const hideEmpty = $("hide-empty") ? $("hide-empty").checked : false;
   (out.sessions || []).forEach(s => { if (s.id === sessionId) _activeTitle = s.title || s.id; });
   let pinnedIds = [];
-  (() => { try { pinnedIds = _pinned(); (out.sessions || []).sort((a, b) => (pinnedIds.includes(b.id) ? 1 : 0) - (pinnedIds.includes(a.id) ? 1 : 0)); } catch (e) {} })();
-  (out.sessions || []).filter(s => (!hideEmpty || (s.messages || 0) > 0) && ((s.title || s.id || "").toLowerCase().includes(q))).forEach(s => {
+  try { pinnedIds = _pinned(); } catch (e) {}
+  (out.sessions || []).forEach(s => {
     _sessModel[s.id] = s.model || "";   // JAG-157: cache each session's model
     _sessJob[s.id] = s.job || null;     // JAG-169: cache each session's job id
     // JAG-323: seed the busy marker from the authoritative server flag, so a page
@@ -2834,35 +2895,50 @@ async function loadSessions() {
     // announced. Never clobber a turn this browser is itself streaming.
     if (s.running) runningSessions[s.id] = true;
     else if (!turnSSE[s.id]) delete runningSessions[s.id];
-    const d = document.createElement("div");
-    d.className = "sess" + (pinnedIds.includes(s.id) ? " pinned" : "") + (s.id === sessionId ? " active" : "") + (runningSessions[s.id] ? " running" : "") + (doneSessions[s.id] && s.id !== sessionId ? " done" : "");
-    d.dataset.sid = s.id;   // JAG-168: lets setRunning() toggle the busy marker
-    const age = s.age ? (" · " + s.age) : "";
-    const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
-    const ag = _agents[s.id];
-    const _anum = _agentNum(s);
-    const jid = _anum ? `<span class="jid" title="${ag ? "agent id " + esc(ag.id) : "session sequence"}">A${_anum}</span>` : "";
-    const agtag = ag ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + ag.reports.join(", ") : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
-    // JAG-339: the team symbol(s) this agent belongs to (may be several).
-    const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];
-      return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
-    const pin = pinnedIds.includes(s.id) ? '<span class="pin" title="pinned session">📌</span>' : "";
-    d.innerHTML = `${pin}${agtag}${jid}${tchips}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span><span class="t">${esc(s.title || s.id)}</span>`;
-    d.onclick = e => {
-      if (e.target.classList.contains("menu-btn")) { openSessMenu(d, s, ag); return; }
-      if (e.target.closest && e.target.closest(".sess-menu")) return;
-      selectSession(s);
-    };
-    // JAG-395: right-click opens THIS row's ⋯ menu — the session under the cursor,
-    // not the active one — so you can act on any session without switching to it.
-    d.oncontextmenu = e => {
-      if (e.target.closest && e.target.closest(".sess-menu")) return;
-      e.preventDefault(); e.stopPropagation();
-      openSessMenu(d, s, ag);
-    };
-        box.appendChild(d);
   });
-  if (!(out.sessions || []).length) box.innerHTML = '<div class="remaining">no sessions yet</div>';
+  const visible = (out.sessions || []).filter(s =>
+    (!hideEmpty || (s.messages || 0) > 0) && ((s.title || s.id || "").toLowerCase().includes(q)));
+  const isPinned = id => pinnedIds.includes(id);
+  visible.sort((a, b) => (pinnedIds.includes(b.id) ? 1 : 0) - (pinnedIds.includes(a.id) ? 1 : 0));
+  const teamsOf = s => { const ag = _agents[s.id]; return ag ? (ag.teams || []).filter(t => _teamsById[t]) : []; };
+  const teams = Object.values(_teamsById).sort((a, b) => (a.n || 0) - (b.n || 0));
+
+  // No teams configured -> keep the flat, header-less list (backward compatible).
+  if (!teams.length) {
+    visible.forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
+  } else {
+    const groups = [];
+    const pinGroup = visible.filter(s => isPinned(s.id));
+    if (pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
+    teams.forEach(t => {
+      const ss = visible.filter(s => teamsOf(s).includes(t.id));
+      if (ss.length) groups.push({ key: t.id, symbol: t.symbol || "•", name: t.name || t.id, id: t.id, col: t.color || "var(--acc)", sessions: ss });
+    });
+    const adhoc = visible.filter(s => teamsOf(s).length === 0);
+    if (adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
+    const collapsed = _collapsedGroups();
+    groups.forEach(g => {
+      const isCol = collapsed.includes(g.key);
+      const sec = document.createElement("div");
+      sec.className = "sgroup" + (isCol ? " collapsed" : "");
+      if (g.col) sec.style.setProperty("--tcol", g.col);
+      const head = document.createElement("div");
+      head.className = "sgroup-h";
+      head.title = (isCol ? "Expand " : "Collapse ") + g.name;
+      head.innerHTML = `<span class="chev">${isCol ? "▸" : "▾"}</span>`
+        + `<span class="gsym">${esc(g.symbol)}</span>`
+        + `<span class="gname">${esc(g.name)}${g.id ? ` <span class="gid">${esc(g.id)}</span>` : ""}</span>`
+        + `<span class="gcount">${g.sessions.length}</span>`;
+      head.onclick = () => _toggleGroup(g.key);
+      sec.appendChild(head);
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "sgroup-b";
+      g.sessions.forEach(s => bodyEl.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
+      sec.appendChild(bodyEl);
+      box.appendChild(sec);
+    });
+  }
+  if (!visible.length) box.innerHTML = '<div class="remaining">no sessions yet</div>';
   updateSessBadge();   // JAG-357: keep the topbar badge in sync with the active session
   modelLabel();   // JAG-157: reflect the active session's model once the cache is filled
 }
@@ -3989,8 +4065,9 @@ let doneSessions = {};           // JAG-218: finished while you were on another 
 function setRunning(sid, on) {
   if (!sid) return;
   if (on) { runningSessions[sid] = true; clearDone(sid); } else delete runningSessions[sid];
-  const row = document.querySelector('.sess[data-sid="' + sid + '"]');
-  if (row) row.classList.toggle("running", !!on);
+  // JAG-414: a session may be drawn in several team groups — update EVERY copy.
+  document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
+    row => row.classList.toggle("running", !!on));
 }
 /* JAG-218: a turn that finished while you were NOT looking at that session gets
    a bell marker on its rail row + a toast, so a background job that completes is
@@ -3998,15 +4075,15 @@ function setRunning(sid, on) {
 function markDone(sid) {
   if (!sid) return;
   doneSessions[sid] = true;
-  const row = document.querySelector('.sess[data-sid="' + sid + '"]');
-  if (row) row.classList.add("done");
+  document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
+    row => row.classList.add("done"));
   showDoneToast(sid);
 }
 function clearDone(sid) {
   if (!sid) return;
   delete doneSessions[sid];
-  const row = document.querySelector('.sess[data-sid="' + sid + '"]');
-  if (row) row.classList.remove("done");
+  document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
+    row => row.classList.remove("done"));
   updateDoneTitle();
 }
 function updateDoneTitle() {
