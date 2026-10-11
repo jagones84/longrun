@@ -41,12 +41,21 @@
   .inp.mini{padding:3px 6px;border-radius:6px;font-size:11px}
   /* JAG-342: one panel per row, top-to-bottom (mobile-style) — the two-column grid
      clipped wide panels (ORG CHART) and forced a page-level horizontal scrollbar. */
-  .wrap{display:flex;flex-direction:column;gap:10px;padding:10px;max-width:1680px;margin:0 auto}
+  .wrap{display:flex;flex-direction:column;gap:10px;padding:10px}
   .grid2{display:flex;flex-direction:column;gap:10px}
-  .grid2.oc,.grid2.rf{display:flex;flex-direction:column;gap:10px}
-  /* JAG-2.1: Agents + Job side by side on wide screens, stacking on narrow ones. */
-  .grid2.ab{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:start}
-  @media (max-width:1000px){ .grid2.ab{grid-template-columns:1fr} }
+  /* JAG-2.2: three resizable two-column rows (Agents|Job, Org|Constellation,
+     Routines|Feed). Middle splitter drags the widths; --cA/--cB persist. Stacks
+     into one column on narrow screens. */
+  .grid2.ab,.grid2.oc,.grid2.rf{display:grid;grid-template-columns:var(--cA,minmax(0,1fr)) 7px var(--cB,minmax(0,1fr));gap:8px;align-items:stretch}
+  .grid2.ab .panel,.grid2.oc .panel,.grid2.rf .panel{display:flex;flex-direction:column;min-height:0}
+  .grid2.ab .panel>.scroll,.grid2.oc .panel>.scroll,.grid2.rf .panel>.scroll{flex:1 1 auto;max-height:none;min-height:0}
+  @media (max-width:1100px){ .grid2.ab,.grid2.oc,.grid2.rf{display:flex;flex-direction:column;gap:10px} .rz-cols{display:none} }
+  .panel{position:relative}
+  .rz-cols,.rz-b{touch-action:none}
+  .rz-cols{align-self:stretch;cursor:ew-resize;border-radius:3px;background:var(--line)}
+  .rz-cols:hover,.rz-cols:active{background:var(--acc)}
+  .rz-b{position:absolute;left:0;right:0;bottom:0;height:7px;cursor:ns-resize;z-index:15}
+  .rz-b:hover,.rz-b:active{background:linear-gradient(transparent,rgba(124,140,255,.4))}
   .col{display:flex;flex-direction:column;gap:10px;min-width:0}
   .row{display:flex;align-items:center;gap:8px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -221,6 +230,7 @@
     <span class="ttab active" aria-current="page">Control</span>
   </nav>
   <span class="spacer"></span>
+  <button class="btn ghost mini" id="rzReset" title="reset panel sizes">reset layout</button>
 </header>
 
 <main class="wrap">
@@ -270,6 +280,8 @@
       </div>
     </section>
 
+    <div class="rz-cols" title="drag to resize columns"></div>
+
     <!-- Job: goal + who you give it to (its reports are the team) -->
     <section class="panel">
       <h2>Job <span class="n" id="jobsCount">—</span></h2>
@@ -297,6 +309,8 @@
         </span></h2>
       <div class="orgwrap" id="orgtree"></div>
     </section>
+
+    <div class="rz-cols" title="drag to resize columns"></div>
 
     <!-- Constellation: DOCKED panel (AGENT = one agent, ALL = every agent + jobs) -->
     <section class="panel cpanel" id="constPanel">
@@ -334,6 +348,8 @@
       </div>
       <div class="scroll" id="routines" style="max-height:22vh"></div>
     </section>
+
+    <div class="rz-cols" title="drag to resize columns"></div>
 
     <section class="panel">
       <h2>Feed</h2>
@@ -1205,7 +1221,63 @@ class OrbitApp {
     setInterval(() => this.refresh(), 5000);
   }
 }
-window.addEventListener("DOMContentLoaded", () => new OrbitApp().start());
+/* JAG-2.2: resizable panels (mouse + touch). Column splitters drag the row widths;
+   a bottom grip on every panel drags its height. Sizes persist locally; the
+   "reset layout" button restores defaults. */
+function initPanels(){
+  const LS = "orbit_layout_v2";
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LS) || "{}"); } catch (_) {}
+  const persist = () => { try { localStorage.setItem(LS, JSON.stringify(saved)); } catch (_) {} };
+  const refit = () => window.dispatchEvent(new Event("resize"));
+
+  document.querySelectorAll(".grid2 .rz-cols").forEach(sp => {
+    const g = sp.parentElement;
+    const key = "w:" + ((g.className.match(/grid2\s+(\w+)/) || [])[1] || "?");
+    const f = saved[key];
+    if (f != null) { g.style.setProperty("--cA", (f * 2).toFixed(3) + "fr"); g.style.setProperty("--cB", ((1 - f) * 2).toFixed(3) + "fr"); }
+    sp.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try { sp.setPointerCapture(e.pointerId); } catch (_) {}
+      const rect = g.getBoundingClientRect();
+      const move = (ev) => {
+        let x = (ev.clientX - rect.left) / rect.width;
+        x = Math.min(0.85, Math.max(0.15, x));
+        g.style.setProperty("--cA", (x * 2).toFixed(3) + "fr");
+        g.style.setProperty("--cB", ((1 - x) * 2).toFixed(3) + "fr");
+        saved[key] = x;
+      };
+      const up = () => { sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up); persist(); refit(); };
+      sp.addEventListener("pointermove", move); sp.addEventListener("pointerup", up);
+    });
+  });
+
+  const panels = [...document.querySelectorAll("main.wrap .panel")];
+  panels.forEach((p, i) => {
+    const key = "h:" + i;
+    if (saved[key]) p.style.height = saved[key] + "px";
+    const grip = document.createElement("div");
+    grip.className = "rz-b"; grip.title = "drag to resize height";
+    p.appendChild(grip);
+    grip.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+      const y0 = e.clientY, h0 = p.getBoundingClientRect().height;
+      const move = (ev) => { const h = Math.max(120, h0 + (ev.clientY - y0)); p.style.height = h + "px"; saved[key] = Math.round(h); };
+      const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); persist(); refit(); };
+      grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up);
+    });
+  });
+
+  const rst = $("rzReset");
+  if (rst) rst.onclick = () => {
+    saved = {}; persist();
+    document.querySelectorAll(".grid2").forEach(g => { g.style.removeProperty("--cA"); g.style.removeProperty("--cB"); });
+    panels.forEach(p => { p.style.height = ""; });
+    refit();
+  };
+}
+window.addEventListener("DOMContentLoaded", () => { new OrbitApp().start(); initPanels(); });
 </script>
 <script>async function clearOrbitSession(sid){if(!sid)return;await fetch('/api/sessions/'+encodeURIComponent(sid)+'/clear',{method:'POST'});location.reload();}</script></body>
 </html>

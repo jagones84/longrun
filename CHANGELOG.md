@@ -43,6 +43,13 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Changed
+- **Control deck layout: full-width + resizable panels (JAG-419).** The deck now fills the window
+  (the old 1680px cap that left huge side margins on wide screens is gone). Three rows sit side by
+  side — Agents|Job, Org chart|Constellation, Routines|Feed — each with a draggable column splitter;
+  every panel has a bottom grip to drag its height (mouse + touch). The Job panel is full-height,
+  level with its row. Sizes persist in `localStorage`; a **reset layout** button restores defaults.
+  The main-app header tagline ("agent harness …") was removed so the banner no longer changes when
+  switching tabs.
 - **Control deck UX: unified agents table, sorting, collapse/expand-all (JAG-418).** The AGENTS pane is
   now ONE editable table grouped by team (collapsible group rows + editable agent rows) instead of two
   separate `table` / `by team` views. A **sort** selector orders agents (id, name, role, model, team,
