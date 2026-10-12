@@ -5,7 +5,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#install--run)
-[![tests](https://img.shields.io/badge/battery-158%2F158%20green-success.svg)](#the-quality-gate)
+[![tests](https://img.shields.io/badge/battery-159%2F159%20green-success.svg)](#the-quality-gate)
 [![CI](https://github.com/jagones84/longrun/actions/workflows/ci.yml/badge.svg)](https://github.com/jagones84/longrun/actions/workflows/ci.yml)
 
 **Longrun is a single agent harness — one engine that drives one LLM
@@ -147,19 +147,21 @@ Copy-Item .env.template .env
 **Interpreter & dependencies — read this once.** The app runs on whatever `python3`
 `run.sh` / the service resolves to (the **system** interpreter, by design): the core is
 stdlib-only + **PyYAML**. `requirements.txt` lists the **optional** extras (e.g.
-`docling` for rich document ingestion) — install them **for that same interpreter**: a
-venv's packages are invisible to a system interpreter and vice-versa. On a PEP-668 host:
+`docling` for rich document ingestion). There is **no bundled virtualenv** — install the
+extras with **`pip install --user`** so the running interpreter sees them without
+touching system packages (install for *that same* interpreter: a venv's packages are
+invisible to it). On a PEP-668 host:
 
 ```bash
-python3 -m pip install --user -r requirements.txt     # runtime extras (system python)
+python3 -m pip install --user -r requirements.txt     # optional runtime extras
 ```
 
-The repo's `.venv/` is **development-only** (pytest / mypy / ruff / mutmut), used by the
-tooling and `tests/mega_test.sh` — it is **not** the app runtime. Rebuild it any time:
+Dev tooling (pytest / mypy / ruff / mutmut …) is optional too, in
+`requirements-dev.txt`; `tests/mega_test.sh` installs it into a throwaway venv under
+`$TMPDIR` so nothing pollutes the repo or the system:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+python3 -m pip install --user -r requirements-dev.txt   # or just run tests/mega_test.sh
 ```
 
 Open **`http://127.0.0.1:8790`** for the **Sessions** view, or
@@ -334,7 +336,7 @@ The **only** regression gate is one deterministic, fully-isolated battery — it
 every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live state:
 
 ```bash
-bash tests/battery.sh        # → === battery: 158/158 GREEN ===
+bash tests/battery.sh        # → === battery: 159/159 GREEN ===
 ```
 
 CI runs the same battery on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).

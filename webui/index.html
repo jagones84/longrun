@@ -496,6 +496,16 @@
   .tctree > .tc-rw { position: absolute; top: 3px; right: 6px; z-index: 2; }
   .task-rw { margin-left: 6px; }
   .tc-rw:hover, .task-rw:hover { color: var(--err); border-color: var(--err); }
+  /* JAG-431g: a "free" chat thread group (turns not tied to a task) — collapsible
+     with the same ⊞/⊟ controls as the task groups. */
+  .fgroup { margin: 6px 0; }
+  .fgroup > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+    padding: 2px 8px; border: 1px dashed var(--line); border-radius: 8px; }
+  .fgroup > summary::-webkit-details-marker { display: none; }
+  .fgroup > summary:hover { color: var(--txt); border-color: var(--acc); }
+  .fgroup[open] > summary { border-style: solid; }
+  .fgroup .fg-kids { padding-left: 8px; margin-top: 4px; }
   .hinj { margin: 4px 0; font-size: 11.5px; }
   .hinj > summary { cursor: pointer; color: var(--info); letter-spacing: .04em; }
   .hinj .hbody { white-space: pre-wrap; color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px;
@@ -1290,8 +1300,8 @@
       <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession"
               title="reveal this session in the sessions panel — expand its group and center it"
               aria-label="reveal the current session in the sessions panel">🎯</button>
-      <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all todo groups" aria-label="expand all todo groups">⊞</button>
-      <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all todo groups (and hide chain-of-thought)" aria-label="collapse all todo groups and chain-of-thought">⊟</button>
+      <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
+      <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
     </div>
     <div id="composer">
       <div id="slashMenu" class="card" hidden style="position:absolute;bottom:100%;left:22px;right:22px;max-height:220px;overflow-y:auto;padding:4px 0;margin-bottom:4px"></div>
@@ -1980,7 +1990,24 @@ function _nodeSub(n) { return (n && n.subjob) ? String(n.subjob) : ""; }
 /* JAG-166: in-chat task tree state. activeScope = the container of the node
    currently 'doing'; every thought/tool/injection is appended there (indented). */
 let _chatNodes = {}, _chatSections = {}, _activeScope = null, _activeNodeId = null, _sysInjectEl = null;
-function _scope() { return _activeScope || $("log"); }
+/* JAG-431g: "free" chat threads — user turns and harness output that sit BETWEEN
+   task groups. They are wrapped in a collapsible <details class="fgroup"> ("Free.N")
+   so they collapse/expand with the same ⊞/⊟ buttons as the todo groups. */
+let _freeGroup = null, _freeN = 0;
+function _freeKids() { return (_freeGroup && _freeGroup.isConnected) ? _freeGroup.querySelector(".fg-kids") : null; }
+function _freeClose() { _freeGroup = null; }
+function _freeNew() {
+  _freeN += 1;
+  const det = document.createElement("details");
+  det.className = "fgroup"; det.open = true;
+  det.innerHTML = '<summary><span class="fglabel"></span></summary><div class="fg-kids"></div>';
+  det.querySelector(".fglabel").textContent = "Free." + _freeN;
+  $("log").appendChild(det);
+  _freeGroup = det;
+  return det.querySelector(".fg-kids");
+}
+function _freeAppend(el) { (_freeKids() || _freeNew()).appendChild(el); }
+function _scope() { return _activeScope || _freeKids() || $("log"); }
 function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id === id) || null; }
 /* JAG-274: the chat is a CHRONOLOGICAL stream (newest always at the bottom). A todo
  * step is an inline section created where the step is first referenced; while that
@@ -2003,7 +2030,11 @@ function _openSection(nid) {
   _updateNowBar();
   return _activeScope;
 }
-function _logAppend(el) { _openSection(_activeNodeId); (_activeScope || $("log")).appendChild(el); }
+function _logAppend(el) {
+  _openSection(_activeNodeId);
+  if (_activeScope) { _activeScope.appendChild(el); return; }
+  _freeAppend(el);                 // JAG-431g: free content lives in a Free.N group
+}
 function _latestSection(nid) {
   const secs = _chatSections[nid] || [];
   return secs.length ? secs[secs.length - 1] : null;
@@ -2043,12 +2074,14 @@ function _updateNowBar() {
  * A manual expand/collapse is an explicit user intent, so it deliberately overrides
  * the harness's per-node auto-open (which re-opens the active "doing" node on update). */
 function _allTodos() { const l = $("log"); return l ? [...l.querySelectorAll("details.tctree")] : []; }
-function expandAllTodos() { _allTodos().forEach(d => { d.open = true; }); _updateTreeTools(); }
+/* JAG-431g: ⊞/⊟ also drive the "Free.N" free-thread groups, not just the task groups. */
+function _allGroups() { const l = $("log"); return l ? [...l.querySelectorAll("details.tctree, details.fgroup")] : []; }
+function expandAllTodos() { _allGroups().forEach(d => { d.open = true; }); _updateTreeTools(); }
 function collapseAllTodos() {
-  _allTodos().forEach(d => { d.open = false; });
+  _allGroups().forEach(d => { d.open = false; });
   // JAG-428: collapsing also tucks away the chain-of-thought blocks (the reasoning
-  // noise). Deliberately ONE-WAY: ⊞ expands the todo GROUPS only and never re-opens
-  // the CoT the user chose to hide.
+  // noise). Deliberately ONE-WAY: ⊞ expands the GROUPS only and never re-opens the
+  // CoT the user chose to hide.
   const l = $("log"); if (l) [...l.querySelectorAll("details.think")].forEach(d => { d.open = false; });
   _updateTreeTools();
 }
@@ -2057,7 +2090,7 @@ function collapseAllTodos() {
 function _updateTreeTools() {
   const t = $("treeTools"); if (!t) return;
   t.hidden = !sessionId;
-  const hasTodos = _allTodos().length > 0;
+  const hasTodos = _allGroups().length > 0;
   t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !hasTodos; });
 }
 let cursorEl = null;
@@ -2186,9 +2219,12 @@ function who(role, text, ts, sender, subjob) {
   if (role === "user") { b.textContent = text; }
   else { b.dataset.raw = (text == null ? "" : String(text)); renderAnswerBubble(b); }
   d.querySelector(".copy").onclick = () => copyBtn(d.querySelector(".copy"), b.dataset.raw != null ? b.dataset.raw : b.textContent);
-  // JAG-166: user turns always sit at top level; harness/agent output nests under
-  // the active todo node (see _scope).
-  if (role === "user") { $("log").appendChild(d); buildDotRail(); } else { _logAppend(d); }
+  // JAG-166/JAG-431g: user turns start a NEW free thread group (top-level when a
+  // task group is active); harness/agent output nests under the active todo node.
+  if (role === "user") {
+    if (_activeScope) { $("log").appendChild(d); } else { _freeClose(); _freeAppend(d); }
+    buildDotRail();
+  } else { _logAppend(d); }
   scroll(); return d;
 }
 /* v1.6.3 (JAG-55): inline tool-call mini-card, coherent with the run graph nodes */
@@ -2309,7 +2345,7 @@ function endStream() {
  * is a <details>; while it is 'doing' it becomes the active scope, so thoughts,
  * tool cards and harness→LLM injections nest (indented) underneath it; on 'done'
  * it collapses and the next node takes over. */
-function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _nowLast = ""; _updateNowBar(); buildDotRail(); }
+function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _updateNowBar(); buildDotRail(); }
 function _nodeDepth(id, d) {
   // JAG-170: depth from the GRAPH hierarchy, independent of draw order, so the
   // indentation stays aligned even when the parent has not been rendered yet.
@@ -2354,6 +2390,7 @@ function chatNodeAdd(node) {
   const det = _mkSection(node);
   if (node.status === "doing") {
     det.open = true; _activeNodeId = node.id; _activeScope = det.querySelector(".tc-kids");
+    _freeClose();                    // JAG-431g: work now nests in the task group
     _updateNowBar();
   }
   scroll();
@@ -2367,6 +2404,7 @@ function chatNodeUpdate(node) {
     secs.forEach(d => { d.open = true; });
     const det = _chatNodes[node.id];
     _activeNodeId = node.id; _activeScope = det.querySelector(".tc-kids");
+    _freeClose();                    // JAG-431g: work now nests in the task group
   } else if (node.status === "done" || node.status === "cancelled" || node.status === "superseded") {
     secs.forEach(d => { d.open = false; });
     if (secs.some(d => d.querySelector(".tc-kids") === _activeScope)) { _activeScope = null; _activeNodeId = null; }
@@ -4795,7 +4833,7 @@ function confirmDelete(message, force) {
   return new Promise(resolve => {
     const ov = document.createElement("div");
     ov.id = "sfConfirm";
-    ov.style.cssText = "position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center";
+    ov.style.cssText = "position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center";
     const box = document.createElement("div");
     box.className = "card";
     box.style.cssText = "width:min(90vw,360px);display:flex;flex-direction:column;gap:12px";

@@ -82,17 +82,18 @@ check("2f it only errors if creation truly failed",
       "cannot create folder" in nw, "")
 
 # --- 3: collapse-all also hides CoT, one-way --------------------------------
-check("3a _allTodos() selects the todo groups (details.tctree)",
-      "details.tctree" in _fn(HTML, "function _allTodos("), "")
+# JAG-431g: the ⊞/⊟ buttons now act on _allGroups() (task groups + free threads).
+check("3a the group selector covers the task groups (details.tctree)",
+      "details.tctree" in _fn(HTML, "function _allGroups("), "")
 cbody = _fn(HTML, "function collapseAllTodos(")
-check("3b collapseAllTodos closes the todo groups",
-      "_allTodos()" in cbody and "d.open = false" in cbody, "")
+check("3b collapseAllTodos closes the groups",
+      "_allGroups()" in cbody and "d.open = false" in cbody, "")
 check("3c collapseAllTodos ALSO closes chain-of-thought",
       "details.think" in cbody, "")
 
 ebody = _fn(HTML, "function expandAllTodos(")
-check("3d expandAllTodos re-opens the todo groups",
-      "_allTodos()" in ebody and "d.open = true" in ebody, "")
+check("3d expandAllTodos re-opens the groups",
+      "_allGroups()" in ebody and "d.open = true" in ebody, "")
 check("3e expandAllTodos does NOT touch chain-of-thought (one-way)",
       "think" not in ebody, "")
 

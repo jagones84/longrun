@@ -7,6 +7,16 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Free-thread groups + rewind-dialog fixes + no repo venv (JAG-431f/g), battery 159/159.** (g) **Collapsible
+  FREE chat threads:** loose chat turns that sit between task groups now collect into **`Free.N`** collapsible
+  groups, toggled by the SAME ⊞/⊟ floating controls as the task groups (`_allGroups` covers `details.tctree`
+  *and* `details.fgroup`). Verified live: 3 `Free.N` groups (9/12/4 kids) + 5 tctree collapse/expand cleanly,
+  0 console errors. (f) **Rewind dialog fixes:** the "delete?" **confirm popup now sits ABOVE** the rewind
+  dialog (overlay z-index 30 → 100); and **turn anchors are bounded per session** — `checkpoints.create_turn`
+  prunes the oldest turn anchors via `prune_turns` (`LONGRUN_TURN_ANCHORS`, default 30), so a long session
+  keeps only the most recent ~30 (the sparse msg 0/14/22/38 list is one anchor per USER turn). Plus the
+  **repo `.venv` is gone for good** — the app is explicitly non-venv (system interpreter + `pip install
+  --user`), dev tooling lives in a throwaway `$TMPDIR` venv. Pinned by `v435` (and `v433`/`v429` re-pointed).
 - **Rewind to a specific todo + non-venv interpreter model (JAG-431d/e), battery 158/158.** (d)
   **Per-todo rewind:** each todo row now carries a **⏮** button (chat tree + Plan panel) that restores
   to *just before that step* — `POST /api/rewind {session, node}` prunes the task graph AT the node (it

@@ -111,6 +111,15 @@ check("S3 the API accepts a `node` rewind",
       'body.get("node")' in api and "rewind_to_node" in api, "")
 check("S4 the WebUI exposes rewindToTodo + per-todo ⏮ buttons",
       "function rewindToTodo(" in idx and 'class="task-rw"' in idx and 'class="tc-rw"' in idx, "")
+# JAG-431f: the confirm popup must sit ABOVE the rewind dialog (it was z-index 30 < 44).
+import re as _re  # noqa: E402
+_confirm_z = _re.search(r'ov\.id = "sfConfirm";\s*ov\.style\.cssText = "[^"]*z-index:\s*(\d+)', idx)
+_rw_z = _re.search(r"#rwDlg \{[^}]*z-index:\s*(\d+)", idx)
+check("S5 the confirm popup sits ABOVE the rewind dialog",
+      _confirm_z and _rw_z and int(_confirm_z.group(1)) > int(_rw_z.group(1)),
+      (_confirm_z and _confirm_z.group(1), _rw_z and _rw_z.group(1)))
+check("S6 turn anchors are bounded per session (prune_turns)",
+      "def prune_turns(" in ck and "prune_turns(session_id)" in ck, "")
 
 print("---")
 ok = sum(results)

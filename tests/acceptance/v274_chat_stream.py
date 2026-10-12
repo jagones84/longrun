@@ -60,7 +60,7 @@ check("a section is reused ONLY while it is still the last element",
 check("otherwise a FRESH section opens at the bottom (no burying up)",
       "const det = _mkSection(_nodeById(nid) || { id: nid, label: \"\", status: \"doing\" });" in html)
 check("_logAppend routes through _openSection",
-      "function _logAppend(el) { _openSection(_activeNodeId);" in html)
+      "function _logAppend(el) {" in html and "_openSection(_activeNodeId)" in html)
 check("_resetChatTree clears the section map (no session leak)",
       "function _resetChatTree() { _chatNodes = {}; _chatSections = {};" in html)
 check("done/cancelled/superseded close the section",

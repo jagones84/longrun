@@ -44,14 +44,16 @@ check("2a requirements-dev.txt exists with the dev tooling",
       all(t in DEV for t in ("pytest", "mypy", "ruff", "mutmut")), "")
 check("2b it is documented as dev-only (not the app runtime)",
       "DEVELOPMENT" in DEV.upper() and "does NOT need" in DEV, "")
-check("2c tests/mega_test.sh creates the venv from scratch",
-      "python3 -m venv .venv" in MEGA, "")
+check("2c mega_test.sh uses a THROWAWAY venv under TMPDIR (repo stays clean)",
+      'VENV="${TMPDIR' in MEGA and "requirements-dev.txt" in MEGA, "")
 
-# --- the README explains the model ------------------------------------------
-check("3a README documents the venv rebuild recipe",
-      "python3 -m venv .venv" in README and "requirements-dev.txt" in README, "")
+# --- the README explains the model (NO bundled venv) ------------------------
+check("3a README installs extras with `pip install --user`",
+      "pip install --user -r requirements.txt" in README, "")
 check("3b README says requirements are installed for the running interpreter",
-      "sys" in README.lower() and "interpreter" in README.lower(), "")
+      "system" in README.lower() and "interpreter" in README.lower(), "")
+check("3c README does NOT tell users to create a repo venv",
+      "python3 -m venv .venv" not in README and ".venv/bin/python" not in README, "")
 
 print("---")
 ok = sum(results)

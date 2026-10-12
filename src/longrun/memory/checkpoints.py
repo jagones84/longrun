@@ -228,7 +228,39 @@ def create_turn(session_id, msg_index, label=None, by="chat"):
     # silently failed to truncate them. Only stamp it when it is not already set.
     if cp.get("events_upto") is None:
         extra["events_upto"] = _feed_seq()
-    return _stamp(cp["id"], extra)
+    stamped = _stamp(cp["id"], extra)
+    try:
+        prune_turns(session_id)          # JAG-431f: bound the per-session anchor history
+    except Exception:  # noqa: BLE001 — pruning must never break a turn
+        pass
+    return stamped
+
+
+# JAG-431f: turn anchors are idempotent per (session, message) and would otherwise
+# grow forever (one per user message). Keep only the newest N per session.
+TURN_KEEP = int(os.environ.get("LONGRUN_TURN_ANCHORS") or 30)
+
+
+def prune_turns(session_id, keep=None):
+    """Drop the OLDEST turn anchors of `session_id` beyond `keep` (newest kept)."""
+    keep = max(1, int(keep or TURN_KEEP))
+    with _lock:
+        entries = _load_index()
+        turns = [m for m in entries
+                 if m.get("session_id") == session_id and m.get("kind") == "turn"]
+        if len(turns) <= keep:
+            return 0
+        turns.sort(key=lambda m: (m.get("msg_index")
+                                  if m.get("msg_index") is not None else -1))
+        victims = {m["id"] for m in turns[:-keep]}
+        _save_index([m for m in entries if m.get("id") not in victims])
+        for cid in victims:
+            for suffix in ("", ".tmp"):
+                try:
+                    os.remove(_snapshot_path(cid) + suffix)
+                except OSError:
+                    pass
+    return len(victims)
 
 
 def get_by_idempotency_key(key):

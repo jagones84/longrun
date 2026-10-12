@@ -15,11 +15,14 @@ echo "      LONGRUN MEGA DEBUG SUITE         "
 echo "=========================================="
 
 echo -e "\n[0] Environment Setup"
-if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
+# JAG-431f: keep the REPO clean — the dev tooling lives in a THROWAWAY venv under
+# $TMPDIR (the app itself runs on the system interpreter; there is no bundled venv).
+VENV="${TMPDIR:-/tmp}/longrun-mega-venv"
+if [ ! -d "$VENV" ]; then
+    python3 -m venv "$VENV"
 fi
-source .venv/bin/activate
-pip install -q ruff mypy bandit mutmut hypothesis pytest
+source "$VENV/bin/activate"
+pip install -q -r requirements-dev.txt
 
 echo -e "\n[1] STATIC ANALYSIS"
 echo "------------------------------------------"
