@@ -471,7 +471,7 @@
   .toolcard.pending { opacity: .7; }
   .toolcard.err { border-color: rgba(255,119,119,.5); }
   /* JAG-166: in-chat task tree + visible harness→LLM injections */
-  .tctree { margin: 4px 0; }
+  .tctree { margin: 4px 0; position: relative; }
   .tctree > summary { cursor: pointer; font-size: 12px; font-weight: 600; list-style: none; display: flex;
     align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
   .tctree > summary::-webkit-details-marker { display: none; }
@@ -488,9 +488,12 @@
   /* JAG-278: the 'superseded' reason inline, so a closed step is never unexplained. */
   .tctree .tcreason { font-size: 10px; color: var(--dim); font-style: italic; margin-left: 6px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* JAG-431d: per-todo rewind (⏮) — undo this step and everything after it. */
-  .tc-rw, .task-rw { margin-left: auto; background: none; border: 1px solid transparent; color: var(--dim);
+  /* JAG-431d: per-todo rewind (⏮) — undo this step and everything after it.
+     In the chat it sits on the group's summary line as a SIBLING of <summary>
+     (an interactive control nested inside <summary> is an a11y anti-pattern). */
+  .tc-rw, .task-rw { background: none; border: 1px solid transparent; color: var(--dim);
     cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 4px; border-radius: 6px; flex: 0 0 auto; }
+  .tctree > .tc-rw { position: absolute; top: 3px; right: 6px; z-index: 2; }
   .task-rw { margin-left: 6px; }
   .tc-rw:hover, .task-rw:hover { color: var(--err); border-color: var(--err); }
   .hinj { margin: 4px 0; font-size: 11.5px; }
@@ -2338,7 +2341,7 @@ function _mkSection(node) {
   const det = document.createElement("details");
   det.className = "tctree"; det.dataset.id = node.id;
   det.style.marginLeft = (_nodeDepth(node.id) * 14) + "px";
-  det.innerHTML = '<summary><span class="st"></span><span class="tcid"></span><span class="tclabel"></span><button class="tc-rw" data-rw="' + _attr(node.id) + '" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button></summary><div class="tc-kids"></div>';
+  det.innerHTML = '<summary><span class="st"></span><span class="tcid"></span><span class="tclabel"></span></summary><button class="tc-rw" data-rw="' + _attr(node.id) + '" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button><div class="tc-kids"></div>';
   $("log").appendChild(det);
   (_chatSections[node.id] = _chatSections[node.id] || []).push(det);
   _chatNodes[node.id] = det;
