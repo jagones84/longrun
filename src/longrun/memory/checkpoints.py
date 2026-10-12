@@ -92,6 +92,49 @@ def _restore_graph(session_id, snapshot):
     return {"ok": True, "nodes": 0, "archived": True}
 
 
+def _prune_graph_after(session_id, upto_ts):
+    """Back-compat rewind for LEGACY anchors (JAG-431): an anchor created BEFORE the
+    graph was snapshotted has no `graph` payload, so a snapshot restore is impossible.
+    Best effort: drop every node the graph gained AFTER the anchor's timestamp
+    (`created > ts`) — that is exactly what the rewound turn(s) added, so the panel no
+    longer shows todos that did not exist at that point. Never raises."""
+    try:
+        from longrun.plan import taskgraph
+    except Exception:  # noqa: BLE001
+        return {"ok": False}
+    g = taskgraph.load(session_id)
+    if not g:
+        return {"ok": True, "nodes": 0, "removed": 0, "legacy": True}
+    cut = float(upto_ts or 0)
+    nodes = g.get("nodes", []) or []
+    keep = [n for n in nodes if float(n.get("created") or 0) <= cut]
+    removed = len(nodes) - len(keep)
+    if removed:
+        g["nodes"] = keep
+        taskgraph.save(g)
+    return {"ok": True, "nodes": len(keep), "removed": removed, "legacy": True}
+
+
+def _prune_graph_at(session_id, cut):
+    """Drop every node whose `created` is >= `cut` (the target todo and all later
+    ones). Used by the node-targeted rewind (JAG-431d). Never raises."""
+    try:
+        from longrun.plan import taskgraph
+    except Exception:  # noqa: BLE001
+        return {"ok": False}
+    g = taskgraph.load(session_id)
+    if not g:
+        return {"ok": True, "nodes": 0, "removed": 0}
+    cut = float(cut or 0)
+    nodes = g.get("nodes", []) or []
+    keep = [n for n in nodes if float(n.get("created") or 0) < cut]
+    removed = len(nodes) - len(keep)
+    if removed:
+        g["nodes"] = keep
+        taskgraph.save(g)
+    return {"ok": True, "nodes": len(keep), "removed": removed}
+
+
 # ------------------------------------------------------------------ create ----
 
 def create(label=None, session_id=None, idempotency_key=None, by="api"):
@@ -310,8 +353,12 @@ def rollback(cp_id, by="api"):
             srv.save_session(payload["session"])
         # JAG-431: restore the SESSION TASK GRAPH too (the real, live todo list).
         graph_info = None
-        if manifest.get("session_id") and "graph" in payload:
-            graph_info = _restore_graph(manifest["session_id"], payload.get("graph"))
+        if manifest.get("session_id"):
+            if "graph" in payload:
+                graph_info = _restore_graph(manifest["session_id"], payload.get("graph"))
+            else:
+                # Legacy anchor (no snapshot): prune the nodes the rewound turn added.
+                graph_info = _prune_graph_after(manifest["session_id"], manifest.get("ts"))
         entries = _load_index()
         for m in entries:
             if m.get("id") == cp_id:

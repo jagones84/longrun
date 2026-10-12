@@ -488,6 +488,11 @@
   /* JAG-278: the 'superseded' reason inline, so a closed step is never unexplained. */
   .tctree .tcreason { font-size: 10px; color: var(--dim); font-style: italic; margin-left: 6px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* JAG-431d: per-todo rewind (⏮) — undo this step and everything after it. */
+  .tc-rw, .task-rw { margin-left: auto; background: none; border: 1px solid transparent; color: var(--dim);
+    cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 4px; border-radius: 6px; flex: 0 0 auto; }
+  .task-rw { margin-left: 6px; }
+  .tc-rw:hover, .task-rw:hover { color: var(--err); border-color: var(--err); }
   .hinj { margin: 4px 0; font-size: 11.5px; }
   .hinj > summary { cursor: pointer; color: var(--info); letter-spacing: .04em; }
   .hinj .hbody { white-space: pre-wrap; color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px;
@@ -2333,7 +2338,7 @@ function _mkSection(node) {
   const det = document.createElement("details");
   det.className = "tctree"; det.dataset.id = node.id;
   det.style.marginLeft = (_nodeDepth(node.id) * 14) + "px";
-  det.innerHTML = '<summary><span class="st"></span><span class="tcid"></span><span class="tclabel"></span></summary><div class="tc-kids"></div>';
+  det.innerHTML = '<summary><span class="st"></span><span class="tcid"></span><span class="tclabel"></span><button class="tc-rw" data-rw="' + _attr(node.id) + '" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button></summary><div class="tc-kids"></div>';
   $("log").appendChild(det);
   (_chatSections[node.id] = _chatSections[node.id] || []).push(det);
   _chatNodes[node.id] = det;
@@ -3320,6 +3325,26 @@ async function doRewind(sid, idx) {
   if (sid === sessionId) { $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree(); loadHistory(); loadPlan(); }
   loadSessions();
 }
+/* JAG-431d: rewind to just BEFORE a specific todo node — undo THAT step and every
+   later one (the task graph is pruned at the node, the transcript goes back to the
+   nearest turn anchor, and the harness's file writes after it are reverted). The
+   per-todo ⏮ buttons (chat tree + Plan panel) call this. */
+async function rewindToTodo(nodeId) {
+  if (!sessionId || !nodeId) return;
+  const go = await confirmDelete("rewind to just BEFORE todo " + nodeId +
+    "?\nThat step and everything done after it will be rolled back — todos, transcript, " +
+    "and the files the harness wrote.");
+  if (!go) return;
+  toast("rewinding to before " + nodeId + "…");
+  let r = {};
+  try { r = await api("POST", "/api/rewind", { session: sessionId, node: nodeId }); }
+  catch (e) { r = { error: String(e) }; }
+  if (r.error || r.ok === false) { toast("rewind failed: " + (r.error || "?")); return; }
+  $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
+  loadHistory(); loadPlan(); loadSessions();
+  const g = r.graph || {};
+  toast("rewound to before " + nodeId + " · todo list → " + (g.nodes != null ? g.nodes : "?") + " node(s)");
+}
 async function createNewSession() {
   const title = $("nsTitle").value.trim() || ("session " + new Date().toLocaleTimeString());
   const p = new URLSearchParams(); p.set("title", title);
@@ -4024,6 +4049,9 @@ function renderGraph() {
     // JAG-424: right-click a todo → a menu to circle it in the Control constellation.
     el.oncontextmenu = (e) => { e.preventDefault(); if (n) _todoCtx(e, n); };
     if (n) el.title = "click to show details and jump the chat to this step";
+    // JAG-431d: per-todo rewind — undo THIS step and everything done after it.
+    const rwb = el.querySelector(".task-rw");
+    if (rwb && n) rwb.onclick = (e) => { e.stopPropagation(); rewindToTodo(n.id); };
     if (n && n.id === graphFresh) el.classList.add("fresh");
   });
   $("remaining").innerHTML = "";
@@ -4409,7 +4437,7 @@ function taskTree(nodes) {
     const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${n.deps.join(", ")}</span>` : "";
     const ev = (n.evidence || []).length ? ` <span class="ev">📎 ${n.evidence.length}</span>` : "";
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
-      `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt" style="color:var(--acc2);margin:0 5px;font-size:10px" title="job ${esc(_nodeJob(n))}">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt" style="color:var(--info);margin:0 5px;font-size:10px" title="subjob ${esc(_nodeSub(n))} (embodies this todo)">${esc(_nodeSub(n))}</span>` : ""}<span>${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}</div>`;
+      `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt" style="color:var(--acc2);margin:0 5px;font-size:10px" title="job ${esc(_nodeJob(n))}">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt" style="color:var(--info);margin:0 5px;font-size:10px" title="subjob ${esc(_nodeSub(n))} (embodies this todo)">${esc(_nodeSub(n))}</span>` : ""}<span>${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button></div>`;
   };
   const seen = new Set();
   const walk = (p, depth) => (byParent[p] || []).map(n => {
@@ -7398,6 +7426,14 @@ function _bindInlineActions() {
     e.preventDefault();
     let a = []; try { a = JSON.parse(el.dataset.args || "[]"); } catch (_) {}
     invoke(el.dataset.call, el, a);
+  });
+  // JAG-431d: per-todo rewind button inside a chat todo group (<summary>). Swallow the
+  // click so it does NOT also toggle the <details>.
+  document.addEventListener("click", e => {
+    const b = closest(e.target, ".tc-rw");
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (b.dataset.rw) rewindToTodo(b.dataset.rw);
   });
   document.addEventListener("change", e => {
     const el = closest(e.target, "[data-change]");

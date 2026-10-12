@@ -13,9 +13,11 @@ This pins that a checkpoint now snapshots + restores the session task graph:
 
 Deterministic, offline, stdlib-only.
 """
+import json
 import os
 import sys
 import tempfile
+import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 tmp = tempfile.mkdtemp(prefix="v431-")
@@ -39,10 +41,10 @@ from longrun.memory import checkpoints  # noqa: E402
 SID = "sess1"
 
 
-def _node(nid):
+def _node(nid, created=0.0):
     return {"id": nid, "label": "step " + nid, "status": "done", "deps": [],
             "parent": None, "evidence": [{"text": "did " + nid}], "requires_proof": False,
-            "plan": 0, "source": "model", "created": 0, "updated": 0}
+            "plan": 0, "source": "model", "created": created, "updated": created}
 
 
 class _FakeSrv:
@@ -101,6 +103,28 @@ check("B2 rollback restores the graph to its anchored state (1 node)",
 check("B3 the surviving node is the anchored one",
       (g.get("nodes") or [{}])[0].get("id") == "n1", g)
 
+# ---- case C: LEGACY anchor (no graph in payload) -> prune by timestamp ---------
+os.makedirs(taskgraph.GRAPH_DIR, exist_ok=True)
+taskgraph.save({"key": SID, "run_id": SID, "session_id": SID, "plan": 0, "nodes": []})
+cpC = checkpoints.create(label="legacy anchor", session_id=SID)
+# emulate a pre-fix checkpoint: strip the graph payload
+p = checkpoints._snapshot_path(cpC["id"])
+with open(p, encoding="utf-8") as f:
+    payload = json.load(f)
+payload.pop("graph", None)
+with open(p, "w", encoding="utf-8") as f:
+    f.write(json.dumps(payload))
+# the rewound turn adds nodes AFTER the anchor
+now = time.time() + 5
+taskgraph.save({"key": SID, "run_id": SID, "session_id": SID, "plan": 0,
+                "nodes": [_node("n1", now), _node("n2", now)]})
+resC = checkpoints.rollback(cpC["id"])
+check("C1 legacy rollback reports a prune",
+      isinstance(resC.get("graph"), dict) and resC["graph"].get("legacy") is True, resC)
+gC = taskgraph.load(SID) or {}
+check("C2 legacy rollback drops the nodes added after the anchor",
+      len(gC.get("nodes", [])) == 0, gC)
+
 # ---- static wiring ----------------------------------------------------------
 ck = open(os.path.join(REPO, "src", "longrun", "memory", "checkpoints.py"), encoding="utf-8").read()
 rw = open(os.path.join(REPO, "src", "longrun", "memory", "rewind.py"), encoding="utf-8").read()
@@ -109,6 +133,8 @@ check("S2 rollback() restores the session graph", "_restore_graph(manifest" in c
 check("S3 _load_graph/_restore_graph exist",
       "def _load_graph(" in ck and "def _restore_graph(" in ck, "")
 check("S4 rewind() returns the graph outcome", '"graph": restored.get("graph")' in rw, "")
+check("S5 legacy anchors fall back to a timestamp prune",
+      "def _prune_graph_after(" in ck and "_prune_graph_after(manifest" in ck, "")
 
 print("---")
 ok = sum(results)

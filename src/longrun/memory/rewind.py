@@ -139,3 +139,57 @@ def rewind(session_id, msg_index, by="api"):
     return {"ok": bool(restored.get("ok")), "anchor": m, "restored": restored,
             "workspace": ws, "events": ev, "graph": restored.get("graph"),
             "pre_snapshot": (pre or {}).get("id"), "msg_index": m.get("msg_index")}
+
+
+def rewind_to_node(session_id, node_id, by="api"):
+    """JAG-431d: restore to just BEFORE a specific todo node.
+
+    The user picks a todo and asks to undo it ("redo this step" / "drop everything
+    done from here"). We restore the transcript to the nearest turn anchor at or
+    before the node's creation, then prune the task graph AT the node (this node and
+    every later one disappear), and revert the harness's file writes made after it.
+    """
+    if not session_id or not node_id:
+        return {"ok": False, "error": "session and node required"}
+    try:
+        from longrun.plan import taskgraph
+        g = taskgraph.load(session_id)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": "task graph unavailable: %s" % e}
+    node = taskgraph.find(g, node_id) if g else None
+    if not node:
+        return {"ok": False, "error": "node %s not found" % node_id}
+    cut = float(node.get("created") or 0)
+
+    # nearest turn anchor at or before the node (transcript/plan/events boundary)
+    anchors = marks(session_id)
+    anch = None
+    for m in anchors:
+        if float(m.get("ts") or 0) <= cut:
+            anch = m
+    if anch is None and anchors:
+        anch = anchors[0]
+
+    pre = None
+    restored = {"error": "checkpoints unavailable"}
+    graph_info = None
+    try:
+        from longrun.memory import checkpoints
+        try:
+            pre = checkpoints.create(label="pre-rewind to node %s" % node_id,
+                                     session_id=session_id, by=by)
+        except Exception:  # noqa: BLE001
+            pre = None
+        if anch:
+            restored = checkpoints.rollback(anch["id"])
+        # prune AT the node: drop it and every later step
+        graph_info = checkpoints._prune_graph_at(session_id, cut)
+    except Exception as e:  # noqa: BLE001
+        restored = {"error": str(e)}
+    ws = restore_workspace(session_id, cut)
+    ev = truncate_events(session_id, (anch or {}).get("events_upto"))
+    ok = bool((restored or {}).get("ok")) or bool((graph_info or {}).get("ok"))
+    return {"ok": ok, "anchor": anch, "restored": restored,
+            "workspace": ws, "events": ev, "graph": graph_info,
+            "node": node_id, "executed_by": by,
+            "pre_snapshot": (pre or {}).get("id")}

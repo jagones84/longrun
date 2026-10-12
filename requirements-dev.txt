@@ -1,0 +1,17 @@
+# Longrun DEVELOPMENT dependencies (JAG-431e).
+#
+# The APP does NOT need these: it runs on the system interpreter with only
+# `requirements.txt` installed (the core is stdlib-only + PyYAML). This file exists
+# so the local `.venv` — used by the tooling/tests (`tests/mega_test.sh`) — is
+# reproducible from scratch instead of a hand-grown, drifting environment.
+#
+#   python3 -m venv .venv
+#   .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+
+pytest>=9.1
+mypy>=2.4
+ruff>=0.16
+mutmut>=3.8
+bandit>=1.9
+hypothesis>=6.168
+coverage>=7.16

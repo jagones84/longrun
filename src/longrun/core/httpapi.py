@@ -1626,13 +1626,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200 if r.get("ok") else 400, r)
         if path == "/api/rewind":
             # JAG-426: restore a session to the state before user message `msg_index`.
+            # JAG-431d: OR before a specific todo `node` (this node and everything after
+            # it are undone — the "redo / drop from here" gesture).
             from longrun.memory import rewind as _rewind
             sid = body.get("session")
             if not sid:
                 return self._send(400, {"error": "session required"})
-            if body.get("msg_index") is None:
-                return self._send(400, {"error": "msg_index required"})
-            r = _rewind.rewind(sid, body.get("msg_index"), by="api")
+            if body.get("node"):
+                r = _rewind.rewind_to_node(sid, body.get("node"), by="api")
+            elif body.get("msg_index") is not None:
+                r = _rewind.rewind(sid, body.get("msg_index"), by="api")
+            else:
+                return self._send(400, {"error": "msg_index or node required"})
             return self._send(200 if r.get("ok") else 400, r)
         if path == "/api/eval/run":
             return self._send(200, eval_run(body.get("model"), _as_int(body.get("max_steps", 6), 6),

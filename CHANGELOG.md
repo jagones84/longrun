@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Rewind to a specific todo + non-venv interpreter model (JAG-431d/e), battery 158/158.** (d)
+  **Per-todo rewind:** each todo row now carries a **⏮** button (chat tree + Plan panel) that restores
+  to *just before that step* — `POST /api/rewind {session, node}` prunes the task graph AT the node (it
+  and every later one vanish), rolls the transcript back to the nearest turn anchor, and reverts the
+  harness's later file writes. Legacy anchors (created before the graph was snapshotted) fall back to a
+  timestamp prune so old sessions work too. Verified live: session `55a29fae70cb` `[n1..n6]` → ⏮ on `n6`
+  → `[n1..n5]` (RH panel + chat agree). Pinned by `v433` (and `v431` extended with the legacy path).
+  (e) **Interpreter model made explicit:** the app runs on the **system** interpreter (stdlib + PyYAML) —
+  `requirements.txt` = runtime extras, installed for *that* interpreter; the repo `.venv/` is
+  **dev-only** (rebuilt from the new `requirements-dev.txt`, used by `tests/mega_test.sh`). Documented in
+  the README. Pinned by `v434`.
 - **Rewind restores the REAL todo list + WebUI fidelity sweep (JAG-431), battery 156/156.** Two fixes
   under one rule — *a UI must mirror the real backend state, never a stub or a disconnected copy*. (1)
   **Rewind truly deletes the todos:** the live todo list is the per-**session** task graph
