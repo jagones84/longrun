@@ -43,21 +43,21 @@ def _fn(src, header):
 check("1a the free-group state + helpers exist",
       all(s in HTML for s in ("function _freeKids(", "function _freeNew(",
                               "function _freeAppend(", "function _freeClose(")), "")
-check("1b the group is labelled Free.N (JAG-431j: + an optional ledger title)",
-      '_freeLabel(_freeN)' in HTML and 'return "Free." + n' in HTML, "")
+check("1b the group is labelled Free.N (+ the agent title when the chapter is known)",
+      '"Free." + n' in HTML and "function _freePaint(" in HTML, "")
 check("1c a .fgroup style is defined", ".fgroup > summary" in HTML, "")
 
 # --- routing -----------------------------------------------------------------
 la = _fn(HTML, "function _logAppend(")
 check("2a free content is routed into _freeAppend when no task scope is active",
-      "_freeAppend(el)" in la and "_activeScope" in la, "")
+      "_freeAppend(el, chapter)" in la and "_activeScope" in la, "")
 sc = _fn(HTML, "function _scope(")
 check("2b _scope() prefers the active task scope, then the free group",
       "_activeScope" in sc and "_freeKids()" in sc, "")
 
 who = _fn(HTML, "function who(")
 check("2c a user turn opens a NEW free thread (unless inside a task group)",
-      "_freeClose()" in who and "_freeAppend(d)" in who, "")
+      "_freeClose()" in who and "_freeAppend(d, chapter)" in who, "")
 check("2d starting a task step closes the free group",
       HTML.count("_freeClose();") >= 3, "count=%d" % HTML.count("_freeClose();"))
 check("2e reset clears the free groups",

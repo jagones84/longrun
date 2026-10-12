@@ -60,7 +60,7 @@ check("a section is reused ONLY while it is still the last element",
 check("otherwise a FRESH section opens at the bottom (no burying up)",
       "const det = _mkSection(_nodeById(nid) || { id: nid, label: \"\", status: \"doing\" });" in html)
 check("_logAppend routes through _openSection",
-      "function _logAppend(el) {" in html and "_openSection(_activeNodeId)" in html)
+      "function _logAppend(el, chapter) {" in html and "_openSection(_activeNodeId)" in html)
 check("_resetChatTree clears the section map (no session leak)",
       "function _resetChatTree() { _chatNodes = {}; _chatSections = {};" in html)
 check("done/cancelled/superseded close the section",
@@ -79,7 +79,7 @@ _lh = between(html, "const _mts = (s.messages || [])", "es.forEach(e =>")
 check("loadHistory builds one ts-ordered stream", "evs.sort((A, B) =>" in _lh)
 check("cards/injects fall back to the ts at their `after`", "_tsAt(" in _lh)
 check("user turns stay top-level (chronology anchor)",
-      'if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob); return; }' in html)
+      'if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter); return; }' in html)
 
 # --- re-plan announcement BEFORE the new steps ---------------------------------
 _rg = between(html, "async function replanGraph() {", "async function resetPlan()")

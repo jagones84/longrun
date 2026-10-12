@@ -163,7 +163,7 @@ check("7b the 🏷 prompt asks for 'request to <ask>' titles",
 check("7c free groups carry a rewind control",
       'class="fgroup-rw"' in idx and "function rewindFreeGroup(" in idx)
 check("7d the free rewind reuses the per-turn rewind API",
-      "doRewind(sessionId, g.req_from)" in idx)
+      "doRewind(sessionId, rf)" in idx)
 check("7e the ledger render says every group carries its justification",
       "carries its justification" in _read("src/longrun/memory/threads.py"))
 
@@ -179,6 +179,52 @@ check("8a a pre-version ledger is rebuilt with the new fields",
       up)
 check("8b a schema rebuild PRESERVES an agent-set title (no silent loss)",
       bool(up) and up[0].get("title") == "stale", (up[0].get("title") if up else None))
+
+# ---- 9. titles/summaries RIDE the message (JAG-431p) -------------------------
+# The WebUI labels a free group from the CHAPTER metadata carried by the message that
+# STARTS it, so the label travels with the transcript and survives compaction — it must
+# never depend on an ordinal (the rendered and ledger free-group sequences diverged).
+sid3 = "v438-sess-chapter"
+stores.save_session({"id": sid3, "title": "c", "created": time.time(), "messages": []})
+s3 = stores.load_session(sid3)
+stores.append_message(s3, "user", "please chapter me")   # opens a free group, req_from=0
+stores.append_message(s3, "assistant", "done")
+g3 = th.outline(sid3)[0]
+T.execute("chapters", {"session": sid3, "action": "title", "id": g3["id"],
+                       "title": "request to chapter me", "summary": "asked to be chaptered"},
+          run_id=sid3)
+stores.save_session(s3)          # the single choke point mirrors the ledger -> transcript
+s3b = stores.load_session(sid3)
+ch = (s3b["messages"][0] or {}).get("chapter") or {}
+check("9a a titled free group's chapter lands on its START message",
+      ch.get("title") == "request to chapter me" and ch.get("gid") == g3["id"], ch)
+check("9b the chapter carries the summary (the free-tier justification)",
+      (ch.get("summary") or "").startswith("asked to be chaptered"), ch)
+check("9c the chapter carries the rewind anchor", ch.get("req_from") == 0, ch)
+
+# A STALE anchor (the message at that index no longer matches the group's request) must
+# NEVER label an unrelated message: sync re-finds the group by content, or skips.
+s3b["messages"][0]["content"] = "completely different text"
+s3b["messages"][0].pop("chapter", None)
+th.sync_chapters(s3b)
+check("9d a stale anchor never labels an unrelated message",
+      not (s3b["messages"][0].get("chapter")), s3b["messages"][0].get("chapter"))
+check("9e sync_chapters is idempotent (0 changes when nothing moved)",
+      th.sync_chapters(s3b) == 0)
+
+# ---- 10. the WebUI labels by chapter, not by ordinal -------------------------
+check("10a a TASK item closes the free group (render sequence == ledger)",
+      "a TASK item CLOSES the current free group" in idx)
+check("10b free groups are labelled from chapter metadata (ledger fallback kept)",
+      "function _freeMeta(" in idx and "chapter.title || lg.title" in idx)
+check("10c the ordinal-only label helper is gone", "function _freeLabel(" not in idx)
+check("10d loadHistory hands the chapter to the renderer",
+      "who(\"user\", m.content, m.ts, m.sender, m.subjob, m.chapter)" in idx
+      and "who(\"ai\", reply, m.ts, null, null, m.chapter)" in idx)
+check("10e the free-group summary is shown on the group header",
+      'class="fgsum"' in idx and ".fgroup .fgsum" in idx)
+check("10f the per-free rewind uses the chapter's anchor (with a ledger fallback)",
+      "function rewindFreeGroup(" in idx and "st.req_from" in idx)
 
 print("---")
 okc = sum(results)

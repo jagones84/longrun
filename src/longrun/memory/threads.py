@@ -291,6 +291,83 @@ def set_title(sid, gid, title, summary=None):
         return False, "unknown group %r (call action=list for the ids)" % gid
 
 
+def _norm(s):
+    return re.sub(r"\s+", " ", str(s or "")).strip()
+
+
+def _anchor_index(msgs, g):
+    """Message index that STARTS a free group (its first USER request, else its first
+    message), or None.
+
+    The stored ``req_from``/``from`` is a message index captured at append time, so
+    after a compaction it can be stale. It is therefore VERIFIED against the group's
+    ``req`` (a user turn whose text still starts with the request) and, failing that,
+    re-found by content — a stale index must never label an unrelated message.
+    """
+    n = len(msgs)
+    req = _norm(g.get("req"))[:60]
+    cand = g.get("req_from")
+    if cand is None:
+        cand = g.get("from")
+
+    def ok(i):
+        if not isinstance(i, int) or not (0 <= i < n):
+            return False
+        m = msgs[i]
+        if m.get("internal"):
+            return False
+        if req:
+            return (m.get("role") == "user"
+                    and _norm(m.get("content")).startswith(req))
+        return True
+
+    if ok(cand):
+        return cand
+    if req:
+        for i, _m in enumerate(msgs):
+            if ok(i):
+                return i
+    return None
+
+
+def sync_chapters(sess):
+    """Mirror each TITLED free group's title/summary onto the message that STARTS it.
+
+    The WebUI labels a rendered free group from the CHAPTER metadata carried by that
+    message (``messages[i]["chapter"]``), NOT from an ordinal — so the label follows
+    the group wherever it is rendered and SURVIVES compaction (a retained message is
+    kept verbatim; a group whose start message was summarized away is not rendered
+    either). Idempotent, best-effort, and it never calls ``save_session`` (the caller
+    owns the session dict). Returns the number of messages whose chapter changed.
+    """
+    sid = (sess or {}).get("id")
+    if not sid:
+        return 0
+    try:
+        doc = _load(sid)
+    except Exception:  # noqa: BLE001
+        return 0
+    if not doc:
+        return 0
+    msgs = sess.get("messages") or []
+    changed = 0
+    for g in (doc.get("groups") or []):
+        if g.get("kind") != "free":
+            continue
+        title, summary = g.get("title"), g.get("summary")
+        if not (title or summary):
+            continue
+        i = _anchor_index(msgs, g)
+        if i is None:
+            continue
+        want = {"gid": g.get("id"), "title": title or "", "summary": summary or "",
+                "req_from": g.get("req_from")}
+        if msgs[i].get("chapter") != want:
+            msgs[i]["chapter"] = want
+            changed += 1
+    return changed
+
+
 def clear(sid):
     """Drop a session's ledger (used by /clear — the session itself is wiped)."""
     try:

@@ -119,6 +119,13 @@ def save_session(sess):
     with _deleted_lock:
         if sid in _DELETED_SESSIONS:
             return  # JAG-222: the session was deleted — never resurrect it
+    # JAG-431p: carry each TITLED free group's title/summary onto the message that
+    # STARTS it, so the WebUI labels groups by data that rides the transcript (and
+    # therefore survives compaction) instead of by an ordinal. Best-effort.
+    try:
+        threads_mod.sync_chapters(sess)
+    except Exception:  # noqa: BLE001
+        pass
     write_json(os.path.join(SESSIONS_DIR, sid + ".json"), sess)
 
 

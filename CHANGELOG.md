@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Free-group titles now ride the transcript, so the 🏷 button labels every `Free.N` — even after compaction (JAG-431p), battery 164/164.**
+  The 🏷 button titled only *some* free groups in the chat: the WebUI labelled `Free.N` by its **ordinal** in a
+  list it computed itself, while the agent titled groups by the **ledger's** ids — and the two lists were built by
+  different rules (a task item closed the rendered free group; the ledger opened a new one), so the counts drifted
+  and the extra on-screen groups stayed untitled (reproduced: session `55a29fae70cb`, ledger 10 free groups vs 8
+  rendered). Two fixes: (1) a TASK item now CLOSES the current free group in `_openSection`, making the rendered
+  sequence match the ledger's **exactly** (verified for all 6 real sessions); (2) `threads.sync_chapters`, called
+  from the `save_session` choke point, mirrors each titled group's `title`/`summary`/`req_from` onto the **message
+  that starts** the group (`messages[i].chapter`) — the WebUI labels the group from that chapter, so the label
+  travels with the transcript and **survives compaction** (retained messages are kept verbatim) instead of
+  depending on an ordinal. A stale `req_from` (post-compaction) is verified against the group's request and never
+  labels an unrelated message. The free group's **summary** is now shown on its header line (muted, ellipsized,
+  full text in the tooltip), and the ⏮ rewind uses the chapter's anchor. Pinned by `v438` (46/46).
 - **`chapters` now carries every group's JUSTIFICATION; free groups get a summary (JAG-431o), battery 164/164.**
   Recalling a thread without its *why* is useless in a long run, so the tool now surfaces metadata that was
   already saved but invisible to the agent: a TODO's `evidence` (the text the model writes when it closes the

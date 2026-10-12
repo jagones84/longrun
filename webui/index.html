@@ -517,6 +517,13 @@
   .fgroup > summary:hover { color: var(--txt); border-color: var(--acc); }
   .fgroup[open] > summary { border-style: solid; }
   .fgroup .fg-kids { padding-left: 8px; margin-top: 4px; }
+  /* JAG-431p: the free group's SUMMARY (its justification, the free-tier analogue of a
+     todo's evidence) rides on the summary line, muted, ellipsized to one line. */
+  .fgroup .fglabel { flex: 0 0 auto; white-space: nowrap; }
+  .fgroup .fgsum { flex: 1 1 auto; min-width: 0; text-transform: none; letter-spacing: 0;
+    font-weight: 400; color: var(--dim); opacity: .8; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .fgroup .fgsum[hidden] { display: none; }
   .hinj { margin: 4px 0; font-size: 11.5px; }
   .hinj > summary { cursor: pointer; color: var(--info); letter-spacing: .04em; }
   .hinj .hbody { white-space: pre-wrap; color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px;
@@ -2011,29 +2018,52 @@ let _freeGroup = null, _freeN = 0;
 let _threadGroups = [];
 function _freeKids() { return (_freeGroup && _freeGroup.isConnected) ? _freeGroup.querySelector(".fg-kids") : null; }
 function _freeClose() { _freeGroup = null; }
-function _freeLabel(n) { const g = _threadGroups[n - 1]; return "Free." + n + (g && g.title ? " · " + g.title : ""); }
-function _freeNew() {
+/* JAG-431p: a free group's TITLE/SUMMARY is the CHAPTER metadata carried on the
+   message that STARTS it (`m.chapter`, written by the harness; it rides the
+   transcript so it survives compaction). The ledger ordinal (`_threadGroups[n-1]`)
+   is only a fallback for sessions titled before JAG-431p. */
+function _freeMeta(n, chapter) {
+  chapter = chapter || {};
+  const lg = _threadGroups[n - 1] || {};
+  return {
+    title: chapter.title || lg.title || "",
+    summary: chapter.summary || lg.summary || "",
+    req_from: (chapter.req_from != null ? chapter.req_from
+              : (lg.req_from != null ? lg.req_from : null)),
+  };
+}
+function _freePaint(det, n) {
+  const st = det._chapter || {};
+  const lbl = det.querySelector(".fglabel");
+  if (lbl) lbl.textContent = "Free." + n + (st.title ? " · " + st.title : "");
+  const sum = det.querySelector(".fgsum");
+  if (sum) { sum.textContent = st.summary || ""; sum.hidden = !st.summary; }
+  const hd = det.querySelector("summary");
+  if (hd) { if (st.summary) hd.title = st.summary; else hd.removeAttribute("title"); }
+  const rw = det.querySelector(".fgroup-rw");
+  if (rw) { rw.hidden = (st.req_from == null); rw.dataset.n = String(n); }
+}
+function _freeNew(chapter) {
   _freeN += 1;
+  const n = _freeN;
   const det = document.createElement("details");
   det.className = "fgroup"; det.open = true;
-  det.dataset.chapter = "free#" + _freeN;   // JAG-431j: stable slot for the ledger title
-  det.innerHTML = '<summary><span class="fglabel"></span></summary>' +
+  det.dataset.chapter = "free#" + n;   // JAG-431j: stable slot for the ledger title
+  det._chapter = _freeMeta(n, chapter);
+  det.innerHTML = '<summary><span class="fglabel"></span><span class="fgsum" hidden></span></summary>' +
     '<button class="fgroup-rw" title="rewind to just before this free thread (it starts with a request)" aria-label="rewind to before this free thread">⏮</button>' +
     '<div class="fg-kids"></div>';
-  det.querySelector(".fglabel").textContent = _freeLabel(_freeN);
-  _wireFreeRewind(det, _freeN);
+  const rw = det.querySelector(".fgroup-rw");
+  rw.onclick = (e) => { e.stopPropagation(); e.preventDefault(); rewindFreeGroup(+(rw.dataset.n || n)); };
+  _freePaint(det, n);
   $("log").appendChild(det);
   _freeGroup = det;
   return det.querySelector(".fg-kids");
 }
-function _freeAppend(el) { (_freeKids() || _freeNew()).appendChild(el); }
-/* JAG-431m: bind the per-free-thread rewind (⏮). A free thread starts with a user
-   REQUEST, which is a turn anchor — so it can be rewound exactly like a todo. */
-function _wireFreeRewind(det, n) {
-  const rw = det.querySelector(".fgroup-rw"); if (!rw) return;
-  const g = _threadGroups[n - 1];
-  rw.hidden = !(g && g.req_from != null);
-  rw.onclick = (e) => { e.stopPropagation(); e.preventDefault(); rewindFreeGroup(n); };
+function _freeAppend(el, chapter) {
+  const k = _freeKids();
+  if (k) { k.appendChild(el); return; }
+  _freeNew(chapter).appendChild(el);
 }
 /* JAG-431j: pull the free groups (titles + rewind anchors) from the durable ledger. */
 async function loadThreadTitles(sid) {
@@ -2044,20 +2074,23 @@ async function loadThreadTitles(sid) {
     _threadGroups = ((r && r.groups) || []).filter(g => g.kind === "free");
   } catch (e) { _threadGroups = []; }
 }
-/* JAG-431j: (re)apply the ledger to the Free.* groups already rendered. */
+/* JAG-431p: (re)apply chapter/ledger metadata to the Free.* groups already rendered. */
 function applyThreadTitles() {
   const log = $("log"); if (!log) return;
   [...log.querySelectorAll("details.fgroup")].forEach((det, i) => {
-    const lbl = det.querySelector(".fglabel"); if (lbl) lbl.textContent = _freeLabel(i + 1);
-    _wireFreeRewind(det, i + 1);
+    det._chapter = _freeMeta(i + 1, det._chapter);
+    _freePaint(det, i + 1);
   });
   _updateTreeTools();
 }
 /* JAG-431m: rewind to just before a free thread (its first user request). */
 function rewindFreeGroup(n) {
-  const g = _threadGroups[n - 1];
-  if (!g || g.req_from == null) { who("ai", "⚠ this free thread has no rewind point"); return; }
-  doRewind(sessionId, g.req_from);
+  const det = $("log").querySelectorAll("details.fgroup")[n - 1];
+  const st = (det && det._chapter) || {};
+  const lg = _threadGroups[n - 1] || {};
+  const rf = (st.req_from != null ? st.req_from : (lg.req_from != null ? lg.req_from : null));
+  if (rf == null) { who("ai", "⚠ this free thread has no rewind point"); return; }
+  doRewind(sessionId, rf);
 }
 /* JAG-431j: the 🏷 button — ask the agent (a REAL turn, like any tool call) to title
    every Free.* group from its real content via the `chapters` tool. A free group is a
@@ -2085,6 +2118,11 @@ function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id ==
  * points at the LATEST one (for repaint + sidebar scroll). */
 function _openSection(nid) {
   if (!nid) { _activeNodeId = null; _activeScope = null; return $("log"); }
+  // JAG-431p: a TASK item CLOSES the current free group, so a node-less item that
+  // follows a task starts a NEW Free.N group — making the RENDERED free-group
+  // sequence match the durable ledger's exactly (they diverged before, which is why
+  // agent-set titles landed on the wrong Free.N / the last ones stayed untitled).
+  _freeClose();
   const last = _chatNodes[nid];
   if (last && last.parentNode === $("log") && !last.nextElementSibling) {
     _activeNodeId = nid; _activeScope = last.querySelector(".tc-kids");
@@ -2096,10 +2134,10 @@ function _openSection(nid) {
   _updateNowBar();
   return _activeScope;
 }
-function _logAppend(el) {
+function _logAppend(el, chapter) {
   _openSection(_activeNodeId);
   if (_activeScope) { _activeScope.appendChild(el); return; }
-  _freeAppend(el);                 // JAG-431g: free content lives in a Free.N group
+  _freeAppend(el, chapter);        // JAG-431g: free content lives in a Free.N group
 }
 function _latestSection(nid) {
   const secs = _chatSections[nid] || [];
@@ -2269,7 +2307,7 @@ function _tsSpan(ts) {
   const txt = p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
   return '<span class="mts" title="' + esc(d.toString()) + '">' + txt + "</span>";
 }
-function who(role, text, ts, sender, subjob) {
+function who(role, text, ts, sender, subjob, chapter) {
   const d = document.createElement("div");
   d.className = "msg " + (role === "user" ? "user" : "ai") + (sender ? " deleg" : "");
   // v1.6.3 (JAG-55): per-message copy button — the transcript is selectable too,
@@ -2288,9 +2326,9 @@ function who(role, text, ts, sender, subjob) {
   // JAG-166/JAG-431g: user turns start a NEW free thread group (top-level when a
   // task group is active); harness/agent output nests under the active todo node.
   if (role === "user") {
-    if (_activeScope) { $("log").appendChild(d); } else { _freeClose(); _freeAppend(d); }
+    if (_activeScope) { $("log").appendChild(d); } else { _freeClose(); _freeAppend(d, chapter); }
     buildDotRail();
-  } else { _logAppend(d); }
+  } else { _logAppend(d, chapter); }
   scroll(); return d;
 }
 /* v1.6.3 (JAG-55): inline tool-call mini-card, coherent with the run graph nodes */
@@ -3549,12 +3587,12 @@ async function loadHistory() {
   evs.forEach(e => {
     if (e.t === "m") {
       const m = e.v;
-      if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob); return; }
+      if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter); return; }
       // v1.6.3 (JAG-55): some models inline their chain-of-thought in `content` as a
       // trailing "think: …" tail. The reply must stay the primary text.
       _activeNodeId = _nid(m.node); _activeScope = null;
       const [reply, tail] = splitThinkTail(m.content);
-      const d = who("ai", reply, m.ts);
+      const d = who("ai", reply, m.ts, null, null, m.chapter);
       // JAG-295: a HITL stop is a FORM, not just prose — rebuild the card from
       // the persisted fields so a reload (or a headless job turn) still shows it.
       // NOTE: `append_message` merges meta FLAT into the message (msg.update), so
