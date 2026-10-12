@@ -269,6 +269,28 @@
   /* JAG-422: anchor the first row flush to the banner — a top padding left a strip of
      the parent page (the Sessions view) visible above the Agents/Routines panes. */
   html.embed .wrap{padding-top:0}
+  /* JAG-431i: a finger on the charts pans/pinches them instead of scrolling the page. */
+  .orgwrap,.orgcanvas,.cbody,.csvg{touch-action:none}
+  /* JAG-431i: PHONE layout (<=640px). Desktop is untouched. The toolbars used to wrap
+     into a jumble of oversized pills with the labels mixed in; here each select fills
+     its own row, the labels drop, and the action buttons wrap into tidy finger-sized
+     rows. Sizes are bumped to >=36px so they are comfortable to tap. */
+  @media (max-width:640px){
+    .wrap{padding:4px}
+    .panel{border-radius:9px}
+    .panel > h2{flex-wrap:wrap;row-gap:5px;padding:7px 9px}
+    .panel > h2 .hint{flex:1 1 100%;margin-left:0}
+    .ctools{gap:4px}
+    .btn.mini{padding:4px 8px;font-size:11px}
+    .toolbar{gap:6px;padding:7px}
+    .toolbar > .lbl,.toolbar > .sp{display:none}
+    .toolbar > .inp,.toolbar > select.inp{flex:1 1 100%;width:100% !important;max-width:none !important;height:36px}
+    .toolbar > .btn{flex:1 1 auto;height:36px;min-height:36px;padding:0 12px}
+    .toolbar.addbar > .inp{flex:1 1 100% !important;width:100% !important}
+    .toolbar.addbar > .btn{flex:1 1 auto}
+    .pad > .row > .inp,.pad > .row > .btn{height:36px}
+    .panel.ag table.at tr.brief textarea{min-height:130px}
+  }
 </style>
 </head>
 <body>
@@ -721,17 +743,37 @@ class OrgChartView {
     box.addEventListener("wheel", (ev) => { ev.preventDefault();
       const r = box.getBoundingClientRect();
       this.zoomAt(ev.clientX - r.left, ev.clientY - r.top, ev.deltaY < 0 ? 1.12 : 0.9); }, {passive: false});
-    // drag the background to pan; a drag started on a node still hits the node.
-    box.addEventListener("mousedown", (ev) => { if (ev.button !== 0) return;
+    // JAG-431i: pan with the mouse OR a finger (pointer events) and PINCH to zoom on
+    // touch. A press that starts on a node still hits the node (tap = preview).
+    const ptrs = new Map(); let pinch = null;
+    const _dist = () => { const v = [...ptrs.values()]; return Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y); };
+    const _mid = () => { const v = [...ptrs.values()]; const r = box.getBoundingClientRect();
+      return {x: (v[0].x + v[1].x) / 2 - r.left, y: (v[0].y + v[1].y) / 2 - r.top}; };
+    box.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
       if (ev.target.closest && ev.target.closest(".node")) return;
-      this.drag = {x: ev.clientX, y: ev.clientY, tx: this.tx, ty: this.ty};
-      box.style.cursor = "grabbing"; ev.preventDefault(); });
-    window.addEventListener("mousemove", (ev) => { if (!this.drag) return;
-      this.tx = this.drag.tx + (ev.clientX - this.drag.x);
-      this.ty = this.drag.ty + (ev.clientY - this.drag.y);
-      this.auto = false;
-      this.apply(); });
-    window.addEventListener("mouseup", () => { if (this.drag){ this.drag = null; box.style.cursor = "default"; } });
+      ptrs.set(ev.pointerId, {x: ev.clientX, y: ev.clientY});
+      if (ptrs.size === 2){ pinch = {d: _dist(), k: this.k, m: _mid()}; this.drag = null; }
+      else if (ptrs.size === 1){ this.drag = {x: ev.clientX, y: ev.clientY, tx: this.tx, ty: this.ty}; box.style.cursor = "grabbing"; ev.preventDefault(); }
+    });
+    window.addEventListener("pointermove", (ev) => {
+      const p = ptrs.get(ev.pointerId); if (!p) return;
+      p.x = ev.clientX; p.y = ev.clientY;
+      if (pinch && ptrs.size >= 2){
+        const nk = Math.max(0.1, Math.min(3, pinch.k * (_dist() / pinch.d)));
+        const px = (pinch.m.x - this.tx) / this.k, py = (pinch.m.y - this.ty) / this.k;
+        this.tx = pinch.m.x - px * nk; this.ty = pinch.m.y - py * nk; this.k = nk;
+        this.auto = false; this.apply();
+      } else if (this.drag){
+        this.tx = this.drag.tx + (ev.clientX - this.drag.x);
+        this.ty = this.drag.ty + (ev.clientY - this.drag.y);
+        this.auto = false; this.apply();
+      }
+    });
+    const _end = (ev) => { ptrs.delete(ev.pointerId); if (ptrs.size < 2) pinch = null;
+      if (!ptrs.size){ this.drag = null; box.style.cursor = "default"; } };
+    window.addEventListener("pointerup", _end);
+    window.addEventListener("pointercancel", _end);
     window.addEventListener("resize", () => { if (this.auto) this.fit(); });
   }
   fit(){
@@ -1026,12 +1068,35 @@ class Constellation {
       const r = svg.getBoundingClientRect(); const mx = (ev.clientX - r.left) / r.width, my = (ev.clientY - r.top) / r.height;
       const f = ev.deltaY < 0 ? 0.88 : 1.14; const nw = c.w * f, nh = c.h * f;
       apply({x: c.x + (c.w - nw) * mx, y: c.y + (c.h - nh) * my, w: nw, h: nh}); }, {passive: false});
-    let drag = null;
-    svg.addEventListener("mousedown", ev => { if (ev.button !== 0) return; drag = {x: ev.clientX, y: ev.clientY, vb: parse()}; svg.style.cursor = "grabbing"; });
-    window.addEventListener("mousemove", ev => { if (!drag) return; const r = svg.getBoundingClientRect();
-      const dx = (ev.clientX - drag.x) * drag.vb.w / r.width, dy = (ev.clientY - drag.y) * drag.vb.h / r.height;
-      apply({x: drag.vb.x - dx, y: drag.vb.y - dy, w: drag.vb.w, h: drag.vb.h}); });
-    window.addEventListener("mouseup", () => { if (drag){ drag = null; svg.style.cursor = "grab"; } });
+    // JAG-431i: pan/zoom by mouse OR finger. Wheel zooms (desktop); two fingers pinch.
+    const ptrs = new Map(); let drag = null, pinch = null;
+    const _dist = () => { const v = [...ptrs.values()]; return Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y); };
+    const _mid = () => { const v = [...ptrs.values()]; const r = svg.getBoundingClientRect();
+      return {x: (v[0].x + v[1].x) / 2 - r.left, y: (v[0].y + v[1].y) / 2 - r.top}; };
+    svg.addEventListener("pointerdown", ev => {
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      ptrs.set(ev.pointerId, {x: ev.clientX, y: ev.clientY});
+      if (ptrs.size === 2){ pinch = {d: _dist(), vb: parse(), m: _mid()}; drag = null; }
+      else if (ptrs.size === 1){ drag = {x: ev.clientX, y: ev.clientY, vb: parse()}; svg.style.cursor = "grabbing"; ev.preventDefault(); }
+    });
+    window.addEventListener("pointermove", ev => {
+      const p = ptrs.get(ev.pointerId); if (!p) return;
+      p.x = ev.clientX; p.y = ev.clientY;
+      const r = svg.getBoundingClientRect();
+      if (pinch && ptrs.size >= 2){
+        const f = pinch.d / _dist();   // fingers apart -> zoom in
+        const nw = pinch.vb.w * f, nh = pinch.vb.h * f;
+        const mx = pinch.m.x / r.width, my = pinch.m.y / r.height;
+        apply({x: pinch.vb.x + (pinch.vb.w - nw) * mx, y: pinch.vb.y + (pinch.vb.h - nh) * my, w: nw, h: nh});
+      } else if (drag){
+        const dx = (ev.clientX - drag.x) * drag.vb.w / r.width, dy = (ev.clientY - drag.y) * drag.vb.h / r.height;
+        apply({x: drag.vb.x - dx, y: drag.vb.y - dy, w: drag.vb.w, h: drag.vb.h});
+      }
+    });
+    const _end = ev => { ptrs.delete(ev.pointerId); if (ptrs.size < 2) pinch = null;
+      if (!ptrs.size){ drag = null; svg.style.cursor = "grab"; } };
+    window.addEventListener("pointerup", _end);
+    window.addEventListener("pointercancel", _end);
     svg.style.cursor = "grab";
   }
   _drawAgent(){

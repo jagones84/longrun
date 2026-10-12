@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Control deck on a phone: tidy layout + finger gestures (JAG-431i), battery 161/161.** The Control deck
+  (`orbit.html`) was desktop-only in two ways. (1) **Layout:** at ≤640px a new media query restyles the
+  toolbars — the `scope`/`sort` labels drop, each `<select>` fills its own row, and the action buttons wrap
+  into tidy **≥36px finger-sized** rows instead of a jumble of oversized pills; the panel headers let their
+  tools wrap neatly. Desktop is untouched. (2) **Gestures:** the org chart and the constellation panned by
+  `mousedown/mousemove` only, so a finger could not drag them; both now use **pointer events (mouse *and*
+  touch)** with **pinch-to-zoom**, and `touch-action:none` keeps a drag panning the chart instead of
+  scrolling the page. Wheel zoom (desktop) is kept. Pinned by `v437`.
 - **Mobile theme fix + Plan goal box (JAG-431h), battery 160/160.** Two phone-reported WebUI fixes.
   (1) **The mobile drawers now follow the theme:** the sessions drawer (`#aside`) and the bottom tab bar
   (`#tabbar`) hardcoded a dark `rgba(…)` background, so switching to the light **Sand** theme left them
