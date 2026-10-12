@@ -235,7 +235,7 @@ from longrun.agent.agent import (SYSTEM_PROMPT, PMCP_PROMPT, system_prompt, RULE
 # Imported at the BOTTOM so `httpapi` can `from .server import (...)` against a
 # fully-populated module (no import cycle). The names are re-exported here, so
 # `server.Handler`, `server.main`, `server._tool_context`, ... still resolve.
-from longrun.core.httpapi import (AUTH_TOKEN, check_auth, _as_int, _int_arg, _should_autoplan,
+from longrun.core.httpapi import (AUTH_TOKEN, check_auth, _as_int, _int_arg,
                       chat_stream_gen, _ATTACH_KINDS, _attach_frame, chat_attach_gen,
                       agent_stream_gen, feed_gen, telemetry_summary, context_status,
                       resolve_ctx_model, providers_catalog, _tool_context,

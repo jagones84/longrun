@@ -453,6 +453,17 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
+- **A completed chat turn can no longer leave a plan nobody authored or closes (JAG-431n), battery 164/164.**
+  The JAG-76 "guarantee a plan" fallback ran a planner model call **after** the turn had already answered, so its
+  steps described work that was already done; nobody ever executed them, and JAG-173 forbids auto-closing a step
+  — so they dangled as OPEN todos forever. Worse, the next turn's JAG-189 "stale plan" rule (`user_pivot`)
+  exempted them from the JAG-402 close-todo enforcement, so they were never cleaned up. **Proven** on kb-agent
+  `55a29fae70cb`: the reply landed at `ts=1791835170.33` and `graph.node.added` fired at `ts=1791835195..200` —
+  3 orphan todos created ~25 s AFTER the answering turn. The fallback planner is **removed** (function +
+  re-export + call): the graph is written only by the model (`write_todos`) or by the operator (the explicit
+  sync `/api/chat` path, which also finalizes its plan). The session's 3 orphans were deleted (a timestamped
+  graph backup kept). Verified live: a fresh chat turn left the graph empty for 60 s. Pinned by the rewritten
+  `v306`.
 - **Knowledge base could not be queried by notebook name (JAG-427 RAG QA), battery 151/151.** Building
   notebooks from the WebUI worked (`add_source`/`add_text`/`search` were all correct at the API level),
   but the **agent** could not retrieve from them: `knowledge action=list_notebooks` printed only NAMES

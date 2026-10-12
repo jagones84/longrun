@@ -88,24 +88,6 @@ def _int_arg(qs, key, default):
     return _as_int(qs.get(key, default), default)
 
 
-def _should_autoplan(jid, graph, autonomous, message):
-    """JAG-308: may the end-of-turn fallback planner run for this turn?
-
-    The JAG-76 fallback exists so the interactive 🧩 GRAPH panel is never empty:
-    when the model answers in prose (no `write_todos`) we still show a plan. But
-    it creates todos NOBODY executes — and the harness, by design (JAG-173),
-    never auto-closes a step, so on a headless job turn (no HITL gate, JAG-295)
-    they dangled as OPEN on a job already `done`. A JOB turn (`jid` set) already
-    owns its graph — the coordinator decomposes and the workers author/close
-    their own steps — so it must NEVER be auto-planned.
-    """
-    if jid is not None:                      # a job turn: the graph is the job's
-        return False
-    if graph is not None and taskgraph.plan_nodes(graph):
-        return False                         # the current plan already has steps
-    return bool(autonomous or len(str(message).split()) >= 4)
-
-
 def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     sender=None, subjob=None, plan_only=False):
     """SSE producer for one chat request on `sess`.
@@ -241,35 +223,24 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     taskgraph.save(_existing)
                 chat_once(sess, message, target, on_delta, trace=trace, on_event=_emit,
                           autonomous=autonomous, plan_only=plan_only)
-                # JAG-76: guarantee a plan. The model normally authors the list
-                # itself via `write_todos`; when it answers with prose only (which
-                # left the app's 🧩 GRAPH panel empty — "there is no plan"), we
-                # generate the graph from the request so the panel is never empty.
-                # Skipped for one-liners (greetings/chit-chat) where a task list
-                # would be noise.
-                _g = taskgraph.load(gkey)
-                # JAG-197: never spawn a planner model call for an ABORTED turn —
-                # it ignores Stop and pins the session in _ACTIVE_CHAT (the turn
-                # looked hung). The planner call is also made abortable.
-                # JAG-216: run the fallback planner in a BACKGROUND daemon thread
-                # and emit its nodes on the FEED (`publish`), NOT the turn's SSE.
-                # Before this the planner call sat between the reply and `done`, so
-                # the session stayed "running" (and the plan/ctx panels only
-                # refreshed at `done`) for the whole planner round-trip — measured
-                # ~20s of tail after a 1.4s reply. The WebUI renders graph events
-                # from the feed too (index.html /api/feed handler -> applyGraphEvent
-                # with a session guard), so nothing is lost. The turn now closes as
-                # soon as the reply is done; the graph fills in a moment later.
-                # JAG-308: never auto-plan a JOB turn (see `_should_autoplan`) —
-                # its graph belongs to the job, not to a fallback UI planner.
-                if _should_autoplan(jid, _g, autonomous, message) and \
-                        not _is_aborted(sess["id"]):
-                    threading.Thread(
-                        target=start_run_graph,
-                        args=(gkey, message, gkey, routing.pick("planner")),
-                        kwargs={"on_event": publish,
-                                "cancel": (lambda: _is_aborted(sess["id"]))},
-                        daemon=True).start()
+                # JAG-431n: the JAG-76 "guarantee a plan" fallback is GONE.
+                #
+                # It ran a planner model call AFTER the turn had already answered,
+                # so its steps described work that was already DONE (or never
+                # attempted) — and nobody ever executed or closed them (JAG-173
+                # forbids auto-closing). They dangled as OPEN todos forever and the
+                # next turn's JAG-189 "stale plan" rule (user_pivot) exempted them
+                # from the JAG-402 close-todo enforcement, so they were never
+                # cleaned up. Proven on kb-agent/55a29fae70cb: the reply landed at
+                # t=1791835170.33 and `graph.node.added` fired at t=1791835195..200
+                # — 3 orphan todos created ~25 s AFTER the answering turn.
+                #
+                # The harness contract is "the MODEL authors the list, then executes
+                # and closes each step with evidence" (JAG-65/173/402). A
+                # retrospective plan is a fake surface, not a task list — and the UI
+                # must show what is real (a graph is empty until the model writes
+                # todos, or the operator adds one). No separate planner call.
+
                 # JAG-63: do NOT finalize the task list at the end of every
                 # message — that forced every open node to 'done' and is exactly
                 # why the list could never persist. Nodes close only with real
