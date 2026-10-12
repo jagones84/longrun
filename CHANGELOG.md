@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Optimal RAG ingestion — docling backend + image support (JAG-430), battery 154/154.** The knowledge
+  base can now ingest **everything**: `docio` gains **docling** (IBM, MIT) as its top backend — a
+  pure-Python package (`pip install docling`, now pinned in `requirements.txt`) that extracts
+  layout-aware Markdown with real **TABLE structure** (TableFormer) for PDF/DOCX/PPTX/XLSX/HTML/EPUB and,
+  newly, **native images** (PNG/JPEG/TIFF/BMP/WEBP) via OCR/vision. `BINARY_DOC_EXT` now includes the
+  image extensions; `available()` reports the backend; the previous stack (markitdown → pdftotext/OCR →
+  libreoffice) remains the graceful fallback when docling is absent. Verified live on the DGX: the
+  Machiavelli PDF → 178 930 chars of Markdown via `docling`, and a generated PNG was transcribed by
+  docling OCR on the GPU. Pinned by `v430`.
 - **New-session dialog + workspace auto-creation + CoT collapse (JAG-429), battery 153/153.** Three
   WebUI fixes. (1) The **New-session dialog is now opaque** (it inherited the translucent `.card`
   background and let the transcript bleed through). (2) Naming a **not-yet-existing workspace** used to

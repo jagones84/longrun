@@ -1,10 +1,13 @@
-"""Document text extraction for the indexes (JAG-403j) — PDF / Office / OCR.
+"""Document text extraction for the indexes (JAG-403j / JAG-430) — PDF / Office / images.
 
 The knowledge base and the codebase index both chunk PLAIN TEXT. This module turns
 the common BINARY documents into text/markdown so they can be chunked + embedded.
 
 Layered, best-available backend (no import-time hard dependency):
 
+  0. ``docling`` (IBM, MIT) when installed -> layout-aware reading order + real
+     TABLE structure (TableFormer) for PDF/DOCX/PPTX/XLSX/HTML/EPUB **and native
+     images** (PNG/JPEG/TIFF…). This is the richest path (JAG-430).
   1. ``markitdown`` (Microsoft, MIT) when installed -> PDF, DOCX, PPTX, XLSX, HTML…
      converts to Markdown (headings + tables preserved).
   2. PDF fallback -> ``pdftotext`` (poppler); when the page has no text layer
@@ -24,6 +27,10 @@ import tempfile
 # Extensions handled here (binary documents that need extraction, not plain text).
 BINARY_DOC_EXT = {".pdf", ".docx", ".doc", ".odt", ".rtf", ".pptx", ".xlsx", ".epub"}
 OFFICE_EXT = {".docx", ".doc", ".odt", ".rtf", ".pptx", ".xlsx", ".epub"}
+# JAG-430: images reach the KB only through docling (OCR/vision); other backends
+# cannot read them, so they are a docling-only extension set.
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+BINARY_DOC_EXT |= IMAGE_EXT
 
 _TIMEOUT = int(os.environ.get("LONGRUN_DOC_TIMEOUT") or 300)
 
@@ -36,6 +43,7 @@ def supported(path):
 def available():
     """Which backends exist on this host (for status / diagnostics)."""
     return {
+        "docling": _has_docling(),
         "markitdown": _has_markitdown(),
         "pdftotext": bool(shutil.which("pdftotext")),
         "tesseract": bool(shutil.which("tesseract")),
@@ -44,12 +52,21 @@ def available():
     }
 
 
-def _has_markitdown():
+def _has_module(name):
     try:
         import importlib.util
-        return importlib.util.find_spec("markitdown") is not None
+        return importlib.util.find_spec(name) is not None
     except Exception:  # noqa: BLE001
         return False
+
+
+def _has_docling():
+    # docling's public entry point lives in `docling.document_converter`.
+    return _has_module("docling")
+
+
+def _has_markitdown():
+    return _has_module("markitdown")
 
 
 _MAX_OUTPUT = int(os.environ.get("LONGRUN_DOC_MAX_OUTPUT") or (64 * 1024 * 1024))
@@ -85,6 +102,28 @@ def _cap(text, max_kb):
 
 
 # ----------------------------------------------------------------- backends ---
+_DOCLING_CONVERTER = None
+
+
+def _docling(path):
+    """Richest backend (JAG-430): layout-aware Markdown + real table structure."""
+    if not _has_docling():
+        return None
+    global _DOCLING_CONVERTER
+    try:
+        if _DOCLING_CONVERTER is None:
+            from docling.document_converter import DocumentConverter
+            _DOCLING_CONVERTER = DocumentConverter()
+        res = _DOCLING_CONVERTER.convert(path)
+        doc = getattr(res, "document", None)
+        if doc is None:
+            return None
+        text = doc.export_to_markdown()
+        return (text or "").strip() or None
+    except Exception:  # noqa: BLE001 — any docling failure falls through to the next backend
+        return None
+
+
 def _markitdown(path):
     if not _has_markitdown():
         return None
@@ -171,9 +210,16 @@ def extract(path, max_kb=25600):
     if os.path.getsize(path) == 0:
         return None, "empty file"
 
+    text = _docling(path)                          # JAG-430: richest (layout + tables + images)
+    if text:
+        return _cap(text, max_kb), "docling"
+
     text = _markitdown(path)                       # richest output when available
     if text:
         return _cap(text, max_kb), "markitdown"
+
+    if ext in IMAGE_EXT:                           # images need docling (OCR/vision)
+        return None, "no text (install docling to OCR/describe images)"
 
     if ext == ".pdf":
         text = _pdftotext(path)

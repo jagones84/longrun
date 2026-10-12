@@ -7,11 +7,19 @@
 
 PyYAML>=6.0
 
-# --- Document ingestion for the knowledge base (JAG-403j) --------------------
-# Converts PDF / DOCX / PPTX / XLSX / HTML to Markdown (best fidelity, pure
-# Python, MIT). It is OPTIONAL: without it the harness still extracts
-#   * PDFs   via the system `pdftotext`, with OCR (`pdftoppm` + `tesseract`)
-#            for scanned PDFs, and
-#   * Office files via `libreoffice --headless --convert-to txt`,
-# when those binaries exist on the host.
+# --- Document ingestion for the knowledge base (JAG-403j / JAG-430) -----------
+# Two OPTIONAL layers, in preference order. Without either, the harness still
+# extracts PDFs via system `pdftotext` (+ `pdftoppm`/`tesseract` OCR for scans)
+# and Office files via `libreoffice --headless --convert-to txt`, when those
+# binaries exist on the host.
+#
+# 1. docling (IBM, MIT) — the richest backend: layout-aware reading order and
+#    real TABLE structure (TableFormer), plus native images/audio. Pure-Python
+#    package (`pip install docling`), Python 3.10+; it pulls torch + a few HF
+#    model weights that download once on first use. This is the "optimal RAG
+#    ingestion" path (JAG-430).
+docling>=2.138
+
+# 2. markitdown (Microsoft, MIT) — a light alternative when docling is not
+#    installed: PDF/DOCX/PPTX/XLSX/HTML → Markdown, no torch.
 markitdown[pdf,docx,pptx,xlsx]>=0.0.1
