@@ -122,7 +122,7 @@ _calls = []
 
 
 def _fake_router(messages, model, on_delta, timeout=300, usage=None, guard=None,
-                 cancel=None, no_reasoning=False):
+                 cancel=None, no_reasoning=False, max_tokens=None):
     _calls.append(no_reasoning)
     if not no_reasoning:
         raise RuntimeError("400: reasoning_effort not supported by this model")

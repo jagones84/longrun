@@ -31,7 +31,8 @@ _DEFAULTS = {
     "target_pct": 30.0,
     "keep_recent": 4,
     "summarizer": {
-        "max_chars": 800,
+        "input_max_chars": 40000,
+        "output_max_chars": 6000,
         "instruction": (
             "Compress the OLDER turns above into the smallest faithful summary "
             "possible. TARGET: ~10x compression of the input. KEEP (one line "

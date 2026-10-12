@@ -41,10 +41,18 @@ compaction:
   keep_recent: 4
 
   summarizer:
-    # JAG-431r: hard cap on the summary text. The previous ~200-word prompt
-    # produced summaries up to ~1.5k tokens; 250 chars gives roughly 60 tokens
-    # of summary, i.e. ~30x compression on a typical 2k-token fold.
-    max_chars: 800
+    # JAG-431r2: the summarizer must SEE enough of the old transcript to produce
+    # a faithful 10x-compressed summary. The previous single `max_chars` capped
+    # BOTH input and output at 800 chars — the model saw less than one full turn
+    # and produced a 200-token stub. Now the two caps are separate:
+    #   input_max_chars  — how much of the OLD transcript the summarizer reads
+    #                      (large, so it can actually compress). Default 40000
+    #                      chars ≈ 10k tokens, enough for ~30 typical turns.
+    #   output_max_chars — how long the resulting summary may be. With ~10x
+    #                      compression on a 40k-char input we expect ~4k chars
+    #                      of summary; 6000 is the safety ceiling.
+    input_max_chars: 40000
+    output_max_chars: 6000
 
     # JAG-431r: the AGGRESSIVE compaction instruction. The summarizer model
     # is told to TARGET 10x compression (the user's exact wording). We drop

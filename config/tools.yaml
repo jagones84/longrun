@@ -246,6 +246,13 @@ tools:
     enabled: true
     approval: auto
 
+  # context meter + manual compaction (JAG-431r2): the agent can check how
+  # close the next turn is to the auto-compact trigger and run a manual
+  # compaction to free headroom before a large tool call or paste.
+  context:
+    enabled: true
+    approval: auto
+
   # agent memory (JAG-73): store/recall durable notes across sessions; the file
   # writes are append-only under data/memory, so it is always safe.
   memory:

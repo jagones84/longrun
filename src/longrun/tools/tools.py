@@ -1131,6 +1131,51 @@ def _chapters(args, run_id):
     return {"ok": False, "error": "unknown action %r \u2014 use list|read|title" % action}
 
 
+def _context(args, run_id):
+    """JAG-431r2: THIS session's context meter + manual compaction.
+
+    action=status  -> tokens used, budget, pct, over_threshold, over_budget.
+    action=compact -> run a manual compaction now (config summarizer model,
+                      keep_recent from config/compaction.yaml). Returns the
+                      compaction stats so the agent can tell what changed.
+    """
+    from longrun.core import httpapi
+    from longrun.model import rllm
+    args = args or {}
+    sid = str(args.get("session") or "").strip() or str(run_id or "")
+    action = str(args.get("action") or "status").strip().lower()
+    if not sid:
+        return {"ok": False, "error": "no session in scope (pass session=)",
+                "backend": "host", "sandboxed": False}
+    if action == "status":
+        info = httpapi.context_usage(session_id=sid)
+        used = info.get("tokens_used", 0)
+        budget = info.get("budget_tokens", 0)
+        pct = info.get("pct", 0.0)
+        thr = info.get("auto_compact_pct", 70)
+        over_thr = info.get("over_threshold", False)
+        over_bud = info.get("over_budget", False)
+        msgs = info.get("messages", 0)
+        out = ("context[%s]: %s / %s tokens (%.1f%%) | msgs=%d | "
+               "trigger=%s%% | over_threshold=%s | over_budget=%s"
+               % (sid, used, budget, pct, msgs, thr, over_thr, over_bud))
+        return {"ok": True, "exit_code": 0, "session": sid, "info": info,
+                "stdout": out, "backend": "host", "sandboxed": False}
+    if action == "compact":
+        stats = httpapi.compact_session(sid, origin="tool")
+        if stats.get("error"):
+            return {"ok": False, "error": stats["error"], "backend": "host",
+                    "sandboxed": False}
+        out = ("compact[%s]: %d -> %d msgs | %d -> %d tokens | "
+               "compacted=%d kept=%d summary=%s"
+               % (sid, stats.get("input_messages", 0), stats.get("input_messages", 0) - stats.get("compacted", 0) + stats.get("kept", 0),
+                  stats.get("input_tokens", 0), stats.get("output_tokens", 0),
+                  stats.get("compacted", 0), stats.get("kept", 0), stats.get("summary")))
+        return {"ok": True, "exit_code": 0, "session": sid, "stats": stats,
+                "stdout": out, "backend": "host", "sandboxed": False}
+    return {"ok": False, "error": "unknown action %r — use status|compact" % action}
+
+
 def _index(args, run_id):
     """JAG-400: the CODEBASE index for the CURRENT workspace (per path).
 
@@ -1239,7 +1284,7 @@ _DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
              "git": _git, "http": _http, "browser": _browser, "self": _self,
              "skills": _skills, "memory": _memory, "web": _web, "improve": _improve,
              "reconcile": _reconcile, "sessions": _sessions, "index": _index,
-             "knowledge": _knowledge, "chapters": _chapters,
+             "knowledge": _knowledge, "chapters": _chapters, "context": _context,
              # JAG-426: baseline tools every standard harness ships
              "python": _python, "process": _process, "glob": _glob}
 

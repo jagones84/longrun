@@ -115,7 +115,8 @@ def _policy():
     if not base:
         # Last-resort fallback: previous defaults kept here only as a safety net.
         return {"trigger_pct": 70.0, "target_pct": 30.0, "keep_recent": 4,
-                "summarizer": {"max_chars": 800,
+                "summarizer": {"input_max_chars": 40000,
+                               "output_max_chars": 6000,
                                "instruction": "Compress aggressively."}}
     return base
 
@@ -132,7 +133,13 @@ def __getattr__(name):
     if name == "SUMMARIZER_INSTRUCTION":
         return str(_policy().get("summarizer", {}).get("instruction", ""))
     if name == "SUMMARIZER_MAX_CHARS":
-        return int(_policy().get("summarizer", {}).get("max_chars", 800))
+        # Legacy alias: the cap on the summary OUTPUT (output_max_chars).
+        # Kept for backward compat; new code should use SUMMARIZER_OUTPUT_CHARS.
+        return int(_policy().get("summarizer", {}).get("output_max_chars", 6000))
+    if name == "SUMMARIZER_INPUT_CHARS":
+        return int(_policy().get("summarizer", {}).get("input_max_chars", 40000))
+    if name == "SUMMARIZER_OUTPUT_CHARS":
+        return int(_policy().get("summarizer", {}).get("output_max_chars", 6000))
     raise AttributeError("module %r has no attribute %r" % (__name__, name))
 
 

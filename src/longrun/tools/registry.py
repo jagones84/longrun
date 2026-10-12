@@ -253,6 +253,21 @@ TOOL_SCHEMAS = {
         "required": [],
         "subject": "id",
     },
+    "context": {
+        "description": ("THIS session's context meter + compaction. "
+                        "action=status -> tokens/budget/pct + over_threshold flag. "
+                        "action=compact -> manual compaction now (summarizer model, "
+                        "merges old turns into one summary). The harness auto-compacts "
+                        "at the trigger %, so use compact only to free headroom early."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["status", "compact"], "default": "status"},
+            "session": {"type": "string",
+                        "description": "session id (default: this run's session)"},
+        },
+        "required": [],
+        "subject": "action",
+    },
     "memory": {
         "description": ("Persistent memory across sessions. action=store saves a "
                         "durable fact/preference/decision (ttl_secs expires it; "

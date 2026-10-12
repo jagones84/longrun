@@ -749,7 +749,10 @@ def context_usage(session_id=None, message=None, model=None):
     budget = context_budget(model)
     base = {"budget_tokens": budget, "session": session_id, "model": model,
             "auto_compact_pct": rllm.AUTOCOMPACT_PCT,
-            "auto_compact_target_pct": rllm.AUTOCOMPACT_TARGET_PCT}
+            "auto_compact_target_pct": rllm.AUTOCOMPACT_TARGET_PCT,
+            "keep_recent": rllm.KEEP_RECENT,
+            "summarizer_input_chars": rllm.SUMMARIZER_INPUT_CHARS,
+            "summarizer_output_chars": rllm.SUMMARIZER_OUTPUT_CHARS}
     sess = load_session(session_id) if session_id else None
     if not sess:
         return {**base, "available": False, "messages": 0, "tokens_used": 0,
@@ -862,13 +865,17 @@ def _summarize_with_llm(messages, model=None, meta=None):
     transcript = "\n".join(lines)
     if not transcript.strip():
         return None
-    # JAG-431r: cap the input transcript by the configured `max_chars` (default
-    # 800 — was a hardcoded ~10k in the legacy prompt). Smaller input + smaller
-    # output = the requested ~10x compression.
-    max_chars = rllm.SUMMARIZER_MAX_CHARS
-    if len(transcript) > max_chars:
-        head = int(max_chars * 0.7)
-        tail = max_chars - head
+    # JAG-431r2: separate input cap from output cap. The summarizer must SEE enough
+    # of the old transcript to produce a faithful ~10x-compressed summary. The
+    # previous single `max_chars` capped both at 800 chars — the model saw less
+    # than one full turn and emitted a 200-token stub. Now:
+    #   input_max_chars  -> how much of the OLD transcript the summarizer reads
+    #   output_max_chars -> how long the resulting summary may be
+    input_chars = rllm.SUMMARIZER_INPUT_CHARS
+    output_chars = rllm.SUMMARIZER_OUTPUT_CHARS
+    if len(transcript) > input_chars:
+        head = int(input_chars * 0.7)
+        tail = input_chars - head
         transcript = transcript[:head] + "\n…[middle omitted]…\n" + transcript[-tail:]
     prompt = (
         rllm.SUMMARIZER_INSTRUCTION.rstrip() + "\n\nTRANSCRIPT:\n" + transcript)
@@ -881,15 +888,17 @@ def _summarize_with_llm(messages, model=None, meta=None):
         except Exception:  # noqa: BLE001
             model = None
     try:
-        # JAG-431r: cap the answer at `max_chars` too. With ~10x compression on
-        # a 800-char input we should land at ~80 chars of output; the cap is the
-        # safety net if the model writes a verbose preamble anyway.
+        # JAG-431r2: the answer cap is now `output_max_chars` (chars) tokens
+        # (~output_chars/4 tokens). With ~10x compression on a 40k-char input
+        # we expect ~4k chars of summary; the cap is the safety net if the model
+        # writes a verbose preamble anyway.
         answer, _think, used = stream_with_fallback(
             [{"role": "user", "content": prompt}], model, "summarizer",
-            lambda ch, t: None, timeout=180, max_tokens=max(60, max_chars // 4))
+            lambda ch, t: None, timeout=180,
+            max_tokens=max(120, output_chars // 4))
         answer = (answer or "").strip()
-        if len(answer) > max_chars:
-            answer = answer[:max_chars].rstrip() + "…"
+        if len(answer) > output_chars:
+            answer = answer[:output_chars].rstrip() + "…"
         if answer and meta is not None:
             meta["model"] = used
         return answer or None
@@ -944,11 +953,25 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     if keep_recent is None:
         keep_recent = rllm.KEEP_RECENT
     meta = {}
-    kwargs = {"summarizer": lambda old: _summarize_with_llm(old, meta=meta),
-              "force": manual}
-    if keep_recent is not None:
-        kwargs["keep_recent"] = keep_recent
-    msgs, stats = context_engine.compact(messages, room, **kwargs)
+    # JAG-431r2: mark the session as "running" for the duration of the summarizer
+    # call so the session list shows a spinner while the (possibly different)
+    # compaction model is working. The turn_begin/turn_end bracket is the same
+    # mechanism the chat turn uses; we guard with try/finally so a crashed
+    # summarizer never leaves the session stuck as "running".
+    # If a turn is ALREADY running (user clicked compact mid-turn), do NOT
+    # overwrite its token — the session already shows as busy.
+    from longrun.core import events as _ev
+    already_active = session in _ev._ACTIVE_CHAT
+    tok = None if already_active else _ev.turn_begin(session)
+    try:
+        kwargs = {"summarizer": lambda old: _summarize_with_llm(old, meta=meta),
+                  "force": manual}
+        if keep_recent is not None:
+            kwargs["keep_recent"] = keep_recent
+        msgs, stats = context_engine.compact(messages, room, **kwargs)
+    finally:
+        if tok is not None:
+            _ev.turn_end(session, tok)
     sess["messages"] = msgs
     save_session(sess)
     # JAG-104: the cached "real" prompt size belongs to the turn BEFORE the
