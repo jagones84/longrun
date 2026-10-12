@@ -7,6 +7,12 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Mobile theme fix + Plan goal box (JAG-431h), battery 160/160.** Two phone-reported WebUI fixes.
+  (1) **The mobile drawers now follow the theme:** the sessions drawer (`#aside`) and the bottom tab bar
+  (`#tabbar`) hardcoded a dark `rgba(…)` background, so switching to the light **Sand** theme left them
+  dark; they now use the `--aside` / `--menubg` tokens. (2) **The Plan goal box is full-width on its own
+  row**, below the ▶ goal / clear / reset buttons, so it no longer shares a sliver of the panel with three
+  buttons. Pinned by `v436`.
 - **Free-thread groups + rewind-dialog fixes + no repo venv (JAG-431f/g), battery 159/159.** (g) **Collapsible
   FREE chat threads:** loose chat turns that sit between task groups now collect into **`Free.N`** collapsible
   groups, toggled by the SAME ⊞/⊟ floating controls as the task groups (`_allGroups` covers `details.tctree`

@@ -674,14 +674,14 @@
     #aside {
       position: fixed; z-index: 9; inset: 0 0 0 auto; width: min(92vw, 400px);
       transform: translateX(105%); transition: transform .28s ease;
-      background: rgba(10,12,24,.96); backdrop-filter: blur(14px);
+      background: var(--aside); backdrop-filter: blur(14px);
       padding-top: max(14px, env(safe-area-inset-top));
     }
     #aside.open { transform: translateX(0); }
     #aside.show { display: block !important; }
     .backdrop.show { display: block; }
     #tabbar {
-      display: flex; border-top: 1px solid var(--line); background: rgba(8,10,20,.85); backdrop-filter: blur(12px);
+      display: flex; border-top: 1px solid var(--line); background: var(--menubg); backdrop-filter: blur(12px);
       padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); gap: 6px;
       /* JAG-381: the nav must stay above the dimmer (z-index 8) AND above the open
          drawers (15/16) so a tab can be switched directly — else the drawer covers
@@ -1393,11 +1393,11 @@
         <h2>TASK LIST (persistent) <span id="taskCount" class="remaining"></span></h2>
         <div class="card">
           <div class="u-df u-g6 u-mt8">
-            <input id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal…">
             <button class="ghost" data-call="planGoal" title="same as typing /goal in chat: plans AND runs to completion">▶ goal</button>
             <button class="ghost" data-call="clearSession" title="clear chat + tasks">clear</button>
             <button class="ghost" data-call="resetPlan" title="clear this session's task list (start a new task)">reset</button>
           </div>
+          <input id="planInp" class="inp u-w100 u-mt6 u-p610 u-fs12" placeholder="goal… (type a goal, then ▶ goal)">
           <div id="graphHead" class="remaining">run graph: — (send a request to generate it)</div>
           <div id="tasks"></div>
           <div class="u-df u-g6 u-mt8">
