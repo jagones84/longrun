@@ -1,0 +1,81 @@
+# Compaction policy — read by `src/longrun/model/compaction_config.py`.
+#
+# Single source of truth for how the harness shrinks an overgrown chat. The
+# thresholds here are what the user sees in the Context panel (the NEAR/OVER
+# colours) AND what triggers an auto-compaction. Bumping them here requires no
+# code edits and no service restart: the loader is hot-path, every chat call
+# re-reads the file.
+#
+# Trigger semantics:
+#   trigger_pct  — when the REAL prompt is `>=` this share of the model budget,
+#                   auto-compaction fires at the START of the next turn.
+#   target_pct   — after the auto-compaction, the prompt must land at or below
+#                   this share of the model budget. The gap (trigger - target)
+#                   is the headroom the LLM gets to work in before re-triggering.
+#   keep_recent  — number of most-recent turns kept VERBATIM in the transcript.
+#                   Everything older than this is merged into a single summary
+#                   message by the summarizer below.
+#   summarizer.* — model + instruction + max tokens used to compress the old
+#                   turns into the leading summary block.
+#
+# Picked values reflect "compact hard, compact early, never let the meter sit
+# near 100%". The previous defaults (75/60/8) let a session drift to 95% with
+# only a cosmetic 90%->80% drop; here the meter should swing from 90% down to
+# 35% on the same trigger.
+
+compaction:
+  # JAG-431r: the user wants the trigger lower than 75 (we used to ship at 75
+  # and it let the meter climb to 95%). 70% gives one full turn of breathing
+  # room before the LLM starts producing from an already-clipped context.
+  trigger_pct: 70
+
+  # JAG-431r: the previous "target = trigger - 15" produced only a cosmetic
+  # compaction (90% -> 80%). Drop the target aggressively so the meter falls
+  # to ~30% of the budget and the session can run for many more turns without
+  # re-triggering.
+  target_pct: 30
+
+  # JAG-431r: keep only the LAST 4 turns verbatim. With 8 verbatim we left
+  # too much room for the summarizer to swallow; with 4 every auto-trigger
+  # has meaningful old content to fold into the leading summary block.
+  keep_recent: 4
+
+  summarizer:
+    # JAG-431r: hard cap on the summary text. The previous ~200-word prompt
+    # produced summaries up to ~1.5k tokens; 250 chars gives roughly 60 tokens
+    # of summary, i.e. ~30x compression on a typical 2k-token fold.
+    max_chars: 800
+
+    # JAG-431r: the AGGRESSIVE compaction instruction. The summarizer model
+    # is told to TARGET 10x compression (the user's exact wording). We drop
+    # narration, pleasantries, partial reasoning, the "I will…" preambles,
+    # and anything that does not change a future turn. We keep decisions,
+    # concrete facts, file paths, error messages, open questions.
+    #
+    # Translation note: instructions live in English (artifact language rule)
+    # even though the LLM is told to write the summary in the transcript's
+    # own language.
+    instruction: |
+      Compress the OLDER turns above into the smallest faithful summary possible.
+      TARGET: ~10x compression of the input.
+
+      KEEP (one line each):
+        - decisions made and their one-line rationale
+        - concrete facts the user established (numbers, paths, names, ids)
+        - open questions / pending actions / TODOs
+        - file paths, function names, command names, error messages referenced
+        - the user's stated preferences for the rest of this session
+
+      DROP (never summarize, never restate):
+        - greetings, pleasantries, "I will…", "let me…", meta-commentary
+        - partial reasoning, intermediate scratch, redundant phrasing
+        - anything the LLM already self-corrected in a later turn
+        - questions the user already answered
+
+      FORMAT: terse bullet points. NO full sentences. NO role prefixes like
+      "The user said:" or "The assistant said:". No preamble. Just the
+      bullets. Reply in the same language as the transcript.
+
+      Hard ceiling: stay under max_chars tokens. If you cannot fit everything,
+      prefer dropping the OLDEST bullets (the most-recent decisions matter
+      more for the next turn).

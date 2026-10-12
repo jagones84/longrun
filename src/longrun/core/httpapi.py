@@ -28,7 +28,8 @@ from longrun.model import routing
 from longrun.tools import sandbox
 from longrun.plan import taskgraph
 from longrun.core import server as _sf_server  # only for the AUTH_TOKEN mirror in main()
-from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS, AUTOCOMPACT_PCT, AUTOCOMPACT_TARGET_PCT,
+from longrun.model import rllm
+from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      CHAT_STREAM_IDLE, CHAT_TOOL_PROMPT, COMPACT_FORCE_RATIO,
                      COMPACT_MANUAL_KEEP_RECENT, DATA_DIR, FEED_REPLAY_MAX,
                      HARNESS_MARK, MAX_BODY_BYTES, REPO, ROUTER_BASE, RunTrace,
@@ -519,9 +520,9 @@ def context_display(tokens_used=0, budget_tokens=0, messages=0,
     pct_f = (used / budget * 100.0) if budget else 0.0
     pct_int = int(round(pct_f))
     over = used > budget
-    near = pct_f >= AUTOCOMPACT_PCT
+    near = pct_f >= rllm.AUTOCOMPACT_PCT
     state = "over" if over else ("near" if near else "normal")
-    threshold = int(round(AUTOCOMPACT_PCT))
+    threshold = int(round(rllm.AUTOCOMPACT_PCT))
     detail = "used %s / %s tokens" % (_short(used), _short(budget))
     if pct_int > 0:
         detail += " · %d%%" % pct_int
@@ -747,8 +748,8 @@ def context_usage(session_id=None, message=None, model=None):
     from longrun.model import context_engine
     budget = context_budget(model)
     base = {"budget_tokens": budget, "session": session_id, "model": model,
-            "auto_compact_pct": AUTOCOMPACT_PCT,
-            "auto_compact_target_pct": AUTOCOMPACT_TARGET_PCT}
+            "auto_compact_pct": rllm.AUTOCOMPACT_PCT,
+            "auto_compact_target_pct": rllm.AUTOCOMPACT_TARGET_PCT}
     sess = load_session(session_id) if session_id else None
     if not sess:
         return {**base, "available": False, "messages": 0, "tokens_used": 0,
@@ -791,7 +792,7 @@ def context_usage(session_id=None, message=None, model=None):
            "system_tokens": sysp_tokens,
            "transcript_tokens": transcript,
            "final_messages": stats.get("final_messages"),
-           "over_threshold": pct >= AUTOCOMPACT_PCT,
+           "over_threshold": pct >= rllm.AUTOCOMPACT_PCT,
            "over_budget": used > budget,
            "cached_tokens": cached,
            "cache_hit_pct": cache_hit_pct,
@@ -818,11 +819,11 @@ def prepare_session_for_turn(sess, model=None):
             return sess
         # JAG-99: shrink to TARGET% (not the full budget) so the prompt lands back
         # under the trigger with headroom; the system prompt is accounted for.
-        target = int(usage["budget_tokens"] * AUTOCOMPACT_TARGET_PCT / 100.0)
+        target = int(usage["budget_tokens"] * rllm.AUTOCOMPACT_TARGET_PCT / 100.0)
         stats = compact_session(sess["id"], target, origin="auto")
         publish("context.auto_compact", session=sess["id"],
-                pct=usage.get("pct"), threshold=AUTOCOMPACT_PCT,
-                target_pct=AUTOCOMPACT_TARGET_PCT,
+                pct=usage.get("pct"), threshold=rllm.AUTOCOMPACT_PCT,
+                target_pct=rllm.AUTOCOMPACT_TARGET_PCT,
                 before=stats.get("input_tokens"), after=stats.get("output_tokens"),
                 compacted=stats.get("compacted"), dropped=stats.get("dropped"))
         return load_session(sess["id"]) or sess
@@ -841,6 +842,13 @@ def _summarize_with_llm(messages, model=None, meta=None):
 
     JAG-110: when `meta` (a dict) is passed, records `meta["model"] = <alias that
     actually answered>`, so the UI can show WHICH model did the compaction.
+
+    JAG-431r: the summarizer instruction + max_chars live in
+    `config/compaction.yaml` (see `rllm.SUMMARIZER_INSTRUCTION` /
+    `rllm.SUMMARIZER_MAX_CHARS`). The instruction is the AGGRESSIVE one that
+    asks the model to TARGET ~10x compression and drop narration / repetition /
+    partial reasoning — what the user sees as "the harness ordered the LLM to
+    compact the chat's context".
     """
     lines = []
     for m in messages:
@@ -854,19 +862,16 @@ def _summarize_with_llm(messages, model=None, meta=None):
     transcript = "\n".join(lines)
     if not transcript.strip():
         return None
-    # JAG-214: never hand the summarizer more than it can hold. A session may be
-    # dominated by one huge paste; keep the head + tail so the call always fits.
-    if len(transcript) > SUMMARIZER_MAX_CHARS:
-        head = int(SUMMARIZER_MAX_CHARS * 0.7)
-        tail = SUMMARIZER_MAX_CHARS - head
+    # JAG-431r: cap the input transcript by the configured `max_chars` (default
+    # 800 — was a hardcoded ~10k in the legacy prompt). Smaller input + smaller
+    # output = the requested ~10x compression.
+    max_chars = rllm.SUMMARIZER_MAX_CHARS
+    if len(transcript) > max_chars:
+        head = int(max_chars * 0.7)
+        tail = max_chars - head
         transcript = transcript[:head] + "\n…[middle omitted]…\n" + transcript[-tail:]
     prompt = (
-        "You are compacting the OLDER turns of an ongoing chat so the assistant can "
-        "keep working with less context. Write a faithful, compact summary IN THE "
-        "SAME LANGUAGE as the transcript. Preserve: decisions made, concrete facts, "
-        "file paths and commands, user preferences, and any OPEN tasks or questions. "
-        "Drop chit-chat and repetition. Reply with the summary text ONLY (no preamble), "
-        "at most ~200 words.\n\nTRANSCRIPT:\n" + transcript)
+        rllm.SUMMARIZER_INSTRUCTION.rstrip() + "\n\nTRANSCRIPT:\n" + transcript)
     # JAG-160: honour an explicitly pinned summarizer model (Settings -> Models)
     # before falling back to pattern-based routing for the "summarizer" role.
     if not model:
@@ -876,10 +881,15 @@ def _summarize_with_llm(messages, model=None, meta=None):
         except Exception:  # noqa: BLE001
             model = None
     try:
+        # JAG-431r: cap the answer at `max_chars` too. With ~10x compression on
+        # a 800-char input we should land at ~80 chars of output; the cap is the
+        # safety net if the model writes a verbose preamble anyway.
         answer, _think, used = stream_with_fallback(
             [{"role": "user", "content": prompt}], model, "summarizer",
-            lambda ch, t: None, timeout=180)
+            lambda ch, t: None, timeout=180, max_tokens=max(60, max_chars // 4))
         answer = (answer or "").strip()
+        if len(answer) > max_chars:
+            answer = answer[:max_chars].rstrip() + "…"
         if answer and meta is not None:
             meta["model"] = used
         return answer or None
@@ -926,6 +936,13 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     manual = not budget_tokens
     if manual and keep_recent is None:
         keep_recent = COMPACT_MANUAL_KEEP_RECENT
+    # JAG-431r: the AUTO path used the engine's DEFAULT_KEEP_RECENT (8) which
+    # let the OLD half of the transcript survive a compact — so a 22-msg
+    # session only shrunk to 11 and the meter barely moved. The policy file
+    # now drives `keep_recent` (default 4), and we honour it when the caller
+    # did not pin one explicitly.
+    if keep_recent is None:
+        keep_recent = rllm.KEEP_RECENT
     meta = {}
     kwargs = {"summarizer": lambda old: _summarize_with_llm(old, meta=meta),
               "force": manual}
@@ -947,6 +964,60 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                                       for m in msgs)})
     origin = origin or ("manual" if not budget_tokens else "auto")
     stats["origin"] = origin
+    # JAG-431r: an AUTO compaction MUST leave a visible mark in the transcript
+    # itself — a single `system` inject at the head of the kept window so the
+    # user (and the LLM on the next turn) can both see the harness shrunk the
+    # chat. Without this the auto-compact felt like a silent guess; with it the
+    # user sees "the harness ordered the LLM to compact the chat's context".
+    # We do this only for `origin == "auto"` so the MANUAL button stays clean.
+    if origin == "auto" and msgs:
+        from longrun.memory import stores as _stores
+        from longrun.memory import threads as _th
+        from longrun.plan import taskgraph as _tg
+        before_n = len(messages)
+        after_n = len(msgs)
+        freed = max(0, int(stats.get("input_tokens", 0)) - int(stats.get("output_tokens", 0)))
+        # JAG-431r: list the compacted-away free groups and open todos so the
+        # "long memory" stays visible in the chat after compaction. The ledger
+        # and plan files still hold the full data; this marker is the user-facing
+        # signpost that says "these groups still exist, use `chapters list` to
+        # recall them". Without this the free.x labels vanished from the chat
+        # view and the user thought compaction DELETED them.
+        free_groups = [g for g in (_th.outline(session) or []) if g.get("kind") == "free"]
+        plan = _tg.load(session) or {}
+        open_tasks = [n for n in plan.get("nodes", []) if n.get("status") != "done"]
+        lines = []
+        lines.append(
+            "[harness] \U0001f5dc Auto-compacted the chat context: "
+            "%d \u2192 %d messages, freed ~%d tokens (target %d%% of budget). "
+            "The oldest turns were merged into the leading summary block so the "
+            "next reply has room to land under the %d%% trigger."
+            % (before_n, after_n, freed,
+               int(round(rllm.AUTOCOMPACT_TARGET_PCT)),
+               int(round(rllm.AUTOCOMPACT_PCT))))
+        if free_groups:
+            titled = [(g.get("id"), g.get("title") or "(untitled)") for g in free_groups]
+            lines.append("Free threads preserved in the ledger (%d): %s"
+                         % (len(titled),
+                            ", ".join("%s=%s" % (gid, (t or "")[:30]) for gid, t in titled[:12])
+                            + (" …" if len(titled) > 12 else "")))
+        if open_tasks:
+            lines.append("Open tasks still pending (%d): %s"
+                         % (len(open_tasks),
+                            ", ".join(str(n.get("id")) for n in open_tasks[:12])
+                            + (" …" if len(open_tasks) > 12 else "")))
+        lines.append("Use the `chapters` tool to recall any compacted thread.")
+        sys_marker = "\n".join(lines)
+        # If the kept window already starts with the synthetic summary the engine
+        # produced, prepend our marker just before it so the timeline reads
+        # "system marker -> system summary -> kept turns".
+        if msgs and msgs[0].get("role") == "system" and msgs[0].get("content", "").startswith(
+                "Earlier conversation (compacted):"):
+            msgs.insert(0, {"role": "system", "content": sys_marker})
+        else:
+            msgs.insert(0, {"role": "system", "content": sys_marker})
+        sess["messages"] = msgs
+        _stores.save_session(sess)
     publish("context.compact", **stats)
     return stats
 

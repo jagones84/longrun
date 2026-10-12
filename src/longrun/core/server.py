@@ -153,13 +153,18 @@ CHAT_STREAM_IDLE = float(os.environ.get("LONGRUN_CHAT_STREAM_IDLE", 900.0))
 
 
 def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=None,
-                         guard=None, cancel=None):
+                         guard=None, cancel=None, max_tokens=None):
     """v0.3 multi-model routing with fallback.
 
     Tries `model` (or the role-selected one) first; on a router failure walks
     the role's fallback chain (which always terminates on the DeepSeek alias
     when it exists in the roster) before giving up. Returns (answer, think,
     model_used).
+
+    JAG-431r: `max_tokens` is plumbed through to `_router_stream` so the
+    summarizer can cap its own output. Defaults to the global `MAX_TOKENS`
+    (16k) for the chat path; the summarizer passes `max(60, max_chars // 4)`
+    so a 10x-compressed summary cannot blow past the user's configured ceiling.
     """
     primary = model or routing.pick(role)
     if not primary:
@@ -178,7 +183,8 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
                     usage.clear()  # a failed attempt must not leave stale numbers
                 answer, think = _router_stream(messages, alias, on_delta, timeout,
                                                usage, guard, cancel,
-                                               no_reasoning=no_reasoning)
+                                               no_reasoning=no_reasoning,
+                                               max_tokens=max_tokens)
                 if i > 0:
                     publish("model.fallback", role=role, from_model=chain[0],
                             to_model=alias)

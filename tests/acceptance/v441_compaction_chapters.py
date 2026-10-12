@@ -35,6 +35,7 @@ from longrun.plan import taskgraph           # noqa: E402
 from longrun.tools import tools as T         # noqa: E402
 from longrun.core import server as _srv      # noqa: E402,F401  (httpapi<->server import order)
 from longrun.core import httpapi             # noqa: E402
+from longrun.model import rllm               # noqa: E402  JAG-431r: policy overrides
 
 results = []
 
@@ -79,19 +80,27 @@ check("1c both chapters were written to the transcript BEFORE any compaction",
       len(_chapters(before)) == 2, _chapters(before))
 groups_before = len(th.outline(sid))
 msgs_before = len(before["messages"])
+# the large filler message is the bulk of the transcript — compaction must remove it
+big_before = sum(len(str(m.get("content", ""))) for m in before["messages"])
+filler = "filler " * 700
 
 # ---- 2. drive the REAL auto-compaction trigger --------------------------------
 caught = []
 httpapi.publish = lambda kind, **kw: caught.append((kind, kw))          # capture events
 httpapi._summarize_with_llm = lambda messages, model=None, meta=None: None  # no network
-httpapi.AUTOCOMPACT_PCT = -1.0            # every session reads as 'over threshold'
+# JAG-431r: policy now lives in `config/compaction.yaml` (via rllm.AUTOCOMPACT_PCT,
+# which is a PEP-562 lazy attribute). To force the trigger to fire we pin the
+# trigger to -1 via the test override, instead of the old module-level rebind.
+rllm.set_policy_override(trigger_pct=-1.0)
 httpapi.context_budget = lambda alias=None: 1500                          # a small window
 after = httpapi.prepare_session_for_turn(before, model=None)
 
 check("2a over-threshold triggers AUTO-compaction", any(k == "context.auto_compact" for k, _ in caught),
       [k for k, _ in caught])
-check("2b the transcript really SHRANK", len(after["messages"]) < msgs_before,
-      (msgs_before, len(after["messages"])))
+big_after = sum(len(str(m.get("content", ""))) for m in after["messages"])
+check("2b the transcript really SHRANK (content, not just count — the marker adds 1 msg)",
+      big_after < big_before * 0.6 and filler not in "".join(str(m.get("content","")) for m in after["messages"]),
+      (msgs_before, len(after["messages"]), big_before, big_after))
 check("2c the auto event reports what it compacted",
       any(k == "context.auto_compact" and kw.get("compacted") for k, kw in caught),
       [kw.get("compacted") for k, kw in caught if k == "context.auto_compact"])

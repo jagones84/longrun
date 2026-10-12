@@ -65,13 +65,85 @@ def router_models():
 
 
 CONTEXT_RESERVE = int(os.environ.get("LONGRUN_CONTEXT_RESERVE", "4096"))
-# JAG-70: auto-compaction triggers when the REAL prompt reaches this % of the
-# budget (the frontier pattern: compact before you hit the wall, not after).
-AUTOCOMPACT_PCT = float(os.environ.get("LONGRUN_CONTEXT_AUTOCOMPACT_PCT", "75"))
-# JAG-99: after compaction the transcript is shrunk to this % of the budget, so
-# the TOTAL prompt lands BELOW the trigger with headroom (no instant re-trigger).
-AUTOCOMPACT_TARGET_PCT = float(os.environ.get(
-    "LONGRUN_CONTEXT_TARGET_PCT", str(max(10.0, AUTOCOMPACT_PCT - 15.0))))
+# JAG-431r: the auto-compaction policy now lives in `config/compaction.yaml`,
+# not in scattered env vars / module constants. The loader re-reads the file
+# on mtime change, so tuning the policy does NOT require a service restart
+# (and never has to touch this file).
+#
+# Existing call sites (httpapi.py, server.py, tests, ...) still reference
+# `AUTOCOMPACT_PCT` and `AUTOCOMPACT_TARGET_PCT` as if they were module-level
+# constants. We use PEP 562 module-level `__getattr__` to make those names
+# always resolve to the FRESH value from the policy file — no call-site edits
+# required, no restart required, no stale value shipped.
+try:
+    from longrun.model import compaction_config as _ccfg
+except Exception:  # pragma: no cover — never let config load break imports
+    _ccfg = None
+
+# JAG-431r: tests need a way to FORCE a policy value (e.g. set the trigger to
+# -1 so every session reads as "over threshold"). `_POLICY_OVERRIDE` is
+# checked BEFORE the file, so a test can pin a value without editing the
+# file. Production code never touches this; it's only meaningful for tests
+# that want deterministic thresholds.
+_POLICY_OVERRIDE = {}
+
+
+def set_policy_override(**kwargs):
+    """Pin one or more policy values for the lifetime of the process (tests)."""
+    _POLICY_OVERRIDE.update({k: v for k, v in kwargs.items() if v is not None})
+
+
+def clear_policy_override():
+    """Drop all pinned overrides; reload from `config/compaction.yaml`."""
+    _POLICY_OVERRIDE.clear()
+
+
+def _policy():
+    base = ({}
+            if _ccfg is None
+            else _ccfg.load())
+    if _POLICY_OVERRIDE:
+        merged = dict(base)
+        for k, v in _POLICY_OVERRIDE.items():
+            if isinstance(v, dict) and isinstance(merged.get(k), dict):
+                inner = dict(merged[k])
+                inner.update(v)
+                merged[k] = inner
+            else:
+                merged[k] = v
+        return merged
+    if not base:
+        # Last-resort fallback: previous defaults kept here only as a safety net.
+        return {"trigger_pct": 70.0, "target_pct": 30.0, "keep_recent": 4,
+                "summarizer": {"max_chars": 800,
+                               "instruction": "Compress aggressively."}}
+    return base
+
+
+def __getattr__(name):
+    # PEP 562: called when `name` is not found as a module-level attribute.
+    # Used to expose the LIVE policy values under their legacy constant names.
+    if name == "AUTOCOMPACT_PCT":
+        return float(_policy()["trigger_pct"])
+    if name == "AUTOCOMPACT_TARGET_PCT":
+        return float(_policy()["target_pct"])
+    if name == "KEEP_RECENT":
+        return int(_policy()["keep_recent"])
+    if name == "SUMMARIZER_INSTRUCTION":
+        return str(_policy().get("summarizer", {}).get("instruction", ""))
+    if name == "SUMMARIZER_MAX_CHARS":
+        return int(_policy().get("summarizer", {}).get("max_chars", 800))
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+def refresh_compaction_policy():
+    """Force the loader to re-read `config/compaction.yaml` on the next access.
+
+    Mostly used by tests; production code relies on the mtime-based auto-refresh
+    in `compaction_config.load()`.
+    """
+    if _ccfg is not None:
+        _ccfg.reset_cache()
 # JAG-102: the MANUAL "compact now" action must always reduce. It targets this
 # fraction of the transcript's CURRENT size — using the full model budget made
 # the button a no-op for any session under 100% (so it "did nothing").
@@ -534,7 +606,7 @@ def _reachable(url, timeout=None):
 
 
 def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=None,
-                   cancel=None, no_reasoning=False):
+                   cancel=None, no_reasoning=False, max_tokens=None):
     """POST /chat/completions with stream=true; feed deltas to on_delta.
 
     on_delta(channel, text) with channel in {think, answer}. Returns the
@@ -547,6 +619,10 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
 
     JAG-403: `no_reasoning=True` omits `reasoning_effort` from the body (retry
     path when a non-thinking model rejects the field).
+
+    JAG-431r: `max_tokens` overrides the global `MAX_TOKENS` for THIS call only,
+    so the summarizer can ask the router for a tight token budget (~200) and the
+    chat path can keep the wide 16k budget. None falls back to MAX_TOKENS.
     """
     url, headers, model_id = _chat_endpoint(model)
     # JAG-217: fail fast on an UNREACHABLE provider, BEFORE the blocking open, so
@@ -555,7 +631,7 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
     if not _reachable(url):
         raise urllib.error.URLError("provider unreachable: %s" % url)
     body = json.dumps(_completion_body(model_id, messages, True,
-                                       MAX_TOKENS or None,
+                                       max_tokens or MAX_TOKENS or None,
                                        no_reasoning=no_reasoning)).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers)
     answer, think = [], []
