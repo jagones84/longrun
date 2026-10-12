@@ -59,8 +59,8 @@ check("floating menus are opaque (sessions / attach / overflow / slash)",
 check("the compact action is a full-width accent button above the donut",
       'id="compactBtn"' in ui and '#inspector #compactBtn' in ui
       and 'width: 100%; margin: 2px 0 8px; padding: 8px 12px;' in ui)
-check("the composer never collapses the model picker when narrowed",
-      '.cb-right .model-wrap > button { max-width: 160px; min-width: 96px;' in ui
+check("the composer keeps the model picker visible and shrinkable (never collapses it)",
+      '.cb-right .model-wrap > button { max-width: 160px; min-width: 34px;' in ui
       and 'gap: 6px; flex-wrap: wrap; min-width: 0; }' in ui)
 
 # --- 2) Context: hide empty categories, explain when empty -------------------
@@ -82,9 +82,9 @@ check("the more-menu opens upward, right-aligned",
       "#moreMenu { position: absolute; right: 0; bottom: calc(100% + 8px)" in ui)
 check("the mic sits before the model picker (compact right cluster)",
       ui.index('id="micBtn"') < ui.index('id="model-btn"'))
-check("the right cluster wraps instead of collapsing the model picker (JAG-396)",
-      "gap: 6px; flex-wrap: wrap; min-width: 0; }" in ui
-      and ".cb-right .model-wrap > button { max-width: 160px; min-width: 96px;" in ui)
+check("the right cluster stays ONE row and lets the model shrink (JAG-427)",
+      "#composerBar .cb-right { flex-wrap: nowrap; justify-content: flex-end;" in ui
+      and "#composerBar .cb-right .model-wrap > button { min-width: 34px; }" in ui)
 
 # --- 4) voice input guidance --------------------------------------------------
 check("voice help explains the OS-dictation route (Win+H / Fn Fn)",

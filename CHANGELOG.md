@@ -30,6 +30,14 @@ All notable changes to Longrun are documented here. The format follows
   through the `data-call` dispatcher and pinned by `v425`. Verified live end to end: the dialog listed
   three anchors, a rewind reported "1 file(s) reverted · 61 event(s) dropped", and the harness journal
   (only the files the harness itself wrote) was honoured.
+- **WebUI composer + chat-todo controls (JAG-427), battery 150/150.** (1) The composer toolbar is now
+  **always a single row**: the model picker is the only flexible control and shrinks toward its caret
+  (min-width 34px) before anything can wrap, so the chat column can no longer grow a broken
+  "multi-floor" button stack when it gets narrow. (2) The chat now has **expand-all / collapse-all**
+  controls (⊞ / ⊟) for its todo groups (`<details.tctree>`), mirroring the sessions rail's ▲/▼ —
+  floating at the chat's bottom-right so they cost zero horizontal space and stay visible even with the
+  editor dock open. Pinned by `v426` (and the older `v282`/`v284` composer checks were re-pointed to the
+  new one-row contract).
 - **Vision input — image attachments now reach the model (JAG-417).** An image attached in the
   composer is sent to vision-capable LLMs as an OpenAI `image_url` content block (base64 data URL),
   not just a text note, so the model actually sees the image. `config/providers.yaml` flags the DGX
