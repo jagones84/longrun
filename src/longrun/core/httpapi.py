@@ -41,7 +41,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS, AUTOCOMPACT_PCT, AUTO
                      _sse_queues,
                      _start_event_pruning, _turn_lock, _valid_sid, agent_run,
                      append_message, backfill_jobs, backfill_session_workspaces,
-                     chat_once, clear_session, context_budget, default_model,
+                     chat_once, clear_abort, clear_session, context_budget, default_model,
                      ensure_job, ensure_model, ensure_reply_persisted, eval_list_tasks,
                      eval_run, events_since, feed_seq, finish_run_graph, generate_plan,
                      get_or_create_session, get_run_trace, graph_post, keys_status,
@@ -127,6 +127,12 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     _turn_tok = object()
     with _ACTIVE_CHAT_LOCK:
         _ACTIVE_CHAT[sess["id"]] = {"ev0": feed_seq(), "ts": time.time(), "tok": _turn_tok}
+    # JAG-431q: drop any stale abort LEFT OVER from a previous turn AT TURN START —
+    # before the planner/graph/answer emit their own model calls. It used to be cleared
+    # inside `chat_once`, i.e. AFTER the planner had already run: a Stop pressed during
+    # that window (the UI shows the turn as running from the very first moment) was
+    # silently wiped and the whole turn ran anyway ("Stop does nothing").
+    clear_abort(sess["id"])
 
     def _delta(channel, text):
         q.put("event: chat.delta\ndata: %s\n\n" % json.dumps(
@@ -1385,6 +1391,10 @@ class Handler(BaseHTTPRequestHandler):
                 _fresh = load_session(sess["id"])
                 if _fresh:
                     sess = _fresh
+                # JAG-431q: clear a stale abort from a PREVIOUS turn here — at the very
+                # start of this turn, before compaction/planner/answer model calls — so a
+                # Stop pressed during any of them is honoured (see the stream path).
+                clear_abort(sess["id"])
                 # JAG-157: explicit model wins, else the session's own model.
                 sess = prepare_session_for_turn(sess, body.get("model") or sess.get("model"))  # JAG-70: auto-compact @75%
                 mark = session_mark(sess)  # JAG-51: boundary of this request
@@ -1420,7 +1430,10 @@ class Handler(BaseHTTPRequestHandler):
                         _ex["jid"] = None
                         _ex["subjob"] = None
                         taskgraph.save(_ex)
-                    start_run_graph(sess["id"], message, sess["id"], routing.pick("planner"))
+                    # JAG-431q: make the PLANNER call abortable too — a Stop pressed while
+                    # the planner is decoding must kill it, not wait for it to finish.
+                    start_run_graph(sess["id"], message, sess["id"], routing.pick("planner"),
+                                    cancel=(lambda: _is_aborted(sess["id"])))
                     reply, model = chat_once(sess, message, body.get("model"), trace=trace,
                                              autonomous=(body.get("mode") or qs.get("mode")) == "goal")
                 except Exception as e:  # noqa: BLE001
@@ -1455,6 +1468,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "queued": depth})
         if path == "/api/chat/abort":
             # JAG-129A: stops the in-flight turn (the agent must not continue).
+            # JAG-431q: `all` aborts EVERY registered running turn — the UI's Stop is a
+            # panic button, and with agents running in parallel a single-session abort
+            # left the others decoding (a single-slot router then kept the GPU busy, so
+            # "stop" looked like a no-op).
+            if body.get("all") or qs.get("all"):
+                with _ACTIVE_CHAT_LOCK:
+                    sids = list(_ACTIVE_CHAT.keys())
+                for _s in sids:
+                    push_abort(_s)
+                publish("chat.abort", session=None, all=len(sids))
+                return self._send(200, {"ok": True, "aborted": sids})
             sid = body.get("session") or qs.get("session")
             if not sid:
                 return self._send(400, {"error": "session required"})

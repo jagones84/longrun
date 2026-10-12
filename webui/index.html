@@ -2021,16 +2021,13 @@ function _freeClose() { _freeGroup = null; }
 /* JAG-431p: a free group's TITLE/SUMMARY is the CHAPTER metadata carried on the
    message that STARTS it (`m.chapter`, written by the harness; it rides the
    transcript so it survives compaction). The ledger ordinal (`_threadGroups[n-1]`)
-   is only a fallback for sessions titled before JAG-431p. */
-function _freeMeta(n, chapter) {
+   is a fallback used ONLY by `applyThreadTitles` and ONLY when the rendered and
+   ledger free-group counts MATCH — after a compaction they don't, and an ordinal
+   would stamp an old (compacted-away) group's title onto a new group. */
+function _freeMeta(chapter) {
   chapter = chapter || {};
-  const lg = _threadGroups[n - 1] || {};
-  return {
-    title: chapter.title || lg.title || "",
-    summary: chapter.summary || lg.summary || "",
-    req_from: (chapter.req_from != null ? chapter.req_from
-              : (lg.req_from != null ? lg.req_from : null)),
-  };
+  return { title: chapter.title || "", summary: chapter.summary || "",
+           req_from: (chapter.req_from != null ? chapter.req_from : null) };
 }
 function _freePaint(det, n) {
   const st = det._chapter || {};
@@ -2049,7 +2046,7 @@ function _freeNew(chapter) {
   const det = document.createElement("details");
   det.className = "fgroup"; det.open = true;
   det.dataset.chapter = "free#" + n;   // JAG-431j: stable slot for the ledger title
-  det._chapter = _freeMeta(n, chapter);
+  det._chapter = _freeMeta(chapter);
   det.innerHTML = '<summary><span class="fglabel"></span><span class="fgsum" hidden></span></summary>' +
     '<button class="fgroup-rw" title="rewind to just before this free thread (it starts with a request)" aria-label="rewind to before this free thread">⏮</button>' +
     '<div class="fg-kids"></div>';
@@ -2074,11 +2071,22 @@ async function loadThreadTitles(sid) {
     _threadGroups = ((r && r.groups) || []).filter(g => g.kind === "free");
   } catch (e) { _threadGroups = []; }
 }
-/* JAG-431p: (re)apply chapter/ledger metadata to the Free.* groups already rendered. */
+/* JAG-431p: fill any gap in the rendered groups from the ledger — but ONLY when the
+   rendered and ledger free-group sequences have the SAME length (a compaction makes
+   them differ, and the ordinal then points at a group that is no longer on screen). */
 function applyThreadTitles() {
   const log = $("log"); if (!log) return;
-  [...log.querySelectorAll("details.fgroup")].forEach((det, i) => {
-    det._chapter = _freeMeta(i + 1, det._chapter);
+  const dets = [...log.querySelectorAll("details.fgroup")];
+  const same = dets.length === _threadGroups.length;
+  dets.forEach((det, i) => {
+    const ch = det._chapter || {};
+    const lg = same ? (_threadGroups[i] || {}) : {};
+    det._chapter = {
+      title: ch.title || lg.title || "",
+      summary: ch.summary || lg.summary || "",
+      req_from: (ch.req_from != null ? ch.req_from
+                : (lg.req_from != null ? lg.req_from : null)),
+    };
     _freePaint(det, i + 1);
   });
   _updateTreeTools();
@@ -2087,8 +2095,7 @@ function applyThreadTitles() {
 function rewindFreeGroup(n) {
   const det = $("log").querySelectorAll("details.fgroup")[n - 1];
   const st = (det && det._chapter) || {};
-  const lg = _threadGroups[n - 1] || {};
-  const rf = (st.req_from != null ? st.req_from : (lg.req_from != null ? lg.req_from : null));
+  const rf = (st.req_from != null ? st.req_from : null);
   if (rf == null) { who("ai", "⚠ this free thread has no rewind point"); return; }
   doRewind(sessionId, rf);
 }
@@ -3115,7 +3122,9 @@ function send(text, display) {
     if (live()) {
       endStream();
       if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll();
-        // JAG-431j: a finished turn may have added/renamed Free.* groups — refresh labels.
+        // JAG-431j/431p: a finished turn may have added/renamed Free.* groups — refresh
+        // the labels from the ledger + chapters. NOTE: this does NOT rebuild the chat
+        // (loadHistory APPENDS; it must only be called after clearing #log).
         loadThreadTitles(turnSession || sessionId).then(applyThreadTitles); }
       flushQueue();
     }
@@ -3652,6 +3661,10 @@ async function loadHistory() {
   }
   // JAG-127: baseline the edit journal so the next turn reports only its own diff.
   try { _editsBase = await api("GET", "/api/edits?session=" + encodeURIComponent(sessionId)); } catch (e) { _editsBase = null; }
+  // JAG-431p: apply the ledger titles to any rendered group whose start message carries
+  // no chapter (mixed/old data). Guarded internally: skipped when the rendered and
+  // ledger free-group counts differ (a compaction), so it can never mislabel.
+  applyThreadTitles();
 }
 
 /* v1.6.3 (JAG-55): splits a trailing "think: …" block out of a reply. */
@@ -4750,16 +4763,17 @@ async function attachIfRunning(sid) {
   } catch (e) {}
 }
 function stopRun() {
-  // JAG-168: a chat turn is stopped SERVER-side for the session on screen; the
-  // live EventSource stays open so the interruption is rendered, never lost.
-  // JAG-271: ALWAYS send the abort. The worker is NOT tied to the request (it
-  // keeps generating after the SSE dies, or when the turn was started in another
-  // tab), so gating the abort on `turnSSE[sessionId]` made Stop a silent no-op
-  // and the GPU kept decoding. push_abort is idempotent and harmless when idle.
-  if (sessionId) {
-    api("POST", "/api/chat/abort", { session: sessionId }).catch(() => {});
-    who("ai", "⏹ stop requested…");
-  }
+  // JAG-168/271: a chat turn is stopped SERVER-side; the live EventSource stays open so
+  // the interruption is rendered, never lost.
+  // JAG-431q: Stop is a PANIC button — abort EVERY running turn, not only the one on
+  // screen. With agents running in parallel, aborting one session left the others
+  // decoding, and on a single-slot local router the GPU stayed busy: "Stop" looked like
+  // a no-op. The server fans `all` out over its ACTIVE-turn registry.
+  const ids = Object.keys(runningSessions || {});
+  if (sessionId && ids.indexOf(sessionId) < 0) ids.push(sessionId);
+  api("POST", "/api/chat/abort", { all: true }).catch(() => {});
+  who("ai", ids.length > 1 ? ("⏹ stop requested — " + ids.length + " running turn(s)")
+                           : "⏹ stop requested…");
   if (sessionId && !turnSSE[sessionId]) attachIfRunning(sessionId);
 }
 /* JAG-431o: the ⚡ "run agent" UI is REMOVED. It drove the legacy /api/agent/run loop
@@ -4819,6 +4833,10 @@ function connectFeed() {
     // Not already streaming it (the attached turn reloads itself on `done`): pull
     // the persisted reply so an off-screen turn's answer is never left unrendered.
     if (d.session && d.session === sessionId && !turnSSE[sessionId]) {
+      // JAG-431q: loadHistory APPENDS to #log (it is the CALLER's job to clear), so a
+      // turn that we did not stream would otherwise duplicate the whole chat. Clear
+      // first, exactly like the attach path.
+      $("log").innerHTML = ""; _resetChatTree();
       loadHistory(); loadPlan(); loadGraph();
     }
   });
@@ -4842,10 +4860,14 @@ function connectFeed() {
     if (d.session && sessionId && d.session !== sessionId) return;
     const kind = d.summary === "llm" ? ("llm:" + (d.summarizer || "?")) : (d.summary || "—");
     const org = d.origin ? (" · " + d.origin) : "";
-    push(`🗜 compact (${d.origin || "auto"}): ${d.compacted} msgs · ${kind} · ${d.tokens_after} tok${org}`); loadHistory(); loadCtx(); });
+    push(`🗜 compact (${d.origin || "auto"}): ${d.compacted} msgs · ${kind} · ${d.tokens_after} tok${org}`);
+    // JAG-431q: loadHistory APPENDS to #log — clear first or the whole chat doubles.
+    $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx(); });
   es.addEventListener("context.auto_compact", e => { const d = JSON.parse(e.data);
     if (d.session && sessionId && d.session !== sessionId) return;
-    push(`🗜 auto-compact: trigger ${d.pct}% (target ${d.target_pct}%) · ${d.compacted} msgs`); loadHistory(); loadCtx(); });
+    push(`🗜 auto-compact: trigger ${d.pct}% (target ${d.target_pct}%) · ${d.compacted} msgs`);
+    // JAG-431q: same — an AUTO-compaction used to duplicate the rendered chat.
+    $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx(); });
   es.addEventListener("session.cleared", e => { const d = JSON.parse(e.data);
     push("🧹 session cleared"); if (!d.session || d.session === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); });
   es.addEventListener("session.renamed", e => { loadSessions(); });

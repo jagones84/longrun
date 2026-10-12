@@ -621,6 +621,9 @@ class LocalApi:
         # active-turn registry so the session shows its running signal like any other
         # turn (no phantom run). turn_end runs in the finally, on any outcome.
         tok = srv.turn_begin(sess["id"])
+        # JAG-431q: clear a stale abort at TURN START (never inside chat_once — that ran
+        # after the planner, wiping a Stop pressed in between).
+        srv.clear_abort(sess["id"])
         try:
             reply, mdl = srv.chat_once(sess, message, model)
         except Exception as e:  # noqa: BLE001

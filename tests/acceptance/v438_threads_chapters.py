@@ -13,6 +13,7 @@ This pins the fix: `memory/threads.py` keeps a durable per-session ledger, writt
 Run: python3 tests/acceptance/v438_threads_chapters.py
 """
 import os
+import re
 import sys
 import tempfile
 import time
@@ -215,16 +216,35 @@ check("9e sync_chapters is idempotent (0 changes when nothing moved)",
 # ---- 10. the WebUI labels by chapter, not by ordinal -------------------------
 check("10a a TASK item closes the free group (render sequence == ledger)",
       "a TASK item CLOSES the current free group" in idx)
-check("10b free groups are labelled from chapter metadata (ledger fallback kept)",
-      "function _freeMeta(" in idx and "chapter.title || lg.title" in idx)
+check("10b free groups are labelled from chapter metadata",
+      "function _freeMeta(" in idx and "chapter.title || \"\"" in idx)
 check("10c the ordinal-only label helper is gone", "function _freeLabel(" not in idx)
 check("10d loadHistory hands the chapter to the renderer",
       "who(\"user\", m.content, m.ts, m.sender, m.subjob, m.chapter)" in idx
       and "who(\"ai\", reply, m.ts, null, null, m.chapter)" in idx)
 check("10e the free-group summary is shown on the group header",
       'class="fgsum"' in idx and ".fgroup .fgsum" in idx)
-check("10f the per-free rewind uses the chapter's anchor (with a ledger fallback)",
+check("10f the per-free rewind uses the chapter's anchor",
       "function rewindFreeGroup(" in idx and "st.req_from" in idx)
+# a compaction makes the rendered vs ledger free-group counts diverge; the ledger
+# ordinal fallback must then be SKIPPED, or it stamps a compacted-away group's title
+# onto a new group.
+check("10g the ledger fallback is guarded by a count match (compaction-safe)",
+      "dets.length === _threadGroups.length" in idx)
+check("10h loadHistory re-applies thread titles after the rebuild",
+      re.search(r"applyThreadTitles\(\);\s*\}", idx) is not None)
+check("10i a finished turn refreshes the labels WITHOUT re-appending the chat",
+      re.search(r"loadThreadTitles\(turnSession \|\| sessionId\)\.then\(applyThreadTitles\)", idx) is not None)
+# loadHistory APPENDS to #log (it does not clear it) — so every caller must clear first,
+# or the chat is duplicated. Pin the one call site that was missing it.
+check("10j the non-streamed chat.done path clears #log before rebuilding",
+      re.search(r'\$\("log"\)\.innerHTML = ""; _resetChatTree\(\);\s*loadHistory\(\); loadPlan\(\); loadGraph\(\);',
+                idx) is not None)
+# JAG-431q: the COMPACTION handlers had the same defect — measured live: a compact made
+# the rendered chat DOUBLE (3 -> 6 messages). Both must clear before rebuilding.
+check("10k the compaction handlers clear #log before rebuilding",
+      len(re.findall(r'\$\("log"\)\.innerHTML = ""; _resetChatTree\(\); loadHistory\(\); loadCtx\(\);', idx)) >= 2,
+      len(re.findall(r'\$\("log"\)\.innerHTML = ""; _resetChatTree\(\); loadHistory\(\); loadCtx\(\);', idx)))
 
 print("---")
 okc = sum(results)

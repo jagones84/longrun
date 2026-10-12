@@ -7,6 +7,20 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Stop really stops, and a compaction no longer doubles the chat (JAG-431q), battery 166/166.**
+  Two WebUI/server defects found by driving the live app (browser + HTTP) end to end. (1) **Stop did
+  nothing.** `chat_once` cleared the abort flag AFTER the planner/graph model calls had already run, so a
+  Stop pressed during that window (the UI shows the turn as running from the first moment) was silently
+  wiped: measured live, abort at t=8s and the turn still finished at t=87s with the full answer. The clear
+  now happens at TURN START (stream + sync + in-process MCP paths, before any model work), `chat_once` no
+  longer touches it, and the sync planner call is abortable (`cancel=`). Verified live: abort at t=8s → the
+  turn ends at 14.3s with `⏹ Interrupted by the user.`. Stop is also a PANIC button now: it aborts EVERY
+  running turn (`/api/chat/abort {all:true}` fans out over the ACTIVE-turn registry) — aborting only the
+  on-screen session left parallel agents decoding and the single-slot local router busy, so "stop" looked
+  like a no-op. (2) **A compaction duplicated the whole chat.** `loadHistory()` APPENDS to `#log` (it is the
+  CALLER's job to clear), and the `context.compact` / `context.auto_compact` / `chat.done` handlers never
+  cleared it — measured live in the browser: a compact turned 3 messages into 6 (1 free group into 2). All
+  three handlers now clear first; re-measured 3 → 3. Pinned by new `v442` (12/12) and `v438` §10j/§10k.
 - **Free-group titles now ride the transcript, so the 🏷 button labels every `Free.N` — even after compaction (JAG-431p), battery 164/164.**
   The 🏷 button titled only *some* free groups in the chat: the WebUI labelled `Free.N` by its **ordinal** in a
   list it computed itself, while the agent titled groups by the **ledger's** ids — and the two lists were built by

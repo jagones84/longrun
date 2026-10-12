@@ -5,7 +5,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#install--run)
-[![tests](https://img.shields.io/badge/battery-164%2F164%20green-success.svg)](#the-quality-gate)
+[![tests](https://img.shields.io/badge/battery-166%2F166%20green-success.svg)](#the-quality-gate)
 [![CI](https://github.com/jagones84/longrun/actions/workflows/ci.yml/badge.svg)](https://github.com/jagones84/longrun/actions/workflows/ci.yml)
 
 **Longrun is a single agent harness — one engine that drives one LLM
@@ -336,7 +336,7 @@ The **only** regression gate is one deterministic, fully-isolated battery — it
 every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live state:
 
 ```bash
-bash tests/battery.sh        # → === battery: 164/164 GREEN ===
+bash tests/battery.sh        # → === battery: 166/166 GREEN ===
 ```
 
 CI runs the same battery on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).

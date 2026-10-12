@@ -31,7 +31,7 @@ from longrun.util.paths import DATA_DIR, SESSIONS_DIR, WEBUI_DIR
 from longrun.util.paths import REPO_ROOT as REPO
 from longrun.model.rllm import ROUTER_BASE, _router_stream, context_budget, default_model
 from longrun.model.rllm import model_supports_vision
-from longrun.util.steering import _is_aborted, clear_abort, drain_steer, has_steer
+from longrun.util.steering import _is_aborted, drain_steer, has_steer
 from longrun.util.fswrite import write_json
 from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event,
                      append_message, load_plan, load_tasks, persist_inject,
@@ -1627,7 +1627,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     used_tools = []
     # JAG-129A: completion loop state (see keepgoing.decide).
     from longrun.plan import keepgoing as _kg
-    clear_abort(sess["id"])
+    # JAG-431q: the stale-abort clear now happens at TURN START in the caller (httpapi/
+    # api_v02), BEFORE the planner/compaction model calls. Clearing it here (after the
+    # planner had already run) wiped a Stop pressed during that window, so the turn ran
+    # to completion anyway.
     from longrun.model import runmetrics
     runmetrics.start(sess["id"], model=model)
     _abort_now = (lambda: _is_aborted(sess["id"]))  # JAG-129D: Stop kills the generation
