@@ -7,6 +7,20 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Rewind restores the REAL todo list + WebUI fidelity sweep (JAG-431), battery 156/156.** Two fixes
+  under one rule — *a UI must mirror the real backend state, never a stub or a disconnected copy*. (1)
+  **Rewind truly deletes the todos:** the live todo list is the per-**session** task graph
+  (`longrun.plan.taskgraph` → `data/graphs/<sid>.json`), but a checkpoint snapshotted only the legacy
+  `plan.json`/`tasks.json` the panel no longer reads, so a rewind left the todos on screen ("graphical
+  delete only"). `checkpoints.create` now carries `graph` and `rollback` restores it (archiving it when
+  the graph did not yet exist at the anchor), and `POST /api/rewind` reports it. Verified live: a session
+  with 4 nodes → rewind → **0 nodes**. (2) **WebUI fidelity sweep** (from a full audit of `index.html` +
+  `console.html`): `index.html`'s todo panel now has ONE source — the per-session graph — instead of the
+  dual `loadPlan()`//`loadGraph()` paths whose `localStorage("sf_run")` mirror could resurrect stale todos
+  (JAG-257); `console.html` no longer **fabricates a whole demo deck on any backend hiccup** (demo is now
+  opt-in via `?demo=1`, a real failure shows an explicit empty *offline* state), its task graph reads the
+  real per-session graph instead of the legacy `/api/plan` board, its TASKS chip no longer falls back to
+  the phantom `tasks.json` counts, and its models grid reads `/api/models`. Pinned by `v431`/`v432`.
 - **Optimal RAG ingestion — docling backend + image support (JAG-430), battery 154/154.** The knowledge
   base can now ingest **everything**: `docio` gains **docling** (IBM, MIT) as its top backend — a
   pure-Python package (`pip install docling`, now pinned in `requirements.txt`) that extracts

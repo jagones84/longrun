@@ -353,11 +353,12 @@
     $("ver").textContent = st.version || "—";
     $("defmodel").textContent = short(st.default_model || "—", 26);
     const led = $("led"), conn = $("conn");
-    if (state.offline){ led.className="led warn"; conn.textContent="DEMO"; }
+    if (state.offline){ led.className = state.demo ? "led warn" : "led off"; conn.textContent = state.demo ? "DEMO" : "OFFLINE"; }
     else if (state.status){ led.className="led on"; conn.textContent="ONLINE"; }
     else { led.className="led off"; conn.textContent="LINK…"; }
     $("offline").hidden = !state.offline;
-    $("footRight").textContent = "node " + location.host + " · " + (state.offline?"demo":"live");
+    $("offline").textContent = state.demo ? "demo telemetry (opt-in)" : "offline — no backend data";
+    $("footRight").textContent = "node " + location.host + " · " + (state.demo ? "demo" : (state.offline ? "offline" : "live"));
   }
 
   /* ---------------- gauges ---------------- */
@@ -404,10 +405,12 @@
     // `!== "done"` rule showed "3 open" for a session whose every step was closed.
     const _gn = (state.graph && state.graph.nodes) || [];
     const _OPEN = ["todo", "doing", "blocked"];
+    // JAG-431c: derive ONLY from the REAL session graph — the legacy tasks.json
+    // fallback (st.tasks) resurrected phantom "173 open" counts.
     const _tasksChip = (state.sid && !state.offline)
       ? (_gn.length ? (_gn.filter(n => _OPEN.includes(String(n.status))).length + " open / " + _gn.length)
                     : "0 open / 0")
-      : (st.tasks ? (st.tasks.open + " open / " + st.tasks.total) : "—");
+      : "—";
     const chips = [
       ["TASKS", _tasksChip],
       ["APPROVALS", (st.approvals? (st.approvals.pending+" pending") : "—")],
@@ -706,9 +709,20 @@
   }
   const DEMO_MODELS = ["qwen-3.8-27b-uncensored-q8","glm-5.3-flash-iq2","deepseek-v4-flash-uncensored-q2"].map((a,i)=>({alias:a,status:i===0?"loaded":"unloaded",loaded:i===0,n_ctx:262144}));
   let demoTimer = null;
+  // JAG-431c: the deck used to FABRICATE every gauge/graph/session on ANY backend
+  // hiccup (or on file://). That is a mirror of nothing real. Demo is now OPT-IN
+  // (`?demo=1`); a real failure shows an explicit EMPTY offline state instead.
+  function wantDemo(){ try { return new URLSearchParams(location.search).get("demo")==="1"; } catch(e){ return false; } }
+  function enterOffline(){
+    state.offline = true; state.demo = false;
+    state.status = null; state.models = []; state.ctx = null;
+    state.graph = null; state.sessions = [];
+    renderAll(); renderHeader();
+  }
   function enterDemo(){
     if (state.offline) return;
-    state.offline = true; state.status = demoStatus(); state.models = DEMO_MODELS;
+    state.offline = true; state.demo = true;
+    state.status = demoStatus(); state.models = DEMO_MODELS;
     state.ctx = {pct:41, tokens_used:106000, budget_tokens:258048, display:{short:"ctx 106k/258k · 41%"}};
     state.graph = {goal:"DEMO OPERATION", nodes:[
       {id:"n1",label:"scan perimeter",status:"done",deps:[]},
@@ -726,7 +740,7 @@
       renderVitals(); renderHeader();
     }, 1200);
   }
-  function exitDemo(){ const was = state.offline; state.offline=false; if (demoTimer){clearInterval(demoTimer); demoTimer=null;} if (was){ connectFeed(); loadGraph(); } }
+  function exitDemo(){ const was = state.offline; state.offline = false; state.demo = false; if (demoTimer){clearInterval(demoTimer); demoTimer=null;} if (was){ connectFeed(); loadGraph(); } }
 
   /* ---------------- data loops ---------------- */
   async function loadStatus(){
@@ -736,18 +750,31 @@
       // link bar; once the link is healthy again, hide it.
       $("linkbar").hidden = true;
       renderHeader(); renderVitals();
-    } catch(e){ if (e.status===401) requireToken(); else enterDemo(); }
+    } catch(e){ if (e.status===401) requireToken(); else if (wantDemo()) enterDemo(); else enterOffline(); }
   }
-  async function loadModels(){ try{ state.models = (state.status && state.status.models) || state.models; if (state.status && state.status.models) renderModels(); }catch(e){} }
+  async function loadModels(){
+    // JAG-431c: read the REAL model catalogue (/api/models), not a fabricated
+    // status.models. Map to the fields this deck renders.
+    try {
+      const d = await api("/api/models");
+      const flat = [];
+      (d.providers || []).forEach(p => (p.models || []).forEach(m => flat.push({
+        alias: m.id, ref: m.ref || (p.id + ":" + m.id), n_ctx: m.context_length || 0,
+        loaded: !!m.loaded, provider: p.id, local: !!p.local,
+      })));
+      state.models = flat; renderModels();
+    } catch(e){ /* keep the last real list; never fabricate */ }
+  }
   async function loadContext(){
     if (state.offline || !state.sid) return;
     try { state.ctx = await api("/api/context?session="+encodeURIComponent(state.sid)); renderVitals(); } catch(e){}
   }
   async function loadGraph(){
-    if (state.offline) return;
-    if (!state.sid){ state.graph = null; renderGraph(); return; }
-    try { state.graph = await api("/api/plan?session="+encodeURIComponent(state.sid)); }
-    catch(e){ try { state.graph = await api("/api/sessions/"+encodeURIComponent(state.sid)+"/graph"); } catch(e2){ state.graph=null; } }
+    if (state.offline || !state.sid){ state.graph = null; renderGraph(); renderVitals(); return; }
+    // JAG-431c: the REAL todo list is the per-session task graph — NOT the legacy
+    // global /api/plan board (it accumulated phantom open tasks).
+    try { state.graph = await api("/api/sessions/"+encodeURIComponent(state.sid)+"/graph"); }
+    catch(e){ state.graph = null; }
     renderGraph();
     renderVitals();  // JAG-224: refresh the TASKS chip from the session graph
   }
@@ -756,7 +783,7 @@
       const d = await api("/api/sessions"); state.sessions = d.sessions||[];
       if (!state.sid && state.sessions.length) state.sid = state.sessions[0].id;
       renderSessions(); exitDemo();
-    } catch(e){ if (e.status!==401) enterDemo(); }
+    } catch(e){ if (e.status!==401){ if (wantDemo()) enterDemo(); else enterOffline(); } }
   }
   // JAG-295-fix: /api/feed emits NAMED SSE frames (`event: chat.run` …), so
   // `es.onmessage` (the default "message" type) never fired — the Event Stream
@@ -797,7 +824,8 @@
   function renderAll(){ renderHeader(); renderVitals(); renderModels(); renderSessions(); renderGraph(); }
   async function boot(){
     exitDemo();
-    if (location.protocol === "file:"){ enterDemo(); return; }
+    if (wantDemo()){ enterDemo(); return; }          // JAG-431c: opt-in only
+    if (location.protocol === "file:"){ enterOffline(); return; }  // no backend here
     await loadStatus();
     await loadModels(); renderModels();
     await loadSessions();

@@ -40,7 +40,7 @@ check("A4 no external stylesheet link", "<link rel=\"stylesheet\"" not in html, 
 
 # ---- B: live wiring + a11y/responsive ----
 check("B1 declares the deck title", "ORBITAL COMMAND DECK" in html, "")
-for ep in ("/api/status", "/api/feed", "/api/sessions", "/api/plan", "/api/context"):
+for ep in ("/api/status", "/api/feed", "/api/sessions", "/api/sessions/", "/api/context"):
     check("B2 wires %s" % ep, ep in html, "")
 check("B3 responsive viewport meta", 'name="viewport"' in html, "")
 check("B4 honours prefers-reduced-motion", "prefers-reduced-motion" in html, "")

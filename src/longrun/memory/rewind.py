@@ -137,5 +137,5 @@ def rewind(session_id, msg_index, by="api"):
     ws = restore_workspace(session_id, m.get("ts"))
     ev = truncate_events(session_id, m.get("events_upto"))
     return {"ok": bool(restored.get("ok")), "anchor": m, "restored": restored,
-            "workspace": ws, "events": ev,
+            "workspace": ws, "events": ev, "graph": restored.get("graph"),
             "pre_snapshot": (pre or {}).get("id"), "msg_index": m.get("msg_index")}

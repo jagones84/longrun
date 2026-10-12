@@ -3308,13 +3308,15 @@ async function openRewindDlg(sid) {
 }
 function closeRewindDlg() { $("rwDlg").hidden = true; $("rwBackdrop").hidden = true; }
 async function doRewind(sid, idx) {
-  if (!(await confirmDelete("rewind session to just BEFORE message #" + idx + "?\nplan, tasks, transcript and the harness's file writes after it will be rolled back."))) return;
+  if (!(await confirmDelete("rewind session to just BEFORE message #" + idx + "?\nplan, todo list, transcript and the harness's file writes after it will be rolled back."))) return;
   const res = $("rwResult"); res.textContent = "rewinding…";
   let r = {};
   try { r = await api("POST", "/api/rewind", { session: sid, msg_index: idx }); } catch (e) { r = { error: String(e) }; }
   if (r.error || r.ok === false) { res.textContent = "error: " + (r.error || "rewind failed"); return; }
   const ws = r.workspace || {}, ev = r.events || {};
-  res.textContent = `done — restored to before #${idx} · ${(ws.restored || []).length} file(s) reverted · ${ev.removed || 0} event(s) dropped`;
+  const g = r.graph || {};
+  const todoTxt = (g.nodes != null) ? ` · todo list → ${g.nodes} node(s)&nbsp;` : "";
+  res.textContent = `done — restored to before #${idx} · ${(ws.restored || []).length} file(s) reverted · ${ev.removed || 0} event(s) dropped${todoTxt}`;
   if (sid === sessionId) { $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree(); loadHistory(); loadPlan(); }
   loadSessions();
 }
@@ -3953,17 +3955,12 @@ function setRun(id) {
   curRunId = id; localStorage.setItem("sf_run", id); graph = null; loadGraph();
 }
 async function loadGraph() {
-  if (!curRunId) { renderGraph(); return; }
-  try {
-    const g = await api("GET", "/api/runs/" + curRunId + "/graph");
-    // JAG-257: a stale `sf_run` (a run that belongs to ANOTHER session) must never
-    // paint its todos into THIS session's panel after a refresh — that is how
-    // "old todos" reappeared. Only accept a run graph that belongs to the session.
-    if (g && !g.error && (g.nodes || []).length) {
-      if (g.session_id && sessionId && g.session_id !== sessionId) return;
-      graph = g; renderGraph();
-    }
-  } catch {}
+  // JAG-431b: the SINGLE source of the todo graph is the SESSION graph
+  // (`/api/sessions/<sid>/graph`) — the same store `loadPlan()` reads. The old
+  // `/api/runs/<curRunId>/graph` path (curRunId came from localStorage `sf_run`)
+  // could point at ANOTHER session's run and paint stale todos into this panel
+  // (JAG-257). One visual = one real source.
+  await loadPlan();
 }
 function applyGraphEvent(d) {
   if (!d || !d.run || !d.node) return;
@@ -3976,7 +3973,9 @@ function applyGraphEvent(d) {
   // was treated as a fresh add, chatNodeAdd early-returned, and the "doing"
   // active scope was never set — that is why nesting only appeared after reload.
   if (_chatNodes[d.node.id]) chatNodeUpdate(d.node); else chatNodeAdd(d.node);
-  if (!curRunId || curRunId !== d.run) { setRun(d.run); return; }
+  // JAG-431b: the panel renders the SESSION graph; a live node event for THIS
+  // session is applied directly (the session filter above is the real boundary —
+  // no run-id gate). If the panel has no graph yet, fetch the session graph.
   if (!graph) { loadGraph(); return; }
   graphFresh = d.node.id;
   const i = (graph.nodes || []).findIndex(n => n.id === d.node.id);

@@ -59,6 +59,39 @@ def _snapshot_path(cp_id):
     return os.path.join(CKPT_DIR, "cp_%s.json" % cp_id)
 
 
+# ------------------------------------------------------- session task graph ----
+# JAG-431: the REAL, live todo list is the per-SESSION task graph
+# (`data/graphs/<sid>.json`, `longrun.plan.taskgraph`) — NOT the legacy global
+# plan.json/tasks.json the panel no longer reads. A snapshot that captured only the
+# legacy stores restored nothing the UI renders, so a rewind left the todos on
+# screen ("graphical delete only"). The checkpoint must carry the session graph too.
+
+def _load_graph(session_id):
+    """The session's task graph (dict) or None. Never raises."""
+    try:
+        from longrun.plan import taskgraph
+        return taskgraph.load(session_id)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _restore_graph(session_id, snapshot):
+    """Put the session task graph back to `snapshot` (or archive it when the graph
+    did not exist at anchor time, so the todos truly disappear)."""
+    try:
+        from longrun.plan import taskgraph
+    except Exception:  # noqa: BLE001
+        return {"ok": False}
+    if snapshot:
+        snap = dict(snapshot)
+        snap.setdefault("key", session_id)
+        snap.setdefault("run_id", session_id)
+        taskgraph.save(snap)
+        return {"ok": True, "nodes": len(snap.get("nodes", []))}
+    taskgraph.reset(session_id)     # soft-clear: archives the graph that appeared after
+    return {"ok": True, "nodes": 0, "archived": True}
+
+
 # ------------------------------------------------------------------ create ----
 
 def create(label=None, session_id=None, idempotency_key=None, by="api"):
@@ -82,6 +115,9 @@ def create(label=None, session_id=None, idempotency_key=None, by="api"):
             if sess is None:
                 return {"error": "session not found: %s" % session_id}
             payload["session"] = sess
+            # JAG-431: the session task graph IS the live todo list the UI renders —
+            # snapshot it so a rewind can put the todos back (or remove them).
+            payload["graph"] = _load_graph(session_id)
         cp_id = "cp_" + uuid.uuid4().hex[:8]
         manifest = {
             "id": cp_id,
@@ -94,6 +130,7 @@ def create(label=None, session_id=None, idempotency_key=None, by="api"):
                 "plan_steps": len(payload["plan"].get("steps", [])),
                 "tasks": len(payload["tasks"].get("tasks", [])),
                 "messages": len(payload.get("session", {}).get("messages", [])),
+                "graph_nodes": len((payload.get("graph") or {}).get("nodes", [])),
             },
             "rolled_back": False,
         }
@@ -271,6 +308,10 @@ def rollback(cp_id, by="api"):
         srv.save_tasks(payload["tasks"])
         if manifest.get("session_id") and payload.get("session"):
             srv.save_session(payload["session"])
+        # JAG-431: restore the SESSION TASK GRAPH too (the real, live todo list).
+        graph_info = None
+        if manifest.get("session_id") and "graph" in payload:
+            graph_info = _restore_graph(manifest["session_id"], payload.get("graph"))
         entries = _load_index()
         for m in entries:
             if m.get("id") == cp_id:
@@ -281,4 +322,7 @@ def rollback(cp_id, by="api"):
         _save_index(entries)
         _publish("checkpoint.rolled_back", id=cp_id, by=by,
                  label=manifest.get("label"))
-        return {"ok": True, "restored": manifest}
+        out = {"ok": True, "restored": manifest}
+        if graph_info is not None:
+            out["graph"] = graph_info
+        return out
