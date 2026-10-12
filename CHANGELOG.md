@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Free threads get rewind + "request to …" titles; full-width chat (JAG-431l/m), battery 164/164.** (m) A free
+  thread is a user **request** plus its answer, so it now behaves like a todo in the rewind feature: the ledger
+  records the request text and its message index (`req` / `req_from`), and each `Free.N` group carries a **⏮**
+  control (a sibling of its `<summary>`, same a11y pattern as the todo rewind) that rewinds to just before that
+  request via the existing per-turn rewind API. The `chapters` tool and the 🏷 prompt now instruct the agent to
+  name a free group `"request to <short summary of the user's ask>"`; `chapters read` surfaces the request line.
+  (l) The chat answers were capped at `max-width: 860px` while the tool cards spanned the column — the per-message
+  cap is removed so a message uses the full width of `#log`. Pinned by `v438` (28/28) and `v440` (3/3).
 - **Session thread ledger + `chapters` tool — recall a long run across compactions (JAG-431j), battery 163/163.**
   A session's chat is a stream of groups: TASK groups (todo nodes) and FREE groups (`Free.N`, chat with no todo).
   Compaction rewrites the stored transcript in place, so the agent could no longer read an old free thread — even

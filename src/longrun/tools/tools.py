@@ -1097,8 +1097,10 @@ def _chapters(args, run_id):
             return {"ok": False, "error": "unknown group %r (action=list for ids)" % gid}
         head = "%s %s %s [msg %s-%s]" % (gid, g["kind"], g.get("node") or "",
                                          g.get("from"), g.get("to"))
-        return {"ok": True, "exit_code": 0, "group": g,
-                "stdout": head + "\n" + (g.get("digest") or "(no text captured)")}
+        body = g.get("digest") or "(no text captured)"
+        if g.get("req"):
+            body = "request: %s\n%s" % (g["req"], body)
+        return {"ok": True, "exit_code": 0, "group": g, "stdout": head + "\n" + body}
     if action in ("title", "name", "rename"):
         title = args.get("title") or args.get("name") or args.get("text") or ""
         ok, res = th.set_title(sid, gid, title)

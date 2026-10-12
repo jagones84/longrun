@@ -37,6 +37,10 @@ MAX_GROUPS = int(os.environ.get("LONGRUN_THREAD_GROUPS", "2000"))
 
 LOCK = threading.RLock()
 
+# Ledger schema version: a doc written by an older version is re-derived from the
+# transcript once (a brand-new store, so an upgrade simply rebuilds it).
+VERSION = 2
+
 
 def _safe(key):
     return re.sub(r"[^A-Za-z0-9_.-]", "_", str(key or "unknown"))[:96]
@@ -58,7 +62,8 @@ def _save(doc):
 
 
 def _new_doc(sid):
-    return {"session": sid, "seq": 0, "groups": [], "updated": round(time.time(), 3)}
+    return {"v": VERSION, "session": sid, "seq": 0, "groups": [],
+            "updated": round(time.time(), 3)}
 
 
 def _cap(doc):
@@ -74,7 +79,7 @@ def _open(doc, kind, node, idx):
     doc["seq"] = int(doc.get("seq", 0)) + 1
     g = {"id": "g%d" % doc["seq"], "kind": kind, "node": node,
          "from": idx, "to": idx, "items": 0, "title": None, "digest": "",
-         "ts": round(time.time(), 3)}
+         "req": None, "req_from": None, "ts": round(time.time(), 3)}
     doc["groups"].append(g)
     return g
 
@@ -91,19 +96,25 @@ def _feed(doc, node, role, text, idx):
     """Append ONE item to the ledger, opening/extending the right group."""
     groups = doc["groups"]
     last = groups[-1] if groups else None
+    is_user = (role == "user")
     if node:
         if last and last.get("kind") == "task" and last.get("node") == node:
             g = last
         else:
             g = _open(doc, "task", node, idx)
     else:
-        if role == "user" or last is None or last.get("kind") == "task":
+        if is_user or last is None or last.get("kind") == "task":
             g = _open(doc, "free", None, idx)
         else:
             g = last
     g["items"] = int(g.get("items", 0)) + 1
     if idx is not None:
         g["to"] = idx
+    # A free thread is usually STARTED by a user turn: remember that request text and
+    # its message index (the rewind anchor + the "request to …" title source).
+    if is_user and g.get("kind") == "free" and not g.get("req"):
+        g["req"] = str(text or "").strip().replace("\n", " ")[:200]
+        g["req_from"] = idx
     _digest(g, text)
 
 
@@ -158,6 +169,28 @@ def _backfill(sess):
 # ------------------------------------------------------------------- public --
 
 
+def _doc_for(sid, sess=None):
+    """Load the ledger, (re)building it when absent or written by an older schema.
+
+    `sess` is the CURRENT session dict when the caller already has it (and, for
+    `record`, one that does NOT yet include the item about to be filed).
+    """
+    doc = _load(sid)
+    if doc is not None and doc.get("v") == VERSION:
+        return doc
+    if sess is None:
+        try:
+            from longrun.core import server
+            sess = server.load_session(sid)
+        except Exception:  # noqa: BLE001
+            sess = None
+    if not sess:
+        return doc   # no transcript to rebuild from — keep whatever we had
+    doc = _backfill(sess)
+    _save(doc)
+    return doc
+
+
 def record(sess, node=None, role=None, text="", idx=None):
     """File ONE persisted item into the session's ledger (call BEFORE the store
     writes it, so a first-time backfill does not see the item twice).
@@ -171,9 +204,9 @@ def record(sess, node=None, role=None, text="", idx=None):
         node = node.get("id")
     try:
         with LOCK:
-            doc = _load(sid)
+            doc = _doc_for(sid, sess)
             if doc is None:
-                doc = _backfill(sess)
+                doc = _new_doc(sid)
             _feed(doc, node, role, text, idx)
             _cap(doc)
             _save(doc)
@@ -184,23 +217,13 @@ def record(sess, node=None, role=None, text="", idx=None):
 def outline(sid):
     """Ordered groups of a session (task + free), oldest first.
 
-    Backfills once, on demand, for a session that predates this ledger.
+    Backfills once, on demand, for a session that predates this ledger (or was
+    written by an older schema version).
     """
     if not sid:
         return []
-    doc = _load(sid)
-    if doc is None:
-        try:
-            from longrun.core import server
-            sess = server.load_session(sid)
-        except Exception:  # noqa: BLE001
-            sess = None
-        if not sess:
-            return []
-        with LOCK:
-            doc = _backfill(sess)
-            _save(doc)
-    return doc.get("groups", [])
+    doc = _doc_for(sid)
+    return (doc or {}).get("groups", [])
 
 
 def get(sid, gid):
@@ -215,11 +238,7 @@ def set_title(sid, gid, title):
     """Set (or clear) the TITLE of a FREE group. Returns (ok, group|error)."""
     title = str(title or "").strip()[:200]
     with LOCK:
-        doc = _load(sid)
-        if doc is None:
-            # trigger the lazy backfill, then reload
-            outline(sid)
-            doc = _load(sid)
+        doc = _doc_for(sid)
         if doc is None:
             return False, "no thread ledger for session %r" % sid
         for g in doc.get("groups", []):
@@ -297,10 +316,13 @@ def render(sid, limit=200):
             lines.append("  #%d task %s  [%s]  <%s \u00b7 id=%s>%s"
                          % (i, g.get("node"), lbl, where, g.get("id"), title))
         else:
+            req = (g.get("req") or "").strip()
             dig = (g.get("digest") or "").strip()
+            body = req or dig
             lines.append("  #%d free  %s  <%s \u00b7 id=%s>%s"
-                         % (i, "\u201c%s\u201d" % dig if dig else "(no text yet)",
+                         % (i, "\u201c%s\u201d" % body if body else "(no text yet)",
                             where, g.get("id"), title))
-    lines.append("Use action=read id=<gN> for a group's content, action=title id=<gN> "
-                 "title=\"…\" to name a FREE group.")
+    lines.append("Use action=read id=<gN> for a group's full content. A free group is a "
+                 "user REQUEST plus the answer it got: name it with action=title id=<gN> "
+                 "title=\"request to <short summary of the user's ask>\".")
     return "\n".join(lines)

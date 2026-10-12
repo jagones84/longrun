@@ -70,6 +70,10 @@ check("1c a free group opens on a user turn", groups[0]["kind"] == "free" and gr
 check("1d a task group carries its node", any(x["kind"] == "task" and x["node"] == n1["id"] for x in groups))
 check("1e free groups captured a digest", all(x["digest"] for x in groups if x["kind"] == "free"),
       [x["digest"][:24] for x in groups])
+check("1f a free group records the user REQUEST + its rewind index (JAG-431m)",
+      (groups[0].get("req") or "").startswith("free chat one opener")
+      and groups[0].get("req_from") == 0,
+      (groups[0].get("req"), groups[0].get("req_from")))
 
 # ---- 2. the ledger is INDEPENDENT of the (compactable) transcript ------------
 sess = stores.load_session(sid)
@@ -109,6 +113,9 @@ check("4d a TASK group refuses a title (todos keep their node label)", r.get("ok
 check("4e read of an unknown id is refused",
       T.execute("chapters", {"session": sid, "action": "read", "id": "gZZ"}, run_id=sid).get("ok") is False)
 check("4f the title survives a transcript wipe", th.get(sid, fid)["title"] == "Opener")
+r = T.execute("chapters", {"session": sid, "action": "read", "id": fid}, run_id=sid)
+check("4g read surfaces the request line", "request: free chat one opener" in (r.get("stdout") or ""),
+      (r.get("stdout") or "")[:70])
 
 # ---- 5. tool registration + policy -------------------------------------------
 names = {t["name"] for t in registry.catalog() if t.get("name")}
@@ -128,6 +135,29 @@ check("6c Free groups carry a stable chapter slot", 'det.dataset.chapter = "free
 check("6d titles are read from the ledger", "loadThreadTitles" in idx and "/api/threads?session=" in idx)
 http = _read("src/longrun/core/httpapi.py")
 check("6e GET /api/threads is routed", '"/api/threads"' in http and "threads_mod.outline" in http)
+
+# ---- 7. naming style + per-free-thread rewind (JAG-431m) ---------------------
+_desc = (registry.TOOL_SCHEMAS.get("chapters") or {}).get("description", "")
+check("7a the tool teaches the 'request to …' title style", "request to <short ask>" in _desc, _desc[-60:])
+check("7b the 🏷 prompt asks for 'request to <ask>' titles",
+      "request to <summary of the user's ask>" in idx)
+check("7c free groups carry a rewind control",
+      'class="fgroup-rw"' in idx and "function rewindFreeGroup(" in idx)
+check("7d the free rewind reuses the per-turn rewind API",
+      "doRewind(sessionId, g.req_from)" in idx)
+check("7e the ledger render explains the free-group naming",
+      "user REQUEST plus the answer" in _read("src/longrun/memory/threads.py"))
+
+# ---- 8. an older-schema ledger is rebuilt on read (version upgrade) -----------
+import json as _json   # noqa: E402
+with open(th.path_for(sid2), "w", encoding="utf-8") as f:
+    _json.dump({"session": sid2, "seq": 1, "groups": [
+        {"id": "g1", "kind": "free", "node": None, "from": 0, "to": 1,
+         "items": 2, "title": "stale", "digest": "stale"}]}, f)
+up = th.outline(sid2)
+check("8a a pre-version ledger is rebuilt with the new fields",
+      bool(up) and up[0].get("req_from") == 0 and "backfilled free one" in (up[0].get("req") or ""),
+      up)
 
 print("---")
 okc = sum(results)
