@@ -859,9 +859,26 @@ def handle(handler, method, path, qs, body):
             return _sse(handler, _SWARM.watch_gen(since), keepalive=True)
 
         if path == "/api/checkpoints":
+            # JAG-426-fix: this v0.3 route is dispatched BEFORE httpapi's handler
+            # (see httpapi.do_GET -> api_v02.handle), so it is the ONLY live
+            # GET /api/checkpoints. It used to ignore `session` entirely and return
+            # the newest N checkpoints of EVERY session with no turn anchors — the
+            # rewind marks a client needs. Now: filter by `session` when given and
+            # always include the session's turn anchors (`marks`).
             _lazy('checkpoints')
-            return _r(handler, 200, {"checkpoints": _CHECKPOINTS.list_checkpoints(
-                _int(qs.get("limit", 50), 50))})
+            limit = _int(qs.get("limit", 500), 500)
+            allc = _CHECKPOINTS.list_checkpoints(limit)
+            sid = qs.get("session")
+            if sid:
+                allc = [c for c in allc if c.get("session_id") == sid]
+                try:
+                    from longrun.memory import rewind as _rew
+                    marks = _rew.marks(sid)
+                except Exception:  # noqa: BLE001 — marks are additive, never fatal
+                    marks = []
+                return _r(handler, 200, {"session": sid, "marks": marks,
+                                         "checkpoints": allc})
+            return _r(handler, 200, {"checkpoints": allc})
         if path.startswith("/api/checkpoints/"):
             _lazy('checkpoints')
             cp_id = path.rsplit("/", 1)[-1]

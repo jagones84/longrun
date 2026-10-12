@@ -328,6 +328,14 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
+- **Checkpoint/rewind route was unreachable (JAG-426 follow-up), battery 148/148.** While QA-ing the
+  WebUI end to end, `GET /api/checkpoints` turned out to be SHADOWED: `httpapi.do_GET` dispatches to
+  `api_v02.handle` first, and the older v0.3 handler owned that route — returning the newest N
+  checkpoints of EVERY session, ignoring `?session=` and never emitting the `marks` (turn anchors) a
+  rewind needs. The newer JAG-426 handler in `httpapi` was dead code, so no client could discover a
+  rewind point. The v0.3 handler is now session-aware and returns `marks`; the duplicate GET handler
+  in `httpapi` was removed. Verified live: rewind to `msg_index N` trims the transcript, truncates the
+  event log, and removes the files the harness wrote through `fs.write`/`fs.edit` (pinned by `v424`).
 - **Harness-audit bug fixes (JAG-426 follow-up), battery 147/147.** Five defects found by auditing the
   freshly shipped JAG-426 code, each pinned by a new acceptance test (`v422`, `v423`). (1) `glob`
   escaped its allow-list through an **absolute** or `../` pattern — `os.path.join(root, "/etc/*")`
