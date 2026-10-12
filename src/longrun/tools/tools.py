@@ -1119,8 +1119,11 @@ def _knowledge(args, run_id):
         return {"ok": True, "exit_code": 0, "stdout": "knowledge: %s" % kb.status()}
     if action in ("notebooks", "list_notebooks"):
         nbs = kb.list_notebooks()
+        # JAG-427 fix: show the notebook ID — `search` scopes by ID, so a list that
+        # omits it forces the model to guess (it guessed the NAME -> zero hits).
         return {"ok": True, "exit_code": 0, "notebooks": nbs,
-                "stdout": "\n".join("%s  (%s sources)" % (n["name"], n["sources"]) for n in nbs)}
+                "stdout": "\n".join("%s  id=%s  (%s sources)" % (n["name"], n["id"], n["sources"])
+                                    for n in nbs) or "(no notebooks)"}
     if action == "create_notebook":
         r = kb.create_notebook(args.get("name"))
         return {"ok": bool(r.get("ok")), "notebooks": kb.list_notebooks(),
@@ -1149,7 +1152,17 @@ def _knowledge(args, run_id):
     lines = ["%s:%s  %s" % (r.get("ref") or r.get("path"), r.get("start"),
                             (r.get("snippet") or "").replace("\n", " ")[:200])
              for r in res.get("results", [])]
-    return {"ok": True, "exit_code": 0, "stdout": "\n".join(lines) or "(no matches)",
+    stdout = "\n".join(lines) or "(no matches)"
+    # JAG-427 fix: a scoped search that finds nothing is usually a bad notebook name/id —
+    # tell the model the valid options instead of leaving it stuck on "(no matches)".
+    if not res.get("results") and args.get("notebook"):
+        try:
+            avail = ", ".join("%s=%s" % (n["name"], n["id"]) for n in kb.list_notebooks())
+            stdout += ("\n(no matches in notebook '%s'. Valid notebooks: %s — "
+                       "or omit `notebook` to search them ALL.)" % (args.get("notebook"), avail))
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": True, "exit_code": 0, "stdout": stdout,
             "results": res.get("results", []), "mode": res.get("mode"),
             "count": len(res.get("results", []))}
 

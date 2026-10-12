@@ -343,6 +343,17 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
+- **Knowledge base could not be queried by notebook name (JAG-427 RAG QA), battery 151/151.** Building
+  notebooks from the WebUI worked (`add_source`/`add_text`/`search` were all correct at the API level),
+  but the **agent** could not retrieve from them: `knowledge action=list_notebooks` printed only NAMES
+  + source counts while `action=search` scopes by notebook ID, so the model passed the name it was shown
+  and got a silent `(no matches)` — notebook-scoped agentic RAG looked broken. Fixed: `list_notebooks`
+  now prints each notebook's `id=`; `search` AND `add_text`/`add_source`/`add_source_text` resolve a
+  notebook given by NAME *or* ID (`knowledge._resolve_id_db`); and an empty scoped search now lists the
+  valid notebooks so the model can recover. Verified live end to end (WebUI): a fresh notebook of 3 PDFs
+  + 5 web URLs (700 chunks, all embedded with `gemini-embedding-001`) returned the correct sources for
+  both a Rademacher-complexity query (Foundations of Machine Learning.pdf) and a Machiavelli query
+  (machiavelli_il_principe.pdf). Pinned by `v427`.
 - **Checkpoint/rewind route was unreachable (JAG-426 follow-up), battery 148/148.** While QA-ing the
   WebUI end to end, `GET /api/checkpoints` turned out to be SHADOWED: `httpapi.do_GET` dispatches to
   `api_v02.handle` first, and the older v0.3 handler owned that route — returning the newest N

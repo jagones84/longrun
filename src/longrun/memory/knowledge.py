@@ -182,6 +182,22 @@ def _notebook_exists(db, nid):
     return bool(db.execute("SELECT 1 FROM notebooks WHERE id=?", (nid,)).fetchone())
 
 
+def _resolve_id_db(db, ref):
+    """Map a notebook ID **or** its human NAME to the canonical ID (JAG-427 fix).
+
+    The agent interface lists notebooks by NAME but scopes search by ID, so a name
+    passed as the scope silently returned zero hits. Resolve names to their IDs here
+    so both spellings work; an unknown value is returned unchanged (caller decides).
+    """
+    ref = str(ref or "").strip()
+    if not ref:
+        return ref
+    if _notebook_exists(db, ref):
+        return ref
+    row = db.execute("SELECT id FROM notebooks WHERE name=?", (ref,)).fetchone()
+    return row["id"] if row else ref
+
+
 # -------------------------------------------------------------------- sources --
 def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts):
     n = _insert_chunks(db, sid, path, lang, "doc" if kind != "code" else "code", pieces, fts)
@@ -201,6 +217,7 @@ def add_source(notebook, ref):
         db = _connect()
         try:
             fts = _init(db)
+            notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
             if not _notebook_exists(db, notebook):
                 return {"ok": False, "error": "no such notebook: %s" % notebook}
             sid = "src:" + uuid.uuid4().hex[:10]
@@ -276,6 +293,7 @@ def add_text(notebook, title, text):
         db = _connect()
         try:
             fts = _init(db)
+            notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
             if not _notebook_exists(db, notebook):
                 return {"ok": False, "error": "no such notebook: %s" % notebook}
             sid = "src:" + uuid.uuid4().hex[:10]
@@ -331,6 +349,7 @@ def add_source_text(notebook, ref, text, title=None):
         db = _connect()
         try:
             fts = _init(db)
+            notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
             if not _notebook_exists(db, notebook):
                 return {"ok": False, "error": "no such notebook: %s" % notebook}
             sid = "src:" + uuid.uuid4().hex[:10]
@@ -423,6 +442,8 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None):
         _init(db)
         if not db.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
             return out
+        if notebook:
+            notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
         terms = re.findall(r"[A-Za-z0-9_]{2,}", query)
         rows = []
         scope = " AND s.notebook = ?" if notebook else ""
