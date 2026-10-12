@@ -43,8 +43,8 @@ def _fn(src, header):
 check("1a the free-group state + helpers exist",
       all(s in HTML for s in ("function _freeKids(", "function _freeNew(",
                               "function _freeAppend(", "function _freeClose(")), "")
-check("1b the group is labelled Free.N",
-      '"Free." + _freeN' in HTML, "")
+check("1b the group is labelled Free.N (JAG-431j: + an optional ledger title)",
+      '_freeLabel(_freeN)' in HTML and 'return "Free." + n' in HTML, "")
 check("1c a .fgroup style is defined", ".fgroup > summary" in HTML, "")
 
 # --- routing -----------------------------------------------------------------

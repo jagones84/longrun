@@ -220,6 +220,15 @@
   .task .dep { font-size: 9px; color: var(--dim); }
   .task .ev { font-size: 9px; color: var(--ok); }
   .task .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); flex-shrink: 0; }
+  /* JAG-431k: meta vs body halves of a todo row, so a long label can reclaim width. */
+  .task .tmeta { display: flex; gap: 8px; align-items: baseline; flex: 0 0 auto; }
+  .task .tmain { display: flex; gap: 6px; align-items: baseline; flex: 1 1 auto; min-width: 0; }
+  /* JAG-431k: when the label wraps beyond 3 lines, the inline meta (JN …) only steals
+     width and inflates the row height. Stack the meta under the status badge so the
+     label uses the full width and the row takes far less vertical space. */
+  .task.w3 { align-items: flex-start; }
+  .task.w3 .tmeta { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .task.w3 .jt { margin: 0 !important; }
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
   .task.fresh { animation: pop .5s ease; border: 1px dashed rgba(181,108,255,.4); }
   @keyframes pop { from { transform: scale(.96); opacity: .3; } }
@@ -1302,6 +1311,7 @@
               aria-label="reveal the current session in the sessions panel">🎯</button>
       <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
       <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
+      <button class="ghost" data-tree-todos data-call="nameThreads" title="ask the agent to title the Free.* groups from their content (uses the chapters tool)" aria-label="title the free thread groups">🏷</button>
     </div>
     <div id="composer">
       <div id="slashMenu" class="card" hidden style="position:absolute;bottom:100%;left:22px;right:22px;max-height:220px;overflow-y:auto;padding:4px 0;margin-bottom:4px"></div>
@@ -1994,19 +2004,51 @@ let _chatNodes = {}, _chatSections = {}, _activeScope = null, _activeNodeId = nu
    task groups. They are wrapped in a collapsible <details class="fgroup"> ("Free.N")
    so they collapse/expand with the same ⊞/⊟ buttons as the todo groups. */
 let _freeGroup = null, _freeN = 0;
+/* JAG-431j: the agent-assigned titles of THIS session's free groups, in order, read
+   from the durable thread ledger (/api/threads). The k-th free group on screen maps
+   to the k-th free group in the ledger. */
+let _threadTitles = [];
 function _freeKids() { return (_freeGroup && _freeGroup.isConnected) ? _freeGroup.querySelector(".fg-kids") : null; }
 function _freeClose() { _freeGroup = null; }
+function _freeLabel(n) { const t = _threadTitles[n - 1]; return "Free." + n + (t ? " · " + t : ""); }
 function _freeNew() {
   _freeN += 1;
   const det = document.createElement("details");
   det.className = "fgroup"; det.open = true;
+  det.dataset.chapter = "free#" + _freeN;   // JAG-431j: stable slot for the ledger title
   det.innerHTML = '<summary><span class="fglabel"></span></summary><div class="fg-kids"></div>';
-  det.querySelector(".fglabel").textContent = "Free." + _freeN;
+  det.querySelector(".fglabel").textContent = _freeLabel(_freeN);
   $("log").appendChild(det);
   _freeGroup = det;
   return det.querySelector(".fg-kids");
 }
 function _freeAppend(el) { (_freeKids() || _freeNew()).appendChild(el); }
+/* JAG-431j: pull the free-group titles from the durable thread ledger. */
+async function loadThreadTitles(sid) {
+  _threadTitles = [];
+  if (!sid) return;
+  try {
+    const r = await api("GET", "/api/threads?session=" + encodeURIComponent(sid));
+    _threadTitles = ((r && r.groups) || []).filter(g => g.kind === "free").map(g => g.title || "");
+  } catch (e) { _threadTitles = []; }
+}
+/* JAG-431j: (re)apply the titles to the Free.* groups already rendered. */
+function applyThreadTitles() {
+  const log = $("log"); if (!log) return;
+  [...log.querySelectorAll("details.fgroup")].forEach((det, i) => {
+    const lbl = det.querySelector(".fglabel"); if (lbl) lbl.textContent = _freeLabel(i + 1);
+  });
+  _updateTreeTools();
+}
+/* JAG-431j: the 🏷 button — ask the agent (a REAL turn, like any tool call) to title
+   every Free.* group from its real content via the `chapters` tool. */
+function nameThreads() {
+  if (!sessionId) return;
+  send("Give every Free.* group in this session a short, specific title (3-6 words, "
+     + "in English) based on its real content. Use the `chapters` tool: action=list to "
+     + "see the groups, then action=title id=<gN> title=\"...\" for each FREE group "
+     + "without a title. Do not touch task/todo groups.");
+}
 function _scope() { return _activeScope || _freeKids() || $("log"); }
 function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id === id) || null; }
 /* JAG-274: the chat is a CHRONOLOGICAL stream (newest always at the bottom). A todo
@@ -3010,7 +3052,9 @@ function send(text, display) {
     if (turnSession && !live()) markDone(turnSession);
     if (live()) {
       endStream();
-      if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll(); }
+      if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll();
+        // JAG-431j: a finished turn may have added/renamed Free.* groups — refresh labels.
+        loadThreadTitles(turnSession || sessionId).then(applyThreadTitles); }
       flushQueue();
     }
   };
@@ -3443,6 +3487,9 @@ async function loadHistory() {
   try { g = await api("GET", "/api/sessions/" + encodeURIComponent(sessionId) + "/graph"); } catch (e) { g = null; }
   const nodes = (g && g.nodes) || [];
   if (nodes.length) graph = g;
+  // JAG-431j: load the free-group titles BEFORE the rebuild so each Free.N group is
+  // labelled correctly as it is created.
+  await loadThreadTitles(sessionId);
   // JAG-194: include every plan's nodes in byId so the transcript still resolves
   // cards that referenced an older plan's ids; the ACTIVE node is current-plan only.
   const _pnodes = planNodes(g);
@@ -4095,6 +4142,7 @@ function renderGraph() {
     if (rwb && n) rwb.onclick = (e) => { e.stopPropagation(); rewindToTodo(n.id); };
     if (n && n.id === graphFresh) el.classList.add("fresh");
   });
+  _markWrappedTasks(box);   // JAG-431k: stack the meta on rows with a long wrapped label
   $("remaining").innerHTML = "";
 }
 /* JAG-424: right-click menu on a todo — "Show in constellation" circles that task in
@@ -4477,8 +4525,12 @@ function taskTree(nodes) {
   const one = (n, depth) => {
     const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${n.deps.join(", ")}</span>` : "";
     const ev = (n.evidence || []).length ? ` <span class="ev">📎 ${n.evidence.length}</span>` : "";
+    // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
+    // so a long wrapped label can reclaim the width (see `.task.w3`).
+    const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt" style="color:var(--acc2);margin:0 5px;font-size:10px" title="job ${esc(_nodeJob(n))}">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt" style="color:var(--info);margin:0 5px;font-size:10px" title="subjob ${esc(_nodeSub(n))} (embodies this todo)">${esc(_nodeSub(n))}</span>` : ""}`;
+    const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
-      `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt" style="color:var(--acc2);margin:0 5px;font-size:10px" title="job ${esc(_nodeJob(n))}">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt" style="color:var(--info);margin:0 5px;font-size:10px" title="subjob ${esc(_nodeSub(n))} (embodies this todo)">${esc(_nodeSub(n))}</span>` : ""}<span>${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button></div>`;
+      `<span class="tmeta">${meta}</span><span class="tmain">${body}</span></div>`;
   };
   const seen = new Set();
   const walk = (p, depth) => (byParent[p] || []).map(n => {
@@ -4491,6 +4543,17 @@ function taskTree(nodes) {
     if (!seen.has(n.id)) { seen.add(n.id); html += one(n, 0); }
   });
   return html;
+}
+/* JAG-431k: flag a todo row whose label wraps beyond 3 lines. Such a row wastes
+   vertical space while its inline meta (JN …) steals width; the `.w3` class makes CSS
+   stack that meta under the status badge and hand the label the full width. */
+function _markWrappedTasks(box) {
+  if (!box) return;
+  box.querySelectorAll(".task").forEach(el => {
+    el.classList.remove("w3");
+    const lbl = el.querySelector(".tlabel");
+    if (lbl && lbl.getClientRects().length > 3) el.classList.add("w3");
+  });
 }
 /* JAG-128B: la proposta di self-improvement arriva come evento SSE e resta
  * azionabile dalla chat (accetta/rifiuta -> POST /api/improve). */
@@ -4818,6 +4881,9 @@ function openTab(name) {
     const bd = $("backdrop"); if (bd) bd.classList.add("show");
     if (t.insp) focusInsp(t.insp);
   }
+  // JAG-431k: the plan panel may be revealed here (hidden -> visible means the wrap
+  // measure is only meaningful now), so re-mark the todo rows on the next frame.
+  if (name === "tasks") requestAnimationFrame(() => _markWrappedTasks($("tasks")));
   _settleHandles();
 }
 function closeAside() { _closeDrawers(); _setTabbarActive("chat"); }
@@ -7327,6 +7393,18 @@ if (window.ResizeObserver) {
   if (_sl) _ro.observe(_sl);
   if (_sr) _ro.observe(_sr);
   if (_ap) _ro.observe(_ap);
+}
+// JAG-431k: re-mark the todo rows whenever the plan panel's WIDTH changes (desktop
+// splitter drag, drawer, zoom, resize). Guarded on a width change so our own class
+// toggle can never loop the observer.
+if (window.ResizeObserver && $("tasks")) {
+  const _tb = $("tasks"); let _tw = _tb.clientWidth;
+  new ResizeObserver(() => {
+    const w = _tb.clientWidth;
+    if (w === _tw) return;
+    _tw = w;
+    _markWrappedTasks(_tb);
+  }).observe(_tb);
 }
 _settleHandles();
 $("palette-input").addEventListener("input", e => { _palHi = 0; renderPalette(e.target.value); });

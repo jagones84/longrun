@@ -1064,6 +1064,52 @@ def _sessions(args, run_id):
             "count": len(rows), "backend": "host", "sandboxed": False}
 
 
+def _chapters(args, run_id):
+    """JAG-431j: the CURRENT session's THREAD — its chat groups, in order.
+
+    The chat is a stream of GROUPS: TASK groups (one per todo-graph node) and FREE
+    groups ("Free.N" — chat with no todo behind them). Long sessions are compacted IN
+    PLACE (older turns collapse into one summary), so the agent can no longer READ an
+    old free thread from its own context — even though the operator still sees it in
+    the chat. This tool reads the harness's durable LEDGER instead (written before
+    compaction can touch the transcript), so the agent can list, recover and TITLE
+    groups from any point of a very long run.
+    action=list (default) -> the whole thread, chronological (ids, ranges, previews).
+    action=read  id=<gN>   -> one group's preserved content.
+    action=title id=<gN> title="…" -> name a FREE group (todos already carry a label).
+    """
+    from longrun.memory import threads as th
+    args = args or {}
+    sid = str(args.get("session") or "").strip() or str(run_id or "")
+    action = str(args.get("action") or "list").strip().lower()
+    if not sid:
+        return {"ok": False, "error": "no session in scope (pass session=)",
+                "backend": "host", "sandboxed": False}
+    if action in ("list", "toc", "outline", ""):
+        return {"ok": True, "exit_code": 0, "session": sid, "stdout": th.render(sid),
+                "backend": "host", "sandboxed": False}
+    gid = str(args.get("id") or args.get("group") or "").strip()
+    if action in ("read", "get", "show", "content"):
+        if not gid:
+            return {"ok": False, "error": "id required for action=read (action=list for ids)"}
+        g = th.get(sid, gid)
+        if not g:
+            return {"ok": False, "error": "unknown group %r (action=list for ids)" % gid}
+        head = "%s %s %s [msg %s-%s]" % (gid, g["kind"], g.get("node") or "",
+                                         g.get("from"), g.get("to"))
+        return {"ok": True, "exit_code": 0, "group": g,
+                "stdout": head + "\n" + (g.get("digest") or "(no text captured)")}
+    if action in ("title", "name", "rename"):
+        title = args.get("title") or args.get("name") or args.get("text") or ""
+        ok, res = th.set_title(sid, gid, title)
+        if not ok:
+            return {"ok": False, "error": res, "backend": "host", "sandboxed": False}
+        return {"ok": True, "exit_code": 0, "group": res,
+                "stdout": "titled %s -> %r" % (gid, (res or {}).get("title")),
+                "backend": "host", "sandboxed": False}
+    return {"ok": False, "error": "unknown action %r \u2014 use list|read|title" % action}
+
+
 def _index(args, run_id):
     """JAG-400: the CODEBASE index for the CURRENT workspace (per path).
 
@@ -1172,7 +1218,7 @@ _DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
              "git": _git, "http": _http, "browser": _browser, "self": _self,
              "skills": _skills, "memory": _memory, "web": _web, "improve": _improve,
              "reconcile": _reconcile, "sessions": _sessions, "index": _index,
-             "knowledge": _knowledge,
+             "knowledge": _knowledge, "chapters": _chapters,
              # JAG-426: baseline tools every standard harness ships
              "python": _python, "process": _process, "glob": _glob}
 

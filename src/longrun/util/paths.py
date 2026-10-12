@@ -26,4 +26,7 @@ CODEBASE_DIR = os.environ.get("LONGRUN_CODEBASE_DIR") or os.path.join(DATA_DIR, 
 KNOWLEDGE_DIR = os.environ.get("LONGRUN_KNOWLEDGE_DIR") or os.path.join(DATA_DIR, "knowledge")
 # JAG-403: per-batch embedding cost log (separate small DB, append-only).
 EMBEDDING_DIR = os.environ.get("LONGRUN_EMBEDDING_DIR") or os.path.join(DATA_DIR, "embedding")
+# JAG-431j: the per-session THREAD ledger (durable chat outline, compaction-proof).
+# Overridable so tests never write it into the live data/.
+THREADS_DIR = os.environ.get("LONGRUN_THREADS_DIR") or os.path.join(DATA_DIR, "threads")
 

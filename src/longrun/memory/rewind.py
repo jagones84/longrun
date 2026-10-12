@@ -136,6 +136,11 @@ def rewind(session_id, msg_index, by="api"):
         restored = {"error": str(e)}
     ws = restore_workspace(session_id, m.get("ts"))
     ev = truncate_events(session_id, m.get("events_upto"))
+    try:  # JAG-431j: the thread ledger follows the transcript
+        from longrun.memory import threads as threads_mod
+        threads_mod.truncate(session_id, m.get("msg_index"))
+    except Exception:  # noqa: BLE001
+        pass
     return {"ok": bool(restored.get("ok")), "anchor": m, "restored": restored,
             "workspace": ws, "events": ev, "graph": restored.get("graph"),
             "pre_snapshot": (pre or {}).get("id"), "msg_index": m.get("msg_index")}
@@ -188,6 +193,11 @@ def rewind_to_node(session_id, node_id, by="api"):
         restored = {"error": str(e)}
     ws = restore_workspace(session_id, cut)
     ev = truncate_events(session_id, (anch or {}).get("events_upto"))
+    try:  # JAG-431j: the thread ledger follows the transcript
+        from longrun.memory import threads as threads_mod
+        threads_mod.truncate(session_id, (anch or {}).get("msg_index"))
+    except Exception:  # noqa: BLE001
+        pass
     ok = bool((restored or {}).get("ok")) or bool((graph_info or {}).get("ok"))
     return {"ok": ok, "anchor": anch, "restored": restored,
             "workspace": ws, "events": ev, "graph": graph_info,

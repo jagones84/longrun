@@ -1256,6 +1256,16 @@ class Handler(BaseHTTPRequestHandler):
                 session=qs.get("session"), kind=qs.get("kind"),
                 since=qs.get("since"), until=qs.get("until"),
                 limit=_int_arg(qs, "limit", 200))})
+        if path == "/api/threads":
+            # JAG-431j: THIS session's chat GROUPS in order (task + free) with the
+            # free groups' agent-assigned titles + a content digest — the read view of
+            # the durable thread ledger (written before compaction can rewrite the
+            # transcript). Backfills once for a session that predates the ledger.
+            sid = qs.get("session")
+            if not sid:
+                return self._send(400, {"error": "session required"})
+            from longrun.memory import threads as threads_mod
+            return self._send(200, {"session": sid, "groups": threads_mod.outline(sid)})
         # JAG-426-fix: there is intentionally NO GET /api/checkpoints HERE — the
         # v0.3 route in api_v02.handle (dispatched earlier at the top of do_GET)
         # owns it and now returns the session's turn anchors under `marks`.

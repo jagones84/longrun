@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 
+from longrun.memory import threads as threads_mod
 from longrun.plan import taskgraph
 from longrun.core.events import (_ACTIVE_CHAT, _ACTIVE_CHAT_LOCK, _TURN_LOCKS,
                      _TURN_LOCKS_GUARD, publish)
@@ -140,6 +141,10 @@ def _purge_session_artifacts(sid):
     except Exception:  # noqa: BLE001
         pass
     try:
+        bases.append(threads_mod.path_for(sid))   # JAG-431j: the thread ledger
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         from longrun.model import runmetrics
         bases.append(runmetrics._path(sid))
     except Exception:  # noqa: BLE001
@@ -215,6 +220,7 @@ def clear_session(sid):
         taskgraph.reset(sid)
     except Exception:  # noqa: BLE001 — a missing graph must not block the clear
         pass
+    threads_mod.clear(sid)   # JAG-431j: the thread ledger describes this session
     _forget_session_runtime(sid)
     publish("session.cleared", session=sid)
     return sess
@@ -514,6 +520,11 @@ def append_message(sess, role, content, reasoning=None, meta=None):
         msg["reasoning"] = reasoning
     if meta:
         msg.update(meta)
+    # JAG-431j: file this turn into the session's durable thread ledger BEFORE the
+    # transcript write — compaction rewrites `messages` (older turns -> one summary),
+    # so the ledger must capture the content while it is still guaranteed present.
+    threads_mod.record(sess, node=msg.get("node"), role=role, text=content,
+                       idx=len(sess.get("messages", [])))
     sess["messages"].append(msg)
     save_session(sess)
     return msg
@@ -557,6 +568,10 @@ def persist_tool_card(sess, tool, ok, args=None, result="", error="",
             "after": (len(sess.get("messages", [])) if after is None else int(after)),
             "ts": round(time.time(), 3),
         }
+        # JAG-431j: file the tool call into the thread ledger (digest) before it is
+        # stored — the ledger must not depend on the (compactable) transcript.
+        threads_mod.record(sess, node=node, text="\u2699 %s %s" % (tool, args_str),
+                           idx=card["after"])
         sess.setdefault("tool_cards", []).append(card)
         save_session(sess)
         return card
@@ -580,6 +595,7 @@ def persist_inject(sess, kind, text, node=None, after=None):
                "node": node,
                "after": (len(sess.get("messages", [])) if after is None else int(after)),
                "ts": round(time.time(), 3)}
+        threads_mod.record(sess, node=node, text=text, idx=rec["after"])
         sess.setdefault("injects", []).append(rec)
         save_session(sess)
         return rec

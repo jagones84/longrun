@@ -7,6 +7,24 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Session thread ledger + `chapters` tool — recall a long run across compactions (JAG-431j), battery 163/163.**
+  A session's chat is a stream of groups: TASK groups (todo nodes) and FREE groups (`Free.N`, chat with no todo).
+  Compaction rewrites the stored transcript in place, so the agent could no longer read an old free thread — even
+  though the operator still sees it in the WebUI. New `src/longrun/memory/threads.py` keeps a durable per-session
+  ledger (`data/threads/<sid>.json`), written by `stores` **before** compaction can touch the transcript, with a
+  bounded digest per group. A new base tool **`chapters`** (agent-callable, `approval: auto`) exposes it:
+  `action=list` → the whole thread in chronological order (task + free, ids + ranges + previews); `action=read
+  id=<gN>` → a group's preserved content; `action=title id=<gN> title="…"` → name a **free** group (todos already
+  carry their node label). `GET /api/threads?session=` serves the ledger to the WebUI, which shows `Free.N · <title>`
+  (backfills once for sessions that predate the ledger). A new **🏷** button in the floating chat cluster asks the
+  agent — a real turn, like any tool call — to title every `Free.*` group from its content. Ledger lifecycle follows
+  the transcript (`/clear` wipes it, rewind truncates it, session-delete purges it). Pinned by `v438` (21/21).
+- **RH Plan panel: stack the todo meta on a long wrapped label (JAG-431k), battery 163/163.** A todo row was one
+  flat flex line (`[status] [id] [JN] [JN.x] [label …]`); when the label wrapped beyond 3 lines the inline meta
+  only stole width and inflated the row height. The row is now split into `.tmeta` + `.tmain`, and a JS pass
+  (`_markWrappedTasks`, measuring the label's line boxes via `getClientRects()`) flags such a row with `.w3`, which
+  stacks the meta **under the status badge** so the label reclaims the full width (far less vertical space). Re-marks
+  on re-render, on panel-width change and when the tasks tab opens. Pinned by `v439` (14/14).
 - **Control deck mobile — follow-up: pan-not-zoom + no panel squash (JAG-431i), battery 161/161.** Two
   regressions the phone user hit. (1) **A one-finger drag on the org chart ZOOMED instead of panning:**
   the first cut used a hand-rolled pointer-Id `Map`, which can go **stale** — a missed `pointerup`/

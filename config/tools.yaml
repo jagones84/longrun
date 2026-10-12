@@ -237,6 +237,15 @@ tools:
     enabled: true
     approval: auto
 
+  # thread ledger (JAG-431j): THIS session's chat GROUPS in chronological order (task +
+  # free), so the agent can recall a whole long run after many compactions, and TITLE
+  # the free groups from their real content. The ledger is written by the harness
+  # before compaction can touch the transcript; the tool only reads it (+ a title
+  # string). Read-only/safe.
+  chapters:
+    enabled: true
+    approval: auto
+
   # agent memory (JAG-73): store/recall durable notes across sessions; the file
   # writes are append-only under data/memory, so it is always safe.
   memory:

@@ -230,6 +230,26 @@ TOOL_SCHEMAS = {
         "required": [],
         "subject": "session",
     },
+    "chapters": {
+        "description": ("THIS session's THREAD — every chat GROUP in order (task = a "
+                        "todo node; free = 'Free.N' chat with no todo behind it). "
+                        "action=list -> the ordered outline (ids, ranges, previews); "
+                        "action=read id=<gN> -> a group's preserved content (the harness "
+                        "files each group into a durable ledger BEFORE compaction erases "
+                        "the transcript, so an old free thread stays readable); "
+                        "action=title id=<gN> title=\"…\" -> name a FREE group. Read-only "
+                        "except title."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["list", "read", "title"], "default": "list"},
+            "id": {"type": "string", "description": "group id (gN) for read/title"},
+            "title": {"type": "string", "description": "new title (action=title)"},
+            "session": {"type": "string",
+                        "description": "session id (default: this run's session)"},
+        },
+        "required": [],
+        "subject": "id",
+    },
     "memory": {
         "description": ("Persistent memory across sessions. action=store saves a "
                         "durable fact/preference/decision (ttl_secs expires it; "
