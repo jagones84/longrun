@@ -7,6 +7,12 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Reveal the active session in the rail (JAG-428), battery 152/152.** While talking in a chat you could
+  collapse the active session's team group (or the whole panel) with no quick way back. A topbar **🎯**
+  control (`revealActiveSession`, shown only with an open session) opens the sessions panel, expands every
+  group that holds the active session (reusing the `_forceExpandActive` path), clears a search filter that
+  would hide it, scrolls its row to the CENTER and flashes it. Clicking the collapsed-panel session badge
+  (topbar) performs the same gesture. Pinned by `v428`.
 - **Harness audit + six upgrades (JAG-426).** A six-domain "harness maxing" pass, shipped in three
   waves and pinned by `v414`-`v421` (battery 137 → 145). (1) **Native self-diagnosis** —
   `tools/diag.py` (`health`/`log_tail`/`context`/`tools_report`) exposed through the `self` tool
@@ -354,6 +360,18 @@ All notable changes to Longrun are documented here. The format follows
   + 5 web URLs (700 chunks, all embedded with `gemini-embedding-001`) returned the correct sources for
   both a Rademacher-complexity query (Foundations of Machine Learning.pdf) and a Machiavelli query
   (machiavelli_il_principe.pdf). Pinned by `v427`.
+- **RAG quality measured on the live corpus (JAG-428 QA).** A 6-question complex evaluation run by a
+  knowledge agent (WebUI, local `nex-n25-mini-uncensored-q8`), forced to answer only from `knowledge`
+  tool snippets. Result: **5/5 in-corpus questions answered correctly and faithfully** — LIME (Interpretable
+  ML PDF), Shapley values (PMC11513550), a LIME-vs-SHAP synthesis across 3 sources, Rademacher complexity
+  (Foundations of ML PDF) and an exact Italian Machiavelli quotation — and the **honesty trap
+  (Anthropic 2024 revenue) correctly refused** with `NOT IN CORPUS` ("anthropic" occurs only in a timeline
+  / blog context; `anthropic`+`revenue` co-occur 0 times). Every cited quote was independently verified as
+  a real substring of a stored chunk (no fabrication). Retrieval precision measured from the WebUI over 8
+  targeted queries: **P@1 0.75 · P@3 0.88 · MRR 0.81** (the two "misses" were the SHAP docs'
+  `partial_dependence_plot` example and the online mirror of the same ML book — both relevant). Honest
+  limitation: BM25 OR-terms over a mixed multi-doc corpus can surface loosely-related chunks for vague
+  natural-language queries; scoping to the right notebook and using distinctive terms gives crisp hits.
 - **Checkpoint/rewind route was unreachable (JAG-426 follow-up), battery 148/148.** While QA-ing the
   WebUI end to end, `GET /api/checkpoints` turned out to be SHADOWED: `httpapi.do_GET` dispatches to
   `api_v02.handle` first, and the older v0.3 handler owned that route — returning the newest N

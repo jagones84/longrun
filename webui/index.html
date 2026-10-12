@@ -67,6 +67,11 @@
     background: var(--chipbg); color: var(--txt); font-size: 12px; font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sessbadge[hidden] { display: none; }
+  /* JAG-428: "reveal this session in the rail" — a compact topbar control, shown
+     only while a session is open, that expands its group and centers it. */
+  #revealSessionBtn { height: 26px; width: 26px; padding: 0; font-size: 13px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  #revealSessionBtn[hidden] { display: none; }
   .pill { font-size: 10px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); white-space: nowrap; }
   .pill.ok { color: var(--ok); border-color: rgba(74,222,128,.35); }
   .pill.warn { color: var(--warn); border-color: rgba(251,191,36,.4); }
@@ -433,6 +438,8 @@
     color: var(--dim); }
   #treeTools button:hover { color: var(--txt); border-color: var(--acc); }
   .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc2); transition: box-shadow .25s; }
+  /* JAG-428: flash the session row the topbar's "reveal" button centered. */
+  .sess.dotflash { box-shadow: 0 0 0 2px var(--acc2); border-radius: 10px; transition: box-shadow .25s; }
   #log { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px; scroll-behavior: smooth; }
   /* JAG-274: sticky "current step" bar — the active todo + its latest activity,
      always visible at the bottom of the chat, so you see what the agent is doing
@@ -1238,6 +1245,9 @@
     <a class="ttab" id="tabControl" href="#control" data-call="showControl">Control</a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
+  <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession" hidden
+          title="reveal this session in the sessions panel — expand its group and center it"
+          aria-label="reveal the current session in the sessions panel">🎯</button>
   <span class="u-f1"></span>
   <!-- JAG-424: the sandbox pill moved OUT of the ☰ menu onto the banner line. -->
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
@@ -7125,6 +7135,42 @@ function updateSessBadge() {
   const on = !_panelShown('[data-col="sessions"]') && !!_activeTitle;
   b.hidden = !on;
   if (on) b.textContent = "\uD83D\uDDC2 " + _activeTitle;
+  // JAG-428: the "reveal in rail" control only makes sense with an open session.
+  const rb = $("revealSessionBtn");
+  if (rb) rb.hidden = !sessionId;
+}
+/* JAG-428: reveal the ACTIVE session in the left rail — from anywhere (typically the
+   chat), even when its team group (or the whole panel) is collapsed. Opens the panel,
+   expands every group that holds the session, scrolls its row to the CENTER and flashes
+   it. Reuses the existing `_forceExpandActive` path so it stays consistent with
+   selectSession / deep-link behaviour. */
+function revealActiveSession() {
+  if (!sessionId) { toast("no active session"); return; }
+  if (!_panelShown('[data-col="sessions"]')) {           // (a) the panel itself
+    if (_overlayLeft()) document.body.classList.add("show-left");
+    else document.body.classList.remove("collapsed-left");
+    _settleHandles();
+  }
+  _forceExpandActive = true;                              // (b) expand its group(s) + re-render
+  const sec = $("session-search"); if (sec && sec.value) sec.value = "";   // don't hide it behind a filter
+  Promise.resolve(loadSessions()).then(() =>
+    requestAnimationFrame(() => setTimeout(_centerActiveRow, 60)));
+}
+function _centerActiveRow() {
+  const el = document.querySelector('#sessions .sess.active');
+  if (!el) { toast("session not visible — clear the search / hide-empty filter"); return; }
+  try { el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" }); }
+  catch (e) { try { el.scrollIntoView(); } catch (e2) {} }
+  el.classList.add("dotflash");
+  setTimeout(() => el.classList.remove("dotflash"), 1300);
+}
+/* JAG-428: clicking the active-session badge (shown when the panel is collapsed) is the
+   same gesture as 🎯 — reveal + center the session. */
+function _bindSessBadgeReveal() {
+  const b = $("sessBadge");
+  if (b && !b._revealBound) { b._revealBound = true; b.style.cursor = "pointer";
+    b.title = "click to reveal this session in the sessions panel";
+    b.onclick = () => revealActiveSession(); }
 }
 /* JAG-358: the true ratio between a CSS `left` value and the pixels
    getBoundingClientRect() reports. The app scales the page with `zoom` on <html>
@@ -7363,6 +7409,7 @@ function _bindInlineActions() {
   });
 }
 _bindInlineActions();
+_bindSessBadgeReveal();   // JAG-428: clicking the collapsed-panel session badge reveals it
 </script>
 <script src="/assets/vendor/marked.min.js"></script>
 <script src="/assets/vendor/purify.min.js"></script>
