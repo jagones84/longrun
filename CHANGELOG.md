@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Control deck mobile — follow-up: pan-not-zoom + no panel squash (JAG-431i), battery 161/161.** Two
+  regressions the phone user hit. (1) **A one-finger drag on the org chart ZOOMED instead of panning:**
+  the first cut used a hand-rolled pointer-Id `Map`, which can go **stale** — a missed `pointerup`/
+  `pointercancel` leaves a phantom second pointer, so every move is mis-read as a **pinch**. Touch now uses
+  **touch events** (`ev.touches` is the browser's authoritative, never-stale live list): 1 touch = pan,
+  2 touches = pinch; mouse keeps `mousedown/move/up`. A tap on a node still selects it (both paths bail on
+  `.node`). (2) **The Agents panel was squashed and could not be un-squashed:** once the rows STACK (≤1100px)
+  the row-height grips sit on the border between two stacked panels and dragging one only compresses them
+  (a stored desktop row height did the same). The grips are now hidden below the stacking breakpoint and any
+  stored row height ignored (`.grid2{height:auto !important}`), so every panel keeps its natural height.
+  Pinned by `v437` (16/16).
 - **Control deck on a phone: tidy layout + finger gestures (JAG-431i), battery 161/161.** The Control deck
   (`orbit.html`) was desktop-only in two ways. (1) **Layout:** at ≤640px a new media query restyles the
   toolbars — the `scope`/`sort` labels drop, each `<select>` fills its own row, and the action buttons wrap

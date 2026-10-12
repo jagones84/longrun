@@ -1,14 +1,16 @@
 """v437 — Control deck on a phone: tidy layout + finger gestures (JAG-431i).
 
-Reported (user): on mobile the Control deck's toolbar was a jumble of oversized
-pills ("buttons on top"), and the org chart / constellation could not be panned or
-zoomed with a finger (mouse-only handlers).
-
-Fix (web/orbit/web/orbit.html):
-  * a <=640px media query restyles the toolbars (labels dropped, selects fill a row,
-    action buttons wrap into tidy >=36px finger-sized rows);
-  * the org chart and the constellation pan/zoom via POINTER events, with PINCH to
-    zoom on touch, and `touch-action:none` so a drag pans instead of scrolling.
+Reported (user), two issues on mobile:
+  1. "the toolbar is a jumble of oversized pills" -> a <=640px media query restyles
+     the toolbars (labels dropped, selects fill a row, buttons wrap into tidy >=36px
+     finger-sized rows).
+  2. "finger press and move on the org chart causes ZOOM not pan" -> the first cut
+     hand-rolled a pointer-Id Map, which can go STALE (a missed pointerup leaves a
+     phantom second pointer, so a one-finger drag is mis-read as a pinch). The fix
+     uses TOUCH events (`ev.touches` is the browser's authoritative live list) for
+     touch, and keeps mouse events for desktop; `touch-action:none` stops page scroll.
+  3. The row-height grips squashed the stacked panels on a phone -> they are hidden
+     below the stacking breakpoint and any stored row height is ignored.
 
 Pins the markup/CSS. Deterministic, offline.
 """
@@ -37,23 +39,35 @@ check("1d toolbar buttons are finger-sized on mobile",
 check("1e the create/row inputs are >=36px on mobile",
       ".pad > .row > .inp,.pad > .row > .btn{height:36px}" in HTML, "")
 
-# --- 2: touch gestures ------------------------------------------------------
-check("2a the charts disable native touch scrolling (touch-action:none)",
+# --- 2: the row-height grips no longer squash the stacked panels -------------
+check("2a the row grips are hidden once the rows stack",
+      ".rz-row{display:none}" in HTML, "")
+check("2b a stored desktop row height is ignored on mobile",
+      ".grid2{height:auto !important}" in HTML, "")
+
+# --- 3: touch gestures ------------------------------------------------------
+check("3a the charts disable native touch scrolling (touch-action:none)",
       ".orgwrap,.orgcanvas,.cbody,.csvg{touch-action:none}" in HTML, "")
-check("2b the org chart pans by POINTER events (mouse + finger)",
-      'box.addEventListener("pointerdown"' in HTML
-      and "window.addEventListener(\"pointermove\"" in HTML, "")
-check("2c the constellation pans by POINTER events",
-      'svg.addEventListener("pointerdown"' in HTML, "")
-check("2d pinch-to-zoom is implemented for the org chart",
-      "pinch = {d: _dist()" in HTML and "_dist() / pinch.d" in HTML, "")
-check("2e pinch-to-zoom is implemented for the constellation",
-      "pinch = {d: _dist(), vb: parse()" in HTML, "")
-check("2f the old mouse-only pan handlers are gone",
-      'box.addEventListener("mousedown"' not in HTML
-      and 'svg.addEventListener("mousedown"' not in HTML, "")
-check("2g desktop wheel zoom is kept",
-      'box.addEventListener("wheel"' in HTML and 'svg.addEventListener("wheel"' in HTML, "")
+check("3b the org chart pans by TOUCH events on the box",
+      'box.addEventListener("touchstart"' in HTML
+      and 'box.addEventListener("touchmove"' in HTML, "")
+check("3c the constellation pans by TOUCH events on the svg",
+      'svg.addEventListener("touchstart"' in HTML
+      and 'svg.addEventListener("touchmove"' in HTML, "")
+check("3d touch uses the authoritative `ev.touches` list (never a stale map)",
+      HTML.count("ev.touches") >= 2 and "const t = ev.touches" in HTML, "")
+check("3e pinch-to-zoom is implemented for both charts",
+      HTML.count('mode: "pinch"') >= 2, "")
+check("3f a single-finger drag pans (pan mode) on both charts",
+      HTML.count('mode: "pan"') >= 3, "")
+check("3g the stale pointer-map gesture is gone",
+      'box.addEventListener("pointerdown"' not in HTML
+      and 'svg.addEventListener("pointerdown"' not in HTML, "")
+check("3h desktop mouse drag + wheel zoom are kept",
+      'box.addEventListener("mousedown"' in HTML and 'svg.addEventListener("mousedown"' in HTML
+      and 'box.addEventListener("wheel"' in HTML and 'svg.addEventListener("wheel"' in HTML, "")
+check("3i a tap on a node still selects it (node guard in both handlers)",
+      'ev.target.closest(".node")' in HTML, "")
 
 print("---")
 ok = sum(results)
