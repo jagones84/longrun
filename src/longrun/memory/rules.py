@@ -134,6 +134,28 @@ def check_dir(path):
     return p if os.path.isdir(p) else None
 
 
+def ensure_dir(path):
+    """Normalise a directory path and CREATE it (`mkdir -p`) when missing.
+
+    JAG-429: naming a not-yet-existing workspace for a new session used to be a
+    hard error ("no such folder"); the intent is obviously to use that folder, so
+    create it (with parents) instead of refusing. Returns the abs path, or None
+    when the path is empty/uncreatable. Same Windows->POSIX translation as
+    ``check_dir`` so `Z:\\...` works too.
+    """
+    raw = _win_to_posix(path).strip()
+    if not raw:
+        return None
+    p = os.path.abspath(os.path.expanduser(raw))
+    if os.path.isdir(p):
+        return p
+    try:
+        os.makedirs(p, exist_ok=True)
+    except OSError:
+        return None
+    return p if os.path.isdir(p) else None
+
+
 def resolve_workspace(sess=None):
     """The workspace for a turn: a session's own folder, else the global default.
 

@@ -1226,14 +1226,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/sessions":
             return self._send(200, {"sessions": list_sessions()})
         if path == "/api/sessions/new":
-            # JAG-127: an explicitly requested folder must exist — never silently
+            # JAG-127: an explicitly requested folder must be honored — never silently
             # fall back to the default (that made a Z:/wrong path look like the
             # session was created in a folder the user never picked).
+            # JAG-429: if the named folder does not exist yet, CREATE it (mkdir -p)
+            # instead of refusing — naming it clearly expresses the intent to use it.
             ws = qs.get("workspace")
             if ws:
                 from longrun.memory import rules as _rm
-                if not _rm.check_dir(ws):
-                    return self._send(400, {"error": "no such folder: %s" % ws})
+                real = _rm.check_dir(ws) or _rm.ensure_dir(ws)
+                if not real:
+                    return self._send(400, {"error": "cannot create folder: %s" % ws})
+                ws = real
             sess = get_or_create_session(None, qs.get("title"), ws)
             publish("session.created", session=sess["id"], title=sess["title"])
             return self._send(200, sess)

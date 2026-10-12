@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **New-session dialog + workspace auto-creation + CoT collapse (JAG-429), battery 153/153.** Three
+  WebUI fixes. (1) The **New-session dialog is now opaque** (it inherited the translucent `.card`
+  background and let the transcript bleed through). (2) Naming a **not-yet-existing workspace** used to
+  be refused with "no such folder"; `rules.ensure_dir` now **creates it** (`mkdir -p`, parents included)
+  and `/api/sessions/new` falls back to it, erroring only if creation truly fails. (3) The **🎯 reveal
+  control moved out of the topbar into the floating chat cluster** (`#treeTools`, beside the todo
+  ⊞/⊟), and **⊟ collapse-all now also tucks away the chain-of-thought** blocks — deliberately ONE-WAY,
+  so ⊞ re-opens the todo groups but never re-opens the CoT the user chose to hide. Pinned by `v429`
+  (and `v428` was re-pointed to the new control location).
 - **Reveal the active session in the rail (JAG-428), battery 152/152.** While talking in a chat you could
   collapse the active session's team group (or the whole panel) with no quick way back. A topbar **🎯**
   control (`revealActiveSession`, shown only with an open session) opens the sessions panel, expands every

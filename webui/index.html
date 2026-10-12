@@ -67,11 +67,6 @@
     background: var(--chipbg); color: var(--txt); font-size: 12px; font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sessbadge[hidden] { display: none; }
-  /* JAG-428: "reveal this session in the rail" — a compact topbar control, shown
-     only while a session is open, that expands its group and centers it. */
-  #revealSessionBtn { height: 26px; width: 26px; padding: 0; font-size: 13px; line-height: 1;
-    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
-  #revealSessionBtn[hidden] { display: none; }
   .pill { font-size: 10px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); white-space: nowrap; }
   .pill.ok { color: var(--ok); border-color: rgba(74,222,128,.35); }
   .pill.warn { color: var(--warn); border-color: rgba(251,191,36,.4); }
@@ -711,7 +706,7 @@
   #nsBackdrop { position: fixed; inset: 0; z-index: 39; background: rgba(0,0,0,.5); }
   #nsBackdrop[hidden] { display: none; }
   #newSessDlg { position: fixed; z-index: 40; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    width: min(460px, 92vw); padding: 16px; }
+    width: min(460px, 92vw); padding: 16px; background: var(--menubg); }
   #newSessDlg[hidden] { display: none; }
   /* JAG-426: rewind dialog — restore a session to before one of its user turns */
   #rwBackdrop { position: fixed; inset: 0; z-index: 43; background: rgba(0,0,0,.5); }
@@ -1245,9 +1240,6 @@
     <a class="ttab" id="tabControl" href="#control" data-call="showControl">Control</a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
-  <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession" hidden
-          title="reveal this session in the sessions panel — expand its group and center it"
-          aria-label="reveal the current session in the sessions panel">🎯</button>
   <span class="u-f1"></span>
   <!-- JAG-424: the sandbox pill moved OUT of the ☰ menu onto the banner line. -->
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
@@ -1287,8 +1279,11 @@
     <button id="jumpBtn" hidden title="jump to latest message" aria-label="jump to latest message">↓</button>
     <div id="nowbar" hidden></div>
     <div id="treeTools" hidden>
-      <button class="ghost" data-call="expandAllTodos" title="expand all todo groups" aria-label="expand all todo groups">⊞</button>
-      <button class="ghost" data-call="collapseAllTodos" title="collapse all todo groups" aria-label="collapse all todo groups">⊟</button>
+      <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession"
+              title="reveal this session in the sessions panel — expand its group and center it"
+              aria-label="reveal the current session in the sessions panel">🎯</button>
+      <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all todo groups" aria-label="expand all todo groups">⊞</button>
+      <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all todo groups (and hide chain-of-thought)" aria-label="collapse all todo groups and chain-of-thought">⊟</button>
     </div>
     <div id="composer">
       <div id="slashMenu" class="card" hidden style="position:absolute;bottom:100%;left:22px;right:22px;max-height:220px;overflow-y:auto;padding:4px 0;margin-bottom:4px"></div>
@@ -2041,8 +2036,22 @@ function _updateNowBar() {
  * the harness's per-node auto-open (which re-opens the active "doing" node on update). */
 function _allTodos() { const l = $("log"); return l ? [...l.querySelectorAll("details.tctree")] : []; }
 function expandAllTodos() { _allTodos().forEach(d => { d.open = true; }); _updateTreeTools(); }
-function collapseAllTodos() { _allTodos().forEach(d => { d.open = false; }); _updateTreeTools(); }
-function _updateTreeTools() { const t = $("treeTools"); if (!t) return; t.hidden = _allTodos().length === 0; }
+function collapseAllTodos() {
+  _allTodos().forEach(d => { d.open = false; });
+  // JAG-428: collapsing also tucks away the chain-of-thought blocks (the reasoning
+  // noise). Deliberately ONE-WAY: ⊞ expands the todo GROUPS only and never re-opens
+  // the CoT the user chose to hide.
+  const l = $("log"); if (l) [...l.querySelectorAll("details.think")].forEach(d => { d.open = false; });
+  _updateTreeTools();
+}
+/* JAG-428: the floating chat cluster holds the reveal-session control (visible with an
+   open session) plus the todo expand/collapse pair (shown only when groups exist). */
+function _updateTreeTools() {
+  const t = $("treeTools"); if (!t) return;
+  t.hidden = !sessionId;
+  const hasTodos = _allTodos().length > 0;
+  t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !hasTodos; });
+}
 let cursorEl = null;
 
 async function ensureToken() {
@@ -7135,9 +7144,6 @@ function updateSessBadge() {
   const on = !_panelShown('[data-col="sessions"]') && !!_activeTitle;
   b.hidden = !on;
   if (on) b.textContent = "\uD83D\uDDC2 " + _activeTitle;
-  // JAG-428: the "reveal in rail" control only makes sense with an open session.
-  const rb = $("revealSessionBtn");
-  if (rb) rb.hidden = !sessionId;
 }
 /* JAG-428: reveal the ACTIVE session in the left rail — from anywhere (typically the
    chat), even when its team group (or the whole panel) is collapsed. Opens the panel,
