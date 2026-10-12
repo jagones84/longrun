@@ -49,8 +49,9 @@ check("1c a .fgroup style is defined", ".fgroup > summary" in HTML, "")
 
 # --- routing -----------------------------------------------------------------
 la = _fn(HTML, "function _logAppend(")
-check("2a free content is routed into _freeAppend when no task scope is active",
-      "_freeAppend(el, chapter)" in la and "_activeScope" in la, "")
+check("2a free content is appended to the active free group or directly to "
+      "the log (no spurious new Free.N for non-user messages)",
+      "_freeKids()" in la and "_activeScope" in la and "$(\"log\").appendChild" in la, "")
 sc = _fn(HTML, "function _scope(")
 check("2b _scope() prefers the active task scope, then the free group",
       "_activeScope" in sc and "_freeKids()" in sc, "")

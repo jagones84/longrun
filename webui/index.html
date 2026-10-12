@@ -2071,17 +2071,32 @@ async function loadThreadTitles(sid) {
     _threadGroups = ((r && r.groups) || []).filter(g => g.kind === "free");
   } catch (e) { _threadGroups = []; }
 }
-/* JAG-431p: fill any gap in the rendered groups from the ledger — but ONLY when the
-   rendered and ledger free-group sequences have the SAME length (a compaction makes
-   them differ, and the ordinal then points at a group that is no longer on screen). */
+/* JAG-431r3: fill any gap in the rendered groups from the ledger. Strategy:
+   1. EXACT match by chapter gid (a group whose start message carries chapter
+      metadata with a gid gets the ledger title for THAT gid — safe, no
+      mislabeling).
+   2. For groups without a gid, fill from the ledger by position, but ONLY
+      when counts match (the original guard — after a compaction counts differ
+      and an ordinal could stamp an old group's title onto a new group).
+   The result: every rendered free group that CAN be titled gets titled, and
+   groups that genuinely can't be matched (e.g. a compaction-summary system
+   message that created a free group) stay as plain "Free.N" with no title. */
 function applyThreadTitles() {
   const log = $("log"); if (!log) return;
   const dets = [...log.querySelectorAll("details.fgroup")];
   const same = dets.length === _threadGroups.length;
+  // index ledger groups by gid for exact matching
+  const byGid = {};
+  (_threadGroups || []).forEach(g => { if (g && g.id) byGid[g.id] = g; });
   dets.forEach((det, i) => {
     const ch = det._chapter || {};
-    const lg = same ? (_threadGroups[i] || {}) : {};
+    // 1. exact match by gid (if the rendered group carries a chapter gid)
+    let lg = (ch.gid && byGid[ch.gid]) ? byGid[ch.gid] : null;
+    // 2. fallback: position match only when counts are identical
+    if (!lg && same) lg = _threadGroups[i] || {};
+    if (!lg) lg = {};
     det._chapter = {
+      gid: ch.gid || lg.id || "",
       title: ch.title || lg.title || "",
       summary: ch.summary || lg.summary || "",
       req_from: (ch.req_from != null ? ch.req_from
@@ -2144,7 +2159,13 @@ function _openSection(nid) {
 function _logAppend(el, chapter) {
   _openSection(_activeNodeId);
   if (_activeScope) { _activeScope.appendChild(el); return; }
-  _freeAppend(el, chapter);        // JAG-431g: free content lives in a Free.N group
+  // JAG-431r3: only USER messages create a new Free.N group. Assistant/system
+  // messages that arrive with no active free group are appended directly to the
+  // log — otherwise a compaction-summary system message would create a spurious
+  // untitled "Free.1" group that no ledger entry can title.
+  const k = _freeKids();
+  if (k) { k.appendChild(el); return; }
+  $("log").appendChild(el);
 }
 function _latestSection(nid) {
   const secs = _chatSections[nid] || [];
