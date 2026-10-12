@@ -23,6 +23,13 @@ All notable changes to Longrun are documented here. The format follows
   (5) **Baseline toolset** — native `python`, `process` (`list`) and `glob` tools. (6) **Local
   decision layer** — `model/decision.py` (Protocol + null/heuristic models, fail-open) with
   `config/decisions.yaml` (disabled by default) and hooks for speculative reads and route hints.
+- **WebUI rewind surface (JAG-426 follow-up), battery 149/149.** The session rail's ⋮ menu now offers
+  **⏪ Rewind…**, opening a dialog that lists the session's turn anchors (`GET /api/checkpoints?session=`
+  → `marks`) newest-first; picking one confirms and calls `POST /api/rewind`, then reloads the
+  transcript/plan. `openRewindDlg`/`closeRewindDlg`/`doRewind` + the `#rwDlg` markup/CSS are wired
+  through the `data-call` dispatcher and pinned by `v425`. Verified live end to end: the dialog listed
+  three anchors, a rewind reported "1 file(s) reverted · 61 event(s) dropped", and the harness journal
+  (only the files the harness itself wrote) was honoured.
 - **Vision input — image attachments now reach the model (JAG-417).** An image attached in the
   composer is sent to vision-capable LLMs as an OpenAI `image_url` content block (base64 data URL),
   not just a text note, so the model actually sees the image. `config/providers.yaml` flags the DGX

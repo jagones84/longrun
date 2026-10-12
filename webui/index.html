@@ -699,6 +699,14 @@
   #newSessDlg { position: fixed; z-index: 40; top: 50%; left: 50%; transform: translate(-50%,-50%);
     width: min(460px, 92vw); padding: 16px; }
   #newSessDlg[hidden] { display: none; }
+  /* JAG-426: rewind dialog — restore a session to before one of its user turns */
+  #rwBackdrop { position: fixed; inset: 0; z-index: 43; background: rgba(0,0,0,.5); }
+  #rwBackdrop[hidden] { display: none; }
+  #rwDlg { position: fixed; z-index: 44; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: min(520px, 94vw); padding: 16px; background: var(--menubg); }
+  #rwDlg[hidden] { display: none; }
+  #rwList { max-height: 46vh; overflow: auto; margin-top: 8px; }
+  #rwList button { display: block; width: 100%; text-align: left; margin-bottom: 4px; font-size: 12px; }
   /* JAG-121: folder picker (file-browser) for choosing the session workspace */
   #dirBackdrop { position: fixed; inset: 0; z-index: 41; background: rgba(0,0,0,.5); }
   #dirBackdrop[hidden] { display: none; }
@@ -1860,6 +1868,17 @@
   </div>
   <div id="dirResult" class="remaining u-mt6"></div>
 </div>
+<div id="rwBackdrop" hidden data-call="closeRewindDlg"></div>
+<div id="rwDlg" class="card" hidden>
+  <h2 style="margin:0 0 6px">Rewind session</h2>
+  <div class="remaining">Restore the plan, task list, transcript and the files the harness wrote
+  back to just BEFORE one of your messages. Your own hand-edits are never touched.</div>
+  <div id="rwList"></div>
+  <div class="u-df u-g8 u-mt10 u-jcfe">
+    <button class="ghost" data-call="closeRewindDlg">cancel</button>
+  </div>
+  <div id="rwResult" class="remaining u-mt6"></div>
+</div>
 <div id="pickBackdrop" class="smback" hidden data-call="closePick"></div>
 <div id="pickModal" class="smodal" hidden role="dialog" aria-modal="true" aria-labelledby="pickTitle">
   <div class="pick-hd">
@@ -3007,7 +3026,7 @@ async function openSessMenu(row, s, ag) {
   const m = document.createElement("div");
   m.className = "sess-menu";
   const pinned = _pinned().includes(s.id);
-  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="role">Edit role (ROLE.md)</button><button data-a="clear">Clear chat + tasks</button><button data-a="del" class="danger">Delete session</button>`;
+  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="role">Edit role (ROLE.md)</button><button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button><button data-a="del" class="danger">Delete session</button>`;
   row.appendChild(m);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
@@ -3015,6 +3034,7 @@ async function openSessMenu(row, s, ag) {
     if (a === "pin") { _togglePin(s.id); }
     if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
     if (a === "role") { let rp = null; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; } catch (e) {} if (!rp) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
+    if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
     if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
       if (ag) { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
@@ -3226,6 +3246,39 @@ async function newSession() {
   $("newSessDlg").hidden = false; $("nsBackdrop").hidden = false; $("nsTitle").focus();
 }
 function closeNewSess() { $("newSessDlg").hidden = true; $("nsBackdrop").hidden = true; }
+/* JAG-426: rewind surface — pick one of the session's user-message anchors and
+   restore the plan/tasks/transcript + the files the HARNESS wrote back to just
+   BEFORE that message. The user's own hand-edits are never touched. */
+async function openRewindDlg(sid) {
+  const list = $("rwList"), res = $("rwResult");
+  list.innerHTML = "<div class=\"remaining\">loading…</div>"; res.textContent = "";
+  $("rwBackdrop").hidden = false; $("rwDlg").hidden = false;
+  let data = {};
+  try { data = await api("GET", "/api/checkpoints?session=" + encodeURIComponent(sid)); } catch (e) {}
+  const marks = (data && data.marks) || [];
+  if (!marks.length) { list.innerHTML = "<div class=\"remaining\">no turn anchors yet — send a message first.</div>"; return; }
+  list.innerHTML = "";
+  marks.slice().reverse().forEach(mk => {
+    const idx = mk.msg_index;
+    const ts = mk.ts ? new Date(mk.ts * 1000).toLocaleString() : "";
+    const b = document.createElement("button");
+    b.innerHTML = `msg #${idx} &nbsp;·&nbsp; ${esc(mk.label || "turn")} <span class="remaining">${ts}</span>`;
+    b.onclick = () => doRewind(sid, idx);
+    list.appendChild(b);
+  });
+}
+function closeRewindDlg() { $("rwDlg").hidden = true; $("rwBackdrop").hidden = true; }
+async function doRewind(sid, idx) {
+  if (!(await confirmDelete("rewind session to just BEFORE message #" + idx + "?\nplan, tasks, transcript and the harness's file writes after it will be rolled back."))) return;
+  const res = $("rwResult"); res.textContent = "rewinding…";
+  let r = {};
+  try { r = await api("POST", "/api/rewind", { session: sid, msg_index: idx }); } catch (e) { r = { error: String(e) }; }
+  if (r.error || r.ok === false) { res.textContent = "error: " + (r.error || "rewind failed"); return; }
+  const ws = r.workspace || {}, ev = r.events || {};
+  res.textContent = `done — restored to before #${idx} · ${(ws.restored || []).length} file(s) reverted · ${ev.removed || 0} event(s) dropped`;
+  if (sid === sessionId) { $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree(); loadHistory(); loadPlan(); }
+  loadSessions();
+}
 async function createNewSession() {
   const title = $("nsTitle").value.trim() || ("session " + new Date().toLocaleTimeString());
   const p = new URLSearchParams(); p.set("title", title);
