@@ -233,8 +233,6 @@
   .task.fresh { animation: pop .5s ease; border: 1px dashed rgba(181,108,255,.4); }
   @keyframes pop { from { transform: scale(.96); opacity: .3; } }
   .remaining { color: var(--dim); font-size: 11px; }
-  .agentline { font-size: 12px; color: var(--dim); padding: 4px 0; }
-  .agentline b { color: var(--acc); }
 
   /* sessions */
   /* JAG-389: the session NAME goes on its OWN full-width line BELOW the badges,
@@ -1341,7 +1339,6 @@
           <div class="more-wrap">
             <button class="ghost" id="moreBtn" title="more actions" aria-haspopup="true" aria-expanded="false">⋯</button>
             <div id="moreMenu" class="card" hidden>
-              <button class="ghost mi" id="agentBtn" title="run the agent loop on the current plan">⚡ run agent</button>
               <button class="ghost mi" id="dockBtn" data-call="SparkEditorToggle" title="open/close the editor (next to the chat)">🗔 editor</button>
               <button class="ghost mi" data-call="compactNow" title="summarize this session now to free up context">🗜 compact</button>
               <button class="ghost mi" data-call="clearSession" title="reset this session: wipe chat history + task list">↺ reset session</button>
@@ -2067,11 +2064,14 @@ function rewindFreeGroup(n) {
    user REQUEST + its answer, so titles read "request to …" (JAG-431m). */
 function nameThreads() {
   if (!sessionId) return;
-  send("Give every Free.* group in this session a short title of the form "
-     + "\"request to <summary of the user's ask>\" (<= 8 words, in English), based on "
-     + "its real content. Use the `chapters` tool: action=list to see the groups, then "
-     + "action=title id=<gN> title=\"request to ...\" for each FREE group without a "
-     + "title. Do not touch task/todo groups.");
+  send("Give every Free.* group in this session a title AND a one-line summary, based "
+     + "on its real content. Title form: \"request to <summary of the user's ask>\" "
+     + "(<= 8 words, English). Summary: ONE line saying what was asked and what was "
+     + "done/decided (the justification, the free-group equivalent of a todo's "
+     + "evidence). Use the `chapters` tool: action=list to see the groups (ids + their "
+     + "current title/summary; for todos it shows the evidence), then action=title "
+     + "id=<gN> title=\"request to ...\" summary=\"...\" for every FREE group missing "
+     + "one. Do not touch task/todo groups.");
 }
 function _scope() { return _activeScope || _freeKids() || $("log"); }
 function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id === id) || null; }
@@ -4603,8 +4603,6 @@ function improveCard(d) {
 }
 
 /* ---- agent loop (tool-enabled, SSE) ---- */
-let activeRunId = null;
-let activeSSE = null;            // agent-run stream only
 /* JAG-168: a chat turn belongs to ONE session. `turnSSE` maps each session to
    its live EventSource and `runningSessions` marks the busy ones, so switching
    to another session never aborts a turn nor paints its output into the wrong
@@ -4725,44 +4723,14 @@ function stopRun() {
     who("ai", "⏹ stop requested…");
   }
   if (sessionId && !turnSSE[sessionId]) attachIfRunning(sessionId);
-  if (activeRunId) api("POST", "/api/agent/control", { runId: activeRunId, action: "abort" }).catch(() => {});
-  if (activeSSE) { try { activeSSE.close(); } catch (e) {} activeSSE = null; }
-  activeRunId = null;
 }
-function runAgent(goal) {
-  if (!goal) return;
-  who("user", "⚡ agent: " + goal); curThink = curAns = null;
-  const es = new EventSource("/api/agent/run?goal=" + encodeURIComponent(goal) + "&max_steps=6"
-                             + (currentModel() ? "&model=" + encodeURIComponent(currentModel()) : "")
-                             + (authQS() ? "&" + authQS() : ""));
-  activeSSE = es; activeRunId = null;
-  es.addEventListener("agent.start", e => { try { activeRunId = JSON.parse(e.data).run; } catch (err) {} });
-  es.addEventListener("agent.iteration", e => { const d = JSON.parse(e.data);
-    const l = document.createElement("div"); l.className = "agentline";
-    l.innerHTML = `── iteration <b>${d.i}/${d.of}</b> ──`; $("log").appendChild(l); scroll(); });
-  es.addEventListener("agent.think", e => { const d = JSON.parse(e.data);
-    if (d.channel === "think") { pushThink(d.text); scroll(); } });
-  es.addEventListener("agent.thought", e => { const d = JSON.parse(e.data);
-    const l = document.createElement("div"); l.className = "agentline";
-    l.innerHTML = `🧠 <b>${esc(d.action)}</b> — ${esc((d.thought || "").slice(0, 160))}`;
-    $("log").appendChild(l); scroll(); });
-  es.addEventListener("agent.observation", e => { const d = JSON.parse(e.data);
-    const l = document.createElement("div"); l.className = "agentline";
-    l.textContent = "👁 " + d.observation; $("log").appendChild(l); scroll(); });
-  es.addEventListener("tool.call", e => { const d = JSON.parse(e.data);
-    toolCard(d.tool, d.args);
-    const l = document.createElement("div"); l.className = "agentline";
-    l.innerHTML = `🛠 <b>${esc(d.tool)}</b> approval=${esc(d.approval)}`; $("log").appendChild(l); scroll(); });
-  es.addEventListener("tool.result", e => updateToolCard(JSON.parse(e.data)));
-  es.addEventListener("agent.paused", () => { const l = document.createElement("div");
-    l.className = "agentline"; l.textContent = "⏸ run paused (awaiting approval / operator)";
-    $("log").appendChild(l); loadApprovals(); scroll(); });
-  es.addEventListener("agent.aborted", e => { const d = JSON.parse(e.data);
-    who("ai", "⛔ run aborted by the operator" + (d.run ? " (" + d.run + ")" : "")); });
-  es.addEventListener("agent.finish", e => { const d = JSON.parse(e.data);
-    who("ai", "🏁 " + (d.summary || "done")); es.close(); activeSSE = null; activeRunId = null; loadPlan(); loadGraph(); loadCtx(); flushQueue(); });
-  es.addEventListener("error", () => { es.close(); activeSSE = null; activeRunId = null; flushQueue(); });
-}
+/* JAG-431o: the ⚡ "run agent" UI is REMOVED. It drove the legacy /api/agent/run loop
+   (a separate, older agent loop with NO todo enforcement and a graph keyed by the RUN
+   id, so its todos never showed in the session Plan panel). The normal chat turn
+   already does everything it did, better: inline tools + model-authored todos + the
+   keepgoing/JAG-402 close-todo enforcement. The /api/agent/run ENDPOINT stays (it is a
+   documented headless entry point for the CLI, the MCP bridge and the benchmarks), it
+   is simply no longer a chat-menu action. */
 
 /* ---- feed ---- */
 let _feedN = 0;   // JAG-403g: feed events seen (drives the Feed tab summary)
@@ -7518,7 +7486,6 @@ function _growInp() {
 }
 $("inp").addEventListener("input", _growInp);
 $("sessInp").addEventListener("keydown", e => { if (e.key === "Enter") newSession(); });
-$("agentBtn").onclick = () => { const g = $("inp").value.trim() || "make progress on the current plan"; $("inp").value = ""; $("inp").style.height = ""; runAgent(g); };
 $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {

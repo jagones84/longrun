@@ -52,7 +52,8 @@ sid = "v438-sess-1"
 stores.save_session({"id": sid, "title": "t", "created": time.time(), "messages": []})
 sess = stores.load_session(sid)
 g = taskgraph.ensure(sid)
-n1 = taskgraph.add_node(g, "search the docs", status="todo")
+n1 = taskgraph.add_node(g, "search the docs", status="done",
+                        evidence="ran the search; 3 hits recorded")
 taskgraph.save(g)
 
 stores.append_message(sess, "user", "free chat one opener")
@@ -116,6 +117,22 @@ check("4f the title survives a transcript wipe", th.get(sid, fid)["title"] == "O
 r = T.execute("chapters", {"session": sid, "action": "read", "id": fid}, run_id=sid)
 check("4g read surfaces the request line", "request: free chat one opener" in (r.get("stdout") or ""),
       (r.get("stdout") or "")[:70])
+r = T.execute("chapters", {"session": sid, "action": "title", "id": fid,
+                           "title": "Opener", "summary": "asked for a free chat; answered"},
+              run_id=sid)
+check("4h title + summary (justification) are stored",
+      r.get("ok") is True and (th.get(sid, fid).get("summary") or "").startswith("asked for a free chat"))
+r = T.execute("chapters", {"session": sid, "action": "read", "id": fid}, run_id=sid)
+check("4i read returns the title + summary",
+      "summary: asked for a free chat" in (r.get("stdout") or "")
+      and "title: Opener" in (r.get("stdout") or ""), (r.get("stdout") or "")[:80])
+r = T.execute("chapters", {"session": sid, "action": "list"}, run_id=sid)
+check("4j list carries a TODO's justification (its evidence)",
+      "why: \u201cran the search" in (r.get("stdout") or ""), (r.get("stdout") or "")[:0])
+r = T.execute("chapters", {"session": sid, "action": "read", "id": task["id"]}, run_id=sid)
+check("4k read shows a todo's evidence as its justification",
+      "justification (evidence)" in (r.get("stdout") or "")
+      and "ran the search; 3 hits recorded" in (r.get("stdout") or ""))
 
 # ---- 5. tool registration + policy -------------------------------------------
 names = {t["name"] for t in registry.catalog() if t.get("name")}
@@ -125,6 +142,8 @@ check("5b chapters declares the 3 actions",
       == ["list", "read", "title"])
 check("5c chapters is approval=auto (read-only + its own ledger)",
       (registry.tool_spec("chapters") or {}).get("approval") == "auto")
+check("5d the schema exposes a summary for a free group's justification",
+      "summary" in ((registry.TOOL_SCHEMAS.get("chapters") or {}).get("properties") or {}))
 
 # ---- 6. WebUI + API wiring ---------------------------------------------------
 idx = _read("webui/index.html")
@@ -145,8 +164,8 @@ check("7c free groups carry a rewind control",
       'class="fgroup-rw"' in idx and "function rewindFreeGroup(" in idx)
 check("7d the free rewind reuses the per-turn rewind API",
       "doRewind(sessionId, g.req_from)" in idx)
-check("7e the ledger render explains the free-group naming",
-      "user REQUEST plus the answer" in _read("src/longrun/memory/threads.py"))
+check("7e the ledger render says every group carries its justification",
+      "carries its justification" in _read("src/longrun/memory/threads.py"))
 
 # ---- 8. an older-schema ledger is rebuilt on read (version upgrade) -----------
 import json as _json   # noqa: E402
@@ -158,6 +177,8 @@ up = th.outline(sid2)
 check("8a a pre-version ledger is rebuilt with the new fields",
       bool(up) and up[0].get("req_from") == 0 and "backfilled free one" in (up[0].get("req") or ""),
       up)
+check("8b a schema rebuild PRESERVES an agent-set title (no silent loss)",
+      bool(up) and up[0].get("title") == "stale", (up[0].get("title") if up else None))
 
 print("---")
 okc = sum(results)

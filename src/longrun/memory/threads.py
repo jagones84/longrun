@@ -79,7 +79,7 @@ def _open(doc, kind, node, idx):
     doc["seq"] = int(doc.get("seq", 0)) + 1
     g = {"id": "g%d" % doc["seq"], "kind": kind, "node": node,
          "from": idx, "to": idx, "items": 0, "title": None, "digest": "",
-         "req": None, "req_from": None, "ts": round(time.time(), 3)}
+         "summary": None, "req": None, "req_from": None, "ts": round(time.time(), 3)}
     doc["groups"].append(g)
     return g
 
@@ -169,6 +169,28 @@ def _backfill(sess):
 # ------------------------------------------------------------------- public --
 
 
+def _carry_meta(old, new):
+    """Keep the agent-set title/summary across a schema REBUILD.
+
+    Those fields ARE the point of the ledger, so a version upgrade must never silently
+    drop them. Matched by ordinal + kind — a rebuild re-derives the same chronological
+    order, so the i-th group of a kind maps to the i-th of the same kind.
+    """
+    if not old:
+        return
+    og, ng = (old.get("groups") or []), (new.get("groups") or [])
+    for i, g in enumerate(ng):
+        if i >= len(og):
+            break
+        o = og[i]
+        if not isinstance(o, dict) or o.get("kind") != g.get("kind"):
+            continue
+        if o.get("title") and not g.get("title"):
+            g["title"] = o["title"]
+        if o.get("summary") and not g.get("summary"):
+            g["summary"] = o["summary"]
+
+
 def _doc_for(sid, sess=None):
     """Load the ledger, (re)building it when absent or written by an older schema.
 
@@ -186,7 +208,9 @@ def _doc_for(sid, sess=None):
             sess = None
     if not sess:
         return doc   # no transcript to rebuild from — keep whatever we had
+    old = doc
     doc = _backfill(sess)
+    _carry_meta(old, doc)
     _save(doc)
     return doc
 
@@ -234,9 +258,20 @@ def get(sid, gid):
     return None
 
 
-def set_title(sid, gid, title):
-    """Set (or clear) the TITLE of a FREE group. Returns (ok, group|error)."""
+def node_for(sid, node_id):
+    """The task-graph node behind a TASK group (label, status, evidence), or None."""
+    return _nodes_map(sid).get(node_id) if node_id else None
+
+
+def set_title(sid, gid, title, summary=None):
+    """Set a FREE group's TITLE and/or SUMMARY (its justification).
+
+    `summary` is the free-group equivalent of a todo's evidence: a short "what/why it
+    was about" note — stored in the durable ledger, so the agent can recollect it after
+    any number of compactions. Returns (ok, group|error).
+    """
     title = str(title or "").strip()[:200]
+    summ = None if summary is None else str(summary).strip()[:600]
     with LOCK:
         doc = _doc_for(sid)
         if doc is None:
@@ -244,9 +279,13 @@ def set_title(sid, gid, title):
         for g in doc.get("groups", []):
             if g.get("id") == gid:
                 if g.get("kind") != "free":
-                    return False, ("group %s is a TASK group — todos already carry "
-                                   "their node label; only free groups need a title" % gid)
-                g["title"] = title or None
+                    return False, ("group %s is a TASK group — a todo already carries "
+                                   "its node label + evidence; only free groups take a "
+                                   "title/summary" % gid)
+                if title:
+                    g["title"] = title
+                if summary is not None:
+                    g["summary"] = summ or None
                 _save(doc)
                 return True, g
         return False, "unknown group %r (call action=list for the ids)" % gid
@@ -286,22 +325,38 @@ def truncate(sid, upto_idx):
         return len(groups) - len(kept)
 
 
-def _node_labels(sid):
+def _nodes_map(sid):
+    """{node id: node} for the session's task graph (the todos' labels + JUSTIFICATION)."""
     try:
         from longrun.plan import taskgraph
         g = taskgraph.load(sid) or {}
-        return {n.get("id"): (n.get("label") or "") for n in (g.get("nodes") or [])}
+        return {n.get("id"): n for n in (g.get("nodes") or [])}
     except Exception:  # noqa: BLE001
         return {}
 
 
+def _why(node):
+    """A todo's justification: its latest evidence text, else its superseded reason."""
+    ev = [e for e in ((node or {}).get("evidence") or []) if (e.get("text") or "").strip()]
+    if ev:
+        return " \u00b7 why: \u201c%s\u201d" % str(ev[-1]["text"]).replace("\n", " ")[:140]
+    reason = (node or {}).get("reason")
+    if reason:
+        return " \u00b7 reason: \u201c%s\u201d" % str(reason).replace("\n", " ")[:140]
+    return ""
+
+
 def render(sid, limit=200):
-    """The whole thread as a compact ordered text block (for the `chapters` tool)."""
+    """The whole thread as a compact ordered text block (for the `chapters` tool).
+
+    Carries the JUSTIFICATION of every group (a todo's evidence / a free group's
+    summary), so the agent can recollect WHY after any number of compactions.
+    """
     groups = outline(sid)
     if not groups:
         return ("THREAD (this session): no groups yet — the session is empty or brand "
                 "new. Groups appear as you chat and take on tasks.")
-    labels = _node_labels(sid)
+    nodes = _nodes_map(sid)
     show = groups[-int(limit):] if limit else groups
     base = len(groups) - len(show)
     lines = ["THREAD (this session) — %d group(s), chronological "
@@ -310,19 +365,26 @@ def render(sid, limit=200):
         where = "msg %s-%s \u00b7 %s item%s" % (g.get("from"), g.get("to"),
                                                 g.get("items"),
                                                 "" if g.get("items") == 1 else "s")
-        title = (" title=%r" % g["title"]) if g.get("title") else ""
         if g.get("kind") == "task":
-            lbl = labels.get(g.get("node")) or ""
-            lines.append("  #%d task %s  [%s]  <%s \u00b7 id=%s>%s"
-                         % (i, g.get("node"), lbl, where, g.get("id"), title))
+            n = nodes.get(g.get("node")) or {}
+            lines.append("  #%d task %s [%s] %s%s  <%s \u00b7 id=%s>"
+                         % (i, g.get("node"), n.get("status") or "?",
+                            (n.get("label") or "").replace("\n", " ")[:110],
+                            _why(n), where, g.get("id")))
         else:
             req = (g.get("req") or "").strip()
             dig = (g.get("digest") or "").strip()
             body = req or dig
-            lines.append("  #%d free  %s  <%s \u00b7 id=%s>%s"
+            extra = ""
+            if g.get("title"):
+                extra += " \u00b7 title=\u201c%s\u201d" % str(g["title"])[:80]
+            if g.get("summary"):
+                extra += " \u00b7 summary=\u201c%s\u201d" % str(g["summary"]).replace("\n", " ")[:200]
+            lines.append("  #%d free %s%s  <%s \u00b7 id=%s>"
                          % (i, "\u201c%s\u201d" % body if body else "(no text yet)",
-                            where, g.get("id"), title))
-    lines.append("Use action=read id=<gN> for a group's full content. A free group is a "
-                 "user REQUEST plus the answer it got: name it with action=title id=<gN> "
-                 "title=\"request to <short summary of the user's ask>\".")
+                            extra, where, g.get("id")))
+    lines.append("Every group carries its justification (a task's evidence / a free "
+                 "group's summary). Use action=read id=<gN> for the full record. A free "
+                 "group is a user REQUEST + the answer it got: name it with action=title "
+                 "id=<gN> title=\"request to <short ask>\" summary=\"<what/why, one line>\".")
     return "\n".join(lines)

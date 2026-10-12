@@ -7,6 +7,16 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`chapters` now carries every group's JUSTIFICATION; free groups get a summary (JAG-431o), battery 164/164.**
+  Recalling a thread without its *why* is useless in a long run, so the tool now surfaces metadata that was
+  already saved but invisible to the agent: a TODO's `evidence` (the text the model writes when it closes the
+  step — durable in `data/graphs/<sid>.json`, never touched by compaction) and a FREE group's new `summary`.
+  `list` prints `#2 task n1 [done] label · why: "<evidence>"` for tasks and `· title=… · summary=…` for free
+  groups; `read id=<gN>` returns the full record (all evidence entries / title+summary+request+content);
+  `title id=<gN> title=… summary=…` stores a free group's name AND its one-line justification in the
+  compaction-proof ledger (the free-group equivalent of a todo's evidence). A schema rebuild now PRESERVES
+  agent-set titles/summaries (`_carry_meta`), so a version upgrade can never silently drop them. The 🏷 prompt
+  asks for both. Pinned by `v438` (35/35).
 - **Free threads get rewind + "request to …" titles; full-width chat (JAG-431l/m), battery 164/164.** (m) A free
   thread is a user **request** plus its answer, so it now behaves like a todo in the rewind feature: the ledger
   records the request text and its message index (`req` / `req_from`), and each `Free.N` group carries a **⏮**
@@ -184,6 +194,13 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Changed
+- **The ⚡ "run agent" chat action is REMOVED (JAG-431o), battery 164/164.** The ⋯ menu item drove the legacy
+  `/api/agent/run` loop — a separate, older agent loop with **no todo enforcement** and a task graph keyed by
+  the RUN id (so its todos never appeared in the session's Plan panel). The normal chat turn already does the
+  same work, better: inline tools + model-authored todos + the keepgoing/JAG-402 close-todo enforcement. The
+  menu item, its handler, the `runAgent()` renderer (`agentline`/`activeSSE`) and its CSS are gone; the
+  **`/api/agent/run` endpoint stays** (documented headless entry point for the CLI, the MCP bridge and the
+  benchmarks). Pinned by `v306`; `v226` re-pointed (the removed renderer was its old XSS site).
 - **Composer one-row + send⇄stop, Control anchor fix, team scope, todo→constellation (JAG-424).**
   The composer toolbar is now a single row: the LLM model picker compresses (max-width 160px, min 96px)
   and every control no longer wraps on desktop; the separate **stop button is removed** — while the

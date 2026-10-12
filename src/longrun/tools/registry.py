@@ -233,18 +233,20 @@ TOOL_SCHEMAS = {
     "chapters": {
         "description": ("THIS session's THREAD — every chat GROUP in order (task = a "
                         "todo node; free = 'Free.N' chat with no todo behind it). "
-                        "action=list -> the ordered outline (ids, ranges, previews); "
-                        "action=read id=<gN> -> a group's preserved content (the harness "
-                        "files each group into a durable ledger BEFORE compaction erases "
-                        "the transcript, so an old free thread stays readable); "
-                        "action=title id=<gN> title=\"…\" -> name a FREE group: it is a "
-                        "user request + its answer, so title it \"request to <short ask>\". "
-                        "Read-only except title."),
+                        "list -> the ordered outline (ids, ranges, previews) WITH each "
+                        "group's JUSTIFICATION (a todo's evidence / a free group's "
+                        "summary), so you can recall WHY even after many compactions; "
+                        "read id=<gN> -> a group's full record; title id=<gN> "
+                        "title=\"…\" summary=\"…\" -> name a FREE group (it is a user "
+                        "request + its answer, so title it \"request to <short ask>\" "
+                        "and give a one-line summary). Read-only except title."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["list", "read", "title"], "default": "list"},
             "id": {"type": "string", "description": "group id (gN) for read/title"},
             "title": {"type": "string", "description": "new title (action=title)"},
+            "summary": {"type": "string",
+                        "description": "one-line justification for a free group (action=title)"},
             "session": {"type": "string",
                         "description": "session id (default: this run's session)"},
         },

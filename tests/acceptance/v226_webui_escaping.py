@@ -36,9 +36,11 @@ check("esc() escapes the single quote (attribute break-out)", "&#39;" in src)
 check("toolCard data-tool= is escaped", 'data-tool="${name}"' not in src)
 check("toolCard tool-name text is escaped",
       '<span class="tc-name">${name}</span>' not in src)
-check("agent.thought escapes action + thought",
-      "esc(d.action)" in src and "esc((d.thought" in src)
-check("tool.call line escapes the tool name", "${esc(d.tool)}" in src)
+# JAG-431o: the ⚡ run-agent chat UI (which rendered `agent.thought`/`tool.call` lines
+# through innerHTML) was REMOVED — the XSS site itself is gone, so the two templates it
+# pinned can no longer exist. Assert the removal instead of the old escaping.
+check("the removed run-agent lines (the old XSS site) are GONE",
+      "agent.thought" not in src and "agent.observation" not in src and "agentline" not in src)
 check("showNodeDetail escapes the evidence text", "${esc(ev)}" in src)
 check("finished-toast escapes the session title", 'esc(name || "session")' in src)
 check("approvals panel escapes tool name + summary",

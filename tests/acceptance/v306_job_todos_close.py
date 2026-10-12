@@ -69,6 +69,15 @@ check("plan.incomplete counts only TRULY-open steps (not superseded)",
 check("the rejected external sweep is gone",
       "def _close_job_todos" not in jobs and "todos_closed" not in jobs)
 
+# --- the legacy ⚡ "run agent" chat action is gone (JAG-431o) ------------------
+idx = read("webui", "index.html")
+check("the ⚡ run agent menu item + its handler are REMOVED",
+      'id="agentBtn"' not in idx and "runAgent(" not in idx and "$(\"agentBtn\")" not in idx)
+check("no dead leftover of the removed agent-run UI",
+      "agentline" not in idx and "activeSSE" not in idx and "activeRunId" not in idx)
+check("the documented /api/agent/run ENDPOINT is kept (CLI/MCP/benchmark surface)",
+      "/api/agent/run" in read("src", "longrun", "core/api_v02.py"))
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

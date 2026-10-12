@@ -1095,19 +1095,38 @@ def _chapters(args, run_id):
         g = th.get(sid, gid)
         if not g:
             return {"ok": False, "error": "unknown group %r (action=list for ids)" % gid}
-        head = "%s %s %s [msg %s-%s]" % (gid, g["kind"], g.get("node") or "",
-                                         g.get("from"), g.get("to"))
-        body = g.get("digest") or "(no text captured)"
-        if g.get("req"):
-            body = "request: %s\n%s" % (g["req"], body)
-        return {"ok": True, "exit_code": 0, "group": g, "stdout": head + "\n" + body}
+        lines = ["%s %s %s [msg %s-%s]" % (gid, g["kind"], g.get("node") or "",
+                                           g.get("from"), g.get("to"))]
+        if g.get("kind") == "task":
+            n = th.node_for(sid, g.get("node")) or {}
+            lines.append("todo: %s [%s]" % (n.get("label") or "", n.get("status") or "?"))
+            if n.get("reason"):
+                lines.append("reason: %s" % str(n["reason"]).replace("\n", " ")[:300])
+            ev = [e for e in (n.get("evidence") or []) if (e.get("text") or "").strip()]
+            lines.append("justification (evidence):")
+            lines += ["  - %s" % str(e["text"]).replace("\n", " ")[:300] for e in ev[-5:]] \
+                or ["  (none recorded yet)"]
+        else:
+            if g.get("title"):
+                lines.append("title: %s" % g["title"])
+            if g.get("summary"):
+                lines.append("summary: %s" % str(g["summary"]).replace("\n", " ")[:400])
+            if g.get("req"):
+                lines.append("request: %s" % g["req"])
+            lines.append("content: %s" % (g.get("digest") or "(no text captured)"))
+        return {"ok": True, "exit_code": 0, "group": g, "stdout": "\n".join(lines)}
     if action in ("title", "name", "rename"):
-        title = args.get("title") or args.get("name") or args.get("text") or ""
-        ok, res = th.set_title(sid, gid, title)
+        title = args.get("title") or args.get("name") or ""
+        summary = args.get("summary")
+        if summary is None:
+            summary = args.get("note")
+        ok, res = th.set_title(sid, gid, title, summary=summary)
         if not ok:
             return {"ok": False, "error": res, "backend": "host", "sandboxed": False}
-        return {"ok": True, "exit_code": 0, "group": res,
-                "stdout": "titled %s -> %r" % (gid, (res or {}).get("title")),
+        out = "titled %s -> %r" % (gid, (res or {}).get("title"))
+        if summary is not None:
+            out += " (summary set)"
+        return {"ok": True, "exit_code": 0, "group": res, "stdout": out,
                 "backend": "host", "sandboxed": False}
     return {"ok": False, "error": "unknown action %r \u2014 use list|read|title" % action}
 
