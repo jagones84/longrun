@@ -249,21 +249,52 @@ def _provider_skills(sess, ws, ctx):
         return ""
 
 
+# JAG-447: the memory section injected into every prompt is a BOUNDED INDEX, not
+# a dump. Each line is truncated and the whole block is capped, so accumulated
+# memory can never balloon the system prompt (the model recalls more on demand
+# with the `memory` tool). This keeps the segregation below while staying within
+# the same prompt budget as before.
+_MEM_PROMPT_MAX = 800
+_MEM_ITEM_CHARS = 120
+
+
 def _provider_memory(sess, ws, ctx):
-    block = ""
+    """JAG-447: memory is injected in TWO segregated, clearly-labelled buckets —
+    durable USER facts (``memory.store``) and SELF-distilled lessons
+    (``agent.note``) — so neither the model nor a human reading the context can
+    confuse what the user said with what the harness inferred on its own. The
+    whole section is hard-bounded (``_MEM_PROMPT_MAX``).
+    """
+    parts = []
     try:
         from longrun.memory import memory
-        lessons = memory.governed_query(kind="agent.note", limit=6)
-        instr = ["- " + str(r.get("content", "")).strip()
-                 for r in lessons if str(r.get("content", "")).strip()]
-        if instr:
-            block = "\nLessons from past sessions (self-improvement):\n" + "\n".join(instr)
+
+        def _items(kind, limit):
+            out = []
+            for r in memory.governed_query(kind=kind, limit=limit):
+                c = " ".join(str(r.get("content", "")).split())
+                if c:
+                    out.append("- " + (c[:_MEM_ITEM_CHARS] + "…"
+                                       if len(c) > _MEM_ITEM_CHARS else c))
+            return out
+
+        facts = _items("memory.store", 3)
+        lessons = _items("agent.note", 5)
+        if facts:
+            parts.append("## Memory \u2014 user facts (told by the user; trust these)\n"
+                         + "\n".join(facts))
+        if lessons:
+            parts.append("## Memory \u2014 self-distilled lessons (your own past "
+                         "reflections; verify before relying)\n" + "\n".join(lessons))
         core = memory.core_read().strip()
         if core:
-            block += ("\n\n## Core memory (always visible \u2014 edit with "
-                      "memory{action:'set_core'})\n" + core)
+            parts.append("## Core memory (always visible \u2014 edit with "
+                         "memory{action:'set_core'})\n" + core)
     except Exception:  # noqa: BLE001
         pass
+    block = "\n\n".join(parts)
+    if len(block) > _MEM_PROMPT_MAX:
+        block = block[:_MEM_PROMPT_MAX] + "\n… [memory index truncated — use the `memory` tool to recall more]"
     return block
 
 

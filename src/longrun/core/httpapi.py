@@ -309,6 +309,7 @@ _ATTACH_KINDS = (
     "graph.node.added", "graph.node.updated",
     "plan.incomplete", "plan.continuing", "plan.stopped", "hitl.request",
     "verify.run", "run.metrics", "bestofn.chosen", "improve.proposal", "cost.usage",
+    "improve.nudge", "improve.verify", "improve.evolve", "improve.archived",  # JAG-447
 )
 
 
@@ -1303,6 +1304,27 @@ class Handler(BaseHTTPRequestHandler):
             # JAG-128B: list of self-improvement proposals for the WebUI card.
             from longrun.util import improve as improve_mod
             return self._send(200, {"proposals": improve_mod.list_proposals()})
+        if path == "/api/improvement":
+            # JAG-447: aggregated self-improvement view for the WebUI panel —
+            # proposals (each pending one with a DIFF preview of what approving
+            # would append), the audit ledger changelog, and the memory
+            # provenance split (auto-generated vs. user-authored).
+            from longrun.util import improve as improve_mod
+            props = improve_mod.list_proposals()
+            for p in props:
+                if p.get("status") == "pending":
+                    p["preview"] = improve_mod.diff_preview(p)
+            try:
+                from longrun.memory import memory as memory_mod
+                mem = memory_mod.provenance()
+            except Exception:  # noqa: BLE001 — the panel must still load
+                mem = {}
+            return self._send(200, {
+                "proposals": props,
+                "ledger": improve_mod.ledger_tail(60),
+                "memory": mem,
+                "origins": list(improve_mod.ORIGINS),
+            })
         if path == "/api/sessions":
             return self._send(200, {"sessions": list_sessions()})
         if path == "/api/sessions/new":

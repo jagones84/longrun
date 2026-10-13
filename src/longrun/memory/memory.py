@@ -121,7 +121,10 @@ def store(kind, content, **meta):
 def _render_md(rec):
     """Render a record as a multi-line markdown block."""
     lines = ["---"]
-    for key in ("mid", "ts", "kind", "session", "run_id", "source",
+    # JAG-447: `origin` is the provenance/segregation key (user | agent |
+    # reflect | mining | harness); rendered so recall and the WebUI can tell
+    # auto-generated knowledge from what the user actually said.
+    for key in ("mid", "ts", "kind", "session", "run_id", "source", "origin",
                 "expires_ts", "target", "tags", "model", "tool", "score"):
         val = rec.get(key)
         if val is not None:
@@ -636,6 +639,36 @@ def health():
     return {"total": len(recs), "stores": len(stores), "expired": expired,
             "invalidated": invalidated, "no_source": no_source,
             "invalid_targets": sorted(bad)[:20]}
+
+
+# JAG-447: kinds the HARNESS writes on its own (telemetry + distilled lessons),
+# as opposed to `memory.store` which is deliberate provenance-tagged knowledge.
+AUTO_KINDS = frozenset(("agent.note", "tool.result", "plan.update",
+                        "task.done", "chat.summary"))
+
+
+def provenance(limit=3000):
+    """Segregation report: how much memory is machine-generated vs user-authored.
+
+    Groups every record by `kind` and by `source`/`origin`, and summarises the
+    split (auto-written telemetry/lessons vs. deliberate `memory.store`). This is
+    what the WebUI "Improvement" panel shows to answer "what did the harness
+    write on its own?". Never raises.
+    """
+    try:
+        recs = query(None, None, limit=limit)
+    except Exception:  # noqa: BLE001 — a report must never raise
+        recs = []
+    by_kind, by_source = {}, {}
+    for r in recs:
+        k = str(r.get("kind") or "other")
+        by_kind[k] = by_kind.get(k, 0) + 1
+        s = str(r.get("source") or r.get("origin") or "unattributed")
+        by_source[s] = by_source.get(s, 0) + 1
+    auto = sum(v for k, v in by_kind.items() if k in AUTO_KINDS)
+    user = by_kind.get("memory.store", 0)
+    return {"by_kind": by_kind, "by_source": by_source,
+            "auto": auto, "user": user, "total": len(recs)}
 
 
 def stats():

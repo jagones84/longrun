@@ -1195,6 +1195,11 @@ def handle(handler, method, path, qs, body):
             content = body.get("content", "")
             meta = {k: v for k, v in body.items()
                     if k not in ("kind", "content", "action")}
+            # JAG-447: a memory posted straight to the API (WebUI form or a human
+            # curl) is USER-authored unless told otherwise — never mislabelled as
+            # agent-generated. Provenance is what the segregation report counts.
+            meta.setdefault("origin", "user")
+            meta.setdefault("source", "user")
             rec = _MEMORY.store(kind, content, **meta)
             return _r(handler, 200, rec)
 

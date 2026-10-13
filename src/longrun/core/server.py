@@ -218,6 +218,7 @@ from longrun.agent.agent import (SYSTEM_PROMPT, PMCP_PROMPT, system_prompt, RULE
                     _next_stale, _looks_like_json_action, _JSON_ACTION_KEYS,
                     _JSON_TOOL_ARG_KEYS, _looks_like_action_dict, _PROMISE_RE,
                     _looks_like_promise, _skill_hints, _stuck_note, _repeat_block_note,
+                    _improvement_pass, _turn_importance, _is_correction,
                     _plan_only_refusal, _open_plan_steps, _open_todo_brief,
                     _nudge_open_todos, _OFFLOAD_SEQ, _OFFLOAD_HEAD, _OFFLOAD_TAIL,
                     _offload_observation, _chat_tool_call, _apply_chat_todos,

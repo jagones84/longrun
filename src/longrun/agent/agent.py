@@ -1194,11 +1194,95 @@ def maybe_reflect(sess, message, answer, used_tools, model=None):
         lesson = (lesson or "").strip().strip('"').strip()
         if len(lesson) < 6 or len(lesson) > 400:
             return None
-        memory.store("agent.note", lesson, session=sess["id"], source="reflect")
+        memory.store("agent.note", lesson, session=sess["id"], source="reflect",
+                     origin="reflect")  # JAG-447: provenance for segregation
         _REFLECT_LATEST[sess["id"]] = now
         return lesson
     except Exception:  # noqa: BLE001 — reflection must never break a turn
         return None
+
+
+# JAG-447: deterministic significance gate for the end-of-turn improvement pass.
+# "Importance" is computed by the HARNESS (never by the model, which would inflate
+# its own reward, cf. arXiv 2608.00017): many tools, an error, a user correction
+# and long multi-step turns each add weight. Below IMPORTANCE_THRESHOLD the turn
+# is only recorded in the audit ledger — no lesson is distilled.
+_CORRECTION_RE = re.compile(
+    r"^\s*(no|non|nope|sbagliato|errato|sbagli|wrong|instead|invece|"
+    r"aspetta|stop|fermati|annulla)\b", re.IGNORECASE)
+
+
+def _is_correction(message):
+    """True when the user's message looks like a correction/redo of the agent."""
+    return bool(_CORRECTION_RE.search(str(message or "")[:240]))
+
+
+def _turn_importance(used_tools=0, errored=False, corrected=False, steps=0):
+    """Deterministic 0..~20 importance score for a finished turn (JAG-447)."""
+    try:
+        n = len(used_tools or [])
+    except TypeError:
+        n = int(used_tools or 0)
+    score = min(n, 8)
+    if errored:
+        score += 6
+    if corrected:
+        score += 5
+    if int(steps or 0) >= 3:
+        score += 2
+    return score
+
+
+def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta):
+    """JAG-447: the EFFECTIVE end-of-turn self-improvement loop.
+
+    Replaces the old cosmetic ``improve.nudge`` (which the model never saw and
+    which offered the user nothing to click). Deterministically, and without ever
+    breaking the turn, it:
+
+      1. gates on a harness-computed importance score (tools/error/correction);
+      2. distills ONE reusable lesson into memory when the turn is significant
+         (Reflexion / Generative-Agents pattern; provenance origin=reflect);
+      3. on a HIGH-SIGNAL turn (an error or a user correction with real tool
+         use) mines repeated tool sequences into skill PROPOSALS (selfevolve);
+      4. records everything in the audit LEDGER (what changed, and who did it);
+      5. emits an ENRICHED ``improve.nudge`` carrying what was actually written.
+    """
+    try:
+        from longrun.util import improve as improve_mod
+        errored = bool((meta or {}).get("error"))
+        corrected = _is_correction(message)
+        n_tools = len(used_tools or [])
+        importance = _turn_importance(used_tools, errored, corrected, work_steps)
+        wrote = []
+        # 2. distill a lesson (maybe_reflect is cooldown-guarded, never raises)
+        if used_tools and importance >= improve_mod.IMPORTANCE_THRESHOLD:
+            lesson = maybe_reflect(sess, message, answer, True, model)
+            if lesson:
+                wrote.append({"kind": "memory", "origin": "reflect",
+                              "summary": lesson,
+                              "path": "data/memory/agent_notes.md"})
+        # 3. cross-trajectory abstraction on a high-signal turn
+        if (errored or corrected) and n_tools >= 3:
+            for p in improve_mod.mine_once(note="auto: %s" % sess.get("id", "")):
+                wrote.append({"kind": "proposal", "origin": "mining",
+                              "summary": os.path.basename(str(p)),
+                              "path": str(p)})
+        # 4. audit ledger (always, so the changelog is complete)
+        rec = improve_mod.ledger_add(
+            "turn", origin="harness", session=sess.get("id", ""),
+            importance=importance, tools=n_tools, errored=errored,
+            corrected=corrected, wrote=wrote,
+            summary="importance=%d tools=%d error=%s correction=%s"
+                    % (importance, n_tools, errored, corrected))
+        # 5. enriched event for the WebUI (what happened, not a vague hint)
+        publish("improve.nudge", session=sess.get("id"),
+                importance=importance, wrote=wrote, ledger=rec.get("id"),
+                hint=(("turn importance %d — %d artifact(s) written"
+                       % (importance, len(wrote))) if wrote else
+                      ("turn importance %d — nothing persisted" % importance)))
+    except Exception:  # noqa: BLE001 — the loop must never break a turn
+        pass
 
 
 def _apply_skill_slash(message):
@@ -2428,18 +2512,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _se.record("%s#%.3f" % (sess["id"], time.time()), used_tools)
     except Exception:  # noqa: BLE001 — history must never break a turn
         pass
-    # JAG-128B: end-of-turn nudge — when the turn used many tools (or
-    # errored), it invites evaluating what to persist (free memory or
-    # a rule proposal via the `improve` tool). Never blocking: any
-    # exception is swallowed so it does not break the turn.
-    try:
-        from longrun.util import improve as improve_mod
-        if improve_mod.should_nudge(used_tools=len(used_tools or []),
-                                    errored=bool(meta.get("error"))):
-            publish("improve.nudge", session=sess["id"],
-                    hint="evaluate what to persist: memory (free) or rule proposal (improve tool)")
-    except Exception:  # noqa: BLE001 — the nudge must never break a turn
-        pass
+    # JAG-447: EFFECTIVE end-of-turn self-improvement (importance-gated reflection
+    # + high-signal skill mining + audit ledger). Replaces the old decorative
+    # JAG-128B nudge, which the model never saw and which offered the user nothing
+    # to act on. Never blocking: any exception is swallowed inside the pass.
+    _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta)
     # JAG-129A: safety net — if the turn ends with open steps (e.g. after
     # an abort), it still publishes the end-of-turn metrics. `plan.incomplete`
     # coexists with `plan.stopped` emitted by the loop.
@@ -2461,12 +2538,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         hooks.run("Stop", run_id=sess["id"], observation=content)
     except Exception:  # noqa: BLE001 — a hook must never break a turn
         pass
-    # JAG-93: post-turn reflection (self-improvement). Runs after the reply is
-    # persisted so it can never delay or corrupt the user-visible turn.
-    try:
-        maybe_reflect(sess, message, answer, work_steps > 0, model)
-    except Exception:  # noqa: BLE001
-        pass
+    # JAG-93/JAG-447: post-turn reflection now lives inside `_improvement_pass`
+    # (called above, importance-gated) so it is never run twice per turn.
     return reply, model
 
 

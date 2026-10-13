@@ -773,7 +773,11 @@ def _memory(args, run_id):
             return {"ok": False, "error": "content required for action=store",
                     "backend": "host", "sandboxed": False}
         kind = (args.get("kind") or "memory.store").strip()
-        meta = {"session": run_id or "", "source": str(args.get("source") or "agent")}
+        # JAG-447: provenance — `source` is the free tag, `origin` the segregation
+        # key the WebUI/prompt group by (agent-stored vs. user-authored).
+        meta = {"session": run_id or "",
+                "source": str(args.get("source") or "agent"),
+                "origin": str(args.get("origin") or "agent")}
         # JAG-204: optional expiry (ttl_secs) — a memory can be time-bounded.
         try:
             ttl = float(args.get("ttl_secs") or args.get("ttl") or 0)
