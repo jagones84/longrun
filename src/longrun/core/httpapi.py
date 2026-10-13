@@ -61,6 +61,26 @@ from longrun.orbit.api import WEB as ORBIT_WEB
 AUTH_TOKEN = None
 
 
+def _planner_model(sess, model):
+    """Model for THIS turn's planner call (JAG-455).
+
+    An explicit request/session model WINS; the configured `planner` role is only
+    the fallback. Before this the sync `/api/chat` path passed
+    `routing.pick("planner")` unconditionally, so a session pinned to a CLOUD model
+    (e.g. deepseek-reasoner) still ran the planner call on whatever the role pattern
+    matched (`pattern: qwen` -> the LOCAL DGX model) and burned the local GPU under a
+    cloud-model session. Deterministic, never raises.
+    """
+    if model:
+        return model
+    if sess and sess.get("model"):
+        return sess["model"]
+    try:
+        return routing.pick("planner")
+    except Exception:  # noqa: BLE001 — routing must never break the turn
+        return None
+
+
 def check_auth(headers, qs=None):
     if not AUTH_TOKEN:
         return True
@@ -1622,11 +1642,16 @@ class Handler(BaseHTTPRequestHandler):
                         _ex["jid"] = None
                         _ex["subjob"] = None
                         taskgraph.save(_ex)
+                    # JAG-455: the planner call must use the SAME model as the turn
+                    # whenever the request or the session pins one (see _planner_model).
                     # JAG-431q: make the PLANNER call abortable too — a Stop pressed while
                     # the planner is decoding must kill it, not wait for it to finish.
-                    start_run_graph(sess["id"], message, sess["id"], routing.pick("planner"),
+                    start_run_graph(sess["id"], message, sess["id"],
+                                    _planner_model(sess, body.get("model")),
                                     cancel=(lambda: _is_aborted(sess["id"])))
-                    reply, model = chat_once(sess, message, body.get("model"), trace=trace,
+                    reply, model = chat_once(sess, message,
+                                             body.get("model") or sess.get("model"),
+                                             trace=trace,
                                              autonomous=(body.get("mode") or qs.get("mode")) == "goal")
                 except Exception as e:  # noqa: BLE001
                     # JAG-51: persist an explicit assistant error turn *before* the

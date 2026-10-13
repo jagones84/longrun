@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A harness-vs-harness bench: same weights, same tasks, with and without the harness (JAG-454), battery 180/180.**
+  The question "how much is the harness worth?" needs a CONTROL, so `benchmarks/` now runs N arms over one task
+  file with the model held fixed and emits a side-by-side artifact. Arms: `bare` (the model API with no tools, no
+  system prompt, no memory — the baseline a harness must beat), `longrun` (this harness over its public REST API
+  only), `hermes` (a second harness via `cli.py -Q`). `compare.py` supports `--tags`/`--model-map`, `--keep-sessions`
+  (the operator wants to open the run in the WebUI and read what the harness actually did), `--jobs` for parallel
+  tasks, and `run_suite()` brackets every suite with `setup()`/`teardown()` so a headless run is not measured with
+  its hands tied (approval gate lifted, then restored). `humaneval.extract_code()` is applied by the SCORER so a
+  chatty arm is not penalised against a terse one. Pinned by new `v454`.
 - **Stop really stops, and a compaction no longer doubles the chat (JAG-431q), battery 166/166.**
   Two WebUI/server defects found by driving the live app (browser + HTTP) end to end. (1) **Stop did
   nothing.** `chat_once` cleared the abort flag AFTER the planner/graph model calls had already run, so a
@@ -497,6 +506,18 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
+- **A session pinned to a CLOUD model no longer burns the local GPU (JAG-455), battery 180/180.**
+  Reported live: harness sessions whose model read `deepseek-reasoner` while the DGX GPU was busy. Root cause
+  (one): the sync `/api/chat` path passed `routing.pick("planner")` to the planner call **unconditionally**, and
+  `config/routing.yaml` resolves the `planner` role by `pattern: qwen` — the **local** DGX model — so every turn
+  of a cloud-pinned session still made one local model call (and the router's autoload loaded the local weights).
+  The turn's own model is now authoritative via `_planner_model()`: explicit request model → session pin → the
+  `planner` role pattern only as a fallback. The same sync path also ignored the session pin for the answering
+  turn (it fell through to `default_model()`), so the two are consistent now. **Verified live** on a session
+  pinned to `deepseek:deepseek-chat`: the emitted `graph.generated` planner model AND the chat model are both the
+  cloud ref, and the local roster's `loaded` set is **unchanged** (no local autoload). The benchmark arm pins
+  every routing role to its own model in `setup()` and restores the previous pins in `teardown()`, so a
+  comparison run can no longer mix a local planner into a cloud arm. Pinned by new `v455` (14/14).
 - **A completed chat turn can no longer leave a plan nobody authored or closes (JAG-431n), battery 164/164.**
   The JAG-76 "guarantee a plan" fallback ran a planner model call **after** the turn had already answered, so its
   steps described work that was already done; nobody ever executed them, and JAG-173 forbids auto-closing a step
