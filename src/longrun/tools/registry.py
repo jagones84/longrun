@@ -190,6 +190,10 @@ TOOL_SCHEMAS = {
     "knowledge": {
         "description": ("GLOBAL knowledge base (separate from the workspace codebase index), "
                         "organised in NOTEBOOKS of sources (URLs / files / pasted text). "
+                        "Binary docs attached to THIS chat (PDF/DOCX/...) are auto-indexed into "
+                        "this session's own notebook: action=search queries it FIRST, then the "
+                        "global notebooks — so prefer `search` over shell text-extraction for an "
+                        "attached PDF. "
                         "action=list_notebooks | create_notebook | add_source | add_text | "
                         "search | discover (web search -> candidate URLs) | import (URLs -> a "
                         "notebook) | status."),
@@ -199,7 +203,7 @@ TOOL_SCHEMAS = {
                        "enum": ["search", "list_notebooks", "create_notebook", "add_source",
                                 "add_text", "discover", "import", "status"],
                        "default": "search"},
-            "notebook": {"type": "string", "description": "target notebook id (default notebook if omitted)"},
+            "notebook": {"type": "string", "description": "target notebook id (default: this session's notebook, then global)"},
             "name": {"type": "string", "description": "notebook name (action=create_notebook)"},
             "query": {"type": "string", "description": "search text / discovery query"},
             "refs": {"type": "string", "description": "one URL/path per line (action=add_source)"},

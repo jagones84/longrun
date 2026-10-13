@@ -215,6 +215,36 @@ def _provider_role(sess, ws, ctx):
         out += ("Hold this role and these behaviour rules for everything you do "
                 "here.\n")
     out += ("\n" + text) if text else "\n(No extra role text is set for this agent yet.)"
+    # JAG-450: an ORCHESTRATOR (an agent with DIRECT REPORTS) must SEE its team and
+    # know it can distribute work to it. Before this the master literally did not
+    # know it had teammates, so it ran the whole job alone and never used the org
+    # chart. The roster + the `dispatch` action make the team usable from chat.
+    try:
+        from longrun.agent import agents as _ag
+        _rec = (_ag.REGISTRY.get(sid) if sid else None) or {}
+        _aid = _rec.get("id")
+        if _aid:
+            _team = _ag.REGISTRY.team_of(_aid)
+            _reports = [x for x in _ag.REGISTRY.list().get("agents", [])
+                        if x.get("id") in _team and x.get("id") != _aid]
+            if _reports:
+                _lines = []
+                for _r in _reports:
+                    _lbl = _r.get("name") or _r.get("id")
+                    if _r.get("role"):
+                        _lbl += " (%s)" % _r["role"]
+                    _lines.append("- %s \u2014 %s" % (_r.get("id"), _lbl))
+                out += ("\n\n## Your team (org chart)\n"
+                        "You are an ORCHESTRATOR. Your direct reports are:\n"
+                        + "\n".join(_lines)
+                        + "\nDISTRIBUTE work: to hand a self-contained subtask to a "
+                        'teammate, emit {"action":"dispatch","agent":"<A-id>",'
+                        '"goal":"<the subtask>"} — it runs a REAL turn in that '
+                        "teammate's own session (their role and model) and returns "
+                        "their reply. Prefer dispatching parallelisable work to your "
+                        "team over doing everything yourself.")
+    except Exception:  # noqa: BLE001 — the prompt must never break the chat
+        pass
     return out
 
 

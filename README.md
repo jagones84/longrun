@@ -5,7 +5,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#install--run)
-[![tests](https://img.shields.io/badge/battery-173%2F173%20green-success.svg)](#the-quality-gate)
+[![tests](https://img.shields.io/badge/battery-177%2F177%20green-success.svg)](#the-quality-gate)
 [![CI](https://github.com/jagones84/longrun/actions/workflows/ci.yml/badge.svg)](https://github.com/jagones84/longrun/actions/workflows/ci.yml)
 
 **Longrun is a single agent harness — one engine that drives one LLM
@@ -336,8 +336,14 @@ The **only** regression gate is one deterministic, fully-isolated battery — it
 every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live state:
 
 ```bash
-bash tests/battery.sh        # → === battery: 173/173 GREEN ===
+bash tests/battery.sh                          # fast gate (heavy tests skipped) → 171/171 GREEN
+LONGRUN_BATTERY_FULL=1 bash tests/battery.sh   # full suite (adds the 6 heavy index/ingestion tests) → 177/177 GREEN
 ```
+
+The 6 tests that build real vector indexes / run document ingestion are **skipped by
+default** so the gate stays quick, and the suite runs in **parallel** (each test gets
+its own throwaway data dirs) — the fast gate is ~12s, the full suite ~1min. Set
+`LONGRUN_BATTERY_FULL=1` to include the heavy tests; CI always runs the full suite.
 
 CI runs the same battery on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 For the *live* seams (reload, session swap, swap-during-run, long tasks) see

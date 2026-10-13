@@ -120,6 +120,11 @@
     padding:5px 8px;border-bottom:1px solid var(--line);font-weight:500}
   table.at td{padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   table.at tr:hover td{background:rgba(108,140,255,.04)}
+  /* JAG-451: an agent picked from the org chart is highlighted here so the user
+     lands on the right row, ready to edit it. */
+  table.at tr.rowsel td{background:rgba(108,140,255,.16)}
+  table.at tr.rowsel td.aid{box-shadow:inset 3px 0 0 var(--acc)}
+  table.at tr.rowsel{outline:1px solid var(--acc);outline-offset:-1px}
   table.at select.inp.mini{max-width:190px}
   table.at tr.brief td{background:rgba(9,14,26,.6);padding:8px}
   table.at tr.brief textarea{min-height:190px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical}
@@ -398,7 +403,7 @@
   <div class="grid2 oc">
     <!-- Org chart: boxes + connectors from reports_to -->
     <section class="panel">
-      <h2 title="click = preview · dbl-click = open · right-click = actions · wheel = zoom · drag = pan">Org chart
+      <h2 title="click = preview + highlight the agent in the Agents panel · dbl-click = open · right-click = actions · wheel = zoom · drag = pan">Org chart
         <span class="ctools">
           <button class="btn ghost mini" id="orgOut" title="zoom out">−</button>
           <button class="btn ghost mini" id="orgIn" title="zoom in">＋</button>
@@ -475,7 +480,7 @@ class AgentsView {
     // selected team vanishes and its edge can be silently cleared.
     this.roster = [];
     this.sort = "default"; this._tmmenu = null; this.closed = new Set(); this._groupIds = [];
-    this._seen = new Set(); }
+    this._seen = new Set(); this.focusSid = null; }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams, roster){
     if (tree) this.agents = tree.agents || [];
@@ -511,6 +516,29 @@ class AgentsView {
     this.bind();
     fillSelect($("jobTo"), this.agents, "assign to…");
     fillSelect($("rtAgent"), this.agents, "agent…");
+    this._applyFocus();
+  }
+  /* JAG-451: highlight + scroll to the agent picked elsewhere (e.g. the org chart)
+     so the operator lands on the right row, ready to edit it. */
+  focusAgent(sid){
+    if (!sid) return;
+    const a = this.agents.find(x => x.session === sid);
+    if (a){
+      const ids = (a.teams && a.teams.length) ? a.teams : ["__none__"];
+      ids.forEach(id => this.closed.delete(id));   // reveal its (collapsed) team group
+    }
+    this.focusSid = sid;
+    this.render();
+  }
+  _applyFocus(){
+    const sid = this.focusSid; if (!sid) return;
+    const body = $("agBody"); if (!body) return;
+    let tr = null;
+    body.querySelectorAll("tr[data-sid]").forEach(r => { if (r.getAttribute("data-sid") === sid) tr = r; });
+    if (!tr) return;
+    tr.classList.add("rowsel");
+    try { tr.scrollIntoView({block: "center", behavior: "smooth"}); }
+    catch (e) { try { tr.scrollIntoView(); } catch (e2) {} }
   }
   teamCell(a){
     const ids = a.teams || [];
@@ -1474,7 +1502,7 @@ class OrbitApp {
     this.team = "ALL";        // JAG-339: the selected team scopes the whole board
     this.teams = [];
     this.tac = new Constellation(this.api);
-    this.org = new OrgChartView((a) => this.tac.open(a, "agent"), (a) => this.tac.gotoAgent(a));
+    this.org = new OrgChartView((a) => { this.tac.open(a, "agent"); if (this.agents && a) this.agents.focusAgent(a.session); }, (a) => this.tac.gotoAgent(a));
     if (window.ResizeObserver) new ResizeObserver(() => { try { if (this.org.auto) this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.routines = new RoutinesView(this.api, () => this.refresh());

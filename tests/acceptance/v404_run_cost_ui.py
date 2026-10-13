@@ -7,8 +7,9 @@ Stdlib-only, deterministic, no browser, no model. Covers the three points:
      The ledger now carries an optional `run` id, tagged by `chat_once`.
   B) the Bridge AGENTS table is packed to the LEFT (content-sized + explicit
      column widths), with its new-agent inputs no longer full-width.
-  C) the Bridge ORG CHART keeps single-click = preview, double-click = open the
-     agent's session, and ADDS a right-click quick-action menu that reuses the
+  C) the Bridge ORG CHART keeps single-click = preview (which now ALSO highlights +
+     scrolls to the agent in the AGENTS table, JAG-451), double-click = open the
+     agent's session, and the right-click quick-action menu reuses the
      EXISTING stores/endpoints (no third synced data entry).
 """
 import os
@@ -79,9 +80,10 @@ check("B3 the new-agent inputs are no longer full-width",
       'id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none"' in ORBIT)
 
 # ------------------------------------------------------------------ C) org chart
-check("C1 single-click still previews the agent's constellation",
+check("C1 single-click still previews the constellation (+ JAG-451 focuses the agent)",
       "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT
-      and 'this.org = new OrgChartView((a) => this.tac.open(a, "agent")' in ORBIT)
+      and 'this.org = new OrgChartView((a) => { this.tac.open(a, "agent")' in ORBIT
+      and "this.agents.focusAgent(a.session)" in ORBIT)
 check("C2 double-click still opens the agent's session in the main app",
       "n.ondblclick = () => { if (this.onGoTo) this.onGoTo(this.bySid[n.dataset.sid]); };" in ORBIT
       and "gotoAgent(agent){ if (!agent) return;" in ORBIT)

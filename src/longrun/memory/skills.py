@@ -143,6 +143,9 @@ def list_skills(reload=False):
                                    "path": os.path.relpath(sp, REPO),
                                    "abspath": sp,
                                    "title": title, "description": desc,
+                                   # JAG-451: `auto` marks MACHINE-generated skills
+                                   # (the skills/created box); `local` = user-uploaded.
+                                   "auto": cat == "created",
                                    "local": cat == LOCAL_CATEGORY})
     _cache.update(sig=sig, skills=skills)
     return skills

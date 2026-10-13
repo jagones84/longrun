@@ -19,6 +19,7 @@ Usage (from agent loop):
 """
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -29,6 +30,68 @@ from longrun.tools import registry
 from longrun.tools import sandbox
 from longrun.plan import taskgraph  # per-run task graph (child gets its own todo list)
 from longrun.tools import tools as toolmod
+
+# JAG-451: subagents are configured — NOT hardcoded. `config/subagents.yaml` holds
+# the parallel cap + the named role briefs; the model lives in config/routing.yaml
+# (roles.subagent). Both are surfaced/edited by Settings ▸ Subagents.
+CFG_PATH = os.environ.get("LONGRUN_SUBAGENTS_CFG") or os.path.join(
+    registry.REPO, "config", "subagents.yaml")
+DEFAULT_CFG = {
+    "version": "1",
+    "max_parallel": 4,
+    "roles": {
+        "researcher": ("Investigate a question against primary sources. Return a "
+                       "compact, cited summary (max ~400 words). Do NOT modify files."),
+        "coder": ("Implement a small, self-contained code change. Report the exact "
+                  "files touched and the commands you ran. Do NOT touch unrelated files."),
+        "reviewer": ("Audit the given code or output for correctness and risks. Return "
+                     "a short, prioritised findings list with file/line references. "
+                     "Do NOT modify files."),
+    },
+}
+
+
+def load_cfg(reload=False):
+    """The subagents config (max_parallel + roles). Never raises."""
+    try:
+        if reload or not hasattr(load_cfg, "_cache"):
+            with open(CFG_PATH, encoding="utf-8") as f:
+                text = f.read()
+            try:
+                import yaml
+                data = yaml.safe_load(text)
+            except Exception:  # noqa: BLE001
+                data = json.loads(text)
+            load_cfg._cache = data if isinstance(data, dict) else dict(DEFAULT_CFG)
+    except Exception:  # noqa: BLE001 — a missing/broken file falls back to defaults
+        load_cfg._cache = dict(DEFAULT_CFG)
+    return load_cfg._cache
+
+
+def save_cfg(cfg):
+    """Persist the subagents config to yaml (best effort). Returns the path."""
+    try:
+        import yaml
+        text = yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True)
+    except Exception:  # noqa: BLE001
+        text = json.dumps(cfg, indent=2)
+    os.makedirs(os.path.dirname(CFG_PATH), exist_ok=True)
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        f.write(text)
+    load_cfg._cache = cfg
+    return CFG_PATH
+
+
+def role_brief(role):
+    """The standing instruction for a named subagent role ("" when unknown)."""
+    roles = load_cfg().get("roles") or {}
+    return str(roles.get(role or "", "") or "").strip()
+
+
+def _running_count():
+    with _lock:
+        return len(_running)
+
 
 _lock = threading.RLock()
 _running = {}     # subagent_id -> {state, parent_run_id, goal, result}
@@ -49,14 +112,23 @@ def depth_allowed(depth, max_depth=None):
     return int(depth) < md
 
 
-def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, depth=0):
+def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, depth=0,
+          role=None):
     """Spawn a subagent run and return its id.
 
     The subagent runs asynchronously in a background thread. Call
     `collect(subagent_id)` to get the result (blocks until done).
 
+    JAG-451: `role` attaches a named brief (config/subagents.yaml) as the
+    subagent's standing instruction. The subagent has its OWN isolated context —
+    it sees ONLY this goal (+ the role brief), never the parent's transcript.
+
     Returns a dict with subagent_id (caller should store it).
     """
+    # JAG-451: prepend the role brief so the subagent's instruction is self-contained.
+    _brief = role_brief(role) if role else ""
+    if _brief:
+        goal = "[role: %s] %s\n\n%s" % (role, _brief, goal)
     fallbacks = []
     if not model:
         # JAG-259: honour an explicitly pinned "subagent" role model (Settings ->
@@ -72,6 +144,14 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
     if not depth_allowed(depth):
         return {"subagent_id": None, "run_id": None, "goal": goal,
                 "error": "max subagent depth reached"}
+    # JAG-451: enforce the configured parallel cap (0 = no cap).
+    try:
+        _cap = int(load_cfg().get("max_parallel") or 0)
+    except (TypeError, ValueError):
+        _cap = 0
+    if _cap and _running_count() >= _cap:
+        return {"subagent_id": None, "run_id": None, "goal": goal,
+                "error": "max parallel subagents reached (%d)" % _cap}
     sid = "sub_%s" % uuid.uuid4().hex[:10]
     st = api_v02.new_run("%s (subagent %s)" % (goal[:80], sid), model, max_steps)
     st.parent_run_id = parent_run_id
@@ -84,6 +164,7 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
         "goal": goal,
         "max_steps": max_steps,
         "model": model,
+        "role": role,
         "parent_run_id": parent_run_id,
         "created": time.time(),
         "result": None,

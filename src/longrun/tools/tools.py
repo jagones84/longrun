@@ -993,13 +993,25 @@ def _improve(args, run_id=None):
         return {"error": "scope in {skill,project,global,mine} and content required"}
     if improve.AGENT_WRITE.get(scope) == "forbidden":
         return {"error": "scope not writable"}
+    # JAG-451: honour the `proposals` approval policy (Settings ▸ Tools & approvals).
+    pol = improve.approval_kind("proposals")
+    if pol == "denied":
+        return {"ok": False, "error": "proposals are DENIED by policy (Settings ▸ Tools & approvals)"}
     rec = improve.propose(scope, content, reason=str(args.get("reason", "")))
     try:
         from longrun.core import server as _srv
         _srv.publish("improve.proposal", **rec)
     except Exception:  # noqa: BLE001 — the event must never break the tool
         pass
-    return {"ok": True, "proposal": rec}
+    applied = False
+    if pol == "auto" and scope in ("project", "global"):
+        try:
+            improve.decide(rec["id"], "approve")       # AUTO: apply without asking
+            applied = True
+            rec = improve.get_proposal(rec["id"]) or rec
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": True, "proposal": rec, "applied": applied}
 
 
 def _reconcile(args, run_id):
@@ -1320,7 +1332,18 @@ def _knowledge(args, run_id):
         k = int(args.get("k") or 8)
     except (TypeError, ValueError):
         k = 8
-    res = kb.search(query, args.get("notebook"), k=k, kind=args.get("kind"))
+    # JAG-451: docs attached to a chat are auto-ingested into the session's own
+    # hidden notebook. Query THAT first (so an attached PDF is retrievable without
+    # raw text extraction), then fall back to the global notebooks. An explicitly
+    # named notebook still wins.
+    notebook = args.get("notebook")
+    sid = str(args.get("session") or "").strip() or str(run_id or "").strip()
+    if not notebook and sid:
+        res = kb.search(query, None, k=k, kind=args.get("kind"), session=sid)
+        if not res.get("results"):
+            res = kb.search(query, None, k=k, kind=args.get("kind"))
+    else:
+        res = kb.search(query, notebook, k=k, kind=args.get("kind"))
     lines = ["%s:%s  %s" % (r.get("ref") or r.get("path"), r.get("start"),
                             (r.get("snippet") or "").replace("\n", " ")[:200])
              for r in res.get("results", [])]

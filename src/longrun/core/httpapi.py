@@ -1305,21 +1305,32 @@ class Handler(BaseHTTPRequestHandler):
             from longrun.util import improve as improve_mod
             return self._send(200, {"proposals": improve_mod.list_proposals()})
         if path == "/api/improvement":
-            # JAG-448: aggregated self-improvement view for the WebUI — proposals
-            # (each pending one with a DIFF preview of what approving would append),
-            # the audit ledger changelog, the auto-written memory records (so the
-            # operator can SEE exactly which lessons/files the harness distilled),
-            # and the memory provenance split (auto-generated vs. user-authored).
+            # JAG-448/450: aggregated self-improvement view for the WebUI. Shows
+            # what the loop ACTUALLY changed — proposals (with the diff approving
+            # would append), the auto-written memory records (which lessons, in
+            # which file), and a changelog filtered to MEANINGFUL events — plus
+            # the methodology config so the operator can see HOW it works.
             from longrun.util import improve as improve_mod
-            props = improve_mod.list_proposals()
-            for p in props:
+            raw = improve_mod.list_proposals()
+            # Collapse DUPLICATE proposals: the same (scope, content) was proposed
+            # again and again (5x "usa sempre pytest -q", all denied) — keep the
+            # newest per pair so the panel is a signal, not a flood.
+            dedup, seen = [], set()
+            for p in raw:
+                key = (p.get("scope"), str(p.get("content") or "").strip())
+                if key in seen:
+                    continue
+                seen.add(key)
+                dedup.append(p)
+            for p in dedup:
                 if p.get("status") == "pending":
                     p["preview"] = improve_mod.diff_preview(p)
+            mem, records, auto_kinds = {}, [], []
             try:
                 from longrun.memory import memory as memory_mod
+                auto_kinds = sorted(getattr(memory_mod, "AUTO_KINDS", []) or [])
                 mem = memory_mod.provenance()
-                records = []
-                for r in memory_mod.query(None, None, limit=80):
+                for r in memory_mod.query(None, None, limit=120):
                     origin = str(r.get("source") or r.get("origin") or "").strip()
                     if origin == "user":
                         continue
@@ -1334,14 +1345,36 @@ class Handler(BaseHTTPRequestHandler):
                             r.get("kind"), "other.md"),
                     })
             except Exception:  # noqa: BLE001 — the panel must still load
-                mem = {}
-                records = []
+                pass
+            # The ledger is flooded by "turn ... wrote=[]" no-op rows; the panel
+            # shows only entries that CHANGED something (or a decision).
+            all_ledger = improve_mod.ledger_tail(500)
+            meaningful = [e for e in all_ledger
+                          if (e.get("kind") != "turn") or (e.get("wrote") or [])]
             return self._send(200, {
-                "proposals": props,
-                "ledger": improve_mod.ledger_tail(120),
+                "proposals": dedup,
+                "proposals_total": len(raw),
+                "ledger": meaningful[:120],
+                "ledger_total": len(meaningful),
                 "records": records,
                 "memory": mem,
                 "origins": list(improve_mod.ORIGINS),
+                # JAG-451: the harness files the loop reads/writes live under the
+                # repo root; expose an ABSOLUTE base so the panel's file links open
+                # in the editor regardless of the session workspace.
+                "root": improve_mod.REPO,
+                "files": [
+                    {"path": "data/improvement/ledger.jsonl", "kind": "audit ledger"},
+                    {"path": "data/memory/agent_notes.md", "kind": "distilled lessons"},
+                    {"path": "data/memory/user_memories.md", "kind": "user memory"},
+                    {"path": "data/proposals", "kind": "rule/skill proposals"},
+                ],
+                "config": {
+                    "importance_threshold": improve_mod.IMPORTANCE_THRESHOLD,
+                    "ledger_max": improve_mod.LEDGER_MAX,
+                    "auto_kinds": auto_kinds,
+                    "origins": list(improve_mod.ORIGINS),
+                },
             })
         if path == "/api/sessions":
             return self._send(200, {"sessions": list_sessions()})

@@ -62,13 +62,23 @@ check("A3 the synchronous z-ai/glm-5.3-flash is present",
       "z-ai/glm-5.3-flash" in openrouter_models)
 
 # ---- B) routing config: subagent role is explicit, nothing hardcoded ------
+# JAG-451: the operator CHANGES the subagent model in Settings ▸ Subagents (it
+# writes routing.yaml ▸ roles.subagent), so assert the CONTRACT — the resolved
+# model mirrors the config and the chain preserves the configured fallbacks — NOT
+# a specific model id (a hardcoded id here would fail every legitimate edit).
+import yaml  # noqa: E402
+_rr = yaml.safe_load(open(os.path.join(REPO, "config", "routing.yaml"), encoding="utf-8")) or {}
+_sub = ((_rr.get("roles") or {}).get("subagent") or {})
 chain = routing.model_chain("subagent")
-check("B1 subagent model_chain leads with the GLM primary",
-      chain and chain[0] == "openrouter:z-ai/glm-5.3-flash", chain)
-check("B2 subagent model_chain has the Meta contributor fallback",
-      "openrouter:meta/muse-spark-1.3-contributor" in chain)
-check("B3 role_model('subagent') returns the explicit config model",
-      routing.role_model("subagent") == "openrouter:z-ai/glm-5.3-flash")
+rm = routing.role_model("subagent")
+check("B1 role_model('subagent') mirrors config/routing.yaml (explicit, not a pattern)",
+      bool(rm) and ":" in rm and (not _sub.get("model") or rm == _sub.get("model")),
+      {"role_model": rm, "config": _sub.get("model")})
+check("B2 the resolved chain leads with that model",
+      bool(chain) and chain[0] == rm, chain)
+check("B3 every configured fallback is preserved in the chain",
+      all(f in chain for f in (_sub.get("fallbacks") or [])),
+      {"chain": chain, "fallbacks": _sub.get("fallbacks")})
 
 # ---- C) the spawn/loop wire the failover chain ----------------------------
 sa = open(os.path.join(REPO, "src", "longrun", "agent", "subagent.py"),

@@ -3,7 +3,8 @@
 Stdlib-only, deterministic, no browser. Covers the user's 6 points:
 
   0) the duplicate BROWSER tab is removed (its search half duplicated Discover)
-  1) org-chart single click ONLY previews the constellation (no table scroll)
+  1) org-chart single click previews the constellation AND highlights + scrolls to
+     the agent in the AGENTS table (JAG-451 — was preview-only in JAG-403h)
   3) a `text` source (pasted text / research summary) is NOT a false file link
   4) the notebooks list is bounded (scrolls when there are many)
   5) depth + max-sources are ALWAYS visible and drive both modes
@@ -30,9 +31,10 @@ check("0 the Browser tab + its code are removed",
       and "function _renderBrowserUrls" not in HTML and '["browser", "Browser"]' not in HTML)
 
 # ------------------------------------------------------------------ 1) org chart click
-check("1a org-chart single click no longer scrolls the AGENTS table",
-      "scrollIntoView" not in ORBIT.split("closeMenu")[0] and
-      "if (row) row.scrollIntoView" not in ORBIT)
+check("1a org-chart single click also highlights + scrolls the agent in the AGENTS table",
+      "this.agents.focusAgent(a.session)" in ORBIT and "focusAgent(sid)" in ORBIT
+      and "_applyFocus()" in ORBIT and 'classList.add("rowsel")' in ORBIT
+      and "scrollIntoView" in ORBIT)
 check("1b it still opens the constellation (onPick)",
       "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT)
 

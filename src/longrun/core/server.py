@@ -223,7 +223,7 @@ from longrun.agent.agent import (SYSTEM_PROMPT, PMCP_PROMPT, system_prompt, RULE
                     _nudge_open_todos, _OFFLOAD_SEQ, _OFFLOAD_HEAD, _OFFLOAD_TAIL,
                     _offload_observation, _chat_tool_call, _apply_chat_todos,
                     _resolve_graph_node, _apply_chat_todo_updates, _apply_chat_replan,
-                    _apply_chat_subagent, _REFLECT_LATEST, _REFLECT_COOLDOWN,
+                    _apply_chat_subagent, _apply_chat_dispatch, _REFLECT_LATEST, _REFLECT_COOLDOWN,
                     maybe_reflect, _apply_skill_slash, assemble_turn,
                     _HARNESS_ACTION_NAMES, _TERMINAL_ACTIONS, _term_action,
                     _normalize_action, _dsml_action, _looks_like_dsml,

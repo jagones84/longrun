@@ -932,6 +932,27 @@ def handle(handler, method, path, qs, body):
         if path == "/api/routing":
             _lazy('routing')
             return _r(handler, 200, _ROUTING.status())
+        if path == "/api/subagents":
+            # JAG-451: the Subagents panel — model + fallbacks (routing.yaml), depth
+            # (runtime), parallel cap + role briefs (config/subagents.yaml), the live
+            # count, and the context model (subagents are ISOLATED).
+            try:
+                from longrun.agent import subagent as _sub
+                from longrun.plan import keepgoing as _kg
+                _lazy('routing')
+                _cfg = _sub.load_cfg()
+                return _r(handler, 200, {
+                    "model": _ROUTING.role_model("subagent"),
+                    "fallbacks": _ROUTING.model_chain("subagent")[1:],
+                    "max_depth": int((_kg.cfg() or {}).get("subagent_max_depth", 2)),
+                    "max_parallel": int(_cfg.get("max_parallel") or 0),
+                    "roles": _cfg.get("roles") or {},
+                    "running": _sub._running_count(),
+                    "context": "isolated",
+                    "config_path": _sub.CFG_PATH,
+                })
+            except Exception as e:  # noqa: BLE001
+                return _r(handler, 500, {"error": str(e)})
         # JAG-114: global/project rules + workspace selection
         if path == "/api/rules":
             return _r(handler, 200, rules_status(qs))
@@ -1342,6 +1363,32 @@ def handle(handler, method, path, qs, body):
         if path == "/api/routing":
             _lazy('routing')
             return _r(handler, 200, _ROUTING.update(body))
+        if path == "/api/subagents":
+            # JAG-451: update the parallel cap + role briefs (config/subagents.yaml)
+            # and, when given, the subagent MODEL / fallbacks (routing.yaml — ONE
+            # source of truth, so the Models picker and this panel cannot drift).
+            try:
+                from longrun.agent import subagent as _sub
+                cfg = dict(_sub.load_cfg())
+                if "max_parallel" in body:
+                    try:
+                        cfg["max_parallel"] = max(0, int(body["max_parallel"]))
+                    except (TypeError, ValueError):
+                        return _r(handler, 400, {"error": "max_parallel must be an integer"})
+                if isinstance(body.get("roles"), dict):
+                    cfg["roles"] = {str(k): str(v) for k, v in body["roles"].items()}
+                if "model" in body or "fallbacks" in body:
+                    upd = {}
+                    if "model" in body:
+                        upd["model"] = str(body.get("model") or "")
+                    if "fallbacks" in body:
+                        upd["fallbacks"] = [str(x) for x in (body.get("fallbacks") or [])]
+                    _lazy('routing')
+                    _ROUTING.update({"roles": {"subagent": upd}})
+                _sub.save_cfg(cfg)
+                return _r(handler, 200, {"ok": True})
+            except Exception as e:  # noqa: BLE001
+                return _r(handler, 500, {"error": str(e)})
         # --- JAG-114: global/project rules + workspace selection --------------
         if path == "/api/rules":
             res = rules_save(body)
@@ -1446,6 +1493,16 @@ def _update_policy(body):
         for k in ("mode", "outside_workspace", "timeout_secs"):
             if k in body["approvals"]:
                 ap[k] = body["approvals"][k]
+        # JAG-451: approval policy BY CATEGORY — what the harness may emit on its
+        # own. auto = apply without asking · required = raise an approval · denied =
+        # never emit. Only known values are accepted (never trust the client).
+        kinds = body["approvals"].get("kinds")
+        if isinstance(kinds, dict):
+            cur = ap.setdefault("kinds", {})
+            for name, val in kinds.items():
+                v = str(val or "").strip().lower()
+                if v in ("auto", "required", "denied"):
+                    cur[str(name)] = v
         registry.save_config(cfg)
         registry.load_config(reload=True)
         _publish("tools.update", policy=dict(ap))

@@ -1,0 +1,15 @@
+version: '1'
+max_parallel: 4
+roles:
+  researcher: 'Investigate a question against primary sources. Return a compact, cited
+    summary (max ~400 words). Do NOT modify files.
+
+    '
+  coder: 'Implement a small, self-contained code change. Report the exact files touched
+    and the commands you ran. Do NOT touch unrelated files.
+
+    '
+  reviewer: 'Audit the given code or output for correctness and risks. Return a short,
+    prioritised findings list with file/line references. Do NOT modify files.
+
+    '

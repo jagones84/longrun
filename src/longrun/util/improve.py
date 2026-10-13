@@ -48,6 +48,22 @@ LEDGER_PATH = os.path.join(DATA_DIR, "improvement", "ledger.jsonl")
 LEDGER_MAX = 500
 
 
+def approval_kind(name):
+    """JAG-451: the configured approval policy for a category.
+
+    Reads `approvals.kinds.<name>` from the tool registry config (Settings ▸
+    Tools & approvals). Returns 'auto' | 'required' | 'denied', or '' when unset
+    (callers then keep their own default). Never raises.
+    """
+    try:
+        from longrun.tools import registry
+        kinds = (registry.load_config().get("approvals") or {}).get("kinds") or {}
+        v = str(kinds.get(name) or "").strip().lower()
+        return v if v in ("auto", "required", "denied") else ""
+    except Exception:  # noqa: BLE001 — a policy lookup must never break a turn
+        return ""
+
+
 def should_nudge(used_tools=0, errored=False, corrected=False):
     """True when the self-improvement nudge triggers (Hermes pattern)."""
     if corrected or errored:
@@ -220,16 +236,29 @@ def diff_preview(rec):
             "added": sum(1 for l in diff if l.startswith("+") and not l.startswith("+++"))}
 
 
-def mine_once(note=""):
+def mine_once(note="", evolve=False):
     """Mine the recorded tool sequences and return the drafted proposal paths.
 
     JAG-447: the cross-trajectory abstraction step (selfevolve), triggered by the
-    end-of-turn improvement pass on a HIGH-SIGNAL turn. Never raises.
+    end-of-turn improvement pass on a HIGH-SIGNAL turn. JAG-451: when `evolve` is
+    True (the `skills: auto` policy), each repeated pattern also runs stage 2
+    (synth + verify in sandbox + promote) so ONLY verified skills get installed.
+    Never raises.
     """
     try:
         from longrun.util import selfevolve
         out = os.path.join(PROPOSAL_DIR, "skills")
-        return selfevolve.mine_history(out, note=note) or []
+        if not evolve:
+            return selfevolve.mine_history(out, note=note) or []
+        installed = []
+        c = selfevolve.cfg()
+        for cand in selfevolve.mine(selfevolve.history(), c):
+            rep = selfevolve.pipeline(cand["pattern"], out, cand["support"])
+            arc = rep.get("archived")
+            rel = arc.get("rel") or arc.get("path") if isinstance(arc, dict) else (arc if isinstance(arc, str) else "")
+            if rel:
+                installed.append(rel)
+        return installed
     except Exception:  # noqa: BLE001 — mining must never break a turn
         return []
 

@@ -24,4 +24,8 @@ jobs:
           python-version: "3.12"
 
       - name: Run the deterministic battery
+        # CI runs the FULL suite (including the heavy index/ingestion tests that
+        # the local default gate skips for speed).
+        env:
+          LONGRUN_BATTERY_FULL: "1"
         run: bash tests/battery.sh

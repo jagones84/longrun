@@ -26,6 +26,15 @@ sandbox:
 # ---- approvals ---------------------------------------------------------------
 approvals:
   timeout_secs: 300             # how long a run waits for a human decision
+  # JAG-451: approval policy BY CATEGORY — everything the harness can emit on its
+  # own. auto = apply/run without asking (still recorded in the audit ledger);
+  # required = raise an approval request (you decide); denied = never emitted.
+  # Editable in Settings > Tools & approvals.
+  kinds:
+    memory: auto        # distilled lessons auto-written to data/memory
+    proposals: required # agent-proposed rule/skill changes
+    skills: required    # self-generated skill drafts (mined -> promoted)
+    subagent: auto      # spawning a delegated subagent
 
 # ---- runtime / long-horizon (JAG-129) ---------------------------------------
 # Controlla il loop di completamento: l'harness non lascia chiudere il turno

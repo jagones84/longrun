@@ -413,11 +413,18 @@ CHAT_TOOL_PROMPT = (
     "became irrelevant, "
     "briefly re-plan with "
     '{"action":"replan_todos","note":"<why>"} and then IMMEDIATELY resume the plan. '
-    "To delegate a self-contained subtask to ONE child agent — it gets an isolated "
-    "transcript and its own task list, then reports back its summary — emit ONLY "
-    '{"action":"subagent","goal":"<the subtask>","max_steps":4}. Use it for a '
-    "distinct subtask that can run on its own (e.g. reading and summarising a big "
-    "file); do not delegate the whole task. One delegate per subtask. "
+    "To delegate a self-contained subtask to ONE child agent — it gets a FRESH "
+    "ISOLATED context (it sees ONLY the goal you pass, NEVER your conversation) and "
+    "its own task list, then reports back its summary — emit ONLY "
+    '{"action":"subagent","goal":"<the subtask>","max_steps":4,"role":"<optional role name>"}. '
+    "Write a COMPLETE, self-contained instruction: the child cannot see your history, "
+    "your files or ask you questions. Use it for a distinct subtask that can run on "
+    "its own (e.g. reading and summarising a big file); do not delegate the whole "
+    "task. One delegate per subtask. "
+    'If your role prompt lists a TEAM (the org chart), DISTRIBUTE work to it: emit ONLY '
+    '{"action":"dispatch","agent":"<A-id>","goal":"<the subtask>"} to run a real turn '
+    "in that teammate's own session (their role and model) and get their reply back. "
+    "Prefer dispatching independent work to teammates over doing everything yourself. "
     "Tool registry (allowlist):\n"
 )
 
@@ -731,18 +738,28 @@ def _open_todo_brief(sess, limit=10):
     return len(opn), "\n".join(lines)
 
 
-def _nudge_open_todos(sess):
+def _nudge_open_todos(sess, errors=None):
     """JAG-271: the post-update nudge — NAMES the exact steps still open (by id).
 
     Replaces the old generic "mark the next step 'doing'" which named nothing.
+    JAG-449: `errors` carries the REASONS a close was REFUSED (e.g. a failed
+    delegation). They were previously surfaced only in the tool CARD, so the
+    model saw "STILL OPEN" but not WHY it could not close — it then flailed and
+    the turn ended with the list open. The reasons now ride the nudge, so the
+    model knows to retry the SAME close (the delegation marker is one-shot).
     """
     on, brief = _open_todo_brief(sess)
+    _refused = ""
+    if errors:
+        _refused = ("\n! These updates were REFUSED — fix and retry EXACTLY these "
+                    "steps (a refusal is one-shot: a corrected retry is accepted):\n! "
+                    + "\n! ".join(str(e) for e in errors[:6]))
     if on:
-        return ("Noted — plan updated (by id). STILL OPEN (%d):\n%s\n"
+        return ("Noted — plan updated (by id). STILL OPEN (%d):\n%s%s\n"
                 "Now do the FIRST one: mark it 'doing' before you start it, then 'done' "
                 "with concrete evidence when it is really finished. Never redo a [x] "
                 "step; close an unwanted one as 'superseded' WITH a reason."
-                % (on, brief))
+                % (on, brief, _refused))
     return ("Noted — every step is now closed. If the user's request is fully answered, "
             "give the final plain-text answer now; otherwise say what still needs doing.")
 
@@ -1032,7 +1049,9 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
         persist_tool_card(sess, "update_todos", (not errors), args={"steps": steps},
                           result=_out, error=_err, exit_code=(0 if not errors else 1),
                           backend="harness", node=node, after=after)
-        return len(changed)
+        # JAG-449: return the REFUSAL reasons too, so the caller can put them in
+        # the model-facing nudge (they were previously only in the tool card).
+        return len(changed), errors
     except Exception as e:  # noqa: BLE001 — the task list must never break chat
         try:
             on_event("tool.result", session=sess["id"], tool="update_todos",
@@ -1041,7 +1060,7 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
                               backend="harness", node=node, after=after)
         except Exception:  # noqa: BLE001
             pass
-        return 0
+        return 0, [str(e)[:200]]
 
 
 def _apply_chat_replan(sess, act, on_event, node=None, after=None):
@@ -1101,11 +1120,15 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None):
         except (TypeError, ValueError):
             max_steps = 4
         model = _act.get("model") or _args.get("model") or None
+        # JAG-451: an optional named role brief (config/subagents.yaml).
+        role = str(_act.get("role") or _args.get("role") or "").strip() or None
         on_event("tool.call", session=sess["id"], tool="subagent",
-                 args={"goal": goal, "max_steps": max_steps, "model": model},
+                 args={"goal": goal, "max_steps": max_steps, "model": model,
+                       "role": role},
                  inline=True)
         spawned = _sub.spawn(goal, parent_run_id=sess["id"], max_steps=max_steps,
-                             model=model, depth=_sub.depth_of(sess["id"]) + 1) or {}
+                             model=model, depth=_sub.depth_of(sess["id"]) + 1,
+                             role=role) or {}
         sid = spawned.get("subagent_id")
         if not sid:
             err = spawned.get("error") or "spawn failed"
@@ -1158,6 +1181,98 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None):
         except Exception:  # noqa: BLE001
             pass
         return "subagent error: %s" % e
+
+
+def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
+    """Harness action `dispatch` (JAG-450): hand a subtask to a TEAMMATE agent's
+    OWN session (the org chart), not a fresh anonymous child run.
+
+    Unlike `subagent` (a private child that reports back), `dispatch` runs a real
+    turn IN the teammate's session — its ROLE.md, its model, its transcript — so an
+    orchestrator ("Master") actually DISTRIBUTES work across its team and the
+    teammate's own chat shows the delegated work. The teammate's reply comes back as
+    the observation. Only a DIRECT REPORT of the current agent may be targeted, and
+    only a NON-delegated turn may dispatch (a dispatched turn cannot dispatch
+    again) — that prevents A->B->A recursion.
+    """
+    try:
+        from longrun.agent import agents as agents_mod
+
+        _act = act if isinstance(act, dict) else {}
+        _args = _act.get("args") if isinstance(_act.get("args"), dict) else {}
+        to = str(_act.get("agent") or _act.get("to") or _args.get("agent")
+                 or _args.get("to") or "").strip()
+        goal = str(_act.get("goal") or _args.get("goal") or _act.get("detail")
+                    or "").strip()
+
+        def _fail(msg):
+            on_event("tool.result", session=sess["id"], tool="dispatch", ok=False,
+                     backend="harness", exit_code=1, summary="dispatch: " + msg)
+            persist_tool_card(sess, "dispatch", False, error=msg, backend="harness",
+                              node=node, after=after)
+            return "dispatch error: %s" % msg
+
+        if not goal:
+            return _fail("goal required")
+        if not to:
+            return _fail('agent required (a teammate A-id, e.g. "A9")')
+        me = agents_mod.REGISTRY.get(sess["id"]) or {}
+        if not me.get("id"):
+            return _fail("this session is not an org agent — designate it first")
+        member = agents_mod.REGISTRY.resolve(to)
+        team = agents_mod.REGISTRY.team_of(me["id"])
+        if not member or member.get("id") not in team or member.get("id") == me.get("id"):
+            return _fail("%r is not one of your direct reports (%s)"
+                         % (to, ", ".join(team[1:]) or "none"))
+        sid2 = member.get("session")
+        if not sid2:
+            return _fail("teammate %s has no session" % member.get("id"))
+        on_event("tool.call", session=sess["id"], tool="dispatch",
+                 args={"agent": member.get("id"), "goal": goal}, inline=True)
+        try:
+            from longrun.core import server as _srv
+            sess2 = _srv.get_or_create_session(sid2)
+            model2 = member.get("model") or None
+            before = len((_srv.load_session(sid2) or {}).get("messages", []))
+            for _ in _srv.chat_stream_gen(
+                    sess2, "[delegated by %s (%s)] %s"
+                    % (me.get("id"), me.get("name") or "", goal),
+                    model2, None, autonomous=True, sender=me.get("id")):
+                pass
+            s2 = _srv.load_session(sid2) or {}
+            turn = (s2.get("messages") or [])[before:]
+            reply = ""
+            for m in reversed(turn):
+                if m.get("role") == "assistant" and (m.get("content") or "").strip():
+                    reply = m.get("content")
+                    break
+        except Exception as e:  # noqa: BLE001
+            return _fail("teammate turn failed: %s" % str(e)[:200])
+        ok = bool(reply)
+        out = reply[:4000]
+        on_event("tool.result", session=sess["id"], tool="dispatch", ok=ok,
+                 exit_code=0 if ok else 1, backend="harness",
+                 args={"agent": member.get("id"), "goal": goal}, output=out,
+                 summary="dispatch %s: %s" % (member.get("id"),
+                                              "replied" if ok else "no reply"))
+        persist_tool_card(sess, "dispatch", ok,
+                          args={"agent": member.get("id"), "goal": goal},
+                          result=out, exit_code=0 if ok else 1, backend="harness",
+                          node=node, after=after)
+        if ok:
+            return ("Teammate %s (%s) replied:\n%s"
+                    % (member.get("id"), member.get("name") or "", out))
+        return "Teammate %s produced no reply." % member.get("id")
+    except Exception as e:  # noqa: BLE001 — dispatch must never break chat
+        try:
+            on_event("tool.result", session=sess["id"], tool="dispatch", ok=False,
+                     backend="harness", exit_code=1, stderr=str(e)[:200],
+                     summary="dispatch: error")
+            persist_tool_card(sess, "dispatch", False, error=str(e)[:200],
+                              backend="harness", node=node, after=after)
+        except Exception:  # noqa: BLE001
+            pass
+        return "dispatch error: %s" % e
 
 
 # JAG-93: post-turn reflection -> one append-only lesson in the memory store
@@ -1255,16 +1370,22 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
         n_tools = len(used_tools or [])
         importance = _turn_importance(used_tools, errored, corrected, work_steps)
         wrote = []
+        # JAG-451: honour the per-category approval policy (Settings ▸ Tools &
+        # approvals). DENIED skips the artifact; AUTO runs the full pipeline for
+        # skills (only VERIFIED ones install); anything else drafts/proposes.
+        k_mem = improve_mod.approval_kind("memory")
+        k_skills = improve_mod.approval_kind("skills")
         # 2. distill a lesson (maybe_reflect is cooldown-guarded, never raises)
-        if used_tools and importance >= improve_mod.IMPORTANCE_THRESHOLD:
+        if used_tools and importance >= improve_mod.IMPORTANCE_THRESHOLD and k_mem != "denied":
             lesson = maybe_reflect(sess, message, answer, True, model)
             if lesson:
                 wrote.append({"kind": "memory", "origin": "reflect",
                               "summary": lesson,
                               "path": "data/memory/agent_notes.md"})
         # 3. cross-trajectory abstraction on a high-signal turn
-        if (errored or corrected) and n_tools >= 3:
-            for p in improve_mod.mine_once(note="auto: %s" % sess.get("id", "")):
+        if (errored or corrected) and n_tools >= 3 and k_skills != "denied":
+            for p in improve_mod.mine_once(note="auto: %s" % sess.get("id", ""),
+                                           evolve=(k_skills == "auto")):
                 wrote.append({"kind": "proposal", "origin": "mining",
                               "summary": os.path.basename(str(p)),
                               "path": str(p)})
@@ -2050,9 +2171,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _invalid_streak = 0
             _node_here = _cur_node()   # JAG-190: nest the card where it happened
             if act["action"] == "update_todos":
-                _apply_chat_todo_updates(sess, act, on_event, node=_node_here,
-                                         after=_after())
-                nudge = _nudge_open_todos(sess)
+                _n_ch, _errs = _apply_chat_todo_updates(
+                    sess, act, on_event, node=_node_here, after=_after())
+                nudge = _nudge_open_todos(sess, errors=_errs)
             else:
                 _apply_chat_replan(sess, act, on_event, node=_node_here,
                                    after=_after())
@@ -2080,6 +2201,35 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _think_buf["t"] += _th + "\n"
                 on_delta("think", _th + "\n")
             obs = _apply_chat_subagent(sess, act, on_event, node=_cur_node(),
+                                       after=_after())
+            msgs.append({"role": "assistant", "content": answer})
+            _inject(obs + "\n\nContinue: call the next tool, or report the result.",
+                    "observation")
+            continue
+        if isinstance(act, dict) and act.get("action") == "dispatch":
+            # JAG-450: hand a subtask to a TEAMMATE's OWN session (the org chart),
+            # so an orchestrator distributes work instead of doing it all itself.
+            if plan_only or autonomous:
+                # A plan-only turn plans; a DELEGATED turn works — neither may
+                # dispatch further (autonomous also blocks A->B->A recursion).
+                msgs.append({"role": "assistant", "content": answer})
+                _inject("SYSTEM (harness) — %s: dispatching to teammates is not "
+                        "allowed here. %s" % (
+                            "PLAN-ONLY turn" if plan_only else "a DELEGATED turn",
+                            "Record the plan and stop." if plan_only
+                            else "Do this work yourself and report the result."),
+                        "nudge")
+                work_steps += 1
+                _total_work_steps += 1
+                continue
+            work_steps += 1
+            _total_work_steps += 1
+            used_tools.append("dispatch")
+            _th = str(act.get("thought") or "").strip()
+            if _th:
+                _think_buf["t"] += _th + "\n"
+                on_delta("think", _th + "\n")
+            obs = _apply_chat_dispatch(sess, act, on_event, node=_cur_node(),
                                        after=_after())
             msgs.append({"role": "assistant", "content": answer})
             _inject(obs + "\n\nContinue: call the next tool, or report the result.",
@@ -2443,6 +2593,34 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     if trace:
         trace.span("llm.chat", model=model, context=ctx_stats)
         trace.llm_call(msgs, answer + think)
+    # JAG-449: HARDEN "never end on open todos". The keepgoing stop block raises
+    # the human gate, but the loop can ALSO end by exhausting its tool-iteration
+    # budget (`while iters < CHAT_TOOL_MAX_ITERS`) or via an early artifact /
+    # term-action acceptance — paths that never reach that block, so `_hitl` was
+    # never set and the turn ended SILENTLY with the model's OWN steps still open
+    # (observed live: the Master room reported "audit complete" with 4 steps still
+    # open, four of them marked todo, and nothing for the user to act on).
+    # Raise the gate HERE, uniformly, for every remaining exit path. Excluded
+    # exactly like the keepgoing gate: a stale plan the user pivoted away from
+    # (_user_pivot), a headless turn (autonomous), a plan-only turn (its WHOLE
+    # point is to leave a plan), and an aborted turn.
+    if (not _hitl and not _user_pivot and not autonomous and not plan_only
+            and not _is_aborted(sess["id"])):
+        try:
+            _g2 = taskgraph.load(sess["id"]) or {}
+            _all2 = _g2.get("nodes") or []
+            _open2 = [n for n in _all2 if n.get("status") in taskgraph.OPEN_STATUSES]
+        except Exception:  # noqa: BLE001 — the gate must never break a turn
+            _all2, _open2 = [], []
+        if _open2:
+            _hitl = {"reason": "step_budget",
+                     "open": [{"id": n.get("id"), "label": n.get("label", "")}
+                              for n in _open2[:8]],
+                     "open_total": len(_open2)}
+            on_event("plan.stopped", session=sess["id"], reason="step_budget",
+                     open=len(_open2), total=len(_all2), rounds=_kg_rounds)
+            on_event("hitl.request", session=sess["id"], reason="step_budget",
+                     open=_hitl["open"], total=len(_all2), rounds=_kg_rounds)
     meta = {"model": model, "node": _cur_node()}
     content = answer.strip()
     if _hitl:
