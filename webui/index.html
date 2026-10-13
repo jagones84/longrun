@@ -3126,6 +3126,23 @@ function _attachmentChips(atts) {
       '" role="button" tabindex="0" title="' + _attr(title) + '">' + ic + " " + esc(a.label) + "</span>";
   }).join("") + "</div>";
 }
+/* JAG-431r11: split the model-facing attachment preamble off a stored user message
+   so a RELOAD can render the clean text AND rebuild the clickable attachment chips
+   (the live send path built them from the in-memory snapshot; a reload used to just
+   strip the preamble, leaving an old attachment un-openable). Returns
+   {atts:[{kind,label,value}], rest:<clean text>}. */
+function _splitAttBlock(content) {
+  const s = String(content || "");
+  const m = s.match(/^The user attached the following[^\n]*\n((?:-[^\n]*\n)+)/);
+  if (!m) return { atts: [], rest: s };
+  const atts = m[1].split("\n").filter(Boolean).map(ln => {
+    const v = ln.replace(/^-\s*/, "").trim();
+    const isFile = v.indexOf("file: ") === 0;
+    const label = isFile ? (v.slice(6).trim().split("/").pop() || "file") : v.slice(0, 40);
+    return { kind: isFile ? "path" : "text", label: label, value: v };
+  });
+  return { atts: atts, rest: s.slice(m[0].length).replace(/^\n+/, "") };
+}
 function _bindAttachmentChips(root) {
   (root || document).querySelectorAll(".chatatt").forEach(el => {
     const go = () => _openAttachment(el.dataset.kind, el.dataset.path);
@@ -3711,13 +3728,18 @@ async function loadHistory() {
     if (e.t === "m") {
       const m = e.v;
       if (m.role === "user") {
-        // JAG-431r4b: the stored content carries the model-facing attachment block
-        // ("The user attached the following — …") — a reload showed that preamble
-        // verbatim instead of the clean text the live send rendered. Strip it
-        // before the renderer gets the bubble.
-        const _stripped = String(m.content || "").replace(
-          /^The user attached the following[^\n]*\n(?:-[^\n]*\n)+\n?/, "");
-        who("user", _stripped, m.ts, m.sender, m.subjob, m.chapter); return;
+        // JAG-431r4b/431r11: the stored content carries the model-facing attachment
+        // block ("The user attached the following — …"). A reload must show the CLEAN
+        // text the live send rendered AND rebuild the CLICKABLE attachment chips, so an
+        // old attachment can still be opened (image in the viewer, other files in the
+        // editor). It used to just strip the preamble, leaving the attachment dead.
+        const _sp = _splitAttBlock(m.content);
+        const _un = who("user", _sp.rest, m.ts, m.sender, m.subjob, m.chapter);
+        if (_sp.atts.length) {
+          const _ub = _un && _un.querySelector(".bubble");
+          if (_ub) { _ub.insertAdjacentHTML("beforeend", _attachmentChips(_sp.atts)); _bindAttachmentChips(_ub); }
+        }
+        return;
       }
       if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter); return; }
       // v1.6.3 (JAG-55): some models inline their chain-of-thought in `content` as a
