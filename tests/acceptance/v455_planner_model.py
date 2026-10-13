@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""v455 — a session pinned to a CLOUD model must not burn the LOCAL GPU (JAG-455).
+"""v455 — ONE model per turn: the planner is the session's chat model (JAG-455).
 
-Reported symptom: benchmark sessions whose model reads `deepseek-reasoner` while the
-DGX GPU was busy. Root cause (one): the sync `/api/chat` path passed
-`routing.pick("planner")` to the planner call UNCONDITIONALLY. `config/routing.yaml`
-resolves the `planner` role by `pattern: qwen` -> the LOCAL DGX model, so every turn of
-a cloud-pinned session still made one local-GPU model call. The turn's own model is now
-authoritative and the role pattern is only the fallback.
+Reported live: benchmark sessions whose model read `deepseek-reasoner` while the DGX
+GPU was busy, and "the planner is not the same model as the session chat". Root cause
+(one, several symptoms): the plan was routed by a SEPARATE `planner` role whose
+`pattern: qwen` matched the LOCAL weights, so a session pinned to a cloud model still
+made a local model call (the router's autoload then loaded it).
+
+The fix removes the planner role entirely: the plan runs on the turn's own model
+(`routing.turn_model`), everywhere. It also pins the delete lifecycle (a deleted
+session can neither be resurrected by a live turn nor grow a look-alike row).
 
 Deterministic: no model, no network, no server.
 Run: python3 tests/acceptance/v455_planner_model.py
@@ -28,7 +31,9 @@ for d in ("cfg", "sessions", "graphs", "edits", "runs"):
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import server    # noqa: E402 — must precede httpapi (circular import)
-from longrun.core import httpapi  # noqa: E402
+from longrun.core import httpapi   # noqa: E402
+from longrun.model import routing  # noqa: E402
+from longrun.memory import stores  # noqa: E402
 
 results = []
 
@@ -43,60 +48,121 @@ def _read(*parts):
         return f.read()
 
 
-real_pick = httpapi.routing.pick
+class _FakeSrv:
+    """Router-facing stub: a known session pin, a distinct harness default."""
+
+    DEFAULT = "default:cloud-model"
+
+    def load_session(self, sid):
+        return {"id": sid, "model": "session-pinned:model"} if sid == "known" else None
+
+    def default_model(self):
+        return self.DEFAULT
+
+
+real_pick = routing.pick
+real_srv = routing._srv
 try:
-    # ---- A: _planner_model — the turn's model wins ---------------------------
-    httpapi.routing.pick = lambda role, preferred=None: "local-qwen-alias"
-    try:
-        got = httpapi._planner_model({"model": "openrouter:deepseek/deepseek-reasoner"},
-                                     "openrouter:deepseek/deepseek-reasoner")
-        check("A1 an explicit request model wins over the role pattern",
-              got == "openrouter:deepseek/deepseek-reasoner", got)
-        got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"}, None)
-        check("A2 the session pin is used when the request has no model",
-              got == "deepseek:deepseek-reasoner", got)
-        got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"}, "explicit:model")
-        check("A3 the explicit request model beats the session pin",
-              got == "explicit:model", got)
-        got = httpapi._planner_model({}, None)
-        check("A4 no pin at all falls back to the planner ROLE pattern",
-              got == "local-qwen-alias", got)
-        got = httpapi._planner_model(None, None)
-        check("A5 a missing session does not blow up", got == "local-qwen-alias", got)
+    # The role pattern resolves to a LOCAL alias we must NEVER see used again.
+    routing.pick = lambda role, preferred=None: "local-qwen-alias"
+    routing._srv = lambda: _FakeSrv()
 
-        def _boom(role, preferred=None):
-            raise RuntimeError("router unreachable")
+    # ---- A: the planner model IS the turn's model ----------------------------
+    got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"},
+                                 "deepseek:deepseek-reasoner")
+    check("A1 an explicit request model wins", got == "deepseek:deepseek-reasoner", got)
+    got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"}, None)
+    check("A2 the session pin is used when the request has no model",
+          got == "deepseek:deepseek-reasoner", got)
+    got = httpapi._planner_model({"model": "deepseek:deepseek-reasoner"}, "explicit:model")
+    check("A3 the explicit request model beats the session pin", got == "explicit:model", got)
+    got = httpapi._planner_model("known", None)
+    check("A4 a session ID (str) resolves to that session's pin",
+          got == "session-pinned:model", got)
+    got = httpapi._planner_model("unknown", None)
+    check("A5 an unknown session id falls back to the harness default",
+          got == _FakeSrv.DEFAULT, got)
+    got = httpapi._planner_model({}, None)
+    check("A6 with NO pin the planner is the harness default — NEVER the role pattern",
+          got == _FakeSrv.DEFAULT and got != "local-qwen-alias", got)
+    check("A7 a missing session does not blow up",
+          httpapi._planner_model(None, None) == _FakeSrv.DEFAULT)
 
-        httpapi.routing.pick = _boom
-        check("A6 an unroutable role returns None instead of raising",
-              httpapi._planner_model({}, None) is None)
-    finally:
-        httpapi.routing.pick = real_pick
+    def _boom(role, preferred=None):
+        raise RuntimeError("router unreachable")
 
-    # ---- B: the sync chat path is WIRED to the helper ------------------------
-    src = _read("src", "longrun", "core", "httpapi.py")
-    check("B1 the sync /api/chat planner call uses _planner_model",
-          '_planner_model(sess, body.get("model"))' in src)
-    check("B2 no bare routing.pick(\"planner\") is passed to start_run_graph",
-          'sess["id"], routing.pick("planner")' not in src)
-    check("B3 the helper documents the local-GPU root cause", "LOCAL DGX model" in src)
-    check("B4 the sync chat TURN also honours the session pin, not just the planner",
-          src.count('body.get("model") or sess.get("model")') >= 2)
-
-    # ---- C: the benchmark arm pins EVERY routing role ------------------------
-    la = _read("benchmarks", "longrun_adapter.py")
-    check("C1 setup() pins all five roles to the arm's model",
-          'roles = ("chat", "planner", "agent", "subagent", "summarizer")' in la
-          and 'POST", "/api/routing"' in la)
-    check("C2 the pin is conditional on the arm actually having a model",
-          "if self.model:" in la and "{r: {\"model\": self.model} for r in roles}" in la)
-    check("C3 teardown() restores the previous role pins (clears ours)",
-          "self._routing = dict((rstatus or {}).get(\"config\") or {})" in la
-          and 'roles[role] = {"model": entry.get("model") or ""}' in la)
-    check("C4 the pin's stated purpose is an equal-conditions run",
-          "burned the local" in la and "GPU for the planner call" in la)
+    routing.pick = _boom
+    check("A8 an unroutable role never breaks the turn",
+          httpapi._planner_model({"model": "x"}, None) == "x")
+    check("A9 turn_model never consults a planner role",
+          routing.turn_model({"model": "x"}, None) == "x")
 finally:
-    httpapi.routing.pick = real_pick
+    routing.pick = real_pick
+    routing._srv = real_srv
+
+# ---- B: every planner call site is wired to the turn model -------------------
+http_src = _read("src", "longrun", "core", "httpapi.py")
+tg_src = _read("src", "longrun", "plan", "taskgraph.py")
+ag_src = _read("src", "longrun", "agent", "agent.py")
+dc_src = _read("src", "longrun", "model", "decision.py")
+rt_src = _read("src", "longrun", "model", "routing.py")
+av_src = _read("src", "longrun", "core", "api_v02.py")
+
+check("B1 the sync /api/chat planner uses _planner_model",
+      '_planner_model(sess, body.get("model"))' in http_src)
+check("B2 the planner and the ANSWER share ONE model variable",
+      'start_run_graph(sess["id"], message, sess["id"], _tm,' in http_src
+      and "chat_once(sess, message, _tm," in http_src)
+check("B3 the plan (write_todos) uses the session's model",
+      "m = routing.turn_model(session_id, model)" in tg_src)
+check("B4 the RE-plan uses the session's model",
+      'm = routing.turn_model(graph.get("session_id"), model)' in tg_src)
+check("B5 the legacy planner uses the turn model, not a planner role",
+      "model = routing.turn_model(None, model)" in ag_src)
+check("B6 the heuristic router has no planner branch",
+      'role = "planner" if' not in dc_src and "role = ctx.role or \"agent\"" in dc_src)
+check("B7 api_v02 never overrides an EXPLICIT model with a route hint",
+      "if not model:" in av_src and "_hint.model\n" not in av_src
+      and "getattr(_hint, \"model\", \"\")" in av_src)
+
+# ---- C: the planner ROLE is gone from the config ----------------------------
+check("C1 DEFAULT_CONFIG has no planner role", '"planner"' not in rt_src)
+routing_cfg = _read("config", "routing.yaml")
+check("C2 config/routing.yaml has no planner role", "planner:" not in routing_cfg)
+check("C3 turn_model exists and documents the one-model rule",
+      "def turn_model(" in rt_src and "NO separate planner model" in rt_src)
+check("C4 no source file still calls pick(\"planner\")",
+      not any('pick("planner")' in _read("src", "longrun", p)
+              for p in ("core/httpapi.py", "plan/taskgraph.py", "agent/agent.py",
+                        "model/decision.py", "core/api_v02.py")))
+
+# ---- D: the DELETE lifecycle cannot resurrect a session ---------------------
+st_src = _read("src", "longrun", "memory", "stores.py")
+check("D1 a deleted transcript is MOVED to trash/, not unlinked",
+      "TRASH_DIR" in st_src and "os.replace(path, dest)" in st_src
+      and "_trash_move(f)" in st_src)
+check("D2 the trash is pruned (bounded)", "_prune_trash()" in st_src
+      and "_TRASH_KEEP" in st_src)
+check("D3 a deleted id is REFUSED by the chat surface — no look-alike row",
+      "def _open_session(" in http_src and "return get_or_create_session(sid, title" in http_src)
+check("D4 every chat path resolves through _open_session and 404s when it is gone",
+      http_src.count("_open_session(") >= 4 and '"session was deleted"' in http_src)
+check("D5 DELETE still 404s on an already-gone session (idempotent)",
+      "if not os.path.isfile(fpath):" in http_src and '"session not found"' in http_src)
+check("D6 the tombstone is still RETAINED on delete (v222/v315 contract kept)",
+      "_DELETED_SESSIONS.add(sid)" in http_src and "_persist_tombstones()" in http_src)
+
+# ---- D functional: a deleted id can never grow a look-alike row -------------
+with stores._deleted_lock:
+    stores._DELETED_SESSIONS.add("deadbeefcafe")
+try:
+    check("D7 _open_session REFUSES a tombstoned id (returns None, no new row)",
+          httpapi._open_session("deadbeefcafe") is None)
+    check("D8 _open_session still opens a session when no id is given",
+          bool((httpapi._open_session(None, "t455") or {}).get("id")))
+finally:
+    with stores._deleted_lock:
+        stores._DELETED_SESSIONS.discard("deadbeefcafe")
 
 print("---")
 okc = sum(results)

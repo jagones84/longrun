@@ -2748,7 +2748,9 @@ def generate_plan(goal, model=None):
     sess = {"id": "planner", "title": "planner", "created": time.time(), "messages": []}  # ephemeral
     sys = system_prompt() + "\n\n" + PLANNER_PROMPT
     msgs = [{"role": "system", "content": sys}, {"role": "user", "content": goal}]
-    model = model or routing.pick("planner") or default_model()
+    # JAG-455: one model per turn — the legacy standalone planner uses the harness
+    # default, never a separate `planner` role model (that was the LOCAL weights).
+    model = routing.turn_model(None, model) or default_model()
     trace = RunTrace("plan", goal=goal, model=model)
     answer, think = _router_stream(msgs, model, lambda ch, t: publish(
         "plan.think", channel=ch, text=t))

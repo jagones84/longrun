@@ -506,18 +506,18 @@ All notable changes to Longrun are documented here. The format follows
   the **☰** menu keeps only the sandbox status + the command palette. Battery 137/137.
 
 ### Fixed
-- **A session pinned to a CLOUD model no longer burns the local GPU (JAG-455), battery 180/180.**
-  Reported live: harness sessions whose model read `deepseek-reasoner` while the DGX GPU was busy. Root cause
-  (one): the sync `/api/chat` path passed `routing.pick("planner")` to the planner call **unconditionally**, and
-  `config/routing.yaml` resolves the `planner` role by `pattern: qwen` — the **local** DGX model — so every turn
-  of a cloud-pinned session still made one local model call (and the router's autoload loaded the local weights).
-  The turn's own model is now authoritative via `_planner_model()`: explicit request model → session pin → the
-  `planner` role pattern only as a fallback. The same sync path also ignored the session pin for the answering
-  turn (it fell through to `default_model()`), so the two are consistent now. **Verified live** on a session
-  pinned to `deepseek:deepseek-chat`: the emitted `graph.generated` planner model AND the chat model are both the
-  cloud ref, and the local roster's `loaded` set is **unchanged** (no local autoload). The benchmark arm pins
-  every routing role to its own model in `setup()` and restores the previous pins in `teardown()`, so a
-  comparison run can no longer mix a local planner into a cloud arm. Pinned by new `v455` (14/14).
+- **ONE model per turn: the planner IS the session's chat model — the local GPU is never a secret helper (JAG-455), battery 180/180.**
+  Reported live: harness sessions whose model read `deepseek-reasoner` while the DGX GPU was busy. Root cause (one, several symptoms): the plan was
+  routed by a SEPARATE `planner` role in `config/routing.yaml` whose `pattern: qwen` matched the **LOCAL** weights, so every turn of a cloud-pinned
+  session still made one local model call — and the router's autoload then LOADED the local weights, which is the GPU the operator saw. The same role
+  was consulted by the sync `/api/chat` path, by `write_todos`/re-plan, by the legacy planner and by the heuristic router; and `/api/agent/run`
+  resolved `model or default_model()` FIRST (dead branch) and then ALWAYS overwrote it with the route hint's `pick("agent")` — the LOCAL model — even
+  when the caller had pinned a cloud one. **The `planner` role is deleted** (config + defaults + code): every planner call now runs on the turn's own
+  model via the new `routing.turn_model()` (explicit request model → session pin → harness default), and the planner and the answer share ONE model
+  variable. A harness comparison therefore tests ONE model — never a mix with a stronger or cheaper helper. **Verified live**: a session pinned to
+  `deepseek:deepseek-chat` gets the cloud ref for the planner call AND the answer, and the router roster's `loaded` set stays unchanged (no local
+  autoload). Deleting sessions is now also safe: a deleted transcript is MOVED to `data/trash/` (recovers a misclick) and a deleted id can no longer
+  be answered with a look-alike fresh session — that is why deleting during a running benchmark appeared to *duplicate* rows. Pinned by `v455` (28/28).
 - **A completed chat turn can no longer leave a plan nobody authored or closes (JAG-431n), battery 164/164.**
   The JAG-76 "guarantee a plan" fallback ran a planner model call **after** the turn had already answered, so its
   steps described work that was already done; nobody ever executed them, and JAG-173 forbids auto-closing a step

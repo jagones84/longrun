@@ -62,23 +62,36 @@ AUTH_TOKEN = None
 
 
 def _planner_model(sess, model):
-    """Model for THIS turn's planner call (JAG-455).
+    """Model for THIS turn's planner call (JAG-455): the SAME model as the turn.
 
-    An explicit request/session model WINS; the configured `planner` role is only
-    the fallback. Before this the sync `/api/chat` path passed
-    `routing.pick("planner")` unconditionally, so a session pinned to a CLOUD model
-    (e.g. deepseek-reasoner) still ran the planner call on whatever the role pattern
-    matched (`pattern: qwen` -> the LOCAL DGX model) and burned the local GPU under a
-    cloud-model session. Deterministic, never raises.
+    There is NO separate planner model. The planner may never be a different (e.g.
+    LOCAL, cheaper or stronger) model than the session's chat: a session pinned to a
+    cloud model used to run its planner on the `planner` role pattern (`qwen`) = the
+    LOCAL DGX weights, so the GPU lit up under a cloud-model session and a benchmark
+    measured a mixed system. Delegates to `routing.turn_model`.
+    Deterministic, never raises.
     """
-    if model:
-        return model
-    if sess and sess.get("model"):
-        return sess["model"]
     try:
-        return routing.pick("planner")
+        return routing.turn_model(sess, model)
     except Exception:  # noqa: BLE001 — routing must never break the turn
-        return None
+        return model or None
+
+
+def _open_session(sid, title=None, workspace=None):
+    """Resolve a session for a chat / attach — REFUSING a deleted id (JAG-455).
+
+    `get_or_create_session` answered a tombstoned id with a BRAND-NEW session, so a
+    stale tab — or a benchmark whose task was deleted WHILE it ran — made look-alike
+    rows appear: the operator deletes 20 rows mid-run and 20 new ones show up. A
+    deleted session stays deleted here (return None -> the caller answers 404);
+    only a request that carries NO id gets a fresh session.
+    """
+    if sid:
+        with _deleted_lock:
+            gone = sid in _DELETED_SESSIONS
+        if gone:
+            return None
+    return get_or_create_session(sid, title, workspace)
 
 
 def check_auth(headers, qs=None):
@@ -1481,7 +1494,9 @@ class Handler(BaseHTTPRequestHandler):
             message = qs.get("message", "")
             if not message:
                 return self._send(400, {"error": "message required"})
-            sess = get_or_create_session(sid)
+            sess = _open_session(sid)          # JAG-455: a deleted id is refused
+            if sess is None:
+                return self._send(404, {"error": "session was deleted"})
             # JAG-201: prepare + append the user turn INSIDE the worker's turn lock
             # (chat_stream_gen), not here — two concurrent turns must not overwrite.
             return sse_response(self, chat_stream_gen(sess, message, qs.get("model"), None,
@@ -1596,7 +1611,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "message must be a string"})
             if not message:
                 return self._send(400, {"error": "message required"})
-            sess = get_or_create_session(body.get("session"))
+            sess = _open_session(body.get("session"))   # JAG-455: refuse a deleted id
+            if sess is None:
+                return self._send(404, {"error": "session was deleted"})
             # JAG-201: one turn at a time per session; RELOAD + prepare INSIDE the
             # lock so a concurrent turn's save is never overwritten (lost update).
             with _turn_lock(sess["id"]):
@@ -1642,16 +1659,16 @@ class Handler(BaseHTTPRequestHandler):
                         _ex["jid"] = None
                         _ex["subjob"] = None
                         taskgraph.save(_ex)
-                    # JAG-455: the planner call must use the SAME model as the turn
-                    # whenever the request or the session pins one (see _planner_model).
+                    # JAG-455: the planner and the ANSWER run on the SAME model — the
+                    # turn's own model (`_planner_model`). There is no separate planner
+                    # model any more, so a session pinned to a cloud model can never
+                    # light up the LOCAL weights for its plan.
                     # JAG-431q: make the PLANNER call abortable too — a Stop pressed while
                     # the planner is decoding must kill it, not wait for it to finish.
-                    start_run_graph(sess["id"], message, sess["id"],
-                                    _planner_model(sess, body.get("model")),
+                    _tm = _planner_model(sess, body.get("model"))
+                    start_run_graph(sess["id"], message, sess["id"], _tm,
                                     cancel=(lambda: _is_aborted(sess["id"])))
-                    reply, model = chat_once(sess, message,
-                                             body.get("model") or sess.get("model"),
-                                             trace=trace,
+                    reply, model = chat_once(sess, message, _tm, trace=trace,
                                              autonomous=(body.get("mode") or qs.get("mode")) == "goal")
                 except Exception as e:  # noqa: BLE001
                     # JAG-51: persist an explicit assistant error turn *before* the
@@ -1717,7 +1734,9 @@ class Handler(BaseHTTPRequestHandler):
             message = body.get("message") or qs.get("message", "")
             if not message:
                 return self._send(400, {"error": "message required"})
-            sess = get_or_create_session(body.get("session") or qs.get("session"))
+            sess = _open_session(body.get("session") or qs.get("session"))
+            if sess is None:                    # JAG-455: refuse a deleted id
+                return self._send(404, {"error": "session was deleted"})
             # JAG-201: prepare + append inside the worker's turn lock (see GET path).
             return sse_response(self, chat_stream_gen(
                 sess, message, body.get("model") or qs.get("model"), None,

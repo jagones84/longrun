@@ -33,9 +33,11 @@ DEFAULT_CONFIG = {
     # JAG-403: NO hardcoded fallback chains. Each role picks its model by
     # `pattern` (substring match on the live roster) only. A user who wants a
     # failover chain can add `fallbacks` per role (CLI/UI or config/routing.yaml).
+    # JAG-455: there is NO `planner` role. The planner call always runs on the
+    # turn's own model (`turn_model`) — a separate planner model silently made a
+    # session pinned to a cloud model burn the LOCAL weights.
     "roles": {
         "chat": {"pattern": "nex", "fallbacks": []},
-        "planner": {"pattern": "qwen", "fallbacks": []},
         "agent": {"pattern": "nex", "fallbacks": []},
         "subagent": {"pattern": "glm", "fallbacks": []},
         "summarizer": {"pattern": "glm", "fallbacks": []},
@@ -161,6 +163,38 @@ def role_model(role):
     """
     entry = (load_config().get("roles") or {}).get(role) or {}
     return entry.get("model") or None
+
+
+def turn_model(sess=None, model=None):
+    """The ONE model a turn runs on — and therefore the model its planner runs on.
+
+    JAG-455: there is deliberately NO separate planner model. The resolution is
+    IDENTICAL to the answering call: an explicit request model, else the session's
+    pinned model, else the harness default. `roles.planner` is NOT consulted: it
+    matched `pattern: qwen`, i.e. the LOCAL weights, so a session pinned to a cloud
+    model still ran its planner on the local GPU (and the router's autoload loaded
+    it). A harness comparison must test ONE model — never a mix where a stronger or
+    cheaper helper model answers part of the turn.
+
+    `sess` may be a session dict OR a session id (str). Never raises; returns None
+    only if the default itself cannot be resolved.
+    """
+    if model:
+        return model
+    pin = None
+    if isinstance(sess, dict):
+        pin = sess.get("model")
+    elif isinstance(sess, str) and sess:
+        try:
+            pin = (_srv().load_session(sess) or {}).get("model")
+        except Exception:  # noqa: BLE001 — a missing store must not break a turn
+            pin = None
+    if pin:
+        return pin
+    try:
+        return _srv().default_model()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def model_chain(role):

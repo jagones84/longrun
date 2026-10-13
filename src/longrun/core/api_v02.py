@@ -348,26 +348,21 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     if st is None:
         st = new_run(goal, model, max_steps, script)
     st.goal, st.max_steps, st.script = goal, max_steps, script
-    model = model or srv.default_model()
-    # v0.3 multi-model routing: role-based selection keeps the explicit model
-    # request intact and otherwise picks the agent-role alias from the roster.
+    # JAG-455: an EXPLICIT model is authoritative — the decision hint must never swap
+    # it. The old code resolved `model or default_model()` FIRST (so the `if not
+    # model` branch below was dead) and then ALWAYS overwrote it with the route
+    # hint's role model (`pick("agent")` = the LOCAL weights): every /api/agent/run
+    # silently ran on the local model even when the caller had pinned a cloud one.
     if not model:
         try:
             from longrun.model import routing
-            model = routing.pick("agent") or srv.default_model()
-        except Exception:
+            from longrun.model import decision as _decision
+            _hint = _decision.get().route(_decision.StepCtx(role="agent", goal=goal))
+            model = (getattr(_hint, "model", "") or routing.pick("agent")
+                     or srv.default_model())
+        except Exception:  # noqa: BLE001 — a routing hint must never break a run
             model = srv.default_model()
     st.model = model
-    # JAG-426 (Domain 6): let the local decision layer override the step model
-    # (route hint). `mode: null` returns an empty hint, so this is a no-op by default.
-    try:
-        from longrun.model import decision as _decision
-        _hint = _decision.get().route(_decision.StepCtx(role="agent", goal=goal))
-        if getattr(_hint, "model", ""):
-            model = _hint.model
-            st.model = model
-    except Exception:  # noqa: BLE001 — a routing hint must never break a run
-        pass
     # JAG-448: the subagent (and any caller passing `fallbacks`) gets a real
     # failover chain of literal model refs. `model` stays PRIMARY; on a stream
     # failure the loop walks `candidates` instead of dying at the first error.

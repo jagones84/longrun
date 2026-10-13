@@ -100,7 +100,9 @@ class HeuristicDecision:
     def route(self, ctx):
         try:
             from longrun.model import routing
-            role = "planner" if (ctx.plan_open > 0 and not ctx.last_tool) else (ctx.role or "agent")
+            # JAG-455: there is no `planner` role any more — a step never switches
+            # to a different model just because a plan is open.
+            role = ctx.role or "agent"
             m = routing.pick(role)
             return RoutingHint(model=m or "", reason="role=%s" % role)
         except Exception:  # noqa: BLE001

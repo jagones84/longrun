@@ -785,14 +785,11 @@ def generate_from_model(run_id, goal, session_id=None, model=None, on_event=None
     stream = _TodoStream(graph, on_event=on_event)
     msgs = [{"role": "system", "content": srv.SYSTEM_PROMPT + "\n\n" + WRITE_TODOS_PROMPT},
             {"role": "user", "content": goal}]
-    m = model
-    if not m:
-        try:
-            from longrun.model import routing
-            m = routing.pick("planner")
-        except Exception:  # noqa: BLE001
-            m = None
-    m = m or srv.default_model()
+    # JAG-455: the plan runs on the SESSION's own model, never a separate `planner`
+    # role model — that one resolved to the LOCAL weights (`pattern: qwen`) and lit
+    # up the GPU under a session pinned to a cloud model.
+    from longrun.model import routing
+    m = routing.turn_model(session_id, model) or srv.default_model()
 
     def on_delta(channel, text):
         if channel == "think" or not text:
@@ -832,14 +829,10 @@ def replan_from_model(graph, note=None, model=None, on_event=None):
               "\nEmit ONLY the NEW steps still missing (never repeat an existing label).")
     msgs = [{"role": "system", "content": srv.SYSTEM_PROMPT + "\n\n" + prompt},
             {"role": "user", "content": note or graph.get("goal") or "continue"}]
-    m = model
-    if not m:
-        try:
-            from longrun.model import routing
-            m = routing.pick("planner")
-        except Exception:  # noqa: BLE001
-            m = None
-    m = m or srv.default_model()
+    # JAG-455: same rule as generate_from_model — the re-plan runs on the session's
+    # own model, never on a separate `planner` role model.
+    from longrun.model import routing
+    m = routing.turn_model(graph.get("session_id"), model) or srv.default_model()
     stream = _TodoStream(graph, on_event=on_event, source="model:replan",
                          skip_existing=True)
 

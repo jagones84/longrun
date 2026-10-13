@@ -112,6 +112,45 @@ def _persist_tombstones():
 _load_tombstones()
 
 
+# JAG-455: a deleted transcript is MOVED to trash/, never unlinked. An operator who
+# deletes a row by mistake (or deletes DURING a run, while the turn worker is still
+# writing) can recover it, and the oldest files are pruned so the trash cannot grow
+# without bound. Repeated DELETE is now a clean 404 (the file is already gone).
+TRASH_DIR = os.path.join(REPO, "data", "trash")
+_TRASH_KEEP = 200
+_TRASH_KEEP_SECS = 30 * 86400
+
+
+def _trash_move(path):
+    """Move a deleted artifact into data/trash/ (best-effort, keeps name + ext)."""
+    try:
+        if not os.path.exists(path):
+            return False
+        os.makedirs(TRASH_DIR, exist_ok=True)
+        base = os.path.basename(path)
+        dest = os.path.join(TRASH_DIR, base)
+        if os.path.exists(dest):
+            dest = os.path.join(TRASH_DIR, "%d-%s" % (int(time.time()), base))
+        os.replace(path, dest)
+        return True
+    except OSError:
+        return False
+
+
+def _prune_trash():
+    """Cap data/trash/: keep the newest `_TRASH_KEEP`, drop the rest after 30 days."""
+    try:
+        files = [os.path.join(TRASH_DIR, f) for f in os.listdir(TRASH_DIR)]
+        files = [f for f in files if os.path.isfile(f)]
+        files.sort(key=os.path.getmtime, reverse=True)
+        now = time.time()
+        for f in files[_TRASH_KEEP:]:
+            if now - os.path.getmtime(f) > _TRASH_KEEP_SECS:
+                os.unlink(f)
+    except OSError:
+        pass
+
+
 def save_session(sess):
     sid = sess.get("id")
     if not _valid_sid(sid):
@@ -176,11 +215,9 @@ def _purge_session_artifacts(sid):
         for f in glob.glob(glob.escape(base) + "*"):
             if f.endswith(".tmp"):
                 continue
-            try:
-                os.unlink(f)
+            if _trash_move(f):          # JAG-455: recoverable, not unlinked
                 removed.append(os.path.basename(f))
-            except OSError:
-                pass
+    _prune_trash()
     return removed
 
 
