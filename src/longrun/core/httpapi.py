@@ -1787,6 +1787,14 @@ class Handler(BaseHTTPRequestHandler):
                 _persist_tombstones()   # JAG-315: survive a restart
             removed = _purge_session_artifacts(sid)
             _forget_session_runtime(sid)
+            # JAG-431r6: deleting a session also drops its HIDDEN knowledge
+            # notebook (the per-session KB scope) so it cannot leak as orphans
+            # in the single global KB.
+            try:
+                from longrun.memory import knowledge as _kb
+                _kb.purge_session(sid)
+            except Exception:  # noqa: BLE001 — KB cleanup must not break the delete
+                pass
             # JAG-314: an agent IS a session — deleting the session must also
             # release the agent designation (and scrub its jobs/routines), else a
             # later job/routine resurrects it via get_or_create_session.

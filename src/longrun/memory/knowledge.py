@@ -11,6 +11,7 @@ candidate URLs; ``import_candidates(notebook, urls)`` feeds each URL through the
 ingestion pipeline into the chosen notebook.
 """
 import json
+import hashlib
 import os
 import re
 import sqlite3
@@ -61,7 +62,9 @@ def _init(db):
     db.executescript(
         """
         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
-        CREATE TABLE IF NOT EXISTS notebooks(id TEXT PRIMARY KEY, name TEXT, created REAL);
+        CREATE TABLE IF NOT EXISTS notebooks(
+            id TEXT PRIMARY KEY, name TEXT, created REAL,
+            hidden INTEGER DEFAULT 0, owner TEXT);
         CREATE TABLE IF NOT EXISTS sources(
             id TEXT PRIMARY KEY, notebook TEXT, kind TEXT, ref TEXT, title TEXT,
             added REAL, chunks INTEGER);
@@ -72,23 +75,25 @@ def _init(db):
         CREATE INDEX IF NOT EXISTS sources_notebook ON sources(notebook);
         """
     )
-    # JAG-431r5: back-fill session_id on legacy DBs that pre-date the column.
-    # Must run BEFORE the CREATE INDEX on the new column (a CREATE INDEX on a
-    # missing column aborts the script and rolls the migration back).
-    for tbl in ("sources", "chunks"):
+    # JAG-431r6: phantom (per-session) notebooks. The DB is ONE global KB; a
+    # session-scoped source lives in a REAL notebook row tagged hidden=1 with an
+    # owner == session id. This reuses the notebook/sources/chunks/search/embed
+    # pipeline verbatim — no per-row session mirroring, no duplicated embedders.
+    # Migrate legacy DBs that pre-date these columns.
+    for col, ddl in (("hidden", "INTEGER DEFAULT 0"), ("owner", "TEXT")):
         try:
-            db.execute("ALTER TABLE %s ADD COLUMN session_id TEXT" % tbl)
+            db.execute("ALTER TABLE notebooks ADD COLUMN %s %s" % (col, ddl))
         except sqlite3.OperationalError:
             pass
-    # JAG-431r5: session_id indexes (now safe — the column is guaranteed to exist).
-    db.execute("CREATE INDEX IF NOT EXISTS chunks_session ON chunks(session_id)")
-    db.execute("CREATE INDEX IF NOT EXISTS sources_session ON sources(session_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS notebooks_owner ON notebooks(owner)")
+    db.execute("CREATE INDEX IF NOT EXISTS notebooks_hidden ON notebooks(hidden)")
     fts = True
     try:
         db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, name, path)")
     except sqlite3.OperationalError:
         fts = False
-    db.execute("INSERT OR IGNORE INTO notebooks(id, name, created) VALUES(?,?,?)",
+    db.execute("INSERT OR IGNORE INTO notebooks(id, name, created, hidden, owner) "
+               "VALUES(?,?,?,0,NULL)",
                (DEFAULT_ID, DEFAULT_NAME, time.time()))
     db.commit()
     return fts
@@ -102,17 +107,17 @@ def _has_fts(db):
         return False
 
 
-def _insert_chunks(db, sid, path, lang, kind, pieces, fts, session_id=None):
+def _insert_chunks(db, sid, path, lang, kind, pieces, fts):
     n = 0
     for p in pieces or []:
         text = p.get("text") or ""
         if not text.strip():
             continue
         cur = db.execute(
-            "INSERT INTO chunks(source, path, lang, kind, name, start, end, tokens, text, session_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO chunks(source, path, lang, kind, name, start, end, tokens, text) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
             (sid, path, lang, kind, p.get("name") or "", int(p.get("start") or 0),
-             int(p.get("end") or 0), max(1, len(text) // 4), text, session_id))
+             int(p.get("end") or 0), max(1, len(text) // 4), text))
         if fts:
             db.execute("INSERT INTO chunks_fts(rowid, text, name, path) VALUES(?,?,?,?)",
                        (cur.lastrowid, text, p.get("name") or "", path))
@@ -129,17 +134,48 @@ def _drop_source(db, sid):
 
 
 # ------------------------------------------------------------------ notebooks --
-def list_notebooks():
+def list_notebooks(include_hidden=False):
+    """List notebooks. HIDDEN (per-session) notebooks are excluded by default
+    (JAG-431r6) so the UI's notebook menu only shows the GLOBAL notebooks.
+    """
     db = _connect()
     try:
         _init(db)
-        rows = db.execute("SELECT id, name, created FROM notebooks ORDER BY created").fetchall()
+        sql = "SELECT id, name, created, hidden, owner FROM notebooks"
+        if not include_hidden:
+            sql += " WHERE hidden = 0"
+        sql += " ORDER BY created"
+        rows = db.execute(sql).fetchall()
         counts = {r["notebook"]: r["c"] for r in db.execute(
             "SELECT notebook, count(*) c FROM sources GROUP BY notebook")}
         return [{"id": r["id"], "name": r["name"], "created": r["created"],
                  "sources": counts.get(r["id"], 0)} for r in rows]
     finally:
         db.close()
+
+
+def purge_session(sid):
+    """Delete every HIDDEN notebook owned by a session (JAG-431r6).
+
+    Called when a session is deleted so its KB scope (sources + chunks) is
+    removed from the single global DB instead of leaking as orphans.
+    """
+    if not sid:
+        return {"ok": True, "removed": []}
+    removed = []
+    with LOCK:
+        db = _connect()
+        try:
+            _init(db)
+            for row in db.execute("SELECT id FROM notebooks WHERE owner=?", (str(sid),)).fetchall():
+                for s in db.execute("SELECT id FROM sources WHERE notebook=?", (row["id"],)).fetchall():
+                    _drop_source(db, s["id"])
+                db.execute("DELETE FROM notebooks WHERE id=?", (row["id"],))
+                removed.append(row["id"])
+            db.commit()
+            return {"ok": True, "removed": removed}
+        finally:
+            db.close()
 
 
 def create_notebook(name):
@@ -324,14 +360,32 @@ def _preview_for_path(path):
 
 
 # -------------------------------------------------------------------- sources --
-def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts,
-            session_id=None):
+def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts):
     n = _insert_chunks(db, sid, path, lang, "doc" if kind != "code" else "code",
-                       pieces, fts, session_id=session_id)
-    db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks, session_id) "
-               "VALUES(?,?,?,?,?,?,?,?)", (sid, notebook, kind, ref, title, time.time(), n,
-                                           session_id))
+                       pieces, fts)
+    db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks) "
+               "VALUES(?,?,?,?,?,?,?)", (sid, notebook, kind, ref, title, time.time(), n))
     return n
+
+
+def _session_notebook(db, sid, create=True):
+    """Get (or create) the hidden notebook that owns this session's KB scope.
+
+    The notebook id is DETERMINISTIC (``sess-<sha1(sid)>``) so the same session
+    always routes to the same phantom notebook without a lookup. It is tagged
+    hidden=1 and owner=<sid>, so it never shows in the UI's notebook list and is
+    only reachable by the session itself (or a full-approval scope).
+    """
+    if not sid:
+        return None
+    short = hashlib.sha1(str(sid).encode("utf-8")).hexdigest()[:12]
+    nid = "sess-" + short
+    row = db.execute("SELECT id FROM notebooks WHERE id=?", (nid,)).fetchone()
+    if not row and create:
+        name = "Session " + str(sid).replace("-", "").upper()[:8]
+        db.execute("INSERT INTO notebooks(id, name, created, hidden, owner) "
+                   "VALUES(?,?,?,1,?)", (nid, name, time.time(), str(sid)))
+    return nid if (row or create) else None
 
 
 def add_source(notebook, ref, session_id=None):
@@ -343,8 +397,9 @@ def add_source(notebook, ref, session_id=None):
     ``notebook_auto: bool``, ``notebook_name: str``, and (for paths that go
     through ``docio.extract``) ``extract_diagnostic`` + ``recommend_visual``.
 
-    JAG-431r5: ``session_id`` (optional) tags the source + chunks so a search
-    can later scope to a single conversation.
+    JAG-431r6: ``session_id`` (optional) routes the source into a HIDDEN
+    per-session notebook (see ``_session_notebook``) instead of tagging rows.
+    All notebook/search/embedding machinery applies verbatim.
     """
     notebook = notebook or DEFAULT_ID
     ref = str(ref or "").strip()
@@ -358,6 +413,11 @@ def add_source(notebook, ref, session_id=None):
         try:
             fts = _init(db)
             notebook_auto_flag = (notebook == "auto")
+            # JAG-431r6: an explicit session forces a phantom-notebook scope.
+            sess_nb = _session_notebook(db, session_id)
+            if sess_nb:
+                notebook = sess_nb
+                notebook_auto_flag = False
             if notebook_auto_flag:
                 notebook = DEFAULT_ID  # placeholder; routed after we have a preview
             else:
@@ -377,7 +437,7 @@ def add_source(notebook, ref, session_id=None):
                         db, (text or "")[:_AUTO_PREVIEW_CHARS], ref)
                     notebook = nb_id
                 n = _ingest(db, sid, notebook, "url", ref, ref, _chunk.chunk_doc(text, cl, ov),
-                            "markdown", ref, cfg, fts, session_id=session_id)
+                            "markdown", ref, cfg, fts)
                 kind = "url"
             else:
                 ap = os.path.realpath(os.path.expanduser(ref))
@@ -405,11 +465,10 @@ def add_source(notebook, ref, session_id=None):
                         continue
                     lang, knd = _chunk.lang_for(fp)
                     n += _insert_chunks(db, sid, fp, lang or "text", knd or "doc",
-                                        _chunk.chunk_file(text, lang or "text", knd or "doc", cfg), fts,
-                                        session_id=session_id)
-                db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks, session_id) "
-                           "VALUES(?,?,?,?,?,?,?,?)",
-                           (sid, notebook, "path", ref, base, time.time(), n, session_id))
+                                        _chunk.chunk_file(text, lang or "text", knd or "doc", cfg), fts)
+                db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks) "
+                           "VALUES(?,?,?,?,?,?,?)",
+                           (sid, notebook, "path", ref, base, time.time(), n))
                 kind = "path"
             em = _cfg.embed_model()
             embed_err = None
@@ -449,8 +508,8 @@ def add_source(notebook, ref, session_id=None):
 def add_text(notebook, title, text, session_id=None):
     """Add a pasted-text source to a notebook.
 
-    JAG-431r5: ``session_id`` (optional) tags the source + chunks so a search
-    can later scope to a single conversation.
+    JAG-431r6: ``session_id`` (optional) routes into a HIDDEN per-session
+    notebook (see ``_session_notebook``).
     """
     notebook = notebook or DEFAULT_ID
     title = str(title or "note").strip() or "note"
@@ -462,15 +521,18 @@ def add_text(notebook, title, text, session_id=None):
         db = _connect()
         try:
             fts = _init(db)
-            notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
+            sess_nb = _session_notebook(db, session_id)
+            if sess_nb:
+                notebook = sess_nb
+            else:
+                notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
             if not _notebook_exists(db, notebook):
                 return {"ok": False, "error": "no such notebook: %s" % notebook}
             sid = "src:" + uuid.uuid4().hex[:10]
             cl = int(cfg.get("chunk_lines") or 60)
             ov = int(cfg.get("overlap_lines") or 8)
             n = _ingest(db, sid, notebook, "text", title, title,
-                        _chunk.chunk_doc(text, cl, ov), "markdown", title, cfg, fts,
-                        session_id=session_id)
+                        _chunk.chunk_doc(text, cl, ov), "markdown", title, cfg, fts)
             db.execute("UPDATE sources SET chunks=? WHERE id=?", (n, sid))
             em = _cfg.embed_model()
             embed_err = None
@@ -511,8 +573,8 @@ def add_source_text(notebook, ref, text, title=None, session_id=None):
     so the same body is NOT re-fetched.
 
     JAG-431r5: also accepts ``notebook="auto"`` for the same routing logic as
-    ``add_source``. ``session_id`` (optional) tags the source + chunks so a
-    search can later scope to a single conversation.
+    ``add_source``. JAG-431r6: ``session_id`` (optional) routes into a HIDDEN
+    per-session notebook (see ``_session_notebook``).
     """
     notebook = notebook or DEFAULT_ID
     ref = str(ref or "").strip()
@@ -526,7 +588,9 @@ def add_source_text(notebook, ref, text, title=None, session_id=None):
             fts = _init(db)
             auto_routed = False
             nb_name = ""
-            if notebook == "auto":
+            if session_id:
+                notebook = _session_notebook(db, session_id)
+            elif notebook == "auto":
                 nb_id, nb_name, auto_routed = _route_notebook(
                     db, (text or "")[:_AUTO_PREVIEW_CHARS], title or ref)
                 notebook = nb_id
@@ -538,8 +602,7 @@ def add_source_text(notebook, ref, text, title=None, session_id=None):
             cl = int(cfg.get("chunk_lines") or 60)
             ov = int(cfg.get("overlap_lines") or 8)
             n = _ingest(db, sid, notebook, "url", ref, title or ref,
-                        _chunk.chunk_doc(text, cl, ov), "markdown", ref, cfg, fts,
-                        session_id=session_id)
+                        _chunk.chunk_doc(text, cl, ov), "markdown", ref, cfg, fts)
             em = _cfg.embed_model()
             embed_err = None
             if em and n:
@@ -623,8 +686,9 @@ def reembed():
 def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None):
     """Search the knowledge base.
 
-    JAG-431r5: ``session`` (optional) scopes the search to chunks tagged with a
-    specific ``session_id`` — useful for "what did we learn in THIS chat?".
+    JAG-431r6: ``session`` (optional) scopes the search to the HIDDEN notebook
+    owned by that session (see ``_session_notebook``) — useful for "what did we
+    learn in THIS chat?" without polluting the global notebooks.
     """
     """Top-k chunks. Optionally scoped to ONE notebook. bm25, or bm25+cosine (RRF)."""
     query = str(query or "").strip()
@@ -636,23 +700,30 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
         _init(db)
         if not db.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
             return out
+        # JAG-431r6: a session scope resolves to that session's phantom notebook
+        # (lookup only — never create one just for a search).
+        if session:
+            notebook = _session_notebook(db, session, create=False)
         if notebook:
             notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
         terms = re.findall(r"[A-Za-z0-9_]{2,}", query)
         rows = []
         scope = " AND s.notebook = ?" if notebook else ""
-        # JAG-431r5: an optional session_id scope.
-        sess = " AND c.session_id = ?" if session else ""
+        # JAG-431r6: a GLOBAL search (no session / notebook) must not leak the
+        # hidden per-session notebooks. They are only reachable through an
+        # explicit session scope (the "FULL approval" path). An explicitly
+        # named visible notebook is unaffected.
+        if not notebook:
+            scope += " AND s.notebook IN (SELECT id FROM notebooks WHERE IFNULL(hidden,0) = 0)"
         if terms and _has_fts(db):
             fts_q = " OR ".join('"%s"' % t for t in terms)
             sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
-                   "c.session_id AS session_id, "
                    "s.notebook AS notebook, s.ref AS ref, s.title AS title, "
                    "bm25(chunks_fts, 1.0, 3.0, 2.0) AS rank, "
                    "snippet(chunks_fts, 0, '\u00ab', '\u00bb', '\u2026', 14) AS snip "
                    "FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid "
-                   "JOIN sources s ON s.id = c.source WHERE chunks_fts MATCH ?" + scope + sess)
-            args = [fts_q] + ([notebook] if notebook else []) + ([session] if session else [])
+                   "JOIN sources s ON s.id = c.source WHERE chunks_fts MATCH ?" + scope)
+            args = [fts_q] + ([notebook] if notebook else [])
             if kind:
                 sql += " AND c.kind = ?"
                 args.append(kind)
@@ -663,11 +734,10 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
             like = " OR ".join(["c.text LIKE ?"] * len(terms))
             args = ["%" + t + "%" for t in terms]
             sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
-                   "c.session_id AS session_id, "
                    "s.notebook AS notebook, s.ref AS ref, s.title AS title, 0 AS rank, "
                    "substr(c.text,1,160) AS snip FROM chunks c JOIN sources s ON s.id=c.source "
-                   "WHERE (" + like + ")" + scope + sess)
-            args = args + ([notebook] if notebook else []) + ([session] if session else [])
+                   "WHERE (" + like + ")" + scope)
+            args = args + ([notebook] if notebook else [])
             if kind:
                 sql += " AND c.kind=?"
                 args.append(kind)
@@ -702,7 +772,6 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
                 "notebook": r["notebook"], "source": r["source"], "ref": r["ref"],
                 "title": r["title"], "path": r["path"], "name": r["name"], "kind": r["kind"],
                 "lang": r["lang"], "start": r["start"], "end": r["end"],
-                "session_id": r.get("session_id"),
                 "score": round(score, 6) if score is not None else round(-(r["rank"] or 0), 6),
                 "snippet": r.get("snip") or (r["text"] or "")[:200],
             })

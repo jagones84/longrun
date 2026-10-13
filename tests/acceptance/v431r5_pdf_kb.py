@@ -153,27 +153,55 @@ check("2c auto-route on a fresh topic creates a new notebook",
       r8.get("ok") and nbs_after > nbs_before,
       {"before": nbs_before, "after": nbs_after, "result": r8})
 
-# -------------------------------------------------- 3) session_id scope
+# -------------------------------------------------- 3) session (phantom) scope
 r9 = K.add_text("default", "session-scoped note", "This note is tagged with sid-A.",
                 session_id="sid-A")
 r10 = K.add_text("default", "session-scoped note B", "This other note is for sid-B.",
                  session_id="sid-B")
-check("3a a session-tagged note is indexed",
-      r9.get("ok") and r10.get("ok") and r9.get("chunks", 0) > 0 and r10.get("chunks", 0) > 0,
-      {"a": r9.get("chunks"), "b": r10.get("chunks")})
+root_nb = r9.get("notebook", "")
+check("3a a session-tagged note is indexed into a HIDDEN notebook",
+      r9.get("ok") and r10.get("ok") and r9.get("chunks", 0) > 0 and r10.get("chunks", 0) > 0
+      and root_nb.startswith("sess-"),
+      {"a": r9.get("chunks"), "b": r10.get("chunks"), "a_nb": root_nb})
 
-# 3b search scopes to one session
+# 3b the phantom notebook is hidden from the UI's notebook list
+visible = {n["id"] for n in K.list_notebooks()}
+check("3b session notebooks are hidden from the default notebook list",
+      root_nb not in visible,
+      {"my": root_nb, "visible": sorted(visible)})
+
+# 3c search scopes to one session (via its phantom notebook)
 sa = K.search("session-scoped", session="sid-A", k=5)
 sb = K.search("session-scoped", session="sid-B", k=5)
-sall = K.search("session-scoped", k=5)
-check("3b session-scoped search returns only the matching session's chunks",
-      all(r.get("session_id") == "sid-A" for r in sa.get("results", []))
-      and all(r.get("session_id") == "sid-B" for r in sb.get("results", []))
-      and len(sa.get("results", [])) > 0
-      and len(sb.get("results", [])) > 0
-      and len(sall.get("results", [])) >= len(sa.get("results", [])) + len(sb.get("results", [])),
+sglob = K.search("session-scoped", k=5)
+# Each session's notebook is distinct and holds only its own chunk; a global
+# search (no session scope) does NOT include the hidden session chunks.
+distinct = (sa.get("results") or [{}])[0].get("notebook") != (sb.get("results") or [{}])[0].get("notebook")
+session_nb_ids = {r9.get("notebook"), r10.get("notebook")}
+g_has_hidden = any(r.get("notebook") in session_nb_ids for r in sglob.get("results", []))
+check("3c session-scoped search returns only the matching session's chunks",
+      len(sa.get("results", [])) > 0 and len(sb.get("results", [])) > 0
+      and distinct and g_has_hidden is False,
       {"a": len(sa.get("results", [])), "b": len(sb.get("results", [])),
-       "all": len(sall.get("results", []))})
+       "global_has_hidden": g_has_hidden,
+       "a_nb": (sa.get("results") or [{}])[0].get("notebook"),
+       "b_nb": (sb.get("results") or [{}])[0].get("notebook")})
+
+# 3d the global search (no session) does NOT return session-scoped chunks:
+# the phantom sources live in hidden notebooks, invisible to the default search.
+s_visible = K.search("session-scoped", k=50)
+session_nbs = {r10.get("notebook"), r9.get("notebook")}
+global_has_hidden = any(r.get("notebook") in session_nbs for r in s_visible.get("results", []))
+check("3d global search does not leak hidden session notebooks by default",
+      global_has_hidden is False,
+      session_nbs)
+
+# 3e purge_session removes the owned hidden notebook (sources + chunks)
+removed = K.purge_session("sid-A")
+left = {n["id"] for n in K.list_notebooks(include_hidden=True)}
+check("3e purge_session drops the session's hidden notebook",
+      root_nb in removed.get("removed", []) and root_nb not in left,
+      {"removed": removed.get("removed"), "left_hidden": left})
 
 # -------------------------------------------------- 4) migration: legacy DB
 import sqlite3  # noqa: E402
@@ -198,11 +226,10 @@ con.close()
 _paths.KNOWLEDGE_DIR = legacy_dir
 K._init(K._connect())
 con = sqlite3.connect(legacy_db)
-src_cols = {r[1] for r in con.execute("PRAGMA table_info(sources)").fetchall()}
-chk_cols = {r[1] for r in con.execute("PRAGMA table_info(chunks)").fetchall()}
-check("4 the migration adds session_id to legacy sources/chunks",
-      "session_id" in src_cols and "session_id" in chk_cols,
-      {"sources": sorted(src_cols), "chunks": sorted(chk_cols)})
+nb_cols = {r[1] for r in con.execute("PRAGMA table_info(notebooks)").fetchall()}
+check("4 the migration adds hidden + owner to legacy notebooks",
+      "hidden" in nb_cols and "owner" in nb_cols,
+      nb_cols)
 con.close()
 
 # -------------------------------------------------- 5) API endpoint
