@@ -5029,6 +5029,11 @@ function connectFeed() {
   es.addEventListener("session.cleared", e => { const d = JSON.parse(e.data);
     push("🧹 session cleared"); if (!d.session || d.session === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); });
   es.addEventListener("session.renamed", e => { loadSessions(); });
+  // JAG-431r8: a Free.N title/summary written by the agent (the `chapters` tool)
+  // now repaints the group labels/summaries LIVE — it used to need a reload.
+  es.addEventListener("threads.updated", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    if (d.session && sessionId && d.session !== sessionId) return;
+    loadThreadTitles(d.session || sessionId).then(applyThreadTitles); });
   es.addEventListener("context.built", e => { const d = JSON.parse(e.data);
     push(`📊 context: ${d.final_tokens}/${d.budget_tokens} tok`); loadCtxSoon(); });
   es.addEventListener("session.created", e => { const d = JSON.parse(e.data); push("🗂 session created"); loadSessions(); });

@@ -42,6 +42,19 @@ LOCK = threading.RLock()
 VERSION = 2
 
 
+def _publish(kind, **data):
+    """Fan out to the harness feed; never let the feed break a title write.
+
+    JAG-431r8: a Free.N title/summary set by the `chapters` tool must reach the
+    open WebUI live (it used to need a reload).
+    """
+    try:
+        from longrun.core import server
+        return server.publish(kind, **data)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _safe(key):
     return re.sub(r"[^A-Za-z0-9_.-]", "_", str(key or "unknown"))[:96]
 
@@ -298,6 +311,10 @@ def set_title(sid, gid, title, summary=None):
                 if summary is not None:
                     g["summary"] = summ or None
                 _save(doc)
+                # JAG-431r8: tell the feed so any open WebUI repaints the Free.N
+                # label/summary live (only for the session that changed).
+                _publish("threads.updated", session=sid, gid=gid,
+                         title=g.get("title"), summary=g.get("summary"))
                 return True, g
         return False, "unknown group %r (call action=list for the ids)" % gid
 

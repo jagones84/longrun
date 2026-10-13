@@ -93,9 +93,13 @@ check("F5 search without a query fails gracefully",
 # JAG-350: the registry gained a native tool (`sessions`), so the ceiling moved
 # from 17k to 18k. JAG-401 added the `knowledge` tool (GLOBAL notebooks + web
 # discover), so the ceiling moves to 19k. JAG-431j added the `chapters` tool
-# (the session thread ledger), so it moves to 20k. It still guards against a
-# runaway dump / disabled-tools wall.
-check("G1 composed system prompt is bounded (<20k chars)", len(sp) < 20000, "chars=%d" % len(sp))
+# (the session thread ledger), so it moves to 20k. JAG-431r9: legitimate
+# content growth — a larger installed-skills index (~2.6k), accumulated memory
+# lessons (~0.7k) and the live MCP tool surface (pmcp, 26 tools, ~1.8k) — pushes
+# the composed prompt past 20k, so the ceiling moves to 21k. It still guards
+# against a runaway dump / disabled-tools wall (the skills index stays capped at
+# 2600 chars, the disabled list is a single line).
+check("G1 composed system prompt is bounded (<21k chars)", len(sp) < 21000, "chars=%d" % len(sp))
 _idx = skills.skills_context(max_chars=2600)
 check("G2 the always-on skills index is bounded", len(_idx) <= 2760, "len=%d" % len(_idx))
 check("G3 the disabled-tools wall is compact",

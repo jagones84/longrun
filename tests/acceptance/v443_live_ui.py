@@ -29,6 +29,7 @@ def _read(*parts):
 
 HTML = _read("webui", "index.html")
 HTTP = _read("src", "longrun", "core", "httpapi.py")
+THREADS = _read("src", "longrun", "memory", "threads.py")
 
 results = []
 
@@ -87,6 +88,14 @@ check("3b the other plans render in a collapsible 'older-plans' section",
       'class="older-plans"' in HTML and "older plan " in HTML, "")
 check("3c task rows resolve against ALL nodes so older-plan rows are clickable",
       "(graph.nodes || []).find(x => String(x.id) === el.dataset.id)" in HTML, "")
+
+# --- 4) Free.N titles/summaries update LIVE (chapters tool) -----------------
+check("4a set_title publishes a threads.updated feed event",
+      'set_title' in THREADS and '_publish("threads.updated"' in THREADS
+      and 'session=sid' in THREADS, "")
+check("4b the WebUI repaints Free.N labels on threads.updated (no reload)",
+      'es.addEventListener("threads.updated"' in HTML
+      and "loadThreadTitles(d.session || sessionId).then(applyThreadTitles)" in HTML, "")
 
 print("---")
 ok = sum(results)
