@@ -3214,26 +3214,10 @@ function send(text, display, atts) {
     }
   };
   // JAG-166: a new turn starts at top level; the previous turn's tree/system block stay in history.
-  es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); adopt(d.session); setRunning(d.session, true); if (!live()) return; setRun(d.run_id); _activeScope = null; _activeNodeId = null; _nowLast = ""; _sysInjectEl = null; _updateNowBar(); });
-  es.addEventListener("graph.node.added", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
-  es.addEventListener("graph.node.updated", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
-  es.addEventListener("harness.inject", e => { if (live()) harnessInject(JSON.parse(e.data)); });
-  // JAG-355: the server emits one event per LLM call -> live cost panel
-  es.addEventListener("cost.usage", e => { if (live()) costLive(JSON.parse(e.data).call); });
-  es.addEventListener("chat.delta", e => {
-    const d = JSON.parse(e.data); adopt(d.session);
-    if (!live()) return;
-    if (d.channel === "think") { pushThink(d.text); }
-    else { appendAnswer(d.text); }
-    scroll();
-  });
-  // v1.6.3 (JAG-55): tool calls happen inline in the chat when the turn runs a tool
-  es.addEventListener("tool.call", e => { if (live()) toolCard(JSON.parse(e.data).tool); });
-  es.addEventListener("tool.result", e => { if (live()) updateToolCard(JSON.parse(e.data)); });
-  // JAG-127b: surface the approval gate inline in the CHAT stream too (before it
-  // relied only on the global /api/feed SSE, which the phone UI may not keep
-  // open) — otherwise a `required` tool looked like a silent 30s freeze.
-  es.addEventListener("approval.request", e => { if (live()) { approvalCard(JSON.parse(e.data)); loadApprovals(); } });
+  // JAG-431r8: the RENDER handlers (tools, harness injects, todo nodes, plan) are
+  // shared with the re-attached stream via _bindRenderStream, so a turn started here
+  // and one re-followed from a job render identically.
+  _bindRenderStream(es, live, adopt);
   es.addEventListener("chat.steer", e => { if (!live()) return; const d = JSON.parse(e.data);
     // JAG-431r4b: the local ⇢ / steer-mode paths already echoed this text, and the
     // server ALSO publishes chat.steer when the turn drains it — every steer then
@@ -3245,14 +3229,6 @@ function send(text, display, atts) {
     const _last = _bubs[_bubs.length - 1];
     if (_t && _last && _last.textContent.indexOf(_t) >= 0) return;
     who("user", "🎯 steer: " + _t); });
-  es.addEventListener("plan.incomplete", e => { if (live()) planIncomplete(JSON.parse(e.data)); });
-  es.addEventListener("plan.continuing", e => { if (live()) planContinuing(JSON.parse(e.data)); });
-  es.addEventListener("plan.stopped", e => { if (live()) planStopped(JSON.parse(e.data)); });
-  es.addEventListener("hitl.request", e => { if (live()) hitlCard(JSON.parse(e.data)); });
-  es.addEventListener("verify.run", e => { if (!live()) return; const d = JSON.parse(e.data); if (d && d.ran) who("ai", (d.green ? "✅ verifier green" : "⛔ verifier RED — change reverted") + " · " + (d.path || "").split("/").pop() + (d.duration_ms ? " · " + d.duration_ms + "ms" : "")); });
-  es.addEventListener("run.metrics", e => { if (live()) runFooter(JSON.parse(e.data).metrics); });
-  es.addEventListener("bestofn.chosen", e => { if (!live()) return; const d = JSON.parse(e.data); who("ai", `🎲 best-of-N: picked the best of ${d.n} samples`); });
-  es.addEventListener("improve.proposal", e => { if (live()) { improveCard(JSON.parse(e.data)); loadApprovals(); } });
   es.addEventListener("done", () => end(true, true));
   // JAG-431r4b: the terminal `event: error` frame (a turn that crashed server-side)
   // carried the error text but the handler just closed the stream — the turn looked
@@ -3261,6 +3237,40 @@ function send(text, display, atts) {
   es.addEventListener("error", e => { let d = null; try { d = JSON.parse(e.data); } catch (_) {}
     if (live() && d && d.error) who("ai", "⚠ " + d.error);
     end(false, false); });
+}
+
+/* JAG-431r8: ONE binder for the turn's RENDER events, shared by the live own-turn
+   stream (`send`) and the re-attached background/job stream (`attachTurn`). Before,
+   `attachTurn` handled ONLY chat.delta — so while a turn the browser did not begin
+   (a job/routine/another tab) was running, the chat showed the answer text but NO
+   tool cards, harness injects or todo-node updates, and they appeared only after the
+   turn ended (a reload). Sharing the handler set removes that drift AND the
+   duplication. `adopt` lets the own-turn path name a brand-new session. */
+function _bindRenderStream(es, live, adopt) {
+  adopt = adopt || (() => {});
+  es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); adopt(d.session);
+    setRunning(d.session, true); if (!live()) return; setRun(d.run_id);
+    _activeScope = null; _activeNodeId = null; _nowLast = ""; _sysInjectEl = null; _updateNowBar(); });
+  es.addEventListener("graph.node.added", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
+  es.addEventListener("graph.node.updated", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
+  es.addEventListener("harness.inject", e => { if (live()) harnessInject(JSON.parse(e.data)); });
+  es.addEventListener("cost.usage", e => { if (live()) costLive(JSON.parse(e.data).call); });
+  es.addEventListener("chat.delta", e => { const d = JSON.parse(e.data); adopt(d.session);
+    if (!live()) return;
+    if (d.channel === "think") { pushThink(d.text); } else { appendAnswer(d.text); }
+    scroll(); });
+  es.addEventListener("tool.call", e => { if (live()) toolCard(JSON.parse(e.data).tool); });
+  es.addEventListener("tool.result", e => { if (live()) updateToolCard(JSON.parse(e.data)); });
+  es.addEventListener("approval.request", e => { if (live()) { approvalCard(JSON.parse(e.data)); loadApprovals(); } });
+  es.addEventListener("plan.incomplete", e => { if (live()) planIncomplete(JSON.parse(e.data)); });
+  es.addEventListener("plan.continuing", e => { if (live()) planContinuing(JSON.parse(e.data)); });
+  es.addEventListener("plan.stopped", e => { if (live()) planStopped(JSON.parse(e.data)); });
+  es.addEventListener("hitl.request", e => { if (live()) hitlCard(JSON.parse(e.data)); });
+  es.addEventListener("verify.run", e => { if (!live()) return; const d = JSON.parse(e.data);
+    if (d && d.ran) who("ai", (d.green ? "\u2705 verifier green" : "\u26d4 verifier RED \u2014 change reverted") + " \u00b7 " + (d.path || "").split("/").pop() + (d.duration_ms ? " \u00b7 " + d.duration_ms + "ms" : "")); });
+  es.addEventListener("run.metrics", e => { if (live()) runFooter(JSON.parse(e.data).metrics); });
+  es.addEventListener("bestofn.chosen", e => { if (!live()) return; const d = JSON.parse(e.data); who("ai", "\ud83c\udfb2 best-of-N: picked the best of " + d.n + " samples"); });
+  es.addEventListener("improve.proposal", e => { if (live()) { improveCard(JSON.parse(e.data)); loadApprovals(); } });
 }
 
 async function api(method, path, body) {
@@ -4312,20 +4322,44 @@ function renderGraph() {
   // that DID have steps — never to the UNION of every plan, which resurfaced
   // long-closed steps from older plans as if they were still open ("old todos").
   const _pn = planNodes(graph);
+  const _curP = (graph.plan != null) ? graph.plan : 0;
   let _nodes = _pn;
+  let _shownP = _curP;
   if (!_nodes.length && (graph.nodes || []).length) {
     const _maxp = Math.max.apply(null, graph.nodes.map(n => (n.plan == null ? 0 : n.plan)));
     _nodes = graph.nodes.filter(n => (n.plan == null ? 0 : n.plan) === _maxp);
+    _shownP = _maxp;
   }
+  // JAG-431r8: the panel used to show ONLY the current plan, so a session whose
+  // todos span successive plans looked like it had just a couple (the Master showed
+  // n18/n19 while 19 todos existed across 5 plans). Show EVERY other plan in a
+  // collapsible section (collapsed by default) so nothing is hidden, while the
+  // current plan still leads and old closed steps are never presented as the ACTIVE
+  // plan (JAG-307). NOTE: the MODEL's todo rendering (taskgraph.render_todos) is
+  // untouched — the model must keep seeing only the current plan.
+  const _older = (graph.nodes || []).filter(n => (n.plan == null ? 0 : n.plan) !== _shownP);
   const c = countNodes(_nodes);
   $("graphHead").textContent = _jid + "run " + (graph.run_id || "").slice(0, 8) + " · " +
     _nodes.length + " nodes · " + (c.done || 0) + " done" +
     (graph.goal ? " · " + graph.goal.slice(0, 40) : "");
   $("taskCount").textContent = (c.done || 0) + "/" + _nodes.length;
   _isum("sPlan", planSummary(c, graph.run_id), (c.todo || c.doing || c.blocked) ? "" : "ok");
-  box.innerHTML = taskTree(_nodes);
+  let _olderHtml = "";
+  if (_older.length) {
+    const _byPlan = {};
+    _older.forEach(n => { const p = (n.plan == null ? 0 : n.plan); (_byPlan[p] ||= []).push(n); });
+    _olderHtml = Object.keys(_byPlan).sort((a, b) => a - b).map(p => {
+      const _oc = countNodes(_byPlan[p]);
+      return '<details class="older-plans"><summary class="remaining u-ptr">older plan ' + p +
+        ' \u00b7 ' + _byPlan[p].length + ' node(s) \u00b7 ' + (_oc.done || 0) + ' done</summary>' +
+        taskTree(_byPlan[p]) + '</details>';
+    }).join("");
+  }
+  box.innerHTML = taskTree(_nodes) + _olderHtml;
   box.querySelectorAll(".task").forEach(el => {
-    const n = _nodes.find(x => String(x.id) === el.dataset.id);
+    // JAG-431r8: resolve against ALL nodes (not just the shown plan) so the rows in
+    // the collapsible "older plans" sections are clickable too.
+    const n = (graph.nodes || []).find(x => String(x.id) === el.dataset.id);
     // JAG-274: clicking a todo shows its detail AND jumps the chat to that step's
     // section (so you can see where that node is in the conversation).
     el.onclick = () => { if (!n) return; showNodeDetail(n); _scrollToNode(n.id); };
@@ -4871,14 +4905,11 @@ function attachTurn(sid) {
       flushQueue();
     }
   };
-  es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); if (live()) setRun(d.run_id); });
-  es.addEventListener("chat.delta", e => {
-    const d = JSON.parse(e.data);
-    if (!live()) return;
-    if (d.channel === "think") { pushThink(d.text); }
-    else { appendAnswer(d.text); }
-    scroll();
-  });
+  // JAG-431r8: the re-attached stream now renders the SAME event set as a turn
+  // started in this tab (tools, harness injects, todo nodes) — not just chat.delta.
+  // On `done` the tree is rebuilt from the durable transcript (clear first), so the
+  // live-rendered cards are replaced, never duplicated.
+  _bindRenderStream(es, live);
   es.addEventListener("done", () => end(true));
   es.addEventListener("error", () => { end(false); setTimeout(() => attachIfRunning(sid), 1500); });
 }
@@ -7725,6 +7756,28 @@ function _growInp() {
   el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
 }
 $("inp").addEventListener("input", _growInp);
+/* JAG-431r8: paste an image (or any file) from the clipboard straight into the
+   composer as an attachment — a copied screenshot now "just works" via Ctrl/Cmd+V
+   exactly like the file picker (JAG-279). Plain-text paste is left to the browser:
+   we only intervene when the clipboard carries actual FILE items. */
+$("inp").addEventListener("paste", e => {
+  const cd = e.clipboardData; if (!cd) return;
+  const files = Array.from(cd.items || [])
+    .filter(it => it.kind === "file")
+    .map(it => it.getAsFile())
+    .filter(Boolean);
+  if (!files.length) return;   // text paste -> let the browser handle it
+  e.preventDefault();
+  // A clipboard screenshot arrives as an unnamed blob; give it a name+extension so
+  // the upload and the server-side extension sniffing work.
+  const named = files.map((f, i) => {
+    if (f.name) return f;
+    const ext = (f.type && f.type.split("/")[1]) || "png";
+    return new File([f], "pasted-" + Date.now() + "-" + i + "." + ext,
+                    { type: f.type || "image/png" });
+  });
+  attachFiles(named);
+});
 $("sessInp").addEventListener("keydown", e => { if (e.key === "Enter") newSession(); });
 $("compactBtn").onclick = compactNow;
 

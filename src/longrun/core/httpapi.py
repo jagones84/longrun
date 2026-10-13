@@ -297,7 +297,19 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             ensure_reply_persisted(sess, since, error="stream ended without a reply")
 
 
-_ATTACH_KINDS = ("chat.run", "chat.delta", "chat.done")
+# JAG-431r8: the re-attach stream must replay the SAME render events the live
+# own-turn stream carries — otherwise a turn the browser did not begin (a job, a
+# routine, another tab) showed only the answer text and NO tool cards / harness
+# injects / todo-node updates until it finished (a reload). The client renders
+# them live and rebuilds from the durable transcript on `done` (clear first), so
+# nothing is duplicated.
+_ATTACH_KINDS = (
+    "chat.run", "chat.delta", "chat.done",
+    "harness.inject", "tool.call", "tool.result", "approval.request",
+    "graph.node.added", "graph.node.updated",
+    "plan.incomplete", "plan.continuing", "plan.stopped", "hitl.request",
+    "verify.run", "run.metrics", "bestofn.chosen", "improve.proposal", "cost.usage",
+)
 
 
 def _attach_frame(ev, terminal=False):
@@ -311,12 +323,12 @@ def chat_attach_gen(sid, since=0):
     RUNNING for `sid`.
 
     A page refresh or a session switch loses the browser's SSE channel but never
-    stops the server-side worker. This generator replays the turn's streaming
-    events (chat.delta text) from the durable event log and then tails new ones
-    until the turn ends, so the reload resumes exactly where it left off instead of
-    looking "interrupted". Only the streaming/render events are replayed: tool
-    cards, todo tree and injects are already rebuilt by loadHistory, so replaying
-    them would duplicate.
+    stops the server-side worker. This generator replays the turn's events
+    (streaming text AND the render events: tool cards, todo tree, harness injects)
+    from the durable event log and then tails new ones until the turn ends, so a
+    re-attached turn shows exactly what a turn begun in this tab would show. On
+    `done` the client rebuilds the tree from the durable transcript (clear first),
+    so the live-rendered cards are replaced, never duplicated (JAG-431r8).
     """
     with _ACTIVE_CHAT_LOCK:
         info = _ACTIVE_CHAT.get(sid)
