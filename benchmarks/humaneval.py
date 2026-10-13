@@ -64,8 +64,14 @@ def check(candidate_src, task):
     if not src:
         return {"ok": False, "passed": False, "error": "task has no `test`"}
     ns = {}
+    # The OFFICIAL HumanEval contract evaluates `prompt + completion + test`: the
+    # prompt carries the `from typing import ...` / `import math` preamble that both
+    # the hidden test and the signature rely on. Evaluating the completion ALONE made
+    # a correct answer fail with `NameError: name 'List' is not defined` — a SCORER
+    # artefact, not a model error (it depressed both arms by ~15 points).
+    prog = (task.get("prompt") or "") + "\n" + (candidate_src or "")
     try:
-        exec(compile(candidate_src or "", "<candidate>", "exec"), ns)
+        exec(compile(prog, "<candidate>", "exec"), ns)
         exec(compile(src + "\ncheck(%s)\n" % entry, "<test>", "exec"), ns)
         return {"ok": True, "passed": True}
     except Exception as e:  # noqa: BLE001 — a failing candidate is data, not a crash

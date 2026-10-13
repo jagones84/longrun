@@ -82,6 +82,16 @@ check("C4 the SCORER applies extract_code uniformly",
       "check(extract_code(p.get(\"prediction\", \"\")), task)" in _read("benchmarks", "humaneval.py"))
 check("C5 the prompt still asks for bare code (so extract is a safety net)",
       "Reply with ONLY the code" in humaneval.prompt_for({"prompt": "def f():"}))
+# C6 (JAG-455): the OFFICIAL contract is `prompt + completion + test`. Scoring the
+# completion alone failed a correct answer with `NameError: name 'List' is not
+# defined` (the prompt carries the typing preamble) — a scorer artefact that cost
+# both arms ~15 points.
+_t = {"task_id": "tb", "entry_point": "f",
+      "prompt": "from typing import List\n\n\ndef f(x: List[int]) -> int:\n    \"\"\"doc\"\"\"\n",
+      "test": "def check(c):\n    assert c([1, 2]) == 2\n"}
+_r = humaneval.check("    return len(x)", _t)
+check("C6 a completion that omits the import still scores (official prompt+completion)",
+      _r.get("passed") is True, _r)
 
 # ---- D: the runner brackets a run with setup/teardown -----------------------
 run_src = _read("benchmarks", "runner.py")

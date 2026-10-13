@@ -1,6 +1,3 @@
-# Longrun role->model routing. JAG-455: there is NO `planner` role — the planner
-# call always runs on the SAME model as the session's chat (routing.turn_model),
-# so a session pinned to a cloud model can never light up the LOCAL weights.
 roles:
   chat:
     pattern: qwen

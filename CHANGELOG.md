@@ -15,7 +15,11 @@ All notable changes to Longrun are documented here. The format follows
   (the operator wants to open the run in the WebUI and read what the harness actually did), `--jobs` for parallel
   tasks, and `run_suite()` brackets every suite with `setup()`/`teardown()` so a headless run is not measured with
   its hands tied (approval gate lifted, then restored). `humaneval.extract_code()` is applied by the SCORER so a
-  chatty arm is not penalised against a terse one. Pinned by new `v454`.
+  chatty arm is not penalised against a terse one. Pinned by new `v454`. **Scoring follows the OFFICIAL contract**: `check()` evaluates
+  `prompt + completion + test` — scoring the completion alone failed a correct answer with `NameError: name 'List' is not defined` (the prompt
+  carries the typing/import preamble), a scorer artefact that cost BOTH arms ~15 points. Pilot result after the fix (`bare` vs `longrun`,
+  `deepseek-reasoner`, HumanEval n20, equal conditions, no local GPU): **1.00 (20/20) vs 1.00 (20/20)** — the task set is SATURATED and cannot
+  discriminate between harnesses, which is exactly why the official, much harder Claw-SWE-Bench / SWE-bench Pro suite is the next step.
 - **Stop really stops, and a compaction no longer doubles the chat (JAG-431q), battery 166/166.**
   Two WebUI/server defects found by driving the live app (browser + HTTP) end to end. (1) **Stop did
   nothing.** `chat_once` cleared the abort flag AFTER the planner/graph model calls had already run, so a

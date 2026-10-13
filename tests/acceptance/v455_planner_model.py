@@ -135,6 +135,10 @@ check("C4 no source file still calls pick(\"planner\")",
       not any('pick("planner")' in _read("src", "longrun", p)
               for p in ("core/httpapi.py", "plan/taskgraph.py", "agent/agent.py",
                         "model/decision.py", "core/api_v02.py")))
+# C5: `routing.update()` CREATES a missing role on demand, so a bench arm that still
+# pins the deleted `planner` role silently puts it BACK into config/routing.yaml.
+check("C5 the bench arm does not resurrect a planner role in the config",
+      '"planner"' not in _read("benchmarks", "longrun_adapter.py"))
 
 # ---- D: the DELETE lifecycle cannot resurrect a session ---------------------
 st_src = _read("src", "longrun", "memory", "stores.py")

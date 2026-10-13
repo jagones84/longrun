@@ -141,7 +141,10 @@ class LongrunAdapter:
         _, rstatus = self._req("GET", "/api/routing", timeout=10)
         self._routing = dict((rstatus or {}).get("config") or {})
         if self.model:
-            roles = ("chat", "planner", "agent", "subagent", "summarizer")
+            # JAG-455: NO `planner` role exists any more (the plan runs on the turn's
+            # own model). Pinning it here would RESURRECT it in config/routing.yaml —
+            # `routing.update()` creates a missing role on demand.
+            roles = ("chat", "agent", "subagent", "summarizer")
             self._req("POST", "/api/routing",
                       {"roles": {r: {"model": self.model} for r in roles}}, timeout=10)
         return {"policy": self._policy, "verifier": self._verifier,
