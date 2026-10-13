@@ -1412,6 +1412,7 @@
         <div class="card">
           <div class="u-df u-g6 u-mt8">
             <button class="ghost" data-call="planGoal" title="same as typing /goal in chat: plans AND runs to completion">▶ goal</button>
+            <button class="ghost" data-call="showConstellation" title="open the selected task in the Control deck's constellation diagram">◇ constellation</button>
             <button class="ghost" data-call="clearSession" title="clear chat + tasks">clear</button>
             <button class="ghost" data-call="resetPlan" title="clear this session's task list (start a new task)">reset</button>
           </div>
@@ -3777,9 +3778,11 @@ async function loadHistory() {
   buildDotRail();   // JAG-267: rebuild the user-message dot rail for this session
   // JAG-296: a deep-link from Orbit (`?node=<nid>`) jumps to that exact task section
   // once the transcript is replayed. Applied ONCE, then cleared.
+  // JAG-431r10: it also opens the RH Plan panel and reveals/flashes that task row
+  // (expanding an "older plan" group when the node lives in one).
   if (window._deepNode) {
     const _dn = window._deepNode; window._deepNode = null;
-    setTimeout(() => { try { _scrollToNode(_dn); } catch (e) {} }, 60);
+    setTimeout(() => { try { _focusPlanNode(_dn); } catch (e) {} }, 60);
   }
   // JAG-127: baseline the edit journal so the next turn reports only its own diff.
   try { _editsBase = await api("GET", "/api/edits?session=" + encodeURIComponent(sessionId)); } catch (e) { _editsBase = null; }
@@ -4390,19 +4393,69 @@ function _todoCtx(ev, n) {
   m.querySelector("button").onclick = () => { _closeTodoCtx(); _showInConstellation(n); };
   setTimeout(() => document.addEventListener("mousedown", _closeTodoCtx, { once: true }), 0);
 }
+/* JAG-431r10: Plan ↔ constellation navigation.
+   Forward — the "◇ constellation" button (and the todo right-click menu) opens the
+   Control deck and rings the selected task. Reverse — a double-click on a
+   constellation task hops back here, opens the Plan panel and reveals the task row,
+   expanding the collapsible "older plan" group when the node lives in one. */
+let _lastPlanNode = null;   // the last task the RH Plan panel detailed (button target)
+function _planRing(f, tries) {
+  // bring the deck's DOCKED constellation panel itself into view, not just a node.
+  try {
+    const p = f.contentDocument && f.contentDocument.getElementById("constPanel");
+    if (p && p.scrollIntoView) p.scrollIntoView({ block: "center", behavior: "smooth" });
+  } catch (e) {}
+}
 function _showInConstellation(n) {
-  const id = n && n.id; if (!id) return;
   showControl();
-  // the iframe boots on first open — post the message a few times so it lands.
   const f = document.getElementById("controlFrame");
-  let n2 = 0;
+  const id = n && n.id ? String(n.id) : null;
+  // the iframe boots on first open — post repeatedly so the message lands once the
+  // deck is live (and ring the panel on the first successful delivery).
+  let n2 = 0, rang = false;
   const iv = setInterval(() => {
-    try { f.contentWindow.postMessage({ type: "longrun-focus-node", id: String(id) }, "*"); } catch (e) {}
-    if (++n2 >= 8) clearInterval(iv);
-  }, 300);
+    try {
+      if (f.contentWindow && f.contentDocument && f.contentDocument.readyState === "complete") {
+        if (!rang) { rang = true; _planRing(f, n2); }
+        if (id) f.contentWindow.postMessage({ type: "longrun-focus-node", id: id }, "*");
+      }
+    } catch (e) {}
+    if (++n2 >= 10) clearInterval(iv);
+  }, 350);
+}
+/* JAG-431r10: the "◇ constellation" button target — the task the RH panel last
+   detailed, else the active (doing) node, else just open the deck. */
+function showConstellation() {
+  const _nodes = (typeof planNodes === "function" ? planNodes(graph) : ((graph && graph.nodes) || []));
+  const n = (_lastPlanNode && _nodes.find(x => String(x.id) === String(_lastPlanNode))) ||
+            (_activeNodeId && _nodes.find(x => String(x.id) === String(_activeNodeId))) ||
+            _nodes.find(x => x.status === "doing") || null;
+  _showInConstellation(n);
+}
+/* JAG-431r10: focus ONE task row in the RH Plan panel: open the panel, uncollapse any
+   ancestor "older plan" group, reveal + flash the row, and fill the detail box. */
+function _focusPlanNode(nid) {
+  if (!nid) return;
+  openTab("tasks");            // reveals + focuses the Plan inspector section (RH panel)
+  _scrollToNode(nid);          // keep the chat in sync (JAG-296)
+  let tries = 0;
+  const go = () => {
+    const esc_ = (window.CSS && CSS.escape) ? CSS.escape(String(nid)) : String(nid);
+    const task = document.querySelector('#tasks .task[data-id="' + esc_ + '"]');
+    if (!task) { if (++tries < 10) setTimeout(go, 250); return; }
+    let d = task.closest("details");
+    while (d) { d.open = true; d = d.parentElement ? d.parentElement.closest("details") : null; }
+    const n = ((graph && graph.nodes) || []).find(x => String(x.id) === String(nid));
+    if (n) showNodeDetail(n);
+    task.scrollIntoView({ block: "center", behavior: "smooth" });
+    task.classList.add("fresh");
+    setTimeout(() => task.classList.remove("fresh"), 1600);
+  };
+  setTimeout(go, 120);
 }
 function showNodeDetail(n) {
   n = n || {};
+  if (n.id) _lastPlanNode = n.id;   // JAG-431r10: the "◇ constellation" button target
   const ev = (n.evidence || []).filter(Boolean).map(e => "• " + (e.text || "")).join("\n") || "(no evidence yet)";
   $("taskDetail").innerHTML =
     `<div style="color:var(--txt)">${esc(_todoid(n))}${n.jid ? " · " + esc(_nodeJob(n)) : ""} · ${esc(n.id)} · ${esc(n.status)}` +
@@ -7308,6 +7361,19 @@ function showSessions() {
 function goControlDetached() { location.href='/orbit' + (TOKEN ? ('?token=' + encodeURIComponent(TOKEN)) : ''); }
 function goControl() { showControl(); }
 function goSession() { showSessions(); }
+/* JAG-431r10: the Control deck asks US to open a task — a double-click on a
+   constellation task when the deck runs EMBEDDED in the Control tab (navigating the
+   iframe would trap the main app inside the deck frame). We hop to the Sessions
+   sheet, switch to that session, open the Plan panel and reveal the task row. */
+window.addEventListener("message", (e) => {
+  const d = e.data || {};
+  if (!d || d.type !== "longrun-open-task") return;
+  const sid = d.session || null;
+  try { showSessions(); } catch (_) {}
+  const switched = !!(sid && sid !== sessionId);
+  if (switched) { try { selectSession({ id: sid }); } catch (_) {} }
+  setTimeout(() => { try { _focusPlanNode(d.node); } catch (err) {} }, switched ? 500 : 60);
+});
 window.addEventListener("DOMContentLoaded", () => { if (location.hash === "#control") showControl(); });
 // JAG-431r4: honour a hash CHANGE too (a deep link after load, back/forward, or a
 // manual URL edit). Without this, navigating from #control to #sessions left the

@@ -1335,12 +1335,22 @@ class Constellation {
       (s.agent ? "<span class='go'>open agent in Sessions \u2197 (double-click)</span>" : "");
     this._place(p, sx, sy);
   }
-  gotoTask(agent, node){ if (!agent) return;
-    location.href = "/?token=" + encodeURIComponent(this.api.token) +
-      "&session=" + encodeURIComponent(agent.session) + "&node=" + encodeURIComponent(node.id); }
-  gotoAgent(agent){ if (!agent) return;
-    location.href = "/?token=" + encodeURIComponent(this.api.token) +
-      "&session=" + encodeURIComponent(agent.session); }
+  /* JAG-431r10: navigate the MAIN app to a session/task. When the deck runs EMBEDDED
+     (Control tab iframe) we must ask the PARENT to navigate — a location change here
+     would load the main app INSIDE the deck frame. Detached (/orbit) navigates itself. */
+  _deckGo(session, node){
+    if (!session) return;
+    if (window.self !== window.top){
+      try { window.parent.postMessage({ type: "longrun-open-task", session: session,
+        node: node == null ? null : String(node) }, "*"); return; } catch (e) {}
+    }
+    let url = "/?token=" + encodeURIComponent(this.api.token) +
+      "&session=" + encodeURIComponent(session);
+    if (node != null) url += "&node=" + encodeURIComponent(node);
+    location.href = url;
+  }
+  gotoTask(agent, node){ if (!agent) return; this._deckGo(agent.session, node && node.id); }
+  gotoAgent(agent){ if (!agent) return; this._deckGo(agent.session, null); }
 }
 
 /* ---------------------------------------------------------------- Jobs --- */
