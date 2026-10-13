@@ -7148,6 +7148,12 @@ function goControlDetached() { location.href='/orbit' + (TOKEN ? ('?token=' + en
 function goControl() { showControl(); }
 function goSession() { showSessions(); }
 window.addEventListener("DOMContentLoaded", () => { if (location.hash === "#control") showControl(); });
+// JAG-431r4: honour a hash CHANGE too (a deep link after load, back/forward, or a
+// manual URL edit). Without this, navigating from #control to #sessions left the
+// Control deck up — the two views never swapped.
+window.addEventListener("hashchange", () => {
+  if (location.hash === "#control") showControl(); else showSessions();
+});
 /* JAG-415: topbar "☰" app menu (settings · bridge · sandbox). */
 (function () {
   const btn = $("appmenuBtn"), menu = $("appMenu");
