@@ -10,7 +10,9 @@ roles:
     fallbacks: []
   subagent:
     pattern: glm
-    fallbacks: []
+    fallbacks:
+      - openrouter:meta/muse-spark-1.3-contributor
+    model: openrouter:z-ai/glm-5.3-flash
   summarizer:
     pattern: glm
     fallbacks: []

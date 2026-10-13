@@ -57,12 +57,16 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
 
     Returns a dict with subagent_id (caller should store it).
     """
+    fallbacks = []
     if not model:
         # JAG-259: honour an explicitly pinned "subagent" role model (Settings ->
         # Models) before the role pattern, so the WebUI setting actually applies.
         try:
             from longrun.model import routing
             model = routing.role_model("subagent") or routing.pick("subagent")
+            # JAG-448: a real failover chain for cloud subagent models (literal
+            # provider:model refs from config, never hardcoded).
+            fallbacks = routing.model_chain("subagent")[1:]
         except Exception:  # noqa: BLE001 — routing must never block a spawn
             model = None
     if not depth_allowed(depth):
@@ -101,7 +105,8 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
         # reported a bogus "subagent timeout". Always complete the handshake.
         try:
             result = api_v02.agent_run_v2(
-                goal, max_steps, model, on_event=on_event, run_id=st.id)
+                goal, max_steps, model, on_event=on_event, run_id=st.id,
+                fallbacks=fallbacks)
             entry["result"] = result
             status_txt = result.get("status")
             steps_n = len(result.get("trace", []))

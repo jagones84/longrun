@@ -163,6 +163,30 @@ def role_model(role):
     return entry.get("model") or None
 
 
+def model_chain(role):
+    """Literal model refs for a role, primary first: [explicit model] + fallbacks.
+
+    JAG-448: unlike ``fallback_chain`` (which matches ALIAS patterns against the
+    live LOCAL llama.cpp roster), these are FULL ``provider:model`` refs resolved
+    by ``providers.resolve()`` — used by the agent/subagent loop which calls the
+    endpoint directly (cloud or local) and needs a real failover for cloud models
+    (e.g. the subagent's OpenRouter GLM with a Meta contributor fallback). Every
+    entry is a string from config — NOTHING is hardcoded — and returns [] when
+    the role has no explicit model/fallbacks, so callers keep ``pick()``.
+    """
+    cfg = load_config()
+    entry = (cfg.get("roles") or {}).get(role) or {}
+    chain = [entry.get("model")] + list(entry.get("fallbacks") or []) + \
+            list(cfg.get("default_fallbacks") or [])
+    out, seen = [], set()
+    for ref in chain:
+        ref = str(ref or "").strip()
+        if ref and ref not in seen:
+            out.append(ref)
+            seen.add(ref)
+    return out
+
+
 def fallback_chain(role):
     """Full alias candidates for a role, resolved against the roster.
 

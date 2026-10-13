@@ -339,7 +339,7 @@ def tool_context():
 
 
 def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_id=None,
-                 workspace=None):
+                 workspace=None, fallbacks=None):
     """Sense-think-act loop with real tools behind the approval gate + HITL."""
     srv = _srv()
     if on_event is None:
@@ -368,6 +368,14 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
             st.model = model
     except Exception:  # noqa: BLE001 — a routing hint must never break a run
         pass
+    # JAG-448: the subagent (and any caller passing `fallbacks`) gets a real
+    # failover chain of literal model refs. `model` stays PRIMARY; on a stream
+    # failure the loop walks `candidates` instead of dying at the first error.
+    candidates = [model]
+    for f in (fallbacks or []):
+        f = str(f or "").strip()
+        if f and f not in candidates:
+            candidates.append(f)
     # v0.3 checkpoint at run start (idempotent per run) so plan/tasks/transcript
     # survive a restart and can be rolled back after a bad run.
     try:
@@ -436,8 +444,29 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 msgs = ([{"role": "system", "content": sysp}] + hist
                         + [{"role": "user", "content": srv.state_block(graph_key=st.id)}])
                 on_event("agent.iteration", run=st.id, i=i + 1, of=max_steps)
-                answer, think = srv._router_stream(
-                    msgs, model, lambda ch, t: on_event("agent.think", channel=ch, text=t))
+                # JAG-448: walk the failover chain (primary + config fallbacks) so
+                # a broken cloud model does not kill the run at the first error.
+                answer, think, last_err = "", "", None
+                for cand in candidates:
+                    try:
+                        answer, think = srv._router_stream(
+                            msgs, cand, lambda ch, t: on_event("agent.think",
+                                                               channel=ch, text=t))
+                        if cand != model:
+                            on_event("model.fallback", run=st.id, from_model=model,
+                                     to_model=cand)
+                            # promote the working model so later iterations try it
+                            # first instead of re-hitting the broken primary.
+                            model = cand
+                            st.model = cand
+                            candidates.insert(0, candidates.pop(candidates.index(cand)))
+                        break
+                    except Exception as _e:  # noqa: BLE001
+                        last_err = _e
+                        on_event("model.failover", run=st.id, failed=cand,
+                                 next_model=None)
+                else:
+                    raise last_err if last_err else RuntimeError("no model available")
                 act = srv.extract_json(answer) or {}
                 if not isinstance(act, dict) or not act.get("action"):
                     act = {"thought": answer[:200], "action": "note", "detail": answer[:400]}

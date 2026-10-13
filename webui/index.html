@@ -412,6 +412,9 @@
   /* JAG-447: the Improvement panel — proposals (with a diff preview), the
      audit ledger changelog and the memory provenance split. */
   .imp-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 6px 0; }
+  .imp-card summary { cursor: pointer; list-style: none; }
+  .imp-card summary::-webkit-details-marker { display: none; }
+  .imp-s { font-size: 12px; }
   .imp-h { font-size: 12px; }
   .imp-body { white-space: pre-wrap; font-size: 12px; color: var(--dim); margin: 3px 0; }
   .imp-diff { font-size: 11px; line-height: 1.35; max-height: 160px; overflow: auto;
@@ -1387,17 +1390,6 @@
         </div>
         </div>
       </section>
-      <section data-insp="improvement" class="insp-open">
-        <button class="insp-hd" data-call="toggleInsp" data-args='["improvement"]'>Improvement<span id="impCount" class="ihd-s"></span></button>
-        <div class="insp-body">
-        <div class="card">
-          <div id="impMemory" class="remaining">–</div>
-          <div class="u-mt6"><button class="ghost" id="impRefresh" title="reload proposals, ledger and provenance">↻ refresh</button></div>
-        </div>
-        <div id="impProps" class="imp-list"></div>
-        <div id="impLedger" class="imp-ledger"></div>
-        </div>
-      </section>
       <section data-insp="cost" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["cost"]'>Cost<span class="ihd-s" id="sCost"></span></button>
         <div class="insp-body">
@@ -1524,6 +1516,19 @@
       <div class="sw-cat" data-cat="tools" hidden>
         <h2>Tool policy · what the agent can do</h2>
         <div class="card" id="configPanel"><div class="remaining">loading…</div></div>
+      </div>
+      <div class="sw-cat" data-cat="improvement" hidden>
+        <h2>Self-improvement · global <span id="impCount" class="remaining"></span></h2>
+        <div class="card">
+          <div class="remaining" id="impMemory">—</div>
+          <div class="u-mt6"><button class="ghost" id="impRefresh" data-call="loadImprovement" title="reload proposals, distilled lessons, changelog and provenance">↻ refresh</button></div>
+        </div>
+        <h2>Pending proposals <span id="impPropCount" class="remaining"></span></h2>
+        <div id="impProps"></div>
+        <h2>Distilled lessons · auto-written memory</h2>
+        <div id="impRecords"></div>
+        <h2>Changelog · what the harness wrote</h2>
+        <div id="impLedger"></div>
       </div>
       <div class="sw-cat" data-cat="info" hidden>
         <h2>ⓘ Info · harness</h2>
@@ -1731,6 +1736,11 @@
         <div class="card">
           <select id="compactionModel" data-change="saveCompactionModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="compactionResult"></div>
+        </div>
+        <h2>Subagent model</h2>
+        <div class="card">
+          <select id="subagentModel" data-change="saveSubagentModel" class="inp u-w100 u-p610 u-fs12"></select>
+          <div class="remaining u-mt6" id="subagentResult"></div>
         </div>
         <h2>Embedding · knowledge index</h2>
         <div class="card">
@@ -4914,51 +4924,75 @@ function improveCard(d) {
    changelog (what the harness wrote on its own) and the memory provenance split
    (auto-generated vs. user-authored). */
 async function loadImprovement() {
-  const props = $("impProps"), led = $("impLedger"), mem = $("impMemory");
+  const props = $("impProps"), led = $("impLedger"), mem = $("impMemory"), recs = $("impRecords");
   if (!props) return;
   let d;
   try { d = await api("GET", "/api/improvement"); }
   catch (e) { if (mem) mem.textContent = "error: " + e; return; }
   const pend = (d.proposals || []).filter(p => p.status === "pending");
-  const cnt = $("impCount"); if (cnt) cnt.textContent = pend.length ? (" " + pend.length) : "";
+  const cnt = $("impCount"); if (cnt) cnt.textContent = pend.length ? ("· " + pend.length + " pending") : "";
+  const pc = $("impPropCount"); if (pc) pc.textContent = pend.length ? ("(" + pend.length + ")") : "(0)";
   if (mem) {
     const m = d.memory || {};
     const kinds = Object.entries(m.by_kind || {}).map(([k, v]) => k + ":" + v).join(" · ");
     mem.innerHTML = "memory — auto <b>" + (m.auto || 0) + "</b> · user <b>" + (m.user || 0) +
-      "</b> · total " + (m.total || 0) +
+      "</b> · total <b>" + (m.total || 0) + "</b>" +
       (kinds ? ('<div class="remaining">' + esc(kinds) + "</div>") : "");
   }
+  // ---- proposals (collapsible, with diff + file path) ----
   props.innerHTML = pend.length ? "" : '<div class="remaining">no pending proposals</div>';
   pend.forEach(p => {
-    const card = document.createElement("div"); card.className = "imp-card";
     const prev = p.preview || {};
-    card.innerHTML = '<div class="imp-h"><b>' + esc(p.scope || "") + "</b>" +
-      '<span class="remaining"> · ' + esc(p.origin || "agent") + "</span></div>" +
+    const det = document.createElement("details"); det.className = "imp-card";
+    const sum = '<b>' + esc(p.scope || "") + '</b> <span class="remaining">· ' + esc(p.origin || "agent") + '</span>' +
+      (prev.applies ? (' <span class="remaining">· file <code>' + esc(prev.path || p.target_path || "") + '</code></span>') : "");
+    det.innerHTML = '<summary class="imp-s">' + sum + '</summary>' +
       '<div class="imp-body">' + esc(p.content || "") + "</div>" +
       (prev.applies
         ? '<pre class="imp-diff">' + esc(prev.diff || "") + "</pre>"
         : '<div class="remaining">' + esc(prev.note || "") + "</div>");
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:6px";
-    const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ accept";
-    const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ reject";
-    ok.onclick = () => api("POST", "/api/improve", { id: p.id, decision: "approve" }).then(loadImprovement);
-    no.onclick = () => api("POST", "/api/improve", { id: p.id, decision: "deny" }).then(loadImprovement);
-    row.appendChild(ok); row.appendChild(no); card.appendChild(row);
-    props.appendChild(card);
+    const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "accept";
+    const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "reject";
+    ok.onclick = (e) => { e.preventDefault(); e.stopPropagation(); api("POST", "/api/improve", { id: p.id, decision: "approve" }).then(loadImprovement); };
+    no.onclick = (e) => { e.preventDefault(); e.stopPropagation(); api("POST", "/api/improve", { id: p.id, decision: "deny" }).then(loadImprovement); };
+    row.appendChild(ok); row.appendChild(no); det.appendChild(row);
+    props.appendChild(det);
   });
+  // ---- distilled lessons (auto-written memory, collapsible) ----
+  if (recs) {
+    const records = d.records || [];
+    recs.innerHTML = records.length ? "" : '<div class="remaining">no auto-written memory yet</div>';
+    records.forEach(r => {
+      const det = document.createElement("details"); det.className = "imp-card";
+      const when = r.ts ? new Date(r.ts * 1000).toLocaleString() : "";
+      det.innerHTML = '<summary class="imp-s"><span class="remaining">' + esc(when) + '</span> <b>' + esc(r.origin || "auto") + '</b> · <code>' + esc(r.kind || "") + '</code></summary>' +
+        '<div class="imp-body">' + esc(r.content || "") + "</div>" +
+        '<div class="remaining">file <code>' + esc(r.path || "") + '</code></div>';
+      recs.appendChild(det);
+    });
+  }
+  // ---- changelog (collapsible, with concrete file paths) ----
   const lg = d.ledger || [];
-  led.innerHTML = lg.length ? '<div class="remaining">changelog (what the harness wrote)</div>' : '<div class="remaining">ledger empty</div>';
-  lg.forEach(e => {
-    const row = document.createElement("div"); row.className = "imp-row";
-    const when = e.ts ? new Date(e.ts * 1000).toLocaleTimeString() : "";
-    const wrote = (e.wrote || []).map(w => (w.kind || "") + ":" + (w.summary || "")).join(", ");
-    row.innerHTML = '<span class="remaining">' + esc(when) + "</span> " +
-      "<b>" + esc(e.kind || "") + '</b> <span class="remaining">(' + esc(e.origin || "") + ")</span> " +
-      esc(e.summary || "") + (wrote ? ' <span class="remaining">→ ' + esc(wrote) + "</span>" : "");
-    led.appendChild(row);
-  });
+  led.innerHTML = "";
+  if (!lg.length) { led.innerHTML = '<div class="remaining">ledger empty</div>'; }
+  else {
+    const grp = document.createElement("details"); grp.className = "imp-card";
+    grp.innerHTML = '<summary class="imp-s">changelog (' + lg.length + ' entries) — what the harness wrote</summary>';
+    const box = document.createElement("div"); box.className = "imp-ledger";
+    lg.forEach(e => {
+      const row = document.createElement("div"); row.className = "imp-row";
+      const when = e.ts ? new Date(e.ts * 1000).toLocaleString() : "";
+      const wrote = (e.wrote || []).map(w =>
+        (w.kind || "") + ' <code>' + esc(w.path || "") + '</code>').join(", ");
+      row.innerHTML = '<span class="remaining">' + esc(when) + "</span> " +
+        "<b>" + esc(e.kind || "") + '</b> <span class="remaining">(' + esc(e.origin || "") + ")</span> " +
+        (wrote ? esc(e.summary || "") + ' <span class="remaining">→ ' + wrote + "</span>" : esc(e.summary || ""));
+      box.appendChild(row);
+    });
+    grp.appendChild(box); led.appendChild(grp);
+  }
 }
-if ($("impRefresh")) $("impRefresh").onclick = loadImprovement;   // JAG-447
 
 /* ---- agent loop (tool-enabled, SSE) ---- */
 /* JAG-168: a chat turn belongs to ONE session. `turnSSE` maps each session to
@@ -6047,7 +6081,8 @@ function skillsAutocomplete() {
 const SETTINGS_CATS = [
   ["appearance", "Appearance"], ["models", "Models"], ["knowledge", "Knowledge"], ["keys", "Keys"],
   ["mcp", "MCP"], ["skills", "Skills"],
-  ["rules", "Rules"], ["harness", "Harness"], ["tools", "Tool policy"], ["info", "\u24D8 Info"],
+  ["rules", "Rules"], ["harness", "Harness"], ["tools", "Tool policy"],
+  ["improvement", "Improvement"], ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
    by the inline boot script above, these helpers just re-render and save. */
@@ -6101,6 +6136,9 @@ function settingsCategory(name) {
   }
   else if (name === "tools") {
     api("GET", "/api/tools").then(d => renderTools($("configPanel"), d)).catch(e => json_pre($("configPanel"), { error: String(e) }));
+  }
+  else if (name === "improvement") {
+    if (typeof loadImprovement === "function") loadImprovement();
   }
   else if (name === "models") {
     // JAG-422: Thinking effort lives in the Models category — load its saved
@@ -6236,6 +6274,25 @@ async function loadRouting() {
       const match = models.find(m => m.ref.toLowerCase().includes(pat) || m.id.toLowerCase().includes(pat));
       if (match) sel.value = match.ref;
     }
+    // JAG-448: the subagent role is the same picker pattern — explicit `model`
+    // plus a configured failover list (literal provider:model refs).
+    const ssel = $("subagentModel");
+    if (ssel) {
+      const sub = ((d.config || {}).roles || {}).subagent || {};
+      const subRef = sub.model || "";
+      ssel.innerHTML = '<option value="">auto (by pattern: ' + _attr(sub.pattern || "—") + ')</option>' +
+        Object.keys(groups).map(pid => {
+          const g = groups[pid];
+          return '<optgroup label="' + _attr(g.name) + '">' + g.items.map(m =>
+            '<option value="' + _attr(m.ref) + '"' + (m.ref === subRef ? " selected" : "") + '>' +
+            esc(m.ref) + (m.available ? "" : " · no key") + '</option>').join("") + '</optgroup>';
+        }).join("");
+      const fb = (sub.fallbacks || []);
+      const sres = $("subagentResult");
+      if (sres) sres.innerHTML = subRef
+        ? ("saved: <b>" + esc(subRef) + "</b>" + (fb.length ? (" · failover → <b>" + esc(fb.join(" › ")) + "</b>") : ""))
+        : "auto — resolved by the local router pattern (glm)";
+    }
     const fb = ((d.config || {}).default_fallbacks || []);
     const box = $("modelsList");
     if (box) box.innerHTML = '<div class="remaining">models available: <b>' + models.length + '</b>' +
@@ -6250,6 +6307,16 @@ async function saveCompactionModel() {
   _compactRef = m;
   const el = $("compactionResult");
   if (el) el.textContent = r.error ? ("error: " + r.error) : ("saved: summarizer = " + m);
+}
+async function saveSubagentModel() {
+  const sel = $("subagentModel");
+  if (!sel) return;
+  const m = sel.value;
+  const r = await api("POST", "/api/routing", { roles: { subagent: { model: m } } });
+  const el = $("subagentResult");
+  if (el) el.textContent = r.error ? ("error: " + r.error)
+    : (m ? ("saved: subagent = " + m) : "cleared — resolved by pattern again");
+  if (typeof loadRouting === "function") loadRouting();
 }
 function moveSettingsCats() {
   const main = $("swMain"); if (!main) return;
@@ -6272,7 +6339,6 @@ function _loadInspector(name) {
   else if (key === "cost") { loadCosts(); }
   else if (key === "rules") { loadRulesPanel(); }
   else if (key === "approvals") { loadApprovals(); }
-  else if (key === "improvement") { loadImprovement(); }
   else if (key === "files") { loadFiles(); loadEdits(); loadRules(); }
   else if (key === "codebase") { cbStatus(); loadIndexCfg(); }
 }
@@ -7364,7 +7430,7 @@ function paletteItems() {
     { label: "\u2699 Open settings", run: () => openSettings() },
   ];
   SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
-  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Role"], ["files", "Workspace"], ["codebase", "Codebase"], ["terminal", "Terminal"], ["feed", "Feed"], ["improvement", "Improvement"]]
+  [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Role"], ["files", "Workspace"], ["codebase", "Codebase"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }

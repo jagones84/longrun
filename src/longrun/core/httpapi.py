@@ -1305,10 +1305,11 @@ class Handler(BaseHTTPRequestHandler):
             from longrun.util import improve as improve_mod
             return self._send(200, {"proposals": improve_mod.list_proposals()})
         if path == "/api/improvement":
-            # JAG-447: aggregated self-improvement view for the WebUI panel —
-            # proposals (each pending one with a DIFF preview of what approving
-            # would append), the audit ledger changelog, and the memory
-            # provenance split (auto-generated vs. user-authored).
+            # JAG-448: aggregated self-improvement view for the WebUI — proposals
+            # (each pending one with a DIFF preview of what approving would append),
+            # the audit ledger changelog, the auto-written memory records (so the
+            # operator can SEE exactly which lessons/files the harness distilled),
+            # and the memory provenance split (auto-generated vs. user-authored).
             from longrun.util import improve as improve_mod
             props = improve_mod.list_proposals()
             for p in props:
@@ -1317,11 +1318,28 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 from longrun.memory import memory as memory_mod
                 mem = memory_mod.provenance()
+                records = []
+                for r in memory_mod.query(None, None, limit=80):
+                    origin = str(r.get("source") or r.get("origin") or "").strip()
+                    if origin == "user":
+                        continue
+                    records.append({
+                        "mid": r.get("mid"),
+                        "ts": r.get("ts"),
+                        "kind": r.get("kind"),
+                        "origin": origin or "unattributed",
+                        "session": str(r.get("session") or ""),
+                        "content": str(r.get("content") or ""),
+                        "path": "data/memory/" + memory_mod.MEMORY_FIELDS.get(
+                            r.get("kind"), "other.md"),
+                    })
             except Exception:  # noqa: BLE001 — the panel must still load
                 mem = {}
+                records = []
             return self._send(200, {
                 "proposals": props,
-                "ledger": improve_mod.ledger_tail(60),
+                "ledger": improve_mod.ledger_tail(120),
+                "records": records,
                 "memory": mem,
                 "origins": list(improve_mod.ORIGINS),
             })

@@ -173,7 +173,8 @@ with open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="
 with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
     _idx = f.read()
 check("J1 GET /api/improvement is registered", '"/api/improvement"' in _htt)
-check("J2 the WebUI has an Improvement panel", 'data-insp="improvement"' in _idx)
+check("J2 the WebUI has an Improvement panel (Settings category)",
+      'data-cat="improvement"' in _idx and "impRecords" in _idx)
 check("J3 the WebUI loads /api/improvement", '"/api/improvement"' in _idx)
 check("J4 the WebUI renders the enriched nudge (wrote) ",
       "improve.nudge" in _idx and "wrote" in _idx)
