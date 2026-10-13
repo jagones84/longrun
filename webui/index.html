@@ -2708,6 +2708,10 @@ function renderQueue() {
 function steerQueued(i) {
   const q = _q(); const it = _qNorm(q.splice(i, 1)[0]);
   if (!it.raw) return renderQueue();
+  // JAG-431r4b: the chip was spliced out but the bar never re-rendered — the stale
+  // chips kept their render-time indexes and the NEXT click spliced/sent the WRONG
+  // message. Always re-render after the splice.
+  renderQueue();
   const mk = _attMark(it.atts);
   who("user", "🎯 steer: " + it.text + (mk ? "  " + mk.text : ""));
   api("POST", "/api/chat/steer", { session: sessionId, message: it.raw }).catch(() => {});
@@ -2720,7 +2724,12 @@ function flushQueue(sid) {
   const q = _q(s);
   if (!q.length) return;
   const it = _qNorm(q.shift()); renderQueue();
-  if (it.raw) send(it.raw, it.text);
+  if (it.raw) {
+    // JAG-431r4b: `send(it.raw, it.text)` keeps the visible bubble and the
+    // model-facing payload separate; `it.atts` carries the queue's attachment
+    // snapshot so a flushed item still shows 📎 chips/note.
+    send(it.raw, it.text, it.atts);
+  }
 }
 
 /* ---- JAG-278/279: composer extras — attachments, "+" menu, pickers, voice ---- */
@@ -3081,15 +3090,20 @@ function _bindAttachmentChips(root) {
   });
 }
 
-function send(text, display) {
+/* JAG-431r4b: function send(text, display) also accepts an optional `atts`
+   snapshot so a QUEUED message flushed later still carries its attachment
+   note/chips. */
+function send(text, display, atts) {
   const inp = $("inp");
   let raw = (text !== undefined ? text : inp.value).trim();
   if (!raw) return;
   // JAG-278: attachments are prepended for the MODEL (read them first) and shown
   // to the user as a 📎 note; the chips are consumed once the message is sent.
+  // JAG-431r4b: a QUEUED message flushed later must still show its 📎 note + chips —
+  // its attachment snapshot rides in the queue item (the composer is already empty).
   const _attBlock = _attachBlock();
-  const _attSnap = _attachments.slice();   // JAG-283: keep for the clickable chips
-  const _attNote = _attachments.length ? "  📎 " + _attachments.map(a => a.label).join(", ") : "";
+  const _attSnap = (Array.isArray(atts) && atts.length) ? atts.slice() : _attachments.slice();
+  const _attNote = _attSnap.length ? "  📎 " + _attSnap.map(a => a.label).join(", ") : "";
   const _rawMsg = _attBlock ? _attBlock + "\n\n" + raw : raw;
   _attachments = []; _renderAttach();
   // JAG-127b: a turn is already streaming → never open a second SSE (that is
@@ -3177,7 +3191,17 @@ function send(text, display) {
   // relied only on the global /api/feed SSE, which the phone UI may not keep
   // open) — otherwise a `required` tool looked like a silent 30s freeze.
   es.addEventListener("approval.request", e => { if (live()) { approvalCard(JSON.parse(e.data)); loadApprovals(); } });
-  es.addEventListener("chat.steer", e => { if (!live()) return; const d = JSON.parse(e.data); who("user", "🎯 steer: " + (d.text || "")); });
+  es.addEventListener("chat.steer", e => { if (!live()) return; const d = JSON.parse(e.data);
+    // JAG-431r4b: the local ⇢ / steer-mode paths already echoed this text, and the
+    // server ALSO publishes chat.steer when the turn drains it — every steer then
+    // rendered TWICE (the second copy showing the raw attachment block). Skip when
+    // the last user bubble already carries the same text; steers arriving from
+    // another tab/device still render.
+    const _t = d.text || "";
+    const _bubs = $("log").querySelectorAll(".msg.user .bubble");
+    const _last = _bubs[_bubs.length - 1];
+    if (_t && _last && _last.textContent.indexOf(_t) >= 0) return;
+    who("user", "🎯 steer: " + _t); });
   es.addEventListener("plan.incomplete", e => { if (live()) planIncomplete(JSON.parse(e.data)); });
   es.addEventListener("plan.continuing", e => { if (live()) planContinuing(JSON.parse(e.data)); });
   es.addEventListener("plan.stopped", e => { if (live()) planStopped(JSON.parse(e.data)); });
@@ -3187,7 +3211,13 @@ function send(text, display) {
   es.addEventListener("bestofn.chosen", e => { if (!live()) return; const d = JSON.parse(e.data); who("ai", `🎲 best-of-N: picked the best of ${d.n} samples`); });
   es.addEventListener("improve.proposal", e => { if (live()) { improveCard(JSON.parse(e.data)); loadApprovals(); } });
   es.addEventListener("done", () => end(true, true));
-  es.addEventListener("error", () => end(false, false));
+  // JAG-431r4b: the terminal `event: error` frame (a turn that crashed server-side)
+  // carried the error text but the handler just closed the stream — the turn looked
+  // SILENT until a manual reload. Render the payload; a bare reconnect `error` has
+  // no data and must stay quiet.
+  es.addEventListener("error", e => { let d = null; try { d = JSON.parse(e.data); } catch (_) {}
+    if (live() && d && d.error) who("ai", "⚠ " + d.error);
+    end(false, false); });
 }
 
 async function api(method, path, body) {
@@ -3626,6 +3656,15 @@ async function loadHistory() {
   evs.forEach(e => {
     if (e.t === "m") {
       const m = e.v;
+      if (m.role === "user") {
+        // JAG-431r4b: the stored content carries the model-facing attachment block
+        // ("The user attached the following — …") — a reload showed that preamble
+        // verbatim instead of the clean text the live send rendered. Strip it
+        // before the renderer gets the bubble.
+        const _stripped = String(m.content || "").replace(
+          /^The user attached the following[^\n]*\n(?:-[^\n]*\n)+\n?/, "");
+        who("user", _stripped, m.ts, m.sender, m.subjob, m.chapter); return;
+      }
       if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter); return; }
       // v1.6.3 (JAG-55): some models inline their chain-of-thought in `content` as a
       // trailing "think: …" tail. The reply must stay the primary text.
@@ -4516,7 +4555,10 @@ function chooseModel(ref) {
 $("model-btn").onclick = (e) => { e.stopPropagation(); const m = $("modelMenu"); const open = m.hidden; m.hidden = !open; if (open) { _mmMode = "chat"; renderModelMenu(); } };
 document.addEventListener("click", e => {
   const m = $("modelMenu");
-  if (m && !m.hidden && !m.contains(e.target) && e.target.id !== "model-btn") m.hidden = true;
+  // JAG-431r4b: the button's label is a <span> — e.target.id is "" when the label
+  // is clicked, so this closer ran in the SAME bubble as the opener and instantly
+  // re-closed the menu (only the 1-2px padding kept it open). Use closest().
+  if (m && !m.hidden && !m.contains(e.target) && !(e.target.closest && e.target.closest("#model-btn"))) m.hidden = true;
 });
 async function loadStatus() {
   try {
@@ -4780,6 +4822,10 @@ function attachTurn(sid) {
       endStream();
       $("log").innerHTML = ""; _resetChatTree();
       loadHistory(); loadPlan(); loadGraph(); loadCtx(); refreshEdits(); linkifyAll();
+      // JAG-431r4b: drain the queue when an ATTACHED (re-followed) turn finishes.
+      // Without this, a message queued while following a re-attached turn sat in the
+      // bar forever (flushQueue only ran in send()'s own end()).
+      flushQueue();
     }
   };
   es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); if (live()) setRun(d.run_id); });
@@ -4932,7 +4978,9 @@ function connectFeed() {
   es.addEventListener("improve.nudge", e => { const d = JSON.parse(e.data); if (d.session && d.session !== sessionId) return; who("ai", "💡 self-improvement: " + (d.hint || "")); });
   es.addEventListener("agent.paused", () => push("⏸ run paused"));
   es.addEventListener("agent.aborted", () => push("⛔ run aborted"));
-  es.addEventListener("agent.control", e => { const d = JSON.parse(e.data); push("🎛 " + d.action + " → " + d.status); });
+  // JAG-431r4b: the duplicate agent.control listener removed — connectFeed already
+  // registered one at the top; every event printed TWO feed rows (and this copy
+  // printed "🎛 undefined → undefined" when action/status were absent).
 }
 let _ctxT;
 function loadCtxSoon() { clearTimeout(_ctxT); _ctxT = setTimeout(loadCtx, 300); }
@@ -6638,7 +6686,10 @@ async function refreshEdits() {
   let cur;
   try { cur = await api("GET", "/api/edits?session=" + encodeURIComponent(sessionId)); } catch (e) { return; }
   if (!cur || cur.error) return;
-  const delta = _editsDelta(_editsBase, cur);
+  // JAG-431r4b: an invalid/missing baseline (loadHistory catch -> null, or a failed
+  // first fetch) made _editsDelta treat EVERY current file as newly created this
+  // turn -> a false "N files changed" chip. Re-baseline silently instead.
+  const delta = (_editsBase && !_editsBase.error) ? _editsDelta(_editsBase, cur) : [];
   _editsBase = cur;
   if (delta.length) editsChip(delta);
   if ($("editsList")) _renderEditsList(cur);

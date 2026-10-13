@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shlex
+import socket
 import time
 import urllib.parse
 import urllib.request
@@ -327,6 +328,12 @@ def _git(args, run_id):
     if not argv:
         return {"ok": False, "error": "empty git args"}
     cwd = args.get("cwd") or args.get("workspace") or REPO
+    # JAG-431r4b: a relative `cwd` resolved against the SERVER process cwd —
+    # inconsistent with the shell tool (which resolves against the session
+    # workspace) and surprising in production where the server is launched from
+    # a different directory than the user. Mirror the shell: relative -> REPO.
+    if not os.path.isabs(str(cwd)):
+        cwd = os.path.join(REPO, str(cwd))
     if not os.path.isdir(cwd):
         return {"ok": False, "error": "cwd not found: %s" % cwd}
     t0 = time.time()
@@ -425,7 +432,13 @@ def _strip_html(s):
 
 
 def _public_host(url):
-    """SSRF guard for `web`: only public http(s) hosts are reachable."""
+    """SSRF guard for `web`: only public http(s) hosts are reachable.
+
+    JAG-431r4b: a hostname-based URL (e.g. `evil.example.com`) passed the
+    textual check, then `urlopen` resolved it at fetch time to a private
+    IP — classic DNS rebind / name-smuggle bypass. Resolve the name NOW
+    and reject any private/loopback address it points at.
+    """
     try:
         parsed = urllib.parse.urlparse(url)
     except Exception:  # noqa: BLE001
@@ -442,7 +455,19 @@ def _public_host(url):
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
             return False, "private/loopback address %s is not allowed" % host
     except ValueError:
-        pass  # a DNS name -> allowed
+        # JAG-431r4b: DNS name -> resolve it and reject any private/loopback
+        # record. Catches `internal.cdn.example` pointing at 10.x.
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except socket.gaierror as e:
+            return False, "dns resolution failed: %s" % e
+        for fam, *_rest, sockaddr in infos:
+            try:
+                ip = ipaddress.ip_address(sockaddr[0])
+            except ValueError:
+                continue
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False, "host %s resolves to private/loopback %s" % (host, sockaddr[0])
     return True, host
 
 
@@ -821,7 +846,16 @@ def _memory(args, run_id):
             if not query:
                 return {"ok": False, "error": "query required for action=recall",
                         "backend": "host", "sandboxed": False}
-            hits = mem.search(query, args.get("kind"), limit, True)
+            # JAG-431r4b: respect an explicit semantic flag. Default to keyword
+            # (bm25) so a recall does not silently hit the embedding API for
+            # hosts with no embedder configured (used to raise inside
+            # semantic_query -> "memory lookup failed"). `semantic=True` opts in.
+            sem_flag = args.get("semantic")
+            if isinstance(sem_flag, str):
+                sem_flag = sem_flag.strip().lower() in ("1", "true", "yes", "on")
+            else:
+                sem_flag = bool(sem_flag) if sem_flag is not None else False
+            hits = mem.search(query, args.get("kind"), limit, sem_flag)
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": "memory lookup failed: %s" % e,
                 "backend": "host", "sandboxed": False}
@@ -901,15 +935,31 @@ def _improve(args, run_id=None):
             except Exception:  # noqa: BLE001 — an event must never break the tool
                 pass
 
+        # JAG-431r4b: verify/promote must only operate on proposal dirs INSIDE
+        # the harness proposals root — otherwise a hostile path could promote
+        # arbitrary directories. Defence in depth: realpath + startswith check.
+        proposals_root = os.path.realpath(out)
+
+        def _inside_proposals(p):
+            try:
+                rp = os.path.realpath(p)
+                return rp == proposals_root or rp.startswith(proposals_root + os.sep)
+            except Exception:
+                return False
+
         if action == "verify":
             if not path:
                 return {"error": "path required for action=verify"}
+            if not _inside_proposals(path):
+                return {"error": "verify path must be under %s" % proposals_root}
             rep = selfevolve.verify(path)
             _pub("improve.verify", path=path, green=bool(rep.get("green")))
             return {"ok": True, "verify": rep}
         if action == "promote":
             if not path:
                 return {"error": "path required for action=promote"}
+            if not _inside_proposals(path):
+                return {"error": "promote path must be under %s" % proposals_root}
             res = selfevolve.promote(path)
             if res.get("ok"):
                 _pub("improve.archived", name=res.get("name"), rel=res.get("rel"))

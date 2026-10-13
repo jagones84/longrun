@@ -671,8 +671,10 @@ class LocalApi:
                     return t
             return {"error": "task not found"}
         tasks = srv.load_tasks()
-        remaining = ["%s: %s" % (t["status"], t["title"]) for t in tasks.get("tasks", [])
-                     if t.get("status") != "done"]
+        # JAG-431r4: .get() — a stored task without `status`/`title` raised KeyError
+        # and dropped the connection (same bug fixed in httpapi /api/tasks).
+        remaining = ["%s: %s" % (t.get("status", "?"), t.get("title", ""))
+                     for t in tasks.get("tasks", []) if t.get("status") != "done"]
         return {**tasks, "remaining": remaining}
 
     def agent_run(self, goal, max_steps=6, model=None):
@@ -1159,9 +1161,16 @@ def handle(handler, method, path, qs, body):
                 _publish("memory.purge", removed=res.get("removed"))
                 return _r(handler, 200, res)
             if action == "invalidate":
-                _MEMORY.invalidate(body.get("target") or body.get("id"),
+                _tgt = (body.get("target") or body.get("id") or "").strip()
+                # JAG-431r4b: an invalidate with no target used to silently
+                # succeed with {"ok": True} — every tool write was a no-op
+                # and the operator got no signal. Require a target.
+                if not _tgt:
+                    return _r(handler, 400, {"ok": False,
+                                             "error": "target (or id) required"})
+                _MEMORY.invalidate(_tgt,
                                    reason=str(body.get("reason") or ""))
-                return _r(handler, 200, {"ok": True})
+                return _r(handler, 200, {"ok": True, "target": _tgt})
             kind = body.get("kind", "memory.store")
             content = body.get("content", "")
             meta = {k: v for k, v in body.items()

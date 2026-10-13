@@ -241,7 +241,18 @@ def probe(force=False):
             ok, detail = fn()
             checks[name] = {"ok": ok, "detail": detail}
         if requested in checks:
-            chosen = requested if checks[requested]["ok"] else "none"
+            # JAG-431r4b: an EXPLICIT requested backend that fails probe used
+            # to silently fall back to `none` (host execution) — an isolation
+            # regression invisible to the operator. Only auto-pick a fallback;
+            # for an explicit ask, raise so the operator sees the failure.
+            if checks[requested]["ok"]:
+                chosen = requested
+            else:
+                raise RuntimeError(
+                    "sandbox: explicit backend %r is not available (%s); "
+                    "refusing to fall back to host execution. "
+                    "Set sandbox.backend=auto to allow auto-pick."
+                    % (requested, checks[requested]["detail"]))
         elif requested == "none":
             chosen = "none"
         else:  # auto
@@ -251,14 +262,36 @@ def probe(force=False):
         return _probe_cache
 
 
+def invalidate_probe():
+    """JAG-431r4b: the probe result was cached FOREVER; there was no way to
+    force a re-check after, e.g., installing docker. Expose the cache clear."""
+    global _probe_cache
+    with _probe_lock:
+        _probe_cache = None
+
+
 # -------------------------------------------------------------- workspaces ---
 
 def workspace_for(run_id):
     """Per-run scratch dir, bind-mounted as /work and world-writable for the
-    sandbox user (uid 65534 in the container)."""
+    sandbox user (uid 65534 in the container).
+
+    JAG-431r4b: a hostile or accidentally-pathological `run_id` ("../etc",
+    "/abs/path", trailing slashes) used to escape the workspace root via
+    os.path.join. Sanitize to a single basename + length cap before joining.
+    """
     cfg = registry.load_config()
-    root = os.path.join(REPO, cfg["sandbox"]["workspace"])
-    ws = os.path.join(root, run_id or "adhoc")
+    root = os.path.realpath(os.path.join(REPO, cfg["sandbox"]["workspace"]))
+    raw = (run_id or "adhoc").strip()
+    # JAG-431r4b: allow only the safe ASCII set, then take the last path
+    # component so a malformed id never escapes the workspace.
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in raw)[:64].strip("_")
+    if not safe:
+        safe = "adhoc"
+    ws = os.path.realpath(os.path.join(root, safe))
+    # JAG-431r4b: defence in depth — refuse anything that resolves outside `root`.
+    if not (ws == root or ws.startswith(root + os.sep)):
+        ws = os.path.join(root, "adhoc")
     os.makedirs(ws, exist_ok=True)
     try:
         os.chmod(ws, 0o755)

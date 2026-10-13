@@ -96,14 +96,25 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
                      goal=goal, max_steps=max_steps, model=model)
         except Exception:
             pass
-        result = api_v02.agent_run_v2(
-            goal, max_steps, model, on_event=on_event, run_id=st.id)
-        entry["result"] = result
-        entry["done"].set()
+        # JAG-431r4b: a crash in the child run used to kill this thread SILENTLY —
+        # `done` was never set, the parent blocked for the full SUBAGENT_WAIT and
+        # reported a bogus "subagent timeout". Always complete the handshake.
+        try:
+            result = api_v02.agent_run_v2(
+                goal, max_steps, model, on_event=on_event, run_id=st.id)
+            entry["result"] = result
+            status_txt = result.get("status")
+            steps_n = len(result.get("trace", []))
+        except Exception as e:  # noqa: BLE001 — the parent must see the failure
+            entry["result"] = {"ok": False, "status": "error", "error": str(e),
+                               "summary": "subagent crashed: %s" % e, "trace": []}
+            status_txt, steps_n = "error", 0
+        finally:
+            entry["done"].set()
         try:
             from longrun.core.server import publish as _publish
             _publish("subagent.done", subagent_id=sid, parent=parent_run_id,
-                     goal=goal, status=result.get("status"), steps=len(result.get("trace", [])))
+                     goal=goal, status=status_txt, steps=steps_n)
         except Exception:
             pass
 
@@ -127,6 +138,14 @@ def collect(subagent_id, timeout=None):
         return {"ok": False, "error": "subagent %r not found" % subagent_id}
     if not entry["done"].wait(timeout=timeout):
         return {"ok": False, "error": "subagent timeout", "subagent_id": subagent_id}
+    # JAG-431r4b: pop the finished entry — _running/_DEPTH kept every completed
+    # subagent forever (status() listed dead runs; both dicts grew unboundedly).
+    with _lock:
+        done_entry = _running.pop(subagent_id, None)
+        if done_entry is not None:
+            st = done_entry.get("state")
+            if st is not None:
+                _DEPTH.pop(st.id, None)
     result = entry["result"] or {}
     summary = result.get("summary", "")
     parent_run_id = entry.get("parent_run_id")

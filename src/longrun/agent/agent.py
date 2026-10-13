@@ -952,6 +952,16 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
             ev = step.get("evidence")
             try:
                 if status == "done":
+                    # JAG-431r4b: require evidence — `complete_node` substitutes
+                    # "completed by agent" for a missing one, which silently accepted
+                    # evidence-free closes and defeated the documented contract
+                    # ("done REQUIRES evidence", same rule as update_node/the API).
+                    if not ev and not (_nd.get("evidence") or _nd.get("evidences")):
+                        errors.append(
+                            "step %s: refusing 'done' without evidence — state WHAT "
+                            "was produced/verified (file, test result, command output)."
+                            % _nd["id"])
+                        continue
                     # JAG-320: refuse a `done` that contradicts a FAILED delegation on
                     # THIS step. Observed live: three subagents timed out for a step,
                     # then the model closed it as done with invented evidence. The
@@ -1627,6 +1637,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
 
     work_steps = 0
     iters = 0
+    # JAG-431r4b: `work_steps` is reset to 0 every time the KG loop grants
+    # another round — at `finish()` it only reflects the LAST chunk, not the
+    # turn's total. Track the running total in `_total_work_steps`.
+    _total_work_steps = 0
     used_tools = []
     # JAG-129A: completion loop state (see keepgoing.decide).
     from longrun.plan import keepgoing as _kg
@@ -1815,6 +1829,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                      open=len(_open), total=len(_nodes), difficulty=_diff_level)
             if _dec.get("reason") == "pivot_sync":
                 _inject(_pivot_sync_text(len(_open), _open_todo_brief(sess)[1]), "pivot")
+            elif not _open and has_steer(sess["id"]):
+                # JAG-431r4b: a steer with an empty plan used to hit the
+                # generic "CONTINUE — N task(s) are still OPEN" inject with
+                # N=0 — contradictory. A steer-only continuation just needs
+                # a nudge to act on the user's new directive.
+                _inject(
+                    "USER_STEER — the user typed a new directive while the "
+                    "previous task list is fully CLOSED. Acknowledge it and "
+                    "act on it now (start with `write_todos` if multi-step).",
+                    "steer_only")
             else:
                 _inject(
                     "CONTINUE — %d task(s) are still OPEN (the full list is in "
@@ -1872,6 +1896,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _bN = 1
         if _bN > 1 and _looks_like_json_action(answer):
             _cands = [answer]
+            # JAG-431r4b: each extra best-of-N sample refills `chat_usage` in
+            # stream_with_fallback, and `_record_usage()` is only called once for
+            # the first sample — every extra sample's tokens (and cost) were
+            # silently dropped from the ledger. Snapshot before/after each
+            # sample and emit a per-sample `cost.usage` for the delta.
+            def _usage_delta():
+                cu = chat_usage or {}
+                pt = int(cu.get("prompt_tokens") or 0)
+                cp = int(cu.get("completion_tokens") or 0)
+                return pt, cp, cu
+            _tot_pt, _tot_cp, _last_cu = _usage_delta()
             for _ in range(_bN - 1):
                 try:
                     _a2, _t2, _m2 = server.stream_with_fallback(
@@ -1880,6 +1915,27 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 except Exception:  # noqa: BLE001
                     break
                 _cands.append(_a2)
+                # JAG-431r4b: price THIS sample's usage delta and emit it.
+                try:
+                    npt, ncp, ncu = _usage_delta()
+                    dpt, dcp = max(0, npt - _tot_pt), max(0, ncp - _tot_cp)
+                    if dpt or dcp:
+                        _sample = {"prompt_tokens": dpt,
+                                   "completion_tokens": dcp,
+                                   "total_tokens": dpt + dcp}
+                        # preserve provider's cache-hint if present on the call
+                        for k in ("prompt_tokens_details", "timings"):
+                            if (ncu or {}).get(k):
+                                _sample[k] = ncu[k]
+                        from longrun.model import costs as _costs
+                        _call = _costs.record(sess["id"], model, _sample,
+                                              getattr(trace, "id", None))
+                        if _call:
+                            _call["tag"] = "bestofn"
+                            on_event("cost.usage", session=sess["id"], call=_call)
+                    _tot_pt, _tot_cp = npt, ncp
+                except Exception:  # noqa: BLE001
+                    pass
                 if (_a2 or "").strip() and not _looks_like_json_action(_a2):
                     break  # a usable candidate already exists: stop spending compute
             _best, _scores = _bn.choose(_cands)
@@ -1930,8 +1986,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _inject("SYSTEM (harness) — PLAN-ONLY turn: spawning subagents is not "
                         "allowed while planning. Record the plan and stop.", "nudge")
                 work_steps += 1
+                _total_work_steps += 1
                 continue
             work_steps += 1
+            _total_work_steps += 1
             used_tools.append("subagent")
             _th = str(act.get("thought") or "").strip()
             if _th:
@@ -1961,6 +2019,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_plan_only_refusal(tool), "nudge")
                 work_steps += 1
+                _total_work_steps += 1
                 continue
             # JAG-183: HARD anti-loop guard. An IDENTICAL call that already FAILED
             # is NOT executed again: it burned the step budget and led to a resigned
@@ -1976,6 +2035,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "nudge")
                 continue
             work_steps += 1
+            _total_work_steps += 1
             used_tools.append(tool)
             on_event("tool.call", session=sess["id"], tool=tool, args=args, inline=True)
             try:
@@ -1990,6 +2050,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                          obs_max=CHAT_OBS_FULL)
                 status = res.get("status")
                 obs = res.get("observation") or res.get("error") or res.get("status") or ""
+                # JAG-431r4b: a GATE outcome (pending/expired/denied) means the tool
+                # NEVER ran — labelling it "failed" froze its (tool,args) hash and
+                # fed _fail_streak, so when the user approved the card and the model
+                # re-issued the SAME call verbatim, the JAG-183 guard BLOCKED it with
+                # "It was NOT executed… already FAILED". Gate outcomes are neutral.
+                _gate_only = status in ("pending", "expired", "denied")
                 if status in ("pending", "expired"):
                     rec = res.get("approval") or {}
                     obs = ("Action '%s' NOT executed: approval %s (id %s). The card is "
@@ -2027,6 +2093,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             except Exception as e:  # noqa: BLE001 — a tool failure must not kill chat
                 obs, ok = "tool error: %s" % e, False
                 _tool_failed = True   # JAG-178: a raised tool error is a failure too
+                _gate_only = False    # a raised call error is a REAL failure
                 persist_tool_card(sess, tool, False, args=args, error=str(e)[:200],
                                   backend="harness", node=_cur_node(),
                                   think=_think_buf["t"].strip(), after=_after())
@@ -2047,10 +2114,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             else:
                 _tool_repeat = 0
             _last_tool_hash = _call_h
-            _fail_streak = (_fail_streak + 1) if _tool_failed else 0
+            # JAG-431r4b: a gate-only outcome is neutral — do not feed the failure
+            # streak (two approval timeouts must not trigger the "YOU ARE STUCK"
+            # socratic nudge for a tool that never executed).
+            _fail_streak = (_fail_streak + 1) if (_tool_failed and not _gate_only) else 0
             # JAG-183: remember the (tool,args) of a FAILED call so the next verbatim
             # re-issue is blocked (a SUCCESS clears it — only failed calls are frozen).
-            if _tool_failed:
+            if _tool_failed and not _gate_only:
                 _last_failed_hash = _call_h
                 _last_failed_err = obs[:300]
             else:
@@ -2236,7 +2306,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _kg.hitl_gate(_dec["reason"], _open, autonomous):
                 _hitl = {"reason": _dec["reason"],
                          "open": [{"id": n.get("id"), "label": n.get("label", "")}
-                                  for n in _open[:8]]}
+                                  for n in _open[:8]],
+                         "open_total": len(_open)}  # JAG-431r4b: card payload
+                                        # truncated to 8 for compactness —
+                                        # always carry the TRUE count too so
+                                        # the bubble text reports it.
                 on_event("hitl.request", session=sess["id"], reason=_dec["reason"],
                          open=_hitl["open"], total=len(_nodes), rounds=_kg_rounds)
         for ch, t in collected:
@@ -2290,8 +2364,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     if _hitl:
         # JAG-171: the turn stopped with open todos → the visible reply is the
         # human gate, not the model's prose report.
+        # JAG-431r4b: `_hitl["open"]` is truncated to 8 for the card payload —
+        # the visible count must reflect the TRUE number of open steps, otherwise
+        # the bubble says "8 open step(s)" while the card actually hides the rest.
+        _hitl_count = _hitl.get("open_total") or len(_hitl["open"])
         content = ("⏸ Paused: %d open step(s) await your decision "
-                   "(see the HUMAN IN THE LOOP card)." % len(_hitl["open"]))
+                   "(see the HUMAN IN THE LOOP card)." % _hitl_count)
         meta = {"model": model, "hitl": True, "node": _cur_node(),
                 "open": len(_hitl["open"]), "reason": _hitl["reason"],
                 "hitl_open": _hitl["open"]}   # JAG-295: replayable card payload
@@ -2332,7 +2410,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     try:
         runmetrics.finish(sess["id"], outcome=("user_abort" if _is_aborted(sess["id"]) else "done"),
                           stop_reason=_kg_stop_reason, iterations=_kg_rounds,
-                          steps=work_steps,
+                          steps=_total_work_steps,
                           prompt_tokens=_total_prompt,
                       completion_tokens=_total_completion,
                       tokens=_total_prompt + _total_completion,
@@ -2614,6 +2692,20 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
         on_event("agent.finish", summary=summary)
         actions.append({"action": "finish", "summary": summary})
         st.status = "aborted"
+        st.summary = summary
+    except Exception as _exc:  # noqa: BLE001 — JAG-431r4b: a non-abort crash
+                # used to leak past this point, leaving `st.status = "running"`
+                # forever (the WebUI/control deck then showed a stuck run until
+                # manual /api/agent/control). Always finalize the RunState.
+        aborted = False
+        summary = "agent crashed: %s" % _exc
+        try:
+            publish("graph.error", run=trace.id, kind="agent.crash", error=str(_exc))
+        except Exception:
+            pass
+        on_event("agent.finish", summary=summary)
+        actions.append({"action": "finish", "summary": summary})
+        st.status = "error"
         st.summary = summary
     st.trace = actions
     finish_run_graph(trace.id, None, goal, on_event=on_event)

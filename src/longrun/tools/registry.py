@@ -63,7 +63,8 @@ TOOL_SCHEMAS = {
             "cwd": {"type": "string",
                     "description": ("optional working directory (default: the "
                                     "session workspace); relative paths resolve "
-                                    "against the server process cwd")},
+                                    "against the session workspace, mirroring "
+                                    "shell.rs implementation")},
         },
         "required": ["command"],
         "subject": "command",
@@ -657,8 +658,19 @@ def _match(patterns, text):
         try:
             if re.search(p, text):
                 return p
-        except re.error:
-            continue
+        except re.error as _exc:
+            # JAG-431r4b: a malformed deny regex used to be silently skipped,
+            # which meant an operator's misconfigured deny list left the action
+            # unblocked (fail-open). Fail-CLOSED: treat the broken pattern as
+            # a match so the action is denied, AND surface the operator error
+            # so it can be fixed.
+            try:
+                from longrun.core.server import publish as _publish
+                _publish("policy.error", kind="deny_regex",
+                         pattern=p, error=str(_exc))
+            except Exception:
+                pass
+            return p
     return None
 
 

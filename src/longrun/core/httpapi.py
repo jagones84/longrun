@@ -44,7 +44,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      append_message, backfill_jobs, backfill_session_workspaces,
                      chat_once, clear_abort, clear_session, context_budget, default_model,
                      ensure_job, ensure_model, ensure_reply_persisted, eval_list_tasks,
-                     eval_run, events_since, feed_seq, finish_run_graph, generate_plan,
+                     eval_run, events_since, feed_seq, generate_plan,
                      get_or_create_session, get_run_trace, graph_post, keys_status,
                      list_sessions, load_plan, load_session, load_tasks, model_loaded,
                      publish, push_abort, push_steer, query_events,
@@ -1535,7 +1535,10 @@ class Handler(BaseHTTPRequestHandler):
                                             "stored_error": True})
                 finally:
                     turn_end(sess["id"], _turn_tok)   # JAG-325: clear the running signal
-                finish_run_graph(sess["id"], sess["id"], message)
+                # JAG-431r4b: the sync path still called finish_run_graph() here, which
+                # force-closes EVERY open node with fabricated "run completed" evidence —
+                # exactly the JAG-63 bug the streaming path forbids (see the comment at
+                # the top of chat_stream_gen). Nodes close only with real evidence.
                 trace.model = model
                 trace.finish("done")
                 return self._send(200, {"session": sess["id"], "model": model, "run_id": trace.id,
