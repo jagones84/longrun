@@ -60,6 +60,9 @@ class LongrunAdapter:
         self.model = model
         self.timeout = float(timeout)
         self.repo = repo or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Captured by `setup()`, restored by `teardown()`, reported in `provenance()`.
+        self._policy = {}
+        self._verifier = {}
 
     # ---- transport ----------------------------------------------------------
     def _req(self, method, path, body=None, timeout=None):
@@ -94,7 +97,44 @@ class LongrunAdapter:
             "base_url": self.base,
             "model": self.model or status.get("model") or status.get("default_model"),
             "router": selfinfo.get("router"),
+            "policy": self._policy,
         }
+
+    # ---- run configuration --------------------------------------------------
+    # A headless benchmark has NO human to click Approve, so any `required` tool
+    # (shell / fs.write / fs.edit / git — see config/tools.yaml) would be raised as
+    # an approval request, time out, and the model would move on WITHOUT editing
+    # anything. That silently measures "the harness with its hands tied". `setup()`
+    # puts the server in the state a real benchmark run needs and returns what it
+    # changed, so `teardown()` restores the operator's own settings afterwards.
+    def setup(self):
+        """Make the live server benchmark-ready. Returns the PREVIOUS policy.
+
+        - approvals.mode = full  (run every enabled tool; hard-deny still blocks)
+        - approvals.kinds.* = auto (memory/proposals/skills/subagent emitted freely)
+        - verifier.enabled = false (an "apply-only-if-green" gate needs a per-repo
+          command and would roll back every edit otherwise)
+        """
+        _, before = self._req("GET", "/api/tools", timeout=10)
+        self._policy = dict(before.get("policy") or {})
+        self._verifier = dict(before.get("verifier") or {})
+        self._req("POST", "/api/tools", {
+            "approvals": {"mode": "full",
+                          "kinds": {"memory": "auto", "proposals": "auto",
+                                    "skills": "auto", "subagent": "auto"}},
+            "verifier": {"enabled": False},
+        }, timeout=10)
+        return {"policy": self._policy, "verifier": self._verifier}
+
+    def teardown(self):
+        """Restore the operator's settings captured by `setup()`."""
+        body = {"approvals": {"mode": (self._policy or {}).get("mode", "normal")}}
+        if self._policy.get("kinds"):
+            body["approvals"]["kinds"] = self._policy["kinds"]
+        if self._verifier:
+            body["verifier"] = self._verifier
+        self._req("POST", "/api/tools", body, timeout=10)
+        return True
 
     # ---- adapter contract ---------------------------------------------------
     def create_agent(self, task):

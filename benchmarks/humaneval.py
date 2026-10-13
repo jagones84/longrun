@@ -11,6 +11,7 @@ trusted/sandboxed evaluation host (the harness's own `shell`/sandbox tool), neve
 for untrusted code on a workstation.
 """
 import json
+import re
 
 
 def load_tasks(path):
@@ -22,6 +23,28 @@ def load_tasks(path):
             if line:
                 out.append(json.loads(line))
     return out
+
+
+_FENCE = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL)
+
+
+def extract_code(text):
+    """Pull the candidate source out of a chatty model reply (JAG-454).
+
+    Applied UNIFORMLY to every arm (bare / longrun / hermes) by `score()`, so a
+    harness that answers in prose is not penalised relative to one that happens
+    to emit bare code — the standard bigcode-evaluation-harness behaviour.
+    """
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    m = _FENCE.search(t)
+    if m:
+        return m.group(1).strip("\n")
+    if t.startswith("```"):
+        body = t[3:]
+        return body.rsplit("```", 1)[0].lstrip("\n")
+    return t
 
 
 def prompt_for(task):
@@ -59,7 +82,7 @@ def score(predictions, tasks):
             rows.append({"task_id": p.get("task_id"), "passed": False,
                          "error": "unknown task_id"})
             continue
-        r = check(p.get("prediction", ""), task)
+        r = check(extract_code(p.get("prediction", "")), task)
         rows.append({"task_id": p.get("task_id"), **r})
     passed = sum(1 for r in rows if r.get("passed"))
     return {"n": len(rows), "passed": passed,

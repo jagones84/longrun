@@ -22,23 +22,37 @@ def _default_prompt(task):
 
 
 def run_suite(adapter, tasks, out_dir, prompt_fn=None, limit=None, model=None):
-    """Run every task through the adapter. Returns the artifact paths + stats."""
+    """Run every task through the adapter. Returns the artifact paths + stats.
+
+    JAG-454: if the adapter exposes `setup()`/`teardown()`, they bracket the whole
+    run (once), so a harness can enter a benchmark-ready state — e.g. Longrun lifts
+    its approval gate — and restore the operator's settings afterwards.
+    """
     os.makedirs(out_dir, exist_ok=True)
     prompt_fn = prompt_fn or _default_prompt
     rows, preds = [], []
     t0 = time.time()
-    for task in (tasks or [])[: (limit or len(tasks or []))]:
-        tid = task.get("id") or task.get("task_id") or task.get("instance_id") or ""
-        ref = adapter.create_agent(task)
-        res = adapter.send_task(ref, prompt_fn(task))
-        preds.append({"task_id": tid, "prediction": res.output})
-        rows.append({"task_id": tid, "ok": bool(res.ok), "run_id": res.run_id,
-                     "duration_s": res.duration_s, "tokens": res.tokens,
-                     "error": res.error})
-        try:
-            adapter.delete_agent(ref)
-        except Exception:  # noqa: BLE001 — cleanup must not fail the run
-            pass
+    try:
+        if hasattr(adapter, "setup"):
+            adapter.setup()
+        for task in (tasks or [])[: (limit or len(tasks or []))]:
+            tid = task.get("id") or task.get("task_id") or task.get("instance_id") or ""
+            ref = adapter.create_agent(task)
+            res = adapter.send_task(ref, prompt_fn(task))
+            preds.append({"task_id": tid, "prediction": res.output})
+            rows.append({"task_id": tid, "ok": bool(res.ok), "run_id": res.run_id,
+                         "duration_s": res.duration_s, "tokens": res.tokens,
+                         "error": res.error})
+            try:
+                adapter.delete_agent(ref)
+            except Exception:  # noqa: BLE001 — cleanup must not fail the run
+                pass
+    finally:
+        if hasattr(adapter, "teardown"):
+            try:
+                adapter.teardown()
+            except Exception:  # noqa: BLE001 — teardown must not fail the run
+                pass
     preds_path = os.path.join(out_dir, "predictions.jsonl")
     with open(preds_path, "w", encoding="utf-8") as f:
         for p in preds:
