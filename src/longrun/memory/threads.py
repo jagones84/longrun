@@ -323,6 +323,58 @@ def _norm(s):
     return re.sub(r"\s+", " ", str(s or "")).strip()
 
 
+# Words that carry no meaning for a "request to …" label.
+_STOP = {"the", "a", "an", "please", "can", "you", "could", "would", "i", "me",
+         "my", "to", "of", "and", "or", "for", "is", "are", "it", "this", "that",
+         "with", "in", "on", "at", "do", "does", "make", "let", "us", "we"}
+
+
+def _short_ask(text, words=8):
+    """A <=`words`-word paraphrase of a user request, for an auto title."""
+    toks = [t for t in re.split(r"[^\w'./-]+", _norm(text)) if t]
+    keep = [t for t in toks if t.lower() not in _STOP] or toks
+    return " ".join(keep[:words]).strip(".,;:!? ")
+
+
+def autotitle_untitled(sid, only_missing=True):
+    """Give every UNTITLED free group a deterministic title + summary (JAG-451).
+
+    The `chapters` tool (the 🏷 button) asks the MODEL to name free groups, but
+    that is a full turn: it may never run, and a compaction can then fold a
+    still-unnamed group into the summary and the chat loses its "Free.N · title"
+    label. This is the cheap, deterministic safety net the harness runs BEFORE an
+    auto-compaction (and on demand): it derives the title from the group's own
+    captured user REQUEST (``req``) and the summary from its digest — no model,
+    no network, so it can never stall a turn. Groups the model already named are
+    left untouched. Returns the number of groups titled.
+    """
+    sid = str(sid or "").strip()
+    if not sid:
+        return 0
+    n = 0
+    with LOCK:
+        doc = _doc_for(sid)
+        if doc is None:
+            return 0
+        for g in (doc.get("groups") or []):
+            if g.get("kind") != "free":
+                continue
+            if only_missing and g.get("title"):
+                continue
+            src = _norm(g.get("req") or g.get("digest") or "")
+            if not src:
+                continue
+            ask = _short_ask(src)
+            if ask and not g.get("title"):
+                g["title"] = "request to %s" % ask[:160]
+            if not g.get("summary"):
+                g["summary"] = src[:240]
+            n += 1
+        if n:
+            _save(doc)
+    return n
+
+
 def _anchor_index(msgs, g):
     """Message index that STARTS a free group (its first USER request, else its first
     message), or None.
@@ -484,16 +536,22 @@ def render(sid, limit=200):
             req = (g.get("req") or "").strip()
             dig = (g.get("digest") or "").strip()
             body = req or dig
+            # JAG-451: an explicit [UNTITLED] marker lets the agent find every
+            # free group that still lacks a name WITHOUT parsing the `title=`
+            # token (which also appears in the tool's own instructions and so
+            # produced false positives / silently skipped groups).
+            tag = "" if g.get("title") else " [UNTITLED]"
             extra = ""
             if g.get("title"):
                 extra += " \u00b7 title=\u201c%s\u201d" % str(g["title"])[:80]
             if g.get("summary"):
                 extra += " \u00b7 summary=\u201c%s\u201d" % str(g["summary"]).replace("\n", " ")[:200]
-            lines.append("  #%d free %s%s  <%s \u00b7 id=%s>"
-                         % (i, "\u201c%s\u201d" % body if body else "(no text yet)",
+            lines.append("  #%d free%s %s%s  <%s \u00b7 id=%s>"
+                         % (i, tag, "\u201c%s\u201d" % body if body else "(no text yet)",
                             extra, where, g.get("id")))
     lines.append("Every group carries its justification (a task's evidence / a free "
                  "group's summary). Use action=read id=<gN> for the full record. A free "
-                 "group is a user REQUEST + the answer it got: name it with action=title "
-                 "id=<gN> title=\"request to <short ask>\" summary=\"<what/why, one line>\".")
+                 "group marked [UNTITLED] has no name yet: title it with action=title "
+                 "id=<gN> title=\"request to <short ask>\" summary=\"<what/why, one line>\" "
+                 "\u2014 one action=title call per [UNTITLED] group, until none remain.")
     return "\n".join(lines)

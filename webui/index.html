@@ -471,9 +471,9 @@
   #treeTools[hidden] { display: none; }
   #treeTools button { width: 26px; height: 26px; padding: 0; font-size: 13px; line-height: 1;
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-    border-radius: 8px; background: rgba(20,24,40,.72); border: 1px solid var(--line);
-    color: var(--dim); }
-  #treeTools button:hover { color: var(--txt); border-color: var(--acc); }
+    border-radius: 8px; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--txt); }
+  #treeTools button:hover { color: var(--accent); border-color: var(--acc); }
   .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc2); transition: box-shadow .25s; }
   /* JAG-428: flash the session row the topbar's "reveal" button centered. */
   .sess.dotflash { box-shadow: 0 0 0 2px var(--acc2); border-radius: 10px; transition: box-shadow .25s; }
@@ -2220,14 +2220,15 @@ function rewindFreeGroup(n) {
    user REQUEST + its answer, so titles read "request to …" (JAG-431m). */
 function nameThreads() {
   if (!sessionId) return;
-  send("Give every Free.* group in this session a title AND a one-line summary, based "
-     + "on its real content. Title form: \"request to <summary of the user's ask>\" "
-     + "(<= 8 words, English). Summary: ONE line saying what was asked and what was "
-     + "done/decided (the justification, the free-group equivalent of a todo's "
-     + "evidence). Use the `chapters` tool: action=list to see the groups (ids + their "
-     + "current title/summary; for todos it shows the evidence), then action=title "
-     + "id=<gN> title=\"request to ...\" summary=\"...\" for every FREE group missing "
-     + "one. Do not touch task/todo groups.");
+  send("Title every UNTITLED Free.* group in this session and give each a one-line "
+     + "summary. Use the `chapters` tool: action=list prints every group with an "
+     + "explicit [UNTITLED] marker on any free group that still lacks a name — use "
+     + "THAT marker (never your own guess of which groups are missing) to find them. "
+     + "For each [UNTITLED] group call action=title id=<gN> with a name of the form "
+     + "\"request to <the user's ask>\" (<= 8 words, English) and a summary = one line "
+     + "of what was asked and what was done/decided (its justification). One "
+     + "action=title call per [UNTITLED] group, until none remain. Never title "
+     + "task/todo groups (they already carry their node label).");
 }
 function _scope() { return _activeScope || _freeKids() || $("log"); }
 function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id === id) || null; }

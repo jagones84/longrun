@@ -241,6 +241,8 @@ TOOL_SCHEMAS = {
                         "list -> the ordered outline (ids, ranges, previews) WITH each "
                         "group's JUSTIFICATION (a todo's evidence / a free group's "
                         "summary), so you can recall WHY even after many compactions; "
+                        "an unnamed FREE group is flagged [UNTITLED] in the list so you "
+                        "can find every one that still needs a name; "
                         "read id=<gN> -> a group's full record; title id=<gN> "
                         "title=\"…\" summary=\"…\" -> name a FREE group (it is a user "
                         "request + its answer, so title it \"request to <short ask>\" "

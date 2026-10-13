@@ -160,7 +160,7 @@ check("6e GET /api/threads is routed", '"/api/threads"' in http and "threads_mod
 _desc = (registry.TOOL_SCHEMAS.get("chapters") or {}).get("description", "")
 check("7a the tool teaches the 'request to …' title style", "request to <short ask>" in _desc, _desc[-60:])
 check("7b the 🏷 prompt asks for 'request to <ask>' titles",
-      "request to <summary of the user's ask>" in idx)
+      "request to <the user's ask>" in idx)
 check("7c free groups carry a rewind control",
       'class="fgroup-rw"' in idx and "function rewindFreeGroup(" in idx)
 check("7d the free rewind reuses the per-turn rewind API",

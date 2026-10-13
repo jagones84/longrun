@@ -811,6 +811,14 @@ def prepare_session_for_turn(sess, model=None):
         usage = context_usage(sess["id"], model=model)
         if not usage.get("available") or not usage.get("over_threshold"):
             return sess
+        # JAG-451: name every still-untitled Free.* group BEFORE compaction can fold
+        # it into the summary — the same intent as the 🏷 button, but deterministic
+        # (derived from each group's captured user request) so it never stalls a turn.
+        try:
+            from longrun.memory import threads as _th
+            _th.autotitle_untitled(sess["id"])
+        except Exception:  # noqa: BLE001 — naming must never block a compaction
+            pass
         # JAG-99: shrink to TARGET% (not the full budget) so the prompt lands back
         # under the trigger with headroom; the system prompt is accounted for.
         target = int(usage["budget_tokens"] * rllm.AUTOCOMPACT_TARGET_PCT / 100.0)
@@ -1033,6 +1041,19 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
         msgs.insert(0, {"role": "system", "content": sys_marker})
         sess["messages"] = msgs
         _stores.save_session(sess)
+        # JAG-451: the head marker above is for the LLM (it must precede the summary),
+        # but it renders at the very TOP of a long chat — off-screen, which is why the
+        # operator never SAW that a compaction had happened. Also drop a user-visible
+        # harness card at the TAIL (where the reader is looking) carrying the same
+        # facts. Appended directly (not via persist_inject) so it does not pollute the
+        # thread ledger's digest with a harness line.
+        try:
+            sess.setdefault("injects", []).append(
+                {"kind": "compact", "text": sys_marker, "node": None,
+                 "after": len(msgs), "ts": round(time.time(), 3)})
+            _stores.save_session(sess)
+        except Exception:  # noqa: BLE001 — a UI marker must never break a compaction
+            pass
     publish("context.compact", **stats)
     return stats
 

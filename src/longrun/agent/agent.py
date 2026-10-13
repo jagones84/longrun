@@ -770,6 +770,28 @@ _OFFLOAD_HEAD = 1500
 _OFFLOAD_TAIL = 600
 
 
+def _clean_offload(text):
+    """Strip the observation wrapper so an offload file holds the RAW payload.
+
+    The chat loop passes the observation RENDER (``[tool] exit=… backend=…
+    sandboxed=…`` followed by a ``stdout:``/``content:`` body), not the raw result.
+    Writing THAT to the file meant the agent, reading it back with fs.read, saw a
+    nested ``[tool] exit=…`` header instead of the data (and reading THAT file
+    nested it a level deeper). Keep only the payload so a read-back is the same
+    text the tool actually emitted.
+    """
+    t = str(text or "")
+    if "\n" in t:
+        head, _, rest = t.partition("\n")
+        if re.match(r"^\[[^\]]*\] exit=", head):
+            t = rest
+    for prefix in ("stdout: ", "content: ", "stderr: "):
+        if t.startswith(prefix):
+            t = t[len(prefix):]
+            break
+    return t
+
+
 def _offload_observation(sess, tool, text):
     """JAG-88 (harness layer L2 — context budgeting): keep big tool outputs OUT
     of the model's context but NEVER lose them.
@@ -782,33 +804,34 @@ def _offload_observation(sess, tool, text):
     and the exact call to read the rest (fs.read / shell grep). The context
     stays bounded; nothing is discarded.
     """
-    n = len(text)
+    clean = _clean_offload(text)
+    n = len(clean)
     seq = _OFFLOAD_SEQ.get(sess["id"], 0) + 1
     _OFFLOAD_SEQ[sess["id"]] = seq
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(tool))[:40] or "tool"
     fallback = ("Observation for tool %s:\n%s\n\n"
                 "Now answer the user in plain text, or call another tool."
-                % (tool, text[:CHAT_TOOL_OBS_LIMIT]))
+                % (tool, clean[:CHAT_TOOL_OBS_LIMIT]))
     try:
         outdir = os.path.join(DATA_DIR, "offload", sess["id"])
         os.makedirs(outdir, exist_ok=True)
         path = os.path.join(outdir, "%03d_%s.txt" % (seq, safe))
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(text)
+            fh.write(clean)
     except Exception:  # noqa: BLE001 — offload must never kill the turn
         return fallback
-    lines = text.count("\n") + 1
-    head = text[:_OFFLOAD_HEAD]
+    lines = clean.count("\n") + 1
+    head = clean[:_OFFLOAD_HEAD]
     ref = (
         "Observation for tool %s: output is LARGE (%d chars, %d lines) and was "
         "saved to a file so it does not flood your context.\n"
         "FULL OUTPUT FILE: %s\n"
         "Read more of it with {\"action\":\"tool\",\"tool\":\"fs.read\","
-        "\"args\":{\"path\":\"%s\"}} (or grep it with the shell tool).\n"
+        "\"args\":{\"path\":\"%s\",\"max_bytes\":262144}} (or grep it with the shell tool).\n"
         "Preview — first %d chars:\n%s\n"
         % (tool, n, lines, path, path, min(_OFFLOAD_HEAD, n), head))
     if n > _OFFLOAD_HEAD + _OFFLOAD_TAIL:
-        ref += "...\nPreview — last %d chars:\n%s\n" % (_OFFLOAD_TAIL, text[-_OFFLOAD_TAIL:])
+        ref += "...\nPreview — last %d chars:\n%s\n" % (_OFFLOAD_TAIL, clean[-_OFFLOAD_TAIL:])
     ref += "\nNow answer the user in plain text, or call another tool."
     return ref
 
