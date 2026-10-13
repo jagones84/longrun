@@ -37,29 +37,50 @@ ROUTER_IDLE_TIMEOUT = float(os.environ.get("LONGRUN_ROUTER_IDLE_TIMEOUT", 120.0)
 # ---------------------------------------------------------------- router ----
 
 
+def _parse_roster(data):
+    """Normalise a router ``/v1/models`` payload into roster entries.
+
+    JAG-447r: a model the router reports as FAILED (``status.failed`` truthy or a
+    non-zero ``status.exit_code``) is flagged ``failed``. Before this the broken
+    signal was discarded, so routing happily selected a model that can never load
+    and the caller hung until the load timeout (root cause of "subagent timeout").
+    """
+    out = []
+    for m in (data or {}).get("data", []):
+        if not isinstance(m, dict):
+            continue
+        status = m.get("status") or {}
+        if not isinstance(status, dict):
+            status = {"value": status}
+        st = status.get("value", "unknown")
+        failed = bool(status.get("failed")) or bool(status.get("exit_code"))
+        meta = m.get("meta") or {}
+        n_ctx = meta.get("n_ctx") or meta.get("n_ctx_train") or 0
+        if not n_ctx:
+            args = status.get("args") or []
+            for i, a in enumerate(args):
+                if a == "--ctx-size" and i + 1 < len(args):
+                    try:
+                        n_ctx = int(args[i + 1])
+                    except (TypeError, ValueError):
+                        n_ctx = 0
+                    break
+        out.append({"alias": m.get("id"), "status": st, "loaded": st == "loaded",
+                    "failed": failed, "n_ctx": int(n_ctx or 0)})
+    return out
+
+
 def router_models():
-    """[{alias, status, loaded, n_ctx}] from the llama.cpp router; [] on failure.
+    """[{alias, status, loaded, failed, n_ctx}] from the llama.cpp router; [] on error.
 
     JAG-66: `n_ctx` is the model's REAL context window (from `meta.n_ctx`, or the
     `--ctx-size` in its launch args) — the source of truth for the token budget.
+    JAG-447r: `failed` marks a model the router could not load.
     """
     try:
         with urllib.request.urlopen(ROUTER_BASE + "/v1/models", timeout=6) as r:
             data = json.loads(r.read().decode("utf-8") or "{}")
-        out = []
-        for m in data.get("data", []):
-            st = (m.get("status") or {}).get("value", "unknown")
-            meta = m.get("meta") or {}
-            n_ctx = meta.get("n_ctx") or meta.get("n_ctx_train") or 0
-            if not n_ctx:
-                args = (m.get("status") or {}).get("args") or []
-                for i, a in enumerate(args):
-                    if a == "--ctx-size" and i + 1 < len(args):
-                        n_ctx = int(args[i + 1])
-                        break
-            out.append({"alias": m.get("id"), "status": st, "loaded": st == "loaded",
-                        "n_ctx": int(n_ctx or 0)})
-        return out
+        return _parse_roster(data)
     except Exception:
         return []
 
@@ -240,10 +261,13 @@ def default_model():
     except Exception:  # noqa: BLE001 — the catalogue must never break the default
         pass
     models = router_models()
-    for m in models:
-        if m["loaded"]:
+    for m in models:  # JAG-447r: never default to a model the router marked FAILED
+        if m["loaded"] and not m.get("failed"):
             return m["alias"]
-    return models[0]["alias"] if models else None
+    for m in models:
+        if not m.get("failed"):
+            return m["alias"]
+    return None
 
 
 def model_loaded(alias):
@@ -343,6 +367,15 @@ def ensure_model(alias, timeout=None, on_event=None):
         return {"model": alias, "loaded": False, "action": "unknown_model",
                 "seconds": round(time.time() - t0, 2),
                 "error": "alias not present in router roster"}
+    # JAG-447r: the router already reported this model as FAILED — polling for a
+    # load that cannot happen burned the full MODEL_LOAD_TIMEOUT (900s) and made
+    # the caller (e.g. a subagent) time out. Fail fast with the real reason.
+    if m.get("failed"):
+        _fire(on_event, "model.load_failed", model=alias, seconds=0.0,
+              error="model reported FAILED by the router")
+        return {"model": alias, "loaded": False, "action": "failed",
+                "seconds": round(time.time() - t0, 2),
+                "error": "model reported FAILED by the router — refusing to poll"}
     _fire(on_event, "model.loading", model=alias,
           detail="loading cold model before first token")
     err = None

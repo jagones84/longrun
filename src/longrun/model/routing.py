@@ -107,16 +107,24 @@ def _roster():
 
 
 def _match(patterns, roster, loaded_only=True):
-    """First roster alias matching any pattern (substring, case-insensitive)."""
+    """First roster alias matching any pattern (substring, case-insensitive).
+
+    JAG-447r: a model the router reports as FAILED is never a candidate — before
+    this, a pattern matching a broken model (e.g. the whole `glm` family) made the
+    caller select something that could never load and hang until the load timeout
+    (the root cause of "subagent timeout").
+    """
     for pat in patterns:
         rx = re.compile(re.escape(str(pat)), re.I)
         for m in roster:
+            if m.get("failed"):
+                continue
             if loaded_only and not m.get("loaded"):
                 continue
             if rx.search(m.get("alias") or ""):
                 return m["alias"]
     if loaded_only:
-        # nothing loaded matched: fall back to any matching alias at all
+        # nothing loaded matched: fall back to any matching (non-failed) alias
         return _match(patterns, roster, loaded_only=False)
     return None
 
