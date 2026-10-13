@@ -122,8 +122,10 @@ def read_text(abspath, max_kb):
     via ``docio`` so they can be chunked + embedded like any other source.
     """
     if docio.supported(abspath):
-        text, _engine = docio.extract(abspath, max_kb=max(1024, int(max_kb or 512)))
-        return text
+        # JAG-431r5: docio.extract now returns a diagnostic dict (text + engine +
+        # per-page metrics + recommend_visual). We only consume the text.
+        res = docio.extract(abspath, max_kb=max(1024, int(max_kb or 512)))
+        return res.get("text") if isinstance(res, dict) else (res[0] if res else None)
     try:
         with open(abspath, "rb") as f:
             data = f.read(int(max_kb) * 1024 + 1)

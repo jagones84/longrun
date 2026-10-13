@@ -53,7 +53,8 @@ check("1c chunk.read_text delegates binary documents to docio",
       "if docio.supported(abspath):" in open(os.path.join(REPO, "src", "longrun", "memory", "chunk.py"),
                                              encoding="utf-8").read())
 check("1d a non-document is rejected by extract()",
-      docio.extract(str(os.path.join(tmp, "x.md"))) == (None, "not a binary document"))
+      (lambda r: r.get("text") is None and r.get("engine") == "not a binary document"
+                 and r.get("ok") is False)(docio.extract(str(os.path.join(tmp, "x.md")))))
 check("1e extract() reports availability of the backends",
       set(docio.available().keys()) >= {"markitdown", "pdftotext", "tesseract", "libreoffice"})
 check("1f docs get a larger size budget than code files",

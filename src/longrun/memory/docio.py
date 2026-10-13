@@ -197,45 +197,140 @@ def _office(path):
 def extract(path, max_kb=25600):
     """Extract text from a binary document.
 
-    Returns ``(text, engine)`` on success, ``(None, reason)`` when nothing could
-    be extracted. Never raises.
+    Returns a dict::
+
+        {"text": <str|None>, "engine": <str|reason>, "ok": bool,
+         "chars": int, "pages": int, "pages_with_text": int,
+         "pages_empty": int, "avg_chars_per_page": float,
+         "extracted_pages": <list of {page, chars, images}>,
+         "recommend_visual": bool}
+
+    Never raises. ``recommend_visual=True`` when the body of a PDF/image-only
+    document has no readable text AND per-page char density is below
+    ``LONGRUN_VISUAL_MIN_CHARS_PER_PAGE`` (default 30) — a hint that
+    visual-embedding backends (ColPali / SigLIP / open_clip) would be needed
+    to make the document searchable.
     """
     path = str(path or "")
     ext = os.path.splitext(path)[1].lower()
     if ext not in BINARY_DOC_EXT:
-        return None, "not a binary document"
+        return _result(None, "not a binary document", 0, [])
     if not os.path.isfile(path):
-        return None, "not a file"
+        return _result(None, "not a file", 0, [])
     path = os.path.abspath(path)  # JAG-413: a "-x.pdf" name must not read as a flag
     if os.path.getsize(path) == 0:
-        return None, "empty file"
+        return _result(None, "empty file", 0, [])
 
     text = _docling(path)                          # JAG-430: richest (layout + tables + images)
     if text:
-        return _cap(text, max_kb), "docling"
+        return _cap_and_diagnose(text, max_kb, "docling", ext)
 
     text = _markitdown(path)                       # richest output when available
     if text:
-        return _cap(text, max_kb), "markitdown"
+        return _cap_and_diagnose(text, max_kb, "markitdown", ext)
 
     if ext in IMAGE_EXT:                           # images need docling (OCR/vision)
-        return None, "no text (install docling to OCR/describe images)"
+        return _result(None, "no text (install docling to OCR/describe images)",
+                       0, [], chars=0)
+
+    pages_info = _pdf_pages_diag(path)
 
     if ext == ".pdf":
         text = _pdftotext(path)
         if text and len(text) >= 40:
-            return _cap(text, max_kb), "pdftotext"
+            return _cap_and_diagnose(text, max_kb, "pdftotext", ext,
+                                     pages_info=pages_info)
         ocr = _ocr_pdf(path)                        # scanned PDF -> OCR
         if ocr:
-            return _cap(ocr, max_kb), "ocr"
+            return _cap_and_diagnose(ocr, max_kb, "ocr", ext, pages_info=pages_info)
         if text:
-            return _cap(text, max_kb), "pdftotext"
-        return None, "no text (scan? install tesseract)"
+            return _cap_and_diagnose(text, max_kb, "pdftotext", ext,
+                                     pages_info=pages_info)
+        # JAG-431r5: surfaced as `recommend_visual` so add_source/auto-route
+        # can hint that an atlas / image-only PDF needs SigLIP / ColPali.
+        return _result(None,
+                       "no text (image-only PDF; pdftotext+OCR returned 0; "
+                       "install a visual embedder)",
+                       0, pages_info, chars=0, recommend_visual=True)
 
     if ext in OFFICE_EXT:
         text = _office(path)
         if text:
-            return _cap(text, max_kb), "libreoffice"
-        return None, "no converter (install markitdown or libreoffice)"
+            return _cap_and_diagnose(text, max_kb, "libreoffice", ext)
+        return _result(None, "no converter (install markitdown or libreoffice)",
+                       0, [], chars=0)
 
-    return None, "no extractor for %s" % ext
+    return _result(None, "no extractor for %s" % ext, 0, [], chars=0)
+
+
+def _result(text, engine, pages, pages_info, **extra):
+    """Build the standardized diagnostic envelope for extract()."""
+    chars = len(text or "")
+    pages_with_text = sum(1 for p in pages_info if p.get("chars", 0) > 0)
+    pages_empty = max(0, pages - pages_with_text)
+    avg = round(chars / max(1, pages), 2) if pages else 0.0
+    if "recommend_visual" not in extra:
+        min_cpp = float(os.environ.get("LONGRUN_VISUAL_MIN_CHARS_PER_PAGE") or 30)
+        extra["recommend_visual"] = (
+            (pages or 0) > 5 and pages_empty >= max(1, int(0.6 * (pages or 1)))
+            and avg < min_cpp)
+    return {"text": text, "engine": engine, "ok": bool(text),
+            "chars": chars, "pages": pages, "pages_with_text": pages_with_text,
+            "pages_empty": pages_empty, "avg_chars_per_page": avg,
+            "extracted_pages": pages_info,
+            "recommend_visual": extra["recommend_visual"]}
+
+
+def _cap_and_diagnose(text, max_kb, engine, ext, pages_info=None):
+    """Apply the per-result size cap AND fill in per-page diagnostic."""
+    if pages_info is None:
+        # Light: synthesise a single virtual page for non-PDF paths so the
+        # downstream consumer can still inspect `extracted_pages`.
+        pages_info = [{"page": 1, "chars": len(text or ""), "images": 0}]
+    return _result(_cap(text, max_kb), engine, len(pages_info), pages_info)
+
+
+def _pdf_pages_diag(path, probe_pages=12):
+    """Sample `probe_pages` of a PDF to estimate how many are image-only.
+
+    A page is "text-bearing" if pdftotext returns ≥ 4 non-space chars for it.
+    The returned list has at most `probe_pages` rows (small + fast); the rest
+    of the document is counted in `pages` via PyMuPDF.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except Exception:  # pragma: no cover — fallback when PyMuPDF is absent
+        return _pdf_pages_diag_fallback(path)
+    out = []
+    try:
+        doc = fitz.open(path)
+        total = doc.page_count
+        step = max(1, total // probe_pages)
+        sample_indices = list(range(0, total, step))[:probe_pages]
+        for i in sample_indices:
+            page = doc[i]
+            t = page.get_text("text") or ""
+            images = len(page.get_images(full=True))
+            out.append({"page": i + 1, "chars": len(t.strip()),
+                        "images": images})
+        return out
+    except Exception:  # noqa: BLE001
+        return _pdf_pages_diag_fallback(path)
+
+
+def _pdf_pages_diag_fallback(path):
+    """pdftotext probe when PyMuPDF is not available (rough, slow)."""
+    if not shutil.which("pdftotext"):
+        return []
+    out = []
+    rc, out_bytes, _ = _run(["pdfinfo", path])
+    total = 0
+    if rc == 0:
+        for line in out_bytes.decode("utf-8", "replace").splitlines():
+            if line.lower().startswith("pages:"):
+                try:
+                    total = int(line.split(":", 1)[1].strip())
+                except (TypeError, ValueError):
+                    total = 0
+                break
+    return out

@@ -80,8 +80,10 @@ check("3b OCR pages sort naturally",
 _empty = os.path.join(tmp, "empty.pdf")
 with open(_empty, "wb"):
     pass
-check("3c empty document rejected early", docio.extract(_empty) == (None, "empty file"),
-      docio.extract(_empty))
+_res_empty = docio.extract(_empty)
+check("3c empty document rejected early",
+      _res_empty.get("text") is None and _res_empty.get("engine") == "empty file",
+      _res_empty)
 
 # ------------------------------------------------ 4) checkpoints purged on delete
 from longrun.memory import checkpoints  # noqa: E402

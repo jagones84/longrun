@@ -1043,6 +1043,26 @@ def handle(handler, method, path, qs, body):
                 n=_int(b.get("n"), 5),
                 max_rounds=_int(b.get("max_rounds"), 4),
             ))
+        # JAG-431r5: auto-route a ref to the right notebook (or create one).
+        # Used by the WebUI's "add to knowledge" flow so the agent doesn't have
+        # to pick a notebook by hand. Body: {ref, text?, title?, session?}.
+        if path == "/api/knowledge/auto-route":
+            from longrun.memory import knowledge as _kb
+            b = body or {}
+            ref = (b.get("ref") or "").strip()
+            text = b.get("text")
+            session = b.get("session") or None
+            if not ref and not text:
+                return _r(handler, 400, {"ok": False, "error": "ref or text required"})
+            if text:
+                res = _kb.add_source_text("auto", ref or "inline://note", text,
+                                          title=b.get("title"), session_id=session)
+            else:
+                res = _kb.add_source("auto", ref, session_id=session)
+            _publish("knowledge.auto_route", ok=bool(res.get("ok")),
+                     notebook=res.get("notebook"), notebook_auto=res.get("notebook_auto"),
+                     recommend_visual=res.get("recommend_visual"))
+            return res
         # JAG-403b: pick / inspect the active research LLM.
         if path == "/api/research/model":
             from longrun.research import researchcfg as _rc

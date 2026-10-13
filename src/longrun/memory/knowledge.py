@@ -72,6 +72,17 @@ def _init(db):
         CREATE INDEX IF NOT EXISTS sources_notebook ON sources(notebook);
         """
     )
+    # JAG-431r5: back-fill session_id on legacy DBs that pre-date the column.
+    # Must run BEFORE the CREATE INDEX on the new column (a CREATE INDEX on a
+    # missing column aborts the script and rolls the migration back).
+    for tbl in ("sources", "chunks"):
+        try:
+            db.execute("ALTER TABLE %s ADD COLUMN session_id TEXT" % tbl)
+        except sqlite3.OperationalError:
+            pass
+    # JAG-431r5: session_id indexes (now safe — the column is guaranteed to exist).
+    db.execute("CREATE INDEX IF NOT EXISTS chunks_session ON chunks(session_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS sources_session ON sources(session_id)")
     fts = True
     try:
         db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, name, path)")
@@ -91,17 +102,17 @@ def _has_fts(db):
         return False
 
 
-def _insert_chunks(db, sid, path, lang, kind, pieces, fts):
+def _insert_chunks(db, sid, path, lang, kind, pieces, fts, session_id=None):
     n = 0
     for p in pieces or []:
         text = p.get("text") or ""
         if not text.strip():
             continue
         cur = db.execute(
-            "INSERT INTO chunks(source, path, lang, kind, name, start, end, tokens, text) "
-            "VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO chunks(source, path, lang, kind, name, start, end, tokens, text, session_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
             (sid, path, lang, kind, p.get("name") or "", int(p.get("start") or 0),
-             int(p.get("end") or 0), max(1, len(text) // 4), text))
+             int(p.get("end") or 0), max(1, len(text) // 4), text, session_id))
         if fts:
             db.execute("INSERT INTO chunks_fts(rowid, text, name, path) VALUES(?,?,?,?)",
                        (cur.lastrowid, text, p.get("name") or "", path))
@@ -198,27 +209,160 @@ def _resolve_id_db(db, ref):
     return row["id"] if row else ref
 
 
+# JAG-431r5: notebook='auto' routing — match a new source to an existing notebook
+# by FTS5 bm25 over the notebook's chunk corpus, or auto-create a new one when no
+# notebook is close enough. Stdlib only, no embeddings required.
+_AUTO_MATCH_THRESHOLD = float(os.environ.get("LONGRUN_AUTO_MATCH_BM25") or -3.5)
+_AUTO_PREVIEW_CHARS = int(os.environ.get("LONGRUN_AUTO_PREVIEW_CHARS") or 2400)
+_AUTO_NOTEBOOKS_IGNORED = {DEFAULT_ID}
+
+
+def _fts_query_for(text, max_terms=12):
+    """Build a safe FTS5 MATCH expression from arbitrary text.
+
+    Splits on non-alphanumerics, keeps 3+ char tokens, wraps each in double
+    quotes (FTS5 verbatim) and OR-joins them. The query is bounded so a
+    multi-megabyte preview does not explode the bm25 evaluation.
+    """
+    if not text:
+        return None
+    toks = re.findall(r"[A-Za-z0-9]{3,}", text)
+    if not toks:
+        return None
+    seen = set()
+    out = []
+    for t in toks:
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append('"' + t.replace('"', '') + '"')
+        if len(out) >= max_terms:
+            break
+    return " OR ".join(out)
+
+
+def _route_notebook(db, preview_text, fallback_name):
+    """Pick a notebook for a new source, or create one.
+
+    The decision is bm25-based: a query is run against every existing notebook
+    (excluding the default catch-all) and the best score is compared to
+    ``_AUTO_MATCH_THRESHOLD`` (the lower the bm25, the better the match). When no
+    notebook is close enough, a new notebook is created using ``fallback_name``
+    (truncated to 60 chars, slugified).
+
+    Returns ``(notebook_id, notebook_name, auto_created)``.
+    """
+    text = (preview_text or "").strip()
+    # JAG-431r5: use only the first ~10 distinctive tokens. The full 30-token
+    # coverage is diluted by shared boilerplate (Wikipedia menus, footers, etc.);
+    # the first tokens are the title + topic terms and carry the strongest signal.
+    terms = list(dict.fromkeys(re.findall(r"[A-Za-z0-9]{4,}", text)))[:10]
+    if not terms:
+        return _auto_create_notebook(db, fallback_name)
+    if not _has_fts(db):
+        return _auto_create_notebook(db, fallback_name)
+
+    placeholders = ",".join("?" for _ in _AUTO_NOTEBOOKS_IGNORED)
+    best_nb = None
+    second_cov = 0.0
+    best_cov = 0.0
+    coverages = []
+    for row in db.execute(
+            "SELECT id, name FROM notebooks WHERE id NOT IN ({})".format(placeholders),
+            tuple(_AUTO_NOTEBOOKS_IGNORED)):
+        # Single FTS5 query with each term, count how many had at least one
+        # hit in the notebook's chunk corpus. Phrase matches ("foo") so
+        # a chunk must contain the literal token.
+        hit_terms = 0
+        for t in terms:
+            cur = db.execute(
+                "SELECT count(*) c FROM chunks_fts WHERE chunks_fts MATCH ? "
+                "AND rowid IN (SELECT id FROM chunks WHERE source IN "
+                "(SELECT id FROM sources WHERE notebook=?)) LIMIT 1",
+                ('"' + t.replace('"', '') + '"', row["id"]))
+            if cur.fetchone()["c"] > 0:
+                hit_terms += 1
+        cov = hit_terms / max(1, len(terms))
+        coverages.append((cov, row["id"], row["name"]))
+    coverages.sort(reverse=True)
+    if coverages:
+        best_cov, bid, bname = coverages[0]
+        if len(coverages) > 1:
+            second_cov = coverages[1][0]
+    # Match: best coverage >= 0.5 AND margin over the runner-up >= 0.15.
+    # The margin prevents pages with lots of shared boilerplate from
+    # auto-merging into the wrong notebook.
+    if best_nb is None and best_cov >= 0.5 and (best_cov - second_cov) >= 0.15:
+        return bid, bname, False
+    return _auto_create_notebook(db, fallback_name)
+
+
+def _auto_create_notebook(db, fallback_name):
+    name = (str(fallback_name or "").strip() or "Untitled")[:60]
+    name = re.sub(r"\s+", " ", name)
+    nid = "nb_" + uuid.uuid4().hex[:8]
+    db.execute("INSERT INTO notebooks(id, name, created) VALUES(?,?,?)",
+               (nid, name, time.time()))
+    return nid, name, True
+
+
+def _preview_for_path(path):
+    """Read up to ``_AUTO_PREVIEW_CHARS`` of text from a file path.
+
+    Uses the new ``docio.extract`` diagnostic so the same diagnostic flows
+    into the auto-routing caller.
+    """
+    if not path or not os.path.isfile(path):
+        return "", None
+    try:
+        res = _docio.extract(path)
+    except Exception:  # noqa: BLE001
+        return "", None
+    if not isinstance(res, dict):
+        return (res or "")[:_AUTO_PREVIEW_CHARS], None
+    return (res.get("text") or "")[:_AUTO_PREVIEW_CHARS], res
+
+
 # -------------------------------------------------------------------- sources --
-def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts):
-    n = _insert_chunks(db, sid, path, lang, "doc" if kind != "code" else "code", pieces, fts)
-    db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks) "
-               "VALUES(?,?,?,?,?,?,?)", (sid, notebook, kind, ref, title, time.time(), n))
+def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts,
+            session_id=None):
+    n = _insert_chunks(db, sid, path, lang, "doc" if kind != "code" else "code",
+                       pieces, fts, session_id=session_id)
+    db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks, session_id) "
+               "VALUES(?,?,?,?,?,?,?,?)", (sid, notebook, kind, ref, title, time.time(), n,
+                                           session_id))
     return n
 
 
-def add_source(notebook, ref):
-    """Index ONE source (URL / file / folder) into `notebook`. Returns a result dict."""
+def add_source(notebook, ref, session_id=None):
+    """Index ONE source (URL / file / folder) into `notebook`. Returns a result dict.
+
+    JAG-431r5: when ``notebook == "auto"`` the source is routed to the closest
+    existing notebook by FTS5 bm25 over its chunks, or a fresh notebook is
+    created when nothing is close enough. The result dict carries
+    ``notebook_auto: bool``, ``notebook_name: str``, and (for paths that go
+    through ``docio.extract``) ``extract_diagnostic`` + ``recommend_visual``.
+
+    JAG-431r5: ``session_id`` (optional) tags the source + chunks so a search
+    can later scope to a single conversation.
+    """
     notebook = notebook or DEFAULT_ID
     ref = str(ref or "").strip()
     if not ref:
         return {"ok": False, "error": "empty source"}
+    auto_routed = False
+    extract_diag = None
     cfg = _cfg.load_config()
     with LOCK:
         db = _connect()
         try:
             fts = _init(db)
-            notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
-            if not _notebook_exists(db, notebook):
+            notebook_auto_flag = (notebook == "auto")
+            if notebook_auto_flag:
+                notebook = DEFAULT_ID  # placeholder; routed after we have a preview
+            else:
+                notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
+            if not notebook_auto_flag and not _notebook_exists(db, notebook):
                 return {"ok": False, "error": "no such notebook: %s" % notebook}
             sid = "src:" + uuid.uuid4().hex[:10]
             cl = int(cfg.get("chunk_lines") or 60)
@@ -228,8 +372,12 @@ def add_source(notebook, ref):
                     text = fetch_text(ref)
                 except Exception as e:  # noqa: BLE001
                     return {"ok": False, "error": "fetch failed: %s" % e, "ref": ref}
+                if notebook_auto_flag:
+                    nb_id, nb_name, auto_routed = _route_notebook(
+                        db, (text or "")[:_AUTO_PREVIEW_CHARS], ref)
+                    notebook = nb_id
                 n = _ingest(db, sid, notebook, "url", ref, ref, _chunk.chunk_doc(text, cl, ov),
-                            "markdown", ref, cfg, fts)
+                            "markdown", ref, cfg, fts, session_id=session_id)
                 kind = "url"
             else:
                 ap = os.path.realpath(os.path.expanduser(ref))
@@ -242,6 +390,14 @@ def add_source(notebook, ref):
                     lang0, _kind0 = _chunk.lang_for(ap)
                     targets = [ap] if lang0 else []
                     base = os.path.basename(ap)
+                if notebook_auto_flag and targets:
+                    preview, extract_diag = _preview_for_path(targets[0])
+                    nb_id, nb_name, auto_routed = _route_notebook(
+                        db, preview, base)
+                    notebook = nb_id
+                elif notebook_auto_flag:
+                    nb_id, nb_name, auto_routed = _route_notebook(db, "", base)
+                    notebook = nb_id
                 n = 0
                 for fp in targets:
                     text = _chunk.read_text(fp, cfg.get("max_file_kb") or 512)
@@ -249,9 +405,11 @@ def add_source(notebook, ref):
                         continue
                     lang, knd = _chunk.lang_for(fp)
                     n += _insert_chunks(db, sid, fp, lang or "text", knd or "doc",
-                                        _chunk.chunk_file(text, lang or "text", knd or "doc", cfg), fts)
-                db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks) "
-                           "VALUES(?,?,?,?,?,?,?)", (sid, notebook, "path", ref, base, time.time(), n))
+                                        _chunk.chunk_file(text, lang or "text", knd or "doc", cfg), fts,
+                                        session_id=session_id)
+                db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks, session_id) "
+                           "VALUES(?,?,?,?,?,?,?,?)",
+                           (sid, notebook, "path", ref, base, time.time(), n, session_id))
                 kind = "path"
             em = _cfg.embed_model()
             embed_err = None
@@ -274,15 +432,26 @@ def add_source(notebook, ref):
                 # the embedder ran but stored nothing (endpoint/key/model unavailable) —
                 # surface it instead of silently shipping a lexical-only source.
                 embed_err = "embedding produced no vectors (endpoint, key or model unavailable)"
-            return {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
-                    "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
-                    "title": ref if kind == "url" else base}
+            nb_row = db.execute("SELECT name FROM notebooks WHERE id=?", (notebook,)).fetchone()
+            result = {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
+                      "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
+                      "title": ref if kind == "url" else base,
+                      "notebook_auto": bool(auto_routed or notebook_auto_flag),
+                      "notebook_name": nb_row["name"] if nb_row else ""}
+            if extract_diag is not None:
+                result["extract_diagnostic"] = extract_diag
+                result["recommend_visual"] = bool(extract_diag.get("recommend_visual"))
+            return result
         finally:
             db.close()
 
 
-def add_text(notebook, title, text):
-    """Add a pasted-text source to a notebook."""
+def add_text(notebook, title, text, session_id=None):
+    """Add a pasted-text source to a notebook.
+
+    JAG-431r5: ``session_id`` (optional) tags the source + chunks so a search
+    can later scope to a single conversation.
+    """
     notebook = notebook or DEFAULT_ID
     title = str(title or "note").strip() or "note"
     text = str(text or "")
@@ -300,7 +469,8 @@ def add_text(notebook, title, text):
             cl = int(cfg.get("chunk_lines") or 60)
             ov = int(cfg.get("overlap_lines") or 8)
             n = _ingest(db, sid, notebook, "text", title, title,
-                        _chunk.chunk_doc(text, cl, ov), "markdown", title, cfg, fts)
+                        _chunk.chunk_doc(text, cl, ov), "markdown", title, cfg, fts,
+                        session_id=session_id)
             db.execute("UPDATE sources SET chunks=? WHERE id=?", (n, sid))
             em = _cfg.embed_model()
             embed_err = None
@@ -336,9 +506,14 @@ def add_sources(notebook, values):
             "chunks": sum(x.get("chunks", 0) for x in ok), "results": results}
 
 
-def add_source_text(notebook, ref, text, title=None):
+def add_source_text(notebook, ref, text, title=None, session_id=None):
     """Ingest pre-fetched text as a URL source. Used by the research executor
-    so the same body is NOT re-fetched."""
+    so the same body is NOT re-fetched.
+
+    JAG-431r5: also accepts ``notebook="auto"`` for the same routing logic as
+    ``add_source``. ``session_id`` (optional) tags the source + chunks so a
+    search can later scope to a single conversation.
+    """
     notebook = notebook or DEFAULT_ID
     ref = str(ref or "").strip()
     text = str(text or "")
@@ -349,14 +524,22 @@ def add_source_text(notebook, ref, text, title=None):
         db = _connect()
         try:
             fts = _init(db)
-            notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
+            auto_routed = False
+            nb_name = ""
+            if notebook == "auto":
+                nb_id, nb_name, auto_routed = _route_notebook(
+                    db, (text or "")[:_AUTO_PREVIEW_CHARS], title or ref)
+                notebook = nb_id
+            else:
+                notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
             if not _notebook_exists(db, notebook):
                 return {"ok": False, "error": "no such notebook: %s" % notebook}
             sid = "src:" + uuid.uuid4().hex[:10]
             cl = int(cfg.get("chunk_lines") or 60)
             ov = int(cfg.get("overlap_lines") or 8)
             n = _ingest(db, sid, notebook, "url", ref, title or ref,
-                        _chunk.chunk_doc(text, cl, ov), "markdown", ref, cfg, fts)
+                        _chunk.chunk_doc(text, cl, ov), "markdown", ref, cfg, fts,
+                        session_id=session_id)
             em = _cfg.embed_model()
             embed_err = None
             if em and n:
@@ -371,9 +554,15 @@ def add_source_text(notebook, ref, text, title=None):
             db.commit()
             embedded = db.execute("SELECT count(*) c FROM chunks WHERE source=? AND vec IS NOT NULL",
                                   (sid,)).fetchone()["c"]
+            nb_row = db.execute("SELECT name FROM notebooks WHERE id=?", (notebook,)).fetchone()
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": "url",
                     "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
-                    "title": title or ref}
+                    "title": title or ref, "notebook_auto": bool(auto_routed),
+                    "notebook_name": nb_row["name"] if nb_row else (nb_name or ""),
+                    # JAG-431r5: pre-fetched text is always lexically indexable,
+                    # so a visual embedder is never strictly needed. Kept in the
+                    # response shape for symmetry with add_source().
+                    "recommend_visual": False}
         finally:
             db.close()
 
@@ -431,7 +620,12 @@ def reembed():
             db.close()
 
 
-def search(query, notebook=None, k=8, kind=None, embed_model=None):
+def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None):
+    """Search the knowledge base.
+
+    JAG-431r5: ``session`` (optional) scopes the search to chunks tagged with a
+    specific ``session_id`` — useful for "what did we learn in THIS chat?".
+    """
     """Top-k chunks. Optionally scoped to ONE notebook. bm25, or bm25+cosine (RRF)."""
     query = str(query or "").strip()
     out = {"query": query, "notebook": notebook, "results": [], "mode": "bm25"}
@@ -447,15 +641,18 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None):
         terms = re.findall(r"[A-Za-z0-9_]{2,}", query)
         rows = []
         scope = " AND s.notebook = ?" if notebook else ""
+        # JAG-431r5: an optional session_id scope.
+        sess = " AND c.session_id = ?" if session else ""
         if terms and _has_fts(db):
             fts_q = " OR ".join('"%s"' % t for t in terms)
             sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
+                   "c.session_id AS session_id, "
                    "s.notebook AS notebook, s.ref AS ref, s.title AS title, "
                    "bm25(chunks_fts, 1.0, 3.0, 2.0) AS rank, "
                    "snippet(chunks_fts, 0, '\u00ab', '\u00bb', '\u2026', 14) AS snip "
                    "FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid "
-                   "JOIN sources s ON s.id = c.source WHERE chunks_fts MATCH ?" + scope)
-            args = [fts_q] + ([notebook] if notebook else [])
+                   "JOIN sources s ON s.id = c.source WHERE chunks_fts MATCH ?" + scope + sess)
+            args = [fts_q] + ([notebook] if notebook else []) + ([session] if session else [])
             if kind:
                 sql += " AND c.kind = ?"
                 args.append(kind)
@@ -466,10 +663,11 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None):
             like = " OR ".join(["c.text LIKE ?"] * len(terms))
             args = ["%" + t + "%" for t in terms]
             sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
+                   "c.session_id AS session_id, "
                    "s.notebook AS notebook, s.ref AS ref, s.title AS title, 0 AS rank, "
                    "substr(c.text,1,160) AS snip FROM chunks c JOIN sources s ON s.id=c.source "
-                   "WHERE (" + like + ")" + scope)
-            args = args + ([notebook] if notebook else [])
+                   "WHERE (" + like + ")" + scope + sess)
+            args = args + ([notebook] if notebook else []) + ([session] if session else [])
             if kind:
                 sql += " AND c.kind=?"
                 args.append(kind)
@@ -504,6 +702,7 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None):
                 "notebook": r["notebook"], "source": r["source"], "ref": r["ref"],
                 "title": r["title"], "path": r["path"], "name": r["name"], "kind": r["kind"],
                 "lang": r["lang"], "start": r["start"], "end": r["end"],
+                "session_id": r.get("session_id"),
                 "score": round(score, 6) if score is not None else round(-(r["rank"] or 0), 6),
                 "snippet": r.get("snip") or (r["text"] or "")[:200],
             })

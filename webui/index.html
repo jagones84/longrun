@@ -2808,8 +2808,34 @@ async function attachFiles(fileList) {
   let okN = 0;
   for (const f of files) {
     const r = await _uploadFile(f);
-    if (r && r.ok) { addAttachment({ kind: "path", label: r.name, value: "file: " + r.path }); okN++; }
-    else toast("attach failed: " + ((r && r.error) || "?") + " (" + f.name + ")", "err");
+    if (r && r.ok) {
+      addAttachment({ kind: "path", label: r.name, value: "file: " + r.path });
+      okN++;
+      // JAG-431r5: auto-ingest binary documents into the knowledge base so the
+      // model can search them later without the user having to "add" twice.
+      // Text files (md/txt/code) are NOT auto-ingested — the chat sees the
+      // path and the model reads them directly. Visual-only PDFs surface a
+      // warning because the embedder is text-only.
+      const name = (r.name || "").toLowerCase();
+      const isBinaryDoc = /\.(pdf|docx?|odt|rtf|pptx|xlsx|epub)$/i.test(name);
+      if (isBinaryDoc) {
+        try {
+          const ir = await api("POST", "/api/knowledge/auto-route",
+                               { ref: r.path, title: r.name, session: sessionId });
+          if (ir && ir.ok) {
+            const vis = ir.recommend_visual
+              ? " ⚠ image-only — install a visual embedder to make this searchable"
+              : "";
+            const where = ir.notebook_name
+              ? " → '" + ir.notebook_name + "' (" + (ir.chunks || 0) + " chunks)"
+              : "";
+            toast("📥 " + r.name + where + vis, ir.recommend_visual ? "warn" : "ok");
+          } else {
+            toast("📥 ingest failed: " + ((ir && ir.error) || "?"), "err");
+          }
+        } catch (e) { /* don't block attach on a KB error */ }
+      }
+    } else toast("attach failed: " + ((r && r.error) || "?") + " (" + f.name + ")", "err");
   }
   if (okN) toast(okN + (okN > 1 ? " files attached" : " file attached"), "ok");
 }
