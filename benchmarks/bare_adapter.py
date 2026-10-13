@@ -52,7 +52,7 @@ class BareAdapter:
     name = "bare"
 
     def __init__(self, base=None, api_key=None, model=None, timeout=600.0,
-                 temperature=0.0, max_tokens=2048):
+                 temperature=0.0, max_tokens=8192):
         self.base = (base or _DEFAULT_BASE).rstrip("/")
         self.api_key = (api_key or os.environ.get("DEEPSEEK_API_KEY")
                         or os.environ.get("OPENAI_API_KEY")

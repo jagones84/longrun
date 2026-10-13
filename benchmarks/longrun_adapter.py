@@ -53,7 +53,8 @@ class LongrunAdapter:
 
     name = "longrun"
 
-    def __init__(self, base=None, token=None, model=None, timeout=900.0, repo=None):
+    def __init__(self, base=None, token=None, model=None, timeout=900.0, repo=None,
+                 keep_sessions=False, tag=None):
         self.base = (base or os.environ.get("LONGRUN_BASE")
                      or "http://127.0.0.1:8790").rstrip("/")
         self.token = token or os.environ.get("LONGRUN_TOKEN") or _token_from_env_file()
@@ -63,6 +64,12 @@ class LongrunAdapter:
         # Captured by `setup()`, restored by `teardown()`, reported in `provenance()`.
         self._policy = {}
         self._verifier = {}
+        self._routing = {}
+        # `keep_sessions`: do NOT delete the benchmark sessions — the operator wants
+        # to open them in the WebUI and read what the harness actually did. `tag`
+        # prefixes the session title so the runs are findable in the rail.
+        self.keep_sessions = bool(keep_sessions)
+        self.tag = tag
 
     # ---- transport ----------------------------------------------------------
     def _req(self, method, path, body=None, timeout=None):
@@ -114,6 +121,13 @@ class LongrunAdapter:
         - approvals.kinds.* = auto (memory/proposals/skills/subagent emitted freely)
         - verifier.enabled = false (an "apply-only-if-green" gate needs a per-repo
           command and would roll back every edit otherwise)
+        - EVERY routing role pinned to THIS arm's model.
+
+        The routing pin is essential for an equal-conditions run: with the shipped
+        routing.yaml, `chat`/`planner`/`agent` resolve by `pattern: qwen` to the
+        LOCAL DGX model, so a session pinned to a cloud model still burned the local
+        GPU for the planner call — the benchmark then measured a mixed model, not
+        one. Pinning all roles to the arm's model keeps the comparison honest.
         """
         _, before = self._req("GET", "/api/tools", timeout=10)
         self._policy = dict(before.get("policy") or {})
@@ -124,7 +138,14 @@ class LongrunAdapter:
                                     "skills": "auto", "subagent": "auto"}},
             "verifier": {"enabled": False},
         }, timeout=10)
-        return {"policy": self._policy, "verifier": self._verifier}
+        _, rstatus = self._req("GET", "/api/routing", timeout=10)
+        self._routing = dict((rstatus or {}).get("config") or {})
+        if self.model:
+            roles = ("chat", "planner", "agent", "subagent", "summarizer")
+            self._req("POST", "/api/routing",
+                      {"roles": {r: {"model": self.model} for r in roles}}, timeout=10)
+        return {"policy": self._policy, "verifier": self._verifier,
+                "routing": self._routing}
 
     def teardown(self):
         """Restore the operator's settings captured by `setup()`."""
@@ -134,15 +155,30 @@ class LongrunAdapter:
         if self._verifier:
             body["verifier"] = self._verifier
         self._req("POST", "/api/tools", body, timeout=10)
+        # Put back the original role pins (the shipped config has no explicit
+        # `model` for chat/planner/agent, so this clears our pin and restores
+        # pattern-based selection).
+        if getattr(self, "_routing", None):
+            roles = {}
+            for role, entry in (self._routing.get("roles") or {}).items():
+                roles[role] = {"model": entry.get("model") or ""}
+            if roles:
+                self._req("POST", "/api/routing", {"roles": roles}, timeout=10)
         return True
 
     # ---- adapter contract ---------------------------------------------------
     def create_agent(self, task):
-        title = str(task.get("id") or task.get("instance_id") or "bench")[:60]
-        st, obj = self._req("POST", "/api/sessions", {"title": title})
+        base_title = str(task.get("id") or task.get("instance_id") or "bench")[:60]
+        title = ("%s · %s" % (self.tag, base_title)) if self.tag else base_title
+        st, obj = self._req("POST", "/api/sessions", {"title": title[:80]})
         sid = obj.get("id") or obj.get("session")
         if not sid:
             return AgentRef(id=title, session="", meta={"error": obj.get("error", "no session")})
+        # Pin the model on the session so the harness uses the arm's model for every
+        # turn of this task (a cloud model, not whatever the session default is).
+        if self.model:
+            self._req("POST", "/api/sessions/%s/model" % urllib.parse.quote(sid),
+                      {"model": self.model})
         ws = task.get("workspace")
         if ws:
             self._req("POST", "/api/sessions/%s/workspace" % urllib.parse.quote(sid),
@@ -172,6 +208,11 @@ class LongrunAdapter:
         return bool(obj.get("ok"))
 
     def delete_agent(self, ref):
+        # `keep_sessions`: the operator wants to inspect the run in the WebUI, so the
+        # session survives the benchmark (it is NOT equivalent to leaving garbage —
+        # the title is tagged, so the whole run is one keystroke to find and clear).
+        if self.keep_sessions:
+            return True
         st, _ = self._req("DELETE", "/api/sessions/%s" % urllib.parse.quote(ref.session))
         return st in (200, 204)
 

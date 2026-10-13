@@ -27,7 +27,17 @@ from benchmarks import humaneval                        # noqa: E402
 from benchmarks.runner import run_suite                 # noqa: E402
 
 
-def _make_arm(name, model, upstream_base=None, upstream_key=None, provider=None):
+def _split_arm(spec):
+    """`longrun:reasoner` -> ('longrun', 'reasoner') so TWO models can run as two
+    arms of the SAME harness (model-vs-model, in parallel, inside one harness)."""
+    if ":" in spec:
+        base, label = spec.split(":", 1)
+        return base.strip(), label.strip()
+    return spec.strip(), spec.strip()
+
+
+def _make_arm(name, model, upstream_base=None, upstream_key=None, provider=None,
+              keep_sessions=False, tag=None):
     """Build one adapter by name. Imported lazily so a missing dep on one arm
     (e.g. no Hermes install) never breaks the others.
 
@@ -40,7 +50,7 @@ def _make_arm(name, model, upstream_base=None, upstream_key=None, provider=None)
         return BareAdapter(base=upstream_base, api_key=upstream_key, model=model)
     if name == "longrun":
         from benchmarks.longrun_adapter import LongrunAdapter
-        return LongrunAdapter(model=model)
+        return LongrunAdapter(model=model, keep_sessions=keep_sessions, tag=tag)
     if name == "hermes":
         from benchmarks.hermes_adapter import HermesAdapter
         return HermesAdapter(model=model, provider=provider, base_url=upstream_base,
@@ -78,6 +88,14 @@ def main(argv=None):
                          "'longrun=dgx:nex-n25-mini-uncensored-q8' — the harness "
                          "takes a provider:model ref while a raw endpoint takes the "
                          "bare alias; SAME weights, two spellings")
+    ap.add_argument("--keep-sessions", action="store_true",
+                    help="do NOT delete the Longrun sessions — open them in the "
+                         "WebUI to see exactly what the harness did")
+    ap.add_argument("--tag", default=None,
+                    help="prefix for the Longrun session titles (find the run fast)")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="run this many TASKS in parallel inside one arm "
+                         "(each in its own Longrun session)")
     args = ap.parse_args(argv)
     model_map = dict(kv.split("=", 1) for kv in args.model_map.split(",") if "=" in kv)
 
@@ -89,18 +107,21 @@ def main(argv=None):
 
     results, summary = {}, {"model": args.model, "tasks": args.tasks,
                             "n_tasks": len(tasks), "arms": {}}
-    for name in [a.strip() for a in args.arms.split(",") if a.strip()]:
-        arm_model = model_map.get(name, args.model)
+    for spec in [a.strip() for a in args.arms.split(",") if a.strip()]:
+        name, label = _split_arm(spec)
+        arm_model = model_map.get(label, model_map.get(name, args.model))
         ad = _make_arm(name, arm_model, upstream_base=args.upstream_base,
-                       upstream_key=args.upstream_key, provider=args.provider)
+                       upstream_key=args.upstream_key, provider=args.provider,
+                       keep_sessions=args.keep_sessions,
+                       tag=(args.tag or label) if args.keep_sessions else None)
         if hasattr(ad, "base") and name == "longrun":
             try:
                 ad.base = args.base
             except Exception:  # noqa: BLE001
                 pass
-        arm_dir = os.path.join(args.out, name)
+        arm_dir = os.path.join(args.out, label)
         out = run_suite(ad, tasks, arm_dir, prompt_fn=humaneval.prompt_for,
-                        limit=args.limit, model=arm_model)
+                        limit=args.limit, model=arm_model, jobs=args.jobs)
         with open(out["preds"], encoding="utf-8") as f:
             preds = [json.loads(ln) for ln in f if ln.strip()]
         sc = humaneval.score(preds, tasks)
@@ -108,12 +129,12 @@ def main(argv=None):
             json.dump(sc, f, indent=2)
         with open(out["summary"], encoding="utf-8") as f:
             s = json.load(f)
-        results[name] = {"pass@1": sc["pass@1"], "passed": sc["passed"], "n": sc["n"],
-                         "ok": s["ok"], "failed": s["failed"],
-                         "duration_s": s["duration_s"], "provenance": s["provenance"]}
-        summary["arms"][name] = results[name]
-        print("%-8s pass@1=%s (%d/%d) ok=%d failed=%d in %ss"
-              % (name, sc["pass@1"], sc["passed"], sc["n"], s["ok"], s["failed"],
+        results[label] = {"pass@1": sc["pass@1"], "passed": sc["passed"], "n": sc["n"],
+                          "ok": s["ok"], "failed": s["failed"],
+                          "duration_s": s["duration_s"], "provenance": s["provenance"]}
+        summary["arms"][label] = results[label]
+        print("%-16s pass@1=%s (%d/%d) ok=%d failed=%d in %ss"
+              % (label, sc["pass@1"], sc["passed"], sc["n"], s["ok"], s["failed"],
                  s["duration_s"]))
 
     summary["generated"] = round(time.time(), 3)

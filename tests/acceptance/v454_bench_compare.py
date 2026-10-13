@@ -105,6 +105,20 @@ check("E4 it emits a side-by-side artifact",
 check("E5 it passes the SAME upstream endpoint to the non-harness arms",
       "upstream_base=args.upstream_base" in cmp_src)
 
+# ---- F: operator affordances (keep sessions, parallel tasks) ----------------
+check("F1 --keep-sessions means delete_agent is a NO-OP (inspect the run in the WebUI)",
+      "if self.keep_sessions:" in la_src and "def delete_agent" in la_src)
+check("F2 the kept sessions are TAGGED so the run is findable",
+      'title = ("%s · %s" % (self.tag, base_title)) if self.tag else base_title' in la_src)
+check("F3 the arm pins its model on the session (a cloud model, not the default)",
+      '/model" % urllib.parse.quote(sid)' in la_src)
+check("F4 the CLI exposes --keep-sessions + --tag",
+      '"--keep-sessions"' in cmp_src and '"--tag"' in cmp_src)
+check("F5 run_suite can run tasks in PARALLEL (jobs)",
+      "ThreadPoolExecutor" in run_src and "jobs=1" in run_src)
+check("F6 parallel results keep task order (written back by index)",
+      "rows[i] = " in run_src and "preds[i] = " in run_src)
+
 print("---")
 okc = sum(results)
 print("\nv454: %d/%d PASS" % (okc, len(results)))

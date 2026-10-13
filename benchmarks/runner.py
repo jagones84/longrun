@@ -21,32 +21,46 @@ def _default_prompt(task):
             or task.get("goal") or "")
 
 
-def run_suite(adapter, tasks, out_dir, prompt_fn=None, limit=None, model=None):
+def run_suite(adapter, tasks, out_dir, prompt_fn=None, limit=None, model=None, jobs=1):
     """Run every task through the adapter. Returns the artifact paths + stats.
 
     JAG-454: if the adapter exposes `setup()`/`teardown()`, they bracket the whole
     run (once), so a harness can enter a benchmark-ready state — e.g. Longrun lifts
     its approval gate — and restore the operator's settings afterwards.
+
+    `jobs` > 1 runs that many tasks CONCURRENTLY (each in its own agent/session).
+    Order is preserved in the artifacts: results are written back by task index.
     """
     os.makedirs(out_dir, exist_ok=True)
     prompt_fn = prompt_fn or _default_prompt
-    rows, preds = [], []
+    selected = (tasks or [])[: (limit or len(tasks or []))]
+    rows, preds = [None] * len(selected), [None] * len(selected)
     t0 = time.time()
+
+    def _one(i_task):
+        i, task = i_task
+        tid = task.get("id") or task.get("task_id") or task.get("instance_id") or ""
+        ref = adapter.create_agent(task)
+        res = adapter.send_task(ref, prompt_fn(task))
+        preds[i] = {"task_id": tid, "prediction": res.output}
+        rows[i] = {"task_id": tid, "ok": bool(res.ok), "run_id": res.run_id,
+                   "duration_s": res.duration_s, "tokens": res.tokens,
+                   "error": res.error, "session": getattr(ref, "session", "")}
+        try:
+            adapter.delete_agent(ref)
+        except Exception:  # noqa: BLE001 — cleanup must not fail the run
+            pass
+
     try:
         if hasattr(adapter, "setup"):
             adapter.setup()
-        for task in (tasks or [])[: (limit or len(tasks or []))]:
-            tid = task.get("id") or task.get("task_id") or task.get("instance_id") or ""
-            ref = adapter.create_agent(task)
-            res = adapter.send_task(ref, prompt_fn(task))
-            preds.append({"task_id": tid, "prediction": res.output})
-            rows.append({"task_id": tid, "ok": bool(res.ok), "run_id": res.run_id,
-                         "duration_s": res.duration_s, "tokens": res.tokens,
-                         "error": res.error})
-            try:
-                adapter.delete_agent(ref)
-            except Exception:  # noqa: BLE001 — cleanup must not fail the run
-                pass
+        if jobs and int(jobs) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=int(jobs)) as ex:
+                list(ex.map(_one, list(enumerate(selected))))
+        else:
+            for it in enumerate(selected):
+                _one(it)
     finally:
         if hasattr(adapter, "teardown"):
             try:
