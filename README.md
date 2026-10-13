@@ -336,7 +336,7 @@ The **only** regression gate is one deterministic, fully-isolated battery — it
 every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live state:
 
 ```bash
-bash tests/battery.sh        # → === battery: 166/166 GREEN ===
+bash tests/battery.sh        # → === battery: 167/167 GREEN ===
 ```
 
 CI runs the same battery on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).

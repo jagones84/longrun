@@ -52,6 +52,13 @@ la = _fn(HTML, "function _logAppend(")
 check("2a free content is appended to the active free group or directly to "
       "the log (no spurious new Free.N for non-user messages)",
       "_freeKids()" in la and "_activeScope" in la and "$(\"log\").appendChild" in la, "")
+# JAG-431r7b: a turn's TAIL (final CoT/answer, last nudge) with no active scope and
+# no free group must reuse the LAST section instead of floating at the root — so it
+# stays inside the task/free group that produced it (live AND reload, both funnel
+# through _logAppend). Never creates a spurious Free.N (JAG-431r3 preserved).
+check("2f the turn tail reuses the last section instead of floating at the root",
+      "lastElementChild" in la
+      and "fg-kids" in la and "tc-kids" in la, "")
 sc = _fn(HTML, "function _scope(")
 check("2b _scope() prefers the active task scope, then the free group",
       "_activeScope" in sc and "_freeKids()" in sc, "")

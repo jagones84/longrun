@@ -1062,7 +1062,7 @@ def handle(handler, method, path, qs, body):
             _publish("knowledge.auto_route", ok=bool(res.get("ok")),
                      notebook=res.get("notebook"), notebook_auto=res.get("notebook_auto"),
                      recommend_visual=res.get("recommend_visual"))
-            return res
+            return _r(handler, 200 if res.get("ok") else 400, res)
         # JAG-403b: pick / inspect the active research LLM.
         if path == "/api/research/model":
             from longrun.research import researchcfg as _rc
@@ -1975,9 +1975,14 @@ def knowledge_status():
 
 
 def knowledge_notebooks():
-    """GET /api/knowledge/notebooks — the notebooks (with a source count each)."""
+    """GET /api/knowledge/notebooks — GLOBAL notebooks + SESSION notebooks.
+
+    JAG-431r6b: session-scoped KBs are returned separately under `sessions`
+    (adds `is_session=True`), so the WebUI renders them in a dedicated,
+    request-expanded "Session" tab instead of mixing them into the global list.
+    """
     from longrun.memory import knowledge as _kb
-    return {"notebooks": _kb.list_notebooks()}
+    return {"notebooks": _kb.list_notebooks(), "sessions": _kb.list_sessions()}
 
 
 def knowledge_sources(qs=None):
@@ -1993,10 +1998,15 @@ def knowledge_files(qs=None):
 
 
 def knowledge_search(src):
-    """GET/POST /api/knowledge/search — search the knowledge base (optional notebook)."""
+    """GET/POST /api/knowledge/search — search the knowledge base.
+
+    Optional `session` scopes the search to that session's notebooks only
+    (JAG-431r6b); a global search (no session/notebook) excludes session KBs.
+    """
     from longrun.memory import knowledge as _kb
     return _kb.search(src.get("q") or src.get("query"), src.get("notebook"),
-                      _int(src.get("k", 8), 8), src.get("kind"))
+                      _int(src.get("k", 8), 8), src.get("kind"),
+                      session=src.get("session") or None)
 
 
 def knowledge_notebook_action(body):

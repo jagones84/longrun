@@ -64,7 +64,8 @@ def _init(db):
         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS notebooks(
             id TEXT PRIMARY KEY, name TEXT, created REAL,
-            hidden INTEGER DEFAULT 0, owner TEXT);
+            hidden INTEGER DEFAULT 0, owner TEXT,
+            is_session INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS sources(
             id TEXT PRIMARY KEY, notebook TEXT, kind TEXT, ref TEXT, title TEXT,
             added REAL, chunks INTEGER);
@@ -75,18 +76,19 @@ def _init(db):
         CREATE INDEX IF NOT EXISTS sources_notebook ON sources(notebook);
         """
     )
-    # JAG-431r6: phantom (per-session) notebooks. The DB is ONE global KB; a
-    # session-scoped source lives in a REAL notebook row tagged hidden=1 with an
-    # owner == session id. This reuses the notebook/sources/chunks/search/embed
-    # pipeline verbatim — no per-row session mirroring, no duplicated embedders.
-    # Migrate legacy DBs that pre-date these columns.
-    for col, ddl in (("hidden", "INTEGER DEFAULT 0"), ("owner", "TEXT")):
+    # JAG-431r6b: phantom → "session notebook". The scope lives in a REAL
+    # notebook row flagged is_session=1 with owner == session id. It is shown
+    # in the Knowledge UI's dedicated "Session" tab, excluded from the global
+    # corpus, and lifecycle-tied to the session (purge on delete/reset).
+    # Migrate legacy DBs (r6 added hidden+owner; r6b adds is_session).
+    for col, ddl in (("hidden", "INTEGER DEFAULT 0"), ("owner", "TEXT"),
+                     ("is_session", "INTEGER DEFAULT 0")):
         try:
             db.execute("ALTER TABLE notebooks ADD COLUMN %s %s" % (col, ddl))
         except sqlite3.OperationalError:
             pass
     db.execute("CREATE INDEX IF NOT EXISTS notebooks_owner ON notebooks(owner)")
-    db.execute("CREATE INDEX IF NOT EXISTS notebooks_hidden ON notebooks(hidden)")
+    db.execute("CREATE INDEX IF NOT EXISTS notebooks_session ON notebooks(is_session)")
     fts = True
     try:
         db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, name, path)")
@@ -134,31 +136,62 @@ def _drop_source(db, sid):
 
 
 # ------------------------------------------------------------------ notebooks --
-def list_notebooks(include_hidden=False):
-    """List notebooks. HIDDEN (per-session) notebooks are excluded by default
-    (JAG-431r6) so the UI's notebook menu only shows the GLOBAL notebooks.
+def _notebook_rows(db, session_only):
+    """Fetch notebook rows, optionally restricted to SESSION notebooks."""
+    sql = "SELECT id, name, created, owner, is_session FROM notebooks"
+    if session_only:
+        sql += " WHERE IFNULL(is_session,0) = 1"
+    else:
+        sql += " WHERE IFNULL(is_session,0) = 0"
+    sql += " ORDER BY created"
+    return db.execute(sql).fetchall()
+
+
+def list_notebooks():
+    """List GLOBAL notebooks only — session notebooks are excluded.
+
+    JAG-431r6b: session-scoped KBs live in notebooks flagged is_session=1 and
+    are surfaced via ``list_sessions()`` instead, so the Knowledge UI's main
+    notebook menu never mixes them with the global corpus.
     """
     db = _connect()
     try:
         _init(db)
-        sql = "SELECT id, name, created, hidden, owner FROM notebooks"
-        if not include_hidden:
-            sql += " WHERE hidden = 0"
-        sql += " ORDER BY created"
-        rows = db.execute(sql).fetchall()
+        rows = _notebook_rows(db, session_only=False)
         counts = {r["notebook"]: r["c"] for r in db.execute(
             "SELECT notebook, count(*) c FROM sources GROUP BY notebook")}
         return [{"id": r["id"], "name": r["name"], "created": r["created"],
+                 "is_session": False, "owner": None,
+                 "sources": counts.get(r["id"], 0)} for r in rows]
+    finally:
+        db.close()
+
+
+def list_sessions():
+    """List SESSION notebooks (the Knowledge UI's dedicated "Session" tab).
+
+    JAG-431r6b: each is flagged is_session=True so consumers can distinguish
+    them from global notebooks. They are lifecycle-tied to their session and
+    disappear on ``purge_session``.
+    """
+    db = _connect()
+    try:
+        _init(db)
+        rows = _notebook_rows(db, session_only=True)
+        counts = {r["notebook"]: r["c"] for r in db.execute(
+            "SELECT notebook, count(*) c FROM sources GROUP BY notebook")}
+        return [{"id": r["id"], "name": r["name"], "created": r["created"],
+                 "is_session": True, "owner": r["owner"],
                  "sources": counts.get(r["id"], 0)} for r in rows]
     finally:
         db.close()
 
 
 def purge_session(sid):
-    """Delete every HIDDEN notebook owned by a session (JAG-431r6).
+    """Delete every SESSION notebook owned by a session (JAG-431r6b).
 
-    Called when a session is deleted so its KB scope (sources + chunks) is
-    removed from the single global DB instead of leaking as orphans.
+    Called when a session is deleted / reset so its KB scope (sources + chunks)
+    is removed from the single global DB — it disappears from ``list_sessions()``.
     """
     if not sid:
         return {"ok": True, "removed": []}
@@ -369,12 +402,13 @@ def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts):
 
 
 def _session_notebook(db, sid, create=True):
-    """Get (or create) the hidden notebook that owns this session's KB scope.
+    """Get (or create) the SESSION notebook that owns this session's KB scope.
 
     The notebook id is DETERMINISTIC (``sess-<sha1(sid)>``) so the same session
-    always routes to the same phantom notebook without a lookup. It is tagged
-    hidden=1 and owner=<sid>, so it never shows in the UI's notebook list and is
-    only reachable by the session itself (or a full-approval scope).
+    always routes to the same session notebook without a lookup. It is flagged
+    is_session=1 with owner=<sid>, so it is excluded from the global corpus and
+    surfaced in the Knowledge UI's dedicated "Session" tab — reachable only via
+    an explicit session scope (the FULL-approval path).
     """
     if not sid:
         return None
@@ -383,8 +417,8 @@ def _session_notebook(db, sid, create=True):
     row = db.execute("SELECT id FROM notebooks WHERE id=?", (nid,)).fetchone()
     if not row and create:
         name = "Session " + str(sid).replace("-", "").upper()[:8]
-        db.execute("INSERT INTO notebooks(id, name, created, hidden, owner) "
-                   "VALUES(?,?,?,1,?)", (nid, name, time.time(), str(sid)))
+        db.execute("INSERT INTO notebooks(id, name, created, hidden, owner, is_session) "
+                   "VALUES(?,?,?,1,?,1)", (nid, name, time.time(), str(sid)))
     return nid if (row or create) else None
 
 
@@ -709,12 +743,12 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
         terms = re.findall(r"[A-Za-z0-9_]{2,}", query)
         rows = []
         scope = " AND s.notebook = ?" if notebook else ""
-        # JAG-431r6: a GLOBAL search (no session / notebook) must not leak the
-        # hidden per-session notebooks. They are only reachable through an
-        # explicit session scope (the "FULL approval" path). An explicitly
-        # named visible notebook is unaffected.
+        # JAG-431r6b: a GLOBAL search (no session / notebook scope) must not
+        # leak the session notebooks. They are only reachable through an
+        # explicit session scope (the FULL-approval path). An explicitly named
+        # global notebook is unaffected.
         if not notebook:
-            scope += " AND s.notebook IN (SELECT id FROM notebooks WHERE IFNULL(hidden,0) = 0)"
+            scope += " AND s.notebook IN (SELECT id FROM notebooks WHERE IFNULL(is_session,0) = 0)"
         if terms and _has_fts(db):
             fts_q = " OR ".join('"%s"' % t for t in terms)
             sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "

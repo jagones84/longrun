@@ -1803,6 +1803,10 @@
             <button class="ghost" data-call="kbCreateNotebook">+ create</button>
           </div>
         </details>
+        <details class="card" id="kbSessionBox">
+          <summary class="remaining u-ptr">Session notebooks <span id="kbSessionCount" class="remaining"></span></summary>
+          <div id="kbSessions" class="u-mt6"><div class="remaining">expand to see session-scoped notebooks…</div></div>
+        </details>
         <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
         <div class="card">
           <div class="remaining u-m006">One per line — a URL, a file, or a folder. URLs are fetched and embedded; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs) then embedded with the active model.</div>
@@ -2165,6 +2169,17 @@ function _logAppend(el, chapter) {
   // untitled "Free.1" group that no ledger entry can title.
   const k = _freeKids();
   if (k) { k.appendChild(el); return; }
+  // JAG-431r7b: no active scope and no free group -> the turn's TAIL (final
+  // CoT/answer, last nudge) used to land at the ROOT, floating BELOW the task
+  // group it belongs to — the "harness message not inside any group" the operator
+  // saw. Reuse the LAST section if it is still the last element of the log (the
+  // same "still last -> keep appending" rule _openSection uses), so the tail stays
+  // inside the turn that produced it. Applies to BOTH live and reload (both funnel
+  // through here) and NEVER creates a spurious Free.N (JAG-431r3 preserved).
+  const _last = $("log").lastElementChild;
+  const _kids = _last ? [..._last.children].find(_c => _c.classList
+    && (_c.classList.contains("fg-kids") || _c.classList.contains("tc-kids"))) : null;
+  if (_kids) { _kids.appendChild(el); return; }
   $("log").appendChild(el);
 }
 function _latestSection(nid) {
@@ -2566,13 +2581,15 @@ function harnessInject(d) {
   det.innerHTML = '<summary>🔌 harness &rarr; LLM<span class="hkind"></span><span class="hcount"></span>' + _tsSpan(d.ts) + '</summary><pre class="hbody"></pre>';
   det.querySelector(".hkind").textContent = kind;
   det.querySelector(".hbody").textContent = text;
-  if (kind === "system") {
-    // one 'system prompt' block per turn, at the top of the turn
-    if (_sysInjectEl) _sysInjectEl.remove();
-    $("log").appendChild(det); _sysInjectEl = det;
-  } else {
-    _logAppend(det);
-  }
+  // JAG-431r7: render EVERY harness injection CHRONOLOGICALLY via _logAppend, so it
+  // lands inside the current turn's group (Free.N / task section) in stream order.
+  // The 'system' echo used to be appended to the root #log, which dropped it AFTER
+  // the turn's Free.N group — i.e. below the answer — so a finished turn looked like
+  // it "ended on a harness message" until a manual reload. Keep ONE system echo per
+  // turn (dedup by removing the previous), but place it where it belongs in the turn.
+  if (kind === "system" && _sysInjectEl) _sysInjectEl.remove();
+  _logAppend(det);
+  if (kind === "system") _sysInjectEl = det;
   scroll();
 }
 /* JAG-170: a persisted chain-of-thought block (the reasoning that preceded a
@@ -5901,7 +5918,7 @@ function settingsCategory(name) {
     if (typeof loadProviders === "function") loadProviders();
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
   }
-  else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSources(); researchModelLs(); kbResearchMode(); }
+  else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSessions(); kbLoadSources(); researchModelLs(); kbResearchMode(); }
   else if (name === "appearance") {
     renderThemeGrid();
     const bc = $("boldText");
@@ -6289,7 +6306,34 @@ async function kbLoadNotebooks() {
     box.querySelectorAll("[data-del]").forEach(el => el.onclick = () => kbDeleteNotebook(el.getAttribute("data-del")));
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
-function kbSelect(id, name) { kbState.notebook = id; _kbNb(name); kbLoadSources(); kbLoadNotebooks(); }
+function kbSelect(id, name) { kbState.notebook = id; _kbNb(name); kbLoadSources(); kbLoadNotebooks(); kbLoadSessions(); }
+/* JAG-431r6b: session-scoped notebooks live in the same global DB but are flagged
+   is_session=1 + owner=<session>. They are scoped to their owning session, excluded
+   from the global corpus & notebook picker, and rendered here in a dedicated
+   expandable panel. Selecting one behaves like any notebook (browse sources). */
+async function kbLoadSessions() {
+  const box = $("kbSessions"); if (!box) return;
+  try {
+    const r = await api("GET", "/api/knowledge/notebooks");
+    const s = r.sessions || [];
+    const cntEl = $("kbSessionCount");
+    if (cntEl) cntEl.textContent = s.length ? ("· " + s.length + (s.length === 1 ? " session" : " sessions")) : "";
+    box.innerHTML = s.map(n => {
+      const sel = n.id === kbState.notebook;
+      const owner = (n.owner || "");
+      return '<div class="kb-row" style="opacity:.92">' +
+        '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
+        '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this session notebook">' + (sel ? "●" : "○") + '</button>' +
+        '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px" readonly title="' + _attr(owner) + '">' +
+        '<span style="color:var(--acc);border:1px solid var(--acc);border-radius:6px;padding:0 5px;font-size:10px" title="session-scoped notebook — ' + _attr(owner) + '">session</span>' +
+        '<span class="cn">' + (n.sources || 0) + '</span>' +
+        '<button class="ghost" style="padding:2px 6px" data-del="' + _attr(n.id) + '" title="delete this session notebook (purges sources + chunks too)">🗑</button>' +
+        '</div>';
+    }).join("") || '<div class="remaining">no session notebooks (attach a PDF from chat with this session to create one)</div>';
+    box.querySelectorAll("[data-use]").forEach(el => el.onclick = () => { kbState.notebook = el.getAttribute("data-use"); kbLoadSources(); kbLoadSessions(); });
+    box.querySelectorAll("[data-del]").forEach(el => el.onclick = () => kbDeleteNotebook(el.getAttribute("data-del")));
+  } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
 async function kbCreateNotebook() {
   const name = $("kbNewName") ? $("kbNewName").value.trim() : "";
   if (!name) return;
@@ -6307,10 +6351,14 @@ async function kbRenameNotebook(id) {
   } catch (e) {}
 }
 async function kbDeleteNotebook(id) {
-  if (typeof confirmDelete === "function" && !(await confirmDelete("delete this notebook and its sources?"))) return;
+  const isSess = String(id).startsWith("sess-");
+  const msg = isSess
+    ? "delete this session notebook AND its sources/chunks? (the owning session loses its scoped KB)"
+    : "delete this notebook and its sources?";
+  if (typeof confirmDelete === "function" && !(await confirmDelete(msg))) return;
   try { await api("POST", "/api/knowledge/notebooks", { action: "delete", id: id });
     if (kbState.notebook === id) { kbState.notebook = "default"; _kbNb("Default"); }
-    kbLoadNotebooks(); kbLoadSources(); kbStatus();
+    kbLoadNotebooks(); kbLoadSessions(); kbLoadSources(); kbStatus();
   } catch (e) {}
 }
 /* A source row: URLs become real hyperlinks (open in a new tab); file paths open

@@ -153,55 +153,62 @@ check("2c auto-route on a fresh topic creates a new notebook",
       r8.get("ok") and nbs_after > nbs_before,
       {"before": nbs_before, "after": nbs_after, "result": r8})
 
-# -------------------------------------------------- 3) session (phantom) scope
+# ------------------------------------------- 3) session-notebook scope (JAG-431r6b)
 r9 = K.add_text("default", "session-scoped note", "This note is tagged with sid-A.",
                 session_id="sid-A")
 r10 = K.add_text("default", "session-scoped note B", "This other note is for sid-B.",
                  session_id="sid-B")
 root_nb = r9.get("notebook", "")
-check("3a a session-tagged note is indexed into a HIDDEN notebook",
+check("3a a session-scoped note is indexed into a session notebook",
       r9.get("ok") and r10.get("ok") and r9.get("chunks", 0) > 0 and r10.get("chunks", 0) > 0
       and root_nb.startswith("sess-"),
       {"a": r9.get("chunks"), "b": r10.get("chunks"), "a_nb": root_nb})
 
-# 3b the phantom notebook is hidden from the UI's notebook list
+# 3b the session notebook is NOT in the global/visible notebook list (it is a
+# session-scoped thing, surfaced only in the dedicated Session tab).
 visible = {n["id"] for n in K.list_notebooks()}
-check("3b session notebooks are hidden from the default notebook list",
+check("3b session notebooks are excluded from the global notebook list",
       root_nb not in visible,
       {"my": root_nb, "visible": sorted(visible)})
 
-# 3c search scopes to one session (via its phantom notebook)
+# 3c session notebooks ARE visible through list_sessions() (the dedicated tab),
+# tagged is_session=True.
+sess_list = K.list_sessions()
+sess_nb_ids = {s["id"] for s in sess_list}
+row = next((s for s in sess_list if s["id"] == root_nb), None)
+check("3c list_sessions() exposes the session notebook with is_session=True",
+      root_nb in sess_nb_ids and row is not None and row.get("is_session") is True,
+      {"sessions": sess_list})
+
+# 3d search scopes to one session (via its session notebook); a global search
+# (no session) does NOT include session chunks.
 sa = K.search("session-scoped", session="sid-A", k=5)
 sb = K.search("session-scoped", session="sid-B", k=5)
 sglob = K.search("session-scoped", k=5)
-# Each session's notebook is distinct and holds only its own chunk; a global
-# search (no session scope) does NOT include the hidden session chunks.
 distinct = (sa.get("results") or [{}])[0].get("notebook") != (sb.get("results") or [{}])[0].get("notebook")
-session_nb_ids = {r9.get("notebook"), r10.get("notebook")}
-g_has_hidden = any(r.get("notebook") in session_nb_ids for r in sglob.get("results", []))
-check("3c session-scoped search returns only the matching session's chunks",
+g_has_session = any(r.get("notebook") in sess_nb_ids for r in sglob.get("results", []))
+check("3d session-scoped search returns only the matching session's chunks and global search does not leak",
       len(sa.get("results", [])) > 0 and len(sb.get("results", [])) > 0
-      and distinct and g_has_hidden is False,
+      and distinct and g_has_session is False,
       {"a": len(sa.get("results", [])), "b": len(sb.get("results", [])),
-       "global_has_hidden": g_has_hidden,
+       "global_has_session": g_has_session,
        "a_nb": (sa.get("results") or [{}])[0].get("notebook"),
        "b_nb": (sb.get("results") or [{}])[0].get("notebook")})
 
-# 3d the global search (no session) does NOT return session-scoped chunks:
-# the phantom sources live in hidden notebooks, invisible to the default search.
-s_visible = K.search("session-scoped", k=50)
-session_nbs = {r10.get("notebook"), r9.get("notebook")}
-global_has_hidden = any(r.get("notebook") in session_nbs for r in s_visible.get("results", []))
-check("3d global search does not leak hidden session notebooks by default",
-      global_has_hidden is False,
-      session_nbs)
+# 3e a session notebook is queryable ONLY in the global corpus when the agent
+# explicitly opts in (the FULL-approval path) — i.e. it still resolves by id.
+s_exp = K.search("session-scoped", notebook=root_nb, k=5)
+check("3e a session notebook resolves by explicit notebook id (FULL approval path)",
+      len(s_exp.get("results", [])) > 0,
+      {"explicit": len(s_exp.get("results", []))})
 
-# 3e purge_session removes the owned hidden notebook (sources + chunks)
+# 3f purge_session removes the owned session notebook (sources + chunks) AND it
+# disappears from list_sessions().
 removed = K.purge_session("sid-A")
-left = {n["id"] for n in K.list_notebooks(include_hidden=True)}
-check("3e purge_session drops the session's hidden notebook",
-      root_nb in removed.get("removed", []) and root_nb not in left,
-      {"removed": removed.get("removed"), "left_hidden": left})
+sess_after = {s["id"] for s in K.list_sessions()}
+check("3f purge_session drops the session notebook from the Session tab",
+      root_nb in removed.get("removed", []) and root_nb not in sess_after,
+      {"removed": removed.get("removed"), "left_sessions": sorted(sess_after)})
 
 # -------------------------------------------------- 4) migration: legacy DB
 import sqlite3  # noqa: E402
@@ -227,8 +234,8 @@ _paths.KNOWLEDGE_DIR = legacy_dir
 K._init(K._connect())
 con = sqlite3.connect(legacy_db)
 nb_cols = {r[1] for r in con.execute("PRAGMA table_info(notebooks)").fetchall()}
-check("4 the migration adds hidden + owner to legacy notebooks",
-      "hidden" in nb_cols and "owner" in nb_cols,
+check("4 the migration adds hidden + owner + is_session to legacy notebooks",
+      "hidden" in nb_cols and "owner" in nb_cols and "is_session" in nb_cols,
       nb_cols)
 con.close()
 
@@ -237,10 +244,18 @@ from longrun.core import api_v02  # noqa: E402
 routes = api_v02.ROUTES if hasattr(api_v02, "ROUTES") else None
 # The dispatcher is inside _do_POST in api_v02; we test by importing the
 # relevant branch via the public path used by httpapi.
+API_SRC = open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"),
+               encoding="utf-8").read()
 check("5 the auto-route endpoint is wired in api_v02",
-      "/api/knowledge/auto-route" in open(os.path.join(REPO, "src", "longrun",
-                                                       "core", "api_v02.py"),
-                                          encoding="utf-8").read())
+      "/api/knowledge/auto-route" in API_SRC)
+# JAG-431r7: the endpoint must WRITE the response (via _r), not return a bare dict
+# (a bare dict left the socket with an empty reply -> curl(52) and a silent
+# failure of the chat "+" ingest flow).
+check("5b auto-route responds via _r(handler, ...) instead of returning a bare dict",
+      'return _r(handler, 200 if res.get("ok") else 400, res)' in API_SRC)
+# JAG-431r6b: the knowledge search endpoint forwards the optional session scope.
+check("5c knowledge search forwards the optional `session` scope to kb.search()",
+      'session=src.get("session") or None' in API_SRC)
 
 # -------------------------------------------------- 6) webui auto-ingest
 HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
@@ -248,6 +263,19 @@ check("6a the WebUI calls /api/knowledge/auto-route on attach",
       "api/knowledge/auto-route" in HTML and "recommend_visual" in HTML)
 check("6b the WebUI tags the ingest with the active session",
       "session: sessionId" in HTML)
+# JAG-431r6b: the dedicated, request-expanded "Session notebooks" tab exists and
+# renders r.sessions from GET /api/knowledge/notebooks.
+check("6c the WebUI has a dedicated Session notebooks panel",
+      'id="kbSessionBox"' in HTML and 'id="kbSessions"' in HTML)
+check("6d the WebUI renders session notebooks from the API `sessions` field",
+      "function kbLoadSessions" in HTML and "r.sessions" in HTML)
+# JAG-431r7: the transient system-prompt echo must be laid out CHRONOLOGICALLY
+# (inside the turn's group), never appended to the root log (which dropped it
+# below the answer, so a finished turn looked like it ended on a harness message).
+check("7 the harness system-echo renders chronologically (not appended to the root log)",
+      '_logAppend(det);' in HTML
+      and 'if (kind === "system" && _sysInjectEl) _sysInjectEl.remove();' in HTML
+      and '$("log").appendChild(det); _sysInjectEl = det;' not in HTML)
 
 print("---")
 ok = sum(results)
