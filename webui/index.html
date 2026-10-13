@@ -1327,7 +1327,7 @@
       <div id="plusMenu" hidden></div>
       <div id="attachRow" hidden></div>
       <input type="file" id="attachInput" multiple hidden>
-      <textarea id="inp" rows="1" placeholder="Message the agent…   (⏎ send)" autofocus></textarea>
+      <textarea id="inp" rows="1" placeholder="Message the agent…   (Ctrl+⏎ send)" autofocus></textarea>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
         <div class="cb-left">
@@ -3103,7 +3103,9 @@ function send(text, display) {
     } else {
       // JAG-364: keep the user text + the attachment snapshot so the queue chip
       // can show WHAT is attached (raw is what the model will receive).
-      enqueueMsg({ raw: _rawMsg, text: raw, atts: _attSnap });
+      // JAG-431r4: strip a leading `/goal` from the DISPLAY text — flushQueue calls
+      // send(raw, text) and send() re-prepends "🎯 /goal ", which doubled the prefix.
+      enqueueMsg({ raw: _rawMsg, text: raw.replace(/^\/goal[\s:]*/i, "").trim(), atts: _attSnap });
     }
     inp.value = ""; if (inp.style) inp.style.height = ""; return;
   }
@@ -3134,7 +3136,7 @@ function send(text, display) {
     turnSession = s; turnSSE[s] = es; setRunning(s, true);
     sessionId = s; localStorage.setItem("sf_session", sessionId);
   };
-  const end = (reload) => {
+  const end = (reload, flush) => {
     try { es.close(); } catch (e) {}
     if (turnSession && turnSSE[turnSession] === es) delete turnSSE[turnSession];
     setRunning(turnSession, false);
@@ -3147,7 +3149,11 @@ function send(text, display) {
         // the labels from the ledger + chapters. NOTE: this does NOT rebuild the chat
         // (loadHistory APPENDS; it must only be called after clearing #log).
         loadThreadTitles(turnSession || sessionId).then(applyThreadTitles); }
-      flushQueue();
+      // JAG-431r4: only drain the queue on a genuine `done`. An SSE `error` (fired on
+      // transient reconnects too) must NOT flush — with turnSSE deleted above,
+      // flushQueue would send the queued message and open a SECOND concurrent turn
+      // while the first is still running server-side.
+      if (flush) flushQueue();
     }
   };
   // JAG-166: a new turn starts at top level; the previous turn's tree/system block stay in history.
@@ -3180,15 +3186,18 @@ function send(text, display) {
   es.addEventListener("run.metrics", e => { if (live()) runFooter(JSON.parse(e.data).metrics); });
   es.addEventListener("bestofn.chosen", e => { if (!live()) return; const d = JSON.parse(e.data); who("ai", `🎲 best-of-N: picked the best of ${d.n} samples`); });
   es.addEventListener("improve.proposal", e => { if (live()) { improveCard(JSON.parse(e.data)); loadApprovals(); } });
-  es.addEventListener("done", () => end(true));
-  es.addEventListener("error", () => end(false));
+  es.addEventListener("done", () => end(true, true));
+  es.addEventListener("error", () => end(false, false));
 }
 
 async function api(method, path, body) {
   const r = await fetch(path, { method, headers: {...authHeaders(), "Content-Type": "application/json"},
                                 body: body ? JSON.stringify(body) : undefined });
   if (!r.ok) { try { const ee = await r.json(); return ee; } catch(e) { return { error: r.status + " " + r.statusText }; } }
-  return r.json();
+  // JAG-431r4: a 2xx with an empty/non-JSON body (common for POST/DELETE) made
+  // `r.json()` throw a SyntaxError that callers did not catch — the action then
+  // failed silently. Treat an unparseable success body as `{}`.
+  try { return await r.json(); } catch (e) { return {}; }
 }
 
 /* ---- sessions ---- */
@@ -3254,7 +3263,7 @@ async function openSessMenu(row, s, ag) {
     if (!a) return;
     if (a === "pin") { _togglePin(s.id); }
     if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
-    if (a === "role") { let rp = null; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; } catch (e) {} if (!rp) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
+    if (a === "role") { let rp = null, rt = ""; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; rt = (r && r.text) || ""; } catch (e) {} if (!rp || !rt) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
     if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
     if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
@@ -3808,7 +3817,10 @@ async function loadCtx() {
   try {
     const c = await api("GET", "/api/context?" + params.toString());
     if (sessionId !== sid) return;   // a newer session switch already ran
-    if (c.error) return;
+    // JAG-431r4: `api()` resolves 4xx/5xx as {error} (it does NOT throw), so an
+    // errored context read must reset the meter here too — otherwise the PREVIOUS
+    // session's % stayed on screen (the same failure the catch block guards).
+    if (c.error) { ctxNa("n/d"); return; }
     if (c.available === false) { ctxNa("session not found"); return; }
     const d = c.display || {};
     const state = d.state || "na";
@@ -4135,7 +4147,12 @@ function planGoal() {
   send("/goal " + goal);
 }
 /* ---- run task graph (v0.6: LLM-generated, live, interactive) ---- */
-let curRunId = localStorage.getItem("sf_run") || null;
+// JAG-431r4: do NOT restore the run id from localStorage. `loadGraph` is now
+// session-driven (JAG-431b), so a leftover `sf_run` belonged to a PREVIOUS session;
+// `listRunId()` would then hand it to addTask/graphNodeAction and the "+" wrote into
+// another session's run. Start null — the session graph (or the session id) is the
+// real source once loadPlan() runs.
+let curRunId = null;
 let graph = null;        // {run_id, session_id, goal, nodes:[], counts, node_count}
 let graphFresh = null;   // node id to highlight on the next render
 
@@ -4479,7 +4496,7 @@ function paintModelHi() {
 function modelKey(e) {
   if (e.key === "ArrowDown") { e.preventDefault(); _modelHi = Math.min(_modelHi + 1, _modelItems.length - 1); paintModelHi(); }
   else if (e.key === "ArrowUp") { e.preventDefault(); _modelHi = Math.max(_modelHi - 1, 0); paintModelHi(); }
-  else if (e.key === "Enter") { if (_modelItems[_modelHi]) { e.preventDefault(); chooseModel(_modelItems[_modelHi].ref); } }
+  else if (e.key === "Enter") { if (_modelItems[_modelHi]) { e.preventDefault(); const pick = (_mmMode === "compact") ? chooseCompactionModel : chooseModel; pick(_modelItems[_modelHi].ref); } }
   else if (e.key === "Escape") { e.preventDefault(); $("modelMenu").hidden = true; }
 }
 function chooseModel(ref) {
@@ -5825,7 +5842,10 @@ function buildSettingsWin() {
   if (document.querySelector("#swNav button")) return;
   $("swNav").innerHTML = SETTINGS_CATS.map(([k, label]) =>
     `<button data-cat="${k}" onclick="settingsCategory('${k}')">${label}</button>`).join("");
-  const pos = JSON.parse(localStorage.getItem("sf_settings_pos") || "null");
+  // JAG-431r4: a corrupted/legacy `sf_settings_pos` must not throw here — that
+  // aborted buildSettingsWin before it unhid the window, so ⚙ could never open.
+  let pos = null;
+  try { pos = JSON.parse(localStorage.getItem("sf_settings_pos") || "null"); } catch (e) { pos = null; }
   const w = settingsWin();
   if (pos) {
     w.style.left = pos.x + "px"; w.style.top = pos.y + "px";
@@ -6125,7 +6145,7 @@ async function emCosts() {
          "<tr><th align='left'>model</th><th align='right'>tokens</th><th align='right'>$ est+real</th><th align='right'>$ real (OR)</th></tr>" +
          r.by_model.map(m =>
            "<tr><td>" + esc(m.model) + "</td><td align='right'>" + m.tokens + "</td>" +
-           "<td align='right'>$" + m.total_cost_usd.toFixed(6) + "</td>" +
+           "<td align='right'>$" + Number(m.total_cost_usd || 0).toFixed(6) + "</td>" +
            "<td align='right'>$" + (m.real_cost_usd || 0).toFixed(6) + "</td></tr>"
          ).join("") + "</table>")
       : '<div class="remaining">no embedding batches logged yet</div>';
@@ -6135,14 +6155,17 @@ async function emCosts() {
          "<tr><th align='left'>day</th><th align='right'>tokens</th><th align='right'>$</th></tr>" +
          r.by_day.map(d =>
            "<tr><td>" + esc(d.day) + "</td><td align='right'>" + d.tokens + "</td>" +
-           "<td align='right'>$" + d.cost_usd.toFixed(6) + "</td></tr>"
+           "<td align='right'>$" + Number(d.cost_usd || 0).toFixed(6) + "</td></tr>"
          ).join("") + "</table>")
       : '';
   } catch (e) { /* ignore */ }
 }
 function emExportCsv() {
   // The API serves text/csv with Content-Disposition; we trigger a download.
-  const u = (window.SF_BASE || "") + "/api/embedding/costs.csv";
+  // JAG-431r4: window.open cannot send an Authorization header, so the token must
+  // ride the query string — otherwise the export 401s whenever the server is
+  // started with --token (the HTML/SSE URLs already carry it the same way).
+  const u = (window.SF_BASE || "") + "/api/embedding/costs.csv" + (authQS() ? "?" + authQS() : "");
   const w = window.open(u, "_blank");
   if (!w && typeof toast === "function") toast("popup blocked — use the CLI: forge embedding costs", "warn");
 }
@@ -6666,8 +6689,13 @@ async function showDiff(path) {
   if (!d || d.error) {
     $("diffSub").textContent = (d && d.error) || "error";
     $("diffStat").textContent = ""; $("diffBody").innerHTML = "";
-    $("diffUndo").disabled = true; return;
+    // JAG-431r4: disable Approve too — otherwise ✓ on a diff that failed to load
+    // approved/cleared a file the user never actually reviewed (only Undo was off).
+    $("diffUndo").disabled = true;
+    const _ap = $("diffApprove"); if (_ap) _ap.disabled = true;
+    return;
   }
+  const _ap2 = $("diffApprove"); if (_ap2) _ap2.disabled = false;
   $("diffSub").textContent = path + "  ·  " + (d.edits || 1) + " edit(s)  ·  " +
     (d.action === "created" ? "created" : "modified") + (d.truncated ? "  ·  truncated" : "");
   $("diffStat").innerHTML = '<span class="add">+' + (d.add || 0) + '</span> <span class="del">−' + (d.del || 0) + "</span>";
@@ -6825,7 +6853,7 @@ function linkifyNodes(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
       const p = n.parentElement;
-      if (p && p.closest("a, pre")) return NodeFilter.FILTER_REJECT;
+      if (p && p.closest("a, pre, code")) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     }
   });

@@ -243,7 +243,7 @@ from longrun.agent.agent import (SYSTEM_PROMPT, PMCP_PROMPT, system_prompt, RULE
 # `server.Handler`, `server.main`, `server._tool_context`, ... still resolve.
 from longrun.core.httpapi import (AUTH_TOKEN, check_auth, _as_int, _int_arg,
                       chat_stream_gen, _ATTACH_KINDS, _attach_frame, chat_attach_gen,
-                      agent_stream_gen, feed_gen, telemetry_summary, context_status,
+                      feed_gen, telemetry_summary, context_status,
                       resolve_ctx_model, providers_catalog, _tool_context,
                       _system_prompt, context_display, _RX_URL, _RX_TOOL, _RX_PATH,
                       context_items, context_usage, prepare_session_for_turn,

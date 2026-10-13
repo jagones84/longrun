@@ -93,11 +93,17 @@ def _python(args, run_id):
         return {"ok": False, "error": "no sandbox workspace: %s" % e}
     name = "_repl_%s.py" % os.urandom(4).hex()
     path = os.path.join(ws, name)
+    res = None
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(code)
         res = sandbox.run("python3 " + name, run_id=run_id,
                           timeout=args.get("timeout_secs"), workspace=ws)
+    except OSError as e:
+        # JAG-431r4: the sandbox workspace can be missing/read-only; report the real
+        # I/O error instead of a NameError on the (unbound) `res` below.
+        return {"ok": False, "exit_code": 1, "error": "cannot stage the script: %s" % e,
+                "backend": "host", "sandboxed": False}
     finally:
         try:
             os.remove(path)

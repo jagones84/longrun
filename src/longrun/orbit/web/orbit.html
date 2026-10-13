@@ -470,11 +470,16 @@ const fillSelect = (sel, agents, ph) => {
 class AgentsView {
   constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
     this.models = []; this.teams = []; this.open = null; this.running = new Set();
+    // JAG-431r4: full (unfiltered) agent roster — the team-scoped `this.agents` list
+    // must not be used to build the REPORTS-TO dropdown, or a manager outside the
+    // selected team vanishes and its edge can be silently cleared.
+    this.roster = [];
     this.sort = "default"; this._tmmenu = null; this.closed = new Set(); this._groupIds = [];
     this._seen = new Set(); }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
-  render(tree, models, running, teams){
+  render(tree, models, running, teams, roster){
     if (tree) this.agents = tree.agents || [];
+    if (roster) this.roster = roster;
     if (models && models.length) this.models = models;
     if (running) this.running = running;
     if (teams) this.teams = teams;
@@ -521,22 +526,23 @@ class AgentsView {
     const hid = (grp != null && this.closed.has(grp)) ? ' hidden' : '';
     const mopts = '<option value=""' + (a.model ? "" : " selected") + '>default</option>' +
       this.models.map(m => '<option value="' + esc(m.ref) + '"' + (a.model === m.ref ? " selected" : "") + '>' + esc(m.label) + '</option>').join("");
+    const roster = (this.roster && this.roster.length) ? this.roster : this.agents;
     const ropts = '<option value="">— none —</option>' +
-      this.agents.filter(x => x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.id) + ' ' + esc(x.name||"") + '</option>').join("");
+      roster.filter(x => x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.id) + ' ' + esc(x.name||"") + '</option>').join("");
     const open = this.open === a.session;
     const run = this.running.has(a.session) ? '<span class="dotr" title="running"></span>' : "";
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
     const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="7">' +
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the Sessions tab (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
-      '<textarea class="inp" data-p="role" placeholder="Role: API designer&#10;- answer only with the endpoint list and JSON schema">' + roleText + '</textarea>' +
+      '<textarea class="inp" name="agent-prompt" aria-label="agent prompt (ROLE.md)" data-p="role" placeholder="Role: API designer&#10;- answer only with the endpoint list and JSON schema">' + roleText + '</textarea>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button class="btn primary" data-save="' + esc(a.session) + '">save prompt</button>' +
       '<button class="btn ghost" data-close="1">close</button></div></td></tr>' : "";
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid">' + esc(a.id) + run + '</td>' +
-      '<td><input class="inp mini" data-f="name" value="' + esc(a.name||"") + '"></td>' +
-      '<td><input class="inp mini" data-f="role" value="' + esc(a.role||"") + '"></td>' +
-      '<td><select class="inp mini" data-f="model">' + mopts + '</select></td>' +
-      '<td><select class="inp mini" data-f="reports_to">' + ropts + '</select></td>' +
+      '<td><input class="inp mini" name="agent-name" aria-label="agent name" data-f="name" value="' + esc(a.name||"") + '"></td>' +
+      '<td><input class="inp mini" name="agent-role" aria-label="agent role" data-f="role" value="' + esc(a.role||"") + '"></td>' +
+      '<td><select class="inp mini" name="agent-model" aria-label="agent model" data-f="model">' + mopts + '</select></td>' +
+      '<td><select class="inp mini" name="agent-reports-to" aria-label="agent reports to" data-f="reports_to">' + ropts + '</select></td>' +
       '<td><button class="btn ghost mini tmbtn" data-aid="' + esc(a.id) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
       '<td><button class="btn ghost" data-brief="1" title="role + behaviour notes (ROLE.md)">✎ prompt</button></td>' +
       '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)">\u21BA reset</button>' +
@@ -564,7 +570,12 @@ class AgentsView {
     body.querySelectorAll("[data-brief]").forEach(b => { b.onclick = async () => {
       const sid = b.closest("tr").dataset.sid;
       if (this.open === sid){ this.open = null; this.openText = null; this.render(null, null); return; }
-      this.open = sid; this.openText = ""; this.render(null, null);
+      // JAG-431r4: set openText to null (NOT "") before re-rendering. With "" the
+      // render() dirty-guard (roleTA.value !== openText) saw the PREVIOUS agent's
+      // still-mounted textarea as dirty, aborted the rebuild, and the async fetch
+      // then wrote agent Y's ROLE.md into agent X's row — whose "save prompt"
+      // button (data-save="<X>") persisted it to the WRONG file.
+      this.open = sid; this.openText = null; this.render(null, null);
       const r = await this.api.get("/api/roles?session=" + encodeURIComponent(sid));
       if (this.open !== sid) return;
       // JAG-367: the ROLE.md loads ASYNC, but render()'s dirty-guard (meant to protect
@@ -966,7 +977,15 @@ class OrgChartView {
     if (m.__k) document.removeEventListener("keydown", m.__k);
     m.remove(); this._menu = null; }
   openPrompt(a){ const row = document.querySelector('#agBody tr[data-sid="' + a.session + '"]');
-    const btn = row && row.querySelector("[data-brief]");
+    if (!row) return;
+    // JAG-431r4: team groups start COLLAPSED (JAG-424e), so the brief row is hidden
+    // and clicking "Edit prompt (ROLE.md)" appeared to do nothing. Expand the group
+    // that owns this agent before opening the editor.
+    const grp = row.dataset.grp;
+    const head = [...document.querySelectorAll("#agBody tr.grp-head")].find(tr => tr.getAttribute("data-grp") === grp);
+    const h = head && head.querySelector(".grp-h");
+    if (h && row.hidden) h.click();
+    const btn = row.querySelector("[data-brief]");
     if (btn){ btn.click(); row.scrollIntoView({block: "center"}); } }
 }
 
@@ -1260,6 +1279,10 @@ class Constellation {
   _pop(){ const p = document.querySelector("#constBody .cpop"); if (p) p.remove(); }
   async extract(agent, node, sx, sy){
     this._pop(); if (!agent) return;
+    // JAG-431r4: the chat-extract history was cached forever (this.hist never
+    // invalidated), so re-opening the same node showed stale lines after the agent
+    // had worked further on the task. Drop the cached copy on every open.
+    delete this.hist[agent.session];
     const p = document.createElement("div"); p.className = "cpop";
     p.innerHTML = "<b>" + esc(this.label(agent, node)) + "</b> · " + esc(node.status || "") +
       "<br>" + esc(node.label || "(no label)") +
@@ -1368,8 +1391,16 @@ class JobsView {
     $("jobs").querySelectorAll("[data-sub]").forEach(el => { el.onclick = (e) => { e.stopPropagation();
       if (this.onOpenAgent) this.onOpenAgent(el.dataset.agent); }; });
     $("jobs").querySelectorAll(".job").forEach(el => {
-      el.onclick = () => { this.open = (this.open === el.dataset.id) ? null : el.dataset.id; this.render(this.jobs); };
-      el.ondblclick = () => { if (this.onOpenAgent) this.onOpenAgent(this._coord(el.dataset.id)); };
+      // JAG-431r4: a double-click also fires two `click`s first, and the first
+      // click's render() replaced #jobs.innerHTML — destroying the node the dblclick
+      // needed — so "double-click to open the coordinator" was unreliable and always
+      // left the row collapsed. Debounce the expand toggle so dblclick cancels it
+      // (same 210ms pattern used for the constellation nodes).
+      let jt = null;
+      el.onclick = () => { clearTimeout(jt);
+        jt = setTimeout(() => { this.open = (this.open === el.dataset.id) ? null : el.dataset.id; this.render(this.jobs); }, 210); };
+      el.ondblclick = () => { clearTimeout(jt);
+        if (this.onOpenAgent) this.onOpenAgent(this._coord(el.dataset.id)); };
     });
   }
   async dispatch(jid){
@@ -1400,7 +1431,8 @@ class RoutinesView {
     $("routines").querySelectorAll("[data-tog]").forEach(b => { b.onclick = () => this.toggle(b.dataset.tog, b.dataset.on === "1"); });
     $("routines").querySelectorAll("[data-del]").forEach(b => { b.onclick = () => this.del(b.dataset.del); });
   }
-  async toggle(rid, on){ await this.api.post("/api/routines/" + encodeURIComponent(rid) + (on ? "/enable" : "/disable"), {}); if (this.onChanged) this.onChanged(); }
+  // JAG-431r4: `on` is the CURRENT enabled state; the button must flip it.
+  async toggle(rid, on){ await this.api.post("/api/routines/" + encodeURIComponent(rid) + (on ? "/disable" : "/enable"), {}); if (this.onChanged) this.onChanged(); }
   async del(rid){ await this.api.del("/api/routines/" + encodeURIComponent(rid)); if (this.onChanged) this.onChanged(); }
   async create(){
     const r = await this.api.post("/api/routines", {agent: $("rtAgent").value, goal: $("rtGoal").value.trim(), every_seconds: parseInt($("rtEvery").value, 10)});
@@ -1515,7 +1547,7 @@ class OrbitApp {
       acc.concat((p.models || []).map(m => ({ref: m.ref || (p.id + ":" + m.id), label: m.id}))), []) : [];
     const running = new Set(((sess && sess.sessions) || []).filter(s => s.running).map(s => s.id));
     if (fTree) this.lastAgents = fTree.agents || [];
-    if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null);
+    if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null, tree ? tree.agents : null);
     if (fTree) this.org.render(fTree);
     if (fJobs) this.jobs.render(fJobs.jobs);
     if (fRoutines) this.routines.render(fRoutines.routines);
@@ -1632,5 +1664,5 @@ window.addEventListener("message", (e) => {
 });
 window.addEventListener("DOMContentLoaded", () => { new OrbitApp().start(); initPanels(); });
 </script>
-<script>async function clearOrbitSession(sid){if(!sid)return;await fetch('/api/sessions/'+encodeURIComponent(sid)+'/clear',{method:'POST'});location.reload();}</script></body>
+<script>async function clearOrbitSession(sid){if(!sid)return;var t=localStorage.getItem('sf_token')||'';var h=t?{Authorization:'Bearer '+t}:{};try{await fetch('/api/sessions/'+encodeURIComponent(sid)+'/clear',{method:'POST',headers:h});}catch(e){}location.reload();}</script></body>
 </html>

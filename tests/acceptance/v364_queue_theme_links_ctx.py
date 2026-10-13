@@ -44,7 +44,8 @@ check("A2 the queue chip renders the user text + the attachment marker",
       "function renderQueue" in HTML and "_attMark(it.atts)" in HTML
       and 'a.className = "qatt"' in HTML, "")
 check("A3 enqueuing keeps the user text separate from the model payload",
-      "enqueueMsg({ raw: _rawMsg, text: raw, atts: _attSnap })" in HTML, "")
+      "enqueueMsg({ raw: _rawMsg," in HTML and " text: raw" in HTML
+      and "atts: _attSnap })" in HTML, "")
 check("A4 steering names the user text, not the raw blob",
       '"🎯 steer: " + it.text' in HTML, "")
 check("A5 flushing shows the user text but sends the raw payload",

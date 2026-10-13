@@ -196,13 +196,28 @@ def _forget_session_runtime(sid):
     _REAL_CACHED_TOKENS.pop(sid, None)
     with _steer_lock:
         STEER_INBOX.pop(sid, None)
-    with _TURN_LOCKS_GUARD:
-        _TURN_LOCKS.pop(sid, None)
+    # JAG-431r4: ALWAYS drop the in-memory registration. The DELETE path pushes an
+    # abort FIRST (JAG-222), so a live worker still stops — but leaving _ACTIVE_CHAT
+    # behind when `active` was true leaked the entry (the exact JAG-302 runtime leak
+    # this function exists to prevent). The abort flag is the ONLY thing kept while
+    # a turn is live.
     with _ACTIVE_CHAT_LOCK:
         active = sid in _ACTIVE_CHAT
         _ACTIVE_CHAT.pop(sid, None)
+    with _TURN_LOCKS_GUARD:
+        _TURN_LOCKS.pop(sid, None)
     if not active:
         clear_abort(sid)
+    # JAG-431r4: also prune the agent module's per-session maps (JAG-302 missed them),
+    # best-effort via a lazy import to avoid a circular import at module load.
+    try:
+        from longrun.agent import agent as _agent_mod
+        for _m in ("_OFFLOAD_SEQ", "_LAST_SYS_INJECT", "_REFLECT_LATEST"):
+            _d = getattr(_agent_mod, _m, None)
+            if isinstance(_d, dict):
+                _d.pop(sid, None)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def clear_session(sid):
@@ -234,18 +249,22 @@ def clear_session(sid):
 
 
 def _rel_time(ts):
-    """JAG-113: short relative label ('ora', '3 min', '15 h', '2 g') for a timestamp."""
+    """JAG-113: short relative label ('now', '3 min', '15 h', '2 d') for a timestamp.
+
+    English-only (repo rule): this string rides the session-list badge, so 'ora'/'g'
+    (Italian) were user-visible artifact strings.
+    """
     try:
         d = max(0.0, time.time() - float(ts))
     except (TypeError, ValueError):
         return ""
     if d < 60:
-        return "ora"
+        return "now"
     if d < 3600:
         return "%d min" % int(d // 60)
     if d < 86400:
         return "%d h" % int(d // 3600)
-    return "%d g" % int(d // 86400)
+    return "%d d" % int(d // 86400)
 
 
 def list_sessions():
@@ -616,13 +635,13 @@ TOOL_EVENT_MAX = int(os.environ.get("LONGRUN_TOOL_EVENT_MAX", "2000"))
 
 
 def _trunc(text, n=None):
-    """Truncate to <= n chars INCLUDING the '… troncati' suffix (JAG-113)."""
+    """Truncate to <= n chars INCLUDING the '… trunc.' suffix (JAG-113)."""
     s = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
     n = n or TOOL_EVENT_MAX
     if len(s) <= n:
         return s
     keep = max(0, n - 48)
-    return s[:keep] + "\n… [%d caratteri troncati]" % (len(s) - keep)
+    return s[:keep] + "\n… [%d chars truncated]" % (len(s) - keep)
 
 
 def _tool_event(tool, ok, args=None, output="", **extra):

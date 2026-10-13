@@ -679,7 +679,9 @@ class LocalApi:
         return agent_run_v2(goal, max_steps, model)
 
     def feed(self, since=0, limit=40):
-        return {"events": _srv().events_since(since)[-limit:]}
+        # JAG-431r4: pass the limit THROUGH to events_since — loading the whole
+        # durable log and slicing the tail is a memory-DoS (see events.py docstring).
+        return {"events": _srv().events_since(since, limit=limit)}
 
     def tools(self):
         return {"tools": registry.catalog(), "sandbox": sandbox.probe(),
@@ -775,10 +777,17 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, rec) if rec else _r(handler, 404, {"error": "approval not found"})
         if path == "/api/feed/recent":
             since, limit = _int(qs.get("since", 0), 0), _int(qs.get("limit", 40), 40)
-            return _r(handler, 200, {"events": _srv().events_since(since)[-limit:]})
+            # JAG-431r4: hand the limit to events_since instead of materializing the
+            # entire log then slicing — an unbounded replay is a memory-DoS.
+            return _r(handler, 200, {"events": _srv().events_since(since, limit=limit)})
         if path == "/api/agent/runs":
+            # JAG-431r4: snapshot RUNS under the lock — new_run mutates/pops it, so
+            # iterating RUNS.values() unguarded could raise "dictionary changed size
+            # during iteration" and drop the connection with no response.
+            with RUNS_LOCK:
+                _snap = list(RUNS.values())
             return _r(handler, 200, {"runs": [r.public() for r in
-                                              sorted(RUNS.values(), key=lambda r: r.created,
+                                              sorted(_snap, key=lambda r: r.created,
                                                      reverse=True)]})
         if path.startswith("/api/agent/runs/"):
             st = run_get(path.rsplit("/", 1)[-1])
@@ -1384,6 +1393,11 @@ def _update_policy(body):
                   "subagent_max_depth"):
             if k in body["runtime"] and body["runtime"][k] is not None:
                 cfg["runtime"][k] = int(body["runtime"][k])
+        # JAG-431r4: `autocontinue` is a BOOL consumed by plan/keepgoing.py but was
+        # never persisted — so the Settings toggle was a no-op both ways (write dropped,
+        # read absent -> always rendered checked).
+        if "autocontinue" in body["runtime"] and body["runtime"]["autocontinue"] is not None:
+            cfg["runtime"]["autocontinue"] = bool(body["runtime"]["autocontinue"])
         registry.save_config(cfg)
         registry.load_config(reload=True)
         _publish("tools.update", runtime=dict(cfg["runtime"]))

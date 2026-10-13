@@ -56,8 +56,19 @@ def _load(sid):
 
 
 def _save(doc):
+    sid = doc.get("session")
+    # JAG-431r4: never resurrect a DELETED session's ledger. A worker in flight
+    # (abort is cooperative) can call record()/set_title() AFTER DELETE purged the
+    # files; stores.save_session is tombstone-guarded but this ledger was not, so an
+    # orphan data/threads/<sid>.json reappeared for a deleted session.
+    try:
+        from longrun.memory import stores as _stores
+        if sid in getattr(_stores, "_DELETED_SESSIONS", ()):
+            return doc
+    except Exception:  # noqa: BLE001
+        pass
     doc["updated"] = round(time.time(), 3)
-    write_json(path_for(doc.get("session")), doc)
+    write_json(path_for(sid), doc)
     return doc
 
 
@@ -393,8 +404,12 @@ def truncate(sid, upto_idx):
             frm = g.get("from")
             if isinstance(frm, int) and frm >= cut:
                 continue
+            # JAG-431r4: `from`/`to` are INCLUSIVE message indices, and `cut` is the
+            # EXCLUSIVE bound (the anchor index captured before the message was
+            # appended, so the transcript keeps 0..cut-1). Clipping to `cut` advertised
+            # one message (index `cut`) that the rewind had just removed.
             if isinstance(g.get("to"), int) and g["to"] >= cut:
-                g["to"] = cut
+                g["to"] = cut - 1
             kept.append(g)
         if len(kept) != len(groups):
             doc["groups"] = kept

@@ -1176,7 +1176,10 @@ def maybe_reflect(sess, message, answer, used_tools, model=None):
                  "future sessions. Max 140 characters. No preamble, no quotes, no markdown."},
                 {"role": "user", "content":
                  "Goal: %s\nOutcome: %s" % (str(message)[:500], str(answer)[:800])}]
-        lesson, _think, _alias = _router_stream(
+        # JAG-431r4: `_router_stream` returns a 2-tuple (answer, think) — the old
+        # 3-value unpack always raised ValueError, which the `except` swallowed, so
+        # post-turn reflection (JAG-93) was silently dead. Unpack 2.
+        lesson, _think = _router_stream(
             msgs, model or default_model(), lambda ch, t: None, timeout=60)
         lesson = (lesson or "").strip().strip('"').strip()
         if len(lesson) < 6 or len(lesson) > 400:
@@ -1996,12 +1999,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                            % (tool, status, rec.get("id", "?")))
                 elif status == "denied":
                     obs = "Action '%s' DENIED by the user." % tool
-                ok = status == "executed"
+                _exec_ok = status == "executed"
                 sub = res.get("result") or {}
                 # JAG-178: `ok` means "the tool executed"; a tool can execute and
                 # still FAIL (nonzero exit / ok:false). Track failure separately.
-                _tool_failed = ((not ok) or (sub.get("ok") is False)
+                _tool_failed = ((not _exec_ok) or (sub.get("ok") is False)
                                 or (sub.get("exit_code") not in (None, 0)))
+                # JAG-431r4: the DISPLAYED `ok` must mean SUCCESS, not merely
+                # "executed" — otherwise a tool that exited non-zero (or returned
+                # ok:false) persisted with ok=True and the WebUI drew a green ✅ on
+                # a failed call (and `prev_error` never fired). bind ok to failure.
+                ok = _exec_ok and not _tool_failed
                 # JAG-96: persist the card so cold-start UIs rebuild the transcript.
                 persist_tool_card(sess, tool, ok, args=args,
                                   result=sub.get("stdout") or obs or "",
@@ -2282,8 +2290,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     if _hitl:
         # JAG-171: the turn stopped with open todos → the visible reply is the
         # human gate, not the model's prose report.
-        content = ("⏸ In pausa: ci sono %d passi aperti e serve la tua scelta "
-                   "(vedi la card HUMAN IN THE LOOP)." % len(_hitl["open"]))
+        content = ("⏸ Paused: %d open step(s) await your decision "
+                   "(see the HUMAN IN THE LOOP card)." % len(_hitl["open"]))
         meta = {"model": model, "hitl": True, "node": _cur_node(),
                 "open": len(_hitl["open"]), "reason": _hitl["reason"],
                 "hitl_open": _hitl["open"]}   # JAG-295: replayable card payload

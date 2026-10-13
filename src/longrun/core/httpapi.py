@@ -333,10 +333,17 @@ def chat_attach_gen(sid, since=0):
             return
         yield _attach_frame(ev)
     idle = 0
+    # JAG-431r4: bound the tail. The loop previously ended ONLY when the turn left
+    # _ACTIVE_CHAT; a worker that hung mid-turn would ping forever and pin this
+    # ThreadingHTTPServer thread. Mirror the live-stream silence policy
+    # (CHAT_STREAM_IDLE) so a genuinely silent-but-alive turn is not cut early.
+    last_activity = time.time()
     while True:
         with _ACTIVE_CHAT_LOCK:
             if sid not in _ACTIVE_CHAT:
                 break
+        if time.time() - last_activity > (CHAT_STREAM_IDLE or 900.0):
+            break
         time.sleep(0.4)
         emitted = False
         for ev in events_since(last):
@@ -347,42 +354,13 @@ def chat_attach_gen(sid, since=0):
                 yield _attach_frame(ev, terminal=True)
                 return
             yield _attach_frame(ev)
-        if not emitted:
+        if emitted:
+            last_activity = time.time()
+        else:
             idle += 1
             if idle % 15 == 0:
                 yield ": ping\n\n"
     yield "event: done\ndata: {}\n\n"
-
-
-def agent_stream_gen(goal, max_steps, model, workspace=None):
-    q = queue.Queue()
-    # JAG-111: create the run HERE so the generator can abort it when the client
-    # disconnects; pass it to agent_run so /api/agent/control can stop it too.
-    st = api_v02.new_run(goal, model, max_steps)
-
-    def on_event(kind, **d):
-        q.put("event: %s\ndata: %s\n\n" % (kind, json.dumps(d, ensure_ascii=False)))
-        if not kind.startswith("agent.think"):
-            publish(kind, **d)
-
-    def worker():
-        try:
-            agent_run(goal, max_steps, model, on_event, run_state=st, workspace=workspace)
-        except Exception as e:  # noqa: BLE001
-            q.put("event: error\ndata: %s\n\n" % json.dumps({"error": str(e)}))
-        finally:
-            q.put(None)
-
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-    try:
-        yield from sse_pump(q, t, open_comment=": agent stream open\n\n",
-                            idle_timeout=CHAT_STREAM_IDLE or None)
-    finally:
-        # client gone (socket closed): stop the loop instead of leaving an orphan
-        # worker streaming forever.
-        if t.is_alive():
-            st.abort = True
 
 
 def feed_gen(since=0):
@@ -1008,7 +986,11 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
         # view and the user thought compaction DELETED them.
         free_groups = [g for g in (_th.outline(session) or []) if g.get("kind") == "free"]
         plan = _tg.load(session) or {}
-        open_tasks = [n for n in plan.get("nodes", []) if n.get("status") != "done"]
+        # JAG-431r4: an OPEN task is one of the OPEN_STATUSES. The old `!= "done"`
+        # test counted `cancelled`/`superseded` (both CLOSED) as still pending, so the
+        # marker told the user/model that finished steps were still open.
+        open_tasks = [n for n in plan.get("nodes", [])
+                      if n.get("status") in _tg.OPEN_STATUSES]
         lines = []
         lines.append(
             "[harness] \U0001f5dc Auto-compacted the chat context: "
@@ -1031,18 +1013,27 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                             + (" …" if len(open_tasks) > 12 else "")))
         lines.append("Use the `chapters` tool to recall any compacted thread.")
         sys_marker = "\n".join(lines)
-        # If the kept window already starts with the synthetic summary the engine
-        # produced, prepend our marker just before it so the timeline reads
-        # "system marker -> system summary -> kept turns".
-        if msgs and msgs[0].get("role") == "system" and msgs[0].get("content", "").startswith(
-                "Earlier conversation (compacted):"):
-            msgs.insert(0, {"role": "system", "content": sys_marker})
-        else:
-            msgs.insert(0, {"role": "system", "content": sys_marker})
+        # JAG-431r4: the marker goes at the very head of the kept window. The engine
+        # puts the synthetic summary as message 0 when it merged turns, so insert(0)
+        # yields "system marker -> system summary -> kept turns"; when there is no
+        # summary the marker simply leads. (Both old branches were byte-identical.)
+        msgs.insert(0, {"role": "system", "content": sys_marker})
         sess["messages"] = msgs
         _stores.save_session(sess)
     publish("context.compact", **stats)
     return stats
+
+
+def _runs_status():
+    """JAG-431r4: active/total run counts, snapshotted under RUNS_LOCK."""
+    try:
+        with api_v02.RUNS_LOCK:
+            vals = list(api_v02.RUNS.values())
+    except Exception:  # noqa: BLE001
+        vals = []
+    return {"active": len([r for r in vals
+                           if r.status in ("running", "paused", "aborting")]),
+            "total": len(vals)}
 
 
 def status_payload():
@@ -1055,15 +1046,16 @@ def status_payload():
         "telemetry": telemetry_summary(),
         "plan": {"goal": plan.get("goal", ""), "steps": len(plan.get("steps", []))},
         "tasks": {"total": len(tasks.get("tasks", [])),
-                  "open": len([t for t in tasks.get("tasks", []) if t["status"] != "done"])},
+                  # JAG-431r4: .get() — a task without `status` used to raise KeyError.
+                  "open": len([t for t in tasks.get("tasks", []) if t.get("status") != "done"])},
         "sandbox": {"backend": probe["backend"], "isolated": probe["isolated"],
                     "requested": probe["requested"]},
         "tools": {"registered": len(registry.catalog()),
                   "enabled": len([t for t in registry.catalog() if t["enabled"]])},
         "approvals": approvals.stats(),
-        "runs": {"active": len([r for r in api_v02.RUNS.values()
-                                if r.status in ("running", "paused", "aborting")]),
-                 "total": len(api_v02.RUNS)},
+        # JAG-431r4: snapshot RUNS under its lock (new_run mutates/pops it) so this
+        # unguarded iteration cannot raise "dictionary changed size during iteration".
+        "runs": _runs_status(),
     }
 
 
@@ -1281,14 +1273,19 @@ class Handler(BaseHTTPRequestHandler):
             g = taskgraph.load(sid) if sid else None
             pub = taskgraph.public(g) or {"nodes": [], "counts": {}}
             pub["goal"] = (g or {}).get("goal") or ""
+            # JAG-431r4: use CLOSED_STATUSES (done/cancelled/superseded) — a node
+            # closed as `superseded` was reported as done=false (an open step).
             pub["steps"] = [{"id": n.get("id"), "title": n.get("label"),
-                             "done": n.get("status") in ("done", "cancelled")}
+                             "done": n.get("status") in taskgraph.CLOSED_STATUSES}
                             for n in (g or {}).get("nodes", [])]
             return self._send(200, pub)
         if path == "/api/tasks":
             tasks = load_tasks()
-            remaining = ["%s: %s" % (t["status"], t["title"]) for t in tasks.get("tasks", [])
-                         if t.get("status") != "done"]
+            # JAG-431r4: the FILTER tolerated a missing `status` (.get) but the body
+            # then indexed t["status"]/t["title"] — a stored task without those keys
+            # raised KeyError and dropped the connection with no reply.
+            remaining = ["%s: %s" % (t.get("status", "?"), t.get("title", ""))
+                         for t in tasks.get("tasks", []) if t.get("status") != "done"]
             return self._send(200, {**tasks, "remaining": remaining})
         if path == "/api/improve":
             # JAG-128B: list of self-improvement proposals for the WebUI card.
@@ -1363,15 +1360,10 @@ class Handler(BaseHTTPRequestHandler):
             # (chat_stream_gen), not here — two concurrent turns must not overwrite.
             return sse_response(self, chat_stream_gen(sess, message, qs.get("model"), None,
                                                       autonomous=qs.get("mode") == "goal"))
-        if path == "/api/agent/run":
-            goal = qs.get("goal", "")
-            if not goal:
-                return self._send(400, {"error": "goal required"})
-            _ws_sess = load_session(qs.get("session")) if qs.get("session") else None
-            from longrun.memory import rules as _rules_mod
-            _ws = _rules_mod.resolve_workspace(_ws_sess)
-            return sse_response(self, agent_stream_gen(goal, _int_arg(qs, "max_steps", 6),
-                                                       qs.get("model"), workspace=_ws))
+        # JAG-431r4: the old GET /api/agent/run block was DEAD — api_v02.handle()
+        # (dispatched at the top of do_GET) already owns this path and drives the v2
+        # loop (agent_stream_gen_v2). The unreachable copy called the OLD agent_run
+        # loop, so any edit here silently diverged from the live behaviour.
         if path.startswith("/api/runs/"):
             parts = path.strip("/").split("/")
             if len(parts) == 4 and parts[3] == "trace":
@@ -1611,7 +1603,7 @@ class Handler(BaseHTTPRequestHandler):
             pub = taskgraph.public(g) or {"nodes": [], "counts": {}}
             pub["goal"] = (g or {}).get("goal") or ""
             pub["steps"] = [{"id": n.get("id"), "title": n.get("label"),
-                             "done": n.get("status") in ("done", "cancelled")}
+                             "done": n.get("status") in taskgraph.CLOSED_STATUSES}
                             for n in (g or {}).get("nodes", [])]
             return self._send(200, pub)
         if path == "/api/plan/generate":
@@ -1647,12 +1639,9 @@ class Handler(BaseHTTPRequestHandler):
             tasks.setdefault("tasks", []).append(t)
             save_tasks(tasks)
             return self._send(200, t)
-        if path == "/api/agent/run":
-            goal = body.get("goal", "")
-            if not goal:
-                return self._send(400, {"error": "goal required"})
-            result = agent_run(goal, _as_int(body.get("max_steps", 6), 6), body.get("model"))
-            return self._send(200, result)
+        # JAG-431r4: DEAD — api_v02.handle() (POST, dispatched at the top of do_POST)
+        # already owns POST /api/agent/run and calls agent_run_v2. The unreachable
+        # copy below dispatched the OLD agent_run loop.
         if path.startswith("/api/runs/") and path.endswith("/graph/nodes"):
             # v0.6: add/cancel node + incremental re-plan on a run's graph
             run_id = path[len("/api/runs/"):-len("/graph/nodes")].strip("/")
@@ -1709,12 +1698,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session not found"})
             ref = _set_session_model(sid, body.get("model"))
             return self._send(200, {"ok": True, "session": sid, "model": ref})
-        if path == "/api/checkpoints":
-            # JAG-426: create a manual restore point (the anchor for a later rewind).
-            from longrun.memory import checkpoints as _ck
-            sid = body.get("session") or None
-            r = _ck.create(label=body.get("label"), session_id=sid, by="api")
-            return self._send(200 if not r.get("error") else 400, r)
+        # JAG-431r4: DEAD — api_v02.handle() (POST) already owns POST /api/checkpoints
+        # (and accepts idempotency_key); this unreachable copy silently dropped it.
         if path == "/api/checkpoints/restore":
             # JAG-426: generic restore of one checkpoint (the non-turn-aware primitive).
             from longrun.memory import checkpoints as _ck

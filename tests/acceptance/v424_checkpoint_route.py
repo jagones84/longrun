@@ -65,9 +65,11 @@ check("1c it delegates the anchors to rewind.marks",
       "rewind as _rew" in block and ".marks(sid)" in block)
 
 # ---- 2. httpapi no longer shadows it with a dead duplicate --------------------
-# httpapi keeps ONLY the POST handler; the GET duplicate was removed.
-check("2a httpapi has exactly ONE /api/checkpoints branch (the POST)",
-      http.count('if path == "/api/checkpoints":') == 1)
+# JAG-431r4: BOTH the GET and the POST live in api_v02 (dispatched first); the
+# httpapi POST was a dead duplicate too, so httpapi keeps NO /api/checkpoints branch.
+check("2a httpapi has NO /api/checkpoints branch (both live in api_v02)",
+      http.count('if path == "/api/checkpoints":') == 0
+      and api.count('if path == "/api/checkpoints":') >= 1)
 check("2b the POST /api/rewind route lives in httpapi still",
       'if path == "/api/rewind":' in http)
 check("2c dispatch order is documented (api_v02 runs first)",

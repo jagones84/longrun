@@ -81,13 +81,14 @@ check("3e delete_agent maps to the session route", ad.delete_agent(ref) is True)
 
 # ---- 4. UI / REST / ACP share ONE loop + ONE guard (parity) -----------------
 http = _read("src", "longrun", "core", "httpapi.py")
+api02 = _read("src", "longrun", "core", "api_v02.py")
 acp = _read("src", "longrun", "interop", "acp.py")
 check("4a the SSE chat path runs the agent loop",
-      "def chat_stream_gen(" in http and "agent_run(" in http)
+      "def chat_stream_gen(" in http and "chat_once(" in http)
 check("4b the sync POST /api/chat path runs the same loop",
       'if path == "/api/chat":' in http and "chat_once(" in http)
-check("4c GET and POST /api/agent/run are both routed",
-      http.count('"/api/agent/run"') >= 2)
+check("4c GET and POST /api/agent/run are both routed (in api_v02, the first dispatcher)",
+      api02.count('"/api/agent/run"') >= 2)
 check("4d ACP exposes the same agent-level operations",
       "agent/run" in acp and "plan/set" in acp and "tools/call" in acp)
 check("4e ACP tools/call goes through the SAME approval gate",

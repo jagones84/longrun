@@ -45,8 +45,17 @@ class AgentRegistry:
         with _LOCK:
             d = _load()
         agents = sorted(d["agents"].values(), key=lambda a: a.get("n", 0))
+        # JAG-431r4: index direct reports by manager so BOTH managers' tooltips and the
+        # delete-confirmation sentence can read `reports` from THIS payload. Only
+        # guards() used to compute it, so the WebUI's `ag.reports` was always undefined.
+        by_mgr = {}
+        for _aid, _rec in d["agents"].items():
+            _m = _rec.get("reports_to")
+            if _m:
+                by_mgr.setdefault(_m, []).append(_aid)
         for a in agents:                       # JAG-339: expose team membership
             a["teams"] = self.teams_for(a.get("id"))
+            a["reports"] = sorted(by_mgr.get(a.get("id"), []))
         return {"agents": agents, "seq": d["seq"], "count": len(agents)}
 
     @staticmethod
