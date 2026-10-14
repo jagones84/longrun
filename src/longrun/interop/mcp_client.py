@@ -39,6 +39,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -86,6 +87,19 @@ def _mcp_session_expired(resp):
         "session" in msg and any(w in msg for w in ("not found", "expired", "invalid", "terminated")))
 
 
+def _http_transport_error(resp) -> bool:
+    """True for HTTP status and network errors, not MCP JSON-RPC errors."""
+    if not isinstance(resp, dict):
+        return False
+    status = resp.get("_http_status")
+    if isinstance(status, int) and 400 <= status < 600:
+        return True
+    error = resp.get("error")
+    if not isinstance(error, dict):
+        return False
+    return error.get("code") == -1
+
+
 # --------------------------------------------------------------- session ---
 
 class MCPSession:
@@ -103,6 +117,8 @@ class MCPSession:
         self._stop = False
         self._connected = False
         self._connect_time = None
+        self.connection_error = None
+        self.tool_error = None
         self._http_base = None    # HTTP transport base URL
         self._http_headers = {}   # extra HTTP headers (e.g. Authorization)
         self._http_session_id = None  # MCP streamable-HTTP session id
@@ -116,44 +132,64 @@ class MCPSession:
     def _connect_stdio(self, command, args, env):
         full_env = dict(os.environ)
         full_env.update(env or {})
+        resolved_command = shutil.which(command, path=full_env.get("PATH")) or command
         self.proc = subprocess.Popen(
-            [osutil.resolve_script(command)] + args, stdin=subprocess.PIPE,
+            [osutil.resolve_script(resolved_command)] + args, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=full_env,
             cwd=self.config.get("cwd", REPO), **osutil.popen_kwargs())
         log("%s: spawned pid=%d", self.name, self.proc.pid)
 
-        def _reader():
-            try:
-                for line in self.proc.stdout:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        msg = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    mid = msg.get("id")
-                    if mid is not None:
-                        with self._lock:
-                            q = self._pending.get(mid)
-                        if q is not None:
-                            q.put(msg)
-                    elif msg.get("method") and msg.get("params"):
-                        pass  # server-initiated notification — ignore for now
-            except Exception:
-                pass
-            self._connected = False
-
-        self._reader = threading.Thread(target=_reader, daemon=True)
+        self._reader = threading.Thread(target=self._read_stdio, daemon=True)
         self._reader.start()
         return True
+
+    def _read_stdio(self) -> None:
+        """Route stdio responses and release pending requests when the child exits."""
+        try:
+            for line in self.proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    self.connection_error = "stdio server emitted invalid JSON"
+                    break
+                if not isinstance(msg, dict):
+                    self.connection_error = "stdio server emitted non-object JSON-RPC data"
+                    break
+                mid = msg.get("id")
+                if mid is not None:
+                    with self._lock:
+                        response_queue = self._pending.get(mid)
+                    if response_queue is not None:
+                        response_queue.put(msg)
+                elif msg.get("method") and msg.get("params"):
+                    pass  # server-initiated notification — ignore for now
+        except Exception:
+            pass
+        finally:
+            self._stdio_closed()
+
+    def _stdio_closed(self) -> None:
+        """Wake every stdio request when its child closes stdout."""
+        with self._lock:
+            was_connected = self._connected
+            self._connected = False
+            if (was_connected and not self._stop and not self.connection_error):
+                self.connection_error = "stdio server closed stdout"
+            pending = list(self._pending.values())
+            self._pending.clear()
+        for response_queue in pending:
+            response_queue.put(None)
 
     def _send_raw(self, obj, timeout=20, _retry=True):
         mid = self._next_id()
         q = queue.Queue()
         is_notification = str(obj.get("method", "")).startswith("notifications/")
         with self._lock:
-            self._pending[mid] = q
+            if not is_notification:
+                self._pending[mid] = q
             req = {"jsonrpc": "2.0", **obj}
             if not is_notification:
                 req["id"] = mid
@@ -164,6 +200,9 @@ class MCPSession:
                 if self.proc.poll() is not None:
                     self._pending.pop(mid, None)
                     self._connected = False
+                    if not self._stop and not self.connection_error:
+                        self.connection_error = "stdio server exited with code %s" \
+                            % self.proc.returncode
                     return None
                 try:
                     self.proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
@@ -171,6 +210,10 @@ class MCPSession:
                 except (BrokenPipeError, OSError, ValueError):
                     self._pending.pop(mid, None)
                     self._connected = False
+                    if not self._stop and not self.connection_error:
+                        self.connection_error = "stdio server closed stdin"
+                    return None
+                if is_notification:
                     return None
             elif self._http_base:
                 resp = self._http_call(req, timeout)
@@ -187,6 +230,11 @@ class MCPSession:
                     except Exception:  # noqa: BLE001 — best effort
                         pass
                     return self._send_raw(obj, timeout, _retry=False)
+                if _http_transport_error(resp):
+                    error = (resp.get("error") or {})
+                    self._connected = False
+                    code = resp.get("_http_status") or error.get("code")
+                    self.connection_error = ("HTTP transport failure (%s)" % code)
                 return resp
             else:
                 self._pending.pop(mid, None)
@@ -254,19 +302,26 @@ class MCPSession:
                     or {}
         except uerr.HTTPError as e:
             try:
-                return self._parse_http_body(e.read().decode(),
-                                             e.headers.get("Content-Type")) \
-                    or {"error": {"code": e.code, "message": str(e)}}
+                response = self._parse_http_body(
+                    e.read().decode(), e.headers.get("Content-Type"))
             except Exception:
-                return {"error": {"code": e.code, "message": str(e)}}
+                response = None
+            if not isinstance(response, dict):
+                response = {"error": {
+                    "code": e.code, "message": "HTTP status %d" % e.code}}
+            response["_http_status"] = e.code
+            return response
         except Exception as e:
-            return {"error": {"code": -1, "message": str(e)}}
+            return {"error": {"code": -1,
+                              "message": "HTTP transport failure (%s)"
+                              % type(e).__name__}}
 
     def _send_http(self, obj, timeout=20):
         return self._http_call(obj, timeout)
     # ---- public session lifecycle ----
 
     def initialize(self):
+        self.connection_error = None
         params = {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
@@ -275,8 +330,17 @@ class MCPSession:
         resp = self._send_raw({"method": "initialize", "params": params}, timeout=30,
                               _retry=False)
         if resp is None:
+            self.connection_error = "initialize returned no response"
             return False
-        result = resp.get("result") or {}
+        error = resp.get("error")
+        if isinstance(error, dict):
+            reason = error.get("message") or error.get("code") or "unknown error"
+            self.connection_error = "initialize failed: %s" % str(reason)[:180]
+            return False
+        result = resp.get("result")
+        if not isinstance(result, dict):
+            self.connection_error = "initialize returned an invalid response"
+            return False
         server_ver = result.get("protocolVersion", "unknown")
         if server_ver not in SUPPORTED_PROTOCOLS and server_ver != "unknown":
             log("%s: protocol version %s may be incompatible", self.name, server_ver)
@@ -288,10 +352,26 @@ class MCPSession:
         return True
 
     def fetch_tools(self):
+        self.tool_error = None
         resp = self._send_raw({"method": "tools/list"}, timeout=30)
         if resp is None:
+            self.tool_error = "tools/list returned no response"
             return []
-        tools = (resp.get("result") or {}).get("tools") or []
+        error = resp.get("error")
+        if isinstance(error, dict):
+            reason = error.get("message") or error.get("code") or "unknown error"
+            self.tool_error = "tools/list failed: %s" % str(reason)[:180]
+            return []
+        result = resp.get("result")
+        if not isinstance(result, dict):
+            self.tool_error = "tools/list returned an invalid response"
+            return []
+        tools = result.get("tools") or []
+        if not isinstance(tools, list):
+            self.tool_error = "tools/list returned an invalid tool list"
+            return []
+        if not tools:
+            self.tool_error = "tools/list returned zero tools"
         with self._lock:
             for t in tools:
                 tname = t.get("name", "unknown")
@@ -486,6 +566,19 @@ def _load_config():
     return doc.get("clients") or {}
 
 
+def runtimes():
+    """Return availability of common MCP launchers on the Longrun host."""
+    return {c: bool(shutil.which(c)) for c in ("npx", "node", "uvx", "python3", "docker")}
+
+
+def _command_available(command: str, env: dict | None = None) -> bool:
+    """Check a launcher using the environment that its client will inherit."""
+    launch_env = dict(os.environ)
+    if isinstance(env, dict):
+        launch_env.update(env)
+    return bool(shutil.which(command, path=launch_env.get("PATH")))
+
+
 class MCPClientManager:
     """Manages all external MCP client sessions."""
 
@@ -494,6 +587,9 @@ class MCPClientManager:
         self._lock = threading.RLock()
         self._tool_prefix = {}    # tool_name -> client_name
         self._started = False
+        # JAG-464: last CONNECT error per client, so the panel can say WHY a server is
+        # down instead of showing a bare "0 tool" next to a red dot.
+        self._errors = {}
 
     def _ensure_config(self):
         """Create default config if neither file exists."""
@@ -527,6 +623,7 @@ class MCPClientManager:
                 return
             self._ensure_config()
             configs = _load_config()
+            self._errors.clear()
             for name, cfg in configs.items():
                 if not cfg.get("enabled", True):
                     log("%s: disabled, skipping", name)
@@ -535,6 +632,12 @@ class MCPClientManager:
                 try:
                     ok = False
                     if cfg.get("command") and cfg.get("args") is not None:
+                        # Resolve with this client's environment, not an SSH shell.
+                        if not _command_available(str(cfg.get("command")), cfg.get("env")):
+                            self._errors[name] = ("command not found on PATH: %s"
+                                                  % cfg.get("command"))
+                            log("%s: %s", name, self._errors[name])
+                            continue
                         ok = session._connect_stdio(
                             cfg["command"], list(cfg.get("args", [])),
                             cfg.get("env", {}))
@@ -543,18 +646,35 @@ class MCPClientManager:
                     if ok:
                         init_ok = session.initialize()
                         if init_ok:
-                            session.fetch_tools()
+                            tools = session.fetch_tools()
                             self.sessions[name] = session
+                            if tools:
+                                self._errors.pop(name, None)
+                            else:
+                                detail = (getattr(session, "tool_error", None)
+                                          or "tools/list returned zero tools")
+                                connection_error = getattr(session, "connection_error", None)
+                                self._errors[name] = (
+                                    "%s (%s)" % (detail, connection_error)
+                                    if connection_error else detail)
                             # Register tools
                             for tname in list(session.tools):
                                 self._tool_prefix[tname] = name
-                            log("%s: connected with %d tools", name, len(session.tools))
+                            if session.connected:
+                                log("%s: connected with %d tools", name, len(tools))
+                            else:
+                                log("%s: disconnected during startup (%s)", name,
+                                    self._errors[name])
                         else:
+                            self._errors[name] = (getattr(session, "connection_error", None)
+                                                  or "initialize failed")
                             log("%s: initialize failed, closing", name)
                             session.close()
                     else:
+                        self._errors[name] = "transport connect failed"
                         log("%s: transport connect failed", name)
                 except Exception as e:
+                    self._errors[name] = str(e)[:200]
                     log("%s: connection error: %s", name, e)
                     try:
                         session.close()
@@ -578,59 +698,53 @@ class MCPClientManager:
         # `start_all` when `sessions` is EMPTY, so nothing ever repaired it). Live
         # evidence: the agent answered "no external MCP servers are active" while the
         # gateway was connected with 26 tools.
-        _EXTERNAL_TOOLS.clear()
-        _live = []
-        for _cname, _sess in list(self.sessions.items()):
-            for _tname, _tspec in list((getattr(_sess, "tools", None) or {}).items()):
-                if _tspec:
-                    _live.append((_cname, _tname, _tspec))
-        for cname, tname, tspec in _live:
-            # JAG-462: the tool name is BUILT from the client key, and the client key
-            # comes from the user's file (`mcp_clients.local.json` may name it `PMCP`).
-            # The name was interpolated VERBATIM, so a mixed-case client produced
-            # `PMCP__gateway.health` while `config/tools.yaml` enables the lowercase
-            # `pmcp__gateway.health` — the policy lookup is exact, so EVERY tool of that
-            # client was silently DISABLED (the agent saw no MCP tools at all). Normalise
-            # the client part to lowercase; `client_name` keeps the real key so the
-            # session lookup below is unaffected.
-            full_name = "%s__%s" % (str(cname).strip().lower(), tname)
-            schema = tspec.get("inputSchema") or {}
-            # Register as an external tool — the harness registry needs to know
-            # about these so the agent can call them via gated_call
-            # We inject them directly into the catalog
-            # Store in the module-level _EXTERNAL registry
-            _EXTERNAL_TOOLS[full_name] = {
-                "name": full_name,
-                "enabled": True,
-                "approval": "required",
-                "allowed": True,
-                "description": (tspec.get("description", "") +
-                                " [external MCP: %s/%s]" % (cname, tname)),
-                "inputSchema": schema,
-                "client_name": cname,
-                "original_name": tname,
-            }
+        with self._lock:
+            live_tools = {}
+            for cname, session in list(self.sessions.items()):
+                if not getattr(session, "connected", True):
+                    continue
+                for tname, tspec in list(
+                        (getattr(session, "tools", None) or {}).items()):
+                    if not tspec:
+                        continue
+                    # Keep original client key for dispatch; normalize only namespace.
+                    full_name = "%s__%s" % (str(cname).strip().lower(), tname)
+                    live_tools[full_name] = {
+                        "name": full_name,
+                        "enabled": True,
+                        "approval": "required",
+                        "allowed": True,
+                        "description": (tspec.get("description", "") +
+                                        " [external MCP: %s/%s]" % (cname, tname)),
+                        "inputSchema": tspec.get("inputSchema") or {},
+                        "client_name": cname,
+                        "original_name": tname,
+                    }
+            with _EXTERNAL_TOOLS_LOCK:
+                _EXTERNAL_TOOLS.clear()
+                _EXTERNAL_TOOLS.update(live_tools)
 
     def list_external_tools(self):
         """Return all external tools as registry-compatible entries."""
-        # JAG-462: self-heal. `_EXTERNAL_TOOLS` is filled by `start_all`, but a session
-        # that connected with an EMPTY first `tools/list` leaves it empty while
-        # `sessions` is non-empty — and `registry._external_tools()` then never calls
-        # `start_all` again. Re-register from the live sessions whenever the registry is
-        # empty but sessions exist, so the MCP tools always reappear.
-        if not _EXTERNAL_TOOLS and self.sessions:
-            try:
-                self._register_as_tools()
-            except Exception:  # noqa: BLE001 — never break a tool listing
-                pass
-        return list(_EXTERNAL_TOOLS.values())
+        # Rebuild from active sessions so tools from an exited child disappear.
+        try:
+            self._register_as_tools()
+        except Exception:  # noqa: BLE001 — never break a tool listing
+            pass
+        with _EXTERNAL_TOOLS_LOCK:
+            return list(_EXTERNAL_TOOLS.values())
 
     def call_external(self, full_name, args, run_id=None):
         """Call an external MCP tool by its full namespaced name."""
-        info = _EXTERNAL_TOOLS.get(full_name)
-        if not info:
-            return {"ok": False, "error": "unknown external tool: %s" % full_name}
-        session = self.sessions.get(info["client_name"])
+        with self._lock:
+            with _EXTERNAL_TOOLS_LOCK:
+                info = _EXTERNAL_TOOLS.get(full_name)
+            session = self.sessions.get(info["client_name"]) if info else None
+            if not info:
+                return {"ok": False, "error": "unknown external tool: %s" % full_name}
+            if not session or not getattr(session, "connected", True):
+                return {"ok": False,
+                        "error": "MCP client %r not connected" % info["client_name"]}
         if not session:
             return {"ok": False, "error": "MCP client %r not connected" % info["client_name"]}
         result = session.call_tool(info["original_name"], args)
@@ -657,7 +771,8 @@ class MCPClientManager:
         with self._lock:
             sessions = list(self.sessions.values())
             self.sessions.clear()
-            _EXTERNAL_TOOLS.clear()
+            with _EXTERNAL_TOOLS_LOCK:
+                _EXTERNAL_TOOLS.clear()
             self._started = False
         for session in sessions:
             session.close()
@@ -665,16 +780,18 @@ class MCPClientManager:
     def status(self):
         """Effective client view: configured entries (connected or not) merged
         with live session state — single source for the API/UI (JAG-108)."""
-        # JAG-462: report the REAL external tool count too — self-heal first, else the
-        # panel said "external_tools: 0" while the registry exposed 26.
-        if not _EXTERNAL_TOOLS and self.sessions:
-            try:
-                self._register_as_tools()
-            except Exception:  # noqa: BLE001
-                pass
+        # Report the external tool count from active sessions, not stale registrations.
+        try:
+            self._register_as_tools()
+        except Exception:  # noqa: BLE001
+            pass
+        configs = _load_config() or {}
+        with self._lock:
+            sessions = self.sessions.copy()
+            errors = self._errors.copy()
         clients = {}
-        for name, cfg in (_load_config() or {}).items():
-            s = self.sessions.get(name)
+        for name, cfg in configs.items():
+            s = sessions.get(name)
             clients[name] = {
                 "connected": bool(s and s.connected),
                 "tools": len(s.tools) if s else 0,
@@ -686,19 +803,31 @@ class MCPClientManager:
                 "command": cfg.get("command"),
                 "args": cfg.get("args"),
                 "url": cfg.get("url"),
+                # JAG-464: WHY it is down + whether the launcher even exists here.
+                "error": (errors.get(name)
+                          or (getattr(s, "connection_error", None) if s else None)),
+                "launcher": (cfg.get("command") or None) if cfg.get("command") else None,
+                "launcher_ok": (_command_available(str(cfg.get("command")), cfg.get("env"))
+                                if cfg.get("command") else None),
             }
-        for name, s in self.sessions.items():
+        for name, s in sessions.items():
             clients.setdefault(name, {
                 "connected": s.connected, "tools": len(s.tools),
                 "uptime": round(time.time() - s._connect_time, 1)
                 if s._connect_time else 0,
-                "enabled": True, "transport": "?"})
-        return {"clients": clients, "external_tools": len(_EXTERNAL_TOOLS),
+                "enabled": True, "transport": "?",
+                "error": (errors.get(name)
+                          or getattr(s, "connection_error", None))})
+        with _EXTERNAL_TOOLS_LOCK:
+            external_tool_count = len(_EXTERNAL_TOOLS)
+        return {"clients": clients, "external_tools": external_tool_count,
+                "runtime": runtimes(),
                 "config": CONFIG_PATH, "local_config": CONFIG_LOCAL_JSON_PATH}
 
 
 # Module-level registry of external tools (populated by the manager)
 _EXTERNAL_TOOLS = {}
+_EXTERNAL_TOOLS_LOCK = threading.RLock()
 
 # Singleton
 _manager = None
@@ -755,7 +884,8 @@ def test_client(spec):
         if not ok:
             return {"ok": False, "error": "transport connect failed"}
         if not session.initialize():
-            return {"ok": False, "error": "initialize failed (handshake)"}
+            return {"ok": False, "error": (session.connection_error
+                                             or "initialize failed")}
         tools = session.fetch_tools()
         names = [t.get("name") for t in tools]
         return {"ok": True, "count": len(names), "tools": names}
@@ -766,6 +896,26 @@ def test_client(spec):
             session.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+def _filesystem_directory_error(spec: dict) -> str | None:
+    """Reject filesystem MCP specs that omit or retain the preset path placeholder."""
+    args = spec.get("args") or []
+    package_name = "@modelcontextprotocol/server-filesystem"
+    package_index = next((
+        index for index, arg in enumerate(args)
+        if isinstance(arg, str)
+        and (arg == package_name or arg.startswith(package_name + "@"))
+    ), None)
+    if package_index is None:
+        return None
+    directories = args[package_index + 1:]
+    if not directories or any(
+            not isinstance(directory, str) or not directory.strip()
+            or re.fullmatch(r"<[^<>]+>", directory.strip())
+            for directory in directories):
+        return "filesystem MCP requires an explicit allowed directory"
+    return None
 
 
 def upsert_client(name, spec):
@@ -783,6 +933,9 @@ def upsert_client(name, spec):
         return {"error": "either command+args (stdio) or url (http) is required"}
     if spec.get("args") is not None and not isinstance(spec.get("args"), list):
         return {"error": "args must be a list"}
+    directory_error = _filesystem_directory_error(spec)
+    if directory_error:
+        return {"error": directory_error}
     doc = _load_local_doc()
     entry = doc["clients"].get(name) or {}
     for k in ALLOWED_CLIENT_KEYS:

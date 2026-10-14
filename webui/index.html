@@ -5915,6 +5915,7 @@ function renderProviders(el, d) {
 /* JAG-150: catalog of known servers = the "marketplace" other harnesses ship.
    Entries without `needs` install in one click; the others prefill the form so
    the user only fills the missing path/token. */
+let _mcpRuntime = {};   // JAG-464: {npx:false, ...} — which launchers exist on the host
 const MCP_CATALOG = [
   { name: "filesystem", transport: "stdio", command: "npx",
     args: ["-y", "@modelcontextprotocol/server-filesystem"],
@@ -5942,6 +5943,7 @@ const MCP_CATALOG = [
 ];
 function renderMcpCatalog() {
   const box = $("mcpCatalog"); if (!box) return;
+  const rt = _mcpRuntime || {};
   box.innerHTML = "";
   MCP_CATALOG.forEach((p, i) => {
     const row = document.createElement("div");
@@ -5950,10 +5952,17 @@ function renderMcpCatalog() {
     const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
     const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = p.name;
     const s = document.createElement("div"); s.className = "remaining"; s.style.wordBreak = "break-all";
-    s.textContent = p.desc + (p.needs ? (" · requires: " + p.needs) : "");
+    const _noLaunch = !!p.command && rt[p.command] === false;
+    s.textContent = p.desc + (p.needs ? (" · requires: " + p.needs) : "")
+      + (_noLaunch ? (" · ⚠ no " + p.command + " on this host — install it first") : "");
+    if (_noLaunch) s.style.color = "var(--warn)";
     info.append(t, s);
     const b = document.createElement("button"); b.className = "ghost";
     b.textContent = "＋ add";
+    // JAG-464: never offer a one-click install whose launcher is missing — it would
+    // just add ANOTHER permanently-red row.
+    b.disabled = _noLaunch;
+    if (_noLaunch) b.title = p.command + " is not installed on this host";
     b.onclick = () => mcpAddPreset(i);
     row.append(info, b);
     box.appendChild(row);
@@ -5976,7 +5985,18 @@ function mcpOpenSnippet(text, hint) {
 }
 function mcpPrefill(i) {
   const p = MCP_CATALOG[i];
-  mcpOpenSnippet(mcpPresetSnippet(p), p.needs ? ("to complete · " + p.needs) : "");
+  let snip = mcpPresetSnippet(p);
+  // JAG-464: Longrun does not provide MCP Roots, so filesystem needs an explicit
+  // allowed directory before tools/list can succeed.
+  if (p.name === "filesystem") {
+    snip = JSON.stringify({ mcpServers: { filesystem: {
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "<absolute-allowed-directory>"] } } }, null, 2);
+  }
+  const hint = p.name === "filesystem"
+    ? "replace the directory placeholder with a folder you explicitly want to expose"
+    : (p.needs ? ("to complete · " + p.needs) : "");
+  mcpOpenSnippet(snip, hint);
 }
 async function mcpAddPreset(i) {
   const p = MCP_CATALOG[i];
@@ -6003,8 +6023,18 @@ async function loadMcpClients() {
   try {
     const d = await api("GET", "/api/mcp/clients");
     const cs = d.clients || {};
+    _mcpRuntime = d.runtime || {};   // JAG-464: npx/uvx/node presence on the host
+    if (typeof renderMcpCatalog === "function") renderMcpCatalog();
     const names = Object.keys(cs);
-    $("mcpSummary").textContent = names.length + " configured · " + (d.external_tools || 0) + " external tools";
+    const broken = names.filter(n => {
+      const c = cs[n] || {};
+      // JAG-464: flag client errors, missing launchers, and connected servers with no tools.
+      return c.enabled && (c.error || c.launcher_ok === false
+        || (c.connected && !(c.tools > 0)));
+    });
+    $("mcpSummary").textContent = names.length + " configured · "
+      + (d.external_tools || 0) + " external tools"
+      + (broken.length ? (" · ⚠ " + broken.length + " not working") : "");
     const box = $("mcpList"); box.innerHTML = "";
     if (!names.length) {
       const e = document.createElement("div"); e.className = "remaining";
@@ -6020,9 +6050,24 @@ async function loadMcpClients() {
       const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
       const title = document.createElement("div"); title.style.fontWeight = "600"; title.textContent = n;
       const sub = document.createElement("div"); sub.className = "remaining"; sub.style.wordBreak = "break-all";
+      const _empty = !(c.tools > 0);
+      const _zero = c.connected && _empty;
+      const _zeroHint = n.toLowerCase() === "filesystem"
+        ? "connected but exposes 0 tools — check its allowed-directory argument and server logs"
+        : "connected but exposes 0 tools — inspect server capabilities and logs";
+      const _filesystemListFailure = n.toLowerCase() === "filesystem" && _empty
+        && String(c.error || "").startsWith("tools/list");
+      const _errorHint = c.error
+        ? (c.error + (_filesystemListFailure
+          ? " — check its allowed-directory argument and server logs" : ""))
+        : "";
+      const _hint = c.error ? (" · ⚠ " + _errorHint)
+        : (c.launcher_ok === false ? (" · ⚠ " + (c.command || "command") + " is not installed on this host")
+           : (_zero ? (" · ⚠ " + _zeroHint) : ""));
       sub.textContent = (c.transport === "stdio"
         ? ((c.command || "") + " " + ((c.args || []).join(" ")))
-        : (c.url || "")) + " · " + (c.tools || 0) + " tool";
+        : (c.url || "")) + " · " + (c.tools || 0) + " tool" + _hint;
+      if (_hint) sub.style.color = "var(--warn)";
       info.append(title, sub);
       const edit = document.createElement("button"); edit.className = "ghost"; edit.textContent = "✎";
       edit.onclick = () => editMcp(n);
