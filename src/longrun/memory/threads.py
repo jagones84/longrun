@@ -336,6 +336,39 @@ def _short_ask(text, words=8):
     return " ".join(keep[:words]).strip(".,;:!? ")
 
 
+def render_untitled(sid, limit=8):
+    """Render a compact batch of free groups that still need titles.
+
+    The full thread can exceed the chat observation budget and be offloaded.
+    This view returns only missing titles, with bounded previews, so the model
+    can reach every group without reading a large offload.
+    """
+    groups = [g for g in outline(sid)
+              if g.get("kind") == "free" and not g.get("title")]
+    if not groups:
+        return "UNTITLED FREE GROUPS: none (0 remain)."
+    try:
+        page_size = max(1, min(int(limit or 8), 16))
+    except (TypeError, ValueError):
+        page_size = 8
+    batch = groups[:page_size]
+    lines = [
+        "UNTITLED FREE GROUPS: %d remain; showing %d. "
+        "Title each listed id, then call action=untitled again."
+        % (len(groups), len(batch))
+    ]
+    for group in batch:
+        request = _norm(group.get("req") or "")[:120] or "(not captured)"
+        context = _norm(group.get("digest") or "")[:120] or "(not captured)"
+        lines.append('id=%s request="%s" context="%s"'
+                     % (group.get("id") or "", request, context))
+    if len(groups) > len(batch):
+        lines.append("More remain after this batch.")
+    else:
+        lines.append("This is the final batch; call action=untitled again to confirm none remain.")
+    return "\n".join(lines)
+
+
 def autotitle_untitled(sid, only_missing=True):
     """Give every UNTITLED free group a deterministic title + summary (JAG-451).
 

@@ -117,7 +117,7 @@ check("C2 the controls use var(--txt) on var(--panel2) (visible on the light San
       "#treeTools button {" in html and "background: var(--panel2)" in html
       and "color: var(--txt)" in html)
 check("C3 the nameThreads prompt points at the [UNTITLED] marker",
-      "explicit [UNTITLED] marker" in html)
+      "UNTITLED Free" in html and "action=untitled" in html)
 
 # ---- D: pre-compaction auto-naming + a visible compaction card --------------
 # (Compaction is triggered at 70% of the model budget, read from config/compaction.yaml.)

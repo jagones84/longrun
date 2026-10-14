@@ -223,12 +223,12 @@
   /* JAG-431k: meta vs body halves of a todo row, so a long label can reclaim width. */
   .task .tmeta { display: flex; gap: 8px; align-items: baseline; flex: 0 0 auto; }
   .task .tmain { display: flex; gap: 6px; align-items: baseline; flex: 1 1 auto; min-width: 0; }
-  /* JAG-431k: when the label wraps beyond 3 lines, the inline meta (JN …) only steals
-     width and inflates the row height. Stack the meta under the status badge so the
-     label uses the full width and the row takes far less vertical space. */
-  .task.w3 { align-items: flex-start; }
-  .task.w3 .tmeta { flex-direction: column; align-items: flex-start; gap: 2px; }
-  .task.w3 .jt { margin: 0 !important; }
+  /* JAG-455: after two wrapped lines, put the label BELOW the status/id row and give
+     it the full width. Keep status and identifiers together to save horizontal space. */
+  .task.stacked { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; align-items: start; }
+  .task.stacked .tmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .task.stacked .tmain { display: flex; flex-wrap: wrap; width: 100%; min-width: 0; }
+  .task.stacked .tlabel { flex: 0 0 100%; }
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
   .task.fresh { animation: pop .5s ease; border: 1px dashed rgba(181,108,255,.4); }
   @keyframes pop { from { transform: scale(.96); opacity: .3; } }
@@ -2221,14 +2221,12 @@ function rewindFreeGroup(n) {
 function nameThreads() {
   if (!sessionId) return;
   send("Title every UNTITLED Free.* group in this session and give each a one-line "
-     + "summary. Use the `chapters` tool: action=list prints every group with an "
-     + "explicit [UNTITLED] marker on any free group that still lacks a name — use "
-     + "THAT marker (never your own guess of which groups are missing) to find them. "
-     + "For each [UNTITLED] group call action=title id=<gN> with a name of the form "
-     + "\"request to <the user's ask>\" (<= 8 words, English) and a summary = one line "
-     + "of what was asked and what was done/decided (its justification). One "
-     + "action=title call per [UNTITLED] group, until none remain. Never title "
-     + "task/todo groups (they already carry their node label).");
+     + "summary. Use `chapters` action=untitled, not action=list; it returns a compact "
+     + "batch so every missing group id stays visible. For each returned id call "
+     + "action=title with title=\"request to <the user's ask>\" (<= 8 English words) "
+     + "and a one-line summary of what was asked and done. After each batch, call "
+     + "action=untitled again. Continue until it returns none. Never title task/todo "
+     + "groups; they already carry their node labels.");
 }
 function _scope() { return _activeScope || _freeKids() || $("log"); }
 function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id === id) || null; }
@@ -2284,13 +2282,25 @@ function _latestSection(nid) {
   const secs = _chatSections[nid] || [];
   return secs.length ? secs[secs.length - 1] : null;
 }
-/* JAG-274: jump the chat to a todo's section (sidebar click). */
+/* JAG-274/JAG-455: align a todo's section with #log's content top.
+   getBoundingClientRect is zoomed while scrollTop is not, so divide the
+   measured rectangle delta by the live page scale. */
+function _alignChatNodeTop(log, det) {
+  const scale = _pageScale();
+  const logRect = log.getBoundingClientRect();
+  const detRect = det.getBoundingClientRect();
+  const paddingTop = parseFloat(getComputedStyle(log).paddingTop) || 0;
+  const scrollportTop = logRect.top + (log.clientTop + paddingTop) * scale;
+  const nextTop = log.scrollTop + (detRect.top - scrollportTop) / scale;
+  log.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+}
 function _scrollToNode(nid) {
   const det = _latestSection(nid) || _chatNodes[nid];
   if (!det) return false;
   det.open = true;
   _stick = false;
-  det.scrollIntoView({ block: "center", behavior: "smooth" });
+  const log = $("log");
+  if (log) _alignChatNodeTop(log, det);
   det.classList.add("dotflash");
   setTimeout(() => det.classList.remove("dotflash"), 900);
   return true;
@@ -2387,7 +2397,18 @@ function updateJump() {
   b.hidden = !(l.scrollHeight - l.clientHeight > 80 && !_nearBottom());
   _dotRailCur();
 }
-function scroll() { const l = $("log"); if (l && _stick) l.scrollTop = l.scrollHeight; updateJump(); }
+function scroll() {
+  const l = $("log");
+  if (l && _stick && _historyReplaySession !== sessionId) l.scrollTop = l.scrollHeight;
+  updateJump();
+}
+function _jumpLogToBottom() {
+  const log = $("log"); if (!log) return;
+  const behavior = log.style.scrollBehavior;
+  log.style.scrollBehavior = "auto";
+  log.scrollTop = log.scrollHeight;
+  requestAnimationFrame(() => { log.style.scrollBehavior = behavior; updateJump(); });
+}
 /* JAG-267: vertical dot rail — one dot per user message; click a dot to jump to it.
  * The last dot is the latest user prompt. Session-scoped: it is rebuilt from the
  * CURRENT #log, so switching sessions / clearing the log resets it automatically. */
@@ -2590,6 +2611,63 @@ function endStream() {
  * is a <details>; while it is 'doing' it becomes the active scope, so thoughts,
  * tool cards and harness→LLM injections nest (indented) underneath it; on 'done'
  * it collapses and the next node takes over. */
+const _todoOpenStorageKey = "sf_tctree_open";
+function _todoOpenMap() {
+  try {
+    const map = JSON.parse(localStorage.getItem(_todoOpenStorageKey) || "{}");
+    return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+  } catch (e) { return {}; }
+}
+function _todoOpenState(sid) {
+  const map = _todoOpenMap();
+  return Object.prototype.hasOwnProperty.call(map, sid) && Array.isArray(map[sid])
+    ? new Set(map[sid].map(String)) : null;
+}
+function _saveTodoOpenState(sid, ids) {
+  if (!sid) return;
+  const map = _todoOpenMap();
+  map[sid] = [...new Set(ids.map(String))];
+  try { localStorage.setItem(_todoOpenStorageKey, JSON.stringify(map)); } catch (e) {}
+}
+function _forgetTodoOpenState(sid) {
+  if (!sid) return;
+  const map = _todoOpenMap();
+  if (!Object.prototype.hasOwnProperty.call(map, sid)) return;
+  delete map[sid];
+  try { localStorage.setItem(_todoOpenStorageKey, JSON.stringify(map)); } catch (e) {}
+}
+function _pruneTodoOpenState(sessions) {
+  const map = _todoOpenMap();
+  const live = new Set(sessions.map(s => s && s.id).filter(Boolean).map(String));
+  let changed = false;
+  Object.keys(map).forEach(sid => {
+    if (!live.has(sid)) { delete map[sid]; changed = true; }
+  });
+  if (changed) {
+    try { localStorage.setItem(_todoOpenStorageKey, JSON.stringify(map)); } catch (e) {}
+  }
+}
+function _restoreTodoOpenState(sid) {
+  const open = _todoOpenState(sid);
+  if (open === null) return false;
+  $("log").querySelectorAll("details.tctree").forEach(det => {
+    det.open = open.has(String(det.dataset.id || ""));
+  });
+  $("log").querySelectorAll("details.fgroup").forEach(det => {
+    det.open = open.has(String(det.dataset.chapter || ""));
+  });
+  return true;
+}
+document.addEventListener("toggle", e => {
+  if (_historyReplaySession === sessionId || !sessionId || !e.target.matches
+      || !e.target.matches("details.tctree, details.fgroup")) return;
+  const open = [
+    ...[...$("log").querySelectorAll("details.tctree[open]")].map(det => det.dataset.id),
+    ...[...$("log").querySelectorAll("details.fgroup[open]")].map(det => det.dataset.chapter)
+  ].filter(Boolean);
+  _saveTodoOpenState(sessionId, open);
+}, true);
+let _historyReplaySession = null;
 function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _updateNowBar(); buildDotRail(); }
 function _nodeDepth(id, d) {
   // JAG-170: depth from the GRAPH hierarchy, independent of draw order, so the
@@ -3588,6 +3666,7 @@ function _sessRowEl(s, pinnedIds, ag) {
 let _forceExpandActive = false;   // JAG-415: set on a redirect/selection, consumed once
 async function loadSessions() {
   const [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
+  if (out && Array.isArray(out.sessions)) _pruneTodoOpenState(out.sessions);
   const box = $("sessions"); box.innerHTML = "";
   const q = ($("session-search") ? $("session-search").value : "").toLowerCase();
   const hideEmpty = $("hide-empty") ? $("hide-empty").checked : false;
@@ -3789,13 +3868,18 @@ function dirUp() { if (_dirState.parent) loadDirs(_dirState.parent); }
 function pickCurrentDir() { $("nsWs").value = _dirState.path || ""; closeDirPicker(); }
 async function loadHistory() {
   if (!sessionId) return;
-  _stick = true;  // JAG-116: opening a session always lands at the latest message
-  const s = await api("GET", "/api/history?session=" + encodeURIComponent(sessionId));
+  const _historySid = sessionId;
+  _historyReplaySession = _historySid;
+  _stick = false;  // replay silently; jump once after rebuilding instead of scrolling per item
+  const s = await api("GET", "/api/history?session=" + encodeURIComponent(_historySid));
+  if (sessionId !== _historySid) return;
   if (s && s.error) {
     // JAG-189: the active session no longer exists (deleted elsewhere): drop it
     // instead of re-polling a dead id every cycle (spurious 404s in the console).
     sessionId = null; localStorage.removeItem("sf_session");
     $("log").innerHTML = ""; _resetChatTree(); graph = null;
+    if (_historyReplaySession === _historySid) _historyReplaySession = null;
+    _stick = true;
     return;
   }
   curJob = _agentNum(s) || null;   // JAG-290: the todo prefix uses the agent id
@@ -3804,12 +3888,14 @@ async function loadHistory() {
   // the item is nested inside it, so a reload looks like the live turn and
   // nothing written in chat can ever be lost.
   let g = null;
-  try { g = await api("GET", "/api/sessions/" + encodeURIComponent(sessionId) + "/graph"); } catch (e) { g = null; }
+  try { g = await api("GET", "/api/sessions/" + encodeURIComponent(_historySid) + "/graph"); } catch (e) { g = null; }
+  if (sessionId !== _historySid) return;
   const nodes = (g && g.nodes) || [];
   if (nodes.length) graph = g;
   // JAG-431j: load the free-group titles BEFORE the rebuild so each Free.N group is
   // labelled correctly as it is created.
-  await loadThreadTitles(sessionId);
+  await loadThreadTitles(_historySid);
+  if (sessionId !== _historySid) return;
   // JAG-194: include every plan's nodes in byId so the transcript still resolves
   // cards that referenced an older plan's ids; the ACTIVE node is current-plan only.
   const _pnodes = planNodes(g);
@@ -3908,6 +3994,7 @@ async function loadHistory() {
     const kids = det.querySelector(".tc-kids");
     if (kids && kids.children.length) det.open = true;
   }));
+  _restoreTodoOpenState(_historySid);
   const _doing = _src.find(n => n.status === "doing");
   if (_doing && _chatNodes[_doing.id]) {
     _activeNodeId = _doing.id;
@@ -3925,11 +4012,14 @@ async function loadHistory() {
     setTimeout(() => { try { _focusPlanNode(_dn); } catch (e) {} }, 60);
   }
   // JAG-127: baseline the edit journal so the next turn reports only its own diff.
-  try { _editsBase = await api("GET", "/api/edits?session=" + encodeURIComponent(sessionId)); } catch (e) { _editsBase = null; }
+  try { _editsBase = await api("GET", "/api/edits?session=" + encodeURIComponent(_historySid)); } catch (e) { _editsBase = null; }
+  if (sessionId !== _historySid) return;
   // JAG-431p: apply the ledger titles to any rendered group whose start message carries
   // no chapter (mixed/old data). Guarded internally: skipped when the rendered and
   // ledger free-group counts differ (a compaction), so it can never mislabel.
   applyThreadTitles();
+  if (_historyReplaySession === _historySid) _historyReplaySession = null;
+  if (sessionId === _historySid) { _stick = true; _jumpLogToBottom(); }
 }
 
 /* v1.6.3 (JAG-55): splits a trailing "think: …" block out of a reply. */
@@ -4951,7 +5041,7 @@ function taskTree(nodes) {
     const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${n.deps.join(", ")}</span>` : "";
     const ev = (n.evidence || []).length ? ` <span class="ev">📎 ${n.evidence.length}</span>` : "";
     // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
-    // so a long wrapped label can reclaim the width (see `.task.w3`).
+    // so a long wrapped label can reclaim the width (see `.task.stacked`).
     const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt" style="color:var(--acc2);margin:0 5px;font-size:10px" title="job ${esc(_nodeJob(n))}">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt" style="color:var(--info);margin:0 5px;font-size:10px" title="subjob ${esc(_nodeSub(n))} (embodies this todo)">${esc(_nodeSub(n))}</span>` : ""}`;
     const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
@@ -4969,15 +5059,18 @@ function taskTree(nodes) {
   });
   return html;
 }
-/* JAG-431k: flag a todo row whose label wraps beyond 3 lines. Such a row wastes
-   vertical space while its inline meta (JN …) steals width; the `.w3` class makes CSS
-   stack that meta under the status badge and hand the label the full width. */
+/* JAG-455: after two wrapped lines, move the label below the status/id row and give it
+   full width. Count text fragments because the label is itself a flex item. */
 function _markWrappedTasks(box) {
   if (!box) return;
   box.querySelectorAll(".task").forEach(el => {
-    el.classList.remove("w3");
+    el.classList.remove("stacked");
     const lbl = el.querySelector(".tlabel");
-    if (lbl && lbl.getClientRects().length > 3) el.classList.add("w3");
+    if (!lbl) return;
+    const range = document.createRange();
+    range.selectNodeContents(lbl);
+    const lines = new Set(Array.from(range.getClientRects()).map(r => Math.round(r.top)));
+    if (lines.size > 2) el.classList.add("stacked");
   });
 }
 /* JAG-128B: la proposta di self-improvement arriva come evento SSE e resta
@@ -5404,6 +5497,7 @@ function connectFeed() {
     // JAG-431q: same — an AUTO-compaction used to duplicate the rendered chat.
     $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx(); });
   es.addEventListener("session.cleared", e => { const d = JSON.parse(e.data);
+    if (d.session) _forgetTodoOpenState(d.session);
     push("🧹 session cleared"); if (!d.session || d.session === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); });
   es.addEventListener("session.renamed", e => { loadSessions(); });
   // JAG-431r8: a Free.N title/summary written by the agent (the `chapters` tool)
@@ -5414,7 +5508,9 @@ function connectFeed() {
   es.addEventListener("context.built", e => { const d = JSON.parse(e.data);
     push(`📊 context: ${d.final_tokens}/${d.budget_tokens} tok`); loadCtxSoon(); });
   es.addEventListener("session.created", e => { const d = JSON.parse(e.data); push("🗂 session created"); loadSessions(); });
-  es.addEventListener("session.deleted", e => { const d = JSON.parse(e.data); push("🗂 session deleted"); loadSessions(); });
+  es.addEventListener("session.deleted", e => { const d = JSON.parse(e.data);
+    if (d.session) _forgetTodoOpenState(d.session);
+    push("🗂 session deleted"); loadSessions(); });
   es.addEventListener("plan.update", () => { push("🗺 plan updated"); loadPlan(); });
   es.addEventListener("tasks.update", () => push("✅ legacy tasks board updated"));
   es.addEventListener("agent.start", e => { const d = JSON.parse(e.data || "{}"); push("⚡ agent: " + (d.goal || "").slice(0, 60)); });

@@ -68,8 +68,15 @@ check("done/cancelled/superseded close the section",
 
 # --- sidebar todo -> jump the chat to that step --------------------------------
 check("_scrollToNode exists and returns a hit", "function _scrollToNode(nid) {" in html
-      and "scrollIntoView" in between(html, "function _scrollToNode(nid) {", "function _updateNowBar")
+      and "_alignChatNodeTop(log, det);" in between(html, "function _scrollToNode(nid) {", "function _updateNowBar")
       and "return true;" in between(html, "function _scrollToNode(nid) {", "function _updateNowBar"))
+_scroll = between(html, "function _scrollToNode(nid) {", "function _updateNowBar")
+_align = between(html, "function _alignChatNodeTop(log, det) {", "function _scrollToNode(nid) {")
+check("todo click aligns within #log using the live CSS zoom scale",
+      "_alignChatNodeTop(log, det);" in _scroll
+      and "const scale = _pageScale();" in _align
+      and "(detRect.top - scrollportTop) / scale" in _align
+      and "log.scrollTo({ top: Math.max(0, nextTop), behavior: \"smooth\" });" in _align)
 check("sidebar task click both shows the detail AND jumps",
       "showNodeDetail(n); _scrollToNode(n.id);" in html)
 check("the sidebar todo advertises the jump", "click to show details and jump the chat to this step" in html)
@@ -118,4 +125,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

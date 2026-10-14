@@ -1147,6 +1147,7 @@ def _chapters(args, run_id):
     compaction can touch the transcript), so the agent can list, recover and TITLE
     groups from any point of a very long run.
     action=list (default) -> the whole thread, chronological (ids, ranges, previews).
+    action=untitled -> a compact batch of free groups that still need titles.
     action=read  id=<gN>   -> one group's preserved content.
     action=title id=<gN> title="…" -> name a FREE group (todos already carry a label).
     """
@@ -1156,6 +1157,10 @@ def _chapters(args, run_id):
     action = str(args.get("action") or "list").strip().lower()
     if not sid:
         return {"ok": False, "error": "no session in scope (pass session=)",
+                "backend": "host", "sandboxed": False}
+    if action == "untitled":
+        return {"ok": True, "exit_code": 0, "session": sid,
+                "stdout": th.render_untitled(sid, limit=args.get("limit", 8)),
                 "backend": "host", "sandboxed": False}
     if action in ("list", "toc", "outline", ""):
         return {"ok": True, "exit_code": 0, "session": sid, "stdout": th.render(sid),
@@ -1484,4 +1489,3 @@ def observation(res, max_chars=1600):
             bits.append("result: " + _truncate(
                 json.dumps(extras, ensure_ascii=False, default=str), max_chars))
     return "\n".join(bits)
-

@@ -123,15 +123,50 @@ r = T.execute("chapters", {"session": sid, "action": "title", "id": fid,
               run_id=sid)
 check("4h title + summary (justification) are stored",
       r.get("ok") is True and (th.get(sid, fid).get("summary") or "").startswith("asked for a free chat"))
+
+# ---- 4i. compact batches for untitled groups (JAG-455) ------------------------
+bulk_sid = "v438-sess-untitled-batch"
+stores.save_session({"id": bulk_sid, "title": "bulk", "created": time.time(), "messages": []})
+bulk_sess = stores.load_session(bulk_sid)
+for i in range(32):
+    stores.append_message(bulk_sess, "user", "request %02d " % i + "question " * 25)
+    stores.append_message(bulk_sess, "assistant", "result %02d " % i + "answer " * 25)
+bulk_groups = th.outline(bulk_sid)
+for group in bulk_groups[:4]:
+    T.execute("chapters", {"session": bulk_sid, "action": "title", "id": group["id"],
+                           "title": "request to item %s" % group["id"],
+                           "summary": "completed item"},
+              run_id=bulk_sid)
+full_outline = th.render(bulk_sid)
+page = T.execute("chapters", {"session": bulk_sid, "action": "untitled"}, run_id=bulk_sid)
+page_ids = re.findall(r"id=(g\d+)", page.get("stdout") or "")
+expected_page = [group["id"] for group in bulk_groups[4:12]]
+check("4i full chapter list exceeds the chat observation limit",
+      len(full_outline) > 6000, len(full_outline))
+check("4j untitled action returns a bounded page with every missing id",
+      page.get("ok") is True and len(page.get("stdout") or "") < 6000
+      and page_ids == expected_page
+      and "more remain" in (page.get("stdout") or "").lower(),
+      (len(page.get("stdout") or ""), page_ids))
+for gid in expected_page:
+    T.execute("chapters", {"session": bulk_sid, "action": "title", "id": gid,
+                           "title": "request to item %s" % gid, "summary": "completed item"},
+              run_id=bulk_sid)
+next_page = T.execute("chapters", {"session": bulk_sid, "action": "untitled"}, run_id=bulk_sid)
+next_ids = re.findall(r"id=(g\d+)", next_page.get("stdout") or "")
+check("4k repeated untitled action advances after titled ids",
+      next_ids == [group["id"] for group in bulk_groups[12:20]],
+      next_ids)
+
 r = T.execute("chapters", {"session": sid, "action": "read", "id": fid}, run_id=sid)
-check("4i read returns the title + summary",
+check("4l read returns the title + summary",
       "summary: asked for a free chat" in (r.get("stdout") or "")
       and "title: Opener" in (r.get("stdout") or ""), (r.get("stdout") or "")[:80])
 r = T.execute("chapters", {"session": sid, "action": "list"}, run_id=sid)
-check("4j list carries a TODO's justification (its evidence)",
+check("4m list carries a TODO's justification (its evidence)",
       "why: \u201cran the search" in (r.get("stdout") or ""), (r.get("stdout") or "")[:0])
 r = T.execute("chapters", {"session": sid, "action": "read", "id": task["id"]}, run_id=sid)
-check("4k read shows a todo's evidence as its justification",
+check("4n read shows a todo's evidence as its justification",
       "justification (evidence)" in (r.get("stdout") or "")
       and "ran the search; 3 hits recorded" in (r.get("stdout") or ""))
 
@@ -140,7 +175,7 @@ names = {t["name"] for t in registry.catalog() if t.get("name")}
 check("5a chapters is a registered base tool", "chapters" in names)
 check("5b chapters declares the 3 actions",
       (registry.TOOL_SCHEMAS.get("chapters") or {}).get("properties", {}).get("action", {}).get("enum")
-      == ["list", "read", "title"])
+      == ["list", "untitled", "read", "title"])
 check("5c chapters is approval=auto (read-only + its own ledger)",
       (registry.tool_spec("chapters") or {}).get("approval") == "auto")
 check("5d the schema exposes a summary for a free group's justification",
@@ -150,7 +185,8 @@ check("5d the schema exposes a summary for a free group's justification",
 idx = _read("webui/index.html")
 check("6a the 🏷 button exists next to the group controls", 'data-call="nameThreads"' in idx)
 check("6b the button asks the agent for a REAL turn via send()",
-      "function nameThreads(" in idx and "chapters` tool" in idx)
+      "function nameThreads(" in idx and "chapters` tool" in idx
+      and "action=untitled" in idx)
 check("6c Free groups carry a stable chapter slot", 'det.dataset.chapter = "free#"' in idx)
 check("6d titles are read from the ledger", "loadThreadTitles" in idx and "/api/threads?session=" in idx)
 http = _read("src/longrun/core/httpapi.py")
@@ -232,7 +268,8 @@ check("10f the per-free rewind uses the chapter's anchor",
 check("10g the ledger fallback is guarded by a count match (compaction-safe)",
       "dets.length === _threadGroups.length" in idx)
 check("10h loadHistory re-applies thread titles after the rebuild",
-      re.search(r"applyThreadTitles\(\);\s*\}", idx) is not None)
+      re.search(r"applyThreadTitles\(\);\s*if \(_historyReplaySession === _historySid\) "
+                r"_historyReplaySession = null;", idx) is not None)
 check("10i a finished turn refreshes the labels WITHOUT re-appending the chat",
       re.search(r"loadThreadTitles\(turnSession \|\| sessionId\)\.then\(applyThreadTitles\)", idx) is not None)
 # loadHistory APPENDS to #log (it does not clear it) — so every caller must clear first,

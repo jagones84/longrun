@@ -241,6 +241,9 @@ TOOL_SCHEMAS = {
                         "list -> the ordered outline (ids, ranges, previews) WITH each "
                         "group's JUSTIFICATION (a todo's evidence / a free group's "
                         "summary), so you can recall WHY even after many compactions; "
+                        "untitled -> a compact batch of FREE groups missing a title "
+                        "(IDs + short request/context previews; title these, then repeat "
+                        "until it returns none; use this instead of list to name all groups); "
                         "an unnamed FREE group is flagged [UNTITLED] in the list so you "
                         "can find every one that still needs a name; "
                         "read id=<gN> -> a group's full record; title id=<gN> "
@@ -249,11 +252,14 @@ TOOL_SCHEMAS = {
                         "and give a one-line summary). Read-only except title."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "read", "title"], "default": "list"},
+            "action": {"type": "string",
+                       "enum": ["list", "untitled", "read", "title"], "default": "list"},
             "id": {"type": "string", "description": "group id (gN) for read/title"},
             "title": {"type": "string", "description": "new title (action=title)"},
             "summary": {"type": "string",
                         "description": "one-line justification for a free group (action=title)"},
+            "limit": {"type": "integer", "default": 8,
+                      "description": "max results for action=untitled (1-16)"},
             "session": {"type": "string",
                         "description": "session id (default: this run's session)"},
         },
@@ -840,4 +846,3 @@ def resolve_path(path, roots=None, base=None):
         if p == root or p.startswith(root + os.sep):
             return p, None
     return None, "path %r outside allowed roots %s" % (path, roots)
-

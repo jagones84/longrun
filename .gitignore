@@ -55,6 +55,8 @@ e2e/
 outputs/
 mutants/
 tests/.e2e/
+tests/battery.ps1
+.battery-fails-*/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
