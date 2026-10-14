@@ -39,18 +39,18 @@ def check(name, ok, detail=""):
     print(("PASS " if ok else "FAIL ") + name + ((" :: " + detail) if detail else ""))
 
 
-# --- 1: the floating chat cluster (JAG-429: moved next to the todo controls) --
+# --- 1: the chat tools bar (JAG-429: moved next to the todo controls) --------
 check("1a the reveal button exists", 'id="revealSessionBtn"' in HTML, "")
 check("1b it is wired to revealActiveSession",
       'data-call="revealActiveSession"' in HTML, "")
-# JAG-429: the control moved OUT of the topbar into #treeTools (the floating chat
-# cluster that also holds the todo expand/collapse pair).
-tt = HTML[HTML.index('id="treeTools"'):]
-tt = tt[:tt.index("</div>")]
-check("1c it lives inside #treeTools (the chat cluster)",
+# JAG-429/JAG-457: the control moved into #toolsBar (the vertical tools bar
+# between the chat and the right inspector, also holding the todo controls).
+tt = HTML[HTML.index('id="toolsBar"'):]
+tt = tt[:tt.index("</aside>")]
+check("1c it lives inside #toolsBar (the chat tools bar)",
       'id="revealSessionBtn"' in tt, "")
-check("1d #treeTools starts hidden (shown only with an open session)",
-      re.search(r'id="treeTools"[^>]*hidden', HTML) is not None, "")
+check("1d #toolsBar starts hidden (shown only with an open session)",
+      re.search(r'id="toolsBar"[^>]*hidden', HTML) is not None, "")
 check("1e visibility is driven by _updateTreeTools()",
       "function _updateTreeTools(" in HTML
       and re.search(r't\.hidden\s*=\s*!sessionId', HTML) is not None, "")

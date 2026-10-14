@@ -463,17 +463,21 @@
     transition: opacity .15s, transform .15s; }
   #dotrail button:hover { opacity: 1; transform: scale(1.5); }
   #dotrail button.cur { background: var(--acc2); opacity: 1; }
-  /* JAG-427: chat todo-group controls — expand / collapse EVERY <details.tctree> at
-     once, mirroring the sessions rail's ▲/▼. Floating at the chat's BOTTOM-right
-     (above the composer, stacked over the jump arrow) so it stays visible even when
-     the editor dock occupies the chat's top — and costs ZERO horizontal space. */
-  #treeTools { position: absolute; bottom: 138px; right: 22px; z-index: 6; display: flex; gap: 3px; }
-  #treeTools[hidden] { display: none; }
-  #treeTools button { width: 26px; height: 26px; padding: 0; font-size: 13px; line-height: 1;
+  /* JAG-457: vertical tools bar (barra strumenti) — lives between the chat and the
+     right inspector, vertically centered. A proper panel that will grow over time
+     (more tools + an important graphic element). Holds the chat-group controls that
+     used to float at the bottom-right of the log. */
+  #toolsBar { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; flex: 0 0 46px; width: 46px; min-width: 46px; padding: 10px 0;
+    background: var(--panel); border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+    z-index: 5; }
+  #toolsBar[hidden] { display: none; }
+  #toolsBar button { width: 30px; height: 30px; padding: 0; font-size: 14px; line-height: 1;
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
     border-radius: 8px; background: var(--panel2); border: 1px solid var(--line);
-    color: var(--txt); }
-  #treeTools button:hover { color: var(--accent); border-color: var(--acc); }
+    color: var(--txt); transition: color .12s, border-color .12s; }
+  #toolsBar button:hover { color: var(--accent); border-color: var(--acc); }
+  #toolsBar button[hidden] { display: none; }
   .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc2); transition: box-shadow .25s; }
   /* JAG-428: flash the session row the topbar's "reveal" button centered. */
   .sess.dotflash { box-shadow: 0 0 0 2px var(--acc2); border-radius: 10px; transition: box-shadow .25s; }
@@ -1349,14 +1353,6 @@
     <nav id="dotrail" aria-label="jump to your messages" hidden></nav>
     <button id="jumpBtn" hidden title="jump to latest message" aria-label="jump to latest message">↓</button>
     <div id="nowbar" hidden></div>
-    <div id="treeTools" hidden>
-      <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession"
-              title="reveal this session in the sessions panel — expand its group and center it"
-              aria-label="reveal the current session in the sessions panel">🎯</button>
-      <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
-      <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
-      <button class="ghost" data-tree-todos data-call="nameThreads" title="ask the agent to title the Free.* groups from their content (uses the chapters tool)" aria-label="title the free thread groups">🏷</button>
-    </div>
     <div id="composer">
       <div id="slashMenu" class="card" hidden style="position:absolute;bottom:100%;left:22px;right:22px;max-height:220px;overflow-y:auto;padding:4px 0;margin-bottom:4px"></div>
       <div id="plusMenu" hidden></div>
@@ -1399,6 +1395,14 @@
       <button data-tab="feed" data-call="openTab" data-args='["feed"]'>📡 feed</button>
     </div>
   </div>
+  <aside id="toolsBar" data-col="tools" hidden aria-label="chat tools">
+    <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession"
+            title="reveal this session in the sessions panel — expand its group and center it"
+            aria-label="reveal the current session in the sessions panel">🎯</button>
+    <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
+    <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
+    <button class="ghost" data-tree-todos data-call="nameThreads" title="ask the agent to title the Free.* groups from their content (uses the chapters tool)" aria-label="title the free thread groups">🏷</button>
+  </aside>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
   <aside id="rail" data-col="context">
     <div id="inspector">
@@ -2340,10 +2344,11 @@ function collapseAllTodos() {
   const l = $("log"); if (l) [...l.querySelectorAll("details.think")].forEach(d => { d.open = false; });
   _updateTreeTools();
 }
-/* JAG-428: the floating chat cluster holds the reveal-session control (visible with an
-   open session) plus the todo expand/collapse pair (shown only when groups exist). */
+/* JAG-457: the vertical tools bar holds the reveal-session control (visible with an
+   open session) plus the todo expand/collapse/title buttons (shown only when groups
+   exist). Lives between the chat and the right inspector. */
 function _updateTreeTools() {
-  const t = $("treeTools"); if (!t) return;
+  const t = $("toolsBar"); if (!t) return;
   t.hidden = !sessionId;
   const hasTodos = _allGroups().length > 0;
   t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !hasTodos; });

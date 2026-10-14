@@ -45,7 +45,7 @@ check("1d the right group no longer wraps at <=920px",
       re.search(r"#composerBar \.cb-right \{ flex-wrap: nowrap; justify-content: flex-end", HTML) is not None, "")
 
 # --- 2: the chat todo-group controls -----------------------------------------
-check("2a the control markup exists", 'id="treeTools"' in HTML, "")
+check("2a the control markup exists", 'id="toolsBar"' in HTML, "")
 check("2b both data-call hooks are present",
       'data-call="expandAllTodos"' in HTML and 'data-call="collapseAllTodos"' in HTML, "")
 for fn in ("expandAllTodos", "collapseAllTodos", "_updateTreeTools", "_allTodos"):
@@ -54,9 +54,9 @@ check("2d the functions target the chat's <details.tctree> groups",
       'querySelectorAll("details.tctree")' in HTML, "")
 check("2e the control is kept in sync from _updateNowBar",
       "_updateTreeTools();   // JAG-427" in HTML, "")
-check("2f there is a CSS rule for the control", "#treeTools {" in HTML, "")
-check("2g it floats (does not consume a layout column)",
-      re.search(r"#treeTools \{ position: absolute;", HTML) is not None, "")
+check("2f there is a CSS rule for the control", "#toolsBar {" in HTML, "")
+check("2g it is a vertical flex panel (a layout column, not floating)",
+      re.search(r"#toolsBar \{[^}]*flex-direction: column;", HTML) is not None, "")
 
 print("---")
 ok = sum(results)

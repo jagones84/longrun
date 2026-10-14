@@ -114,7 +114,7 @@ html = _read("webui", "index.html")
 check("C1 the floating chat controls no longer use a hardcoded dark background",
       "background: rgba(20,24,40,.72)" not in html)
 check("C2 the controls use var(--txt) on var(--panel2) (visible on the light Sand theme)",
-      "#treeTools button {" in html and "background: var(--panel2)" in html
+      "#toolsBar button {" in html and "background: var(--panel2)" in html
       and "color: var(--txt)" in html)
 check("C3 the nameThreads prompt points at the [UNTITLED] marker",
       "UNTITLED Free" in html and "action=untitled" in html)
