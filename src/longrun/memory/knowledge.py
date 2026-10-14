@@ -816,8 +816,12 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
 
 def _embed_texts_query(ref, query):
     from longrun.model import embed
-    vs = embed.embed_texts([query], model=ref)
-    return vs[0] if vs else None
+    # JAG-462: `embed.embed_texts` returns the TUPLE (vecs, usage). Returning `vs[0]`
+    # handed the caller the whole vecs LIST (`[[...]]`), so `vectors.cos(query, doc)`
+    # always saw a length mismatch and returned 0.0 — hybrid/semantic search silently
+    # degraded to lexical-only. Return the FIRST float vector.
+    vecs, _usage = embed.embed_texts([query], model=ref)
+    return vecs[0] if vecs else None
 
 
 # ------------------------------------------------------------------- discover --

@@ -3631,6 +3631,13 @@ async function openSessMenu(row, s, ag) {
       if (ag) { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
       else if (!(await confirmDelete("delete session " + (s.title || s.id) + "?"))) return;
       await api("DELETE", "/api/sessions/" + s.id);
+      // JAG-462: drop EVERY browser-side per-session cache for the deleted id. Only
+      // the todo/scroll maps were pruned; `_sessModel`/`_sessJob`/`doneSessions` kept
+      // the key forever — unbounded growth, a stale `_sessJob` seeds a wrong todo
+      // prefix, and a stale `doneSessions` key leaves a permanent "🔔 (1)" in the title.
+      delete _sessModel[s.id];
+      delete _sessJob[s.id];
+      clearDone(s.id);
       if (sessionId === s.id) { sessionId = null; $("log").innerHTML = ""; }
       loadSessions();
     }
@@ -5156,7 +5163,10 @@ function taskTree(nodes) {
   // "☐" and a long-closed step looked still-open.
   const mark = { todo: "☐", doing: "◐", done: "☑", blocked: "⛔", cancelled: "⊘", superseded: "⊘" };
   const one = (n, depth) => {
-    const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${n.deps.join(", ")}</span>` : "";
+    // JAG-462: `deps` is model-authored data — it MUST be escaped like every sibling
+    // field (id via _attr, label/evidence via esc). It was interpolated raw, so a dep
+    // id containing markup rendered executable HTML inside the Plan list (stored XSS).
+    const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${esc(n.deps.join(", "))}</span>` : "";
     const ev = (n.evidence || []).length ? ` <span class="ev">📎 ${n.evidence.length}</span>` : "";
     // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
     // so a long wrapped label can reclaim the width (see `.task.stacked`).
@@ -8564,7 +8574,10 @@ $("inp").addEventListener("keydown", e => {
   if (menu && !menu.hidden && _slashItems.length) {
     if (e.key === "ArrowDown") { e.preventDefault(); _slashHi = Math.min(_slashHi + 1, _slashItems.length - 1); _paintSlashHi(); return; }
     if (e.key === "ArrowUp") { e.preventDefault(); _slashHi = Math.max(_slashHi - 1, 0); _paintSlashHi(); return; }
-    if (e.key === "Enter") { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }
+    // JAG-462: Ctrl/Cmd+Enter is the SEND shortcut handled by the other #inp keydown
+    // listener; without this guard the picker ALSO fired for the same keystroke, so
+    // sending a message with the slash menu open re-opened the panel / re-wrote /goal.
+    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }
   }
   if (e.key === "Escape" && menu) menu.hidden = true;
 });

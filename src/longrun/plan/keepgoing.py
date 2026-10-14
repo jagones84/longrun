@@ -47,7 +47,12 @@ def hitl_gate(reason, open_nodes, autonomous=False):
     `autonomous=True`, no browser attached — has NOBODY to answer, so it must
     never gate: the turn just stops and the open steps stay in the graph.
     """
-    return bool(open_nodes) and reason != "user_pivot" and not autonomous
+    # JAG-462: an ABORTED turn (`reason == "user_stop"`) must NEVER gate. The whole
+    # keepgoing decision already returns `user_stop` when the operator pressed Stop,
+    # and the tail gate in the chat loop excludes aborted turns — but this gate did
+    # not, so pressing Stop immediately popped a "⏸ Paused — N open step(s)" card.
+    return (bool(open_nodes) and reason not in ("user_pivot", "user_stop")
+            and not autonomous)
 
 
 def state_hash(nodes):

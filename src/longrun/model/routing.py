@@ -143,9 +143,16 @@ def pick(role, preferred=None):
     if not roster:
         return None
     if preferred:
+        # JAG-462: match the pin CASE-INSENSITIVELY and never return a model the
+        # router marked FAILED — `==` missed a pin whose casing differed from the
+        # roster alias (silently falling through to the role pattern, i.e. the
+        # operator's chosen model got replaced) and also bypassed the JAG-447r guard.
+        p = str(preferred).strip().lower()
         for m in roster:
-            if m.get("alias") == preferred:
-                return preferred
+            if m.get("failed"):
+                continue
+            if str(m.get("alias") or "").strip().lower() == p:
+                return m["alias"]
     entry = (cfg.get("roles") or {}).get(role) or {}
     chain = [entry.get("pattern")] + list(entry.get("fallbacks") or []) + \
             list(cfg.get("default_fallbacks") or [])

@@ -208,6 +208,18 @@ def _turn_lock(sid):
         return lk
 
 
+# JAG-462: event kinds that a helper publishes durably AND whose caller re-emits
+# through `on_event` (which also publishes) — so every graph/tool/approval row
+# landed in `events.db` (and on `/api/feed`) TWICE. Collapse an IMMEDIATELY
+# repeated identical (kind, payload); a legitimate second event always differs or
+# is separated by another event. Streaming deltas are never deduped.
+_DEDUPE_KINDS = frozenset((
+    "graph.node.added", "graph.node.updated", "tool.call", "tool.result",
+    "tool.blocked", "approval.request", "approval.auto", "approval.resolved",
+    "chat.run", "chat.done", "cost.usage", "model.failover", "model.fallback"))
+_last_pub = {"sig": None, "event": None}
+
+
 def publish(kind, **data):
     """Record an event in the SQLite store + memory cache, fan out to SSE.
 
@@ -224,6 +236,14 @@ def publish(kind, **data):
         for k in ("id", "ts"):
             if k in data:
                 data[k + "_id"] = data.pop(k)
+        if kind in _DEDUPE_KINDS:
+            try:
+                _sig = (kind, json.dumps(data, ensure_ascii=False, sort_keys=True))
+            except Exception:  # noqa: BLE001 — an unserialisable payload is never deduped
+                _sig = None
+            if _sig is not None and _last_pub.get("sig") == _sig:
+                return _last_pub.get("event")
+            _last_pub["sig"] = _sig
         ts = round(time.time(), 3)
         with _db_lock:
             cur = db().execute("INSERT INTO events(ts, kind, data) VALUES(?,?,?)",
@@ -232,6 +252,7 @@ def publish(kind, **data):
         _feed_seq = cur.lastrowid
         event = {"id": _feed_seq, "ts": ts, "kind": kind, **data}
         _feed.append(event)
+        _last_pub["event"] = event
         payload = "id: {id}\nevent: {kind}\ndata: {data}\n\n".format(
             id=event["id"], kind=kind, data=json.dumps(event, ensure_ascii=False)
         )

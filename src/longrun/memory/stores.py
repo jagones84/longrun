@@ -210,6 +210,11 @@ def _purge_session_artifacts(sid):
         checkpoints.purge_session(sid)          # JAG-413: drop session checkpoints
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from longrun.model import costs
+        bases.append(costs._path(sid))          # JAG-462: the per-session cost ledger
+    except Exception:  # noqa: BLE001
+        pass
     removed = []
     for base in bases:
         for f in glob.glob(glob.escape(base) + "*"):

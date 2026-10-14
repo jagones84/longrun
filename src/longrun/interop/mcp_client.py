@@ -570,14 +570,30 @@ class MCPClientManager:
         there are no name collisions. The approval policy is 'required' by
         default (configurable in tools.yaml).
         """
-        for tname, cname in self._tool_prefix.items():
-            session = self.sessions.get(cname)
-            if not session:
-                continue
-            tspec = session.tools.get(tname)
-            if not tspec:
-                continue
-            full_name = "%s__%s" % (cname, tname)
+        # JAG-462: derive the registry from the LIVE sessions (the source of truth)
+        # instead of the `_tool_prefix` index. That index is written ONCE at connect
+        # time from `session.tools`; when the gateway's first `tools/list` came back
+        # empty, the index stayed empty FOREVER and the ENTIRE MCP surface silently
+        # vanished from the agent's tool list (`registry._external_tools()` only calls
+        # `start_all` when `sessions` is EMPTY, so nothing ever repaired it). Live
+        # evidence: the agent answered "no external MCP servers are active" while the
+        # gateway was connected with 26 tools.
+        _EXTERNAL_TOOLS.clear()
+        _live = []
+        for _cname, _sess in list(self.sessions.items()):
+            for _tname, _tspec in list((getattr(_sess, "tools", None) or {}).items()):
+                if _tspec:
+                    _live.append((_cname, _tname, _tspec))
+        for cname, tname, tspec in _live:
+            # JAG-462: the tool name is BUILT from the client key, and the client key
+            # comes from the user's file (`mcp_clients.local.json` may name it `PMCP`).
+            # The name was interpolated VERBATIM, so a mixed-case client produced
+            # `PMCP__gateway.health` while `config/tools.yaml` enables the lowercase
+            # `pmcp__gateway.health` — the policy lookup is exact, so EVERY tool of that
+            # client was silently DISABLED (the agent saw no MCP tools at all). Normalise
+            # the client part to lowercase; `client_name` keeps the real key so the
+            # session lookup below is unaffected.
+            full_name = "%s__%s" % (str(cname).strip().lower(), tname)
             schema = tspec.get("inputSchema") or {}
             # Register as an external tool — the harness registry needs to know
             # about these so the agent can call them via gated_call
@@ -597,6 +613,16 @@ class MCPClientManager:
 
     def list_external_tools(self):
         """Return all external tools as registry-compatible entries."""
+        # JAG-462: self-heal. `_EXTERNAL_TOOLS` is filled by `start_all`, but a session
+        # that connected with an EMPTY first `tools/list` leaves it empty while
+        # `sessions` is non-empty — and `registry._external_tools()` then never calls
+        # `start_all` again. Re-register from the live sessions whenever the registry is
+        # empty but sessions exist, so the MCP tools always reappear.
+        if not _EXTERNAL_TOOLS and self.sessions:
+            try:
+                self._register_as_tools()
+            except Exception:  # noqa: BLE001 — never break a tool listing
+                pass
         return list(_EXTERNAL_TOOLS.values())
 
     def call_external(self, full_name, args, run_id=None):
@@ -639,6 +665,13 @@ class MCPClientManager:
     def status(self):
         """Effective client view: configured entries (connected or not) merged
         with live session state — single source for the API/UI (JAG-108)."""
+        # JAG-462: report the REAL external tool count too — self-heal first, else the
+        # panel said "external_tools: 0" while the registry exposed 26.
+        if not _EXTERNAL_TOOLS and self.sessions:
+            try:
+                self._register_as_tools()
+            except Exception:  # noqa: BLE001
+                pass
         clients = {}
         for name, cfg in (_load_config() or {}).items():
             s = self.sessions.get(name)

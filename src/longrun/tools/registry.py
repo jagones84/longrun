@@ -590,6 +590,16 @@ def tool_spec(name, ext_snapshot=None):
                       "properties": ins.get("properties", {}),
                       "required": ins.get("required", [])}
     entry = load_config()["tools"].get(name)
+    # JAG-462: an external tool name is `<client>__<tool>`; the client key in the
+    # user's mcp config may differ in CASE from the policy key in config/tools.yaml.
+    # Fall back to a case-insensitive match for the namespaced form so a client named
+    # `PMCP` is not silently DISABLED by an exact-match lookup.
+    if entry is None and "__" in name:
+        _low = name.lower()
+        for _k, _v in (load_config()["tools"] or {}).items():
+            if str(_k).lower() == _low:
+                entry = _v
+                break
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
     # server is NOT connected has no schema — the tool does not exist. Return None
     # so a clone without pmcp never advertises (nor tries) a tool it lacks; the

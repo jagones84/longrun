@@ -2535,7 +2535,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # (`_user_pivot` still True = model never re-engaged the list this
             # turn) may be answered directly — the user's new request supersedes
             # the old plan and the model is not forced to close it.
-            if (_open and not _user_pivot and not _is_aborted(sess["id"])
+            # JAG-462: also NEVER on a `plan_only` turn (a coordinator's delegation
+            # plan IS the plan — JAG-344) nor on an `autonomous` job turn: forcing
+            # "close your todos" there made the master execute/force-close the work it
+            # was supposed to hand to the team (the SEVERE JAG-344 regression).
+            if (_open and not _user_pivot and not plan_only and not autonomous
+                    and not _is_aborted(sess["id"])
                     and _close_todo_rounds < _close_todo_max):
                 _dec = {"continue": True, "reason": "close_todos"}
             if _dec["continue"]:
@@ -3009,7 +3014,12 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
         st.status = "error"
         st.summary = summary
     st.trace = actions
-    finish_run_graph(trace.id, None, goal, on_event=on_event)
+    # JAG-462: an ABORTED run must NOT be "finalized". `finish_run_graph` closes every
+    # OPEN node as `done` with a fabricated "run completed" evidence string — so
+    # pressing Stop marked the remaining work as DONE with a fake claim. Only a run
+    # that actually reached its end may finalize.
+    if not aborted:
+        finish_run_graph(trace.id, None, goal, on_event=on_event)
     trace.finish("aborted" if aborted else "done")
     return {"goal": goal, "model": model, "trace": actions, "run_id": trace.id,
             "aborted": aborted}

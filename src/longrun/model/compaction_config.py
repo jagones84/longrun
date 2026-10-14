@@ -145,7 +145,16 @@ def load(force=False):
         except OSError:
             mtime = None
         if force or _CACHE["mtime"] != mtime or _CACHE["data"] is None:
-            _CACHE["data"] = _read().get("compaction") or dict(_DEFAULTS)
+            # JAG-462: `_read()` already returns the UNWRAPPED policy dict (it merges
+            # `raw["compaction"]` over `_DEFAULTS`). Calling `.get("compaction")` on it
+            # always returned None, so `config/compaction.yaml` was SILENTLY IGNORED and
+            # the hard-coded defaults won — every user edit to the compaction policy
+            # (trigger/target/keep_recent/summarizer) was dead. Accept BOTH shapes so a
+            # raw document is handled too.
+            data = _read()
+            if isinstance(data, dict) and isinstance(data.get("compaction"), dict):
+                data = data["compaction"]
+            _CACHE["data"] = data or dict(_DEFAULTS)
             _CACHE["mtime"] = mtime
         return _CACHE["data"]
 

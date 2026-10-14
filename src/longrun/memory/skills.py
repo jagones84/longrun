@@ -83,9 +83,19 @@ def _skills_sig():
                 for name in sorted(os.listdir(cd)):
                     sd = os.path.join(cd, name)
                     try:
-                        parts.append((cat, name, os.stat(sd).st_mtime_ns))
+                        # JAG-462: fingerprint the SKILL.md FILE, not just the skill
+                        # DIRECTORY. Editing an existing SKILL.md changes the file's
+                        # mtime but leaves the parent dir mtime untouched, so the
+                        # cached title/description stayed STALE (and that stale text is
+                        # what gets injected into the system prompt).
+                        sp = os.path.join(sd, "SKILL.md")
+                        parts.append((cat, name, os.stat(sd).st_mtime_ns,
+                                      os.stat(sp).st_mtime_ns))
                     except OSError:
-                        continue
+                        try:
+                            parts.append((cat, name, os.stat(sd).st_mtime_ns))
+                        except OSError:
+                            continue
             except OSError:
                 continue
     except OSError:

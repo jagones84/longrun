@@ -698,6 +698,48 @@ def _self(args, run_id):
             "Apply with POST /api/tools (reload) or restart: %s."
         ) % osutil.service_hint(),
     }
+    # JAG-462: report the EFFECTIVE external MCP surface. Without this, a model asked
+    # "what MCP do I have?" read the TRACKED `config/mcp_clients.yaml` (which ships
+    # `clients: {}` as an example) and wrongly answered "no external MCP servers are
+    # active" while the gateway was connected with 26 tools.
+    try:
+        from longrun.interop import mcp_client as _mc
+        _doc = _mc.load_doc() or {}
+        _clients = sorted((_doc.get("clients") or {}).keys())
+        try:
+            _tools = sorted(t.get("name") for t in (_mc.list_tools() or []) if t.get("name"))
+        except Exception:  # noqa: BLE001
+            _tools = []
+        info["mcp"] = {
+            "clients": _clients,
+            "tools_count": len(_tools),
+            "tools_available": _tools[:40],
+            "note": ("the tracked config/mcp_clients.yaml holds EXAMPLES; the real "
+                     "clients live in the gitignored config/mcp_clients.local.json"),
+        }
+    except Exception:  # noqa: BLE001 — the self report must never fail on MCP
+        pass
+    # JAG-462: report the EFFECTIVE external MCP surface. Without this, a model asked
+    # "what MCP do I have?" read the TRACKED `config/mcp_clients.yaml` (which ships
+    # `clients: {}` as an example) and wrongly answered "no external MCP servers are
+    # active" while the gateway was connected with 26 tools.
+    try:
+        from longrun.interop import mcp_client as _mc
+        _doc = _mc.load_doc() or {}
+        _clients = sorted((_doc.get("clients") or {}).keys())
+        try:
+            _tools = sorted(t.get("name") for t in (_mc.list_tools() or []) if t.get("name"))
+        except Exception:  # noqa: BLE001
+            _tools = []
+        info["mcp"] = {
+            "clients": _clients,
+            "tools_count": len(_tools),
+            "tools_available": _tools[:40],
+            "note": ("the tracked config/mcp_clients.yaml holds EXAMPLES; the real "
+                     "clients live in the gitignored config/mcp_clients.local.json"),
+        }
+    except Exception:  # noqa: BLE001 - the self report must never fail on MCP
+        pass
     try:
         from longrun.memory import skills as skills_mod
         sk = skills_mod.list_skills()
