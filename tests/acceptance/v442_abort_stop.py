@@ -89,6 +89,12 @@ check("3d the composer button routes to Stop while busy",
       "function sendOrStop() { if (composerBusy()) stopRun(); else send(); }" in IDX)
 check("3e Stop reports the number of turns it hit",
       "running turn(s)" in IDX)
+check("3f the Stop icon resets from server turn state, not a lingering EventSource",
+      "function composerBusy() { return !!(sessionId && runningSessions[sessionId]); }" in IDX)
+_feed_done = IDX.split('es.addEventListener("chat.done", e => {', 1)[1].split(
+    'es.addEventListener("graph.node.added"', 1)[0]
+check("3g server turn completion clears Stop state even if stream cleanup lags",
+      "setRunning(d.session, false)" in _feed_done)
 
 print("---")
 okc = sum(results)

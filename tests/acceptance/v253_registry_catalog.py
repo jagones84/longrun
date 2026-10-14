@@ -21,6 +21,9 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.tools import registry  # noqa: E402
 
+# The baseline catalog is local-only; the flaky external set is injected below.
+registry._external_tools = lambda: {}
+
 results = []
 
 
@@ -91,4 +94,3 @@ print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-

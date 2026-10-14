@@ -55,6 +55,9 @@ check("3b the completed replay jumps to the bottom with smooth scrolling disable
 check("3c replay restoration is finalized after the historical DOM is built",
       '_historyReplaySession = null;' in html
       and 'if (!_restoreChatScrollState(_historySid)) _jumpLogToBottom();' in html)
+check("3d model-only compaction summaries are not replayed as chat bubbles",
+      'if (!m.internal && m.role !== "system") evs.push({ key: _mts[i], i, t: "m", v: m });'
+      in html)
 
 # Chat viewport position is independent for each session and survives replay.
 check("4a chat viewport has its own per-session localStorage key",

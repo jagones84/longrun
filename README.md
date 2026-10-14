@@ -338,11 +338,13 @@ every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live sta
 ```bash
 bash tests/battery.sh                          # fast gate (heavy tests skipped) → 176/176 GREEN
 LONGRUN_BATTERY_FULL=1 bash tests/battery.sh   # full suite (adds the 6 heavy index/ingestion tests) → 182/182 GREEN
+LONGRUN_BATTERY_TIMINGS=1 bash tests/battery.sh # optional: print the 10 slowest tests
 ```
 
 The 6 tests that build real vector indexes / run document ingestion are **skipped by
 default** so the gate stays quick, and the suite runs in **parallel** (each test gets
-its own throwaway data dirs) — the fast gate is ~12s, the full suite ~1min. Set
+its own throwaway data dirs) — the fast gate is ~12s, the full suite ~1min. Default
+parallelism is capped at 12 workers on the DGX; `LONGRUN_BATTERY_JOBS` overrides it. Set
 `LONGRUN_BATTERY_FULL=1` to include the heavy tests; CI always runs the full suite.
 
 CI runs the same battery on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).

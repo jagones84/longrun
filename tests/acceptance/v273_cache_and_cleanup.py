@@ -31,6 +31,9 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.model import prompt as P  # noqa: E402
 from longrun.core import server as S  # noqa: E402
 from longrun.plan import taskgraph as TG  # noqa: E402
+from longrun.tools import registry  # noqa: E402
+
+registry._external_tools = lambda: {}
 
 results = []
 
@@ -129,4 +132,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

@@ -664,13 +664,28 @@ def context_items(session_id=None):
     except Exception:  # noqa: BLE001
         _ws = None
     files, _seen_files = [], set()
-    for p in _RX_PATH.findall(_RX_URL.sub(" ", blob)):
-        cands = [p] if os.path.isabs(p) else [os.path.join(_ws or "", p),
-                                              os.path.join(REPO, p)]
+
+    def _record_file(path: str) -> None:
+        """Add an existing local path to the context file list once."""
+        cands = [path] if os.path.isabs(path) else [os.path.join(_ws or "", path),
+                                                    os.path.join(REPO, path)]
         real = next((c for c in cands if c and os.path.isfile(c)), None)
         if real and real not in _seen_files:
             _seen_files.add(real)
             files.append({"label": os.path.basename(real), "path": real})
+
+    # JAG-459: the generic path scanner intentionally recognizes only source-like
+    # extensions. Parse the structured attachment preamble separately so PDFs,
+    # images, archives, and other uploaded files appear in the Context panel too.
+    for block in re.findall(
+            r"(?m)^The user attached the following[^\n]*\n((?:-[^\n]*(?:\n|$))+)",
+            blob):
+        for line in block.splitlines():
+            attached = re.match(r"^-\s+file:\s*(.+?)\s*$", line)
+            if attached:
+                _record_file(attached.group(1))
+    for p in _RX_PATH.findall(_RX_URL.sub(" ", blob)):
+        _record_file(p)
 
     tool_counts = {}
     for nm in _RX_TOOL.findall(blob):
@@ -2096,4 +2111,3 @@ def main():
     if args.tls or os.environ.get("LONGRUN_TLS", "1") != "0":
         _start_tls(args)
     server.serve_forever()
-

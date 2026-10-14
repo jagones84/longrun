@@ -453,7 +453,7 @@
     box-shadow: 0 6px 18px rgba(0,0,0,.5); }
   #jumpBtn[hidden] { display: none; }
   #jumpBtn:hover { background: var(--sel); }
-  /* JAG-267: vertical dot rail — one dot per user message, click to jump to it. */
+  /* JAG-267/JAG-459: one dot per operator prompt; delegated assignments are excluded. */
   #dotrail { position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
     display: flex; flex-direction: column; gap: 7px; z-index: 5; max-height: 62%;
     overflow: hidden; padding: 2px; }
@@ -820,7 +820,10 @@
   @media (max-width: 1100px) {
     [data-col="context"] { display: none; }
     .resizer { display: none; }
-    body.show-right [data-col="context"] { display: flex !important; position: fixed; right: 0; top: 44px; bottom: var(--sf-bottombar, 0px); width: var(--drawer-w-right, 300px) !important; transform: none; z-index: 15; box-shadow: -12px 0 30px rgba(0,0,0,.5); }
+    body.show-right [data-col="context"] { display: flex !important; position: fixed; right: 46px; top: 44px; bottom: var(--sf-bottombar, 0px); width: min(var(--drawer-w-right, 300px), calc(100vw - 46px)) !important; transform: none; z-index: 15; box-shadow: -12px 0 30px rgba(0,0,0,.5); }
+    body.show-right #toolsBar:not([hidden]) { display: flex; position: fixed; right: 0; top: 44px;
+      bottom: var(--sf-bottombar, 0px); z-index: 17; }
+    body.show-right #toolsBar[hidden] { display: none; }
     /* JAG-368: a fixed DRAWER gets a draggable grip on its INNER edge (left, for the
        right drawer) so the inspector can be widened on a phone too. Positioned in JS. */
     body.show-right #resize-right { display: block !important; position: fixed; top: 44px; bottom: var(--sf-bottombar, 0px);
@@ -2414,10 +2417,12 @@ function _jumpLogToBottom() {
   log.scrollTop = log.scrollHeight;
   requestAnimationFrame(() => { log.style.scrollBehavior = behavior; updateJump(); });
 }
-/* JAG-267: vertical dot rail — one dot per user message; click a dot to jump to it.
- * The last dot is the latest user prompt. Session-scoped: it is rebuilt from the
- * CURRENT #log, so switching sessions / clearing the log resets it automatically. */
-function _userMsgs() { return [...$("log").querySelectorAll(".msg.user")]; }
+/* JAG-267/JAG-459: only operator-authored prompts get dots. Messages assigned by
+ * another agent are displayed as delegated user turns, but are not user prompts. */
+function _userMsgs() {
+  const log = $("log");
+  return log ? [...log.querySelectorAll(".msg.user:not(.deleg)")] : [];
+}
 function buildDotRail() {
   const rail = $("dotrail"); if (!rail) return;
   const msgs = _userMsgs();
@@ -2432,7 +2437,8 @@ function buildDotRail() {
     b.setAttribute("aria-label", "jump to your message " + (i + 1) + " of " + msgs.length);
     b.onclick = () => {
       _stick = false;
-      m.scrollIntoView({ block: "start", behavior: "smooth" });
+      const log = $("log");
+      if (log) _alignChatNodeTop(log, m);
       m.classList.add("dotflash");
       setTimeout(() => m.classList.remove("dotflash"), 900);
     };
@@ -2990,9 +2996,11 @@ function _renderAttach() {
     '<span class="attchip" title="' + _attr(a.value) + '">' + (a.kind === "text" ? "📝" : "📎") +
     " " + esc(a.label) + ' <span class="x" data-i="' + i + '" role="button" aria-label="remove attachment">✕</span></span>').join("");
   row.querySelectorAll(".x").forEach(x => x.onclick =
-    () => { _attachments.splice(+x.dataset.i, 1); _renderAttach(); });
+    () => { _attachments.splice(+x.dataset.i, 1); _renderAttach(); _renderPendingCtxItems(); });
 }
-function addAttachment(a) { _attachments.push(a); _renderAttach(); $("inp").focus(); }
+function addAttachment(a) {
+  _attachments.push(a); _renderAttach(); _renderPendingCtxItems(); $("inp").focus();
+}
 function _attachBlock() {
   if (!_attachments.length) return "";
   const lines = _attachments.map(a => "- " + a.value);
@@ -3417,7 +3425,7 @@ function send(text, display, atts) {
   const _attSnap = (Array.isArray(atts) && atts.length) ? atts.slice() : _attachments.slice();
   const _attNote = _attSnap.length ? "  📎 " + _attSnap.map(a => a.label).join(", ") : "";
   const _rawMsg = _attBlock ? _attBlock + "\n\n" + raw : raw;
-  _attachments = []; _renderAttach();
+  _attachments = []; _renderAttach(); _renderPendingCtxItems();
   // JAG-127b: a turn is already streaming → never open a second SSE (that is
   // what silently fought the running one). Queue it (flushed on `done`), or the
   // user can press ⇢ on the chip to steer the live turn.
@@ -3972,7 +3980,9 @@ async function loadHistory() {
   };
   const evs = [];
   (s.messages || []).forEach((m, i) => {
-    if (!m.internal) evs.push({ key: _mts[i], i, t: "m", v: m });
+    // System summaries/markers stay in model context, not in the visible chat.
+    // The concise compaction card is replayed separately from persisted injects.
+    if (!m.internal && m.role !== "system") evs.push({ key: _mts[i], i, t: "m", v: m });
   });
   (s.tool_cards || []).forEach(c => evs.push({
     key: (typeof c.ts === "number" ? c.ts : _tsAt(c.after == null ? nMsgs : c.after)),
@@ -4248,9 +4258,23 @@ async function loadCtx() {
  * CURRENT session only. Derived server-side from what is still in context, so it
  * resets by itself after compaction; the client never mixes two sessions. */
 let _ctxItems = null, _ctxCat = null, _ctxTokens = null, _ctxMeta = null, _ctxBreakdown = null;
+function _pendingCtxItems() {
+  return _attachments.map(a => {
+    const value = String(a.value || "");
+    const path = value.startsWith("file: ") ? value.slice(6).trim() : "";
+    return { label: a.label || path || "pasted text", path, pending: true };
+  });
+}
+function _renderPendingCtxItems() {
+  if (_attachments.length) _ctxCat = "pending";
+  renderCtxItems();
+}
 async function loadCtxItems() {
   const box = $("ctxCats"); if (!box) return;
-  if (!sessionId) { _ctxItems = null; _ctxCat = null; _ctxTokens = null; _ctxMeta = null; _ctxBreakdown = null; box.innerHTML = ""; return; }
+  if (!sessionId) {
+    _ctxItems = null; _ctxCat = null; _ctxTokens = null; _ctxMeta = null; _ctxBreakdown = null;
+    renderCtxItems(); return;
+  }
   const sid = sessionId;
   const params = new URLSearchParams();
   params.set("session", sid);
@@ -4304,10 +4328,13 @@ function _ctxDonut(bd, total) {
 }
 function renderCtxItems() {
   const box = $("ctxCats"); if (!box) return;
-  if (!_ctxItems) { box.innerHTML = '<div class="remaining">no context yet</div>'; return; }
-  const order = [["skills", "Skills"], ["rules", "Rules"], ["web", "Web Search"],
+  const data = _ctxItems || {};
+  const pending = _pendingCtxItems();
+  if (!_ctxItems && !pending.length) { box.innerHTML = '<div class="remaining">no context yet</div>'; return; }
+  const order = [...(pending.length ? [["pending", "Pending"]] : []),
+                 ["skills", "Skills"], ["rules", "Rules"], ["web", "Web Search"],
                  ["files", "Files"], ["other", "Other"]];
-  const nonEmpty = order.filter(([k]) => (_ctxItems[k] || []).length);
+  const nonEmpty = order.filter(([k]) => (k === "pending" ? pending : data[k] || []).length);
   if (!_ctxCat || !nonEmpty.some(([k]) => k === _ctxCat)) {
     _ctxCat = nonEmpty.length ? nonEmpty[0][0] : "skills";
   }
@@ -4339,11 +4366,11 @@ function renderCtxItems() {
              '<div class="ctxbd">' + bars + "</div></div>";
   }
   const chips = nonEmpty.map(([k, label]) => {
-    const n = (_ctxItems[k] || []).length;
+    const n = (k === "pending" ? pending : (data[k] || [])).length;
     return `<button class="ctxchip${k === _ctxCat ? " on" : ""}" data-c="${k}">${label}` +
            ` <span class="cn">${n}</span></button>`;
   }).join("");
-  const items = _ctxItems[_ctxCat] || [];
+  const items = _ctxCat === "pending" ? pending : (data[_ctxCat] || []);
   const webUrls = (_ctxCat === "web") ? items.map(it => it && it.url).filter(Boolean) : [];
   const listBar = (_ctxCat === "web" && webUrls.length)
     ? '<div class="ctxlistbar"><span class="ctxlistlab">' + webUrls.length + ' source' + (webUrls.length > 1 ? "s" : "") + '</span>' +
@@ -4351,6 +4378,8 @@ function renderCtxItems() {
     : "";
   const rows = items.length ? items.map(it => {
     const label = esc(it.label || it.path || it.url || "");
+    if (it.pending && it.path) return `<button type="button" class="ctxitem" data-open="${esc(it.path)}" title="pending attachment — send a message to add it to context">📎 <span>${label}</span><span class="cn">pending</span></button>`;
+    if (it.pending) return `<div class="ctxitem" title="pending text — send a message to add it to context">📝 <span>${label}</span><span class="cn">pending</span></div>`;
     if (it.url) return `<div class="ctxitemwrap"><a class="ctxitem" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer" title="${esc(it.url)}">🌐 <span>${label}</span></a>` +
       `<button type="button" class="ctxcopy mini" data-url="${_attr(it.url)}" title="copy this URL">⧉</button></div>`;
     if (it.path) return `<button type="button" class="ctxitem" data-open="${esc(it.path)}" title="open in the editor: ${esc(it.path)}">📄 <span>${label}</span></button>`;
@@ -4379,11 +4408,9 @@ function renderCtxItems() {
       if (on) b.scrollIntoView({ block: "nearest" });
     });
   });
-  box.querySelectorAll(".ctxitem[data-open]").forEach(b => b.onclick = () => {
-    if (!window.SparkEditor) return;
-    if (SparkEditor.ensureOpen) SparkEditor.ensureOpen();
-    SparkEditor.open(b.getAttribute("data-open"));
-  });
+  box.querySelectorAll(".ctxitem[data-open]").forEach(b => b.onclick = () =>
+    _openAttachment(_isImage(b.getAttribute("data-open")) ? "img" : "file",
+                    b.getAttribute("data-open")));
 }
 /* JAG-355: live cost of the session — a running $ total + one row per API call.
    The server folds the provider's REAL usage into the ledger and pushes a
@@ -5361,7 +5388,7 @@ function setRunning(sid, on) {
 /* JAG-424: ONE composer button. Normally ↑ = send; while the ACTIVE session has a
    running turn it becomes a red ■ = stop. Replaces the separate stop control so the
    toolbar fits a single row. */
-function composerBusy() { return !!(sessionId && (turnSSE[sessionId] || runningSessions[sessionId])); }
+function composerBusy() { return !!(sessionId && runningSessions[sessionId]); }
 function refreshSendBtn() {
   const b = $("sendBtn"); if (!b) return;
   const busy = composerBusy();

@@ -60,6 +60,11 @@ check("C2 the polish guards hold",
       and "button:disabled {" in HTML and "#dotrail button:focus-visible" in HTML, "")
 check("C3 the undefined border token and the forced-dark popup are gone",
       "var(--line2)" not in HTML and "#qmode { color-scheme: inherit; }" in HTML, "")
+check("C4 chat dots exclude delegated user turns",
+      '.msg.user:not(.deleg)' in HTML and "only operator-authored prompts get dots" in HTML, "")
+_dot_rail = HTML.split("function buildDotRail()")[1].split("function _dotRailCur()")[0]
+check("C5 bookmark click aligns its exact prompt to the chat top",
+      '_alignChatNodeTop(log, m);' in _dot_rail and "m.scrollIntoView" not in _dot_rail)
 
 # --- B: REAL per-call cost ---------------------------------------------------
 TMP = tempfile.mkdtemp(prefix="sf-v361-")
@@ -108,4 +113,3 @@ print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-

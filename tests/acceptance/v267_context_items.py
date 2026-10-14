@@ -19,11 +19,20 @@ for _k in ("CONFIG_DIR", "SESSIONS_DIR", "EDITS_DIR", "RUNS_DIR", "GRAPH_DIR", "
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import server as S  # noqa: E402
+from longrun.tools import registry  # noqa: E402
+
+registry._external_tools = lambda: {}
 
 os.makedirs(S.SESSIONS_DIR, exist_ok=True)
 REAL = os.path.join(TMP, "notes.md")     # JAG-272: only REAL files are listed
 with open(REAL, "w", encoding="utf-8") as f:
     f.write("a real note\n")
+ATTACH_PDF = os.path.join(TMP, "contract scans.pdf")
+ATTACH_IMAGE = os.path.join(TMP, "diagram image.png")
+ATTACH_OTHER = os.path.join(TMP, "source archive.zip")
+for _path in (ATTACH_PDF, ATTACH_IMAGE, ATTACH_OTHER):
+    with open(_path, "wb") as f:
+        f.write(b"attachment")
 
 results = []
 
@@ -36,6 +45,10 @@ def check(name, ok, detail=""):
 sid = "c1"
 S.save_session({"id": sid, "title": sid, "messages": [
     {"role": "user", "content": "hi"},
+    {"role": "user",
+     "content": "The user attached the following — read/consider them FIRST:\n"
+                "- file: %s\n- file: %s\n- file: %s\n\nSummarize the files."
+                % (ATTACH_PDF, ATTACH_IMAGE, ATTACH_OTHER)},
     {"role": "assistant",
      "content": '{"action":"tool","tool":"fs.read","args":{"path":"%s"}}' % REAL},
     {"role": "user",
@@ -63,6 +76,15 @@ check("skills: names parsed from the observation",
 fi = [x["path"] for x in cats["files"]]
 check("files: a REAL local path is listed (url paths excluded)",
       REAL in fi and not any("example.com" in p for p in fi), str(fi))
+check("files: attached PDFs, images, and other file types are listed",
+      all(path in fi for path in (ATTACH_PDF, ATTACH_IMAGE, ATTACH_OTHER)), str(fi))
+with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
+    ui = f.read()
+check("WebUI shows selected attachments under a separate Pending category",
+      '["pending", "Pending"]' in ui and "function _pendingCtxItems()" in ui
+      and "pending attachment — send a message to add it to context" in ui)
+check("sending clears the Pending category before backend context refresh",
+      '_attachments = []; _renderAttach(); _renderPendingCtxItems();' in ui)
 ot = [x["label"] for x in cats["other"]]
 check("other: non-specialised tool counted", "shell" in ot, str(ot))
 check("counts mirror the lists", r["counts"]["web"] == len(web) and r["total"] >= len(web))
@@ -88,4 +110,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

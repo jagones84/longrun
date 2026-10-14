@@ -35,6 +35,10 @@ from longrun.tools import registry  # noqa: E402
 from longrun.memory import skills  # noqa: E402
 from longrun.tools import tools  # noqa: E402
 
+# Keep prompt construction deterministic; this acceptance test covers the local
+# registry and must not start configured external MCP clients.
+registry._external_tools = lambda: {}
+
 results = []
 
 
@@ -93,21 +97,21 @@ check("F5 search without a query fails gracefully",
 # JAG-350: the registry gained a native tool (`sessions`), so the ceiling moved
 # from 17k to 18k. JAG-401 added the `knowledge` tool (GLOBAL notebooks + web
 # discover), so the ceiling moves to 19k. JAG-431j added the `chapters` tool
-# (the session thread ledger), so it moves to 20k. JAG-431r9: legitimate
-# content growth — a larger installed-skills index (~2.6k), accumulated memory
-# lessons (~0.7k) and the live MCP tool surface (pmcp, 26 tools, ~1.8k) — pushes
-# the composed prompt past 20k, so the ceiling moves to 21k. JAG-450 added the
-# `dispatch` line to the chat tool contract (hand work to the org-chart team),
-# so it moves to 22k. It still guards against a runaway dump / disabled-tools
-# wall (the skills index stays capped at 2600 chars, the disabled list is one line).
+# the session thread ledger), so it moves to 20k. JAG-431r9: legitimate runtime
+# growth — a larger installed-skills index (~2.6k), accumulated memory lessons
+# (~0.7k), and 26 PMCP tools (~1.8k) — pushed the composed prompt past 20k.
+# Acceptance tests now stub external-tool discovery, so this test makes no PMCP
+# connection. JAG-450 added the `dispatch` line to the chat tool contract (hand
+# work to the org-chart team), so the ceiling moves to 22k. It still guards
+# against a runaway dump / disabled-tools wall (skills index capped at 2600 chars,
+# disabled list one line).
 check("G1 composed system prompt is bounded (<22k chars)", len(sp) < 22000, "chars=%d" % len(sp))
 _idx = skills.skills_context(max_chars=2600)
 check("G2 the always-on skills index is bounded", len(_idx) <= 2760, "len=%d" % len(_idx))
-check("G3 the disabled-tools wall is compact",
-      bool([l for l in sp.splitlines() if "present but DISABLED" in l])
-      and len([l for l in sp.splitlines() if "present but DISABLED" in l][0]) < 400,
-      "footer_len=%s" % (len([l for l in sp.splitlines() if "present but DISABLED" in l][0])
-                         if [l for l in sp.splitlines() if "present but DISABLED" in l] else -1))
+_disabled_lines = [l for l in sp.splitlines() if "present but DISABLED" in l]
+check("G3 disabled-tools footer is absent or compact",
+      len("\n".join(_disabled_lines)) < 400,
+      "footer_len=%d" % len("\n".join(_disabled_lines)))
 
 # ---- H: skill-library health audit (JAG-203, read-only) ----
 _aud = skills.audit_skills()
@@ -122,4 +126,3 @@ check("H3 the `skills` tool exposes action=audit",
 
 print("\n==== %d/%d checks passed ====" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
-

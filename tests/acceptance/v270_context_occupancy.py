@@ -20,6 +20,9 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import server as S  # noqa: E402
 from longrun.memory import skills as SK  # noqa: E402
+from longrun.tools import registry  # noqa: E402
+
+registry._external_tools = lambda: {}
 
 os.makedirs(S.SESSIONS_DIR, exist_ok=True)
 os.makedirs(os.environ["LONGRUN_CONFIG_DIR"], exist_ok=True)
@@ -106,4 +109,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

@@ -66,7 +66,7 @@ check("the composer keeps the model picker visible and shrinkable (never collaps
 # --- 2) Context: hide empty categories, explain when empty -------------------
 check("context chips only render non-empty categories (no always-empty 'Other')",
       "const chips = nonEmpty.map(" in ui
-      and "order.filter(([k]) => (_ctxItems[k] || []).length)" in ui)
+      and 'order.filter(([k]) => (k === "pending" ? pending : data[k] || []).length)' in ui)
 check("an empty context shows a helpful hint instead of blank chips",
       "Nothing is carried in context yet" in ui and "empty categories are hidden" in ui)
 
@@ -96,4 +96,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

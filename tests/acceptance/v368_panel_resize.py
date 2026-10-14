@@ -56,7 +56,9 @@ check("B2 a drawer grip is glued to the drawer's inner edge (centred on the bord
       and 'const edge = (s.side === "left") ? r.right : r.left;' in HTML
       and 's.el.style.left = Math.round(edge - half) + "px";' in HTML, "")
 check("B3 each drawer carries a resizable width + a shown grip",
-      'width: var(--drawer-w-right, 300px) !important' in HTML
+      'right: 46px; top: 44px;' in HTML
+      and 'width: min(var(--drawer-w-right, 300px), calc(100vw - 46px)) !important' in HTML
+      and 'body.show-right #toolsBar:not([hidden]) { display: flex; position: fixed; right: 0;' in HTML
       and 'body.show-right #resize-right { display: block !important; position: fixed;' in HTML
       and 'width: var(--drawer-w-left, 260px) !important' in HTML
       and 'body.show-left #resize-left { display: block !important; position: fixed;' in HTML, "")
@@ -149,4 +151,3 @@ print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-

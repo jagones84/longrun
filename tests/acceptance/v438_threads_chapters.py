@@ -35,6 +35,8 @@ from longrun.plan import taskgraph           # noqa: E402
 from longrun.tools import registry           # noqa: E402
 from longrun.tools import tools as T         # noqa: E402
 
+registry._external_tools = lambda: {}
+
 results = []
 
 

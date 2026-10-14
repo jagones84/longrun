@@ -42,6 +42,8 @@ _run_one() {
   t="$1"
   name="$(basename "$t" .py)"
   d="$(mktemp -d "${TMPDIR:-/tmp}/sf-t-XXXXXX")"
+  timing="${LONGRUN_BATTERY_TIMINGS:-0}"
+  if [ "$timing" = "1" ]; then start_ms="$(date +%s%3N)"; fi
   mkdir -p "$d/cfg" "$d/sessions" "$d/graphs" "$d/edits" "$d/runs" \
            "$d/roles" "$d/costs" "$d/threads" "$d/data"
   PYTHONPYCACHEPREFIX="$PYC" \
@@ -57,7 +59,12 @@ _run_one() {
   LONGRUN_THREADS_DIR="$d/threads" \
   LONGRUN_PRICES_FILE="$d/prices.json" \
   python3 "$t" > "$d/log" 2>&1
-  if [ $? -eq 0 ]; then
+  test_status=$?
+  if [ "$timing" = "1" ]; then
+    elapsed_ms=$(( $(date +%s%3N) - start_ms ))
+    printf '%s\t%s\n' "$elapsed_ms" "$name" >> "$RES/timing"
+  fi
+  if [ "$test_status" -eq 0 ]; then
     echo 0 > "$RES/$name.rc"
   else
     echo 1 > "$RES/$name.rc"
@@ -69,8 +76,17 @@ export -f _run_one
 export PYC RES
 
 JOBS="${LONGRUN_BATTERY_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+# More workers caused CPU / filesystem contention on the DGX. Twelve workers
+# benchmarked faster than both eight and nproc while keeping the gate near 12s.
+if [ -z "${LONGRUN_BATTERY_JOBS:-}" ] && [ "$JOBS" -gt 12 ]; then
+  JOBS=12
+fi
 # shellcheck disable=SC2086
 printf '%s\n' $LIST | xargs -P "$JOBS" -I {} bash -c '_run_one "$@"' _ {}
+if [ "${LONGRUN_BATTERY_TIMINGS:-0}" = "1" ] && [ -f "$RES/timing" ]; then
+  echo "=== slowest tests (ms) ==="
+  sort -nr "$RES/timing" | head -10
+fi
 
 # Aggregate
 total=0
