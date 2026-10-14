@@ -81,7 +81,7 @@ check("D2 under budget + no force -> untouched", st5["compacted"] == 0 and out5 
 calls = {"n": 0}
 
 
-def fake_llm(messages, model=None, meta=None):
+def fake_llm(messages, model=None, meta=None, cancel=None):
     calls["n"] += 1
     if meta is not None:
         meta["model"] = "fake-sum"

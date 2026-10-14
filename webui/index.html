@@ -3979,10 +3979,24 @@ async function loadHistory() {
     return null;
   };
   const evs = [];
+  // JAG-461: a `compact` inject carries the same text as the LLM-facing head marker,
+  // so collect them to avoid rendering the SAME compaction twice.
+  const _compactTexts = new Set(((s.injects || []).filter(r => (r.kind || "") === "compact"))
+    .map(r => String(r.text || "")));
   (s.messages || []).forEach((m, i) => {
-    // System summaries/markers stay in model context, not in the visible chat.
-    // The concise compaction card is replayed separately from persisted injects.
-    if (!m.internal && m.role !== "system") evs.push({ key: _mts[i], i, t: "m", v: m });
+    if (m.internal) return;
+    if (m.role === "system") {
+      // A harness/summary system message is a CONTROL artifact, never an AI answer.
+      // It is replayed ONCE as a labelled, collapsed card (not a chat bubble), and
+      // sorted to the TOP (it represents the oldest retained turns). It used to be
+      // rendered as a normal assistant reply at the tail — the junk the operator saw.
+      const txt = String(m.content || "");
+      if (txt && !_compactTexts.has(txt)) {
+        evs.push({ key: (typeof m.ts === "number" ? m.ts : -1), i, t: "s", v: m });
+      }
+      return;
+    }
+    evs.push({ key: _mts[i], i, t: "m", v: m });
   });
   (s.tool_cards || []).forEach(c => evs.push({
     key: (typeof c.ts === "number" ? c.ts : _tsAt(c.after == null ? nMsgs : c.after)),
@@ -4034,6 +4048,14 @@ async function loadHistory() {
         if (d.parentNode) d.parentNode.insertBefore(t, d);
       }
       _activeNodeId = null; _activeScope = null;
+      return;
+    }
+    if (e.t === "s") {
+      // JAG-461: a control/system message renders as the SAME collapsed harness card
+      // as a persisted inject, so a compaction summary is visible (once) without ever
+      // masquerading as an assistant answer.
+      _activeNodeId = null; _activeScope = null;
+      harnessInject({ inject_kind: "compact", text: e.v.content, ts: e.v.ts });
       return;
     }
     const v = e.v;
@@ -4519,13 +4541,20 @@ if ($("costRefresh")) $("costRefresh").onclick = async () => {
 async function compactNow() {
   if (!sessionId) { alert("no active session"); return; }
   const btn = $("compactBtn"); if (btn) btn.textContent = "🗜 compacting…";
-  const r = await api("POST", "/api/context/compact", { session: sessionId });
-  if (btn) btn.textContent = "🗜 Compact context";
-  if (r.error) { alert(r.error); return; }
-  const kind = r.summary === "llm" ? ("llm:" + (r.summarizer || "?")) : (r.summary || "—");
-  const afterN = (r.messages_after != null ? r.messages_after : (r.input_messages - r.compacted));
-  const trunc = r.truncated ? (" · " + r.truncated + " truncated") : "";
-  who("ai", `🗜 compacted (manual): ${r.input_messages} → ${afterN} messages (${r.compacted} summarized${trunc} · ${kind} · ${r.tokens_after} tok after)`);
+  let r = {};
+  try { r = await api("POST", "/api/context/compact", { session: sessionId }); }
+  finally { if (btn) btn.textContent = "🗜 Compact context"; }
+  // JAG-461: Stop aborts a running compaction server-side -> the transcript is
+  // UNCHANGED. Say so instead of pretending a compaction happened.
+  if (r && r.aborted) { toast("compaction aborted — context unchanged", "warn"); return; }
+  if (r && r.error) { alert(r.error); return; }
+  if (!r || !r.compacted) { toast("nothing to compact in this session", "warn"); return; }
+  const kind = r.summary === "llm" ? ("llm:" + (r.summarizer || "?"))
+    : (r.summary === "extractive" ? "local fallback (summarizer model unavailable)"
+       : (r.summary || "—"));
+  toast("🗜 compacted " + r.compacted + " message(s) · " + kind,
+        r.summary === "extractive" ? "warn" : "ok");
+  // The visible proof is the persisted `compact` card replayed from the transcript.
   $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx();
 }
 

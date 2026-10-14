@@ -111,6 +111,13 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
                 if not isinstance(content, str):
                     content = str(content)
                 content = content.strip().replace("\n", " ")
+                # JAG-461: never fold harness scaffolding into the user-facing summary
+                # block — a raw "[harness] Observation for tool …" dump is noise, not
+                # memory (that was the "junk repeated in context" the operator saw when
+                # the LLM summarizer was unavailable). A previous system summary is
+                # skipped too, so summaries never nest.
+                if role == "system" or content.startswith("[harness]"):
+                    continue
                 if content:
                     summary_lines.append("%s: %s" % (role, content[:160]))
             summary = "Earlier conversation (compacted):\n" + "\n".join(summary_lines[-40:])

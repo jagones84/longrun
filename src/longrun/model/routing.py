@@ -36,12 +36,11 @@ DEFAULT_CONFIG = {
     # JAG-455: there is NO `planner` role. The planner call always runs on the
     # turn's own model (`turn_model`) — a separate planner model silently made a
     # session pinned to a cloud model burn the LOCAL weights.
-    "roles": {
-        "chat": {"pattern": "nex", "fallbacks": []},
-        "agent": {"pattern": "nex", "fallbacks": []},
-        "subagent": {"pattern": "glm", "fallbacks": []},
-        "summarizer": {"pattern": "glm", "fallbacks": []},
-    },
+    # JAG-461: NO hardcoded model aliases/patterns EITHER. A shipped pattern like
+    # `glm` made a role silently match a LOCAL GGUF alias and the router autoloaded
+    # it. Roles carry NO default here; config/routing.yaml is the single source of
+    # truth, and an unconfigured role falls through to `default_model()` (cloud).
+    "roles": {"chat": {}, "agent": {}, "subagent": {}, "summarizer": {}},
     "default_fallbacks": [],
 }
 

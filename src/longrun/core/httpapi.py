@@ -881,7 +881,7 @@ def prepare_session_for_turn(sess, model=None):
         return sess
 
 
-def _summarize_with_llm(messages, model=None, meta=None):
+def _summarize_with_llm(messages, model=None, meta=None, cancel=None):
     """JAG-103: let the MODEL do the compaction.
 
     Summarize the OLDER turns into one faithful, compact block (decisions, facts,
@@ -942,7 +942,11 @@ def _summarize_with_llm(messages, model=None, meta=None):
         answer, _think, used = stream_with_fallback(
             [{"role": "user", "content": prompt}], model, "summarizer",
             lambda ch, t: None, timeout=180,
-            max_tokens=max(120, output_chars // 4))
+            max_tokens=max(120, output_chars // 4),
+            # JAG-461: Stop must abort a running compaction too — plumb the session's
+            # abort flag into the stream so pressing ■ kills the summarizer call
+            # (it used to ignore Stop and keep decoding until it finished).
+            cancel=cancel)
         answer = (answer or "").strip()
         if len(answer) > output_chars:
             answer = answer[:output_chars].rstrip() + "…"
@@ -999,6 +1003,28 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     # did not pin one explicitly.
     if keep_recent is None:
         keep_recent = rllm.KEEP_RECENT
+    # JAG-461: a compaction is ABORTABLE. Stop in this session must kill the
+    # summarizer call and leave the transcript untouched (before this, a compaction
+    # ignored Stop and kept decoding until it finished — "premuto stop e andata
+    # avanti"). Checked before we start and again before we apply, so a Stop during
+    # the slow summarizer wins either way.
+    def _cancelled():
+        try:
+            return _is_aborted(session)
+        except Exception:  # noqa: BLE001
+            return False
+
+    if _cancelled():
+        # JAG-461: consume the Stop only when no OTHER turn owns it (a concurrent
+        # chat turn's abort must not be silently swallowed by a compaction).
+        try:
+            from longrun.core import events as _ev0
+            if session not in _ev0._ACTIVE_CHAT:
+                clear_abort(session)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"session": session, "aborted": True, "origin": origin or "manual",
+                "compacted": 0, "messages_after": len(messages), "summary": None}
     meta = {}
     # JAG-431r2: mark the session as "running" for the duration of the summarizer
     # call so the session list shows a spinner while the (possibly different)
@@ -1011,7 +1037,8 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     already_active = session in _ev._ACTIVE_CHAT
     tok = None if already_active else _ev.turn_begin(session)
     try:
-        kwargs = {"summarizer": lambda old: _summarize_with_llm(old, meta=meta),
+        kwargs = {"summarizer": lambda old: _summarize_with_llm(old, meta=meta,
+                                                               cancel=_cancelled),
                   "force": manual}
         if keep_recent is not None:
             kwargs["keep_recent"] = keep_recent
@@ -1019,6 +1046,17 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     finally:
         if tok is not None:
             _ev.turn_end(session, tok)
+    # JAG-461: a Stop pressed DURING the summarizer call must leave the transcript
+    # intact — never apply a half-finished compaction. We own the turn here (tok),
+    # so consume the Stop; a concurrent chat turn's flag (tok is None) is left alone.
+    if _cancelled():
+        if tok is not None:
+            try:
+                clear_abort(session)
+            except Exception:  # noqa: BLE001
+                pass
+        return {"session": session, "aborted": True, "origin": origin or "manual",
+                "compacted": 0, "messages_after": len(messages), "summary": None}
     sess["messages"] = msgs
     save_session(sess)
     # JAG-104: the cached "real" prompt size belongs to the turn BEFORE the
@@ -1034,13 +1072,12 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                                       for m in msgs)})
     origin = origin or ("manual" if not budget_tokens else "auto")
     stats["origin"] = origin
-    # JAG-431r: an AUTO compaction MUST leave a visible mark in the transcript
-    # itself — a single `system` inject at the head of the kept window so the
-    # user (and the LLM on the next turn) can both see the harness shrunk the
-    # chat. Without this the auto-compact felt like a silent guess; with it the
-    # user sees "the harness ordered the LLM to compact the chat's context".
-    # We do this only for `origin == "auto"` so the MANUAL button stays clean.
-    if origin == "auto" and msgs:
+    # JAG-431r/JAG-461: EVERY compaction leaves a visible mark. The head `system`
+    # marker is for the LLM (it must precede the summary); the TAIL card is for the
+    # operator, where the reader is looking. Before JAG-461 ONLY `origin == "auto"`
+    # did this, so a MANUAL compaction silently folded the visible chat (Free.*
+    # groups included) into a hidden summary and the operator thought it was deleted.
+    if msgs:
         from longrun.memory import stores as _stores
         from longrun.memory import threads as _th
         from longrun.plan import taskgraph as _tg
@@ -1053,22 +1090,28 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
         # signpost that says "these groups still exist, use `chapters list` to
         # recall them". Without this the free.x labels vanished from the chat
         # view and the user thought compaction DELETED them.
-        free_groups = [g for g in (_th.outline(session) or []) if g.get("kind") == "free"]
-        plan = _tg.load(session) or {}
+        try:
+            free_groups = [g for g in (_th.outline(session) or []) if g.get("kind") == "free"]
+        except Exception:  # noqa: BLE001 — a marker must never break a compaction
+            free_groups = []
+        try:
+            plan = _tg.load(session) or {}
+        except Exception:  # noqa: BLE001 — a marker must never break a compaction
+            plan = {}
         # JAG-431r4: an OPEN task is one of the OPEN_STATUSES. The old `!= "done"`
         # test counted `cancelled`/`superseded` (both CLOSED) as still pending, so the
         # marker told the user/model that finished steps were still open.
         open_tasks = [n for n in plan.get("nodes", [])
                       if n.get("status") in _tg.OPEN_STATUSES]
-        lines = []
-        lines.append(
-            "[harness] \U0001f5dc Auto-compacted the chat context: "
-            "%d \u2192 %d messages, freed ~%d tokens (target %d%% of budget). "
-            "The oldest turns were merged into the leading summary block so the "
-            "next reply has room to land under the %d%% trigger."
-            % (before_n, after_n, freed,
-               int(round(rllm.AUTOCOMPACT_TARGET_PCT)),
-               int(round(rllm.AUTOCOMPACT_PCT))))
+        _verb = ("Auto-compacted the chat context: " if origin == "auto"
+                 else "Compacted the chat context (manual): ")
+        lines = ["[harness] \U0001f5dc " + _verb
+                 + "%d \u2192 %d messages, freed ~%d tokens (target %d%% of budget). "
+                   "The oldest turns were merged into the leading summary block so the "
+                   "next reply has room to land under the %d%% trigger."
+                 % (before_n, after_n, freed,
+                    int(round(rllm.AUTOCOMPACT_TARGET_PCT)),
+                    int(round(rllm.AUTOCOMPACT_PCT)))]
         if free_groups:
             titled = [(g.get("id"), g.get("title") or "(untitled)") for g in free_groups]
             lines.append("Free threads preserved in the ledger (%d): %s"
@@ -1082,19 +1125,16 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                             + (" …" if len(open_tasks) > 12 else "")))
         lines.append("Use the `chapters` tool to recall any compacted thread.")
         sys_marker = "\n".join(lines)
-        # JAG-431r4: the marker goes at the very head of the kept window. The engine
-        # puts the synthetic summary as message 0 when it merged turns, so insert(0)
-        # yields "system marker -> system summary -> kept turns"; when there is no
-        # summary the marker simply leads. (Both old branches were byte-identical.)
-        msgs.insert(0, {"role": "system", "content": sys_marker})
-        sess["messages"] = msgs
-        _stores.save_session(sess)
-        # JAG-451: the head marker above is for the LLM (it must precede the summary),
-        # but it renders at the very TOP of a long chat — off-screen, which is why the
-        # operator never SAW that a compaction had happened. Also drop a user-visible
-        # harness card at the TAIL (where the reader is looking) carrying the same
-        # facts. Appended directly (not via persist_inject) so it does not pollute the
-        # thread ledger's digest with a harness line.
+        # JAG-431r4: for an AUTO compaction the marker goes at the very head of the
+        # kept window (it must precede the summary for the LLM). A MANUAL compaction
+        # keeps the transcript clean — the tail card below is the visible sign.
+        if origin == "auto":
+            msgs.insert(0, {"role": "system", "content": sys_marker})
+            sess["messages"] = msgs
+            _stores.save_session(sess)
+        # JAG-451: a user-visible harness card at the TAIL (where the reader is
+        # looking), appended directly (not via persist_inject) so it does not pollute
+        # the thread ledger's digest with a harness line.
         try:
             sess.setdefault("injects", []).append(
                 {"kind": "compact", "text": sys_marker, "node": None,

@@ -1,3 +1,14 @@
+# Longrun model routing — the SINGLE source of truth for every role.
+#
+# JAG-461: NOTHING is hardcoded in Python. A role with a `model` uses it VERBATIM
+# (a `<provider>:<model>` ref); `fallbacks` are literal refs tried in order. There
+# is deliberately NO `pattern` on `subagent`/`summarizer` any more: a pattern is
+# matched against the LOCAL llama.cpp roster, so when a configured CLOUD model
+# failed the role silently fell over to a local GGUF alias and the router
+# autoloaded 100+GB of weights (live incident: summarizer -> glm-5.3-flash-iq2).
+#
+# `chat`/`agent` keep a pattern because they intentionally follow whatever local
+# model is loaded; set an explicit `model:` to pin them (never a pattern).
 roles:
   chat:
     pattern: qwen
@@ -6,12 +17,13 @@ roles:
     pattern: qwen
     fallbacks: []
   subagent:
-    pattern: glm
-    fallbacks:
-    - deepseek:deepseek-reasoner
     model: openrouter:z-ai/glm-5.3-flash
+    fallbacks:
+    - openrouter:meta/muse-spark-1.3-contributor
   summarizer:
-    pattern: glm
-    fallbacks: []
     model: openrouter:meta/muse-spark-1.3-contributor
+  team_lead:
+    model: openrouter:z-ai/glm-5.3-flash
+  team_member:
+    model: openrouter:deepseek/deepseek-v4-flash-0731
 default_fallbacks: []

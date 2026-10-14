@@ -39,10 +39,31 @@ _PALETTE = [
 
 # JAG-343: model policy. A team may use at most `LOCAL_SLOTS` LOCAL model per machine
 # (dgx / win / any provider with `local: true`); everyone else runs a cheap cloud model,
-# and the LEADS / coordinator get the strongest cheap cloud. All three are overridable.
-LEAD_MODEL = os.environ.get("LONGRUN_TEAM_LEAD_MODEL", "openrouter:z-ai/glm-5.3-flash")
-MEMBER_MODEL = os.environ.get("LONGRUN_TEAM_MEMBER_MODEL",
-                              "openrouter:deepseek/deepseek-v4-flash-0731")
+# and the LEADS / coordinator get the strongest cheap cloud.
+# JAG-461: the model refs are NOT hardcoded in Python any more — they come from
+# `config/routing.yaml` (`roles.team_lead` / `roles.team_member`, falling back to the
+# subagent role chain). An env var still overrides. Nothing here can silently pick a
+# LOCAL model the operator did not configure.
+def _config_team_models():
+    """(lead, member) model refs from config/routing.yaml — no literal fallback."""
+    try:
+        from longrun.model import routing
+        roles = (routing.load_config().get("roles") or {})
+        lead = ((roles.get("team_lead") or {}).get("model") or "")
+        member = ((roles.get("team_member") or {}).get("model") or "")
+        chain = routing.model_chain("subagent")
+        if not lead and chain:
+            lead = chain[0]
+        if not member:
+            member = chain[1] if len(chain) > 1 else (chain[0] if chain else "")
+        return lead, member
+    except Exception:  # noqa: BLE001 — a config hiccup must never break team seeding
+        return "", ""
+
+
+_CFG_LEAD, _CFG_MEMBER = _config_team_models()
+LEAD_MODEL = os.environ.get("LONGRUN_TEAM_LEAD_MODEL") or _CFG_LEAD or ""
+MEMBER_MODEL = os.environ.get("LONGRUN_TEAM_MEMBER_MODEL") or _CFG_MEMBER or ""
 
 
 def local_slots():

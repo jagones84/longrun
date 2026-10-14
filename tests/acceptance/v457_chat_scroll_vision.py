@@ -81,8 +81,12 @@ try:
     _msgs = [{"role": "user", "content": _message}]
     with mock.patch.object(agent_mod, "model_supports_vision", return_value=False):
         _plain = agent_mod._inject_vision_blocks(_msgs, "win:text-model")
-    check("2a unsupported model receives no image block",
-          _plain is _msgs and isinstance(_plain[-1]["content"], str))
+    # JAG-461: the content stays TEXT (no image block) but the harness now tells the
+    # model the truth so it cannot invent a "I can see it" answer.
+    check("2a unsupported model receives no image block but an explicit note",
+          isinstance(_plain[-1]["content"], str)
+          and "cannot" in _plain[-1]["content"]
+          and "[harness]" in _plain[-1]["content"])
 
     with mock.patch.object(agent_mod, "model_supports_vision", return_value=True):
         _vision = agent_mod._inject_vision_blocks(_msgs, "win:vision-model")

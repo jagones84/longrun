@@ -169,7 +169,15 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
     primary = model or routing.pick(role)
     if not primary:
         primary = default_model()
-    chain = [primary] + [a for a in routing.fallback_chain(role) if a != primary]
+    # JAG-461: the failover chain is built from EXPLICIT configured refs only
+    # (`roles.<role>.model` + its literal `fallbacks`, via `model_chain`). It used
+    # to walk `routing.fallback_chain(role)`, which resolved the role PATTERN
+    # against the LOCAL router roster — so when a configured CLOUD model failed,
+    # the next candidate could be a LOCAL alias (live incident: the summarizer
+    # failed `openrouter:deepseek-v4-flash-0731` and fell over to the local
+    # `glm-5.3-flash-iq2`, and the router autoloaded 100+GB of weights). A model
+    # the user chose must never silently become a different one.
+    chain = [primary] + [a for a in routing.model_chain(role) if a and a != primary]
     # JAG-403: a non-thinking model may reject `reasoning_effort`. When thinking
     # effort is ON, retry the SAME model once with the field OMITTED before
     # failing over — a model without reasoning must never crash the turn.

@@ -1473,23 +1473,35 @@ _IMAGE_MAX_BYTES = 8 * 1024 * 1024
 
 
 def _extract_image_paths(text):
-    """Absolute local image paths named on `- file: <path>` / `- <path>` lines."""
+    """Absolute local image paths named in `text`.
+
+    Accepts `- file: <path>`, `- <path>` / `* <path>`, AND a bare absolute image
+    path on its own line (JAG-461: the operator often just writes the path). Every
+    candidate must be an existing file with a known image extension; duplicates are
+    dropped.
+    """
     out = []
     if not isinstance(text, str):
         return out
     for line in text.splitlines():
         s = line.strip()
-        if not s.startswith("-"):
+        if not s:
             continue
-        s = s[1:].strip()
+        if s[:1] in ("-", "*"):
+            s = s[1:].strip()
         if s.startswith("file:"):
             s = s[len("file:"):].strip()
-        if not s or not os.path.isabs(s):
+        cand = s.strip().strip('"').strip("'")
+        if not cand:
             continue
-        if os.path.splitext(s)[1].lower() not in _IMAGE_EXTS:
+        if " " in cand:          # a bare line may be "<path> — note"; keep the path
+            cand = cand.split()[0]
+        if not os.path.isabs(cand):
             continue
-        if os.path.isfile(s) and s not in out:
-            out.append(s)
+        if os.path.splitext(cand)[1].lower() not in _IMAGE_EXTS:
+            continue
+        if os.path.isfile(cand) and cand not in out:
+            out.append(cand)
     return out
 
 
@@ -1531,10 +1543,23 @@ def _inject_vision_blocks(msgs, model):
         return msgs
     try:
         eff_model = model or routing.pick("chat") or default_model()
-        if not model_supports_vision(eff_model):
-            return msgs
+        can_see = bool(model_supports_vision(eff_model))
     except Exception:  # noqa: BLE001 — never block a turn on vision detection
-        return msgs
+        eff_model, can_see = model, False
+    if not can_see:
+        # JAG-461: when the harness CANNOT deliver the pixels, say so to the model in
+        # the turn itself. Otherwise a text-only session guesses (the live answer
+        # "non ho capacità vision, mmproj va configurato" invented a cause). The image
+        # stays a path the model cannot read; the note makes that explicit and the
+        # model stops pretending.
+        note = ("\n\n[harness] %d image attachment(s) detected, but the harness cannot "
+                "deliver image pixels to this session's model (`%s` is not marked "
+                "vision-capable). You CANNOT see these images — say so plainly and never "
+                "invent a description. To let the agent read them, switch this session to "
+                "a vision-capable model." % (len(paths), eff_model or "?"))
+        out = list(msgs)
+        out[-1] = dict(last, content=text + note)
+        return out
     blocks = _image_content_blocks(text, paths)
     if len(blocks) <= 1:  # every image was skipped (size/mime/read error)
         return msgs
