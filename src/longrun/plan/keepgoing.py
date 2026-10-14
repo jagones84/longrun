@@ -88,6 +88,12 @@ def decide(open_nodes, rounds, stale, started, now=None, aborted=False, blocked=
         return {"continue": False, "reason": "goal_reached"}
     if blocked:
         return {"continue": False, "reason": "blocked"}
+    # JAG-463: a HUMAN STEER must never be dropped by a budget / no-progress stop.
+    # The operator typed a directive while the turn was running; the round/time cap
+    # used to win, the loop stopped, and the steer was never drained — the live
+    # "forced steer doesn't cause the LLM to proceed".
+    if steer:
+        return {"continue": True, "reason": None}
     if now - float(started) >= float(c["max_wall_secs"]):
         return {"continue": False, "reason": "budget"}
     if int(rounds) >= int(c["keepgoing_max"]):

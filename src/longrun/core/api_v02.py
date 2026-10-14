@@ -1591,6 +1591,19 @@ def _update_policy(body):
         registry.load_config(reload=True)
         _publish("tools.update", reasoning=dict(r))
         return {"ok": True, "tools": registry.catalog(), "reasoning": dict(r)}
+    # JAG-463: BULK policy — one request for the whole list (the Settings panel's
+    # "enable all" / "disable all"). Applies to every tool the registry knows
+    # (native + external MCP), so the operator does not have to click 48 rows.
+    if body.get("enable_all") or body.get("disable_all"):
+        want = bool(body.get("enable_all"))
+        names = [t.get("name") for t in registry.catalog() if t.get("name")]
+        for _nm in names:
+            cfg.setdefault("tools", {}).setdefault(_nm, {})["enabled"] = want
+        registry.save_config(cfg)
+        registry.load_config(reload=True)
+        _publish("tools.update", bulk=("enable" if want else "disable"),
+                 count=len(names))
+        return {"ok": True, "updated": len(names), "tools": registry.catalog()}
     name = body.get("tool") or body.get("name")
     if not name:
         return {"error": "tool required", "tools": registry.catalog()}

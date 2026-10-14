@@ -629,6 +629,12 @@
      This removes the separate stop control so the toolbar fits one row. */
   #composerBar #sendBtn.stop { background: var(--err); color: #fff; border-radius: 10px; font-size: 14px; }
   #composerBar #sendBtn.stop:hover { filter: brightness(1.1); }
+  /* JAG-463: queue indicator — a GREEN dot on the (stop) send button while messages are
+     waiting to be sent, so "queued" is distinguishable from "idle red stop". */
+  #composerBar #sendBtn { position: relative; }
+  #composerBar #sendBtn.hasqueue::after { content: ""; position: absolute; top: -2px; right: -2px;
+    width: 9px; height: 9px; border-radius: 50%; background: var(--ok);
+    border: 1px solid var(--panel); box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
   /* JAG-416: keep the composer toolbar on ONE line as the window narrows — shrink the
      model label and tighten the gaps (stop · ⋯ · send) BEFORE anything wraps. */
   @media (max-width: 1400px) { #composerBar .cb-right .model-wrap > button { max-width: 150px; } }
@@ -2438,7 +2444,18 @@ function buildDotRail() {
     b.onclick = () => {
       _stick = false;
       const log = $("log");
-      if (log) _alignChatNodeTop(log, m);
+      // JAG-463: a bookmark can live INSIDE a collapsed Free.* / todo section. Open
+      // every ancestor <details> first, then align — otherwise the alignment measures
+      // a hidden box and the chat does not reach the user message at all.
+      let _p = m.parentElement, _opened = false;
+      while (_p && _p !== log) {
+        if (_p.tagName === "DETAILS" && !_p.open) { _p.open = true; _opened = true; }
+        _p = _p.parentElement;
+      }
+      if (log) {
+        if (_opened) requestAnimationFrame(() => _alignChatNodeTop(log, m));
+        else _alignChatNodeTop(log, m);
+      }
       m.classList.add("dotflash");
       setTimeout(() => m.classList.remove("dotflash"), 900);
     };
@@ -2940,6 +2957,7 @@ function renderQueue() {
   const bar = $("queueBar"); if (!bar) return;
   const q = _q();
   bar.innerHTML = ""; bar.hidden = !q.length;
+  refreshSendBtn();   // JAG-463: keep the queue dot on the composer button in sync
   q.forEach((m, i) => {
     const it = _qNorm(m);
     const chip = document.createElement("span"); chip.className = "qchip";
@@ -5431,9 +5449,17 @@ function composerBusy() { return !!(sessionId && runningSessions[sessionId]); }
 function refreshSendBtn() {
   const b = $("sendBtn"); if (!b) return;
   const busy = composerBusy();
+  // JAG-463: while a turn runs the big button IS the Stop panic button, so a green dot
+  // shows when the composer queue is non-empty (something waits to be sent). Ctrl+⏎
+  // still queues/steers; the per-item chips offer ⇢ (steer now) and × (remove).
+  const qn = sessionId ? _q(sessionId).length : 0;
   b.classList.toggle("stop", busy);
+  b.classList.toggle("hasqueue", qn > 0);
   b.textContent = busy ? "■" : "↑";
-  b.title = busy ? "stop agent / chat" : "send (Ctrl+Enter)";
+  b.title = busy
+    ? ("stop agent / chat · " + (qn ? qn + " queued — Ctrl+⏎ adds another"
+                                     : "Ctrl+⏎ queues or steers the next message"))
+    : "send (Ctrl+Enter)";
   b.setAttribute("aria-label", busy ? "stop" : "send");
 }
 function sendOrStop() { if (composerBusy()) stopRun(); else send(); }
@@ -5807,8 +5833,14 @@ function renderTools(el, d) {
          </div>`;
        }).join("")}
      </div>`;
+  const _onN = tools.filter(t => t.enabled !== false).length;
   el.innerHTML = policyCard + kindsCard +
-    '<div class="remaining" style="margin:8px 0 8px">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
+      '<span class="remaining" style="flex:1">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b></span>' +
+      '<span class="remaining">' + _onN + "/" + tools.length + " enabled</span>" +
+      '<button class="ghost" data-bulk="enable" title="enable EVERY tool (native + external MCP) in one request">enable all</button>' +
+      '<button class="ghost" data-bulk="disable" title="disable every tool (native + external MCP)">disable all</button>' +
+    "</div>" +
     tools.map(t => {
     const on = t.enabled !== false;
     const ap = t.approval || "auto";
@@ -5816,13 +5848,16 @@ function renderTools(el, d) {
     // so both the text and the data-* attribute sinks must be escaped (every
     // other render path here already escapes; these two did not).
     const nm = esc(t.name || t.id || "?");
+    // JAG-463: the data-* attributes must carry the RAW name — they used to reuse the
+    // esc()'d text, so a name containing & or a quote POSTed a mangled tool name.
+    const nmRaw = _attr(t.name || t.id || "?");
     const apSafe = esc(ap);
     const apColor = ap === "auto" ? "var(--ok)" : (ap === "denied" ? "var(--err)" : "var(--warn)");
     return `<div class="card" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">` +
       `<span style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
       `<span style="font-weight:600">${nm}</span>` +
-      `<button class="ghost" style="margin-left:auto;font-size:10px;color:${apColor}" data-ap="${nm}" title="cycle approval policy">${apSafe} ⟳</button>` +
-      `<button class="ghost" style="font-size:10px" data-tool="${nm}" data-on="${on}">${on ? "disable" : "enable"}</button></div>` +
+      `<button class="ghost" style="margin-left:auto;font-size:10px;color:${apColor}" data-ap="${nmRaw}" title="cycle approval policy">${apSafe} ⟳</button>` +
+      `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button></div>` +
       (t.description ? `<div class="remaining" style="margin:-4px 0 8px 22px">${esc(t.description)}</div>` : "");
   }).join("");
   el.querySelectorAll("button[data-pol]").forEach(b =>
@@ -5837,6 +5872,11 @@ function renderTools(el, d) {
     });
   el.querySelectorAll("button[data-tool]").forEach(b =>
     b.onclick = () => api("POST", "/api/tools", { tool: b.dataset.tool, enabled: b.dataset.on !== "true" })
+      .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2)));
+  // JAG-463: ONE request enables/disables EVERY tool (native + external MCP).
+  el.querySelectorAll("button[data-bulk]").forEach(b =>
+    b.onclick = () => api("POST", "/api/tools",
+      b.dataset.bulk === "enable" ? { enable_all: true } : { disable_all: true })
       .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2)));
   // JAG-451: cycle a category approval policy: auto -> required -> denied -> auto.
   el.querySelectorAll("button[data-kind]").forEach(b =>
