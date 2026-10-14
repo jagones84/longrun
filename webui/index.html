@@ -2617,6 +2617,56 @@ function endStream() {
  * tool cards and harness→LLM injections nest (indented) underneath it; on 'done'
  * it collapses and the next node takes over. */
 const _todoOpenStorageKey = "sf_tctree_open";
+const _chatScrollStorageKey = "sf_chat_scroll";
+function _chatScrollMap() {
+  try {
+    const map = JSON.parse(localStorage.getItem(_chatScrollStorageKey) || "{}");
+    return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+  } catch (e) { return {}; }
+}
+function _saveChatScrollState(sid, scrollTop) {
+  if (!sid) return;
+  const map = _chatScrollMap();
+  map[sid] = Math.max(0, Number(scrollTop) || 0);
+  try { localStorage.setItem(_chatScrollStorageKey, JSON.stringify(map)); } catch (e) {}
+}
+function _chatScrollState(sid) {
+  const map = _chatScrollMap();
+  if (!Object.prototype.hasOwnProperty.call(map, sid)) return null;
+  const top = Number(map[sid]);
+  return Number.isFinite(top) ? Math.max(0, top) : null;
+}
+function _restoreChatScrollState(sid) {
+  const top = _chatScrollState(sid), log = $("log");
+  if (top === null || !log) return false;
+  const behavior = log.style.scrollBehavior;
+  log.style.scrollBehavior = "auto";
+  log.scrollTop = Math.min(top, Math.max(0, log.scrollHeight - log.clientHeight));
+  requestAnimationFrame(() => {
+    log.style.scrollBehavior = behavior;
+    if (sessionId === sid) _saveChatScrollState(sid, log.scrollTop);
+    updateJump();
+  });
+  return true;
+}
+function _forgetChatScrollState(sid) {
+  if (!sid) return;
+  const map = _chatScrollMap();
+  if (!Object.prototype.hasOwnProperty.call(map, sid)) return;
+  delete map[sid];
+  try { localStorage.setItem(_chatScrollStorageKey, JSON.stringify(map)); } catch (e) {}
+}
+function _pruneChatScrollState(sessions) {
+  const map = _chatScrollMap();
+  const live = new Set(sessions.map(s => s && s.id).filter(Boolean).map(String));
+  let changed = false;
+  Object.keys(map).forEach(sid => {
+    if (!live.has(sid)) { delete map[sid]; changed = true; }
+  });
+  if (changed) {
+    try { localStorage.setItem(_chatScrollStorageKey, JSON.stringify(map)); } catch (e) {}
+  }
+}
 function _todoOpenMap() {
   try {
     const map = JSON.parse(localStorage.getItem(_todoOpenStorageKey) || "{}");
@@ -3507,6 +3557,7 @@ async function api(method, path, body) {
    (workspace/editor, todo/plan, model). Used by the rail and the palette. */
 function selectSession(s) {
   if (!s || !s.id) return;
+  _saveChatScrollState(sessionId, $("log").scrollTop);
   sessionId = s.id; localStorage.setItem("sf_session", sessionId);
   _forceExpandActive = true;   // JAG-415: reveal this session's team group in the rail
   clearDone(s.id);   // JAG-218: opening a session clears its "finished" bell
@@ -3567,7 +3618,7 @@ async function openSessMenu(row, s, ag) {
     if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
     if (a === "role") { let rp = null, rt = ""; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; rt = (r && r.text) || ""; } catch (e) {} if (!rp || !rt) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
     if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
-    if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
+    if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); _forgetChatScrollState(s.id); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
       if (ag) { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
       else if (!(await confirmDelete("delete session " + (s.title || s.id) + "?"))) return;
@@ -3671,7 +3722,10 @@ function _sessRowEl(s, pinnedIds, ag) {
 let _forceExpandActive = false;   // JAG-415: set on a redirect/selection, consumed once
 async function loadSessions() {
   const [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
-  if (out && Array.isArray(out.sessions)) _pruneTodoOpenState(out.sessions);
+  if (out && Array.isArray(out.sessions)) {
+    _pruneTodoOpenState(out.sessions);
+    _pruneChatScrollState(out.sessions);
+  }
   const box = $("sessions"); box.innerHTML = "";
   const q = ($("session-search") ? $("session-search").value : "").toLowerCase();
   const hideEmpty = $("hide-empty") ? $("hide-empty").checked : false;
@@ -4024,7 +4078,10 @@ async function loadHistory() {
   // ledger free-group counts differ (a compaction), so it can never mislabel.
   applyThreadTitles();
   if (_historyReplaySession === _historySid) _historyReplaySession = null;
-  if (sessionId === _historySid) { _stick = true; _jumpLogToBottom(); }
+  if (sessionId === _historySid) {
+    if (!_restoreChatScrollState(_historySid)) _jumpLogToBottom();
+    _stick = _nearBottom();
+  }
 }
 
 /* v1.6.3 (JAG-55): splits a trailing "think: …" block out of a reply. */
@@ -5503,6 +5560,7 @@ function connectFeed() {
     $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx(); });
   es.addEventListener("session.cleared", e => { const d = JSON.parse(e.data);
     if (d.session) _forgetTodoOpenState(d.session);
+    if (d.session) _forgetChatScrollState(d.session);
     push("🧹 session cleared"); if (!d.session || d.session === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); });
   es.addEventListener("session.renamed", e => { loadSessions(); });
   // JAG-431r8: a Free.N title/summary written by the agent (the `chapters` tool)
@@ -5515,6 +5573,7 @@ function connectFeed() {
   es.addEventListener("session.created", e => { const d = JSON.parse(e.data); push("🗂 session created"); loadSessions(); });
   es.addEventListener("session.deleted", e => { const d = JSON.parse(e.data);
     if (d.session) _forgetTodoOpenState(d.session);
+    if (d.session) _forgetChatScrollState(d.session);
     push("🗂 session deleted"); loadSessions(); });
   es.addEventListener("plan.update", () => { push("🗺 plan updated"); loadPlan(); });
   es.addEventListener("tasks.update", () => push("✅ legacy tasks board updated"));
@@ -8436,8 +8495,12 @@ $("inp").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
 });
 $("inp").addEventListener("input", skillsAutocomplete);
-/* JAG-116: track whether the reader is pinned to the bottom + the jump arrow */
-$("log").addEventListener("scroll", () => { _stick = _nearBottom(); updateJump(); });
+/* JAG-116/JAG-458: track the bottom pin and save each session's reading position. */
+$("log").addEventListener("scroll", () => {
+  const log = $("log");
+  _stick = _nearBottom(); updateJump();
+  if (_historyReplaySession !== sessionId) _saveChatScrollState(sessionId, log.scrollTop);
+});
 $("jumpBtn").onclick = () => { _stick = true; const l = $("log"); l.scrollTop = l.scrollHeight; updateJump(); };
 ["nsTitle", "nsWs"].forEach(id => { const el = $(id); if (el) el.addEventListener("keydown", e => { if (e.key === "Enter") createNewSession(); }); });
 $("inp").addEventListener("keydown", e => {

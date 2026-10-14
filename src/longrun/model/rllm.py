@@ -282,9 +282,9 @@ def model_supports_vision(alias):
     """True when `alias` can accept multimodal image content blocks.
 
     Signal order: an explicit `vision: true` in the provider catalogue, then the
-    live llama.cpp roster's `architecture.input_modalities` (the router reports
-    the loaded mmproj). Conservative: any doubt returns False, so a text-only
-    model never receives image blocks it cannot use.
+    resolved local provider roster's `architecture.input_modalities` (llama.cpp
+    reports the loaded mmproj). Conservative: any doubt returns False, so a
+    text-only model never receives image blocks it cannot use.
     """
     if not alias:
         return False
@@ -305,7 +305,13 @@ def model_supports_vision(alias):
     if provider is not None and not provider.get("local"):
         return False
     try:
-        with urllib.request.urlopen(ROUTER_BASE + "/v1/models", timeout=6) as r:
+        if provider is not None and provider.get("base_url"):
+            models_url = provider["base_url"].rstrip("/") + "/models"
+            request = urllib.request.Request(
+                models_url, headers=providers.headers(provider))
+        else:
+            request = ROUTER_BASE + "/v1/models"
+        with urllib.request.urlopen(request, timeout=6) as r:
             data = json.loads(r.read().decode("utf-8") or "{}")
         for m in data.get("data", []):
             if m.get("id") != mid:
@@ -790,4 +796,3 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
             answer.append(clean)
             on_delta("answer", clean)
     return "".join(answer), "".join(think)
-
