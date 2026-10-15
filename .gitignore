@@ -79,6 +79,11 @@ tests/legacy/
 *.pyc
 *.pyo
 
+# JAG-465: the Trae IDE keeps its agent rules and session state here. It is local
+# machine state (it can carry an auth URL) and must never be tracked. The files stay
+# on disk — untracked, not deleted (`git rm -r --cached .trae`).
+.trae/
+
 # OS / editor cruft (never share a machine's local state).
 .DS_Store
 Thumbs.db

@@ -258,7 +258,7 @@ check("10b free groups are labelled from chapter metadata",
       "function _freeMeta(" in idx and "chapter.title || \"\"" in idx)
 check("10c the ordinal-only label helper is gone", "function _freeLabel(" not in idx)
 check("10d loadHistory hands the chapter to the renderer",
-      "who(\"user\", m.content, m.ts, m.sender, m.subjob, m.chapter)" in idx
+      "who(\"user\", m.content, m.ts, m.sender, m.subjob, m.chapter" in idx
       and "who(\"ai\", reply, m.ts, null, null, m.chapter)" in idx)
 check("10e the free-group summary is shown on the group header",
       'class="fgsum"' in idx and ".fgroup .fgsum" in idx)

@@ -50,12 +50,12 @@ providers:
     local: true
     models:
       - {id: qwen-3.8-27b-abliterated-q4}
-      - {id: qwen-3.8-27b-abliterated-q3}
-      - {id: qwen3.6-35b-a3b-uncensored-iq4xs, context_length: 96000}
-      - {id: nex-n2.5-mini-uncensored-iq4xs, context_length: 131072}
+      - {id: qwen-3.8-27b-abliterated-q3, vision: true}
+      - {id: qwen3.6-35b-a3b-uncensored-iq4xs, context_length: 96000, vision: true}
+      - {id: nex-n2.5-mini-uncensored-iq4xs, context_length: 131072, vision: true}
       - {id: deepseek-r1-distill-qwen-32b-abl-iq2m}
-      - {id: muse-glimmer-30b-abliterated-q3}
-      - {id: gemma-4-26b-a4b}
+      - {id: muse-glimmer-30b-abliterated-q3, vision: true}
+      - {id: gemma-4-26b-a4b, vision: true}
       - {id: gpt-oss-20b}
 
   # ---- local: vLLM ----------------------------------------------------------

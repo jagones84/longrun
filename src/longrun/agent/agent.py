@@ -31,6 +31,10 @@ from longrun.util.paths import DATA_DIR, SESSIONS_DIR, WEBUI_DIR
 from longrun.util.paths import REPO_ROOT as REPO
 from longrun.model.rllm import ROUTER_BASE, _router_stream, context_budget, default_model
 from longrun.model.rllm import model_supports_vision
+# JAG-465: read the compaction policy through the MODULE, never `from ... import
+# AUTOCOMPACT_PCT` — it is a PEP-562 lazy attribute backed by config/compaction.yaml,
+# and binding it at import time would freeze the threshold for the process lifetime.
+from longrun.model import rllm as _rllm
 from longrun.util.steering import _is_aborted, drain_steer, has_steer
 from longrun.util.fswrite import write_json
 from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event,
@@ -1251,7 +1255,8 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
         if not sid2:
             return _fail("teammate %s has no session" % member.get("id"))
         on_event("tool.call", session=sess["id"], tool="dispatch",
-                 args={"agent": member.get("id"), "goal": goal}, inline=True)
+                 args={"agent": member.get("id"), "goal": goal, "session": sid2},
+                 inline=True)
         try:
             from longrun.core import server as _srv
             sess2 = _srv.get_or_create_session(sid2)
@@ -1260,7 +1265,8 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
             for _ in _srv.chat_stream_gen(
                     sess2, "[delegated by %s (%s)] %s"
                     % (me.get("id"), me.get("name") or "", goal),
-                    model2, None, autonomous=True, sender=me.get("id")):
+                    model2, None, autonomous=True, sender=me.get("id"),
+                    sender_session=sess["id"]):
                 pass
             s2 = _srv.load_session(sid2) or {}
             turn = (s2.get("messages") or [])[before:]
@@ -1275,11 +1281,11 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
         out = reply[:4000]
         on_event("tool.result", session=sess["id"], tool="dispatch", ok=ok,
                  exit_code=0 if ok else 1, backend="harness",
-                 args={"agent": member.get("id"), "goal": goal}, output=out,
+                 args={"agent": member.get("id"), "goal": goal, "session": sid2}, output=out,
                  summary="dispatch %s: %s" % (member.get("id"),
                                               "replied" if ok else "no reply"))
         persist_tool_card(sess, "dispatch", ok,
-                          args={"agent": member.get("id"), "goal": goal},
+                          args={"agent": member.get("id"), "goal": goal, "session": sid2},
                           result=out, exit_code=0 if ok else 1, backend="harness",
                           node=node, after=after)
         if ok:
@@ -2014,16 +2020,74 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if kind != "system":
             persist_inject(sess, kind, content, node=_cur_node(), after=_after())
 
-    # JAG-166: publish the assembled system prompt once per turn (collapsed in the
-    # UI), so the operator can read the real prompt the model received.
+    def _trim_midturn():
+        """JAG-465: keep ONE long agentic turn inside the model's window.
+
+        Auto-compaction is evaluated at the START of a turn, so a turn that begins
+        near 30% and runs dozens of tool rounds can climb past the 70% trigger with
+        nothing to stop it — the operator saw a chat at 75% "near threshold" that
+        never compacted. Between rounds we drop the OLDEST entries of THIS turn
+        (harness observations and earlier assistant tool-call echoes) while never
+        touching the system prompt, the user's own turns, or the last few entries.
+        Returns the number of dropped entries (0 when nothing was needed).
+        """
+        try:
+            _budget = context_budget(model)
+            if not _budget:
+                return 0
+            from longrun.model import context_engine as _ce
+
+            def _used():
+                return sum(_ce.count_tokens(m.get("content")) for m in msgs)
+
+            _limit = int(_budget * (float(_rllm.AUTOCOMPACT_PCT) / 100.0))
+            if _used() <= _limit:
+                return 0
+            _keep = 6                     # never trim the recent working set
+            _dropped = 0
+            while len(msgs) - _turn_base > _keep and _used() > _limit:
+                _idx = None
+                for _i, _m in enumerate(msgs[_turn_base:]):
+                    if len(msgs) - _turn_base - _i <= _keep:
+                        break
+                    _c = _m.get("content")
+                    _c = _c if isinstance(_c, str) else ""
+                    if _m.get("role") == "system":
+                        continue
+                    if _c.startswith(HARNESS_MARK) or _m.get("role") == "assistant":
+                        _idx = _turn_base + _i
+                        break
+                if _idx is None:
+                    break
+                del msgs[_idx]
+                _dropped += 1
+            return _dropped
+        except Exception:  # noqa: BLE001 — trimming must never break a turn
+            return 0
+
+    # JAG-166/JAG-465: publish the assembled system prompt ONCE per session (the
+    # operator must be able to read the real prompt the model received). Every
+    # FURTHER turn only emits a compact delta note when the prompt actually changed
+    # — re-publishing the whole prompt on every user message flooded the chat with
+    # an identical wall of text and buried the actual work. The prompt itself is
+    # still sent to the model on every request (the API is stateless): this is a
+    # display rule, not a context change.
     try:
         if msgs and msgs[0].get("role") == "system":
             _sys_txt = msgs[0].get("content") or ""
             _h = hash(_sys_txt)
-            if _LAST_SYS_INJECT.get(sess["id"]) != _h:
+            _prev = _LAST_SYS_INJECT.get(sess["id"])
+            if _prev is None:
                 _LAST_SYS_INJECT[sess["id"]] = _h
                 on_event("harness.inject", session=sess["id"], inject_kind="system",
                          text=_sys_txt)
+            elif _prev != _h:
+                _LAST_SYS_INJECT[sess["id"]] = _h
+                on_event("harness.inject", session=sess["id"], inject_kind="system-delta",
+                         text=("[system prompt updated for this turn — %d chars "
+                               "(the full text was shown at the start of this chat); "
+                               "the model always receives the current prompt]"
+                               % len(_sys_txt)))
     except Exception:  # noqa: BLE001 — must never break the turn
         pass
     # JAG-170: buffer the live reasoning so each persisted tool card carries the
@@ -2078,6 +2142,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _kg_rounds += 1
             _kg_prev = _cur
             work_steps = 0  # grant another round of tool calls
+            # JAG-465: auto-compaction runs only at TURN START, so a long agentic turn
+            # could climb past the trigger with nothing to stop it. Trim this turn's
+            # oldest context between rounds and SAY SO, so the operator sees why.
+            _tr = _trim_midturn()
+            if _tr:
+                _inject("The harness trimmed %d older step(s) from this turn's context "
+                        "to stay inside the model window. Continue from your current "
+                        "step; the persistent task list is unaffected." % _tr,
+                        "observation")
             on_event("plan.continuing", session=sess["id"], round=_kg_rounds,
                      open=len(_open), total=len(_nodes), difficulty=_diff_level)
             if _dec.get("reason") == "pivot_sync":

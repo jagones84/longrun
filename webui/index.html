@@ -68,7 +68,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sessbadge[hidden] { display: none; }
   .pill { font-size: 10px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); white-space: nowrap; }
-  .pill.ok { color: var(--ok); border-color: rgba(74,222,128,.35); }
+  .pill.ok { color: var(--ok); border-color: color-mix(in srgb, currentColor 40%, transparent); }
   .pill.warn { color: var(--warn); border-color: rgba(251,191,36,.4); }
   /* JAG-359: the topbar indicators are compact GRAPHICS, not debug text — a tiny
      ring for the context load, a status DOT for the sandbox. The verbose string
@@ -167,7 +167,7 @@
     border-radius: 10px; padding: 8px 14px; font-size: 12.5px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
     opacity: 0; transform: translateY(6px); transition: opacity .18s ease, transform .18s ease; }
   .sf-toast.show { opacity: 1; transform: translateY(0); }
-  .sf-toast.ok { border-color: rgba(74,222,128,.6); }
+  .sf-toast.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
   .sf-toast.err { border-color: rgba(248,113,113,.6); }
   /* JAG-279: tiny copy affordances in the Context panel (curated). */
   .ctxlistbar { display: flex; align-items: center; gap: 8px; margin: 9px 0 3px; }
@@ -212,9 +212,22 @@
   .step:hover, .task:hover { background: var(--hover); cursor: pointer; }
   .step.done { color: var(--dim); text-decoration: line-through; }
   .task .st { font-size: 9px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); flex-shrink: 0; }
-  .task .st.doing { color: var(--warn); border-color: rgba(251,191,36,.4); }
-  .task .st.done { color: var(--ok); border-color: rgba(74,222,128,.4); }
-  .task .st.blocked { color: var(--err); border-color: rgba(248,113,113,.4); }
+  /* JAG-465: the status borders are derived from the STATUS colour itself, so the
+     badge reads correctly on every theme. The old hard-coded light-green border was
+     tuned for dark backgrounds and made a "done" badge look washed out on the light
+     Sand (cream) theme. */
+  .task .st.doing { color: var(--warn); border-color: color-mix(in srgb, currentColor 45%, transparent); }
+  .task .st.done { color: var(--ok); border-color: color-mix(in srgb, currentColor 45%, transparent); background: color-mix(in srgb, currentColor 10%, transparent); }
+  .task .st.blocked { color: var(--err); border-color: color-mix(in srgb, currentColor 45%, transparent); }
+  /* JAG-465: the step of a LIVE turn gets a soft pulse, so a running todo is visible
+     at a glance in the Plan panel. Motion is suppressed for reduced-motion users. */
+  .task.live { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .task.live .st.doing { animation: doingPulse 1.4s ease-in-out infinite; }
+  @keyframes doingPulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 55%, transparent); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 0%, transparent); }
+  }
+  @media (prefers-reduced-motion: reduce) { .task.live .st.doing { animation: none; } }
   .task .st.cancelled { color: var(--dim); text-decoration: line-through; }
   .task .st.superseded { color: var(--dim); text-decoration: line-through; opacity: .7; }
   .task .dep { font-size: 9px; color: var(--dim); }
@@ -655,6 +668,10 @@
     padding: 4px; z-index: 40; background: var(--menubg); }
   /* JAG-396: no see-through menus — the slash popup uses .card, force it opaque. */
   #slashMenu { background: var(--menubg); }
+  /* JAG-465: the picker now lists up to 60 catalogue matches — let the popup scroll. */
+  #slashMenu { max-height: 46vh; overflow-y: auto; }
+  .msg .xlink { margin-left: auto; }
+  .msg .xlink + .copy { margin-left: 6px; }
   #slashMenu .slashrow.hl { background: var(--hl); outline: 1px solid var(--acc); }
   #moreMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%; height: auto;
     min-height: 0; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
@@ -2307,6 +2324,61 @@ function _alignChatNodeTop(log, det) {
   const nextTop = log.scrollTop + (detRect.top - scrollportTop) / scale;
   log.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
 }
+/* JAG-465: the same top-alignment for an ARBITRARY element (a tool card or a
+   message), so a cross-chat link can land on the exact point it points at. */
+function _alignElTop(log, el) {
+  if (!log || !el) return;
+  const scale = _pageScale();
+  const logRect = log.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const paddingTop = parseFloat(getComputedStyle(log).paddingTop) || 0;
+  const scrollportTop = logRect.top + (log.clientTop + paddingTop) * scale;
+  log.scrollTo({ top: Math.max(0, log.scrollTop + (r.top - scrollportTop) / scale),
+                 behavior: "smooth" });
+}
+function _findLastIn(sel, pred) {
+  const list = Array.from(document.querySelectorAll(sel));
+  for (let i = list.length - 1; i >= 0; i--) if (pred(list[i])) return list[i];
+  return null;
+}
+/* JAG-465: open ANOTHER session and reveal the exact point a dispatch link refers
+   to — the last card of a given tool, a given todo node, or the message whose text
+   contains `text`. Used in BOTH directions (dispatcher <-> teammate). */
+async function _openSessionAt(sid, want) {
+  want = want || {};
+  if (!sid) return;
+  if (sid !== sessionId) selectSession({ id: sid });
+  const deadline = Date.now() + 7000;
+  let el = null;
+  while (Date.now() < deadline) {
+    if (want.tool) el = _findLastIn("#log .toolcard", c => (c.dataset.tool || "") === want.tool);
+    else if (want.node) el = _latestSection(want.node) || _chatNodes[want.node] || null;
+    else if (want.text) el = _findLastIn("#log .msg.user", m => (m.textContent || "").includes(want.text));
+    if (el) break;
+    await new Promise(r => setTimeout(r, 150));
+  }
+  if (!el) { toast("the linked item is not in that chat yet"); return; }
+  const sec = el.closest("details"); if (sec) sec.open = true;
+  _alignElTop($("log"), el);
+  el.classList.add("dotflash");
+  setTimeout(() => el.classList.remove("dotflash"), 1400);
+}
+function _xlinkBtn(label, title, fn) {
+  const b = document.createElement("button");
+  b.className = "ghost xlink"; b.type = "button";
+  b.textContent = label; b.title = title;
+  b.style.cssText = "font-size:10px;padding:1px 7px;border-radius:6px";
+  b.onclick = e => { e.stopPropagation(); e.preventDefault(); fn(); };
+  return b;
+}
+/* JAG-465: attach the "back to the dispatch" link to a delegated user bubble. */
+function _whoLink(msgEl, senderSession) {
+  const wh = msgEl.querySelector(".who");
+  if (!wh) return;
+  wh.insertBefore(_xlinkBtn("↗ dispatch", "open the dispatch card in the sender's chat",
+    () => _openSessionAt(senderSession, { tool: "dispatch" })),
+    wh.querySelector(".copy"));
+}
 function _scrollToNode(nid) {
   const det = _latestSection(nid) || _chatNodes[nid];
   if (!det) return false;
@@ -2497,7 +2569,7 @@ function _tsSpan(ts) {
   const txt = p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
   return '<span class="mts" title="' + esc(d.toString()) + '">' + txt + "</span>";
 }
-function who(role, text, ts, sender, subjob, chapter) {
+function who(role, text, ts, sender, subjob, chapter, senderSession) {
   const d = document.createElement("div");
   d.className = "msg " + (role === "user" ? "user" : "ai") + (sender ? " deleg" : "");
   // v1.6.3 (JAG-55): per-message copy button — the transcript is selectable too,
@@ -2513,6 +2585,10 @@ function who(role, text, ts, sender, subjob, chapter) {
   if (role === "user") { b.textContent = text; }
   else { b.dataset.raw = (text == null ? "" : String(text)); renderAnswerBubble(b); }
   d.querySelector(".copy").onclick = () => copyBtn(d.querySelector(".copy"), b.dataset.raw != null ? b.dataset.raw : b.textContent);
+  // JAG-465: a DELEGATED turn carries the dispatcher's session id — offer a link
+  // back to the exact dispatch card in the sender's chat, so the two chats are
+  // navigable in both directions instead of being two disconnected transcripts.
+  if (sender && senderSession) _whoLink(d, senderSession);
   // JAG-166/JAG-431g: user turns start a NEW free thread group (top-level when a
   // task group is active); harness/agent output nests under the active todo node.
   if (role === "user") {
@@ -2567,6 +2643,19 @@ function updateToolCard(data) {
   card.classList.remove("pending");
   card.classList.add(data.ok ? "ok" : "err");
   card.querySelector(".tc-ic").textContent = data.ok ? "✅" : "⛔";
+  // JAG-465: a `dispatch` card remembers the TEAMMATE's session — one click opens
+  // their chat at the delegated message (the other half of the cross-chat link).
+  {
+    const _da = data.args;
+    if (tool === "dispatch" && _da && typeof _da === "object" && _da.session &&
+        !card.querySelector(".xlink")) {
+      const _g = String(_da.goal || "").slice(0, 40);
+      const _head = card.querySelector(".toolcard-head");
+      if (_head) _head.appendChild(_xlinkBtn(
+        "↗ open", "open this teammate's chat at the delegated message",
+        () => _openSessionAt(_da.session, { text: _g })));
+    }
+  }
   // JAG-127: a file write/edit card exposes a one-click diff of what it changed.
   const _fp = _toolFilePath(data);
   if (_fp && !card.querySelector(".tcdiff")) {
@@ -2812,6 +2901,20 @@ function chatNodeUpdate(node) {
   }
   _updateNowBar();
   scroll();
+}
+/* JAG-465: repaint every already-rendered chat todo section from the LOADED graph.
+   A section created before the graph arrived (or from a replayed feed event) used
+   to keep an empty label/status forever — the "doing with no description" rows —
+   and only a full page reload repaired it. This is a PAINT-ONLY pass: no
+   open/close, no scrolling, so it can run after any graph load. */
+function _repaintChatNodes() {
+  if (!graph) return;
+  const seen = new Set();
+  (graph.nodes || []).forEach(n => {
+    if (!n || !n.id || seen.has(n.id)) return;
+    seen.add(n.id);
+    (_chatSections[n.id] || []).forEach(det => _paintNode(n, det));
+  });
 }
 function harnessInject(d) {
   if (!d) return;
@@ -3546,6 +3649,19 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); adopt(d.session);
     setRunning(d.session, true); if (!live()) return; setRun(d.run_id);
     _activeScope = null; _activeNodeId = null; _nowLast = ""; _sysInjectEl = null; _updateNowBar(); });
+  // JAG-465: a turn triggered by ANOTHER agent (a `dispatch` from a coordinator) is
+  // announced by `chat.user`; the receiver's own chat must show the ASSIGNMENT as it
+  // starts, not only after a reload. The bubble is attributed to the sender and
+  // carries the link back to the dispatcher's card. Deduped: a turn this tab started
+  // already rendered its own user bubble.
+  es.addEventListener("chat.user", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    adopt(d.session);
+    if (!live() || d.session !== sessionId) return;
+    const txt = String(d.text || "");
+    const clean = (_splitAttBlock(txt).rest || "").trim();
+    const last = [...document.querySelectorAll("#log .msg.user .bubble")].pop();
+    if (last && clean && (last.textContent || "").trim() === clean) return;
+    who("user", clean || txt, null, d.sender, d.subjob, null, d.sender_session); });
   es.addEventListener("graph.node.added", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
   es.addEventListener("graph.node.updated", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
   es.addEventListener("harness.inject", e => { if (live()) harnessInject(JSON.parse(e.data)); });
@@ -4046,14 +4162,14 @@ async function loadHistory() {
         // old attachment can still be opened (image in the viewer, other files in the
         // editor). It used to just strip the preamble, leaving the attachment dead.
         const _sp = _splitAttBlock(m.content);
-        const _un = who("user", _sp.rest, m.ts, m.sender, m.subjob, m.chapter);
+        const _un = who("user", _sp.rest, m.ts, m.sender, m.subjob, m.chapter, m.sender_session);
         if (_sp.atts.length) {
           const _ub = _un && _un.querySelector(".bubble");
           if (_ub) { _ub.insertAdjacentHTML("beforeend", _attachmentChips(_sp.atts)); _bindAttachmentChips(_ub); }
         }
         return;
       }
-      if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter); return; }
+      if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter, m.sender_session); return; }
       // v1.6.3 (JAG-55): some models inline their chain-of-thought in `content` as a
       // trailing "think: …" tail. The reply must stay the primary text.
       _activeNodeId = _nid(m.node); _activeScope = null;
@@ -4117,6 +4233,7 @@ async function loadHistory() {
     _activeScope = _chatNodes[_doing.id].querySelector(".tc-kids");
   } else { _activeNodeId = null; _activeScope = null; }
   _updateNowBar();
+  _repaintChatNodes();   // JAG-465: fill labels/status of every row from the graph
   linkifyAll();
   buildDotRail();   // JAG-267: rebuild the user-message dot rail for this session
   // JAG-296: a deep-link from Orbit (`?node=<nid>`) jumps to that exact task section
@@ -4596,6 +4713,7 @@ async function loadPlan() {
   graph = (g && g.nodes && g.nodes.length) ? g : null;
   curJob = _sessJob[sessionId] || curJob;   // JAG-169: keep JX aligned with the session
   renderGraph();
+  _repaintChatNodes();   // JAG-465: labels/status of already-drawn chat rows
 }
 /* v0.8: dedupe identical plan steps (the "say hello" x9 bug) */
 function dedupePlan(steps) {
@@ -4746,6 +4864,10 @@ function renderGraph() {
     const rwb = el.querySelector(".task-rw");
     if (rwb && n) rwb.onclick = (e) => { e.stopPropagation(); rewindToTodo(n.id); };
     if (n && n.id === graphFresh) el.classList.add("fresh");
+    // JAG-465: pulse ONLY the step of a REAL live turn on THIS session. A persisted
+    // 'doing' left behind by a finished turn must never look active (the operator's
+    // "doing but nothing is running" report).
+    if (n && n.status === "doing" && runningSessions[sessionId]) el.classList.add("live");
   });
   _markWrappedTasks(box);   // JAG-431k: stack the meta on rows with a long wrapped label
   $("remaining").innerHTML = "";
@@ -5440,6 +5562,9 @@ function setRunning(sid, on) {
   // JAG-414: a session may be drawn in several team groups — update EVERY copy.
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
     row => row.classList.toggle("running", !!on));
+  // JAG-465: the Plan panel marks the step of a LIVE turn (animated); re-render so
+  // the marker appears/disappears the moment the turn starts or ends.
+  if (sid === sessionId) { try { renderGraph(); } catch (e) {} }
   refreshSendBtn();   // JAG-424: the send button becomes STOP while the ACTIVE turn runs
 }
 /* JAG-424: ONE composer button. Normally ↑ = send; while the ACTIVE session has a
@@ -5568,8 +5693,42 @@ function stopRun() {
 
 /* ---- feed ---- */
 let _feedN = 0;   // JAG-403g: feed events seen (drives the Feed tab summary)
+/* JAG-465: ONE place that applies a feed event to the UI. The same handler serves a
+   LIVE event and a REPLAYED backlog event after a reconnect, so a disconnect no
+   longer silently drops graph/todo updates — the reason the Plan panel and chat rows
+   kept a stale `doing`/status and only corrected themselves after a manual reload. */
+function _feedReplay(ev) {
+  const kind = ev && ev.kind, d = ev || {};
+  if (!kind) return;
+  if (kind === "graph.node.added" || kind === "graph.node.updated") { applyGraphEvent(d); return; }
+  if (kind === "chat.run") { if (d.session) setRunning(d.session, true); return; }
+  if (kind === "chat.done") {
+    if (d.session) setRunning(d.session, false);
+    if (d.session === sessionId && !turnSSE[sessionId]) {
+      $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadPlan();
+    }
+    return;
+  }
+  if (kind === "context.auto_compact" || kind === "context.compact") {
+    if (!d.session || d.session === sessionId) loadCtx();
+    return;
+  }
+  if (kind === "threads.updated") {
+    if (!d.session || d.session === sessionId) loadThreadTitles(d.session || sessionId).then(applyThreadTitles);
+    return;
+  }
+  if (kind === "session.created" || kind === "session.deleted" || kind === "session.renamed") loadSessions();
+}
+/* JAG-465: after a feed gap the DURABLE stores are the truth — re-read them so the
+   UI cannot stay stale until the operator hits reload. */
+function _resyncDurable() {
+  try { loadPlan(); } catch (e) {}
+  try { loadCtx(); } catch (e) {}
+  try { loadSessions(); } catch (e) {}
+}
 function connectFeed() {
-  const es = new EventSource("/api/feed" + (authQS() ? "?" + authQS() : ""));
+  const _qs = (authQS() ? "?" + authQS() + "&" : "?") + "since=" + feedSince;
+  const es = new EventSource("/api/feed" + _qs);
   es.addEventListener("error", () => { es.close(); setTimeout(connectFeed, 5000); });
   const push = line => {
     const f = $("feed"); const d = document.createElement("div");
@@ -5583,6 +5742,10 @@ function connectFeed() {
     // stack when the feed backlog is large ("Maximum call stack size exceeded").
     arr.forEach(x => { if (x && typeof x.id === "number" && x.id > feedSince) feedSince = x.id; });
     arr.slice(-15).forEach(x => push(`${x.kind}`));
+    // JAG-465: APPLY the events we missed while disconnected, then re-sync from the
+    // durable stores so a missed (or out-of-window) update is repaired without F5.
+    try { arr.forEach(_feedReplay); } catch (_) {}
+    _resyncDurable();
   });
   // JAG-323: a turn STARTING on ANY session (including a headless job/routine turn
   // this browser did not begin) must mark that session busy in the left panel.
@@ -5611,7 +5774,11 @@ function connectFeed() {
     // "finished" bell + toast (same mechanism as in-tab turns), so a background
     // agent/team turn is never silently missed.
     if (d.session && d.session !== sessionId) markDone(d.session);
-    push("💬 chat done"); loadCtx();
+    push("💬 chat done");
+    // JAG-465: only re-measure THIS session. Re-rendering the Context panel because
+    // some OTHER agent's turn ended rebuilt the inspector under the operator's cursor
+    // (the "it jumps back to the top" report) for no reason.
+    if (!d.session || d.session === sessionId) loadCtx();
     // Not already streaming it (the attached turn reloads itself on `done`): pull
     // the persisted reply so an off-screen turn's answer is never left unrendered.
     if (d.session && d.session === sessionId && !turnSSE[sessionId]) {
@@ -5667,6 +5834,10 @@ function connectFeed() {
     if (d.session) _forgetTodoOpenState(d.session);
     if (d.session) _forgetChatScrollState(d.session);
     push("🗂 session deleted"); loadSessions(); });
+  // JAG-465: a suspended/backgrounded tab receives no feed events at all. Re-read the
+  // durable state when it becomes visible again, so returning to the tab shows the
+  // real state without a manual reload.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) _resyncDurable(); });
   es.addEventListener("plan.update", () => { push("🗺 plan updated"); loadPlan(); });
   es.addEventListener("tasks.update", () => push("✅ legacy tasks board updated"));
   es.addEventListener("agent.start", e => { const d = JSON.parse(e.data || "{}"); push("⚡ agent: " + (d.goal || "").slice(0, 60)); });
@@ -5799,7 +5970,7 @@ function renderTools(el, d) {
   const pol = (d && d.policy) || {};
   const mode = pol.mode || "normal";
   const mk = (k, v, cur, extra) => { const on = cur === v; const danger = v === "full";
-    const c = on ? (danger ? "color:var(--err);border-color:rgba(248,113,113,.65)" : "color:var(--ok);border-color:rgba(74,222,128,.5)") : "";
+    const c = on ? (danger ? "color:var(--err);border-color:color-mix(in srgb, var(--err) 65%, transparent)" : "color:var(--ok);border-color:color-mix(in srgb, var(--ok) 50%, transparent)") : "";
     return `<button class="ghost" data-pol="${k}" data-val="${v}" style="${c}">${extra || v}</button>`; };
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
@@ -6599,7 +6770,28 @@ function skillsAutocomplete() {
   if (!v.startsWith("/") || v.includes(" ")) { box.hidden = true; return; }
   const q = v.slice(1).toLowerCase();
   const cmds = SLASH_COMMANDS.filter(c => c.cmd.startsWith(q));
-  const hits = _skillsCache.filter(s => s.name.toLowerCase().startsWith(q)).slice(0, 8);
+  // JAG-465: the picker only ever offered the first EIGHT skills whose NAME started
+  // with the query, so with 174 installed skills most of them were unreachable from
+  // `/` (the operator counted 30 shown out of 174). Search the WHOLE catalogue — by
+  // name, title and description — rank prefix matches first, and cap only the RENDER
+  // (the popup scrolls) while reporting how many matched.
+  const _skills = _skillsCache || [];
+  const _score = s => {
+    const n = String(s.name || "").toLowerCase();
+    const t = String(s.title || "").toLowerCase();
+    const dsc = String(s.description || "").toLowerCase();
+    if (!q) return 1;
+    if (n.startsWith(q)) return 4;
+    if (n.includes(q)) return 3;
+    if (t.includes(q)) return 2;
+    if (dsc.includes(q)) return 1;
+    return 0;
+  };
+  const _matched = _skills.map(s => ({ s, k: _score(s) })).filter(x => x.k > 0)
+    .sort((a, b) => (b.k - a.k) || String(a.s.name).localeCompare(String(b.s.name)));
+  const _SLASH_CAP = 60;
+  const hits = _matched.slice(0, _SLASH_CAP).map(x => x.s);
+  const _more = Math.max(0, _matched.length - hits.length);
   if (!cmds.length && !hits.length) { box.hidden = true; return; }
   box.innerHTML = "";
   const addRow = (label, hint, onPick) => {
@@ -6625,7 +6817,7 @@ function skillsAutocomplete() {
   if (hits.length) {
     const h = document.createElement("div");
     h.className = "remaining"; h.style.cssText = "padding:4px 10px;font-size:10px;text-transform:uppercase";
-    h.textContent = "skills"; box.appendChild(h);
+    h.textContent = "skills · " + hits.length + (_more ? " of " + _matched.length : ""); box.appendChild(h);
     hits.forEach(s => addRow("/" + s.name, s.title || s.description || "", () => {
       inp.value = "/" + s.name + " "; box.hidden = true; inp.focus();
     }));

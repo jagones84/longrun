@@ -113,7 +113,7 @@ check("chat timestamp helper exists", "function _tsSpan(ts)" in ui)
 check("timestamps wired into chat + tool cards + harness + history",
       ui.count("_tsSpan(") >= 5, str(ui.count("_tsSpan(")))
 check("history replay forwards the stored ts",
-      'who("user", m.content, m.ts, m.sender, m.subjob, m.chapter)' in ui and "toolCard(v.tool, undefined, v.ts)" in ui)
+      'who("user", m.content, m.ts, m.sender, m.subjob, m.chapter' in ui and "toolCard(v.tool, undefined, v.ts)" in ui)
 
 print("---")
 passed = sum(results)

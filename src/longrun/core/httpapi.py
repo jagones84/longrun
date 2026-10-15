@@ -123,7 +123,7 @@ def _int_arg(qs, key, default):
 
 
 def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
-                    sender=None, subjob=None, plan_only=False):
+                    sender=None, subjob=None, plan_only=False, sender_session=None):
     """SSE producer for one chat request on `sess`.
 
     Contract (JAG-51): the caller has already appended the `user` message and
@@ -211,10 +211,15 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             except Exception:  # noqa: BLE001 — an anchor must never break the turn
                 pass
             append_message(sess, "user", message,
-                           meta=({"sender": sender, "subjob": subjob}
+                           meta=({"sender": sender, "subjob": subjob,
+                                  "sender_session": sender_session}
                                  if (sender or subjob) else None))
+            # JAG-465: `sender_session` is the ORIGINATING chat (the dispatcher's
+            # session), so both chats can hyperlink to the exact point of the other
+            # one — the teammate back to the dispatch card, the dispatcher forward
+            # to this assignment.
             publish("chat.user", session=sess["id"], text=message,
-                    sender=sender, subjob=subjob)
+                    sender=sender, subjob=subjob, sender_session=sender_session)
             # v0.5.1 warm-up: resolve the target alias and, if it is cold, emit
             # `model.loading` and load it *before* the first token instead of
             # letting the client stall silently on the router's autoload.
@@ -337,7 +342,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
 # them live and rebuilds from the durable transcript on `done` (clear first), so
 # nothing is duplicated.
 _ATTACH_KINDS = (
-    "chat.run", "chat.delta", "chat.done",
+    "chat.run", "chat.delta", "chat.done", "chat.user",
     "harness.inject", "tool.call", "tool.result", "approval.request",
     "graph.node.added", "graph.node.updated",
     "plan.incomplete", "plan.continuing", "plan.stopped", "hitl.request",

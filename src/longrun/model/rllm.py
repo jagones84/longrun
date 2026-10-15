@@ -56,8 +56,10 @@ def _parse_roster(data):
         failed = bool(status.get("failed")) or bool(status.get("exit_code"))
         meta = m.get("meta") or {}
         n_ctx = meta.get("n_ctx") or meta.get("n_ctx_train") or 0
+        args = status.get("args") or []
+        if not isinstance(args, list):
+            args = []
         if not n_ctx:
-            args = status.get("args") or []
             for i, a in enumerate(args):
                 if a == "--ctx-size" and i + 1 < len(args):
                     try:
@@ -65,8 +67,14 @@ def _parse_roster(data):
                     except (TypeError, ValueError):
                         n_ctx = 0
                     break
+        # JAG-465: the router publishes the server's REAL launch args. A `--mmproj`
+        # entry is the projector that makes image inputs usable — the honest signal
+        # that a configured model CAN see. It is reported separately from the
+        # catalogue flag so `model_supports_vision` can trust the live server state.
+        mmproj = any(isinstance(a, str) and (a == "--mmproj" or a.startswith("--mmproj="))
+                     for a in args)
         out.append({"alias": m.get("id"), "status": st, "loaded": st == "loaded",
-                    "failed": failed, "n_ctx": int(n_ctx or 0)})
+                    "failed": failed, "n_ctx": int(n_ctx or 0), "mmproj": mmproj})
     return out
 
 
@@ -281,10 +289,15 @@ def model_loaded(alias):
 def model_supports_vision(alias):
     """True when `alias` can accept multimodal image content blocks.
 
-    Signal order: an explicit `vision: true` in the provider catalogue, then the
-    resolved local provider roster's `architecture.input_modalities` (llama.cpp
-    reports the loaded mmproj). Conservative: any doubt returns False, so a
-    text-only model never receives image blocks it cannot use.
+    Signal order (JAG-465):
+      1. an explicit `vision: true` in the provider catalogue — the user's own
+         declaration, always honoured;
+      2. the LIVE roster of the model's provider: llama.cpp reports the server's
+         real launch args, so a `--mmproj` entry proves a projector is loaded and
+         image inputs are usable. `architecture.input_modalities` is still read as
+         a secondary hint (some builds expose it, these builds do not).
+    Conservative: any doubt returns False, so a text-only model never receives
+    image blocks it cannot use.
     """
     if not alias:
         return False
@@ -314,8 +327,19 @@ def model_supports_vision(alias):
         with urllib.request.urlopen(request, timeout=6) as r:
             data = json.loads(r.read().decode("utf-8") or "{}")
         for m in data.get("data", []):
-            if m.get("id") != mid:
+            # JAG-465: the router reports the id in ITS own casing (e.g.
+            # `gemma-4-26B-A4B`) while the catalogue may spell it differently — an
+            # exact match silently missed the projector for those models.
+            if str(m.get("id") or "").lower() != str(mid or "").lower():
                 continue
+            status = m.get("status") or {}
+            if not isinstance(status, dict):
+                status = {"value": status}
+            args = status.get("args") or []
+            if isinstance(args, list) and any(
+                    isinstance(a, str) and (a == "--mmproj" or a.startswith("--mmproj="))
+                    for a in args):
+                return True          # a projector is loaded on the live server
             arch = (m.get("meta") or {}).get("architecture") or {}
             return "image" in (arch.get("input_modalities") or [])
     except Exception:  # noqa: BLE001 — fall back to text-only

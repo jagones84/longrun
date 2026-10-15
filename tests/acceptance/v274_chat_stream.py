@@ -86,7 +86,7 @@ _lh = between(html, "const _mts = (s.messages || [])", "es.forEach(e =>")
 check("loadHistory builds one ts-ordered stream", "evs.sort((A, B) =>" in _lh)
 check("cards/injects fall back to the ts at their `after`", "_tsAt(" in _lh)
 check("user turns stay top-level (chronology anchor)",
-      'if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter); return; }' in html)
+      'if (m.role === "user") { who("user", m.content, m.ts, m.sender, m.subjob, m.chapter' in html)
 
 # --- re-plan announcement BEFORE the new steps ---------------------------------
 _rg = between(html, "async function replanGraph() {", "async function resetPlan()")
