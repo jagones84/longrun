@@ -896,8 +896,11 @@ def _apply_chat_todos(sess, act, on_event, node=None, after=None):
                              index=graph["nodes"].index(_n),
                              total=len(graph["nodes"]), changes=["status"])
         base = len(graph.get("nodes", []))
-        added = taskgraph.apply_write_todos(
-            graph, taskgraph._missing(graph, todos or []))
+        # JAG-466: hand `apply_write_todos` the MODEL's list UNFILTERED (with
+        # `skip_existing`) so a `deps` index keeps pointing at the step the model
+        # meant. Pre-filtering with `_missing()` shifted the positions and the
+        # dependency was silently dropped or retargeted.
+        added = taskgraph.apply_write_todos(graph, todos or [], skip_existing=True)
         total = len(graph.get("nodes", []))
         # surface each node on the chat stream too, so the app renders the list
         # live (apply_write_todos only fans out on the global feed).
@@ -942,6 +945,13 @@ def _resolve_graph_node(graph, step):
     against the whole node list made index 0 hit an OLD plan's node — the current
     plan never advanced ("All steps complete" vs "4 open" deadlock). Resolve
     labels/indices against the CURRENT plan only; ids stay globally unique.
+
+    JAG-466: the list the model actually SEES in the always-on 'Harness state'
+    block (and in the nudge) is `render_todos(compact=True)` — the OPEN steps of the
+    current plan. Resolving an index against the FULL current plan therefore
+    drifted as soon as an earlier step was closed: `{"index": 0}` re-opened a DONE
+    step as `doing` instead of touching the first open one. Prefer the OPEN list,
+    then fall back to the full plan (no open steps, or an index that only fits it).
     """
     nodes = taskgraph.plan_nodes(graph) or graph.get("nodes", [])
     node = None
@@ -958,7 +968,10 @@ def _resolve_graph_node(graph, step):
             i = int(step["index"])
         except (TypeError, ValueError):
             return None
-        if 0 <= i < len(nodes):
+        _visible = [n for n in nodes if n.get("status") in taskgraph.OPEN_STATUSES]
+        if 0 <= i < len(_visible):
+            node = _visible[i]
+        elif 0 <= i < len(nodes):
             node = nodes[i]
     return node
 
@@ -1567,8 +1580,24 @@ def _inject_vision_blocks(msgs, model):
         out[-1] = dict(last, content=text + note)
         return out
     blocks = _image_content_blocks(text, paths)
-    if len(blocks) <= 1:  # every image was skipped (size/mime/read error)
-        return msgs
+    _sent = len(blocks) - 1
+    if _sent <= 0:
+        # JAG-466: the model IS vision-capable, but every attachment was unusable
+        # (unreadable file, unsupported type, or over the size cap). Returning the
+        # message silently left the model free to invent a description of a picture it
+        # never received — the same failure the text-only note below prevents.
+        note = ("\n\n[harness] %d image attachment(s) were detected but could NOT be "
+                "attached (unreadable file, unsupported type, or larger than the %d MiB "
+                "cap). You did NOT receive them — say so plainly and never invent a "
+                "description." % (len(paths), _IMAGE_MAX_BYTES // (1024 * 1024)))
+        out = list(msgs)
+        out[-1] = dict(last, content=text + note)
+        return out
+    if _sent < len(paths):
+        blocks[0] = dict(blocks[0], text=text + (
+            "\n\n[harness] %d of %d image attachment(s) could not be attached "
+            "(unreadable/oversized); do not describe the missing one(s)."
+            % (len(paths) - _sent, len(paths))))
     msgs = list(msgs)
     msgs[-1] = dict(last, content=blocks)
     return msgs

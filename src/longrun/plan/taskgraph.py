@@ -515,14 +515,25 @@ def audit_node(graph, node_id):
             "reason": reason}
 
 
-def apply_write_todos(graph, todos, source="model:write_todos", index_map=None, start=0):
+def apply_write_todos(graph, todos, source="model:write_todos", index_map=None, start=0,
+                      skip_existing=False):
     """Turn a parsed `write_todos` payload into graph nodes (order preserved).
 
     `deps` are 0-based indices into the todo list; `index_map` (index → node id)
     lets callers feed the list one line at a time and still resolve deps.
+
+    JAG-466: `skip_existing=True` makes the call idempotent against the CURRENT plan
+    WITHOUT pre-filtering the list. Pre-filtering with `_missing()` used to shift
+    every position, so `deps` (indices into the MODEL's list) either vanished or
+    pointed at the wrong step. Here a todo whose label already exists keeps its
+    ORIGINAL index mapped to the existing node and is not re-created.
     """
     added = []
     index_map = index_map if index_map is not None else {}
+    _seen = {}
+    if skip_existing:
+        _seen = {str(n.get("label", "")).strip().lower(): n["id"]
+                 for n in (plan_nodes(graph) or graph.get("nodes", []))}
     for i, item in enumerate(todos or []):
         if isinstance(item, str):
             item = {"label": item}
@@ -530,6 +541,10 @@ def apply_write_todos(graph, todos, source="model:write_todos", index_map=None, 
             continue
         label = item.get("label") or item.get("title") or item.get("task")
         if not label:
+            continue
+        _k = str(label).strip().lower()
+        if skip_existing and _k and _k in _seen:
+            index_map[start + i] = _seen[_k]   # keep the index resolvable
             continue
         deps = []
         for d in (item.get("deps") or item.get("depends_on") or []):
@@ -559,6 +574,8 @@ def apply_write_todos(graph, todos, source="model:write_todos", index_map=None, 
         node = add_node(graph, label, deps=deps, status=status, evidence=evidence,
                         source=source, parent=parent,
                         requires_proof=bool(item.get("requires_proof")))
+        if skip_existing and _k:
+            _seen[_k] = node["id"]      # an in-payload duplicate is skipped too
         index_map[start + i] = node["id"]
         added.append(node)
     graph["generated"] = True
@@ -708,9 +725,13 @@ class _TodoStream:
         if not isinstance(obj, dict):
             return
         if isinstance(obj.get("todos"), list):
-            nested = self._dedupe(obj["todos"])
+            # JAG-466: feed the ORIGINAL nested list (never a filtered copy) so every
+            # `deps` index still resolves; dedupe happens inside via skip_existing and
+            # the running position advances by the ORIGINAL length.
+            nested = obj["todos"]
             for t in apply_write_todos(self.graph, nested, self.source,
-                                       index_map=self.index_map, start=self.count):
+                                       index_map=self.index_map, start=self.count,
+                                       skip_existing=self.skip_existing):
                 self._emit(t)
             self.count += len(nested)
             return
@@ -807,7 +828,7 @@ def generate_from_model(run_id, goal, session_id=None, model=None, on_event=None
         stream.feed(answer)
     stream.flush()
     if not stream.added:  # pretty-printed / nested JSON that never formed a line
-        for node in apply_write_todos(graph, _missing(graph, parse_todos(answer)[0])):
+        for node in apply_write_todos(graph, parse_todos(answer)[0], skip_existing=True):
             stream._emit(node)
     graph["generated"] = graph.get("generated") or bool(stream.added)
     save(graph)
@@ -848,8 +869,8 @@ def replan_from_model(graph, note=None, model=None, on_event=None):
         stream.feed(answer)
     stream.flush()
     if not stream.added:
-        for node in apply_write_todos(graph, _missing(graph, parse_todos(answer)[0]),
-                                      "model:replan"):
+        for node in apply_write_todos(graph, parse_todos(answer)[0], "model:replan",
+                                      skip_existing=True):
             stream._emit(node)
     save(graph)
     _publish("graph.replanned", run=graph["run_id"], session=graph.get("session_id"),
