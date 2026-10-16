@@ -53,6 +53,33 @@ python3 forge.py agent "trova e correggi un typo nel README" --max-steps 4
 python3 forge.py control abort run_abc123
 ```
 
+### Paperclip adapter (child process)
+
+| Command | Endpoint | Notes |
+|---|---|---|
+| `paperclip-bot` | `POST /api/agent/run/stream` + `GET /api/agent/runs/<id>` | Paperclip's external adapter spawns this; **not** an operator command |
+
+`paperclip-bot` is the child process Paperclip's Longrun adapter starts:
+
+```bash
+python forge.py paperclip-bot     # one invocation JSON on stdin, NDJSON frames on stdout
+```
+
+* **stdin** — one object with schema `longrun.paperclip.invocation.v1`
+  (`goal`, `paperclip_run_id`, `agent_id`, `company_id`, optional `task_id`,
+  `model`, `max_steps`, `session_id`).
+* **stdout** — one protocol frame per line, schema
+  `longrun.paperclip.event.v1`, strictly increasing `seq`; the allowlist is
+  `longrun.run.started`, `longrun.run.progress`, `longrun.run.completed`,
+  `longrun.run.failed`, `longrun.run.cancelled`. Reasoning, raw observations,
+  tool arguments, and credentials are never emitted.
+* **environment** — `LONGRUN_URL` and `LONGRUN_TOKEN` only; never argv or stdin.
+* **exit codes** — `0` only for a corroborated `completed` run, `1` for anything
+  else (incomplete, failed, indeterminate, rejected input), `130` after
+  SIGINT/SIGTERM (the known run id is aborted first).
+
+See `integrations/paperclip/README.md` for the adapter install and configuration.
+
 ### Sessions & history
 
 | Command | Endpoint |
@@ -322,6 +349,7 @@ Every HTTP route the server exposes has a CLI entry point:
 | GET | `/api/routing` | `routing show` |
 | POST | `/api/chat` `/api/chat/stream` | `chat` / `chat --stream` |
 | POST | `/api/agent/run` | `agent` |
+| POST | `/api/agent/run/stream` | `paperclip-bot` (Paperclip child) |
 | POST | `/api/model/ensure` | `models ensure` |
 | POST | `/api/plan` | `plan set` |
 | POST | `/api/plan/generate` | `plan generate` |

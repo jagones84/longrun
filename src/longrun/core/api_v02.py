@@ -80,6 +80,11 @@ class RunState:
         self.max_steps = max_steps
         self.script = script
         self.status = "running"           # running|paused|aborting|aborted|done
+        # Machine-readable terminal classification (JAG-467 / Paperclip adapter).
+        # `status: "done"` is NOT proof the agent finished: a max-step or
+        # no-progress stop also ends "done". `termination` separates them:
+        #   completed | max_steps | no_progress | aborted | error
+        self.termination = None
         self.trace = []
         self.summary = None
         self.created = round(time.time(), 3)
@@ -92,6 +97,7 @@ class RunState:
     def public(self):
         return {"id": self.id, "goal": self.goal, "model": self.model,
                 "max_steps": self.max_steps, "status": self.status,
+                "termination": self.termination,
                 "created": self.created, "summary": self.summary,
                 "steps": len(self.trace), "trace": self.trace,
                 "scripted": self.script is not None}
@@ -471,8 +477,9 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
 
             if action == "finish":
                 summary = str(act.get("summary", ""))[:600] or "done"
-                st.summary, st.status = summary, "done"
-                on_event("agent.finish", run=st.id, summary=summary)
+                st.summary, st.status, st.termination = summary, "done", "completed"
+                on_event("agent.finish", run=st.id, summary=summary,
+                         termination=st.termination)
                 st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                  "summary": summary})
                 return _result(st, goal, model)
@@ -502,8 +509,9 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 repeated, last_sig = 1, sig
             if repeated >= 2:
                 summary = "no progress: %r repeated; concluding run" % action
-                st.summary, st.status = summary, "done"
-                on_event("agent.finish", run=st.id, summary=summary, no_progress=True)
+                st.summary, st.status, st.termination = summary, "done", "no_progress"
+                on_event("agent.finish", run=st.id, summary=summary,
+                         termination=st.termination, no_progress=True)
                 _publish("agent.no_progress", run=st.id, action=action)
                 st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                  "summary": summary})
@@ -540,26 +548,35 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                     del hist[:-30]
         else:
             summary = "stopped at max_steps=%d; see trace" % max_steps
-            st.summary, st.status = summary, "done"
-            on_event("agent.finish", run=st.id, summary=summary)
+            st.summary, st.status, st.termination = summary, "done", "max_steps"
+            on_event("agent.finish", run=st.id, summary=summary,
+                     termination=st.termination)
             st.trace.append({"action": "finish", "summary": summary})
     except AbortRun:
         st.status = "aborted"
         summary = "aborted by operator at step %d" % len(st.trace)
         st.summary = summary
+        st.termination = "aborted"
         _publish("agent.aborted", run=st.id, summary=summary)
-        on_event("agent.aborted", run=st.id, summary=summary)
+        on_event("agent.aborted", run=st.id, summary=summary,
+                 termination=st.termination)
         st.trace.append({"action": "abort", "summary": summary})
     except Exception as e:  # noqa: BLE001
         st.status = "error"
+        st.termination = "error"
         st.summary = "run error: %s" % e
-        on_event("agent.error", run=st.id, error=str(e))
+        on_event("agent.error", run=st.id, error=str(e), termination=st.termination)
     return _result(st, goal, model)
 
 
 def _result(st, goal, model):
     if st.status in ("running", "paused", "aborting"):
         st.status = "done"
+    if st.termination is None:
+        # A run state that never entered the loop has no better evidence than
+        # its status; the field must still be one of the documented values.
+        st.termination = {"done": "completed", "aborted": "aborted"}.get(
+            st.status, "error")
     # v0.6: run end — close every still-open graph node with evidence.
     try:
         _srv().finish_run_graph(st.id, None, goal)
@@ -588,6 +605,7 @@ def _result(st, goal, model):
     except Exception:  # noqa: BLE001
         prm_report = None
     return {"run_id": st.id, "goal": goal, "model": model, "status": st.status,
+            "termination": st.termination,
             "summary": st.summary, "trace": st.trace, "prm": prm_report}
 
 
@@ -1210,6 +1228,31 @@ def handle(handler, method, path, qs, body):
             result = agent_run_v2(goal, _int(body.get("max_steps", 6), 6), body.get("model"),
                                   script=script)
             return _r(handler, 200, result)
+
+        if path == "/api/agent/run/stream":
+            # JAG-467 (Paperclip adapter): the SAME run, but the goal arrives in
+            # the request BODY and the answer is SSE. `GET /api/agent/run` puts
+            # the goal in the query string, which a task goal cannot use (URL
+            # length, escaping). Event vocabulary and framing are unchanged.
+            goal = body.get("goal")
+            if not isinstance(goal, str) or not goal.strip():
+                return _r(handler, 400, {"error": "goal required"})
+            if "max_steps" in body:
+                ms = body.get("max_steps")
+                if isinstance(ms, bool) or not isinstance(ms, int) or ms < 1:
+                    return _r(handler, 400,
+                              {"error": "max_steps must be a positive integer"})
+            else:
+                ms = 6
+            model = body.get("model")
+            if model is not None and not isinstance(model, str):
+                return _r(handler, 400, {"error": "model must be a string"})
+            session = body.get("session")
+            if session is not None and not isinstance(session, str):
+                return _r(handler, 400, {"error": "session must be a string"})
+            st = new_run(goal, model, ms)
+            ws, _sess = _session_ws(session)
+            return _sse(handler, agent_stream_gen_v2(goal, ms, model, st.id, workspace=ws))
 
         # --- Sperimentale POST routes ---
         if path == "/api/memory":

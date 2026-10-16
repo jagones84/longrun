@@ -336,8 +336,8 @@ The **only** regression gate is one deterministic, fully-isolated battery — it
 every `LONGRUN_*` data dir at a throwaway temp dir, so it never touches live state:
 
 ```bash
-bash tests/battery.sh                          # fast gate (heavy tests skipped) → 182/182 GREEN
-LONGRUN_BATTERY_FULL=1 bash tests/battery.sh   # full suite (adds the 6 heavy index/ingestion tests) → 188/188 GREEN
+bash tests/battery.sh                          # fast gate (heavy tests skipped) → 187/187 GREEN
+LONGRUN_BATTERY_FULL=1 bash tests/battery.sh   # full suite (adds the 6 heavy index/ingestion tests) → 193/193 GREEN
 LONGRUN_BATTERY_TIMINGS=1 bash tests/battery.sh # optional: print the 10 slowest tests
 ```
 

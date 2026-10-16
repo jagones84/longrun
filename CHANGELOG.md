@@ -7,6 +7,28 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A Paperclip external adapter: one assigned task becomes exactly one bounded Longrun run.**
+  Paperclip-managed companies can now dispatch work to Longrun without patching Paperclip core: the
+  external adapter package in `integrations/paperclip/` is loaded through Paperclip's `localPath`
+  plugin seam and spawns the Longrun CLI shim as `python forge.py paperclip-bot`. One task = one run:
+  the shim reads one `longrun.paperclip.invocation.v1` envelope on stdin, calls
+  `POST /api/agent/run/stream`, and writes `longrun.paperclip.event.v1` NDJSON frames on stdout. A
+  five-event allowlist reaches Paperclip — `longrun.run.started`, `longrun.run.progress`,
+  `longrun.run.completed`, `longrun.run.failed`, `longrun.run.cancelled` — while reasoning
+  (`agent.think`), raw observations, tool arguments and credentials are never forwarded. Completion is
+  fail-closed: success requires BOTH the streamed terminal classification and the fetched run record to
+  say `completed`, a terminal frame is held back until the child's exit status confirms it, and every
+  failure path reports a non-zero exit code so a clean child exit can never be read as success. The
+  run record gains an additive machine-readable `termination` (`completed` / `max_steps` /
+  `no_progress` / `aborted` / `error`) so `status: done` is no longer mistaken for completion.
+  Cancellation aborts the known run id and exits `130`; an ambiguous disconnect is `indeterminate` and
+  never starts a second run. `LONGRUN_TOKEN` travels only in the `Authorization` header and is absent
+  from the settings schema. Deterministic and offline:
+
+  ```bash
+  cd integrations/paperclip && npm install && npm test && npm run typecheck
+  ```
+  Pinned by new `v464`–`v468`.
 - **A harness-vs-harness bench: same weights, same tasks, with and without the harness (JAG-454), battery 180/180.**
   The question "how much is the harness worth?" needs a CONTROL, so `benchmarks/` now runs N arms over one task
   file with the model held fixed and emits a side-by-side artifact. Arms: `bare` (the model API with no tools, no

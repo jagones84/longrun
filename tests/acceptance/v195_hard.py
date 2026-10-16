@@ -193,11 +193,14 @@ check("G5 _missing does NOT drop a re-used label from an old plan",
 # ---- H: _router_stream honours cancel while the router is SILENT (JAG-197) --
 # A silent upstream used to block the read with no cancel check, so Stop did
 # nothing until ROUTER_IDLE_TIMEOUT elapsed (turn hung, router starved).
+# H1/H2 exercise the stream loop itself, so the JAG-217 reachability pre-flight
+# is stubbed: the test must not depend on a live router on 127.0.0.1:8080.
 import socket as _socket  # noqa: E402
 import time as _time  # noqa: E402
 
 _real_open = _rllm._open_with_retry
 _real_idle = _rllm.ROUTER_IDLE_TIMEOUT
+_real_reachable = _rllm._reachable
 
 
 class _SilentResp:
@@ -227,6 +230,7 @@ class _SilentResp:
 
 _sock_stream, _sock_peer = _socket.socketpair()  # peer never writes -> silent
 _rllm._open_with_retry = lambda req, timeout: _SilentResp(_sock_stream)
+_rllm._reachable = lambda *a, **k: True
 _rllm.ROUTER_IDLE_TIMEOUT = 30.0
 _cancel = {"flag": False}
 _timer = threading.Timer(1.0, lambda: _cancel.__setitem__("flag", True))
@@ -240,6 +244,7 @@ try:
 finally:
     _timer.cancel()
     _rllm._open_with_retry = _real_open
+    _rllm._reachable = _real_reachable
     _rllm.ROUTER_IDLE_TIMEOUT = _real_idle
     _sock_stream.close()
     _sock_peer.close()
@@ -257,11 +262,13 @@ def _open_dies(req, timeout):
 
 
 _rllm._open_with_retry = _open_dies
+_rllm._reachable = lambda *a, **k: True
 try:
     _rllm._router_stream([{"role": "user", "content": "x"}], "m",
                          lambda ch, t: None, timeout=5, cancel=lambda: True)
 finally:
     _rllm._open_with_retry = _real_open
+    _rllm._reachable = _real_reachable
 check("H2 abort does NOT enter the blocking non-streaming fallback",
       _calls["n"] == 1, "open_calls=%d" % _calls["n"])
 

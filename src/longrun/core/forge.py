@@ -27,6 +27,7 @@ Usage:
   python3 forge.py blackboard post <topic> <content> [--tags T] | get [--id I] [--topic T] | search <q>
   python3 forge.py acp server <method> '[params]' | connect <name> <url> [--token T]
   python3 forge.py swarm <goal> [--n-workers N] [--max-steps N]
+  python3 forge.py paperclip-bot   # Paperclip adapter child: envelope on stdin, NDJSON on stdout
 Environment:
   LONGRUN_URL (default http://127.0.0.1:8790)
   LONGRUN_TOKEN (bearer token, optional)
@@ -924,6 +925,18 @@ def cmd_jobs(args):
         print(json.dumps(req("GET", "/api/jobs/" + _q(args.value)), indent=2, ensure_ascii=False))
 
 
+def cmd_paperclip_bot(args):
+    """Run ONE Paperclip-issued task (JAG-467): envelope on stdin, NDJSON on stdout.
+
+    The protocol lives in ``longrun.integrations.paperclip_bot``; this command
+    only registers it with the CLI and propagates its exit code, which
+    Paperclip reads to classify the run (0 completed / 1 otherwise / 130
+    cancelled).
+    """
+    from longrun.integrations.paperclip_bot import main as paperclip_main
+    sys.exit(paperclip_main())
+
+
 def main():
     ap = argparse.ArgumentParser(prog="forge")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -987,6 +1000,7 @@ def main():
         p.add_argument("--token"); p.set_defaults(fn=cmd_acp)
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
         p.add_argument("--max-steps", type=int, default=4); p.set_defaults(fn=cmd_swarm)
+    sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
     p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "history", "graph", "reset", "clear", "model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_sessions)
     p = sub.add_parser("context"); p.add_argument("action", choices=["show", "compact", "preview", "items"]); \
