@@ -25,7 +25,10 @@ All notable changes to Longrun are documented here. The format follows
   Both go through ONE new route — `POST /api/teams/<tid>/reset` and `POST /api/teams/<tid>/compact` — instead of
   a browser-side loop, and report per session (`input_tokens → tokens_after`). One failing session never aborts
   the batch (it is reported in `results`), an unknown team is a 404, and an empty team is a clean 0-session
-  no-op. Pinned by new `v482` (22 checks).
+  no-op. The deck's floating menu is now ONE shared `.ctxmenu` primitive: the agent→teams picker, the team
+  bulk menu and the constellation node menu used to carry three copies of the same build/clamp/dismiss
+  plumbing (and only one may be open at a time — now guaranteed, not maintained by hand). Pinned by new
+  `v482` (23 checks).
 - **The chat names itself: a small header bar with the ACTIVE session's name (JAG-480), battery 198/198.**
   Hiding the left panel (or collapsing a session's team group) used to hide *which* session you were
   reading, so finding it again meant remembering its name. The chat now carries its own compact top bar

@@ -474,6 +474,34 @@ const fillSelect = (sel, agents, ph) => {
   sel.value = keep;
 };
 
+/* ------------------------------------------------------- popovers ---- */
+/* ONE floating-menu primitive for the deck. The same .ctxmenu surface backs the
+   agent→teams picker, the per-TEAM bulk menu (JAG-482) and the constellation
+   node menu — and only ONE may be open at a time, so a single module-level
+   handle owns it: `openPopover` tears the previous one down, clamps it on
+   screen and wires the two dismiss gestures (outside-click, Escape);
+   `closePopover` removes it. Callers keep the returned element for their rows. */
+let _POP = null;
+function openPopover(ev, html, opts){
+  const o = opts || {};
+  closePopover();
+  const m = document.createElement("div"); m.className = "ctxmenu" + (o.cls ? " " + o.cls : "");
+  m.innerHTML = html;
+  document.body.appendChild(m);
+  m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - (o.w || 224))) + "px";
+  m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - (o.h || 150))) + "px";
+  _POP = m;
+  const h = (e) => { if (!m.contains(e.target)) closePopover(); };
+  const k = (e) => { if (e.key === "Escape") closePopover(); };
+  m.__h = h; m.__k = k;
+  setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
+  return m;
+}
+function closePopover(){ const m = _POP; if (!m) return;
+  if (m.__h) document.removeEventListener("mousedown", m.__h);
+  if (m.__k) document.removeEventListener("keydown", m.__k);
+  m.remove(); _POP = null; }
+
 /* ----------------------------------------------------- Agents (table) ---- */
 class AgentsView {
   constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
@@ -482,8 +510,7 @@ class AgentsView {
     // must not be used to build the REPORTS-TO dropdown, or a manager outside the
     // selected team vanishes and its edge can be silently cleared.
     this.roster = [];
-    this.sort = "default"; this._tmmenu = null; this.closed = new Set(); this._groupIds = [];
-    this._tmenu = null;   // JAG-482: the per-TEAM bulk-action menu
+    this.sort = "default"; this.closed = new Set(); this._groupIds = [];
     this._seen = new Set(); this.focusSid = null; }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams, roster){
@@ -735,70 +762,44 @@ class AgentsView {
   expandAll(){ this._groupIds.forEach(id => this.closed.delete(id)); this._groupIds.forEach(id => this._applyGroupState(id)); }
   /* JAG-2.0: checkbox popover that adds/removes the agent from teams one by one. */
   openTeamPicker(ev, a){
-    this.closeTeamPicker();
-    const m = document.createElement("div"); m.className = "ctxmenu tmmenu";
-    m.innerHTML = (this.teams && this.teams.length)
+    const m = openPopover(ev, (this.teams && this.teams.length)
       ? this.teams.map(t => {
           const on = (a.teams || []).includes(t.id);
           return '<label class="tmopt"><input type="checkbox" data-tid="' + esc(t.id) + '"' + (on ? " checked" : "") + '> ' +
             esc(t.symbol || "") + ' ' + esc(t.name) + '</label>';
         }).join("")
-      : '<div class="muted small" style="padding:6px 10px">no teams yet — create one above.</div>';
-    document.body.appendChild(m);
-    m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - 240)) + "px";
-    m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - 220)) + "px";
+      : '<div class="muted small" style="padding:6px 10px">no teams yet — create one above.</div>',
+      {cls: "tmmenu", w: 240, h: 220});
     m.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.onchange = () => this.setTeamMembership(a.id, cb.dataset.tid, cb.checked);
     });
-    this._tmmenu = m;
-    const h = (e) => { if (!m.contains(e.target)) this.closeTeamPicker(); };
-    const k = (e) => { if (e.key === "Escape") this.closeTeamPicker(); };
-    m.__h = h; m.__k = k;
-    setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
   }
-  closeTeamPicker(){ const m = this._tmmenu; if (!m) return;
-    if (m.__h) document.removeEventListener("mousedown", m.__h);
-    if (m.__k) document.removeEventListener("keydown", m.__k);
-    m.remove(); this._tmmenu = null; }
   async setTeamMembership(aid, tid, add){
     const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/members",
       {agent: aid, action: add ? "add" : "remove"});
     if (!r || r.ok === false){ alert((r && r.error) || "membership update failed"); return; }
-    this.closeTeamPicker();
+    closePopover();
     if (this.onChanged) this.onChanged();
   }
   /* JAG-482: TEAM-wide bulk actions. The kebab on a team header row opens this
      menu; both actions hit ONE server route that walks the team's member
      sessions — no per-session loop in the browser, no third data source. */
   openTeamMenu(ev, tid){
-    this.closeTeamPicker(); this.closeTeamMenu();
     const t = this.teamById(tid); if (!t) return;
     const n = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
-    const m = document.createElement("div"); m.className = "ctxmenu";
-    m.innerHTML = '<div data-a="reset">\u21BA Reset all sessions\u2026</div>' +
-                  '<div data-a="compact">\u2261 Compact all sessions\u2026</div>';
-    document.body.appendChild(m);
-    m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - 224)) + "px";
-    m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - 110)) + "px";
-    m.querySelector('[data-a="reset"]').onclick = () => { this.closeTeamMenu();
+    const m = openPopover(ev,
+      '<div data-a="reset">\u21BA Reset all sessions\u2026</div>' +
+      '<div data-a="compact">\u2261 Compact all sessions\u2026</div>', {w: 224, h: 110});
+    m.querySelector('[data-a="reset"]').onclick = () => { closePopover();
       if (confirm("Reset all " + n + " session(s) of " + (t.name || tid) +
         "?\n\nTheir chat history and task list are wiped — the agents, their names and " +
         "their ROLE.md stay. Nothing is deleted."))
         this.teamBulk(tid, "reset"); };
-    m.querySelector('[data-a="compact"]').onclick = () => { this.closeTeamMenu();
+    m.querySelector('[data-a="compact"]').onclick = () => { closePopover();
       if (confirm("Compact all " + n + " session(s) of " + (t.name || tid) +
         "?\n\nThe older half of each transcript is summarised so the context shrinks."))
         this.teamBulk(tid, "compact"); };
-    this._tmenu = m;
-    const h = (e) => { if (!m.contains(e.target)) this.closeTeamMenu(); };
-    const k = (e) => { if (e.key === "Escape") this.closeTeamMenu(); };
-    m.__h = h; m.__k = k;
-    setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
   }
-  closeTeamMenu(){ const m = this._tmenu; if (!m) return;
-    if (m.__h) document.removeEventListener("mousedown", m.__h);
-    if (m.__k) document.removeEventListener("keydown", m.__k);
-    m.remove(); this._tmenu = null; }
   async teamBulk(tid, action){
     const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/" + action, {});
     if (!r || r.ok === false){ alert((r && r.error) || (action + " failed")); return; }
@@ -1043,33 +1044,22 @@ class OrgChartView {
     if (sig !== this._sig){ this._sig = sig; this.fit(); }
     else this.apply();
   }
-  menu(ev, a){ if (!a) return; this.closeMenu();
-    const m = document.createElement("div"); m.className = "ctxmenu";
-    m.innerHTML =
+  menu(ev, a){ if (!a) return;
+    const m = openPopover(ev,
       '<div data-a="const">\uD83D\uDD2D Constellation</div>' +
       '<div data-a="open">\u2197 Open session in Sessions tab</div>' +
       '<div data-a="prompt">\u270E Edit prompt (ROLE.md)</div>' +
       '<div class="sep"></div>' +
-      '<div data-a="reset">\u21BA Reset session\u2026</div>';
-    document.body.appendChild(m);
-    m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - 208)) + "px";
-    m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - 150)) + "px";
-    m.querySelector('[data-a="const"]').onclick = () => { this.closeMenu(); if (this.onPick) this.onPick(a); };
-    m.querySelector('[data-a="open"]').onclick = () => { this.closeMenu(); if (this.onGoTo) this.onGoTo(a); };
-    m.querySelector('[data-a="prompt"]').onclick = () => { this.closeMenu(); this.openPrompt(a); };
-    m.querySelector('[data-a="reset"]').onclick = () => { this.closeMenu();
+      '<div data-a="reset">\u21BA Reset session\u2026</div>', {w: 208, h: 150});
+    m.querySelector('[data-a="const"]').onclick = () => { closePopover(); if (this.onPick) this.onPick(a); };
+    m.querySelector('[data-a="open"]').onclick = () => { closePopover(); if (this.onGoTo) this.onGoTo(a); };
+    m.querySelector('[data-a="prompt"]').onclick = () => { closePopover(); this.openPrompt(a); };
+    m.querySelector('[data-a="reset"]').onclick = () => { closePopover();
       if (confirm("Reset " + a.id + " " + (a.name || "") + " \u2014 wipe its chat and task list (the agent stays)?"))
         clearOrbitSession(a.session); };
-    this._menu = m;
-    const h = (e) => { if (!m.contains(e.target)) this.closeMenu(); };
-    const k = (e) => { if (e.key === "Escape") this.closeMenu(); };
-    m.__h = h; m.__k = k;
-    setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
   }
-  closeMenu(){ const m = this._menu; if (!m) return;
-    if (m.__h) document.removeEventListener("mousedown", m.__h);
-    if (m.__k) document.removeEventListener("keydown", m.__k);
-    m.remove(); this._menu = null; }
+  /* The menu itself is the deck's shared .ctxmenu popover (see openPopover). */
+  closeMenu(){ closePopover(); }
   openPrompt(a){ const row = document.querySelector('#agBody tr[data-sid="' + a.session + '"]');
     if (!row) return;
     // JAG-431r4: team groups start COLLAPSED (JAG-424e), so the brief row is hidden

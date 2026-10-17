@@ -155,6 +155,17 @@ check("E5 both actions call the ONE team route",
       '"/api/teams/" + encodeURIComponent(tid) + "/" + action' in deck)
 check("E6 the reset copy states it does not delete",
       "Nothing is deleted." in deck)
+# JAG-482r: ONE popover primitive for the whole deck. The agents table and the
+# constellation both open the same .ctxmenu panel, so the build/clamp/dismiss
+# plumbing must exist EXACTLY once — a per-surface copy is how the two menus
+# drifted apart in the first place.
+check("E7 the deck has ONE .ctxmenu primitive, not one per surface",
+      deck.count('m.className = "ctxmenu"') == 1
+      and "function openPopover(" in deck and "function closePopover(){" in deck
+      and "openPopover(ev," in deck
+      and "this.closeTeamPicker()" not in deck and "this.closeTeamMenu()" not in deck
+      and "_tmenu" not in deck and "_tmmenu" not in deck
+      and "closeMenu(){ closePopover(); }" in deck)
 
 print("---")
 ok = sum(1 for r in results if r)
