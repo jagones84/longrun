@@ -7,7 +7,7 @@
     "quality_profile": "standard",
     "repository": {
       "url": "https://github.com/jagones84/longrun.git",
-      "revision": "e04a81b5fd1d427b61c0bc39bc9c306c35f80a59"
+      "revision": "ba8dcec69ca95b671e7764f0c7d1325ca6bd8610"
     },
     "views": [
       { "id": "request-path", "label": "End-to-end request", "focus": ["clients", "gateway", "agentloop", "prompt", "router", "control", "registry", "tools", "sandbox"], "note": "From client to model: the harness assembles the prompt." },
@@ -53,7 +53,7 @@
     { "from": "control", "to": "registry", "label": "gated action", "labelDy": 56 },
     { "from": "registry", "to": "tools", "label": "authorized call", "labelDy": 56 },
     { "from": "tools", "to": "sandbox", "label": "execution", "variant": "emphasis", "labelDy": 56 },
-    { "from": "tools", "to": "workspace", "label": "fs · git · read/write", "fromSide": "bottom", "toSide": "top" },
+    { "from": "tools", "to": "workspace", "label": "fs · git · read/write", "fromSide": "bottom", "toSide": "top", "labelDx": 1, "labelDy": 24 },
     { "from": "agentloop", "to": "prompt", "label": "assemble turn · inject (nudge · obs · steer)", "fromSide": "top", "toSide": "bottom", "labelDx": -110, "labelDy": 20 },
     { "from": "prompt", "to": "router", "label": "assembled prompt", "labelAt": [470, 182] },
     { "from": "router", "to": "agentloop", "label": "completion (stream)", "fromSide": "bottom", "toSide": "top", "labelDx": 110, "labelDy": 55 },

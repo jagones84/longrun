@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "standard",
+  "specification": {
+    "path": "/home/jagones/Repositories/longrun/docs/diagrams/longrun-architecture.architecture.json",
+    "sha256": "1ba1fbfa43d8adeee25a9ec7ef4168a8acfae291a0fc2d766115d5db8504ae77",
+    "bytes": 14021
+  },
+  "artifact": {
+    "path": "/home/jagones/Repositories/longrun/docs/diagrams/longrun-architecture.html",
+    "sha256": "864ff1bc0defa1f9136870ecb39891ca9ee14347aaf6d7e8b3cbc5bc64297b75",
+    "bytes": 866742
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/jagones/Repositories/longrun/docs/diagrams/longrun-architecture.finalize.json",
+    "summaryReceipt": "/home/jagones/Repositories/longrun/docs/diagrams/longrun-architecture.finalize-summary.json",
+    "browserCheckReceipt": "/home/jagones/Repositories/longrun/docs/diagrams/longrun-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.1.0",
+    "availableVersion": "3.1.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-17T11:26:05.372Z",
+    "source": "network",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3198,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "resolvedCrossovers": 1,
+      "routesOverSuggestedBends": 3,
+      "routesOverSuggestedStretch": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [
+        {
+          "left": {
+            "from": "tools",
+            "to": "hooks",
+            "label": "hook.run (Pre/PostToolUse)",
+            "collectionIndex": 12,
+            "artifactIndex": 13
+          },
+          "right": {
+            "from": "hooks",
+            "to": "tools",
+            "label": "block (exit 2)",
+            "collectionIndex": 13,
+            "artifactIndex": 14
+          },
+          "point": [
+            828,
+            254
+          ],
+          "sharedNode": "tools"
+        }
+      ],
+      "detours": [
+        {
+          "relationship": {
+            "from": "observe",
+            "to": "clients",
+            "label": "feed · traces (SSE)",
+            "collectionIndex": 15,
+            "artifactIndex": 16
+          },
+          "bends": 4,
+          "stretch": 1.434
+        },
+        {
+          "relationship": {
+            "from": "agentloop",
+            "to": "store",
+            "label": "write state (graph · memory)",
+            "collectionIndex": 16,
+            "artifactIndex": 17
+          },
+          "bends": 4,
+          "stretch": 1.221
+        },
+        {
+          "relationship": {
+            "from": "store",
+            "to": "agentloop",
+            "label": "read context (mem · todo)",
+            "collectionIndex": 17,
+            "artifactIndex": 18
+          },
+          "bends": 4,
+          "stretch": 1.221
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "tools → hooks and hooks → tools cross next to tools: move node hooks or hooks so the two reach tools from different sides (for example one level with it, one directly above or below it).",
+      "observe → clients needs 4 bends: move node observe or clients so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "agentloop → store needs 4 bends: move node agentloop or store so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "store → agentloop needs 4 bends: move node store or agentloop so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "8e90b087-c3b2-4aa6-bb63-68a9aac7f27e",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/jagones/Repositories/longrun/docs/diagrams/longrun-architecture.architecture.json",
+  "output": "/home/jagones/Repositories/longrun/docs/diagrams/longrun-architecture.html",
+  "specification": {
+    "sha256": "1ba1fbfa43d8adeee25a9ec7ef4168a8acfae291a0fc2d766115d5db8504ae77",
+    "bytes": 14021
+  },
+  "artifact": {
+    "sha256": "864ff1bc0defa1f9136870ecb39891ca9ee14347aaf6d7e8b3cbc5bc64297b75",
+    "bytes": 866742
+  }
+}
