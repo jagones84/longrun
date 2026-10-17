@@ -26,40 +26,55 @@ import time
 
 from longrun.util import osutil
 
-from longrun.util.paths import REPO_ROOT as REPO
+from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR
 CONFIG = os.environ.get("LONGRUN_HOOKS") or os.path.join(REPO, "config", "hooks.yaml")
+# JAG-491: the WebUI hook table writes a gitignored overlay so the shipped file
+# (with its documented examples) is never rewritten. Present = REPLACES the list.
+# An explicit LONGRUN_HOOKS (tests) disables the overlay unless it is named too,
+# so a test never picks up the live user overlay.
+OVERLAY = os.environ.get("LONGRUN_HOOKS_OVERLAY") or (
+    "" if os.environ.get("LONGRUN_HOOKS") else os.path.join(DATA_DIR, "hooks.overlay.yaml"))
 DEFAULT_TIMEOUT = 60
 EVENTS = ("PreToolUse", "PostToolUse", "Stop")
 
 _cache = {"ts": None, "hooks": []}
 
 
-def load(reload=False):
-    """Cached hook list from config/hooks.yaml ([] when the file is absent)."""
-    try:
-        mt = os.stat(CONFIG).st_mtime
-    except OSError:
-        return []
-    if not reload and _cache["ts"] == mt:
-        return _cache["hooks"]
-    hooks = []
+def _read_hooks(path):
+    """The normalised hook list stored in one file ([] when absent/broken)."""
     try:
         import yaml
-        with open(CONFIG, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        out = []
         for h in (data.get("hooks") or []):
             if not isinstance(h, dict) or h.get("event") not in EVENTS or not h.get("command"):
                 continue
-            hooks.append({
+            out.append({
                 "event": str(h["event"]),
                 "matcher": str(h.get("matcher") or ""),
                 "command": str(h["command"]),
                 "timeout_secs": int(h.get("timeout_secs") or DEFAULT_TIMEOUT),
                 "block_on_fail": bool(h.get("block_on_fail", False)),
             })
+        return out
     except Exception:  # noqa: BLE001 — hooks must never break a run
-        hooks = []
-    _cache.update(ts=mt, hooks=hooks)
+        return []
+
+
+def load(reload=False):
+    """Cached hook list: config/hooks.yaml, REPLACED by the WebUI overlay."""
+    stamps = []
+    for path in (CONFIG, OVERLAY):
+        try:
+            stamps.append(os.stat(path).st_mtime if path else None)
+        except OSError:
+            stamps.append(None)
+    key = tuple(stamps)
+    if not reload and _cache["ts"] == key:
+        return _cache["hooks"]
+    hooks = _read_hooks(OVERLAY) if OVERLAY and os.path.isfile(OVERLAY) else _read_hooks(CONFIG)
+    _cache.update(ts=key, hooks=hooks)
     return hooks
 
 

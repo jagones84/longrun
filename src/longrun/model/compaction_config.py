@@ -198,13 +198,17 @@ def local_path():
     return _LOCAL_PATH
 
 
-def save(trigger_pct=None, target_pct=None, keep_recent=None):
+def save(trigger_pct=None, target_pct=None, keep_recent=None, patch=None):
     """Persist the user-tunable policy keys into the local overlay.
 
     Writes only the keys passed (the rest keep coming from the shipped file), so
     `config/compaction.yaml` and its comments are never rewritten. The loader
     picks the new values up on the next access — no service restart (JAG-487).
     Returns the validated policy after the write.
+
+    JAG-491: `patch` carries any other policy keys (the summarizer caps + its
+    instruction, edited from the structured form). Every prior overlay key is
+    kept, so saving from one panel never drops what the other one saved.
     """
     cur = _read()
     trig = float(cur["trigger_pct"] if trigger_pct is None else trigger_pct)
@@ -216,8 +220,32 @@ def save(trigger_pct=None, target_pct=None, keep_recent=None):
         raise ValueError("target_pct must be >= 0 and below trigger_pct")
     if not (1 <= keep <= 50):
         raise ValueError("keep_recent must be between 1 and 50")
-    payload = {"compaction": {"trigger_pct": trig, "target_pct": targ,
-                              "keep_recent": keep}}
+    merged = dict(_read_file(_LOCAL_PATH))
+    merged.update({"trigger_pct": trig, "target_pct": targ, "keep_recent": keep})
+    for key, val in (patch or {}).items():
+        if isinstance(val, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **val}
+        else:
+            merged[key] = val
+    summ = merged.get("summarizer")
+    if isinstance(summ, dict):
+        for k, lo, hi in (("input_max_chars", 1000, 1000000),
+                          ("output_max_chars", 200, 100000)):
+            if k in summ:
+                try:
+                    n = int(summ[k])
+                except (TypeError, ValueError):
+                    raise ValueError("summarizer.%s must be an integer" % k)
+                if n < lo or n > hi:
+                    raise ValueError("summarizer.%s must be between %d and %d"
+                                     % (k, lo, hi))
+                summ[k] = n
+        if "instruction" in summ:
+            txt = str(summ["instruction"] or "").strip()
+            if not txt:
+                raise ValueError("summarizer.instruction must not be empty")
+            summ["instruction"] = txt[:200000]
+    payload = {"compaction": merged}
     with _LOCK:
         with open(_LOCAL_PATH, "w", encoding="utf-8") as f:
             if yaml is not None:

@@ -917,6 +917,14 @@ def handle(handler, method, path, qs, body):
             except ValueError as e:
                 return _r(handler, 400, {"ok": False, "error": str(e)})
             return _r(handler, 200 if res.get("ok") else 404, res)
+        # JAG-491: structured (object) editors for the config files — every field
+        # is a checkbox/number/select/row, never hand-typed YAML.
+        if path == "/api/settings":
+            from longrun.core import settings as _settings
+            try:
+                return _r(handler, 200, _settings.view())
+            except Exception as e:  # noqa: BLE001 — the panel must still load
+                return _r(handler, 500, {"ok": False, "error": str(e)})
         if path == "/api/sandbox":
             return _r(handler, 200, sandbox.probe(force=qs.get("force") == "1"))
         if path == "/api/approvals":
@@ -1270,6 +1278,16 @@ def handle(handler, method, path, qs, body):
             except ValueError as e:
                 return _r(handler, 400, {"ok": False, "error": str(e)})
             _publish("config.saved", name=body.get("name"), ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/settings":
+            # JAG-491: apply ONE structured section (validated paths + types).
+            from longrun.core import settings as _settings
+            try:
+                res = _settings.update(body)
+            except ValueError as e:
+                return _r(handler, 400, {"ok": False, "error": str(e)})
+            if res.get("ok"):
+                _publish("config.saved", name=body.get("file"), structured=True)
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/tools":
             return _r(handler, 200, update_policy(body))
@@ -1849,9 +1867,18 @@ def _update_policy(body):
     if "enabled" in body:
         entry["enabled"] = bool(body["enabled"])
     if "approval" in body:
-        entry["approval"] = str(body["approval"])
-    if "auto_approve" in body:
-        entry["auto_approve"] = list(body["auto_approve"])
+        ap = str(body["approval"] or "").strip().lower()
+        if ap not in ("auto", "required", "denied"):
+            return {"ok": False, "error": "approval must be auto|required|denied"}
+        entry["approval"] = ap
+    # JAG-491: the per-tool ADVANCED fields (the same lists the shipped YAML
+    # documents) are editable as objects too. Each is a list of strings.
+    for key in ("auto_approve", "roots", "deny", "allow_hosts"):
+        if key in body:
+            vals = body[key]
+            if not isinstance(vals, list):
+                return {"ok": False, "error": "%s must be a list" % key}
+            entry[key] = [str(x)[:500] for x in vals if str(x).strip()]
     registry.save_config(cfg)
     registry.load_config(reload=True)
     _publish("tools.update", tool=name, enabled=entry.get("enabled"),

@@ -7,6 +7,40 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **Every config knob is now an OBJECT in the WebUI, and the improvement backlog is
+  reviewed by an LLM (JAG-491).**
+  - **Structured settings** (`src/longrun/core/settings.py` + `GET|POST /api/settings`):
+    one schema declares the fields of the files that had no bespoke panel —
+    `index.yaml` (chunking, size caps, knowledge knobs, url cap, image caption
+    model), `compaction.yaml` (summarizer input/output caps + instruction),
+    `routing.yaml` (every role: model / pattern / fallbacks + global fallbacks),
+    `decisions.yaml`, `hooks.yaml` (a repeatable row per hook) and
+    `mcp_clients.yaml` (env files). Controls are checkbox / bounded number /
+    select / text / textarea / line list / repeatable rows — never hand-typed YAML.
+    Writes go to the owning overlay (`data/index.overlay.yaml`,
+    `config/compaction.local.yaml`, `data/hooks.overlay.yaml`,
+    `data/decisions.overlay.yaml`, `config/mcp_clients.local.json`), so shipped
+    files and their documentation are never rewritten. Unknown paths and
+    out-of-range values are rejected server-side. Keys owned by a dedicated panel
+    (providers, embedding catalogue, subagents, tool policy) are listed in the UI
+    and deliberately not duplicated; `v491` fails if any config leaf is covered
+    by neither.
+  - **Tools & approvals gained the missing controls**: sandbox `pids_limit` / `cpus`,
+    global approval `outside_workspace` / `timeout_secs`, and a per-tool ⚙ editor
+    for `roots`, `auto_approve`, `deny` and `allow_hosts` (validated lists).
+  - **LLM backlog audit** (`improve.review`): every proposal + non-user distilled
+    lesson is classified against the CURRENT code (evidence retrieved from the
+    workspace index) as **keep / implemented / obsolete / update / conflict**, with
+    a confidence, a one-line reason and — for `update` — the rewritten text.
+    Nothing is applied automatically. Shared by two callers through one function:
+    the **🧠 review with LLM** button in Settings ▸ Improvement (last report
+    persisted under `data/improvement/reviews/`, shown with its evidence paths and
+    an audit-ledger entry) and the base **`improve` tool** (`scope=review` or
+    `action=review`, optional `limit`/`model`), so any session agent can audit its
+    own backlog. The model comes from `routing.roles.reviewer`, then the general
+    default.
+  `tests/acceptance/v491_settings_forms.py` (23 checks) and `v492_improvement_review.py`
+  (20 checks) pin both, deterministically.
 - **External sources are now first-class in the knowledge base (JAG-490).** An audit against
   real documents (PDF, DOCX, XLSX, EPUB, images, URL-pointed PDFs/images, a 23 MB / 783-page book)
   found and fixed the whole ingestion path:

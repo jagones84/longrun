@@ -1673,6 +1673,8 @@ class Handler(BaseHTTPRequestHandler):
                 "records": records,
                 "memory": mem,
                 "origins": list(improve_mod.ORIGINS),
+                # JAG-491: the last LLM backlog audit (None until the first run).
+                "review": improve_mod.latest_review(),
                 # JAG-451: the harness files the loop reads/writes live under the
                 # repo root; expose an ABSOLUTE base so the panel's file links open
                 # in the editor regardless of the session workspace.
@@ -1989,6 +1991,19 @@ class Handler(BaseHTTPRequestHandler):
             decision = body.get("decision") or qs.get("decision", "")
             res = improve_mod.decide(pid, decision)
             return self._send(200 if res.get("ok") else 400, res)
+        if path == "/api/improvement/review":
+            # JAG-491: run the LLM backlog audit now (the panel button and the
+            # `improve` tool call the SAME function). Synchronous + bounded.
+            from longrun.util import improve as improve_mod
+            try:
+                limit = int(body.get("limit") or 24)
+            except (TypeError, ValueError):
+                limit = 24
+            rep = improve_mod.review(limit=max(1, min(limit, 60)),
+                                     model=str(body.get("model") or "").strip() or None)
+            publish("improve.review", reviewed=len(rep.get("items") or []),
+                    counts=rep.get("counts"), model=rep.get("model"))
+            return self._send(200 if rep.get("ok") else 500, rep)
         if path == "/api/chat/stream":
             # a JSON body over query params). Same SSE contract.
             message = body.get("message") or qs.get("message", "")

@@ -163,23 +163,38 @@ def _path():
     return CONFIG_PATH
 
 
-def _stat_key(path):
+def _overlay_path():
+    """JAG-491: the WebUI-structured form writes a gitignored overlay.
+
+    The shipped file keeps its documentation; the overlay is merged on top
+    (key-by-key, `speculative` merged too). An explicit LONGRUN_DECISIONS
+    (tests) disables the overlay unless LONGRUN_DECISIONS_OVERLAY names one.
+    """
+    explicit = os.environ.get("LONGRUN_DECISIONS_OVERLAY")
+    if explicit:
+        return explicit
+    if os.environ.get("LONGRUN_DECISIONS"):
+        return ""
     try:
-        st = os.stat(path)
-        return (path, st.st_mtime_ns, st.st_size)
-    except OSError:
-        return (path, None, None)
+        from longrun.util.paths import DATA_DIR
+        return os.path.join(DATA_DIR, "decisions.overlay.yaml")
+    except Exception:  # noqa: BLE001
+        return ""
 
 
-def load_config():
-    # Absent file / bad stat -> a cacheable "missing" key, so a later appearance
-    # of the file still invalidates the entry.
-    path = _path()
-    key = _stat_key(path)
-    if _cfg_cache["key"] == key and _cfg_cache["cfg"] is not None:
-        return dict(_cfg_cache["cfg"])
-    cfg = {"speculative": dict(_DEFAULTS["speculative"])}
-    cfg.update({k: v for k, v in _DEFAULTS.items() if k != "speculative"})
+def _stat_key(path):
+    key = [path]
+    for p in (path, _overlay_path()):
+        try:
+            st = os.stat(p) if p else None
+            key.extend([st.st_mtime_ns, st.st_size] if st else [None, None])
+        except OSError:
+            key.extend([None, None])
+    return tuple(key)
+
+
+def _merge_file(cfg, path):
+    """Merge one decisions document into `cfg` (best effort)."""
     try:
         with open(path, encoding="utf-8") as f:
             raw = f.read()
@@ -197,6 +212,22 @@ def load_config():
                     cfg["speculative"].update(v)
     except OSError:
         pass
+    return cfg
+
+
+def load_config():
+    # Absent file / bad stat -> a cacheable "missing" key, so a later appearance
+    # of the file still invalidates the entry.
+    path = _path()
+    key = _stat_key(path)
+    if _cfg_cache["key"] == key and _cfg_cache["cfg"] is not None:
+        return dict(_cfg_cache["cfg"])
+    cfg = {"speculative": dict(_DEFAULTS["speculative"])}
+    cfg.update({k: v for k, v in _DEFAULTS.items() if k != "speculative"})
+    _merge_file(cfg, path)
+    overlay = _overlay_path()
+    if overlay:
+        _merge_file(cfg, overlay)
     _cfg_cache["key"] = key
     _cfg_cache["cfg"] = cfg
     return dict(cfg)

@@ -312,16 +312,29 @@ TOOL_SCHEMAS = {
         "subject": "action",
     },
     "improve": {
+        "description": ("Self-improvement. propose registers a rule/skill proposal; "
+                        "mine/evolve/verify/promote drive the self-evolving skill "
+                        "miner; review audits THE WHOLE backlog (proposals + "
+                        "distilled lessons) with an LLM against the current "
+                        "codebase and reports keep/implemented/obsolete/update/"
+                        "conflict for each artifact."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["propose", "mine", "evolve", "verify", "promote"],
+                       "enum": ["propose", "mine", "evolve", "verify", "promote",
+                                "review"],
                        "default": "propose"},
-            "scope": {"type": "string", "enum": ["skill", "project", "global", "mine"]},
+            "scope": {"type": "string",
+                      "enum": ["skill", "project", "global", "mine", "review"]},
             "content": {"type": "string"},
             "path": {"type": "string",
-                     "description": "cartella proposta (per verify/promote)"},
+                     "description": "proposal folder (for verify/promote)"},
             "reason": {"type": "string"},
+            "limit": {"type": "integer",
+                      "description": "review: how many artifacts to audit (max 60)"},
+            "model": {"type": "string",
+                      "description": "review: model ref (default: routing role "
+                                     "'reviewer', then the general default)"},
         },
         "required": ["action", "scope"],
     },
@@ -669,6 +682,7 @@ def catalog():
             "auto_approve": spec["auto_approve"],
             "deny": spec["deny"],
             "allow_hosts": spec["allow_hosts"],
+            "roots": spec["roots"],
             "description": (spec["schema"] or {}).get("description", ""),
             "inputSchema": {k: v for k, v in (spec["schema"] or {}).items()
                             if k in ("type", "properties", "required")},

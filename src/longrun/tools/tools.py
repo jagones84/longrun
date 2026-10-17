@@ -991,6 +991,35 @@ def _improve(args, run_id=None):
     scope = str(args.get("scope", "")).strip()
     action = str(args.get("action", "propose") or "propose").strip()
     content = str(args.get("content", "")).strip()
+    # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
+    # against the current codebase. One implementation shared with the panel.
+    if scope == "review" or action == "review":
+        try:
+            limit = int(args.get("limit") or 18)
+        except (TypeError, ValueError):
+            limit = 18
+        rep = improve.review(limit=max(1, min(limit, 60)),
+                             model=str(args.get("model") or "").strip() or None)
+        if not rep.get("ok"):
+            return {"ok": False, "error": rep.get("error") or "review failed",
+                    "reviewed": len(rep.get("items") or [])}
+        rows = []
+        for it in rep.get("items") or []:
+            line = "%-11s %-8s %s" % (it.get("verdict"), it.get("kind"),
+                                      str(it.get("text") or "")[:140])
+            if it.get("why"):
+                line += "\n            why: " + it["why"][:220]
+            if it.get("rewritten"):
+                line += "\n            rewrite: " + it["rewritten"][:300]
+            rows.append(line)
+        return {"ok": True, "counts": rep.get("counts"), "unrated": rep.get("unrated"),
+                "reviewed": len(rep.get("items") or []), "model": rep.get("model"),
+                "report": rep.get("report"),
+                "items": [{k: it.get(k) for k in
+                           ("id", "kind", "scope", "verdict", "confidence",
+                            "why", "rewritten")}
+                          for it in (rep.get("items") or [])],
+                "stdout": "\n".join(rows) or "(nothing to review)"}
     if scope == "mine":
         from longrun.util import selfevolve
         out = os.path.join(registry.REPO, "data", "proposals", "skills")
