@@ -9,10 +9,10 @@ All notable changes to Longrun are documented here. The format follows
 ### Changed
 - **Repo tagline rewritten; the discontinued SparkPulse client dropped.**
   The repo description still claimed the harness "Powers the SparkPulse Android client" — that client no
-  longer exists, so the claim was removed. The text now reads: *"AI agent harness with bounded context, a
-  verification gate, and tool-output offload. Runs a team of meta-agents as an org chart — every session is
-  an agent."* The two in-repo docstrings that still named the client (`plan/taskgraph.py`,
-  `tools/registry.py`) now simply say "the WebUI".
+  longer exists (its GitHub repo 404s), so the claim was removed and the dead homepage link cleared. The
+  text now reads: *"AI agent harness with bounded context, a verification gate, and tool-output offload.
+  Runs a team of meta-agents as an org chart — every session is an agent."* The two in-repo docstrings that
+  still named the client (`plan/taskgraph.py`, `tools/registry.py`) now simply say "the WebUI".
 
 ### Added
 - **TEAM bulk actions: reset-all / compact-all from a 3-dot menu on the team header (JAG-482), battery 199/199.**
