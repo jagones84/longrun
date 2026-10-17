@@ -464,7 +464,7 @@ def load_config(reload=False):
 
 _OVERLAY_HEADER = (
     "# Longrun policy overlay — written automatically by POST /api/tools\n"
-    "# (the SETTINGS panel in SparkPulse). Only the keys that DIFFER from\n"
+    "# (the SETTINGS panel in the Longrun WebUI). Only the keys that DIFFER from\n"
     "# config/tools.yaml live here, so that file stays the hand-edited source\n"
     "# of truth and its comments are never rewritten. Delete this file to fall\n"
     "# back entirely to config/tools.yaml.\n\n"

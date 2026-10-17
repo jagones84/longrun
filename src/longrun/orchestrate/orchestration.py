@@ -17,6 +17,8 @@ server. Routes:
   GET    /api/roles?session=    the session's ROLE.md (any session)
   POST   /api/roles             set {session, text} (empty text clears it)
   DELETE /api/roles?session=    remove the session's ROLE.md
+  POST   /api/teams/<tid>/reset    team bulk: reset every member session (chat+tasks)
+  POST   /api/teams/<tid>/compact  team bulk: compact every member session
 """
 import json
 
@@ -69,6 +71,44 @@ def _team_payload(t, reg):
     return out
 
 
+def _team_bulk(tid, action, reg):
+    """JAG-482: apply ONE action to EVERY session (= agent) of a team.
+
+    `reset`   -> ``stores.clear_session``: wipe the transcript, the tool cards,
+                 the harness injects and the task graph. The session, its agent
+                 and its ROLE.md stay — nothing is deleted.
+    `compact` -> ``httpapi.compact_session`` (the MANUAL policy, identical to the
+                 single-session "compact now" action): summarise the old half of
+                 the transcript so the context actually shrinks.
+
+    The sessions are ACTUAL backend sessions; one session failing never aborts
+    the batch, it is reported per session in ``results``.
+    """
+    if not teams_mod.REGISTRY.get(tid):
+        return {"ok": False, "error": "team not found"}
+    sids, seen = [], set()
+    for a in reg.agents_of_team(tid):
+        sid = a.get("session")
+        if sid and sid not in seen:
+            seen.add(sid)
+            sids.append(sid)
+    from longrun.core import httpapi as httpapi_mod
+    from longrun.memory import stores as stores_mod
+    results = []
+    for sid in sids:
+        try:
+            if action == "compact":
+                results.append({"session": sid,
+                                "result": httpapi_mod.compact_session(sid, origin="manual")})
+            else:
+                stores_mod.clear_session(sid)
+                results.append({"session": sid, "ok": True})
+        except Exception as exc:  # noqa: BLE001 — one bad session must not abort the team
+            results.append({"session": sid, "error": str(exc)})
+    return {"ok": True, "team": tid, "action": action,
+            "sessions": sids, "count": len(sids), "results": results}
+
+
 def _teams(handler, method, path, qs, body, reg):
     """JAG-339: the /api/teams surface (CRUD + multi-team membership)."""
     R = teams_mod.REGISTRY
@@ -103,6 +143,12 @@ def _teams(handler, method, path, qs, body, reg):
                 tid, lead_model=data.get("lead_model"),
                 member_model=data.get("member_model"),
                 local_slots_n=data.get("local_slots")))
+        if len(parts) >= 2 and parts[1] in ("reset", "compact"):
+            # JAG-482: TEAM-WIDE bulk action over the team's member sessions.
+            # "reset" wipes each session (chat + tasks), "compact" shrinks each
+            # transcript — NEVER deletes a session or its agent.
+            res = _team_bulk(tid, parts[1], reg)
+            return _json(handler, 404 if res.get("error") else 200, res)
         return _json(handler, 200, R.update(
             tid, name=data.get("name"), symbol=data.get("symbol"),
             color=data.get("color"), description=data.get("description")))

@@ -175,6 +175,9 @@
   tr.grp-head .grp-h:hover{background:rgba(108,140,255,.05)}
   tr.grp-head .caret{display:inline-block;width:12px;transition:transform .12s;color:var(--dim)}
   tr.grp-head .gc{margin-left:auto;font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:0 7px}
+  /* JAG-482: per-TEAM kebab (right of the team name) — bulk actions on the team's sessions. */
+  tr.grp-head .kebab{border:0;background:none;color:var(--dim);cursor:pointer;font-size:14px;line-height:1;padding:1px 6px;border-radius:6px}
+  tr.grp-head .kebab:hover{background:var(--brief);color:#fff}
   tr.grp-empty td{padding:0;border-bottom:1px solid var(--line)}
   tr[hidden]{display:none}
   /* constellation — a DOCKED panel in the page grid (JAG-297) */
@@ -480,6 +483,7 @@ class AgentsView {
     // selected team vanishes and its edge can be silently cleared.
     this.roster = [];
     this.sort = "default"; this._tmmenu = null; this.closed = new Set(); this._groupIds = [];
+    this._tmenu = null;   // JAG-482: the per-TEAM bulk-action menu
     this._seen = new Set(); this.focusSid = null; }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams, roster){
@@ -586,6 +590,11 @@ class AgentsView {
         this._applyGroupState(id);
       };
     });
+    // JAG-482: the team kebab must NOT toggle the group — stop the header click.
+    body.querySelectorAll("[data-tmbulk]").forEach(b => { b.onclick = (ev) => {
+      ev.stopPropagation();
+      this.openTeamMenu(ev, b.dataset.tmbulk);
+    }; });
     body.querySelectorAll("select[data-f],input[data-f]").forEach(el => {
       el.onchange = () => { const sid = el.closest("tr").dataset.sid; this.save(sid, {[el.dataset.f]: el.value}); };
     });
@@ -697,10 +706,16 @@ class AgentsView {
   groupHtml(g){
     const closed = this.closed.has(g.id);
     const hid = closed ? ' hidden' : '';
+    // JAG-482: only a REAL team (one the deck knows) gets the bulk kebab; the
+    // "No team" bucket and unknown/stray group ids have no team to act on.
+    const isTeam = !!this.teamById(g.id);
     const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="8">' +
       '<div class="grp-h"><span class="caret">' + (closed ? '▸' : '▾') + '</span>' +
       (g.symbol ? '<span>' + esc(g.symbol) + '</span>' : '') +
-      '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span></div></td></tr>';
+      '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span>' +
+      (isTeam ? '<button class="kebab" data-tmbulk="' + esc(g.id) + '" aria-label="team actions" ' +
+        'aria-haspopup="menu" title="team actions — all sessions of this team">\u22EF</button>' : '') +
+      '</div></td></tr>';
     const rows = (g.ms || []).length
       ? (g.ms || []).map(a => this.row(a, g.id)).join("")
       : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="8" class="empty">no agents in this group.</td></tr>';
@@ -750,6 +765,57 @@ class AgentsView {
       {agent: aid, action: add ? "add" : "remove"});
     if (!r || r.ok === false){ alert((r && r.error) || "membership update failed"); return; }
     this.closeTeamPicker();
+    if (this.onChanged) this.onChanged();
+  }
+  /* JAG-482: TEAM-wide bulk actions. The kebab on a team header row opens this
+     menu; both actions hit ONE server route that walks the team's member
+     sessions — no per-session loop in the browser, no third data source. */
+  openTeamMenu(ev, tid){
+    this.closeTeamPicker(); this.closeTeamMenu();
+    const t = this.teamById(tid); if (!t) return;
+    const n = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
+    const m = document.createElement("div"); m.className = "ctxmenu";
+    m.innerHTML = '<div data-a="reset">\u21BA Reset all sessions\u2026</div>' +
+                  '<div data-a="compact">\u2261 Compact all sessions\u2026</div>';
+    document.body.appendChild(m);
+    m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - 224)) + "px";
+    m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - 110)) + "px";
+    m.querySelector('[data-a="reset"]').onclick = () => { this.closeTeamMenu();
+      if (confirm("Reset all " + n + " session(s) of " + (t.name || tid) +
+        "?\n\nTheir chat history and task list are wiped — the agents, their names and " +
+        "their ROLE.md stay. Nothing is deleted."))
+        this.teamBulk(tid, "reset"); };
+    m.querySelector('[data-a="compact"]').onclick = () => { this.closeTeamMenu();
+      if (confirm("Compact all " + n + " session(s) of " + (t.name || tid) +
+        "?\n\nThe older half of each transcript is summarised so the context shrinks."))
+        this.teamBulk(tid, "compact"); };
+    this._tmenu = m;
+    const h = (e) => { if (!m.contains(e.target)) this.closeTeamMenu(); };
+    const k = (e) => { if (e.key === "Escape") this.closeTeamMenu(); };
+    m.__h = h; m.__k = k;
+    setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
+  }
+  closeTeamMenu(){ const m = this._tmenu; if (!m) return;
+    if (m.__h) document.removeEventListener("mousedown", m.__h);
+    if (m.__k) document.removeEventListener("keydown", m.__k);
+    m.remove(); this._tmenu = null; }
+  async teamBulk(tid, action){
+    const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/" + action, {});
+    if (!r || r.ok === false){ alert((r && r.error) || (action + " failed")); return; }
+    const bad = (r.results || []).filter(x => x.error || (x.result && x.result.error));
+    const lines = (r.results || []).map(x => {
+      const err = x.error || (x.result && x.result.error);
+      if (err) return "  " + x.session + " — " + err;
+      if (action === "compact"){
+        const q = x.result || {};
+        return "  " + x.session + " — " + (q.input_tokens != null
+          ? q.input_tokens + " \u2192 " + (q.tokens_after != null ? q.tokens_after : "?") + " tokens"
+          : "compacted");
+      }
+      return "  " + x.session + " — reset";
+    });
+    alert(action + ": " + (r.count || 0) + " session(s) of this team" +
+      (bad.length ? " \u2014 " + bad.length + " issue(s)" : "") + "\n" + lines.join("\n"));
     if (this.onChanged) this.onChanged();
   }
   async save(sid, patch){

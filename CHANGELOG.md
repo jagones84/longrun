@@ -6,7 +6,26 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **Repo tagline rewritten; the discontinued SparkPulse client dropped.**
+  The repo description still claimed the harness "Powers the SparkPulse Android client" — that client no
+  longer exists, so the claim was removed. The text now reads: *"AI agent harness with bounded context, a
+  verification gate, and tool-output offload. Runs a team of meta-agents as an org chart — every session is
+  an agent."* The two in-repo docstrings that still named the client (`plan/taskgraph.py`,
+  `tools/registry.py`) now simply say "the WebUI".
+
 ### Added
+- **TEAM bulk actions: reset-all / compact-all from a 3-dot menu on the team header (JAG-482), battery 199/199.**
+  The AGENTS table groups the roster under one collapsible header per TEAM, but a team-wide action had to be
+  clicked agent by agent. The header now carries a kebab — rendered ONLY for a real team (the "No team" bucket
+  and unknown/stray group ids have no team to act on) — offering two actions over EVERY member session:
+  **reset all sessions** (the same semantics as the row's ↺ reset, i.e. `stores.clear_session`: transcript,
+  tool cards, harness injects and task graph wiped — the sessions, their agents and their ROLE.md are NOT
+  deleted) and **compact all sessions** (the MANUAL compaction policy of "compact now", one call per session).
+  Both go through ONE new route — `POST /api/teams/<tid>/reset` and `POST /api/teams/<tid>/compact` — instead of
+  a browser-side loop, and report per session (`input_tokens → tokens_after`). One failing session never aborts
+  the batch (it is reported in `results`), an unknown team is a 404, and an empty team is a clean 0-session
+  no-op. Pinned by new `v482` (22 checks).
 - **The chat names itself: a small header bar with the ACTIVE session's name (JAG-480), battery 198/198.**
   Hiding the left panel (or collapsing a session's team group) used to hide *which* session you were
   reading, so finding it again meant remembering its name. The chat now carries its own compact top bar

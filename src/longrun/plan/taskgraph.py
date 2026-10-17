@@ -12,7 +12,7 @@ graph:
   * the first action of any chat/agent run is a model-generated
     `write_todos` tool call (streamed, NDJSON or nested JSON — never a template);
   * every mutation emits `graph.node.added` / `graph.node.updated` on the feed,
-    so WebUI and SparkPulse render the graph live;
+    so the WebUI renders the graph live;
   * a node may only become `done` when it carries evidence (command + output);
   * `plan_step` / `complete_plan_step` / `add_task` / `complete_task` from the
     existing agent loops are mapped onto graph nodes.
