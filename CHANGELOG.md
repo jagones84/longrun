@@ -7,6 +7,22 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Every agent run now shows as RUNNING, and the Sessions rail counts them (JAG-479), battery 197/197.**
+  Two defects behind one report: "the running symbol never appears on a chat" and "I cannot see how
+  many agents are running". (1) **A run that OWNS a session never registered a turn.** The chat and the
+  in-process MCP chat bracket their turn with `turn_begin`/`turn_end`, but `agent_stream_gen_v2` — the
+  path a Paperclip task or job takes, the one that auto-creates and owns the visible session (JAG-476) —
+  did not. So `_ACTIVE_CHAT` never held that session: `list_sessions` reported `running: false`, the rail
+  spinner never rendered, and no `chat.done` was published — no finished-bell either. The worker now
+  brackets the run (`turn_begin` before the SSE `run` frame; `turn_end` in its `finally`, AFTER the reply
+  is persisted, so a browser reacting to `chat.done` already finds the answer on disk). (2) **A counted,
+  navigable surface.** The Sessions header gains a runs BAR (`N running · 🔔 M finished`) that opens a
+  separate popover panel (`role="dialog"`, Escape / outside-click to close) listing **running agents**
+  and **finished-but-unread** sessions, one real hyperlink per row that jumps straight to that chat and
+  clears its bell. Running comes from the server flag / `chat.run`; unread is client-side truth
+  (`chat.done` on a session this browser was not showing) persisted in `localStorage["sf_unread"]` and
+  pruned of deleted ids on every `loadSessions`. The rail spinner, the bell and the panel's dot now all
+  respect `prefers-reduced-motion`. Pinned by new `v472` (28 checks).
 - **The 🏷 button names EVERY untitled Free.* group in one shot — it is now an LLM subroutine,
   not an agent turn (JAG-473).** The old button only PROMPTED the agent ("use `chapters`
   action=untitled …"), and that turn always stopped after one page: the tool shows ≤8 ids and a

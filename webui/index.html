@@ -270,6 +270,51 @@
   .sess.done::before { content: "🔔"; font-size: 10px; flex-shrink: 0;
     animation: sfpulse 1.2s ease-in-out infinite; }
   @keyframes sfpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+  /* JAG-479: the Sessions rail states the two REAL signals — how many agents are
+     in flight right now, and how many sessions finished while you were elsewhere.
+     The bar is the COUNT (always visible); the panel is the LIST, one hyperlink per
+     session that jumps straight to its chat. */
+  .runs-bar { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px;
+    padding: 5px 8px; border-radius: 9px; cursor: pointer; background: transparent;
+    border: 1px solid var(--line); color: var(--dim); font: inherit; font-size: 11px;
+    letter-spacing: .02em; text-align: left; }
+  .runs-bar:hover { background: var(--hover); color: var(--txt); }
+  .runs-bar:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+  .runs-bar .rb-run, .runs-bar .rb-done { display: inline-flex; align-items: center; gap: 4px; }
+  .runs-bar.has-run .rb-run { color: var(--ok); font-weight: 600; }
+  .runs-bar.has-done .rb-done { color: var(--warn); font-weight: 600; }
+  .runs-bar .rb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
+  .runs-bar.has-run .rb-dot { background: var(--ok); animation: sfpulse 1.2s ease-in-out infinite; }
+  .runs-bar .rb-caret { margin-left: auto; font-size: 9px; }
+  .runs-panel { position: fixed; z-index: 60; max-height: 60vh; overflow-y: auto;
+    background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px;
+    padding: 6px; box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+  .runs-panel:focus { outline: none; }
+  .rp-head { display: flex; align-items: center; gap: 8px; padding: 2px 6px 6px;
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+  .rp-head .rp-x { margin-left: auto; background: none; border: 0; color: var(--dim);
+    cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .rp-head .rp-x:hover { color: var(--txt); background: var(--hover); }
+  .rp-sec { padding: 7px 6px 3px; font-size: 10px; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--dim); }
+  .rp-row { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 7px;
+    text-decoration: none; color: var(--txt); font-size: 12px; }
+  .rp-row:hover { background: var(--hover); }
+  .rp-row:focus-visible { outline: 2px solid var(--acc); outline-offset: -1px; }
+  .rp-row .rp-ic { width: 11px; flex-shrink: 0; text-align: center; font-size: 10px; }
+  .rp-row.run .rp-ic::before { content: ""; display: block; width: 10px; height: 10px;
+    box-sizing: border-box; border-radius: 50%; border: 2px solid var(--line);
+    border-top-color: var(--ok); animation: sfspin .7s linear infinite; }
+  .rp-row .rp-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-row .rp-m { color: var(--dim); font-size: 10px; flex-shrink: 0; }
+  .rp-empty { padding: 3px 6px 6px; color: var(--dim); font-size: 11px; }
+  .rp-mark { display: block; width: 100%; margin-top: 6px; padding: 5px; cursor: pointer;
+    background: transparent; border: 1px solid var(--line); border-radius: 7px;
+    color: var(--dim); font: inherit; font-size: 11px; }
+  .rp-mark:hover { color: var(--txt); background: var(--hover); }
+  /* JAG-479: the rail animations are decorative — honour the OS motion setting. */
+  @media (prefers-reduced-motion: reduce) { .sess.running::before, .sess.done::before,
+    .runs-bar .rb-dot, .rp-row.run .rp-ic::before { animation: none; } }
   .sess .t { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
   .sess .n { margin-left: auto; color: var(--dim); font-size: 10px; letter-spacing: .02em; }
   .sess .ws { font-size: 12px; flex-shrink: 0; opacity: .85; }
@@ -1362,6 +1407,21 @@
   <aside id="aside" data-col="sessions">
     <section>
       <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
+      <button type="button" id="runsBar" class="runs-bar" aria-controls="runsPanel"
+              aria-expanded="false"
+              title="agents in flight · sessions that finished while you were elsewhere">
+        <span class="rb-dot" aria-hidden="true"></span>
+        <span class="rb-run"><b id="runsBarRun">0</b> running</span>
+        <span class="rb-done">🔔 <b id="runsBarDone">0</b> finished</span>
+        <span class="rb-caret" aria-hidden="true">▾</span>
+      </button>
+      <div id="runsPanel" class="runs-panel" hidden role="dialog" tabindex="-1"
+           aria-label="agents in flight and unread sessions">
+        <div class="rp-head"><b>Agents &amp; unread</b>
+          <button type="button" class="rp-x" id="runsPanelClose" aria-label="close panel">×</button>
+        </div>
+        <div class="rp-body" id="runsPanelBody"></div>
+      </div>
       <div class="u-df u-g6 u-mb6">
         <input id="sessInp" class="inp u-f1 u-p610 u-fs12" placeholder="new session title…">
         <button class="ghost" data-call="newSession">+ new</button>
@@ -3919,15 +3979,26 @@ async function loadSessions() {
   (out.sessions || []).forEach(s => { if (s.id === sessionId) _activeTitle = s.title || s.id; });
   let pinnedIds = [];
   try { pinnedIds = _pinned(); } catch (e) {}
-  (out.sessions || []).forEach(s => {
+  const _all = out.sessions || [];
+  _sessList = _all;   // JAG-479: the runs panel reads titles/ages from the REAL payload
+  const _IDs = new Set(_all.map(s => s.id));
+  _all.forEach(s => {
     _sessModel[s.id] = s.model || "";   // JAG-157: cache each session's model
     _sessJob[s.id] = s.job || null;     // JAG-169: cache each session's job id
+    _sessTitle[s.id] = s.title || s.id; // JAG-479: so the panel names every row
     // JAG-323: seed the busy marker from the authoritative server flag, so a page
     // load / refresh shows a HEADLESS run (job/routine turn) that no in-page event
     // announced. Never clobber a turn this browser is itself streaming.
     if (s.running) runningSessions[s.id] = true;
     else if (!turnSSE[s.id]) delete runningSessions[s.id];
   });
+  // JAG-479: a session that no longer EXISTS must not leave a ghost "unread" row —
+  // nor a permanent "(1) 🔔" in the tab title.
+  if (Object.keys(doneSessions).some(id => !_IDs.has(id))) {
+    Object.keys(doneSessions).forEach(id => { if (!_IDs.has(id)) delete doneSessions[id]; });
+    _saveUnread();
+    updateDoneTitle();
+  }
   const visible = (out.sessions || []).filter(s =>
     (!hideEmpty || (s.messages || 0) > 0) && ((s.title || s.id || "").toLowerCase().includes(q)));
   const isPinned = id => pinnedIds.includes(id);
@@ -4003,6 +4074,7 @@ async function loadSessions() {
   updateSessBadge();   // JAG-357: keep the topbar badge in sync with the active session
   _repaintCtx();   // JAG-424g: re-apply the context ring on the freshly rendered active row
   modelLabel();   // JAG-157: reflect the active session's model once the cache is filled
+  renderRuns();   // JAG-479: the rail's count + panel rows follow the REAL payload
 }
 /* JAG-117: creating a session asks which local folder to open it in. */
 async function newSession() {
@@ -5081,6 +5153,8 @@ let _modelItems = [];    // items currently rendered, in visual order
 let _modelHi = 0;        // highlighted index (keyboard)
 let _sessModel = {};     // JAG-157: per-session model {sessionId: modelRef}
 let _sessJob = {};       // JAG-169: per-session job id {sessionId: JX}
+let _sessTitle = {};     // JAG-479: per-session title, so the runs panel names a row
+let _sessList = [];      // JAG-479: the last /api/sessions payload (real server truth)
 
 /* JAG-157: a session remembers its own LLM; fall back to the global default. */
 function currentModel() { return (sessionId && _sessModel[sessionId]) || localStorage.getItem("sf_model") || ""; }
@@ -5593,7 +5667,19 @@ async function loadImprovement() {
    log — every session runs independently in parallel. */
 let turnSSE = {};                // sessionId -> EventSource of a running chat turn
 let runningSessions = {};        // sessionId -> true while its chat turn streams
-let doneSessions = {};           // JAG-218: finished while you were on another session
+/* JAG-479: reading state is genuinely the CLIENT's (the server cannot know which
+   browser looked at a chat), so it lives in localStorage and is pruned against the
+   real session list on every refresh — a deleted session never leaves a ghost row. */
+const UNREAD_KEY = "sf_unread";
+function _loadUnread() {
+  try { const v = JSON.parse(localStorage.getItem(UNREAD_KEY) || "{}");
+    return (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; }
+  catch (e) { return {}; }
+}
+function _saveUnread() { try { localStorage.setItem(UNREAD_KEY, JSON.stringify(doneSessions)); } catch (e) {} }
+let doneSessions = _loadUnread();  // JAG-218/479: finished while you were on another
+                                  // session — PERSISTED, so the bell + the runs
+                                  // panel survive a reload until the session is opened
 function setRunning(sid, on) {
   if (!sid) return;
   if (on) { runningSessions[sid] = true; clearDone(sid); } else delete runningSessions[sid];
@@ -5603,6 +5689,7 @@ function setRunning(sid, on) {
   // JAG-465: the Plan panel marks the step of a LIVE turn (animated); re-render so
   // the marker appears/disappears the moment the turn starts or ends.
   if (sid === sessionId) { try { renderGraph(); } catch (e) {} }
+  renderRuns();       // JAG-479: the rail's running COUNT follows the real signal
   refreshSendBtn();   // JAG-424: the send button becomes STOP while the ACTIVE turn runs
 }
 /* JAG-424: ONE composer button. Normally ↑ = send; while the ACTIVE session has a
@@ -5634,6 +5721,8 @@ function markDone(sid) {
   doneSessions[sid] = true;
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
     row => row.classList.add("done"));
+  _saveUnread();   // JAG-479: the "unread" set outlives this page load
+  renderRuns();
   showDoneToast(sid);
 }
 function clearDone(sid) {
@@ -5641,7 +5730,9 @@ function clearDone(sid) {
   delete doneSessions[sid];
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
     row => row.classList.remove("done"));
+  _saveUnread();   // JAG-479
   updateDoneTitle();
+  renderRuns();
 }
 function updateDoneTitle() {
   const n = Object.keys(doneSessions).length;
@@ -5666,6 +5757,118 @@ function showDoneToast(sid) {
   clearTimeout(t._h);
   t._h = setTimeout(() => { t.hidden = true; }, 8000);
   updateDoneTitle();
+}
+/* JAG-479: the Sessions rail makes the two REAL signals countable and navigable.
+   `runningSessions` and `doneSessions` are the live maps the rail already keeps —
+   the bar mirrors their SIZE, the panel LISTS them (one hyperlink per session, so a
+   click jumps straight to that chat and clears its bell). Nothing here is invented:
+   the running set comes from the server flag / `chat.run`, the unread set from
+   `chat.done` on a session this browser was not showing. */
+function _runsData() {
+  const list = _sessList || [];
+  const byId = {}; list.forEach(s => { byId[s.id] = s; });
+  const running = list.filter(s => runningSessions[s.id]);
+  const unread = Object.keys(doneSessions)
+    .filter(id => id !== sessionId && !runningSessions[id])
+    .map(id => byId[id] || { id: id, title: _sessTitle[id] || id });
+  return { running: running, unread: unread };
+}
+function renderRuns() {
+  const bar = $("runsBar"); if (!bar) return;
+  const d = _runsData();
+  bar.classList.toggle("has-run", d.running.length > 0);
+  bar.classList.toggle("has-done", d.unread.length > 0);
+  $("runsBarRun").textContent = d.running.length;
+  $("runsBarDone").textContent = d.unread.length;
+  bar.setAttribute("aria-label", d.running.length + " agent(s) running, "
+                   + d.unread.length + " session(s) finished and unread");
+  _renderRunsBody(d.running, d.unread);
+}
+function _runsRow(s, kind) {
+  const a = document.createElement("a");
+  a.className = "rp-row " + kind;
+  a.href = "#session-" + s.id;          // a real hyperlink to the chat
+  a.dataset.sid = s.id;
+  a.title = (s.title || s.id) + " — open this chat";
+  const meta = [_sessModel[s.id], s.age,
+                (s.messages ? s.messages + " msg" : "")].filter(Boolean).join(" · ");
+  a.innerHTML = `<span class="rp-ic" aria-hidden="true">${kind === "run" ? "" : "🔔"}</span>`
+    + `<span class="rp-t">${esc(s.title || s.id)}</span>`
+    + `<span class="rp-m">${esc(meta)}</span>`;
+  a.onclick = e => { e.preventDefault(); selectSession({ id: s.id }); closeRunsPanel(); };
+  return a;
+}
+function _renderRunsBody(running, unread) {
+  const body = $("runsPanelBody"); if (!body || $("runsPanel").hidden) return;
+  body.innerHTML = "";
+  const section = (label, items, kind, empty) => {
+    const h = document.createElement("div"); h.className = "rp-sec"; h.textContent = label;
+    body.appendChild(h);
+    if (!items.length) {
+      const e = document.createElement("div"); e.className = "rp-empty"; e.textContent = empty;
+      body.appendChild(e); return;
+    }
+    items.forEach(s => body.appendChild(_runsRow(s, kind)));
+  };
+  section("⚡ running (" + running.length + ")", running, "run", "no agent running");
+  section("🔔 finished — unread (" + unread.length + ")", unread, "done", "nothing unread");
+  if (unread.length) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "rp-mark"; b.textContent = "mark all read";
+    b.onclick = () => { Object.keys(doneSessions).forEach(clearDone); };
+    body.appendChild(b);
+  }
+}
+function _placeRunsPanel() {
+  const p = $("runsPanel"), bar = $("runsBar");
+  if (!p || !bar || p.hidden) return;
+  const r = bar.getBoundingClientRect();
+  p.style.left = Math.max(8, r.left) + "px";
+  p.style.top = (r.bottom + 6) + "px";
+  p.style.width = Math.max(250, Math.min(420, r.width)) + "px";
+}
+function openRunsPanel() {
+  const p = $("runsPanel"), bar = $("runsBar");
+  if (!p) return;
+  p.hidden = false;
+  if (bar) bar.setAttribute("aria-expanded", "true");
+  renderRuns();
+  _placeRunsPanel();
+  try { p.focus(); } catch (e) {}
+}
+function closeRunsPanel() {
+  const p = $("runsPanel"), bar = $("runsBar");
+  if (!p) return;
+  p.hidden = true;
+  if (bar) bar.setAttribute("aria-expanded", "false");
+}
+function toggleRunsPanel() {
+  const p = $("runsPanel");
+  if (p && !p.hidden) closeRunsPanel(); else openRunsPanel();
+}
+/* JAG-479: the panel is a popover — it must never outlive the state it shows. It
+   closes on Escape, on any click outside it, and it re-anchors when the rail is
+   resized or the window scrolls behind it. */
+function _wireRunsPanel() {
+  const bar = $("runsBar"), p = $("runsPanel");
+  if (!bar || !p) return;
+  bar.onclick = e => { e.stopPropagation(); toggleRunsPanel(); };
+  const x = $("runsPanelClose"); if (x) x.onclick = e => { e.stopPropagation(); closeRunsPanel(); };
+  p.addEventListener("click", e => e.stopPropagation());
+  // Capture phase, so a click ANYWHERE else closes the popover — but the bar and the
+  // panel itself are "inside": opening the panel must not close it again.
+  document.addEventListener("click", e => {
+    if (p.hidden || p.contains(e.target) || bar.contains(e.target)) return;
+    closeRunsPanel();
+  }, true);
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !p.hidden) { closeRunsPanel(); bar.focus(); }
+  });
+  window.addEventListener("resize", _placeRunsPanel);
+  if (window.ResizeObserver) {
+    try { new ResizeObserver(_placeRunsPanel).observe(bar); } catch (e) {}
+  }
+  renderRuns();
 }
 /* JAG-181: after a page refresh or a session switch the browser loses the SSE
    channel of a chat turn that is STILL running server-side (the worker is not
@@ -8819,6 +9022,7 @@ $("palette-input").addEventListener("keydown", paletteKey);
 $("palette").addEventListener("click", e => { if (e.target.id === "palette") closePalette(); });
 $("mcpJsonWin").addEventListener("click", e => { if (e.target.id === "mcpJsonWin") closeMcpJson(); });
 $("session-search").addEventListener("input", loadSessions);
+_wireRunsPanel();   // JAG-479: the running/unread popover reads real state and follows it
 $("railCollapseAll").onclick = () => _setAllGroups(true);
 $("railExpandAll").onclick = () => _setAllGroups(false);
 { const _qm = $("qmode");

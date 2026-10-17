@@ -702,6 +702,11 @@ def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=N
                                        _outcome["text"] or "(run produced no summary)")
                 except Exception:  # noqa: BLE001 — visibility must never fail a run
                     pass
+            # JAG-479: release the running bracket ONLY after the reply is stored, so
+            # a browser that reacts to `chat.done` by reloading the transcript already
+            # finds the run's answer on disk.
+            if _turn_tok is not None:
+                srv.turn_end(session_obj["id"], _turn_tok)
             q.put(None)
 
     if session_obj is not None:
@@ -709,6 +714,14 @@ def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=N
             srv.append_message(session_obj, "user", goal)
         except Exception:  # noqa: BLE001
             pass
+    # JAG-479: a run that OWNS a session (Paperclip task, job) must carry the same
+    # server-truth "running" signal a chat turn does. Only `chat_once` and the
+    # in-process MCP chat bracketed themselves, so a headless AGENT run left the rail
+    # showing the session idle while the loop burned GPU, and its end never rang the
+    # "finished" bell. `turn_begin` also publishes `chat.run`; the matching
+    # `turn_end` (in the worker's finally, on ANY outcome) publishes `chat.done` —
+    # the exact event pair the chat path uses and the feed replays to every browser.
+    _turn_tok = srv.turn_begin(session_obj["id"]) if session_obj is not None else None
     yield "event: run\ndata: %s\n\n" % json.dumps({"run_id": run_id,
                                                    "session": (session_obj or {}).get("id")})
     threading.Thread(target=worker, daemon=True).start()
