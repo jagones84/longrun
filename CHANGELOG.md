@@ -7,6 +7,28 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **The auto-compaction policy is editable from the WebUI (JAG-487).** The Context panel now shows the
+  live `trigger %` / `target %` / `keep` values with a save button; `GET/POST /api/compaction/policy`
+  reads and validates them. Saves go to `config/compaction.local.yaml` (same overlay convention as
+  `providers.local.yaml`), so the commented shipped file is never rewritten and the next turn picks
+  the new values up with **no restart**. Defaults: **trigger 70% → target 30%, keep 4** — from
+  `config/compaction.yaml`.
+- **Fixed: the policy file was never read (JAG-487).** `compaction_config._PATH` walked up only three
+  parents from `src/longrun/model/`, resolving to `src/config/compaction.yaml` (nonexistent); the
+  loader silently served the hard-coded defaults, so every edit to `config/compaction.yaml` was dead
+  while the old tests passed (defaults happened to equal the shipped values). It now anchors on the
+  repo root `config/compaction.yaml`, verified by editing the file live (66% was picked up with no
+  restart).
+- **Fixed: a reasoning summarizer could silently degrade a compaction to the extractive path
+  (JAG-487).** On a real 317-message session the chosen summarizer (`meta/muse-spark`) spent the whole
+  `max_tokens` budget on its thoughts and returned a 0-character answer at 1500 and even 3000 tokens;
+  4500 produced the summary. `_summarize_with_llm` now retries ONCE with a larger budget
+  (`output_max_chars * 3 / 4`) when the answer is empty but thoughts were produced. The same
+  compaction now reports `summary: llm` instead of `extractive`.
+- **Verified live on `coder 1` (JAG-487).** 317 messages / 62.9% of 126,976 tokens → auto-compaction at
+  the next turn: 317 → 5 messages, **63% → 8%**, 227 tool cards and 265 injects trimmed to 0 / 4,
+  LLM summary in the `compacted history` group, all 19 task-graph nodes and the 37 thread-ledger
+  groups preserved, every `after` anchor valid, and the turn completed normally.
 - **After a compaction, everything on screen now belongs to a group (JAG-486).** The retained window starts
   with the compaction SUMMARY, not with a user turn, so the summary, the harness `final` injection, the
   retained answer and the tail `compact` marker used to render at the ROOT — "text outside a Free.X session"

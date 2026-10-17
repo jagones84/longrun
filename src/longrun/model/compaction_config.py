@@ -20,8 +20,20 @@ except ImportError:                # pragma: no cover — bare-bones fallback
     yaml = None
 
 _LOCK = threading.Lock()
-_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), "config", "compaction.yaml")
+# JAG-487: this file is at <repo>/src/longrun/model/, so THREE dirnames landed on
+# `src/` — `_PATH` pointed at `src/config/compaction.yaml` (nonexistent) and the
+# loader silently served the hard-coded defaults: every edit to the shipped policy
+# file was dead. Use the central anchor (4 levels up) instead.
+try:
+    from longrun.util.paths import REPO_ROOT as _REPO
+except Exception:  # pragma: no cover — never let path setup break imports
+    _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))))
+_PATH = os.path.join(_REPO, "config", "compaction.yaml")
+# JAG-487: user overrides saved by the WebUI live in a SIBLING overlay, exactly like
+# `providers.local.yaml` / `mcp_clients.local.yaml`. The shipped file keeps its
+# comments; the overlay wins key-by-key and is hot-reloaded with it.
+_LOCAL_PATH = os.path.join(os.path.dirname(_PATH), "compaction.local.yaml")
 
 # Defaults match the values recommended in config/compaction.yaml. If the file
 # disappears or a key is missing we still behave sensibly (the values match
@@ -48,21 +60,29 @@ _DEFAULTS = {
 _CACHE = {"mtime": None, "data": None}
 
 
-def _read():
-    if not os.path.isfile(_PATH):
-        return dict(_DEFAULTS)
+def _read_file(path):
+    """Return the `compaction:` section of ONE policy file ({} when absent/broken)."""
+    if not os.path.isfile(path):
+        return {}
     if yaml is None:
         # Bare-bones YAML loader for the very small subset we use: top-level
         # keys, 2-space indent, scalar values, `|` block scalars for the long
         # instruction string. This keeps the policy file editable even on a
         # minimal install.
-        return _fallback_yaml(_PATH)
+        return (_fallback_yaml(path) or {}).get("compaction") or {}
     try:
-        with open(_PATH, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
     except Exception:
-        return dict(_DEFAULTS)
-    return _merge(_DEFAULTS, raw.get("compaction") or {})
+        return {}
+    if isinstance(raw, dict) and isinstance(raw.get("compaction"), dict):
+        return raw["compaction"]
+    return raw if isinstance(raw, dict) else {}
+
+
+def _read():
+    # Shipped policy first, then the WebUI overlay (JAG-487).
+    return _merge(_merge(dict(_DEFAULTS), _read_file(_PATH)), _read_file(_LOCAL_PATH))
 
 
 def _merge(defaults, override):
@@ -138,12 +158,15 @@ def _fallback_yaml(path):
 
 
 def load(force=False):
-    """Return the parsed policy dict, refreshing on file mtime change."""
+    """Return the parsed policy dict, refreshing when either file changes."""
     with _LOCK:
         try:
-            mtime = os.path.getmtime(_PATH)
+            mtime = (os.path.getmtime(_PATH), os.path.getmtime(_LOCAL_PATH))
         except OSError:
-            mtime = None
+            try:
+                mtime = (os.path.getmtime(_PATH), None)
+            except OSError:
+                mtime = (None, None)
         if force or _CACHE["mtime"] != mtime or _CACHE["data"] is None:
             # JAG-462: `_read()` already returns the UNWRAPPED policy dict (it merges
             # `raw["compaction"]` over `_DEFAULTS`). Calling `.get("compaction")` on it
@@ -168,6 +191,44 @@ def reset_cache():
 
 def path():
     return _PATH
+
+
+def local_path():
+    """The WebUI-owned overlay (JAG-487); absent until the user saves a policy."""
+    return _LOCAL_PATH
+
+
+def save(trigger_pct=None, target_pct=None, keep_recent=None):
+    """Persist the user-tunable policy keys into the local overlay.
+
+    Writes only the keys passed (the rest keep coming from the shipped file), so
+    `config/compaction.yaml` and its comments are never rewritten. The loader
+    picks the new values up on the next access — no service restart (JAG-487).
+    Returns the validated policy after the write.
+    """
+    cur = _read()
+    trig = float(cur["trigger_pct"] if trigger_pct is None else trigger_pct)
+    targ = float(cur["target_pct"] if target_pct is None else target_pct)
+    keep = int(cur["keep_recent"] if keep_recent is None else keep_recent)
+    if not (0 < trig <= 100):
+        raise ValueError("trigger_pct must be > 0 and <= 100")
+    if not (0 <= targ < trig):
+        raise ValueError("target_pct must be >= 0 and below trigger_pct")
+    if not (1 <= keep <= 50):
+        raise ValueError("keep_recent must be between 1 and 50")
+    payload = {"compaction": {"trigger_pct": trig, "target_pct": targ,
+                              "keep_recent": keep}}
+    with _LOCK:
+        with open(_LOCAL_PATH, "w", encoding="utf-8") as f:
+            if yaml is not None:
+                yaml.safe_dump(payload, f, sort_keys=False, allow_unicode=True)
+            else:  # pragma: no cover — minimal install without PyYAML
+                f.write("compaction:\n"
+                        "  trigger_pct: %s\n  target_pct: %s\n  keep_recent: %s\n"
+                        % (trig, targ, keep))
+        _CACHE["mtime"] = None
+        _CACHE["data"] = None
+    return load(force=True)
 
 
 if __name__ == "__main__":  # quick smoke test

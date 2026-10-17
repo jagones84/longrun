@@ -1550,6 +1550,19 @@
           <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
         </div>
         <button id="compactBtn" title="summarize this session's transcript now to free up context">🗜 Compact context</button>
+        <div class="card" id="cmpPolicyCard">
+          <div class="remaining">auto-compact policy <span id="cmpPolicySrc"></span></div>
+          <div class="u-df u-g6 u-mt6 u-fs12">
+            <label class="remaining" title="auto-compact when the prompt reaches this share of the model budget">trigger %
+              <input id="cmpTrigger" class="inp u-p610" type="number" min="1" max="100" step="1" style="width:64px"></label>
+            <label class="remaining" title="the prompt must land at or below this share after an auto-compaction">target %
+              <input id="cmpTarget" class="inp u-p610" type="number" min="0" max="99" step="1" style="width:64px"></label>
+            <label class="remaining" title="how many newest turns stay verbatim">keep
+              <input id="cmpKeep" class="inp u-p610" type="number" min="1" max="50" step="1" style="width:56px"></label>
+            <button class="ghost" data-call="saveCompactionPolicy" title="save to config/compaction.local.yaml — the next turn picks it up, no restart">save</button>
+          </div>
+          <div class="remaining u-mt6" id="cmpPolicyMsg"></div>
+        </div>
         <div id="ctxCats"></div>
         </div>
       </section>
@@ -4539,6 +4552,7 @@ async function saveRuleSource(kind) {
 }
 
 async function loadCtx() {
+  loadCompactionPolicy();   // JAG-487: the editable policy works with or without a session
   if (!sessionId) { ctxNa("no session"); loadCtxItems(); return; }
   const sid = sessionId;   // JAG-214: guard against an out-of-order response
   loadCtxItems();          // JAG-267: keep the category breakdown in sync
@@ -4854,6 +4868,42 @@ if ($("costRefresh")) $("costRefresh").onclick = async () => {
   toast(r && r.ok ? ("cached " + r.count + " model prices") : ("price refresh failed: " + ((r && r.error) || "?")), r && r.ok ? "ok" : "err");
   loadCosts();
 };
+/* JAG-487: the auto-compaction policy is live config (config/compaction.yaml, plus
+   the WebUI overlay config/compaction.local.yaml). Show it in the Context panel and
+   let the operator tune it there — the next turn picks it up, no restart. */
+let _policyLoadedAt = 0;
+async function loadCompactionPolicy(force) {
+  if (!force && Date.now() - _policyLoadedAt < 15000) return;
+  try {
+    const p = await api("GET", "/api/compaction/policy");
+    if (!p || p.error) return;
+    _policyLoadedAt = Date.now();
+    const set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = v; };
+    set("cmpTrigger", Math.round(p.trigger_pct));
+    set("cmpTarget", Math.round(p.target_pct));
+    set("cmpKeep", p.keep_recent);
+    const src = $("cmpPolicySrc");
+    if (src) src.textContent = p.local_exists ? "(config/compaction.local.yaml)"
+                                              : "(config/compaction.yaml)";
+  } catch (e) { /* the panel is informational — never break the chat */ }
+}
+async function saveCompactionPolicy() {
+  const t = parseFloat(($("cmpTrigger") || {}).value);
+  const g = parseFloat(($("cmpTarget") || {}).value);
+  const k = parseInt(($("cmpKeep") || {}).value, 10);
+  const msg = $("cmpPolicyMsg");
+  if (!(t > 0 && t <= 100) || !(g >= 0 && g < t) || !(k >= 1 && k <= 50)) {
+    if (msg) msg.textContent = "invalid: need 0 < trigger \u2264 100, 0 \u2264 target < trigger, 1 \u2264 keep \u2264 50";
+    return;
+  }
+  const r = await api("POST", "/api/compaction/policy",
+                      {trigger_pct: t, target_pct: g, keep_recent: k});
+  if (r && r.error) { if (msg) msg.textContent = "error: " + r.error; return; }
+  if (msg) msg.textContent = "saved \u2014 auto-compact fires at " + Math.round(t) +
+    "% and lands \u2264 " + Math.round(g) + "% on the next turn (no restart)";
+  loadCompactionPolicy(true);
+  loadCtx();
+}
 async function compactNow() {
   if (!sessionId) { alert("no active session"); return; }
   const btn = $("compactBtn"); if (btn) btn.textContent = "🗜 compacting…";

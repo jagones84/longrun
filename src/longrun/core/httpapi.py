@@ -769,6 +769,30 @@ def context_items(session_id=None):
             "cached_tokens": cached, "cache_hit_pct": cache_hit_pct}
 
 
+def compaction_policy():
+    """The LIVE auto-compaction policy + which file supplies it (JAG-487)."""
+    from longrun.model import compaction_config as _ccfg
+    cur = _ccfg.load(force=True)
+    return {"trigger_pct": float(cur["trigger_pct"]),
+            "target_pct": float(cur["target_pct"]),
+            "keep_recent": int(cur["keep_recent"]),
+            "source": _ccfg.path(),
+            "local": _ccfg.local_path(),
+            "local_exists": os.path.isfile(_ccfg.local_path())}
+
+
+def set_compaction_policy(body):
+    """Validate + persist a WebUI policy change (JAG-487). Returns the new policy."""
+    from longrun.model import compaction_config as _ccfg
+    try:
+        _ccfg.save(trigger_pct=(body or {}).get("trigger_pct"),
+                   target_pct=(body or {}).get("target_pct"),
+                   keep_recent=(body or {}).get("keep_recent"))
+    except (TypeError, ValueError) as e:
+        return {"error": str(e)}
+    return compaction_policy()
+
+
 def context_usage(session_id=None, message=None, model=None):
     """Effective prompt tokens vs budget for the next turn (JAG-70).
 
@@ -777,11 +801,14 @@ def context_usage(session_id=None, message=None, model=None):
     message. Returns the raw parts too, so the UI can explain the number.
     """
     from longrun.model import context_engine
+    from longrun.model import compaction_config as _ccfg
     budget = context_budget(model)
     base = {"budget_tokens": budget, "session": session_id, "model": model,
             "auto_compact_pct": rllm.AUTOCOMPACT_PCT,
             "auto_compact_target_pct": rllm.AUTOCOMPACT_TARGET_PCT,
             "keep_recent": rllm.KEEP_RECENT,
+            "policy_local": _ccfg.local_path(),
+            "policy_local_exists": os.path.isfile(_ccfg.local_path()),
             "summarizer_input_chars": rllm.SUMMARIZER_INPUT_CHARS,
             "summarizer_output_chars": rllm.SUMMARIZER_OUTPUT_CHARS}
     sess = load_session(session_id) if session_id else None
@@ -931,14 +958,27 @@ def _summarize_with_llm(messages, model=None, meta=None, cancel=None):
         # (~output_chars/4 tokens). With ~10x compression on a 40k-char input
         # we expect ~4k chars of summary; the cap is the safety net if the model
         # writes a verbose preamble anyway.
-        answer, _think, used = stream_with_fallback(
-            [{"role": "user", "content": prompt}], model, "summarizer",
-            lambda ch, t: None, timeout=180,
-            max_tokens=max(120, output_chars // 4),
-            # JAG-461: Stop must abort a running compaction too — plumb the session's
-            # abort flag into the stream so pressing ■ kills the summarizer call
-            # (it used to ignore Stop and keep decoding until it finished).
-            cancel=cancel)
+        base_mt = max(120, output_chars // 4)
+
+        def _attempt(mt):
+            return stream_with_fallback(
+                [{"role": "user", "content": prompt}], model, "summarizer",
+                lambda ch, t: None, timeout=180,
+                max_tokens=mt,
+                # JAG-461: Stop must abort a running compaction too — plumb the session's
+                # abort flag into the stream so pressing ■ kills the summarizer call
+                # (it used to ignore Stop and keep decoding until it finished).
+                cancel=cancel)
+
+        answer, _think, used = _attempt(base_mt)
+        # JAG-487: a REASONING summarizer can spend the ENTIRE budget thinking and
+        # emit no answer at all — the call "succeeds", the summary is empty, and the
+        # compaction silently degrades to the extractive merge. Measured on a
+        # 317-message session with meta/muse-spark: 1500 and 3000 tokens → 0 chars of
+        # answer; 4500 → the real summary. Retry ONCE with a budget big enough for
+        # thoughts + the compressed bullets before giving up on the model.
+        if not (answer or "").strip() and (_think or "").strip():
+            answer, _think, used = _attempt(max(base_mt, int(output_chars * 3 // 4)))
         answer = (answer or "").strip()
         if len(answer) > output_chars:
             answer = answer[:output_chars].rstrip() + "…"
@@ -1535,6 +1575,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/context/items":
             # JAG-267: Context-panel breakdown for ONE session (never mixes sessions).
             return self._send(200, context_items(qs.get("session")))
+        if path == "/api/compaction/policy":
+            # JAG-487: the live policy + where it is written (WebUI Context panel).
+            return self._send(200, compaction_policy())
         if path == "/api/status":
             return self._send(200, status_payload())
         if path == "/api/models" or path == "/api/providers":
@@ -1842,7 +1885,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Stop pressed during any of them is honoured (see the stream path).
                 clear_abort(sess["id"])
                 # JAG-157: explicit model wins, else the session's own model.
-                sess = prepare_session_for_turn(sess, body.get("model") or sess.get("model"))  # JAG-70: auto-compact @75%
+                sess = prepare_session_for_turn(sess, body.get("model") or sess.get("model"))  # JAG-70: auto-compact at the policy trigger
                 mark = session_mark(sess)  # JAG-51: boundary of this request
                 # JAG-426: anchor this turn for rewind (same rule as the stream path).
                 try:
@@ -2054,6 +2097,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/context/compact":
             res = compact_session(body.get("session"), body.get("budget_tokens"), origin="manual")
             return self._send(200 if "error" not in res else 404, res)
+        if path == "/api/compaction/policy":
+            # JAG-487: set trigger / target / keep_recent from the Context panel.
+            res = set_compaction_policy(body)
+            return self._send(200 if "error" not in res else 400, res)
         if path.startswith("/api/sessions/") and path.endswith("/chapters/autoname"):
             # 🏷 → name EVERY untitled Free.* group with the chat model, in ONE
             # subroutine (no tool-call budget) — see autoname_untitled (JAG-473).
