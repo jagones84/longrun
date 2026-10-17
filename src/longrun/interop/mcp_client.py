@@ -46,6 +46,7 @@ import threading
 import time
 
 from longrun.util import osutil
+from longrun.util.dataio import read_yaml
 from longrun.tools import registry
 
 REPO = registry.REPO
@@ -433,24 +434,18 @@ def _load_env_files(paths):
 
 
 def _read_doc(path):
-    """Read a YAML (or JSON) config document; {} on any failure."""
+    """Read a YAML (or JSON) config document; {} on any failure (JAG-483).
+
+    The parsing lives in ``dataio.read_yaml``; this keeps the local ``log()``
+    for a file that IS present but cannot be parsed.
+    """
     if not path or not os.path.isfile(path):
         return {}
-    try:
-        import yaml
-        with open(path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    except ImportError:
-        pass
-    except Exception as e:
-        log("error reading %s: %s", path, e)
+    doc = read_yaml(path, default=None)
+    if doc is None:
+        log("error reading %s", path)
         return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception as e:
-        log("error reading %s: %s", path, e)
-        return {}
+    return doc
 
 
 def _servers_to_clients(servers):

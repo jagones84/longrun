@@ -16,13 +16,12 @@ because turns serialise per session, never globally.
 
 Storage: ``LONGRUN_JOBS_FILE`` (default ``data/jobs.json``).
 """
-import json
 import os
 import re
 import threading
 import time
 
-from longrun.util.fswrite import write_json
+from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -30,14 +29,7 @@ JOBS_FILE = os.environ.get("LONGRUN_JOBS_FILE") or os.path.join(REPO, "data", "j
 
 
 def _load():
-    try:
-        with open(JOBS_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:  # noqa: BLE001
-        d = {}
-    d.setdefault("jobs", {})
-    d.setdefault("seq", 0)
-    return d
+    return read_registry(JOBS_FILE, jobs={}, seq=0)
 
 
 def _save(d):

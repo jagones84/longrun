@@ -26,6 +26,21 @@ def read_json(path, default=None):
         return default
 
 
+def read_registry(path, **defaults):
+    """Read the JSON registry at ``path`` and guarantee its top-level keys exist.
+
+    Every registry (agents, jobs, routines, teams) is a plain ``{...: {}, "seq": 0}``
+    document whose readers must survive a missing or corrupt file AND a document
+    written by an older version. ``read_registry(FILE, agents={}, seq=0)`` is that
+    contract in one place instead of four slightly different copies (JAG-483).
+    """
+    d = read_json(path, None)
+    d = d if isinstance(d, dict) else {}
+    for k, v in defaults.items():
+        d.setdefault(k, v)
+    return d
+
+
 def write_json(path, obj, *, indent=2, ensure_ascii=False, sort_keys=False):
     """Atomically write ``obj`` as JSON to ``path``.
 

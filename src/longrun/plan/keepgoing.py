@@ -25,18 +25,9 @@ DEFAULTS = {
 
 
 def cfg(override=None):
-    """Runtime config: DEFAULTS <- config/tools.yaml -> explicit override."""
-    out = dict(DEFAULTS)
-    try:
-        from longrun.tools import registry
-        got = (registry.load_config().get("runtime") or {})
-        if isinstance(got, dict):
-            out.update({k: v for k, v in got.items() if v is not None})
-    except Exception:  # noqa: BLE001
-        pass
-    if isinstance(override, dict):
-        out.update(override)
-    return out
+    """Runtime config: DEFAULTS <- config/tools.yaml (runtime) -> explicit override."""
+    from longrun.tools.registry import section_config
+    return section_config("runtime", DEFAULTS, override)
 
 
 def hitl_gate(reason, open_nodes, autonomous=False):

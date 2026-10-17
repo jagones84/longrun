@@ -20,26 +20,14 @@ server. Routes:
   POST   /api/teams/<tid>/reset    team bulk: reset every member session (chat+tasks)
   POST   /api/teams/<tid>/compact  team bulk: compact every member session
 """
-import json
-
 from longrun.agent import agents as agents_mod
 from longrun.orchestrate import teams as teams_mod
+from longrun.util.dataio import json_body as _body
 
 
 def _json(handler, code, obj):
     handler._send(code, obj)
     return True
-
-
-def _body(body):
-    if isinstance(body, dict):
-        return body
-    if isinstance(body, (bytes, bytearray)):
-        try:
-            return json.loads(body.decode("utf-8", "replace") or "{}")
-        except Exception:  # noqa: BLE001
-            return {}
-    return {}
 
 
 def _is(path, base):

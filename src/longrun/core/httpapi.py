@@ -22,6 +22,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from longrun.core import api_v02
+from longrun.util.dataio import as_int
 from longrun.tools import approvals
 from longrun.tools import registry
 from longrun.model import routing
@@ -106,10 +107,7 @@ def check_auth(headers, qs=None):
 
 def _as_int(x, default):
     """Coerce any wire value to int, falling back on garbage (JAG-229/231)."""
-    try:
-        return int(x)
-    except (TypeError, ValueError):
-        return default
+    return as_int(x, default)
 
 
 def _int_arg(qs, key, default):

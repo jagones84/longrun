@@ -35,23 +35,12 @@ import threading
 import time
 import uuid
 
+from longrun.util.dataio import as_int as _int
 from longrun.tools import approvals
 from longrun.interop import mcp
 from longrun.tools import registry
 from longrun.tools import sandbox
 from longrun.tools import tools as toolmod
-
-
-def _int(x, default):
-    """Coerce a client-supplied numeric field, falling back on garbage (JAG-231).
-
-    `int(qs.get("limit", 50))` raised an unhandled ValueError on `?limit=abc`,
-    dropping the connection instead of answering. Never trust the wire type.
-    """
-    try:
-        return int(x)
-    except (TypeError, ValueError):
-        return default
 
 
 def _srv():

@@ -26,18 +26,9 @@ DEFAULTS = {
 
 
 def cfg(override=None):
-    out = dict(DEFAULTS)
-    out.update(STAGE2_DEFAULTS)
-    try:
-        from longrun.tools import registry
-        got = registry.load_config().get("selfevolve") or {}
-        if isinstance(got, dict):
-            out.update({k: v for k, v in got.items() if v is not None})
-    except Exception:  # noqa: BLE001
-        pass
-    if isinstance(override, dict):
-        out.update(override)
-    return out
+    """Effective config: DEFAULTS+STAGE2 <- tools.yaml (selfevolve) -> override."""
+    from longrun.tools.registry import section_config
+    return section_config("selfevolve", {**DEFAULTS, **STAGE2_DEFAULTS}, override)
 
 
 def _ngrams(seq, k):

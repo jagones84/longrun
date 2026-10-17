@@ -34,6 +34,7 @@ import os
 import threading
 import time
 
+from longrun.util.dataio import as_int, read_yaml as _read_doc
 from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR
 
@@ -49,24 +50,6 @@ RETENTION_DAYS = 30
 
 _lock = threading.RLock()
 _prices = None
-
-
-def _read_doc(path):
-    """Read a small YAML/JSON doc into a dict, or None. Never fatal."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        return None
-    try:
-        import yaml
-        d = yaml.safe_load(text)
-    except Exception:  # noqa: BLE001 — fall back to JSON
-        try:
-            d = json.loads(text)
-        except Exception:  # noqa: BLE001
-            return None
-    return d if isinstance(d, dict) else None
 
 
 def _f(v):
@@ -176,10 +159,8 @@ def rates_for(model):
 
 
 def _int(v):
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
+    """int(v) or None — a usage field may be absent or a string (JAG-231)."""
+    return as_int(v, default=None)
 
 
 def _usage_tokens(usage):

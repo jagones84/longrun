@@ -25,6 +25,7 @@ import re
 import threading
 
 from longrun.tools import registry
+from longrun.util.dataio import dump_yaml as _yaml_dump, load_yaml
 
 REPO = registry.REPO
 CONFIG_PATH = os.path.join(REPO, "config", "routing.yaml")
@@ -54,26 +55,8 @@ def _srv():
 
 
 def _yaml_load(text):
-    try:
-        import yaml
-        return yaml.safe_load(text)
-    except Exception:
-        pass
-    # minimal fallback: JSON-lookalike configs also parse
-    import json
-    try:
-        return json.loads(text)
-    except Exception:
-        return dict(DEFAULT_CONFIG)
-
-
-def _yaml_dump(data):
-    try:
-        import yaml
-        return yaml.safe_dump(data, sort_keys=False)
-    except Exception:
-        import json
-        return json.dumps(data, indent=2)
+    """YAML (or JSON) config text; the shipped defaults on garbage (JAG-483)."""
+    return load_yaml(text, default=dict(DEFAULT_CONFIG))
 
 
 def load_config(reload=False):

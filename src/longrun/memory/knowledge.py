@@ -49,13 +49,9 @@ def db_path():
 
 
 def _connect():
-    db = sqlite3.connect(db_path(), timeout=30)
-    db.row_factory = sqlite3.Row
-    try:
-        db.execute("PRAGMA journal_mode=WAL")
-    except Exception:  # noqa: BLE001
-        pass
-    return db
+    """Open the knowledge DB with the shared opener (JAG-483)."""
+    from longrun.memory import sqlkit
+    return sqlkit.connect(db_path())
 
 
 def _init(db):

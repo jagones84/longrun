@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **De-duplication pass: every mechanical helper now has ONE implementation (JAG-483).** A codebase-wide
+  scan (AST function clustering for Python, block windows for JS) found the same small primitives
+  re-implemented and quietly drifted: the `int` coercion (5 copies, two different failure defaults), the
+  YAML-or-JSON document loader (5 copies, three different fallbacks), the request-body unwrap (2
+  byte-identical copies), the registry reader (4 copies), the sqlite opener (2 copies), the agent-file
+  frontmatter parser (2 copies) and the "defaults ← tools.yaml ← override" config merge (5 copies). Each
+  copy now delegates to a single source: new `util/dataio.py` (`as_int`, `load_yaml`, `dump_yaml`,
+  `read_yaml`, `json_body`), new `memory/sqlkit.py` (`connect`), `util/fswrite.read_registry`,
+  `tools/registry.section_config` and `agent/agency.frontmatter`. Behaviour is unchanged, and the `v231`
+  guards that pin `api_v02._int` / `providers._to_int` / `server._as_int` still pass because those names
+  remain as thin aliases. Verified live that TEAM bulk reset/compact touches ONLY its member sessions — a
+  362-message session outside the team came back byte-identical.
 - **Repo tagline rewritten; the discontinued SparkPulse client dropped.**
   The repo description still claimed the harness "Powers the SparkPulse Android client" — that client no
   longer exists (its GitHub repo 404s), so the claim was removed and the dead homepage link cleared. The

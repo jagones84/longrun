@@ -4,8 +4,9 @@ Reached only through the server's two guarded hooks. `serve_page` answers the
 public shell (like `/console`); `handle` answers the auth-gated `/api/orbit/*`
 routes. Every route is additive: the beta never shadows an existing app route.
 """
-import json
 import os
+
+from longrun.util.dataio import json_body as _body
 
 from .attention import AttentionFeed
 from .bay import ModelBay
@@ -49,17 +50,6 @@ def _ok(handler, res):
     """
     code = 400 if (isinstance(res, dict) and res.get("ok") is False) else 200
     return _json(handler, code, res)
-
-
-def _body(body):
-    if isinstance(body, dict):
-        return body
-    if isinstance(body, (bytes, bytearray)):
-        try:
-            return json.loads(body.decode("utf-8", "replace") or "{}")
-        except Exception:  # noqa: BLE001
-            return {}
-    return {}
 
 
 def _subjobs_of(agents_list, jobs_list, graphs):

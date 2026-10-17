@@ -20,6 +20,7 @@ import re
 import threading
 import time
 
+from longrun.util.dataio import as_int as _to_int, read_yaml as _read_yaml
 from longrun.util.paths import REPO_ROOT as REPO
 CONFIG = os.environ.get("LONGRUN_PROVIDERS") or os.path.join(REPO, "config", "providers.yaml")
 # JAG-112: user additions/overrides live in a gitignored overlay (never the repo).
@@ -73,18 +74,6 @@ def _join_bg():
 atexit.register(_join_bg)
 
 
-def _to_int(x, default=0):
-    """Coerce a provider/model field to int, falling back on garbage (JAG-231).
-
-    `context_length` comes from hand-edited YAML or an upstream model list; a
-    value like `128k` used to crash the whole catalogue (`int("128k")`).
-    """
-    try:
-        return int(x)
-    except (TypeError, ValueError):
-        return default
-
-
 # ------------------------------------------------------------------- env -----
 
 def load_env(reload=False):
@@ -123,24 +112,6 @@ def load_env(reload=False):
 _PROVIDER_KINDS = ("llamacpp", "openai", "openrouter", "deepseek", "anthropic", "custom")
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _ENVNAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
-
-
-def _read_yaml(path):
-    """Read a small YAML (or JSON) doc; None when missing/invalid (never fatal)."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        return None
-    try:
-        import yaml
-        data = yaml.safe_load(text)
-    except Exception:  # noqa: BLE001 — fall back to JSON
-        try:
-            data = json.loads(text)
-        except Exception:  # noqa: BLE001
-            return None
-    return data if isinstance(data, dict) else None
 
 
 def _merge(base, local):

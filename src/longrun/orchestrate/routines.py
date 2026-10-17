@@ -10,12 +10,11 @@ fired routine respects the agent's daily budget (`agents.AgentRegistry.charge`).
 
 Storage: ``LONGRUN_ROUTINES_FILE`` (default ``data/routines.json``).
 """
-import json
 import os
 import threading
 import time
 
-from longrun.util.fswrite import write_json
+from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -26,14 +25,7 @@ DEFAULT_TICK = 20
 
 
 def _load():
-    try:
-        with open(ROUTINES_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:  # noqa: BLE001
-        d = {}
-    d.setdefault("routines", {})
-    d.setdefault("seq", 0)
-    return d
+    return read_registry(ROUTINES_FILE, routines={}, seq=0)
 
 
 def _save(d):

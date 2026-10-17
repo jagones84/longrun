@@ -22,17 +22,8 @@ DEFAULTS = {
 
 def cfg(override=None):
     """Effective config: DEFAULTS <- config/tools.yaml (difficulty) -> override."""
-    out = dict(DEFAULTS)
-    try:
-        from longrun.tools import registry
-        got = registry.load_config().get("difficulty") or {}
-        if isinstance(got, dict):
-            out.update({k: v for k, v in got.items() if v is not None})
-    except Exception:  # noqa: BLE001
-        pass
-    if isinstance(override, dict):
-        out.update(override)
-    return out
+    from longrun.tools.registry import section_config
+    return section_config("difficulty", DEFAULTS, override)
 
 
 def score(signals, c=None):

@@ -11,12 +11,11 @@ Object model (see .agent/design-agents-jobs.md):
 
 Storage: one JSON file (``LONGRUN_AGENTS_FILE``, default ``data/agents.json``).
 """
-import json
 import os
 import threading
 import time
 
-from longrun.util.fswrite import write_json
+from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -24,14 +23,7 @@ AGENTS_FILE = os.environ.get("LONGRUN_AGENTS_FILE") or os.path.join(REPO, "data"
 
 
 def _load():
-    try:
-        with open(AGENTS_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:  # noqa: BLE001 - a missing/corrupt file is just an empty registry
-        d = {}
-    d.setdefault("agents", {})
-    d.setdefault("seq", 0)
-    return d
+    return read_registry(AGENTS_FILE, agents={}, seq=0)
 
 
 def _save(d):

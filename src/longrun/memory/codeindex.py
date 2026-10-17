@@ -35,13 +35,9 @@ def db_path(ws):
 
 
 def _connect(ws):
-    db = sqlite3.connect(db_path(ws), timeout=30)
-    db.row_factory = sqlite3.Row
-    try:
-        db.execute("PRAGMA journal_mode=WAL")
-    except Exception:  # noqa: BLE001
-        pass
-    return db
+    """Open this workspace's index DB with the shared opener (JAG-483)."""
+    from longrun.memory import sqlkit
+    return sqlkit.connect(db_path(ws))
 
 
 def _init(db):

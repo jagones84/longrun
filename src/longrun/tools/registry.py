@@ -462,6 +462,28 @@ def load_config(reload=False):
         return _cfg
 
 
+def section_config(section, defaults, override=None):
+    """Effective config for one ``config/tools.yaml`` block (JAG-483).
+
+    Every plan / self-evolution module carried its own copy of "DEFAULTS <- the
+    YAML block -> the explicit override", and they had drifted apart (some let a
+    ``None`` in the YAML clobber a real default, some did not). This is the one
+    contract: the block is merged over ``defaults``, ``None`` values are ignored
+    so a hand-edited file cannot blank a field, and the ``override`` (highest
+    priority) wins last.
+    """
+    out = dict(defaults)
+    try:
+        got = load_config().get(section) or {}
+        if isinstance(got, dict):
+            out.update({k: v for k, v in got.items() if v is not None})
+    except Exception:  # noqa: BLE001 — a missing config is just the defaults
+        pass
+    if isinstance(override, dict):
+        out.update(override)
+    return out
+
+
 _OVERLAY_HEADER = (
     "# Longrun policy overlay — written automatically by POST /api/tools\n"
     "# (the SETTINGS panel in the Longrun WebUI). Only the keys that DIFFER from\n"

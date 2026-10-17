@@ -13,12 +13,11 @@ never drift. An agent in no team is an ad-hoc session.
 
 Storage: one JSON file (``LONGRUN_TEAMS_FILE``, default ``data/teams.json``).
 """
-import json
 import os
 import threading
 import time
 
-from longrun.util.fswrite import write_json
+from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -112,14 +111,7 @@ def _default_machine():
 
 
 def _load():
-    try:
-        with open(TEAMS_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:  # noqa: BLE001 - a missing/corrupt file is just an empty registry
-        d = {}
-    d.setdefault("teams", {})
-    d.setdefault("seq", 0)
-    return d
+    return read_registry(TEAMS_FILE, teams={}, seq=0)
 
 
 def _save(d):

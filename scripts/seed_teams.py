@@ -22,7 +22,6 @@ Env:
 """
 import json
 import os
-import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -61,20 +60,9 @@ def _agent_index():
 
 
 def _frontmatter(path):
-    """Parse the leading YAML-ish frontmatter (key: value) of an agent file."""
-    out = {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        return out
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.S)
-    body = m.group(1) if m else ""
-    for line in body.splitlines():
-        if ":" in line:
-            k, _, v = line.partition(":")
-            out[k.strip().lower()] = v.strip().strip('"').strip("'")
-    return out
+    """Parse the leading YAML-ish frontmatter — shared parser (JAG-483)."""
+    from longrun.agent.agency import frontmatter
+    return frontmatter(path)
 
 
 def _pick_runbooks(slugs):

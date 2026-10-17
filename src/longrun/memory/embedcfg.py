@@ -19,6 +19,7 @@ import threading
 
 from longrun.memory import indexcfg
 from longrun.util import paths
+from longrun.util.dataio import load_yaml as _yaml_load
 
 LOCK = threading.RLock()
 
@@ -34,18 +35,6 @@ BASIC = [
      "label": "BGE small EN v1.5 (local)", "dim": 384, "price_per_mtok": 0.0,
      "notes": "Basic fallback entry (local, free)."},
 ]
-
-
-def _yaml_load(text):
-    try:
-        import yaml
-        return yaml.safe_load(text)
-    except Exception:  # noqa: BLE001
-        import json
-        try:
-            return json.loads(text)
-        except Exception:  # noqa: BLE001
-            return None
 
 
 def _clean(m):

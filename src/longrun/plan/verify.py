@@ -32,17 +32,8 @@ TARGET_TOOLS = ("fs.write", "fs.edit")
 
 def cfg(override=None):
     """Effective config: DEFAULTS <- config/tools.yaml (verifier) -> override."""
-    out = dict(DEFAULTS)
-    try:
-        from longrun.tools import registry
-        got = registry.load_config().get("verifier") or {}
-        if isinstance(got, dict):
-            out.update({k: v for k, v in got.items() if v is not None})
-    except Exception:  # noqa: BLE001
-        pass
-    if isinstance(override, dict):
-        out.update(override)
-    return out
+    from longrun.tools.registry import section_config
+    return section_config("verifier", DEFAULTS, override)
 
 
 def is_active(c=None):

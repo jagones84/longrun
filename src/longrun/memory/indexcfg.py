@@ -5,11 +5,11 @@ knowledge base): chunking window/overlap, ignore globs, size cap, and the option
 embedding model. Layering: DEFAULT_CONFIG <- ``config/index.yaml`` (tracked base)
 <- ``data/index.overlay.yaml`` (gitignored user override).
 """
-import json
 import os
 import threading
 
 from longrun.util import paths
+from longrun.util.dataio import dump_yaml as _yaml_dump, load_yaml
 
 LOCK = threading.RLock()
 
@@ -45,22 +45,8 @@ DEFAULT_CONFIG = {
 
 
 def _yaml_load(text):
-    try:
-        import yaml
-        return yaml.safe_load(text)
-    except Exception:  # noqa: BLE001
-        try:
-            return json.loads(text)
-        except Exception:  # noqa: BLE001
-            return {}
-
-
-def _yaml_dump(data):
-    try:
-        import yaml
-        return yaml.safe_dump(data, sort_keys=False)
-    except Exception:  # noqa: BLE001
-        return json.dumps(data, indent=2)
+    """YAML (or JSON) text -> a mapping; ``{}`` on garbage (JAG-483)."""
+    return load_yaml(text, default={})
 
 
 def base_config():
