@@ -267,6 +267,40 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Fixed
+- **A run and its session could display DIFFERENT models — the WebUI lied (JAG-478).** Two
+  independent resolutions of "which model?" had drifted: an interactive chat honours the session's
+  own model (`resolve_ctx_model`), but `POST /api/agent/run/stream` forwarded the raw body model
+  (`null` for Paperclip) straight into `agent_run_v2`, which then resolved the ROLE hint
+  (`pick("agent")` = the local weights) — the session was read for its WORKSPACE only. The session
+  JAG-476 auto-creates recorded no model either, so the composer fell back to the global
+  `localStorage.sf_model`: it could show `deepseek:deepseek-reasoner` while `qwen…` really ran. One
+  resolver now decides — `agent_model_for(goal, explicit, session)` (explicit → session's own →
+  role hint, the SAME precedence as chat), used by the run loop AND the route, which records the
+  resolved ref on the session it runs in. A session pinned to X runs on X; whatever runs is
+  displayed. Pinned by `v471` (11/11), `v455` B7 restated against the shared resolver.
+- **A transient model-endpoint failure killed a run on the first hit (JAG-477).** The DGX router
+  runs `--models-max 1 --parallel 1`, so a tool that itself curls the model endpoint (a smoke test
+  hitting `:8080`) forces a model swap and the NEXT harness call can answer `500` — the observed
+  `run failed: HTTP Error 500` in a Paperclip task. A 5xx / timeout / dropped connection is now
+  retried ONCE (after a 2s pause) before failing, and the retry is visible as a `model.retry`
+  event; a 4xx is a contract error and still fails fast. Pinned by `v470` (3/3).
+- **A headless run was invisible in the WebUI — no session was ever created (JAG-476).**
+  `POST /api/agent/run/stream` (the route the Paperclip bridge calls) started an agent run
+  with its own task graph and feed events but never a chat session, so a task dispatched from
+  Paperclip ran with nothing to watch in the sessions list. When the caller supplies no
+  `session`, the route now creates one titled from the task's first line, persists the goal as
+  its user turn and the run outcome as the reply, and publishes `session.created`. A
+  caller-supplied session keeps its old meaning (workspace context only). Verified live: goal
+  `Reply with the single word: pong` → session `80befbeb2b06` with `user`/`assistant` turns.
+  Pinned by `v465` (4/4).
+- **The Paperclip adapter rejected every real assignment as "no title or description"
+  (JAG-475).** The installed Paperclip (`2026.928.0-canary.7`) delivers a fresh assignment in
+  `ctx.executionContinuation.objective` and leaves `ctx.context` empty; the adapter only read the
+  LEGACY wake keys `context.taskTitle`/`context.taskBody`, so `buildGoal` returned `null` and the
+  run failed as `longrun_invocation_incomplete` before any work — the issue itself had a 73-char
+  title and a 1519-char description. The modern `objective` now wins (with `issueId` as the
+  `task_id` fallback) and the legacy pair stays as a fallback; `DEFAULT_COMMAND` is `python3`
+  (the DGX has no `python`). 17/17 vitest tests green.
 - **The 🏷 button reported success while no label changed (JAG-474).** The server named the
   groups correctly, but the WebUI never applied the titles: rendered free groups carry no
   chapter `gid`, and the position fallback only fired when the rendered and ledger group counts

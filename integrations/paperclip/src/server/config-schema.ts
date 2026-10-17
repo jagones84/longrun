@@ -8,7 +8,7 @@ export const ADAPTER_LABEL = "Longrun";
  * Launch defaults for the Longrun CLI shim, which reads one invocation JSON
  * object on stdin and writes NDJSON events on stdout.
  */
-export const DEFAULT_COMMAND = "python";
+export const DEFAULT_COMMAND = "python3";
 export const DEFAULT_ARGS: readonly string[] = ["forge.py", "paperclip-bot"];
 export const DEFAULT_LONGRUN_URL = "http://127.0.0.1:8790";
 export const DEFAULT_TIMEOUT_SEC = 1800;

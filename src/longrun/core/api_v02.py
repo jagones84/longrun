@@ -344,6 +344,40 @@ def tool_context():
     return "\n".join(lines)
 
 
+def _routed_agent_model(goal):
+    """The role-routing answer for an agent run (the LAST resort, JAG-478).
+
+    Kept in one function so the run loop and the HTTP route cannot resolve the
+    model differently: the route calls it BEFORE the run starts, records the
+    answer on the session, and hands it in as an EXPLICIT model.
+    """
+    srv = _srv()
+    try:
+        from longrun.model import routing
+        from longrun.model import decision as _decision
+        _hint = _decision.get().route(_decision.StepCtx(role="agent", goal=goal))
+        return getattr(_hint, "model", "") or routing.pick("agent") or srv.default_model()
+    except Exception:  # noqa: BLE001 — a routing hint must never break a run
+        return srv.default_model()
+
+
+def agent_model_for(goal, explicit=None, session_obj=None):
+    """JAG-478: the ONE place a run's model is decided.
+
+    Precedence is the same as the chat's (`resolve_ctx_model`): an explicit
+    choice wins, then the SESSION's own model, then the role-routing hint. Two
+    independent resolutions were the bug — a session showed
+    `deepseek:deepseek-reasoner` while the run really executed on the local
+    role model. A session pinned to X must RUN on X.
+    """
+    if explicit:
+        return explicit
+    pinned = str((session_obj or {}).get("model") or "").strip()
+    if pinned:
+        return pinned
+    return _routed_agent_model(goal)
+
+
 def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_id=None,
                  workspace=None, fallbacks=None):
     """Sense-think-act loop with real tools behind the approval gate + HITL."""
@@ -359,15 +393,9 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     # model` branch below was dead) and then ALWAYS overwrote it with the route
     # hint's role model (`pick("agent")` = the LOCAL weights): every /api/agent/run
     # silently ran on the local model even when the caller had pinned a cloud one.
-    if not model:
-        try:
-            from longrun.model import routing
-            from longrun.model import decision as _decision
-            _hint = _decision.get().route(_decision.StepCtx(role="agent", goal=goal))
-            model = (getattr(_hint, "model", "") or routing.pick("agent")
-                     or srv.default_model())
-        except Exception:  # noqa: BLE001 — a routing hint must never break a run
-            model = srv.default_model()
+    # JAG-478: the resolver is shared with the HTTP route, so a caller that knows
+    # the session resolves it the SAME way and passes it in explicitly.
+    model = model or _routed_agent_model(goal)
     st.model = model
     # JAG-448: the subagent (and any caller passing `fallbacks`) gets a real
     # failover chain of literal model refs. `model` stays PRIMARY; on a stream
@@ -447,27 +475,39 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 on_event("agent.iteration", run=st.id, i=i + 1, of=max_steps)
                 # JAG-448: walk the failover chain (primary + config fallbacks) so
                 # a broken cloud model does not kill the run at the first error.
+                # JAG-477: one 5xx from the local router used to kill the whole run.
+                # The DGX router runs with `--models-max 1 --parallel 1`, so a tool
+                # that calls the model endpoint itself (a smoke test curling :8080)
+                # forces a model swap and the NEXT harness call can get a 500. One
+                # short retry turns that into a hiccup instead of a failed task.
                 answer, think, last_err = "", "", None
-                for cand in candidates:
-                    try:
-                        answer, think = srv._router_stream(
-                            msgs, cand, lambda ch, t: on_event("agent.think",
-                                                               channel=ch, text=t))
-                        if cand != model:
-                            on_event("model.fallback", run=st.id, from_model=model,
-                                     to_model=cand)
-                            # promote the working model so later iterations try it
-                            # first instead of re-hitting the broken primary.
-                            model = cand
-                            st.model = cand
-                            candidates.insert(0, candidates.pop(candidates.index(cand)))
-                        break
-                    except Exception as _e:  # noqa: BLE001
-                        last_err = _e
-                        on_event("model.failover", run=st.id, failed=cand,
-                                 next_model=None)
-                else:
-                    raise last_err if last_err else RuntimeError("no model available")
+                for _attempt in range(2):
+                    for cand in candidates:
+                        try:
+                            answer, think = srv._router_stream(
+                                msgs, cand, lambda ch, t: on_event("agent.think",
+                                                                   channel=ch, text=t))
+                            if cand != model:
+                                on_event("model.fallback", run=st.id, from_model=model,
+                                         to_model=cand)
+                                # promote the working model so later iterations try it
+                                # first instead of re-hitting the broken primary.
+                                model = cand
+                                st.model = cand
+                                candidates.insert(0, candidates.pop(candidates.index(cand)))
+                            break
+                        except Exception as _e:  # noqa: BLE001
+                            last_err = _e
+                            on_event("model.failover", run=st.id, failed=cand,
+                                     next_model=None)
+                    else:
+                        if _attempt == 0 and _transient_model_error(last_err):
+                            on_event("model.retry", run=st.id,
+                                     error=str(last_err)[:200])
+                            time.sleep(2.0)
+                            continue
+                        raise last_err if last_err else RuntimeError("no model available")
+                    break
                 act = srv.extract_json(answer) or {}
                 if not isinstance(act, dict) or not act.get("action"):
                     act = {"thought": answer[:200], "action": "note", "detail": answer[:400]}
@@ -609,14 +649,45 @@ def _result(st, goal, model):
             "summary": st.summary, "trace": st.trace, "prm": prm_report}
 
 
-def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=None):
+def _goal_title(goal, limit=80):
+    """A session title taken from the task's first line (never the whole goal)."""
+    text = " ".join((goal or "").split())
+    if not text:
+        return "Paperclip task"
+    return (text[:limit - 1] + "\u2026") if len(text) > limit else text
+
+
+def _transient_model_error(err):
+    """A model-endpoint failure worth ONE retry (5xx, timeout, reset).
+
+    A 4xx is a contract error and must fail fast; a 5xx or a dropped connection
+    on the single-slot DGX router is transient and usually clears in seconds.
+    """
+    text = str(err or "").lower()
+    if "http error 5" in text or "timeout" in text or "timed out" in text \
+            or "connection reset" in text or "connection refused" in text:
+        return True
+    return isinstance(err, (TimeoutError, ConnectionError))
+
+
+def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=None,
+                        session_obj=None):
     srv = _srv()
     q = queue.Queue()
+    # JAG-476: a HEADLESS run (Paperclip, jobs) used to be INVISIBLE in the WebUI —
+    # it produced a task graph and feed events but never a chat session, so the
+    # operator could not watch the task just assigned. When the caller hands us a
+    # session, the goal becomes its user turn and the outcome its reply.
+    _outcome = {"text": ""}
 
     def on_event(kind, **d):
         q.put("event: %s\ndata: %s\n\n" % (kind, json.dumps(d, ensure_ascii=False)))
         if not kind.startswith("agent.think"):
             srv.publish(kind, **d)
+        if kind == "agent.finish":
+            _outcome["text"] = str(d.get("summary") or "").strip()
+        elif kind == "agent.error" and not _outcome["text"]:
+            _outcome["text"] = "run failed: %s" % (d.get("error") or "unknown error")
 
     def worker():
         try:
@@ -625,9 +696,21 @@ def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=N
         except Exception as e:  # noqa: BLE001
             q.put("event: error\ndata: %s\n\n" % json.dumps({"error": str(e)}))
         finally:
+            if session_obj is not None:
+                try:
+                    srv.append_message(session_obj, "assistant",
+                                       _outcome["text"] or "(run produced no summary)")
+                except Exception:  # noqa: BLE001 — visibility must never fail a run
+                    pass
             q.put(None)
 
-    yield "event: run\ndata: %s\n\n" % json.dumps({"run_id": run_id})
+    if session_obj is not None:
+        try:
+            srv.append_message(session_obj, "user", goal)
+        except Exception:  # noqa: BLE001
+            pass
+    yield "event: run\ndata: %s\n\n" % json.dumps({"run_id": run_id,
+                                                   "session": (session_obj or {}).get("id")})
     threading.Thread(target=worker, daemon=True).start()
     while True:
         try:
@@ -1251,8 +1334,27 @@ def handle(handler, method, path, qs, body):
             if session is not None and not isinstance(session, str):
                 return _r(handler, 400, {"error": "session must be a string"})
             st = new_run(goal, model, ms)
-            ws, _sess = _session_ws(session)
-            return _sse(handler, agent_stream_gen_v2(goal, ms, model, st.id, workspace=ws))
+            ws, sess = _session_ws(session)
+            # JAG-476: one Paperclip task = one VISIBLE session. Only when the
+            # caller supplied no session do we create one (and transcript it), so a
+            # configured session keeps its "workspace context only" meaning.
+            visible = sess if session is not None else None
+            if session is None:
+                visible = _srv().get_or_create_session(None, _goal_title(goal), ws)
+                _srv().publish("session.created", session=visible["id"],
+                               title=visible.get("title"))
+            # JAG-478: resolve the model ONCE, here, then hand it to the run as an
+            # EXPLICIT ref and RECORD it on the session. Before this, the route
+            # forwarded the raw body model (None for Paperclip) and `agent_run_v2`
+            # resolved the ROLE hint (local weights) while the composer showed the
+            # session's own model — a session could display `deepseek-reasoner`
+            # while `qwen…` really ran. A run and its session now share ONE model.
+            resolved = agent_model_for(goal, model, visible)
+            if visible is not None and resolved:
+                _srv()._set_session_model(visible["id"], resolved)
+                visible = _srv().load_session(visible["id"]) or visible
+            return _sse(handler, agent_stream_gen_v2(goal, ms, resolved, st.id,
+                                                     workspace=ws, session_obj=visible))
 
         # --- Sperimentale POST routes ---
         if path == "/api/memory":

@@ -68,8 +68,19 @@ function buildRedactor(secrets: Array<string | null>): (text: string) => string 
     values.reduce((acc, secret) => acc.split(secret).join(REDACTED), text);
 }
 
-/** The goal is the assigned task's title and description, and nothing else. */
-function buildGoal(context: Record<string, unknown>): string | null {
+/** The goal is the assigned task's objective, and nothing else.
+ *
+ * The installed Paperclip (2026.928 canary) hands a fresh assignment over in
+ * `ctx.executionContinuation.objective` — a server-authored snapshot — and leaves
+ * `ctx.context` for the LEGACY wake shape (`taskTitle`/`taskBody`). Reading only
+ * the legacy keys made every real assignment fail with
+ * "carries no title or description" even though the issue had one, so the
+ * modern objective wins and the legacy pair remains as a fallback.
+ */
+function buildGoal(ctx: AdapterExecutionContext): string | null {
+  const objective = readText(ctx.executionContinuation?.objective);
+  if (objective) return objective.slice(0, MAX_GOAL_CHARS);
+  const context = (ctx.context ?? {}) as Record<string, unknown>;
   const parts = [readText(context.taskTitle), readText(context.taskBody)].filter(
     (part): part is string => part !== null,
   );
@@ -207,8 +218,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const config = resolveAdapterConfig(ctx.config);
   const context = (ctx.context ?? {}) as Record<string, unknown>;
 
-  const goal = buildGoal(context);
+  const goal = buildGoal(ctx);
   if (goal === null) {
+    // Diagnostic: name the keys the runner actually sent (names only, never values)
+    // so a contract drift is visible in the run log instead of guessed at.
+    const keys = Object.keys(context);
+    await ctx.onLog(
+      "stderr",
+      `[longrun] no goal in the assignment: executionContinuation=${ctx.executionContinuation ? "present" : "absent"}` +
+        `, context keys=[${keys.slice(0, 12).join(", ")}]`,
+    );
     return result({
       exitCode: null,
       signal: null,
@@ -240,7 +259,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     agent_id: ctx.agent.id,
     company_id: ctx.agent.companyId,
     goal,
-    task_id: readText(context.taskId) ?? readText(context.issueId),
+    task_id: readText(context.taskId) ?? readText(context.issueId)
+      ?? readText(ctx.executionContinuation?.issueId),
     model: config.model,
     max_steps: config.maxSteps,
     session_id: config.session,

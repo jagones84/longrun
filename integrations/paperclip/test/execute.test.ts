@@ -31,6 +31,10 @@ interface HarnessOptions {
   echo?: boolean;
   authToken?: string;
   extraConfig?: Record<string, unknown>;
+  /** Override the legacy wake context; `null` simulates an EMPTY ctx.context. */
+  context?: Record<string, unknown> | null;
+  /** The modern assignment snapshot Paperclip actually sends. */
+  executionContinuation?: Record<string, unknown> | null;
 }
 
 interface Harness {
@@ -69,11 +73,12 @@ function harness(options: HarnessOptions): Harness {
       longrunUrl: "http://127.0.0.1:9",
       ...options.extraConfig,
     },
-    context: {
+    context: options.context === null ? {} : (options.context ?? {
       taskId: "task_1",
       taskTitle: "Ship the fixture",
       taskBody: "Make the deterministic child behave.",
-    },
+    }),
+    executionContinuation: options.executionContinuation ?? null,
     authToken: options.authToken,
     onLog: async (_stream: "stdout" | "stderr", chunk: string) => {
       logs.push(chunk);
@@ -137,6 +142,33 @@ describe("Longrun adapter execution", () => {
     const visible = logs.join("");
     expect(visible).not.toContain("longrun.paperclip.event.v1");
     expect(visible).not.toContain('"schema"');
+  });
+
+  // The installed Paperclip (2026.928 canary) sends a fresh assignment in
+  // `ctx.executionContinuation` and leaves `ctx.context` EMPTY. Reading only the
+  // legacy taskTitle/taskBody made the real agent fail before doing any work
+  // ("carries no title or description"), so this pins the modern shape.
+  test("test_execute_uses_the_modern_assignment_objective", async () => {
+    const { ctx, echoPath } = harness({
+      mode: "completed",
+      echo: true,
+      context: null,
+      executionContinuation: {
+        version: 1,
+        companyId: "company_1",
+        issueId: "issue_42",
+        objective: "Ship the fixture from the assignment snapshot.",
+        messages: [],
+      },
+    });
+
+    const result = await execute(ctx);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.errorCode).toBeNull();
+    const sent = JSON.parse(fs.readFileSync(echoPath, "utf8"));
+    expect(sent.goal).toBe("Ship the fixture from the assignment snapshot.");
+    expect(sent.task_id).toBe("issue_42");
   });
 
   test("test_execute_succeeds_only_for_completed_termination", async () => {

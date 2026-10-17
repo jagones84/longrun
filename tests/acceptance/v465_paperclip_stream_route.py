@@ -136,6 +136,20 @@ try:
           and CALLS[-1]["run_id"] == _json.loads(frames[0][1])["run_id"],
           "names=%s term=%s" % (names, term))
 
+    # --- 4: a headless run is VISIBLE as a session (JAG-476) ------------------
+    from longrun.memory import stores as _stores
+    created = [s for s in _stores.list_sessions() if s.get("title") == "summarize the repo"]
+    sd = _stores.load_session(created[0]["id"]) if created else {}
+    msgs = (sd or {}).get("messages") or []
+    check("test_post_stream_creates_a_visible_session",
+          len(created) == 1 and len(msgs) == 2
+          and msgs[0].get("role") == "user"
+          and msgs[0].get("content") == "summarize the repo"
+          and msgs[1].get("role") == "assistant"
+          and msgs[1].get("content") == "scripted done",
+          "sessions=%d msgs=%s" % (
+              len(created), [(m.get("role"), (m.get("content") or "")[:20]) for m in msgs]))
+
     # --- 3: invalid goals and run settings are rejected before any run --------
     before = len(CALLS)
     cases = [

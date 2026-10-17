@@ -122,7 +122,12 @@ check("B5 the legacy planner uses the turn model, not a planner role",
 check("B6 the heuristic router has no planner branch",
       'role = "planner" if' not in dc_src and "role = ctx.role or \"agent\"" in dc_src)
 check("B7 api_v02 never overrides an EXPLICIT model with a route hint",
-      "if not model:" in av_src and "_hint.model\n" not in av_src
+      # JAG-478: the hint moved into ONE resolver (`_routed_agent_model`) that the
+      # run loop, the HTTP route and the session recorder all share; an explicit
+      # model is still returned FIRST and untouched.
+      "model = model or _routed_agent_model(goal)" in av_src
+      and "if explicit:\n        return explicit" in av_src
+      and "_hint.model\n" not in av_src
       and "getattr(_hint, \"model\", \"\")" in av_src)
 
 # ---- C: the planner ROLE is gone from the config ----------------------------

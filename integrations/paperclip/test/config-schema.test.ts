@@ -43,7 +43,9 @@ describe("Longrun Paperclip adapter package", () => {
     expect(keys).not.toContain("token");
 
     const byKey = new Map(schema.fields.map((field) => [field.key, field]));
-    expect(byKey.get("command")?.default).toBe("python");
+    // The DGX has no `python` on PATH; a default that cannot resolve made every
+    // run fail before the adapter was even invoked.
+    expect(byKey.get("command")?.default).toBe("python3");
     expect(byKey.get("args")?.default).toBe("forge.py paperclip-bot");
     expect(byKey.get("longrunUrl")?.default).toBe("http://127.0.0.1:8790");
     expect(byKey.get("timeoutSec")?.default).toBe(1800);
@@ -52,7 +54,7 @@ describe("Longrun Paperclip adapter package", () => {
 
     // Defaults resolve to the executable command plus argument list.
     const defaults = resolveAdapterConfig({});
-    expect(defaults.command).toBe("python");
+    expect(defaults.command).toBe("python3");
     expect(defaults.args).toEqual(["forge.py", "paperclip-bot"]);
     expect(defaults.cwd).toBeNull();
     expect(defaults.longrunUrl).toBe("http://127.0.0.1:8790");
