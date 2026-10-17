@@ -7,6 +7,25 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **A compaction now trims the WHOLE transcript, not just `messages` (JAG-485).** The WebUI chat is the
+  merge of `messages` + `tool_cards` + `injects`, and `compact_session` rewrote only the first one: after a
+  manual/auto compaction a reload replayed every card and harness injection of the compacted-away turns, so
+  the entire pre-compaction chat came back above the summary — and each card carrying a todo `node`
+  re-opened that todo section (the same 4 todos painted 4 times). Compaction now drops the artifacts anchored
+  in the summarized region, re-anchors the survivors onto their message in the new list, and also discards
+  anchors that point past the transcript (a store left inconsistent by an older build). A one-off cleanup
+  (with a backup) repaired the already-compacted live session.
+- **`loadHistory` can no longer paint the transcript twice (JAG-485).** On a normal boot two loads ran
+  concurrently — the init call plus the `chat.done` feed-backlog replay — each replaying the whole transcript
+  into the same `#log`. A generation guard makes the newest load the only winner; every older in-flight call
+  bails after its next await, and the winner starts from an empty log. Verified live: the boot still issues
+  2 `/api/history` requests, but the DOM contains exactly one section per todo (0 duplicated sections).
+- **A replayed compaction summary is labelled `compacted history`, not `compact`, and shows no timestamp
+  (JAG-485).** It is the HEAD of the retained window (for the model), not a live harness injection; the
+  missing timestamp used to fall back to "now", stamping an October summary with the page-load time. The
+  visible compaction event remains the `compact` marker at the TAIL (JAG-451). Verified live on the UX
+  Architect session: `compacted history` → nudge → answer → `compact 15:11:16`, with no fabricated time on
+  the summary and no todo section left on screen.
 - **A subjob row no longer re-implements the ORG chart's click (JAG-484).** In the Control deck's JOB panel,
   single-clicking a subjob row (`J8.1 → A14`) opened that agent's chat — the *same* action the ORG chart
   already performs. The row is now inert (its only job is to stop the click from collapsing the job) and

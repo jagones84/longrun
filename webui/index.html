@@ -2956,6 +2956,7 @@ document.addEventListener("toggle", e => {
   _saveTodoOpenState(sessionId, open);
 }, true);
 let _historyReplaySession = null;
+let _historySeq = 0;   // JAG-485: generation of the newest loadHistory() run
 function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _updateNowBar(); buildDotRail(); }
 function _nodeDepth(id, d) {
   // JAG-170: depth from the GRAPH hierarchy, independent of draw order, so the
@@ -3056,7 +3057,7 @@ function harnessInject(d) {
   const det = document.createElement("details");
   det.className = "hinj";
   det.dataset.k = key; det.dataset.n = "1";
-  det.innerHTML = '<summary>🔌 harness &rarr; LLM<span class="hkind"></span><span class="hcount"></span>' + _tsSpan(d.ts) + '</summary><pre class="hbody"></pre>';
+  det.innerHTML = '<summary>🔌 harness &rarr; LLM<span class="hkind"></span><span class="hcount"></span>' + (d.ts === null ? "" : _tsSpan(d.ts)) + '</summary><pre class="hbody"></pre>';
   det.querySelector(".hkind").textContent = kind;
   det.querySelector(".hbody").textContent = text;
   // JAG-431r7: render EVERY harness injection CHRONOLOGICALLY via _logAppend, so it
@@ -4211,10 +4212,20 @@ function pickCurrentDir() { $("nsWs").value = _dirState.path || ""; closeDirPick
 async function loadHistory() {
   if (!sessionId) return;
   const _historySid = sessionId;
+  // JAG-485: ONE load owns the log. Two loads ran CONCURRENTLY on a normal boot
+  // (the init one here plus the `chat.done` feed-backlog replay in _feedReplay):
+  // each replayed the WHOLE transcript into the same #log, so every todo section
+  // and every card was painted twice — four times when a compaction reload raced
+  // them too ("why this todos replication"). The newest call bumps the generation;
+  // every older in-flight call bails at its next await and the winner starts from
+  // an EMPTY log, so exactly one transcript is on screen.
+  const _gen = ++_historySeq;
+  const _stale = () => _gen !== _historySeq || sessionId !== _historySid;
+  $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
   _historyReplaySession = _historySid;
   _stick = false;  // replay silently; jump once after rebuilding instead of scrolling per item
   const s = await api("GET", "/api/history?session=" + encodeURIComponent(_historySid));
-  if (sessionId !== _historySid) return;
+  if (_stale()) return;
   if (s && s.error) {
     // JAG-189: the active session no longer exists (deleted elsewhere): drop it
     // instead of re-polling a dead id every cycle (spurious 404s in the console).
@@ -4231,13 +4242,13 @@ async function loadHistory() {
   // nothing written in chat can ever be lost.
   let g = null;
   try { g = await api("GET", "/api/sessions/" + encodeURIComponent(_historySid) + "/graph"); } catch (e) { g = null; }
-  if (sessionId !== _historySid) return;
+  if (_stale()) return;
   const nodes = (g && g.nodes) || [];
   if (nodes.length) graph = g;
   // JAG-431j: load the free-group titles BEFORE the rebuild so each Free.N group is
   // labelled correctly as it is created.
   await loadThreadTitles(_historySid);
-  if (sessionId !== _historySid) return;
+  if (_stale()) return;
   // JAG-194: include every plan's nodes in byId so the transcript still resolves
   // cards that referenced an older plan's ids; the ACTIVE node is current-plan only.
   const _pnodes = planNodes(g);
@@ -4329,8 +4340,13 @@ async function loadHistory() {
       // JAG-461: a control/system message renders as the SAME collapsed harness card
       // as a persisted inject, so a compaction summary is visible (once) without ever
       // masquerading as an assistant answer.
+      // JAG-485: this one is the SUMMARY of the compacted-away turns — the head of the
+      // retained window, not a live injection. Label it as such and show NO timestamp:
+      // a missing ts used to fall back to "now", so an October summary was stamped with
+      // the page-load time and read like a brand-new harness event.
       _activeNodeId = null; _activeScope = null;
-      harnessInject({ inject_kind: "compact", text: e.v.content, ts: e.v.ts });
+      harnessInject({ inject_kind: "compacted history", text: e.v.content,
+                      ts: (typeof e.v.ts === "number" ? e.v.ts : null) });
       return;
     }
     const v = e.v;
@@ -4380,7 +4396,7 @@ async function loadHistory() {
   }
   // JAG-127: baseline the edit journal so the next turn reports only its own diff.
   try { _editsBase = await api("GET", "/api/edits?session=" + encodeURIComponent(_historySid)); } catch (e) { _editsBase = null; }
-  if (sessionId !== _historySid) return;
+  if (_stale()) return;
   // JAG-431p: apply the ledger titles to any rendered group whose start message carries
   // no chapter (mixed/old data). Guarded internally: skipped when the rendered and
   // ledger free-group counts differ (a compaction), so it can never mislabel.

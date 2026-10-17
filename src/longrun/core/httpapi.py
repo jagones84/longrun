@@ -1246,6 +1246,54 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
             msgs.insert(0, {"role": "system", "content": sys_marker})
             sess["messages"] = msgs
             _stores.save_session(sess)
+        # JAG-485: rewriting `messages` is not enough — the WebUI transcript is the
+        # merge of messages + tool_cards + injects, and the cards/injects of the
+        # COMPACTED-AWAY turns survived the rewrite. `loadHistory` replayed them all,
+        # so after a compaction the operator saw the whole pre-compaction chat again
+        # (the "wall" above the summary) and every card carrying a todo `node`
+        # re-opened that todo section — the same 4 todos painted four times. Drop the
+        # artifacts anchored in the summarized region and re-anchor the survivors onto
+        # their message in the NEW list (`_lead` = summary + optional auto marker).
+        # A store compacted by an OLDER build can still carry anchors that point PAST
+        # the current message list (after=31 with 3 messages); those can never be
+        # placed again, so drop them too (never during an in-flight turn, whose cards
+        # legitimately run ahead of the flushed transcript).
+        if not already_active:
+            _limit = len(messages)
+
+            def _inside(_it):
+                _a = _it.get("after")
+                if _a is None:
+                    return True
+                try:
+                    return int(_a) <= _limit
+                except (TypeError, ValueError):
+                    return False
+
+            sess["tool_cards"] = [c for c in (sess.get("tool_cards") or []) if _inside(c)]
+            sess["injects"] = [r for r in (sess.get("injects") or []) if _inside(r)]
+        _kept = int(stats.get("kept") or 0)
+        _cut = max(0, before_n - _kept)
+        if _cut:
+            _lead = len(msgs) - _kept
+
+            def _reanchor(_it):
+                _a = _it.get("after")
+                if _a is None:
+                    _it["after"] = len(msgs)
+                    return True
+                try:
+                    _a = int(_a)
+                except (TypeError, ValueError):
+                    return False
+                if _a <= _cut:          # sits inside the summarized region
+                    return False
+                _it["after"] = min(len(msgs), _a - _cut + _lead)
+                return True
+
+            sess["tool_cards"] = [c for c in (sess.get("tool_cards") or []) if _reanchor(c)]
+            sess["injects"] = [r for r in (sess.get("injects") or []) if _reanchor(r)]
+            _stores.save_session(sess)
         # JAG-451: a user-visible harness card at the TAIL (where the reader is
         # looking), appended directly (not via persist_inject) so it does not pollute
         # the thread ledger's digest with a harness line.

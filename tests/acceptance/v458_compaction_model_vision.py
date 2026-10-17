@@ -145,7 +145,8 @@ check("D1 harness scaffolding never enters the extractive summary",
 _html = _read("webui/index.html")
 check("E1 a system summary replays as a collapsed harness card",
       'if (m.role === "system")' in _html and 't: "s", v: m' in _html
-      and 'harnessInject({ inject_kind: "compact", text: e.v.content, ts: e.v.ts });' in _html)
+      and 'inject_kind: "compacted history"' in _html
+      and 'typeof e.v.ts === "number" ? e.v.ts : null' in _html)
 check("E2 the compact button reports abort and the local fallback honestly",
       "compaction aborted — context unchanged" in _html
       and "local fallback (summarizer model unavailable)" in _html

@@ -57,7 +57,8 @@ check("3c replay restoration is finalized after the historical DOM is built",
       and 'if (!_restoreChatScrollState(_historySid)) _jumpLogToBottom();' in html)
 check("3d compaction/system summaries replay as a labelled card, never an AI bubble",
       'if (m.role === "system")' in html and 't: "s", v: m' in html
-      and 'harnessInject({ inject_kind: "compact", text: e.v.content, ts: e.v.ts });' in html)
+      and 'inject_kind: "compacted history"' in html
+      and 'typeof e.v.ts === "number" ? e.v.ts : null' in html)
 
 # Chat viewport position is independent for each session and survives replay.
 check("4a chat viewport has its own per-session localStorage key",
