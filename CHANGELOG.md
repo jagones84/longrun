@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The chat names itself: a small header bar with the ACTIVE session's name (JAG-480), battery 198/198.**
+  Hiding the left panel (or collapsing a session's team group) used to hide *which* session you were
+  reading, so finding it again meant remembering its name. The chat now carries its own compact top bar
+  with the session title and id, both selectable and one-click copyable (`⧉ copy name`, which uses the
+  existing secure-context-aware `copyText`). The title comes from the REAL `/api/sessions` payload
+  (`_sessTitle`), so it can be pasted straight into the rail's search box. Refreshed on every sessions
+  load and hidden when no session is open. Pinned by new `v473`.
 - **Every agent run now shows as RUNNING, and the Sessions rail counts them (JAG-479), battery 197/197.**
   Two defects behind one report: "the running symbol never appears on a chat" and "I cannot see how
   many agents are running". (1) **A run that OWNS a session never registered a turn.** The chat and the

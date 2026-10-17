@@ -504,6 +504,22 @@
 
   /* ---------------- chat ---------------- */
   #chat { display: flex; flex-direction: column; min-height: 0; position: relative; }
+  /* JAG-480: the chat's own header — the ACTIVE session's name, always at the top of
+     the transcript. Its exact text is selectable and one-click copyable, so the name
+     can be pasted into the rail search to find the session again after its group or
+     the whole left panel was collapsed. */
+  #chatHead { flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+    font-size: 12px; min-height: 30px; }
+  #chatHead[hidden] { display: none; }
+  #chatHead .ch-title { font-weight: 600; color: var(--txt); user-select: text;
+    max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #chatHead .ch-id { color: var(--dim); font-size: 11px; user-select: text; flex: 0 0 auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #chatHead .ch-sp { flex: 1 1 auto; }
+  #chatHead .ch-copy { all: unset; cursor: pointer; color: var(--dim); padding: 2px 6px;
+    border-radius: 6px; font-size: 12px; }
+  #chatHead .ch-copy:hover { color: var(--acc); background: var(--panel2); }
   /* JAG-116: "jump to bottom" — appears only when the reader scrolled up */
   #jumpBtn { position: absolute; right: 22px; bottom: 96px; z-index: 6; width: 34px; height: 34px;
     padding: 0; border-radius: 999px; font-size: 16px; line-height: 1; color: var(--txt);
@@ -1435,6 +1451,13 @@
   </aside>
   <div class="resizer" id="resize-left" title="drag to resize"></div>
   <div id="chat" data-col="chat">
+    <div id="chatHead" hidden>
+      <span class="ch-title" id="chatHeadTitle"></span>
+      <span class="ch-id" id="chatHeadId"></span>
+      <span class="ch-sp"></span>
+      <button type="button" class="ch-copy" id="chatHeadCopy"
+              title="copy the session name" aria-label="copy the session name">⧉ copy name</button>
+    </div>
     <div id="log"></div>
     <nav id="dotrail" aria-label="jump to your messages" hidden></nav>
     <button id="jumpBtn" hidden title="jump to latest message" aria-label="jump to latest message">↓</button>
@@ -4072,6 +4095,7 @@ async function loadSessions() {
   }
   if (!visible.length) box.innerHTML = '<div class="remaining">no sessions yet</div>';
   updateSessBadge();   // JAG-357: keep the topbar badge in sync with the active session
+  renderChatHead();   // JAG-480: the chat header names the session you are reading
   _repaintCtx();   // JAG-424g: re-apply the context ring on the freshly rendered active row
   modelLabel();   // JAG-157: reflect the active session's model once the cache is filled
   renderRuns();   // JAG-479: the rail's count + panel rows follow the REAL payload
@@ -8889,6 +8913,27 @@ function updateSessBadge() {
   b.hidden = !on;
   if (on) b.textContent = "\uD83D\uDDC2 " + _activeTitle;
 }
+/* JAG-480: the chat's own header shows the ACTIVE session's exact name and id. The
+   name is what the rail's search box matches, so keeping it visible (and copyable)
+   at the top of the transcript lets you find the session again after collapsing its
+   group or the whole panel. Real backend truth: the title comes from /api/sessions
+   (`_sessTitle`), never a locally invented label. */
+function renderChatHead() {
+  const head = $("chatHead"); if (!head) return;
+  const t = sessionId ? (_sessTitle[sessionId] || _activeTitle || "") : "";
+  head.hidden = !sessionId;
+  if (!sessionId) return;
+  const tt = $("chatHeadTitle"), ii = $("chatHeadId");
+  if (tt) { tt.textContent = t || "(untitled)"; tt.title = t; }
+  if (ii) ii.textContent = sessionId;
+}
+function _copySessionName() {
+  const t = sessionId ? (_sessTitle[sessionId] || _activeTitle || "") : "";
+  const payload = t ? (t + "\n" + sessionId) : sessionId;
+  if (!payload) { toast("no session selected"); return; }
+  Promise.resolve(copyText(payload)).then(ok =>
+    toast(ok ? "session name copied" : "copy failed", ok ? "ok" : "err"));
+}
 /* JAG-428: reveal the ACTIVE session in the left rail — from anywhere (typically the
    chat), even when its team group (or the whole panel) is collapsed. Opens the panel,
    expands every group that holds the session, scrolls its row to the CENTER and flashes
@@ -9023,6 +9068,7 @@ $("palette").addEventListener("click", e => { if (e.target.id === "palette") clo
 $("mcpJsonWin").addEventListener("click", e => { if (e.target.id === "mcpJsonWin") closeMcpJson(); });
 $("session-search").addEventListener("input", loadSessions);
 _wireRunsPanel();   // JAG-479: the running/unread popover reads real state and follows it
+{ const _chc = $("chatHeadCopy"); if (_chc) _chc.onclick = _copySessionName; }   // JAG-480
 $("railCollapseAll").onclick = () => _setAllGroups(true);
 $("railExpandAll").onclick = () => _setAllGroups(false);
 { const _qm = $("qmode");
