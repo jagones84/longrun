@@ -27,6 +27,16 @@ DEFAULT_CONFIG = {
     "auto_index": True,
     # JAG-403j: binary documents (PDF/DOCX/…) may be much larger than code files.
     "doc_max_kb": 25600,
+    # JAG-490: the KNOWLEDGE base has its own size cap + ignore globs. The code
+    # index still ignores *.png/*.svg/*.ipynb, but a KB folder must not.
+    "knowledge_max_file_kb": 25600,
+    "knowledge_ignore": [],
+    # JAG-490: an online source may be a large PDF/image; cap the download.
+    "url_max_kb": 51200,
+    # JAG-490: OPT-IN vision caption for images whose OCR text is too thin to be
+    # searchable (an OpenAI-compatible model ref, e.g. openrouter:google/gemini-2.5-flash).
+    "image_caption_model": "",
+    "image_min_chars": 80,
     "chunk_lines": 60,
     "overlap_lines": 8,
     "ignore": ["*.min.js", "*.min.css", "*.map", "*.lock", "*.svg", "*.ipynb"],

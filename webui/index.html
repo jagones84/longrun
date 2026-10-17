@@ -3307,7 +3307,7 @@ function _attachBlock() {
       + "pdftotext/OCR/tr on the raw file first. Example: "
       + '{"tool":"knowledge","args":{"action":"search","query":"<topic>"}}.';
   } else {
-    const bin = _attachments.filter(a => /\.(pdf|docx?|odt|rtf|pptx|xlsx|epub)\b/i.test(a.label || a.value));
+    const bin = _attachments.filter(a => /\.(pdf|docx?|odt|rtf|pptx|xlsx|epub|png|jpe?g|gif|bmp|webp|tiff?)\b/i.test(a.label || a.value));
     if (bin.length) hint = "\n\n" + bin.map(a => a.label).join(", ")
       + " is a binary document. If it is large, prefer the `knowledge` tool (action=search) "
       + "over raw shell text extraction.";
@@ -3376,13 +3376,12 @@ async function attachFiles(fileList) {
       const att = { kind: "path", label: r.name, value: "file: " + r.path };
       addAttachment(att);
       okN++;
-      // JAG-431r5: auto-ingest binary documents into the knowledge base so the
-      // model can search them later without the user having to "add" twice.
-      // Text files (md/txt/code) are NOT auto-ingested — the chat sees the
-      // path and the model reads them directly. Visual-only PDFs surface a
-      // warning because the embedder is text-only.
+      // JAG-431r5/490: auto-ingest binary documents AND images into the session
+      // knowledge base, so the model can search them later (images via OCR and,
+      // when configured, a vision caption). Text files are NOT auto-ingested —
+      // the chat sees the path and the model reads them directly.
       const name = (r.name || "").toLowerCase();
-      const isBinaryDoc = /\.(pdf|docx?|odt|rtf|pptx|xlsx|epub)$/i.test(name);
+      const isBinaryDoc = /\.(pdf|docx?|odt|rtf|pptx|xlsx|epub|png|jpe?g|gif|bmp|webp|tiff?)$/i.test(name);
       if (isBinaryDoc) {
         try {
           const ir = await api("POST", "/api/knowledge/auto-route",
@@ -3390,7 +3389,7 @@ async function attachFiles(fileList) {
           if (ir && ir.ok) {
             att.ingested = true; att.chunks = ir.chunks || 0;
             const vis = ir.recommend_visual
-              ? " ⚠ image-only — install a visual embedder to make this searchable"
+              ? " ⚠ little/no text — set image_caption_model to add a vision caption"
               : "";
             const where = ir.notebook_name
               ? " → '" + ir.notebook_name + "' (" + (ir.chunks || 0) + " chunks)"

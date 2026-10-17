@@ -8,6 +8,7 @@ The cost is EXACT for OpenRouter (it returns ``usage.cost``), and ESTIMATED for
 direct providers (price from the catalogue × tokens).
 """
 import array
+import os
 
 from longrun.memory import costlog, embedcfg
 from longrun.model import embed
@@ -112,6 +113,42 @@ def vecs_for(db, ids):
     marks = ",".join("?" * len(ids))
     return {row["id"]: blob_vec(row["vec"]) for row in db.execute(
         "SELECT id, vec FROM chunks WHERE id IN (%s) AND vec IS NOT NULL" % marks, list(ids))}
+
+
+def semantic_hits(db, qv, where_sql="", where_args=(), limit=20, cap=None):
+    """The nearest chunks by cosine, INDEPENDENT of the lexical candidates.
+
+    JAG-490: hybrid search used to re-rank ONLY the bm25 hits, so a paraphrase
+    (or a query in another language) with no keyword overlap returned NOTHING
+    even though every chunk had a vector. This scans the scoped vectors and
+    returns ``(ids, {id: vec})`` for the top ``limit``.
+
+    ``cap`` bounds the scan (default 20 000) so a huge notebook stays responsive;
+    numpy is used when present, with a pure-python fallback.
+    """
+    cap = int(cap or os.environ.get("LONGRUN_VECTOR_SCAN") or 20000)
+    sql = ("SELECT c.id AS id, c.vec AS vec FROM chunks c "
+           "JOIN sources s ON s.id = c.source WHERE c.vec IS NOT NULL" + (where_sql or ""))
+    rows = db.execute(sql + " LIMIT ?", tuple(where_args or ()) + (cap,)).fetchall()
+    if not rows:
+        return [], {}
+    scored = []
+    try:
+        import numpy as np
+        mat = np.frombuffer(b"".join(bytes(r["vec"]) for r in rows), dtype=np.float32)
+        mat = mat.reshape(len(rows), -1)
+        q = np.asarray(qv, dtype=np.float32)
+        if mat.shape[1] != q.shape[0]:
+            return [], {}
+        denom = np.linalg.norm(mat, axis=1) * (float(np.linalg.norm(q)) or 1.0) + 1e-9
+        sims = (mat @ q) / denom
+        scored = sorted(((float(sims[i]), i) for i in range(len(rows))), reverse=True)[:limit]
+    except Exception:  # noqa: BLE001 — no numpy (or a bad blob): pure python
+        scored = sorted(((cos(qv, blob_vec(r["vec"])), i) for i, r in enumerate(rows)),
+                        reverse=True)[:limit]
+    ids = [rows[i]["id"] for _s, i in scored if _s > -1.0]
+    cand = {rows[i]["id"]: blob_vec(rows[i]["vec"]) for _s, i in scored if _s > -1.0}
+    return ids, cand
 
 
 def fuse_rrf(rows, cand, qv, k=60):

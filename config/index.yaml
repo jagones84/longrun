@@ -8,6 +8,7 @@
 enabled: true
 automatic: false          # true = incremental rebuild on demand; the UI has a manual button
 max_file_kb: 512          # skip files larger than this (avoids huge generated blobs)
+doc_max_kb: 25600         # PDF/DOCX/… extracted text cap (documents are bigger than code)
 chunk_lines: 60           # fallback line-window size for non-Python source
 overlap_lines: 8
 ignore:                   # extra globs on top of the built-in ignores (.git, node_modules, …)
@@ -21,5 +22,16 @@ ignore:                   # extra globs on top of the built-in ignores (.git, no
   - "*.jpg"
   - "*.jpeg"
   - "*.gif"
+
+# ---- KNOWLEDGE base only (JAG-490) ------------------------------------------
+# The code index ignores images/notebooks above; a KB folder must index them.
+knowledge_max_file_kb: 25600
+knowledge_ignore: []      # e.g. ["*.tmp", "*/private/*"]
+url_max_kb: 51200         # max bytes downloaded for an online source (PDF/image/HTML)
+# OPT-IN vision caption for images with too little OCR text to be searchable.
+# Use any OpenAI-compatible vision model ref, e.g. openrouter:google/gemini-2.5-flash
+# (leave empty for OCR-only). The caption is indexed with the image.
+image_caption_model: ""
+image_min_chars: 80       # OCR text shorter than this triggers the caption
 embed_model: "cohere:embed-multilingual-v3.0"   # provider ref; set "" for lexical-only (bm25)
 embed_batch: 32

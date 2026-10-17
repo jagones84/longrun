@@ -213,8 +213,30 @@ def _fs_read(args, run_id):
         return {"ok": False, "error": err}
     if not os.path.isfile(path):
         return {"ok": False, "error": "no such file: %s" % path}
+    max_bytes = int(args.get("max_bytes", 65536))
+    # JAG-490: a PDF/DOCX/image attached to the chat is a PATH the model is told
+    # to read. Decoding its bytes as UTF-8 returned binary garbage, so binary
+    # documents go through the same extractor the knowledge base uses.
+    try:
+        from longrun.memory import docio as _docio
+    except Exception:  # noqa: BLE001
+        _docio = None
+    if _docio is not None and _docio.supported(path):
+        res = _docio.extract(path, max_kb=max(1024, max_bytes // 1024))
+        text = res.get("text") or ""
+        if not text:
+            return {"ok": False, "path": path,
+                    "error": "no extractable text: %s" % (res.get("engine") or "?"),
+                    "engine": res.get("engine"),
+                    "recommend_visual": res.get("recommend_visual"),
+                    "exit_code": 1}
+        content = text[:max_bytes]
+        return {"ok": True, "path": path, "content": content, "bytes": len(content),
+                "engine": res.get("engine"), "quality": res.get("quality"),
+                "truncated": len(text) > len(content),
+                "backend": "host", "sandboxed": False, "exit_code": 0}
     with open(path, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read(int(args.get("max_bytes", 65536)))
+        content = f.read(max_bytes)
     return {"ok": True, "path": path, "content": content, "bytes": len(content),
             "backend": "host", "sandboxed": False, "exit_code": 0}
 

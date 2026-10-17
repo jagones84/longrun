@@ -313,9 +313,13 @@ def model_supports_vision(alias):
                     return True
     except Exception:  # noqa: BLE001 — capability must never break a turn
         provider = None
-    # Remote providers carry no router roster; only the catalogue flag (checked
-    # above) can grant vision there.
+    # Remote providers carry no router roster. OpenRouter publishes the real
+    # input modalities per model, so a cloud vision model is detected from live
+    # vendor metadata; any other remote provider can only be granted vision by
+    # its catalogue `vision: true` flag (checked above).
     if provider is not None and not provider.get("local"):
+        if provider.get("kind") == "openrouter":
+            return providers.openrouter_vision(mid)
         return False
     try:
         if provider is not None and provider.get("base_url"):

@@ -7,6 +7,39 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **External sources are now first-class in the knowledge base (JAG-490).** An audit against
+  real documents (PDF, DOCX, XLSX, EPUB, images, URL-pointed PDFs/images, a 23 MB / 783-page book)
+  found and fixed the whole ingestion path:
+  - a URL to a **PDF or an image** was decoded as UTF-8 text (the KB indexed `%PDF-1.5…`); the
+    new `chunk.fetch_url_info()` sniffs magic bytes + `Content-Type`, handles gzip/deflate/brotli,
+    follows redirects, caps at `url_max_kb`, snapshots the binary under `data/knowledge/raw/`, and
+    runs it through the normal extractor. Sources now record **`content_type`, `final_url` and
+    `snapshot`**, so an online pointer is reproducible after the page changes;
+  - a knowledge **folder applied the code** ignore list (`*.png`, `*.ipynb`, …) and its 512 KB cap;
+    the KB now has its own `knowledge_ignore` / `knowledge_max_file_kb` and extracts documents up to
+    `doc_max_kb`;
+  - **XLSX** produced "no converter" (LibreOffice's generic text filter cannot write a spreadsheet);
+    the office fallback now uses the Calc CSV filter in an isolated profile;
+  - a **PDF with a broken font layer** was indexed as symbol soup (`quality 1.00`, `## a0 ✁ ✂ ☎`);
+    `docio` now scores the extracted text (share of letters, script-agnostic), tries the fast
+    `pdftotext` first for PDFs and goes straight to OCR when the layer is garbage;
+  - an **image URL** indexed the docling placeholder `<!-- image -->`; placeholders are stripped and
+    a thin-OCR image can be captioned by a real vision model (`image_caption_model`, opt-in, e.g.
+    `openrouter:google/gemini-2.5-flash`) — the caption (visible text + description) is what gets
+    indexed;
+  - **hybrid retrieval returned nothing for a paraphrase** because it only re-ranked the bm25 hits;
+    it now computes the query vector first, adds semantic-only hits (`vectors.semantic_hits`) and
+    fuses with RRF (`mode: hybrid`);
+  - **ingestion held the global lock** during fetch/extraction/embedding (one 783-page book froze
+    every KB read and left its source row invisible); preparation moved outside the lock and the
+    chunk transaction commits **before** embedding;
+  - `fs.read` on a binary document now returns the **extracted** text instead of a UTF-8 decode;
+  - the chat **“+”** auto-ingests images as well as documents into the session notebook, and
+    **cloud vision detection** was broken: `model_supports_vision()` returned False for
+    `openrouter:google/gemini-2.5-flash` even though that model describes images. It now reads the
+    live OpenRouter `architecture.input_modalities` (cached, both vendor spellings) — verified live:
+    an attached screenshot is transcribed and described correctly.
+  `tests/acceptance/v490_kb_external_sources.py` pins all of it (27 checks, no network/model).
 - **The whole `config/` store is editable from the WebUI (JAG-488).** A new **Settings ▸ Config files**
   panel lists every top-level `config/*.yaml`, loads the real file into an editor and saves it through
   `GET /api/config/files`, `GET/POST /api/config/file`. The server validates the YAML **before** the

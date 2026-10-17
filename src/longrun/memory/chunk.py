@@ -30,6 +30,12 @@ CODE_EXT = {
     ".clj": "clojure", ".hs": "haskell",
 }
 DOC_EXT = {".md": "markdown", ".markdown": "markdown", ".rst": "rst", ".txt": "text", ".adoc": "asciidoc"}
+# Plain-text DATA formats (JAG-490): these were not indexable at all, so a KB
+# built from exports (.csv/.log/.eml/.tex/.ipynb/…) silently missed them.
+DATA_EXT = {".csv": "csv", ".tsv": "tsv", ".log": "log", ".eml": "email",
+            ".tex": "latex", ".bib": "bibtex", ".ipynb": "notebook",
+            ".srt": "subtitle", ".vtt": "subtitle", ".ini": "ini",
+            ".cfg": "ini", ".conf": "ini"}
 EXTLESS = {"dockerfile": "dockerfile", "makefile": "makefile", "rakefile": "ruby", "procfile": "text"}
 
 
@@ -41,6 +47,9 @@ def lang_for(rel):
         return CODE_EXT[ext], "code"
     if ext in DOC_EXT:
         return DOC_EXT[ext], "doc"
+    if ext in DATA_EXT:
+        # JAG-490: data-shaped TEXT is a document, not code (no AST chunking).
+        return DATA_EXT[ext], "doc"
     if ext in docio.BINARY_DOC_EXT:
         # JAG-403j: PDF/DOCX/… are extracted to text by ``docio`` (see read_text).
         return "doc", "doc"
@@ -226,13 +235,149 @@ def strip_html(html):
 
 
 def fetch_url(url, timeout=20):
-    """Readable text from a URL (public internet). HTML is stripped to text."""
+    """Readable text from a URL (public internet). HTML is stripped to text.
+
+    Back-compat string wrapper around :func:`fetch_url_info`. Binary documents
+    (PDF / Office / images) are extracted with ``docio`` instead of being
+    decoded as text.
+    """
+    return (fetch_url_info(url, timeout=timeout) or {}).get("text") or ""
+
+
+# JAG-490: what a URL actually IS. Before this, a PDF/image URL was read as
+# bytes and decoded as UTF-8 ("%PDF-1.5 …"), so the KB indexed garbage.
+_IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", ".png"), (b"\xff\xd8\xff", ".jpg"),
+    (b"GIF87a", ".gif"), (b"GIF89a", ".gif"), (b"BM", ".bmp"),
+    (b"II*\x00", ".tiff"), (b"MM\x00*", ".tiff"),
+)
+_CTYPE_SUFFIX = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/epub+zip": ".epub",
+    "application/rtf": ".rtf",
+    "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
+    "image/bmp": ".bmp", "image/webp": ".webp", "image/tiff": ".tiff",
+}
+
+
+def _sniff_suffix(data, ctype, url):
+    """The document suffix implied by the bytes/content-type/URL (or None)."""
+    ctype = (ctype or "").split(";")[0].strip().lower()
+    if ctype in _CTYPE_SUFFIX:
+        return _CTYPE_SUFFIX[ctype]
+    head = data[:8]
+    if head.startswith(b"%PDF-"):
+        return ".pdf"
+    for magic, suffix in _IMAGE_MAGIC:
+        if head.startswith(magic):
+            return suffix
+    # Office formats are ZIP containers: [Content_Types].xml near the start.
+    if head.startswith(b"PK\x03\x04") and b"[Content_Types].xml" in data[:4096]:
+        ext = os.path.splitext(url.split("?", 1)[0])[1].lower()
+        if ext in (".docx", ".pptx", ".xlsx", ".epub"):
+            return ext
+        return ".docx"
+    ext = os.path.splitext(url.split("?", 1)[0])[1].lower()
+    if ext in docio.BINARY_DOC_EXT:
+        return ext
+    return None
+
+
+def fetch_url_info(url, timeout=20, max_kb=None, snapshot_dir=None):
+    """Fetch a URL and return ``{text, engine, content_type, final_url, kind,
+    bytes, truncated, snapshot, diagnostic}``.
+
+    Handles gzip/deflate/brotli, redirects (``final_url``), HTML, plain text and
+    binary documents. A binary document can be snapshotted verbatim into
+    ``snapshot_dir`` so the KB keeps a local copy of an online pointer.
+    Never raises: network/parse failures return ``{"error": ...}``.
+    """
+    import gzip
+    import shutil
+    import tempfile
     import urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": "longrun-index/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        ctype = (resp.headers.get("Content-Type") or "").lower()
-        data = resp.read(2 * 1024 * 1024)
-    text = data.decode("utf-8", "replace")
-    if "html" in ctype or "<html" in text[:400].lower():
-        return strip_html(text)
-    return text
+    import zlib
+
+    max_bytes = int(max_kb or os.environ.get("LONGRUN_URL_MAX_KB") or 51200) * 1024
+    info = {"text": "", "engine": "", "content_type": "", "final_url": url,
+            "kind": "url", "bytes": 0, "truncated": False, "snapshot": None,
+            "diagnostic": None}
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "longrun-index/1.0",
+            "Accept": ("text/html,application/xhtml+xml,application/pdf,"
+                       "image/*,text/plain;q=0.9,*/*;q=0.5"),
+        })
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            ctype = resp.headers.get("Content-Type") or ""
+            enc = (resp.headers.get("Content-Encoding") or "").lower()
+            raw = resp.read(max_bytes + 1)
+            final = resp.geturl() or url
+        info["content_type"] = ctype.split(";")[0].strip().lower()
+        info["final_url"] = final
+        info["bytes"] = len(raw)
+        if len(raw) > max_bytes:
+            raw, info["truncated"] = raw[:max_bytes], True
+        try:
+            if "gzip" in enc:
+                raw = gzip.decompress(raw)
+            elif "deflate" in enc:
+                raw = zlib.decompress(raw)
+            elif "br" in enc:
+                try:
+                    import brotli  # optional
+                    raw = brotli.decompress(raw)
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception:  # noqa: BLE001 — a truncated stream: use what we have
+            pass
+        raw = raw[: max_bytes * 4]
+        suffix = _sniff_suffix(raw, info["content_type"], final)
+        if suffix:
+            tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+            try:
+                tmp.write(raw)
+                tmp.close()
+                if snapshot_dir:
+                    try:
+                        os.makedirs(snapshot_dir, exist_ok=True)
+                        import hashlib
+                        digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:14]
+                        snap = os.path.join(snapshot_dir, digest + suffix)
+                        shutil.copyfile(tmp.name, snap)
+                        info["snapshot"] = snap
+                    except OSError:
+                        pass
+                res = docio.extract(tmp.name, max_kb=int(
+                    os.environ.get("LONGRUN_URL_DOC_MAX_KB") or 25600))
+            finally:
+                try:
+                    os.unlink(tmp.name)
+                except OSError:
+                    pass
+            info["diagnostic"] = res
+            info["engine"] = res.get("engine")
+            info["text"] = res.get("text") or ""
+            if suffix == ".pdf":
+                info["kind"] = "pdf-url"
+            elif suffix in docio.IMAGE_EXT:
+                info["kind"] = "image-url"
+            else:
+                info["kind"] = "doc-url"
+            if not info["text"]:
+                info["error"] = "no text in %s (%s)" % (suffix, res.get("engine"))
+            return info
+        text = raw.decode("utf-8", "replace")
+        if "html" in info["content_type"] or "<html" in text[:400].lower():
+            info["engine"] = "html"
+            info["text"] = strip_html(text)
+        else:
+            info["engine"] = info["content_type"] or "text"
+            info["text"] = text
+        return info
+    except Exception as e:  # noqa: BLE001 — a fetch failure is data, not a crash
+        info["error"] = "%s: %s" % (type(e).__name__, e)
+        return info

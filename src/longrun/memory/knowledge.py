@@ -33,6 +33,9 @@ DEFAULT_NAME = "Default"
 
 # Indirections so tests (and future providers) can swap them without network.
 fetch_text = _chunk.fetch_url
+# JAG-490: the rich fetcher (content type / final URL / snapshot + binary
+# extraction). A test may still override only `fetch_text`; add_source honours it.
+fetch_info = _chunk.fetch_url_info
 
 
 def _default_searcher(query, n):
@@ -85,6 +88,15 @@ def _init(db):
             pass
     db.execute("CREATE INDEX IF NOT EXISTS notebooks_owner ON notebooks(owner)")
     db.execute("CREATE INDEX IF NOT EXISTS notebooks_session ON notebooks(is_session)")
+    # JAG-490: an online source is not only a URL string — record WHAT was fetched
+    # (content type / final redirect URL) and, for binary documents, the local
+    # snapshot so the "pointer" is reproducible after the page changes.
+    for col, ddl in (("content_type", "TEXT"), ("final_url", "TEXT"),
+                     ("snapshot", "TEXT")):
+        try:
+            db.execute("ALTER TABLE sources ADD COLUMN %s %s" % (col, ddl))
+        except sqlite3.OperationalError:
+            pass
     fts = True
     try:
         db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, name, path)")
@@ -355,29 +367,15 @@ def _auto_create_notebook(db, fallback_name):
     return nid, name, True
 
 
-def _preview_for_path(path):
-    """Read up to ``_AUTO_PREVIEW_CHARS`` of text from a file path.
-
-    Uses the new ``docio.extract`` diagnostic so the same diagnostic flows
-    into the auto-routing caller.
-    """
-    if not path or not os.path.isfile(path):
-        return "", None
-    try:
-        res = _docio.extract(path)
-    except Exception:  # noqa: BLE001
-        return "", None
-    if not isinstance(res, dict):
-        return (res or "")[:_AUTO_PREVIEW_CHARS], None
-    return (res.get("text") or "")[:_AUTO_PREVIEW_CHARS], res
-
-
 # -------------------------------------------------------------------- sources --
-def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts):
+def _ingest(db, sid, notebook, kind, ref, title, pieces, lang, path, cfg, fts, meta=None):
+    meta = meta or {}
     n = _insert_chunks(db, sid, path, lang, "doc" if kind != "code" else "code",
                        pieces, fts)
-    db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks) "
-               "VALUES(?,?,?,?,?,?,?)", (sid, notebook, kind, ref, title, time.time(), n))
+    db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, "
+               "chunks, content_type, final_url, snapshot) VALUES(?,?,?,?,?,?,?,?,?,?)",
+               (sid, notebook, kind, ref, title, time.time(), n,
+                meta.get("content_type"), meta.get("final_url"), meta.get("snapshot")))
     return n
 
 
@@ -402,18 +400,34 @@ def _session_notebook(db, sid, create=True):
     return nid if (row or create) else None
 
 
+def _kb_cfg():
+    """Index config tuned for the KNOWLEDGE base (not the code index).
+
+    JAG-490: the codebase ignores (`*.png`, `*.svg`, `*.ipynb`, …) and the
+    512 KB cap were applied to knowledge folders too, so images and big exports
+    were silently skipped. The KB has its own knobs (`knowledge_ignore`,
+    `knowledge_max_file_kb`) and always allows documents up to `doc_max_kb`.
+    """
+    cfg = dict(_cfg.load_config())
+    cfg["ignore"] = list(cfg.get("knowledge_ignore") or [])
+    cfg["max_file_kb"] = int(cfg.get("knowledge_max_file_kb") or 25600)
+    return cfg
+
+
 def add_source(notebook, ref, session_id=None):
     """Index ONE source (URL / file / folder) into `notebook`. Returns a result dict.
 
     JAG-431r5: when ``notebook == "auto"`` the source is routed to the closest
     existing notebook by FTS5 bm25 over its chunks, or a fresh notebook is
-    created when nothing is close enough. The result dict carries
-    ``notebook_auto: bool``, ``notebook_name: str``, and (for paths that go
-    through ``docio.extract``) ``extract_diagnostic`` + ``recommend_visual``.
+    created when nothing is close enough.
 
     JAG-431r6: ``session_id`` (optional) routes the source into a HIDDEN
-    per-session notebook (see ``_session_notebook``) instead of tagging rows.
-    All notebook/search/embedding machinery applies verbatim.
+    per-session notebook (see ``_session_notebook``).
+
+    JAG-490: fetching/extraction happens OUTSIDE the global lock (a 300-page PDF
+    used to freeze every KB read for minutes), documents are extracted up to
+    ``doc_max_kb`` (not the 512 KB code cap), and URL sources record the real
+    content type / final URL / local snapshot of a binary document.
     """
     notebook = notebook or DEFAULT_ID
     ref = str(ref or "").strip()
@@ -421,75 +435,108 @@ def add_source(notebook, ref, session_id=None):
         return {"ok": False, "error": "empty source"}
     auto_routed = False
     extract_diag = None
-    cfg = _cfg.load_config()
+    cfg = _kb_cfg()
+    cl = int(cfg.get("chunk_lines") or 60)
+    ov = int(cfg.get("overlap_lines") or 8)
+    doc_kb = int(cfg.get("doc_max_kb") or 25600)
+    text_kb = int(cfg.get("max_file_kb") or 512)
+
+    # ---- prepare (NO lock): network + document extraction can be slow ------
+    kind = "path"
+    url_info = None
+    pieces = None
+    prepared = []          # [(path, text, lang, kind)]
+    base = ""
+    if ref.startswith("http://") or ref.startswith("https://"):
+        try:
+            if fetch_text is _chunk.fetch_url:
+                url_info = fetch_info(
+                    ref, max_kb=int(cfg.get("url_max_kb") or 51200),
+                    snapshot_dir=os.path.join(paths.KNOWLEDGE_DIR, "raw"))
+                text = url_info.get("text") or ""
+            else:
+                # A test / research executor overrode the TEXT fetcher: honour it
+                # (the rich fetcher stays available for callers that want metadata).
+                text = fetch_text(ref)
+                url_info = {"text": text, "kind": "url"}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": "fetch failed: %s" % e, "ref": ref}
+        if not str(text or "").strip():
+            return {"ok": False,
+                    "error": (url_info or {}).get("error") or "fetch produced no text",
+                    "ref": ref}
+        kind = (url_info or {}).get("kind") or "url"
+        base = ref
+        pieces = _chunk.chunk_doc(str(text), cl, ov)
+        extract_diag = (url_info or {}).get("diagnostic")
+    else:
+        ap = os.path.realpath(os.path.expanduser(ref))
+        if not os.path.exists(ap):
+            return {"ok": False, "error": "path not found: %s" % ref, "ref": ref}
+        if os.path.isdir(ap):
+            targets = [abs_ for _rel, abs_, _l, _k in _chunk.walk(ap, cfg)]
+            base = os.path.basename(ap) or ap
+        else:
+            lang0, _kind0 = _chunk.lang_for(ap)
+            targets = [ap] if lang0 else []
+            base = os.path.basename(ap)
+        if not targets:
+            return {"ok": False, "error": "no indexable files in %s" % ref, "ref": ref}
+        for fp in targets:
+            mb = doc_kb if _docio.supported(fp) else text_kb
+            text = _chunk.read_text(fp, mb)
+            if text is None:
+                continue
+            lang, knd = _chunk.lang_for(fp)
+            prepared.append((fp, text, lang or "text", knd or "doc"))
+        if not prepared:
+            return {"ok": False, "error": "no extractable text in %s" % ref, "ref": ref}
+        if len(targets) == 1 and _docio.supported(targets[0]):
+            extract_diag = _docio.extract(targets[0], max_kb=doc_kb)
+
+    # ---- write (locked): routing + chunks + vectors ------------------------
     with LOCK:
         db = _connect()
         try:
             fts = _init(db)
             notebook_auto_flag = (notebook == "auto")
-            # JAG-431r6: an explicit session forces a phantom-notebook scope.
             sess_nb = _session_notebook(db, session_id)
             if sess_nb:
                 notebook = sess_nb
                 notebook_auto_flag = False
             if notebook_auto_flag:
-                notebook = DEFAULT_ID  # placeholder; routed after we have a preview
+                notebook = DEFAULT_ID  # placeholder; routed below
             else:
-                notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
+                notebook = _resolve_id_db(db, notebook)   # JAG-427: name or id
             if not notebook_auto_flag and not _notebook_exists(db, notebook):
                 return {"ok": False, "error": "no such notebook: %s" % notebook}
+            if notebook_auto_flag:
+                preview = pieces[0]["text"] if pieces else prepared[0][1]
+                notebook, _nb_name, auto_routed = _route_notebook(
+                    db, preview[:_AUTO_PREVIEW_CHARS], base)
             sid = "src:" + uuid.uuid4().hex[:10]
-            cl = int(cfg.get("chunk_lines") or 60)
-            ov = int(cfg.get("overlap_lines") or 8)
-            if ref.startswith("http://") or ref.startswith("https://"):
-                try:
-                    text = fetch_text(ref)
-                except Exception as e:  # noqa: BLE001
-                    return {"ok": False, "error": "fetch failed: %s" % e, "ref": ref}
-                if notebook_auto_flag:
-                    nb_id, nb_name, auto_routed = _route_notebook(
-                        db, (text or "")[:_AUTO_PREVIEW_CHARS], ref)
-                    notebook = nb_id
-                n = _ingest(db, sid, notebook, "url", ref, ref, _chunk.chunk_doc(text, cl, ov),
-                            "markdown", ref, cfg, fts)
-                kind = "url"
+            if pieces is not None:
+                n = _ingest(db, sid, notebook, kind, ref, ref, pieces,
+                            "markdown", ref, cfg, fts, meta=url_info)
             else:
-                ap = os.path.realpath(os.path.expanduser(ref))
-                if not os.path.exists(ap):
-                    return {"ok": False, "error": "path not found: %s" % ref, "ref": ref}
-                if os.path.isdir(ap):
-                    targets = [abs_ for _rel, abs_, _l, _k in _chunk.walk(ap, cfg)]
-                    base = os.path.basename(ap) or ap
-                else:
-                    lang0, _kind0 = _chunk.lang_for(ap)
-                    targets = [ap] if lang0 else []
-                    base = os.path.basename(ap)
-                if notebook_auto_flag and targets:
-                    preview, extract_diag = _preview_for_path(targets[0])
-                    nb_id, nb_name, auto_routed = _route_notebook(
-                        db, preview, base)
-                    notebook = nb_id
-                elif notebook_auto_flag:
-                    nb_id, nb_name, auto_routed = _route_notebook(db, "", base)
-                    notebook = nb_id
                 n = 0
-                for fp in targets:
-                    text = _chunk.read_text(fp, cfg.get("max_file_kb") or 512)
-                    if text is None:
-                        continue
-                    lang, knd = _chunk.lang_for(fp)
-                    n += _insert_chunks(db, sid, fp, lang or "text", knd or "doc",
-                                        _chunk.chunk_file(text, lang or "text", knd or "doc", cfg), fts)
-                db.execute("INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, added, chunks) "
-                           "VALUES(?,?,?,?,?,?,?)",
-                           (sid, notebook, "path", ref, base, time.time(), n))
-                kind = "path"
+                for fp, text, lang, knd in prepared:
+                    n += _insert_chunks(db, sid, fp, lang, knd,
+                                        _chunk.chunk_file(text, lang, knd, cfg), fts)
+                db.execute(
+                    "INSERT OR REPLACE INTO sources(id, notebook, kind, ref, title, "
+                    "added, chunks, content_type, final_url, snapshot) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (sid, notebook, kind, ref, base, time.time(), n, None, None, None))
+            # Commit the chunks BEFORE embedding: a large book spends minutes in
+            # the embedding API, and an open write transaction (plus the global
+            # lock) made the whole KB unavailable and the source invisible.
+            db.commit()
             em = _cfg.embed_model()
             embed_err = None
             if em and n:
-                # JAG-403j: a failing embedder must never break the ingest — the
-                # source is still indexed (bm25) even if the vectors cannot be built.
-                # JAG-403k: the failure is REPORTED back in the result, not swallowed.
+                # JAG-403j/k: a failing embedder never breaks the ingest (bm25
+                # still works) and the failure is REPORTED in the result.
                 try:
                     rows = [(r["id"], r["text"]) for r in db.execute(
                         "SELECT id, text FROM chunks WHERE source=? AND vec IS NULL", (sid,))]
@@ -502,18 +549,21 @@ def add_source(notebook, ref, session_id=None):
             embedded = db.execute("SELECT count(*) c FROM chunks WHERE source=? AND vec IS NOT NULL",
                                   (sid,)).fetchone()["c"]
             if em and n and embedded == 0 and not embed_err:
-                # the embedder ran but stored nothing (endpoint/key/model unavailable) —
-                # surface it instead of silently shipping a lexical-only source.
                 embed_err = "embedding produced no vectors (endpoint, key or model unavailable)"
             nb_row = db.execute("SELECT name FROM notebooks WHERE id=?", (notebook,)).fetchone()
             result = {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
                       "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
-                      "title": ref if kind == "url" else base,
+                      "title": ref if pieces is not None else base,
                       "notebook_auto": bool(auto_routed or notebook_auto_flag),
-                      "notebook_name": nb_row["name"] if nb_row else ""}
+                      "notebook_name": nb_row["name"] if nb_row else "",
+                      "content_type": (url_info or {}).get("content_type"),
+                      "final_url": (url_info or {}).get("final_url"),
+                      "snapshot": (url_info or {}).get("snapshot"),
+                      "engine": (extract_diag or {}).get("engine")}
             if extract_diag is not None:
-                result["extract_diagnostic"] = extract_diag
+                result["extract_diagnostic"] = _diag_meta(extract_diag)
                 result["recommend_visual"] = bool(extract_diag.get("recommend_visual"))
+                result["text_quality"] = extract_diag.get("quality")
             return result
         finally:
             db.close()
@@ -654,7 +704,11 @@ def list_sources(notebook=None):
         else:
             rows = db.execute("SELECT * FROM sources ORDER BY added DESC").fetchall()
         return [{"id": r["id"], "notebook": r["notebook"], "kind": r["kind"], "ref": r["ref"],
-                 "title": r["title"], "added": r["added"], "chunks": r["chunks"]} for r in rows]
+                 "title": r["title"], "added": r["added"], "chunks": r["chunks"],
+                 "content_type": r["content_type"] if "content_type" in r.keys() else None,
+                 "final_url": r["final_url"] if "final_url" in r.keys() else None,
+                 "snapshot": r["snapshot"] if "snapshot" in r.keys() else None}
+                for r in rows]
     finally:
         db.close()
 
@@ -669,6 +723,29 @@ def remove_source(sid):
             return {"ok": True, "removed": sid}
         finally:
             db.close()
+
+
+def _diag_meta(d):
+    """The extract diagnostic WITHOUT its full text (it is already chunked)."""
+    if not isinstance(d, dict):
+        return d
+    return {k: v for k, v in d.items() if k != "text"}
+
+
+def _rows_by_ids(db, ids, kind=None):
+    """Full result rows for the SEMANTIC-only hits (same shape as the lexical one)."""
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
+           "s.notebook AS notebook, s.ref AS ref, s.title AS title, 0 AS rank, "
+           "substr(c.text,1,160) AS snip FROM chunks c JOIN sources s ON s.id=c.source "
+           "WHERE c.id IN (%s)" % marks)
+    args = list(ids)
+    if kind:
+        sql += " AND c.kind = ?"
+        args.append(kind)
+    return [dict(r) for r in db.execute(sql, args)]
 
 
 # --------------------------------------------------------------------- search --
@@ -729,6 +806,11 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
         # global notebook is unaffected.
         if not notebook:
             scope += " AND s.notebook IN (SELECT id FROM notebooks WHERE IFNULL(is_session,0) = 0)"
+        # JAG-490: the query vector is computed BEFORE the lexical branch so a
+        # paraphrase / cross-language query with zero keyword overlap still finds
+        # its chunks. It used to re-rank only the bm25 hits, i.e. nothing.
+        ref = embed_model if embed_model is not None else _cfg.embed_model()
+        qv = _embed_texts_query(ref, query) if ref else None
         if terms and _has_fts(db):
             fts_q = _sqlkit.fts_match(terms)
             sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
@@ -758,14 +840,18 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
             sql += " LIMIT ?"
             args.append(max(k * 5, 30))
             rows = [dict(r) for r in db.execute(sql, args)]
-        else:
+        elif not qv:
             return out
-        ref = embed_model if embed_model is not None else _cfg.embed_model()
-        if ref and rows:
-            # JAG-483: the query vector, the candidate vectors and the RRF fusion are
-            # the SAME mechanic the codebase index runs — see memory/vectors.py.
-            qv = _embed_texts_query(ref, query)
-            if qv and _vec.fuse_rrf(rows, _vec.vecs_for(db, [x["id"] for x in rows]), qv):
+        if qv:
+            sem_ids, _cand = _vec.semantic_hits(
+                db, qv, scope, [notebook] if notebook else [],
+                limit=max(k * 3, 20))
+            have = {r["id"] for r in rows}
+            extra = [i for i in sem_ids if i not in have][:max(k * 3, 20)]
+            if extra:
+                rows += _rows_by_ids(db, extra, kind=kind)
+            cand = _vec.vecs_for(db, [r["id"] for r in rows])
+            if cand and _vec.fuse_rrf(rows, cand, qv):
                 out["mode"] = "hybrid"
         for r in rows[:k]:
             score = r.get("rrf")

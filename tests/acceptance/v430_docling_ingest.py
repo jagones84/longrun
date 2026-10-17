@@ -57,8 +57,10 @@ check("3d docling result is tagged as the engine 'docling'",
       '"docling"' in ex, "")
 
 # --- 4: graceful degradation ------------------------------------------------
-check("4a images without docling return an actionable reason",
-      "install docling" in DOCIO, "")
+# JAG-490: images no longer depend on docling alone (plain OCR runs too); when
+# neither OCR text nor a caption exists the reason names the real remedy.
+check("4a an unreadable image returns an actionable reason",
+      "image_caption_model" in DOCIO and "no text (image" in DOCIO, "")
 
 # --- 5: it is a declared (optional) dependency ------------------------------
 check("5 requirements.txt pins docling", "docling>=" in REQS, "")

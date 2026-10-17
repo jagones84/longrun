@@ -479,12 +479,36 @@ def ref_of(provider, model_id):
 # ------------------------------------------------- remote model metadata ------
 
 _OPENROUTER_CTX = {"ts": None, "map": None, "lock": threading.Lock()}
+_OPENROUTER_MODAL = {}   # model_id -> [input modalities] from the live vendor list
+_OPENROUTER_FAIL_TS = [0.0]   # last failed fetch (avoid retrying on every turn)
 _CTX_TTL = 6 * 3600
 
 
+def _normalise_modalities(raw):
+    """Flatten OpenRouter's two modality spellings into a lowercase list.
+
+    The live API exposes `architecture.input_modalities: ["text", "image"]`;
+    older responses only carry `modality: "text+image->text"`. Both are read so
+    a capability check never depends on one shape.
+    """
+    out = []
+    if isinstance(raw, list):
+        out = [str(x).lower() for x in raw]
+    elif isinstance(raw, str):
+        left = raw.split("->", 1)[0]
+        out = [x.strip().lower() for x in left.split("+") if x.strip()]
+    return out
+
+
 def _fetch_openrouter_contexts():
-    """One bounded fetch of OpenRouter's live model list → {id: context_length}."""
+    """One bounded fetch of OpenRouter's live model list.
+
+    Returns {id: context_length} and, as a side effect, caches each model's
+    `input_modalities` in `_OPENROUTER_MODAL` so a cloud vision model can be
+    detected from live vendor data instead of a hand-maintained flag.
+    """
     m = {}
+    modal = {}
     try:
         import urllib.request
         req = urllib.request.Request("https://openrouter.ai/api/v1/models",
@@ -495,10 +519,44 @@ def _fetch_openrouter_contexts():
             cid, cl = d.get("id"), d.get("context_length")
             if cid and cl:
                 m[cid] = int(cl)
+            if not cid:
+                continue
+            arch = d.get("architecture") or {}
+            mods = _normalise_modalities(arch.get("input_modalities")
+                                         or d.get("modality"))
+            if mods:
+                modal[cid] = mods
     except Exception:  # noqa: BLE001 — metadata is best-effort, never fatal
+        _OPENROUTER_FAIL_TS[0] = time.time()
         m = _OPENROUTER_CTX["map"] or {}
+        return m
+    _OPENROUTER_MODAL.update(modal)
     _OPENROUTER_CTX.update(ts=time.time(), map=m)
     return m
+
+
+def openrouter_vision(mid):
+    """True when OpenRouter lists `mid` with an image input modality.
+
+    Uses the cached vendor metadata (fetched by `openrouter_contexts`/`warm`);
+    on a cold cache one bounded fetch is made. Unknown models stay text-only.
+    """
+    if not mid:
+        return False
+    if not _OPENROUTER_MODAL or _OPENROUTER_CTX["map"] is None:
+        if (time.time() - _OPENROUTER_FAIL_TS[0]) < 300:
+            return False        # vendor list unreachable — stay conservative
+        with _OPENROUTER_CTX["lock"]:
+            if not _OPENROUTER_MODAL or _OPENROUTER_CTX["map"] is None:
+                _fetch_openrouter_contexts()
+    mods = _OPENROUTER_MODAL.get(mid)
+    if mods is None:
+        low = str(mid).lower()
+        for k, v in _OPENROUTER_MODAL.items():
+            if k.lower() == low:
+                mods = v
+                break
+    return "image" in (mods or [])
 
 
 def openrouter_contexts(block=True):
