@@ -32,6 +32,7 @@ import threading
 import time
 import uuid
 
+from longrun.core.sse import sse_tail
 from longrun.tools import registry
 from longrun.util.fswrite import write_json
 
@@ -232,7 +233,8 @@ def _notify(entry):
 def watch_gen(since_version=0):
     """SSE generator for blackboard watchers.
 
-    Yields backlog from version N, then live updates.
+    Yields backlog from version N, then live updates (shared tail skeleton: see
+    ``core.sse.sse_tail``).
     """
     q = queue.Queue()
     with _lock:
@@ -240,17 +242,7 @@ def watch_gen(since_version=0):
     try:
         with _lock:
             backlog = [e for e in _entries if e.get("version", 0) > since_version]
-        if backlog:
-            yield "event: backlog\ndata: %s\n\n" % json.dumps(backlog, ensure_ascii=False)
-        yield ": blackboard watch open\n\n"
-        idle = 0
-        while idle < 600:
-            try:
-                yield q.get(timeout=1)
-                idle = 0
-            except queue.Empty:
-                idle += 1
-                yield ": ping\n\n"
+        yield from sse_tail(q, backlog, ": blackboard watch open\n\n")
     finally:
         with _lock:
             _watchers.discard(q)

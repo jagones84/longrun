@@ -91,3 +91,41 @@ def cos(a, b):
     if na <= 0 or nb <= 0:
         return 0.0
     return dot / ((na ** 0.5) * (nb ** 0.5))
+
+
+def query_vector(ref, query):
+    """The FIRST embedding vector for ``query``, or None (JAG-462).
+
+    ``embed.embed_texts`` returns the TUPLE ``(vecs, usage)``. Handing ``vecs``
+    itself to ``cos()`` compared a length-mismatched list and silently degraded
+    hybrid search to lexical-only, so the caller must get a flat float vector.
+    """
+    out = embed.embed_texts([query], model=ref)
+    vecs = out[0] if out else None
+    return (vecs[0] if vecs else None)
+
+
+def vecs_for(db, ids):
+    """``{chunk id: vector}`` for those of ``ids`` that already carry one."""
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    return {row["id"]: blob_vec(row["vec"]) for row in db.execute(
+        "SELECT id, vec FROM chunks WHERE id IN (%s) AND vec IS NOT NULL" % marks, list(ids))}
+
+
+def fuse_rrf(rows, cand, qv, k=60):
+    """Reciprocal Rank Fusion of the lexical order and the semantic ranks, in place.
+
+    ``rows`` are the lexical hits in rank order; ``cand`` maps chunk id -> vector.
+    Adds ``rrf`` to every row and re-sorts by it. Returns True when it ran.
+    """
+    if not cand:
+        return False
+    lex = {r["id"]: i for i, r in enumerate(rows)}
+    sem = sorted(((cos(qv, v), cid) for cid, v in cand.items()), reverse=True)
+    sem_rank = {cid: i for i, (_, cid) in enumerate(sem)}
+    for r in rows:
+        r["rrf"] = 1.0 / (k + lex[r["id"]]) + 1.0 / (k + sem_rank.get(r["id"], 10 ** 6))
+    rows.sort(key=lambda r: -r["rrf"])
+    return True

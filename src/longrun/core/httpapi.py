@@ -51,7 +51,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      publish, push_abort, push_steer, query_events,
                      reconcile_agent_models, reconcile_orphan_turns, router_models,
                      runs_summary, save_session, save_tasks, self_knowledge,
-                     selfcheck_payload, session_mark, sse_pump, sse_response,
+                     selfcheck_payload, session_mark, sse_pump, sse_response, sse_tail,
                      start_run_graph, state_block, stream_with_fallback, system_prompt,
                      turn_begin, turn_end, voice_status, voice_stt, voice_tts)
 from longrun.orbit.api import WEB as ORBIT_WEB
@@ -417,18 +417,7 @@ def feed_gen(since=0):
     with _sse_lock:
         _sse_queues.add(q)
     try:
-        backlog = events_since(since, limit=FEED_REPLAY_MAX)
-        if backlog:
-            yield "event: backlog\ndata: %s\n\n" % json.dumps(backlog, ensure_ascii=False)
-        yield ": feed open\n\n"
-        idle = 0
-        while idle < 600:  # ~10 min max per connection
-            try:
-                yield q.get(timeout=1)
-                idle = 0
-            except queue.Empty:
-                idle += 1
-                yield ": ping\n\n"
+        yield from sse_tail(q, events_since(since, limit=FEED_REPLAY_MAX), ": feed open\n\n")
     finally:
         with _sse_lock:
             _sse_queues.discard(q)

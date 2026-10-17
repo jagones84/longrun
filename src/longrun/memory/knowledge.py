@@ -22,6 +22,7 @@ import uuid
 from longrun.memory import chunk as _chunk
 from longrun.memory import docio as _docio
 from longrun.memory import indexcfg as _cfg
+from longrun.memory import sqlkit as _sqlkit
 from longrun.memory import vectors as _vec
 from longrun.util import paths
 
@@ -50,8 +51,7 @@ def db_path():
 
 def _connect():
     """Open the knowledge DB with the shared opener (JAG-483)."""
-    from longrun.memory import sqlkit
-    return sqlkit.connect(db_path())
+    return _sqlkit.connect(db_path())
 
 
 def _init(db):
@@ -98,29 +98,13 @@ def _init(db):
 
 
 def _has_fts(db):
-    try:
-        return bool(db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'").fetchone())
-    except Exception:  # noqa: BLE001
-        return False
+    """True when this DB carries the FTS5 shadow (shared with the codebase index)."""
+    return _sqlkit.has_fts(db)
 
 
 def _insert_chunks(db, sid, path, lang, kind, pieces, fts):
-    n = 0
-    for p in pieces or []:
-        text = p.get("text") or ""
-        if not text.strip():
-            continue
-        cur = db.execute(
-            "INSERT INTO chunks(source, path, lang, kind, name, start, end, tokens, text) "
-            "VALUES(?,?,?,?,?,?,?,?,?)",
-            (sid, path, lang, kind, p.get("name") or "", int(p.get("start") or 0),
-             int(p.get("end") or 0), max(1, len(text) // 4), text))
-        if fts:
-            db.execute("INSERT INTO chunks_fts(rowid, text, name, path) VALUES(?,?,?,?)",
-                       (cur.lastrowid, text, p.get("name") or "", path))
-        n += 1
-    return n
+    """Insert a source's chunks (``source`` = ``sid``); returns how many landed."""
+    return len(_sqlkit.insert_chunks(db, pieces, path, lang, kind, fts, source=sid))
 
 
 def _drop_source(db, sid):
@@ -736,7 +720,7 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
             notebook = _session_notebook(db, session, create=False)
         if notebook:
             notebook = _resolve_id_db(db, notebook)   # JAG-427: accept a name or an id
-        terms = re.findall(r"[A-Za-z0-9_]{2,}", query)
+        terms = _sqlkit.terms(query)
         rows = []
         scope = " AND s.notebook = ?" if notebook else ""
         # JAG-431r6b: a GLOBAL search (no session / notebook scope) must not
@@ -746,7 +730,7 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
         if not notebook:
             scope += " AND s.notebook IN (SELECT id FROM notebooks WHERE IFNULL(is_session,0) = 0)"
         if terms and _has_fts(db):
-            fts_q = " OR ".join('"%s"' % t for t in terms)
+            fts_q = _sqlkit.fts_match(terms)
             sql = ("SELECT c.id, c.source, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
                    "s.notebook AS notebook, s.ref AS ref, s.title AS title, "
                    "bm25(chunks_fts, 1.0, 3.0, 2.0) AS rank, "
@@ -778,24 +762,11 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
             return out
         ref = embed_model if embed_model is not None else _cfg.embed_model()
         if ref and rows:
+            # JAG-483: the query vector, the candidate vectors and the RRF fusion are
+            # the SAME mechanic the codebase index runs — see memory/vectors.py.
             qv = _embed_texts_query(ref, query)
-            if qv:
-                marks = ",".join("?" * len(rows))
-                # JAG-403k: `row` (not `r`) — `r` is a function-local from the
-                # `for r in rows[:k]` loop below, so using it here raised
-                # UnboundLocalError the first time the hybrid path actually ran.
-                cand = {row["id"]: _vec.blob_vec(row["vec"]) for row in db.execute(
-                    "SELECT id, vec FROM chunks WHERE id IN (%s) AND vec IS NOT NULL" % marks,
-                    [x["id"] for x in rows])}
-                if cand:
-                    K = 60
-                    lex = {r["id"]: i for i, r in enumerate(rows)}
-                    sem = sorted(((_vec.cos(qv, v), cid) for cid, v in cand.items()), reverse=True)
-                    sem_rank = {cid: i for i, (_, cid) in enumerate(sem)}
-                    for r in rows:
-                        r["rrf"] = 1.0 / (K + lex[r["id"]]) + 1.0 / (K + sem_rank.get(r["id"], 10 ** 6))
-                    rows.sort(key=lambda r: -r["rrf"])
-                    out["mode"] = "hybrid"
+            if qv and _vec.fuse_rrf(rows, _vec.vecs_for(db, [x["id"] for x in rows]), qv):
+                out["mode"] = "hybrid"
         for r in rows[:k]:
             score = r.get("rrf")
             out["results"].append({
@@ -811,13 +782,8 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
 
 
 def _embed_texts_query(ref, query):
-    from longrun.model import embed
-    # JAG-462: `embed.embed_texts` returns the TUPLE (vecs, usage). Returning `vs[0]`
-    # handed the caller the whole vecs LIST (`[[...]]`), so `vectors.cos(query, doc)`
-    # always saw a length mismatch and returned 0.0 — hybrid/semantic search silently
-    # degraded to lexical-only. Return the FIRST float vector.
-    vecs, _usage = embed.embed_texts([query], model=ref)
-    return vecs[0] if vecs else None
+    """The query's flat float vector, or None (JAG-462; shared with the codebase index)."""
+    return _vec.query_vector(ref, query)
 
 
 # ------------------------------------------------------------------- discover --
@@ -896,13 +862,8 @@ def clear():
     with LOCK:
         db = _connect()
         try:
-            for t in ("chunks", "chunks_fts", "sources", "notebooks", "meta"):
-                try:
-                    db.execute("DROP TABLE IF EXISTS %s" % t)
-                except sqlite3.OperationalError:
-                    pass
-            db.commit()
-            _init(db)
+            _sqlkit.reset_tables(
+                db, ("chunks", "chunks_fts", "sources", "notebooks", "meta"), _init)
             return {"ok": True}
         finally:
             db.close()

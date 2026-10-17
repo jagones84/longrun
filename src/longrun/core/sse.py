@@ -116,6 +116,30 @@ def sse_pump(q, worker, open_comment=": stream open\n\n", terminal="done",
     yield "event: %s\ndata: {}\n\n" % terminal
 
 
+def sse_tail(q, backlog=None, open_comment=": tail open\n\n", idle_limit=600):
+    """Drain a LOOPBACK tail queue into SSE frames, then stop (JAG-483).
+
+    The durable feed (``/api/feed``) and the blackboard watcher are the two
+    streams that stay open on purpose: replay their backlog once, then forward
+    whatever the producer pushes, emitting a ``: ping`` comment on every silent
+    second and giving up after ``idle_limit`` consecutive silent ones.
+
+    Only the tail skeleton is shared — each caller keeps its own backlog source,
+    registration set and open comment.
+    """
+    if backlog:
+        yield "event: backlog\ndata: %s\n\n" % json.dumps(backlog, ensure_ascii=False)
+    yield open_comment
+    idle = 0
+    while idle < idle_limit:
+        try:
+            yield q.get(timeout=1)
+            idle = 0
+        except queue.Empty:
+            idle += 1
+            yield ": ping\n\n"
+
+
 class ThinkCoalescer:
     """JAG-265: coalesce per-token chain-of-thought deltas into bounded flushes.
 

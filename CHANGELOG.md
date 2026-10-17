@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **De-duplication pass, phase 2: the INDEX and SSE machines now have ONE implementation too (JAG-483).**
+  The per-workspace codebase index and the global knowledge base run the same machinery over two different
+  schemas, and that machinery lived twice. Consolidated: FTS5 detection (`sqlkit.has_fts`), the lexical query
+  splitter + `MATCH` expression (`sqlkit.terms` / `sqlkit.fts_match`), the chunk + FTS-shadow insert loop
+  (`sqlkit.insert_chunks`, `source=None` for the codebase index), the drop-and-rebuild used by `clear()`
+  (`sqlkit.reset_tables`), and the whole hybrid retrieval tail — the flat query vector
+  (`vectors.query_vector`, which also removes the accidental `qv[0]` the codebase index relied on), the
+  candidate-vector fetch (`vectors.vecs_for`) and the Reciprocal Rank Fusion (`vectors.fuse_rrf`). The two
+  SSE loopback tails (`/api/feed` and the blackboard watcher) now share one skeleton, `core.sse.sse_tail`;
+  only the backlog source, the registration set and the open comment stay per-caller. `_embed_texts_query`
+  and the private aliases stay as thin wrappers. Verified: FULL battery 199/199 GREEN plus 18 deterministic
+  live checks on both stores (hybrid RRF in both, insert/FTS counts, `clear()` rebuilds) and 12 on the SSE
+  tails (backlog frame, forwarded item, idle ping, queue release) — no residual queues or watchers.
 - **De-duplication pass: every mechanical helper now has ONE implementation (JAG-483).** A codebase-wide
   scan (AST function clustering for Python, block windows for JS) found the same small primitives
   re-implemented and quietly drifted: the `int` coercion (5 copies, two different failure defaults), the

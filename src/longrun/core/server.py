@@ -48,7 +48,7 @@ from longrun.core.events import (DB_PATH, EVENTS_KEEP, MAX_FEED_EVENTS, PRUNE_BA
                      _start_event_pruning, _turn_lock, turn_begin, turn_end)
 from longrun.model.keys import ENV_FILE, KNOWN_ENV_KEYS, keys_status, reveal_key, set_key
 from longrun.core.sse import (CHAT_THINK_FLUSH_S, CHAT_THINK_LIVE_CAP, ThinkCoalescer,
-                  sse_response, sse_pump)
+                  sse_response, sse_pump, sse_tail)
 from longrun.util.steering import (ABORT_INBOX, STEER_INBOX, _abort_lock, _is_aborted,
                        _steer_lock, clear_abort, drain_steer, has_steer, push_abort,
                        push_steer)

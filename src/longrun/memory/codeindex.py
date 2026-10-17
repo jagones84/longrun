@@ -8,15 +8,14 @@ and make retrieval hybrid (bm25 + cosine fused with RRF).
 """
 import hashlib
 import os
-import re
 import sqlite3
 import threading
 import time
 
 from longrun.memory import chunk as _chunk
 from longrun.memory import indexcfg as _cfg
+from longrun.memory import sqlkit as _sqlkit
 from longrun.memory import vectors as _vec
-from longrun.model import embed as _embed
 from longrun.util import paths
 
 LOCK = threading.RLock()
@@ -36,8 +35,7 @@ def db_path(ws):
 
 def _connect(ws):
     """Open this workspace's index DB with the shared opener (JAG-483)."""
-    from longrun.memory import sqlkit
-    return sqlkit.connect(db_path(ws))
+    return _sqlkit.connect(db_path(ws))
 
 
 def _init(db):
@@ -61,11 +59,8 @@ def _init(db):
 
 
 def _has_fts(db):
-    try:
-        row = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'").fetchone()
-        return bool(row)
-    except Exception:  # noqa: BLE001
-        return False
+    """True when this workspace DB carries the FTS5 shadow (shared with the KB)."""
+    return _sqlkit.has_fts(db)
 
 
 def _set_meta(db, pairs):
@@ -93,21 +88,8 @@ def _drop_path(db, path):
 
 
 def _insert_chunks(db, path, lang, kind, pieces, fts):
-    ids = []
-    for p in pieces or []:
-        text = p.get("text") or ""
-        if not text.strip():
-            continue
-        cur = db.execute(
-            "INSERT INTO chunks(path, lang, kind, name, start, end, tokens, text) VALUES(?,?,?,?,?,?,?,?)",
-            (path, lang, kind, p.get("name") or "", int(p.get("start") or 0),
-             int(p.get("end") or 0), max(1, len(text) // 4), text))
-        cid = cur.lastrowid
-        if fts:
-            db.execute("INSERT INTO chunks_fts(rowid, text, name, path) VALUES(?,?,?,?)",
-                       (cid, text, p.get("name") or "", path))
-        ids.append(cid)
-    return ids
+    """Insert this file's chunks; returns the new row ids (shared with the KB)."""
+    return _sqlkit.insert_chunks(db, pieces, path, lang, kind, fts)
 
 
 def build(ws, force=False):
@@ -165,11 +147,8 @@ def build(ws, force=False):
             db.close()
 
 
-_vec_blob = _vec.vec_blob
-_blob_vec = _vec.blob_vec
 _dim = _vec.dim
 _embed_chunks = _vec.embed_chunks
-_cos = _vec.cos
 
 
 def ensure_fresh(ws):
@@ -210,10 +189,10 @@ def search(ws, query, k=8, kind=None, embed_model=None):
         _init(db)
         if not db.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
             return out
-        terms = re.findall(r"[A-Za-z0-9_]{2,}", query)
+        terms = _sqlkit.terms(query)
         rows = []
         if terms and _has_fts(db):
-            fts_q = " OR ".join('"%s"' % t for t in terms)
+            fts_q = _sqlkit.fts_match(terms)
             sql = ("SELECT c.id, c.path, c.lang, c.kind, c.name, c.start, c.end, c.text, "
                    "bm25(chunks_fts, 1.0, 3.0, 2.0) AS rank, "
                    "snippet(chunks_fts, 0, '\u00ab', '\u00bb', '\u2026', 14) AS snip "
@@ -241,25 +220,11 @@ def search(ws, query, k=8, kind=None, embed_model=None):
             return out
         ref = embed_model if embed_model is not None else _cfg.embed_model()
         if ref and rows:
-            qv_out = _embed.embed_texts([query], model=ref)
-            qv = qv_out[0] if qv_out else None
-            if qv:
-                marks = ",".join("?" * len(rows))
-                # JAG-403k: `row` (not `r`) — `r` is a function-local from the
-                # `for r in rows[:k]` loop below, so using it here raised
-                # UnboundLocalError the first time the hybrid path actually ran.
-                cand = {row["id"]: _blob_vec(row["vec"]) for row in db.execute(
-                    "SELECT id, vec FROM chunks WHERE id IN (%s) AND vec IS NOT NULL" % marks,
-                    [x["id"] for x in rows])}
-                if cand:
-                    K = 60
-                    lex = {r["id"]: i for i, r in enumerate(rows)}
-                    sem = sorted(((_cos(qv[0], v), cid) for cid, v in cand.items()), reverse=True)
-                    sem_rank = {cid: i for i, (_, cid) in enumerate(sem)}
-                    for r in rows:
-                        r["rrf"] = 1.0 / (K + lex[r["id"]]) + 1.0 / (K + sem_rank.get(r["id"], 10 ** 6))
-                    rows.sort(key=lambda r: -r["rrf"])
-                    out["mode"] = "hybrid"
+            # JAG-483: the query vector, the candidate vectors and the RRF fusion are
+            # the SAME mechanic the knowledge base runs — see memory/vectors.py.
+            qv = _vec.query_vector(ref, query)
+            if qv and _vec.fuse_rrf(rows, _vec.vecs_for(db, [x["id"] for x in rows]), qv):
+                out["mode"] = "hybrid"
         for r in rows[:k]:
             score = r.get("rrf")
             out["results"].append({
@@ -317,13 +282,7 @@ def clear(ws):
     with LOCK:
         db = _connect(ws)
         try:
-            for t in ("chunks", "chunks_fts", "files", "meta"):
-                try:
-                    db.execute("DROP TABLE IF EXISTS %s" % t)
-                except sqlite3.OperationalError:
-                    pass
-            db.commit()
-            _init(db)
+            _sqlkit.reset_tables(db, ("chunks", "chunks_fts", "files", "meta"), _init)
             return {"ok": True, "workspace": os.path.realpath(ws)}
         finally:
             db.close()
