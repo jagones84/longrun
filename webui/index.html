@@ -1660,6 +1660,22 @@
           <button class="ghost" data-call="saveSelfevolve" title="save the self-evolving settings">save selfevolve</button>
         </div>
       </div>
+      <div class="sw-cat" data-cat="config" hidden>
+        <h2>Config · every file in <code>config/</code> <span class="remaining">— edit, validate, save (hot reload)</span></h2>
+        <div class="card">
+          <div class="hrow">
+            <label title="A top-level YAML file under config/">file <select id="cfgFileName" onchange="loadConfigFile()"></select></label>
+            <button class="ghost" data-call="loadConfigFile" title="re-read the file from disk">↻ reload</button>
+            <button class="ghost" data-call="saveConfigFile" title="validate the YAML, back up the previous version and save">save</button>
+          </div>
+          <div class="remaining" id="cfgFileInfo">—</div>
+          <textarea id="cfgFileText" spellcheck="false" autocomplete="off" autocapitalize="off" style="width:100%;min-height:360px;margin-top:8px;font-size:12px;font-family:ui-monospace,monospace;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt);resize:vertical"></textarea>
+          <div class="remaining" id="cfgFileMsg"></div>
+        </div>
+        <div class="card">
+          <div class="remaining">The structured editors in Harness / Tools / Models / Subagents / MCP / Knowledge write their own files (or overlays) and stay the recommended path. This editor is the complete fallback: anything they do not cover (<code>decisions.yaml</code>, <code>hooks.yaml</code>, ...) is editable here. A save is rejected when the text is not valid YAML; the previous version is kept in <code>data/config-backups/</code>.</div>
+        </div>
+      </div>
       <div class="sw-cat" data-cat="tools" hidden>
         <h2>Tools &amp; approvals · what the agent can do, and when it must ask</h2>
         <div class="card" id="configPanel"><div class="remaining">loading…</div></div>
@@ -4871,6 +4887,53 @@ if ($("costRefresh")) $("costRefresh").onclick = async () => {
 /* JAG-487: the auto-compaction policy is live config (config/compaction.yaml, plus
    the WebUI overlay config/compaction.local.yaml). Show it in the Context panel and
    let the operator tune it there — the next turn picks it up, no restart. */
+/* JAG-488: the complete config/ editor. The structured panels (Harness, Tools,
+   Models, Subagents, MCP, Knowledge) cover the files they own; this one makes
+   EVERY top-level config/*.yaml readable and writable from the WebUI, with a
+   server-side YAML validation before the atomic write. */
+let _cfgFilesAt = 0;
+async function loadConfigFiles() {
+  try {
+    const r = await api("GET", "/api/config/files");
+    if (!r || !r.ok) return;
+    const sel = $("cfgFileName"); if (!sel) return;
+    const cur = sel.value;
+    const files = r.files || [];
+    sel.innerHTML = files.map(f => '<option value="' + esc(f.name) + '">' +
+      esc(f.name) + "  ·  " + f.bytes + " B</option>").join("");
+    if (cur && files.some(f => f.name === cur)) sel.value = cur;
+    else if (files.length) sel.value = files[0].name;
+    _cfgFilesAt = Date.now();
+    loadConfigFile();
+  } catch (e) { /* the panel is informational — never break the app */ }
+}
+async function loadConfigFile() {
+  const sel = $("cfgFileName"), ta = $("cfgFileText"), info = $("cfgFileInfo"), msg = $("cfgFileMsg");
+  if (!sel || !ta) return;
+  const name = sel.value;
+  if (!name) return;
+  if (msg) msg.textContent = "";
+  try {
+    const r = await api("GET", "/api/config/file?name=" + encodeURIComponent(name));
+    if (!r || !r.ok) { if (msg) msg.textContent = (r && r.error) || "cannot read"; return; }
+    ta.value = r.text;
+    if (info) info.textContent = name + " · " + r.text.length + " chars · modified " +
+      new Date((r.mtime || 0) * 1000).toLocaleString();
+  } catch (e) { if (msg) msg.textContent = String(e); }
+}
+async function saveConfigFile() {
+  const sel = $("cfgFileName"), ta = $("cfgFileText"), msg = $("cfgFileMsg");
+  if (!sel || !ta) return;
+  if (msg) msg.textContent = "saving…";
+  try {
+    const r = await api("POST", "/api/config/file", { name: sel.value, text: ta.value });
+    if (!r || !r.ok) { if (msg) msg.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    if (msg) msg.textContent = "saved " + r.name + " (" + r.bytes + " B) — reloaded: " +
+      ((r.reloaded || []).join(", ") || "no owning module (read per call)");
+    toast("config saved: " + r.name, "ok");
+    loadConfigFile();
+  } catch (e) { if (msg) msg.textContent = String(e); }
+}
 let _policyLoadedAt = 0;
 async function loadCompactionPolicy(force) {
   if (!force && Date.now() - _policyLoadedAt < 15000) return;
@@ -6359,8 +6422,31 @@ function renderTools(el, d) {
          </div>`;
        }).join("")}
      </div>`;
+  // JAG-488: the sandbox block was read-only (the topbar pill) — no way to switch
+  // the backend, the image or the limits from the WebUI. Now it is editable here.
+  const sbc = (d && d.sandbox_config) || {};
+  const probe = (d && d.sandbox) || {};
+  const avail = probe.available || {};
+  const availTxt = Object.keys(avail).map(k => k + ": " + (avail[k].ok ? "ok" : "no (" + avail[k].detail + ")")).join(" · ");
+  const sbOpts = ["auto", "docker", "bwrap", "nsjail", "none"].map(v =>
+    '<option value="' + v + '"' + ((sbc.backend || "none") === v ? " selected" : "") + ">" + v + "</option>").join("");
+  const sbCard =
+    `<div class="card" style="margin-bottom:10px">
+       <div style="font-weight:600;margin-bottom:6px">🧱 Sandbox · isolation for shell / python</div>
+       <div class="remaining" style="margin-bottom:8px">Now: <b>${esc(probe.backend || "?")}</b>${probe.isolated ? " (isolated)" : " (host execution)"} · requested <b>${esc(probe.requested || "?")}</b>. <b>auto</b> picks the first working of docker → bwrap → nsjail; <b>none</b> runs on the host (still approval-gated and deny-listed).${probe.error ? '<br><span style="color:var(--err)">' + esc(probe.error) + "</span>" : ""}${availTxt ? "<br>" + esc(availTxt) : ""}</div>
+       <div class="hrow">
+         <label title="Which isolation backend to use">backend <select id="sbxBackend">${sbOpts}</select></label>
+         <label title="Container image for the docker backend">image <input id="sbxImage" type="text" value="${esc(sbc.image || "alpine:latest")}"></label>
+         <label title="Give the docker container the host network">network <input id="sbxNetwork" type="checkbox"${sbc.network ? " checked" : ""}></label>
+         <label title="Per-command wall clock">timeout (s) <input id="sbxTimeout" type="number" min="1" value="${Number(sbc.timeout_secs || 900)}"></label>
+         <label title="Container memory cap">memory (MB) <input id="sbxMem" type="number" min="16" value="${Number(sbc.memory_mb || 256)}"></label>
+         <label title="Mount point for the per-run scratch dir, relative to the repo">workspace <input id="sbxWorkspace" type="text" value="${esc(sbc.workspace || "data/sandbox")}"></label>
+       </div>
+       <button class="ghost" id="sbxSave" title="save the sandbox settings and re-probe">save sandbox</button>
+       <div class="remaining" id="sbxMsg"></div>
+     </div>`;
   const _onN = tools.filter(t => t.enabled !== false).length;
-  el.innerHTML = policyCard + kindsCard +
+  el.innerHTML = policyCard + kindsCard + sbCard +
     '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
       '<span class="remaining" style="flex:1">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b></span>' +
       '<span class="remaining">' + _onN + "/" + tools.length + " enabled</span>" +
@@ -6412,6 +6498,26 @@ function renderTools(el, d) {
       api("POST", "/api/tools", { approvals: { kinds: { [b.dataset.kind]: next } } })
         .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
     });
+  // JAG-488: save the sandbox block and re-probe (the pill updates on the next poll).
+  const sbSave = el.querySelector("#sbxSave");
+  if (sbSave) sbSave.onclick = async () => {
+    const val = id => { const n = el.querySelector(id); return n ? n.value : ""; };
+    const body = { sandbox: {
+      backend: val("#sbxBackend"), image: val("#sbxImage"),
+      network: !!(el.querySelector("#sbxNetwork") || {}).checked,
+      timeout_secs: parseInt(val("#sbxTimeout"), 10),
+      memory_mb: parseInt(val("#sbxMem"), 10),
+      workspace: val("#sbxWorkspace"),
+    } };
+    const m = el.querySelector("#sbxMsg");
+    const r = await api("POST", "/api/tools", body);
+    if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    const pr = r.probe || {};
+    if (m) m.textContent = pr.error ? ("saved, but: " + pr.error)
+      : ("saved — backend " + (pr.backend || "?") + (pr.isolated ? " (isolated)" : " (host)"));
+    const d2 = await api("GET", "/api/tools");
+    renderTools(el, d2);
+  };
 }
 
 function renderSelf(el, d) {
@@ -7186,7 +7292,7 @@ function skillsAutocomplete() {
 const SETTINGS_CATS = [
   ["appearance", "Appearance"], ["models", "Models"], ["subagents", "Subagents"], ["knowledge", "Knowledge"], ["keys", "Keys"],
   ["mcp", "MCP"], ["skills", "Skills"],
-  ["rules", "Rules"], ["harness", "Harness"], ["tools", "Tools & approvals"],
+  ["rules", "Rules"], ["harness", "Harness"], ["config", "Config files"], ["tools", "Tools & approvals"],
   ["improvement", "Improvement"], ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
@@ -7238,6 +7344,9 @@ function settingsCategory(name) {
   else if (name === "rules") { loadRules(); loadMemories(); }
   else if (name === "harness") {
     loadRuntime(); loadVerifier(); loadBestofn(); loadDifficulty(); loadSelfevolve(); loadReasoning();
+  }
+  else if (name === "config") {
+    if (typeof loadConfigFiles === "function") loadConfigFiles();
   }
   else if (name === "tools") {
     api("GET", "/api/tools").then(d => renderTools($("configPanel"), d)).catch(e => json_pre($("configPanel"), { error: String(e) }));

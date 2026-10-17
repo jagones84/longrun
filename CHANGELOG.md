@@ -7,6 +7,32 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **The whole `config/` store is editable from the WebUI (JAG-488).** A new **Settings ▸ Config files**
+  panel lists every top-level `config/*.yaml`, loads the real file into an editor and saves it through
+  `GET /api/config/files`, `GET/POST /api/config/file`. The server validates the YAML **before** the
+  atomic write (a parse error or a non-mapping top level leaves the file untouched), keeps the previous
+  version in `data/config-backups/`, refuses path traversal, and hot-reloads the owning module
+  (`tools`, `routing`, `compaction`, `hooks`, `providers`, `mcp_clients`, `subagents`). `decisions.yaml`
+  and `hooks.yaml` had no writer at all before this.
+- **The sandbox block is editable too (JAG-488).** `POST /api/tools` now accepts
+  `{"sandbox": {...}}` with validation (backend `auto|docker|bwrap|nsjail|none`, image, network,
+  timeout, memory, pids, cpus, workspace inside the repo), invalidates the probe cache and re-probes.
+  Settings ▸ Tools & approvals gained a Sandbox card showing the live probe and these fields; an
+  explicitly requested but unavailable backend is reported in the payload instead of returning a 500.
+- **Sandbox verified live, then restored (JAG-488).** On this DGX `docker` 29.6.2 works: with
+  `sandbox.backend: auto` the probe chose docker and a real `shell` call ran as `uid=65534(nobody)`
+  inside `alpine:latest` with only the workspace mounted at `/work`. `bwrap` is blocked by the kernel
+  (`loopback: Failed RTM.NEWADDR: Operation not permitted`) and `nsjail` is not installed. The shipped
+  value stays `none` on purpose (JAG-59: the DGX toolchain — JDK/Gradle/Android SDK — does not exist in
+  a bare alpine image); the pill now says so and the panel shows why.
+- **The three headline claims are pinned by a test (JAG-489).** `v489_description_claims` proves against
+  the real modules that (1) the compaction policy drives the live trigger and the observation budget is
+  bounded, (2) an oversized observation is offloaded verbatim to `data/offload/<session>/` while the
+  model receives a head+tail reference, (3) the verification gate rolls a write back when the verify
+  command fails and keeps it when green. It also locks the retraction of the discontinued SparkPulse
+  client (the live GitHub description already reads "AI agent harness with bounded context, a
+  verification gate, and tool-output offload"; no code claims the old client).
+
 - **The auto-compaction policy is editable from the WebUI (JAG-487).** The Context panel now shows the
   live `trigger %` / `target %` / `keep` values with a save button; `GET/POST /api/compaction/policy`
   reads and validates them. Saves go to `config/compaction.local.yaml` (same overlay convention as

@@ -878,8 +878,18 @@ def handle(handler, method, path, qs, body):
     if method == "GET":
         # v0.2 core GET routes
         if path == "/api/tools":
+            # JAG-488: an explicitly requested backend that is unavailable raises
+            # from probe() (never silently run on the host) — report it in the
+            # payload instead of failing the whole Settings panel with a 500.
+            try:
+                _probe = sandbox.probe(force=qs.get("probe") == "1")
+            except RuntimeError as _e:
+                _probe = {"requested": (registry.load_config().get("sandbox") or {}).get("backend"),
+                          "backend": "unavailable", "isolated": False,
+                          "error": str(_e), "available": {}}
             return _r(handler, 200, {"tools": registry.catalog(),
-                                     "sandbox": sandbox.probe(force=qs.get("probe") == "1"),
+                                     "sandbox": _probe,
+                                     "sandbox_config": registry.load_config().get("sandbox") or {},
                                      "policy": registry.load_config().get("approvals") or {},
                                      "runtime": registry.load_config().get("runtime") or {},
                                      "verifier": registry.load_config().get("verifier") or {},
@@ -895,6 +905,18 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, {"hooks": hooks.load(reload=qs.get("reload") == "1"),
                                      "events": list(hooks.EVENTS),
                                      "config": hooks.CONFIG})
+        # JAG-488: the WHOLE config/ YAML store is editable from the WebUI.
+        if path == "/api/config/files":
+            from longrun.core import configfiles
+            return _r(handler, 200, {"ok": True, "dir": configfiles.CONFIG_DIR,
+                                     "files": configfiles.list_files()})
+        if path == "/api/config/file":
+            from longrun.core import configfiles
+            try:
+                res = configfiles.read_file(qs.get("name"))
+            except ValueError as e:
+                return _r(handler, 400, {"ok": False, "error": str(e)})
+            return _r(handler, 200 if res.get("ok") else 404, res)
         if path == "/api/sandbox":
             return _r(handler, 200, sandbox.probe(force=qs.get("force") == "1"))
         if path == "/api/approvals":
@@ -1240,6 +1262,15 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, term_exec(body))
         if path == "/api/term/reset":  # JAG-281: kill the session's shell
             return _r(handler, 200, term_reset(body))
+        if path == "/api/config/file":
+            # JAG-488: validate + atomically write any config/*.yaml, then reload.
+            from longrun.core import configfiles
+            try:
+                res = configfiles.write_file(body.get("name"), body.get("text"))
+            except ValueError as e:
+                return _r(handler, 400, {"ok": False, "error": str(e)})
+            _publish("config.saved", name=body.get("name"), ok=bool(res.get("ok")))
+            return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/tools":
             return _r(handler, 200, update_policy(body))
         if path == "/api/tools/call":
@@ -1738,6 +1769,66 @@ def _update_policy(body):
         registry.load_config(reload=True)
         _publish("tools.update", reasoning=dict(r))
         return {"ok": True, "tools": registry.catalog(), "reasoning": dict(r)}
+    # JAG-488: the `sandbox` block was the ONLY part of config/tools.yaml with no
+    # writer — the topbar pill showed the state and nothing could change it.
+    if isinstance(body.get("sandbox"), dict):
+        sb = cfg.setdefault("sandbox", {})
+        src = body["sandbox"]
+        if "backend" in src:
+            v = str(src["backend"] or "").strip().lower()
+            if v not in ("auto", "docker", "bwrap", "nsjail", "none"):
+                return {"ok": False, "error":
+                        "sandbox.backend must be auto|docker|bwrap|nsjail|none"}
+            sb["backend"] = v
+        if "image" in src:
+            img = str(src["image"] or "").strip()
+            if not img or len(img) > 200 or any(c.isspace() for c in img):
+                return {"ok": False, "error": "sandbox.image must be an image reference"}
+            sb["image"] = img
+        if "network" in src:
+            sb["network"] = bool(src["network"])
+        for k, lo, hi in (("timeout_secs", 1, 86400), ("memory_mb", 16, 65536),
+                          ("pids_limit", 8, 65536)):
+            if src.get(k) is not None:
+                try:
+                    n = int(src[k])
+                except (TypeError, ValueError):
+                    return {"ok": False, "error": "sandbox.%s must be an integer" % k}
+                if n < lo or n > hi:
+                    return {"ok": False, "error":
+                            "sandbox.%s must be between %d and %d" % (k, lo, hi)}
+                sb[k] = n
+        if src.get("cpus") is not None:
+            try:
+                c = float(src["cpus"])
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "sandbox.cpus must be a number"}
+            if not (0 < c <= 64):
+                return {"ok": False, "error": "sandbox.cpus must be > 0 and <= 64"}
+            sb["cpus"] = str(c)
+        if "workspace" in src:
+            raw_ws = str(src["workspace"] or "").strip()
+            ws = raw_ws.rstrip("/")
+            # Check the ORIGINAL value: stripping the slash would turn an
+            # absolute "/etc" into the relative "etc" and let it through.
+            if (not ws or raw_ws.startswith(("/", "\\"))
+                    or ".." in ws.split("/")
+                    or (len(ws) > 1 and ws[1] == ":")):
+                return {"ok": False, "error":
+                        "sandbox.workspace must be a relative path inside the repo"}
+            sb["workspace"] = ws
+        registry.save_config(cfg)
+        registry.load_config(reload=True)
+        sandbox.invalidate_probe()
+        _publish("tools.update", sandbox=dict(sb))
+        # An EXPLICIT unavailable backend raises by design (never silently run on
+        # the host); report it instead of failing the save.
+        try:
+            probed = sandbox.probe(force=True)
+        except RuntimeError as e:
+            probed = {"error": str(e)}
+        return {"ok": True, "tools": registry.catalog(), "sandbox": dict(sb),
+                "probe": probed}
     # JAG-463: BULK policy — one request for the whole list (the Settings panel's
     # "enable all" / "disable all"). Applies to every tool the registry knows
     # (native + external MCP), so the operator does not have to click 48 rows.
