@@ -1447,21 +1447,23 @@ class JobsView {
     $("jobsCount").textContent = this.jobs.length ? (this.jobs.filter(j => j.status === "running").length + " running / " + this.jobs.length) : "—";
     $("jobs").innerHTML = this.jobs.map(j => {
       const subs = j.subjobs || {};
-      // JAG-322/335: the job's SUBJOBS (J8.1, J8.1.1 …) — who was assigned what,
-      // tracked and timed. Each row is INDENTED by its org depth and CLICKABLE to open
-      // the receiving agent's chat. The old flat per-agent `runs` list is GONE: only
-      // the JN.j indexes make sense (they ARE the structure), not one row per agent.
+      // JAG-322/335/484: the job's SUBJOBS (J8.1, J8.1.1 …) — who was assigned what,
+      // tracked and timed. Each row is INDENTED by its org depth and carries an
+      // explicit "↗ session" button that opens that agent's chat; the row itself is
+      // NOT a click target (that would duplicate the ORG chart's open). The old flat
+      // per-agent `runs` list is GONE: only the JN.j indexes make sense (they ARE the
+      // structure), not one row per agent.
       // JAG-326: natural order — a string sort would put J8.10 before J8.2.
       const _jn = s => { const m = String(s).match(/(\d+)$/); return m ? Number(m[1]) : 0; };
       const subHtml = Object.keys(subs).sort((a, b) => _jn(a) - _jn(b)).map(sid => {
         const s = subs[sid];
         const depth = Math.max(0, String(sid).split(".").length - 2);   // J8.1 -> 0, J8.1.2 -> 1
         const dur = (s.started && s.ended) ? (' · ' + Math.round(s.ended - s.started) + 's') : '';
-        return '<div class="runrow subjob" data-sub="' + esc(sid) + '" data-agent="' + esc(s.agent) +
-          '" title="open ' + esc(s.agent) + '\u2019s chat" style="padding-left:' + (12 + depth * 16) + 'px;cursor:pointer">' +
+        return '<div class="runrow subjob" data-sub="' + esc(sid) + '" style="padding-left:' + (12 + depth * 16) + 'px">' +
           '<span class="st">' + esc(s.id) + ' \u2192 ' + esc(s.agent) + '</span>' +
           '<span>' + esc(s.status || "pending") + dur + '</span>' +
-          '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(short(s.result || s.error || s.assignment || "", 70)) + '</span></div>';
+          '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(short(s.result || s.error || s.assignment || "", 70)) + '</span>' +
+          '<button class="btn mini ghost" data-go="' + esc(s.agent) + '" title="open ' + esc(s.agent) + '\u2019s session in the Sessions tab">\u2197 session</button></div>';
       }).join("");
       const runHtml = (this.open === j.id) ? subHtml : "";
       const canRun = (j.status !== "running" && j.status !== "blocked");
@@ -1481,9 +1483,15 @@ class JobsView {
       if (!r || r.ok === false){ alert((r && r.error) || "delete failed"); return; }
       if (this.onChanged) this.onChanged();
     }; });
-    // JAG-335: a subjob row opens the receiving agent's chat (hyper-link to the session).
-    $("jobs").querySelectorAll("[data-sub]").forEach(el => { el.onclick = (e) => { e.stopPropagation();
-      if (this.onOpenAgent) this.onOpenAgent(el.dataset.agent); }; });
+    // JAG-335 / JAG-484: a subjob row is NOT a second "open the agent" click (that
+    // is the ORG chart's job) — it only swallows the click so it cannot collapse the
+    // job. The explicit "\u2197 session" button on the right does the navigation and
+    // REUSES the deck's shared onOpenAgent callback (no duplicated open logic).
+    $("jobs").querySelectorAll("[data-sub]").forEach(el => {
+      el.onclick = (e) => e.stopPropagation(); });
+    $("jobs").querySelectorAll("[data-go]").forEach(b => {
+      b.onclick = (e) => { e.stopPropagation();
+        if (this.onOpenAgent) this.onOpenAgent(b.dataset.go); }; });
     $("jobs").querySelectorAll(".job").forEach(el => {
       // JAG-431r4: a double-click also fires two `click`s first, and the first
       // click's render() replaced #jobs.innerHTML — destroying the node the dblclick

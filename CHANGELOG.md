@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **A subjob row no longer re-implements the ORG chart's click (JAG-484).** In the Control deck's JOB panel,
+  single-clicking a subjob row (`J8.1 → A14`) opened that agent's chat — the *same* action the ORG chart
+  already performs. The row is now inert (its only job is to stop the click from collapsing the job) and
+  every subjob carries its own explicit `↗ session` button on the right, which reuses the deck's shared
+  `onOpenAgent` callback (`tac.gotoAgent` → `_deckGo(session)`) so exactly ONE open-session path remains.
+  Verified live on `/orbit` (job J16): the row emits no `data-agent`, the button is `btn mini ghost`, and
+  clicking it navigated the tab to `/?token=…&session=<sid>` — the Sessions app on that agent's session.
 - **De-duplication pass, phase 2: the INDEX and SSE machines now have ONE implementation too (JAG-483).**
   The per-workspace codebase index and the global knowledge base run the same machinery over two different
   schemas, and that machinery lived twice. Consolidated: FTS5 detection (`sqlkit.has_fts`), the lexical query
