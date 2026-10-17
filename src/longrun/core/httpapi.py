@@ -962,6 +962,128 @@ def _summarize_with_llm(messages, model=None, meta=None, cancel=None):
         return None
 
 
+# The 🏷 autoname subroutine: one direct model call names EVERY untitled Free.*
+# group (see `autoname_untitled`). Kept next to the summarizer because both are
+# "harness calls the model outside the tool loop" jobs.
+_NAME_INSTRUCTION = (
+    "You are labelling the CHAPTERS of a coding-assistant chat. Each item below is a "
+    "FREE group: a user request and the answer that followed. For EVERY item, produce a "
+    "short TITLE and a one-line SUMMARY.\n"
+    "TITLE: start with \"request to \" then the user's ask in at most 7 more English "
+    "words (e.g. \"request to swap the embeddings model\").\n"
+    "SUMMARY: one line — what was asked and what was done.\n"
+    "Use ONLY the item's own request/context; never invent facts you were not given.\n"
+    "Reply with ONLY a JSON array (no prose, no code fence), one object per id:\n"
+    '[{"id":"g51","title":"request to …","summary":"…"}]\n\n'
+    "ITEMS:\n")
+
+
+def _parse_name_json(text):
+    """Parse the autoname reply into [{"id","title","summary"}].
+
+    Tolerant of a ```code fence``` or surrounding prose; returns [] when nothing
+    usable is found (the caller then falls back to deterministic naming).
+    """
+    if not text:
+        return []
+    s = str(text).strip()
+    if "```" in s:  # keep the fenced block's body, if any
+        for part in s.split("```"):
+            if "[" in part and "]" in part:
+                s = part
+                break
+    i, j = s.find("["), s.rfind("]")
+    if i < 0 or j < 0 or j < i:
+        return []
+    try:
+        data = json.loads(s[i:j + 1])
+    except Exception:  # noqa: BLE001
+        return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for it in data:
+        if isinstance(it, dict) and str(it.get("id") or "").strip():
+            out.append({"id": str(it["id"]).strip(),
+                        "title": str(it.get("title") or "").strip(),
+                        "summary": str(it.get("summary") or "").strip()})
+    return out
+
+
+def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
+    """Name EVERY untitled FREE group with the chat model — no tool-call budget.
+
+    The 🏷 button used to just PROMPT the agent ("use `chapters` action=untitled…"),
+    and that turn always died after one page: `chapters action=untitled` shows at
+    most 8 ids and a chat turn may spend only CHAT_TOOL_MAX_STEPS (8) real tool
+    calls before the keepgoing loop stops — renaming creates no todo, so
+    `keepgoing.decide` sees zero open nodes and returns `goal_reached`. Naming is
+    bookkeeping, not work, so it must not ride the work budget.
+
+    This is a SUBROUTINE, like the compaction summarizer: one direct call to the
+    SESSION's OWN chat model that returns a title+summary for all untitled groups
+    at once, applied server-side, repeated until none remain — no per-call tool
+    budget and no page cap. When the model is unavailable (or names nothing) it
+    falls back to the deterministic `autotitle_untitled`, so the button always
+    does something. Returns {"ok", "session", "titled", "remaining", "model",
+    "rounds"}.
+    """
+    from longrun.memory import threads as th
+    if isinstance(session, dict):
+        sid = str(session.get("id") or "").strip()
+        sess = session
+    else:
+        sid = str(session or "").strip()
+        sess = None
+    if not sid:
+        return {"ok": False, "error": "session required"}
+    if sess is None:
+        sess = load_session(sid)
+    ref = resolve_ctx_model(sess, model)
+    titled = 0
+    used = None
+    rounds = 0
+    while rounds < int(rounds_max):
+        groups = th.untitled_free(sid)
+        if not groups:
+            break
+        rounds += 1
+        items = []
+        for g in groups:
+            req = str(g.get("req") or "").replace("\n", " ")[:160] or "(not captured)"
+            ctx = str(g.get("digest") or "").replace("\n", " ")[:160] or "(not captured)"
+            items.append('id=%s request="%s" context="%s"' % (g.get("id"), req, ctx))
+        prompt = _NAME_INSTRUCTION + "\n".join(items)
+        try:
+            answer, _think, used_one = stream_with_fallback(
+                [{"role": "user", "content": prompt}], ref, "chat",
+                lambda ch, t: None, timeout=180,
+                max_tokens=max(400, min(4000, 80 + 60 * len(groups))),
+                cancel=cancel)
+        except Exception:  # noqa: BLE001 — naming must never break the button
+            answer, used_one = None, None
+        used = used_one or used
+        applied = 0
+        for item in _parse_name_json(answer):
+            ok, _g = th.set_title(sid, item["id"], item["title"],
+                                  summary=(item["summary"] or None))
+            if ok:
+                applied += 1
+        titled += applied
+        if not applied:
+            # The model named none (down, or unparseable): stop rather than spin,
+            # then let the deterministic fallback below finish the job.
+            break
+    remaining = len(th.untitled_free(sid))
+    if remaining:
+        # JAG-451 deterministic safety net (the same one the harness runs before an
+        # auto-compaction) — the button must never leave groups unnamed.
+        titled += th.autotitle_untitled(sid)
+        remaining = len(th.untitled_free(sid))
+    return {"ok": True, "session": sid, "titled": titled,
+            "remaining": remaining, "model": used, "rounds": rounds}
+
+
 def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     """Compact a session transcript in place under the token budget (v0.5).
 
@@ -1897,6 +2019,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/context/compact":
             res = compact_session(body.get("session"), body.get("budget_tokens"), origin="manual")
             return self._send(200 if "error" not in res else 404, res)
+        if path.startswith("/api/sessions/") and path.endswith("/chapters/autoname"):
+            # 🏷 → name EVERY untitled Free.* group with the chat model, in ONE
+            # subroutine (no tool-call budget) — see autoname_untitled (JAG-473).
+            sid = path[len("/api/sessions/"):-len("/chapters/autoname")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            sess = load_session(sid)
+            if not sess:
+                return self._send(404, {"error": "session not found"})
+            res = autoname_untitled(sess, model=body.get("model"))
+            return self._send(200 if res.get("ok") else 400, res)
         if path == "/api/sessions":
             sess = get_or_create_session(None, body.get("title"))
             publish("session.created", session=sess["id"], title=sess["title"])

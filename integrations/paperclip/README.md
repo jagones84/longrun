@@ -49,16 +49,25 @@ cd integrations/paperclip
 npm install
 npm run typecheck
 npm test
+npm run build      # tsc → dist/ ; Paperclip imports dist/index.js
 ```
 
-Then register the adapter with Paperclip using a **`localPath`** pointing at this
-directory (the **checkout** path), not at a published tarball:
+`npm run build` is required: `exports["."]` resolves to `./dist/index.js`, and the
+`src/*.ts` sources carry Node16 `.js` specifiers that only exist after `tsc` has
+emitted them. Registering the package without a build fails with
+`ERR_MODULE_NOT_FOUND` on the first relative import.
+
+Then register the adapter with Paperclip by appending a record to
+`~/.paperclip/adapter-plugins.json` (a JSON array) and restarting the server, with
+**`localPath`** pointing at this directory (the **checkout** path), not at a
+published tarball:
 
 ```jsonc
 {
+  "packageName": "longrun-paperclip-adapter",
   "type": "longrun",
-  "label": "Longrun",
-  "localPath": "/home/jagones/Repositories/longrun/integrations/paperclip"
+  "localPath": "/home/jagones/Repositories/longrun/integrations/paperclip",
+  "version": "0.1.0"
 }
 ```
 

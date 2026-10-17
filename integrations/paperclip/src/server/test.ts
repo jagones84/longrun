@@ -27,6 +27,16 @@ function boundedError(err: unknown): string {
 }
 
 /**
+ * The Longrun bearer token comes from the server environment only, exactly as
+ * in `execute.ts`. `GET /api/status` is gated, so the probe must present it.
+ */
+function readToken(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
  * Readiness probe for one Longrun adapter configuration.
  *
  * It resolves the configured interpreter and reads `GET /api/status`. It never
@@ -61,9 +71,12 @@ export async function testEnvironment(
   }
 
   try {
+    const token = readToken(process.env.LONGRUN_TOKEN);
+    const headers: Record<string, string> = { accept: "application/json" };
+    if (token) headers.authorization = `Bearer ${token}`;
     const response = await fetch(new URL("/api/status", config.longrunUrl), {
       method: "GET",
-      headers: { accept: "application/json" },
+      headers,
       signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
     });
     checks.push(
@@ -74,13 +87,21 @@ export async function testEnvironment(
             message: "Longrun answered GET /api/status.",
             detail: config.longrunUrl,
           }
-        : {
-            code: "longrun_status_unreachable",
-            level: "error",
-            message: `Longrun answered GET /api/status with HTTP ${response.status}.`,
-            detail: config.longrunUrl,
-            hint: "Start Longrun on the configured base URL and confirm it is reachable from the Paperclip server.",
-          },
+        : response.status === 401 || response.status === 403
+          ? {
+              code: "longrun_status_unauthorized",
+              level: "error",
+              message: `Longrun rejected GET /api/status with HTTP ${response.status}.`,
+              detail: config.longrunUrl,
+              hint: "Export LONGRUN_TOKEN into the Paperclip server environment; the probe sends it as a bearer credential.",
+            }
+          : {
+              code: "longrun_status_unreachable",
+              level: "error",
+              message: `Longrun answered GET /api/status with HTTP ${response.status}.`,
+              detail: config.longrunUrl,
+              hint: "Start Longrun on the configured base URL and confirm it is reachable from the Paperclip server.",
+            },
     );
   } catch (err) {
     checks.push({

@@ -336,6 +336,18 @@ def _short_ask(text, words=8):
     return " ".join(keep[:words]).strip(".,;:!? ")
 
 
+def untitled_free(sid):
+    """Every FREE group still missing a title, oldest first.
+
+    The FULL list, with NO page cap — the 🏷 autoname subroutine (one direct LLM
+    call, no tool budget) names them all at once. `render_untitled` pages the same
+    set for the agent's `chapters action=untitled` view; that paging exists only
+    because a chat turn may spend a bounded number of tool calls.
+    """
+    return [g for g in outline(sid)
+            if g.get("kind") == "free" and not g.get("title")]
+
+
 def render_untitled(sid, limit=8):
     """Render a compact batch of free groups that still need titles.
 
@@ -343,8 +355,7 @@ def render_untitled(sid, limit=8):
     This view returns only missing titles, with bounded previews, so the model
     can reach every group without reading a large offload.
     """
-    groups = [g for g in outline(sid)
-              if g.get("kind") == "free" and not g.get("title")]
+    groups = untitled_free(sid)
     if not groups:
         return "UNTITLED FREE GROUPS: none (0 remain)."
     try:

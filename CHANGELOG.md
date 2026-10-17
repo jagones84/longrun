@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The 🏷 button names EVERY untitled Free.* group in one shot — it is now an LLM subroutine,
+  not an agent turn (JAG-473).** The old button only PROMPTED the agent ("use `chapters`
+  action=untitled …"), and that turn always stopped after one page: the tool shows ≤8 ids and a
+  chat turn may spend only `CHAT_TOOL_MAX_STEPS` (8) real tool calls before the keepgoing loop
+  stops — renaming creates no todo, so `keepgoing.decide` sees zero open nodes and returns
+  `goal_reached`. Naming is bookkeeping, so it no longer rides the work budget:
+  `POST /api/sessions/<id>/chapters/autoname` runs `httpapi.autoname_untitled` — one direct call
+  to the SESSION's own chat model that returns a title+summary for all untitled groups at once,
+  applied server-side and repeated until none remain (no page cap, no per-call tool budget), with
+  the JAG-451 deterministic naming as a fallback whenever the model is unavailable. Pinned by new
+  `v469`.
 - **A Paperclip external adapter: one assigned task becomes exactly one bounded Longrun run.**
   Paperclip-managed companies can now dispatch work to Longrun without patching Paperclip core: the
   external adapter package in `integrations/paperclip/` is loaded through Paperclip's `localPath`
@@ -254,6 +265,16 @@ All notable changes to Longrun are documented here. The format follows
   budgeted) → final LLM summary stored as a text source alongside the URLs. New
   `/api/knowledge/research` (POST) and `/api/research/model` (GET/POST); v402 25/25;
   battery 128 → 129.
+
+### Fixed
+- **The 🏷 button reported success while no label changed (JAG-474).** The server named the
+  groups correctly, but the WebUI never applied the titles: rendered free groups carry no
+  chapter `gid`, and the position fallback only fired when the rendered and ledger group counts
+  matched — after a compaction they don't (`coder 1`: 13 rendered vs 18 in the ledger, so zero
+  matches). `applyThreadTitles` now matches a rendered group by its OWN captured user request
+  (compaction-proof, index-free — the same rule `threads._anchor_index` uses) and never stamps
+  one ledger group onto two rendered ones. Verified live: 9 untitled → 2 on `coder 1`. Pinned
+  by `v469` 6a–6c.
 
 ### Changed
 - **The ⚡ "run agent" chat action is REMOVED (JAG-431o), battery 164/164.** The ⋯ menu item drove the legacy

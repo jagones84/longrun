@@ -1427,7 +1427,7 @@
             aria-label="reveal the current session in the sessions panel">🎯</button>
     <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
     <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
-    <button class="ghost" data-tree-todos data-call="nameThreads" title="ask the agent to title the Free.* groups from their content (uses the chapters tool)" aria-label="title the free thread groups">🏷</button>
+    <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups">🏷</button>
   </aside>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
   <aside id="rail" data-col="context">
@@ -2212,6 +2212,12 @@ async function loadThreadTitles(sid) {
    The result: every rendered free group that CAN be titled gets titled, and
    groups that genuinely can't be matched (e.g. a compaction-summary system
    message that created a free group) stay as plain "Free.N" with no title. */
+function _normTxt(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
+/* JAG-474: the user REQUEST that starts a rendered free group, read from its own DOM. */
+function _freeReqText(det) {
+  const b = det.querySelector(".msg.user .bubble") || det.querySelector(".msg.user");
+  return _normTxt(b ? b.textContent : "");
+}
 function applyThreadTitles() {
   const log = $("log"); if (!log) return;
   const dets = [...log.querySelectorAll("details.fgroup")];
@@ -2219,13 +2225,33 @@ function applyThreadTitles() {
   // index ledger groups by gid for exact matching
   const byGid = {};
   (_threadGroups || []).forEach(g => { if (g && g.id) byGid[g.id] = g; });
+  // JAG-474: JAG-431p's ordinal fallback dies the moment a compaction makes the
+  // counts differ (coder 1: 13 rendered vs 18 in the ledger -> NOTHING was ever
+  // matched, so the 🏷 button reported "named 11" while no label changed). Match
+  // by the group's OWN user request instead — compaction-proof and index-free,
+  // the same rule `threads._anchor_index` uses server-side.
+  const byReq = (_threadGroups || [])
+    .filter(g => g && g.id && _normTxt(g.req))
+    .map(g => ({ g: g, k: _normTxt(g.req).slice(0, 60) }));
+  const used = {};
   dets.forEach((det, i) => {
     const ch = det._chapter || {};
     // 1. exact match by gid (if the rendered group carries a chapter gid)
-    let lg = (ch.gid && byGid[ch.gid]) ? byGid[ch.gid] : null;
-    // 2. fallback: position match only when counts are identical
-    if (!lg && same) lg = _threadGroups[i] || {};
+    let lg = (ch.gid && byGid[ch.gid] && !used[ch.gid]) ? byGid[ch.gid] : null;
+    // 2. match by the user request text (survives compaction)
+    if (!lg) {
+      const own = _freeReqText(det).slice(0, 60);
+      if (own) {
+        for (const c of byReq) {
+          if (used[c.g.id]) continue;
+          if (own === c.k || own.startsWith(c.k) || c.k.startsWith(own)) { lg = c.g; break; }
+        }
+      }
+    }
+    // 3. last resort: position match only when counts are identical
+    if (!lg && same && _threadGroups[i] && !used[_threadGroups[i].id]) lg = _threadGroups[i];
     if (!lg) lg = {};
+    if (lg.id) used[lg.id] = true;
     det._chapter = {
       gid: ch.gid || lg.id || "",
       title: ch.title || lg.title || "",
@@ -2245,18 +2271,30 @@ function rewindFreeGroup(n) {
   if (rf == null) { who("ai", "⚠ this free thread has no rewind point"); return; }
   doRewind(sessionId, rf);
 }
-/* JAG-431j: the 🏷 button — ask the agent (a REAL turn, like any tool call) to title
-   every Free.* group from its real content via the `chapters` tool. A free group is a
-   user REQUEST + its answer, so titles read "request to …" (JAG-431m). */
-function nameThreads() {
+/* JAG-473: the 🏷 button names every UNTITLED Free.* group with ONE LLM subroutine
+   (the session's own chat model, server-side, like a compaction) — NOT a normal
+   agent turn. The old version only PROMPTED the agent to loop `chapters
+   action=untitled`: that always stopped after one page (the tool shows ≤8 ids and a
+   turn may spend only 8 real tool calls before the keepgoing loop stops, since
+   renaming creates no todo). Naming is bookkeeping, so it must not ride that budget.
+   The server loops until none remain; labels repaint live via the `threads.updated`
+   feed (and we also force a refresh here as a belt-and-braces). */
+async function nameThreads() {
   if (!sessionId) return;
-  send("Title every UNTITLED Free.* group in this session and give each a one-line "
-     + "summary. Use `chapters` action=untitled, not action=list; it returns a compact "
-     + "batch so every missing group id stays visible. For each returned id call "
-     + "action=title with title=\"request to <the user's ask>\" (<= 8 English words) "
-     + "and a one-line summary of what was asked and done. After each batch, call "
-     + "action=untitled again. Continue until it returns none. Never title task/todo "
-     + "groups; they already carry their node labels.");
+  const btn = document.querySelector('[data-call="nameThreads"]');
+  if (btn) { btn.disabled = true; btn.textContent = "🏷…"; }
+  try {
+    const r = await api("POST", "/api/sessions/" + sessionId + "/chapters/autoname", {});
+    if (r && r.error) { toast("title failed: " + r.error, "err"); return; }
+    loadThreadTitles(sessionId).then(applyThreadTitles);
+    if (!r || !r.titled) { toast("no untitled Free.* groups to name", "warn"); return; }
+    toast("🏷 named " + r.titled + " Free.* group(s)"
+          + (r.model ? " · " + String(r.model).split("/").pop() : ""), "ok");
+  } catch (e) {
+    toast("title failed: " + ((e && e.message) || e), "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🏷"; }
+  }
 }
 function _scope() { return _activeScope || _freeKids() || $("log"); }
 function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id === id) || null; }

@@ -186,9 +186,8 @@ check("5d the schema exposes a summary for a free group's justification",
 # ---- 6. WebUI + API wiring ---------------------------------------------------
 idx = _read("webui/index.html")
 check("6a the 🏷 button exists next to the group controls", 'data-call="nameThreads"' in idx)
-check("6b the button asks the agent for a REAL turn via send()",
-      "function nameThreads(" in idx and "chapters` tool" in idx
-      and "action=untitled" in idx)
+check("6b the button names the Free.* groups via the autoname subroutine (no agent turn)",
+      "async function nameThreads(" in idx and "/chapters/autoname" in idx)
 check("6c Free groups carry a stable chapter slot", 'det.dataset.chapter = "free#"' in idx)
 check("6d titles are read from the ledger", "loadThreadTitles" in idx and "/api/threads?session=" in idx)
 http = _read("src/longrun/core/httpapi.py")
@@ -197,8 +196,8 @@ check("6e GET /api/threads is routed", '"/api/threads"' in http and "threads_mod
 # ---- 7. naming style + per-free-thread rewind (JAG-431m) ---------------------
 _desc = (registry.TOOL_SCHEMAS.get("chapters") or {}).get("description", "")
 check("7a the tool teaches the 'request to …' title style", "request to <short ask>" in _desc, _desc[-60:])
-check("7b the 🏷 prompt asks for 'request to <ask>' titles",
-      "request to <the user's ask>" in idx)
+check("7b the naming subroutine asks for 'request to …' titles (now server-side)",
+      "You are labelling the CHAPTERS" in http and "request to " in http)
 check("7c free groups carry a rewind control",
       'class="fgroup-rw"' in idx and "function rewindFreeGroup(" in idx)
 check("7d the free rewind reuses the per-turn rewind API",
