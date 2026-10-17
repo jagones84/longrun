@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **After a compaction, everything on screen now belongs to a group (JAG-486).** The retained window starts
+  with the compaction SUMMARY, not with a user turn, so the summary, the harness `final` injection, the
+  retained answer and the tail `compact` marker used to render at the ROOT — "text outside a Free.X session"
+  above `Free.1`. They are now wrapped in one collapsible **`compacted history`** group that the summary
+  opens and the first retained user turn closes. It is deliberately NOT a `Free.N`: it has no ledger
+  counterpart, so it consumes no ordinal (`Free.1`/`Free.2` keep their numbers) and is excluded from
+  `applyThreadTitles` and the free-group rewind index. Verified live on the Master session: the log's only
+  root children are `compacted history` (5 items), `Free.1` (12) and `Free.2` (3) — no floating text.
 - **A compaction now trims the WHOLE transcript, not just `messages` (JAG-485).** The WebUI chat is the
   merge of `messages` + `tool_cards` + `injects`, and `compact_session` rewrote only the first one: after a
   manual/auto compaction a reload replayed every card and harness injection of the compacted-away turns, so

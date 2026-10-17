@@ -2276,6 +2276,26 @@ function _freeAppend(el, chapter) {
   if (k) { k.appendChild(el); return; }
   _freeNew(chapter).appendChild(el);
 }
+/* JAG-486: after a compaction the transcript no longer STARTS with a user turn —
+   its first item is the summary of the compacted-away turns, followed by the
+   retained answer and the `compact` marker, and only then a real user turn. Those
+   head items used to float at the ROOT, outside every group ("text out of a
+   Free.X session"). Wrap them in ONE collapsible "compacted history" group that
+   the summary opens and the first retained user turn closes (it creates the first
+   real Free.N). It is NOT a Free.N: it has no ledger counterpart, so it must not
+   consume an ordinal and must not be renamed by `applyThreadTitles`. */
+function _headGroup() {
+  const det = document.createElement("details");
+  det.className = "fgroup head"; det.open = true;
+  det.dataset.chapter = "compacted-history";
+  det._chapter = { title: "compacted history" };
+  det.innerHTML = '<summary><span class="fglabel"></span><span class="fgsum" hidden></span></summary>' +
+    '<div class="fg-kids"></div>';
+  det.querySelector(".fglabel").textContent = "compacted history";
+  $("log").appendChild(det);
+  _freeGroup = det;
+  return det.querySelector(".fg-kids");
+}
 /* JAG-431j: pull the free groups (titles + rewind anchors) from the durable ledger. */
 async function loadThreadTitles(sid) {
   _threadGroups = [];
@@ -2303,7 +2323,7 @@ function _freeReqText(det) {
 }
 function applyThreadTitles() {
   const log = $("log"); if (!log) return;
-  const dets = [...log.querySelectorAll("details.fgroup")];
+  const dets = [...log.querySelectorAll("details.fgroup:not(.head)")];
   const same = dets.length === _threadGroups.length;
   // index ledger groups by gid for exact matching
   const byGid = {};
@@ -2348,7 +2368,7 @@ function applyThreadTitles() {
 }
 /* JAG-431m: rewind to just before a free thread (its first user request). */
 function rewindFreeGroup(n) {
-  const det = $("log").querySelectorAll("details.fgroup")[n - 1];
+  const det = $("log").querySelectorAll("details.fgroup:not(.head)")[n - 1];
   const st = (det && det._chapter) || {};
   const rf = (st.req_from != null ? st.req_from : null);
   if (rf == null) { who("ai", "⚠ this free thread has no rewind point"); return; }
@@ -4344,7 +4364,11 @@ async function loadHistory() {
       // retained window, not a live injection. Label it as such and show NO timestamp:
       // a missing ts used to fall back to "now", so an October summary was stamped with
       // the page-load time and read like a brand-new harness event.
+      // JAG-486: it also OPENS the "compacted history" group, so the summary, the
+      // retained answer and the `compact` marker that follow it are all INSIDE a group
+      // instead of floating above Free.1.
       _activeNodeId = null; _activeScope = null;
+      if (!_freeKids()) { _freeGroup = null; _headGroup(); }
       harnessInject({ inject_kind: "compacted history", text: e.v.content,
                       ts: (typeof e.v.ts === "number" ? e.v.ts : null) });
       return;

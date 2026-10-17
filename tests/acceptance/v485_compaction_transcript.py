@@ -127,6 +127,11 @@ check("4b every await in loadHistory re-checks the generation",
       ui.count("if (_stale()) return;") >= 3)
 check("4c a replayed summary is labelled 'compacted history' with no fake timestamp",
       'inject_kind: "compacted history"' in ui and "d.ts === null ? \"\" : _tsSpan(d.ts)" in ui)
+check("4d the compacted head is wrapped in a 'compacted history' group, not left at the root",
+      "function _headGroup()" in ui and 'det.className = "fgroup head"' in ui
+      and "{ _freeGroup = null; _headGroup(); }" in ui)
+check("4e the head group neither consumes a Free.N ordinal nor is renamed by the ledger",
+      ui.count('details.fgroup:not(.head)') >= 2)
 
 print("---")
 okc = sum(results)
