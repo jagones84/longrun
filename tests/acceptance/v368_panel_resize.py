@@ -10,8 +10,8 @@ Locked here:
     never moved (it toggled the panel instead);
   * a panel that is a fixed DRAWER (narrow layout) is resized through a CSS var, with
     a grip glued to its inner edge (positionDrawerResizers);
-  * the panel clamps account for the open editor dock (_dockRoomW), and opening or
-    closing the dock re-fits the panels (editor.js _notifyLayout -> _settleHandles);
+  * panel clamps account for the open editor dock and in-flow tools bar, and opening
+    or closing the dock re-fits the panels (editor.js _notifyLayout -> _settleHandles);
   * the dock itself can never grow so wide that it shoves the inspector off the right
     edge (JAG-369): only the collapse arrows may hide a panel, a resize must not.
 Deterministic, no browser. Run: python3 tests/acceptance/v368_panel_resize.py
@@ -71,8 +71,8 @@ check("B5 a fixed drawer is not treated as a layout column by the fit maths",
 # --- C: the editor dock is part of the row budget -----------------------------
 check("C1 the panel clamp accounts for the open editor dock",
       "function _dockRoomW(z)" in HTML
-      and "avail - ow - CHAT_MIN_W - _dockRoomW(z)" in HTML
-      and "over = (lw + rw) - (avail - CHAT_MIN_W - _dockRoomW(z))" in HTML, "")
+      and "avail - ow - CHAT_MIN_W - _dockRoomW(z) - _toolsRoomW(z)" in HTML
+      and "over = (lw + rw) - (avail - CHAT_MIN_W - _dockRoomW(z) - _toolsRoomW(z))" in HTML, "")
 check("C2 opening/closing the dock re-fits the panels",
       "function _notifyLayout()" in EDITOR and "window._settleHandles" in EDITOR
       and EDITOR.count("_notifyLayout();") == 3, "")
@@ -84,7 +84,7 @@ check("C2 opening/closing the dock re-fits the panels",
 # looking like the inspector vanished. Only the collapse arrows may hide a panel.
 check("D1 the app caps the dock by the room the panels + chat floor leave",
       "function _dockMaxW()" in HTML
-      and "avail - side - CHAT_MIN_W" in HTML
+      and "avail - side - CHAT_MIN_W - _toolsRoomW(z)" in HTML
       and "window._dockMaxW = _dockMaxW;" in HTML, "")
 check("D2 the dock drag is bounded by that cap (not only the viewport)",
       "function _dockMaxW()" in EDITOR

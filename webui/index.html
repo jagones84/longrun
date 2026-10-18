@@ -993,6 +993,8 @@
   a.imglink { color: var(--acc2); }
   /* JAG-150: inspector (collapsible sections, replaces the rail tabs) */
   #inspector { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; }
+  #inspector .insp-tools { display: flex; align-items: center; margin: 0 8px 4px; }
+  #inspector .insp-tools h2 { margin: 6px 0 4px; }
   #inspector section { border-bottom: 1px solid var(--line-2); }
   #inspector .insp-hd { display: block; width: 100%; text-align: left; background: transparent; border: 0;
     color: var(--txt); font-weight: 600; font-size: 12px; padding: 9px 8px; cursor: pointer; }
@@ -1550,6 +1552,15 @@
   <div class="resizer" id="resize-right" title="drag to resize"></div>
   <aside id="rail" data-col="context">
     <div id="inspector">
+      <div class="insp-tools">
+        <h2>Inspector</h2>
+        <span class="srail-tools">
+          <button type="button" id="inspCollapseAll" title="collapse all inspector sections"
+                  aria-label="collapse all inspector sections">▲</button>
+          <button type="button" id="inspExpandAll" title="expand all inspector sections"
+                  aria-label="expand all inspector sections">▼</button>
+        </span>
+      </div>
       <section data-insp="approvals" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["approvals"]'>Approvals<span id="apprCount" class="ihd-s"></span></button>
         <div class="insp-body">
@@ -8340,6 +8351,17 @@ function toggleInsp(name) {
   localStorage.setItem("sf_insp_" + name, body.hidden ? "0" : "1");
   if (!body.hidden) _loadInspector(name);   // populate on open (no manual ↻)
 }
+function _setAllInspector(open) {
+  document.querySelectorAll("#inspector > section[data-insp]").forEach(section => {
+    const body = section.querySelector(".insp-body");
+    if (!body) return;
+    const wasHidden = body.hidden;
+    body.hidden = !open;
+    section.classList.toggle("insp-open", open);
+    localStorage.setItem("sf_insp_" + section.dataset.insp, open ? "1" : "0");
+    if (open && wasHidden) _loadInspector(section.dataset.insp);
+  });
+}
 function _loadInspector(name) {
   const key = ({ graph: "plan", plan: "plan" })[name] || name;
   if (key === "plan") { loadPlan(); loadGraph(); }
@@ -9581,7 +9603,7 @@ function _panelRoom(col) {
   const oe = document.querySelector(other);
   const ow = (oe && getComputedStyle(oe).display !== "none")
     ? oe.getBoundingClientRect().width / z : 0;
-  return Math.max(150, Math.min(1200, avail - ow - CHAT_MIN_W - _dockRoomW(z)));
+  return Math.max(150, Math.min(1200, avail - ow - CHAT_MIN_W - _dockRoomW(z) - _toolsRoomW(z)));
 }
 /* JAG-368: the editor dock, when it is a real layout COLUMN (not a fixed overlay),
    steals room from the row. The panel clamps must account for it, otherwise the chat
@@ -9592,6 +9614,12 @@ function _dockRoomW(z) {
   if (getComputedStyle(d).position === "fixed") return 0;   // overlay: takes no layout room
   const w = d.getBoundingClientRect().width;
   return w > 1 ? w / z : 0;
+}
+function _toolsRoomW(z) {
+  const tools = document.getElementById("toolsBar");
+  if (!tools || getComputedStyle(tools).display === "none"
+      || getComputedStyle(tools).position === "fixed") return 0;
+  return tools.getBoundingClientRect().width / z;
 }
 /* JAG-369: the editor dock is a `flex: 0 0 auto` column, so the flex algorithm never
    shrinks it. If it grows wider than the room the two side panels + the chat floor
@@ -9609,7 +9637,7 @@ function _dockMaxW() {
   const ctx = document.querySelector('[data-col="context"]');
   if (shown(sess)) side += sess.getBoundingClientRect().width / z;
   if (shown(ctx)) side += ctx.getBoundingClientRect().width / z;
-  return Math.max(320, avail - side - CHAT_MIN_W);
+  return Math.max(320, avail - side - CHAT_MIN_W - _toolsRoomW(z));
 }
 window._dockMaxW = _dockMaxW;
 /* Clamp BOTH panels so the chat keeps CHAT_MIN_W. Runs when a width is restored,
@@ -9634,7 +9662,7 @@ function _fitPanels() {
   const avail = ((app || document.body).getBoundingClientRect().width / z) - 10;
   let lw = lv ? sess.getBoundingClientRect().width / z : 0;
   let rw = rv ? ctx.getBoundingClientRect().width / z : 0;
-  let over = (lw + rw) - (avail - CHAT_MIN_W - _dockRoomW(z));
+  let over = (lw + rw) - (avail - CHAT_MIN_W - _dockRoomW(z) - _toolsRoomW(z));
   if (over <= 0) return;
   const order = (lv && rv)
     ? (lw >= rw ? [[sess, "l"], [ctx, "r"]] : [[ctx, "r"], [sess, "l"]])
@@ -9950,6 +9978,8 @@ _wireRunsPanel();   // JAG-479: the running/unread popover reads real state and 
 { const _chc = $("chatHeadCopy"); if (_chc) _chc.onclick = _copySessionName; }   // JAG-480
 $("railCollapseAll").onclick = () => _setAllGroups(true);
 $("railExpandAll").onclick = () => _setAllGroups(false);
+$("inspCollapseAll").onclick = () => _setAllInspector(false);
+$("inspExpandAll").onclick = () => _setAllInspector(true);
 { const _qm = $("qmode");
   if (_qm) { _qm.value = localStorage.getItem("sf_qmode") || "queue";
     _qm.onchange = () => localStorage.setItem("sf_qmode", _qm.value); } }
