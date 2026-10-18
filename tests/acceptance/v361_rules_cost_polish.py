@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -123,7 +124,7 @@ with open(_fx, "w", encoding="utf-8") as f:
     json.dump({"data": [{"id": "fx/only", "pricing": {
         "prompt": "0.000002", "completion": "0.000008",
         "input_cache_read": "0.0000009", "request": "0.01"}}]}, f)
-_ref = C.refresh_openrouter(url="file://" + _fx)
+_ref = C.refresh_openrouter(url=Path(_fx).as_uri())
 check("B6 the refresh caches the richer rate set (cache_read + request)",
       _ref.get("ok") and C.rates_for("fx/only") == {"in": 2.0, "out": 8.0, "cache_read": 0.9,
                                                     "cache_write": None, "request": 0.01},
