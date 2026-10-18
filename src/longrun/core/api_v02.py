@@ -1546,6 +1546,11 @@ def handle(handler, method, path, qs, body):
         if path == "/api/keys":
             # JAG-161: set/clear an env var and persist it to the gitignored .env.
             res = _srv().set_key(body.get("name"), body.get("value"))
+            if res.get("ok") and str(body.get("name") or "").strip() == "LONGRUN_TOKEN":
+                # Keep the live HTTP gate aligned with the persisted key. The
+                # browser can rotate its server token without a restart.
+                from longrun.core import httpapi as _httpapi
+                _httpapi.sync_runtime_token(body.get("value"))
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/keys/reveal":
             # JAG-163: on-demand single-value reveal for the eye / copy buttons.
@@ -2466,4 +2471,3 @@ def install_skill_raw(data, name=None, overwrite=False):
     res = skills_mod.install_zip(data, name=name, overwrite=overwrite)
     _publish("skills.install", name=res.get("name"), ok=bool(res.get("ok")))
     return res
-

@@ -55,6 +55,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      start_run_graph, state_block, stream_with_fallback, system_prompt,
                      turn_begin, turn_end, voice_status, voice_stt, voice_tts)
 from longrun.orbit.api import WEB as ORBIT_WEB
+from longrun.model.keys import set_key as _set_key
 
 
 # ------------------------------------------------------------------ HTTP ----
@@ -103,6 +104,44 @@ def check_auth(headers, qs=None):
         return True
     # EventSource cannot set headers: allow ?token= as fallback
     return bool(qs) and qs.get("token") == AUTH_TOKEN
+
+
+def first_run_setup_available():
+    """Whether this process still accepts the local first-run token setup."""
+    return not bool(AUTH_TOKEN)
+
+
+def configure_first_run_token(token, remote_addr="127.0.0.1"):
+    """Persist and activate the first token from a local browser only.
+
+    The normal `/api/keys` route remains authenticated. This deliberately
+    narrow bootstrap path prevents an exposed, unconfigured server from being
+    claimed by a remote client.
+    """
+    global AUTH_TOKEN
+    if AUTH_TOKEN:
+        return {"ok": False, "error": "token is already configured"}
+    addr = str(remote_addr or "").strip().lower()
+    if addr not in ("127.0.0.1", "::1", "localhost"):
+        return {"ok": False, "error": "first-run setup is local-only"}
+    value = str(token or "").strip()
+    if not value:
+        return {"ok": False, "error": "token required"}
+    if len(value) > 512:
+        return {"ok": False, "error": "token too long"}
+    res = _set_key("LONGRUN_TOKEN", value)
+    if not res.get("ok"):
+        return {"ok": False, "error": res.get("error") or "cannot save token"}
+    AUTH_TOKEN = value
+    _sf_server.AUTH_TOKEN = value
+    return {"ok": True, "configured": True}
+
+
+def sync_runtime_token(value):
+    """Apply a persisted LONGRUN_TOKEN change without requiring a restart."""
+    global AUTH_TOKEN
+    AUTH_TOKEN = str(value or "").strip() or None
+    _sf_server.AUTH_TOKEN = AUTH_TOKEN
 
 
 def _as_int(x, default):
@@ -1514,8 +1553,8 @@ class Handler(BaseHTTPRequestHandler):
         # JAG-390: PWA plumbing. Both routes are PUBLIC (non-secret): the browser
         # fetches them during install WITHOUT the API token, and the SW must live
         # at the root so its scope covers the whole app. The manifest injects the
-        # caller's token into `start_url` (when given) so the installed icon opens
-        # an AUTHENTICATED shell — the HTML route stays token-gated (no change).
+        # caller's token into `start_url` (when given) so an installed icon opens
+        # with the browser credential already available.
         if path == "/manifest.webmanifest":
             import json as _json
             from urllib.parse import quote
@@ -1534,6 +1573,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, f.read(), ctype="text/javascript; charset=utf-8")
             except FileNotFoundError:
                 return self._send(404, {"error": "sw missing"})
+        # Keep the static shell public so a fresh browser can reach the token
+        # setup panel. All API/data routes remain protected below.
+        if path in ("/", "/index.html"):
+            try:
+                with open(os.path.join(WEBUI_DIR, "index.html"), "r", encoding="utf-8") as f:
+                    return self._send(200, f.read(), ctype="text/html; charset=utf-8")
+            except FileNotFoundError:
+                return self._send(404, {"error": "webui missing"})
+        if path == "/api/setup/status":
+            return self._send(200, {"ok": True, "first_run": first_run_setup_available()})
         if not check_auth(self.headers, qs):
             return self._send(401, {"error": "unauthorized"})
         if api_v02.handle(self, "GET", path, qs, None):
@@ -1557,12 +1606,6 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 _b = ""
             return self._send(200, {"build": _b})
-        if path in ("/", "/index.html"):
-            try:
-                with open(os.path.join(WEBUI_DIR, "index.html"), "r", encoding="utf-8") as f:
-                    return self._send(200, f.read(), ctype="text/html; charset=utf-8")
-            except FileNotFoundError:
-                return self._send(404, {"error": "webui missing"})
         if path == "/api/self":
             return self._send(200, self_knowledge())
         if path == "/api/context":
@@ -1813,6 +1856,11 @@ class Handler(BaseHTTPRequestHandler):
     # ---- POST ----
     def do_POST(self):
         path, qs = self._query()
+        if path == "/api/setup/token":
+            body = self._body()
+            addr = self.client_address[0] if self.client_address else ""
+            res = configure_first_run_token(body.get("token"), addr)
+            return self._send(200 if res.get("ok") else 400, res)
         if not check_auth(self.headers, qs):
             return self._send(401, {"error": "unauthorized"})
         path = path
@@ -2315,11 +2363,19 @@ def _start_tls(args):
 
 def main():
     global AUTH_TOKEN
+    # JAG-492: a token set in `.env` (LONGRUN_TOKEN) is honoured without a flag,
+    # so a fresh clone only has to edit the gitignored `.env`. The flag still wins.
+    try:
+        from longrun.model import providers as _providers
+        _providers.load_env()
+    except Exception:  # noqa: BLE001 — provider metadata is optional
+        pass
     ap = argparse.ArgumentParser(description="Longrun harness server")
     ap.add_argument("--host", default="127.0.0.1",
                     help="bind host (0.0.0.0 to expose to Tailscale/mobile)")
     ap.add_argument("--port", type=int, default=8790)
-    ap.add_argument("--token", default=None, help="require Authorization: Bearer <token>")
+    ap.add_argument("--token", default=os.environ.get("LONGRUN_TOKEN") or None,
+                    help="require Authorization: Bearer <token> (default: $LONGRUN_TOKEN)")
     # JAG-416: an HTTPS listener makes the origin a SECURE CONTEXT so voice input
     # works; on by default (set LONGRUN_TLS=0 to disable).
     ap.add_argument("--tls", action="store_true", help="also serve HTTPS (secure context → voice)")

@@ -17,12 +17,24 @@ from longrun.util.paths import REPO_ROOT as REPO
 # written here is picked up by providers and MCP `${VAR}` references.
 ENV_FILE = os.path.join(REPO, ".env")
 
-# Env vars the harness knows about even before a provider or MCP client
-# references them, so the Keys panel can offer to set them.
+# Env vars the Keys panel must offer even when a provider or MCP catalog is
+# unavailable. Each value is a (where_label, description) tuple.
 KNOWN_ENV_KEYS = {
-    "GITHUB_TOKEN": "tool:github",
+    "OPENROUTER_API_KEY": ("provider:openrouter", "Default chat/model API key; recommended first key"),
+    "DEEPSEEK_API_KEY": ("provider:deepseek", "DeepSeek model API key"),
+    "OPENAI_API_KEY": ("provider:openai", "OpenAI model API key"),
+    "ANTHROPIC_API_KEY": ("provider:anthropic", "Anthropic model API key"),
+    "GEMINI_API_KEY": ("provider:google", "Google Gemini model API key"),
+    "COHERE_API_KEY": ("provider:cohere", "Cohere embedding API key"),
+    "VOYAGE_API_KEY": ("provider:voyage", "Voyage embedding API key"),
+    "JINA_API_KEY": ("provider:jina", "Jina embedding API key"),
+    "VLLM_API_KEY": ("provider:vllm", "Local vLLM server auth, if required"),
+    "GITHUB_TOKEN": ("mcp:github", "GitHub API access — issues, PRs, repos, code search"),
+    "TAVILY_API_KEY": ("tool:tavily", "Web search (AI-powered)"),
+    "BRAVE_API_KEY": ("tool:brave", "Web search (privacy-focused)"),
+    "PERPLEXITY_API_KEY": ("tool:perplexity", "Research provider with citations"),
+    "LONGRUN_TOKEN": ("server:auth", "Protects Longrun API routes; browser token is managed above"),
 }
-
 
 def _env_file_upsert(name, value):
     """Write/update `NAME=VALUE` in the repo .env, preserving every other line.
@@ -118,7 +130,12 @@ def keys_status():
     rows = {}
 
     def _bump(env, where):
-        r = rows.setdefault(env, {"env": env, "where": [], "set": False})
+        _, description = KNOWN_ENV_KEYS.get(
+            env, ("", "Custom environment variable"))
+        r = rows.setdefault(env, {
+            "env": env, "where": [], "set": False,
+            "description": description,
+        })
         r["where"].append(where)
 
     try:
@@ -147,16 +164,21 @@ def keys_status():
                         _bump(ln.split("=", 1)[0].strip(), "env:.env")
     except Exception:  # noqa: BLE001
         pass
-    for env, where in KNOWN_ENV_KEYS.items():
-        rows.setdefault(env, {"env": env, "where": [], "set": False})["where"].append(where)
+    for env, (where, description) in KNOWN_ENV_KEYS.items():
+        row = rows.setdefault(env, {
+            "env": env, "where": [], "set": False,
+            "description": description,
+        })
+        row["where"].append(where)
+        row["description"] = description
     out = []
     for env in sorted(rows):
         r = rows[env]
         r["where"] = sorted(set(r["where"]))
         r["set"] = bool(os.environ.get(env))
+        r.setdefault("description", "Custom environment variable")
         out.append(r)
     return {"keys": out, "env_files": [".env", "~/.hermes/.env"],
             "env_file": ENV_FILE,
             "note": "Values are never in the repo: set them here and they are written "
                     "to the gitignored .env. Providers and MCP reference a key by NAME only."}
-

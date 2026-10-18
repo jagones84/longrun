@@ -86,7 +86,12 @@ def load_env(reload=False):
     if _env_loaded and not reload:
         return
     cfg = load(reload=True)
-    for rel in (cfg.get("env_files") or []):
+    files = []
+    extra = os.environ.get("LONGRUN_ENV_FILE")
+    if extra:  # JAG-492: the path documented in config/providers.yaml now works
+        files.append(extra)
+    files.extend(cfg.get("env_files") or [])
+    for rel in files:
         path = os.path.expanduser(rel)
         if not os.path.isabs(path):
             path = os.path.join(REPO, path)

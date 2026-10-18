@@ -486,6 +486,26 @@ All notable changes to Longrun are documented here. The format follows
   battery 128 → 129.
 
 ### Fixed
+- **First-run authentication no longer requires hand-editing `.env` (JAG-493).**
+  An unconfigured local server opens a blocking WebUI setup panel; saving there
+  persists and activates `LONGRUN_TOKEN`, while remote clients cannot claim setup.
+  Settings → Keys can rotate the live token without a restart, and the browser-only
+  credential field is now labelled as such.
+- **A token placed in `.env` now actually gates the API, and the README is a
+  copy-paste first run (JAG-492).** `main()` ran `argparse` before
+  `providers.load_env()`, so `LONGRUN_TOKEN` in the gitignored `.env` was ignored
+  (only `--token` worked) while `.env.template` promised otherwise. The server now
+  loads the env files first and defaults `--token` to `$LONGRUN_TOKEN` (the flag
+  still wins); `LONGRUN_ENV_FILE` — documented in `config/providers.yaml` — is
+  honoured too. `deploy/longrun.service` no longer interpolates the token into
+  `ExecStart`, so a missing env file means "no auth" instead of an argparse crash
+  loop. `.env.template` lists every optional key; the README gained a Quick start,
+  a `.env` variable table, an `/api/status` check, first-run troubleshooting and a
+  **single canonical URL** (Sessions and Control are tabs of one page — the detached
+  `/orbit` entry point is no longer advertised). Stale claims were corrected: the
+  70% compaction trigger, the `no sandbox` topbar label, the ACP route
+  (`POST /api/acp`), the Workspace panel for the default folder, and the removed CI
+  workflow/badge.
 - **A run and its session could display DIFFERENT models — the WebUI lied (JAG-478).** Two
   independent resolutions of "which model?" had drifted: an interactive chat honours the session's
   own model (`resolve_ctx_model`), but `POST /api/agent/run/stream` forwarded the raw body model

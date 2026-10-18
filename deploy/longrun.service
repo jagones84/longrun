@@ -6,8 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h/Repositories/longrun
-ExecStart=/usr/bin/python3 %h/Repositories/longrun/server.py --host 0.0.0.0 --port 8790 --token ${LONGRUN_TOKEN}
-EnvironmentFile=-%h/.config/longrun/env
+ExecStart=/usr/bin/python3 %h/Repositories/longrun/server.py --host 0.0.0.0 --port 8790
+# One source for provider keys and the server token; WebUI changes survive restarts.
+EnvironmentFile=-%h/Repositories/longrun/.env
 Restart=always
 RestartSec=3
 

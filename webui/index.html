@@ -201,7 +201,7 @@
 
   /* ---------------- sidebar ---------------- */
   aside {
-    border-right: 1px solid var(--line); padding: 14px; overflow-y: auto;
+    border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; overflow-x: hidden;
     background: rgba(8,10,20,.45); display: flex; flex-direction: column; gap: 4px;
   }
   aside h2 { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin: 12px 0 8px; text-transform: uppercase;
@@ -277,15 +277,16 @@
   .runs-bar { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px;
     padding: 5px 8px; border-radius: 9px; cursor: pointer; background: transparent;
     border: 1px solid var(--line); color: var(--dim); font: inherit; font-size: 11px;
-    letter-spacing: .02em; text-align: left; }
+    letter-spacing: .02em; text-align: left; min-width: 0; overflow: hidden; }
   .runs-bar:hover { background: var(--hover); color: var(--txt); }
   .runs-bar:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
-  .runs-bar .rb-run, .runs-bar .rb-done { display: inline-flex; align-items: center; gap: 4px; }
+  .runs-bar .rb-run, .runs-bar .rb-done { display: inline-flex; align-items: center; gap: 4px;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .runs-bar.has-run .rb-run { color: var(--ok); font-weight: 600; }
   .runs-bar.has-done .rb-done { color: var(--warn); font-weight: 600; }
   .runs-bar .rb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
   .runs-bar.has-run .rb-dot { background: var(--ok); animation: sfpulse 1.2s ease-in-out infinite; }
-  .runs-bar .rb-caret { margin-left: auto; font-size: 9px; }
+  .runs-bar .rb-caret { margin-left: auto; font-size: 9px; flex-shrink: 0; }
   .runs-panel { position: fixed; z-index: 60; max-height: 60vh; overflow-y: auto;
     background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px;
     padding: 6px; box-shadow: 0 12px 30px rgba(0,0,0,.45); }
@@ -1395,6 +1396,26 @@
 </script>
 </head>
 <body>
+<div id="firstRunBackdrop" class="smback" hidden></div>
+<div id="firstRunSetup" class="smodal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="firstRunTitle">
+  <div class="pick-hd">
+    <b id="firstRunTitle">🔐 First-run security setup</b>
+  </div>
+  <p class="remaining" style="line-height:1.5">
+    Choose a token for this Longrun server. It will be saved in the server's
+    gitignored <code>.env</code> as <code>LONGRUN_TOKEN</code> and used automatically
+    on future starts.
+  </p>
+  <label class="remaining" for="firstRunToken">Server token</label>
+  <input id="firstRunToken" class="inp u-mt6" type="password"
+         placeholder="choose a token" autocomplete="new-password">
+  <div id="firstRunMsg" class="remaining u-mt6"></div>
+  <div class="u-df u-jcfe u-g8 u-mt10">
+    <button class="ghost" id="firstRunSkip">continue without token</button>
+    <button class="ghost" id="firstRunSave">save token</button>
+  </div>
+</div>
 <header id="topbar">
   <h1 class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</h1>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
@@ -1719,24 +1740,42 @@
         <div class="card" id="selfPanel"><div class="remaining">loading…</div></div>
       </div>
       <div class="sw-cat" data-cat="keys" hidden>
-        <h2>Keys · secrets</h2>
+        <h2>Longrun token</h2>
         <div class="card">
-          <div class="remaining" id="keysSummary">loading…</div>
-          <div id="keysList" class="u-mt8"></div>
-          <div class="remaining u-mt8" id="keysFile">Values are never in the repo: set them here and they are written to the gitignored <code>.env</code>. Providers and MCP reference a key by NAME only.</div>
-        </div>
-        <h2>GitHub access</h2>
-        <div class="card">
-          <button class="ghost" data-call="openSettings" data-args='["mcp"]'>open MCP settings</button>
-        </div>
-        <h2>API token</h2>
-        <div class="card">
+          <div class="remaining u-mb8">This browser's copy of the server token.
+            To create or rotate the server-side secret, set
+            <code>LONGRUN_TOKEN</code> in the key list below; the live server updates
+            immediately.</div>
           <div class="u-df u-g6 u-aic">
-            <input id="token-input" class="inp u-f1 u-p610 u-fs12" type="password" placeholder="LONGRUN_TOKEN">
+            <input id="token-input" class="inp u-f1 u-p610 u-fs12" type="password" placeholder="server token">
             <button class="ghost" id="tokenEye" data-call="revealToken" title="show/hide">👁</button>
             <button class="ghost" data-call="copyToken" title="copy">⧉ copy</button>
             <button class="ghost" data-call="saveToken">save</button>
           </div>
+        </div>
+        <h2>Keys · secrets</h2>
+        <div class="card">
+          <div class="remaining" id="keysSummary">loading…</div>
+          <div class="remaining u-mt8" id="keysStatus" role="status" aria-live="polite"></div>
+          <div id="keysList" class="u-mt8"></div>
+          <div class="remaining u-mt8" id="keysFile">Values are never in the repo: set them here and they are written to the gitignored <code>.env</code>. Providers and MCP reference a key by NAME only.</div>
+        </div>
+        <div class="card">
+          <button class="ghost" id="showNewKey" data-call="showNewKey">+ New key</button>
+          <form id="customKeyForm" class="u-mt8" onsubmit="event.preventDefault(); addCustomKey()" hidden>
+            <label class="remaining" for="customKeyName">Environment variable name</label>
+            <input id="customKeyName" class="inp u-w100 u-mt6 u-p610 u-fs12"
+                   name="environment_name" type="text" autocomplete="off" placeholder="OPENROUTER_API_KEY">
+            <label class="remaining u-mt8" for="customKeyDescription">Description</label>
+            <input id="customKeyDescription" class="inp u-w100 u-mt6 u-p610 u-fs12"
+                   name="description" type="text" autocomplete="off" placeholder="What this key is used for">
+            <label class="remaining u-mt8" for="customKeyValue">Secret value</label>
+            <div class="u-df u-g6 u-mt6">
+              <input id="customKeyValue" class="inp u-f1 u-p610 u-fs12"
+                     name="secret_value" type="password" autocomplete="new-password" placeholder="Paste key value">
+              <button class="ghost" id="addCustomKey" type="submit">set</button>
+            </div>
+          </form>
         </div>
       </div>
       <div class="sw-cat" data-cat="mcp" hidden>
@@ -2632,14 +2671,66 @@ async function ensureToken() {
     const sq = u.searchParams.get("session");
     if (sq) { sessionId = sq; localStorage.setItem("sf_session", sessionId); _forceExpandActive = true; }
     window._deepNode = u.searchParams.get("node") || null;
-    if (qt || sq) return TOKEN;
+    if (qt) return TOKEN;
   } catch (e) {}
   if (TOKEN) return TOKEN;
   const ok = await fetch("/api/status", { headers: authHeaders() }).then(r => r.ok).catch(() => false);
-  if (ok) return null;
+  if (ok) { await firstRunSetup(); return TOKEN; }
   TOKEN = prompt("Longrun API token:") || "";
   localStorage.setItem("sf_token", TOKEN);
   return TOKEN;
+}
+function _firstRunClose() {
+  const b = $("firstRunBackdrop"), d = $("firstRunSetup");
+  if (b) b.hidden = true;
+  if (d) d.hidden = true;
+}
+function _firstRunSkip() {
+  localStorage.setItem("sf_setup_skipped", "1");
+  _firstRunClose();
+}
+function _firstRunOpen() {
+  return new Promise(resolve => {
+    const b = $("firstRunBackdrop"), d = $("firstRunSetup");
+    const input = $("firstRunToken"), save = $("firstRunSave"), skip = $("firstRunSkip");
+    if (!b || !d || !input || !save || !skip) return resolve();
+    if (localStorage.getItem("sf_setup_skipped") === "1") return resolve();
+    b.hidden = false; d.hidden = false; input.focus();
+    const finish = () => { _firstRunClose(); resolve(); };
+    skip.onclick = () => { _firstRunSkip(); finish(); };
+    save.onclick = async () => {
+      const token = input.value.trim();
+      const msg = $("firstRunMsg");
+      if (!token) { if (msg) msg.textContent = "Choose a non-empty token."; return; }
+      save.disabled = true;
+      try {
+        const r = await fetch("/api/setup/token", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({token})
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) throw new Error(data.error || "cannot save token");
+        TOKEN = token;
+        localStorage.setItem("sf_token", token);
+        localStorage.removeItem("sf_setup_skipped");
+        finish();
+      } catch (e) {
+        if (msg) msg.textContent = String(e.message || e);
+        save.disabled = false;
+      }
+    };
+    input.onkeydown = e => {
+      if (e.key === "Enter") { e.preventDefault(); save.click(); }
+    };
+  });
+}
+async function firstRunSetup() {
+  if (TOKEN || localStorage.getItem("sf_setup_skipped") === "1") return;
+  try {
+    const r = await fetch("/api/setup/status");
+    const d = await r.json();
+    if (r.ok && d.first_run) await _firstRunOpen();
+  } catch (e) {}
 }
 function authQS() { return TOKEN ? "token=" + encodeURIComponent(TOKEN) : ""; }
 function authHeaders() { return TOKEN ? {"Authorization": "Bearer " + TOKEN} : {}; }
@@ -7357,18 +7448,51 @@ async function saveProvider() {
   if (!r.error) loadProviders();
 }
 /* ---- keys (JAG-113/161): which env NAMES are needed, if set, and SET them ---- */
+function _keyDescriptions() {
+  try { return JSON.parse(localStorage.getItem("sf_key_descriptions") || "{}"); }
+  catch (e) { return {}; }
+}
+function _keyAuthMessage() {
+  return "Longrun rejected the saved token. Enter the active server token above, click save, then return to Keys.";
+}
+function showNewKey() {
+  const form = $("customKeyForm");
+  if (form) form.hidden = false;
+  $("customKeyName").focus();
+}
 async function loadKeys() {
+  const box = $("keysList");
+  const status = $("keysStatus");
+  if (!box) return;
   try {
     const d = await api("GET", "/api/keys");
+    if (d.error) {
+      $("keysSummary").textContent = "Key list unavailable";
+      status.textContent = /unauthorized|401|forbidden/i.test(d.error)
+        ? _keyAuthMessage() : ("Could not load keys: " + d.error);
+      box.innerHTML = "";
+      $("customKeyForm").hidden = false;
+      return;
+    }
     const rows = d.keys || [];
     $("keysSummary").textContent = rows.length + " keys · " +
       rows.filter(k => k.set).length + " set";
+    status.textContent = "";
     if ($("keysFile")) {
       $("keysFile").innerHTML = "Values are never in the repo: they are written to the gitignored " +
         "<code>.env</code>. Providers and MCP reference a key by NAME only.";
     }
-    const box = $("keysList"); box.innerHTML = "";
-    if (!rows.length) { box.innerHTML = '<div class="remaining">no keys known</div>'; return; }
+    box.innerHTML = "";
+    if (!rows.length) {
+      box.innerHTML = '<div class="remaining">No configured keys were discovered. Use <b>+ New key</b> to add one.</div>';
+      return;
+    }
+    const descriptions = _keyDescriptions();
+    rows.sort((a, b) => {
+      if (a.env === "OPENROUTER_API_KEY") return -1;
+      if (b.env === "OPENROUTER_API_KEY") return 1;
+      return a.env.localeCompare(b.env);
+    });
     rows.forEach(k => {
       const row = document.createElement("div");
       row.className = "card";
@@ -7379,48 +7503,98 @@ async function loadKeys() {
       const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
       const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = k.env;
       const sub = document.createElement("div"); sub.className = "remaining";
-      sub.textContent = (k.where || []).join(", ");
+      sub.textContent = descriptions[k.env] || k.description || "Custom environment variable";
       info.append(t, sub);
       const st = document.createElement("span"); st.className = "remaining";
       st.textContent = k.set ? "set" : "missing";
       head.append(dot, info, st);
-      const edit = document.createElement("div");
-      edit.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:6px";
+      const edit = document.createElement("form");
+      edit.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px";
       const inp = document.createElement("input");
       inp.type = "password"; inp.className = "inp";
+      inp.name = k.env;
+      inp.setAttribute("aria-label", "Value for " + k.env);
       inp.placeholder = k.set ? "•••••••• (stored — 👁 to reveal)" : "new value…";
-      inp.style.cssText = "flex:1;padding:6px 10px;font-size:12px";
+      inp.style.cssText = "flex:1 1 180px;min-width:0;padding:6px 10px;font-size:12px";
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") setKey(k.env, inp.value, saveBtn); });
       const saveBtn = document.createElement("button");
-      saveBtn.className = "ghost"; saveBtn.textContent = "set";
-      saveBtn.onclick = () => setKey(k.env, inp.value, saveBtn);
+      saveBtn.className = "ghost"; saveBtn.type = "submit"; saveBtn.textContent = "set";
+      edit.onsubmit = (e) => { e.preventDefault(); setKey(k.env, inp.value, saveBtn); };
       edit.append(inp, saveBtn);
       if (k.set) {
         // JAG-163: the stored value is masked (••••); the eye reveals it and ⧉
         // copies it on demand (fetched from /api/keys/reveal, never listed).
         const eye = document.createElement("button");
-        eye.className = "ghost"; eye.textContent = "👁"; eye.title = "show / hide value";
+        eye.className = "ghost"; eye.type = "button"; eye.textContent = "👁"; eye.title = "show / hide value";
         eye.onclick = () => revealKey(k.env, inp, eye);
         const cp = document.createElement("button");
-        cp.className = "ghost"; cp.textContent = "⧉"; cp.title = "copy value";
+        cp.className = "ghost"; cp.type = "button"; cp.textContent = "⧉"; cp.title = "copy value";
         cp.onclick = () => copyKeyValue(k.env, cp);
         const clr = document.createElement("button");
-        clr.className = "ghost"; clr.textContent = "clear";
+        clr.className = "ghost"; clr.type = "button"; clr.textContent = "clear";
         clr.onclick = () => setKey(k.env, "", clr);
         edit.append(eye, cp, clr);
       }
       row.append(head, edit);
       box.appendChild(row);
     });
-  } catch (e) { $("keysSummary").textContent = "error: " + e; }
+  } catch (e) {
+    $("keysSummary").textContent = "Key list unavailable";
+    status.textContent = "Could not load keys: " + e;
+    $("customKeyForm").hidden = false;
+  }
+}
+async function addCustomKey() {
+  const name = $("customKeyName").value.trim().toUpperCase();
+  const description = $("customKeyDescription").value.trim();
+  const value = $("customKeyValue").value;
+  const button = $("addCustomKey");
+  const status = $("keysStatus");
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) {
+    status.textContent = "Use a valid environment-variable name, such as OPENROUTER_API_KEY.";
+    $("customKeyName").focus();
+    return;
+  }
+  if (!value) {
+    status.textContent = "Enter a secret value before saving.";
+    $("customKeyValue").focus();
+    return;
+  }
+  if (description) {
+    const descriptions = _keyDescriptions();
+    descriptions[name] = description;
+    localStorage.setItem("sf_key_descriptions", JSON.stringify(descriptions));
+  }
+  if (await setKey(name, value, button)) {
+    $("customKeyName").value = "";
+    $("customKeyDescription").value = "";
+    $("customKeyValue").value = "";
+  }
 }
 async function setKey(name, value, btn) {
   const prev = btn.textContent; btn.textContent = "…";
   try {
     const r = await api("POST", "/api/keys", { name: name, value: value });
-    if (r.error) { btn.textContent = "err"; setTimeout(() => { btn.textContent = prev; }, 1200); return; }
-    loadKeys();
-  } catch (e) { btn.textContent = "err"; setTimeout(() => { btn.textContent = prev; }, 1200); }
+    if (r.error) {
+      $("keysStatus").textContent = /unauthorized|401|forbidden/i.test(r.error)
+        ? _keyAuthMessage() : ("Could not save key: " + r.error);
+      if (/unauthorized|401|forbidden/i.test(r.error)) $("customKeyForm").hidden = false;
+      btn.textContent = "err"; setTimeout(() => { btn.textContent = prev; }, 1200);
+      return false;
+    }
+    if (name === "LONGRUN_TOKEN") {
+      TOKEN = (value || "").trim() || null;
+      if (TOKEN) localStorage.setItem("sf_token", TOKEN);
+      else localStorage.removeItem("sf_token");
+    }
+    $("keysStatus").textContent = "Saved " + name + " to the server's gitignored .env.";
+    await loadKeys();
+    return true;
+  } catch (e) {
+    $("keysStatus").textContent = "Could not save key: " + e;
+    btn.textContent = "err"; setTimeout(() => { btn.textContent = prev; }, 1200);
+    return false;
+  }
 }
 /* JAG-163: reveal/copy a stored value on demand (never listed in /api/keys). */
 async function revealKey(name, inp, btn) {
@@ -7564,10 +7738,10 @@ function skillsAutocomplete() {
 
 /* JAG-150: movable settings window (non-blocking). */
 const SETTINGS_CATS = [
-  ["appearance", "Appearance"], ["models", "Models"], ["subagents", "Subagents"], ["knowledge", "Knowledge"], ["keys", "Keys"],
+  ["keys", "Keys"], ["models", "Models"], ["subagents", "Subagents"], ["knowledge", "Knowledge"],
   ["mcp", "MCP"], ["skills", "Skills"],
   ["rules", "Rules"], ["harness", "Harness"], ["config", "Config files"], ["tools", "Tools & approvals"],
-  ["improvement", "Improvement"], ["info", "\u24D8 Info"],
+  ["improvement", "Improvement"], ["appearance", "Appearance"], ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
    by the inline boot script above, these helpers just re-render and save. */
@@ -7649,7 +7823,15 @@ function settingsCategory(name) {
   }
   else if (name === "keys") { $("token-input").value = TOKEN || ""; loadKeys(); }
   else if (name === "info") {
-    api("GET", "/api/self").then(d => renderSelf($("selfPanel"), d)).catch(e => json_pre($("selfPanel"), { error: String(e) }));
+    api("GET", "/api/self").then(d => {
+      if (d.error) {
+        $("selfPanel").innerHTML = '<div class="remaining">Longrun rejected this browser token. Replace it in Settings → Keys, click save, then reopen Info.</div>';
+        return;
+      }
+      renderSelf($("selfPanel"), d);
+    }).catch(() => {
+      $("selfPanel").innerHTML = '<div class="remaining">Longrun is unavailable. Check the server connection and try again.</div>';
+    });
   }
 }
 function buildSettingsWin() {
