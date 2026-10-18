@@ -85,9 +85,10 @@ check("restored draft does not claim the corrected token is still rejected",
       'id="provAuthMessage"' in UI
       and '$("provAuthMessage").textContent =' in restore_provider_ui
       and "Unsaved provider draft restored" in restore_provider_ui)
-check("README documents generic Ollama and LM Studio setup",
+check("README documents Ollama, llama.cpp, and LM Studio setup",
       all(term in README for term in (
           "Ollama", "LM Studio", "Settings → Models", "11434/v1",
+          "llama.cpp", "llamacpp-local", "8080/v1", "/v1/models",
           "1234/v1", "local (no key)")))
 
 print("---")

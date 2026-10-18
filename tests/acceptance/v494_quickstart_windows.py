@@ -51,12 +51,38 @@ check("A2 Windows launcher installs the required dependency and opens the UI",
       and "--version" in LAUNCHER
       and " -c " not in LAUNCHER
       and "Start-Process" in LAUNCHER)
+check("A3 DGX quick start confirms ARM64 and installs distro PyYAML",
+      "uname -m" in linux and "aarch64" in linux and "python3-yaml" in linux)
+common_setup_links = (
+    "[Model setup](#model-setup)",
+    "[Secrets and local settings](#secrets-and-local-settings)",
+    "[MCP servers and skills](#optional-mcp-servers-and-skills)",
+    "[remote access](#remote-access)",
+    "[document extraction](#optional-document-extraction)",
+    "[sandbox](#sandbox)",
+)
+linux_setup_links = common_setup_links + ("[Linux service](#optional-linux-service)",)
+setup_headings = (
+    "## Model setup",
+    "### Secrets and local settings",
+    "### Optional: MCP servers and skills",
+    "### Remote access",
+    "### Optional Linux service",
+    "### Optional document extraction",
+    "### Sandbox",
+)
+check("A4 Windows quick start links to full setup and optional instructions",
+      all(link in start for link in common_setup_links)
+      and all(heading in README for heading in setup_headings))
+check("A5 Linux quick start links to full setup and optional instructions",
+      all(link in linux for link in linux_setup_links)
+      and all(heading in README for heading in setup_headings))
 
 check("B1 OpenRouter account and API-key destination are linked",
-      "https://openrouter.ai/" in start
-      and "https://openrouter.ai/settings/keys" in start
-      and "OPENROUTER_API_KEY" in start
-      and "Settings" in start and "Keys" in start)
+      "https://openrouter.ai/" in README
+      and "https://openrouter.ai/settings/keys" in README
+      and "OPENROUTER_API_KEY" in README
+      and "Settings" in README and "Keys" in README)
 check("B2 README distinguishes server token from provider API key",
       "first-run panel" in guide.lower()
       and "OPENROUTER_API_KEY" in guide
@@ -86,7 +112,10 @@ check("C2 README omits machine-specific role and compaction defaults",
 
 check("D1 MCP is optional and has a UI catalog setup path",
       "Settings" in guide and "MCP" in guide and "npx" in guide
-      and "GITHUB_TOKEN" in guide and "mcp_clients.local.json" in guide)
+      and "GITHUB_TOKEN" in guide and "mcp_clients.local.json" in guide
+      and "MCP JSON" in guide and "Streamable HTTP" in guide
+      and "absolute allowed directory" in guide and "`${VARIABLE_NAME}`" in guide
+      and "Click **reload**" in guide)
 check("D2 skills are optional, installed from ZIP, and stored in skills/local",
       "Settings" in guide and "Skills" in guide and ".zip" in guide
       and "skills/local" in guide

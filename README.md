@@ -30,15 +30,17 @@ core runtime. Supports Windows 10/11 x64 and Linux x86_64/ARM64.
 
 3. When the WebUI opens at `http://127.0.0.1:8790/`, set a Longrun token in the
    first-run panel.
-4. For OpenRouter, create an account at [openrouter.ai](https://openrouter.ai/),
-   create a key at [OpenRouter API Keys](https://openrouter.ai/settings/keys),
-   and enter it in **Settings → Keys** as `OPENROUTER_API_KEY`. For Ollama, follow
-   [Local models](#local-models) instead.
+4. Configure a provider using [Model setup](#model-setup). Add required credentials
+   in [Secrets and local settings](#secrets-and-local-settings).
 5. Choose an available model in the chat model picker and send a message.
 
 The launcher installs PyYAML if needed. Leave its terminal open; press **Ctrl+C**
 there to stop Longrun. `LONGRUN_TOKEN` protects Longrun; provider keys authorize
 model calls. Both are entered in the WebUI and saved to the gitignored `.env`.
+
+Optional setup: [MCP servers and skills](#optional-mcp-servers-and-skills),
+[remote access](#remote-access), [document extraction](#optional-document-extraction),
+and [sandbox](#sandbox).
 
 ---
 
@@ -57,10 +59,13 @@ See [Architecture](docs/ARCHITECTURE.md) for system behavior and
 
 ## Quick start: Linux (x86_64 and ARM64)
 
-On Ubuntu 24.04, including DGX Spark ARM64, install Git, Python 3.10+, and
+### DGX Spark (ARM64 / aarch64)
+
+Confirm the architecture, then install Git, Python 3.10+, and
 [PyYAML](https://packages.ubuntu.com/noble/python3-yaml):
 
 ```bash
+uname -m
 sudo apt update
 sudo apt install -y git python3 python3-yaml
 git clone https://github.com/jagones84/longrun
@@ -68,18 +73,29 @@ cd longrun
 ./run.sh
 ```
 
-Open `http://127.0.0.1:8790/`. Set a token in the first-run panel. Then configure
-a provider below. Keep the terminal open; press **Ctrl+C** to stop Longrun.
-For other Linux distributions, install equivalent Git, Python, and PyYAML packages.
+`uname -m` should print `aarch64`. These same package and launch steps work on
+Ubuntu x86_64; there, `uname -m` prints `x86_64`.
+
+Open `http://127.0.0.1:8790/`. Set a token in the first-run panel. Configure a
+provider with [Model setup](#model-setup), then choose it in the model picker.
+Keep the terminal open; press **Ctrl+C** to stop Longrun. For other Linux
+distributions, install equivalent Git, Python, and PyYAML packages.
+
+Next: [Secrets and local settings](#secrets-and-local-settings),
+[MCP servers and skills](#optional-mcp-servers-and-skills),
+[remote access](#remote-access), [Linux service](#optional-linux-service),
+[document extraction](#optional-document-extraction), and [sandbox](#sandbox).
 
 ## Model setup
 
 ### OpenRouter
 
-After setting `OPENROUTER_API_KEY`, choose `openrouter:openai/gpt-4o-mini` in the
-model picker. See the
-[OpenRouter model page](https://openrouter.ai/openai/gpt-4o-mini) for its current
-availability and pricing.
+Create an account at [OpenRouter](https://openrouter.ai/) and an API key at
+[OpenRouter API Keys](https://openrouter.ai/settings/keys). Enter it in
+**Settings → Keys** as `OPENROUTER_API_KEY`, then choose
+`openrouter:openai/gpt-4o-mini` in the model picker. See the
+[model page](https://openrouter.ai/openai/gpt-4o-mini) for current availability
+and pricing.
 
 ### Local models
 
@@ -98,8 +114,15 @@ This URL assumes Ollama and Longrun run on the same machine. The provider URL is
 accessed by the Longrun server, not the browser. Use the model server's reachable
 address when they run on different machines.
 
+For llama.cpp, open **Settings → Models → Add/edit provider** and set ID
+`llamacpp-local`, name `llama.cpp local`, kind `llama.cpp`, base URL
+`http://127.0.0.1:8080/v1`, and the exact model ID reported by `/v1/models`.
+Leave the key variable blank and enable **local (no key)**. After saving, choose
+`llamacpp-local:<model-id>` in the picker.
+
 For LM Studio, use ID and name `lmstudio` / `LM Studio`, base URL
-`http://127.0.0.1:1234/v1`, its exact model ID, and enable **local (no key)**.
+`http://127.0.0.1:1234/v1`, kind `openai-compatible`, its exact model ID, and
+enable **local (no key)**.
 Official references:
 [Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility) and
 [LM Studio OpenAI-compatible endpoints](https://lmstudio.ai/docs/developer/openai-compat).
@@ -139,13 +162,31 @@ Longrun instance; the codebase index is separate for each workspace.
 
 Neither is required for chat.
 
-- **MCP:** install [Node.js](https://nodejs.org/) for catalog entries that use `npx`,
-  then open **Settings → MCP → Catalog** and click **+ add**. GitHub needs
-  `GITHUB_TOKEN` in **Settings → Keys**; Filesystem asks you to choose an absolute
-  folder to expose. User server definitions are saved in
-  `config/mcp_clients.local.json`.
-- **Skills:** open **Settings → Skills → Install from zip**, choose a trusted skill
-  `.zip`, and click **install**. User-installed skills go under `skills/local/`.
+#### MCP servers
+
+1. Install [Node.js](https://nodejs.org/) on the machine running Longrun if the
+   server uses `npx` (stdio). Streamable HTTP servers do not need `npx`.
+2. Open **Settings → MCP**. Use **Catalog · add in one click** for a preset, or
+   **MCP JSON** to paste one server's `mcpServers` snippet and confirm it.
+   **Edit mcp.json** opens the local server definitions for direct editing.
+3. Complete any required values before saving:
+   - **Filesystem:** replace the placeholder with an absolute allowed directory.
+     Choose a narrow folder; do not expose the whole home directory.
+   - **GitHub:** set `GITHUB_TOKEN` in **Settings → Keys**.
+   - **Other servers:** use `command` and `args` for stdio, or `url` and optional
+     `headers` for Streamable HTTP. For HTTP auth headers, store the key in
+     **Settings → Keys** and reference it as `${VARIABLE_NAME}`.
+4. Click **reload** in Settings → MCP. Check that each enabled server is connected
+   and reports the expected tools.
+
+User server definitions are saved in the gitignored
+`config/mcp_clients.local.json`; the shipped `config/mcp_clients.yaml` contains
+generic examples only.
+
+#### Skills
+
+Open **Settings → Skills → Install from zip**, choose a trusted skill `.zip`, and
+click **install**. User-installed skills go under `skills/local/`.
 
 ### Remote access
 
