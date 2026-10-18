@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""v494 — a fresh Windows clone can launch and configure itself from the UI.
+"""v494 — README quickstarts give accurate, ordered setup steps.
 
 Guards the first-run path users follow: one PowerShell launcher command, automatic
-required-dependency bootstrap, browser launch, an OpenRouter key link + UI save
-path, accurate shipped model defaults, and optional MCP/skill setup instructions.
+required-dependency bootstrap, browser launch, provider examples, no private
+machine addresses, and optional MCP/skill setup instructions.
 """
 import os
 import sys
@@ -37,9 +37,10 @@ def check(name, ok, detail=""):
           + ((" :: " + str(detail)) if detail else ""))
 
 
-start = README.split("## Quick start", 1)[-1].split("## Why Longrun", 1)[0]
-install = README.split("## Install & run", 1)[-1].split("## API & integration", 1)[0]
-guide = start + install
+start = README.split("## Quick start: Windows", 1)[1].split("## What Longrun does", 1)[0]
+linux = README.split("## Quick start: Linux", 1)[1].split("## Model setup", 1)[0]
+install = README.split("## Model setup", 1)[1].split("## Secrets and local settings", 1)[0]
+guide = start + linux + install + README
 check("A1 Windows quick start uses the policy-bypass launcher and one URL",
       "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\run.ps1" in start
       and "http://127.0.0.1:8790/" in start
@@ -57,29 +58,31 @@ check("B1 OpenRouter account and API-key destination are linked",
       and "OPENROUTER_API_KEY" in start
       and "Settings" in start and "Keys" in start)
 check("B2 README distinguishes server token from provider API key",
-      "First-run security setup" in guide
+      "first-run panel" in guide.lower()
       and "OPENROUTER_API_KEY" in guide
       and "LONGRUN_TOKEN" in guide
-      and "different" in guide.lower())
+      and "protects Longrun" in guide
+      and "provider keys authorize" in guide)
 check("B3 README names the physical ignored key file",
       'os.path.join(REPO, ".env")' in KEYS and ".env" in read(".gitignore")
-      and "repo-root" in guide.lower()
-      and r"C:\Users\you\longrun\.env" in guide)
+      and "<repository>/.env" in guide)
 
-check("C1 docs match the shipped cloud default and optional local chat pattern",
+check("C1 README shows a selectable OpenRouter model without claiming a default",
       "openrouter:openrouter/auto" in PROVIDERS
-      and "openrouter:openrouter/auto" in guide
+      and "openrouter:openai/gpt-4o-mini" in guide
+      and "openrouter:openrouter/auto" not in README
       and "pattern: qwen" in ROUTING
-      and "qwen" in guide.lower())
-check("C2 docs match shipped compaction and agent-role model pins",
+      and "pattern: qwen" not in README)
+check("C2 README omits machine-specific role and compaction defaults",
       "openrouter:meta/muse-spark-1.3-contributor" in ROUTING
       and "openrouter:z-ai/glm-5.3-flash" in ROUTING
       and "openrouter:deepseek/deepseek-v4-flash-0731" in ROUTING
       and "trigger_pct: 70" in COMPACTION
-      and all(ref in guide for ref in (
+      and all(ref not in README for ref in (
           "openrouter:meta/muse-spark-1.3-contributor",
           "openrouter:z-ai/glm-5.3-flash",
-          "openrouter:deepseek/deepseek-v4-flash-0731")))
+          "openrouter:deepseek/deepseek-v4-flash-0731",
+          "70% context, target 30%")))
 
 check("D1 MCP is optional and has a UI catalog setup path",
       "Settings" in guide and "MCP" in guide and "npx" in guide

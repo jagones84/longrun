@@ -47,11 +47,11 @@ check("2b it is documented as dev-only (not the app runtime)",
 check("2c mega_test.sh uses a THROWAWAY venv under TMPDIR (repo stays clean)",
       'VENV="${TMPDIR' in MEGA and "requirements-dev.txt" in MEGA, "")
 
-# --- the README explains the model (NO bundled venv) ------------------------
-check("3a README installs extras with `pip install --user`",
-      "pip install --user -r requirements.txt" in README, "")
-check("3b README says requirements are installed for the running interpreter",
-      "system" in README.lower() and "interpreter" in README.lower(), "")
+# --- the Linux README bootstrap uses the distro Python package ---------------
+check("3a Ubuntu README installs PyYAML for the system Python",
+      "sudo apt install -y git python3 python3-yaml" in README, "")
+check("3b Linux quick start launches through run.sh",
+      "Python 3.10+" in README and "./run.sh" in README, "")
 check("3c README does NOT tell users to create a repo venv",
       "python3 -m venv .venv" not in README and ".venv/bin/python" not in README, "")
 

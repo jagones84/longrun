@@ -113,8 +113,8 @@ check("C4 an out-of-scope path is not verified",
 # ---- D) the description is truthful -----------------------------------------
 readme = open(os.path.join(REPO, "README.md"), encoding="utf-8").read().lower()
 check("D1 the README documents the three headline mechanisms",
-      "tool-output offload" in readme and "auto-compact" in readme
-      and "verifier gates" in readme and "bounded" in readme, "")
+      "tool-output offload" in readme and "bounded context" in readme
+      and "verification gates" in readme, "")
 hits = []
 for root_dir, dirs, fs in os.walk(os.path.join(REPO, "src")):
     for name in fs:

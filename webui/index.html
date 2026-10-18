@@ -204,6 +204,9 @@
     border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; overflow-x: hidden;
     background: rgba(8,10,20,.45); display: flex; flex-direction: column; gap: 4px;
   }
+  .session-create { width: 100%; min-width: 0; }
+  #sessInp { flex: 1 1 0; min-width: 0; }
+  .session-create > button { flex: 0 0 auto; white-space: nowrap; }
   aside h2 { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin: 12px 0 8px; text-transform: uppercase;
     display: flex; align-items: center; gap: 8px; }
   aside h2:first-child { margin-top: 0; }
@@ -1459,9 +1462,9 @@
         </div>
         <div class="rp-body" id="runsPanelBody"></div>
       </div>
-      <div class="u-df u-g6 u-mb6">
-        <input id="sessInp" class="inp u-f1 u-p610 u-fs12" placeholder="new session title…">
-        <button class="ghost" data-call="newSession">+ new</button>
+      <div id="sessionCreate" class="session-create u-df u-g6 u-mb6">
+        <input id="sessInp" class="inp u-p610 u-fs12" placeholder="new session title…">
+        <button type="button" class="ghost" data-call="newSession" aria-label="create new session">+ new</button>
       </div>
       <input id="session-search" class="inp u-w100 u-mb6 u-p610 u-fs12" placeholder="search sessions…">
       <label class="remaining u-df u-aic u-g6 u-mb6"><input type="checkbox" id="hide-empty"> hide empty</label>
@@ -2019,7 +2022,11 @@
           <input id="provModels" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="models (comma-separated; id or id:context_length)">
           <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="provLocal"> local (no key)</label>
           <button class="ghost u-mt8" data-call="saveProvider">save provider</button>
-          <div id="provResult" class="remaining u-mt6"></div>
+          <div id="provResult" class="remaining u-mt6" role="status" aria-live="polite"></div>
+          <div id="provAuthRecovery" class="remaining u-mt8" role="alert" hidden>
+            <div id="provAuthMessage">Provider was not saved. Longrun rejected this browser token. Enter the active server token in Settings → Keys, save it, then return to Models and save this provider again.</div>
+            <button class="ghost u-mt6" data-call="openSettings" data-args='["keys"]'>open Keys →</button>
+          </div>
         </details>
         <h2>Providers</h2>
         <div class="card">
@@ -7434,6 +7441,7 @@ async function saveReasoning() {
 async function saveProvider() {
   const id = $("provId").value.trim();
   if (!id) { $("provResult").textContent = "id required"; return; }
+  $("provAuthRecovery").hidden = true;
   const body = { id, kind: $("provKind").value || "openai", local: $("provLocal").checked };
   if ($("provName").value.trim()) body.name = $("provName").value.trim();
   if ($("provUrl").value.trim()) body.base_url = $("provUrl").value.trim();
@@ -7444,8 +7452,53 @@ async function saveProvider() {
   });
   if (models.length) body.models = models;
   const r = await api("POST", "/api/providers", body);
+  if (r.error && /unauthorized|401|forbidden/i.test(String(r.error))) {
+    _saveProviderDraft();
+    $("provResult").textContent = "Provider was not saved.";
+    $("provAuthRecovery").hidden = false;
+    return;
+  }
   $("provResult").textContent = r.error ? ("error: " + r.error) : ("saved: " + r.id);
-  if (!r.error) loadProviders();
+  if (!r.error) {
+    try { sessionStorage.removeItem("sf_provider_draft"); } catch (e) {}
+    await loadProviders();
+    await loadModels();
+  }
+}
+function _saveProviderDraft() {
+  try {
+    sessionStorage.setItem("sf_provider_draft", JSON.stringify({
+      id: $("provId").value,
+      name: $("provName").value,
+      kind: $("provKind").value,
+      url: $("provUrl").value,
+      keyEnv: $("provKeyEnv").value,
+      models: $("provModels").value,
+      local: $("provLocal").checked,
+    }));
+  } catch (e) { /* the form remains available until this page reloads */ }
+}
+function _restoreProviderDraft() {
+  let draft;
+  try {
+    draft = JSON.parse(sessionStorage.getItem("sf_provider_draft") || "null");
+  } catch (e) {
+    try { sessionStorage.removeItem("sf_provider_draft"); } catch (_) {}
+    return;
+  }
+  if (!draft || typeof draft !== "object") return;
+  $("provId").value = draft.id || "";
+  $("provName").value = draft.name || "";
+  $("provKind").value = draft.kind || "openai";
+  $("provUrl").value = draft.url || "";
+  $("provKeyEnv").value = draft.keyEnv || "";
+  $("provModels").value = draft.models || "";
+  $("provLocal").checked = !!draft.local;
+  const form = $("provId").closest("details");
+  if (form) form.open = true;
+  $("provResult").textContent = "Provider was not saved. Unsaved provider draft restored; check the Longrun token, then save again.";
+  $("provAuthMessage").textContent = "Draft restored. Confirm the browser token in Settings → Keys, then save the provider again.";
+  $("provAuthRecovery").hidden = false;
 }
 /* ---- keys (JAG-113/161): which env NAMES are needed, if set, and SET them ---- */
 function _keyDescriptions() {
@@ -9910,6 +9963,7 @@ function _bindInlineActions() {
   });
 }
 _bindInlineActions();
+_restoreProviderDraft();
 _bindSessBadgeReveal();   // JAG-428: clicking the collapsed-panel session badge reveals it
 </script>
 <script src="/assets/vendor/marked.min.js"></script>

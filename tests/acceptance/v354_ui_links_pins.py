@@ -81,8 +81,11 @@ check("D1 the wrong 'not another meta-harness' framing is gone",
       "not another meta-harness" not in README, "")
 check("D2 the 'zero pip dependencies' claim is corrected",
       "zero pip dependencies" not in README and "PyYAML" in README, "")
-check("D3 the correct framing is stated (one harness / its sessions are the agents)",
-      "single agent harness" in README and 'not a "meta-harness"' in README, "")
+check("D3 README states product scope and excludes private test endpoints",
+      "Self-hosted AI agent harness" in README
+      and all(value not in README for value in (
+          "100.102.61.23", "192.168.1.37", "100.76.251.9",
+          "Ollama Windows test", "a05c548dce55")), "")
 check("D4 the 1.0.0 changelog no longer says 'merely spawns sub-agents'",
       "merely spawns sub-agents" not in CHANGELOG, "")
 _ntests = len([f for f in os.listdir(os.path.join(REPO, "tests", "acceptance"))
@@ -134,4 +137,3 @@ print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-
