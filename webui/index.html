@@ -1040,6 +1040,15 @@
     border: 1px solid transparent; color: var(--dim); border-radius: 8px; padding: 7px 10px; margin-bottom: 3px;
     font-size: 12px; cursor: pointer; }
   #settingsWin .sw-nav button.active { color: var(--txt); border-color: var(--accent); background: var(--sel); }
+  .diag-badge { padding: 4px 8px; font-size: 10px; white-space: nowrap; }
+  .diag-badge.error { color: var(--err); border-color: var(--err); }
+  .diag-badge.warning { color: var(--warn); border-color: var(--warn); }
+  .diag-issue { border-left: 3px solid var(--warn); margin-bottom: 8px; }
+  .diag-issue.error { border-left-color: var(--err); }
+  .diag-issue.info { border-left-color: var(--acc); }
+  .diag-issue-head { display: flex; align-items: flex-start; gap: 8px; }
+  .diag-issue-title { flex: 1; font-weight: 600; }
+  .diag-severity { color: var(--dim); font-size: 10px; text-transform: uppercase; }
   /* JAG-3xx: on a phone the fixed 190px nav column left almost no room for the content
      and it could NOT be reduced (there was no handle). Turn the nav into a compact TOP
      tab strip and let the window fill the screen, so there is no "left width" to fight. */
@@ -1431,6 +1440,8 @@
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
       id="sbxTxt">…</span></span>
   <button class="ghost" id="settingsBtn" title="settings" data-call="toggleSettings">⚙</button>
+  <button class="ghost diag-badge" id="settingsDiagBadge" data-call="openSettings"
+          data-args='["diagnostics"]' aria-label="settings diagnostics" title="configuration diagnostics" hidden></button>
   <div class="appmenu-wrap">
     <button class="ghost" id="appmenuBtn" title="more — command palette" aria-haspopup="true" aria-expanded="false">☰</button>
     <div id="appMenu" class="card" hidden>
@@ -1616,9 +1627,10 @@
         </div>
       </section>
       <section data-insp="rules" class="insp-open">
-        <button class="insp-hd" data-call="toggleInsp" data-args='["rules"]'>Role<span class="ihd-s" id="sRoles"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["rules"]'>Session role<span class="ihd-s" id="sRoles"></span></button>
         <div class="insp-body">
         <div class="card">
+          <div class="remaining u-mb6">Per-session ROLE.md only. Global and project RULES.md: Settings → Rules.</div>
           <div id="rulesWho" class="rwho"></div>
           <div id="rulesList"></div>
         </div>
@@ -1702,6 +1714,15 @@
         <div class="card">
           <div class="remaining">Use the structured forms above (and the dedicated panels in Harness / Tools / Models / Subagents / MCP / Knowledge) for every normal change: they validate the values and write the right overlay. This raw editor is the complete fallback for anything not yet modelled. A save is rejected when the text is not valid YAML; the previous version is kept in <code>data/config-backups/</code>.</div>
         </div>
+      </div>
+      <div class="sw-cat" data-cat="diagnostics" hidden>
+        <h2>Settings diagnostics</h2>
+        <div class="card">
+          <div class="remaining" id="diagSummary" role="status" aria-live="polite">loading…</div>
+          <div class="remaining u-mt6">Checks run locally. They do not call an LLM or test remote credentials; provider validity is diagnosed after a real request fails.</div>
+          <button class="ghost u-mt8" data-call="loadDiagnostics" title="rerun settings checks">↻ run checks</button>
+        </div>
+        <div id="diagIssues" class="u-mt8"></div>
       </div>
       <div class="sw-cat" data-cat="tools" hidden>
         <h2>Tools &amp; approvals · what the agent can do, and when it must ask</h2>
@@ -3994,6 +4015,7 @@ function selectSession(s) {
   curRunId = null; localStorage.removeItem("sf_run"); graph = null;
   if (window.SparkEditor && SparkEditor.onSessionChange) SparkEditor.onSessionChange();
   loadSessions(); loadHistory(); loadCtx(); loadRole(); loadRules(); loadPlan(); loadCosts(); cbStatus();
+  scheduleDiagnosticsRefresh();
   modelLabel(); closeAside();
   attachIfRunning(sessionId);   // JAG-181: resume following a still-running turn
   // JAG-127: the open panel must follow the session switch — its folder
@@ -4347,6 +4369,7 @@ async function createNewSession() {
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
   if (window.SparkEditor && SparkEditor.onSessionChange) SparkEditor.onSessionChange();
   closeNewSess(); loadSessions(); loadHistory(); loadRules(); loadCtx(); loadRole(); loadPlan(); loadCosts(); modelLabel(); closeAside();
+  scheduleDiagnosticsRefresh();
 }
 /* JAG-121: folder picker (file-browser) for the session workspace */
 let _dirState = { path: "", parent: null, roots: [] };
@@ -4613,7 +4636,6 @@ async function loadRulesPanel() {
   const box = $("rulesList"); if (!box) return;
   const params = new URLSearchParams();
   if (sessionId) params.set("session", sessionId);
-  if (TOKEN) params.set("token", TOKEN);
   let d = null, role = null;
   try { d = await api("GET", "/api/rules?" + params.toString()); } catch (e) { d = null; }
   if (sessionId) {
@@ -5722,6 +5744,7 @@ function chooseModel(ref) {
     api("POST", "/api/sessions/" + encodeURIComponent(sessionId) + "/model", { model: ref }).catch(() => {});
   }
   modelLabel();
+  scheduleDiagnosticsRefresh();
   const m = $("modelMenu"); if (m) m.hidden = true;
   renderModelMenu();
   // JAG-258: re-measure the context bar against the newly selected model, so the
@@ -6428,6 +6451,11 @@ let _feedN = 0;   // JAG-403g: feed events seen (drives the Feed tab summary)
 function _feedReplay(ev) {
   const kind = ev && ev.kind, d = ev || {};
   if (!kind) return;
+  if (["config.saved", "providers.update", "rules.update", "settings.changed",
+       "settings.diagnostic"].includes(kind)) {
+    scheduleDiagnosticsRefresh();
+    return;
+  }
   if (kind === "graph.node.added" || kind === "graph.node.updated") { applyGraphEvent(d); return; }
   if (kind === "chat.run") { if (d.session) setRunning(d.session, true); return; }
   if (kind === "chat.done") {
@@ -6458,6 +6486,9 @@ function connectFeed() {
   const _qs = (authQS() ? "?" + authQS() + "&" : "?") + "since=" + feedSince;
   const es = new EventSource("/api/feed" + _qs);
   es.addEventListener("error", () => { es.close(); setTimeout(connectFeed, 5000); });
+  ["config.saved", "providers.update", "rules.update", "settings.changed",
+   "settings.diagnostic"].forEach(kind =>
+    es.addEventListener(kind, scheduleDiagnosticsRefresh));
   const push = line => {
     const f = $("feed"); const d = document.createElement("div");
     d.textContent = line; f.appendChild(d); f.scrollTop = f.scrollHeight;
@@ -7642,6 +7673,7 @@ async function setKey(name, value, btn) {
     }
     $("keysStatus").textContent = "Saved " + name + " to the server's gitignored .env.";
     await loadKeys();
+    scheduleDiagnosticsRefresh();
     return true;
   } catch (e) {
     $("keysStatus").textContent = "Could not save key: " + e;
@@ -7791,7 +7823,7 @@ function skillsAutocomplete() {
 
 /* JAG-150: movable settings window (non-blocking). */
 const SETTINGS_CATS = [
-  ["keys", "Keys"], ["models", "Models"], ["subagents", "Subagents"], ["knowledge", "Knowledge"],
+  ["keys", "Keys"], ["diagnostics", "Diagnostics"], ["models", "Models"], ["subagents", "Subagents"], ["knowledge", "Knowledge"],
   ["mcp", "MCP"], ["skills", "Skills"],
   ["rules", "Rules"], ["harness", "Harness"], ["config", "Config files"], ["tools", "Tools & approvals"],
   ["improvement", "Improvement"], ["appearance", "Appearance"], ["info", "\u24D8 Info"],
@@ -7835,6 +7867,143 @@ function applyBold(on) {
   localStorage.setItem("sf_bold", on ? "1" : "0");
   const c = $("boldText"); if (c) c.checked = !!on;
 }
+let _diagLoadSeq = 0, _diagRefreshTimer = null;
+function scheduleDiagnosticsRefresh() {
+  clearTimeout(_diagRefreshTimer);
+  _diagRefreshTimer = setTimeout(loadDiagnostics, 180);
+}
+function renderDiagnostics(report) {
+  const issues = Array.isArray(report && report.issues)
+    ? report.issues.filter(issue => issue && typeof issue === "object") : [];
+  const counts = (report && report.summary) || {};
+  const errors = Number(counts.errors) || 0;
+  const warnings = Number(counts.warnings) || 0;
+  const info = Number(counts.info) || 0;
+  const countLabel = (count, word) => count + " " + word + (count === 1 ? "" : "s");
+  const actionable = Number.isFinite(Number(counts.actionable))
+    ? Number(counts.actionable) : errors + warnings;
+  const badge = $("settingsDiagBadge");
+  if (badge) {
+    badge.hidden = actionable <= 0;
+    badge.textContent = actionable + (actionable === 1 ? " issue" : " issues");
+    badge.className = "ghost diag-badge" + (errors ? " error" : " warning");
+    badge.title = countLabel(errors, "error") + " · " + countLabel(warnings, "warning")
+      + " — open Settings diagnostics";
+  }
+  const summary = $("diagSummary"), box = $("diagIssues");
+  if (!summary || !box) return;
+  summary.textContent = countLabel(errors, "error") + " · "
+    + countLabel(warnings, "warning") + " · " + info + " info";
+  box.replaceChildren();
+  if (!issues.length) {
+    const empty = document.createElement("div");
+    empty.className = "card remaining";
+    empty.textContent = report && report.ok === false
+      ? "Diagnostics could not complete. Check the Longrun connection and retry."
+      : "No configuration issues found. Provider credentials and remote model IDs are not tested until a model request.";
+    box.appendChild(empty);
+    return;
+  }
+  const labels = { keys: "Open Keys", models: "Open Models",
+    config: "Open Config files", rules: "Open Rules" };
+  issues.forEach(issue => {
+    const severity = ["error", "warning", "info"].includes(issue.severity)
+      ? issue.severity : "warning";
+    const card = document.createElement("article");
+    card.className = "card diag-issue " + severity;
+    const head = document.createElement("div");
+    head.className = "diag-issue-head";
+    const title = document.createElement("div");
+    title.className = "diag-issue-title";
+    title.textContent = issue.title || "Settings issue";
+    const level = document.createElement("span");
+    level.className = "diag-severity";
+    level.textContent = severity;
+    head.append(title, level);
+    const message = document.createElement("div");
+    message.className = "remaining u-mt6";
+    message.textContent = issue.message || "Review this setting.";
+    const source = document.createElement("div");
+    source.className = "remaining u-mt4";
+    source.textContent = issue.source || "Settings";
+    card.append(head, message, source);
+    if (issue.model) {
+      const model = document.createElement("div");
+      model.className = "remaining u-mt4";
+      model.textContent = "Model: " + issue.model;
+      card.appendChild(model);
+    }
+    if (issue.occurred_at) {
+      const time = document.createElement("div");
+      time.className = "remaining u-mt4";
+      time.textContent = "Observed: " + new Date(issue.occurred_at * 1000).toLocaleString();
+      card.appendChild(time);
+    }
+    if (labels[issue.action]) {
+      const action = document.createElement("button");
+      action.className = "ghost u-mt8";
+      action.textContent = labels[issue.action];
+      action.addEventListener("click", () => openSettings(issue.action));
+      card.appendChild(action);
+    }
+    box.appendChild(card);
+  });
+}
+async function loadDiagnostics() {
+  const seq = ++_diagLoadSeq;
+  const params = new URLSearchParams();
+  if (sessionId) params.set("session", sessionId);
+  const selected = currentModel();
+  if (selected) params.set("model", selected);
+  const query = params.toString();
+  try {
+    const report = await api("GET", "/api/diagnostics" + (query ? "?" + query : ""));
+    if (seq !== _diagLoadSeq) return;
+    if (report && report.error) {
+      const unauthorized = /401|unauthorized/i.test(String(report.error));
+      renderDiagnostics({
+        ok: false, summary: { errors: 1, warnings: 0, info: 0, actionable: 1 },
+        issues: [{
+          code: unauthorized ? "auth.browser_unauthorized" : "diagnostics.unavailable",
+          severity: "error",
+          title: unauthorized ? "Browser is not authenticated" : "Diagnostics unavailable",
+          message: unauthorized
+            ? "Longrun rejected this browser token. Set the active server token in Settings → Keys."
+            : "Longrun could not load diagnostics. Check the server connection and retry.",
+          source: "Longrun", action: unauthorized ? "keys" : null,
+        }],
+      });
+      return;
+    }
+    if (!report || report.ok !== true || !Array.isArray(report.issues)
+        || !report.summary || typeof report.summary !== "object") {
+      renderDiagnostics({
+        ok: false, summary: { errors: 0, warnings: 1, info: 0, actionable: 1 },
+        issues: [{
+          code: "diagnostics.invalid_response",
+          severity: "warning",
+          title: "Diagnostics report is invalid",
+          message: "Longrun returned an incomplete report. Check the server and retry.",
+          source: "Longrun", action: "config",
+        }],
+      });
+      return;
+    }
+    renderDiagnostics(report);
+  } catch (e) {
+    if (seq !== _diagLoadSeq) return;
+    renderDiagnostics({
+      ok: false, summary: { errors: 0, warnings: 1, info: 0, actionable: 1 },
+      issues: [{
+        code: "diagnostics.unavailable",
+        severity: "warning",
+        title: "Diagnostics unavailable",
+        message: "Longrun could not load diagnostics. Check the server connection and retry.",
+        source: "Longrun", action: "config",
+      }],
+    });
+  }
+}
 function settingsWin() { return $("settingsWin"); }
 function settingsCategory(name) {
   document.querySelectorAll("#swNav button").forEach(b => b.classList.toggle("active", b.dataset.cat === name));
@@ -7868,6 +8037,7 @@ function settingsCategory(name) {
     if (typeof loadProviders === "function") loadProviders();
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
   }
+  else if (name === "diagnostics") { loadDiagnostics(); }
   else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSessions(); kbLoadSources(); researchModelLs(); kbResearchMode(); }
   else if (name === "appearance") {
     renderThemeGrid();
@@ -9893,7 +10063,7 @@ $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
-  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); refreshSendBtn();
+  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); refreshSendBtn();
   // auto-open the workspace tree of a restored-open Files panel (no manual ↻)
   { const _fs = document.querySelector('#inspector section[data-insp="files"]');
     if (_fs && _fs.classList.contains("insp-open")) { loadFiles(); loadEdits(); } }

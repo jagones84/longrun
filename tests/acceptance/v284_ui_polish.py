@@ -38,13 +38,14 @@ check("Approvals is the first inspector section",
 check("Approvals is the first inspector entry in the command palette",
       '[["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"]' in ui)
 
-# --- 1b) JAG-415/416: Context above Plan; the section is titled "Role" -------
+# --- 1b) JAG-415/416: Context above Plan; session role is scoped clearly -----
 check("the Context inspector section sits above Plan",
       ui.index('data-insp="context"') < ui.index('data-insp="plan"'))
-check("the per-session role section is titled Role (singular, not Rules)",
+check("the per-session role section is distinct from global Rules",
       # JAG-425: the inline handler became a delegated data-call attribute — assert
-      # the INTENT (the Role section title) without locking the binding syntax.
-      '>Role<span class="ihd-s"' in ui and ">Rules<" not in ui
+      # the INTENT (session-only role; global rules in Settings) without locking syntax.
+      '>Session role<span class="ihd-s"' in ui
+      and "Global and project RULES.md: Settings → Rules." in ui
       and 'data-insp="rules"' in ui)
 check("clicking a donut slice highlights its bar (seg + bar share a data-i key)",
       'class="seg" data-i="' in ui and 'class="bdbar" data-i="' in ui

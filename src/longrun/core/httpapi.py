@@ -159,6 +159,12 @@ def _int_arg(qs, key, default):
     return _as_int(qs.get(key, default), default)
 
 
+def _chat_failure_issue(error, session, model):
+    """Publish only a safe classification of a failed model request."""
+    from longrun.core import diagnostics
+    return diagnostics.report_model_failure(error, session, model, publish)
+
+
 def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     sender=None, subjob=None, plan_only=False, sender_session=None):
     """SSE producer for one chat request on `sess`.
@@ -334,8 +340,8 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
         except Exception as e:
             # JAG-51: a failed stream must still leave a trace in the session —
             # persist the explicit assistant error turn, then tell the client.
-            ensure_reply_persisted(sess, since, error=e, model=target)
-            publish("chat.error", session=sess["id"], error=str(e))
+            issue = _chat_failure_issue(e, sess["id"], target)
+            ensure_reply_persisted(sess, since, error=issue["message"], model=target)
             try:
                 from longrun.model import runmetrics
                 runmetrics.finish(sess["id"], outcome="error", stop_reason="error",
@@ -345,7 +351,8 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             except Exception:  # noqa: BLE001
                 pass
             q.put("event: error\ndata: %s\n\n" % json.dumps(
-                {"error": str(e), "session": sess["id"], "stored": True},
+                {"error": issue["message"], "diagnostic": issue,
+                 "session": sess["id"], "stored": True},
                 ensure_ascii=False))
         finally:
             _coalesce.flush()  # JAG-265: emit any coalesced CoT tail before closing
@@ -1983,11 +1990,14 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:  # noqa: BLE001
                     # JAG-51: persist an explicit assistant error turn *before* the
                     # 502 — the user message must never stay orphaned.
-                    ensure_reply_persisted(sess, mark, error=e, model=body.get("model"))
-                    publish("chat.error", session=sess["id"], error=str(e))
+                    failed_model = locals().get("_tm") or body.get("model")
+                    issue = _chat_failure_issue(e, sess["id"], failed_model)
+                    ensure_reply_persisted(sess, mark, error=issue["message"],
+                                           model=failed_model)
                     if trace:
                         trace.finish("error")
-                    return self._send(502, {"error": "router call failed: %s" % e,
+                    return self._send(502, {"error": issue["message"],
+                                            "diagnostic": issue,
                                             "session": sess["id"],
                                             "run_id": getattr(trace, "id", None),
                                             "stored_error": True})

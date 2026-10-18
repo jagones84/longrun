@@ -755,9 +755,11 @@ class LocalApi:
             reply, mdl = srv.chat_once(sess, message, model)
         except Exception as e:  # noqa: BLE001
             # JAG-51: same contract as /api/chat — persist the error turn.
-            srv.ensure_reply_persisted(sess, mark, error=e, model=model)
-            return {"session": sess["id"], "model": model, "error": str(e),
-                    "stored_error": True}
+            from longrun.core import diagnostics
+            issue = diagnostics.report_model_failure(e, sess["id"], model, srv.publish)
+            srv.ensure_reply_persisted(sess, mark, error=issue["message"], model=model)
+            return {"session": sess["id"], "model": model, "error": issue["message"],
+                    "diagnostic": issue, "stored_error": True}
         finally:
             srv.turn_end(sess["id"], tok)
         return {"session": sess["id"], "model": mdl, "reply": reply.get("content"),
@@ -1081,6 +1083,31 @@ def handle(handler, method, path, qs, body):
                 })
             except Exception as e:  # noqa: BLE001
                 return _r(handler, 500, {"error": str(e)})
+        if path == "/api/diagnostics":
+            from longrun.core import diagnostics
+            try:
+                host = handler.server.server_address[0]
+            except Exception:  # noqa: BLE001 — diagnostics still work without listener metadata
+                host = "127.0.0.1"
+            try:
+                report = diagnostics.collect(
+                    session_id=qs.get("session"), model=qs.get("model"), host=host)
+            except Exception:  # noqa: BLE001 — do not expose internals or fake an empty result
+                report = {
+                    "ok": False,
+                    "generated_at": time.time(),
+                    "summary": {"errors": 0, "warnings": 1, "info": 0, "actionable": 1},
+                    "issues": [{
+                        "code": "diagnostics.unavailable",
+                        "severity": "warning",
+                        "scope": "global",
+                        "title": "Diagnostics could not complete",
+                        "message": "Longrun could not complete the settings report. Review Settings → Config files.",
+                        "source": "Diagnostics",
+                        "action": "config",
+                    }],
+                }
+            return _r(handler, 200, report)
         # JAG-114: global/project rules + workspace selection
         if path == "/api/rules":
             return _r(handler, 200, rules_status(qs))
@@ -1551,6 +1578,8 @@ def handle(handler, method, path, qs, body):
                 # browser can rotate its server token without a restart.
                 from longrun.core import httpapi as _httpapi
                 _httpapi.sync_runtime_token(body.get("value"))
+            if res.get("ok"):
+                _publish("settings.changed", area="keys")
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/keys/reveal":
             # JAG-163: on-demand single-value reveal for the eye / copy buttons.

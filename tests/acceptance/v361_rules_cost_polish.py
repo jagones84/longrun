@@ -48,9 +48,32 @@ check("A5 the panel reads both APIs and keeps loadRole as an alias",
       'api("GET", "/api/rules?" + params.toString())' in HTML
       and 'api("GET", "/api/roles?session="' in HTML
       and "async function loadRole() { return loadRulesPanel(); }" in HTML, "")
+_rules_loader = HTML.split("async function loadRulesPanel() {", 1)[1].split(
+    "\nfunction _rulesRow", 1)[0]
+check("A5b the Rules request never puts the browser token in its URL",
+      'params.set("token", TOKEN)' not in _rules_loader
+      and 'params.set("session", sessionId)' in _rules_loader, "")
 check("A6 the panel is role-only (global/project rules moved to Settings)",
       '"global rules (all projects)"' not in HTML
       and '"project rules (this workspace)"' not in HTML, "")
+check("A7 the session inspector identifies ROLE.md and links global rules to Settings",
+      'data-args=\'["rules"]\'>Session role<' in HTML
+      and "Per-session ROLE.md only" in HTML
+      and "Global and project RULES.md: Settings → Rules." in HTML, "")
+check("A8 global and project RULES.md editors remain in Settings",
+      'data-cat="rules"' in HTML and 'id="rulesGlobalText"' in HTML
+      and 'id="rulesProjectText"' in HTML, "")
+check("A9 Settings includes a diagnostics category and panel",
+      '["diagnostics", "Diagnostics"]' in HTML
+      and 'data-cat="diagnostics"' in HTML
+      and 'api("GET", "/api/diagnostics' in HTML, "")
+check("A10 the header diagnostics control exposes its issue summary",
+      'id="settingsDiagBadge"' in HTML and 'aria-label="settings diagnostics"' in HTML
+      and 'function renderDiagnostics' in HTML, "")
+check("A11 diagnostics presents unauthorized responses as an auth issue",
+      'const unauthorized = /401|unauthorized/i.test(String(report.error))' in HTML
+      and '"auth.browser_unauthorized"' in HTML
+      and "Longrun rejected this browser token" in HTML, "")
 
 # --- C: my duplicate-id regression + the interface polish --------------------
 check("C1 the topbar element no longer shadows the inspector #ctxPct",
