@@ -10,6 +10,11 @@ eval/results/
 .agent/
 .Matrix/
 
+# Matrix scratch/test scripts must NEVER be tracked. `.Matrix/` above already
+# ignores the whole tree; this explicit rule keeps trash ignored even if a later
+# change starts tracking parts of .Matrix (e.g. rules/ or docs/).
+.Matrix/trash/
+
 
 # JAG-180: editor/agent backup + temp files must never reach the repo.
 *.bak

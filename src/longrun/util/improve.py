@@ -109,6 +109,12 @@ def ledger_add(kind, **fields):
         _trim_ledger()
     except OSError:
         pass
+    if origin != "matrix":
+        try:
+            from longrun.core import matrix as _mtx
+            _mtx.call_hook("util", "on_ledger_add", entry, default=None)
+        except Exception:  # noqa: BLE001
+            pass
     return entry
 
 

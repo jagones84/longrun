@@ -449,6 +449,14 @@ def _terminal_payload(termination: str, payload: Dict[str, Any]) -> Dict[str, An
     error = payload.get("error") or payload.get("message")
     if isinstance(error, str) and error.strip():
         out["error"] = " ".join(error.split())[:MAX_ERROR_CHARS]
+    if termination == TERMINATION_COMPLETED:
+        try:
+            from longrun.core import matrix as _mtx
+            aug = _mtx.call_hook("integrations", "transform_bridge_payload", out, default=out)
+            if isinstance(aug, dict):
+                return aug
+        except Exception:  # noqa: BLE001
+            pass
     return out
 
 

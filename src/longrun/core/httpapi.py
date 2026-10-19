@@ -1580,6 +1580,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, f.read(), ctype="text/javascript; charset=utf-8")
             except FileNotFoundError:
                 return self._send(404, {"error": "sw missing"})
+        if path == "/api/matrix/plugins.js":
+            try:
+                from longrun.core import matrix as _mtx_pjs
+                return self._send(200, _mtx_pjs.webui_plugins_js(),
+                                  ctype="text/javascript; charset=utf-8")
+            except Exception:  # noqa: BLE001
+                return self._send(200, "/* Matrix plugins unavailable */\n",
+                                  ctype="text/javascript; charset=utf-8")
         # Keep the static shell public so a fresh browser can reach the token
         # setup panel. All API/data routes remain protected below.
         if path in ("/", "/index.html"):
@@ -1603,6 +1611,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if _orbit_handle(self, "GET", path, qs, None):   # JAG-285: optional beta API
             return
+        try:
+            from longrun.core import matrix as _mtx_get
+            if _mtx_get.handle_ext_http(self, "GET", path, qs=qs, body=None):
+                return
+        except Exception:  # noqa: BLE001
+            pass
 
         if path == "/api/build":
             # JAG-362: a cheap fingerprint of the served UIs so a long-lived tab
@@ -1937,6 +1951,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if _orbit_handle(self, "POST", path, qs, body):   # JAG-285: optional beta API
             return
+        try:
+            from longrun.core import matrix as _mtx_post
+            if _mtx_post.handle_ext_http(self, "POST", path, qs=qs, body=body):
+                return
+        except Exception:  # noqa: BLE001
+            pass
 
         if path == "/api/chat":
             # One-shot chat. Session contract: see the Handler docstring (JAG-51).

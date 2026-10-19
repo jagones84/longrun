@@ -86,9 +86,18 @@ def decide(open_nodes, rounds, stale, started, now=None, aborted=False, blocked=
     if steer:
         return {"continue": True, "reason": None}
     if now - float(started) >= float(c["max_wall_secs"]):
-        return {"continue": False, "reason": "budget"}
-    if int(rounds) >= int(c["keepgoing_max"]):
-        return {"continue": False, "reason": "budget"}
-    if int(stale) >= int(c["no_progress_rounds"]):
-        return {"continue": False, "reason": "no_progress"}
-    return {"continue": True, "reason": None}
+        out = {"continue": False, "reason": "budget"}
+    elif int(rounds) >= int(c["keepgoing_max"]):
+        out = {"continue": False, "reason": "budget"}
+    elif int(stale) >= int(c["no_progress_rounds"]):
+        out = {"continue": False, "reason": "no_progress"}
+    else:
+        out = {"continue": True, "reason": None}
+    try:
+        from longrun.core import matrix as _mtx
+        adj = _mtx.call_hook("plan", "decide_keepgoing", out, open_nodes, rounds, default=out)
+        if isinstance(adj, dict) and "continue" in adj:
+            return adj
+    except Exception:  # noqa: BLE001
+        pass
+    return out

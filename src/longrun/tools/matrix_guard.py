@@ -14,7 +14,10 @@ import re
 
 from longrun.util.paths import REPO_ROOT as REPO
 
-MATRIX_SUBDIRS = ("agent", "core", "memory", "model", "plan", "tools", "util", "webui")
+MATRIX_SUBDIRS = (
+    "agent", "core", "integrations", "interop", "memory", "model",
+    "orbit", "orchestrate", "plan", "research", "tools", "util", "webui"
+)
 DOT_SUBDIRS = ("trash", "docs", "rules", "skills", "checkpoints")
 
 NUCLEUS_PROTECTED_REL = (
@@ -48,17 +51,34 @@ _DEFAULT_HANDOFF = (
 
 _DEFAULT_MANUAL = (
     "# Matrix Self-Evolution — Architecture & Operations Manual\n\n"
-    "## Directory Layout\n"
+    "## Directory Layout (All 13 Subpackages Live-Hooked)\n"
     "- `src/Matrix/`: live-editable Python packages mirroring `src/longrun/` (`agent`, `core`, "
-    "`memory`, `model`, `plan`, `tools`, `util`, `webui`).\n"
+    "`integrations`, `interop`, `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, "
+    "`tools`, `util`, `webui`).\n"
     "- `.Matrix/trash/`: temporary test scripts and sandbox experiments (clean up after use).\n"
-    "- `.Matrix/docs/`: `HANDOFF.md` (short-term state) and `MANUAL.md` (verified recipes).\n"
+    "- `.Matrix/docs/`: `HANDOFF.md` (short-term state) and `MANUAL.md` (verified recipes); "
+    "included in `checkpoint_save` / `checkpoint_rollback`.\n"
     "- `.Matrix/rules/`: `<NN>-<section>.md` system prompt addenda automatically hooked into the prompt.\n"
     "- `.Matrix/skills/`: `<name>/SKILL.md` auto-created skills segregated from external skills.\n"
     "- `.Matrix/checkpoints/`: 3 atomic rollback slots (`slot_1`, `slot_2`, `slot_3`).\n\n"
-    "## Adding a Dynamic Tool\n"
-    "Create `src/Matrix/tools/<name>.py` defining `TOOL_SCHEMA = {...}` and "
-    "`def execute(args, run_id=None) -> dict:`. Call `matrix{action:\"hotload\"}` to validate.\n"
+    "## 13 Live Seams into Nucleus (Fail-Open Isolated)\n"
+    "1. `src/Matrix/tools/<name>.py`: `TOOL_SCHEMA = {...}` + `def execute(args, run_id=None) -> dict`.\n"
+    "2. `src/Matrix/agent/hooks.py`: `transform_turn(sess, msgs, message)`.\n"
+    "3. `src/Matrix/core/hooks.py`: `on_event(event_dict)` & `handle_http(method, sub_path, qs, body)` "
+    "(serves `/api/matrix/ext/<sub_path>`).\n"
+    "4. `src/Matrix/memory/hooks.py`: `augment_recall(kind, results, limit)`.\n"
+    "5. `src/Matrix/model/hooks.py` (or `prompt_hook.py`): `extend_prompt(sess, ws)` & "
+    "`pick_model(role, default_model)`.\n"
+    "6. `src/Matrix/plan/hooks.py`: `score_candidate(text, base_score)` & "
+    "`decide_keepgoing(decision, open_nodes, rounds)`.\n"
+    "7. `src/Matrix/orchestrate/hooks.py`: `on_job_change(jobs_payload, event)`.\n"
+    "8. `src/Matrix/research/hooks.py`: `augment_research(query, report)`.\n"
+    "9. `src/Matrix/interop/hooks.py`: `extra_mcp_tools()`.\n"
+    "10. `src/Matrix/orbit/hooks.py`: `augment_orbit(payload)`.\n"
+    "11. `src/Matrix/integrations/hooks.py`: `transform_bridge_payload(payload)`.\n"
+    "12. `src/Matrix/util/hooks.py`: `on_ledger_add(entry)` + shared `Matrix.util.*` modules.\n"
+    "13. `src/Matrix/webui/index.html` (shadow SPA) & `src/Matrix/webui/plugins.js` "
+    "(auto-loaded at `/api/matrix/plugins.js`).\n"
 )
 
 

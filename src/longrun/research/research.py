@@ -224,6 +224,13 @@ def run(query, notebook="default", depth="shallow", n=5, max_rounds=4,
     _emit({"type": "summary", "text": summary})
     out["ok"] = True
     _emit({"type": "done", "rounds": out["rounds"], "sources_added": out["sources_added"]})
+    try:
+        from longrun.core import matrix as _mtx
+        aug = _mtx.call_hook("research", "augment_research", query, out, default=out)
+        if isinstance(aug, dict):
+            return aug
+    except Exception:  # noqa: BLE001
+        pass
     return out
 
 

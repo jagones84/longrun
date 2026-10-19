@@ -421,7 +421,8 @@ TOOL_SCHEMAS = {
             "action": {"type": "string",
                        "enum": ["status", "hotload", "checkpoint_save", "checkpoint_rollback",
                                 "git_commit", "git_log", "git_diff", "git_reset",
-                                "test", "clean_trash", "webui_init", "webui_reset", "restart"],
+                                "test", "clean_trash", "webui_init", "webui_reset", "restart",
+                                "verify_target", "promote_to_nucleus"],
                        "default": "status"},
             "slot": {"type": "integer", "description": "checkpoint slot (1, 2, or 3)"},
             "label": {"type": "string", "description": "checkpoint label (action=checkpoint_save)"},
@@ -429,6 +430,10 @@ TOOL_SCHEMAS = {
             "rev": {"type": "string", "description": "git revision (action=git_diff|git_reset)"},
             "script": {"type": "string", "description": "script filename in .Matrix/trash (action=test)"},
             "code": {"type": "string", "description": "optional Python code to write & run in .Matrix/trash (action=test)"},
+            "target": {"type": "string", "description": "target tested e.g. 'tool:foo' or 'hook:plan' (action=test)"},
+            "kind": {"type": "string", "enum": ["tool", "hook", "skill"],
+                     "description": "artifact kind to verify or promote to Nucleus"},
+            "name": {"type": "string", "description": "artifact name to verify or promote to Nucleus"},
             "install_deps": {"type": "array", "items": {"type": "string"},
                              "description": "pip packages to install in .Matrix/venv (action=test)"},
             "timeout_secs": {"type": "integer", "default": 60},
@@ -641,9 +646,19 @@ def _matrix_tools():
         return {}
 
 
+def _promoted_tools():
+    """Tools permanently promoted from Matrix into Nucleus (`src/longrun/tools/promoted/*.py`)."""
+    try:
+        from longrun.core import matrix
+        return matrix.discover_promoted_tools()
+    except Exception:
+        return {}
+
+
 def tool_names():
-    """All known tools: registry entries from config ∪ shipped schemas ∪ Matrix ∪ external MCP."""
-    return sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(_matrix_tools()) | set(_external_tools()))
+    """All known tools: registry entries from config ∪ shipped schemas ∪ promoted ∪ Matrix ∪ external MCP."""
+    return sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(_promoted_tools())
+                  | set(_matrix_tools()) | set(_external_tools()))
 
 
 def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
@@ -655,6 +670,11 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     schema = TOOL_SCHEMAS.get(name)
     ext = None
     mtx = None
+    prom = None
+    if schema is None:
+        prom = _promoted_tools().get(name)
+        if prom:
+            schema = prom.get("schema")
     if schema is None:
         mtx = (mtx_snapshot if mtx_snapshot is not None else _matrix_tools()).get(name)
         if mtx:
@@ -678,8 +698,8 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
             if str(_k).lower() == _low:
                 entry = _v
                 break
-    if entry is None and (mtx or name == "matrix"):
-        entry = {"enabled": True, "approval": (mtx or {}).get("approval", "auto")}
+    if entry is None and (mtx or prom or name == "matrix"):
+        entry = {"enabled": True, "approval": (mtx or prom or {}).get("approval", "auto")}
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
     # server is NOT connected has no schema — the tool does not exist. Return None
     # so a clone without pmcp never advertises (nor tries) a tool it lacks; the
@@ -716,7 +736,8 @@ def catalog():
     # None, and `None["enabled"]` crashed the handler (dropped HTTP connection).
     ext = _external_tools()
     mtx = _matrix_tools()
-    names = sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(mtx) | set(ext))
+    prom = _promoted_tools()
+    names = sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(prom) | set(mtx) | set(ext))
     out = []
     for name in names:
         spec = tool_spec(name, ext)
@@ -893,6 +914,16 @@ def classify(tool, args, workspace=None):
         return "denied", "matches hard-deny pattern %r" % hit
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
+    # PT3: `matrix{action:"promote_to_nucleus"}` is gated EXCLUSIVELY by the dedicated
+    # `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
+    if tool == "matrix" and str((args or {}).get("action") or "").strip().lower() == "promote_to_nucleus":
+        ap_mtx = load_config().get("approvals") or {}
+        if not bool(ap_mtx.get("allow_matrix_promote", False)):
+            return "denied", (
+                "promote_to_nucleus requires the dedicated allow_matrix_promote checkbox "
+                "in Settings > Tools & approvals (even FULL mode does not authorize it)"
+            )
+        return "auto", "allow_matrix_promote checkbox is enabled"
     # JAG-127c/388: global approval switch, set from the Config panel (persisted
     # in the overlay). `full` = never ask for anything (hard-deny/disabled still
     # win). It is now the ONLY thing that relaxes the workspace boundary below.

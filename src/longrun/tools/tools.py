@@ -1512,7 +1512,12 @@ def _matrix(args, run_id):
             code=args.get("code"),
             install_deps=args.get("install_deps"),
             timeout_secs=args.get("timeout_secs") or 60,
+            target=args.get("target"),
         )
+    if action == "verify_target":
+        return matrix.verify_target(args.get("kind") or "tool", args.get("name") or "")
+    if action == "promote_to_nucleus":
+        return matrix.promote_to_nucleus(args.get("kind") or "tool", args.get("name") or "")
     if action == "clean_trash":
         return matrix.clean_trash(keep_recent=args.get("keep_recent") or 0)
     if action == "webui_init":
@@ -1545,6 +1550,10 @@ def _dispatch_execute(tool, args, run_id=None):
     if fn is None:
         try:
             from longrun.core import matrix as _mtx
+            if tool in _mtx.discover_promoted_tools():
+                res = _mtx.execute_promoted_tool(tool, args, run_id=run_id)
+                res["args"] = args or {}
+                return res
             if tool in _mtx.discover_tools():
                 res = _mtx.execute_tool(tool, args, run_id=run_id)
                 res["args"] = args or {}

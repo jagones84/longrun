@@ -262,6 +262,11 @@ def publish(kind, **data):
                 q.put_nowait(payload)
             except Exception:
                 pass
+    try:
+        from longrun.core import matrix as _mtx
+        _mtx.call_hook("core", "on_event", event, default=None)
+    except Exception:  # noqa: BLE001
+        pass
     return event
 
 

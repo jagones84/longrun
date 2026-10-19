@@ -123,24 +123,34 @@ def pick(role, preferred=None):
     """
     cfg = load_config()
     roster = _roster()
-    if not roster:
-        return None
-    if preferred:
-        # JAG-462: match the pin CASE-INSENSITIVELY and never return a model the
-        # router marked FAILED — `==` missed a pin whose casing differed from the
-        # roster alias (silently falling through to the role pattern, i.e. the
-        # operator's chosen model got replaced) and also bypassed the JAG-447r guard.
-        p = str(preferred).strip().lower()
-        for m in roster:
-            if m.get("failed"):
-                continue
-            if str(m.get("alias") or "").strip().lower() == p:
-                return m["alias"]
-    entry = (cfg.get("roles") or {}).get(role) or {}
-    chain = [entry.get("pattern")] + list(entry.get("fallbacks") or []) + \
-            list(cfg.get("default_fallbacks") or [])
-    chain = [c for c in chain if c]
-    return _match(chain, roster)
+    base = None
+    if roster:
+        if preferred:
+            # JAG-462: match the pin CASE-INSENSITIVELY and never return a model the
+            # router marked FAILED — `==` missed a pin whose casing differed from the
+            # roster alias (silently falling through to the role pattern, i.e. the
+            # operator's chosen model got replaced) and also bypassed the JAG-447r guard.
+            p = str(preferred).strip().lower()
+            for m in roster:
+                if m.get("failed"):
+                    continue
+                if str(m.get("alias") or "").strip().lower() == p:
+                    base = m["alias"]
+                    break
+        if base is None:
+            entry = (cfg.get("roles") or {}).get(role) or {}
+            chain = [entry.get("pattern")] + list(entry.get("fallbacks") or []) + \
+                    list(cfg.get("default_fallbacks") or [])
+            chain = [c for c in chain if c]
+            base = _match(chain, roster)
+    try:
+        from longrun.core import matrix as _mtx
+        override = _mtx.call_hook("model", "pick_model", role, base, default=base)
+        if isinstance(override, str) and override.strip():
+            return override.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return base
 
 
 def role_model(role):

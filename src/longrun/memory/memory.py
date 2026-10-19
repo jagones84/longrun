@@ -624,7 +624,15 @@ def governed_query(kind=None, limit=6, halflife=None, threshold=0.85,
         bad = invalid_targets()
         now = time.time()
         recs = [r for r in recs if is_valid(r, now=now, invalid=bad)]
-    return dedupe(rank(recs, halflife=halflife), threshold)[:limit]
+    base = dedupe(rank(recs, halflife=halflife), threshold)[:limit]
+    try:
+        from longrun.core import matrix as _mtx
+        aug = _mtx.call_hook("memory", "augment_recall", kind, base, limit, default=base)
+        if isinstance(aug, list):
+            return aug
+    except Exception:  # noqa: BLE001
+        pass
+    return base
 
 
 def health():

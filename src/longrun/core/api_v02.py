@@ -1718,6 +1718,8 @@ def _update_policy(body):
         for k in ("mode", "outside_workspace", "timeout_secs"):
             if k in body["approvals"]:
                 ap[k] = body["approvals"][k]
+        if "allow_matrix_promote" in body["approvals"]:
+            ap["allow_matrix_promote"] = bool(body["approvals"]["allow_matrix_promote"])
         # JAG-451: approval policy BY CATEGORY — what the harness may emit on its
         # own. auto = apply without asking · required = raise an approval · denied =
         # never emit. Only known values are accepted (never trust the client).

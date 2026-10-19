@@ -11,6 +11,7 @@ Implements the mutable Matrix half of the Nucleus/Matrix architecture:
   - Session-preserving warm restart ticket (`.Matrix/resume_ticket.json`)
 """
 import glob
+import hashlib
 import importlib.util
 import json
 import os
@@ -28,21 +29,25 @@ from longrun.util.paths import REPO_ROOT as REPO
 
 SLOT_IDS = (1, 2, 3)
 MAX_GIT_COMMITS = 20
+HOOK_SUBPACKAGES = (
+    "agent", "core", "integrations", "interop", "memory",
+    "model", "orbit", "orchestrate", "plan", "research", "util"
+)
 _LOCK = threading.RLock()
 _TOOL_CACHE = {}  # {repo_root: {"stamps": {}, "tools": {}, "errors": []}}
+_HOOK_CACHE = {}  # {repo_root: {"stamps": {}, "modules": {}, "errors": [], "runtime_errors": []}}
 
 MATRIX_SYSTEM_PROMPT = (
     "## Matrix Self-Evolution (Nucleus vs. Matrix)\n"
     "- **NUCLEUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `RULES.md` "
-    "are hard-protected (`NUCLEUS_PROTECTED`). Never edit Nucleus; import Nucleus functions freely.\n"
-    "- **MATRIX (Mutable):** `src/Matrix/` mirrors `src/longrun/` (`agent`, `core`, `memory`, "
-    "`model`, `plan`, `tools`, `util`, `webui`). Add dynamic tools in `src/Matrix/tools/<name>.py` "
-    "(`TOOL_SCHEMA` + `execute(args, run_id=None)`) and call `matrix{action:\"hotload\"}`.\n"
-    "- **State & Hygiene (`.Matrix/`):** run scratch tests in `.Matrix/trash/` (`matrix{action:\"test\"}`), "
-    "prune with `clean_trash`, maintain `.Matrix/docs/HANDOFF.md` & `MANUAL.md`, put prompt hooks in "
-    "`.Matrix/rules/*.md` and skills in `.Matrix/skills/<name>/SKILL.md`. Save a rollback slot "
-    "(`checkpoint_save` 1..3) or local commit (`git_commit`, max 20, no token) before edits; "
-    "use `matrix{action:\"restart\"}` for warm session-preserving restarts."
+    "are hard-protected (`NUCLEUS_PROTECTED`). Import Nucleus functions freely; never edit them.\n"
+    "- **MATRIX (`src/Matrix/` & `.Matrix/`):** all 13 subpackages (`agent`, `core`, `integrations`, "
+    "`interop`, `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `tools`, `util`, `webui`) "
+    "are live-hooked via `src/Matrix/<subpkg>/hooks.py` (fail-open `matrix.call_hook`), "
+    "`src/Matrix/tools/<name>.py` (`TOOL_SCHEMA` + `execute`), `/api/matrix/ext/*`, and "
+    "`src/Matrix/webui/plugins.js`. Run tests in `.Matrix/trash/`, maintain `.Matrix/docs/HANDOFF.md` "
+    "& `MANUAL.md`, put rules in `.Matrix/rules/*.md` and skills in `.Matrix/skills/<name>/SKILL.md`, "
+    "and use `checkpoint_save` (slots 1..3), `git_commit` (max 20), `hotload`, or `restart`."
 )
 
 
@@ -56,6 +61,88 @@ def _ledger(kind, **fields):
         improve.ledger_add(kind, origin="matrix", **fields)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _format_matrix_error(exc, target_file=None):
+    """Extract exact 1-based line number (`line`) and offending source line (`code_line`) from an exception."""
+    lineno = getattr(exc, "lineno", None)
+    code_line = (getattr(exc, "text", None) or "").strip()
+    fname = os.path.basename(str(getattr(exc, "filename", None) or target_file or ""))
+    tb_frames = traceback.extract_tb(getattr(exc, "__traceback__", None))
+    if tb_frames:
+        chosen = tb_frames[-1]
+        if target_file:
+            t_norm = os.path.normcase(os.path.abspath(target_file))
+            for fr in reversed(tb_frames):
+                if os.path.normcase(os.path.abspath(fr.filename)) == t_norm:
+                    chosen = fr
+                    break
+        if lineno is None:
+            lineno = chosen.lineno
+        if not code_line:
+            code_line = (chosen.line or "").strip()
+        if not fname:
+            fname = os.path.basename(chosen.filename)
+    loc = ("%s:line %d" % (fname or "matrix", int(lineno))) if lineno else (fname or "matrix")
+    msg = "%s at %s: %s" % (type(exc).__name__, loc, exc)
+    if code_line:
+        msg += " [code: %s]" % code_line[:120]
+    return {
+        "error": msg,
+        "line": int(lineno) if lineno is not None else None,
+        "code_line": code_line[:200],
+        "traceback": traceback.format_exc()[-1000:],
+    }
+
+
+def _verified_store_path(repo_root=None):
+    _root, _msrc, mdot = _roots(repo_root)
+    os.makedirs(mdot, exist_ok=True)
+    return os.path.join(mdot, "verified_targets.json")
+
+
+def _file_sha256(path):
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _resolve_target_path(kind, name, repo_root=None):
+    _root, msrc, mdot = _roots(repo_root)
+    k = str(kind or "tool").strip().lower()
+    nm = str(name or "").strip()
+    if k == "tool":
+        if nm.endswith(".py"):
+            nm = nm[:-3]
+        return "tool", nm, os.path.join(msrc, "tools", nm + ".py")
+    if k == "hook":
+        return "hook", nm, os.path.join(msrc, nm, "hooks.py")
+    if k == "skill":
+        return "skill", nm, os.path.join(mdot, "skills", nm, "SKILL.md")
+    return k, nm, ""
+
+
+def _record_verified(kind, name, script_name="", repo_root=None):
+    k, nm, fpath = _resolve_target_path(kind, name, repo_root)
+    if not fpath or not os.path.isfile(fpath):
+        return
+    sha = _file_sha256(fpath)
+    if not sha:
+        return
+    vp = _verified_store_path(repo_root)
+    store = read_json(vp, {})
+    if not isinstance(store, dict):
+        store = {}
+    store["%s:%s" % (k, nm)] = {
+        "kind": k,
+        "name": nm,
+        "sha256": sha,
+        "script": script_name,
+        "ts": round(time.time(), 3),
+    }
+    write_json(vp, store)
 
 
 # ------------------------------------------------ 3-slot atomic checkpoints ---
@@ -116,6 +203,7 @@ def checkpoint_save(slot, label="", repo_root=None):
             _copy_tree_clean(msrc, os.path.join(sdir, "src_Matrix"))
             _copy_tree_clean(os.path.join(mdot, "rules"), os.path.join(sdir, "dot_rules"))
             _copy_tree_clean(os.path.join(mdot, "skills"), os.path.join(sdir, "dot_skills"))
+            _copy_tree_clean(os.path.join(mdot, "docs"), os.path.join(sdir, "dot_docs"))
             idx = read_json(_ckpt_index_path(repo_root), {})
             if not isinstance(idx, dict):
                 idx = {}
@@ -178,6 +266,8 @@ def checkpoint_rollback(slot, repo_root=None):
             _restore_dir_preserving_git(os.path.join(sdir, "src_Matrix"), msrc)
             _restore_dir_preserving_git(os.path.join(sdir, "dot_rules"), os.path.join(mdot, "rules"))
             _restore_dir_preserving_git(os.path.join(sdir, "dot_skills"), os.path.join(mdot, "skills"))
+            if os.path.isdir(os.path.join(sdir, "dot_docs")):
+                _restore_dir_preserving_git(os.path.join(sdir, "dot_docs"), os.path.join(mdot, "docs"))
             hl = hotload(repo_root)
             _ledger("matrix.checkpoint_rollback", slot=slot_num)
             return {"ok": True, "slot": slot_num, "hotload": hl}
@@ -326,8 +416,13 @@ def git_reset(rev="HEAD", repo_root=None):
 # ------------------------------------ .Matrix/trash test runner & cleanup -----
 
 def run_test(script_name="test_matrix.py", code=None, install_deps=None,
-             timeout_secs=60, repo_root=None):
-    """Execute a test script inside `.Matrix/trash/` (with optional `.Matrix/venv` deps)."""
+             timeout_secs=60, target=None, repo_root=None):
+    """Execute a test script inside `.Matrix/trash/` (with optional `.Matrix/venv` deps).
+
+    When the test passes (exit_code == 0), records the SHA-256 verification proof
+    for `target` (e.g. 'tool:fast_calc' or 'hook:plan') and any Matrix module
+    imported by the test script in `.Matrix/verified_targets.json`.
+    """
     matrix_guard.ensure_layout(repo_root)
     root, msrc, mdot = _roots(repo_root)
     trash_dir = os.path.join(mdot, "trash")
@@ -340,6 +435,11 @@ def run_test(script_name="test_matrix.py", code=None, install_deps=None,
             f.write(str(code))
     elif not os.path.isfile(script_path):
         return {"ok": False, "error": "script not found in .Matrix/trash: %s" % safe_name}
+    try:
+        with open(script_path, "r", encoding="utf-8", errors="replace") as f:
+            script_src = f.read()
+    except OSError:
+        script_src = str(code or "")
 
     py_exe = sys.executable or "python3"
     if install_deps:
@@ -369,12 +469,27 @@ def run_test(script_name="test_matrix.py", code=None, install_deps=None,
             text=True,
             timeout=int(timeout_secs or 60),
         )
+        ok = p.returncode == 0
+        verified_targets = []
+        if ok:
+            if target and ":" in str(target):
+                tk, tn = str(target).split(":", 1)
+                _record_verified(tk, tn, safe_name, repo_root)
+                verified_targets.append("%s:%s" % (tk.strip(), tn.strip()))
+            for m_tool in re.findall(r"Matrix\.tools(?:\s+import\s+|\.)([A-Za-z0-9_]+)", script_src):
+                _record_verified("tool", m_tool, safe_name, repo_root)
+                verified_targets.append("tool:%s" % m_tool)
+            for m_hook in re.findall(r"Matrix\.([A-Za-z0-9_]+)(?:\s+import\s+hooks|\.hooks)", script_src):
+                if m_hook in HOOK_SUBPACKAGES:
+                    _record_verified("hook", m_hook, safe_name, repo_root)
+                    verified_targets.append("hook:%s" % m_hook)
         return {
-            "ok": p.returncode == 0,
+            "ok": ok,
             "exit_code": p.returncode,
             "stdout": p.stdout or "",
             "stderr": p.stderr or "",
             "path": script_path,
+            "verified_targets": sorted(set(verified_targets)),
             "duration_ms": int((time.time() - t0) * 1000),
         }
     except subprocess.TimeoutExpired:
@@ -431,21 +546,137 @@ def prompt_section_text(sess=None, ws=None, repo_root=None):
         if rule_texts:
             parts.append("## Matrix Dynamic Rules (`.Matrix/rules/`)\n" + "\n\n".join(rule_texts)[:4000])
     hook_py = os.path.join(msrc, "model", "prompt_hook.py")
-    if os.path.isfile(hook_py):
-        try:
-            spec = importlib.util.spec_from_file_location("Matrix.model.prompt_hook", hook_py)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            if hasattr(mod, "extend_prompt"):
-                extra = str(mod.extend_prompt(sess=sess, ws=ws) or "").strip()
-                if extra:
-                    parts.append("## Matrix Prompt Hook\n" + extra[:2000])
-        except Exception as e:  # noqa: BLE001 — fail-open
-            parts.append("## Matrix Prompt Hook Error (isolated)\n`%s: %s`" % (type(e).__name__, e))
+    for hfile in ("prompt_hook.py", "hooks.py"):
+        hook_py = os.path.join(msrc, "model", hfile)
+        if os.path.isfile(hook_py):
+            try:
+                spec = importlib.util.spec_from_file_location("Matrix.model." + hfile[:-3], hook_py)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "extend_prompt"):
+                    extra = str(mod.extend_prompt(sess=sess, ws=ws) or "").strip()
+                    if extra:
+                        parts.append("## Matrix Prompt Hook\n" + extra[:2000])
+                        break
+            except Exception as e:  # noqa: BLE001 — fail-open
+                parts.append("## Matrix Prompt Hook Error (isolated)\n`%s: %s`" % (type(e).__name__, e))
     return "\n\n".join(parts)
 
 
-# ------------------------------- Seam 2: Dynamic tool discovery & hotload -----
+# ----------- Seam 2 & 3: Universal Subpackage Hooks & Dynamic Tools -----------
+
+def _hotload_hooks(msrc):
+    """Scan and reload `src/Matrix/<subpkg>/hooks.py` across all 11 Python subpackages."""
+    modules = {}
+    active = {}
+    errors = []
+    stamps = {}
+    for sub in HOOK_SUBPACKAGES:
+        hp = os.path.join(msrc, sub, "hooks.py")
+        if not os.path.isfile(hp):
+            continue
+        try:
+            stamps[sub] = os.stat(hp).st_mtime_ns
+        except OSError:
+            continue
+        try:
+            mod_name = "Matrix.%s.hooks" % sub
+            spec = importlib.util.spec_from_file_location(mod_name, hp)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            fns = sorted(
+                k for k, v in vars(mod).items()
+                if not k.startswith("_") and callable(v)
+            )
+            modules[sub] = mod
+            active[sub] = fns
+        except Exception as e:  # noqa: BLE001 — isolate syntax/import error
+            err_info = _format_matrix_error(e, hp)
+            errors.append({
+                "subpackage": sub,
+                "file": "%s/hooks.py" % sub,
+                **err_info,
+            })
+    prev_rt = (_HOOK_CACHE.get(msrc) or {}).get("runtime_errors") or []
+    _HOOK_CACHE[msrc] = {
+        "stamps": stamps,
+        "modules": modules,
+        "active": active,
+        "errors": errors,
+        "runtime_errors": prev_rt[-20:],
+    }
+    return active, errors
+
+
+def discover_hooks(repo_root=None):
+    """Return `{subpackage: [callable_names]}` for all `src/Matrix/<subpkg>/hooks.py`, mtime-cached."""
+    _root, msrc, _mdot = _roots(repo_root)
+    cur_stamps = {}
+    for sub in HOOK_SUBPACKAGES:
+        hp = os.path.join(msrc, sub, "hooks.py")
+        if os.path.isfile(hp):
+            try:
+                cur_stamps[sub] = os.stat(hp).st_mtime_ns
+            except OSError:
+                pass
+    with _LOCK:
+        cached = _HOOK_CACHE.get(msrc)
+        if not cached or cached.get("stamps") != cur_stamps:
+            _hotload_hooks(msrc)
+            cached = _HOOK_CACHE.get(msrc) or {}
+        return dict(cached.get("active") or {})
+
+
+def call_hook(subpkg, fn_name, *args, default=None, repo_root=None, **kwargs):
+    """Invoke promoted Nucleus hook (`src/longrun/<subpkg>/matrix_promoted_hooks.py`) then Matrix hook (`src/Matrix/<subpkg>/hooks.py`).
+
+    Returns `default` when no hook is present, returns `None`, or raises any exception.
+    Records any runtime exception with exact line number in `_HOOK_CACHE[msrc]["runtime_errors"]`.
+    """
+    root, msrc, _mdot = _roots(repo_root)
+    cur_default = default
+    # 1. Promoted Nucleus baseline hook (if previously promoted via promote_to_nucleus)
+    prom_hp = os.path.join(root, "src", "longrun", subpkg, "matrix_promoted_hooks.py")
+    if os.path.isfile(prom_hp):
+        try:
+            spec = importlib.util.spec_from_file_location("longrun.%s.matrix_promoted_hooks" % subpkg, prom_hp)
+            pmod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(pmod)
+            pfn = getattr(pmod, fn_name, None)
+            if callable(pfn):
+                pres = pfn(*args, **kwargs)
+                if pres is not None:
+                    cur_default = pres
+        except Exception:  # noqa: BLE001
+            pass
+    # 2. Live Matrix overlay hook
+    discover_hooks(repo_root)
+    with _LOCK:
+        cached = _HOOK_CACHE.get(msrc) or {}
+        mod = (cached.get("modules") or {}).get(subpkg)
+    if mod is None:
+        return cur_default
+    fn = getattr(mod, fn_name, None)
+    if not callable(fn):
+        return cur_default
+    hp = os.path.join(msrc, subpkg, "hooks.py")
+    try:
+        res = fn(*args, **kwargs)
+        return cur_default if res is None else res
+    except Exception as e:  # noqa: BLE001 — fail-open back to Nucleus default
+        err_info = _format_matrix_error(e, hp)
+        with _LOCK:
+            hc = _HOOK_CACHE.setdefault(msrc, {"stamps": {}, "modules": {}, "active": {},
+                                               "errors": [], "runtime_errors": []})
+            rt = hc.setdefault("runtime_errors", [])
+            rt.append({
+                "subpackage": subpkg,
+                "hook": "%s.hooks.%s" % (subpkg, fn_name),
+                "ts": round(time.time(), 3),
+                **err_info,
+            })
+            hc["runtime_errors"] = rt[-20:]
+        return cur_default
 
 def _builtin_tool_names():
     try:
@@ -474,7 +705,7 @@ def hotload(repo_root=None):
                 continue
             tname = bn[:-3]
             try:
-                stamps[bn] = os.stat(p).st_mtime
+                stamps[bn] = os.stat(p).st_mtime_ns
             except OSError:
                 continue
             if tname in builtins or tname == "matrix":
@@ -512,24 +743,29 @@ def hotload(repo_root=None):
                     "execute": exec_fn,
                 }
             except Exception as e:  # noqa: BLE001 — isolate broken tool module
+                err_info = _format_matrix_error(e, p)
                 errors.append({
                     "file": bn,
                     "tool": tname,
-                    "error": "%s: %s" % (type(e).__name__, e),
-                    "traceback": traceback.format_exc()[-600:],
+                    **err_info,
                 })
     with _LOCK:
-        _TOOL_CACHE[root] = {"stamps": stamps, "tools": loaded, "errors": errors}
+        _TOOL_CACHE[msrc] = {"stamps": stamps, "tools": loaded, "errors": errors}
+        active_hooks, hook_errors = _hotload_hooks(msrc)
+        if msrc in _HOOK_CACHE:
+            _HOOK_CACHE[msrc]["runtime_errors"] = []
     return {
-        "ok": len(errors) == 0,
+        "ok": len(errors) == 0 and len(hook_errors) == 0,
         "loaded_tools": sorted(loaded.keys()),
+        "active_hooks": active_hooks,
         "errors": errors,
+        "hook_errors": hook_errors,
     }
 
 
 def discover_tools(repo_root=None):
     """Return `{name: spec_dict}` for valid Matrix tools, auto-reloading when mtimes change."""
-    root, msrc, _mdot = _roots(repo_root)
+    _root, msrc, _mdot = _roots(repo_root)
     tdir = os.path.join(msrc, "tools")
     cur_stamps = {}
     if os.path.isdir(tdir):
@@ -537,14 +773,14 @@ def discover_tools(repo_root=None):
             bn = os.path.basename(p)
             if not bn.startswith("_"):
                 try:
-                    cur_stamps[bn] = os.stat(p).st_mtime
+                    cur_stamps[bn] = os.stat(p).st_mtime_ns
                 except OSError:
                     pass
     with _LOCK:
-        cached = _TOOL_CACHE.get(root)
+        cached = _TOOL_CACHE.get(msrc)
         if not cached or cached.get("stamps") != cur_stamps:
             hotload(repo_root)
-            cached = _TOOL_CACHE.get(root) or {"tools": {}}
+            cached = _TOOL_CACHE.get(msrc) or {"tools": {}}
         return dict(cached.get("tools") or {})
 
 
@@ -562,10 +798,13 @@ def execute_tool(name, args, run_id=None, repo_root=None):
         if not isinstance(res, dict):
             res = {"ok": True, "stdout": str(res)}
     except Exception as e:  # noqa: BLE001
+        err_info = _format_matrix_error(e, entry.get("file"))
         res = {
             "ok": False,
-            "error": "Matrix tool %r raised %s: %s" % (name, type(e).__name__, e),
-            "stderr": traceback.format_exc()[-1000:],
+            "error": "Matrix tool %r failed — %s" % (name, err_info["error"]),
+            "line": err_info["line"],
+            "code_line": err_info["code_line"],
+            "stderr": err_info["traceback"],
             "exit_code": 1,
         }
     reverted = matrix_guard.restore_if_nucleus_tampered(snap, repo_root)
@@ -633,6 +872,48 @@ def webui_index_path(repo_root=None, prefer_nucleus=False):
         except OSError:
             pass
     return nuc_html
+
+
+def webui_plugins_js(repo_root=None):
+    """Return a fail-open JavaScript wrapper around `src/Matrix/webui/plugins.js`."""
+    _root, msrc, _mdot = _roots(repo_root)
+    p = os.path.join(msrc, "webui", "plugins.js")
+    if not os.path.isfile(p):
+        return "/* Matrix webui/plugins.js: not present */\n"
+    try:
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            body = f.read(500_000)
+        return (
+            "/* Matrix live WebUI plugin (fail-open isolated) */\n"
+            "try {\n" + body + "\n} catch (_mtxErr) {\n"
+            "  console.warn('[Matrix plugin error]', _mtxErr);\n"
+            "}\n"
+        )
+    except OSError:
+        return "/* Matrix webui/plugins.js: unreadable */\n"
+
+
+def call_ext_http(method, path, qs=None, body=None, repo_root=None):
+    """Invoke `src/Matrix/core/hooks.py::handle_http(method, sub_path, qs, body)` for `/api/matrix/ext/*`."""
+    prefix = "/api/matrix/ext"
+    sub = path[len(prefix):].lstrip("/") if str(path or "").startswith(prefix) else str(path or "")
+    res = call_hook("core", "handle_http", str(method or "GET").upper(), sub,
+                    qs or {}, body, default=None, repo_root=repo_root)
+    if not isinstance(res, dict):
+        return {"status": 404, "body": {"ok": False, "error": "no Matrix HTTP handler for %r" % sub}}
+    return {
+        "status": int(res.get("status") or 200),
+        "body": res.get("body") if "body" in res else res,
+    }
+
+
+def handle_ext_http(handler, method, path, qs=None, body=None, repo_root=None):
+    """HTTP route dispatcher for `/api/matrix/ext/*` inside `httpapi.py`."""
+    if not str(path or "").startswith("/api/matrix/ext"):
+        return False
+    out = call_ext_http(method, path, qs=qs, body=body, repo_root=repo_root)
+    handler._send(out["status"], out["body"])
+    return True
 
 
 def _resume_ticket_path(repo_root=None):
@@ -723,9 +1004,12 @@ def status(repo_root=None):
     matrix_guard.ensure_layout(repo_root)
     root, msrc, mdot = _roots(repo_root)
     tools_map = discover_tools(repo_root)
-    cached = _TOOL_CACHE.get(root) or {}
+    hooks_map = discover_hooks(repo_root)
+    cached = _TOOL_CACHE.get(msrc) or {}
+    hcached = _HOOK_CACHE.get(msrc) or {}
     glog = git_log(limit=5, repo_root=repo_root)
     shadow = os.path.join(msrc, "webui", "index.html")
+    plugins_p = os.path.join(msrc, "webui", "plugins.js")
     active_webui = webui_index_path(repo_root)
     skills_dir = os.path.join(mdot, "skills")
     m_skills = []
@@ -734,15 +1018,228 @@ def status(repo_root=None):
             d for d in os.listdir(skills_dir)
             if os.path.isfile(os.path.join(skills_dir, d, "SKILL.md"))
         )
+    hook_errs = list(hcached.get("errors") or []) + list(hcached.get("runtime_errors") or [])
+    vstore = read_json(_verified_store_path(repo_root), {})
     return {
         "ok": True,
         "matrix_src": msrc,
         "matrix_dot": mdot,
+        "subpackages": list(matrix_guard.MATRIX_SUBDIRS),
         "tools": sorted(tools_map.keys()),
+        "promoted_tools": sorted(discover_promoted_tools(repo_root).keys()),
         "tool_errors": cached.get("errors") or [],
+        "active_hooks": hooks_map,
+        "hook_errors": hook_errs,
+        "verified_targets": sorted(vstore.keys()) if isinstance(vstore, dict) else [],
         "skills": m_skills,
         "checkpoints": checkpoint_list(repo_root),
         "git_commits": glog.get("commits", []),
         "webui_shadow_active": active_webui == shadow,
+        "webui_plugins_active": os.path.isfile(plugins_p),
         "webui_active_path": active_webui,
+    }
+
+
+# ------ PT3: Deterministic Matrix -> Nucleus Promotion & Promoted Loader ------
+
+def discover_promoted_tools(repo_root=None):
+    """Discover tools permanently promoted into Nucleus (`src/longrun/tools/promoted/*.py`)."""
+    root, _msrc, _mdot = _roots(repo_root)
+    pdir = os.path.join(root, "src", "longrun", "tools", "promoted")
+    out = {}
+    if not os.path.isdir(pdir):
+        return out
+    for p in sorted(glob.glob(os.path.join(pdir, "*.py"))):
+        bn = os.path.basename(p)
+        if bn.startswith("_"):
+            continue
+        tname = bn[:-3]
+        try:
+            spec = importlib.util.spec_from_file_location("longrun.tools.promoted.%s" % tname, p)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            schema = getattr(mod, "TOOL_SCHEMA", None)
+            exec_fn = getattr(mod, "execute", None)
+            if isinstance(schema, dict) and callable(exec_fn):
+                out[tname] = {
+                    "name": tname,
+                    "origin": "nucleus",
+                    "file": p,
+                    "schema": {
+                        "description": str(schema.get("description") or tname),
+                        "type": schema.get("type", "object"),
+                        "properties": schema.get("properties", {}),
+                        "required": schema.get("required", []),
+                    },
+                    "approval": str(schema.get("approval") or "auto"),
+                    "execute": exec_fn,
+                }
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def execute_promoted_tool(name, args, run_id=None, repo_root=None):
+    """Execute a tool permanently promoted to `src/longrun/tools/promoted/<name>.py`."""
+    pmap = discover_promoted_tools(repo_root)
+    entry = pmap.get(name)
+    if not entry:
+        return {"ok": False, "tool": name, "origin": "nucleus",
+                "error": "unknown promoted Nucleus tool %r" % name, "exit_code": 127}
+    t0 = time.time()
+    try:
+        res = entry["execute"](args or {}, run_id)
+        if not isinstance(res, dict):
+            res = {"ok": True, "stdout": str(res)}
+    except Exception as e:  # noqa: BLE001
+        err_info = _format_matrix_error(e, entry.get("file"))
+        res = {"ok": False, "error": err_info["error"], "line": err_info["line"],
+               "code_line": err_info["code_line"], "exit_code": 1}
+    res.setdefault("ok", res.get("exit_code", 0) == 0)
+    res.setdefault("exit_code", 0 if res.get("ok") else 1)
+    res["tool"] = name
+    res["origin"] = "nucleus"
+    res["backend"] = "nucleus(promoted)"
+    res["sandboxed"] = False
+    res.setdefault("duration_ms", int((time.time() - t0) * 1000))
+    return res
+
+
+def verify_target(kind, name, repo_root=None):
+    """Deterministically verify that a Matrix artifact is tested, valid, and safe to promote into Nucleus."""
+    k, nm, fpath = _resolve_target_path(kind, name, repo_root)
+    if k not in ("tool", "hook", "skill") or not nm:
+        return {"ok": False, "error": "kind must be 'tool', 'hook', or 'skill' and name is required"}
+    if not fpath or not os.path.isfile(fpath):
+        return {"ok": False, "error": "Matrix artifact not found at %s" % fpath}
+    cur_sha = _file_sha256(fpath)
+    vstore = read_json(_verified_store_path(repo_root), {})
+    rec = (vstore if isinstance(vstore, dict) else {}).get("%s:%s" % (k, nm))
+    if not rec or rec.get("sha256") != cur_sha:
+        return {
+            "ok": False,
+            "error": (
+                "PROMOTE_UNVERIFIED: '%s:%s' has not been tested with its current content. "
+                "You MUST first run matrix{action:'test', target:'%s:%s', ...} in .Matrix/trash/ "
+                "and verify it passes with exit_code=0 before promoting to Nucleus." % (k, nm, k, nm)
+            ),
+        }
+    if k in ("tool", "hook"):
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                src = f.read()
+            compile(src, fpath, "exec")
+            spec = importlib.util.spec_from_file_location("_verify_%s_%s" % (k, nm), fpath)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if k == "tool":
+                if not isinstance(getattr(mod, "TOOL_SCHEMA", None), dict) or not callable(getattr(mod, "execute", None)):
+                    return {"ok": False, "error": "PROMOTE_UNVERIFIED: tool %r must define dict TOOL_SCHEMA and callable execute" % nm}
+            else:
+                fns = [fn for fn, v in vars(mod).items() if not fn.startswith("_") and callable(v)]
+                if not fns:
+                    return {"ok": False, "error": "PROMOTE_UNVERIFIED: hook %r defines no callable hook functions" % nm}
+        except Exception as e:  # noqa: BLE001
+            err_info = _format_matrix_error(e, fpath)
+            return {
+                "ok": False,
+                "error": "PROMOTE_UNVERIFIED: %s" % err_info["error"],
+                "line": err_info["line"],
+                "code_line": err_info["code_line"],
+            }
+    return {"ok": True, "kind": k, "name": nm, "path": fpath, "sha256": cur_sha}
+
+
+def promote_to_nucleus(kind, name, repo_root=None):
+    """Deterministically import a tested Matrix artifact into Legacy Nucleus and delete it from Matrix.
+
+    Enforces:
+      1. Dedicated checkbox `approvals.allow_matrix_promote == True` (even `approvals.mode == 'full'` does NOT unlock it).
+      2. Mandatory pre-promotion test & syntax/contract verification (`verify_target`).
+      3. Automatic pre-promotion checkpoint + Git commit before modifying Nucleus.
+      4. Atomic copy into Nucleus + deletion from Matrix.
+    """
+    try:
+        from longrun.tools import registry
+        ap = (registry.load_config().get("approvals") or {})
+        allowed = bool(ap.get("allow_matrix_promote", False))
+    except Exception:  # noqa: BLE001
+        allowed = False
+    if not allowed:
+        return {
+            "ok": False,
+            "error": (
+                "PROMOTE_DENIED: Matrix -> Nucleus permanent promotion requires the dedicated "
+                "'allow_matrix_promote' checkbox in Settings > Tools & approvals (even FULL approval "
+                "mode does not authorize it)."
+            ),
+        }
+    v = verify_target(kind, name, repo_root=repo_root)
+    if not v.get("ok"):
+        return v
+    k, nm, src_path = v["kind"], v["name"], v["path"]
+    root, msrc, mdot = _roots(repo_root)
+
+    # Automatic pre-promotion checkpoint & commit (both .Matrix/git and root .git when present)
+    checkpoint_save(1, label="pre-promote:%s:%s" % (k, nm), repo_root=repo_root)
+    pre_msg = "chore(matrix): pre-promote snapshot before importing %s:%s to Nucleus" % (k, nm)
+    pre_c = git_commit(pre_msg, repo_root=repo_root)
+    pre_sha = pre_c.get("commit") or "checkpoint_slot_1"
+    if os.path.isdir(os.path.join(root, ".git")):
+        try:
+            subprocess.run(["git", "add", "--", src_path], cwd=root, capture_output=True, timeout=15)
+            subprocess.run(["git", "commit", "-m", pre_msg, "--", src_path],
+                           cwd=root, capture_output=True, timeout=15)
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        if k == "tool":
+            pdir = os.path.join(root, "src", "longrun", "tools", "promoted")
+            os.makedirs(pdir, exist_ok=True)
+            init_p = os.path.join(pdir, "__init__.py")
+            if not os.path.exists(init_p):
+                with open(init_p, "w", encoding="utf-8") as f:
+                    f.write('"""Tools permanently promoted from Matrix into Nucleus."""\n')
+            dst_path = os.path.join(pdir, nm + ".py")
+            shutil.copy2(src_path, dst_path)
+            os.remove(src_path)
+        elif k == "hook":
+            sub_dir = os.path.join(root, "src", "longrun", nm)
+            os.makedirs(sub_dir, exist_ok=True)
+            dst_path = os.path.join(sub_dir, "matrix_promoted_hooks.py")
+            shutil.copy2(src_path, dst_path)
+            os.remove(src_path)
+        elif k == "skill":
+            src_sdir = os.path.dirname(src_path)
+            dst_path = os.path.join(root, "skills", "created", nm)
+            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+            if os.path.exists(dst_path):
+                shutil.rmtree(dst_path, ignore_errors=True)
+            shutil.copytree(src_sdir, dst_path)
+            shutil.rmtree(src_sdir, ignore_errors=True)
+        else:
+            return {"ok": False, "error": "unsupported kind %r" % k}
+    except OSError as e:
+        return {"ok": False, "error": "promotion file move failed: %s" % e}
+
+    post_msg = "chore(matrix): promoted %s:%s to Nucleus and removed from Matrix" % (k, nm)
+    git_commit(post_msg, repo_root=repo_root)
+    if os.path.isdir(os.path.join(root, ".git")):
+        try:
+            subprocess.run(["git", "add", "--", dst_path, src_path], cwd=root, capture_output=True, timeout=15)
+            subprocess.run(["git", "commit", "-m", post_msg, "--", dst_path, src_path],
+                           cwd=root, capture_output=True, timeout=15)
+        except Exception:  # noqa: BLE001
+            pass
+    hl = hotload(repo_root)
+    _ledger("matrix.promote_to_nucleus", artifact_kind=k, name=nm, promoted_to=dst_path, pre_commit=pre_sha)
+    return {
+        "ok": True,
+        "kind": k,
+        "name": nm,
+        "promoted_to": dst_path,
+        "deleted_from_matrix": True,
+        "pre_commit": pre_sha,
+        "hotload": hl,
     }

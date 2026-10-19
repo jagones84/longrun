@@ -395,7 +395,15 @@ def handle(msg, api):
     if method == "ping":
         return _ok(msg_id, {})
     if method == "tools/list":
-        return _ok(msg_id, {"tools": MCP_TOOLS})
+        tools_out = list(MCP_TOOLS)
+        try:
+            from longrun.core import matrix as _mtx
+            extra = _mtx.call_hook("interop", "extra_mcp_tools", default=[])
+            if isinstance(extra, list):
+                tools_out.extend(t for t in extra if isinstance(t, dict) and t.get("name"))
+        except Exception:  # noqa: BLE001
+            pass
+        return _ok(msg_id, {"tools": tools_out})
     if method == "tools/call":
         params = msg.get("params") or {}
         name = params.get("name")

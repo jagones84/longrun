@@ -45,7 +45,7 @@ _run_one() {
   timing="${LONGRUN_BATTERY_TIMINGS:-0}"
   if [ "$timing" = "1" ]; then start_ms="$(date +%s%3N)"; fi
   mkdir -p "$d/cfg" "$d/sessions" "$d/graphs" "$d/edits" "$d/runs" \
-           "$d/roles" "$d/costs" "$d/threads" "$d/data"
+           "$d/roles" "$d/costs" "$d/threads" "$d/data" "$d/matrix_src" "$d/matrix_dot"
   PYTHONPYCACHEPREFIX="$PYC" \
   LONGRUN_DATA_DIR="$d/data" \
   LONGRUN_CONFIG_DIR="$d/cfg" \
@@ -58,6 +58,8 @@ _run_one() {
   LONGRUN_COSTS_DIR="$d/costs" \
   LONGRUN_THREADS_DIR="$d/threads" \
   LONGRUN_PRICES_FILE="$d/prices.json" \
+  LONGRUN_MATRIX_SRC="$d/matrix_src" \
+  LONGRUN_MATRIX_DOT="$d/matrix_dot" \
   python3 "$t" > "$d/log" 2>&1
   test_status=$?
   if [ "$timing" = "1" ]; then

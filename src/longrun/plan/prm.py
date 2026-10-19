@@ -159,7 +159,13 @@ def rank_text(text):
             score += 0.1
             break
     score += min(len(t) / 4000.0, 0.2)    # prefer informative, substantive replies
-    return round(max(0.0, min(1.0, score)), 3)
+    base = round(max(0.0, min(1.0, score)), 3)
+    try:
+        from longrun.core import matrix as _mtx
+        adj = _mtx.call_hook("plan", "score_candidate", text, base, default=base)
+        return round(max(0.0, min(1.0, float(adj))), 3)
+    except Exception:  # noqa: BLE001
+        return base
 
 
 def rank(candidates):

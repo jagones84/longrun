@@ -106,7 +106,7 @@ def _constellation(team=None):
             continue
         g = _tg.load(sid) or {}
         graphs[sid] = {"nodes": g.get("nodes", []), "run_id": g.get("run_id")}
-    return {
+    out_payload = {
         "team": team or "ALL",
         "teams": [{"id": t.get("id"), "name": t.get("name"), "symbol": t.get("symbol"),
                    "color": t.get("color"), "count": len(t.get("members") or [])}
@@ -121,6 +121,14 @@ def _constellation(team=None):
         "subjobs": _subjobs_of(ags, jbs, graphs),
         "graphs": graphs,
     }
+    try:
+        from longrun.core import matrix as _mtx
+        aug = _mtx.call_hook("orbit", "augment_orbit", out_payload, default=out_payload)
+        if isinstance(aug, dict):
+            return aug
+    except Exception:  # noqa: BLE001
+        pass
+    return out_payload
 
 
 def serve_page(handler, path):

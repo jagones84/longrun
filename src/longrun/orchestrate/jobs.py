@@ -235,7 +235,13 @@ class JobRegistry:
         jobs = sorted(d["jobs"].values(), key=lambda j: j.get("n", 0), reverse=True)
         for j in jobs:                          # JAG-292: uniform contract for old jobs
             j.setdefault("blocked_by", [])
-        return {"jobs": jobs, "seq": d["seq"], "count": len(jobs)}
+        out = {"jobs": jobs, "seq": d["seq"], "count": len(jobs)}
+        try:
+            from longrun.core import matrix as _mtx
+            _mtx.call_hook("orchestrate", "on_job_change", out, "list", default=None)
+        except Exception:  # noqa: BLE001
+            pass
+        return out
 
     def get(self, jid):
         with _LOCK:

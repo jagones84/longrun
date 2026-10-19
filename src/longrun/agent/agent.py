@@ -1636,13 +1636,21 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
         from longrun.model import context_engine
         msgs, ctx_stats = context_engine.build(
             sys, transcript, eff_message, budget_tokens=context_budget(model))
-        return _inject_vision_blocks(msgs, model), ctx_stats
+        msgs = _inject_vision_blocks(msgs, model)
     except Exception:  # noqa: BLE001 — never block a turn on the context engine
         msgs = [{"role": "system", "content": sys}]
         msgs += [{"role": m["role"], "content": m["content"]}
                  for m in transcript[-20:]]
         msgs.append({"role": "user", "content": eff_message})
-        return _inject_vision_blocks(msgs, model), None
+        msgs, ctx_stats = _inject_vision_blocks(msgs, model), None
+    try:
+        from longrun.core import matrix as _mtx
+        t_msgs = _mtx.call_hook("agent", "transform_turn", sess, msgs, message, default=msgs)
+        if isinstance(t_msgs, list) and t_msgs:
+            msgs = t_msgs
+    except Exception:  # noqa: BLE001
+        pass
+    return msgs, ctx_stats
 
 
 _HARNESS_ACTION_NAMES = ("write_todos", "update_todos", "replan_todos", "subagent",
