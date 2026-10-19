@@ -1584,7 +1584,14 @@ class Handler(BaseHTTPRequestHandler):
         # setup panel. All API/data routes remain protected below.
         if path in ("/", "/index.html"):
             try:
-                with open(os.path.join(WEBUI_DIR, "index.html"), "r", encoding="utf-8") as f:
+                from longrun.core import matrix as _mtx_ui
+                _ui_path = _mtx_ui.webui_index_path(
+                    prefer_nucleus=(qs.get("webui") == "nucleus")
+                )
+            except Exception:  # noqa: BLE001
+                _ui_path = os.path.join(WEBUI_DIR, "index.html")
+            try:
+                with open(_ui_path, "r", encoding="utf-8") as f:
                     return self._send(200, f.read(), ctype="text/html; charset=utf-8")
             except FileNotFoundError:
                 return self._send(404, {"error": "webui missing"})
@@ -1605,14 +1612,21 @@ class Handler(BaseHTTPRequestHandler):
             # Control deck's orbit.html. Fingerprinting only index.html left an
             # open tab blind to an orbit.html change (e.g. a new resize bar), so
             # the Control iframe stayed stale until a manual reload.
-            _uif = (os.path.join(WEBUI_DIR, "index.html"),
-                    os.path.join(ORBIT_WEB, "orbit.html"))
+            try:
+                from longrun.core import matrix as _mtx_b
+                _active_idx = _mtx_b.webui_index_path()
+            except Exception:  # noqa: BLE001
+                _active_idx = os.path.join(WEBUI_DIR, "index.html")
+            _uif = (_active_idx, os.path.join(ORBIT_WEB, "orbit.html"))
             try:
                 _b = "-".join("%d-%d" % (int(os.stat(p).st_mtime), os.stat(p).st_size)
                               for p in _uif)
             except OSError:
                 _b = ""
             return self._send(200, {"build": _b})
+        if path == "/api/matrix":
+            from longrun.core import matrix as _mtx_api
+            return self._send(200, _mtx_api.status())
         if path == "/api/self":
             return self._send(200, self_knowledge())
         if path == "/api/context":
@@ -1715,6 +1729,11 @@ class Handler(BaseHTTPRequestHandler):
             all_ledger = improve_mod.ledger_tail(500)
             meaningful = [e for e in all_ledger
                           if (e.get("kind") != "turn") or (e.get("wrote") or [])]
+            try:
+                from longrun.core import matrix as _mtx_imp
+                _mtx_info = _mtx_imp.status()
+            except Exception:  # noqa: BLE001
+                _mtx_info = {}
             return self._send(200, {
                 "proposals": dedup,
                 "proposals_total": len(raw),
@@ -1722,6 +1741,7 @@ class Handler(BaseHTTPRequestHandler):
                 "ledger_total": len(meaningful),
                 "records": records,
                 "memory": mem,
+                "matrix": _mtx_info,
                 "origins": list(improve_mod.ORIGINS),
                 # JAG-491: the last LLM backlog audit (None until the first run).
                 "review": improve_mod.latest_review(),
@@ -2425,6 +2445,11 @@ def main():
     backfill_jobs()                # JAG-169: every session gets a stable JX id
     reconcile_agent_models()       # JAG-309: agent model == its session's model
     reconcile_orphan_turns()       # JAG-262: close turns killed by a hard restart
+    try:
+        from longrun.core import matrix as _mtx_boot
+        _mtx_boot.resume_after_restart()
+    except Exception:  # noqa: BLE001
+        pass
     publish("service.start", host=args.host, port=args.port, router=ROUTER_BASE)
     try:
         from longrun.orchestrate import jobs as _jobs

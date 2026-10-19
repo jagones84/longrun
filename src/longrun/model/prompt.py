@@ -39,6 +39,7 @@ SECTIONS = [
     {"id": "agent-role",    "order": 52, "kind": "dynamic"},
     {"id": "tools",         "order": 55, "kind": "dynamic"},
     {"id": "rules",         "order": 60, "kind": "dynamic"},
+    {"id": "matrix",        "order": 62, "kind": "dynamic"},
     {"id": "skills",        "order": 65, "kind": "dynamic"},
     {"id": "memory",        "order": 80, "kind": "dynamic"},
 ]
@@ -266,6 +267,14 @@ def _provider_rules(sess, ws, ctx):
         return ""
 
 
+def _provider_matrix(sess, ws, ctx):
+    try:
+        from longrun.core import matrix
+        return matrix.prompt_section_text(sess=sess, ws=ws)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _provider_skills(sess, ws, ctx):
     try:
         from longrun.memory import skills
@@ -333,6 +342,7 @@ _PROVIDERS = {
     "agent-role": _provider_role,
     "tools": _provider_tools,
     "rules": _provider_rules,
+    "matrix": _provider_matrix,
     "skills": _provider_skills,
     "memory": _provider_memory,
 }

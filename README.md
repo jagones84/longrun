@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-211%2F211%20green-success.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-214%2F214%20green-success.svg)](#tests)
 
 Self-hosted AI agent harness with a browser UI, tool-enabled sessions, task graphs,
 team orchestration, HTTP/SSE API, and CLI. Requires Python 3.10+ and PyYAML for the
@@ -268,7 +268,7 @@ LONGRUN_BATTERY_FULL=1 bash tests/battery.sh
 LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
-The full command ran successfully during this README update: **211/211 passed**.
+The full command ran successfully during this README update: **214/214 passed**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

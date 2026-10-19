@@ -2988,7 +2988,8 @@ function updateToolCard(data) {
     _o.onclick = e => { e.stopPropagation(); openInEditor(_fp); };
     card.querySelector(".toolcard-head").appendChild(_o);
   }
-  const meta = [(data.exit_code != null ? "exit " + data.exit_code : ""), (data.backend || ""),
+  const isMtx = data.origin === "matrix" || data.backend === "matrix" || tool === "matrix";
+  const meta = [(isMtx ? "[MATRIX]" : ""), (data.exit_code != null ? "exit " + data.exit_code : ""), (data.backend || ""),
                 (data.summary || "")].filter(Boolean).join(" · ");
   card.querySelector(".tc-meta").textContent = meta;
   const argsEl = card.querySelector(".tc-args");
@@ -6035,7 +6036,15 @@ async function loadImprovement() {
       '<li><b>Proposals</b> — the agent only PROPOSES rule/skill changes; YOU approve (rules) or they stay pending. Memory is written freely.</li>' +
       '<li><b>Audit ledger</b> — every artifact is appended (bounded to ' + esc(String(c.ledger_max)) + '). Auto kinds: <code>' + esc(kinds) + '</code>.</li>' +
       '</ol>' +
-      '<div class="remaining">origins: ' + esc((c.origins || []).join(" · ")) + '</div>';
+      '<div class="remaining">origins: ' + esc((c.origins || []).join(" · ")) + '</div>' +
+      (d.matrix && d.matrix.ok ? (
+        '<div class="remaining" style="margin-top:4px"><b>Matrix zone</b>: ' +
+        ((d.matrix.tools || []).length) + ' dynamic tool(s) · ' +
+        ((d.matrix.skills || []).length) + ' skill(s) · ' +
+        ((d.matrix.git_commits || []).length) + ' recent commit(s) · ' +
+        'WebUI: ' + (d.matrix.webui_shadow_active ? 'shadow (src/Matrix/webui)' : 'Nucleus') +
+        '</div>'
+      ) : '');
   }
   // ---- JAG-491: the last LLM backlog review (verdict per artifact) ----
   const revBox = $("impReview"), revMsg = $("impReviewMsg"), revCnt = $("impRevCount");

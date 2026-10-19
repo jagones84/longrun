@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "subdirs": [
+    "agent",
+    "core",
+    "memory",
+    "model",
+    "plan",
+    "tools",
+    "util",
+    "webui"
+  ]
+}

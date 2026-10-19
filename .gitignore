@@ -8,6 +8,8 @@ eval/results/
 # Agent working memory (HANDOFF + per-domain manuals): local operational state,
 # never part of the shipped repo.
 .agent/
+.Matrix/
+
 
 # JAG-180: editor/agent backup + temp files must never reach the repo.
 *.bak

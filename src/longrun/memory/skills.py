@@ -62,6 +62,15 @@ def _frontmatter_name(text):
 _cache = {"sig": None, "skills": []}
 
 
+def _matrix_skills_dir():
+    try:
+        from longrun.tools import matrix_guard
+        _root, _msrc, mdot = matrix_guard._roots()
+        return os.path.join(mdot, "skills")
+    except Exception:  # noqa: BLE001
+        return os.path.join(REPO, ".Matrix", "skills")
+
+
 def _skills_sig():
     """Signature of the skills tree: mtimes of SKILLS_DIR + each category dir.
 
@@ -70,11 +79,22 @@ def _skills_sig():
     mtime. Keying the cache on the top-level mtime alone made a freshly adopted
     skill invisible until a server restart.
     """
-    if not os.path.exists(SKILLS_DIR):
+    mdir = _matrix_skills_dir()
+    if not os.path.exists(SKILLS_DIR) and not os.path.exists(mdir):
         return None
-    parts = [os.stat(SKILLS_DIR).st_mtime_ns]
+    parts = [os.stat(SKILLS_DIR).st_mtime_ns if os.path.exists(SKILLS_DIR) else 0]
+    if os.path.isdir(mdir):
+        try:
+            parts.append(("matrix", os.stat(mdir).st_mtime_ns))
+            for name in sorted(os.listdir(mdir)):
+                sd = os.path.join(mdir, name)
+                sp = os.path.join(sd, "SKILL.md")
+                if os.path.isfile(sp):
+                    parts.append(("matrix", name, os.stat(sp).st_mtime_ns))
+        except OSError:
+            pass
     try:
-        for cat in sorted(os.listdir(SKILLS_DIR)):
+        for cat in (sorted(os.listdir(SKILLS_DIR)) if os.path.isdir(SKILLS_DIR) else []):
             cd = os.path.join(SKILLS_DIR, cat)
             try:
                 if not os.path.isdir(cd):
@@ -157,6 +177,27 @@ def list_skills(reload=False):
                                    # (the skills/created box); `local` = user-uploaded.
                                    "auto": cat == "created",
                                    "local": cat == LOCAL_CATEGORY})
+    mdir = _matrix_skills_dir()
+    if os.path.isdir(mdir):
+        for name in sorted(os.listdir(mdir)):
+            sd = os.path.join(mdir, name)
+            sp = os.path.join(sd, "SKILL.md")
+            if os.path.isfile(sp):
+                try:
+                    with open(sp, "r", encoding="utf-8", errors="replace") as f:
+                        text = f.read(8192)
+                except OSError:
+                    continue
+                title, desc = _parse_skill_md(text, name)
+                try:
+                    rel_p = os.path.relpath(sp, REPO)
+                except ValueError:
+                    rel_p = sp
+                skills.append({"name": name, "category": "matrix",
+                               "path": rel_p,
+                               "abspath": sp,
+                               "title": title, "description": desc,
+                               "auto": True, "matrix": True, "local": False})
     _cache.update(sig=sig, skills=skills)
     return skills
 
@@ -259,7 +300,8 @@ def get_skill(name):
     """Full SKILL.md content for a skill (matched by directory name)."""
     for s in list_skills():
         if s["name"] == name:
-            with open(os.path.join(REPO, s["path"]), "r",
+            p = s.get("abspath") or os.path.join(REPO, s["path"])
+            with open(p, "r",
                       encoding="utf-8", errors="replace") as f:
                 return {"ok": True, **s, "content": f.read(65536)}
     return None

@@ -411,6 +411,35 @@ TOOL_SCHEMAS = {
         "required": ["pattern"],
         "subject": "pattern",
     },
+    "matrix": {
+        "description": ("Self-evolving Matrix suite (src/Matrix & .Matrix). "
+                        "Actions: status | hotload | checkpoint_save/checkpoint_rollback (slot 1..3) | "
+                        "git_commit/git_log/git_diff/git_reset (local 20-commit repo) | "
+                        "test/clean_trash (.Matrix/trash) | webui_init/webui_reset | restart (warm resume)."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string",
+                       "enum": ["status", "hotload", "checkpoint_save", "checkpoint_rollback",
+                                "git_commit", "git_log", "git_diff", "git_reset",
+                                "test", "clean_trash", "webui_init", "webui_reset", "restart"],
+                       "default": "status"},
+            "slot": {"type": "integer", "description": "checkpoint slot (1, 2, or 3)"},
+            "label": {"type": "string", "description": "checkpoint label (action=checkpoint_save)"},
+            "message": {"type": "string", "description": "commit message (action=git_commit)"},
+            "rev": {"type": "string", "description": "git revision (action=git_diff|git_reset)"},
+            "script": {"type": "string", "description": "script filename in .Matrix/trash (action=test)"},
+            "code": {"type": "string", "description": "optional Python code to write & run in .Matrix/trash (action=test)"},
+            "install_deps": {"type": "array", "items": {"type": "string"},
+                             "description": "pip packages to install in .Matrix/venv (action=test)"},
+            "timeout_secs": {"type": "integer", "default": 60},
+            "keep_recent": {"type": "integer", "default": 0},
+            "session": {"type": "string", "description": "session id to resume after warm restart"},
+            "reason": {"type": "string", "description": "reason for warm restart"},
+            "dry_run": {"type": "boolean", "default": False},
+        },
+        "required": [],
+        "subject": "action",
+    },
 }
 
 
@@ -603,12 +632,21 @@ def _external_tools():
         return {}
 
 
+def _matrix_tools():
+    """Dynamically discovered Matrix tools (`src/Matrix/tools/*.py`); empty on any error."""
+    try:
+        from longrun.core import matrix
+        return matrix.discover_tools()
+    except Exception:
+        return {}
+
+
 def tool_names():
-    """All known tools: registry entries from config ∪ shipped schemas ∪ external MCP."""
-    return sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(_external_tools()))
+    """All known tools: registry entries from config ∪ shipped schemas ∪ Matrix ∪ external MCP."""
+    return sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(_matrix_tools()) | set(_external_tools()))
 
 
-def tool_spec(name, ext_snapshot=None):
+def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     """Merged {name, enabled, approval, ...policy, schema} or None if unknown.
 
     `ext_snapshot` (optional) is a pre-fetched `_external_tools()` map so callers
@@ -616,6 +654,11 @@ def tool_spec(name, ext_snapshot=None):
     """
     schema = TOOL_SCHEMAS.get(name)
     ext = None
+    mtx = None
+    if schema is None:
+        mtx = (mtx_snapshot if mtx_snapshot is not None else _matrix_tools()).get(name)
+        if mtx:
+            schema = mtx.get("schema")
     if schema is None:
         ext = (ext_snapshot if ext_snapshot is not None else _external_tools()).get(name)
         if ext:
@@ -635,6 +678,8 @@ def tool_spec(name, ext_snapshot=None):
             if str(_k).lower() == _low:
                 entry = _v
                 break
+    if entry is None and (mtx or name == "matrix"):
+        entry = {"enabled": True, "approval": (mtx or {}).get("approval", "auto")}
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
     # server is NOT connected has no schema — the tool does not exist. Return None
     # so a clone without pmcp never advertises (nor tries) a tool it lacks; the
@@ -646,6 +691,7 @@ def tool_spec(name, ext_snapshot=None):
     entry = entry or {}
     return {
         "name": name,
+        "origin": "matrix" if mtx else ("mcp" if ext else "nucleus"),
         # JAG-80: external MCP tools (the pmcp gateway) are OPT-IN. Shipping 26
         # gateway tools (23 of them approval-gated) into the chat prompt made the
         # model call `pmcp__gateway.request_capability` instead of its own
@@ -669,7 +715,8 @@ def catalog():
     # server was (re)connecting the two views disagreed, `tool_spec` returned
     # None, and `None["enabled"]` crashed the handler (dropped HTTP connection).
     ext = _external_tools()
-    names = sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(ext))
+    mtx = _matrix_tools()
+    names = sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(mtx) | set(ext))
     out = []
     for name in names:
         spec = tool_spec(name, ext)
@@ -677,6 +724,7 @@ def catalog():
             continue
         out.append({
             "name": name,
+            "origin": spec.get("origin", "nucleus"),
             "enabled": spec["enabled"],
             "approval": spec["approval"],
             "auto_approve": spec["auto_approve"],

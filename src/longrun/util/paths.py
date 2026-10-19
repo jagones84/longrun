@@ -29,4 +29,8 @@ EMBEDDING_DIR = os.environ.get("LONGRUN_EMBEDDING_DIR") or os.path.join(DATA_DIR
 # JAG-431j: the per-session THREAD ledger (durable chat outline, compaction-proof).
 # Overridable so tests never write it into the live data/.
 THREADS_DIR = os.environ.get("LONGRUN_THREADS_DIR") or os.path.join(DATA_DIR, "threads")
+# Matrix self-evolution roots (segregated from the immutable Nucleus in src/longrun).
+MATRIX_SRC_DIR = os.environ.get("LONGRUN_MATRIX_SRC") or os.path.join(REPO_ROOT, "src", "Matrix")
+MATRIX_DOT_DIR = os.environ.get("LONGRUN_MATRIX_DOT") or os.path.join(REPO_ROOT, ".Matrix")
+
 

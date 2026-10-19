@@ -30,7 +30,7 @@ AGENT_WRITE = {
 # Every improvement product (proposal, mined skill, ledger entry) and every
 # memory record carries one of these, so auto-generated knowledge is never
 # mixed with what the user actually said.
-ORIGINS = ("user", "agent", "reflect", "mining", "harness")
+ORIGINS = ("user", "agent", "reflect", "mining", "harness", "matrix")
 
 _TOOLCALL_THRESHOLD = 5
 

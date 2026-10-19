@@ -272,6 +272,10 @@ tools:
     enabled: true
     approval: auto
 
+  matrix:
+    enabled: true
+    approval: auto
+
   # ---- JAG-426: baseline tools every standard harness ships ------------------
   # Native Python execution (previously only reachable via the pmcp MCP client,
   # so a host without pmcp had NO way to run a snippet). Arbitrary code = the

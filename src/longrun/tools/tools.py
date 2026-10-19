@@ -67,9 +67,20 @@ def _shell(args, run_id):
     cwd = cwd or base
     if cwd and not os.path.isdir(cwd):
         return {"ok": False, "error": "cwd not found: %s" % cwd}
+    from longrun.tools import matrix_guard
+    ok_cmd, err_cmd = matrix_guard.check_shell_command(command, cwd=cwd)
+    if not ok_cmd:
+        return {"ok": False, "exit_code": 126, "error": err_cmd,
+                "backend": "host", "sandboxed": False}
+    snap = matrix_guard.snapshot_nucleus_digests()
     res = sandbox.run(command, run_id=run_id,
                       timeout=args.get("timeout_secs"),
                       workspace=cwd)
+    reverted = matrix_guard.restore_if_nucleus_tampered(snap)
+    if reverted:
+        return {"ok": False, "exit_code": 126,
+                "error": "NUCLEUS_PROTECTED: shell command modified Nucleus files (reverted %d file(s))" % len(reverted),
+                "backend": res.get("backend", "host"), "sandboxed": res.get("sandboxed", False)}
     res["ok"] = res.get("exit_code") == 0
     return res
 
@@ -94,6 +105,8 @@ def _python(args, run_id):
         return {"ok": False, "error": "no sandbox workspace: %s" % e}
     name = "_repl_%s.py" % os.urandom(4).hex()
     path = os.path.join(ws, name)
+    from longrun.tools import matrix_guard
+    snap = matrix_guard.snapshot_nucleus_digests()
     res = None
     try:
         with open(path, "w", encoding="utf-8") as f:
@@ -110,6 +123,11 @@ def _python(args, run_id):
             os.remove(path)
         except OSError:
             pass
+    reverted = matrix_guard.restore_if_nucleus_tampered(snap)
+    if reverted:
+        return {"ok": False, "exit_code": 126,
+                "error": "NUCLEUS_PROTECTED: python snippet modified Nucleus files (reverted %d file(s))" % len(reverted),
+                "backend": res.get("backend", "host"), "sandboxed": res.get("sandboxed", False)}
     res["ok"] = res.get("exit_code") == 0
     return res
 
@@ -287,6 +305,10 @@ def _fs_write(args, run_id):
                                       base=args.get("workspace"))
     if err:
         return {"ok": False, "error": err}
+    from longrun.tools import matrix_guard
+    ok_mw, err_mw = matrix_guard.check_write_allowed(path)
+    if not ok_mw:
+        return {"ok": False, "exit_code": 126, "error": err_mw, "path": path}
     os.makedirs(os.path.dirname(path), exist_ok=True)
     content = str(args.get("content", ""))
     append = bool(args.get("append"))
@@ -312,6 +334,10 @@ def _fs_edit(args, run_id):
                                       base=args.get("workspace"))
     if err:
         return {"ok": False, "error": err}
+    from longrun.tools import matrix_guard
+    ok_mw, err_mw = matrix_guard.check_write_allowed(path)
+    if not ok_mw:
+        return {"ok": False, "exit_code": 126, "error": err_mw, "path": path}
     if not os.path.isfile(path):
         return {"ok": False, "error": "no such file: %s" % path}
     search = str(args.get("search", ""))
@@ -1460,6 +1486,49 @@ def _knowledge(args, run_id):
             "count": len(res.get("results", []))}
 
 
+def _matrix(args, run_id):
+    """Execute Matrix self-evolution suite actions."""
+    from longrun.core import matrix
+    action = str((args or {}).get("action") or "status").strip().lower()
+    if action in ("status", "info"):
+        return matrix.status()
+    if action in ("hotload", "reload"):
+        return matrix.hotload()
+    if action == "checkpoint_save":
+        return matrix.checkpoint_save(args.get("slot"), label=args.get("label") or "")
+    if action == "checkpoint_rollback":
+        return matrix.checkpoint_rollback(args.get("slot"))
+    if action == "git_commit":
+        return matrix.git_commit(args.get("message") or "matrix update")
+    if action == "git_log":
+        return matrix.git_log(limit=args.get("limit") or 20)
+    if action == "git_diff":
+        return matrix.git_diff(rev=args.get("rev"))
+    if action == "git_reset":
+        return matrix.git_reset(rev=args.get("rev") or "HEAD")
+    if action == "test":
+        return matrix.run_test(
+            script_name=args.get("script") or "test_matrix.py",
+            code=args.get("code"),
+            install_deps=args.get("install_deps"),
+            timeout_secs=args.get("timeout_secs") or 60,
+        )
+    if action == "clean_trash":
+        return matrix.clean_trash(keep_recent=args.get("keep_recent") or 0)
+    if action == "webui_init":
+        return matrix.webui_init()
+    if action == "webui_reset":
+        return matrix.webui_reset()
+    if action == "restart":
+        sid = str(args.get("session") or run_id or "").strip()
+        return matrix.schedule_restart(
+            session_id=sid,
+            reason=args.get("reason") or "",
+            dry_run=bool(args.get("dry_run", False)),
+        )
+    return {"ok": False, "error": "unknown matrix action %r" % action}
+
+
 _DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
              "fs.edit": _fs_edit, "diff": _diff,
              "git": _git, "http": _http, "browser": _browser, "self": _self,
@@ -1467,12 +1536,22 @@ _DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
              "reconcile": _reconcile, "sessions": _sessions, "index": _index,
              "knowledge": _knowledge, "chapters": _chapters, "context": _context,
              # JAG-426: baseline tools every standard harness ships
-             "python": _python, "process": _process, "glob": _glob}
+             "python": _python, "process": _process, "glob": _glob,
+             "matrix": _matrix}
 
 
 def _dispatch_execute(tool, args, run_id=None):
     fn = _DISPATCH.get(tool)
     if fn is None:
+        try:
+            from longrun.core import matrix as _mtx
+            if tool in _mtx.discover_tools():
+                res = _mtx.execute_tool(tool, args, run_id=run_id)
+                res["args"] = args or {}
+                return res
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": "Matrix tool dispatch failed: %s" % e,
+                    "tool": tool, "origin": "matrix"}
         # external MCP tools (<client>__<tool>) route through the MCP client
         if "__" in tool:
             try:
