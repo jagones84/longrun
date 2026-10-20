@@ -7135,40 +7135,101 @@ function renderTools(el, d) {
        <button class="ghost config-save" id="sbxSave" disabled title="no changes to save">save sandbox</button>
        <div class="remaining" id="sbxMsg"></div>
      </div>`;
+  // JAG-498: an MCP server registers MANY tools whose names share a namespace
+  // (`pmcp__gateway.` ×26, `fs.` ×3). Listing them flat made the panel a wall of
+  // `pmcp__gateway.*` rows. Group by the name's namespace — derived from the NAME
+  // alone, so it covers every origin (native, external MCP, Matrix) with no
+  // backend contract — and let each group collapse. The open/closed state is
+  // remembered in localStorage. Standalone names (no separator) stay a flat list.
+  // With a global AUTO mode (FULL) every tool is auto-approved (registry.classify),
+  // so a row shows that relation instead of a misleading per-tool `required`.
+  const globalAuto = ["full", "auto", "yolo"].indexOf(String(mode).toLowerCase()) >= 0;
+  const groups = new Map();
+  tools.forEach(t => {
+    const nm0 = String(t.name || t.id || "?");
+    // JAG-498b: namespace = text before the LAST dot (`fs.read` -> `fs`,
+    // `pmcp__gateway.catalog_search` -> `pmcp__gateway`). An external MCP tool
+    // named `<client>__<tool>` with NO dot (`github__create_issue`) falls back to
+    // the `__` client separator so ANY MCP server groups, not only those that
+    // ship their own dotted sub-namespace.
+    const dot = nm0.lastIndexOf(".");
+    const sep = dot > 0 ? dot : nm0.indexOf("__");
+    const g = sep > 0 ? nm0.slice(0, sep) : "";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(t);
+  });
+  let _open = {};
+  try { _open = JSON.parse(localStorage.getItem("longrun:toolGroups") || "{}") || {}; }
+  catch (_e) { _open = {}; }
+  // JAG-295-fix: `name`/`description` can come from a third-party MCP server, so
+  // both the text and the data-* attribute sinks must be escaped.
+  // JAG-463: the data-* attributes must carry the RAW name — they used to reuse
+  // the esc()'d text, so a name with & or a quote POSTed a mangled tool name.
+  const toolRow = t => {
+    const on = t.enabled !== false;
+    const ap = t.approval || "auto";
+    const nm = esc(t.name || t.id || "?");
+    const nmRaw = _attr(t.name || t.id || "?");
+    const apColor = ap === "auto" ? "var(--ok)" : (ap === "denied" ? "var(--err)" : "var(--warn)");
+    const eff = (globalAuto && ap !== "auto")
+      ? '<span class="remaining" style="color:var(--err)" title="global approval mode is FULL: this tool is auto-approved no matter what is stored here">FULL ⇒ auto</span>'
+      : "";
+    return `<div class="card" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">` +
+      `<span style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
+      `<span style="font-weight:600">${nm}</span>` + eff +
+      `<button class="ghost" style="margin-left:auto;font-size:10px;color:${apColor}" data-ap="${nmRaw}" data-cur="${ap}" title="stored per-tool policy — click to cycle">${esc(ap)} ⟳</button>` +
+      `<button class="ghost" style="font-size:10px" data-adv="${nmRaw}" title="roots · deny · allow_hosts · auto_approve">⚙</button>` +
+      `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button></div>` +
+      (t.description ? `<div class="remaining" style="margin:-4px 0 8px 22px">${esc(t.description)}</div>` : "");
+  };
+  const gNames = Array.from(groups.keys()).filter(g => g)
+    .sort((a, b) => (groups.get(b).length - groups.get(a).length) || a.localeCompare(b));
+  const _flat = groups.get("") || [];
+  const tree = gNames.map(g => {
+    const list = groups.get(g);
+    const gOn = list.filter(t => t.enabled !== false).length;
+    const aps = Array.from(new Set(list.map(t => t.approval || "auto")));
+    const gAp = aps.length === 1 ? aps[0] : "mixed";
+    const gCol = gAp === "auto" ? "var(--ok)" : (gAp === "denied" ? "var(--err)"
+      : (gAp === "mixed" ? "var(--dim)" : "var(--warn)"));
+    const gid = _attr(g);
+    const open = !!_open[g];
+    return `<div class="card" data-group="${gid}" style="padding:6px 8px;margin-bottom:6px">` +
+      `<div class="tg-head" style="display:flex;align-items:center;gap:8px;cursor:pointer">` +
+        `<span class="tg-caret" style="width:10px;color:var(--dim)">${open ? "▾" : "▸"}</span>` +
+        `<span style="font-weight:600">${esc(g)}</span>` +
+        `<span class="remaining">${gOn}/${list.length} enabled</span>` +
+        `<span class="remaining" style="margin-left:auto">namespace</span>` +
+        `<button class="ghost" style="font-size:10px;color:${gCol}" data-gap="${gid}" data-gcur="${esc(gAp)}" title="policy applied to EVERY tool of this group — click to cycle">${esc(gAp)} ⟳ all</button>` +
+        `<button class="ghost" style="font-size:10px" data-gbulk="${gid}" data-gon="${gOn === list.length ? "1" : "0"}">${gOn === list.length ? "disable" : "enable"} all</button>` +
+      `</div>` +
+      `<div class="tg-body" style="display:${open ? "block" : "none"};margin-top:6px">` +
+        list.map(toolRow).join("") + `</div></div>`;
+  }).join("");
+  const flatHtml = _flat.length
+    ? '<div class="remaining" style="margin:10px 0 6px">no namespace — standalone tools</div>' +
+      _flat.map(toolRow).join("")
+    : "";
   const _onN = tools.filter(t => t.enabled !== false).length;
   el.innerHTML = policyCard + kindsCard + sbCard +
     '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
-      '<span class="remaining" style="flex:1">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b></span>' +
+      '<span class="remaining" style="flex:1">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b>' +
+        (globalAuto ? ' · <b style="color:var(--err)">global FULL: every tool is auto (never ask)</b>' : '') +
+      "</span>" +
       '<span class="remaining">' + _onN + "/" + tools.length + " enabled</span>" +
       '<button class="ghost" data-bulk="enable" title="enable EVERY tool (native + external MCP) in one request">enable all</button>' +
       '<button class="ghost" data-bulk="disable" title="disable every tool (native + external MCP)">disable all</button>' +
     "</div>" +
     '<div id="toolAdv"></div>' +
-    tools.map(t => {
-    const on = t.enabled !== false;
-    const ap = t.approval || "auto";
-    // JAG-295-fix: `name`/`description` can come from a third-party MCP server,
-    // so both the text and the data-* attribute sinks must be escaped (every
-    // other render path here already escapes; these two did not).
-    const nm = esc(t.name || t.id || "?");
-    // JAG-463: the data-* attributes must carry the RAW name — they used to reuse the
-    // esc()'d text, so a name containing & or a quote POSTed a mangled tool name.
-    const nmRaw = _attr(t.name || t.id || "?");
-    const apSafe = esc(ap);
-    const apColor = ap === "auto" ? "var(--ok)" : (ap === "denied" ? "var(--err)" : "var(--warn)");
-    return `<div class="card" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">` +
-      `<span style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
-      `<span style="font-weight:600">${nm}</span>` +
-      `<button class="ghost" style="margin-left:auto;font-size:10px;color:${apColor}" data-ap="${nmRaw}" title="cycle approval policy">${apSafe} ⟳</button>` +
-      `<button class="ghost" style="font-size:10px" data-adv="${nmRaw}" title="roots · deny · allow_hosts · auto_approve">⚙</button>` +
-      `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button></div>` +
-      (t.description ? `<div class="remaining" style="margin:-4px 0 8px 22px">${esc(t.description)}</div>` : "");
-  }).join("");
+    tree + flatHtml;
   el.querySelectorAll("button[data-pol]").forEach(b =>
     b.onclick = () => scheduleApprovalSave(el, b.dataset.val));
   el.querySelectorAll("button[data-ap]").forEach(b =>
     b.onclick = () => {
-      const cur = b.textContent.replace("⟳", "").trim();
+      // JAG-498: read the STORED value from the data-* attribute (the visible
+      // label may carry a `FULL ⇒ auto` note, so textContent is no longer the
+      // policy). data-cur holds the raw per-tool value.
+      const cur = b.dataset.cur;
       const next = cur === "auto" ? "required" : (cur === "required" ? "denied" : "auto");
       api("POST", "/api/tools", { tool: b.dataset.ap, approval: next })
         .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
@@ -7176,6 +7237,34 @@ function renderTools(el, d) {
   el.querySelectorAll("button[data-tool]").forEach(b =>
     b.onclick = () => api("POST", "/api/tools", { tool: b.dataset.tool, enabled: b.dataset.on !== "true" })
       .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2)));
+  // JAG-498: collapse/expand a NAMESPACE group; the state is remembered across
+  // renders and page loads (localStorage).
+  el.querySelectorAll("[data-group]").forEach(g =>
+    g.querySelector(".tg-head").onclick = (e) => {
+      if (e.target.closest("button")) return;   // the group buttons keep their job
+      const body = g.querySelector(".tg-body"), caret = g.querySelector(".tg-caret");
+      const isOpen = body.style.display !== "none";
+      body.style.display = isOpen ? "none" : "block";
+      if (caret) caret.textContent = isOpen ? "▸" : "▾";
+      _open[g.dataset.group] = !isOpen;
+      try { localStorage.setItem("longrun:toolGroups", JSON.stringify(_open)); } catch (_e) { /* private mode */ }
+    });
+  // JAG-498: set ONE approval policy for EVERY tool of the group (one request).
+  el.querySelectorAll("button[data-gap]").forEach(b =>
+    b.onclick = () => {
+      const cur = b.dataset.gcur;
+      const next = cur === "auto" ? "required" : (cur === "required" ? "denied" : "auto");
+      const names = (groups.get(b.dataset.gap) || []).map(t => t.name || t.id);
+      api("POST", "/api/tools", { tools: names, approval: next })
+        .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
+    });
+  // JAG-498: enable/disable the WHOLE group in one request.
+  el.querySelectorAll("button[data-gbulk]").forEach(b =>
+    b.onclick = () => {
+      const names = (groups.get(b.dataset.gbulk) || []).map(t => t.name || t.id);
+      api("POST", "/api/tools", { tools: names, enabled: b.dataset.gon !== "1" })
+        .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
+    });
   // JAG-463: ONE request enables/disables EVERY tool (native + external MCP).
   el.querySelectorAll("button[data-bulk]").forEach(b =>
     b.onclick = () => api("POST", "/api/tools",

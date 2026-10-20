@@ -1730,6 +1730,30 @@ def update_policy(body):
         return {"ok": False, "error": "invalid settings value: %s" % e}
 
 
+def _apply_tool_fields(entry, body):
+    """The per-tool policy fields, applied to ONE config entry.
+
+    Shared by the single-tool path and the GROUP path (JAG-498) so the two can
+    never drift. Returns an error string, or None on success.
+    """
+    if "enabled" in body:
+        entry["enabled"] = bool(body["enabled"])
+    if "approval" in body:
+        ap = str(body["approval"] or "").strip().lower()
+        if ap not in ("auto", "required", "denied"):
+            return "approval must be auto|required|denied"
+        entry["approval"] = ap
+    # JAG-491: the per-tool ADVANCED fields (the same lists the shipped YAML
+    # documents) are editable as objects too. Each is a list of strings.
+    for key in ("auto_approve", "roots", "deny", "allow_hosts"):
+        if key in body:
+            vals = body[key]
+            if not isinstance(vals, list):
+                return "%s must be a list" % key
+            entry[key] = [str(x)[:500] for x in vals if str(x).strip()]
+    return None
+
+
 def _update_policy(body):
     cfg = registry.load_config()
     # JAG-127c: the GLOBAL approval policy (Config panel) — no `tool` needed.
@@ -1925,25 +1949,33 @@ def _update_policy(body):
         _publish("tools.update", bulk=("enable" if want else "disable"),
                  count=len(names))
         return {"ok": True, "updated": len(names), "tools": registry.catalog()}
+    # JAG-498: GROUP policy — ONE request for every tool of a namespace, so the
+    # Settings panel can "approve all" / enable / disable a whole MCP server
+    # (e.g. the 26 `pmcp__gateway.*` tools) or the `fs.*` group without looping
+    # one request per row. Applied with the SAME field logic as the single-tool
+    # path below (`_apply_tool_fields`) so the two can never drift.
+    group = body.get("tools")
+    if isinstance(group, list) and group:
+        group = [str(n) for n in group if str(n).strip()]
+        if not group:
+            return {"ok": False, "error": "tools list is empty"}
+        for _nm in group:
+            entry = cfg.setdefault("tools", {}).setdefault(_nm, {})
+            err = _apply_tool_fields(entry, body)
+            if err:
+                return {"ok": False, "error": "%s: %s" % (_nm, err)}
+        registry.save_config(cfg)
+        registry.load_config(reload=True)
+        _publish("tools.update", group=len(group), enabled=body.get("enabled"),
+                 approval=body.get("approval"))
+        return {"ok": True, "updated": len(group), "tools": registry.catalog()}
     name = body.get("tool") or body.get("name")
     if not name:
         return {"error": "tool required", "tools": registry.catalog()}
     entry = cfg.setdefault("tools", {}).setdefault(name, {})
-    if "enabled" in body:
-        entry["enabled"] = bool(body["enabled"])
-    if "approval" in body:
-        ap = str(body["approval"] or "").strip().lower()
-        if ap not in ("auto", "required", "denied"):
-            return {"ok": False, "error": "approval must be auto|required|denied"}
-        entry["approval"] = ap
-    # JAG-491: the per-tool ADVANCED fields (the same lists the shipped YAML
-    # documents) are editable as objects too. Each is a list of strings.
-    for key in ("auto_approve", "roots", "deny", "allow_hosts"):
-        if key in body:
-            vals = body[key]
-            if not isinstance(vals, list):
-                return {"ok": False, "error": "%s must be a list" % key}
-            entry[key] = [str(x)[:500] for x in vals if str(x).strip()]
+    err = _apply_tool_fields(entry, body)
+    if err:
+        return {"ok": False, "error": err}
     registry.save_config(cfg)
     registry.load_config(reload=True)
     _publish("tools.update", tool=name, enabled=entry.get("enabled"),

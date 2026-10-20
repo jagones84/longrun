@@ -64,6 +64,23 @@ check("B2 the panel offers enable-all / disable-all buttons",
 check("B3 the buttons post the bulk request and re-render",
       "{ enable_all: true }" in _html and "{ disable_all: true }" in _html)
 
+# ---- B4/B5/B6) JAG-498 grouped (per-namespace) tool policy -------------------
+check("B4 POST /api/tools accepts a GROUPED `tools` list applied in one request",
+      'group = body.get("tools")' in _api
+      and "_apply_tool_fields(entry, body)" in _api
+      and 'return {"ok": True, "updated": len(group), "tools": registry.catalog()}' in _api)
+check("B5 the panel groups tools by namespace, collapsible + state remembered",
+      'data-group="${gid}"' in _html and "longrun:toolGroups" in _html
+      and 'data-gap="${gid}"' in _html and 'data-gbulk="${gid}"' in _html
+      and "{ tools: names, approval: next }" in _html
+      and 'enabled: b.dataset.gon !== "1"' in _html)
+check("B6 a row shows why a stored `required` does not ask under global FULL",
+      'FULL \u21d2 auto' in _html and "global FULL: every tool is auto (never ask)" in _html
+      and 'const cur = b.dataset.cur;' in _html)
+check("B7 an MCP tool with no dot (`<client>__<tool>`) groups under its client",
+      'const sep = dot > 0 ? dot : nm0.indexOf("__");' in _html
+      and 'const g = sep > 0 ? nm0.slice(0, sep) : "";' in _html)
+
 # ---- C) a bookmark reveals its collapsed section -----------------------------
 check("C1 the bookmark click opens every ancestor <details> before aligning",
       "if (_p.tagName === \"DETAILS\" && !_p.open) { _p.open = true; _opened = true; }" in _html
