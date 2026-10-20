@@ -45,6 +45,13 @@ check("C1 price lookup: exact ref and its basename",
       C.price_for("deepseek/deepseek-chat") == (2.0, 8.0)
       and C.price_for("deepseek-chat") == (2.0, 8.0), str(C.price_for("deepseek-chat")))
 check("C2 an unpriced model has no price", C.price_for("mystery/model") is None)
+# JAG-516: the OpenRouter cache only prices the models OpenRouter hosts, so the
+# provider-direct DeepSeek models used to record `usd: null` ("unpriced"). The
+# repo ships config/prices.yaml with the OFFICIAL rates for them.
+check("C2b config/prices.yaml prices the provider-direct DeepSeek models",
+      C.price_for("deepseek-reasoner") is not None
+      and C.rates_for("deepseek-reasoner")["cache_read"] is not None,
+      str(C.rates_for("deepseek-reasoner")))
 
 rec = C.record("s1", "deepseek/deepseek-chat", {"prompt_tokens": 1000, "completion_tokens": 500})
 check("C3 one call is priced from its REAL usage ($2/$8 per 1M)", rec and abs(rec["usd"] - 0.006) < 1e-9, str(rec))
