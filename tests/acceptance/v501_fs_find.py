@@ -101,9 +101,9 @@ check("B6 the attach-file picker searches the whole tree",
       "_pickRemoteRun" in HTML and "{ kind: \"any\", base:" in HTML)
 check("B7 arrow keys move the picker selection",
       'e.key === "ArrowDown" || e.key === "ArrowUp"' in HTML)
-check("B8 the FILES panel reuses the same controller (third browser, no copy)",
-      'id="fileSearch"' in HTML and 'id="fileHits"' in HTML
-      and "F.bindSearch(inp, box" in HTML)
+check("B8 the FILES panel hands the tree off to the editor (no second browser)",
+      'id="fileSearch"' not in HTML and 'id="fileTree"' not in HTML
+      and "window.SparkEditor.toggle()" in HTML)
 
 # --- C: a workspace change refreshes every browser --------------------------
 check("C1 saving a workspace refreshes the panels + the editor tree",
@@ -112,8 +112,8 @@ check("C1 saving a workspace refreshes the panels + the editor tree",
       and "window.SparkEditor.reloadTree" in HTML)
 check("C2 the editor exports a tree reload",
       "reloadTree: () => loadTree()" in EDITOR)
-check("C3 a finished turn refreshes an OPEN Files panel",
-      "may have written/deleted files" in HTML)
+check("C3 a finished turn refreshes the pending-changes list",
+      "refreshEdits(); linkifyAll();" in HTML)
 
 # --- D: DSML self-heal + a truthful human gate ------------------------------
 _DSML = "\uff5c\uff5cDSML\uff5c\uff5c"

@@ -68,7 +68,7 @@ check("A10 a session switch does not wipe the reveal-built tree",
 m = re.search(r"const SETTINGS_CATS = \[(.*?)\n\];", idx, re.S)
 cats = re.findall(r'\[\s*"([a-z]+)"\s*,', m.group(1)) if m else []
 want = ["appearance", "keys", "models", "subagents", "tools", "mcp", "skills",
-        "rules", "improvement", "diagnostics", "config"]
+        "rules", "knowledge", "improvement", "diagnostics", "harness", "config"]
 check("B1 SETTINGS_CATS is parseable", bool(cats), "found %r" % (cats,))
 check("B2 categories follow the operator's order",
       cats[:len(want)] == want, "got %r" % (cats,))
@@ -102,6 +102,20 @@ check("C2 the healthy verdict gets a green card, not an empty grey box",
       'empty.className = "card diag-ok"' in diag and "Healthy." in diag)
 check("C3 a green style exists", ".diag-ok" in idx and "--ok" in idx)
 check("C4 the check count is surfaced when available", "counts.checked" in diag)
+
+# ---- D) the right rail hands the tree to the editor, without moving the rail --
+check("D1 the Files panel no longer renders its own tree or search",
+      'id="fileTree"' not in idx and 'id="fileSearch"' not in idx)
+check("D2 the Files panel offers an editor hand-off instead",
+      "open in editor" in idx and "window.SparkEditor.toggle()" in idx)
+check("D3 the workspace-folder card carries the editor button",
+      re.search(r'id="wsSave"[^\n]*\n[^\n]*ws-ed', idx) is not None)
+check("D4 there is no second workspace-tree implementation",
+      "function loadFiles" not in idx and "function _renderDir" not in idx)
+check("D5 focusInsp can skip the scroll",
+      "function focusInsp(name, opts)" in idx and "opts.scroll !== false" in idx)
+check("D6 opening a file from a panel does not move the rail",
+      'openPanel("files", { scroll: false })' in idx)
 
 print("---")
 ok = sum(results)

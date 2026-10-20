@@ -56,8 +56,9 @@ check("D2 Context summary is set in loadCtx", '_isum("sContext", (d.pct != null 
 check("D3 Approvals summary is set in loadApprovals", '_isum("apprCount"' in HTML)
 check("D4 Plan summary is set in renderGraph", '_isum("sPlan", planSummary(c, graph.run_id)' in HTML)
 check("D5 Roles summary is set in the rules panel loader", '_isum("sRoles"' in HTML)
-check("D6 Workspace summary is set from the workspace path", '_isum("sWorkspace", _base(d.workspace)' in HTML
-      and '_isum("sWorkspace", _base(d.path)' in HTML)
+check("D6 Workspace summary is set from the workspace path", '_isum("sWorkspace", _base(d.workspace)' in HTML)
+      # v506: the right-rail tree (the second setter, `_base(d.path)`) is gone —
+      # the workspace-folder card is the single source for this summary.
 check("D7 Codebase summary is set in cbStatus", '_isum("sCodebase"' in HTML)
 check("D9 Terminal summary follows the shell cwd", HTML.count('_isum("sTerm", _base(') == 2)
 check("D10 Feed summary is a live event counter", "let _feedN = 0;" in HTML

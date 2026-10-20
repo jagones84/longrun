@@ -973,7 +973,6 @@
     body.show-left #resize-left.active { background: var(--accent); }
   }
   /* JAG-124: workspace file tree + editor */
-  #fileTree { max-height: 300px; overflow: auto; font-family: monospace; }
   .ftrow { cursor: pointer; padding: 3px 6px; border-radius: 6px; font-size: 12px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ftrow:hover { background: var(--hover); }
@@ -2011,18 +2010,16 @@
             <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
             <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]' title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁 browse…</button>
             <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
+            <button class="ghost ws-ed" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock on this workspace (tree, keyboard search, tabs)">🗔 editor</button>
           </div>
         </div>
         <h2>Files · workspace</h2>
         <div class="card">
-          <div class="u-df u-g6 u-aic">
-            <span class="remaining u-f1 u-wba" id="filesRoot">…</span>
-            <button class="ghost" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock (CodeMirror; markdown/images preview)">🗔 editor</button>
-            <button class="ghost" data-call="loadFiles" title="reload tree">↻</button>
+          <div class="remaining" id="filesRoot">…</div>
+          <div class="u-df u-g6 u-mt6 u-aic u-fww">
+            <button class="ghost" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔 open in editor</button>
+            <span class="remaining u-f1">tree + search live in the editor dock — one implementation</span>
           </div>
-          <input id="fileSearch" class="inp u-mt6" placeholder="search this workspace — ↑/↓ then Enter" autocomplete="off" aria-label="search files in this workspace">
-          <div id="fileTree" class="u-mt6"><div class="remaining">open a session first</div></div>
-          <div id="fileHits"></div>
           <div class="remaining u-mt4" id="fileMsg"></div>
         </div>
         <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
@@ -4174,10 +4171,8 @@ function send(text, display, atts) {
     if (live()) {
       endStream();
       if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll();
-        // JAG-501: the turn may have written/deleted files — the Files panel
-        // follows without a manual ↻ (only while it is actually open).
-        { const _fs = document.querySelector('#inspector section[data-insp="files"]');
-          if (_fs && _fs.classList.contains("insp-open")) loadFiles(); }
+        // JAG-506: the Files panel carries no tree anymore; the pending-changes
+        // list refreshes through refreshEdits() above.
         // JAG-431j/431p: a finished turn may have added/renamed Free.* groups — refresh
         // the labels from the ledger + chapters. NOTE: this does NOT rebuild the chat
         // (loadHistory APPENDS; it must only be called after clearing #log).
@@ -4295,7 +4290,7 @@ function selectSession(s) {
   // JAG-127: the open panel must follow the session switch — its folder
   // changed, so a stale workspace/tree would be shown otherwise.
   const filesSec = document.querySelector('#inspector section[data-insp="files"]');
-  if (filesSec && filesSec.classList.contains("insp-open")) { loadFiles(); loadEdits(); }
+  if (filesSec && filesSec.classList.contains("insp-open")) { loadEdits(); }
   refreshSendBtn();   // JAG-424: the button mirrors THIS session's running state
 }
 let _agents = {};   // JAG-287: session id -> org-agent record (empty if none)
@@ -8447,6 +8442,7 @@ async function loadRules() {
     _rulePathGlobal = g.path || null;
     _rulePathProject = p.path || null;
     $("wsPath").value = d.workspace || "";
+    if ($("filesRoot")) $("filesRoot").textContent = d.workspace || "…";   // JAG-506: the tree's old owner
     gateEnroll($("wsCard"));   // JAG-496: this is the baseline the workspace Save compares against
     _isum("sWorkspace", _base(d.workspace), "");
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
@@ -8490,7 +8486,7 @@ async function setWorkspace() {
 function _afterWorkspaceChange() {
   loadRules(); loadSessions();
   const filesSec = document.querySelector('#inspector section[data-insp="files"]');
-  if (filesSec && filesSec.classList.contains("insp-open")) { loadFiles(); loadEdits(); }
+  if (filesSec && filesSec.classList.contains("insp-open")) { loadEdits(); }
   if (window.SparkEditor && window.SparkEditor.reloadTree) window.SparkEditor.reloadTree();
   try { cbStatus(); } catch (e) {}
 }
@@ -8578,9 +8574,9 @@ function skillsAutocomplete() {
 const SETTINGS_CATS = [
   ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
   ["subagents", "Subagents"], ["tools", "Tools & approvals"], ["mcp", "MCP"],
-  ["skills", "Skills"], ["rules", "Rules"], ["improvement", "Improvements"],
-  ["diagnostics", "Diagnostics"], ["config", "Config files"],
-  ["knowledge", "Knowledge"], ["harness", "Harness"], ["info", "\u24D8 Info"],
+  ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
+  ["improvement", "Improvements"], ["diagnostics", "Diagnostics"],
+  ["harness", "Harness"], ["config", "Config files"], ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
    by the inline boot script above, these helpers just re-render and save. */
@@ -9101,17 +9097,20 @@ function _loadInspector(name) {
   else if (key === "cost") { loadCosts(); }
   else if (key === "rules") { loadRulesPanel(); }
   else if (key === "approvals") { loadApprovals(); }
-  else if (key === "files") { loadFiles(); loadEdits(); loadRules(); }
+  else if (key === "files") { loadEdits(); loadRules(); }
   else if (key === "codebase") { cbStatus(); loadIndexCfg(); }
 }
-function focusInsp(name) {
+function focusInsp(name, opts) {
   const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", feed: "feed" };
   const key = map[name] || name;
   const sec = document.querySelector('#inspector section[data-insp="' + key + '"]');
   if (sec) {
     sec.querySelector(".insp-body").hidden = false;
     sec.classList.add("insp-open");
-    requestAnimationFrame(function () { sec.scrollIntoView({ block: "start" }); });
+    // JAG-506: an in-panel click (Codebase hit -> editor) must not move the rail.
+    if (!opts || opts.scroll !== false) {
+      requestAnimationFrame(function () { sec.scrollIntoView({ block: "start" }); });
+    }
   }
   localStorage.setItem("sf_insp_" + key, "1");
   _loadInspector(key);
@@ -9124,7 +9123,7 @@ function restoreInspector() {
   });
 }
 restoreInspector();
-function openPanel(name) { focusInsp(name); }
+function openPanel(name, opts) { focusInsp(name, opts); }
 
 /* ---- JAG-400: CODEBASE index — PER WORKSPACE (like project rules) ---- */
 function _cbQS() { return sessionId ? ("?session=" + encodeURIComponent(sessionId)) : ""; }
@@ -9732,7 +9731,7 @@ function emRenderList() {
 }
 
 /* ---- JAG-124: workspace file tree + editor ---- */
-let _filesRoot = null, _openFile = null;
+let _openFile = null;
 
 function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 function _fmtSize(n) {
@@ -9740,86 +9739,6 @@ function _fmtSize(n) {
   if (n < 1024) return n + " B";
   if (n < 1048576) return (n / 1024).toFixed(1) + " kB";
   return (n / 1048576).toFixed(1) + " MB";
-}
-
-/* JAG-501: the FILES panel is the third file browser — same keyboard search,
-   same controller (fsfind.js), no second implementation. `path` lets a search
-   hit re-root the tree on the folder that matched. */
-let _fileSearchBound = false;
-function _bindFileSearch() {
-  if (_fileSearchBound) return;
-  const inp = $("fileSearch"), box = $("fileHits");
-  if (!inp || !box) return;
-  const F = window.FsFind;
-  if (!F || !F.bindSearch) {
-    // the ES module (which publishes window.FsFind) may still be loading at boot
-    inp.addEventListener("focus", _bindFileSearch, { once: true });
-    return;
-  }
-  _fileSearchBound = true;
-  F.bindSearch(inp, box, {
-    kind: "any",
-    empty: "no file or folder matches",
-    onResults: () => { $("fileTree").hidden = true; },
-    onEmpty: () => { box.innerHTML = ""; $("fileTree").hidden = false; },
-    onPick: (hit) => {
-      inp.value = ""; box.innerHTML = ""; $("fileTree").hidden = false;
-      if (hit.dir) loadFiles(hit.path); else openFile(hit.path);
-    },
-  });
-}
-async function loadFiles(path) {
-  const tree = $("fileTree");
-  _bindFileSearch();
-  tree.hidden = false;
-  if ($("fileSearch") && $("fileSearch").value.trim()) return;   // a live search owns the panel
-  tree.innerHTML = '<div class="remaining">loading…</div>';
-  const qs = new URLSearchParams({ session: sessionId || "" });
-  if (path) qs.set("path", path);
-  try {
-    const d = await api("GET", "/api/fs/list?" + qs.toString());
-    if (d.error) { tree.innerHTML = '<div class="remaining">' + esc(d.error) + '</div>'; return; }
-    _filesRoot = d.path;
-    $("filesRoot").textContent = d.path;
-    _isum("sWorkspace", _base(d.path), "");
-    tree.innerHTML = "";
-    _renderDir(tree, d, 0);
-    if (!d.count) tree.innerHTML = '<div class="remaining">empty folder</div>';
-  } catch (e) { tree.innerHTML = '<div class="remaining">' + esc(e) + '</div>'; }
-}
-
-function _renderDir(container, d, depth) {
-  (d.dirs || []).forEach(dir => {
-    const row = document.createElement("div");
-    row.className = "ftrow";
-    row.style.paddingLeft = (6 + depth * 14) + "px";
-    row.textContent = "▸ 📁 " + dir.name;
-    const kids = document.createElement("div");
-    kids.hidden = true;
-    let loaded = false;
-    row.onclick = async () => {
-      kids.hidden = !kids.hidden;
-      row.textContent = (kids.hidden ? "▸" : "▾") + " 📁 " + dir.name;
-      if (!kids.hidden && !loaded) {
-        loaded = true;
-        const sub = await api("GET", "/api/fs/list?session=" + encodeURIComponent(sessionId || "") + "&path=" + encodeURIComponent(dir.path));
-        if (sub.error) { kids.innerHTML = '<div class="remaining" style="margin-left:' + (20 + depth * 14) + 'px">' + esc(sub.error) + '</div>'; }
-        else { _renderDir(kids, sub, depth + 1); }
-      }
-    };
-    container.appendChild(row);
-    container.appendChild(kids);
-  });
-  (d.files || []).forEach(f => {
-    const row = document.createElement("div");
-    row.className = "ftrow";
-    row.style.paddingLeft = (20 + depth * 14) + "px";
-    row.innerHTML = "📄 " + esc(f.name) + ' <span class="remaining">' + _fmtSize(f.size) + "</span>";
-    row.title = f.path;
-    if (_openFile && _openFile.path === f.path) row.classList.add("active");
-    row.onclick = () => openFile(f.path);
-    container.appendChild(row);
-  });
 }
 
 async function openFile(path, opts) {
@@ -10071,8 +9990,11 @@ function _markdownFilePath(href) {
   return _readable(path) ? path : "";
 }
 async function openInEditor(path, opts) {
-  openPanel("files");
-  try { await loadFiles(); } catch (e) {}
+  // JAG-506: reveal the Workspace section WITHOUT scrolling the rail. Clicking a
+  // Codebase hit (or any "open in editor" affordance) must leave the operator's
+  // right panel exactly where it was — the file opens in the dock, the camera
+  // does not move.
+  openPanel("files", { scroll: false });
   await openFile(path, opts);
 }
 function showImage(url) {
@@ -11145,9 +11067,9 @@ $("compactBtn").onclick = compactNow;
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
   loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); refreshSendBtn();
-  // auto-open the workspace tree of a restored-open Files panel (no manual ↻)
+  // auto-open the pending changes of a restored-open Files panel (no manual ↻)
   { const _fs = document.querySelector('#inspector section[data-insp="files"]');
-    if (_fs && _fs.classList.contains("insp-open")) { loadFiles(); loadEdits(); } }
+    if (_fs && _fs.classList.contains("insp-open")) loadEdits(); }
 
 /* JAG-362: a long-lived tab must notice that the app on disk was updated. The
    server serves the SPA with no-store, but an OPEN tab never re-fetches
