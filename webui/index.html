@@ -2794,19 +2794,53 @@ function _updateTreeTools() {
 }
 let cursorEl = null;
 
-async function ensureToken() {
+/* JAG-499: an installed PWA bakes the manifest's `start_url` token into its minted
+ * icon (JAG-390). Once the server token rotates, that icon writes its DEAD token back
+ * into localStorage on EVERY launch, so every /api call 401s and the panels render
+ * empty ("the app looks like an old version"). Never let a URL token destroy a working
+ * stored token: adopt it only when it authenticates, else fall back to the stored one,
+ * and drop both only when the server actually REJECTED them (an unreachable server
+ * decides nothing). */
+async function tokenState(t) {
+  if (!t) return "none";
+  try {
+    const r = await fetch("/api/status", { headers: {"Authorization": "Bearer " + t} });
+    if (r.ok) return "ok";
+    return (r.status === 401 || r.status === 403) ? "rejected" : "unknown";
+  } catch (e) { return "unreachable"; }
+}
+function stripTokenParam() {
   try {
     const u = new URL(location.href);
-    const qt = u.searchParams.get("token");
-    if (qt) { TOKEN = qt; localStorage.setItem("sf_token", qt); }
+    if (!u.searchParams.has("token")) return;
+    u.searchParams.delete("token");
+    history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
+  } catch (e) {}
+}
+async function ensureToken() {
+  let qt = null;
+  try {
+    const u = new URL(location.href);
+    qt = u.searchParams.get("token");
     // JAG-296: deep-link from Orbit — `?session=<sid>&node=<nid>` opens the exact
     // agent session and jumps to the exact task section (same tab). Stash the node;
     // `loadHistory` applies it once the transcript is rebuilt.
     const sq = u.searchParams.get("session");
     if (sq) { sessionId = sq; localStorage.setItem("sf_session", sessionId); _forceExpandActive = true; }
     window._deepNode = u.searchParams.get("node") || null;
-    if (qt) return TOKEN;
   } catch (e) {}
+  const stored = localStorage.getItem("sf_token") || TOKEN || "";
+  if (qt) {
+    const qstate = await tokenState(qt);
+    if (qstate === "ok") {
+      TOKEN = qt; localStorage.setItem("sf_token", qt); stripTokenParam(); return TOKEN;
+    }
+    if (stored && stored !== qt && (await tokenState(stored)) === "ok") {
+      TOKEN = stored; stripTokenParam(); return TOKEN;
+    }
+    if (qstate === "unreachable") { TOKEN = qt; localStorage.setItem("sf_token", qt); return TOKEN; }
+    TOKEN = ""; localStorage.removeItem("sf_token"); stripTokenParam();
+  }
   if (TOKEN) return TOKEN;
   const ok = await fetch("/api/status", { headers: authHeaders() }).then(r => r.ok).catch(() => false);
   if (ok) { await firstRunSetup(); return TOKEN; }
@@ -4283,8 +4317,25 @@ function _sessRowEl(s, pinnedIds, ag) {
   return d;
 }
 let _forceExpandActive = false;   // JAG-415: set on a redirect/selection, consumed once
+/* JAG-499: say a rejected browser token OUT LOUD. Painting an empty sidebar hides
+ * the real cause behind a false "no sessions" state. */
+function authErrorCard() {
+  const box = $("sessions");
+  if (!box) return;
+  box.innerHTML = '<div class="card">'
+    + '<div class="remaining"><strong>Browser is not authenticated</strong></div>'
+    + '<div class="remaining u-mt6">Longrun rejected this browser token, so no sessions can be '
+    + 'listed. Paste the active server token in <code>Settings \u25b8 Keys</code> and save it.</div>'
+    + '<button class="ghost u-mt8" data-call="openSettings" data-args=\'["keys"]\'>open Settings \u25b8 Keys</button>'
+    + '</div>';
+}
 async function loadSessions() {
   const [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
+  // JAG-499: a rejected token is an AUTH failure, not an empty session list.
+  if (out && out.error && /unauthorized|401|forbidden/i.test(String(out.error))) {
+    authErrorCard();
+    return;
+  }
   if (out && Array.isArray(out.sessions)) {
     _pruneTodoOpenState(out.sessions);
     _pruneChatScrollState(out.sessions);

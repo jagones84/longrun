@@ -68,6 +68,19 @@ check("D1 httpapi serves /manifest.webmanifest and folds the token into start_ur
 check("D2 httpapi serves /sw.js publicly as JavaScript",
       '== "/sw.js"' in api and 'ctype="text/javascript; charset=utf-8"' in api, "")
 
+# --- E: JAG-499 — a rotated server token must not brick an installed PWA -------
+check("E1 the URL token is probed before it can overwrite the stored token",
+      "async function tokenState(" in html
+      and 'return (r.status === 401 || r.status === 403) ? "rejected" : "unknown";' in html
+      and "function stripTokenParam()" in html, "")
+check("E2 a REJECTED URL token falls back to a WORKING stored token",
+      'if (stored && stored !== qt && (await tokenState(stored)) === "ok")' in html, "")
+check("E3 an unreachable server decides nothing (the token is kept)",
+      'if (qstate === "unreachable")' in html, "")
+check("E4 a rejected token never paints a false EMPTY session list",
+      "function authErrorCard()" in html
+      and '/unauthorized|401|forbidden/i.test(String(out.error))' in html, "")
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
