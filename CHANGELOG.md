@@ -7,6 +7,10 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **The editor's empty state keeps the workspace tree usable (JAG-515).**
+  Opening the dock with no active file now reveals the tree and loads it by
+  checking for actual tree rows, not static search controls. The empty-state hint
+  is shorter; saved tabs and the existing open-by-default behavior remain intact.
 - **An older plan can be deleted for real, and the right rail stops spending
   space twice (JAG-514).**
   - **Plan deletion is a GRAPH operation, not a UI hide:** `taskgraph.drop_plan`

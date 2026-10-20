@@ -76,6 +76,11 @@ check("closing the last tab keeps the editor open on an empty state",
       "function showEmpty()" in ed and "showEmpty();" in ed
       and "state.emptyEl = dock.querySelector" in ed
       and "no file open" in ed)
+check("opening an empty editor reveals and loads the file tree",
+      'if (state.treeEl && state.treeEl.hidden)' in ed
+      and 'localStorage.setItem("sf_ed_tree", "1")' in ed
+      and 'if (state.treeEl && !state.treeEl.hidden && !state.treeEl.querySelector(".ed-trow")) loadTree();' in ed
+      and 'if (!saved || !Array.isArray(saved.paths) || !saved.paths.length) { show(); return; }' in ed)
 
 # ------------------------------------------------------------- longrun/orbit api
 from longrun.orbit import api as oapi  # noqa: E402

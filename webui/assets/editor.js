@@ -251,7 +251,7 @@ function buildDock() {
         <div class="ed-preview" hidden></div>
         <div class="ed-empty" hidden>
           <div class="ed-empty-t">no file open</div>
-          <div class="ed-empty-h">pick one from the file tree (🗂 files) — the editor stays open</div>
+          <div class="ed-empty-h">pick one from the tree</div>
         </div>
       </div>
     </div>
@@ -1016,8 +1016,17 @@ function show() {
   state.dock.hidden = false;
   localStorage.setItem(LS_OPEN, "true");   // JAG-157: an explicit open sticks
   applyResponsive();
-  if (!activeTab()) renderEmpty();   // JAG-499b: empty state, not a blank dock
-  if (state.treeEl && !state.treeEl.hidden && !state.treeEl.childElementCount) loadTree();
+  if (!activeTab()) {
+    // JAG-515: with no file open the dock must still earn its width — an empty
+    // code area with the tree hidden was a blank column. Unhide the tree, then
+    // show the compact one-line hint.
+    if (state.treeEl && state.treeEl.hidden) {
+      state.treeEl.hidden = false;
+      localStorage.setItem("sf_ed_tree", "1");
+    }
+    renderEmpty();
+  }
+  if (state.treeEl && !state.treeEl.hidden && !state.treeEl.querySelector(".ed-trow")) loadTree();
   _notifyLayout();
 }
 function close() {
@@ -1028,7 +1037,9 @@ function close() {
 }
 function toggle(e) {
   if (!$id("editorDock")) buildDock();
-  if (state.dock.hidden) { if (!state.tabs.length) restoreTabs(); else show(); } else close();
+  // JAG-515: opening the dock is ALWAYS show() — with no tabs it lands on the
+  // tree (see show()), instead of a restoreTabs() that could leave it hidden.
+  if (state.dock.hidden) show(); else close();
 }
 /* JAG-157: open the editor by default — unless the user closed it on purpose. */
 async function ensureOpen() {
@@ -1054,6 +1065,8 @@ async function onSessionChange() {
 async function restoreTabs() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(tabsKey()) || "null"); } catch (e) { saved = null; }
+  // JAG-515: an empty dock is useful only when its file tree is loaded. Keep the
+  // established open-by-default behavior, but never leave the tree blank.
   if (!saved || !Array.isArray(saved.paths) || !saved.paths.length) { show(); return; }
   for (const p of saved.paths.slice(0, 12)) {
     try {
