@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **`/goal` keeps working until evidence-backed completion (JAG-517).**
+  - Explicit user goals now have a distinct mode from headless jobs. They continue
+    past ordinary round, no-progress, and per-turn iteration limits; the model
+    cannot end early with final prose, a `finish` envelope, or an artifact while
+    the current plan lacks evidence-backed completion.
+  - A missing/closed-but-unverified plan triggers recovery. Stop, a blocked task,
+    runtime failure, and the configured wall-clock cap remain explicit incomplete
+    outcomes; they are never reported as goal completion. The wall cap is checked
+    from request start (including the synchronous planner) and after each model
+    response/best-of-N sample. Matrix policy hooks may add explicit stops, but
+    cannot label an incomplete plan `goal_reached`.
+
 - **The task-list actions are a real NAMESPACE, and FULL mode unlocks the fs
   roots (JAG-516).**
   - **`todo.write` / `todo.update` / `todo.replan`** replace the flat
@@ -29,6 +41,13 @@ All notable changes to Longrun are documented here. The format follows
     OFFICIAL rates (source + date in the file). A basename collision between the
     cache and a configured file now resolves by the DOCUMENTED precedence
     (env > config > cache) instead of first-writer-wins.
+
+### Fixed
+- **Tool calls now reject incomplete web inputs clearly and recover valid nested
+  argument wrappers (JAG-518).** `web.search` requires `query`; `web.fetch`
+  requires `url`. Missing and blank required values receive distinct errors, and
+  empty searches are rejected before contacting a backend. Public `web.fetch`
+  remains separate from local-allowlist `http.fetch`.
 
 ### Changed
 - **The editor's empty state keeps the workspace tree usable (JAG-515).**

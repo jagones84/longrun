@@ -69,6 +69,8 @@ check("A2b fs.read documents the relative/absolute path contract",
       fs_read.get("properties", {}).get("path"))
 
 # ------------------------------------------------- A3 the prompt block ----
+from longrun.core import server as _server  # noqa: E402
+from longrun.agent import agent as _agent   # noqa: E402
 from longrun.core import api_v02           # noqa: E402
 tctx = api_v02.tool_context()
 check("A3 prompt states the discovery contract instead of a registry dump",
@@ -78,10 +80,15 @@ check("A3 prompt states the discovery contract instead of a registry dump",
 check("A3b prompt states that args is ONE JSON object",
       "`args` is ALWAYS one JSON object" in tctx
       and '"args":{"path"' in tctx)
+check("A3b2 the prompt forbids a second nested args wrapper",
+      "never nest another `args` object" in tctx)
 check("A3c prompt still names the enabled tools, grouped by namespace",
       "fs{" in tctx and "shell{" in tctx and "memory{" in tctx)
 check("A3d the block is COMPACT (a name index, not a catalogue)",
       len(tctx) < 4000, "%d chars" % len(tctx))
+_chat_tool_context = _server._tool_context()
+check("A3e chat assembly includes the discovery contract",
+      "Tool discovery" in _chat_tool_context and "shell{" in _chat_tool_context)
 
 # ------------------------------------------------- A4 the schema lookup ----
 full = diag.tools_report(tool="fs.read")
@@ -139,6 +146,69 @@ check("A8 a well-formed call is NOT blocked by the validator",
 self_schema = (registry.tool_spec("self") or {}).get("schema") or {}
 check("A8b `self` advertises tool + query",
       {"tool", "query"} <= set(self_schema.get("properties") or {}))
+
+# --------------------------- A8c web subtools expose conditional requirements -
+_web_search_schema = (registry.tool_spec("web.search") or {}).get("schema") or {}
+_web_fetch_schema = (registry.tool_spec("web.fetch") or {}).get("schema") or {}
+check("A8c web.search requires query in its discovered schema",
+      _web_search_schema.get("required") == ["query"],
+      _web_search_schema.get("required"))
+check("A8d web.fetch requires url in its discovered schema",
+      _web_fetch_schema.get("required") == ["url"],
+      _web_fetch_schema.get("required"))
+
+# --------------------------- A8e nested args and blank-value handling --------
+_normalizer = getattr(T, "normalize_args", None)
+check("A8e a nested args wrapper is normalized using the tool schema",
+      callable(_normalizer) and _normalizer(
+          "shell.exec", {"args": {"command": "printf PROBE", "timeout_secs": 3}})
+      == {"command": "printf PROBE", "timeout_secs": 3})
+_chat_call = _agent._chat_tool_call(
+    {"action": "tool", "tool": "shell.exec",
+     "args": {"args": {"command": "printf PROBE"}}}, api_v02)
+check("A8e2 chat tool cards receive the normalized argument object",
+      _chat_call == ("shell.exec", {"command": "printf PROBE"}),
+      _chat_call)
+_gate_seen = {}
+_original_classify = registry.classify
+_original_approval_create = api_v02.approvals.create
+_original_execute = T.execute
+registry.classify = lambda tool, args, workspace=None: (
+    _gate_seen.update(classified=dict(args)) or "auto", "test")
+api_v02.approvals.create = lambda *args, **kwargs: {
+    "id": "v510-gate", "status": "auto_approved", "summary": "test"}
+T.execute = lambda tool, args, run_id=None: (
+    _gate_seen.update(executed=dict(args)) or
+    {"ok": True, "exit_code": 0, "stdout": "probe ok", "backend": "test"})
+try:
+    _nested_gate = api_v02.gated_call(
+        "shell.exec", {"args": {"command": "printf PROBE"}}, run_id="v510-gate")
+finally:
+    registry.classify = _original_classify
+    api_v02.approvals.create = _original_approval_create
+    T.execute = _original_execute
+check("A8e3 the approval gate classifies and executes normalized arguments",
+      _nested_gate.get("status") == "executed"
+      and _gate_seen.get("classified") == {"command": "printf PROBE"}
+      and _gate_seen.get("executed") == {"command": "printf PROBE"},
+      _gate_seen)
+_blank_shell = T._dispatch_execute("shell.exec", {"command": "   "})
+check("A8f a present-but-blank required value is not reported as missing",
+      _blank_shell.get("empty_args") == ["command"]
+      and not _blank_shell.get("missing_args"),
+      _blank_shell.get("error"))
+_original_web_search = T._web_search
+_web_search_calls = []
+T._web_search = lambda query, count: (
+    _web_search_calls.append(query) or ([], "test"))
+try:
+    _blank_web = T._web({"query": "   "}, None)
+finally:
+    T._web_search = _original_web_search
+check("A8g an empty web search is rejected before invoking a search backend",
+      "query required" in (_blank_web.get("error") or "")
+      and not _web_search_calls,
+      _blank_web)
 
 # ------------------------------- A9 a canonical description is not truncated ----
 k = (registry.tool_spec("knowledge.search") or {}).get("schema") or {}

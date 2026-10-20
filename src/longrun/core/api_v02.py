@@ -62,6 +62,11 @@ class AbortRun(Exception):
     """Raised inside a run when the operator aborts it (HITL)."""
 
 
+def normalize_tool_args(tool: str, args: dict) -> dict:
+    """Canonicalize known model argument wrappers before policy and dispatch."""
+    return toolmod.normalize_args(tool, args)
+
+
 class RunState:
     def __init__(self, rid, goal, model, max_steps, script=None):
         self.id = rid
@@ -168,7 +173,7 @@ def tool_action(st, tool, args, on_event, workspace=None):
     `workspace` (JAG-127) makes a file op outside the session folder require approval.
     """
     run_id = st.id if st else None
-    args = args or {}
+    args = normalize_tool_args(tool, args or {})
     # JAG-163: the session workspace IS the tool's working directory. Without
     # this, `shell` fell back to the per-run scratch dir (data/sandbox/<run>) and
     # the agent explored an empty folder, never the project it was asked about.
@@ -252,7 +257,7 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     if not spec["enabled"]:
         _publish("tool.blocked", run=run_id, tool=tool, reason="not enabled")
         return {"status": "blocked", "reason": "tool %r is disabled (allowlist)" % tool}
-    args = dict(args or {})
+    args = normalize_tool_args(tool, dict(args or {}))
     # JAG-163: run the tool INSIDE the session workspace (see tool_action above).
     if workspace and "workspace" not in args:
         args["workspace"] = workspace
@@ -361,6 +366,8 @@ def tool_context():
         "this session — the schema is authoritative, your memory is not.",
         "`args` is ALWAYS one JSON object — never positional, never "
         "`key=value`, never a JSON string:",
+        "Put tool fields directly inside that object; never nest another "
+        "`args` object.",
         '  {"action":"tool","tool":"fs.read","args":{"path":"src/foo.py",'
         '"start_line":1,"end_line":60}}',
         "Enabled tools, grouped by namespace (name{s sub-tools}):",

@@ -44,8 +44,9 @@ with open(os.path.join(REPO, "src", "longrun", "core/server.py"), encoding="utf-
     srv = f.read()
 with open(os.path.join(REPO, "src", "longrun", "agent/agent.py"), encoding="utf-8") as f:
     srv += f.read()
-check("the server gates via keepgoing.hitl_gate",
-      '_kg.hitl_gate(_dec["reason"], _open, autonomous)' in srv)
+check("the server gates user goals but not headless autonomous jobs",
+      '_kg.hitl_gate(_dec["reason"], _open,' in srv
+      and "autonomous=(autonomous and not goal_mode)" in srv)
 check("the server persists the open list (hitl_open)",
       '"hitl_open": _hitl["open"]' in srv)
 check("append_message merges meta FLAT into the message",
@@ -76,4 +77,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

@@ -17,6 +17,7 @@ import socket
 import time
 import urllib.parse
 import urllib.request
+from typing import Any
 
 from longrun.util import osutil
 from longrun.tools import registry
@@ -690,6 +691,9 @@ def _web(args, run_id):
                 "duration_ms": int((time.time() - t0) * 1000),
                 "backend": "host(web)", "sandboxed": False}
     query = str(args.get("query") or "").strip()
+    if not query:
+        return {"ok": False, "error": "query required for action=search",
+                "backend": "host(web)", "sandboxed": False}
     try:
         results, engine = _web_search(query, args.get("max_results", 5))
     except Exception as e:  # noqa: BLE001
@@ -1714,48 +1718,101 @@ _DISPATCH = {"shell": _shell, "shell.exec": _shell,
              "matrix": _matrix}
 
 
-def _missing_required(tool, args):
-    """REQUIRED arguments the call did not supply, read from the registry schema.
-
-    JAG-513: the tools answered a malformed call with whatever the implementation
-    happened to notice — `shell.exec {}` said "empty command", `fs.read` with no
-    `path` said "outside allowed roots". Neither told the model WHICH argument was
-    missing, so it retried blind. The schema already knows; use it.
-    """
+def normalize_args(tool: str, args: Any) -> Any:
+    """Unwrap one duplicate args layer when schema-required keys prove it safe."""
+    if not isinstance(args, dict):
+        return args
     try:
         from longrun.tools import registry
         schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
-        req = list(schema.get("required") or [])
+        required = list(schema.get("required") or [])
+    except Exception:  # noqa: BLE001 — normalization must never block a call
+        return args
+    nested = args.get("args")
+    if not required or "args" in required or not isinstance(nested, dict):
+        return args
+
+    def absent(value: Any) -> bool:
+        return value is None or (isinstance(value, str) and not value.strip())
+
+    outer_missing = [key for key in required
+                     if key not in args or absent(args[key])]
+    if not outer_missing or any(key not in nested for key in required):
+        return args
+
+    normalized = dict(nested)
+    for key, value in args.items():
+        if key == "args":
+            continue
+        if not absent(value):
+            normalized[key] = value
+        else:
+            normalized.setdefault(key, value)
+    return normalized
+
+
+def _missing_required(tool: str, args: Any) -> list[str]:
+    """Required argument names absent from the schema-level object."""
+    try:
+        from longrun.tools import registry
+        schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
+        required = list(schema.get("required") or [])
     except Exception:  # noqa: BLE001 — validation must never block a call
         return []
     got = args if isinstance(args, dict) else {}
-    return [r for r in req if got.get(r) is None or got.get(r) == ""]
+    return [key for key in required if key not in got or got[key] is None]
 
 
-def _missing_args_reply(tool, missing):
+def _empty_required(tool: str, args: Any) -> list[str]:
+    """Required string arguments supplied as empty or whitespace-only values."""
+    try:
+        from longrun.tools import registry
+        schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
+        required = list(schema.get("required") or [])
+    except Exception:  # noqa: BLE001 — validation must never block a call
+        return []
+    got = args if isinstance(args, dict) else {}
+    return [key for key in required if isinstance(got.get(key), str)
+            and not got[key].strip()]
+
+
+def _missing_args_reply(tool: str, missing: list[str],
+                        empty: list[str] | None = None) -> dict[str, Any]:
     """A failure that teaches: which args are required, their types, the example."""
+    empty = list(empty or [])
     try:
         from longrun.tools import diag
         full = (diag.tools_report(tool=tool) or {}).get("tool") or {}
     except Exception:  # noqa: BLE001
         full = {}
     props = full.get("properties") or {}
-    return {"ok": False, "tool": tool, "exit_code": 64, "missing_args": missing,
-            "error": ("%s: missing REQUIRED argument(s) %s. Required: %s. "
+    problems = []
+    if missing:
+        problems.append("missing REQUIRED argument(s) %s"
+                        % ", ".join(repr(name) for name in missing))
+    if empty:
+        problems.append("REQUIRED argument(s) present but empty %s"
+                        % ", ".join(repr(name) for name in empty))
+    required = list(full.get("required") or missing or empty)
+    return {"ok": False, "tool": tool, "exit_code": 64,
+            "missing_args": missing, "empty_args": empty,
+            "error": ("%s: %s. Required: %s. "
                       "Arg types: %s. Example call: %s"
-                      % (tool, ", ".join(repr(m) for m in missing),
-                         ", ".join(full.get("required") or missing),
-                         {m: (props.get(m) or {}).get("type") for m in missing},
+                      % (tool, "; ".join(problems), ", ".join(required),
+                         {name: (props.get(name) or {}).get("type")
+                          for name in required},
                          {"action": "tool", "tool": tool,
                           "args": full.get("example_args") or {}})),
-            "schema": {"required": full.get("required") or missing,
+            "schema": {"required": required,
                        "properties": props}}
 
 
 def _dispatch_execute(tool, args, run_id=None):
+    args = normalize_args(tool, args)
     missing = _missing_required(tool, args)
-    if missing:
-        return _missing_args_reply(tool, missing)
+    empty = _empty_required(tool, args)
+    if missing or empty:
+        return _missing_args_reply(tool, missing, empty)
     fn = _DISPATCH.get(tool)
     injected_action = None
     if fn is None and "." in str(tool or "") and "__" not in str(tool or ""):
@@ -1812,6 +1869,7 @@ def execute(tool, args, run_id=None):
     `PreToolUse` may BLOCK the call (hook exit 2); `PostToolUse` receives the
     observation. Both are deterministic shell scripts — the model is not asked.
     """
+    args = normalize_args(tool, args)
     try:
         from longrun.tools import hooks
         pre = hooks.run("PreToolUse", tool=tool, args=args or {}, run_id=run_id)

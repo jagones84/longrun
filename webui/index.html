@@ -1787,7 +1787,7 @@
         <h2>TASK LIST (persistent) <span id="taskCount" class="remaining"></span></h2>
         <div class="card">
           <div class="u-df u-g6 u-mt8">
-            <button class="ghost" data-call="planGoal" title="same as typing /goal in chat: plans AND runs to completion">▶ goal</button>
+            <button class="ghost" data-call="planGoal" title="same as /goal: runs until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop">▶ goal</button>
             <button class="ghost" data-call="showConstellation" title="open the selected task in the Control deck's constellation diagram">◇ constellation</button>
             <button class="ghost" data-call="clearSession" title="clear chat + tasks">clear</button>
             <button class="ghost" data-call="resetPlan" title="clear this session's task list (start a new task)">reset</button>
@@ -8817,7 +8817,7 @@ function _afterWorkspaceChange() {
 }
 /* JAG-127: slash menu shows COMMANDS first (/goal, /skills, /compact) then skills. */
 const SLASH_COMMANDS = [
-  { cmd: "goal", hint: "plan + run autonomously — type your goal after it" },
+  { cmd: "goal", hint: "run until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop" },
   { cmd: "skills", hint: "open the Skills panel" },
   { cmd: "compact", hint: "compact this session's context now" },
 ];

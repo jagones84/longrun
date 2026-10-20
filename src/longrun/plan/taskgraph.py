@@ -275,6 +275,27 @@ def all_done(graph):
     return all(n.get("status") in CLOSED_STATUSES for n in nodes)
 
 
+def goal_complete(graph: dict | None) -> bool:
+    """Whether the current goal plan has evidence-backed completion.
+
+    An empty plan, a cancelled plan, or a plan containing only superseded steps
+    is not proof that the requested goal was achieved.
+    """
+    nodes = plan_nodes(graph)
+    if not nodes:
+        return False
+    if not any(n.get("status") == "done" and _has_evidence(n) for n in nodes):
+        return False
+    for node in nodes:
+        status = node.get("status")
+        if status == "done" and _has_evidence(node):
+            continue
+        if status == "superseded" and str(node.get("reason") or "").strip():
+            continue
+        return False
+    return True
+
+
 
 def counts(graph):
     c = {s: 0 for s in STATUSES}
@@ -957,4 +978,3 @@ def map_action(run_id, act, observation=None, session_id=None, goal=None):
                              source="action:" + action)
     except (KeyError, ValueError):
         return None
-

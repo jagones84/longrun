@@ -187,7 +187,8 @@ def _chat_failure_issue(error, session, model):
 
 
 def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
-                    sender=None, subjob=None, plan_only=False, sender_session=None):
+                    sender=None, subjob=None, plan_only=False, sender_session=None,
+                    goal_mode=False, goal_started=None):
     """SSE producer for one chat request on `sess`.
 
     Contract (JAG-51): the caller has already appended the `user` message and
@@ -331,7 +332,8 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     _existing["subjob"] = subjob
                     taskgraph.save(_existing)
                 chat_once(sess, message, target, on_delta, trace=trace, on_event=_emit,
-                          autonomous=autonomous, plan_only=plan_only)
+                          autonomous=autonomous, plan_only=plan_only,
+                          goal_mode=goal_mode, goal_started=goal_started)
                 # JAG-431n: the JAG-76 "guarantee a plan" fallback is GONE.
                 #
                 # It ran a planner model call AFTER the turn had already answered,
@@ -1875,8 +1877,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session was deleted"})
             # JAG-201: prepare + append the user turn INSIDE the worker's turn lock
             # (chat_stream_gen), not here — two concurrent turns must not overwrite.
-            return sse_response(self, chat_stream_gen(sess, message, qs.get("model"), None,
-                                                      autonomous=qs.get("mode") == "goal"))
+            _goal_mode = qs.get("mode") == "goal"
+            return sse_response(self, chat_stream_gen(
+                sess, message, qs.get("model"), None, autonomous=_goal_mode,
+                goal_mode=_goal_mode,
+                goal_started=(time.time() if _goal_mode else None)))
         # JAG-431r4: the old GET /api/agent/run block was DEAD — api_v02.handle()
         # (dispatched at the top of do_GET) already owns this path and drives the v2
         # loop (agent_stream_gen_v2). The unreachable copy called the OLD agent_run
@@ -2013,6 +2018,13 @@ class Handler(BaseHTTPRequestHandler):
             sess = _open_session(body.get("session"))   # JAG-455: refuse a deleted id
             if sess is None:
                 return self._send(404, {"error": "session was deleted"})
+            _goal_mode = (body.get("mode") or qs.get("mode")) == "goal"
+            _goal_started = time.time() if _goal_mode else None
+            _goal_wall_secs = None
+            if _goal_mode:
+                from longrun.plan import keepgoing as _keepgoing
+                _goal_wall_secs = float(_keepgoing.cfg().get(
+                    "max_wall_secs", _keepgoing.DEFAULTS["max_wall_secs"]))
             # JAG-201: one turn at a time per session; RELOAD + prepare INSIDE the
             # lock so a concurrent turn's save is never overwritten (lost update).
             with _turn_lock(sess["id"]):
@@ -2066,9 +2078,12 @@ class Handler(BaseHTTPRequestHandler):
                     # the planner is decoding must kill it, not wait for it to finish.
                     _tm = _planner_model(sess, body.get("model"))
                     start_run_graph(sess["id"], message, sess["id"], _tm,
-                                    cancel=(lambda: _is_aborted(sess["id"])))
+                                    cancel=(lambda: _is_aborted(sess["id"]) or (
+                                        _goal_mode and _goal_started is not None
+                                        and time.time() - _goal_started >= _goal_wall_secs)))
                     reply, model = chat_once(sess, message, _tm, trace=trace,
-                                             autonomous=(body.get("mode") or qs.get("mode")) == "goal")
+                                             autonomous=_goal_mode, goal_mode=_goal_mode,
+                                             goal_started=_goal_started)
                 except Exception as e:  # noqa: BLE001
                     # JAG-51: persist an explicit assistant error turn *before* the
                     # 502 — the user message must never stay orphaned.
@@ -2153,9 +2168,11 @@ class Handler(BaseHTTPRequestHandler):
             if sess is None:                    # JAG-455: refuse a deleted id
                 return self._send(404, {"error": "session was deleted"})
             # JAG-201: prepare + append inside the worker's turn lock (see GET path).
+            _goal_mode = (body.get("mode") or qs.get("mode")) == "goal"
             return sse_response(self, chat_stream_gen(
                 sess, message, body.get("model") or qs.get("model"), None,
-                autonomous=(body.get("mode") or qs.get("mode")) == "goal"))
+                autonomous=_goal_mode, goal_mode=_goal_mode,
+                goal_started=(time.time() if _goal_mode else None)))
         if path == "/api/model/ensure":
             alias = body.get("model") or qs.get("model") or \
                 routing.pick("chat") or default_model()

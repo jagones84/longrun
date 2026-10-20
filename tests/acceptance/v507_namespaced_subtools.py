@@ -10,6 +10,10 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.core import matrix  # noqa: E402
 from longrun.tools import matrix_guard, registry, tools  # noqa: E402
 
+# This test covers the local registry and Matrix loader, not operator MCP
+# servers. Keep registry.catalog() deterministic and offline.
+registry._external_tools = lambda: {}
+
 results = []
 
 

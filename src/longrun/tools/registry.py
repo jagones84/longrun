@@ -577,12 +577,15 @@ def _build_canonical_schemas():
         base_desc = str(sch.get("description") or "").strip().rstrip(".")
         for act in actions:
             cname = "%s.%s" % (k, act)
+            action_required = sub_req
+            if k == "web":
+                action_required = {"search": ["query"], "fetch": ["url"]}.get(act, sub_req)
             out[cname] = {
                 "description": ("%s — %s (action=%s)." % (cname, base_desc, act)
                                 if base_desc else cname),
                 "type": "object",
                 "properties": dict(sub_props),
-                "required": list(sub_req),
+                "required": list(action_required),
                 "subject": sch.get("subject"),
                 "_namespace": k,
                 "_subtool": act,

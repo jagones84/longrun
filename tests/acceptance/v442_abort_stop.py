@@ -76,7 +76,9 @@ check("2c the sync /api/chat turn clears it at turn start too",
 check("2d the in-process MCP chat clears it at turn start",
       'clear_abort(sess["id"])' in V02)
 check("2e the planner call is abortable (a Stop kills it, not waits for it)",
-      'cancel=(lambda: _is_aborted(sess["id"]))' in HTTP)
+      'cancel=(lambda: _is_aborted(sess["id"]) or (' in HTTP
+      and "_goal_mode and _goal_started is not None" in HTTP
+      and "time.time() - _goal_started >= _goal_wall_secs" in HTTP)
 
 # ---- 3. Stop = panic button (abort EVERY running turn) ------------------------
 check("3a /api/chat/abort supports all=true over the ACTIVE registry",

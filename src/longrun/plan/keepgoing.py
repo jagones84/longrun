@@ -62,18 +62,30 @@ def tool_hash(tool, args):
 
 
 def decide(open_nodes, rounds, stale, started, now=None, aborted=False, blocked=False,
-           steer=False, override=None):
+           steer=False, override=None, goal_mode=False, goal_complete=None):
     """Decide whether to continue. Returns {"continue": bool, "reason": str|None}.
 
     Priority order (the first one that triggers wins): user_stop, goal_reached,
     blocked, budget (time), budget (rounds), no_progress. `steer` forces
-    continuation (user redirection) even with an empty list.
+    continuation (user redirection) even with an empty list. Explicit `/goal`
+    runs ignore round and no-progress stops while work remains; only evidence-
+    backed completion, a blocker, cancellation, or the wall-clock safety cap ends
+    them. A Matrix policy hook may add its own stop, but cannot label an
+    incomplete goal as reached.
     """
     c = cfg(override)
     now = time.time() if now is None else float(now)
     if aborted:
         return {"continue": False, "reason": "user_stop"}
     if open_nodes <= 0:
+        if goal_mode:
+            if goal_complete:
+                return {"continue": False, "reason": "goal_reached"}
+            if steer:
+                return {"continue": True, "reason": None}
+            if now - float(started) >= float(c["max_wall_secs"]):
+                return {"continue": False, "reason": "budget"}
+            return {"continue": True, "reason": "goal_recovery"}
         if steer:
             return {"continue": True, "reason": None}
         return {"continue": False, "reason": "goal_reached"}
@@ -87,6 +99,13 @@ def decide(open_nodes, rounds, stale, started, now=None, aborted=False, blocked=
         return {"continue": True, "reason": None}
     if now - float(started) >= float(c["max_wall_secs"]):
         out = {"continue": False, "reason": "budget"}
+    elif goal_mode:
+        if int(stale) >= int(c["no_progress_rounds"]):
+            out = {"continue": True, "reason": "goal_recovery"}
+        elif int(rounds) >= int(c["keepgoing_max"]):
+            out = {"continue": True, "reason": "goal_continue"}
+        else:
+            out = {"continue": True, "reason": None}
     elif int(rounds) >= int(c["keepgoing_max"]):
         out = {"continue": False, "reason": "budget"}
     elif int(stale) >= int(c["no_progress_rounds"]):
@@ -97,6 +116,9 @@ def decide(open_nodes, rounds, stale, started, now=None, aborted=False, blocked=
         from longrun.core import matrix as _mtx
         adj = _mtx.call_hook("plan", "decide_keepgoing", out, open_nodes, rounds, default=out)
         if isinstance(adj, dict) and "continue" in adj:
+            if (goal_mode and not goal_complete and not adj["continue"]
+                    and adj.get("reason") == "goal_reached"):
+                return {"continue": True, "reason": "goal_recovery"}
             return adj
     except Exception:  # noqa: BLE001
         pass

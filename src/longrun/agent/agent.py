@@ -781,6 +781,38 @@ def _nudge_open_todos(sess, errors=None):
             "give the final plain-text answer now; otherwise say what still needs doing.")
 
 
+def _goal_recovery_nudge(sess: dict, stale: bool = False) -> str:
+    """Keep an explicit goal active until its current plan has evidence."""
+    graph = taskgraph.load(sess["id"]) or {}
+    nodes = taskgraph.plan_nodes(graph)
+    open_nodes = [n for n in nodes if n.get("status") in taskgraph.OPEN_STATUSES]
+    if not nodes:
+        text = (
+            "GOAL INCOMPLETE — no task plan exists yet. Do not answer or emit a "
+            "deliverable. First call todo.write with concrete steps for the goal, "
+            "then execute them and close them with evidence."
+        )
+    elif open_nodes:
+        text = (
+            "GOAL INCOMPLETE — %d task(s) remain open. Do not answer or emit a "
+            "deliverable yet. Continue with the next open step, verify its result, "
+            "and mark it done with concrete evidence. If no safe path remains, mark "
+            "the exact step blocked and state the blocker."
+        ) % len(open_nodes)
+    else:
+        text = (
+            "GOAL INCOMPLETE — the current plan has no evidence-backed completed "
+            "work. Do not claim success. Re-plan actionable steps for the original "
+            "goal, then execute and verify them."
+        )
+    if stale:
+        text += (
+            "\nThe last round made no progress. Change strategy; do not repeat the "
+            "same response or tool call."
+        )
+    return text
+
+
 # JAG-88: per-session counter for offloaded observation files (001_, 002_, ...).
 _OFFLOAD_SEQ = {}
 _OFFLOAD_HEAD = 1500
@@ -872,7 +904,7 @@ def _chat_tool_call(act, av02):
     for k in ("command", "path", "content", "url"):
         if k in act and k not in args:
             args[k] = act[k]
-    return str(tool), args
+    return str(tool), av02.normalize_tool_args(tool, args)
 
 
 def _apply_chat_todos(sess, act, on_event, node=None, after=None):
@@ -1863,7 +1895,7 @@ def _harness_start_note(sess):
 
 
 def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=None,
-              autonomous=False, plan_only=False):
+              autonomous=False, plan_only=False, goal_mode=False, goal_started=None):
     """Run one streamed router call and persist exactly one assistant message.
 
     Contract (JAG-51): the caller appends the `user` message; this function is
@@ -1883,6 +1915,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             "chat.delta", session=sess["id"], channel=channel, text=text)
     if on_event is None:
         on_event = publish
+    goal_mode = bool(goal_mode and not plan_only)
+    autonomous = bool(autonomous or goal_mode)
     # JAG-58b: the chat IS the agent — same tool registry as the agent loop, so
     # the model can call tools inline before it answers. Falls back to plain chat
     # if the tool registry is unavailable.
@@ -2034,9 +2068,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                   if n.get("status") in taskgraph.OPEN_STATUSES]
     except Exception:  # noqa: BLE001
         _open0 = []
-    _user_pivot = bool(_open0)
+    _user_pivot = bool(_open0) and not goal_mode
     _pivot_state = {"synced": False}  # JAG-266: exactly one pivot sync round per turn
-    _kg_started = time.time()
+    _kg_started = (float(goal_started) if goal_mode and goal_started is not None
+                   else time.time())
     _kg_last_tool = None
     _last_tool_ok = None
     # JAG-134/135: a SINGLE difficulty estimate (compute-optimal) feeds both the
@@ -2044,9 +2079,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # already has, recomputed on every round (a single estimator, no divergence).
     try:
         from longrun.plan import difficulty as _diff
-        _kg_base = int(_kg.cfg().get("keepgoing_max") or 0)
+        _runtime_cfg = _kg.cfg()
+        _kg_base = int(_runtime_cfg.get("keepgoing_max") or 0)
+        _kg_wall_secs = float(_runtime_cfg.get(
+            "max_wall_secs", _kg.DEFAULTS["max_wall_secs"]))
     except Exception:  # noqa: BLE001
         _diff, _kg_base = None, None
+        _kg_wall_secs = float(_kg.DEFAULTS["max_wall_secs"])
 
     def _diff_signals(_msg, _used, _stale=0):
         try:
@@ -2186,7 +2225,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # chain-of-thought that led to it — otherwise the COTs between tool calls
     # vanish on reload (they were only ever streamed, never stored).
     _think_buf = {"t": ""}
-    while iters < CHAT_TOOL_MAX_ITERS:
+    while goal_mode or iters < CHAT_TOOL_MAX_ITERS:
+        # JAG-517: goal mode bypasses the iteration cap, so enforce its hard
+        # wall-clock limit even when the model only emits harness todo actions.
+        if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
+            _kg_stop_reason = "budget"
+            break
         iters += 1
         # JAG-164: the tool budget is PER keepgoing round, not per turn. Before
         # this the turn hard-stopped the moment `work_steps` hit `max_steps`
@@ -2194,11 +2238,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # prose answer and the persistent todos stayed stuck in 'doing' (session
         # 66c66e3c702d: 8 shells, answer "…scaffold incompleto", n2 never closed).
         # Now, when the budget is spent with OPEN steps, the continuation loop
-        # decides: refill the budget and push the model to close every step with
-        # evidence, or stop for a typed reason (budget/no_progress/blocked).
-        if tool_ctx and work_steps >= max_steps:
+        # decides whether to refill the tool budget or stop for a typed reason.
+        if (tool_ctx or goal_mode) and work_steps >= max_steps:
             _g = taskgraph.load(sess["id"]) or {}
-            _nodes = _g.get("nodes", [])
+            _nodes = taskgraph.plan_nodes(_g) if goal_mode else _g.get("nodes", [])
             _open = [n for n in _nodes if n.get("status") in taskgraph.OPEN_STATUSES]
             # JAG-344: a PLAN-ONLY turn never continues. The master's own todos are
             # its DELEGATION plan, not work for it to close itself; the continuation
@@ -2223,8 +2266,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _dec = _kg.decide(open_nodes=len(_open), rounds=_kg_rounds, stale=_kg_stale,
                               started=_kg_started, aborted=_is_aborted(sess["id"]),
                               blocked=any(n.get("status") == "blocked" for n in _nodes),
-                              steer=has_steer(sess["id"]), override=_kg_override)
-            _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
+                              steer=has_steer(sess["id"]), override=_kg_override,
+                              goal_mode=goal_mode,
+                              goal_complete=(taskgraph.goal_complete(_g)
+                                             if goal_mode else None))
+            if not goal_mode:
+                _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
             if not _dec["continue"]:
                 _kg_stop_reason = _dec["reason"]
                 on_event("plan.stopped", session=sess["id"], reason=_dec["reason"],
@@ -2247,6 +2294,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                      open=len(_open), total=len(_nodes), difficulty=_diff_level)
             if _dec.get("reason") == "pivot_sync":
                 _inject(_pivot_sync_text(len(_open), _open_todo_brief(sess)[1]), "pivot")
+            elif goal_mode and _dec.get("reason") == "goal_recovery":
+                _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)), "continue")
             elif not _open and has_steer(sess["id"]):
                 # JAG-431r4b: a steer with an empty plan used to hit the
                 # generic "CONTINUE — N task(s) are still OPEN" inject with
@@ -2303,6 +2352,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 on_delta("answer", final_answer)
             _kg_stop_reason = "user_stop"
             break
+        if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
+            _kg_stop_reason = "budget"
+            break
         # JAG-132/134: adaptive best-of-N. Only when the first sample is NOT usable
         # (malformed tool-call JSON) are more samples spent and the
         # best picked with the deterministic ranker (prm.rank_text). N grows with the
@@ -2326,6 +2378,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 return pt, cp, cu
             _tot_pt, _tot_cp, _last_cu = _usage_delta()
             for _ in range(_bN - 1):
+                if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
+                    _kg_stop_reason = "budget"
+                    break
                 try:
                     _a2, _t2, _m2 = server.stream_with_fallback(
                         msgs, model, "chat", lambda ch, t: None,
@@ -2354,8 +2409,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _tot_pt, _tot_cp = npt, ncp
                 except Exception:  # noqa: BLE001
                     pass
+                if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
+                    _kg_stop_reason = "budget"
+                    break
                 if (_a2 or "").strip() and not _looks_like_json_action(_a2):
                     break  # a usable candidate already exists: stop spending compute
+            if goal_mode and _kg_stop_reason == "budget":
+                break
             _best, _scores = _bn.choose(_cands)
             if _best is not None and _best != answer:
                 on_event("bestofn.chosen", session=sess["id"], n=len(_cands),
@@ -2594,6 +2654,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _txt = act[_k].strip()
                     break
             if _txt:
+                if goal_mode and not taskgraph.goal_complete(taskgraph.load(sess["id"])):
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
+                            "continue")
+                    continue
                 final_answer = _txt
                 on_delta("answer", _txt)
                 break
@@ -2605,6 +2670,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # That rejection forced needless "not a valid action" retries and
                 # could halt the turn after four in a row (observed on J2: the
                 # coordinator's own Book JSON-Schema deliverable was rejected).
+                if goal_mode and not taskgraph.goal_complete(taskgraph.load(sess["id"])):
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
+                            "continue")
+                    continue
                 final_answer = answer
                 _final_is_artifact = True
                 on_delta("answer", answer)
@@ -2654,7 +2724,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 "or — if there is nothing left to do — reply with the final "
                 "result in plain prose. Do not just repeat the announcement.", "nudge")
             continue
-        if tool_ctx:
+        if tool_ctx or goal_mode:
             # JAG-129A: the harness (the "secretary") decides whether the agent can really
             # close. With open steps it re-injects the list and CONTINUES.
             # JAG-173 (rev): the MODEL owns the todo list — the standard contract
@@ -2663,7 +2733,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # only ENFORCES and REMINDS; it never auto-closes a step, because closing
             # a step that is not truly done is "lying about completion".
             _g = taskgraph.load(sess["id"]) or {}
-            _nodes = _g.get("nodes", [])
+            _nodes = taskgraph.plan_nodes(_g) if goal_mode else _g.get("nodes", [])
             _open = [n for n in _nodes if n.get("status") in taskgraph.OPEN_STATUSES]
             _cur = _kg.state_hash(_nodes)
             # JAG-268: see the note at the budget branch — a round that ran tools is
@@ -2680,14 +2750,18 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _dec = _kg.decide(open_nodes=len(_open), rounds=_kg_rounds, stale=_kg_stale,
                               started=_kg_started, aborted=_is_aborted(sess["id"]),
                               blocked=any(n.get("status") == "blocked" for n in _nodes),
-                              steer=has_steer(sess["id"]), override=_kg_override)
+                          steer=has_steer(sess["id"]), override=_kg_override,
+                          goal_mode=goal_mode,
+                          goal_complete=(taskgraph.goal_complete(_g)
+                                         if goal_mode else None))
             # JAG-266: on a pivot, grant ONE sync round (remind the model it left
             # todos open) instead of stopping silently; after it, stop as user_pivot.
-            _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
+            if not goal_mode:
+                _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
             # JAG-171: with autocontinue OFF the harness does not insist — the
             # first stop with OPEN todos goes straight to the human gate.
             # JAG-266: but never suppress the single pivot sync round.
-            if (_open and _dec.get("reason") != "pivot_sync"
+            if (_open and _dec.get("reason") != "pivot_sync" and not goal_mode
                     and not bool((_kg.cfg(_kg_override) or {}).get("autocontinue", True))):
                 _dec = {"continue": False, "reason": "need_input"}
             # JAG-402: the model must NOT stop with open todos IT OWNS this turn.
@@ -2723,6 +2797,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 if _dec.get("reason") == "pivot_sync":
                     _inject(_pivot_sync_text(len(_open), _open_todo_brief(sess)[1]), "pivot")
+                elif goal_mode and _dec.get("reason") == "goal_recovery":
+                    _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)), "continue")
                 elif _dec.get("reason") == "close_todos":
                     _inject(
                         "STOP — your final answer was REJECTED because your TASK LIST "
@@ -2756,7 +2832,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # chatting, so the reply is theirs; the paused plan needs no gate.
             # JAG-295: and NEVER on a headless turn (a JOB/routine, autonomous):
             # there is nobody to answer, so the turn just stops.
-            if _kg.hitl_gate(_dec["reason"], _open, autonomous):
+            if _kg.hitl_gate(_dec["reason"], _open,
+                             autonomous=(autonomous and not goal_mode)):
                 _hitl = {"reason": _dec["reason"],
                          "open": [{"id": n.get("id"), "label": n.get("label", "")}
                                   for n in _open[:8]],
@@ -2770,7 +2847,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             on_delta(ch, t)
         final_answer, think = answer, think
         break
-    if not final_answer and not _is_aborted(sess["id"]):
+    if (not final_answer and not _is_aborted(sess["id"])
+            and not (goal_mode and _kg_stop_reason)):
         # JAG-78b: the loop ran out of tool steps without a prose answer — force
         # one, but BUFFER it. Streaming it live leaked raw tool-call JSON into
         # the user's chat bubble when the model kept acting instead of answering
@@ -2819,18 +2897,18 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # never set and the turn ended SILENTLY with the model's OWN steps still open
     # (observed live: the Master room reported "audit complete" with 4 steps still
     # open, four of them marked todo, and nothing for the user to act on).
-    # Raise the gate HERE, uniformly, for every remaining exit path. Excluded
-    # exactly like the keepgoing gate: a stale plan the user pivoted away from
-    # (_user_pivot), a headless turn (autonomous), a plan-only turn (its WHOLE
-    # point is to leave a plan), and an aborted turn.
-    if (not _hitl and not _user_pivot and not autonomous and not plan_only
+    # Raise the gate HERE for every remaining exit path. Explicit user goals have
+    # a human present even though their model turn is autonomous.
+    _goal_incomplete = False
+    if (not _hitl and not _user_pivot and (not autonomous or goal_mode) and not plan_only
             and not _is_aborted(sess["id"])):
         try:
             _g2 = taskgraph.load(sess["id"]) or {}
-            _all2 = _g2.get("nodes") or []
+            _all2 = taskgraph.plan_nodes(_g2) if goal_mode else (_g2.get("nodes") or [])
             _open2 = [n for n in _all2 if n.get("status") in taskgraph.OPEN_STATUSES]
+            _goal_incomplete = goal_mode and not taskgraph.goal_complete(_g2)
         except Exception:  # noqa: BLE001 — the gate must never break a turn
-            _all2, _open2 = [], []
+            _all2, _open2, _goal_incomplete = [], [], goal_mode
         if _open2:
             # JAG-501: report the REAL cause, not a hard-coded "step_budget". The
             # live card said "step_budget · 0 rounds · undefined" while the turn
@@ -2863,6 +2941,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         meta = {"model": model, "hitl": True, "node": _cur_node(),
                 "open": len(_hitl["open"]), "reason": _hitl["reason"],
                 "hitl_open": _hitl["open"]}   # JAG-295: replayable card payload
+    elif _goal_incomplete:
+        _reason = _kg_stop_reason or "goal_incomplete"
+        content = ("⏸ Goal incomplete: stopped with reason '%s' before the current "
+                   "plan had evidence-backed completion." % _reason)
+        meta = {"model": model, "goal_incomplete": True, "reason": _reason,
+                "node": _cur_node()}
     if (_looks_like_json_action(content) and not _final_is_artifact) or not content:
         # JAG-64/78b: last-resort guard — never show/persist raw tool-call JSON
         # (or an empty turn). Summarise the plan state instead of leaking JSON.
@@ -3200,4 +3284,3 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
     trace.finish("aborted" if aborted else "done")
     return {"goal": goal, "model": model, "trace": actions, "run_id": trace.id,
             "aborted": aborted}
-
