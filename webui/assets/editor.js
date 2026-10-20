@@ -11,6 +11,7 @@ import {
   autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap,
   javascript, python, json, markdown, html, css, yaml, oneDark,
 } from "./vendor/codemirror.js";
+import { bindSearch } from "./fsfind.js";
 
 const TOKEN = () => localStorage.getItem("sf_token") || "";
 /* JAG-299: the file tree is session-scoped (?session=), but read/write/raw were
@@ -124,6 +125,14 @@ const STYLE = `
 #editorDock .ed-body{flex:1;min-height:0;display:flex;flex-direction:row}
 #editorDock .ed-tree{width:210px;flex:0 0 auto;overflow:auto;border-right:1px solid var(--line,#26304a);padding:6px;font-family:monospace;font-size:11px}
 #editorDock .ed-tree[hidden]{display:none}
+/* JAG-501: keyboard search inside the tree pane — one shared controller
+   (fsfind.js) also used by the workspace / file pickers in index.html. */
+#editorDock .ed-search{width:100%;box-sizing:border-box;margin:0 0 6px;padding:3px 6px;
+  font-family:monospace;font-size:11px;background:var(--bg2,#11161f);color:var(--fg,#dde3ee);
+  border:1px solid var(--line,#26304a);border-radius:4px}
+#editorDock .ed-search:focus{outline:none;border-color:var(--accent,#8b7bf0)}
+#editorDock .ed-hits .ed-trow{padding-left:4px}
+#editorDock .ed-hits .ed-trow.hl{background:rgba(139,123,240,.28)}
 #editorDock .ed-tree-resize{flex:0 0 5px;width:5px;cursor:col-resize;background:transparent;touch-action:none}
 #editorDock .ed-tree-resize:hover,#editorDock .ed-tree-resize.active{background:var(--accent,#8b7bf0)}
 #editorDock .ed-tree[hidden]+.ed-tree-resize{display:none}
@@ -214,7 +223,7 @@ function buildDock() {
         <button class="ed-wbtn ed-x" title="close (Esc)">✕</button>
       </span></div>
     <div class="ed-body">
-      <div class="ed-tree"></div>
+      <div class="ed-tree"><input class="ed-search" placeholder="🔍 jump to a file…" autocomplete="off" aria-label="search files in the workspace"><div class="ed-hits"></div></div>
       <div class="ed-tree-resize" title="drag to resize the file tree"></div>
       <div class="ed-main">
         <div class="ed-tabs"></div>
@@ -256,6 +265,30 @@ function buildDock() {
   state.toggleBtn.onclick = toggleRender;
   state.treeEl = dock.querySelector(".ed-tree");
   state.treeEl.hidden = localStorage.getItem("sf_ed_tree") === "0";
+  // JAG-501: keyboard search over the whole workspace, straight from the tree
+  // pane. Uses the SAME controller as the workspace/file pickers (fsfind.js).
+  state.treeHits = dock.querySelector(".ed-hits");
+  const searchInput = dock.querySelector(".ed-search");
+  state.searchInput = searchInput;
+  state.search = bindSearch(searchInput, state.treeHits, {
+    kind: "file",
+    empty: "no file matches",
+    render: (hit, i, active) => {
+      const row = document.createElement("div");
+      row.className = "ed-trow" + (active ? " hl" : "");
+      row.textContent = (hit.dir ? "📁 " : "📄 ") + (hit.rel || hit.name);
+      row.title = hit.path;
+      return row;
+    },
+    onResults: () => treeClear(),          // the flat hits replace the tree rows
+    onPick: (hit) => {
+      searchInput.value = ""; state.search.clear();
+      state.treeHits.innerHTML = "";
+      loadTree().then(() => { if (hit && hit.path) revealInTree(hit.path); });
+      if (hit && !hit.dir) open(hit.path);
+    },
+    onEmpty: () => { state.treeHits.innerHTML = ""; loadTree(); },
+  });
   dock.querySelector(".ed-files").onclick = () => {
     const t = state.treeEl;
     t.hidden = !t.hidden;
@@ -540,22 +573,49 @@ function syncActive() {
 async function loadTree() {
   const box = state.treeEl;
   if (!box) return;
-  box.innerHTML = '<div class="remaining">loading…</div>';
+  // JAG-501: an active search owns the pane — do not repaint the tree under its
+  // hits (a manual ↻ or a late async load used to show both lists at once).
+  if (state.searchInput && state.searchInput.value.trim()) return;
+  setTreeMsg("loading…");
   const sid = localStorage.getItem("sf_session") || "";
   try {
     const d = await jget("/api/fs/list?session=" + encodeURIComponent(sid));
-    if (d.error) { box.innerHTML = '<div class="remaining">' + esc(d.error) + "</div>"; return; }
+    if (d.error) { setTreeMsg(d.error); return; }
     state.root = d.root || "";
-    box.innerHTML = "";
+    treeClear();
     const root = document.createElement("div");
-    root.className = "remaining";
+    root.className = "remaining ed-root";
     root.style.marginBottom = "4px";
     root.textContent = (d.root ? basename(d.root) : "workspace") + "/";
     box.appendChild(root);
     renderTree(box, d, 0);
     syncTreeActive();   // JAG-500: a freshly loaded tree must highlight the open file
-    if (!d.count) box.insertAdjacentHTML("beforeend", '<div class="remaining">empty folder</div>');
-  } catch (e) { box.innerHTML = '<div class="remaining">' + esc(e) + "</div>"; }
+    if (!d.count) setTreeMsg("empty folder");
+  } catch (e) { setTreeMsg(String(e)); }
+}
+
+/* JAG-501: the tree pane also hosts the keyboard search, so a reload must clear
+   only the TREE — never the `.ed-search` input nor the `.ed-hits` container the
+   controller paints into. A descendant selector used to delete the hit rows too:
+   a `loadTree()` still in flight from a previous open wiped the results as soon
+   as the operator typed. Clearing DIRECT children keeps both, and removes the
+   nested folder containers in one step. */
+function treeClear() {
+  const box = state.treeEl;
+  if (!box) return;
+  Array.from(box.children).forEach((c) => {
+    if (c.classList.contains("ed-search") || c.classList.contains("ed-hits")) return;
+    c.remove();
+  });
+}
+function setTreeMsg(text) {
+  const box = state.treeEl;
+  if (!box) return;
+  treeClear();
+  const m = document.createElement("div");
+  m.className = "remaining";
+  m.textContent = text;
+  box.appendChild(m);
 }
 
 function renderTree(container, d, depth) {
@@ -1077,6 +1137,7 @@ window.SparkEditor = {
   save,
   refresh,
   refreshAll,
+  reloadTree: () => loadTree(),   // JAG-501: workspace changed -> re-root the tree
   closePath,
   has,
   close,

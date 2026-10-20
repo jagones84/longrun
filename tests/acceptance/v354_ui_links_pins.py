@@ -74,7 +74,8 @@ check("A3 a relative path is tried against the workspace root FIRST",
       and "candidates.append(_os.path.join(d, p))" in API, "")
 check("A4 every fs handler resolves the path argument",
       "def _fs_allowed_roots(qs=None)" in API
-      and API.count("_fs_allowed_roots(q)") == 3
+      # 3 handlers in JAG-354 (list/read/write) + the JAG-501 search handler
+      and API.count("_fs_allowed_roots(q)") == 4
       and "_fs_allowed_roots(b)" in API, "")
 
 # --- A4: the README is accurate (positioning + dependencies) -----------------

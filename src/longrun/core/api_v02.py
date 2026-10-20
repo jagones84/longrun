@@ -1155,6 +1155,8 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, fs_dirs(qs))
         if path == "/api/fs/list":  # JAG-124: workspace file tree
             return _r(handler, 200, fs_list(qs))
+        if path == "/api/fs/find":  # JAG-501: keyboard search for folders/files
+            return _r(handler, 200, fs_find(qs))
         if path == "/api/fs/read":  # JAG-124: read a text file into the editor
             return _r(handler, 200, fs_read(qs))
         if path == "/api/fs/raw":  # JAG-150: raw bytes for inline image/pdf preview
@@ -2232,6 +2234,81 @@ def fs_list(qs=None) -> dict:
     files.sort(key=lambda d: d["name"].lower())
     return {"root": root, "path": p, "dirs": dirs[:1000], "files": files[:2000],
             "count": len(dirs) + len(files)}
+
+
+FS_FIND_MAX = 20000  # entries scanned per query: bounded, never a full-disk walk
+
+
+def fs_find(qs=None) -> dict:
+    """GET /api/fs/find — search folders/files by name under the browse root.
+
+    Keyboard-first navigation for the workspace pickers (JAG-501): the operator
+    types a fragment, the server walks the tree breadth-first and returns the
+    closest matches (exact > prefix > substring, dirs before files), so a deep
+    folder is one Enter away instead of a dozen clicks. Read-only, sandboxed to
+    the same roots as /api/fs/list, and bounded by FS_FIND_MAX entries.
+    """
+    import os as _os
+    q = qs or {}
+    term = str(q.get("q") or "").strip().lower()
+    kind = str(q.get("kind") or "any")
+    if kind not in ("dir", "file", "any"):
+        kind = "any"
+    try:
+        limit = max(1, min(200, int(q.get("limit") or 60)))
+    except (TypeError, ValueError):
+        limit = 60
+    if not term:
+        return {"error": "q required", "results": [], "count": 0}
+    root = _ws_root(q)
+    start = _safe_fs_path(_resolve_fs_arg(q.get("path"), q) or root,
+                          _fs_allowed_roots(q))
+    if not start:
+        return {"error": "path outside allowed roots", "root": root, "results": []}
+    if not _os.path.isdir(start):
+        return {"error": "not a directory: %s" % start, "root": root, "results": []}
+    skip = {"node_modules", "__pycache__", ".git", "venv", "dist", "build", "target"}
+    hits, scanned, queue = [], 0, [start]
+    while queue and scanned < FS_FIND_MAX:
+        cur = queue.pop(0)
+        try:
+            entries = list(_os.scandir(cur))
+        except OSError:
+            continue
+        for e in entries:
+            scanned += 1
+            if scanned >= FS_FIND_MAX:
+                break
+            name = e.name
+            if name.startswith("."):
+                continue
+            try:
+                is_dir = e.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if is_dir:
+                if name.lower() in skip:
+                    continue
+                queue.append(e.path)
+            low = name.lower()
+            if kind == "dir" and not is_dir:
+                continue
+            if kind == "file" and is_dir:
+                continue
+            if term not in low:
+                continue
+            score = 0 if low == term else (1 if low.startswith(term) else 2)
+            try:
+                rel = _os.path.relpath(e.path, start)
+            except ValueError:
+                rel = name
+            hits.append({"name": name, "path": e.path, "rel": rel,
+                         "dir": is_dir, "score": score})
+        if len(hits) >= limit * 4:
+            break
+    hits.sort(key=lambda h: (h["score"], not h["dir"], len(h["rel"]), h["rel"].lower()))
+    return {"root": root, "path": start, "q": term, "kind": kind,
+            "results": hits[:limit], "count": len(hits), "scanned": scanned}
 
 
 def fs_read(qs=None) -> dict:

@@ -1740,22 +1740,29 @@ def _normalize_action(act):
 
 
 def _dsml_action(text):
-    """JAG-369: convert the model's native DSML tool-call markup into the harness
-    action. Returns the FIRST invocation as
+    """JAG-369/JAG-501: convert the model's native DSML tool-call markup into the
+    harness action. Returns the FIRST invocation as
     ``{"action":"tool","tool":<name>,"args":{...}}``, or ``None`` when `text` is
     not DSML or carries no parseable invocation. A parameter marked
     ``string="false"`` (a number / array / object) is decoded from JSON when it
-    parses, otherwise kept verbatim."""
+    parses, otherwise kept verbatim.
+
+    JAG-501: the live markup closes its tags in TWO shapes — ``</|DSML| invoke>``
+    and a bare ``</|DSML|>`` — and the model sometimes wraps the whole call in a
+    meta envelope (``invoke name="tool"`` with ``tool`` + ``args`` parameters,
+    copying the JSON protocol's own example). Both are accepted here; otherwise
+    the call was dropped as "invalid JSON" and the turn ended mid-work.
+    """
     if not _looks_like_dsml(text):
         return None
     m = re.search(_DSML + r'\s*invoke\s+name="([^"]+)"\s*>(.*?)</' + _DSML
-                  + r'\s*invoke>', text, re.S)
+                  + r'\s*(?:invoke)?>', text, re.S)
     if not m:
         return None
     name = m.group(1).strip()
     args = {}
     for pm in re.finditer(_DSML + r'\s*parameter\s+name="([^"]+)"([^>]*)>(.*?)</'
-                          + _DSML + r'\s*parameter>', m.group(2), re.S):
+                          + _DSML + r'\s*(?:parameter)?>', m.group(2), re.S):
         key = pm.group(1).strip()
         val = pm.group(3)
         if 'string="false"' in pm.group(2):
@@ -1766,15 +1773,34 @@ def _dsml_action(text):
         args[key] = val
     if not name:
         return None
+    # JAG-501: unwrap the meta envelope the model copies from the protocol's own
+    # example: <invoke name="tool"> <parameter name="tool">X</parameter>
+    #                     <parameter name="args">{...}</parameter> </invoke>
+    if name == "tool" and isinstance(args.get("tool"), str) and args.get("tool").strip():
+        inner = args.get("args")
+        if isinstance(inner, str):
+            try:
+                inner = json.loads(inner)
+            except Exception:  # noqa: BLE001
+                inner = {}
+        return {"action": "tool", "tool": args["tool"].strip(), "args": inner or {}}
     return {"action": "tool", "tool": name, "args": args}
 
 
 def _extract_action(answer):
-    """JAG-369: turn the model's raw answer into a harness action (or None).
+    """JAG-369/JAG-501: turn the model's raw answer into a harness action (or None).
 
-    Tries the JSON protocol first; if that yields NOTHING usable — `extract_json`
-    returns `[]` on failure, not `None`, so a falsy check is required, not an
-    `is None` one — fall back to the model's native DSML tool-call markup."""
+    JAG-501: when the answer is DSML, it is parsed AS DSML ONLY. The old fallback
+    ran `extract_json` first, which happily returned the JSON *inside* the markup
+    (``{"script": …, "target": …}``). That dict carries no action key, so the chat
+    loop accepted it as the model's final ARTIFACT and ENDED the turn — the tool
+    the model had written out never ran, the todos stayed open and the operator
+    got a premature HUMAN IN THE LOOP card (Master session, live). Returning
+    `None` here instead routes the answer to the "invalid action" retry, so the
+    model can correct itself.
+    """
+    if _looks_like_dsml(answer):
+        return _normalize_action(_dsml_action(answer))
     act = _normalize_action(extract_json(answer))
     if not act:
         act = _dsml_action(answer)
@@ -2789,13 +2815,22 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         except Exception:  # noqa: BLE001 — the gate must never break a turn
             _all2, _open2 = [], []
         if _open2:
-            _hitl = {"reason": "step_budget",
+            # JAG-501: report the REAL cause, not a hard-coded "step_budget". The
+            # live card said "step_budget · 0 rounds · undefined" while the turn
+            # had actually ended on an unparsed action, which read like a budget
+            # exhaustion that never happened. `_kg_stop_reason` is set by every
+            # typed stop; when the loop ended without one, the honest cause is
+            # "open_todos".
+            _reason2 = _kg_stop_reason or "open_todos"
+            _hitl = {"reason": _reason2,
                      "open": [{"id": n.get("id"), "label": n.get("label", "")}
                               for n in _open2[:8]],
                      "open_total": len(_open2)}
-            on_event("plan.stopped", session=sess["id"], reason="step_budget",
-                     open=len(_open2), total=len(_all2), rounds=_kg_rounds)
-            on_event("hitl.request", session=sess["id"], reason="step_budget",
+            on_event("plan.stopped", session=sess["id"], reason=_reason2,
+                     open=len(_open2), total=len(_all2), rounds=_kg_rounds,
+                     duration_s=round(time.time() - _kg_started, 1),
+                     difficulty=_diff_level)
+            on_event("hitl.request", session=sess["id"], reason=_reason2,
                      open=_hitl["open"], total=len(_all2), rounds=_kg_rounds)
     meta = {"model": model, "node": _cur_node()}
     content = answer.strip()

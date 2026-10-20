@@ -924,6 +924,9 @@
     width: min(520px, 94vw); padding: 16px; background: var(--menubg); }
   #dirPicker[hidden] { display: none; }
   #dirList button { display: block; width: 100%; text-align: left; margin-bottom: 4px; font-size: 12px; }
+  /* JAG-501: keyboard search rows in the folder browser */
+  #dirList .ff-row { display: block; width: 100%; text-align: left; margin-bottom: 4px; font-size: 12px; }
+  #dirList .ff-row.hl, #dirList .ff-row.hl:hover { background: var(--hl); }
   .pal-item { cursor: pointer; }
   .pal-item:hover, .pal-item.hl { background: var(--hl); }
   #palette-results { max-height: 56vh; overflow: auto; }
@@ -2335,6 +2338,9 @@
   <div class="u-df u-aic u-g8">
     <button class="ghost" id="dirUp" data-call="dirUp" title="parent folder" aria-label="parent folder">↑</button>
     <div id="dirPath" class="remaining u-f1 u-wba"></div>
+  </div>
+  <div class="u-df u-aic u-g8 u-mt8">
+    <input id="dirSearch" class="inp u-f1" placeholder="type to jump to a folder — ↑/↓ then Enter" autocomplete="off" aria-label="search folders">
   </div>
   <div id="dirList" style="margin-top:8px;max-height:46vh;overflow:auto"></div>
   <div class="u-df u-g8 u-mt10 u-jcfe">
@@ -3767,8 +3773,11 @@ document.addEventListener("click", (e) => {
 
 /* JAG-279: generic searchable picker modal (workspace files, skills). */
 let _pickHits = [], _pickHi = -1, _pickOnPick = null;
-function openPick(title, hint, items, onPick) {
-  _pickHits = items || []; _pickHi = _pickHits.length ? 0 : -1; _pickOnPick = onPick || null;
+let _pickBase = [], _pickRemote = null, _pickTimer = null, _pickSeq = 0;
+function openPick(title, hint, items, onPick, remote) {
+  _pickHits = items || []; _pickBase = _pickHits.slice();
+  _pickHi = _pickHits.length ? 0 : -1; _pickOnPick = onPick || null;
+  _pickRemote = remote || null; _pickSeq++;
   $("pickTitle").textContent = title;
   $("pickHint").textContent = hint || "";
   $("pickQuery").value = "";
@@ -3776,7 +3785,7 @@ function openPick(title, hint, items, onPick) {
   _renderPick(_pickHits);
   setTimeout(() => $("pickQuery").focus(), 0);
 }
-function closePick() { $("pickBackdrop").hidden = true; $("pickModal").hidden = true; _pickHits = []; _pickOnPick = null; }
+function closePick() { $("pickBackdrop").hidden = true; $("pickModal").hidden = true; _pickHits = []; _pickBase = []; _pickRemote = null; _pickOnPick = null; }
 function _renderPick(hits) {
   const list = $("pickList");
   if (!hits.length) { list.innerHTML = '<div class="pick-empty">nothing here</div>'; return; }
@@ -3789,10 +3798,35 @@ function _renderPick(hits) {
     el.onclick = () => { const f = _pickOnPick, it = hits[i]; closePick(); if (f) f(it); };
   });
 }
+/* JAG-501: with a remote provider the picker searches the WHOLE workspace
+   tree (GET /api/fs/find) instead of filtering the current folder's rows. The
+   search itself lives in fsfind.js — ONE implementation shared with the folder
+   picker and the editor tree. */
+async function _pickRemoteRun(q) {
+  const F = window.FsFind;
+  if (!F || !F.findPaths) return;
+  const seq = ++_pickSeq;
+  const d = await F.findPaths(q, _pickRemote || {});
+  if (seq !== _pickSeq) return;
+  const items = (d.results || []).map(h => ({
+    icon: h.dir ? "📁" : "📄", label: h.rel || h.name,
+    sub: h.dir ? "folder" : "file",
+    _dir: h.dir ? h.path : undefined, _file: h.dir ? undefined : h.path }));
+  if (d.error) items.unshift({ icon: "⚠", label: d.error, sub: "" });
+  _pickHits = items; _pickHi = items.length ? 0 : -1;
+  _renderPick(items);
+  $("pickHint").textContent = (d.count || 0) + " match(es) · ↑/↓ then Enter";
+}
 function _pickFilter() {
-  const q = ($("pickQuery").value || "").toLowerCase();
-  const hits = _pickHits.filter(it => !q || (it.label || "").toLowerCase().includes(q)
-                                      || (it.sub || "").toLowerCase().includes(q));
+  const q = ($("pickQuery").value || "").trim().toLowerCase();
+  if (_pickRemote && q) {
+    clearTimeout(_pickTimer);
+    _pickTimer = setTimeout(() => _pickRemoteRun(q), 160);
+    return;
+  }
+  const hits = _pickBase.filter(it => !q || (it.label || "").toLowerCase().includes(q)
+                                     || (it.sub || "").toLowerCase().includes(q));
+  _pickHits = hits;
   _pickHi = hits.length ? 0 : -1;
   _renderPick(hits);
 }
@@ -3802,6 +3836,13 @@ function _pickKey(e) {
     const rows = $("pickList").querySelectorAll(".pick-row");
     const hit = rows[_pickHi >= 0 ? _pickHi : 0];
     if (hit) hit.click();
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const rows = $("pickList").querySelectorAll(".pick-row");
+    if (!rows.length) return;
+    e.preventDefault();
+    _pickHi = (_pickHi + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+    rows.forEach((el, i) => el.classList.toggle("hl", i === _pickHi));
+    rows[_pickHi].scrollIntoView({ block: "nearest" });
   } else if (e.key === "Escape") { closePick(); }
 }
 $("pickQuery").oninput = _pickFilter;
@@ -3826,7 +3867,7 @@ async function openFsPicker(path) {
       addAttachment({ kind: "path", label: _short(it._file), value: "file: " + it._file });
       toast("attached " + _short(it._file), "ok");
     }
-  });
+  }, { kind: "any", base: (d && d.path) || "" });
 }
 
 /* Skill picker — list the skills so one can be attached to the message. */
@@ -4064,6 +4105,10 @@ function send(text, display, atts) {
     if (live()) {
       endStream();
       if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll();
+        // JAG-501: the turn may have written/deleted files — the Files panel
+        // follows without a manual ↻ (only while it is actually open).
+        { const _fs = document.querySelector('#inspector section[data-insp="files"]');
+          if (_fs && _fs.classList.contains("insp-open")) loadFiles(); }
         // JAG-431j/431p: a finished turn may have added/renamed Free.* groups — refresh
         // the labels from the ledger + chapters. NOTE: this does NOT rebuild the chat
         // (loadHistory APPENDS; it must only be called after clearing #log).
@@ -4587,19 +4632,35 @@ async function createNewSession() {
    choosing a folder there IS the save, no second click. */
 let _dirState = { path: "", parent: null, roots: [] };
 let _dirTarget = "nsWs";
+/* JAG-501: the folder browser is keyboard-first — type a fragment anywhere under
+   the browse root, ↑/↓ to move, Enter to jump. One shared controller (fsfind.js)
+   with the file picker and the editor tree: no second implementation. */
+let _dirOpts = { kind: "dir", empty: "no folder matches" };
+let _dirCtl = null;
+function _bindDirSearch() {
+  if (_dirCtl || !$("dirSearch")) return;
+  const F = window.FsFind;
+  if (!F || !F.bindSearch) return;
+  _dirOpts.onPick = (hit) => loadDirs(hit.path);
+  _dirOpts.onEmpty = () => loadDirs(_dirState.path || "");
+  _dirCtl = F.bindSearch($("dirSearch"), $("dirList"), _dirOpts);
+}
 async function openDirPicker(target) {
   _dirTarget = target || "nsWs";
   $("dirPicker").hidden = false; $("dirBackdrop").hidden = false; $("dirResult").textContent = "";
+  _bindDirSearch();
   const src = $(_dirTarget);
   await loadDirs((src && src.value.trim()) || "");
 }
-function closeDirPicker() { $("dirPicker").hidden = true; $("dirBackdrop").hidden = true; $("dirResult").textContent = ""; }
+function closeDirPicker() { $("dirPicker").hidden = true; $("dirBackdrop").hidden = true; $("dirResult").textContent = ""; if (_dirCtl) _dirCtl.clear(); }
 async function loadDirs(path) {
   const qs = path ? ("?path=" + encodeURIComponent(path)) : "";
   const d = await api("GET", "/api/fs/dirs" + qs);
   if (d.error) { $("dirResult").textContent = "error: " + d.error; return; }
   _dirState = d; $("dirPath").textContent = d.path;
   $("dirUp").disabled = !d.parent;
+  _dirOpts.root = (d.roots || [])[0] || "";
+  if (_dirCtl) _dirCtl.clear();
   const box = $("dirList"); box.innerHTML = "";
   if (!(d.dirs || []).length) box.innerHTML = '<div class="remaining">no subfolders</div>';
   (d.dirs || []).forEach(x => {
@@ -6253,8 +6314,9 @@ function planContinuing(d) {
 function planStopped(d) {
   const map = { goal_reached: "✅ goal reached", no_progress: "⚠ no progress",
                 budget: "⏱ budget exhausted", blocked: "⛔ blocked",
-                user_stop: "⏹ stopped by you" };
-  who("ai", `${map[d.reason] || d.reason} — ${d.open} open / ${d.total} · ${d.rounds} rounds · ${d.duration_s}s`);
+                user_stop: "⏹ stopped by you", step_budget: "⏱ step budget",
+                open_todos: "⏸ stopped with open steps" };
+  who("ai", `${map[d.reason] || d.reason} — ${d.open} open / ${d.total} · ${d.rounds} rounds · ${d.duration_s == null ? "—" : d.duration_s}s`);
 }
 function runFooter(m) {
   if (!m) return;
@@ -8326,7 +8388,18 @@ async function setWorkspace() {
                   : ("workspace " + (r.scope === "session" ? "session" : "default") + ": " + (r.workspace || "")),
           r.error ? "err" : "ok");
   }
-  if (!r.error) { loadRules(); loadSessions(); }
+  if (!r.error) { _afterWorkspaceChange(); }
+}
+/* JAG-501: a workspace change re-roots EVERY browser at once — the Files panel
+   (right rail), the pending-changes list, the editor tree and the Codebase badge.
+   The manual ↻ buttons stay, but only for a forced re-read: the normal path is
+   this automatic refresh. */
+function _afterWorkspaceChange() {
+  loadRules(); loadSessions();
+  const filesSec = document.querySelector('#inspector section[data-insp="files"]');
+  if (filesSec && filesSec.classList.contains("insp-open")) { loadFiles(); loadEdits(); }
+  if (window.SparkEditor && window.SparkEditor.reloadTree) window.SparkEditor.reloadTree();
+  try { cbStatus(); } catch (e) {}
 }
 /* JAG-127: slash menu shows COMMANDS first (/goal, /skills, /compact) then skills. */
 const SLASH_COMMANDS = [

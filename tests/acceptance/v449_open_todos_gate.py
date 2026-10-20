@@ -76,8 +76,9 @@ check("C2 no errors on the accepted retry", errs2 == [], errs2)
 
 # ---- D: static wiring of the turn-end HITL gate ------------------------------
 src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
-check("D1 the turn-end gate is present (step_budget)",
-      'reason="step_budget"' in src)
+check("D1 the turn-end gate is present (truthful stop reason)",
+      '_reason2 = _kg_stop_reason or "open_todos"' in src
+      and "reason=_reason2" in src)
 check("D2 the gate reuses the open-node scan", "_open2" in src and "OPEN_STATUSES" in src)
 check("D3 the gate excludes plan-only turns", "not plan_only" in src)
 check("D4 the gate excludes a stale pivot + headless turn",
