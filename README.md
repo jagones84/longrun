@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-218%2F218%20green-success.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-221%2F221%20tests-blue.svg)](#tests)
 
 Self-hosted AI agent harness with a browser UI, tool-enabled sessions, task graphs,
 team orchestration, HTTP/SSE API, and CLI. Requires Python 3.10+ and PyYAML for the
@@ -54,6 +54,61 @@ and [sandbox](#sandbox).
 
 See [Architecture](docs/ARCHITECTURE.md) for system behavior and
 [CLI reference](docs/CLI.md) for commands and API routes.
+
+---
+
+## Self-evolution: Nucleus vs. Matrix
+
+Longrun can extend *itself* without a fork and without a restart. It splits into
+two zones:
+
+- **Nucleus** — `src/longrun/`: the protected core (13 subpackages). Stable, reviewed, and hard to break.
+- **Matrix** — `src/Matrix/` (Python) plus `.Matrix/` (trash, docs, rules, skills, checkpoints, git).
+  A live, agent-editable zone. Drop a file and it takes effect on the next call — no rebuild.
+
+Every Nucleus seam exposes a **fail-open** hook point: `agent`, `core`, `integrations`, `interop`,
+`memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `tools`, `util`, `webui`.
+Matrix code is loaded in an isolated `try/except`; a broken Matrix file is reported and skipped
+rather than crashing the harness.
+
+### Write once, run live
+
+```python
+# src/Matrix/tools/live_probe.py — appears as a tool immediately
+TOOL_SCHEMA = {"description": "probe", "type": "object", "properties": {}}
+def execute(args, run_id=None): return {"ok": True, "stdout": "hello from Matrix"}
+```
+
+```python
+# src/Matrix/plan/hooks.py — nudges the planner, no restart required
+def score_candidate(candidate, score, **kwargs): return min(1.0, score + 0.05)
+```
+
+Enable or disable the whole Matrix zone **live** — from the WebUI
+(*Settings ▸ Tools & approvals ▸ Enable live Matrix zone*) or from the agent:
+
+```jsonc
+{"tool": "matrix", "args": {"action": "disable"}}   // only the Nucleus stays active
+{"tool": "matrix", "args": {"action": "enable"}}    // Matrix hooks come back
+{"tool": "matrix", "args": {"action": "status"}}    // {"enabled": true, "hooks": {...}, "tools": [...]}
+```
+
+### Promote to Nucleus, deterministically
+
+When a Matrix artifact has proven itself, move it into the protected core with
+`promote_to_nucleus`. It is universal — any kind under `src/Matrix`/`.Matrix`:
+
+```jsonc
+{"tool": "matrix", "args": {"action": "verify_target", "kind": "tool", "name": "live_probe"}}
+{"tool": "matrix", "args": {"action": "promote_to_nucleus", "kind": "tool", "name": "live_probe"}}
+```
+
+`kind` ∈ `tool`, `hook`, `module`, `skill`, `rule`, `webui`. Promotion runs four gates:
+a **verified test** must pass first (an unverified target is refused), a dedicated
+**checkbox** in *Settings ▸ Tools & approvals* must be on (even `full` approval mode does
+not authorize it), the workspace is **auto-checkpointed and auto-committed**, and only then
+is the artifact moved into the Nucleus and deleted from Matrix. Broken code returns the exact
+`file:line` and offending source line for fast debugging.
 
 ---
 
@@ -268,7 +323,8 @@ LONGRUN_BATTERY_FULL=1 bash tests/battery.sh
 LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
-The full command ran successfully during this README update: **218/218 passed**.
+The full command ran successfully during the original README update: **218/218 passed**.
+The acceptance suite now contains **221/221 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

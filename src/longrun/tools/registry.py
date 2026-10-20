@@ -14,13 +14,15 @@ import os
 import re
 import threading
 
-from longrun.util.paths import REPO_ROOT as REPO
+from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR as APP_DATA_DIR
 CONFIG_YAML = os.path.join(REPO, "config", "tools.yaml")
 CONFIG_JSON = os.path.join(REPO, "config", "tools.json")
 # JAG-82: programmatic policy changes (POST /api/tools, the SETTINGS panel) are
 # written to a sparse overlay, never back into the hand-edited tools.yaml.
-OVERLAY_YAML = os.path.join(REPO, "data", "tools.overlay.yaml")
-OVERLAY_JSON = os.path.join(REPO, "data", "tools.overlay.json")
+# The overlay lives under the app data dir (LONGRUN_DATA_DIR-aware) so isolated
+# test runs never write into the real checkout; it defaults to REPO/data.
+OVERLAY_YAML = os.path.join(APP_DATA_DIR, "tools.overlay.yaml")
+OVERLAY_JSON = os.path.join(APP_DATA_DIR, "tools.overlay.json")
 
 _lock = threading.RLock()
 _cfg = None
@@ -419,7 +421,8 @@ TOOL_SCHEMAS = {
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["status", "hotload", "checkpoint_save", "checkpoint_rollback",
+                       "enum": ["status", "hotload", "enable", "disable",
+                                "checkpoint_save", "checkpoint_rollback",
                                 "git_commit", "git_log", "git_diff", "git_reset",
                                 "test", "clean_trash", "webui_init", "webui_reset", "restart",
                                 "verify_target", "promote_to_nucleus"],
@@ -431,7 +434,7 @@ TOOL_SCHEMAS = {
             "script": {"type": "string", "description": "script filename in .Matrix/trash (action=test)"},
             "code": {"type": "string", "description": "optional Python code to write & run in .Matrix/trash (action=test)"},
             "target": {"type": "string", "description": "target tested e.g. 'tool:foo' or 'hook:plan' (action=test)"},
-            "kind": {"type": "string", "enum": ["tool", "hook", "skill"],
+            "kind": {"type": "string", "enum": ["tool", "hook", "module", "skill", "rule", "webui"],
                      "description": "artifact kind to verify or promote to Nucleus"},
             "name": {"type": "string", "description": "artifact name to verify or promote to Nucleus"},
             "install_deps": {"type": "array", "items": {"type": "string"},

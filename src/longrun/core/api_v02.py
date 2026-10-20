@@ -1720,6 +1720,13 @@ def _update_policy(body):
                 ap[k] = body["approvals"][k]
         if "allow_matrix_promote" in body["approvals"]:
             ap["allow_matrix_promote"] = bool(body["approvals"]["allow_matrix_promote"])
+        if "matrix_enabled" in body["approvals"]:
+            ap["matrix_enabled"] = bool(body["approvals"]["matrix_enabled"])
+            try:
+                from longrun.core import matrix as _mtx_ap
+                _mtx_ap._ENABLED_OVERRIDE = ap["matrix_enabled"]
+            except Exception:  # noqa: BLE001
+                pass
         # JAG-451: approval policy BY CATEGORY — what the harness may emit on its
         # own. auto = apply without asking · required = raise an approval · denied =
         # never emit. Only known values are accepted (never trust the client).

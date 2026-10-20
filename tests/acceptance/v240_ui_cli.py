@@ -57,11 +57,12 @@ check("JAG-240 the CoT is no longer appended below the answer in loadHistory",
 # ---- JAG-255 -> JAG-274: history render never nests under a stale card --------
 # Two turns sharing one plan node used to nest the 2nd answer inside the 1st
 # turn's card (ABOVE the question it answered). JAG-274 replaced the drawnIdx
-# heuristic with the open-at-bottom rule: a node's section is reused ONLY while
-# it is still the LAST element; otherwise a FRESH section opens at the bottom.
-check("JAG-274 _openSection reuses a section only while it is last",
-      'last.parentNode === $("log") && !last.nextElementSibling' in ui)
-check("JAG-274 otherwise a fresh section opens at the bottom",
+# heuristic with the open-at-bottom rule: a node's section is MOVED back to the
+# bottom and REUSED (a second copy used to duplicate the whole todo tree).
+check("JAG-274 _openSection reuses the node's section instead of duplicating it",
+      'last.isConnected && last.parentNode === lg' in ui
+      and "if (last.nextElementSibling) lg.appendChild(last);" in ui)
+check("JAG-274 a fresh section opens only when the node has none yet",
       'const det = _mkSection(_nodeById(nid)' in ui)
 check("JAG-274 loadHistory drives placement through the node id",
       "_activeNodeId = _nid(m.node); _activeScope = null;" in ui)

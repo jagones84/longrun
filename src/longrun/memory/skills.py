@@ -64,6 +64,9 @@ _cache = {"sig": None, "skills": []}
 
 def _matrix_skills_dir():
     try:
+        from longrun.core import matrix
+        if not matrix.is_enabled():
+            return ""
         from longrun.tools import matrix_guard
         _root, _msrc, mdot = matrix_guard._roots()
         return os.path.join(mdot, "skills")

@@ -55,9 +55,10 @@ check("the latest activity is stamped on the bar", '_nowLast = "→ " + name;' i
 
 # --- open-at-bottom sections ---------------------------------------------------
 check("_openSection exists", "function _openSection(nid) {" in html)
-check("a section is reused ONLY while it is still the last element",
-      'last.parentNode === $("log") && !last.nextElementSibling' in html)
-check("otherwise a FRESH section opens at the bottom (no burying up)",
+check("a node's section is REUSED and moved to the bottom (no duplicated tree)",
+      'last.isConnected && last.parentNode === lg' in html
+      and "if (last.nextElementSibling) lg.appendChild(last);" in html)
+check("a section opens fresh only when the node has none yet",
       "const det = _mkSection(_nodeById(nid) || { id: nid, label: \"\", status: \"doing\" });" in html)
 check("_logAppend routes through _openSection",
       "function _logAppend(el, chapter) {" in html and "_openSection(_activeNodeId)" in html)

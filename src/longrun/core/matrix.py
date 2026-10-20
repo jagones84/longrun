@@ -36,6 +36,41 @@ HOOK_SUBPACKAGES = (
 _LOCK = threading.RLock()
 _TOOL_CACHE = {}  # {repo_root: {"stamps": {}, "tools": {}, "errors": []}}
 _HOOK_CACHE = {}  # {repo_root: {"stamps": {}, "modules": {}, "errors": [], "runtime_errors": []}}
+_ENABLED_OVERRIDE = None  # None = read from config approvals.matrix_enabled (default True)
+
+
+def is_enabled():
+    """True when the live Matrix zone (`src/Matrix` & `.Matrix`) is active."""
+    if _ENABLED_OVERRIDE is not None:
+        return bool(_ENABLED_OVERRIDE)
+    try:
+        from longrun.tools import registry
+        ap = (registry.load_config().get("approvals") or {})
+        return bool(ap.get("matrix_enabled", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def set_enabled(enabled):
+    """Enable or disable all live `src/Matrix` and `.Matrix` effects immediately without restart."""
+    global _ENABLED_OVERRIDE
+    val = bool(enabled)
+    _ENABLED_OVERRIDE = val
+    try:
+        from longrun.tools import registry
+        cfg = registry.load_config()
+        cfg.setdefault("approvals", {})["matrix_enabled"] = val
+        registry.save_config(cfg)
+        registry.load_config(reload=True)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from longrun.memory import skills
+        skills.list_skills(reload=True)
+    except Exception:  # noqa: BLE001
+        pass
+    _ledger("matrix.toggle", enabled=val)
+    return {"ok": True, "enabled": val}
 
 MATRIX_SYSTEM_PROMPT = (
     "## Matrix Self-Evolution (Nucleus vs. Matrix)\n"
@@ -112,15 +147,30 @@ def _file_sha256(path):
 def _resolve_target_path(kind, name, repo_root=None):
     _root, msrc, mdot = _roots(repo_root)
     k = str(kind or "tool").strip().lower()
-    nm = str(name or "").strip()
+    nm = str(name or "").strip().replace("\\", "/").strip("/")
     if k == "tool":
         if nm.endswith(".py"):
             nm = nm[:-3]
         return "tool", nm, os.path.join(msrc, "tools", nm + ".py")
     if k == "hook":
         return "hook", nm, os.path.join(msrc, nm, "hooks.py")
+    if k == "module":
+        if nm.endswith(".py"):
+            nm = nm[:-3]
+        nm = nm.replace(".", "/")
+        parts = [p for p in nm.split("/") if p and p != ".."]
+        if len(parts) < 2 or parts[0] not in HOOK_SUBPACKAGES:
+            return "module", nm, ""
+        return "module", "/".join(parts), os.path.join(msrc, *parts) + ".py"
     if k == "skill":
         return "skill", nm, os.path.join(mdot, "skills", nm, "SKILL.md")
+    if k == "rule":
+        if not nm.endswith(".md"):
+            nm += ".md"
+        return "rule", os.path.basename(nm), os.path.join(mdot, "rules", os.path.basename(nm))
+    if k == "webui":
+        bn = os.path.basename(nm) or "index.html"
+        return "webui", bn, os.path.join(msrc, "webui", bn)
     return k, nm, ""
 
 
@@ -532,6 +582,9 @@ def prompt_section_text(sess=None, ws=None, repo_root=None):
     """Render the Matrix system prompt block: hardcoded instructions + `.Matrix/rules/*.md`."""
     _root, msrc, mdot = _roots(repo_root)
     parts = [MATRIX_SYSTEM_PROMPT]
+    if not is_enabled():
+        parts.append("[Matrix runtime is currently DISABLED — only immutable Nucleus is active. Call matrix{action:'enable'} to re-enable.]")
+        return "\n\n".join(parts)
     rules_dir = os.path.join(mdot, "rules")
     if os.path.isdir(rules_dir):
         rule_texts = []
@@ -610,6 +663,8 @@ def _hotload_hooks(msrc):
 
 def discover_hooks(repo_root=None):
     """Return `{subpackage: [callable_names]}` for all `src/Matrix/<subpkg>/hooks.py`, mtime-cached."""
+    if not is_enabled():
+        return {}
     _root, msrc, _mdot = _roots(repo_root)
     cur_stamps = {}
     for sub in HOOK_SUBPACKAGES:
@@ -649,7 +704,9 @@ def call_hook(subpkg, fn_name, *args, default=None, repo_root=None, **kwargs):
                     cur_default = pres
         except Exception:  # noqa: BLE001
             pass
-    # 2. Live Matrix overlay hook
+    # 2. Live Matrix overlay hook (skipped when Matrix is disabled)
+    if not is_enabled():
+        return cur_default
     discover_hooks(repo_root)
     with _LOCK:
         cached = _HOOK_CACHE.get(msrc) or {}
@@ -765,6 +822,8 @@ def hotload(repo_root=None):
 
 def discover_tools(repo_root=None):
     """Return `{name: spec_dict}` for valid Matrix tools, auto-reloading when mtimes change."""
+    if not is_enabled():
+        return {}
     _root, msrc, _mdot = _roots(repo_root)
     tdir = os.path.join(msrc, "tools")
     cur_stamps = {}
@@ -860,7 +919,7 @@ def webui_index_path(repo_root=None, prefer_nucleus=False):
     """Return the valid `index.html` path to serve on `/` (Matrix shadow if healthy, else Nucleus)."""
     root, msrc, _mdot = _roots(repo_root)
     nuc_html = os.path.join(root, "webui", "index.html")
-    if prefer_nucleus:
+    if prefer_nucleus or not is_enabled():
         return nuc_html
     shadow_html = os.path.join(msrc, "webui", "index.html")
     if os.path.isfile(shadow_html):
@@ -875,22 +934,35 @@ def webui_index_path(repo_root=None, prefer_nucleus=False):
 
 
 def webui_plugins_js(repo_root=None):
-    """Return a fail-open JavaScript wrapper around `src/Matrix/webui/plugins.js`."""
-    _root, msrc, _mdot = _roots(repo_root)
+    """Return a fail-open JavaScript wrapper around `src/Matrix/webui/plugins.js` (plus promoted plugins)."""
+    root, msrc, _mdot = _roots(repo_root)
+    chunks = []
+    prom_js = os.path.join(root, "webui", "assets", "matrix_promoted_plugins.js")
+    if os.path.isfile(prom_js):
+        try:
+            with open(prom_js, "r", encoding="utf-8", errors="replace") as f:
+                chunks.append("try {\n" + f.read(500_000) + "\n} catch (_e) {}\n")
+        except OSError:
+            pass
+    if not is_enabled():
+        chunks.append("/* Matrix live plugins disabled */\n")
+        return "\n".join(chunks)
     p = os.path.join(msrc, "webui", "plugins.js")
     if not os.path.isfile(p):
-        return "/* Matrix webui/plugins.js: not present */\n"
+        chunks.append("/* Matrix webui/plugins.js: not present */\n")
+        return "\n".join(chunks)
     try:
         with open(p, "r", encoding="utf-8", errors="replace") as f:
             body = f.read(500_000)
-        return (
+        chunks.append(
             "/* Matrix live WebUI plugin (fail-open isolated) */\n"
             "try {\n" + body + "\n} catch (_mtxErr) {\n"
             "  console.warn('[Matrix plugin error]', _mtxErr);\n"
             "}\n"
         )
     except OSError:
-        return "/* Matrix webui/plugins.js: unreadable */\n"
+        chunks.append("/* Matrix webui/plugins.js: unreadable */\n")
+    return "\n".join(chunks)
 
 
 def call_ext_http(method, path, qs=None, body=None, repo_root=None):
@@ -1022,6 +1094,7 @@ def status(repo_root=None):
     vstore = read_json(_verified_store_path(repo_root), {})
     return {
         "ok": True,
+        "enabled": is_enabled(),
         "matrix_src": msrc,
         "matrix_dot": mdot,
         "subpackages": list(matrix_guard.MATRIX_SUBDIRS),
@@ -1108,8 +1181,8 @@ def execute_promoted_tool(name, args, run_id=None, repo_root=None):
 def verify_target(kind, name, repo_root=None):
     """Deterministically verify that a Matrix artifact is tested, valid, and safe to promote into Nucleus."""
     k, nm, fpath = _resolve_target_path(kind, name, repo_root)
-    if k not in ("tool", "hook", "skill") or not nm:
-        return {"ok": False, "error": "kind must be 'tool', 'hook', or 'skill' and name is required"}
+    if k not in ("tool", "hook", "module", "skill", "rule", "webui") or not nm:
+        return {"ok": False, "error": "kind must be 'tool', 'hook', 'module', 'skill', 'rule', or 'webui' and name is required"}
     if not fpath or not os.path.isfile(fpath):
         return {"ok": False, "error": "Matrix artifact not found at %s" % fpath}
     cur_sha = _file_sha256(fpath)
@@ -1124,18 +1197,18 @@ def verify_target(kind, name, repo_root=None):
                 "and verify it passes with exit_code=0 before promoting to Nucleus." % (k, nm, k, nm)
             ),
         }
-    if k in ("tool", "hook"):
+    if k in ("tool", "hook", "module"):
         try:
             with open(fpath, "r", encoding="utf-8") as f:
                 src = f.read()
             compile(src, fpath, "exec")
-            spec = importlib.util.spec_from_file_location("_verify_%s_%s" % (k, nm), fpath)
+            spec = importlib.util.spec_from_file_location("_verify_%s_%s" % (k, nm.replace("/", "_")), fpath)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             if k == "tool":
                 if not isinstance(getattr(mod, "TOOL_SCHEMA", None), dict) or not callable(getattr(mod, "execute", None)):
                     return {"ok": False, "error": "PROMOTE_UNVERIFIED: tool %r must define dict TOOL_SCHEMA and callable execute" % nm}
-            else:
+            elif k == "hook":
                 fns = [fn for fn, v in vars(mod).items() if not fn.startswith("_") and callable(v)]
                 if not fns:
                     return {"ok": False, "error": "PROMOTE_UNVERIFIED: hook %r defines no callable hook functions" % nm}
@@ -1147,6 +1220,24 @@ def verify_target(kind, name, repo_root=None):
                 "line": err_info["line"],
                 "code_line": err_info["code_line"],
             }
+    elif k in ("skill", "rule"):
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                txt = f.read().strip()
+            if not txt:
+                return {"ok": False, "error": "PROMOTE_UNVERIFIED: %s %r is empty" % (k, nm)}
+        except OSError as e:
+            return {"ok": False, "error": "PROMOTE_UNVERIFIED: %s" % e}
+    elif k == "webui":
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                txt = f.read()
+            if nm == "index.html" and ('id="app"' not in txt or "<html" not in txt.lower()):
+                return {"ok": False, "error": "PROMOTE_UNVERIFIED: shadow webui/index.html is missing id=\"app\" or <html>"}
+            if not txt.strip():
+                return {"ok": False, "error": "PROMOTE_UNVERIFIED: webui artifact %r is empty" % nm}
+        except OSError as e:
+            return {"ok": False, "error": "PROMOTE_UNVERIFIED: %s" % e}
     return {"ok": True, "kind": k, "name": nm, "path": fpath, "sha256": cur_sha}
 
 
@@ -1210,14 +1301,37 @@ def promote_to_nucleus(kind, name, repo_root=None):
             dst_path = os.path.join(sub_dir, "matrix_promoted_hooks.py")
             shutil.copy2(src_path, dst_path)
             os.remove(src_path)
+        elif k == "module":
+            parts = nm.split("/")
+            dst_path = os.path.join(root, "src", "longrun", *parts) + ".py"
+            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+            shutil.copy2(src_path, dst_path)
+            os.remove(src_path)
         elif k == "skill":
             src_sdir = os.path.dirname(src_path)
-            dst_path = os.path.join(root, "skills", "created", nm)
-            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-            if os.path.exists(dst_path):
-                shutil.rmtree(dst_path, ignore_errors=True)
-            shutil.copytree(src_sdir, dst_path)
+            dst_pdir = os.path.join(root, "skills", "created", nm)
+            os.makedirs(os.path.dirname(dst_pdir), exist_ok=True)
+            if os.path.exists(dst_pdir):
+                shutil.rmtree(dst_pdir, ignore_errors=True)
+            shutil.copytree(src_sdir, dst_pdir)
             shutil.rmtree(src_sdir, ignore_errors=True)
+            dst_path = os.path.join(dst_pdir, "SKILL.md")
+        elif k == "rule":
+            pddir = os.path.join(root, ".longrun", "prompt.d")
+            os.makedirs(pddir, exist_ok=True)
+            dst_path = os.path.join(pddir, nm)
+            shutil.copy2(src_path, dst_path)
+            os.remove(src_path)
+        elif k == "webui":
+            if nm == "index.html":
+                dst_path = os.path.join(root, "webui", "index.html")
+            else:
+                adir = os.path.join(root, "webui", "assets")
+                os.makedirs(adir, exist_ok=True)
+                dst_path = os.path.join(adir, "matrix_promoted_" + nm)
+            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+            shutil.copy2(src_path, dst_path)
+            os.remove(src_path)
         else:
             return {"ok": False, "error": "unsupported kind %r" % k}
     except OSError as e:

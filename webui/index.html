@@ -1337,6 +1337,10 @@
     padding: 8px 14px; border-radius: var(--radius); text-decoration: none; cursor: pointer; } /* H6 */
   button:hover { filter: brightness(1.08); }               /* M6 */
   button:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+  button.config-save.dirty:not(:disabled) {
+    color: var(--acc); border-color: var(--acc);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--acc) 28%, transparent);
+  }
   #dotrail button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } /* M7 */
   #settingsWin .sw-nav button:hover { background: var(--hover); }   /* L5 */
   /* JAG-361: the complete Rules panel rows. */
@@ -1740,8 +1744,9 @@
         <div class="card">
           <div class="hrow">
             <label title="A top-level YAML file under config/">file <select id="cfgFileName" onchange="loadConfigFile()"></select></label>
-            <button class="ghost" data-call="loadConfigFile" title="re-read the file from disk">↻ reload</button>
-            <button class="ghost" data-call="saveConfigFile" title="validate the YAML, back up the previous version and save">save</button>
+            <button class="ghost" data-call="reloadConfigFile" title="re-read the file from disk">↻ reload</button>
+            <button class="ghost config-save" id="cfgFileSave" disabled
+                    data-call="saveConfigFile" title="no changes to save">save</button>
           </div>
           <div class="remaining" id="cfgFileInfo">—</div>
           <textarea id="cfgFileText" spellcheck="false" autocomplete="off" autocapitalize="off" style="width:100%;min-height:360px;margin-top:8px;font-size:12px;font-family:ui-monospace,monospace;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt);resize:vertical"></textarea>
@@ -2548,14 +2553,31 @@ async function nameThreads() {
 }
 function _scope() { return _activeScope || _freeKids() || $("log"); }
 function _nodeById(id) { return ((graph && graph.nodes) || []).find(n => n.id === id) || null; }
+function _queueHistoryGraphEvent(d) {
+  const sid = d && (d.session || _historyReplaySession);
+  if (!sid || sid !== _historyReplaySession || !d.node || !d.node.id) return;
+  const key = sid + "\u0000" + d.node.id;
+  _historyGraphPending.set(key, Object.assign({}, d, {session: sid}));
+}
+function _flushHistoryGraphEvents(sid) {
+  if (!sid || _historyReplaySession === sid) return;
+  const events = [];
+  for (const [key, event] of _historyGraphPending) {
+    if (event.session === sid) {
+      events.push(event);
+      _historyGraphPending.delete(key);
+    }
+  }
+  events.forEach(event => applyGraphEvent(event));
+}
 /* JAG-274: the chat is a CHRONOLOGICAL stream (newest always at the bottom). A todo
- * step is an inline section created where the step is first referenced; while that
- * section is the ACTIVE step's AND is still the last element, its cards/thoughts/
- * injects append into it — so the newest work stays at the bottom. If other content
- * landed after it (a new user turn, another step), the next item for that step opens
- * a FRESH section at the bottom instead of appending "up" into the old one. A step
- * can therefore have several sections (one per resumed run); `_chatNodes[id]` always
- * points at the LATEST one (for repaint + sidebar scroll). */
+ * step is an inline section created where the step is first referenced; its cards/
+ * thoughts/injects append into that section so the step's work stays together.
+ * A step can be referenced again after other content landed (interleaved tool cards,
+ * a resumed run): the section is MOVED back to the bottom (newest stays last) and
+ * REUSED instead of opening a second copy — a fresh copy duplicated the whole todo
+ * tree in the render ("todo duplicati"). `_chatNodes[id]` is the single live section
+ * (repaint + sidebar scroll); legacy sessions with extra copies keep using the latest. */
 function _openSection(nid) {
   if (!nid) { _activeNodeId = null; _activeScope = null; return $("log"); }
   // JAG-431p: a TASK item CLOSES the current free group, so a node-less item that
@@ -2563,8 +2585,10 @@ function _openSection(nid) {
   // sequence match the durable ledger's exactly (they diverged before, which is why
   // agent-set titles landed on the wrong Free.N / the last ones stayed untitled).
   _freeClose();
+  const lg = $("log");
   const last = _chatNodes[nid];
-  if (last && last.parentNode === $("log") && !last.nextElementSibling) {
+  if (last && last.isConnected && last.parentNode === lg) {
+    if (last.nextElementSibling) lg.appendChild(last);
     _activeNodeId = nid; _activeScope = last.querySelector(".tc-kids");
     return _activeScope;
   }
@@ -3178,6 +3202,7 @@ document.addEventListener("toggle", e => {
 }, true);
 let _historyReplaySession = null;
 let _historySeq = 0;   // JAG-485: generation of the newest loadHistory() run
+let _historyGraphPending = new Map();
 function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _updateNowBar(); buildDotRail(); }
 function _nodeDepth(id, d) {
   // JAG-170: depth from the GRAPH hierarchy, independent of draw order, so the
@@ -4443,6 +4468,7 @@ async function loadHistory() {
   // an EMPTY log, so exactly one transcript is on screen.
   const _gen = ++_historySeq;
   const _stale = () => _gen !== _historySeq || sessionId !== _historySid;
+  _historyGraphPending.clear();
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
   _historyReplaySession = _historySid;
   _stick = false;  // replay silently; jump once after rebuilding instead of scrolling per item
@@ -4453,6 +4479,7 @@ async function loadHistory() {
     // instead of re-polling a dead id every cycle (spurious 404s in the console).
     sessionId = null; localStorage.removeItem("sf_session");
     $("log").innerHTML = ""; _resetChatTree(); graph = null;
+    _historyGraphPending.clear();
     if (_historyReplaySession === _historySid) _historyReplaySession = null;
     _stick = true;
     return;
@@ -4628,6 +4655,9 @@ async function loadHistory() {
   // ledger free-group counts differ (a compaction), so it can never mislabel.
   applyThreadTitles();
   if (_historyReplaySession === _historySid) _historyReplaySession = null;
+  if (_historyReplaySession !== _historySid && sessionId === _historySid)
+    _flushHistoryGraphEvents(_historySid);
+  else if (sessionId !== _historySid) _historyGraphPending.clear();
   if (sessionId === _historySid) {
     if (!_restoreChatScrollState(_historySid)) _jumpLogToBottom();
     _stick = _nearBottom();
@@ -5065,6 +5095,23 @@ if ($("costRefresh")) $("costRefresh").onclick = async () => {
    EVERY top-level config/*.yaml readable and writable from the WebUI, with a
    server-side YAML validation before the atomic write. */
 let _cfgFilesAt = 0;
+let _cfgFileLoadedName = "", _cfgFileBaseline = "", _cfgFileSaving = false;
+function _cfgFileHasDraft() {
+  const ta = $("cfgFileText");
+  return !!(_cfgFileLoadedName && ta && ta.value !== _cfgFileBaseline);
+}
+function _cfgFileDirty() {
+  const sel = $("cfgFileName");
+  return !!(sel && sel.value === _cfgFileLoadedName && _cfgFileHasDraft());
+}
+function _syncConfigFileSaveState() {
+  const save = $("cfgFileSave");
+  if (!save) return;
+  const dirty = _cfgFileDirty();
+  save.disabled = !dirty || _cfgFileSaving;
+  save.classList.toggle("dirty", dirty);
+  save.title = dirty ? "save changed YAML after validation and backup" : "no changes to save";
+}
 async function loadConfigFiles() {
   try {
     const r = await api("GET", "/api/config/files");
@@ -5080,9 +5127,15 @@ async function loadConfigFiles() {
     loadConfigFile();
   } catch (e) { /* the panel is informational — never break the app */ }
 }
-async function loadConfigFile() {
+async function loadConfigFile(forceDiscard) {
   const sel = $("cfgFileName"), ta = $("cfgFileText"), info = $("cfgFileInfo"), msg = $("cfgFileMsg");
   if (!sel || !ta) return;
+  if (!forceDiscard && _cfgFileHasDraft()) {
+    if (sel.value !== _cfgFileLoadedName) sel.value = _cfgFileLoadedName;
+    if (msg) msg.textContent = "unsaved changes — save before switching or reloading";
+    _syncConfigFileSaveState();
+    return;
+  }
   const name = sel.value;
   if (!name) return;
   if (msg) msg.textContent = "";
@@ -5090,22 +5143,41 @@ async function loadConfigFile() {
     const r = await api("GET", "/api/config/file?name=" + encodeURIComponent(name));
     if (!r || !r.ok) { if (msg) msg.textContent = (r && r.error) || "cannot read"; return; }
     ta.value = r.text;
+    _cfgFileLoadedName = name;
+    _cfgFileBaseline = ta.value;
+    _syncConfigFileSaveState();
     if (info) info.textContent = name + " · " + r.text.length + " chars · modified " +
       new Date((r.mtime || 0) * 1000).toLocaleString();
   } catch (e) { if (msg) msg.textContent = String(e); }
 }
+async function reloadConfigFile() {
+  if (_cfgFileHasDraft() &&
+      !window.confirm("Discard unsaved changes to " + _cfgFileLoadedName + "?")) return;
+  await loadConfigFile(true);
+}
 async function saveConfigFile() {
   const sel = $("cfgFileName"), ta = $("cfgFileText"), msg = $("cfgFileMsg");
-  if (!sel || !ta) return;
+  const info = $("cfgFileInfo"), save = $("cfgFileSave");
+  if (!sel || !ta || !_cfgFileDirty()) { _syncConfigFileSaveState(); return; }
+  const savedName = sel.value, savedText = ta.value;
+  _cfgFileSaving = true; _syncConfigFileSaveState();
   if (msg) msg.textContent = "saving…";
   try {
-    const r = await api("POST", "/api/config/file", { name: sel.value, text: ta.value });
+    const r = await api("POST", "/api/config/file", { name: savedName, text: savedText });
     if (!r || !r.ok) { if (msg) msg.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    _cfgFileLoadedName = savedName;
+    _cfgFileBaseline = savedText;
     if (msg) msg.textContent = "saved " + r.name + " (" + r.bytes + " B) — reloaded: " +
       ((r.reloaded || []).join(", ") || "no owning module (read per call)");
+    if (info && ta.value === savedText) {
+      info.textContent = savedName + " · " + r.bytes + " B · saved " + new Date().toLocaleString();
+    }
     toast("config saved: " + r.name, "ok");
-    loadConfigFile();
   } catch (e) { if (msg) msg.textContent = String(e); }
+  finally {
+    _cfgFileSaving = false;
+    _syncConfigFileSaveState();
+  }
 }
 /* JAG-491: structured settings — one schema-driven renderer for every config
    file that has no bespoke panel. The backend declares the fields (type, bounds,
@@ -5129,6 +5201,21 @@ async function loadSettingsForms() {
       '<div class="remaining" style="margin-top:6px;line-height:1.7">' + rows.join("<br>") + '</div>';
   }
 }
+function _setSectionValues(card, sec) {
+  const values = {};
+  (sec.fields || []).forEach(f => { values[f.path] = _setReadField(card, f); });
+  return values;
+}
+function _syncSectionDirty(card, sec) {
+  const save = card.querySelector("[data-save]");
+  if (!save) return false;
+  const isDirty = JSON.stringify(_setSectionValues(card, sec)) !== card._savedValues;
+  save.disabled = !isDirty;
+  if (card._saving) save.disabled = true;
+  save.classList.toggle("dirty", isDirty);
+  save.title = isDirty ? "save changed settings" : "no changes to save";
+  return isDirty;
+}
 function _setSectionEl(sec) {
   const card = document.createElement("div");
   card.className = "card"; card.style.marginBottom = "10px";
@@ -5137,10 +5224,22 @@ function _setSectionEl(sec) {
     ' <span class="remaining">· ' + esc(sec.file) + '</span></div>' +
     (sec.help ? '<div class="remaining" style="margin-bottom:8px">' + esc(sec.help) + '</div>' : "") +
     '<div class="hrow" data-fields></div>' +
-    '<button class="ghost" data-save style="margin-top:8px">save ' + esc(sec.id) + '</button>' +
-    '<div data-msg class="remaining u-mt4"></div>';
+    '<button class="ghost config-save" data-save disabled style="margin-top:8px">save ' + esc(sec.id) + '</button>' +
+    '<div data-msg class="remaining u-mt4" role="status" aria-live="polite"></div>';
   const box = card.querySelector("[data-fields]");
   (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));
+  card._savedValues = JSON.stringify(_setSectionValues(card, sec));
+  card._saving = false;
+  card.addEventListener("input", () => _syncSectionDirty(card, sec));
+  card.addEventListener("change", () => _syncSectionDirty(card, sec));
+  card.addEventListener("click", e => {
+    const target = e.target instanceof Element ? e.target : e.target.parentElement;
+    const button = target && target.closest("button");
+    if (button && !button.hasAttribute("data-save")) {
+      setTimeout(() => _syncSectionDirty(card, sec), 0);
+    }
+  });
+  _syncSectionDirty(card, sec);
   card.querySelector("[data-save]").onclick = () => saveSettingsSection(card, sec);
   return card;
 }
@@ -5246,16 +5345,24 @@ function _setReadField(root, f) {
   return el.value;
 }
 async function saveSettingsSection(card, sec) {
-  const values = {};
-  (sec.fields || []).forEach(f => { values[f.path] = _setReadField(card, f); });
+  const values = _setSectionValues(card, sec);
+  const isDirty = JSON.stringify(values) !== card._savedValues;
+  if (!isDirty) { _syncSectionDirty(card, sec); return; }
+  card._saving = true;
+  _syncSectionDirty(card, sec);
   const msg = card.querySelector("[data-msg]");
   if (msg) msg.textContent = "saving…";
   try {
     const r = await api("POST", "/api/settings", { file: sec.file, values });
     if (!r || !r.ok) { if (msg) msg.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    card._savedValues = JSON.stringify(r.values || values);
     if (msg) msg.textContent = "saved — live now";
     if (typeof toast === "function") toast(sec.file + ": saved", "ok");
   } catch (e) { if (msg) msg.textContent = String(e); }
+  finally {
+    card._saving = false;
+    _syncSectionDirty(card, sec);
+  }
 }
 let _policyLoadedAt = 0;
 async function loadCompactionPolicy(force) {
@@ -5384,17 +5491,15 @@ async function loadGraph() {
   // (JAG-257). One visual = one real source.
   await loadPlan();
 }
-function applyGraphEvent(d) {
-  if (!d || !d.run || !d.node) return;
-  // JAG-168: the global /api/feed delivers events for EVERY session — never paint
-  // another session's node into the log currently on screen.
-  if (d.session && d.session !== sessionId) return;
+function _applyChatGraphEvent(d) {
   // JAG-166: keep the in-chat tree in sync FIRST, independent of the panel state.
   // Decide add-vs-update from the RENDERED map (_chatNodes), not from `graph`:
   // during a live turn `graph` is null/stale, so a status change (todo->doing)
   // was treated as a fresh add, chatNodeAdd early-returned, and the "doing"
   // active scope was never set — that is why nesting only appeared after reload.
   if (_chatNodes[d.node.id]) chatNodeUpdate(d.node); else chatNodeAdd(d.node);
+}
+function _applyGraphPanelEvent(d) {
   // JAG-431b: the panel renders the SESSION graph; a live node event for THIS
   // session is applied directly (the session filter above is the real boundary —
   // no run-id gate). If the panel has no graph yet, fetch the session graph.
@@ -5404,6 +5509,17 @@ function applyGraphEvent(d) {
   if (i >= 0) graph.nodes[i] = d.node; else graph.nodes.push(d.node);
   graph.node_count = graph.nodes.length; graph.counts = countNodes(graph.nodes);
   renderGraph();
+}
+function applyGraphEvent(d) {
+  if (!d || !d.run || !d.node) return;
+  // JAG-168: the global /api/feed delivers events for EVERY session — never paint
+  // another session's node into the log currently on screen.
+  if (d.session && d.session !== sessionId) return;
+  // History already rebuilds chronological task sections. Queue live chat paints
+  // until that rebuild finishes; the session graph panel can still update now.
+  if (_historyReplaySession === sessionId) _queueHistoryGraphEvent(d);
+  else _applyChatGraphEvent(d);
+  _applyGraphPanelEvent(d);
 }
 function planNodes(g) {
   // JAG-194: nodes of the CURRENT plan (graph.plan); untagged nodes belong to
@@ -6769,6 +6885,55 @@ function confirmDelete(message, force) {
 /* ---- v0.8 context rail panels ---- */
 function json_pre(el, d) { el.innerHTML = '<pre style="white-space:pre-wrap;font-size:11px;color:var(--dim)">' + JSON.stringify(d, null, 2).replace(/</g, "&lt;") + '</pre>'; }
 
+function scheduleApprovalSave(el, mode) {
+  if (!el) return;
+  if (mode) el._approvalMode = mode;
+  const revision = (el._approvalRevision || 0) + 1;
+  el._approvalRevision = revision;
+  if (el._approvalSaveTimer) clearTimeout(el._approvalSaveTimer);
+  const msg = el.querySelector("#apPolicyMsg");
+  if (msg) msg.textContent = "changes pending…";
+  el.querySelectorAll('button[data-pol="mode"]').forEach(button => {
+    const selected = button.dataset.val === el._approvalMode;
+    const full = button.dataset.val === "full";
+    button.style.color = selected ? (full ? "var(--err)" : "var(--ok)") : "";
+    button.style.borderColor = selected
+      ? (full ? "color-mix(in srgb, var(--err) 65%, transparent)"
+        : "color-mix(in srgb, var(--ok) 50%, transparent)") : "";
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  el._approvalSaveTimer = setTimeout(() => {
+    el._approvalSaveTimer = null;
+    const outside = el.querySelector("#apOutside");
+    const timeout = Number((el.querySelector("#apTimeout") || {}).value);
+    const matrix = el.querySelector("#apMatrixPromote");
+    const matrixEnabled = el.querySelector("#apMatrixEnabled");
+    if (!Number.isInteger(timeout) || timeout < 10 || timeout > 86400) {
+      if (msg && el._approvalRevision === revision) {
+        msg.textContent = "not saved — timeout must be between 10 and 86400 seconds";
+      }
+      return;
+    }
+    const approvals = {
+      mode: el._approvalMode || "normal",
+      outside_workspace: (outside || {}).value || "required",
+      timeout_secs: timeout,
+      allow_matrix_promote: !!(matrix || {}).checked,
+      matrix_enabled: matrixEnabled ? !!matrixEnabled.checked : true
+    };
+    if (msg && el._approvalRevision === revision) msg.textContent = "saving…";
+    const save = (el._approvalSaveChain || Promise.resolve()).catch(() => null)
+      .then(() => api("POST", "/api/tools", {approvals}));
+    el._approvalSaveChain = save;
+    save.then(result => {
+      if (!result || !result.ok) throw new Error((result && result.error) || "save failed");
+      if (msg && el._approvalRevision === revision) msg.textContent = "saved";
+    }).catch(error => {
+      if (msg && el._approvalRevision === revision) msg.textContent = "not saved — " + String(error);
+    });
+  }, 350);
+}
+
 function renderTools(el, d) {
   const tools = (d && d.tools) || d || [];
   if (!Array.isArray(tools)) { json_pre(el, d); return; }
@@ -6776,9 +6941,10 @@ function renderTools(el, d) {
   // JAG-127c: global approval policy (persisted server-side in the overlay).
   const pol = (d && d.policy) || {};
   const mode = pol.mode || "normal";
+  el._approvalMode = mode;
   const mk = (k, v, cur, extra) => { const on = cur === v; const danger = v === "full";
     const c = on ? (danger ? "color:var(--err);border-color:color-mix(in srgb, var(--err) 65%, transparent)" : "color:var(--ok);border-color:color-mix(in srgb, var(--ok) 50%, transparent)") : "";
-    return `<button class="ghost" data-pol="${k}" data-val="${v}" style="${c}">${extra || v}</button>`; };
+    return `<button class="ghost" data-pol="${k}" data-val="${v}" aria-pressed="${on}" style="${c}">${extra || v}</button>`; };
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
        <div style="font-weight:600;margin-bottom:6px">🔓 Global approval policy</div>
@@ -6795,9 +6961,13 @@ function renderTools(el, d) {
            </select></label>
          <label title="How long a run waits for a human decision.">decision timeout (s)
            <input id="apTimeout" type="number" min="10" max="86400" value="${Number(pol.timeout_secs || 300)}"></label>
-         <button class="ghost" id="apSave" title="save the global approval policy">save policy</button>
+         <span class="remaining" id="apPolicyMsg" role="status" aria-live="polite">changes save automatically</span>
        </div>
-       <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd)">
+       <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
+         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Live toggle: uncheck to disable all src/Matrix and .Matrix tools, hooks, rules, skills, and shadow WebUI, leaving only the immutable Nucleus active">
+           <input id="apMatrixEnabled" type="checkbox"${pol.matrix_enabled !== false ? " checked" : ""}>
+           <span><b>Enable live Matrix zone (<code>src/Matrix</code> &amp; <code>.Matrix</code>)</b> <span class="remaining">(uncheck to disable all Matrix effects live and run pure Nucleus only)</span></span>
+         </label>
          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Exclusive authorization to promote tested Matrix code permanently into Legacy Nucleus (even FULL mode does not unlock this)">
            <input id="apMatrixPromote" type="checkbox"${pol.allow_matrix_promote ? " checked" : ""}>
            <span><b>Allow Matrix → Nucleus permanent promotion</b> <span class="remaining">(<code>promote_to_nucleus</code> — never unlocked by FULL mode; requires tested Matrix code + auto-commit)</span></span>
@@ -6882,8 +7052,7 @@ function renderTools(el, d) {
       (t.description ? `<div class="remaining" style="margin:-4px 0 8px 22px">${esc(t.description)}</div>` : "");
   }).join("");
   el.querySelectorAll("button[data-pol]").forEach(b =>
-    b.onclick = () => api("POST", "/api/tools", { approvals: { [b.dataset.pol]: b.dataset.val } })
-      .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2)));
+    b.onclick = () => scheduleApprovalSave(el, b.dataset.val));
   el.querySelectorAll("button[data-ap]").forEach(b =>
     b.onclick = () => {
       const cur = b.textContent.replace("⟳", "").trim();
@@ -6929,21 +7098,17 @@ function renderTools(el, d) {
     const d2 = await api("GET", "/api/tools");
     renderTools(el, d2);
   };
-  // JAG-491: save the global approval policy fields that had no control.
-  const apSave = el.querySelector("#apSave");
-  if (apSave) apSave.onclick = async () => {
-    const outside = (el.querySelector("#apOutside") || {}).value || "required";
-    const timeout = parseInt((el.querySelector("#apTimeout") || {}).value, 10);
-    const allow_matrix_promote = !!(el.querySelector("#apMatrixPromote") || {}).checked;
-    await api("POST", "/api/tools", { approvals: {
-      mode, outside_workspace: outside, timeout_secs: timeout, allow_matrix_promote } });
-    renderTools(el, await api("GET", "/api/tools"));
-  };
+  const apOutside = el.querySelector("#apOutside");
+  if (apOutside) apOutside.onchange = () => scheduleApprovalSave(el);
+  const apTimeout = el.querySelector("#apTimeout");
+  if (apTimeout) {
+    apTimeout.oninput = () => scheduleApprovalSave(el);
+    apTimeout.onchange = () => scheduleApprovalSave(el);
+  }
   const apMtxCb = el.querySelector("#apMatrixPromote");
-  if (apMtxCb) apMtxCb.onchange = async () => {
-    await api("POST", "/api/tools", { approvals: { allow_matrix_promote: !!apMtxCb.checked } });
-    renderTools(el, await api("GET", "/api/tools"));
-  };
+  if (apMtxCb) apMtxCb.onchange = () => scheduleApprovalSave(el);
+  const apMtxEn = el.querySelector("#apMatrixEnabled");
+  if (apMtxEn) apMtxEn.onchange = () => scheduleApprovalSave(el);
   // JAG-491: per-tool ADVANCED policy (roots / deny / allow_hosts / auto_approve).
   el.querySelectorAll("button[data-adv]").forEach(b =>
     b.onclick = () => _toolAdvanced(el, b.dataset.adv, tools));
@@ -10201,6 +10366,7 @@ $("palette-input").addEventListener("keydown", paletteKey);
 $("palette").addEventListener("click", e => { if (e.target.id === "palette") closePalette(); });
 $("mcpJsonWin").addEventListener("click", e => { if (e.target.id === "mcpJsonWin") closeMcpJson(); });
 $("session-search").addEventListener("input", loadSessions);
+{ const _cfgText = $("cfgFileText"); if (_cfgText) _cfgText.addEventListener("input", _syncConfigFileSaveState); }
 _wireRunsPanel();   // JAG-479: the running/unread popover reads real state and follows it
 { const _chc = $("chatHeadCopy"); if (_chc) _chc.onclick = _copySessionName; }   // JAG-480
 $("chatSearchToggle").onclick = toggleChatSearch;

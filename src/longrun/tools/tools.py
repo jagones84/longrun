@@ -1492,6 +1492,10 @@ def _matrix(args, run_id):
     action = str((args or {}).get("action") or "status").strip().lower()
     if action in ("status", "info"):
         return matrix.status()
+    if action == "enable":
+        return matrix.set_enabled(True)
+    if action == "disable":
+        return matrix.set_enabled(False)
     if action in ("hotload", "reload"):
         return matrix.hotload()
     if action == "checkpoint_save":
