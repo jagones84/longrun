@@ -400,6 +400,27 @@ def _session_notebook(db, sid, create=True):
     return nid if (row or create) else None
 
 
+def _existing_source(db: sqlite3.Connection, notebook: str, ref: str) -> dict | None:
+    """Return current indexing state when this exact source already exists."""
+    row = db.execute(
+        "SELECT s.id, s.kind, s.ref, s.title, s.chunks, n.name "
+        "FROM sources s LEFT JOIN notebooks n ON n.id=s.notebook "
+        "WHERE s.notebook=? AND s.ref=? ORDER BY s.added DESC LIMIT 1",
+        (notebook, ref)).fetchone()
+    if not row:
+        return None
+    chunks = int(row["chunks"] or 0)
+    embedded = int(db.execute(
+        "SELECT count(*) AS n FROM chunks WHERE source=? AND vec IS NOT NULL",
+        (row["id"],)).fetchone()["n"])
+    return {"ok": True, "duplicate": True, "already_indexed": True,
+            "source_id": row["id"], "notebook": notebook,
+            "notebook_name": row["name"] or "", "kind": row["kind"],
+            "ref": row["ref"], "title": row["title"], "chunks": chunks,
+            "embedded": embedded,
+            "pending_embeddings": max(0, chunks - embedded) if _cfg.embed_model() else 0}
+
+
 def _kb_cfg():
     """Index config tuned for the KNOWLEDGE base (not the code index).
 
@@ -433,6 +454,18 @@ def add_source(notebook, ref, session_id=None):
     ref = str(ref or "").strip()
     if not ref:
         return {"ok": False, "error": "empty source"}
+    if session_id:
+        with LOCK:
+            db = _connect()
+            try:
+                _init(db)
+                session_nb = _session_notebook(db, session_id, create=False)
+                if session_nb:
+                    existing = _existing_source(db, session_nb, ref)
+                    if existing:
+                        return existing
+            finally:
+                db.close()
     auto_routed = False
     extract_diag = None
     cfg = _kb_cfg()
@@ -514,6 +547,10 @@ def add_source(notebook, ref, session_id=None):
                 preview = pieces[0]["text"] if pieces else prepared[0][1]
                 notebook, _nb_name, auto_routed = _route_notebook(
                     db, preview[:_AUTO_PREVIEW_CHARS], base)
+            if session_id:
+                existing = _existing_source(db, notebook, ref)
+                if existing:
+                    return existing
             sid = "src:" + uuid.uuid4().hex[:10]
             if pieces is not None:
                 n = _ingest(db, sid, notebook, kind, ref, ref, pieces,
@@ -550,9 +587,11 @@ def add_source(notebook, ref, session_id=None):
                                   (sid,)).fetchone()["c"]
             if em and n and embedded == 0 and not embed_err:
                 embed_err = "embedding produced no vectors (endpoint, key or model unavailable)"
+            pending_embeddings = max(0, n - embedded) if em else 0
             nb_row = db.execute("SELECT name FROM notebooks WHERE id=?", (notebook,)).fetchone()
             result = {"ok": True, "source_id": sid, "notebook": notebook, "kind": kind,
                       "ref": ref, "chunks": n, "embedded": embedded, "embed_error": embed_err,
+                      "pending_embeddings": pending_embeddings,
                       "title": ref if pieces is not None else base,
                       "notebook_auto": bool(auto_routed or notebook_auto_flag),
                       "notebook_name": nb_row["name"] if nb_row else "",
@@ -619,17 +658,20 @@ def add_text(notebook, title, text, session_id=None):
             db.close()
 
 
-def add_sources(notebook, values):
-    """Index MANY sources from a multi-line string (one URL/path per line) or a list."""
+def add_sources(notebook, values, session_id=None):
+    """Index many refs; session_id scopes them and repeated session refs are skipped."""
     if isinstance(values, str):
         refs = [ln.strip() for ln in values.splitlines()]
     else:
         refs = [str(v).strip() for v in (values or [])]
     refs = [r for r in dict.fromkeys(refs) if r]
-    results = [add_source(notebook, r) for r in refs]
+    results = [add_source(notebook, r, session_id=session_id) for r in refs]
     ok = [x for x in results if x.get("ok")]
-    return {"ok": bool(ok) and len(ok) == len(refs), "added": len(ok), "total": len(refs),
-            "chunks": sum(x.get("chunks", 0) for x in ok), "results": results}
+    added = [x for x in ok if not x.get("duplicate")]
+    skipped = len(ok) - len(added)
+    return {"ok": bool(ok) and len(ok) == len(refs), "added": len(added),
+            "skipped": skipped, "total": len(refs),
+            "chunks": sum(x.get("chunks", 0) for x in added), "results": results}
 
 
 def add_source_text(notebook, ref, text, title=None, session_id=None):
@@ -889,9 +931,9 @@ def discover(query, n=5):
                             "snippet": r.get("snippet", "")} for r in results]}
 
 
-def import_candidates(notebook, urls):
-    """Import discovered URLs into a notebook (each through the source pipeline)."""
-    return add_sources(notebook, urls)
+def import_candidates(notebook, urls, session_id=None):
+    """Import discovered URLs into a notebook or the requested session scope."""
+    return add_sources(notebook, urls, session_id=session_id)
 
 
 # --------------------------------------------------------------- status/clear --

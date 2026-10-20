@@ -21,10 +21,10 @@ per setting. ``tests/acceptance/v491_settings_forms.py`` walks every leaf of
 every config file and fails if it is covered by neither.
 
 JAG-499b: each section also declares its home Settings ``panel`` (harness /
-tools / models / mcp / knowledge). The WebUI renders every section inside that
-panel, so Settings ▸ Config — marked ``DO NOT REMOVE! ITS BACKUP`` — is no longer
-needed for a normal change: everything in ``config/*.yaml`` is settable from the
-panels around the Settings window.
+hooks / tools / models / mcp / knowledge). The WebUI renders every section inside
+that panel, so Settings ▸ Config — marked ``DO NOT REMOVE! ITS BACKUP`` — is no
+longer needed for a normal change: everything in ``config/*.yaml`` is settable
+from the panels around the Settings window.
 
 Writes reuse the existing per-domain persistence:
   * ``index.yaml``      -> ``indexcfg.save_config`` (gitignored overlay)
@@ -120,7 +120,7 @@ SECTIONS = [
         ],
     },
     {
-        "file": "hooks.yaml", "id": "hooks", "panel": "tools",
+        "file": "hooks.yaml", "id": "hooks", "panel": "hooks",
         "title": "Lifecycle hooks",
         "help": ("Deterministic shell commands around every tool call. Exit 2 on "
                  "PreToolUse BLOCKS the call. Saved to a gitignored overlay, so the "

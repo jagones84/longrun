@@ -1415,7 +1415,7 @@ def _index(args, run_id):
 
 
 def _knowledge(args, run_id):
-    """JAG-401: the GLOBAL knowledge base (notebooks of sources).
+    """JAG-401: shared notebooks plus per-session attachment knowledge.
 
     action=list_notebooks | create_notebook | add_source | add_text | search |
     discover (web -> candidate URLs) | import (URLs -> a notebook) | status.
@@ -1437,18 +1437,31 @@ def _knowledge(args, run_id):
         return {"ok": bool(r.get("ok")), "notebooks": kb.list_notebooks(),
                 "stdout": "notebook %s" % r.get("name"), **r}
     if action == "add_text":
-        r = kb.add_text(args.get("notebook"), args.get("title"), args.get("text") or args.get("content"))
+        sid = str(args.get("session") or run_id or "").strip() or None
+        session_scope = sid if not args.get("notebook") else None
+        r = kb.add_text(args.get("notebook"), args.get("title"),
+                        args.get("text") or args.get("content"),
+                        session_id=session_scope)
         return {"ok": bool(r.get("ok")), "stdout": "stored %s chunk(s)" % r.get("chunks"), **r}
     if action in ("add_source", "add"):
         vals = args.get("refs") or args.get("ref") or args.get("url") or args.get("query") or ""
-        r = kb.add_sources(args.get("notebook"), vals)
-        return {"ok": bool(r.get("ok")), "added": r.get("added"), "chunks": r.get("chunks"),
-                "stdout": "added %s/%s source(s), %s chunk(s)" % (r.get("added"), r.get("total"), r.get("chunks")),
+        sid = str(args.get("session") or run_id or "").strip() or None
+        session_scope = sid if not args.get("notebook") else None
+        r = kb.add_sources(args.get("notebook"), vals, session_id=session_scope)
+        return {"ok": bool(r.get("ok")), "added": r.get("added"),
+                "skipped": r.get("skipped"), "chunks": r.get("chunks"),
+                "stdout": ("indexed %s new source(s), skipped %s already-indexed "
+                           "duplicate(s), %s chunk(s)" %
+                           (r.get("added"), r.get("skipped"), r.get("chunks"))),
                 **r}
     if action == "discover":
         return kb.discover(args.get("query") or args.get("q"), args.get("n", 5))
     if action == "import":
-        return kb.import_candidates(args.get("notebook"), args.get("urls") or args.get("refs"))
+        sid = str(args.get("session") or run_id or "").strip() or None
+        session_scope = sid if not args.get("notebook") else None
+        return kb.import_candidates(args.get("notebook"),
+                                    args.get("urls") or args.get("refs"),
+                                    session_id=session_scope)
     query = args.get("query") or args.get("q") or ""
     if not str(query).strip():
         return {"ok": False, "exit_code": 1, "error": "query required for action=search"}

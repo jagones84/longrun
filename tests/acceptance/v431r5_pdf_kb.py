@@ -202,11 +202,46 @@ check("3e a session notebook resolves by explicit notebook id (FULL approval pat
       len(s_exp.get("results", [])) > 0,
       {"explicit": len(s_exp.get("results", []))})
 
-# 3f purge_session removes the owned session notebook (sources + chunks) AND it
+# 3f the agent's add_source action inherits the chat session and skips duplicates.
+from longrun.tools import tools as toolmod  # noqa: E402
+attached_path = os.path.join(tmp, "attached-session-source.md")
+with open(attached_path, "w", encoding="utf-8") as f:
+    f.write("Unique session attachment marker: amber quartz.")
+_old_embed_model = K._cfg.embed_model
+try:
+    K._cfg.embed_model = lambda: ""
+    add1 = toolmod._knowledge({"action": "add_source", "ref": attached_path}, "sid-A")
+    add2 = toolmod._knowledge({"action": "add_source", "ref": attached_path}, "sid-A")
+finally:
+    K._cfg.embed_model = _old_embed_model
+session_results = K.search("amber quartz", session="sid-A", k=5)
+global_results = K.search("amber quartz", k=5)
+db = K._connect()
+source_count = db.execute("SELECT count(*) AS n FROM sources WHERE ref=?",
+                          (attached_path,)).fetchone()["n"]
+db.close()
+check("3f knowledge.add_source defaults to the chat session notebook",
+      add1.get("ok") and add1.get("added") == 1
+      and add1.get("results", [{}])[0].get("notebook") == root_nb
+      and bool(session_results.get("results"))
+      and not global_results.get("results"),
+      {"added": add1.get("added"),
+       "notebook": add1.get("results", [{}])[0].get("notebook"),
+       "session_hits": len(session_results.get("results", [])),
+       "global_hits": len(global_results.get("results", []))})
+check("3g repeated session source is skipped without duplicate chunks",
+      add2.get("ok") and add2.get("added") == 0 and add2.get("skipped") == 1
+      and add2.get("results", [{}])[0].get("duplicate") is True
+      and add2.get("results", [{}])[0].get("pending_embeddings") == 0
+      and source_count == 1,
+      {"added": add2.get("added"), "skipped": add2.get("skipped"),
+       "source_count": source_count})
+
+# 3h purge_session removes the owned session notebook (sources + chunks) AND it
 # disappears from list_sessions().
 removed = K.purge_session("sid-A")
 sess_after = {s["id"] for s in K.list_sessions()}
-check("3f purge_session drops the session notebook from the Session tab",
+check("3h purge_session drops the session notebook from the Session tab",
       root_nb in removed.get("removed", []) and root_nb not in sess_after,
       {"removed": removed.get("removed"), "left_sessions": sorted(sess_after)})
 
@@ -256,6 +291,12 @@ check("5b auto-route responds via _r(handler, ...) instead of returning a bare d
 # JAG-431r6b: the knowledge search endpoint forwards the optional session scope.
 check("5c knowledge search forwards the optional `session` scope to kb.search()",
       'session=src.get("session") or None' in API_SRC)
+TOOLS_SRC = open(os.path.join(REPO, "src", "longrun", "tools", "tools.py"),
+                 encoding="utf-8").read()
+check("5d agent source writes inherit the chat session and report duplicate skips",
+      "session_scope = sid if not args.get(\"notebook\") else None" in TOOLS_SRC
+      and "kb.add_sources(args.get(\"notebook\"), vals, session_id=session_scope)" in TOOLS_SRC
+      and "already-indexed" in TOOLS_SRC)
 
 # -------------------------------------------------- 6) webui auto-ingest
 HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
@@ -263,6 +304,8 @@ check("6a the WebUI calls /api/knowledge/auto-route on attach",
       "api/knowledge/auto-route" in HTML and "recommend_visual" in HTML)
 check("6b the WebUI tags the ingest with the active session",
       "session: sessionId" in HTML)
+check("6e the WebUI reports automatic Knowledge ingest failures",
+      "knowledge indexing failed for " in HTML and "don't block attach on a KB error" not in HTML)
 # JAG-431r6b: the dedicated, request-expanded "Session notebooks" tab exists and
 # renders r.sessions from GET /api/knowledge/notebooks.
 check("6c the WebUI has a dedicated Session notebooks panel",

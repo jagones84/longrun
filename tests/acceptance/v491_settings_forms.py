@@ -192,10 +192,13 @@ check("D6 the dedicated panels are listed, not duplicated",
       "setDedicated" in UI and bool(settings.DEDICATED))
 
 # ---- E) the Config panel is a backup; every form lives in its own panel -----
-_panels = {"harness", "tools", "models", "subagents", "mcp", "knowledge"}
+_panels = {"harness", "hooks", "tools", "models", "subagents", "mcp", "knowledge"}
 check("E1 every structured section declares a real home panel",
       all(s.get("panel") in _panels for s in settings._sections()),
       sorted({s.get("panel") for s in settings._sections()}))
+check("E1a lifecycle hooks belong to the dedicated Hooks panel",
+      any(s.get("file") == "hooks.yaml" and s.get("panel") == "hooks"
+          for s in settings._sections()))
 check("E2 view() exposes the panel for every section",
       all(sec.get("panel") for sec in settings.view()["sections"]))
 check("E3 the WebUI routes each form to its declared panel",

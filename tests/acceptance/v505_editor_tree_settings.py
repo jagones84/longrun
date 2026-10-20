@@ -68,12 +68,17 @@ check("A10 a session switch does not wipe the reveal-built tree",
 m = re.search(r"const SETTINGS_CATS = \[(.*?)\n\];", idx, re.S)
 cats = re.findall(r'\[\s*"([a-z]+)"\s*,', m.group(1)) if m else []
 want = ["appearance", "keys", "models", "subagents", "tools", "mcp", "skills",
-        "rules", "knowledge", "improvement", "diagnostics", "harness", "config"]
+        "rules", "knowledge", "improvement", "diagnostics", "hooks", "harness", "config"]
 check("B1 SETTINGS_CATS is parseable", bool(cats), "found %r" % (cats,))
 check("B2 categories follow the operator's order",
       cats[:len(want)] == want, "got %r" % (cats,))
 check("B3 Info stays last", bool(cats) and cats[-1] == "info", "got %r" % (cats,))
 check("B4 no category is listed twice", len(cats) == len(set(cats)), "got %r" % (cats,))
+check("B4a Hooks is a dedicated panel immediately above Harness",
+      'data-cat="hooks"' in idx and "hooks" in cats and
+      "harness" in cats and cats.index("hooks") + 1 == cats.index("harness")
+      and '"file": "hooks.yaml", "id": "hooks", "panel": "hooks"' in
+      _read("src", "longrun", "core", "settings.py"))
 
 # no duplicate subagent picker inside Models; the single one lives in Subagents
 def _cat_block(name):
@@ -92,6 +97,22 @@ check("B6 Subagents owns the subagent model picker",
       'id="subModel"' in subs and 'data-cat="subagents"' in idx)
 check("B7 the dead Models-era handler cannot fire",
       'data-call="saveSubagentModel"' not in idx)
+keys = _cat_block("keys")
+check("B8 New key appears before the configured key list",
+      keys.find('id="showNewKey"') >= 0 and keys.find('id="showNewKey"') < keys.find('id="keysList"'))
+check("B9 Skills panel filters with the shared slash skill matcher",
+      'id="skillsFilter"' in idx and "function _skillSearchScore" in idx
+      and "_rankSkills(_skillsCache, query)" in idx and "_rankSkills(_skills, q)" in idx)
+check("B10 Subagents has one automatic fallback picker and no add button",
+      'id="subFallbackPick"' in idx and 'id="subFallbacksList"' not in idx
+      and 'data-call="subAddFallback"' not in idx
+      and 'data-cat="subagents"' in idx)
+keys = _cat_block("keys")
+check("B8 New key is placed before the configured key list",
+      keys.find('id="showNewKey"') >= 0 and keys.find('id="showNewKey"') < keys.find('id="keysList"'))
+check("B9 Skills has a filter and shares the slash skill matcher",
+      'id="skillsFilter"' in idx and "function _skillSearchScore" in idx
+      and "_rankSkills(_skillsCache, query)" in idx and "_rankSkills(_skills, q)" in idx)
 
 # ---- C) Diagnostics: a healthy run says so ----------------------------------
 diag = idx[idx.find("function renderDiagnostics"):]

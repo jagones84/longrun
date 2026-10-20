@@ -517,15 +517,10 @@
     padding: 6px; margin: 4px 0; white-space: pre-wrap; word-break: break-word; color: var(--txt); }
   .imp-ledger { margin-top: 8px; }
   .imp-row { font-size: 11px; line-height: 1.5; padding: 3px 0; border-bottom: 1px dashed var(--line); }
-  /* JAG-451: Subagents panel — clean limits grid + failover chips */
+  /* JAG-451: Subagents panel — clean limits grid + single fallback selector */
   .sub-limits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .sub-limits label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--dim); }
   .sub-limits input { width: 100%; }
-  .sub-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .sub-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
-    background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px 3px 10px; }
-  .sub-chip button { background: none; border: none; color: var(--err, #f66); cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
-  .sub-chip.empty { color: var(--dim); border-style: dashed; }
   .sub-fl { color: var(--dim); font-size: 12px; margin: 0 0 2px; }
   /* JAG-451: Skills panel provenance badges */
   .sk-badge { font-size: 9px; border-radius: 999px; padding: 1px 6px; border: 1px solid var(--line);
@@ -1136,6 +1131,7 @@
      (slate panel, accent dot header, compact inline labels). */
   #swMain .sw-cat[data-cat="harness"] > .card,
   #swMain .sw-cat[data-cat="tools"] > .card,
+  #swMain .sw-cat[data-cat="hooks"] .setFormsHost > .card,
   #swMain .sw-cat[data-cat="harness"] .setFormsHost > .card,
   #swMain .sw-cat[data-cat="tools"] .setFormsHost > .card {
     background: var(--panel);
@@ -1225,6 +1221,7 @@
   #swMain .sw-cat[data-cat="harness"] #seCat { width: 190px; }
   #swMain .sw-cat[data-cat="harness"] > .card > .ghost,
   #swMain .sw-cat[data-cat="tools"] > .card > .ghost,
+  #swMain .sw-cat[data-cat="hooks"] .setFormsHost > .card > .ghost,
   #swMain .sw-cat .setFormsHost > .card > .ghost { margin-top: 8px; }
   #settingsWin .sw-resize { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px;
     cursor: nwse-resize; color: var(--dim); touch-action: none; }
@@ -1795,6 +1792,11 @@
         </div>
         </div>
       </section>
+      <div class="sw-cat" data-cat="hooks" hidden>
+        <h2>Hooks · tool lifecycle</h2>
+        <div class="remaining u-mb8">Deterministic commands run before or after tool calls. Configure lifecycle hooks below.</div>
+        <div class="setFormsHost"></div>
+      </div>
       <div class="sw-cat" data-cat="harness" hidden>
         <h2>Harness · agent behaviour</h2>
         <div class="card hcard" style="--hc:#22d3ee">
@@ -1858,7 +1860,7 @@
       <!-- DO NOT REMOVE! ITS BACKUP — Settings ▸ Config (its structured forms and
            the raw YAML editor below) is kept only as an emergency fallback. Every
            knob in config/*.yaml is settable from its own Settings panel
-           (Harness / Tools / Models / Subagents / MCP / Knowledge): the structured
+           (Hooks / Harness / Tools / Models / Subagents / MCP / Knowledge): the structured
            forms are routed to those panels at render time, so this panel should
            not be needed for a normal change. -->
       <div class="sw-cat" data-cat="config" hidden>
@@ -1878,7 +1880,7 @@
           <div class="remaining" id="cfgFileMsg"></div>
         </div>
         <div class="card">
-          <div class="remaining">Use the structured forms above (and the dedicated panels in Harness / Tools / Models / Subagents / MCP / Knowledge) for every normal change: they validate the values and write the right overlay. This raw editor is the complete fallback for anything not yet modelled. A save is rejected when the text is not valid YAML; the previous version is kept in <code>data/config-backups/</code>.</div>
+          <div class="remaining">Use the structured forms above (and the dedicated panels in Hooks / Harness / Tools / Models / Subagents / MCP / Knowledge) for every normal change: they validate the values and write the right overlay. This raw editor is the complete fallback for anything not yet modelled. A save is rejected when the text is not valid YAML; the previous version is kept in <code>data/config-backups/</code>.</div>
         </div>
       </div>
       <div class="sw-cat" data-cat="diagnostics" hidden>
@@ -1947,25 +1949,28 @@
         <div class="card">
           <div class="remaining" id="keysSummary">loading…</div>
           <div class="remaining u-mt8" id="keysStatus" role="status" aria-live="polite"></div>
+          <div class="u-mt8">
+            <div class="u-df u-g6 u-aic">
+              <button class="ghost" id="showNewKey" data-call="showNewKey">+ New key</button>
+              <span class="remaining">creates a named entry in the ignored <code>.env</code></span>
+            </div>
+            <form id="customKeyForm" class="u-mt8" onsubmit="event.preventDefault(); addCustomKey()" hidden>
+              <label class="remaining" for="customKeyName">Environment variable name</label>
+              <input id="customKeyName" class="inp u-w100 u-mt6 u-p610 u-fs12"
+                     name="environment_name" type="text" autocomplete="off" placeholder="OPENROUTER_API_KEY">
+              <label class="remaining u-mt8" for="customKeyDescription">Description</label>
+              <input id="customKeyDescription" class="inp u-w100 u-mt6 u-p610 u-fs12"
+                     name="description" type="text" autocomplete="off" placeholder="What this key is used for">
+              <label class="remaining u-mt8" for="customKeyValue">Secret value</label>
+              <div class="u-df u-g6 u-mt6">
+                <input id="customKeyValue" class="inp u-f1 u-p610 u-fs12"
+                       name="secret_value" type="password" autocomplete="new-password" placeholder="Paste key value">
+                <button class="ghost" id="addCustomKey" type="submit">set</button>
+              </div>
+            </form>
+          </div>
           <div id="keysList" class="u-mt8"></div>
           <div class="remaining u-mt8" id="keysFile">Values are never in the repo: set them here and they are written to the gitignored <code>.env</code>. Providers and MCP reference a key by NAME only.</div>
-        </div>
-        <div class="card">
-          <button class="ghost" id="showNewKey" data-call="showNewKey">+ New key</button>
-          <form id="customKeyForm" class="u-mt8" onsubmit="event.preventDefault(); addCustomKey()" hidden>
-            <label class="remaining" for="customKeyName">Environment variable name</label>
-            <input id="customKeyName" class="inp u-w100 u-mt6 u-p610 u-fs12"
-                   name="environment_name" type="text" autocomplete="off" placeholder="OPENROUTER_API_KEY">
-            <label class="remaining u-mt8" for="customKeyDescription">Description</label>
-            <input id="customKeyDescription" class="inp u-w100 u-mt6 u-p610 u-fs12"
-                   name="description" type="text" autocomplete="off" placeholder="What this key is used for">
-            <label class="remaining u-mt8" for="customKeyValue">Secret value</label>
-            <div class="u-df u-g6 u-mt6">
-              <input id="customKeyValue" class="inp u-f1 u-p610 u-fs12"
-                     name="secret_value" type="password" autocomplete="new-password" placeholder="Paste key value">
-              <button class="ghost" id="addCustomKey" type="submit">set</button>
-            </div>
-          </form>
         </div>
       </div>
       <div class="sw-cat" data-cat="mcp" hidden>
@@ -1996,6 +2001,9 @@
         </div>
         <h2>Skills · installed</h2>
         <div class="card">
+          <input id="skillsFilter" class="inp u-w100 u-p610 u-fs12" type="search"
+                 autocomplete="off" aria-label="Filter installed skills"
+                 placeholder="filter by name, title, or description…">
           <div class="remaining" id="skillsSummary">loading…</div>
           <div id="skillsList" class="u-mt8"></div>
         </div>
@@ -2236,12 +2244,9 @@
         <div class="card">
           <div class="sub-fl">primary model</div>
           <select id="subModel" class="inp u-w100 u-p610 u-fs12"></select>
-          <div class="sub-fl u-mt8">failover models <span title="Tried in order when the primary model fails. Config-driven (routing.yaml ▸ roles.subagent.fallbacks).">— tried in order if the primary fails</span></div>
-          <div id="subFallbacksList" class="sub-chips"></div>
-          <div class="u-df u-g6 u-mt6 u-aic">
-            <select id="subFallbackPick" class="inp u-f1 u-p610 u-fs12"></select>
-            <button class="ghost" data-call="subAddFallback">+ add fallback</button>
-          </div>
+          <div class="sub-fl u-mt8">fallback model <span title="Optional model tried when the primary fails. Empty disables the subagent-specific fallback.">— optional; default is none</span></div>
+          <select id="subFallbackPick" class="inp u-w100 u-p610 u-fs12 u-mt6"></select>
+          <div class="remaining u-mt4" id="subFallbackNote">None = no subagent fallback.</div>
           <div class="remaining u-mt4">One source of truth: this writes <code>config/routing.yaml</code> ▸ roles.subagent (the same value as the Models picker).</div>
         </div>
         <h2>Limits</h2>
@@ -2297,7 +2302,7 @@
         </details>
         <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
         <div class="card">
-          <div class="remaining u-m006">One per line — a URL, a file, or a folder. URLs are fetched and embedded; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs) then embedded with the active model.</div>
+          <div class="remaining u-m006"><b>Manual sources for the selected notebook.</b> Chat attachments are automatically indexed in their own session notebook; you do not need to add them again here. URLs are fetched and embedded; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs) then embedded with the active model.</div>
           <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
           <div class="u-df u-g6 u-mt6 u-fww">
             <button class="ghost" data-call="kbAddSource">+ add + index</button>
@@ -3754,6 +3759,7 @@ async function attachFiles(fileList) {
                                { ref: r.path, title: r.name, session: sessionId });
           if (ir && ir.ok) {
             att.ingested = true; att.chunks = ir.chunks || 0;
+            att.duplicate = !!ir.duplicate;
             const vis = ir.recommend_visual
               ? " ⚠ little/no text — set image_caption_model to add a vision caption"
               : "";
@@ -3761,13 +3767,17 @@ async function attachFiles(fileList) {
               ? " → '" + ir.notebook_name + "' (" + (ir.chunks || 0) + " chunks)"
               : "";
             const embWarn = ir.embed_error
-              ? " ⚠ vectors failed (lexical search only): " + ir.embed_error : "";
-            toast("📥 " + r.name + where + vis + embWarn,
-                  (ir.recommend_visual || ir.embed_error) ? "warn" : "ok");
+              ? " ⚠ vector error: " + ir.embed_error
+              : (ir.pending_embeddings ? " · " + ir.pending_embeddings + " vectors pending" : "");
+            toast("📥 " + r.name + (ir.duplicate ? " already indexed" : " indexed") +
+                  where + vis + embWarn,
+                  (ir.recommend_visual || ir.embed_error || ir.pending_embeddings) ? "warn" : "ok");
           } else {
             toast("📥 ingest failed: " + ((ir && ir.error) || "?"), "err");
           }
-        } catch (e) { /* don't block attach on a KB error */ }
+        } catch (e) {
+          toast("📥 knowledge indexing failed for " + r.name + ": " + String(e), "err");
+        }
       }
     } else toast("attach failed: " + ((r && r.error) || "?") + " (" + f.name + ")", "err");
   }
@@ -5513,7 +5523,7 @@ async function saveConfigFile() {
    file that has no bespoke panel. The backend declares the fields (type, bounds,
    options, rows); this code only paints controls and posts typed values. */
 /* JAG-499b: a structured form's home is its OWN Settings panel. The backend tags
-   every section with `panel` (harness / tools / models / subagents / mcp /
+   every section with `panel` (harness / hooks / tools / models / subagents / mcp /
    knowledge); this resolves the container inside that panel, creating it on
    first use. A section with no declared panel — or an unknown one — falls back
    to the Config backup. */
@@ -5551,7 +5561,7 @@ async function loadSettingsForms() {
   });
   if (!here) {
     box.innerHTML = '<div class="remaining">Every structured form is rendered inside its own ' +
-      'Settings panel (Harness · Tools · Models · Subagents · MCP · Knowledge). ' +
+      'Settings panel (Hooks · Harness · Tools · Models · Subagents · MCP · Knowledge). ' +
       'This Config panel is the backup surface.</div>';
   }
   if (ded) {
@@ -7914,62 +7924,96 @@ async function applyMcpJson() {
 
 /* ---- JAG-109: skills panel + '/' autocomplete (engine = /api/skills) ---- */
 let _skillsCache = [];
+function _skillSearchScore(skill, query) {
+  const name = String(skill.name || "").toLowerCase();
+  const title = String(skill.title || "").toLowerCase();
+  const desc = String(skill.description || "").toLowerCase();
+  const extra = (String(skill.category || "") + " " + String(skill.path || "")).toLowerCase();
+  if (!query) return 1;
+  if (name.startsWith(query)) return 4;
+  if (name.includes(query)) return 3;
+  if (title.includes(query)) return 2;
+  if (desc.includes(query) || extra.includes(query)) return 1;
+  return 0;
+}
+function _rankSkills(skills, query) {
+  return (skills || []).map(s => ({ s, k: _skillSearchScore(s, query) }))
+    .filter(x => x.k > 0)
+    .sort((a, b) => (b.k - a.k) || String(a.s.name).localeCompare(String(b.s.name)));
+}
+function renderSkills() {
+  const box = $("skillsList"), summary = $("skillsSummary");
+  if (!box || !summary) return;
+  const query = String(($("skillsFilter") && $("skillsFilter").value) || "").trim().toLowerCase();
+  const ranked = _rankSkills(_skillsCache, query);
+  const matches = ranked.map(x => x.s);
+  const auto = matches.filter(s => s.auto);
+  const local = matches.filter(s => s.local);
+  const core = matches.filter(s => !s.auto && !s.local);
+  summary.innerHTML = query
+    ? "<b>" + matches.length + "</b> of " + _skillsCache.length + " skills match “" + esc(query) + "”"
+    : _skillsCache.length + " skills · <b>" + auto.length +
+      "</b> self-generated (auto) · " + local.length + " user · " + core.length + " built-in";
+  box.innerHTML = "";
+  if (query && !matches.length) {
+    box.innerHTML = '<div class="remaining">No skills match “' + esc(query) + '”.</div>';
+    return;
+  }
+  const rowEl = s => {
+    const row = document.createElement("div");
+    row.className = "card skillrow";
+    row.style.cssText = "padding:6px 8px;margin-bottom:6px;display:flex;gap:8px;align-items:center";
+    row.title = "click to open " + (s.path || "SKILL.md") + " in the editor";
+    row.onclick = () => openSkillInEditor(s.name);
+    const dot = document.createElement("span"); dot.textContent = s.auto ? "🧠" : (s.local ? "🟢" : "🏠");
+    const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
+    const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = s.name;
+    const badge = s.auto ? '<span class="sk-badge sk-auto">self-generated</span>'
+      : (s.local ? '<span class="sk-badge sk-user">user</span>' : '<span class="sk-badge sk-core">built-in</span>');
+    const sub = document.createElement("div"); sub.className = "remaining";
+    sub.innerHTML = badge + esc(s.category || "") + " · " + esc(s.title || "") +
+      (s.path ? ' · <code>' + esc(s.path) + "</code>" : "");
+    info.append(t, sub);
+    const ins = document.createElement("button"); ins.className = "ghost"; ins.textContent = "/";
+    ins.title = "use in chat";
+    ins.onclick = e => { e.stopPropagation(); $("inp").value = "/" + s.name + " "; $("inp").focus(); };
+    row.append(dot, info, ins);
+    if (s.local) {
+      const del = document.createElement("button"); del.className = "ghost"; del.textContent = "🗑";
+      del.onclick = async e => {
+        e.stopPropagation();
+        if (!(await confirmDelete("remove skill '" + s.name + "'?"))) return;
+        await api("DELETE", "/api/skills/" + encodeURIComponent(s.name));
+        loadSkills();
+      };
+      row.appendChild(del);
+    }
+    return row;
+  };
+  const section = (title, list, note) => {
+    if (query && !list.length) return;
+    const h = document.createElement("div"); h.className = "remaining u-mt8";
+    h.innerHTML = "<b>" + esc(title) + "</b> (" + list.length + ")" + (note ? " — " + esc(note) : "");
+    box.appendChild(h);
+    if (!list.length) {
+      const e = document.createElement("div"); e.className = "remaining";
+      e.textContent = title.indexOf("Self-generated") === 0
+        ? "none — the harness has not mined + promoted any skill yet" : "none";
+      box.appendChild(e); return;
+    }
+    list.forEach(s => box.appendChild(rowEl(s)));
+  };
+  section("Self-generated (auto)", auto, "mined by the harness and promoted into skills/created/");
+  section("Built-in", core, "");
+  section("User (local)", local, "uploaded by you");
+}
 async function loadSkills() {
   try {
     const d = await api("GET", "/api/skills");
     _skillsCache = d.skills || [];
-    const auto = _skillsCache.filter(s => s.auto);
-    const local = _skillsCache.filter(s => s.local);
-    const core = _skillsCache.filter(s => !s.auto && !s.local);
-    $("skillsSummary").innerHTML = _skillsCache.length + " skills · <b>" + auto.length +
-      "</b> self-generated (auto) · " + local.length + " user · " + core.length + " built-in";
-    const box = $("skillsList"); box.innerHTML = "";
-    const rowEl = (s) => {
-      const row = document.createElement("div");
-      row.className = "card skillrow";
-      row.style.cssText = "padding:6px 8px;margin-bottom:6px;display:flex;gap:8px;align-items:center";
-      row.title = "click to open " + (s.path || "SKILL.md") + " in the editor";
-      row.onclick = () => openSkillInEditor(s.name);
-      const dot = document.createElement("span"); dot.textContent = s.auto ? "🧠" : (s.local ? "🟢" : "🏠");
-      const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
-      const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = s.name;
-      const badge = s.auto ? '<span class="sk-badge sk-auto">self-generated</span>'
-        : (s.local ? '<span class="sk-badge sk-user">user</span>' : '<span class="sk-badge sk-core">built-in</span>');
-      const sub = document.createElement("div"); sub.className = "remaining";
-      sub.innerHTML = badge + esc(s.category || "") + " · " + esc(s.title || "") +
-        (s.path ? ' · <code>' + esc(s.path) + "</code>" : "");
-      info.append(t, sub);
-      const ins = document.createElement("button"); ins.className = "ghost"; ins.textContent = "/";
-      ins.title = "use in chat";
-      ins.onclick = (e) => { e.stopPropagation(); $("inp").value = "/" + s.name + " "; $("inp").focus(); };
-      row.append(dot, info, ins);
-      if (s.local) {
-        const del = document.createElement("button"); del.className = "ghost"; del.textContent = "🗑";
-        del.onclick = async (e) => {
-          e.stopPropagation();
-          if (!(await confirmDelete("remove skill '" + s.name + "'?"))) return;
-          await api("DELETE", "/api/skills/" + encodeURIComponent(s.name));
-          loadSkills();
-        };
-        row.appendChild(del);
-      }
-      return row;
-    };
-    const section = (title, list, note) => {
-      const h = document.createElement("div"); h.className = "remaining u-mt8";
-      h.innerHTML = "<b>" + esc(title) + "</b> (" + list.length + ")" + (note ? " — " + esc(note) : "");
-      box.appendChild(h);
-      if (!list.length) {
-        const e = document.createElement("div"); e.className = "remaining";
-        e.textContent = title.indexOf("Self-generated") === 0
-          ? "none — the harness has not mined + promoted any skill yet" : "none";
-        box.appendChild(e); return;
-      }
-      list.forEach(s => box.appendChild(rowEl(s)));
-    };
-    section("Self-generated (auto)", auto, "mined by the harness and promoted into skills/created/");
-    section("Built-in", core, "");
-    section("User (local)", local, "uploaded by you");
+    const search = $("skillsFilter");
+    if (search) search.oninput = renderSkills;
+    renderSkills();
   } catch (e) { $("skillsSummary").textContent = "error: " + e; }
 }
 /* JAG-403e: a skill opens in the FILE EDITOR (like any other file), not a
@@ -8299,7 +8343,7 @@ async function loadKeys() {
     }
     box.innerHTML = "";
     if (!rows.length) {
-      box.innerHTML = '<div class="remaining">No configured keys were discovered. Use <b>+ New key</b> to add one.</div>';
+      box.innerHTML = '<div class="remaining">No configured keys yet. Use the button above to add one.</div>';
       return;
     }
     const descriptions = _keyDescriptions();
@@ -8516,19 +8560,7 @@ function skillsAutocomplete() {
   // name, title and description — rank prefix matches first, and cap only the RENDER
   // (the popup scrolls) while reporting how many matched.
   const _skills = _skillsCache || [];
-  const _score = s => {
-    const n = String(s.name || "").toLowerCase();
-    const t = String(s.title || "").toLowerCase();
-    const dsc = String(s.description || "").toLowerCase();
-    if (!q) return 1;
-    if (n.startsWith(q)) return 4;
-    if (n.includes(q)) return 3;
-    if (t.includes(q)) return 2;
-    if (dsc.includes(q)) return 1;
-    return 0;
-  };
-  const _matched = _skills.map(s => ({ s, k: _score(s) })).filter(x => x.k > 0)
-    .sort((a, b) => (b.k - a.k) || String(a.s.name).localeCompare(String(b.s.name)));
+  const _matched = _rankSkills(_skills, q);
   const _SLASH_CAP = 60;
   const hits = _matched.slice(0, _SLASH_CAP).map(x => x.s);
   const _more = Math.max(0, _matched.length - hits.length);
@@ -8568,14 +8600,14 @@ function skillsAutocomplete() {
 }
 
 /* JAG-150: movable settings window (non-blocking). */
-/* JAG-505: the operator's order. Appearance first, then the daily drivers; the
-   two panels that were NOT in that list (Knowledge, Harness) sit at the end so
-   nothing is lost — they can be dropped on request. */
+/* JAG-505: keep the operator's Settings order; Hooks is a dedicated panel directly
+   before Harness, and the Knowledge panel remains near the end. */
 const SETTINGS_CATS = [
   ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
   ["subagents", "Subagents"], ["tools", "Tools & approvals"], ["mcp", "MCP"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
   ["improvement", "Improvements"], ["diagnostics", "Diagnostics"],
+  ["hooks", "Hooks"],
   ["harness", "Harness"], ["config", "Config files"], ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
@@ -8981,11 +9013,48 @@ async function loadSubagents() {
       esc(m.ref) + '</option>').join("") + '</optgroup>';
   }).join("");
   sel.innerHTML = '<option value="">auto (router default)</option>' + _opts(cur);
-  sel.onchange = () => { subRenderFallbacks(); subSaveSoon(); };   // primary stays out of the chips
-  if ($("subFallbackPick")) $("subFallbackPick").innerHTML =
-    '<option value="">pick a model to add as fallback…</option>' + _opts("");
-  _subFallbacks = (d.fallbacks || []).slice();
-  subRenderFallbacks();
+  const fallbackPick = $("subFallbackPick");
+  const fallbackNote = $("subFallbackNote");
+  _subFallbacks = (d.fallbacks || []).map(f => String(f || "").trim())
+    .filter(f => f && f !== cur);
+  const currentFallback = _subFallbacks[0] || "";
+  if (fallbackPick) {
+    let fallbackOptions = _opts(currentFallback);
+    if (currentFallback && !models.some(m => m.ref === currentFallback)) {
+      fallbackOptions += '<option value="' + _attr(currentFallback) + '" selected>' +
+        esc(currentFallback) + " · not in model roster</option>";
+    }
+    fallbackPick.innerHTML = '<option value="">None — no fallback</option>' + fallbackOptions;
+    fallbackPick.value = currentFallback;
+    const extraCount = Math.max(0, _subFallbacks.length - (currentFallback ? 1 : 0));
+    if (fallbackNote) fallbackNote.textContent = extraCount
+      ? (extraCount + " additional existing fallback(s) stay in order until you change this menu.")
+      : "None = no fallback. Choosing a model saves it immediately.";
+    fallbackPick.onchange = () => {
+      let ref = String(fallbackPick.value || "").trim();
+      const invalid = !!ref && ref === sel.value;
+      if (invalid) {
+        ref = "";
+        fallbackPick.value = "";
+      }
+      _subFallbacks = ref ? [ref] : [];
+      if (fallbackNote) fallbackNote.textContent = invalid
+        ? "Primary and fallback must be different. No fallback selected."
+        : (ref ? "Fallback saved automatically."
+          : "No subagent-specific fallback. The primary failure stops this delegation.");
+      subSaveSoon();
+    };
+  }
+  sel.onchange = () => {
+    if (fallbackPick && fallbackPick.value && fallbackPick.value === sel.value) {
+      _subFallbacks = _subFallbacks.filter(ref => ref !== sel.value);
+      fallbackPick.value = _subFallbacks[0] || "";
+      if (fallbackNote) fallbackNote.textContent = fallbackPick.value
+        ? "The primary cannot also be a fallback. The next configured fallback stays selected."
+        : "Primary and fallback must be different. No fallback selected.";
+    }
+    subSaveSoon();
+  };
   if ($("subDepth")) { $("subDepth").value = d.max_depth ?? 2; $("subDepth").oninput = subSaveSoon; }
   if ($("subParallel")) { $("subParallel").value = d.max_parallel ?? 0; $("subParallel").oninput = subSaveSoon; }
   if ($("subRunning")) $("subRunning").value = d.running ?? 0;
@@ -8997,31 +9066,6 @@ async function loadSubagents() {
 }
 let _subRoles = {};
 let _subFallbacks = [];
-function subRenderFallbacks() {
-  const box = $("subFallbacksList"); if (!box) return;
-  const primary = $("subModel") ? $("subModel").value : "";
-  const list = _subFallbacks.filter(f => f && f !== primary);
-  box.innerHTML = list.length ? "" :
-    '<span class="sub-chip empty">no failover — if the primary model fails the delegation aborts</span>';
-  list.forEach(ref => {
-    const chip = document.createElement("span"); chip.className = "sub-chip";
-    const lab = document.createElement("span"); lab.textContent = ref;
-    const del = document.createElement("button"); del.type = "button"; del.textContent = "✕";
-    del.title = "remove fallback"; del.onclick = () => {
-      _subFallbacks = _subFallbacks.filter(x => x !== ref); subRenderFallbacks(); subSaveSoon();
-    };
-    chip.appendChild(lab); chip.appendChild(del); box.appendChild(chip);
-  });
-}
-function subAddFallback() {
-  const pick = $("subFallbackPick"); if (!pick) return;
-  const ref = (pick.value || "").trim();
-  if (!ref) { toast("pick a model first"); return; }
-  const primary = $("subModel") ? $("subModel").value : "";
-  if (ref === primary) { toast("that is already the primary model"); return; }
-  if (_subFallbacks.indexOf(ref) === -1) _subFallbacks.push(ref);
-  pick.value = ""; subRenderFallbacks(); subSaveSoon();
-}
 function subRenderRoles() {
   const box = $("subRolesBox"); if (!box) return;
   const names = Object.keys(_subRoles);

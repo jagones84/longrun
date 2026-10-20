@@ -52,15 +52,15 @@ agent_src = read("src", "longrun", "agent", "agent.py")
 toolsyaml = read("config", "tools.yaml")
 
 
-# ---- A) subagents failover picker + limits grid ----------------------------
-check("A1 failover is a menu picker, not a comma text box",
-      'id="subFallbackPick"' in idx and 'id="subFallbacksList"' in idx
-      and 'id="subFallbacks"' not in idx)
-check("A2 the picker has add/remove helpers + state",
-      "function subAddFallback" in idx and "function subRenderFallbacks" in idx
-      and "let _subFallbacks" in idx)
-check("A3 saving reads the chip state (not a text field)",
-      "fallbacks: (_subFallbacks || [])" in idx)
+# ---- A) subagents single fallback picker + limits grid ----------------------
+check("A1 one fallback dropdown replaces the chips and add button",
+      'id="subFallbackPick"' in idx and 'id="subFallbacksList"' not in idx
+      and 'data-call="subAddFallback"' not in idx and 'id="subFallbacks"' not in idx)
+check("A2 choosing a fallback saves it automatically, with None as the empty value",
+      "fallbackPick.onchange" in idx and "None — no fallback" in idx
+      and "function subAddFallback" not in idx and "function subRenderFallbacks" not in idx)
+check("A3 saving writes the selected zero-or-one fallback list",
+      "fallbacks: (_subFallbacks || [])" in idx and "_subFallbacks = ref ? [ref] : []" in idx)
 check("A4 LIMITS uses the sub-limits grid (not the ugly hrow)",
       ".sub-limits {" in idx and 'class="sub-limits"' in idx
       and 'class="hrow"' not in idx.split('data-cat="subagents"')[1].split("sw-cat")[0])
@@ -103,8 +103,9 @@ check("D2 it falls back to a global search when the session has no hit",
       and "kb.search(query, None, k=k, kind=args.get(\"kind\"))" in tools_src)
 check("D3 an explicit notebook still wins",
       "res = kb.search(query, notebook, k=k, kind=args.get(\"kind\"))" in tools_src)
-check("D4 the tool schema tells the model attached docs are indexed in the session",
-      "auto-indexed into " in reg_src and "this session's own notebook" in reg_src)
+check("D4 the tool schema says chat attachments are session-indexed and must not be re-added",
+      "auto-indexed " in reg_src and "session notebook" in reg_src
+      and "do NOT call `add_source`" in reg_src)
 check("D5 the attach preamble tells the model to use the knowledge tool",
       "ALREADY indexed into THIS session's knowledge" in idx
       and 'action":"search"' in idx)

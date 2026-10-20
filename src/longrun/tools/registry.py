@@ -190,12 +190,12 @@ _LEGACY_SCHEMAS = {
         },
     },
     "knowledge": {
-        "description": ("GLOBAL knowledge base (separate from the workspace codebase index), "
-                        "organised in NOTEBOOKS of sources (URLs / files / pasted text). "
-                        "Binary docs attached to THIS chat (PDF/DOCX/...) are auto-indexed into "
-                        "this session's own notebook: action=search queries it FIRST, then the "
-                        "global notebooks — so prefer `search` over shell text-extraction for an "
-                        "attached PDF. "
+        "description": ("Knowledge has shared notebooks and a private notebook for this chat. "
+                        "Binary documents attached through Chat > Attach files are auto-indexed "
+                        "once into the session notebook. For an attached file, use `search` "
+                        "first; do NOT call `add_source` for the same path again. Without an "
+                        "explicit notebook, add_source/add_text/import target this session; "
+                        "name a notebook explicitly to add shared content. "
                         "action=list_notebooks | create_notebook | add_source | add_text | "
                         "search | discover (web search -> candidate URLs) | import (URLs -> a "
                         "notebook) | status."),
@@ -205,10 +205,12 @@ _LEGACY_SCHEMAS = {
                        "enum": ["search", "list_notebooks", "create_notebook", "add_source",
                                 "add_text", "discover", "import", "status"],
                        "default": "search"},
-            "notebook": {"type": "string", "description": "target notebook id (default: this session's notebook, then global)"},
+            "notebook": {"type": "string",
+                         "description": "optional explicit shared notebook id; omit to use this session notebook for writes"},
+            "session": {"type": "string", "description": "optional session scope (defaults to the current chat)"},
             "name": {"type": "string", "description": "notebook name (action=create_notebook)"},
             "query": {"type": "string", "description": "search text / discovery query"},
-            "refs": {"type": "string", "description": "one URL/path per line (action=add_source)"},
+            "refs": {"type": "string", "description": "one new URL/path per line; existing session paths are skipped"},
             "title": {"type": "string", "description": "note title (action=add_text)"},
             "text": {"type": "string", "description": "pasted note body (action=add_text)"},
             "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs (action=import)"},
