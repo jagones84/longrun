@@ -293,7 +293,7 @@ AGENT_PROMPT_V2 = (
     "You are the agent loop of the Longrun harness. Given the goal and the "
     "current harness state, decide ONE next action. Respond with ONLY one JSON "
     'object, always with a "thought" field. Actions:\n'
-    '  {"action":"write_todos","todos":[{"label":"...","deps":[]}]}\n'
+    '  {"action":"todo.write","todos":[{"label":"...","deps":[]}]}\n'
     '  {"action":"tool","tool":"<name>","args":{...}}   run a registered tool\n'
     '  {"action":"plan_step","title":"...","detail":"..."}\n'
     '  {"action":"complete_plan_step","id":"..."}\n'

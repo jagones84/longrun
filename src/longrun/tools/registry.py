@@ -1030,6 +1030,21 @@ def _is_system(path):
     return any(path == r or path.startswith(r + "/") for r in _SYSTEM_ROOTS)
 
 
+def _approvals_full():
+    """JAG-516: True when the operator chose `approvals.mode=full` (or the
+    `auto`/`yolo` aliases) — the explicit "let the agent work" opt-out.
+
+    In that mode the filesystem tools (fs.read / fs.write / fs.edit / diff /
+    glob) are UNRESTRICTED, exactly like `shell.exec`, which never had a root
+    allow-list. Any other mode keeps the per-tool roots from config/tools.yaml.
+    """
+    try:
+        ap = load_config().get("approvals") or {}
+        return str(ap.get("mode", "normal")).lower() in ("full", "auto", "yolo")
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _resolve_any(raw, base):
     """Absolute-ize a path-like token: expand `~`, join a RELATIVE path against
     `base` (the session workspace), then realpath. None when unresolvable."""
@@ -1168,6 +1183,11 @@ def resolve_path(path, roots=None, base=None):
     base = os.path.realpath(base) if base else REPO
     p = path if os.path.isabs(path) else os.path.join(base, path)
     p = os.path.realpath(p)
+    # JAG-516: `approvals.mode=full` is the explicit opt-out; with it the fs
+    # tools see the WHOLE filesystem (shell.exec already could), so the
+    # allow-list below is the boundary for every OTHER mode.
+    if _approvals_full():
+        return p, None
     for r in roots:
         root = os.path.realpath(r if os.path.isabs(r) else os.path.join(REPO, r))
         if p == root or p.startswith(root + os.sep):

@@ -179,6 +179,10 @@ DEDICATED = {
     "providers.local.yaml": {"*": "Settings ▸ Models"},
     "compaction.local.yaml": {"*": "right rail ▸ Context"},
     "embedding.yaml": {"*": "Settings ▸ Models"},
+    # JAG-516: hand-maintained rate table for models the OpenRouter cache cannot
+    # price (provider-direct APIs). Model METADATA, so it belongs to the Models
+    # panel exactly like embedding.yaml — never to the generic Config form.
+    "prices.yaml": {"*": "Settings ▸ Models"},
     "subagents.yaml": {"*": "Settings ▸ Subagents"},
     "mcp_clients.yaml": {"clients": "Settings ▸ MCP"},
     "index.yaml": {

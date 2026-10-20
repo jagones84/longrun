@@ -7,6 +7,30 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **The task-list actions are a real NAMESPACE, and FULL mode unlocks the fs
+  roots (JAG-516).**
+  - **`todo.write` / `todo.update` / `todo.replan`** replace the flat
+    `write_todos` / `update_todos` / `replan_todos`: the chat renders them in the
+    SAME card structure as every other namespaced tool (`fs.read`, `shell.exec`),
+    the prompts teach the namespaced form, and an explicit pre-namespace spelling
+    is still ACCEPTED (old transcripts, the v0.6 taskgraph path, weak models) —
+    `_normalize_action` just canonicalises it.
+  - **A ↻ button in the Sessions header re-reads the chat**: the same path a page
+    reload takes (transcript rebuilt in chronological order, todos and their
+    nesting restored, plan and context refreshed).
+  - **`approvals.mode=full` now lifts the fs.* ROOT allow-list, not only the
+    workspace boundary.** `fs.read` / `fs.write` / `fs.edit` reached only
+    `.` + `/home/jagones/Repositories` while `shell.exec` had no root policy at
+    all; with the explicit opt-out they see the whole filesystem, and every other
+    mode keeps the per-tool roots.
+  - **Provider-direct DeepSeek models stop being "unpriced".** The ledger prices
+    only what OpenRouter's public catalogue lists, and DeepSeek has no
+    machine-readable price endpoint, so `config/prices.yaml` now ships the
+    OFFICIAL rates (source + date in the file). A basename collision between the
+    cache and a configured file now resolves by the DOCUMENTED precedence
+    (env > config > cache) instead of first-writer-wins.
+
+### Changed
 - **The editor's empty state keeps the workspace tree usable (JAG-515).**
   Opening the dock with no active file now reveals the tree and loads it by
   checking for actual tree rows, not static search controls. The empty-state hint

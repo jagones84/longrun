@@ -65,12 +65,12 @@ check("the accepted reason is stored", _no.get("reason", "").startswith("obsolet
 
 # --- 2) normalisation of unrecognized actions ---------------------------------
 _nm = S._normalize_action
-check("unknown action name + steps payload -> update_todos",
+check("unknown action name + steps payload -> todo.update",
       _nm({"action": "update", "steps": [{"id": "n1", "status": "done"}]})
-      == {"action": "update_todos", "steps": [{"id": "n1", "status": "done"}]})
-check("unknown action name + todos payload -> write_todos",
+      == {"action": "todo.update", "steps": [{"id": "n1", "status": "done"}]})
+check("unknown action name + todos payload -> todo.write",
       _nm({"action": "set_todos", "todos": [{"label": "a"}]})
-      == {"action": "write_todos", "todos": [{"label": "a"}]})
+      == {"action": "todo.write", "todos": [{"label": "a"}]})
 check("OpenAI function-call shape -> tool call",
       _nm({"name": "shell", "arguments": "{\"command\": \"ls\"}"})
       == {"action": "tool", "tool": "shell", "args": {"command": "ls"}})
@@ -86,7 +86,7 @@ check("_term_action recognises answer/finish/done",
       S._term_action({"action": "answer"}) and S._term_action({"action": "finish"})
       and S._term_action({"action": "Done"}))
 check("_term_action rejects a real tool name", not S._term_action({"action": "shell"}))
-check("_term_action rejects a harness action", not S._term_action({"action": "update_todos"}))
+check("_term_action rejects a harness action", not S._term_action({"action": "todo.update"}))
 
 # --- 4) the retry NAMES the emitted action + the UI shows the reason ----------
 with open(os.path.join(REPO, "src", "longrun", "core/server.py"), encoding="utf-8") as f:

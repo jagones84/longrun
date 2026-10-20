@@ -143,8 +143,8 @@ WRAPPED = (_o(" calls") + _o(' invoke name="update_todos"')
            + '[{"id": "n1", "status": "doing"}]' + _c(" parameter")
            + _c() + _c(" calls"))
 act2 = A._extract_action(WRAPPED)
-check("D2 a harness action keeps its action name + payload",
-      isinstance(act2, dict) and act2.get("action") == "update_todos"
+check("D2 a harness action keeps its canonical name + payload",
+      isinstance(act2, dict) and act2.get("action") == "todo.update"
       and isinstance(act2.get("steps"), list), act2)
 check("D3 DSML never degenerates into an 'artifact' answer",
       A._extract_action(BARE) is not None

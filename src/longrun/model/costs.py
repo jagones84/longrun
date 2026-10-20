@@ -126,7 +126,10 @@ def _lookup_raw(table, model):
     Both the table key and the query are indexed by their full form AND their
     last ``/``- or ``:``-segment, so ``deepseek/deepseek-chat``,
     ``openrouter:deepseek-chat`` and a bare ``deepseek-chat`` all resolve to the
-    same entry.
+    same entry. JAG-516: the table is built in ASCENDING priority (cache, then
+    the config files, then LONGRUN_PRICES), so a LATER entry overwrites an
+    earlier one for the same basename — the documented precedence (env >
+    config > OpenRouter cache) holds for basename collisions too.
     """
     if not model:
         return None
@@ -134,7 +137,7 @@ def _lookup_raw(table, model):
     for k, v in table.items():
         s = str(k)
         for key in (s, s.split("/")[-1], s.split(":")[-1]):
-            idx.setdefault(key.lower(), v)
+            idx[key.lower()] = v
     m = str(model)
     for key in (m, m.split("/")[-1], m.split(":")[-1]):
         v = idx.get(key.lower())

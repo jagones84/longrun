@@ -20,6 +20,8 @@ This suite freezes the fix:
      `required`, regardless of the per-tool policy and of the (now inert)
      `outside_workspace` toggle; only `mode=full` relaxes it. A RELATIVE path
      resolves against the session workspace; system/scratch trees stay auto.
+     (JAG-516) `mode=full` ALSO lifts the fs.* ROOT allow-list, so fs.read /
+     fs.write / fs.edit reach the whole filesystem like shell.exec already could.
   H) the approvals screen (policy card caption) documents the rule.
 
 Deterministic, no model, no network. `sandbox.run` is stubbed, so no command is
@@ -177,10 +179,21 @@ try:
               str(_dec("shell", {"command": "pwd", "cwd": "sub"})))
     finally:
         os.chdir(_cwd0)
+    # `tmp` is OUTSIDE the repo, which is exactly the root fs.* allow-lists to.
+    check("G12 the fs ROOT allow-list refuses an outside path in normal mode",
+          registry.resolve_path(os.path.join(tmp, "f.txt"), ["."])[1] is not None,
+          str(registry.resolve_path(os.path.join(tmp, "f.txt"), ["."])))
     _cfg["approvals"]["mode"] = "full"
     check("G10 approvals.mode=full disables the whole boundary",
           _dec("shell", {"command": "cat /etc/shadow"})[0] == "auto"
           and _dec("fs.read", {"path": os.path.join(outside, "f.txt")})[0] == "auto")
+    # JAG-516: full mode is the ONE switch that lifts the fs root allow-list, so
+    # fs.read / fs.write / fs.edit see the whole filesystem — like shell.exec,
+    # which never had a root policy. Any other mode keeps config/tools.yaml roots.
+    _p, _err = registry.resolve_path(os.path.join(tmp, "f.txt"), ["."])
+    check("G13 approvals.mode=full lifts the fs ROOT allow-list too",
+          _err is None and _p == os.path.realpath(os.path.join(tmp, "f.txt")),
+          str((_p, _err)))
 finally:
     registry.load_config = _real_load
 

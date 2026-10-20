@@ -197,9 +197,9 @@ def script_plan(n):
 run_turn("v183e", script_plan, gated_ok)
 _ecards = (server.load_session("v183e") or {}).get("tool_cards", [])
 _tools = [c.get("tool") for c in _ecards]
-check("E1 write_todos card persisted (JAG-190)", "write_todos" in _tools,
+check("E1 todo.write card persisted (JAG-190)", "todo.write" in _tools,
       "cards=%s" % _tools)
-check("E2 update_todos card persisted (JAG-190)", "update_todos" in _tools,
+check("E2 todo.update card persisted (JAG-190)", "todo.update" in _tools,
       "cards=%s" % _tools)
 
 

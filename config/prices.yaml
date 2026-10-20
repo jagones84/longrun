@@ -1,0 +1,50 @@
+# Longrun price table for models the OpenRouter cache CANNOT cover.
+#
+# `data/prices.json` is filled by refresh_openrouter() from
+# https://openrouter.ai/api/v1/models — a PUBLIC JSON endpoint that prices only
+# the models OpenRouter itself hosts. A model used through ANOTHER provider (the
+# DeepSeek API, a self-hosted gateway) therefore had no price and the ledger
+# recorded `usd: null` / "unpriced".
+#
+# DeepSeek's own API has NO machine-readable price endpoint: the rates live on
+# the public docs page https://api-docs.deepseek.com/quick_start/pricing (HTML),
+# so they are kept here by hand, with the source and the date they were read.
+#
+# Source: https://api-docs.deepseek.com/quick_start/pricing   (read 2026-10-20)
+# Unit: USD per 1M tokens. Fields: `in` = input (cache MISS), `out` = output,
+# `cache_read` = input (cache HIT).
+#
+# PEAK or OFF-PEAK? DeepSeek bills its PEAK rates 01:00-04:00 and 06:00-10:00
+# UTC, Monday-Friday, and HALF of them off-peak. The harness cannot know the
+# billing window of a past call, so the PEAK (upper-bound) rates are used: the
+# ledger may over-report an off-peak call, never under-report one.
+
+deepseek-v4-flash:
+  in: 0.44
+  out: 1.32
+  cache_read: 0.014
+
+deepseek-v4-flash-vision-exp:
+  in: 0.44
+  out: 1.32
+  cache_read: 0.014
+
+deepseek-v4-pro:
+  in: 1.32
+  out: 3.96
+  cache_read: 0.044
+
+# Compatibility shims — the legacy ids the `deepseek` provider (config/
+# providers.yaml) still serves. DeepSeek's V4 migration notes map `deepseek-chat`
+# to V4-Flash (non-thinking) and `deepseek-reasoner` to V4-Flash (thinking), so
+# both are billed at V4-Flash rates. The official pricing page lists only the
+# `deepseek-v4-*` names, hence the explicit note here instead of a silent guess.
+deepseek-chat:
+  in: 0.44
+  out: 1.32
+  cache_read: 0.014
+
+deepseek-reasoner:
+  in: 0.44
+  out: 1.32
+  cache_read: 0.014

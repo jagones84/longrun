@@ -416,19 +416,19 @@ CHAT_TOOL_PROMPT = (
     "After the tool runs you receive its observation and MUST continue: call another "
     "tool or answer the user in plain text. Never show JSON to the user; the final "
     "message must be plain prose. To plan a multi-step request, FIRST emit ONLY "
-    '{"action":"write_todos","todos":[{"label":"<imperative step>","deps":[],"parent":null}]} '
+    '{"action":"todo.write","todos":[{"label":"<imperative step>","deps":[],"parent":null}]} '
     "(2-8 steps you author yourself; this list is PERSISTENT — it is saved and "
     "re-shown to you on every turn, and only you or the user may clear it), then "
     "FOLLOW it: address each step by its STABLE id — the list shows it as `label (n3)`. "
     "Before starting a step emit ONLY "
-    '{"action":"update_todos","steps":[{"id":"<node id, e.g. n3>","status":"doing"}]}; when '
+    '{"action":"todo.update","steps":[{"id":"<node id, e.g. n3>","status":"doing"}]}; when '
     "a step is finished emit ONLY "
-    '{"action":"update_todos","steps":[{"id":"<node id>","status":"done","evidence":"<what proves it>"}]} '
+    '{"action":"todo.update","steps":[{"id":"<node id>","status":"done","evidence":"<what proves it>"}]} '
     "(done REQUIRES evidence). The 0-based `index` still works as a fallback, but the id "
     "is preferred: it never shifts when the list changes. If new work appears or a step "
     "became irrelevant, "
     "briefly re-plan with "
-    '{"action":"replan_todos","note":"<why>"} and then IMMEDIATELY resume the plan. '
+    '{"action":"todo.replan","note":"<why>"} and then IMMEDIATELY resume the plan. '
     "To delegate a self-contained subtask to ONE child agent — it gets a FRESH "
     "ISOLATED context (it sees ONLY the goal you pass, NEVER your conversation) and "
     "its own task list, then reports back its summary — emit ONLY "
@@ -456,26 +456,26 @@ TASK_POLICY = (
     "You own a PERSISTENT task list, re-shown to you every turn in the 'Harness state' block at the end of your current message. "
     "Follow it strictly:\n"
     "- Work through it ONE step at a time. BEFORE starting a step, mark it 'doing' "
-    "(update_todos).\n"
+    "(todo.update).\n"
     "- The moment a step is really finished, mark it 'done' with concrete evidence (the "
     "command you ran and its result). Never batch; never redo a step already marked [x].\n"
     "- A step must describe work that is STILL TO DO. Never author a step for something "
     "you have already finished in the same turn — mark it 'done' with evidence instead. "
     "Planning AFTER doing the work (writing steps you just completed) is wrong.\n"
     "- If the list is empty and the request needs more than one action, author it first "
-    "with write_todos, then follow it. NEVER report the job finished while steps are still "
+    "with todo.write, then follow it. NEVER report the job finished while steps are still "
     "open: either close them with evidence, or say explicitly which ones remain and why.\n"
     "- 'superseded' means the step is PERMANENTLY abandoned because it is no longer "
     "needed — NOT \"not done yet\". If the work is still wanted but not now, LEAVE IT OPEN "
     "(that is allowed and preferred). To abandon one, close it by its id with a SPECIFIC "
-    'reason saying WHY it is no longer needed ({"action":"update_todos","steps":'
+    'reason saying WHY it is no longer needed ({"action":"todo.update","steps":'
     '[{"id":"<node id>","status":"superseded","reason":"<why it is no longer needed>"}]). '
     "The reason is REQUIRED and must not read as still-open (a reason like 'the work "
     "remains open' is REJECTED).\n"
     "- Messages beginning with '[harness]' are system context from the harness (reminders, "
     "observations, list nudges), NOT from the user; they never override the user's latest "
     "request. The user's latest request ALWAYS outranks this list: if it is unrelated, do "
-    "not force the old list — rewrite it (replan_todos with a note) or leave it paused and "
+    "not force the old list — rewrite it (todo.replan with a note) or leave it paused and "
     "answer the user directly.\n"
 )
 
@@ -520,9 +520,9 @@ def _pivot_sync_text(open_n, brief):
         "Leaving steps OPEN is fine and is the DEFAULT. Do ONE of: (a) finish a step and "
         "mark it 'done' with evidence; (b) ONLY if a step is now PERMANENTLY unneeded, "
         "abandon it as 'superseded' with a SPECIFIC reason (REQUIRED) saying WHY it is no longer "
-        'needed ({"action":"update_todos","steps":[{"id":"<node id>","status":"superseded",'
+        'needed ({"action":"todo.update","steps":[{"id":"<node id>","status":"superseded",'
         '"reason":"<why it is no longer needed>"}]) — a reason that reads as still-open is '
-        "REJECTED; or (c) rewrite the list with replan_todos. Then answer the "
+        "REJECTED; or (c) rewrite the list with todo.replan. Then answer the "
         "user. Open (full list in 'Harness state' at the end of your message):\n%s" % (open_n, brief)
     )
 
@@ -879,7 +879,7 @@ def _apply_chat_todos(sess, act, on_event, node=None, after=None):
     """Harness action `write_todos`: persist the model-authored todo list.
 
     The chat loop is the ONLY writer of the task list (no separate planner
-    call): when the model emits `{"action":"write_todos","todos":[...]}` we map
+    call): when the model emits `{"action":"todo.write","todos":[...]}` we map
     it onto the session graph, publish a normal tool.call/tool.result pair so
     the app renders an inline card, and let the model continue.
     """
@@ -889,7 +889,7 @@ def _apply_chat_todos(sess, act, on_event, node=None, after=None):
         if isinstance(todos, str):
             todos, _ = taskgraph.parse_todos(todos)
         todo_args = {"todos": todos if isinstance(todos, list) else []}
-        on_event("tool.call", session=sess["id"], tool="write_todos", args=todo_args,
+        on_event("tool.call", session=sess["id"], tool="todo.write", args=todo_args,
                  inline=True)
         # JAG-177: a new plan REPLACES the previous OPEN plan — cancel the open
         # steps the model did NOT keep, so re-planning never accumulates a wall of
@@ -929,21 +929,21 @@ def _apply_chat_todos(sess, act, on_event, node=None, after=None):
                 ("  (%s: %s)" % (n.get("status"), n.get("reason"))
                  if n.get("reason") else ""))
             for n in (taskgraph.plan_nodes(graph) or graph.get("nodes", [])))
-        on_event("tool.result", session=sess["id"], tool="write_todos", ok=True,
+        on_event("tool.result", session=sess["id"], tool="todo.write", ok=True,
                  exit_code=0, backend="harness", args=todo_args,
                  output=out[:2000] or ("+%d node(s)" % len(added)),
                  summary="task list: %d node(s), +%d" % (total, len(added)))
         # JAG-190: persist the card so a reload rebuilds it (harness-action cards
         # were streamed live but never stored, so they vanished on refresh).
-        persist_tool_card(sess, "write_todos", True, args=todo_args,
+        persist_tool_card(sess, "todo.write", True, args=todo_args,
                           result=out[:2000] or ("+%d node(s)" % len(added)),
                           exit_code=0, backend="harness", node=node, after=after)
         return len(added)
     except Exception as e:  # noqa: BLE001 — the task list must never break chat
         try:
-            on_event("tool.result", session=sess["id"], tool="write_todos",
+            on_event("tool.result", session=sess["id"], tool="todo.write",
                      ok=False, backend="harness", stderr=str(e)[:200])
-            persist_tool_card(sess, "write_todos", False, error=str(e)[:200],
+            persist_tool_card(sess, "todo.write", False, error=str(e)[:200],
                               backend="harness", node=node, after=after)
         except Exception:  # noqa: BLE001
             pass
@@ -992,7 +992,7 @@ def _resolve_graph_node(graph, step):
 def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
     """Harness action `update_todos`: the MODEL advances its own plan (JAG-75).
 
-    `{"action":"update_todos","steps":[{"index":0,"status":"doing"}]}` marks a
+    `{"action":"todo.update","steps":[{"index":0,"status":"doing"}]}` marks a
     step in progress; `{"status":"done","evidence":"..."}` completes it (evidence
     is mandatory — same rule as the API). This is what let the graph advance on
     its own: before, only the UI/API could move a node.
@@ -1004,7 +1004,7 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
             steps = [steps]
         if not isinstance(steps, list):
             steps = []
-        on_event("tool.call", session=sess["id"], tool="update_todos",
+        on_event("tool.call", session=sess["id"], tool="todo.update",
                  args={"steps": steps}, inline=True)
         changed = []
         # JAG-269: reasons/misses are surfaced (not swallowed) so the model learns
@@ -1092,14 +1092,14 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
             _out = (_out + "\n! " + "\n! ".join(str(e) for e in errors))[:2000]
         _err = "; ".join(str(e) for e in errors)[:400]
         _n_steps = len([s for s in steps if isinstance(s, dict)])
-        on_event("tool.result", session=sess["id"], tool="update_todos", ok=(not errors),
+        on_event("tool.result", session=sess["id"], tool="todo.update", ok=(not errors),
                  exit_code=(0 if not errors else 1), backend="harness", args={"steps": steps},
                  output=_out, stderr=(_err or None),
                  summary="task list: %d/%d step(s) updated%s"
                          % (len(changed), _n_steps,
                             (", %d rejected" % len(errors)) if errors else ""))
         # JAG-190: persist so the card survives a reload.
-        persist_tool_card(sess, "update_todos", (not errors), args={"steps": steps},
+        persist_tool_card(sess, "todo.update", (not errors), args={"steps": steps},
                           result=_out, error=_err, exit_code=(0 if not errors else 1),
                           backend="harness", node=node, after=after)
         # JAG-449: return the REFUSAL reasons too, so the caller can put them in
@@ -1107,9 +1107,9 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
         return len(changed), errors
     except Exception as e:  # noqa: BLE001 — the task list must never break chat
         try:
-            on_event("tool.result", session=sess["id"], tool="update_todos",
+            on_event("tool.result", session=sess["id"], tool="todo.update",
                      ok=False, backend="harness", stderr=str(e)[:200])
-            persist_tool_card(sess, "update_todos", False, error=str(e)[:200],
+            persist_tool_card(sess, "todo.update", False, error=str(e)[:200],
                               backend="harness", node=node, after=after)
         except Exception:  # noqa: BLE001
             pass
@@ -1124,22 +1124,22 @@ def _apply_chat_replan(sess, act, on_event, node=None, after=None):
     """
     try:
         graph = taskgraph.ensure(sess["id"], session_id=sess["id"])
-        on_event("tool.call", session=sess["id"], tool="replan_todos", args={}, inline=True)
+        on_event("tool.call", session=sess["id"], tool="todo.replan", args={}, inline=True)
         added = taskgraph.replan_from_model(
             graph, act.get("note") or act.get("goal") or "", on_event=on_event) or []
-        on_event("tool.result", session=sess["id"], tool="replan_todos", ok=True,
+        on_event("tool.result", session=sess["id"], tool="todo.replan", ok=True,
                  exit_code=0, backend="harness",
                  summary="re-plan: +%d step(s)" % len(added))
         # JAG-190: persist so the card survives a reload.
-        persist_tool_card(sess, "replan_todos", True,
+        persist_tool_card(sess, "todo.replan", True,
                           result="re-plan: +%d step(s)" % len(added),
                           exit_code=0, backend="harness", node=node, after=after)
         return len(added)
     except Exception as e:  # noqa: BLE001 — never break chat
         try:
-            on_event("tool.result", session=sess["id"], tool="replan_todos",
+            on_event("tool.result", session=sess["id"], tool="todo.replan",
                      ok=False, backend="harness", stderr=str(e)[:200])
-            persist_tool_card(sess, "replan_todos", False, error=str(e)[:200],
+            persist_tool_card(sess, "todo.replan", False, error=str(e)[:200],
                               backend="harness", node=node, after=after)
         except Exception:  # noqa: BLE001
             pass
@@ -1634,7 +1634,7 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     if autonomous:
         eff_message = (
             "AUTONOMOUS GOAL MODE — accomplish the goal below end to end without "
-            "asking for confirmation. FIRST emit write_todos with 2-8 steps, then "
+            "asking for confirmation. FIRST emit todo.write with 2-8 steps, then "
             "execute them one by one with tools, marking each 'doing' and then "
             "'done' with evidence, then finish with a short plain-text summary."
             "\n\nGOAL: " + str(message))
@@ -1666,9 +1666,21 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     return msgs, ctx_stats
 
 
-_HARNESS_ACTION_NAMES = ("write_todos", "update_todos", "replan_todos", "subagent",
+# JAG-515: the task-list actions are a NAMESPACE like every other tool
+# (`fs.read`, `shell.exec`, `git.run`), so the chat shows `todo.write` /
+# `todo.update` / `todo.replan` in the SAME card structure and the tools panel
+# groups them under one collapsible `todo` node. The pre-namespace spellings stay
+# ACCEPTED aliases (old transcripts, the v0.6 taskgraph NDJSON path, and weak
+# models that still emit the flat names) — `_normalize_action` canonicalises them.
+_TODO_ACTION_ALIASES = {
+    "write_todos": "todo.write",
+    "update_todos": "todo.update",
+    "replan_todos": "todo.replan",
+}
+
+_HARNESS_ACTION_NAMES = ("todo.write", "todo.update", "todo.replan", "subagent",
                          "plan_step", "complete_plan_step", "add_task",
-                         "complete_task", "note", "finish")
+                         "complete_task", "note", "finish") + tuple(_TODO_ACTION_ALIASES)
 
 # JAG-278: a weak model often ends a turn with a made-up envelope whose action is a
 # synonym of "I am done" ({"action":"answer","text":"..."} / {"action":"finish"}).
@@ -1690,7 +1702,7 @@ def _normalize_action(act):
     """JAG-264: accept the obvious near-misses weak models keep emitting.
 
     Real tools use {"action":"tool","tool":"<name>","args":{...}}; harness/plan
-    actions are TOP-LEVEL ({"action":"update_todos","steps":[...]}). A small model
+    actions are TOP-LEVEL ({"action":"todo.update","steps":[...]}). A small model
     conflates the two — it wraps a harness action inside the tool envelope, or
     emits the bare payload with no "action" — then loops forever on the harness's
     "not a valid tool call" retry (observed flooding the WebUI). Normalise those
@@ -1713,7 +1725,7 @@ def _normalize_action(act):
         name = act.get("tool") or act.get("tool_name") or act.get("name")
         if name in _HARNESS_ACTION_NAMES:
             inner = dict(act.get("args") or {})
-            inner["action"] = name
+            inner["action"] = _TODO_ACTION_ALIASES.get(name, name)
             for k in ("thought", "note", "todos", "steps", "goal", "detail",
                       "model", "max_steps"):
                 if k in act and k not in inner:
@@ -1724,19 +1736,23 @@ def _normalize_action(act):
         return act
     if not a:
         if "todos" in act:
-            return dict(act, action="write_todos")
+            return dict(act, action="todo.write")
         if "steps" in act:
-            return dict(act, action="update_todos")
+            return dict(act, action="todo.update")
         if "note" in act:
-            return dict(act, action="replan_todos")
+            return dict(act, action="todo.replan")
     # JAG-278: an UNKNOWN action name but a recognizable PAYLOAD — coerce by SHAPE.
     # A weak model writes the right body under a wrong/labelled action ("update",
     # "set_todos", ...); the payload is the reliable signal, not the action name.
-    if a not in ("tool", "write_todos", "update_todos", "replan_todos", "subagent"):
+    if a not in ("tool", "todo.write", "todo.update", "todo.replan", "subagent"):
         if isinstance(act.get("todos"), list):
-            return dict(act, action="write_todos")
+            return dict(act, action="todo.write")
         if isinstance(act.get("steps"), list):
-            return dict(act, action="update_todos")
+            return dict(act, action="todo.update")
+    # JAG-515: an explicit pre-namespace spelling (`write_todos`, ...) is honoured
+    # but canonicalised, so the harness and the chat card always speak `todo.*`.
+    if a in _TODO_ACTION_ALIASES:
+        return dict(act, action=_TODO_ACTION_ALIASES[a])
     return act
 
 
@@ -2239,14 +2255,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _inject(
                     "USER_STEER — the user typed a new directive while the "
                     "previous task list is fully CLOSED. Acknowledge it and "
-                    "act on it now (start with `write_todos` if multi-step).",
+                    "act on it now (start with `todo.write` if multi-step).",
                     "steer_only")
             else:
                 _inject(
                     "CONTINUE — %d task(s) are still OPEN (the full list is in "
                     "'Harness state' at the end of your message). Work ONE step at a time: mark the current "
                     "step 'doing', do the work with a tool call, then mark it 'done' with "
-                    "the concrete evidence via update_todos. Never redo a step already "
+                    "the concrete evidence via todo.update. Never redo a step already "
                     "marked [x]. Open now:\n%s"
                     % (len(_open), _open_todo_brief(sess)[1]), "continue")
             continue
@@ -2346,7 +2362,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                          scores=[round(s, 3) for _, s in _scores])
                 answer = _best
         act = _extract_action(answer)
-        if isinstance(act, dict) and act.get("action") == "write_todos":
+        if isinstance(act, dict) and act.get("action") == "todo.write":
             _user_pivot = False   # JAG-189: the model re-engaged the plan
             n = _apply_chat_todos(sess, act, on_event, after=_after())
             _invalid_streak = 0
@@ -2361,13 +2377,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 "'done' with concrete evidence."
                 % (n, _on, _brief), "nudge")
             continue
-        if isinstance(act, dict) and act.get("action") in ("update_todos", "replan_todos"):
+        if isinstance(act, dict) and act.get("action") in ("todo.update", "todo.replan"):
             # JAG-75: the model advances its own plan mid-run (in_progress → done
             # with evidence), or briefly re-plans. Then it must resume the plan.
             _user_pivot = False   # JAG-189: the model re-engaged the plan
             _invalid_streak = 0
             _node_here = _cur_node()   # JAG-190: nest the card where it happened
-            if act["action"] == "update_todos":
+            if act["action"] == "todo.update":
                 _n_ch, _errs = _apply_chat_todo_updates(
                     sess, act, on_event, node=_node_here, after=_after())
                 nudge = _nudge_open_todos(sess, errors=_errs)
@@ -2608,8 +2624,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _inject(
                 "That was not a valid action. You emitted: " + _snip + "\n"
                 'Emit either {"action":"tool","tool":"<name>","args":{...}} for a real '
-                "tool, a top-level harness action (write_todos / update_todos / "
-                "replan_todos), or answer the user in plain prose (no JSON).", "retry")
+                "tool, a top-level harness action (todo.write / todo.update / "
+                "todo.replan), or answer the user in plain prose (no JSON).", "retry")
             continue
         if _looks_like_json_action(answer):
             # JAG-64: malformed/TRUNCATED tool-call JSON (extract_json failed, so
@@ -2715,7 +2731,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "(a) mark it 'done' with the concrete evidence (the command "
                         "you ran and its result); or (b) ONLY if it is PERMANENTLY "
                         "unneeded, mark it 'superseded' with a SPECIFIC reason saying "
-                        "WHY. Use update_todos for EVERY open step — do not skip any. "
+                        "WHY. Use todo.update for EVERY open step — do not skip any. "
                         "When the list is fully closed (0 open), your next message will "
                         "be accepted as the final answer. Open now:\n%s"
                         % (len(_open), _open_todo_brief(sess)[1]), "continue")
@@ -2725,7 +2741,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "YOURS (the full list is in 'Harness state' at the end of your message): mark the step "
                         "you are working on 'doing', and when it is REALLY finished mark it "
                         "'done' with the concrete evidence (the command you ran and its "
-                        "result) via update_todos. One step at a time. NEVER redo a step "
+                        "result) via todo.update. One step at a time. NEVER redo a step "
                         "already marked [x]. Open now:\n%s"
                         % (len(_open), _open_todo_brief(sess)[1]), "continue")
                 continue
@@ -2962,15 +2978,15 @@ def generate_plan(goal, model=None):
     return plan, answer, think, trace.id
 
 
-AGENT_ACTIONS = ("write_todos", "plan_step", "complete_plan_step", "add_task",
+AGENT_ACTIONS = ("todo.write", "plan_step", "complete_plan_step", "add_task",
                  "complete_task", "subagent", "note", "finish")
 
 AGENT_PROMPT = (
     "You are the agent loop of the Longrun harness. Given the goal and the "
     "current harness state, decide ONE next action. Respond with ONLY a JSON "
-    'object: {"thought": "<brief reasoning>", "action": "write_todos|'
+    'object: {"thought": "<brief reasoning>", "action": "todo.write|'
     'plan_step|complete_plan_step|add_task|complete_task|subagent|note|finish", '
-    '"todos": [{"label": "...", "deps": []}] (for write_todos), '
+    '"todos": [{"label": "...", "deps": []}] (for todo.write), '
     '"title": "<for plan_step/add_task>", "id": "<for '
     'complete_plan_step/complete_task>", "detail": "<optional>", '
     '"goal": "<the subtask>" and "max_steps": 4 (for subagent — delegate ONE '
@@ -2985,7 +3001,7 @@ def apply_agent_action(act, run_id=None, session=None):
     v0.6: when a run_id is given, the action is mirrored onto the run's task
     graph (plan_step/complete_plan_step/add_task/complete_task → nodes).
     """
-    action = act.get("action")
+    action = _TODO_ACTION_ALIASES.get(act.get("action"), act.get("action"))
     plan, tasks = load_plan(), load_tasks()
     if action == "plan_step":
         if not plan.get("goal"):
@@ -3018,8 +3034,8 @@ def apply_agent_action(act, run_id=None, session=None):
                 save_tasks(tasks)
                 return _mirror_graph(run_id, act, "task completed: %s" % t["title"], session)
         return "task not found"
-    if action == "write_todos":
-        return _mirror_graph(run_id, act, "write_todos: graph updated", session)
+    if action == "todo.write":
+        return _mirror_graph(run_id, act, "todo.write: graph updated", session)
     if action == "subagent":
         goal = str(act.get("goal") or act.get("detail") or "").strip()
         if not goal:

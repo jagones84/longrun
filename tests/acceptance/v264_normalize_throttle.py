@@ -46,8 +46,8 @@ check("None passes through", n(None) is None)
 check("a non-dict passes through", n("plain text") == "plain text")
 
 r = n({"action": "tool", "tool": "update_todos", "args": {"steps": [1]}})
-check("tool-wrapped harness action is unwrapped",
-      isinstance(r, dict) and r.get("action") == "update_todos" and r.get("steps") == [1],
+check("tool-wrapped harness action is unwrapped to its canonical todo name",
+      isinstance(r, dict) and r.get("action") == "todo.update" and r.get("steps") == [1],
       str(r))
 
 r = n({"action": "tool", "tool": "subagent", "args": {"goal": "g"}, "thought": "t"})
@@ -63,17 +63,17 @@ check("a REAL tool call is left unchanged",
       r.get("action") == "tool" and r.get("tool") == "bash", str(r))
 
 r = n({"todos": [{"label": "a"}]})
-check("bare todos payload -> write_todos", r.get("action") == "write_todos", str(r))
+check("bare todos payload -> todo.write", r.get("action") == "todo.write", str(r))
 
 r = n({"steps": [{"id": "1", "status": "done"}]})
-check("bare steps payload -> update_todos", r.get("action") == "update_todos", str(r))
+check("bare steps payload -> todo.update", r.get("action") == "todo.update", str(r))
 
 r = n({"note": "rethink"})
-check("bare note payload -> replan_todos", r.get("action") == "replan_todos", str(r))
+check("bare note payload -> todo.replan", r.get("action") == "todo.replan", str(r))
 
 r = n({"action": "write_todos", "todos": []})
-check("a well-formed harness action is unchanged",
-      r.get("action") == "write_todos", str(r))
+check("a legacy-spelled harness action is canonicalised",
+      r.get("action") == "todo.write", str(r))
 
 # --------------------------------------------------------------- JAG-265 ----
 
