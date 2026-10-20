@@ -2241,6 +2241,13 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             publish("session.renamed", session=sid, title=title)
             return self._send(200, {"ok": True, "id": sid, "title": title})
+        if path.startswith("/api/sessions/") and path.endswith("/graph/plan/drop"):
+            # JAG-514: delete ONE older plan and every step in it (the nodes ARE the
+            # plan — the tasks panel, the model prompt and the Control constellation
+            # all read this graph). The current plan is refused by the module.
+            sess_id = path[len("/api/sessions/"):-len("/graph/plan/drop")].strip("/")
+            res = taskgraph.drop_plan(sess_id, (body or {}).get("plan"))
+            return self._send(200 if res.get("ok") else 400, res)
         if path.startswith("/api/sessions/") and path.endswith("/graph/reset"):
             # JAG-63: only the user clears the persistent task list (new task).
             sess_id = path[len("/api/sessions/"):-len("/graph/reset")].strip("/")

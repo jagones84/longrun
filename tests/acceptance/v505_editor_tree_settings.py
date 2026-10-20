@@ -141,11 +141,12 @@ check("C4 the check count is surfaced when available", "counts.checked" in diag)
 # ---- D) the right rail hands the tree to the editor, without moving the rail --
 check("D1 the Files panel no longer renders its own tree or search",
       'id="fileTree"' not in idx and 'id="fileSearch"' not in idx)
-check("D2 the Files panel offers an editor hand-off instead",
-      "open in editor" in idx and "window.SparkEditor.toggle()" in idx)
-check("D3 exactly ONE editor hand-off in the rail (JAG-511 removed the duplicate)",
-      idx.count("window.SparkEditor.toggle()") == 2 and  # the topbar/toolbar one + D2's
-      'class="ghost ws-ed"' not in idx)
+check("D2 the Workspace panel offers the editor hand-off, next to browse",
+      "🗔 open editor" in idx and 'data-call="SparkEditorToggle"' in idx)
+check("D3 ONE hand-off per surface, through ONE function (JAG-511/JAG-514)",
+      idx.count('data-call="SparkEditorToggle"') == 2   # composer + inspector
+      and idx.count("window.SparkEditor.toggle()") == 1  # only inside the function
+      and 'class="ghost ws-ed"' not in idx)
 check("D4 there is no second workspace-tree implementation",
       "function loadFiles" not in idx and "function _renderDir" not in idx)
 check("D5 focusInsp can skip the scroll",

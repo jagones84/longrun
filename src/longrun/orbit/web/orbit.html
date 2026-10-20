@@ -1575,7 +1575,7 @@ class FeedView {
   constructor(api){ this.api = api; this.es = null; }
   connect(){
     try { this.es = this.api.es("/api/feed"); } catch(e){ return; }
-    ["chat.run","chat.user","tool.call","tool.result","graph.node.added","graph.node.updated","plan.update","chat.done","error"].forEach(k => this.es.addEventListener(k, (e) => {
+    ["chat.run","chat.user","tool.call","tool.result","graph.node.added","graph.node.updated","graph.plan_dropped","plan.update","chat.done","error"].forEach(k => this.es.addEventListener(k, (e) => {
       let d = {}; try { d = JSON.parse(e.data); } catch(_){}
       const f = $("feed"); f.insertAdjacentHTML("afterbegin", '<div><b>' + esc(k) + '</b> ' + esc(d.session ? String(d.session).slice(0,8) : "") + ' ' + esc(d.text || d.label || d.title || d.tool || "") + '</div>');
       while (f.childElementCount > 100) f.removeChild(f.lastChild); }));

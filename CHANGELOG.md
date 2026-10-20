@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **An older plan can be deleted for real, and the right rail stops spending
+  space twice (JAG-514).**
+  - **Plan deletion is a GRAPH operation, not a UI hide:** `taskgraph.drop_plan`
+    removes every node of that plan, prunes the dependencies that pointed at them,
+    persists the graph and publishes `graph.plan_dropped`, so the tasks panel AND
+    the Control constellation lose the plan together (they read the same graph).
+    The CURRENT plan is refused — the model may still be working on it — and each
+    older plan row carries a ✕ with a confirm that states how many steps go.
+  - **Workspace panel compacted**: the duplicated "Files · workspace" card is gone,
+    `save` sits on the path row and `open editor` moved next to `browse`.
+  - **Context ▸ auto-compact policy names the file in force as a link** that opens
+    it in the editor (the WebUI overlay when it exists, the shipped file otherwise).
 - **Tools are self-describing and discoverable instead of dumped in the prompt,
   and the Control/chat UI stops fighting the operator (JAG-513).**
   - **The system prompt no longer carries the tool registry.** It carried every

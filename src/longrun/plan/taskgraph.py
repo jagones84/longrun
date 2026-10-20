@@ -163,6 +163,52 @@ def begin_plan(graph):
         return graph["plan"]
 
 
+def drop_plan(key, plan):
+    """Delete ONE plan — and every step that belongs to it — from a session graph.
+
+    JAG-514: `begin_plan` KEEPS every node forever (ids must stay unique so the
+    transcript's old cards still resolve), so a long session accumulates plans the
+    operator no longer wants. This removes them FOR REAL instead of hiding them:
+    the nodes ARE the plan, and the same graph feeds the tasks panel, the model's
+    prompt and the Control constellation, so dropping them clears all three at once.
+    Dependencies pointing at a dropped id are pruned too, so no surviving step can
+    wait forever on a step that no longer exists.
+
+    The CURRENT plan is refused: the model may be working on it, and only a user
+    may end a plan (`reset` / a new plan). The chat transcript is NOT touched.
+    """
+    with GRAPH_LOCK:
+        g = load(key)
+        if not g:
+            return {"ok": False, "error": "no task graph for %r" % key}
+        cur = int(g.get("plan", 0) or 0)
+        try:
+            p = int(plan)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "plan must be an integer"}
+        if p == cur:
+            return {"ok": False, "error": "plan %d is the CURRENT plan — start a new "
+                                          "plan (or reset the list) before deleting it" % p}
+        nodes = list(g.get("nodes") or [])
+        gone = {n.get("id") for n in nodes
+                if int(n.get("plan", 0) or 0) == p and n.get("id")}
+        kept = [n for n in nodes if n.get("id") not in gone]
+        removed = len(nodes) - len(kept)
+        if not removed:
+            return {"ok": False, "error": "plan %d has no steps" % p}
+        for n in kept:
+            deps = n.get("deps")
+            if deps and any(d in gone for d in deps):
+                n["deps"] = [d for d in deps if d not in gone]
+        g["nodes"] = kept
+        g["updated"] = round(time.time(), 3)
+        save(g)
+        node_count = len(kept)
+    _publish("graph.plan_dropped", run=key, session=g.get("session_id") or key,
+             plan=p, removed=removed, node_count=node_count)
+    return {"ok": True, "plan": p, "removed": removed, "node_count": node_count}
+
+
 def plan_nodes(graph):
     """Nodes of the CURRENT plan (all nodes when none is tagged / plan 0)."""
     if not graph:

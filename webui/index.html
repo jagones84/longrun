@@ -666,6 +666,17 @@
   .fgroup > .fgroup-rw { position: absolute; top: 3px; right: 6px; z-index: 2; }
   .fgroup-rw[hidden] { display: none; }
   .tc-rw:hover, .task-rw:hover, .fgroup-rw:hover { color: var(--err); border-color: var(--err); }
+  /* JAG-514: the ✕ that deletes an "older plan" sits OUTSIDE the <details>, on its
+     summary line (a control nested in <summary> is an a11y anti-pattern, and a
+     CLOSED <details> renders none of its children). A flex row keeps the two
+     side by side at any rail width — an absolutely positioned ✕ overlapped the
+     summary text once the rail got narrow. */
+  .older-wrap { display: flex; align-items: flex-start; gap: 3px; }
+  .older-wrap > .older-plans { flex: 1 1 auto; min-width: 0; }
+  .older-wrap > .plan-drop { flex: 0 0 auto; }
+  .plan-drop { background: none; border: 1px solid transparent; color: var(--dim);
+    cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 6px; }
+  .plan-drop:hover { color: var(--err); border-color: var(--err); }
   /* JAG-431g: a "free" chat thread group (turns not tied to a task) — collapsible
      with the same ⊞/⊟ controls as the task groups. */
   .fgroup { margin: 6px 0; position: relative; }
@@ -2039,20 +2050,17 @@
         <div class="insp-body">
         <h2>Workspace · folder (this session)</h2>
         <div class="card" id="wsCard">
-          <input id="wsPath" class="inp u-w100 u-p610 u-fs12" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)">
+          <div class="u-df u-g6 u-aic">
+            <input id="wsPath" class="inp u-f1 u-p610 u-fs12" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)">
+            <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
+          </div>
           <div class="u-df u-g8 u-aic u-mt6 u-fww">
             <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
             <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]' title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁 browse…</button>
-            <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
+            <!-- JAG-514: the old extra card below only repeated this path; its one
+                 action (open the editor) now lives here, next to browse. -->
+            <button class="ghost" data-call="SparkEditorToggle" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔 open editor</button>
           </div>
-        </div>
-        <h2>Files · workspace</h2>
-        <div class="card">
-          <div class="u-df u-g6 u-mt6 u-aic u-fww">
-            <button class="ghost" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔 open in editor</button>
-            <span class="remaining u-f1" id="filesRoot">…</span>
-          </div>
-          <div class="remaining u-mt4" id="fileMsg"></div>
         </div>
         <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
         <div class="card">
@@ -5810,8 +5818,23 @@ async function loadCompactionPolicy(force) {
     set("cmpKeep", p.keep_recent);
     ["cmpTrigger", "cmpTarget", "cmpKeep"].forEach((id) => { const e = $(id); if (e) e.classList.remove("bad"); });
     const src = $("cmpPolicySrc");
-    if (src) src.textContent = p.local_exists ? "(config/compaction.local.yaml)"
-                                              : "(config/compaction.yaml)";
+    if (src) {
+      // JAG-514: the panel NAMED the file that supplies the policy but gave no way
+      // to open it. Link the file that is actually in force (the WebUI overlay when
+      // it exists, else the shipped config) straight into the editor.
+      const f = p.local_exists ? (p.local || p.source) : p.source;
+      const label = "(config/" + String(f || "").split("/").pop() + ")";
+      src.innerHTML = "";
+      if (f) {
+        const a = document.createElement("a");
+        a.href = "#"; a.className = "filelink"; a.textContent = label;
+        a.title = "open " + f + " in the editor";
+        a.onclick = (e) => { e.preventDefault(); openInEditor(f, { mode: "code" }); };
+        src.appendChild(a);
+      } else {
+        src.textContent = label;
+      }
+    }
   } catch (e) { /* the panel is informational — never break the chat */ }
 }
 /* JAG-495: auto-saved from the three number inputs (data-change) — no Save button.
@@ -6009,9 +6032,20 @@ function renderGraph() {
     _older.forEach(n => { const p = (n.plan == null ? 0 : n.plan); (_byPlan[p] ||= []).push(n); });
     _olderHtml = Object.keys(_byPlan).sort((a, b) => a - b).map(p => {
       const _oc = countNodes(_byPlan[p]);
-      return '<details class="older-plans"><summary class="remaining u-ptr">older plan ' + p +
+      // JAG-514: an old plan can be DELETED for real (the nodes are the plan, and
+      // the tasks panel + the Control constellation read the same graph), so the
+      // operator is no longer stuck with every plan the session ever opened.
+      // The ✕ lives OUTSIDE the <details> (absolutely positioned over the summary
+      // line): an interactive control nested in <summary> is the a11y anti-pattern
+      // this file already avoids, and children of a CLOSED <details> are not rendered.
+      return '<div class="older-wrap"><details class="older-plans">' +
+        '<summary class="remaining u-ptr">older plan ' + p +
         ' \u00b7 ' + _byPlan[p].length + ' node(s) \u00b7 ' + (_oc.done || 0) + ' done</summary>' +
-        taskTree(_byPlan[p]) + '</details>';
+        taskTree(_byPlan[p]) + '</details>' +
+        '<button class="plan-drop" data-plan="' + p + '" title="delete this plan and its ' +
+        _byPlan[p].length + ' step(s) — they disappear from this panel AND from the ' +
+        'Control constellation; the chat itself is kept" aria-label="delete older plan ' +
+        p + '">✕</button></div>';
     }).join("");
   }
   box.innerHTML = taskTree(_nodes) + _olderHtml;
@@ -6035,7 +6069,31 @@ function renderGraph() {
     if (n && n.status === "doing" && runningSessions[sessionId]) el.classList.add("live");
   });
   _markWrappedTasks(box);   // JAG-431k: stack the meta on rows with a long wrapped label
+  // JAG-514: the ✕ on an "older plan" deletes that plan (and its steps) for real.
+  // stopPropagation keeps the click from toggling the <details> around it.
+  box.querySelectorAll(".plan-drop").forEach(b => {
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); dropPlan(Number(b.dataset.plan)); };
+  });
   $("remaining").innerHTML = "";
+}
+/* JAG-514: remove ONE older plan from the session graph. The graph IS the plan:
+   the tasks panel, the model's todo list and the Control constellation all read it,
+   so the steps disappear from every surface at once. The chat transcript is kept —
+   the conversation happened, and its cards simply stop resolving to a live step. */
+async function dropPlan(p) {
+  if (!sessionId || !graph) return;
+  const n = (graph.nodes || []).filter(x => (x.plan == null ? 0 : x.plan) === p).length;
+  if (!(await confirmDelete("delete older plan " + p + " and its " + n +
+      " step(s)? They disappear from this panel and from the Control constellation. "
+      + "The chat itself is not touched."))) return;
+  let r = null;
+  try {
+    r = await api("POST", "/api/sessions/" + encodeURIComponent(sessionId)
+                       + "/graph/plan/drop", { plan: p });
+  } catch (e) { r = { error: String(e) }; }
+  if (!r || !r.ok) { toast("delete failed — " + ((r && r.error) || "?"), "err"); return; }
+  toast("plan " + p + " deleted (" + r.removed + " step(s))", "ok");
+  await loadGraph();
 }
 /* JAG-424: right-click menu on a todo — "Show in constellation" circles that task in
    the Control deck's constellation panel (crosses into the iframe via postMessage). */
@@ -8697,7 +8755,6 @@ async function loadRules() {
     _rulePathGlobal = g.path || null;
     _rulePathProject = p.path || null;
     $("wsPath").value = d.workspace || "";
-    if ($("filesRoot")) $("filesRoot").textContent = d.workspace || "…";   // JAG-506: the tree's old owner
     gateEnroll($("wsCard"));   // JAG-496: this is the baseline the workspace Save compares against
     _isum("sWorkspace", _base(d.workspace), "");
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
@@ -10031,7 +10088,9 @@ function _fmtSize(n) {
 async function openFile(path, opts) {
   _openFile = { path: path };
   if (window.SparkEditor) { window.SparkEditor.open(path, opts); return; }
-  if ($("fileMsg")) $("fileMsg").textContent = "editor not available";
+  // JAG-514: the old extra Files card (and its inline status line) is gone —
+  // a failed editor load must still say so, through the toast.
+  toast("editor not available", "err");
 }
 
 async function saveFile() { if (window.SparkEditor) window.SparkEditor.save(); }
