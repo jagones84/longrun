@@ -93,12 +93,14 @@ check("C3 agent_run_v2 accepts fallbacks", "fallbacks=None" in av)
 check("C4 agent_run_v2 walks the candidate chain on failure",
       "candidates" in av and "model.failover" in av)
 
-# ---- D) WebUI: subagent model is settable in Settings > Models -------------
+# ---- D) WebUI: subagent model is settable in Settings > Subagents ----------
+# v505: the picker was duplicated in Models and Subagents. Subagents is now the
+# single owner (one source of truth for roles.subagent).
 idx = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
-check("D1 Settings > Models has a subagent model picker",
-      'id="subagentModel"' in idx and "saveSubagentModel" in idx)
+check("D1 Settings > Subagents has a subagent model picker",
+      'id="subModel"' in idx and 'data-cat="subagents"' in idx)
 check("D2 the subagent picker is listed in the settings nav",
-      '["improvement", "Improvement"]' in idx)
+      '["subagents", "Subagents"]' in idx)
 
 # ---- E) WebUI: improvement moved from inspector to Settings ---------------
 check("E1 the improvement panel is a Settings category",
