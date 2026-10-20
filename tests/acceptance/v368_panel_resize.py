@@ -13,7 +13,10 @@ Locked here:
   * panel clamps account for the open editor dock and in-flow tools bar, and opening
     or closing the dock re-fits the panels (editor.js _notifyLayout -> _settleHandles);
   * the dock itself can never grow so wide that it shoves the inspector off the right
-    edge (JAG-369): only the collapse arrows may hide a panel, a resize must not.
+    edge (JAG-369): only the collapse arrows may hide a panel, a resize must not;
+  * and it can never COLLAPSE to a sliver either: a stored width below MIN_DOCK_W (or
+    a NaN) is repaired and written back on read (JAG-510), so the docked editor can
+    never again be laid out but invisible.
 Deterministic, no browser. Run: python3 tests/acceptance/v368_panel_resize.py
 """
 import os
@@ -89,14 +92,15 @@ check("D1 the app caps the dock by the room the panels + chat floor leave",
 check("D2 the dock drag is bounded by that cap (not only the viewport)",
       "function _dockMaxW()" in EDITOR
       and "const cap = Math.min(_vw() - 120, _dockMaxW());" in EDITOR
-      and "Math.min(cap, Math.max(240," in EDITOR, "")
+      and "Math.max(MIN_DOCK_W, Math.min(cap," in EDITOR, "")
 check("D3 releasing the dock resize re-fits the panels (pointerup: mouse + touch)",
       "const _dockUp = () => {" in EDITOR
       and 'state.resizeEl.addEventListener("pointerup", _dockUp);' in EDITOR
       and "_notifyLayout();" in EDITOR, "")
-check("D4 a restored dock width is clamped on (re)build and on every responsive pass",
-      "Math.min(saved, _dockMaxW())" in EDITOR
-      and EDITOR.count("_dockMaxW()") >= 4, "")
+check("D4 a restored dock width is normalised then clamped on every responsive pass",
+      "function _dockWidth()" in EDITOR
+      and "d.style.width = _dockWidth() + " in EDITOR
+      and "Math.max(MIN_DOCK_W, Math.min(sane, _dockMaxW()))" in EDITOR, "")
 check("D5 the fit maths also caps an already-too-wide dock (self-heal on resize/zoom)",
       "dk.getBoundingClientRect().width / z > cap + 0.5" in HTML
       and "dk.style.width = Math.round(cap)" in HTML, "")
@@ -109,6 +113,20 @@ check("D6 both editor grips are touch-capable (pointer events + touch-action:non
 check("D7 the mobile overlay stays clear of the chat composer + tab bar",
       "function _bottomChromeH()" in EDITOR
       and "d.style.bottom = _bottomChromeH() + " in EDITOR, "")
+# JAG-510: a saved width of 0 / a tiny number / NaN (an old drag, a stale value, a
+# corrupt store) made the DOCKED editor a ~30px sliver: `hidden:false`, laid out, and
+# the operator saw nothing — "the editor does not open anymore". The stored value must
+# be REPAIRED on read and written back, not merely clamped at render time, so a broken
+# session can only ever be broken once.
+check("D8 a sliver / NaN saved dock width is self-healed AND written back on read",
+      "const MIN_DOCK_W = 260;" in EDITOR
+      and "const DEFAULT_DOCK_W = 420;" in EDITOR
+      and "Number.isFinite(raw) && raw >= MIN_DOCK_W" in EDITOR
+      and "localStorage.setItem(LS_W, String(sane))" in EDITOR, "")
+check("D9 the floating editor is clamped so its title bar (and tabs) stay reachable",
+      "function _clampFloat()" in EDITOR
+      and "d.style.left = left + \"px\"; d.style.top = top + \"px\";" in EDITOR
+      and "vh - Math.min(r.height, 120)" in EDITOR, "")
 
 # --- E: the mobile bottom tab bar drives the REAL drawers (JAG-381) ------------
 # Tapping a tab used to add `#aside.open` + `#backdrop.show`: the screen just dimmed

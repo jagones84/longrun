@@ -21,6 +21,12 @@ const TOKEN = () => localStorage.getItem("sf_token") || "";
 const SESSION = () => localStorage.getItem("sf_session") || "";
 const sessionQS = () => { const s = SESSION(); return s ? ("&session=" + encodeURIComponent(s)) : ""; };
 const LS_W = "sf_ed_w";
+// JAG-510: the narrowest a DOCKED editor may ever be. A persisted width below
+// this (an old drag, a stale value from a previous build, a NaN) collapsed the
+// dock to a ~30px sliver that is `hidden:false` but unreadable — it looked
+// exactly like "the editor does not open", and a right-click on it hit nothing.
+const MIN_DOCK_W = 260;
+const DEFAULT_DOCK_W = 420;
 const LS_TREE_W = "sf_ed_tree_w";    // JAG-252: width of the file-tree pane
 const LS_TABS = "sf_ed_tabs";        // legacy/global tab set (no session)
 const LS_TABS_S = "sf_ed_tabs_";     // JAG-157: per-session tab set
@@ -326,7 +332,8 @@ function buildDock() {
     const z = (typeof window._pageScale === "function") ? window._pageScale() : 1;
     const right = dock.getBoundingClientRect().right;
     const cap = Math.min(_vw() - 120, _dockMaxW());
-    const w = Math.min(cap, Math.max(240, (right - e.clientX) / z));
+    // JAG-510: never persist a width that would collapse the dock to a sliver.
+    const w = Math.max(MIN_DOCK_W, Math.min(cap, (right - e.clientX) / z));
     dock.style.width = w + "px";
     localStorage.setItem(LS_W, String(Math.round(w)));
   };
@@ -474,7 +481,6 @@ function applyResponsive() {
   state.floatReady = false;
   const overlay = _vw() < 1024;
   d.classList.toggle("ed-overlay", overlay);
-  const saved = parseInt(localStorage.getItem(LS_W) || "420", 10);
   if (overlay) {
     // JAG-3xx: the fixed overlay ran top:44px -> bottom:0, so on a phone it covered
     // the chat composer (send) AND the whole bottom tab bar — those buttons looked
@@ -487,8 +493,22 @@ function applyResponsive() {
     d.style.width = "";
   } else {
     d.style.top = ""; d.style.bottom = ""; d.style.left = ""; d.style.right = ""; d.style.height = "";
-    d.style.width = Math.min(saved, _dockMaxW()) + "px";
+    d.style.width = _dockWidth() + "px";
   }
+}
+
+/* JAG-510: the width of the DOCKED editor, normalised on READ.
+   `parseInt` of a missing/empty value is NaN, and a 0 (or a tiny number) stored
+   by an older build made the dock a 30px sliver with `hidden:false`. Anything
+   below MIN_DOCK_W is replaced by the default AND written back, so a session can
+   only ever be broken once — the next load heals it for good. */
+function _dockWidth() {
+  const raw = parseInt(localStorage.getItem(LS_W) || "", 10);
+  const sane = (Number.isFinite(raw) && raw >= MIN_DOCK_W) ? raw : DEFAULT_DOCK_W;
+  if (sane !== raw) {
+    try { localStorage.setItem(LS_W, String(sane)); } catch (e) { /* ignore */ }
+  }
+  return Math.max(MIN_DOCK_W, Math.min(sane, _dockMaxW()));
 }
 
 /* JAG-453: switch the editor between DOCK (default, in the app row), FLOAT (a movable,
@@ -543,13 +563,15 @@ function _applyFloatGeom() {
   d.style.right = "auto"; d.style.bottom = "auto";
   if (!d.hidden) _clampFloat();
 }
-/* Keep a floating window on-screen (never fully above the top / off to the right). */
+/* Keep a floating window on-screen (never fully above the top / off to the right).
+   JAG-510: the title bar (and its tabs) must stay REACHABLE — clamping `top` to
+   `vh - 32` left a tall window with only 32px visible and no way to drag it back. */
 function _clampFloat() {
   const d = state.dock; if (!d) return;
   const r = d.getBoundingClientRect();
   const vw = window.innerWidth, vh = window.innerHeight;
-  const left = Math.max(0, Math.min(r.left, vw - Math.max(80, r.width)));
-  const top = Math.max(0, Math.min(r.top, vh - 32));
+  const left = Math.max(0, Math.min(r.left, Math.max(0, vw - Math.max(80, r.width))));
+  const top = Math.max(0, Math.min(r.top, Math.max(0, vh - Math.min(r.height, 120))));
   d.style.left = left + "px"; d.style.top = top + "px";
 }
 function _saveFloatPos() {
