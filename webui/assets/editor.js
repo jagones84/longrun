@@ -624,22 +624,15 @@ function renderTree(container, d, depth) {
     row.className = "ed-trow";
     row.style.paddingLeft = (4 + depth * 12) + "px";
     row.textContent = "▸ 📁 " + dir.name;
+    // JAG-503: folder rows carry their identity too, so `revealInTree` can walk
+    // the ancestors of a file opened from a hyperlink and expand them one by one.
+    row.title = dir.path;
+    row.dataset.path = dir.path;
+    row.dataset.dir = "1";
+    row.dataset.depth = String(depth);
     const kids = document.createElement("div");
     kids.hidden = true;
-    let loaded = false;
-    row.onclick = async () => {
-      kids.hidden = !kids.hidden;
-      row.textContent = (kids.hidden ? "▸" : "▾") + " 📁 " + dir.name;
-      if (!kids.hidden && !loaded) {
-        loaded = true;
-        const sid = localStorage.getItem("sf_session") || "";
-        try {
-          const sub = await jget("/api/fs/list?session=" + encodeURIComponent(sid) + "&path=" + encodeURIComponent(dir.path));
-          if (sub.error) kids.innerHTML = '<div class="remaining" style="padding-left:' + (16 + depth * 12) + 'px">' + esc(sub.error) + "</div>";
-          else renderTree(kids, sub, depth + 1);
-        } catch (e) { /* ignore */ }
-      }
-    };
+    row.onclick = () => { toggleDir(row, kids, dir, depth); };
     container.appendChild(row);
     container.appendChild(kids);
   });
@@ -655,6 +648,22 @@ function renderTree(container, d, depth) {
     row.oncontextmenu = (e) => { e.preventDefault(); showTreeMenu(e.clientX, e.clientY, f.path); };
     container.appendChild(row);
   });
+}
+
+/* JAG-503: one expander shared by the click handler and the reveal walk. Returns
+   a promise that resolves once the children are rendered, so `revealInTree` can
+   descend level by level instead of giving up on a collapsed folder. */
+async function toggleDir(row, kids, dir, depth) {
+  kids.hidden = !kids.hidden;
+  row.textContent = (kids.hidden ? "▸" : "▾") + " 📁 " + dir.name;
+  if (kids.hidden || kids.dataset.loaded === "1") return;
+  kids.dataset.loaded = "1";
+  const sid = localStorage.getItem("sf_session") || "";
+  try {
+    const sub = await jget("/api/fs/list?session=" + encodeURIComponent(sid) + "&path=" + encodeURIComponent(dir.path));
+    if (sub.error) kids.innerHTML = '<div class="remaining" style="padding-left:' + (16 + depth * 12) + 'px">' + esc(sub.error) + "</div>";
+    else renderTree(kids, sub, depth + 1);
+  } catch (e) { kids.dataset.loaded = ""; }
 }
 
 /* JAG-500: the file tree and the editor tabs must highlight the SAME file both
@@ -803,6 +812,7 @@ async function open(path, opts) {
     activate(existing);
     if (existing === state.active) renderActive();   // activate() no-ops on the already-active tab
     show();
+    if (!opts || opts.reveal !== false) revealInTree(path, { showPane: false });
     return;
   }
   let d;
@@ -825,6 +835,10 @@ async function open(path, opts) {
   renderActive();
   persistTabs();
   show();
+  // JAG-503: a chat hyperlink (or any external open) must LOCATE the file in the
+  // tree — expand its folders and select the row. `showPane: false` respects a
+  // pane the operator deliberately closed; restoreTabs opts out entirely.
+  if (!opts || opts.reveal !== false) revealInTree(d.path, { showPane: false });
 }
 
 function activate(i) {
@@ -959,7 +973,7 @@ async function restoreTabs() {
   if (!saved || !Array.isArray(saved.paths) || !saved.paths.length) { show(); return; }
   for (const p of saved.paths.slice(0, 12)) {
     try {
-      await open(p);
+      await open(p, { reveal: false });   // JAG-503: a restore is not a navigation
     } catch (e) { /* skip */ }
   }
   if (typeof saved.active === "number" && saved.active >= 0 && saved.active < state.tabs.length) {
@@ -1057,24 +1071,60 @@ function showTabMenu(x, y, i) {
   m.style.left = Math.min(x, window.innerWidth - r.width - 8) + "px";
   m.style.top = Math.min(y, window.innerHeight - r.height - 8) + "px";
 }
-/* Reveal a path in the file tree: show the pane, (re)load it, then flash the row.
-   Root-level files (the usual agent output) are found directly; deeper ones need
-   the folders expanded, so we also fall back to a basename match. */
-async function revealInTree(path) {
+/* Reveal a path in the file tree: show the pane, (re)load it, EXPAND the folders
+   that contain the file, then flash + highlight its row.
+   JAG-503: the tree is lazy, so a file opened from a chat hyperlink (or a tab)
+   used to be invisible — its ancestors were collapsed and the row did not exist
+   yet. The reveal now walks the path segment by segment, expanding each folder
+   exactly like a click would, and only then selects the row. */
+function _treeRow(path) {
+  if (!state.treeEl) return null;
+  return Array.from(state.treeEl.querySelectorAll(".ed-trow"))
+    .find((r) => r.dataset.path === path || r.title === path) || null;
+}
+
+async function _expandTo(path) {
+  const root = String(state.root || "").replace(/\/+$/, "");
+  if (!root || !path || String(path).indexOf(root + "/") !== 0) return;
+  const rel = String(path).slice(root.length + 1).split("/").filter(Boolean);
+  let prefix = root;
+  for (let i = 0; i < rel.length - 1; i++) {
+    prefix += "/" + rel[i];
+    const row = _treeRow(prefix);
+    if (!row || row.dataset.dir !== "1") return;
+    const kids = row.nextElementSibling;
+    if (!kids) return;
+    if (kids.hidden) {
+      await toggleDir(row, kids, { name: rel[i], path: prefix },
+                      parseInt(row.dataset.depth || "0", 10));
+    }
+    if (kids.dataset.loaded !== "1") return;   // the folder failed to load
+  }
+}
+
+async function revealInTree(path, opts) {
   if (!state.treeEl) return;
-  state.treeEl.hidden = false;
-  localStorage.setItem("sf_ed_tree", "1");
+  if (!(opts && opts.showPane === false)) {
+    state.treeEl.hidden = false;
+    localStorage.setItem("sf_ed_tree", "1");
+  } else if (state.treeEl.hidden) {
+    return;                                    // the pane is closed: nothing to reveal
+  }
   if (!state.treeEl.childElementCount) await loadTree();
-  const rows = Array.from(state.treeEl.querySelectorAll(".ed-trow"));
-  let hit = rows.find((r) => r.dataset.path === path);
-  if (!hit) hit = rows.find((r) => r.title === path);
-  if (!hit) { const base = basename(path); hit = rows.find((r) => r.textContent.trim().endsWith(base)); }
+  let hit = _treeRow(path);
+  if (!hit) { await _expandTo(path); hit = _treeRow(path); }
+  if (!hit) {
+    // last resort: a row whose label ends with the basename (never a folder row)
+    const base = basename(path);
+    hit = Array.from(state.treeEl.querySelectorAll(".ed-trow"))
+      .find((r) => r.dataset.dir !== "1" && r.textContent.trim().endsWith(base)) || null;
+  }
   if (hit) {
     hit.scrollIntoView({ block: "center" });
     hit.classList.add("flash");
     setTimeout(() => hit.classList.remove("flash"), 1400);
-    if (hit.dataset.path) {
-      rows.forEach((r) => r.classList.remove("active"));
+    if (hit.dataset.path && hit.dataset.dir !== "1") {
+      state.treeEl.querySelectorAll(".ed-trow.active").forEach((r) => r.classList.remove("active"));
       hit.classList.add("active");   // JAG-500: reveal also keeps the row highlighted
     }
   }
