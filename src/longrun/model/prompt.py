@@ -58,8 +58,8 @@ CAPABILITY_RULE = (
     "## Capability questions\n"
     "When the user asks about YOUR OWN capabilities \u2014 which tools you have, "
     "whether a tool exists, where your rules or memory live, what you can do \u2014 "
-    "answer FROM YOUR PROMPT: the `Tool registry` block above, the tool `self`, or "
-    "skills{action:'list'}. NEVER run shell/git (ls, find, git status) to answer a "
+    "answer FROM YOUR PROMPT: the `Tool registry` block above, `self.info` (the tool `self`), or "
+    "`skills.list` (skills{action:'list'}). NEVER run `shell.exec`/`git.run` (ls, find, git status) to answer a "
     "question about yourself: that inspects the machine, not you."
 )
 

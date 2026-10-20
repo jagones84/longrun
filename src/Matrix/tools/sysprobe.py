@@ -32,6 +32,14 @@ TOOL_SCHEMA = {
     "approval": "auto",
 }
 
+TOOL_SCHEMAS = {
+    "sysprobe.snapshot": dict(TOOL_SCHEMA),
+    "sysprobe.cpu": {"description": "[MATRIX experimental] Host CPU load & cores via /proc.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
+    "sysprobe.mem": {"description": "[MATRIX experimental] Host RAM & swap usage via /proc/meminfo.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
+    "sysprobe.disk": {"description": "[MATRIX experimental] Filesystem capacity & free space.", "type": "object", "properties": {"path": {"type": "string"}}, "required": [], "approval": "auto"},
+    "sysprobe.runtime": {"description": "[MATRIX experimental] Python/OS runtime snapshot.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
+}
+
 _SECTIONS = ("all", "cpu", "mem", "disk", "runtime")
 
 
@@ -111,10 +119,12 @@ def _runtime():
     }
 
 
-def execute(args, run_id=None):
+def execute(args, run_id=None, subtool=None):
     """Return the requested host snapshot section(s). Never raises."""
     args = args or {}
     raw = args.get("section")
+    if raw is None and subtool in ("cpu", "mem", "disk", "runtime"):
+        raw = subtool
     section = str(raw if raw is not None else "all").strip().lower()
     if section not in _SECTIONS:
         return {"ok": False, "error": "unknown section %r" % section, "valid": list(_SECTIONS)}

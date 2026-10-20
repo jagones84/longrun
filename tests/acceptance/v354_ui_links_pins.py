@@ -20,6 +20,7 @@ Run: python3 tests/acceptance/v354_ui_links_pins.py
 import os
 import sys
 import tempfile
+from unittest.mock import patch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -72,9 +73,9 @@ check("A3 a relative path is tried against the workspace root FIRST",
       "d = _os.path.abspath(_os.path.expanduser(root))" in API
       and "candidates.append(_os.path.join(d, p))" in API, "")
 check("A4 every fs handler resolves the path argument",
-      '_safe_fs_path(_resolve_fs_arg(q.get("path"), q) or root' in API
-      and API.count('_safe_fs_path(_resolve_fs_arg(q.get("path"), q), _browse_roots()') == 2
-      and '_safe_fs_path(_resolve_fs_arg(b.get("path"), b)' in API, "")
+      "def _fs_allowed_roots(qs=None)" in API
+      and API.count("_fs_allowed_roots(q)") == 3
+      and "_fs_allowed_roots(b)" in API, "")
 
 # --- A4: the README is accurate (positioning + dependencies) -----------------
 check("D1 the wrong 'not another meta-harness' framing is gone",
@@ -103,7 +104,63 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.model import context_engine as CE  # noqa: E402
 from longrun.core import server as S  # noqa: E402
+from longrun.core import api_v02 as API_MOD  # noqa: E402
 from longrun.plan import taskgraph as TG  # noqa: E402
+from longrun.tools import registry as REG  # noqa: E402
+
+# Keep prompt construction local; acceptance tests must never start MCP clients.
+REG._external_tools = lambda: {}
+
+# An explicit `root=` must not grant itself access outside configured browse roots.
+_browse_root = os.path.join(TMP, "browse")
+_outside_root = os.path.join(TMP, "outside")
+os.makedirs(_browse_root, exist_ok=True)
+os.makedirs(_outside_root, exist_ok=True)
+os.environ["LONGRUN_BROWSE_ROOTS"] = _browse_root
+_outside_file = os.path.join(_outside_root, "guarded.txt")
+with open(_outside_file, "w", encoding="utf-8") as _f:
+    _f.write("original")
+_fs_read = API_MOD.fs_read({"path": _outside_file, "root": _outside_root})
+check("A5 explicit roots cannot read outside configured browse roots",
+      _fs_read.get("error") == "path outside allowed roots", str(_fs_read))
+_fs_list = API_MOD.fs_list({"path": _outside_root, "root": _outside_root})
+check("A6 explicit roots cannot list outside configured browse roots",
+      _fs_list.get("error") == "path outside allowed roots", str(_fs_list))
+_fs_write = API_MOD.fs_write({"path": _outside_file, "root": _outside_root,
+                              "content": "tampered"})
+with open(_outside_file, encoding="utf-8") as _f:
+    _outside_content = _f.read()
+check("A7 explicit roots cannot write outside configured browse roots",
+      _fs_write.get("error") == "path outside allowed roots"
+      and _outside_content == "original", str(_fs_write))
+_session_ws_original = API_MOD._session_ws
+API_MOD._session_ws = lambda sid: (_outside_root, {"id": sid})
+try:
+    _session_read = API_MOD.fs_read(
+        {"path": _outside_file, "session": "trusted-workspace"})
+finally:
+    API_MOD._session_ws = _session_ws_original
+check("A8 a session-owned workspace remains accessible outside browse roots",
+      _session_read.get("text") == "original", str(_session_read))
+_previous_browse_roots = os.environ.get("LONGRUN_BROWSE_ROOTS")
+os.environ["LONGRUN_BROWSE_ROOTS"] = (
+    r"C:\Users\Operator\Longrun Work;D:\Shared Files")
+with patch("os.pathsep", ";"), \
+        patch("os.path.realpath", side_effect=lambda path: path), \
+        patch("os.path.expanduser", side_effect=lambda path: path):
+    _windows_roots = API_MOD._browse_roots()
+if _previous_browse_roots is None:
+    os.environ.pop("LONGRUN_BROWSE_ROOTS", None)
+else:
+    os.environ["LONGRUN_BROWSE_ROOTS"] = _previous_browse_roots
+check("A9 browse roots parse Windows drives and paths containing spaces",
+      _windows_roots == [r"C:\Users\Operator\Longrun Work", r"D:\Shared Files"],
+      str(_windows_roots))
+os.environ["LONGRUN_BROWSE_ROOTS"] = os.path.abspath(os.sep)
+_root_file = API_MOD.fs_read({"path": _outside_file})
+check("A10 filesystem root permits reads of files beneath it",
+      _root_file.get("text") == "original", str(_root_file))
+os.environ["LONGRUN_BROWSE_ROOTS"] = _browse_root
 
 g = TG.ensure("cc1", session_id="cc1")
 TG.add_node(g, "open task XY")

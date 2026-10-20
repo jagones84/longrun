@@ -142,6 +142,13 @@ const STYLE = `
 #editorDock .ed-host.hidden{display:none}
 #editorDock .ed-preview{flex:1;min-height:0;overflow:auto;padding:12px;line-height:1.5}
 #editorDock .ed-preview[hidden]{display:none}
+/* JAG-499b: closing the last tab keeps the dock OPEN on an empty state (the file
+   tree stays reachable) instead of making the whole editor disappear. */
+#editorDock .ed-empty{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:6px;padding:16px;text-align:center;opacity:.75}
+#editorDock .ed-empty[hidden]{display:none}
+#editorDock .ed-empty .ed-empty-t{font-weight:600}
+#editorDock .ed-empty .ed-empty-h{opacity:.8;font-size:11px}
 #editorDock .ed-preview img{max-width:100%}
 #editorDock .ed-preview iframe{width:100%;height:100%;border:0;background:#fff}
 #editorDock .ed-preview .md h1,#editorDock .ed-preview .md h2{border-bottom:1px solid var(--line,#26304a);padding-bottom:4px}
@@ -213,6 +220,10 @@ function buildDock() {
         <div class="ed-tabs"></div>
         <div class="ed-host"></div>
         <div class="ed-preview" hidden></div>
+        <div class="ed-empty" hidden>
+          <div class="ed-empty-t">no file open</div>
+          <div class="ed-empty-h">pick one from the file tree (🗂 files) — the editor stays open</div>
+        </div>
       </div>
     </div>
     <div class="ed-foot">
@@ -228,6 +239,7 @@ function buildDock() {
   state.statusEl = dock.querySelector(".ed-status");
   state.host = new EditorHost(dock.querySelector(".ed-host"));
   state.preview = dock.querySelector(".ed-preview");
+  state.emptyEl = dock.querySelector(".ed-empty");   // JAG-499b
   state.toggleBtn = dock.querySelector(".ed-toggle");
   state.resizeEl = dock.querySelector(".ed-resize");
   state.mode = localStorage.getItem(LS_MODE) || "dock";
@@ -628,9 +640,23 @@ function showCode(show) {
   state.preview.hidden = show;
 }
 
+/* JAG-499b: with no open file the dock stays up on an empty state — hide the code
+   host + preview, disable the file actions and show the "no file open" hint. */
+function renderEmpty() {
+  if (!state.dock) return;
+  if (state.emptyEl) state.emptyEl.hidden = false;
+  state.dock.querySelector(".ed-host").classList.add("hidden");
+  if (state.preview) state.preview.hidden = true;
+  state.dock.querySelector(".ed-save").disabled = true;
+  state.dock.querySelector(".ed-revert").disabled = true;
+  state.toggleBtn.hidden = true;
+  setStatus("");
+}
+
 function renderActive() {
   const t = activeTab();
-  if (!t) return;
+  if (!t) { renderEmpty(); return; }
+  if (state.emptyEl) state.emptyEl.hidden = true;
   const code = isCodeMode(t);
   showCode(code);
   if (code) {
@@ -742,11 +768,9 @@ function closeTab(i) {
   if (t.temp && t.objectUrl) { try { URL.revokeObjectURL(t.objectUrl); } catch (e) { /* ignore */ } }
   state.tabs.splice(i, 1);
   if (state.tabs.length === 0) {
-    // JAG-252: persist the EMPTY tab set before hiding the dock. Without this
-    // the closed file stayed in localStorage and reappeared on the next open.
-    state.active = -1;
-    persistTabs();
-    close();
+    // JAG-499b: keep the dock OPEN on an empty state instead of collapsing the
+    // whole editor — the file tree must stay reachable. (persistTabs() runs inside.)
+    showEmpty();
     return;
   }
   // JAG-295-fix: after splicing, tabs after `i` shift down. Closing a tab that
@@ -760,16 +784,25 @@ function closeTab(i) {
 }
 
 /* JAG-494: close every open file in the editor (one confirmation if any is
-   dirty), then hide the dock since there is nothing left to show. */
+   dirty). JAG-499b: the dock STAYS OPEN on an empty state — it does not hide. */
 function closeAllTabs() {
   if (!state.tabs.length) return;
   const dirty = state.tabs.filter((t) => t.dirty).length;
   if (dirty && !window.confirm("Close all " + state.tabs.length + " tabs? " + dirty + " have unsaved changes.")) return;
   state.tabs.forEach((t) => { if (t.temp && t.objectUrl) { try { URL.revokeObjectURL(t.objectUrl); } catch (e) { /* ignore */ } } });
   state.tabs = [];
+  showEmpty();
+}
+
+/* JAG-499b: the "no file open" resting state — clears the active tab + the code
+   host, keeps the dock visible (so 🗂 files / the tree stay reachable). */
+function showEmpty() {
   state.active = -1;
   persistTabs();
-  close();
+  renderTabs();
+  if (state.host) state.host.destroy();
+  renderEmpty();
+  show();
 }
 
 async function save() {
@@ -810,6 +843,7 @@ function show() {
   state.dock.hidden = false;
   localStorage.setItem(LS_OPEN, "true");   // JAG-157: an explicit open sticks
   applyResponsive();
+  if (!activeTab()) renderEmpty();   // JAG-499b: empty state, not a blank dock
   if (state.treeEl && !state.treeEl.hidden && !state.treeEl.childElementCount) loadTree();
   _notifyLayout();
 }

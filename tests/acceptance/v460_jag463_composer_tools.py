@@ -18,6 +18,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.plan import keepgoing  # noqa: E402
+from longrun.core import api_v02  # noqa: E402
+from longrun.tools import registry  # noqa: E402
 
 results = []
 
@@ -80,6 +82,21 @@ check("B6 a row shows why a stored `required` does not ask under global FULL",
 check("B7 an MCP tool with no dot (`<client>__<tool>`) groups under its client",
       'const sep = dot > 0 ? dot : nm0.indexOf("__");' in _html
       and 'const g = sep > 0 ? nm0.slice(0, sep) : "";' in _html)
+
+# ---- B8) a rejected policy update is atomic -------------------------------
+_policy_fixture = {"tools": {"fixture__tool": {"enabled": False, "approval": "required"}}}
+_load_config, _save_config = registry.load_config, registry.save_config
+registry.load_config = lambda reload=False: _policy_fixture
+registry.save_config = lambda cfg: None
+try:
+    _rejected = api_v02._update_policy(
+        {"tool": "fixture__tool", "enabled": True, "approval": "not-a-policy"})
+    check("B8 rejected policy updates do not mutate cached configuration",
+          _rejected.get("ok") is False
+          and _policy_fixture["tools"]["fixture__tool"]
+          == {"enabled": False, "approval": "required"})
+finally:
+    registry.load_config, registry.save_config = _load_config, _save_config
 
 # ---- C) a bookmark reveals its collapsed section -----------------------------
 check("C1 the bookmark click opens every ancestor <details> before aligning",

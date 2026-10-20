@@ -52,13 +52,13 @@ def _persist():
 
 
 def _summarize(tool, args):
-    if tool == "shell":
+    if tool in ("shell", "shell.exec"):
         return str(args.get("command", ""))[:200]
-    if tool in ("fs.read", "fs.write"):
+    if tool in ("fs.read", "fs.write", "fs.edit"):
         return str(args.get("path", ""))[:200]
-    if tool == "git":
+    if tool in ("git", "git.run"):
         return "git " + str(args.get("args", ""))[:180]
-    if tool in ("http", "browser"):
+    if tool in ("http", "http.fetch", "browser", "browser.fetch"):
         return str(args.get("url", ""))[:200]
     return json.dumps(args, ensure_ascii=False)[:200]
 

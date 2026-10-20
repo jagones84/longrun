@@ -58,7 +58,8 @@ def _classify_normal(name, args):
 
 # ---- 1. declared + policy ----------------------------------------------------
 check("1a python/process/glob are registered tools",
-      {"python", "process", "glob"}.issubset(NAMES), sorted(NAMES)[:8])
+      {"python", "process", "glob"}.issubset(NAMES)
+      or {"python.run", "process.list", "glob.list"}.issubset(NAMES), sorted(NAMES)[:8])
 check("1b python is approval=required (declared + classified)",
       _spec_approval("python") == "required"
       and _classify_normal("python", {"code": "1"}) == "required")

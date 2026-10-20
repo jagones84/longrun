@@ -62,8 +62,10 @@ check("2 no nvidia-smi -> gpu None, still ok (no raise)",
 
 # ---- 3. tools_report mirrors the registry -----------------------------------
 tr = diag.tools_report()
+_nat = set(tr.get("native", []))
 check("3a tools_report lists native tools incl. shell/self/fs.read",
-      tr.get("ok") is True and {"shell", "self", "fs.read"}.issubset(set(tr.get("native", []))),
+      tr.get("ok") is True and ({"shell", "self", "fs.read"}.issubset(_nat)
+                                or {"shell.exec", "self.info", "fs.read"}.issubset(_nat)),
       tr.get("count"))
 check("3b external MCP tools are separated (names contain '__')",
       all("__" in n for n in tr.get("external", [])))

@@ -20,6 +20,7 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import BinaryIO
 
 from longrun.core import api_v02
 from longrun.util.dataio import as_int
@@ -61,6 +62,26 @@ from longrun.model.keys import set_key as _set_key
 # ------------------------------------------------------------------ HTTP ----
 
 AUTH_TOKEN = None
+
+
+def _read_bounded_body(stream: BinaryIO, length: int, limit: int) -> bytes | None:
+    """Read a complete bounded request body, draining and rejecting oversize input."""
+    if length < 0 or limit < 0:
+        return None
+    data = bytearray()
+    remaining = length
+    while remaining:
+        room = limit - len(data)
+        size = min(65536, remaining, room) if room > 0 else min(65536, remaining)
+        chunk = stream.read(size)
+        if not chunk:
+            return None
+        if room > 0:
+            data.extend(chunk[:room])
+        remaining -= len(chunk)
+    if length > limit:
+        return None
+    return bytes(data)
 
 
 def _planner_model(sess, model):
@@ -727,7 +748,8 @@ def context_items(session_id=None):
 
     tool_counts = {}
     for nm in _RX_TOOL.findall(blob):
-        if nm in ("fs.read", "fs.write", "fs.edit", "web", "skills"):
+        if nm in ("fs.read", "fs.write", "fs.edit", "web", "web.search", "web.fetch",
+                  "skills", "skills.list", "skills.read", "skills.search"):
             continue
         tool_counts[nm] = tool_counts.get(nm, 0) + 1
     other = [{"label": k, "count": v} for k, v in
@@ -764,9 +786,9 @@ def context_items(session_id=None):
         mo = _obs.match(c)
         if mo:
             tool = mo.group(1)
-            if tool == "skills":
+            if tool == "skills" or tool.startswith("skills."):
                 tok["skills"] += n
-            elif tool == "web":
+            elif tool == "web" or tool.startswith("web."):
                 tok["web"] += n
             elif tool in ("fs.read", "fs.write", "fs.edit"):
                 tok["files"] += n
@@ -1911,11 +1933,15 @@ class Handler(BaseHTTPRequestHandler):
             n = self._content_length()
             if not n:
                 return self._send(400, {"error": "audio body required"})
+            raw = _read_bounded_body(self.rfile, n, MAX_BODY_BYTES)
+            if raw is None:
+                code = 413 if n > MAX_BODY_BYTES else 400
+                return self._send(code, {"error": "audio body exceeds limit" if code == 413
+                                         else "incomplete audio body"})
             import tempfile
             ext = ".wav"
-            # JAG-295-fix: cap the read — an unbounded Content-Length is a memory-DoS.
             with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
-                f.write(self.rfile.read(min(n, MAX_BODY_BYTES)))
+                f.write(raw)
                 tmp = f.name
             try:
                 return self._send(200, voice_stt(tmp))
@@ -1930,7 +1956,11 @@ class Handler(BaseHTTPRequestHandler):
             n = self._content_length()
             if not n:
                 return self._send(400, {"error": "zip body required"})
-            data = self.rfile.read(min(n, MAX_BODY_BYTES))  # JAG-295-fix: bound the read
+            data = _read_bounded_body(self.rfile, n, MAX_BODY_BYTES)
+            if data is None:
+                code = 413 if n > MAX_BODY_BYTES else 400
+                return self._send(code, {"error": "zip body exceeds limit" if code == 413
+                                         else "incomplete zip body"})
             res = api_v02.install_skill_raw(data, name=qs.get("name"),
                                             overwrite=qs.get("overwrite") == "1")
             return self._send(200 if res.get("ok") else 400, res)
@@ -1942,7 +1972,11 @@ class Handler(BaseHTTPRequestHandler):
             if not n:
                 return self._send(400, {"error": "empty body"})
             cap = int(os.environ.get("LONGRUN_ATTACH_MAX", str(32 * 1024 * 1024)))
-            data = self.rfile.read(min(n, cap))
+            data = _read_bounded_body(self.rfile, n, cap)
+            if data is None:
+                code = 413 if n > cap else 400
+                return self._send(code, {"error": "attachment exceeds size limit" if code == 413
+                                         else "incomplete attachment body"})
             res = api_v02.attach_save(data, name=qs.get("name"),
                                       session=qs.get("session"))
             return self._send(200 if res.get("ok") else 400, res)

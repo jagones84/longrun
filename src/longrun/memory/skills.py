@@ -336,9 +336,9 @@ def skills_context(max_chars=2200):
     cats = sorted({s["category"] for s in skills})
     out = ("Skills: %d installed, in categories: %s.\n"
            'Before solving a task, SEARCH this library instead of improvising: '
-           '{"action":"search","query":"<task keywords>"} ranks it over each skill\'s '
+           'call `skills.search` {"query":"<task keywords>"} (or {"action":"search","query":"<task keywords>"}) — ranks over each skill\'s '
            "name, description AND full instructions (SKILL.md body); "
-           '{"action":"list"} dumps every name; {"action":"read","name":"<name>"} '
+           '`skills.list` ({"action":"list"}) dumps every name; `skills.read` {"name":"<name>"} ({"action":"read","name":"<name>"}) '
            "loads ONE skill — then FOLLOW its instructions step by step."
            % (len(skills), ", ".join(cats)))
     if len(out) > max_chars:

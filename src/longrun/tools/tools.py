@@ -842,7 +842,7 @@ def _memory(args, run_id):
     """
     from longrun.memory import memory as mem
     action = (args.get("action") or "recall").strip().lower()
-    limit = int(args.get("limit") or (10 if action == "recent" else 5))
+    limit = int(args.get("limit") or (10 if action in ("recent", "list") else 5))
     if action in ("core", "core_read", "read_core"):
         txt = mem.core_read().strip()
         return {"ok": True, "count": 1 if txt else 0,
@@ -933,7 +933,7 @@ def _memory(args, run_id):
                 "backend": "host", "sandboxed": False}
     include_invalid = bool(args.get("include_invalid"))
     try:
-        if action == "recent":
+        if action in ("recent", "list"):
             hits = [(1.0, r) for r in mem.query("", args.get("kind"), limit)]
         else:
             query = (args.get("query") or "").strip()
@@ -1492,6 +1492,14 @@ def _matrix(args, run_id):
     action = str((args or {}).get("action") or "status").strip().lower()
     if action in ("status", "info"):
         return matrix.status()
+    if action in ("seams", "list_seams"):
+        return matrix.seams_catalog()
+    if action == "scaffold":
+        return matrix.scaffold(
+            args.get("kind") or "tool",
+            args.get("name") or "",
+            description=args.get("description") or "",
+        )
     if action == "enable":
         return matrix.set_enabled(True)
     if action == "disable":
@@ -1538,28 +1546,45 @@ def _matrix(args, run_id):
     return {"ok": False, "error": "unknown matrix action %r" % action}
 
 
-_DISPATCH = {"shell": _shell, "fs.read": _fs_read, "fs.write": _fs_write,
-             "fs.edit": _fs_edit, "diff": _diff,
-             "git": _git, "http": _http, "browser": _browser, "self": _self,
-             "skills": _skills, "memory": _memory, "web": _web, "improve": _improve,
-             "reconcile": _reconcile, "sessions": _sessions, "index": _index,
+_DISPATCH = {"shell": _shell, "shell.exec": _shell,
+             "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
+             "diff": _diff,
+             "git": _git, "git.run": _git,
+             "http": _http, "http.fetch": _http,
+             "browser": _browser, "browser.fetch": _browser,
+             "self": _self, "skills": _skills, "memory": _memory, "web": _web,
+             "improve": _improve,
+             "reconcile": _reconcile, "reconcile.run": _reconcile,
+             "sessions": _sessions, "index": _index,
              "knowledge": _knowledge, "chapters": _chapters, "context": _context,
              # JAG-426: baseline tools every standard harness ships
-             "python": _python, "process": _process, "glob": _glob,
+             "python": _python, "python.run": _python,
+             "process": _process,
+             "glob": _glob, "glob.list": _glob,
              "matrix": _matrix}
 
 
 def _dispatch_execute(tool, args, run_id=None):
     fn = _DISPATCH.get(tool)
+    injected_action = None
+    if fn is None and "." in str(tool or "") and "__" not in str(tool or ""):
+        ns, sub = str(tool).split(".", 1)
+        if ns in _DISPATCH and ns not in ("fs",):
+            fn = _DISPATCH[ns]
+            injected_action = sub
     if fn is None:
         try:
             from longrun.core import matrix as _mtx
-            if tool in _mtx.discover_promoted_tools():
+            pmap = _mtx.discover_promoted_tools()
+            if tool in pmap or (tool + ".run") in pmap:
                 res = _mtx.execute_promoted_tool(tool, args, run_id=run_id)
+                res["tool"] = tool
                 res["args"] = args or {}
                 return res
-            if tool in _mtx.discover_tools():
+            mmap = _mtx.discover_tools()
+            if tool in mmap or (tool + ".run") in mmap:
                 res = _mtx.execute_tool(tool, args, run_id=run_id)
+                res["tool"] = tool
                 res["args"] = args or {}
                 return res
         except Exception as e:  # noqa: BLE001
@@ -1577,7 +1602,9 @@ def _dispatch_execute(tool, args, run_id=None):
                 return {"ok": False, "error": "external MCP call failed: %s" % e,
                         "tool": tool}
         return {"ok": False, "error": "no implementation for tool %r" % tool, "tool": tool}
-    args = args or {}
+    args = dict(args or {})
+    if injected_action is not None:
+        args.setdefault("action", injected_action)
     try:
         res = fn(args, run_id)
     except Exception as e:  # noqa: BLE001

@@ -132,19 +132,19 @@ PLANNER_PROMPT = (
 # said memory existed or WHEN to use it.
 MEMORY_POLICY = (
     "Memory: you have a persistent memory store seeded across sessions (the "
-    "`memory` tool; also GET /api/memory). Relevant past memories are "
+    "`memory.*` subtools; also GET /api/memory). Relevant past memories are "
     "AUTO-INJECTED below as 'Relevant memories from previous sessions' when they "
     "match the current message. Use it deliberately:\n"
-    "- to REMEMBER: call memory{action:'store', content:'...'} as soon as you "
+    "- to REMEMBER: call `memory.store` {content:'...'} as soon as you "
     "learn a durable fact — a user preference, a decision and its reason, a "
     "project convention, the fix for a bug. Keep it short and self-contained.\n"
-    "- to RECALL: call memory{action:'recall', query:'...'} whenever the user "
-    "refers to earlier work or you are missing context; memory{action:'recent'} "
+    "- to RECALL: call `memory.recall` {query:'...'} whenever the user "
+    "refers to earlier work or you are missing context; `memory.list` / `memory.recent` "
     "shows the newest notes.\n"
     "- CORE (always visible): keep a compact, living CORE block of durable facts "
     "— user preferences, project conventions, key decisions. Read it with "
-    "memory{action:'core'} and REWRITE it with memory{action:'set_core', "
-    "content:'...'} whenever it changes; it is injected into every prompt, so "
+    "`memory.core` and REWRITE it with `memory.set_core` "
+    "{content:'...'} whenever it changes; it is injected into every prompt, so "
     "keep it short and current.\n"
     "Never store ephemeral chatter, and never store secrets."
 )
@@ -162,12 +162,12 @@ CHAT_APPROVAL_WAIT = 30
 SKILLS_POLICY = (
     "Skills: you have an installed skill library — its size, categories and the "
     "exact calls are in the skills section below. Before solving a task, SCAN it "
-    'with {"action":"search","query":"..."} (the ranking reads each skill\'s '
+    'with `skills.search` ({"action":"search","query":"..."}) (the ranking reads each skill\'s '
     "instructions, not just its title): if a skill matches (e.g. "
     "using-superpowers, brainstorming, writing-plans, tdd, systematic-debugging, "
-    "research, mcp-builder, code-review), LOAD it with the `skills` tool "
+    "research, mcp-builder, code-review), LOAD it with `skills.read` / LOAD it with the `skills` tool "
     '({\"action\":\"read\",\"name\":\"<name>\"}) and FOLLOW its instructions '
-    'step by step instead of improvising. Use {\"action\":\"list\"} for every '
+    'step by step instead of improvising. Use `skills.list` ({\"action\":\"list\"}) for every '
     "name with descriptions."
 )
 
@@ -181,11 +181,11 @@ def self_summary():
         "servers: config/mcp_clients.yaml (add a stdio command or HTTP url entry, "
         "tools appear as <client>__<tool>; then reload via POST /api/tools or "
         "restart with %s, unit file "
-        "deploy/longrun.service, port 8790). Skills: the `skills` tool lists and "
-        "reads agent skills from skills/<category>/<name>/SKILL.md. Harness-"
-        "native tools: "
+        "deploy/longrun.service, port 8790). Skills: `skills.list` / `skills.read` / `skills.search` "
+        "manage agent skills from skills/<category>/<name>/SKILL.md. Harness-"
+        "native tools are all namespaced `<namespace>.<subtool>` in "
         "registry.TOOL_SCHEMAS + tools.py. Full self report: GET /api/self or "
-        "the `self` tool."
+        "`self.info` (the `self` tool)."
     ) % (REPO, DATA_DIR, osutil.service_hint())
 
 
@@ -2416,10 +2416,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _think_buf["t"] += _th + "\n"   # JAG-170: kept with the card
                 on_delta("think", _th + "\n")
             tool, args = tc
-            # JAG-344: a PLAN-ONLY turn may INSPECT (fs.read / skills) but NEVER mutate.
+            # JAG-344: a PLAN-ONLY turn may INSPECT (fs.read / skills.*) but NEVER mutate.
             # Refuse shell / fs.write / fs.edit / … so the master cannot execute the
             # teammates' work; hand back a directive to plan and stop.
-            if plan_only and tool not in PLAN_ONLY_TOOLS:
+            _t_ns = str(tool or "").split(".", 1)[0]
+            if plan_only and tool not in PLAN_ONLY_TOOLS and _t_ns not in ("skills", "memory", "self"):
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_plan_only_refusal(tool), "nudge")
                 work_steps += 1

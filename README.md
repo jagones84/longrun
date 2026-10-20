@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-222%2F222%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-223%2F223%20tests-blue.svg)](#tests)
 
 Self-hosted AI agent harness with a browser UI, tool-enabled sessions, task graphs,
 team orchestration, HTTP/SSE API, and CLI. Requires Python 3.10+ and PyYAML for the
@@ -74,9 +74,9 @@ rather than crashing the harness.
 ### Write once, run live
 
 ```python
-# src/Matrix/tools/live_probe.py — appears as a tool immediately
-TOOL_SCHEMA = {"description": "probe", "type": "object", "properties": {}}
-def execute(args, run_id=None): return {"ok": True, "stdout": "hello from Matrix"}
+# src/Matrix/tools/live_probe.py — every tool is namespaced <namespace>.<subtool>
+TOOL_SCHEMAS = {"live_probe.ping": {"description": "probe", "type": "object", "properties": {}}}
+def execute(args, run_id=None, subtool=None): return {"ok": True, "stdout": "hello from Matrix"}
 ```
 
 ```python
@@ -88,9 +88,9 @@ Enable or disable the whole Matrix zone **live** — from the WebUI
 (*Settings ▸ Tools & approvals ▸ Enable live Matrix zone*) or from the agent:
 
 ```jsonc
-{"tool": "matrix", "args": {"action": "disable"}}   // only the Nucleus stays active
-{"tool": "matrix", "args": {"action": "enable"}}    // Matrix hooks come back
-{"tool": "matrix", "args": {"action": "status"}}    // {"enabled": true, "hooks": {...}, "tools": [...]}
+{"tool": "matrix.disable", "args": {}}   // only the Nucleus stays active
+{"tool": "matrix.enable", "args": {}}    // Matrix hooks come back
+{"tool": "matrix.status", "args": {}}    // {"enabled": true, "hooks": {...}, "tools": [...]}
 ```
 
 ### Promote to Nucleus, deterministically
@@ -99,8 +99,8 @@ When a Matrix artifact has proven itself, move it into the protected core with
 `promote_to_nucleus`. It is universal — any kind under `src/Matrix`/`.Matrix`:
 
 ```jsonc
-{"tool": "matrix", "args": {"action": "verify_target", "kind": "tool", "name": "live_probe"}}
-{"tool": "matrix", "args": {"action": "promote_to_nucleus", "kind": "tool", "name": "live_probe"}}
+{"tool": "matrix.verify_target", "args": {"kind": "tool", "name": "live_probe"}}
+{"tool": "matrix.promote_to_nucleus", "args": {"kind": "tool", "name": "live_probe"}}
 ```
 
 `kind` ∈ `tool`, `hook`, `module`, `skill`, `rule`, `webui`. Promotion runs four gates:
@@ -324,7 +324,7 @@ LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
 The full command ran successfully during the original README update: **218/218 passed**.
-The acceptance suite now contains **222/222 test files**.
+The acceptance suite now contains **223/223 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

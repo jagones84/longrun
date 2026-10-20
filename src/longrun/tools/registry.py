@@ -47,7 +47,7 @@ DEFAULT_CONFIG = {
 }
 
 # JSON-schema-ish descriptions exposed to the agent prompt and to MCP clients.
-TOOL_SCHEMAS = {
+_LEGACY_SCHEMAS = {
     "shell": {
         "description": ("Run a shell command inside the sandbox (no network, "
                         "read-only rootfs, tmpfs /tmp, scratch /work). Returns "
@@ -421,12 +421,13 @@ TOOL_SCHEMAS = {
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["status", "hotload", "enable", "disable",
+                       "enum": ["status", "seams", "scaffold", "hotload", "enable", "disable",
                                 "checkpoint_save", "checkpoint_rollback",
                                 "git_commit", "git_log", "git_diff", "git_reset",
                                 "test", "clean_trash", "webui_init", "webui_reset", "restart",
                                 "verify_target", "promote_to_nucleus"],
                        "default": "status"},
+            "description": {"type": "string", "description": "short description for matrix.scaffold"},
             "slot": {"type": "integer", "description": "checkpoint slot (1, 2, or 3)"},
             "label": {"type": "string", "description": "checkpoint label (action=checkpoint_save)"},
             "message": {"type": "string", "description": "commit message (action=git_commit)"},
@@ -449,6 +450,106 @@ TOOL_SCHEMAS = {
         "subject": "action",
     },
 }
+
+# Single-action plain tools mapped to their canonical `<namespace>.<subtool>` name.
+_SINGLE_SUBTOOL_MAP = {
+    "shell": "shell.exec",
+    "git": "git.run",
+    "http": "http.fetch",
+    "browser": "browser.fetch",
+    "reconcile": "reconcile.run",
+    "python": "python.run",
+    "glob": "glob.list",
+}
+
+# Default subtool when a legacy plain tool name is referenced without an explicit action.
+LEGACY_DEFAULT_SUBTOOL = {
+    "shell": "shell.exec",
+    "git": "git.run",
+    "http": "http.fetch",
+    "browser": "browser.fetch",
+    "reconcile": "reconcile.run",
+    "python": "python.run",
+    "glob": "glob.list",
+    "self": "self.info",
+    "skills": "skills.list",
+    "index": "index.search",
+    "knowledge": "knowledge.search",
+    "sessions": "sessions.list",
+    "chapters": "chapters.list",
+    "context": "context.status",
+    "memory": "memory.recall",
+    "improve": "improve.propose",
+    "web": "web.search",
+    "diff": "diff.files",
+    "process": "process.list",
+    "matrix": "matrix.status",
+}
+
+
+def _build_canonical_schemas():
+    out = {}
+    for k, sch in _LEGACY_SCHEMAS.items():
+        if "." in k:
+            out[k] = dict(sch)
+            continue
+        if k in _SINGLE_SUBTOOL_MAP:
+            cname = _SINGLE_SUBTOOL_MAP[k]
+            csch = dict(sch)
+            csch["_namespace"] = k
+            csch["_subtool"] = cname.split(".", 1)[1]
+            out[cname] = csch
+            continue
+        props = dict(sch.get("properties") or {})
+        act_prop = props.get("action") or {}
+        actions = list(act_prop.get("enum") or ["run"])
+        if k == "memory" and "list" not in actions:
+            actions.insert(0, "list")
+        if k == "skills" and "search" not in actions:
+            actions.append("search")
+        sub_props = {pk: pv for pk, pv in props.items() if pk != "action"}
+        sub_req = [r for r in (sch.get("required") or []) if r != "action"]
+        base_desc = str(sch.get("description") or "").split(".")[0].strip()
+        for act in actions:
+            cname = "%s.%s" % (k, act)
+            out[cname] = {
+                "description": "%s — %s (%s)." % (cname, base_desc, act),
+                "type": "object",
+                "properties": dict(sub_props),
+                "required": list(sub_req),
+                "subject": sch.get("subject"),
+                "_namespace": k,
+                "_subtool": act,
+            }
+    return out
+
+
+class _NamespacedSchemasDict(dict):
+    """Canonical `<namespace>.<subtool>` schema map with read-only fallback for legacy namespace keys."""
+
+    def __init__(self, canonical, legacy):
+        super().__init__(canonical)
+        self._legacy = legacy
+
+    def __getitem__(self, key):
+        if super().__contains__(key):
+            return super().__getitem__(key)
+        if key in self._legacy:
+            return self._legacy[key]
+        raise KeyError(key)
+
+    def get(self, key, default=None):
+        if super().__contains__(key):
+            return super().__getitem__(key)
+        return self._legacy.get(key, default)
+
+    def __contains__(self, key):
+        return super().__contains__(key) or (key in self._legacy)
+
+
+TOOL_SCHEMAS = _NamespacedSchemasDict(_build_canonical_schemas(), _LEGACY_SCHEMAS)
+KNOWN_NAMESPACES = frozenset(k.split(".", 1)[0] for k in TOOL_SCHEMAS.keys()) | frozenset(_LEGACY_SCHEMAS.keys())
+
 
 
 # ---------------------------------------------------------------- loading ----
@@ -659,9 +760,10 @@ def _promoted_tools():
 
 
 def tool_names():
-    """All known tools: registry entries from config ∪ shipped schemas ∪ promoted ∪ Matrix ∪ external MCP."""
-    return sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(_promoted_tools())
-                  | set(_matrix_tools()) | set(_external_tools()))
+    """All known tools: canonical namespaced tools + promoted + Matrix + external MCP (+ legacy aliases)."""
+    cfg_tools = set(load_config()["tools"])
+    return sorted(cfg_tools | set(TOOL_SCHEMAS.keys()) | set(_LEGACY_SCHEMAS.keys())
+                  | set(_promoted_tools()) | set(_matrix_tools()) | set(_external_tools()))
 
 
 def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
@@ -674,12 +776,14 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     ext = None
     mtx = None
     prom = None
+    pmap = _promoted_tools() if schema is None else {}
     if schema is None:
-        prom = _promoted_tools().get(name)
+        prom = pmap.get(name) or (pmap.get(name + ".run") if "." not in name and "__" not in name else None)
         if prom:
             schema = prom.get("schema")
     if schema is None:
-        mtx = (mtx_snapshot if mtx_snapshot is not None else _matrix_tools()).get(name)
+        m_map = mtx_snapshot if mtx_snapshot is not None else _matrix_tools()
+        mtx = m_map.get(name) or (m_map.get(name + ".run") if "." not in name and "__" not in name else None)
         if mtx:
             schema = mtx.get("schema")
     if schema is None:
@@ -690,18 +794,37 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
                       "type": ins.get("type", "object"),
                       "properties": ins.get("properties", {}),
                       "required": ins.get("required", [])}
-    entry = load_config()["tools"].get(name)
+    tools_cfg = load_config()["tools"] or {}
+    ns_entry = None
+    if "." in name and "__" not in name:
+        ns_prefix = name.split(".", 1)[0]
+        if isinstance(tools_cfg.get(ns_prefix), dict):
+            ns_entry = dict(tools_cfg[ns_prefix])
+    exact_entry = tools_cfg.get(name)
+    if isinstance(exact_entry, dict) and isinstance(ns_entry, dict):
+        entry = {**ns_entry, **exact_entry}
+    elif isinstance(exact_entry, dict):
+        entry = dict(exact_entry)
+    elif isinstance(ns_entry, dict):
+        entry = ns_entry
+    else:
+        entry = exact_entry
+    if entry is None and name in LEGACY_DEFAULT_SUBTOOL:
+        c_entry = tools_cfg.get(LEGACY_DEFAULT_SUBTOOL[name])
+        if isinstance(c_entry, dict):
+            entry = dict(c_entry)
     # JAG-462: an external tool name is `<client>__<tool>`; the client key in the
     # user's mcp config may differ in CASE from the policy key in config/tools.yaml.
     # Fall back to a case-insensitive match for the namespaced form so a client named
     # `PMCP` is not silently DISABLED by an exact-match lookup.
     if entry is None and "__" in name:
         _low = name.lower()
-        for _k, _v in (load_config()["tools"] or {}).items():
+        for _k, _v in tools_cfg.items():
             if str(_k).lower() == _low:
                 entry = _v
                 break
-    if entry is None and (mtx or prom or name == "matrix"):
+    is_mtx_family = bool(mtx or prom or name == "matrix" or name.startswith("matrix."))
+    if entry is None and is_mtx_family:
         entry = {"enabled": True, "approval": (mtx or prom or {}).get("approval", "auto")}
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
     # server is NOT connected has no schema — the tool does not exist. Return None
@@ -732,17 +855,22 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
 
 
 def catalog():
-    """Public catalogue for GET /api/tools and MCP tools/list."""
-    # JAG-253: snapshot the external MCP tools ONCE. `tool_names()` and
-    # `tool_spec()` used to re-evaluate `_external_tools()` independently; while a
-    # server was (re)connecting the two views disagreed, `tool_spec` returned
-    # None, and `None["enabled"]` crashed the handler (dropped HTTP connection).
+    """Public catalogue for GET /api/tools and MCP tools/list.
+
+    Every entry in the public catalogue is strictly namespaced (`<namespace>.<subtool>`
+    or `<server>__<tool>`). Plain namespace keys in `config/tools.yaml` or
+    `data/tools.overlay.yaml` provide namespace-level policy inheritance and are never
+    emitted as standalone plain rows.
+    """
     ext = _external_tools()
     mtx = _matrix_tools()
     prom = _promoted_tools()
-    names = sorted(set(load_config()["tools"]) | set(TOOL_SCHEMAS) | set(prom) | set(mtx) | set(ext))
+    cfg_names = {k for k in (load_config()["tools"] or {}) if ("." in k or "__" in k)}
+    names = sorted(cfg_names | set(TOOL_SCHEMAS.keys()) | set(prom) | set(mtx) | set(ext))
     out = []
     for name in names:
+        if "." not in name and "__" not in name:
+            continue
         spec = tool_spec(name, ext)
         if not spec:
             continue
@@ -770,14 +898,17 @@ def _subject(tool, args):
     """The string a policy regex is matched against for this action."""
     spec = TOOL_SCHEMAS.get(tool) or {}
     key = spec.get("subject")
-    if tool == "git":
+    args = args or {}
+    if tool in ("git", "git.run"):
         return str(args.get("args", ""))
-    if tool == "shell":
+    if tool in ("shell", "shell.exec"):
         # JAG-85: `TZ=Europe/Rome date '…'` is still a read-only `date`. Drop the
         # leading `VAR=value` assignments so the auto-approve patterns (and the
         # hard-deny list) match the REAL command. A pointless approval gate here
         # cost a 30s wait and made a simple "what day is it" turn look stuck.
         return _ENV_ASSIGN_RE.sub("", str(args.get("command", "")))
+    if key == "action" and not args.get("action") and spec.get("_subtool"):
+        return str(spec.get("_subtool"))
     if key:
         return str(args.get(key, ""))
     return json.dumps(args, sort_keys=True)
@@ -875,13 +1006,13 @@ def touches_outside(tool, args, workspace):
         return None
     a = args or {}
     paths = []
-    if tool in ("fs.read", "fs.write", "fs.edit", "diff"):
+    if tool in ("fs.read", "fs.write", "fs.edit", "diff", "diff.files", "diff.text"):
         if a.get("path"):
             paths.append(str(a["path"]))
-    elif tool == "git":
+    elif tool in ("git", "git.run"):
         if a.get("cwd") or a.get("workspace"):
             paths.append(str(a.get("cwd") or a.get("workspace")))
-    elif tool == "shell":
+    elif tool in ("shell", "shell.exec"):
         if a.get("cwd"):
             paths.append(str(a["cwd"]))
         paths.extend(_shell_paths(str(a.get("command", ""))))
@@ -917,9 +1048,11 @@ def classify(tool, args, workspace=None):
         return "denied", "matches hard-deny pattern %r" % hit
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
-    # PT3: `matrix{action:"promote_to_nucleus"}` is gated EXCLUSIVELY by the dedicated
-    # `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
-    if tool == "matrix" and str((args or {}).get("action") or "").strip().lower() == "promote_to_nucleus":
+    # PT3: `matrix.promote_to_nucleus` / `matrix{action:"promote_to_nucleus"}` is gated EXCLUSIVELY
+    # by the dedicated `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
+    if tool == "matrix.promote_to_nucleus" or (
+        tool == "matrix" and str((args or {}).get("action") or "").strip().lower() == "promote_to_nucleus"
+    ):
         ap_mtx = load_config().get("approvals") or {}
         if not bool(ap_mtx.get("allow_matrix_promote", False)):
             return "denied", (

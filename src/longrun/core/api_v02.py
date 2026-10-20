@@ -28,6 +28,7 @@ Routes owned here:
   POST /mcp                       MCP JSON-RPC 2.0 (tools/list, tools/call, …)
 """
 
+import copy
 import json
 import queue
 import sys
@@ -314,43 +315,58 @@ _GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
 
 
 def tool_context():
-    """The tool block for the chat/agent prompt.
-
-    JAG-80: only ENABLED tools are listed as callable. Disabled ones (e.g. the
-    opt-in pmcp gateway surface) are collapsed into one compact footer line — a
-    huge [DISABLED] wall used to drown the real tools and push the model into
-    calling an approval-gated gateway tool.
-
-    JAG-497: the ENABLED pmcp gateway was the same wall in miniature — 26 listed
-    tools cost ~8k chars of every prompt (49% of this block) for a surface the
-    model reaches through `catalog_search` → `describe` → `invoke`. The bulk is
-    now ONE compact line that still NAMES them, so they stay callable.
-    """
-    lines = ["Tool registry (allowlist — only enabled tools may be called):"]
-    disabled = []
-    gateway = []
+    """Render the enabled tools + their approval policy for the chat prompt."""
+    lines = ["Tool registry (allowlist — only enabled `<namespace>.<subtool>` tools may be called):"]
+    gw_collapsed = 0
+    disabled = 0
+    ns_groups = {}
+    ns_order = []
     for t in registry.catalog():
         if not t["enabled"]:
-            disabled.append(t["name"])
+            disabled += 1
             continue
         nm = t["name"]
-        if nm.startswith(_GATEWAY_PREFIX) and nm[len(_GATEWAY_PREFIX):] not in _GATEWAY_KEEP:
-            gateway.append(nm[len(_GATEWAY_PREFIX):])
-            continue
-        props = ", ".join((t["inputSchema"].get("properties") or {}).keys())
-        lines.append("  - %-9s(%s) approval=%s :: %s"
-                     % (nm, props, t["approval"], t["description"]))
-    if gateway:
-        lines.append("  - %s* (%d more gateway tools, callable by name; the trio "
-                     "above finds + runs them): %s"
-                     % (_GATEWAY_PREFIX, len(gateway), ", ".join(sorted(gateway))))
+        if nm.startswith(_GATEWAY_PREFIX):
+            short = nm[len(_GATEWAY_PREFIX):]
+            if short not in _GATEWAY_KEEP:
+                gw_collapsed += 1
+                continue
+        if "." in nm and "__" not in nm and not nm.startswith("fs."):
+            ns, sub = nm.split(".", 1)
+            if ns not in ns_groups:
+                ns_groups[ns] = {"subs": [], "props": [], "approval": t["approval"], "desc": t["description"]}
+                ns_order.append(("ns", ns))
+            ns_groups[ns]["subs"].append(sub)
+            for pk in ((t.get("inputSchema") or {}).get("properties") or {}).keys():
+                if pk not in ns_groups[ns]["props"]:
+                    ns_groups[ns]["props"].append(pk)
+        else:
+            ns_order.append(("single", t))
+    for kind, item in ns_order:
+        if kind == "single":
+            t = item
+            props = ", ".join((t["inputSchema"].get("properties") or {}).keys())
+            lines.append("  - %-9s(%s) approval=%s :: %s"
+                         % (t["name"], props, t["approval"], t["description"]))
+        else:
+            ns = item
+            g = ns_groups[ns]
+            subs = g["subs"]
+            label = ("%s.%s" % (ns, subs[0])) if len(subs) == 1 else ("%s.{%s}" % (ns, "|".join(subs)))
+            props = ", ".join(g["props"][:6])
+            raw_desc = str(g["desc"] or "")
+            if " — " in raw_desc:
+                raw_desc = raw_desc.split(" — ", 1)[1]
+            lines.append("  - %-9s(%s) approval=%s :: %s"
+                         % (label, props, g["approval"], raw_desc[:140]))
+    if gw_collapsed:
+        lines.append("  (+ %d more `%s*` tools enabled — reach them via "
+                     "`%scatalog_search` -> `describe` -> `invoke`)"
+                     % (gw_collapsed, _GATEWAY_PREFIX, _GATEWAY_PREFIX))
     if disabled:
-        # JAG-202: keep this to ONE short line. Listing every disabled tool name
-        # was a ~900-char wall that drowned the callable tools and pushed the model
-        # toward an approval-gated gateway tool (the JAG-80 failure).
-        lines.append("(%d tool(s) present but DISABLED / not callable — e.g. %s … ; "
-                     "the user can enable one in config/tools.yaml)"
-                     % (len(disabled), ", ".join(disabled[:3])))
+        lines.append("  (%d tool(s) present in the registry are DISABLED by "
+                     "policy and omitted above; enable them in Settings -> "
+                     "Tools & approvals or config/tools.yaml.)" % disabled)
     return "\n".join(lines)
 
 
@@ -1755,7 +1771,9 @@ def _apply_tool_fields(entry, body):
 
 
 def _update_policy(body):
-    cfg = registry.load_config()
+    # Work on a candidate: validation may fail after earlier fields were changed,
+    # and load_config() returns the shared live cache.
+    cfg = copy.deepcopy(registry.load_config())
     # JAG-127c: the GLOBAL approval policy (Config panel) — no `tool` needed.
     #   approvals.mode: normal | full ("never ask, only hard-deny blocks")
     #   approvals.outside_workspace: required | auto
@@ -2037,11 +2055,22 @@ def provider_reload():
 
 
 def _browse_roots():
-    """Allowed roots for the folder picker (default: the user's home)."""
+    """Allowed roots, separated with the current platform's path-list separator."""
     import os as _os
     env = _os.environ.get("LONGRUN_BROWSE_ROOTS")
-    roots = [r for r in env.replace(":", " ").split() if r] if env else [_os.path.expanduser("~")]
+    roots = [r.strip() for r in env.split(_os.pathsep) if r.strip()] \
+        if env else [_os.path.expanduser("~")]
     return [_os.path.realpath(_os.path.expanduser(r)) for r in roots]
+
+
+def _path_is_within(path: str, root: str) -> bool:
+    """Check path containment without breaking filesystem or drive roots."""
+    import os as _os
+    try:
+        common = _os.path.commonpath([path, root])
+        return _os.path.normcase(common) == _os.path.normcase(root)
+    except (OSError, ValueError):
+        return False
 
 
 def fs_dirs(qs=None):
@@ -2049,7 +2078,7 @@ def fs_dirs(qs=None):
     import os as _os
     roots = _browse_roots()
     p = _os.path.realpath(_os.path.expanduser((qs or {}).get("path") or roots[0]))
-    if not any(p == r or p.startswith(r + _os.sep) for r in roots):
+    if not any(_path_is_within(p, r) for r in roots):
         return {"error": "path outside browse roots", "roots": roots, "path": p}
     if not _os.path.isdir(p):
         return {"error": "not a directory: %s" % p, "roots": roots, "path": p}
@@ -2066,7 +2095,7 @@ def fs_dirs(qs=None):
         return {"error": str(e), "roots": roots, "path": p}
     dirs.sort(key=lambda d: d["name"].lower())
     parent = _os.path.dirname(p)
-    if not any(parent == r or parent.startswith(r + _os.sep) for r in roots):
+    if not any(_path_is_within(parent, r) for r in roots):
         parent = None
     return {"path": p, "parent": parent, "roots": roots, "dirs": dirs[:500], "count": len(dirs)}
 
@@ -2092,6 +2121,18 @@ def _ws_root(qs=None) -> str:
         if ws:
             return _os.path.realpath(_os.path.expanduser(ws))
     return _browse_roots()[0]
+
+
+def _fs_allowed_roots(qs=None) -> list[str]:
+    """Return browse roots plus a trusted session workspace, never client root input."""
+    import os as _os
+    q = qs or {}
+    roots = _browse_roots()
+    if not q.get("root"):
+        workspace = _ws_root(q)
+        if workspace and not any(_path_is_within(workspace, root) for root in roots):
+            roots.append(workspace)
+    return roots
 
 
 def _resolve_fs_arg(path, qs=None) -> str:
@@ -2131,8 +2172,7 @@ def _resolve_fs_arg(path, qs=None) -> str:
             parent = _os.path.dirname(d)
             if parent == d:
                 break
-            if roots and not any(parent == r or parent.startswith(r + _os.sep)
-                                 for r in roots):
+            if roots and not any(_path_is_within(parent, r) for r in roots):
                 break
             d = parent
     candidates.append(_os.path.join(_os.getcwd(), p))
@@ -2152,7 +2192,7 @@ def _safe_fs_path(path, roots=None):
     import os as _os
     roots = roots or _browse_roots()
     p = _os.path.realpath(_os.path.expanduser(path or ""))
-    if not any(p == r or p.startswith(r + _os.sep) for r in roots):
+    if not any(_path_is_within(p, r) for r in roots):
         return None
     return p
 
@@ -2166,7 +2206,8 @@ def fs_list(qs=None) -> dict:
     import os as _os
     q = qs or {}
     root = _ws_root(q)
-    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q) or root, [root] + _browse_roots())
+    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q) or root,
+                      _fs_allowed_roots(q))
     if not p:
         return {"error": "path outside allowed roots", "root": root}
     if not _os.path.isdir(p):
@@ -2201,7 +2242,7 @@ def fs_read(qs=None) -> dict:
     """
     import os as _os
     q = qs or {}
-    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _browse_roots() + [_ws_root(q)])
+    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _fs_allowed_roots(q))
     if not p:
         return {"error": "path outside allowed roots"}
     if not _os.path.isfile(p):
@@ -2228,7 +2269,7 @@ def _fs_raw(handler, qs=None):
     import os as _os
     import mimetypes
     q = qs or {}
-    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _browse_roots() + [_ws_root(q)])
+    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _fs_allowed_roots(q))
     if not p or not _os.path.isfile(p):
         return _r(handler, 404, {"error": "not found"})
     if _os.path.getsize(p) > 32 * 1024 * 1024:
@@ -2263,7 +2304,7 @@ def fs_write(body) -> dict:
     """
     import os as _os
     b = body or {}
-    p = _safe_fs_path(_resolve_fs_arg(b.get("path"), b), _browse_roots() + [_ws_root(b)])
+    p = _safe_fs_path(_resolve_fs_arg(b.get("path"), b), _fs_allowed_roots(b))
     if not p:
         return {"error": "path outside allowed roots"}
     if not _os.path.isfile(p):

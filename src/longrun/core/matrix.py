@@ -78,11 +78,17 @@ MATRIX_SYSTEM_PROMPT = (
     "are hard-protected (`NUCLEUS_PROTECTED`). Import Nucleus functions freely; never edit them.\n"
     "- **MATRIX (`src/Matrix/` & `.Matrix/`):** all 13 subpackages (`agent`, `core`, `integrations`, "
     "`interop`, `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `tools`, `util`, `webui`) "
-    "are live-hooked via `src/Matrix/<subpkg>/hooks.py` (fail-open `matrix.call_hook`), "
-    "`src/Matrix/tools/<name>.py` (`TOOL_SCHEMA` + `execute`), `/api/matrix/ext/*`, and "
-    "`src/Matrix/webui/plugins.js`. Run tests in `.Matrix/trash/`, maintain `.Matrix/docs/HANDOFF.md` "
-    "& `MANUAL.md`, put rules in `.Matrix/rules/*.md` and skills in `.Matrix/skills/<name>/SKILL.md`, "
-    "and use `checkpoint_save` (slots 1..3), `git_commit` (max 20), `hotload`, or `restart`."
+    "are live-hooked via `src/Matrix/<subpkg>/hooks.py` (fail-open `matrix.call_hook`).\n"
+    "- **Creating Matrix Tools (strict `<namespace>.<subtool>` syntax):** write `src/Matrix/tools/<namespace>.py` "
+    "defining `TOOL_SCHEMAS = {'<namespace>.<subtool>': {'description': '...', 'type': 'object', 'properties': {...}, 'required': []}}` "
+    "and `def execute(args, run_id=None, subtool=None) -> dict:` (or call `matrix.scaffold` with `kind='tool', name='<namespace>.<subtool>'`). "
+    "NEVER create plain un-namespaced tool names; every tool MUST be `<namespace>.<subtool>`.\n"
+    "- **Creating Hooks, Modules, Skills, Rules, WebUI:** call `matrix.seams` to inspect all 13 hook signatures, "
+    "or `matrix.scaffold` (`kind` in `tool|hook|module|skill|rule|webui`, `name=...`) to generate a compliant skeleton "
+    "(e.g. `src/Matrix/plan/hooks.py`, `src/Matrix/util/<mod>.py`, `.Matrix/skills/<name>/SKILL.md`, `.Matrix/rules/<NN>-<name>.md`, `src/Matrix/webui/plugins.js`).\n"
+    "- **Lifecycle & Promotion:** test in `.Matrix/trash/` via `matrix.test` (`target='<kind>:<name>'`), "
+    "check with `matrix.verify_target`, and promote to Nucleus with `matrix.promote_to_nucleus`. "
+    "Use `matrix.checkpoint_save` (slots 1..3), `matrix.git_commit` (max 20), `matrix.hotload`, `matrix.enable`/`matrix.disable`."
 )
 
 
@@ -758,10 +764,112 @@ def call_hook(subpkg, fn_name, *args, default=None, repo_root=None, **kwargs):
             hc["runtime_errors"] = rt[-20:]
         return cur_default
 
+class _NamespacedToolList(list):
+    """List of `<namespace>.<subtool>` names that also matches `<namespace>` in `x in lst` checks."""
+
+    def __contains__(self, item):
+        if super().__contains__(item):
+            return True
+        if isinstance(item, str) and "." not in item:
+            prefix = item + "."
+            return any(isinstance(x, str) and x.startswith(prefix) for x in self)
+        return False
+
+
+class _NamespacedToolMap(dict):
+    """Dict of `<namespace>.<subtool>` tool specs that also resolves `<namespace>` via `.get()` / `in`."""
+
+    def __contains__(self, key):
+        if super().__contains__(key):
+            return True
+        if isinstance(key, str) and "." not in key:
+            if super().__contains__(key + ".run"):
+                return True
+            prefix = key + "."
+            return any(isinstance(k, str) and k.startswith(prefix) for k in self.keys())
+        return False
+
+    def get(self, key, default=None):
+        if super().__contains__(key):
+            return super().__getitem__(key)
+        if isinstance(key, str) and "." not in key:
+            if super().__contains__(key + ".run"):
+                return super().__getitem__(key + ".run")
+            prefix = key + "."
+            for k in sorted(self.keys()):
+                if isinstance(k, str) and k.startswith(prefix):
+                    return super().__getitem__(k)
+        return default
+
+
+def _invoke_matrix_tool_fn(fn, args, run_id, subtool=None):
+    call_args = dict(args or {})
+    if subtool and "action" not in call_args:
+        call_args["action"] = subtool
+    try:
+        import inspect
+        sig = inspect.signature(fn)
+        params = list(sig.parameters.values())
+        accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
+        if "subtool" in sig.parameters or accepts_var_kw or len(params) >= 3:
+            return fn(call_args, run_id, subtool=subtool)
+    except Exception:  # noqa: BLE001
+        pass
+    return fn(call_args, run_id)
+
+
+def _extract_module_subtools(tname, mod, p, origin):
+    """Extract one or more `<namespace>.<subtool>` entries from a Matrix/promoted tool module."""
+    exec_fn = getattr(mod, "execute", None)
+    if not callable(exec_fn):
+        return None
+    schemas_map = getattr(mod, "TOOL_SCHEMAS", None)
+    schema_single = getattr(mod, "TOOL_SCHEMA", None)
+    raw_entries = {}
+    if isinstance(schemas_map, dict) and schemas_map:
+        for k, sch in schemas_map.items():
+            if not isinstance(sch, dict):
+                continue
+            full_k = k if "." in str(k) else ("%s.%s" % (tname, k))
+            raw_entries[str(full_k)] = sch
+    elif isinstance(schema_single, dict):
+        explicit_name = str(schema_single.get("name") or getattr(mod, "TOOL_NAME", "") or "").strip()
+        if explicit_name and "." in explicit_name:
+            raw_entries[explicit_name] = schema_single
+        else:
+            sub = str(schema_single.get("subtool") or "run").strip() or "run"
+            raw_entries["%s.%s" % (tname, sub)] = schema_single
+    else:
+        return None
+    out = {}
+    prefix_tag = "[MATRIX] " if origin == "matrix" else ""
+    for full_name, sch in raw_entries.items():
+        subtool = full_name.split(".", 1)[1] if "." in full_name else "run"
+        desc = str(sch.get("description") or full_name)
+        if prefix_tag and not desc.startswith("[MATRIX"):
+            desc = prefix_tag + desc
+        out[full_name] = {
+            "name": full_name,
+            "namespace": tname,
+            "subtool": subtool,
+            "origin": origin,
+            "file": p,
+            "schema": {
+                "description": desc,
+                "type": sch.get("type", "object"),
+                "properties": sch.get("properties", {}),
+                "required": sch.get("required", []),
+            },
+            "approval": str(sch.get("approval") or "auto"),
+            "execute": exec_fn,
+        }
+    return out
+
+
 def _builtin_tool_names():
     try:
         from longrun.tools import registry
-        return set(registry.TOOL_SCHEMAS.keys())
+        return set(registry.TOOL_SCHEMAS.keys()) | set(getattr(registry, "KNOWN_NAMESPACES", set()))
     except Exception:  # noqa: BLE001
         return set()
 
@@ -775,7 +883,7 @@ def hotload(repo_root=None):
         sys.path.insert(0, src_parent)
     tdir = os.path.join(msrc, "tools")
     builtins = _builtin_tool_names()
-    loaded = {}
+    loaded = _NamespacedToolMap()
     errors = []
     stamps = {}
     if os.path.isdir(tdir):
@@ -800,28 +908,23 @@ def hotload(repo_root=None):
                 spec = importlib.util.spec_from_file_location(mod_name, p)
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
-                schema = getattr(mod, "TOOL_SCHEMA", None)
-                exec_fn = getattr(mod, "execute", None)
-                if not isinstance(schema, dict) or not callable(exec_fn):
+                extracted = _extract_module_subtools(tname, mod, p, origin="matrix")
+                if not extracted:
                     errors.append({
                         "file": bn,
                         "tool": tname,
-                        "error": "module must define dict TOOL_SCHEMA and callable execute(args, run_id=None)",
+                        "error": "module must define dict TOOL_SCHEMAS (or TOOL_SCHEMA) and callable execute(args, run_id=None, subtool=None)",
                     })
                     continue
-                loaded[tname] = {
-                    "name": tname,
-                    "origin": "matrix",
-                    "file": p,
-                    "schema": {
-                        "description": "[MATRIX] " + str(schema.get("description") or tname),
-                        "type": schema.get("type", "object"),
-                        "properties": schema.get("properties", {}),
-                        "required": schema.get("required", []),
-                    },
-                    "approval": str(schema.get("approval") or "auto"),
-                    "execute": exec_fn,
-                }
+                for full_name, entry in extracted.items():
+                    if full_name in builtins:
+                        errors.append({
+                            "file": bn,
+                            "tool": full_name,
+                            "error": "collision with built-in Nucleus tool %r is forbidden" % full_name,
+                        })
+                        continue
+                    loaded[full_name] = entry
             except Exception as e:  # noqa: BLE001 — isolate broken tool module
                 err_info = _format_matrix_error(e, p)
                 errors.append({
@@ -836,7 +939,7 @@ def hotload(repo_root=None):
             _HOOK_CACHE[msrc]["runtime_errors"] = []
     return {
         "ok": len(errors) == 0 and len(hook_errors) == 0,
-        "loaded_tools": sorted(loaded.keys()),
+        "loaded_tools": _NamespacedToolList(sorted(loaded.keys())),
         "active_hooks": active_hooks,
         "errors": errors,
         "hook_errors": hook_errors,
@@ -846,7 +949,7 @@ def hotload(repo_root=None):
 def discover_tools(repo_root=None):
     """Return `{name: spec_dict}` for valid Matrix tools, auto-reloading when mtimes change."""
     if not is_enabled():
-        return {}
+        return _NamespacedToolMap()
     _root, msrc, _mdot = _roots(repo_root)
     tdir = os.path.join(msrc, "tools")
     cur_stamps = {}
@@ -863,7 +966,7 @@ def discover_tools(repo_root=None):
         if not cached or cached.get("stamps") != cur_stamps:
             hotload(repo_root)
             cached = _TOOL_CACHE.get(msrc) or {"tools": {}}
-        return dict(cached.get("tools") or {})
+        return _NamespacedToolMap(cached.get("tools") or {})
 
 
 def execute_tool(name, args, run_id=None, repo_root=None):
@@ -876,7 +979,7 @@ def execute_tool(name, args, run_id=None, repo_root=None):
     t0 = time.time()
     snap = matrix_guard.snapshot_nucleus_digests(repo_root)
     try:
-        res = entry["execute"](args or {}, run_id)
+        res = _invoke_matrix_tool_fn(entry["execute"], args or {}, run_id, subtool=entry.get("subtool"))
         if not isinstance(res, dict):
             res = {"ok": True, "stdout": str(res)}
     except Exception as e:  # noqa: BLE001
@@ -1121,8 +1224,8 @@ def status(repo_root=None):
         "matrix_src": msrc,
         "matrix_dot": mdot,
         "subpackages": list(matrix_guard.MATRIX_SUBDIRS),
-        "tools": sorted(tools_map.keys()),
-        "promoted_tools": sorted(discover_promoted_tools(repo_root).keys()),
+        "tools": _NamespacedToolList(sorted(tools_map.keys())),
+        "promoted_tools": _NamespacedToolList(sorted(discover_promoted_tools(repo_root).keys())),
         "tool_errors": cached.get("errors") or [],
         "active_hooks": hooks_map,
         "hook_errors": hook_errs,
@@ -1142,7 +1245,7 @@ def discover_promoted_tools(repo_root=None):
     """Discover tools permanently promoted into Nucleus (`src/longrun/tools/promoted/*.py`)."""
     root, _msrc, _mdot = _roots(repo_root)
     pdir = os.path.join(root, "src", "longrun", "tools", "promoted")
-    out = {}
+    out = _NamespacedToolMap()
     if not os.path.isdir(pdir):
         return out
     for p in sorted(glob.glob(os.path.join(pdir, "*.py"))):
@@ -1154,22 +1257,10 @@ def discover_promoted_tools(repo_root=None):
             spec = importlib.util.spec_from_file_location("longrun.tools.promoted.%s" % tname, p)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
-            schema = getattr(mod, "TOOL_SCHEMA", None)
-            exec_fn = getattr(mod, "execute", None)
-            if isinstance(schema, dict) and callable(exec_fn):
-                out[tname] = {
-                    "name": tname,
-                    "origin": "nucleus",
-                    "file": p,
-                    "schema": {
-                        "description": str(schema.get("description") or tname),
-                        "type": schema.get("type", "object"),
-                        "properties": schema.get("properties", {}),
-                        "required": schema.get("required", []),
-                    },
-                    "approval": str(schema.get("approval") or "auto"),
-                    "execute": exec_fn,
-                }
+            extracted = _extract_module_subtools(tname, mod, p, origin="nucleus")
+            if extracted:
+                for full_name, entry in extracted.items():
+                    out[full_name] = entry
         except Exception:  # noqa: BLE001
             continue
     return out
@@ -1184,7 +1275,7 @@ def execute_promoted_tool(name, args, run_id=None, repo_root=None):
                 "error": "unknown promoted Nucleus tool %r" % name, "exit_code": 127}
     t0 = time.time()
     try:
-        res = entry["execute"](args or {}, run_id)
+        res = _invoke_matrix_tool_fn(entry["execute"], args or {}, run_id, subtool=entry.get("subtool"))
         if not isinstance(res, dict):
             res = {"ok": True, "stdout": str(res)}
     except Exception as e:  # noqa: BLE001
@@ -1380,3 +1471,117 @@ def promote_to_nucleus(kind, name, repo_root=None):
         "pre_commit": pre_sha,
         "hotload": hl,
     }
+
+
+SEAMS_SPEC = {
+    "tools": {
+        "path": "src/Matrix/tools/<namespace>.py",
+        "contract": "TOOL_SCHEMAS = {'<namespace>.<subtool>': {...}} + def execute(args, run_id=None, subtool=None) -> dict",
+    },
+    "agent": {"path": "src/Matrix/agent/hooks.py", "hooks": ["def transform_turn(sess, msgs, message) -> list"]},
+    "core": {
+        "path": "src/Matrix/core/hooks.py",
+        "hooks": ["def on_event(event_dict) -> None", "def handle_http(method, sub_path, qs, body) -> dict"],
+    },
+    "memory": {"path": "src/Matrix/memory/hooks.py", "hooks": ["def augment_recall(kind, results, limit) -> list"]},
+    "model": {
+        "path": "src/Matrix/model/hooks.py",
+        "hooks": ["def extend_prompt(sess=None, ws=None) -> str", "def pick_model(role, default_model) -> str"],
+    },
+    "plan": {
+        "path": "src/Matrix/plan/hooks.py",
+        "hooks": ["def score_candidate(text, base_score) -> float", "def decide_keepgoing(decision, open_nodes, rounds) -> dict"],
+    },
+    "orchestrate": {"path": "src/Matrix/orchestrate/hooks.py", "hooks": ["def on_job_change(jobs_payload, event) -> dict"]},
+    "research": {"path": "src/Matrix/research/hooks.py", "hooks": ["def augment_research(query, report) -> dict"]},
+    "interop": {"path": "src/Matrix/interop/hooks.py", "hooks": ["def extra_mcp_tools() -> list"]},
+    "orbit": {"path": "src/Matrix/orbit/hooks.py", "hooks": ["def augment_orbit(payload) -> dict"]},
+    "integrations": {"path": "src/Matrix/integrations/hooks.py", "hooks": ["def transform_bridge_payload(payload) -> dict"]},
+    "util": {"path": "src/Matrix/util/hooks.py", "hooks": ["def on_ledger_add(entry) -> dict"]},
+    "webui": {"path": "src/Matrix/webui/plugins.js", "contract": "Browser JS auto-loaded at /api/matrix/plugins.js"},
+    "skill": {"path": ".Matrix/skills/<name>/SKILL.md", "contract": "Markdown skill instructions with title & steps"},
+    "rule": {"path": ".Matrix/rules/<NN>-<name>.md", "contract": "Standing rule automatically appended to system prompt"},
+}
+
+
+def seams_catalog():
+    """Return the exact specification of all 13 Matrix -> Nucleus live seams and artifact contracts."""
+    return {"ok": True, "seams": SEAMS_SPEC, "stdout": json.dumps(SEAMS_SPEC, indent=2)}
+
+
+def scaffold(kind, name, description="", repo_root=None):
+    """Deterministically scaffold a compliant Matrix artifact (`tool`, `hook`, `module`, `skill`, `rule`, `webui`)."""
+    matrix_guard.ensure_layout(repo_root)
+    _root, msrc, mdot = _roots(repo_root)
+    k = str(kind or "tool").strip().lower()
+    nm = str(name or "").strip()
+    desc = str(description or ("Matrix %s %s" % (k, nm))).strip()
+    if not nm:
+        return {"ok": False, "error": "name is required for matrix.scaffold"}
+    if k == "tool":
+        if "." in nm:
+            ns, sub = nm.split(".", 1)
+        else:
+            ns, sub = nm, "run"
+        ns = re.sub(r"[^a-zA-Z0-9_]", "_", ns).strip("_") or "custom"
+        sub = re.sub(r"[^a-zA-Z0-9_]", "_", sub).strip("_") or "run"
+        full_tool = "%s.%s" % (ns, sub)
+        fpath = os.path.join(msrc, "tools", ns + ".py")
+        body = (
+            '"""Matrix tool namespace: %s."""\n\n'
+            "TOOL_SCHEMAS = {\n"
+            '    "%s": {\n'
+            '        "description": %r,\n'
+            '        "type": "object",\n'
+            '        "properties": {},\n'
+            '        "required": [],\n'
+            '        "approval": "auto",\n'
+            "    },\n"
+            "}\n\n\n"
+            "def execute(args, run_id=None, subtool=None):\n"
+            "    args = args or {}\n"
+            '    return {"ok": True, "stdout": "%s executed", "subtool": subtool or %r}\n'
+            % (ns, full_tool, desc, full_tool, sub)
+        )
+    elif k == "hook":
+        if nm not in HOOK_SUBPACKAGES:
+            return {"ok": False, "error": "hook subpackage must be one of %s" % (list(HOOK_SUBPACKAGES),)}
+        fpath = os.path.join(msrc, nm, "hooks.py")
+        sigs = (SEAMS_SPEC.get(nm) or {}).get("hooks") or ["def on_hook(*args, **kwargs): return None"]
+        fn_blocks = []
+        for s in sigs:
+            fn_head = s.split("->")[0].strip()
+            first_arg = "None"
+            if "(" in fn_head and ")" in fn_head:
+                inner = fn_head.split("(", 1)[1].rsplit(")", 1)[0].split(",")
+                if len(inner) >= 2 and nm in ("plan", "memory", "model", "research"):
+                    first_arg = inner[1].split("=")[0].strip()
+                elif inner and inner[0].strip():
+                    first_arg = inner[0].split("=")[0].strip()
+            fn_blocks.append("%s:\n    return %s\n" % (fn_head, first_arg))
+        body = '"""Matrix live hooks for `longrun.%s`."""\n\n' % nm + "\n\n".join(fn_blocks)
+    elif k == "module":
+        k2, nm2, fpath = _resolve_target_path("module", nm, repo_root)
+        if not fpath:
+            return {"ok": False, "error": "module name must be '<subpkg>/<mod>' where <subpkg> is one of %s" % (list(HOOK_SUBPACKAGES),)}
+        body = '"""Matrix shared module `%s` (%s)."""\n\n\ndef helper(val):\n    return val\n' % (nm2, desc)
+    elif k == "skill":
+        s_name = re.sub(r"[^a-zA-Z0-9_-]", "-", nm).strip("-")
+        fpath = os.path.join(mdot, "skills", s_name, "SKILL.md")
+        body = "# %s\n\n%s\n\n## Steps\n1. Inspect context.\n2. Execute and verify.\n" % (s_name, desc)
+    elif k == "rule":
+        r_name = nm if nm.endswith(".md") else (nm + ".md")
+        fpath = os.path.join(mdot, "rules", os.path.basename(r_name))
+        body = "# %s\n\n%s\n" % (os.path.basename(r_name)[:-3], desc)
+    elif k == "webui":
+        bn = os.path.basename(nm) or "plugins.js"
+        fpath = os.path.join(msrc, "webui", bn)
+        body = "/* Matrix WebUI plugin: %s */\nconsole.debug('[Matrix plugin loaded]', %r);\n" % (bn, desc)
+    else:
+        return {"ok": False, "error": "kind must be tool, hook, module, skill, rule, or webui"}
+    os.makedirs(os.path.dirname(fpath), exist_ok=True)
+    with open(fpath, "w", encoding="utf-8", newline="\n") as f:
+        f.write(body)
+    hl = hotload(repo_root)
+    return {"ok": True, "kind": k, "name": nm, "path": fpath, "hotload": hl, "stdout": "scaffolded %s at %s" % (k, fpath)}
+

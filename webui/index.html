@@ -2835,11 +2835,17 @@ async function ensureToken() {
     if (qstate === "ok") {
       TOKEN = qt; localStorage.setItem("sf_token", qt); stripTokenParam(); return TOKEN;
     }
-    if (stored && stored !== qt && (await tokenState(stored)) === "ok") {
+    const storedState = stored && stored !== qt ? await tokenState(stored) : qstate;
+    if (stored && stored !== qt && storedState === "ok") {
       TOKEN = stored; stripTokenParam(); return TOKEN;
     }
-    if (qstate === "unreachable") { TOKEN = qt; localStorage.setItem("sf_token", qt); return TOKEN; }
-    TOKEN = ""; localStorage.removeItem("sf_token"); stripTokenParam();
+    if (qstate === "rejected" && storedState === "rejected") {
+      TOKEN = ""; localStorage.removeItem("sf_token"); stripTokenParam();
+    } else {
+      if (qstate === "rejected") stripTokenParam();
+      TOKEN = stored && storedState !== "rejected" ? stored : qt;
+      return TOKEN;
+    }
   }
   if (TOKEN) return TOKEN;
   const ok = await fetch("/api/status", { headers: authHeaders() }).then(r => r.ok).catch(() => false);
@@ -3118,7 +3124,7 @@ function updateToolCard(data) {
     _o.onclick = e => { e.stopPropagation(); openInEditor(_fp); };
     card.querySelector(".toolcard-head").appendChild(_o);
   }
-  const isMtx = data.origin === "matrix" || data.backend === "matrix" || tool === "matrix";
+  const isMtx = data.origin === "matrix" || data.backend === "matrix" || tool === "matrix" || String(tool).startsWith("matrix.");
   const meta = [(isMtx ? "[MATRIX]" : ""), (data.exit_code != null ? "exit " + data.exit_code : ""), (data.backend || ""),
                 (data.summary || "")].filter(Boolean).join(" · ");
   card.querySelector(".tc-meta").textContent = meta;
@@ -4317,23 +4323,53 @@ function _sessRowEl(s, pinnedIds, ag) {
   return d;
 }
 let _forceExpandActive = false;   // JAG-415: set on a redirect/selection, consumed once
-/* JAG-499: say a rejected browser token OUT LOUD. Painting an empty sidebar hides
- * the real cause behind a false "no sessions" state. */
-function authErrorCard() {
+/* JAG-499: API failures are not an empty session list. Keep server text out of
+ * innerHTML so an error response cannot inject markup into the sidebar. */
+function sessionErrorCard(error) {
   const box = $("sessions");
   if (!box) return;
-  box.innerHTML = '<div class="card">'
-    + '<div class="remaining"><strong>Browser is not authenticated</strong></div>'
-    + '<div class="remaining u-mt6">Longrun rejected this browser token, so no sessions can be '
-    + 'listed. Paste the active server token in <code>Settings \u25b8 Keys</code> and save it.</div>'
-    + '<button class="ghost u-mt8" data-call="openSettings" data-args=\'["keys"]\'>open Settings \u25b8 Keys</button>'
-    + '</div>';
+  const unauthorized = /unauthorized|401|forbidden/i.test(String(error || ""));
+  const card = document.createElement("div");
+  card.className = "card";
+  const heading = document.createElement("div");
+  heading.className = "remaining";
+  const strong = document.createElement("strong");
+  strong.textContent = unauthorized ? "Browser is not authenticated" : "Sessions unavailable";
+  heading.appendChild(strong);
+  const detail = document.createElement("div");
+  detail.className = "remaining u-mt6";
+  detail.textContent = unauthorized
+    ? "Longrun rejected this browser token, so no sessions can be listed. Update the token in Settings → Keys."
+    : "Could not load sessions: " + String(error || "unknown error");
+  const button = document.createElement("button");
+  button.className = "ghost u-mt8";
+  button.type = "button";
+  if (unauthorized) {
+    button.dataset.call = "openSettings";
+    button.dataset.args = '["keys"]';
+    button.textContent = "open Settings → Keys";
+  } else {
+    button.dataset.call = "loadSessions";
+    button.textContent = "retry";
+  }
+  card.append(heading, detail, button);
+  box.replaceChildren(card);
 }
 async function loadSessions() {
-  const [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
-  // JAG-499: a rejected token is an AUTH failure, not an empty session list.
-  if (out && out.error && /unauthorized|401|forbidden/i.test(String(out.error))) {
-    authErrorCard();
+  let out;
+  try {
+    [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
+  } catch (e) {
+    sessionErrorCard(e);
+    return;
+  }
+  // JAG-499: API errors and malformed payloads are not valid empty lists.
+  if (out && out.error) {
+    sessionErrorCard(out.error);
+    return;
+  }
+  if (!out || !Array.isArray(out.sessions)) {
+    sessionErrorCard("Longrun returned an invalid sessions response.");
     return;
   }
   if (out && Array.isArray(out.sessions)) {

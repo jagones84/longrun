@@ -9,6 +9,7 @@ Locked here:
   * orbit.html: the 5s auto-poll no longer rebuilds the agent table mid-edit;
   * console.html: the event stream subscribes to NAMED /api/feed frames (onmessage never fired);
   * editor.js: closeTab keeps the right active tab; refreshAll warns before discarding edits;
+  * editor.js (JAG-499b): closing the last file keeps the dock open on an empty state;
   * longrun/orbit/api.py: POST routes map `{"ok": false}` to HTTP 400 (were always 200);
   * server.publish: the payload's own `id`/`ts` are renamed BEFORE the DB insert, so replay
     from SQLite no longer clobbers the integer envelope id;
@@ -16,6 +17,7 @@ Locked here:
 
 Deterministic, no live model. Run: python3 tests/v295_bugfix.py
 """
+import io
 import json
 import os
 import sys
@@ -68,6 +70,12 @@ ed = read("webui", "assets", "editor.js")
 check("closeTab keeps the correct active tab",
       "if (i < state.active) state.active -= 1;" in ed)
 check("refreshAll warns before discarding edits", "discard unsaved changes" in ed)
+# JAG-499b: closing the last file keeps the dock open on a "no file open" empty
+# state (the tree stays reachable) instead of collapsing the whole editor.
+check("closing the last tab keeps the editor open on an empty state",
+      "function showEmpty()" in ed and "showEmpty();" in ed
+      and "state.emptyEl = dock.querySelector" in ed
+      and "no file open" in ed)
 
 # ------------------------------------------------------------- longrun/orbit api
 from longrun.orbit import api as oapi  # noqa: E402
@@ -110,8 +118,29 @@ check("replayed event id stays int", bool(replayed) and isinstance(replayed[-1].
       "got %r" % (replayed[-1].get("id") if replayed else None))
 
 # ------------------------------------------------------------- raw upload cap
-s = read("src", "longrun", "core/server.py") + read("src", "longrun", "core/httpapi.py")
-check("raw uploads cap the Content-Length read", s.count("self.rfile.read(min(n, MAX_BODY_BYTES))") >= 2)
+httpapi_src = read("src", "longrun", "core/httpapi.py")
+s = read("src", "longrun", "core/server.py") + httpapi_src
+check("raw body reader bounds allocation and drains oversize payloads",
+      "def _read_bounded_body(stream: BinaryIO, length: int, limit: int)" in httpapi_src
+      and "size = min(65536, remaining, room)" in httpapi_src
+      and "chunk = stream.read(size)" in httpapi_src
+      and "data.extend(chunk[:room])" in httpapi_src
+      and "if length > limit" in httpapi_src)
+check("raw upload routes reject oversized bodies instead of accepting truncated data",
+      httpapi_src.count("_read_bounded_body(self.rfile, n, MAX_BODY_BYTES)") >= 2
+      and "_read_bounded_body(self.rfile, n, cap)" in httpapi_src
+      and httpapi_src.count("code = 413 if n >") >= 3
+      and httpapi_src.count("return self._send(code,") >= 3)
+from longrun.core import httpapi as httpapi_mod  # noqa: E402
+
+_oversize = io.BytesIO(b"abcdefgh")
+_bounded = httpapi_mod._read_bounded_body(_oversize, 8, 4)
+check("bounded upload reader rejects oversize payloads after draining the request",
+      _bounded is None and _oversize.read() == b"")
+_complete = httpapi_mod._read_bounded_body(io.BytesIO(b"abc"), 3, 3)
+check("bounded upload reader preserves complete in-limit payloads", _complete == b"abc")
+_short = httpapi_mod._read_bounded_body(io.BytesIO(b"abc"), 5, 10)
+check("bounded upload reader rejects incomplete payloads", _short is None)
 
 # --------------------------------------------------- feed replay is bounded
 check("feed replay cap constant exists", isinstance(srv.FEED_REPLAY_MAX, int) and srv.FEED_REPLAY_MAX > 0)
@@ -127,4 +156,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

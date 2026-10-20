@@ -74,15 +74,25 @@ check("E1 the URL token is probed before it can overwrite the stored token",
       and 'return (r.status === 401 || r.status === 403) ? "rejected" : "unknown";' in html
       and "function stripTokenParam()" in html, "")
 check("E2 a REJECTED URL token falls back to a WORKING stored token",
-      'if (stored && stored !== qt && (await tokenState(stored)) === "ok")' in html, "")
-check("E3 an unreachable server decides nothing (the token is kept)",
-      'if (qstate === "unreachable")' in html, "")
-check("E4 a rejected token never paints a false EMPTY session list",
-      "function authErrorCard()" in html
-      and '/unauthorized|401|forbidden/i.test(String(out.error))' in html, "")
+      'if (stored && stored !== qt && storedState === "ok")' in html, "")
+check("E3 saved tokens survive unreachable and transient-error responses",
+      'const storedState = stored && stored !== qt ? await tokenState(stored) : qstate;' in html
+      and 'TOKEN = stored && storedState !== "rejected" ? stored : qt;' in html, "")
+check("E4 credentials are cleared only when all candidates are definitively rejected",
+      'if (qstate === "rejected" && storedState === "rejected")' in html
+      and "localStorage.removeItem(\"sf_token\")" in html, "")
+check("E5 a rejected token never paints a false EMPTY session list",
+      "function sessionErrorCard(error)" in html
+      and '/unauthorized|401|forbidden/i.test(String(error || ""))' in html
+      and 'button.dataset.call = "openSettings"' in html, "")
+check("E6 other session API failures never masquerade as an empty session list",
+      "function sessionErrorCard(error)" in html
+      and "Longrun returned an invalid sessions response." in html
+      and "Could not load sessions:" in html
+      and 'button.dataset.call = "loadSessions"' in html
+      and "box.replaceChildren(card)" in html, "")
 
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

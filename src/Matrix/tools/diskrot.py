@@ -27,6 +27,14 @@ TOOL_SCHEMA = {
     "approval": "auto",
 }
 
+TOOL_SCHEMAS = {
+    "diskrot.scan": dict(TOOL_SCHEMA),
+    "diskrot.summary": {
+        **TOOL_SCHEMA,
+        "description": "[MATRIX experimental] Read-only disk rot summary by category (never deletes).",
+    },
+}
+
 # category -> predicate on (name, path parts)
 _DIR_JUNK = {
     "__pycache__": "python bytecode cache",

@@ -55,8 +55,8 @@ with tempfile.TemporaryDirectory() as tmp:
         cat_names = [t["name"] for t in registry.catalog()]
         out = tools.execute("echo_plus", {"msg": "hello"})
         check("B registry.catalog and tools.execute expose and run hotloaded Matrix tools without restart",
-              "matrix" in cat_names
-              and "echo_plus" in cat_names
+              ("matrix" in cat_names or "matrix.status" in cat_names)
+              and ("echo_plus" in cat_names or "echo_plus.run" in cat_names)
               and out.get("ok") is True
               and out.get("stdout") == "MTX:hello"
               and out.get("origin") == "matrix")

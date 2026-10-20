@@ -52,8 +52,8 @@ sp = _srv._system_prompt(None)
 # ---- A: tools are declared ----
 check("A1 prompt lists a tool registry", "Tool registry" in sp, "")
 names = [t["name"] for t in registry.catalog()]
-check("A2 a `self` tool exists (self-knowledge)", "self" in names, str(names)[:140])
-check("A3 a `skills` tool exists", "skills" in names, str(names)[:140])
+check("A2 a `self` tool exists (self-knowledge)", "self" in names or "self.info" in names, str(names)[:140])
+check("A3 a `skills` tool exists", "skills" in names or "skills.list" in names, str(names)[:140])
 check("A4 registry block is non-empty", ("  - " in sp), "")
 
 # ---- B: skills known WITHOUT a discovery round-trip ----

@@ -174,7 +174,7 @@ check("4n read shows a todo's evidence as its justification",
 
 # ---- 5. tool registration + policy -------------------------------------------
 names = {t["name"] for t in registry.catalog() if t.get("name")}
-check("5a chapters is a registered base tool", "chapters" in names)
+check("5a chapters is a registered base tool", "chapters" in names or "chapters.list" in names)
 check("5b chapters declares the 3 actions",
       (registry.TOOL_SCHEMAS.get("chapters") or {}).get("properties", {}).get("action", {}).get("enum")
       == ["list", "untitled", "read", "title"])
