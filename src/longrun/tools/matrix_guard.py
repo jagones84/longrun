@@ -2,10 +2,22 @@
 """Matrix scaffold and deterministic Nucleus write-protection guard.
 
 Enforces the strict two-zone architecture:
-  1. NUCLEUS (`src/longrun/**`, `webui/**`, `config/**`, `deploy/**`, `tests/**`,
-     `RULES.md`, `README.md`, `pyproject.toml`): fixed and immutable during agent
+  1. NUCLEUS (see `NUCLEUS_PROTECTED_REL`): fixed and immutable during agent
      self-evolution turns.
   2. MATRIX (`src/Matrix/**`, `.Matrix/**`): live-editable self-evolution zone.
+
+JAG-510 (red-team hardening). The first version of the shell gate matched the RAW
+COMMAND TEXT, so it was a spelling check rather than a boundary:
+  * C1 `t=$(printf ... | base64 -d); printf x > "$t/f"` wrote into `src/longrun/`;
+  * C2 `tests/` and `deploy/` were declared Nucleus but absent from the token list;
+  * C3 a file CREATED inside a Nucleus directory survived `restore_*`;
+  * C4 the prompt-bearing surfaces (`.longrun/rules`, `AGENTS.md`) were writable;
+  * C5 a `SRC/LONGRUN/...` spelling slipped past the case-sensitive compare;
+  * C6 the snapshot covered only 131 files (no `deploy/`, `tests/`, `.trae/`);
+  * C7 the gate was skipped entirely when `cwd` sat outside the repository.
+The gate now judges the write TARGETS (with `cd` tracking) and fails CLOSED on a
+target it cannot resolve, and the restore also removes creations. Everything is
+unlocked only by the DANGEROUS `approvals.allow_nucleus_write` operator opt-in.
 """
 import hashlib
 import json
@@ -27,9 +39,47 @@ NUCLEUS_PROTECTED_REL = (
     "deploy",
     "tests",
     ".trae",
+    # JAG-510/C4: the surfaces the system prompt READS. Writing here is not a code
+    # change but a persistent prompt injection, so they are part of the Nucleus.
+    ".longrun",
+    "docs",
     "RULES.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
     "README.md",
     "pyproject.toml",
+)
+
+# JAG-510/C6: what the snapshot protects (content revert + creation removal).
+# `docs/` and `.longrun/` stay in the WRITE gate above but out of the snapshot:
+# both receive machine-written artefacts (archify diagrams, `.longrun/prompt.d/`
+# promotions) that a restore must not mistake for tampering.
+NUCLEUS_SNAPSHOT_REL = (
+    os.path.join("src", "longrun"),
+    "webui",
+    "config",
+    "deploy",
+    "tests",
+    ".trae",
+    "RULES.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "README.md",
+    "pyproject.toml",
+)
+NUCLEUS_SNAPSHOT_EXTS = (
+    ".py", ".yaml", ".yml", ".json", ".html", ".js", ".css", ".md", ".sh",
+    ".toml", ".cfg", ".ini", ".ts", ".mjs", ".service", ".webmanifest", ".svg",
+)
+_SNAPSHOT_MAX_BYTES = 2_000_000
+_SKIP_DIRS = frozenset({"__pycache__", "node_modules", "venv"})
+# Runtime-written config overlays (WebUI auto-save, not an agent command): a
+# concurrent save must survive the creation sweep.
+_KEEP_REL = (
+    "config/compaction.local.yaml",
+    "config/providers.local.yaml",
+    "config/mcp_clients.local.yaml",
+    "config/mcp_clients.local.json",
 )
 
 MATRIX_ALLOWED_REL = (
@@ -154,15 +204,41 @@ def is_matrix_writable(path, repo_root=None):
 
 
 def is_nucleus_path(path, repo_root=None):
-    """True when `path` resolves inside a protected Nucleus directory or file."""
+    """True when `path` resolves inside a protected Nucleus directory or file.
+
+    JAG-510/C5: the comparison is case-insensitive so a `SRC/LONGRUN/...` spelling
+    cannot slip past on a case-insensitive filesystem. The Matrix zone still wins.
+    """
     root, msrc, mdot = _roots(repo_root)
     p = os.path.realpath(path if os.path.isabs(path) else os.path.join(root, path))
     if _under(p, msrc) or _under(p, mdot):
         return False
-    for rel in NUCLEUS_PROTECTED_REL:
-        if _under(p, os.path.join(root, rel)):
+    try:
+        rel = os.path.relpath(p, os.path.realpath(root)).replace("\\", "/").lower()
+    except ValueError:
+        return False
+    if rel == ".." or rel.startswith("../"):
+        return False
+    for prot in NUCLEUS_PROTECTED_REL:
+        rel_prot = prot.replace("\\", "/").lower()
+        if rel == rel_prot or rel.startswith(rel_prot + "/"):
             return True
     return False
+
+
+def nucleus_write_unlocked():
+    """True only when the operator flipped the DANGEROUS `allow_nucleus_write` opt-in.
+
+    Read dynamically from the live config (like `allow_matrix_promote`) so the
+    Settings checkbox applies without a restart. Anything unreadable => LOCKED.
+    """
+    try:
+        from longrun.tools import registry
+        approvals = (registry.load_config() or {}).get("approvals") or {}
+        return bool(approvals.get("allow_nucleus_write", False))
+    except Exception:  # noqa: BLE001
+        return False
+
 
 
 def check_write_allowed(path, repo_root=None):
@@ -170,10 +246,13 @@ def check_write_allowed(path, repo_root=None):
 
     Paths outside `repo_root` (e.g. a separate user workspace or scratch dir)
     are governed by the normal workspace policy. Paths inside `repo_root` that
-    belong to Nucleus are hard-blocked.
+    belong to Nucleus are hard-blocked, unless the operator enabled the DANGEROUS
+    `approvals.allow_nucleus_write` opt-in (JAG-510).
     """
     if not path:
         return False, "empty path"
+    if nucleus_write_unlocked():
+        return True, ""
     root, msrc, mdot = _roots(repo_root)
     p = os.path.realpath(path if os.path.isabs(path) else os.path.join(root, path))
     if not _under(p, root):
@@ -193,54 +272,183 @@ def check_write_allowed(path, repo_root=None):
     return True, ""
 
 
-_WRITE_OP_RE = re.compile(
-    r"(?:>>?|\btee\b|\bsed\s+-i\b|\brm\b|\bmv\b|\bcp\b|\bchmod\b|\btruncate\b|"
-    r"shutil\.|open\s*\([^)]*['\"][wa+])"
-)
-_NUCLEUS_TOKEN_RE = re.compile(
-    r"(?:^|[\s'\"=/\\])(src[/\\]longrun|webui[/\\]|config[/\\]|deploy[/\\]|RULES\.md|pyproject\.toml)"
-)
+_SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;|&()\n]")
+# Every argument is a write target.
+_WRITE_ALL_ARGS = frozenset({
+    "tee", "rm", "rmdir", "unlink", "touch", "truncate", "dd", "shred",
+    "chmod", "chown", "chgrp", "mkfifo", "mknod", "sponge",
+})
+# Only the LAST argument is written (the earlier ones are sources).
+_WRITE_LAST_ARG = frozenset({"cp", "mv", "ln", "install", "rsync", "scp"})
+_GIT_WRITE_SUBCMDS = frozenset({
+    "rm", "mv", "checkout", "restore", "clean", "reset", "apply", "stash", "switch",
+})
+_SAFE_DEVICES = frozenset({
+    "-", "/dev/null", "/dev/stdout", "/dev/stderr", "/dev/zero",
+    "/dev/random", "/dev/urandom", "/dev/tty",
+})
+
+
+def _shell_tokens(segment):
+    """Tokens of one command segment: fd duplications dropped, redirections apart."""
+    s = re.sub(r"\d*>&\d+", " ", segment)
+    s = re.sub(r">>?", r" \g<0> ", s)  # `>>` stays one token, `>` its own
+    s = s.replace("<", " < ")
+    out = []
+    for raw in s.split():
+        tok = raw.strip("'\"")
+        if tok:
+            out.append(tok)
+    return out
+
+
+def _resolve_target(target, whence):
+    """Absolute path for a shell write target, or None when it cannot be resolved.
+
+    None is the fail-CLOSED answer (JAG-510/C1): a target built from a variable or
+    a command substitution must never be assumed harmless.
+    """
+    t = str(target or "").strip()
+    if not t:
+        return ""
+    if "$" in t or "`" in t:
+        return None
+    if t.startswith("~"):
+        t = os.path.expanduser(t)
+        if t.startswith("~"):
+            return None
+    if not os.path.isabs(t):
+        if whence is None:
+            return None
+        t = os.path.join(whence, t)
+    return os.path.normpath(os.path.realpath(t))
+
+
+def _segment_writes(toks, whence):
+    """Return `(write targets, resulting cwd)` for one command segment."""
+    targets = []
+    i, n = 0, len(toks)
+    while i < n:
+        base = os.path.basename(toks[i]).lower()
+        if base in ("cd", "pushd"):
+            j = i + 1
+            while j < n and (toks[j].startswith("-") or os.path.basename(toks[j]).lower() == "cd"):
+                j += 1
+            if j < n:
+                nxt = _resolve_target(toks[j], whence)
+                whence = nxt if (nxt and os.path.isdir(nxt)) else None
+            i = j + 1
+            continue
+        if toks[i] in (">", ">>"):
+            if i + 1 < n:
+                targets.append(toks[i + 1])
+            i += 2
+            continue
+        if base == "sed":
+            rest = [t for t in toks[i + 1:] if t != "<"]
+            if any(t == "-i" or t.startswith("-i") for t in rest):
+                files = [t for t in rest if not t.startswith("-")]
+                targets.extend(files[1:])  # files[0] is the sed script
+            i = n
+            continue
+        if base == "git":
+            sub = next((t for t in toks[i + 1:] if not t.startswith("-")), "")
+            if sub.lower() in _GIT_WRITE_SUBCMDS:
+                targets.extend(t for t in toks[i + 1:] if not t.startswith("-"))
+            i = n
+            continue
+        if base in _WRITE_ALL_ARGS or base in _WRITE_LAST_ARG:
+            args = []
+            j = i + 1
+            while j < n and toks[j] not in (">", ">>", "<", "|"):
+                if not toks[j].startswith("-"):
+                    args.append(toks[j])
+                j += 1
+            if base in _WRITE_LAST_ARG:
+                targets.extend(args[-1:])
+            else:
+                targets.extend(args)
+            i = j
+            continue
+        i += 1
+    return targets, whence
 
 
 def check_shell_command(command, cwd=None, repo_root=None):
-    """Reject shell commands that attempt to write/delete protected Nucleus paths."""
+    """Reject shell commands that could write inside the immutable Nucleus.
+
+    The decision is made on the write TARGETS, never on the raw text, and an
+    unresolvable target fails CLOSED. Reading (`cat`, `grep`, `pytest > /tmp/log`)
+    and writing outside the repository stay allowed.
+    """
     cmd = str(command or "")
     if not cmd.strip():
         return True, ""
+    if nucleus_write_unlocked():
+        return True, ""
     root, _msrc, _mdot = _roots(repo_root)
-    eff_cwd = os.path.realpath(cwd or root)
-    if _under(eff_cwd, root):
-        hit = _NUCLEUS_TOKEN_RE.search(cmd)
-        if hit and _WRITE_OP_RE.search(cmd):
-            # Allow if the only match is actually src/Matrix/webui
-            if "src/Matrix" in cmd or "src\\Matrix" in cmd:
-                cleaned = cmd.replace("src/Matrix/webui", "").replace("src\\Matrix\\webui", "")
-                if not _NUCLEUS_TOKEN_RE.search(cleaned):
-                    return True, ""
-            return False, (
-                "NUCLEUS_PROTECTED: shell command targets immutable Nucleus path (%s). "
-                "Modify only src/Matrix/ or .Matrix/." % hit.group(1)
-            )
+    whence = os.path.realpath(cwd or root)
+    for segment in _SEGMENT_SPLIT_RE.split(cmd):
+        toks = _shell_tokens(segment)
+        if not toks:
+            continue
+        targets, whence = _segment_writes(toks, whence)
+        for target in targets:
+            resolved = _resolve_target(target, whence)
+            if resolved is None:
+                return False, (
+                    "NUCLEUS_PROTECTED: shell command writes to the unresolvable target %r. "
+                    "Use an explicit path (the guard fails closed on variables and "
+                    "command substitutions)." % target
+                )
+            if not resolved or resolved in _SAFE_DEVICES:
+                continue
+            if not _under(resolved, root):
+                continue  # outside the repository: normal workspace policy applies
+            if is_nucleus_path(resolved, root):
+                try:
+                    rel = os.path.relpath(resolved, os.path.realpath(root)).replace("\\", "/")
+                except ValueError:
+                    rel = target
+                return False, (
+                    "NUCLEUS_PROTECTED: shell command targets immutable Nucleus path (%s). "
+                    "Modify only src/Matrix/ or .Matrix/." % rel
+                )
     return True, ""
 
 
 def _iter_nucleus_files(repo_root=None):
+    """Yield every Nucleus artefact the snapshot tracks.
+
+    INVARIANT (JAG-510): the creation sweep in `restore_if_nucleus_tampered` uses
+    this SAME iterator, so "what appeared" is judged by exactly the predicate used
+    to build the snapshot. A pre-existing file with an unlisted extension (the
+    WebUI icons, an icon font, a `.png`) therefore can never be mistaken for a
+    creation and deleted.
+    """
     root, _msrc, _mdot = _roots(repo_root)
-    for rel in ("src/longrun", "webui", "config", "RULES.md", "README.md", "pyproject.toml"):
+    for rel in NUCLEUS_SNAPSHOT_REL:
         target = os.path.join(root, *rel.split("/"))
         if os.path.isfile(target):
             yield target
-        elif os.path.isdir(target):
-            for dirpath, dirnames, filenames in os.walk(target):
-                dirnames[:] = [d for d in dirnames if d != "__pycache__"]
-                for fn in filenames:
-                    if fn.endswith((".py", ".yaml", ".json", ".html", ".js", ".css", ".md")):
-                        p = os.path.join(dirpath, fn)
-                        try:
-                            if os.path.getsize(p) <= 2_000_000:
-                                yield p
-                        except OSError:
-                            continue
+            continue
+        if not os.path.isdir(target):
+            continue
+        for dirpath, dirnames, filenames in os.walk(target):
+            dirnames[:] = [d for d in dirnames
+                           if not d.startswith(".") and d not in _SKIP_DIRS]
+            for fn in filenames:
+                if fn.startswith("."):
+                    continue
+                ext = os.path.splitext(fn)[1].lower()
+                if ext not in NUCLEUS_SNAPSHOT_EXTS:
+                    continue
+                p = os.path.join(dirpath, fn)
+                try:
+                    if os.path.getsize(p) <= _SNAPSHOT_MAX_BYTES:
+                        yield p
+                except OSError:
+                    continue
 
 
 def snapshot_nucleus_digests(repo_root=None):
@@ -257,9 +465,14 @@ def snapshot_nucleus_digests(repo_root=None):
 
 
 def restore_if_nucleus_tampered(before_digests, repo_root=None):
-    """Compare current Nucleus files against `before_digests` and revert any modifications."""
-    if not before_digests:
+    """Revert every Nucleus change a command made: edits, deletions AND creations.
+
+    JAG-510/C3: the previous version iterated only the snapshot, so a file created
+    *ex novo* inside `src/longrun/`, `tests/` or `deploy/` survived untouched.
+    """
+    if not before_digests or nucleus_write_unlocked():
         return []
+    root, _msrc, _mdot = _roots(repo_root)
     reverted = []
     for p, (digest, raw) in before_digests.items():
         try:
@@ -275,6 +488,15 @@ def restore_if_nucleus_tampered(before_digests, repo_root=None):
                 with open(p, "wb") as f:
                     f.write(raw)
                 reverted.append(p)
+        except OSError:
+            continue
+    keep = {os.path.normpath(os.path.join(root, *rel.split("/"))) for rel in _KEEP_REL}
+    for p in _iter_nucleus_files(repo_root):
+        if p in before_digests or os.path.normpath(p) in keep:
+            continue
+        try:
+            os.remove(p)
+            reverted.append(p)
         except OSError:
             continue
     return reverted

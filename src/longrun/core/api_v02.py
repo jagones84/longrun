@@ -1812,6 +1812,9 @@ def _update_policy(body):
                 ap[k] = body["approvals"][k]
         if "allow_matrix_promote" in body["approvals"]:
             ap["allow_matrix_promote"] = bool(body["approvals"]["allow_matrix_promote"])
+        # JAG-510: the DANGEROUS Nucleus unlock. Read live by matrix_guard.
+        if "allow_nucleus_write" in body["approvals"]:
+            ap["allow_nucleus_write"] = bool(body["approvals"]["allow_nucleus_write"])
         if "matrix_enabled" in body["approvals"]:
             ap["matrix_enabled"] = bool(body["approvals"]["matrix_enabled"])
             try:

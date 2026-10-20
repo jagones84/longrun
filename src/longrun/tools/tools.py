@@ -450,6 +450,14 @@ def _git(args, run_id):
         cwd = os.path.join(REPO, str(cwd))
     if not os.path.isdir(cwd):
         return {"ok": False, "error": "cwd not found: %s" % cwd}
+    # JAG-510: `git checkout/restore/rm/apply/...` writes working-tree files, so
+    # the same Nucleus write-target gate as the shell tool must run first —
+    # otherwise this tool is a second front door into `src/longrun/`.
+    from longrun.tools import matrix_guard
+    ok_git, err_git = matrix_guard.check_shell_command("git " + raw, cwd=cwd)
+    if not ok_git:
+        return {"ok": False, "exit_code": 126, "error": err_git,
+                "backend": "host(git)", "sandboxed": False}
     t0 = time.time()
     import subprocess
     try:

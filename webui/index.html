@@ -7315,6 +7315,7 @@ function scheduleApprovalSave(el, mode) {
     const timeout = Number((el.querySelector("#apTimeout") || {}).value);
     const matrix = el.querySelector("#apMatrixPromote");
     const matrixEnabled = el.querySelector("#apMatrixEnabled");
+    const nucleusUnlock = el.querySelector("#apNucleusUnlock");
     if (!Number.isInteger(timeout) || timeout < 10 || timeout > 86400) {
       if (msg && el._approvalRevision === revision) {
         msg.textContent = "not saved — timeout must be between 10 and 86400 seconds";
@@ -7326,7 +7327,8 @@ function scheduleApprovalSave(el, mode) {
       outside_workspace: (outside || {}).value || "required",
       timeout_secs: timeout,
       allow_matrix_promote: !!(matrix || {}).checked,
-      matrix_enabled: matrixEnabled ? !!matrixEnabled.checked : true
+      matrix_enabled: matrixEnabled ? !!matrixEnabled.checked : true,
+      allow_nucleus_write: !!(nucleusUnlock || {}).checked
     };
     if (msg && el._approvalRevision === revision) msg.textContent = "saving…";
     const save = (el._approvalSaveChain || Promise.resolve()).catch(() => null)
@@ -7378,6 +7380,10 @@ function renderTools(el, d) {
          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Exclusive authorization to promote tested Matrix code permanently into Legacy Nucleus (even FULL mode does not unlock this)">
            <input id="apMatrixPromote" type="checkbox"${pol.allow_matrix_promote ? " checked" : ""}>
            <span><b>Allow Matrix → Nucleus permanent promotion</b> <span class="remaining">(<code>promote_to_nucleus</code> — never unlocked by FULL mode; requires tested Matrix code + auto-commit)</span></span>
+         </label>
+         <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;color:var(--err)" title="DANGEROUS — unlocks writes into the immutable Nucleus for every tool: the shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, so the agent can rewrite the harness mid-run. Off by default; never unlocked by FULL approval mode.">
+           <input id="apNucleusUnlock" type="checkbox"${pol.allow_nucleus_write ? " checked" : ""}>
+           <span><b>DANGEROUS — unlock Nucleus writes</b> <span class="remaining">(lets the agent modify <code>src/longrun</code>, <code>webui</code>, <code>config</code>, <code>deploy</code>, <code>tests</code>, <code>docs</code>, <code>.longrun</code>, <code>RULES.md</code>, <code>AGENTS.md</code>; off by default)</span></span>
          </label>
        </div>
      </div>`;
@@ -7618,6 +7624,18 @@ function renderTools(el, d) {
   if (apMtxCb) apMtxCb.onchange = () => scheduleApprovalSave(el);
   const apMtxEn = el.querySelector("#apMatrixEnabled");
   if (apMtxEn) apMtxEn.onchange = () => scheduleApprovalSave(el);
+  const apNucUnlock = el.querySelector("#apNucleusUnlock");
+  if (apNucUnlock) apNucUnlock.onchange = () => {
+    if (apNucUnlock.checked && !confirm(
+      "DANGEROUS\n\nThis unlocks writes into the immutable Nucleus "
+      + "(src/longrun, webui, config, deploy, tests, docs, .longrun, RULES.md, AGENTS.md).\n"
+      + "The shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, "
+      + "so the agent can rewrite the harness itself mid-run.\n\nEnable it?")) {
+      apNucUnlock.checked = false;
+      return;
+    }
+    scheduleApprovalSave(el);
+  };
   // JAG-491: per-tool ADVANCED policy (roots / deny / allow_hosts / auto_approve).
   el.querySelectorAll("button[data-adv]").forEach(b =>
     b.onclick = () => _toolAdvanced(el, b.dataset.adv, tools));
