@@ -72,7 +72,8 @@ check("B2 the session list reads the live active-turn registry",
 
 ui = read("webui", "index.html")
 check("C1 the feed marks a session busy on chat.run",
-      'es.addEventListener("chat.run"' in ui and "if (d.session) setRunning(d.session, true);" in ui)
+      'es.addEventListener("chat.run"' in ui
+      and "if (d.session) { _streamedDone[d.session] = false; setRunning(d.session, true); }" in ui)
 check("C2 chat.done clears the busy marker for ANY session",
       "setRunning(d.session, false);" in ui)
 check("C3 the session list seeds the marker from the server flag",

@@ -553,6 +553,7 @@ async function loadTree() {
     root.textContent = (d.root ? basename(d.root) : "workspace") + "/";
     box.appendChild(root);
     renderTree(box, d, 0);
+    syncTreeActive();   // JAG-500: a freshly loaded tree must highlight the open file
     if (!d.count) box.insertAdjacentHTML("beforeend", '<div class="remaining">empty folder</div>');
   } catch (e) { box.innerHTML = '<div class="remaining">' + esc(e) + "</div>"; }
 }
@@ -588,9 +589,24 @@ function renderTree(container, d, depth) {
     row.style.paddingLeft = (16 + depth * 12) + "px";
     row.textContent = "📄 " + f.name;
     row.title = f.path;
+    row.dataset.path = f.path;                                  // JAG-500: row <-> tab sync key
+    if (f.path === activePath()) row.classList.add("active");   // JAG-500: reflect the open file
     row.onclick = () => open(f.path);
     row.oncontextmenu = (e) => { e.preventDefault(); showTreeMenu(e.clientX, e.clientY, f.path); };
     container.appendChild(row);
+  });
+}
+
+/* JAG-500: the file tree and the editor tabs must highlight the SAME file both
+   ways. Clicking a tree row opens the file (open -> renderTabs); clicking a tab
+   activates it and calls revealInTree. Every path pushes the highlight down to
+   the tree through this single function, keyed on the row's dataset.path. */
+function activePath() { const t = activeTab(); return t ? t.path : ""; }
+function syncTreeActive() {
+  if (!state.treeEl) return;
+  const want = activePath();
+  state.treeEl.querySelectorAll(".ed-trow[data-path]").forEach((r) => {
+    r.classList.toggle("active", !!want && r.dataset.path === want);
   });
 }
 
@@ -625,6 +641,7 @@ function renderTabs() {
     b.oncontextmenu = (e) => { e.preventDefault(); showTabMenu(e.clientX, e.clientY, i); };
     el.appendChild(b);
   });
+  syncTreeActive();   // JAG-500: keep the tree highlight in step with the active tab
 }
 
 function persistTabs() {
@@ -989,12 +1006,17 @@ async function revealInTree(path) {
   localStorage.setItem("sf_ed_tree", "1");
   if (!state.treeEl.childElementCount) await loadTree();
   const rows = Array.from(state.treeEl.querySelectorAll(".ed-trow"));
-  let hit = rows.find((r) => r.title === path);
+  let hit = rows.find((r) => r.dataset.path === path);
+  if (!hit) hit = rows.find((r) => r.title === path);
   if (!hit) { const base = basename(path); hit = rows.find((r) => r.textContent.trim().endsWith(base)); }
   if (hit) {
     hit.scrollIntoView({ block: "center" });
     hit.classList.add("flash");
     setTimeout(() => hit.classList.remove("flash"), 1400);
+    if (hit.dataset.path) {
+      rows.forEach((r) => r.classList.remove("active"));
+      hit.classList.add("active");   // JAG-500: reveal also keeps the row highlighted
+    }
   }
 }
 function fallbackCopy(text) {

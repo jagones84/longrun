@@ -169,6 +169,8 @@
   .sf-toast.show { opacity: 1; transform: translateY(0); }
   .sf-toast.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
   .sf-toast.err { border-color: rgba(248,113,113,.6); }
+  /* JAG-500: click-to-reload chip — #sfToast is pointer-events:none, the chip opts back in. */
+  .sf-toast.action { pointer-events: auto; cursor: pointer; border-color: color-mix(in srgb, var(--accent, #8b7bf0) 60%, transparent); }
   /* JAG-279: tiny copy affordances in the Context panel (curated). */
   .ctxlistbar { display: flex; align-items: center; gap: 8px; margin: 9px 0 3px; }
   .ctxlistbar .ctxlistlab { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
@@ -4055,7 +4057,7 @@ function send(text, display, atts) {
   };
   const end = (reload, flush) => {
     try { es.close(); } catch (e) {}
-    if (turnSession && turnSSE[turnSession] === es) delete turnSSE[turnSession];
+    if (turnSession && turnSSE[turnSession] === es) { delete turnSSE[turnSession]; _streamedDone[turnSession] = true; }
     setRunning(turnSession, false);
     // JAG-218: finished while the user was on ANOTHER session -> bell + toast.
     if (turnSession && !live()) markDone(turnSession);
@@ -6581,6 +6583,7 @@ async function loadImprovement() {
    to another session never aborts a turn nor paints its output into the wrong
    log — every session runs independently in parallel. */
 let turnSSE = {};                // sessionId -> EventSource of a running chat turn
+let _streamedDone = {};          // JAG-500: sessionId -> true once THIS tab streamed its turn to the end
 let runningSessions = {};        // sessionId -> true while its chat turn streams
 /* JAG-479: reading state is genuinely the CLIENT's (the server cannot know which
    browser looked at a chat), so it lives in localStorage and is pruned against the
@@ -6798,7 +6801,7 @@ function attachTurn(sid) {
   const live = () => sessionId === sid;
   const end = (reload) => {
     try { es.close(); } catch (e) {}
-    if (turnSSE[sid] === es) delete turnSSE[sid];
+    if (turnSSE[sid] === es) { delete turnSSE[sid]; _streamedDone[sid] = true; }
     setRunning(sid, false);
     if (live() && reload) {
       endStream();
@@ -6849,6 +6852,21 @@ function stopRun() {
 
 /* ---- feed ---- */
 let _feedN = 0;   // JAG-403g: feed events seen (drives the Feed tab summary)
+/* JAG-500: the feed's `chat.done` used to clear #log and re-render the whole
+   transcript. loadHistory() blanks #log before it rebuilds, so on a turn THIS tab
+   streamed the chat visibly "switched off" for a moment at the very end of the
+   reply — a rebuild racing its own live render. The rebuild is only needed for a
+   turn this tab did NOT render (a job / another tab), so it is deferred briefly
+   and skipped when this tab already streamed that turn to `done`. The delay makes
+   the decision independent of which of the two channels (turn SSE vs feed) wins
+   the race, since both are published by the same server event. */
+function _rebuildOnFeedDone(sid) {
+  if (!sid || sid !== sessionId) return;
+  setTimeout(() => {
+    if (_streamedDone[sid] || turnSSE[sid] || sid !== sessionId) return;
+    $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadPlan();
+  }, 500);
+}
 /* JAG-465: ONE place that applies a feed event to the UI. The same handler serves a
    LIVE event and a REPLAYED backlog event after a reconnect, so a disconnect no
    longer silently drops graph/todo updates — the reason the Plan panel and chat rows
@@ -6862,12 +6880,10 @@ function _feedReplay(ev) {
     return;
   }
   if (kind === "graph.node.added" || kind === "graph.node.updated") { applyGraphEvent(d); return; }
-  if (kind === "chat.run") { if (d.session) setRunning(d.session, true); return; }
+  if (kind === "chat.run") { if (d.session) { _streamedDone[d.session] = false; setRunning(d.session, true); } return; }
   if (kind === "chat.done") {
     if (d.session) setRunning(d.session, false);
-    if (d.session === sessionId && !turnSSE[sessionId]) {
-      $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadPlan();
-    }
+    _rebuildOnFeedDone(d.session);
     return;
   }
   if (kind === "context.auto_compact" || kind === "context.compact") {
@@ -6917,7 +6933,7 @@ function connectFeed() {
   // "phantom run". `chat.done` already reached this feed; `chat.run` did not.
   es.addEventListener("chat.run", e => {
     let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
-    if (d.session) setRunning(d.session, true);
+    if (d.session) { _streamedDone[d.session] = false; setRunning(d.session, true); }
   });
   // JAG-310: a turn can START on the open session WITHOUT this browser beginning
   // it — a headless JOB turn (the coordinator's "Team results" synthesis) or a
@@ -6943,15 +6959,9 @@ function connectFeed() {
     // some OTHER agent's turn ended rebuilt the inspector under the operator's cursor
     // (the "it jumps back to the top" report) for no reason.
     if (!d.session || d.session === sessionId) loadCtx();
-    // Not already streaming it (the attached turn reloads itself on `done`): pull
-    // the persisted reply so an off-screen turn's answer is never left unrendered.
-    if (d.session && d.session === sessionId && !turnSSE[sessionId]) {
-      // JAG-431q: loadHistory APPENDS to #log (it is the CALLER's job to clear), so a
-      // turn that we did not stream would otherwise duplicate the whole chat. Clear
-      // first, exactly like the attach path.
-      $("log").innerHTML = ""; _resetChatTree();
-      loadHistory(); loadPlan(); loadGraph();
-    }
+    // JAG-500: pull the persisted reply ONLY for a turn this tab did not render
+    // (see _rebuildOnFeedDone — a deferred, race-proof check).
+    _rebuildOnFeedDone(d.session);
   });
   es.addEventListener("graph.node.added", e => applyGraphEvent(JSON.parse(e.data)));
   es.addEventListener("graph.node.updated", e => applyGraphEvent(JSON.parse(e.data)));
@@ -10868,15 +10878,31 @@ ensureToken().then(() => {
 /* JAG-362: a long-lived tab must notice that the app on disk was updated. The
    server serves the SPA with no-store, but an OPEN tab never re-fetches
    index.html — which is why a freshly-fixed UI could keep looking stale. Compare
-   the /api/build fingerprint on load, on focus and every 60s, then reload once. */
-let _build0 = null;
+   the /api/build fingerprint on load, on focus and every 60s.
+   JAG-500: it used to `location.reload()` on a change — a full page restart that
+   blanked an open chat mid-reply (the agent, or another agent, rewrites
+   index.html while the user reads). It never reloads now: the tab stays intact
+   and a click-to-reload chip appears instead. */
+let _build0 = null, _buildOffered = null;
+function _offerReload() {
+  let box = $("sfToast");
+  if (!box) { box = document.createElement("div"); box.id = "sfToast"; document.body.appendChild(box); }
+  if (box.querySelector(".sf-toast.action")) return;
+  const t = document.createElement("div");
+  t.className = "sf-toast action show";
+  t.setAttribute("role", "status");
+  t.textContent = "UI updated on the server — click to reload";
+  t.title = "A newer WebUI build is on disk. This tab keeps working; click to load the new build.";
+  t.onclick = () => location.reload();
+  box.appendChild(t);
+}
 async function _checkBuild() {
   try {
     const d = await api("GET", "/api/build");
     const b = d && d.build;
     if (!b) return;
     if (_build0 === null) { _build0 = b; return; }
-    if (b !== _build0) { _build0 = b; location.reload(); }
+    if (b !== _build0) { _build0 = b; if (_buildOffered !== b) { _buildOffered = b; _offerReload(); } }
   } catch (e) { /* offline is fine — never break the app for a build check */ }
 }
 _checkBuild();

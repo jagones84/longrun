@@ -152,6 +152,30 @@ check("events_since(limit) keeps the NEWEST rows",
       bool(cap) and cap[-1]["id"] == max(e["id"] for e in srv.events_since(0)))
 check("feed_gen caps the backlog", "events_since(since, limit=FEED_REPLAY_MAX)" in s)
 
+# -------------------------------------- JAG-500: tree <-> tab highlight sync
+check("editor tree rows carry their path as the sync key",
+      "row.dataset.path = f.path;" in ed)
+check("one sync function drives the tree highlight from the active tab",
+      "function syncTreeActive()" in ed
+      and 'r.classList.toggle("active", !!want && r.dataset.path === want)' in ed
+      and ed.count("syncTreeActive();") >= 2)   # renderTabs + loadTree
+check("revealInTree keeps the revealed row highlighted",
+      "function activePath()" in ed and 'hit.classList.add("active")' in ed)
+
+# ---------------------- JAG-500: no chat blanking / restart at the end of a turn
+check("build watcher no longer restarts the page",
+      "location.reload(); }" not in gui and "function _offerReload()" in gui
+      and "t.onclick = () => location.reload();" in gui)
+check("click-to-reload chip opts back into pointer events",
+      ".sf-toast.action { pointer-events: auto;" in gui)
+check("feed chat.done rebuilds only for a turn this tab did not stream",
+      "function _rebuildOnFeedDone(sid)" in gui
+      and "if (_streamedDone[sid] || turnSSE[sid] || sid !== sessionId) return;" in gui
+      and gui.count("_rebuildOnFeedDone(") >= 3)   # definition + _feedReplay + connectFeed
+check("a streamed turn is recorded so the feed cannot re-render it",
+      "_streamedDone[turnSession] = true;" in gui and "_streamedDone[sid] = true;" in gui
+      and gui.count("_streamedDone[d.session] = false;") >= 2)
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

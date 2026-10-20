@@ -124,7 +124,7 @@ ui = read("webui", "index.html")
 check("the feed follows a turn that starts on the open session",
       "if (d.session && d.session === sessionId) attachIfRunning(sessionId);" in ui)
 check("the feed pulls the reply when the turn ends off-stream",
-      "if (d.session && d.session === sessionId && !turnSSE[sessionId]) {" in ui)
+      "function _rebuildOnFeedDone(sid)" in ui and "_rebuildOnFeedDone(d.session);" in ui)
 check("the old one-line-only chat.done handler is gone",
       'es.addEventListener("chat.done", () => { push("💬 chat done"); loadCtx(); });' not in ui)
 
