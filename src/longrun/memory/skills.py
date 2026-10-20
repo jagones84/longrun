@@ -59,7 +59,7 @@ def _frontmatter_name(text):
     return None
 
 
-_cache = {"sig": None, "skills": []}
+_cache = {"sig": None, "skills": [], "bodies": {}}
 
 
 def _matrix_skills_dir():
@@ -157,6 +157,11 @@ def list_skills(reload=False):
     if not reload and _cache["skills"] and _cache["sig"] == sig:
         return _cache["skills"]
     skills = []
+    # JAG-497: the body text is ALREADY read here (8192 chars) to parse the
+    # title/description — keep a lowercase copy so `search_skills` can rank over
+    # the real CONTENT (the instructions), not just the one-line blurb, at zero
+    # extra I/O. It stays out of the returned dicts so `action:list` stays small.
+    bodies = {}
     if os.path.isdir(SKILLS_DIR):
         for cat in sorted(os.listdir(SKILLS_DIR)):
             cat_dir = os.path.join(SKILLS_DIR, cat)
@@ -172,6 +177,7 @@ def list_skills(reload=False):
                     except OSError:
                         continue
                     title, desc = _parse_skill_md(text, name)
+                    bodies[sp] = text.lower()
                     skills.append({"name": name, "category": cat,
                                    "path": os.path.relpath(sp, REPO),
                                    "abspath": sp,
@@ -196,12 +202,13 @@ def list_skills(reload=False):
                     rel_p = os.path.relpath(sp, REPO)
                 except ValueError:
                     rel_p = sp
+                bodies[sp] = text.lower()
                 skills.append({"name": name, "category": "matrix",
                                "path": rel_p,
                                "abspath": sp,
                                "title": title, "description": desc,
                                "auto": True, "matrix": True, "local": False})
-    _cache.update(sig=sig, skills=skills)
+    _cache.update(sig=sig, skills=skills, bodies=bodies)
     return skills
 
 
@@ -311,36 +318,33 @@ def get_skill(name):
 
 
 def skills_context(max_chars=2200):
-    """Compact skills block injected into the agent's system prompt.
+    """The skills block injected into the agent system prompt.
 
-    JAG-163: mirrors the frontier pattern (Claude Code / openclaw / hermes) — the
-    model always sees every installed skill as NAME + a one-line description, so
-    it knows what it has WITHOUT a discovery round-trip (previously only bare
-    names were preloaded, and only into the chat loop). The full SKILL.md body is
-    still loaded on demand with the `skills` tool, keeping the prompt bounded.
+    JAG-163 preloaded every installed skill as NAME + one-line description so the
+    model knew what it had without a discovery round-trip.
+
+    JAG-497 makes it a POINTER instead of an index: with 175 installed skills the
+    enumeration cost ~2.6k chars of EVERY prompt for a list the model mostly
+    ignores, and it still could not tell which skill really fit. The block now
+    names the categories + the exact tool calls, and the model discovers the ONE
+    skill it needs with `search` (ranked over name, description AND the SKILL.md
+    body) or `list`. Same information reachable, a fraction of the always-on cost.
     """
     skills = list_skills()
     if not skills:
         return "Skills: none found in %s." % SKILLS_DIR
-    cats = {}
-    for s in skills:
-        cats.setdefault(s["category"], []).append(s)
-    lines = ["Skills: %d installed. The `skills` tool: "
-             '{"action":"read","name":"<name>"} loads one and you FOLLOW its '
-             'instructions; {"action":"search","query":"..."} finds one by keyword; '
-             '{"action":"list"} shows all. Index:"' % len(skills)]
-    for cat in sorted(cats):
-        lines.append("- %s:" % cat)
-        for s in sorted(cats[cat], key=lambda x: x["name"]):
-            d = (s.get("description") or "").strip().replace("\n", " ")
-            if len(d) > 80:
-                d = d[:77].rstrip() + "\u2026"
-            lines.append(("    %s \u2014 %s" % (s["name"], d)) if d else ("    %s" % s["name"]))
-    out = "\n".join(lines)
-    if len(out) <= max_chars:
-        return out
-    return out[:max_chars] + \
-        '\n…[index truncated — find the rest with {"action":"search","query":"..."}]'
+    cats = sorted({s["category"] for s in skills})
+    out = ("Skills: %d installed, in categories: %s.\n"
+           'Before solving a task, SEARCH this library instead of improvising: '
+           '{"action":"search","query":"<task keywords>"} ranks it over each skill\'s '
+           "name, description AND full instructions (SKILL.md body); "
+           '{"action":"list"} dumps every name; {"action":"read","name":"<name>"} '
+           "loads ONE skill — then FOLLOW its instructions step by step."
+           % (len(skills), ", ".join(cats)))
+    if len(out) > max_chars:
+        out = out[:max_chars] + \
+            '\n…[skills block truncated — still find the rest with {"action":"search","query":"..."}]'
+    return out
 
 
 _SKILL_STOP = {
@@ -351,21 +355,32 @@ _SKILL_STOP = {
 
 
 def search_skills(query, limit=10):
-    """Rank installed skills against `query` (JAG-198).
+    """Rank installed skills against `query` (JAG-198, extended JAG-497).
 
     Progressive discovery (Claude Code / ScaleMCP pattern): the model can find
-    the ONE relevant skill without loading the whole library into context. A hit
-    in the name/title weighs 3x a hit in the description. Returns a list of
-    {name, category, title, description, score}, best first.
+    the ONE relevant skill without loading the whole library into context.
+
+    JAG-497: the ranking now also reads the SKILL.md BODY (the actual
+    instructions), not only name/title/description — that is where a skill really
+    says what it does, and it is what lets a content-only query find the skill
+    after the always-on index was dropped from the prompt. Weights: name/title 3x,
+    description 2x, body 1x. Pure lexical + deterministic — no model, no network
+    (an embedding index would add a model dependency and non-deterministic tests
+    for a 175-file library a keyword scan covers instantly).
+    Returns a list of {name, category, title, description, score}, best first.
     """
     words = set(re.findall(r"[a-z]{3,}", str(query or "").lower())) - _SKILL_STOP
     if not words:
         return []
+    bodies = _cache.get("bodies") or {}
     scored = []
     for s in list_skills():
         strong = (str(s.get("name") or "") + " " + str(s.get("title") or "")).lower()
         weak = str(s.get("description") or "").lower()
-        score = sum(3 for w in words if w in strong) + sum(1 for w in words if w in weak)
+        body = bodies.get(s.get("abspath") or "", "")
+        score = (sum(3 for w in words if w in strong)
+                 + sum(2 for w in words if w in weak)
+                 + sum(1 for w in words if w in body))
         if score:
             scored.append((score, s))
     scored.sort(key=lambda x: (-x[0], x[1]["name"]))

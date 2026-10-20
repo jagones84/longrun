@@ -109,6 +109,18 @@ def rules_context(sess=None, ws=None):
     except Exception:  # noqa: BLE001 — rules must never break a prompt
         return ""
 
+def matrix_context(ws=None):
+    """JAG-497: the Matrix dynamic-rules block for prompt paths that do NOT go
+    through `prompt.render_sections` — the standalone planner and the delegated
+    subagent loop. Without this a `.Matrix/rules/` rule reached the chat but
+    never the agents it dispatches, so every rule had only half its reach.
+    """
+    try:
+        from longrun.core import matrix as matrix_mod
+        return matrix_mod.prompt_section_text(ws=ws)
+    except Exception:  # noqa: BLE001 — a prompt section must never break a turn
+        return ""
+
 PLANNER_PROMPT = (
     "You are the planner module of the Longrun harness. Break the goal into "
     "3-7 concrete strategy steps. Respond with ONLY a JSON array, each item "
@@ -148,15 +160,15 @@ CHAT_APPROVAL_WAIT = 30
 # JAG-375: the steer/abort inboxes moved to `steering.py` (imported above).
 
 SKILLS_POLICY = (
-    "Skills: you have an installed skill library — the SKILLS list below is "
-    "live and includes all symlinked distributions. Before solving a task, SCAN "
-    "it: if a skill matches (e.g. using-superpowers, brainstorming, "
-    "writing-plans, tdd, systematic-debugging, research, mcp-builder, "
-    "code-review), LOAD it with the `skills` tool "
+    "Skills: you have an installed skill library — its size, categories and the "
+    "exact calls are in the skills section below. Before solving a task, SCAN it "
+    'with {"action":"search","query":"..."} (the ranking reads each skill\'s '
+    "instructions, not just its title): if a skill matches (e.g. "
+    "using-superpowers, brainstorming, writing-plans, tdd, systematic-debugging, "
+    "research, mcp-builder, code-review), LOAD it with the `skills` tool "
     '({\"action\":\"read\",\"name\":\"<name>\"}) and FOLLOW its instructions '
-    "step by step instead of improvising. Use {\"action\":\"list\"} for the "
-    "full list with descriptions; if the list is long or truncated, SEARCH it "
-    'with {"action":"search","query":"..."} and read the best match.'
+    'step by step instead of improvising. Use {\"action\":\"list\"} for every '
+    "name with descriptions."
 )
 
 
@@ -2886,7 +2898,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
 
 def generate_plan(goal, model=None):
     sess = {"id": "planner", "title": "planner", "created": time.time(), "messages": []}  # ephemeral
-    sys = system_prompt() + "\n\n" + PLANNER_PROMPT
+    sys = "\n\n".join(x for x in (system_prompt(), matrix_context(), PLANNER_PROMPT) if x)
     msgs = [{"role": "system", "content": sys}, {"role": "user", "content": goal}]
     # JAG-455: one model per turn — the legacy standalone planner uses the harness
     # default, never a separate `planner` role model (that was the LOCAL weights).
@@ -3060,13 +3072,15 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
     actions = []
     aborted = False
     rb = rules_context(ws=workspace)  # JAG-114/115: the agent loop honours the same rules
+    mx = matrix_context(ws=workspace)  # JAG-497: …and the Matrix dynamic rules too
     from longrun.model import prompt as prompt_mod  # JAG-128A: prompt-map + capability in the agent loop too
     try:
         for i in range(max_steps):
             api_v02.checkpoint(st)  # JAG-111: honour pause / abort between steps
             sys = (prompt_mod.prompt_map_text() + "\n\n" + prompt_mod.capability_text()
                    + "\n\n" + system_prompt() + "\n\n" + self_summary() + "\n\n" + AGENT_PROMPT
-                   + "\n\n" + RULES_POLICY + ("\n" + rb if rb else ""))
+                   + "\n\n" + RULES_POLICY + ("\n" + rb if rb else "")
+                   + ("\n\n" + mx if mx else ""))
             # JAG-276: the live task list rides in the user turn, not the system prompt.
             # JAG-348: ALSO carry the agent's own previous steps + observations, so the
             # model learns from a tool/subagent result and can correct a rejected action

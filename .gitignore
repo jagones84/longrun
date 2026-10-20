@@ -50,6 +50,10 @@ skills/*
 # JAG-112: user-added/overridden providers land here (never the tracked base).
 config/providers.local.yaml
 
+# JAG-487/495: the auto-compact policy overlay written by the WebUI auto-save is
+# per-machine local state (never the tracked base config/compaction.yaml).
+config/compaction.local.yaml
+
 .superpowers/
 
 # JAG-311: the e2e WebUI test project (Node). It consumes the sibling cloned

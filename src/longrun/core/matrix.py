@@ -578,6 +578,15 @@ def clean_trash(keep_recent=0, repo_root=None):
 
 # ------------------------------- Seam 1: Prompt section & .Matrix/rules/ ------
 
+# Prompt budget for the Matrix rules block (JAG-497). It used to clip SILENTLY at
+# 2000 chars/rule and 4000/block, so a truncated rule was indistinguishable from
+# a complete one — the model believed it had read the whole thing. The budget is
+# now doubled AND every clip leaves a visible marker.
+_RULE_CHARS = 4000         # per rule file
+_RULES_BLOCK_CHARS = 8000  # the whole `.Matrix/rules/` block
+_HOOK_CHARS = 4000         # Matrix prompt-hook extra
+
+
 def prompt_section_text(sess=None, ws=None, repo_root=None):
     """Render the Matrix system prompt block: hardcoded instructions + `.Matrix/rules/*.md`."""
     _root, msrc, mdot = _roots(repo_root)
@@ -593,11 +602,21 @@ def prompt_section_text(sess=None, ws=None, repo_root=None):
                 with open(p, encoding="utf-8", errors="replace") as f:
                     txt = f.read().strip()
                 if txt:
-                    rule_texts.append("### Matrix rule (%s)\n%s" % (os.path.basename(p), txt[:2000]))
+                    body = txt[:_RULE_CHARS]
+                    if len(txt) > _RULE_CHARS:
+                        body += ("\n…[this rule is TRUNCATED at %d chars (%d on disk) — "
+                                 "keep Matrix rules short, the rest never reaches the model]"
+                                 % (_RULE_CHARS, len(txt)))
+                    rule_texts.append("### Matrix rule (%s)\n%s" % (os.path.basename(p), body))
             except OSError:
                 continue
         if rule_texts:
-            parts.append("## Matrix Dynamic Rules (`.Matrix/rules/`)\n" + "\n\n".join(rule_texts)[:4000])
+            block = "## Matrix Dynamic Rules (`.Matrix/rules/`)\n" + "\n\n".join(rule_texts)
+            if len(block) > _RULES_BLOCK_CHARS:
+                block = block[:_RULES_BLOCK_CHARS] + (
+                    "\n\n…[Matrix rules block TRUNCATED at %d chars — %d rule file(s) on disk; "
+                    "shorten them, the tail is NOT in this prompt]" % (_RULES_BLOCK_CHARS, len(rule_texts)))
+            parts.append(block)
     hook_py = os.path.join(msrc, "model", "prompt_hook.py")
     for hfile in ("prompt_hook.py", "hooks.py"):
         hook_py = os.path.join(msrc, "model", hfile)
@@ -609,7 +628,11 @@ def prompt_section_text(sess=None, ws=None, repo_root=None):
                 if hasattr(mod, "extend_prompt"):
                     extra = str(mod.extend_prompt(sess=sess, ws=ws) or "").strip()
                     if extra:
-                        parts.append("## Matrix Prompt Hook\n" + extra[:2000])
+                        hook = extra[:_HOOK_CHARS]
+                        if len(extra) > _HOOK_CHARS:
+                            hook += ("\n…[Matrix prompt hook TRUNCATED at %d chars (%d on disk)]"
+                                     % (_HOOK_CHARS, len(extra)))
+                        parts.append("## Matrix Prompt Hook\n" + hook)
                         break
             except Exception as e:  # noqa: BLE001 — fail-open
                 parts.append("## Matrix Prompt Hook Error (isolated)\n`%s: %s`" % (type(e).__name__, e))

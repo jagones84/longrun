@@ -306,6 +306,13 @@ AGENT_PROMPT_V2 = (
 )
 
 
+_GATEWAY_PREFIX = "pmcp__gateway."
+# The gateway's DISCOVERY + CALL interface. These three stay listed with their
+# full schema; every OTHER `pmcp__gateway.*` tool (auth/provision/tasks/config/…)
+# is a management helper the model reaches through them.
+_GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
+
+
 def tool_context():
     """The tool block for the chat/agent prompt.
 
@@ -313,16 +320,30 @@ def tool_context():
     opt-in pmcp gateway surface) are collapsed into one compact footer line — a
     huge [DISABLED] wall used to drown the real tools and push the model into
     calling an approval-gated gateway tool.
+
+    JAG-497: the ENABLED pmcp gateway was the same wall in miniature — 26 listed
+    tools cost ~8k chars of every prompt (49% of this block) for a surface the
+    model reaches through `catalog_search` → `describe` → `invoke`. The bulk is
+    now ONE compact line that still NAMES them, so they stay callable.
     """
     lines = ["Tool registry (allowlist — only enabled tools may be called):"]
     disabled = []
+    gateway = []
     for t in registry.catalog():
         if not t["enabled"]:
             disabled.append(t["name"])
             continue
+        nm = t["name"]
+        if nm.startswith(_GATEWAY_PREFIX) and nm[len(_GATEWAY_PREFIX):] not in _GATEWAY_KEEP:
+            gateway.append(nm[len(_GATEWAY_PREFIX):])
+            continue
         props = ", ".join((t["inputSchema"].get("properties") or {}).keys())
         lines.append("  - %-9s(%s) approval=%s :: %s"
-                     % (t["name"], props, t["approval"], t["description"]))
+                     % (nm, props, t["approval"], t["description"]))
+    if gateway:
+        lines.append("  - %s* (%d more gateway tools, callable by name; the trio "
+                     "above finds + runs them): %s"
+                     % (_GATEWAY_PREFIX, len(gateway), ", ".join(sorted(gateway))))
     if disabled:
         # JAG-202: keep this to ONE short line. Listing every disabled tool name
         # was a ~900-char wall that drowned the callable tools and pushed the model
@@ -423,6 +444,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     # app"). We carry assistant actions + observations across the whole run.
     hist = []
     rb = srv.rules_context(ws=workspace)  # JAG-114/115: standing rules for this run
+    mx = srv.matrix_context(ws=workspace)  # JAG-497: …and the Matrix dynamic rules too
     from longrun.model import prompt as prompt_mod  # JAG-128A: prompt-map + capability in the agent loop too
     try:
         for i in range(max_steps):
@@ -448,7 +470,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                         + "\n\n" + srv.SYSTEM_PROMPT + "\n\n" + AGENT_PROMPT_V2 + "\n\n"
                         + srv.RULES_POLICY + ("\n" + rb if rb else "") + "\n\n"
                         + srv.SKILLS_POLICY + ("\n" + _sk if _sk else "") + "\n\n"
-                        + tool_context())
+                        + tool_context() + ("\n\n" + mx if mx else ""))
                 if not hist:
                     hist.append({"role": "user", "content":
                                  "Goal: %s\n\nWork step by step: issue ONE action "

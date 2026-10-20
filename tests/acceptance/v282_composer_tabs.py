@@ -9,8 +9,9 @@ Locked here:
   * the composer bar is ALWAYS one row (JAG-427): the model picker is the only flexible
     element and it shrinks toward a glyph before anything can wrap or overlap;
   * every editor tab shows its full path on hover and has a right-click menu with
-    'copy path' (mirroring the file tree), a 'reveal in file tree' action, and an
-    outside-the-workspace marker (tab + status bar).
+    'copy path' (mirroring the file tree), a 'close all' action, and an
+    outside-the-workspace marker (tab + status bar). Clicking a tab reveals the
+    file in the tree (JAG-494: that moved off the menu onto the click itself).
 
 Deterministic, no live server. Run: python3 tests/v282_composer_tabs.py
 """
@@ -65,8 +66,13 @@ check("right-clicking a tab opens a menu",
       "function showTabMenu" in ed and "b.oncontextmenu" in ed)
 check("the tab menu copies the path (like the file tree)",
       'mk("⧉ copy path"' in ed and "copyPath(t.path)" in ed)
-check("the tab menu reveals the file in the tree",
-      "function revealInTree" in ed and "reveal in file tree" in ed)
+check("the tab menu offers a close-all command",
+      "function closeAllTabs" in ed and 'mk("✕✕ close all"' in ed)
+check("clicking a tab reveals the file in the tree (reveal moved off the menu)",
+      "function revealInTree" in ed
+      and "activate(i); if (!temp && _inWorkspace(t.path)) revealInTree(t.path);" in ed)
+check("reveal is no longer a menu item",
+      'mk("🔎 reveal in file tree"' not in ed)
 check("an outside-the-workspace tab is marked",
       "function _inWorkspace" in ed and ".ed-tab.ext" in ed and "ext-i" in ed)
 check("the status bar flags a file outside the workspace",

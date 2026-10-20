@@ -103,10 +103,11 @@ api = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding=
 check("E1 the API exposes GET/POST /api/compaction/policy",
       api.count('"/api/compaction/policy"') >= 2
       and "def compaction_policy(" in api and "def set_compaction_policy(" in api)
-check("E2 the Context panel has trigger/target/keep inputs + save",
+check("E2 the Context panel has trigger/target/keep inputs that auto-save on change",
       'id="cmpTrigger"' in ui and 'id="cmpTarget"' in ui and 'id="cmpKeep"' in ui
       and "async function saveCompactionPolicy(" in ui
-      and 'data-call="saveCompactionPolicy"' in ui)
+      and ui.count('data-change="saveCompactionPolicy"') == 3
+      and 'data-call="saveCompactionPolicy"' not in ui)
 check("E3 the panel shows the live policy and where it is stored",
       "async function loadCompactionPolicy(" in ui
       and 'api("GET", "/api/compaction/policy")' in ui

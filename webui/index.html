@@ -391,6 +391,32 @@
   .ctxstate.near { color: var(--warn); }
   .ctxstate.over { color: var(--err); }
   .ctxrow { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--dim); }
+  /* JAG-495: the auto-compact policy editor. Three numeric fields sit on ONE line as
+     a fixed 3-column grid (each label ABOVE its box), instead of the old wrapping row
+     of wide inputs with the label glued to the LEFT of each box. No save button: a
+     `change` saves automatically (data-change). */
+  #cmpPolicyCard { padding: 10px 12px; }
+  .cmp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .cmp-title { font-size: 10px; font-weight: 600; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--dim); }
+  .cmp-src { font-size: 10px; color: var(--dim); opacity: .75; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px; margin-top: 8px; }
+  .cmp-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; cursor: pointer; }
+  .cmp-lbl { font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmp-num { width: 100%; min-width: 0; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--txt); border-radius: 8px; padding: 6px 4px; font: inherit; font-size: 13px;
+    font-variant-numeric: tabular-nums; text-align: center; outline: none;
+    transition: border-color .15s, box-shadow .15s; }
+  .cmp-num:hover { border-color: var(--acc); }
+  .cmp-num:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,140,255,.12); }
+  .cmp-num.bad { border-color: var(--err); box-shadow: 0 0 0 3px rgba(248,113,113,.14); }
+  .cmp-msg { font-size: 10.5px; margin-top: 7px; min-height: 0; color: var(--dim); }
+  .cmp-msg:empty { display: none; }
+  .cmp-msg.ok { color: var(--ok); }
+  .cmp-msg.err { color: var(--err); }
   /* JAG-267: Context-panel category breakdown (session-scoped).
      JAG-269: clickable items (open in the editor) + a per-category token meter. */
   .ctxmeter { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px;
@@ -960,17 +986,28 @@
   .editchip .efile { display: flex; gap: 8px; cursor: pointer; padding: 2px 4px; border-radius: 5px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .editchip .efile:hover { background: var(--hover); }
+  /* JAG-452: the filename (with its icon) opens the file in the editor; the
+     +/-N badge on the right is its own control that opens the diff. */
+  .editchip .efopen { display: flex; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
   .editchip .efile .en { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .editchip .efstat { display: flex; gap: 6px; cursor: pointer; border-radius: 5px;
+    padding: 0 4px; border-bottom: 1px dotted var(--line); }
+  .editchip .efstat:hover { background: var(--hover); }
   .add { color: var(--ok); }
   .del { color: var(--err); }
   #diffBackdrop { position: fixed; inset: 0; z-index: 45; background: rgba(0,0,0,.55); }
   #diffBackdrop[hidden] { display: none; }
+  /* JAG-452: the diff modal must never be taller than the app shell. `vh` is scaled
+     by the CSS `zoom` on <html> (JAG-359), so divide it out to size against the REAL
+     viewport; `min-height:0` + `flex:1 1 auto` on the body are what actually cap the
+     modal — without them the body refused to shrink below its content and stretched
+     the modal past the viewport. The body now scrolls INSIDE the modal. */
   #diffView { position: fixed; z-index: 46; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    width: min(1120px, 96vw); max-height: 88vh; padding: 14px; background: var(--menubg);
-    display: flex; flex-direction: column; }
+    width: min(1120px, 96vw); max-height: calc(100dvh / var(--zoom, 1) - 24px); padding: 14px;
+    background: var(--menubg); display: flex; flex-direction: column; }
   #diffView[hidden] { display: none; }
-  #diffBody { overflow: auto; border: 1px solid var(--line); border-radius: 8px;
-    font-family: monospace; font-size: 11.5px; line-height: 1.45; }
+  #diffBody { flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid var(--line);
+    border-radius: 8px; font-family: monospace; font-size: 11.5px; line-height: 1.45; }
   .diffhead, .diffrow { display: grid; grid-template-columns: 1fr 1fr; }
   .diffhead > span { padding: 4px 8px; background: var(--bg2); color: var(--dim);
     border-bottom: 1px solid var(--line); position: sticky; top: 0; }
@@ -1626,17 +1663,25 @@
         </div>
         <button id="compactBtn" title="summarize this session's transcript now to free up context">🗜 Compact context</button>
         <div class="card" id="cmpPolicyCard">
-          <div class="remaining">auto-compact policy <span id="cmpPolicySrc"></span></div>
-          <div class="u-df u-g6 u-mt6 u-fs12">
-            <label class="remaining" title="auto-compact when the prompt reaches this share of the model budget">trigger %
-              <input id="cmpTrigger" class="inp u-p610" type="number" min="1" max="100" step="1" style="width:64px"></label>
-            <label class="remaining" title="the prompt must land at or below this share after an auto-compaction">target %
-              <input id="cmpTarget" class="inp u-p610" type="number" min="0" max="99" step="1" style="width:64px"></label>
-            <label class="remaining" title="how many newest turns stay verbatim">keep
-              <input id="cmpKeep" class="inp u-p610" type="number" min="1" max="50" step="1" style="width:56px"></label>
-            <button class="ghost" data-call="saveCompactionPolicy" title="save to config/compaction.local.yaml — the next turn picks it up, no restart">save</button>
+          <div class="cmp-head">
+            <span class="cmp-title">auto-compact policy</span>
+            <span id="cmpPolicySrc" class="cmp-src"></span>
           </div>
-          <div class="remaining u-mt6" id="cmpPolicyMsg"></div>
+          <div class="cmp-grid">
+            <label class="cmp-field" title="auto-compact when the prompt reaches this share of the model budget">
+              <span class="cmp-lbl">trigger %</span>
+              <input id="cmpTrigger" class="cmp-num" type="number" min="1" max="100" step="1" inputmode="numeric"
+                     data-change="saveCompactionPolicy"></label>
+            <label class="cmp-field" title="the prompt must land at or below this share after an auto-compaction">
+              <span class="cmp-lbl">target %</span>
+              <input id="cmpTarget" class="cmp-num" type="number" min="0" max="99" step="1" inputmode="numeric"
+                     data-change="saveCompactionPolicy"></label>
+            <label class="cmp-field" title="how many newest turns stay verbatim">
+              <span class="cmp-lbl">keep</span>
+              <input id="cmpKeep" class="cmp-num" type="number" min="1" max="50" step="1" inputmode="numeric"
+                     data-change="saveCompactionPolicy"></label>
+          </div>
+          <div class="cmp-msg" id="cmpPolicyMsg" role="status" aria-live="polite"></div>
         </div>
         <div id="ctxCats"></div>
         </div>
@@ -1688,7 +1733,7 @@
             <label title="How many levels of sub-agents an agent may spawn (0 = none).">sub-agent levels <input id="rtDepth" type="number" min="0" value="2"></label>
             <label title="If enabled the harness keeps going on its own until the todos are closed, then asks you. If disabled, as soon as steps remain open it hands over to the human (HUMAN IN THE LOOP).">autocontinue <input id="rtAuto" type="checkbox" checked></label>
           </div>
-          <button class="ghost" data-call="saveRuntime" title="save the runtime settings">save runtime</button>
+          <button class="ghost config-save" data-call="saveRuntime" disabled title="no changes to save">save runtime</button>
         </div>
         <div class="card hcard" style="--hc:#34d399">
           <div class="hcard-hd"><span class="dot"></span><b>Verifier</b><span class="hc-sub">apply only if green</span></div>
@@ -1699,7 +1744,7 @@
             <label title="Maximum seconds to wait for the verify command.">timeout (s) <input id="vfTimeout" type="number" min="0" value="120"></label>
             <label title="Limit the verification to these paths, comma-separated (empty = the whole workspace).">checked paths <input id="vfPaths" type="text" placeholder="optional"></label>
           </div>
-          <button class="ghost" data-call="saveVerifier" title="save the verifier settings">save verifier</button>
+          <button class="ghost config-save" data-call="saveVerifier" disabled title="no changes to save">save verifier</button>
         </div>
         <div class="card hcard" style="--hc:#fbbf24">
           <div class="hcard-hd"><span class="dot"></span><b>Best-of-N</b><span class="hc-sub">more answers, the best one</span></div>
@@ -1709,7 +1754,7 @@
             <label title="How many answers to generate (1 = no best-of-N).">number of answers N <input id="bnN" type="number" min="1" max="16" value="1"></label>
             <label title="Minimum score (0..1) an answer must have to be accepted.">minimum score <input id="bnMin" type="number" step="0.05" value="0"></label>
           </div>
-          <button class="ghost" data-call="saveBestofn" title="save the best-of-N settings">save best-of-N</button>
+          <button class="ghost config-save" data-call="saveBestofn" disabled title="no changes to save">save best-of-N</button>
         </div>
         <div class="card hcard" style="--hc:#a78bfa">
           <div class="hcard-hd"><span class="dot"></span><b>Difficulty</b><span class="hc-sub">adaptive effort</span></div>
@@ -1722,7 +1767,7 @@
             <label title="Difficulty threshold (0..1) above which the task is considered medium.">threshold → medium <input id="dfMedAt" type="number" step="0.05" value="0.35"></label>
             <label title="Difficulty threshold (0..1) above which the task is considered hard.">threshold → hard <input id="dfHardAt" type="number" step="0.05" value="0.65"></label>
           </div>
-          <button class="ghost" data-call="saveDifficulty" title="save the difficulty settings">save difficulty</button>
+          <button class="ghost config-save" data-call="saveDifficulty" disabled title="no changes to save">save difficulty</button>
         </div>
         <div class="card hcard" style="--hc:#fb923c">
           <div class="hcard-hd"><span class="dot"></span><b>Self-evolving</b><span class="hc-sub">new skills</span></div>
@@ -1733,7 +1778,7 @@
             <label title="Maximum length (in lines) of a synthesized skill.">maximum length <input id="seMaxLen" type="number" min="2" value="6"></label>
             <label title="Category in which to save generated skills (auto = decided by the agent).">category <input id="seCat" type="text" value="auto"></label>
           </div>
-          <button class="ghost" data-call="saveSelfevolve" title="save the self-evolving settings">save selfevolve</button>
+          <button class="ghost config-save" data-call="saveSelfevolve" disabled title="no changes to save">save selfevolve</button>
         </div>
       </div>
       <div class="sw-cat" data-cat="config" hidden>
@@ -1806,7 +1851,7 @@
       </div>
       <div class="sw-cat" data-cat="keys" hidden>
         <h2>Longrun token</h2>
-        <div class="card">
+        <div class="card" id="tokenCard">
           <div class="remaining u-mb8">This browser's copy of the server token.
             To create or rotate the server-side secret, set
             <code>LONGRUN_TOKEN</code> in the key list below; the live server updates
@@ -1815,7 +1860,7 @@
             <input id="token-input" class="inp u-f1 u-p610 u-fs12" type="password" placeholder="server token">
             <button class="ghost" id="tokenEye" data-call="revealToken" title="show/hide">👁</button>
             <button class="ghost" data-call="copyToken" title="copy">⧉ copy</button>
-            <button class="ghost" data-call="saveToken">save</button>
+            <button class="ghost config-save" data-call="saveToken" disabled title="no changes to save">save</button>
           </div>
         </div>
         <h2>Keys · secrets</h2>
@@ -1879,11 +1924,12 @@
         <button class="insp-hd" data-call="toggleInsp" data-args='["files"]'>Workspace<span class="ihd-s" id="sWorkspace"></span></button>
         <div class="insp-body">
         <h2>Workspace · folder (this session)</h2>
-        <div class="card">
+        <div class="card" id="wsCard">
           <input id="wsPath" class="inp u-w100 u-p610 u-fs12" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)">
           <div class="u-df u-g8 u-aic u-mt6 u-fww">
             <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
-            <button class="ghost" data-call="setWorkspace">use this folder</button>
+            <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]' title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁 browse…</button>
+            <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
           </div>
         </div>
         <h2>Files · workspace</h2>
@@ -1960,17 +2006,17 @@
       </section>
       <div class="sw-cat" data-cat="rules" hidden>
         <h2>Rules · global</h2>
-        <div class="card">
+        <div class="card" id="rulesGlobalCard">
           <div class="remaining" id="rulesGlobalPath">…</div>
           <textarea id="rulesGlobalText" style="width:100%;min-height:120px;margin-top:6px;font-size:12px;font-family:monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)"></textarea>
-          <button class="ghost u-mt8" data-call="saveRules" data-args='["global"]'>save global</button>
+          <button class="ghost config-save u-mt8" data-call="saveRules" data-args='["global"]' disabled title="no changes to save">save global</button>
           <button class="ghost u-mt8" data-call="openRule" data-args='["global"]' title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
         </div>
         <h2>Rules · project</h2>
-        <div class="card">
+        <div class="card" id="rulesProjectCard">
           <div class="remaining" id="rulesProjectPath">…</div>
           <textarea id="rulesProjectText" style="width:100%;min-height:120px;margin-top:6px;font-size:12px;font-family:monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)"></textarea>
-          <button class="ghost u-mt8" data-call="saveRules" data-args='["project"]'>save project</button>
+          <button class="ghost config-save u-mt8" data-call="saveRules" data-args='["project"]' disabled title="no changes to save">save project</button>
           <button class="ghost u-mt8" data-call="openRule" data-args='["project"]' title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
           <div id="rulesResult" class="remaining u-mt6"></div>
         </div>
@@ -2067,7 +2113,7 @@
           <button class="ghost u-mt8" data-call="openSettings" data-args='["knowledge"]' title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
         </div>
         <h2>Add / edit provider</h2>
-        <details class="card">
+        <details class="card" id="provCard">
           <summary class="remaining u-ptr">＋ add or edit a provider</summary>
           <input id="provId" class="inp u-w100 u-p610 u-fs12" placeholder="id (e.g. openrouter) *">
           <input id="provName" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="name">
@@ -2083,7 +2129,7 @@
           <input id="provKeyEnv" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="api_key_env = VAR name (not the key)">
           <input id="provModels" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="models (comma-separated; id or id:context_length)">
           <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="provLocal"> local (no key)</label>
-          <button class="ghost u-mt8" data-call="saveProvider">save provider</button>
+          <button class="ghost config-save u-mt8" data-call="saveProvider" disabled title="no changes to save">save provider</button>
           <div id="provResult" class="remaining u-mt6" role="status" aria-live="polite"></div>
           <div id="provAuthRecovery" class="remaining u-mt8" role="alert" hidden>
             <div id="provAuthMessage">Provider was not saved. Longrun rejected this browser token. Enter the active server token in Settings → Keys, save it, then return to Models and save this provider again.</div>
@@ -2253,7 +2299,7 @@
     <div class="u-df u-g6 u-mt10 u-jcfe">
       <button class="ghost" data-call="copyMcpJson">⧉ copy</button>
       <button class="ghost" data-call="closeMcpJson">cancel</button>
-      <button class="ghost" data-call="applyMcpJson">confirm</button>
+      <button class="ghost config-save" data-call="applyMcpJson" disabled title="no changes to apply">confirm</button>
     </div>
   </div>
 </div>
@@ -2282,7 +2328,7 @@
   <div id="dirList" style="margin-top:8px;max-height:46vh;overflow:auto"></div>
   <div class="u-df u-g8 u-mt10 u-jcfe">
     <button class="ghost" data-call="closeDirPicker">cancel</button>
-    <button class="ghost" data-call="pickCurrentDir">use this folder</button>
+    <button class="ghost" id="dirPick" data-call="pickCurrentDir" title="use the folder shown above">save</button>
   </div>
   <div id="dirResult" class="remaining u-mt6"></div>
 </div>
@@ -4434,11 +4480,20 @@ async function createNewSession() {
   closeNewSess(); loadSessions(); loadHistory(); loadRules(); loadCtx(); loadRole(); loadPlan(); loadCosts(); modelLabel(); closeAside();
   scheduleDiagnosticsRefresh();
 }
-/* JAG-121: folder picker (file-browser) for the session workspace */
+/* JAG-121: folder picker (file-browser) for the session workspace.
+   JAG-496: the picker serves whoever opened it. `_dirTarget` is the input id it
+   starts from AND writes back to (New-session dialog → `nsWs`, Workspace card →
+   `wsPath`). The folder list comes from the SERVER (`GET /api/fs/dirs`), so
+   browsing works identically whatever the host is (Windows, Linux, ARM64), and
+   the pick is committed straight away when the target is the Workspace card:
+   choosing a folder there IS the save, no second click. */
 let _dirState = { path: "", parent: null, roots: [] };
-async function openDirPicker(start) {
+let _dirTarget = "nsWs";
+async function openDirPicker(target) {
+  _dirTarget = target || "nsWs";
   $("dirPicker").hidden = false; $("dirBackdrop").hidden = false; $("dirResult").textContent = "";
-  await loadDirs(start || $("nsWs").value.trim());
+  const src = $(_dirTarget);
+  await loadDirs((src && src.value.trim()) || "");
 }
 function closeDirPicker() { $("dirPicker").hidden = true; $("dirBackdrop").hidden = true; $("dirResult").textContent = ""; }
 async function loadDirs(path) {
@@ -4455,7 +4510,13 @@ async function loadDirs(path) {
   });
 }
 function dirUp() { if (_dirState.parent) loadDirs(_dirState.parent); }
-function pickCurrentDir() { $("nsWs").value = _dirState.path || ""; closeDirPicker(); }
+function pickCurrentDir() {
+  const target = _dirTarget, path = _dirState.path || "";
+  const el = $(target);
+  if (el) el.value = path;
+  closeDirPicker();
+  if (target === "wsPath") setWorkspace();   // JAG-496: browse → save, automatically
+}
 async function loadHistory() {
   if (!sessionId) return;
   const _historySid = sessionId;
@@ -5090,6 +5151,52 @@ if ($("costRefresh")) $("costRefresh").onclick = async () => {
 /* JAG-487: the auto-compaction policy is live config (config/compaction.yaml, plus
    the WebUI overlay config/compaction.local.yaml). Show it in the Context panel and
    let the operator tune it there — the next turn picks it up, no restart. */
+/* JAG-496: ONE dirty-gate for every save/apply button of the settings class.
+   A button carrying the `.config-save` class stays DIMMED and DISABLED until the
+   form around it differs from the values it was loaded/saved with; as soon as it
+   differs the button lights up (.dirty, accent token). A panel calls
+   `gateEnroll(root)` ONCE after it has populated its form — that snapshot is the
+   baseline — and `gateEnroll(root)` again after a successful save to re-base. The
+   two delegated listeners re-evaluate on any input/change, so nothing is wired
+   per field and this logic is never copied per panel. */
+function _gateValue(root) {
+  const parts = [];
+  root.querySelectorAll("input,select,textarea").forEach(el => {
+    parts.push((el.type === "checkbox" || el.type === "radio")
+      ? (el.checked ? "1" : "0") : String(el.value));
+  });
+  return parts.join("\u0001");
+}
+function gateSync(root) {
+  if (!root || root._gate === undefined) return;
+  const btn = root.querySelector("button.config-save");
+  if (!btn) return;
+  const dirty = _gateValue(root) !== root._gate;
+  btn.disabled = !dirty;
+  btn.classList.toggle("dirty", dirty);
+  if (btn.dataset.gateTitle === undefined) {
+    // The authored title is the IDLE wording ("no changes to save"/"\u2026apply").
+    // Keep it for the resting state, but never parrot it while the button is live.
+    const authored = (btn.getAttribute("title") || "").trim();
+    const idle = /^no changes/i.test(authored) || !authored ? (authored || "no changes to save") : "no changes to save";
+    btn.dataset.gateIdle = idle;
+    btn.dataset.gateTitle = /^no changes/i.test(authored) ? "" : authored;
+  }
+  btn.title = dirty ? (btn.dataset.gateTitle || "save changes") : btn.dataset.gateIdle;
+}
+function gateEnroll(root) {
+  if (!root || !root.querySelector("button.config-save")) return;
+  root._gate = _gateValue(root);
+  gateSync(root);
+}
+function _gateOwner(el) {
+  for (let n = el; n && n !== document.body; n = n.parentElement) {
+    if (n._gate !== undefined) return n;
+  }
+  return null;
+}
+["input", "change"].forEach(ev =>
+  document.addEventListener(ev, e => { const o = _gateOwner(e.target); if (o) gateSync(o); }, true));
 /* JAG-488: the complete config/ editor. The structured panels (Harness, Tools,
    Models, Subagents, MCP, Knowledge) cover the files they own; this one makes
    EVERY top-level config/*.yaml readable and writable from the WebUI, with a
@@ -5375,25 +5482,31 @@ async function loadCompactionPolicy(force) {
     set("cmpTrigger", Math.round(p.trigger_pct));
     set("cmpTarget", Math.round(p.target_pct));
     set("cmpKeep", p.keep_recent);
+    ["cmpTrigger", "cmpTarget", "cmpKeep"].forEach((id) => { const e = $(id); if (e) e.classList.remove("bad"); });
     const src = $("cmpPolicySrc");
     if (src) src.textContent = p.local_exists ? "(config/compaction.local.yaml)"
                                               : "(config/compaction.yaml)";
   } catch (e) { /* the panel is informational — never break the chat */ }
 }
+/* JAG-495: auto-saved from the three number inputs (data-change) — no Save button.
+   Invalid values mark the offending box red and are NOT written. */
 async function saveCompactionPolicy() {
-  const t = parseFloat(($("cmpTrigger") || {}).value);
-  const g = parseFloat(($("cmpTarget") || {}).value);
-  const k = parseInt(($("cmpKeep") || {}).value, 10);
-  const msg = $("cmpPolicyMsg");
-  if (!(t > 0 && t <= 100) || !(g >= 0 && g < t) || !(k >= 1 && k <= 50)) {
-    if (msg) msg.textContent = "invalid: need 0 < trigger \u2264 100, 0 \u2264 target < trigger, 1 \u2264 keep \u2264 50";
+  const tr = $("cmpTrigger"), tg = $("cmpTarget"), kp = $("cmpKeep"), msg = $("cmpPolicyMsg");
+  const t = parseFloat((tr || {}).value), g = parseFloat((tg || {}).value);
+  const k = parseInt((kp || {}).value, 10);
+  const mark = (el, ok) => { if (el) el.classList.toggle("bad", !ok); };
+  const okT = t > 0 && t <= 100, okG = g >= 0 && g < t, okK = k >= 1 && k <= 50;
+  mark(tr, okT); mark(tg, okG); mark(kp, okK);
+  const say = (text, kind) => { if (msg) { msg.className = "cmp-msg " + (kind || ""); msg.textContent = text; } };
+  if (!(okT && okG && okK)) {
+    say("invalid — need 0 < trigger \u2264 100, 0 \u2264 target < trigger, 1 \u2264 keep \u2264 50", "err");
     return;
   }
   const r = await api("POST", "/api/compaction/policy",
                       {trigger_pct: t, target_pct: g, keep_recent: k});
-  if (r && r.error) { if (msg) msg.textContent = "error: " + r.error; return; }
-  if (msg) msg.textContent = "saved \u2014 auto-compact fires at " + Math.round(t) +
-    "% and lands \u2264 " + Math.round(g) + "% on the next turn (no restart)";
+  if (r && r.error) { say("error: " + r.error, "err"); return; }
+  say("\u2713 auto-saved \u2014 fires at " + Math.round(t) + "% \u2192 lands \u2264 " +
+      Math.round(g) + "% (no restart)", "ok");
   loadCompactionPolicy(true);
   loadCtx();
 }
@@ -7006,7 +7119,7 @@ function renderTools(el, d) {
   const sbOpts = ["auto", "docker", "bwrap", "nsjail", "none"].map(v =>
     '<option value="' + v + '"' + ((sbc.backend || "none") === v ? " selected" : "") + ">" + v + "</option>").join("");
   const sbCard =
-    `<div class="card" style="margin-bottom:10px">
+    `<div class="card" id="sbxCard" style="margin-bottom:10px">
        <div style="font-weight:600;margin-bottom:6px">🧱 Sandbox · isolation for shell / python</div>
        <div class="remaining" style="margin-bottom:8px">Now: <b>${esc(probe.backend || "?")}</b>${probe.isolated ? " (isolated)" : " (host execution)"} · requested <b>${esc(probe.requested || "?")}</b>. <b>auto</b> picks the first working of docker → bwrap → nsjail; <b>none</b> runs on the host (still approval-gated and deny-listed).${probe.error ? '<br><span style="color:var(--err)">' + esc(probe.error) + "</span>" : ""}${availTxt ? "<br>" + esc(availTxt) : ""}</div>
        <div class="hrow">
@@ -7019,7 +7132,7 @@ function renderTools(el, d) {
          <label title="CPU quota for the container">cpus <input id="sbxCpus" type="number" min="0.1" max="64" step="0.1" value="${Number(sbc.cpus || 1)}"></label>
          <label title="Mount point for the per-run scratch dir, relative to the repo">workspace <input id="sbxWorkspace" type="text" value="${esc(sbc.workspace || "data/sandbox")}"></label>
        </div>
-       <button class="ghost" id="sbxSave" title="save the sandbox settings and re-probe">save sandbox</button>
+       <button class="ghost config-save" id="sbxSave" disabled title="no changes to save">save sandbox</button>
        <div class="remaining" id="sbxMsg"></div>
      </div>`;
   const _onN = tools.filter(t => t.enabled !== false).length;
@@ -7077,6 +7190,7 @@ function renderTools(el, d) {
         .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
     });
   // JAG-488: save the sandbox block and re-probe (the pill updates on the next poll).
+  gateEnroll(el.querySelector("#sbxCard"));   // JAG-496: the sandbox form keeps Save dimmed until edited
   const sbSave = el.querySelector("#sbxSave");
   if (sbSave) sbSave.onclick = async () => {
     const val = id => { const n = el.querySelector(id); return n ? n.value : ""; };
@@ -7131,9 +7245,10 @@ function _toolAdvanced(el, name, tools) {
     ta("advAuto", "auto_approve", t.auto_approve, "regexes approved without asking") +
     ta("advDeny", "deny", t.deny, "regexes never executed") +
     ta("advHosts", "allow_hosts", t.allow_hosts, "hosts http/browser may reach") +
-    '<div class="u-df u-g6 u-mt6"><button class="ghost" id="advSave">save</button>' +
+    '<div class="u-df u-g6 u-mt6"><button class="ghost config-save" id="advSave" disabled title="no changes to save">save</button>' +
     '<button class="ghost" id="advClose">close</button></div>' +
     '<div class="remaining" id="advMsg"></div>';
+  gateEnroll(box);   // JAG-496: an untouched advanced policy cannot be saved
   const lines = id => box.querySelector("#" + id).value.split("\n").map(s => s.trim()).filter(Boolean);
   box.querySelector("#advClose").onclick = () => { box.innerHTML = ""; box.className = ""; };
   box.querySelector("#advSave").onclick = async () => {
@@ -7389,6 +7504,7 @@ async function openMcpJson() {
     const d = await api("GET", "/api/mcp/clients");
     ta.value = JSON.stringify({ mcpServers: mcpClientsToJson(d.clients || {}) }, null, 2);
   } catch (e) { ta.value = ""; msg.textContent = "error: " + e; }
+  gateEnroll($("mcpJsonWin"));   // JAG-496: confirm stays blocked until the pasted text differs
   ta.focus();
 }
 function closeMcpJson() { $("mcpJsonWin").hidden = true; }
@@ -7588,6 +7704,7 @@ function editProvider(p) {
   $("provLocal").checked = !!p.local;
   $("provModels").value = (p.models || []).map(m => m.id + (m.context_length ? (":" + m.context_length) : "")).join(", ");
   $("provResult").textContent = "editing '" + p.id + "' — press save provider";
+  gateEnroll($("provCard"));   // JAG-496: baseline = the provider just loaded
 }
 async function loadRuntime() {
   const d = await api("GET", "/api/tools");
@@ -7597,6 +7714,7 @@ async function loadRuntime() {
   if ($("rtWall")) $("rtWall").value = r.max_wall_secs ?? 3600;
   if ($("rtDepth")) $("rtDepth").value = r.subagent_max_depth ?? 2;
   if ($("rtAuto")) $("rtAuto").checked = (r.autocontinue !== false);   // JAG-171
+  if ($("rtKgMax")) gateEnroll($("rtKgMax").closest(".card"));   // JAG-496
 }
 async function saveRuntime() {
   await api("POST", "/api/tools", { runtime: {
@@ -7607,6 +7725,7 @@ async function saveRuntime() {
     autocontinue: !!(($("rtAuto") || {}).checked),   // JAG-171
   }});
   who("ai", "✅ runtime updated");
+  if ($("rtKgMax")) gateEnroll($("rtKgMax").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadVerifier() {
   const d = await api("GET", "/api/tools");
@@ -7615,6 +7734,7 @@ async function loadVerifier() {
   if ($("vfCmd")) $("vfCmd").value = v.command || "";
   if ($("vfTimeout")) $("vfTimeout").value = v.timeout_secs ?? 120;
   if ($("vfPaths")) $("vfPaths").value = (v.paths || []).join(", ");
+  if ($("vfOn")) gateEnroll($("vfOn").closest(".card"));   // JAG-496
 }
 async function saveVerifier() {
   const paths = ($("vfPaths").value || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -7625,6 +7745,7 @@ async function saveVerifier() {
     paths: paths,
   }});
   who("ai", "✅ verifier updated");
+  if ($("vfOn")) gateEnroll($("vfOn").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadBestofn() {
   const d = await api("GET", "/api/tools");
@@ -7632,6 +7753,7 @@ async function loadBestofn() {
   if ($("bnOn")) $("bnOn").checked = !!b.enabled;
   if ($("bnN")) $("bnN").value = b.n ?? 1;
   if ($("bnMin")) $("bnMin").value = b.min_score ?? 0;
+  if ($("bnOn")) gateEnroll($("bnOn").closest(".card"));   // JAG-496
 }
 async function saveBestofn() {
   await api("POST", "/api/tools", { bestofn: {
@@ -7640,6 +7762,7 @@ async function saveBestofn() {
     min_score: numField("bnMin", 0),
   }});
   who("ai", "✅ best-of-N updated");
+  if ($("bnOn")) gateEnroll($("bnOn").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadDifficulty() {
   const d = await api("GET", "/api/tools");
@@ -7650,6 +7773,7 @@ async function loadDifficulty() {
   if ($("dfHard")) $("dfHard").value = x.hard_n ?? 3;
   if ($("dfMedAt")) $("dfMedAt").value = x.medium_at ?? 0.35;
   if ($("dfHardAt")) $("dfHardAt").value = x.hard_at ?? 0.65;
+  if ($("dfOn")) gateEnroll($("dfOn").closest(".card"));   // JAG-496
 }
 async function saveDifficulty() {
   await api("POST", "/api/tools", { difficulty: {
@@ -7661,6 +7785,7 @@ async function saveDifficulty() {
     hard_at: numField("dfHardAt", 0.65),
   }});
   who("ai", "✅ difficulty updated");
+  if ($("dfOn")) gateEnroll($("dfOn").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadSelfevolve() {
   const d = await api("GET", "/api/tools");
@@ -7669,6 +7794,7 @@ async function loadSelfevolve() {
   if ($("seMinCount")) $("seMinCount").value = x.min_count ?? 3;
   if ($("seMaxLen")) $("seMaxLen").value = x.max_len ?? 6;
   if ($("seCat")) $("seCat").value = x.category || "auto";
+  if ($("seMinLen")) gateEnroll($("seMinLen").closest(".card"));   // JAG-496
 }
 async function saveSelfevolve() {
   await api("POST", "/api/tools", { selfevolve: {
@@ -7678,6 +7804,7 @@ async function saveSelfevolve() {
     category: $("seCat").value,
   }});
   who("ai", "✅ selfevolve updated");
+  if ($("seMinLen")) gateEnroll($("seMinLen").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadReasoning() {
   const d = await api("GET", "/api/tools");
@@ -7719,6 +7846,7 @@ async function saveProvider() {
     try { sessionStorage.removeItem("sf_provider_draft"); } catch (e) {}
     await loadProviders();
     await loadModels();
+    gateEnroll($("provCard"));   // JAG-496: re-base after a save
   }
 }
 function _saveProviderDraft() {
@@ -7755,6 +7883,7 @@ function _restoreProviderDraft() {
   $("provResult").textContent = "Provider was not saved. Unsaved provider draft restored; check the Longrun token, then save again.";
   $("provAuthMessage").textContent = "Draft restored. Confirm the browser token in Settings → Keys, then save the provider again.";
   $("provAuthRecovery").hidden = false;
+  gateEnroll($("provCard"));   // JAG-496: the restored draft is the new baseline
 }
 /* ---- keys (JAG-113/161): which env NAMES are needed, if set, and SET them ---- */
 function _keyDescriptions() {
@@ -7936,11 +8065,14 @@ async function loadRules() {
     _rulePathGlobal = g.path || null;
     _rulePathProject = p.path || null;
     $("wsPath").value = d.workspace || "";
+    gateEnroll($("wsCard"));   // JAG-496: this is the baseline the workspace Save compares against
     _isum("sWorkspace", _base(d.workspace), "");
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
     $("rulesProjectPath").textContent = "file: " + (p.path || "—") + (p.exists ? "" : " (does not exist)");
     $("rulesGlobalText").value = g.text || "";
     $("rulesProjectText").value = p.text || "";
+    gateEnroll($("rulesGlobalCard"));     // JAG-496: RULES.md Save buttons follow the shared dirty-gate
+    gateEnroll($("rulesProjectCard"));
     const files = [];
     (g.files || []).forEach(f => files.push("G " + f));
     (p.files || []).forEach(f => files.push("P " + f));
@@ -8261,6 +8393,7 @@ function settingsCategory(name) {
     if (typeof loadRouting === "function") loadRouting();
     if (typeof loadProviders === "function") loadProviders();
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
+    gateEnroll($("provCard"));   // JAG-496: an untouched provider form cannot be saved
   }
   else if (name === "diagnostics") { loadDiagnostics(); }
   else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSessions(); kbLoadSources(); researchModelLs(); kbResearchMode(); }
@@ -8269,7 +8402,7 @@ function settingsCategory(name) {
     const bc = $("boldText");
     if (bc) bc.checked = (localStorage.getItem("sf_bold") || "0") === "1";
   }
-  else if (name === "keys") { $("token-input").value = TOKEN || ""; loadKeys(); }
+  else if (name === "keys") { $("token-input").value = TOKEN || ""; gateEnroll($("tokenCard")); loadKeys(); }
   else if (name === "info") {
     api("GET", "/api/self").then(d => {
       if (d.error) {
@@ -9249,11 +9382,17 @@ function editsChip(files) {
     '<button class="ghost eap" style="font-size:10px" title="keep every changed file as written, clear the pending list">✓ approve all</button>' +
     '<button class="ghost erj" style="font-size:10px" title="restore every changed file to its pre-image">↩ reject all</button></div>' +
     files.filter(Boolean).map(f => '<div class="efile" data-p="' + _attr(f.path) + '" title="' + _attr(f.path) + '">' +
-        "<span>" + (f.action === "created" ? "🆕" : "📝") + "</span>" +
-        '<span class="en">' + esc(_short(f.path)) + "</span>" +
-        '<span class="add">+' + f.add + '</span><span class="del">−' + f.del + "</span></div>").join("");
+        '<span class="efopen" title="open ' + _attr(f.path) + ' in the editor"><span>' + (f.action === "created" ? "🆕" : "📝") + "</span>" +
+        '<span class="en">' + esc(_short(f.path)) + "</span></span>" +
+        '<span class="efstat" title="show the diff for this file"><span class="add">+' + f.add + '</span><span class="del">−' + f.del + "</span></span></div>").join("");
   wrap.appendChild(d); $("log").appendChild(wrap); scroll();
-  d.querySelectorAll(".efile").forEach(r => r.onclick = () => showDiff(r.dataset.p));
+  // JAG-452: the filename opens the file in the editor (no diff); the +/-N badge
+  // opens the side-by-side diff modal.
+  d.querySelectorAll(".efile").forEach(r => {
+    const p = r.dataset.p;
+    const op = r.querySelector(".efopen"); if (op) op.onclick = () => openFile(p);
+    const st = r.querySelector(".efstat"); if (st) st.onclick = () => showDiff(p);
+  });
   d.querySelector(".eap").onclick = () => approveEdits(null);
   d.querySelector(".erj").onclick = () => rejectEdits(null);
 }
@@ -9295,13 +9434,16 @@ function _renderEditsList(cur) {
     const row = document.createElement("div");
     row.className = "ftrow";
     row.style.cssText = "display:flex;gap:6px;align-items:center";
-    row.innerHTML = '<span class="edname" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-bottom:1px dotted transparent">' +
+    row.innerHTML = '<span class="edname" title="open in the editor" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-bottom:1px dotted transparent">' +
       (f.action === "created" ? "🆕" : "📝") + " " + esc(f.path) + "</span>" +
-      '<span class="add">+' + f.add + '</span><span class="del">−' + f.del + "</span>" +
+      // JAG-452: the +/-N badge is its own control (opens the diff); the name opens the file.
+      '<span class="edstat" title="show the diff for this file" style="display:flex;gap:6px;cursor:pointer;border-radius:5px;padding:0 4px;border-bottom:1px dotted var(--line)">' +
+      '<span class="add">+' + f.add + '</span><span class="del">−' + f.del + "</span></span>" +
       '<button class="ghost ed-ok" title="approve: keep this file as written, clear it from the list">✓</button>' +
       '<button class="ghost ed-no" title="reject: restore this file to its pre-image">↩</button>';
     row.title = f.path;
-    row.querySelector(".edname").onclick = () => showDiff(f.path);
+    row.querySelector(".edname").onclick = () => openFile(f.path);
+    row.querySelector(".edstat").onclick = () => showDiff(f.path);
     row.querySelector(".ed-ok").onclick = () => approveEdits(f.path);
     row.querySelector(".ed-no").onclick = () => rejectEdits(f.path);
     box.appendChild(row);

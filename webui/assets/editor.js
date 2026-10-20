@@ -24,6 +24,8 @@ const LS_TREE_W = "sf_ed_tree_w";    // JAG-252: width of the file-tree pane
 const LS_TABS = "sf_ed_tabs";        // legacy/global tab set (no session)
 const LS_TABS_S = "sf_ed_tabs_";     // JAG-157: per-session tab set
 const LS_OPEN = "sf_dock_open";      // JAG-157: "false" = the user closed the dock
+const LS_MODE = "sf_ed_mode";        // JAG-453: "dock" (default) | "float" | "full"
+const LS_POS = "sf_ed_pos";          // JAG-453: floating window geometry {left,top,w,h}
 const IMG_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif"]);
 const LANG_BY_EXT = {
   js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
@@ -103,7 +105,8 @@ class EditorHost {
   destroy() { if (this.view) { this.view.destroy(); this.view = null; } }
 }
 
-const state = { tabs: [], active: -1, host: null, preview: null, tabsEl: null, statusEl: null, toggleBtn: null, resizeEl: null, dock: null, root: "" };
+const state = { tabs: [], active: -1, host: null, preview: null, tabsEl: null, statusEl: null, toggleBtn: null, resizeEl: null, dock: null, root: "",
+  mode: "dock", floatReady: false };   // JAG-453: window mode dock|float|full
 
 const STYLE = `
 #editorDock{position:relative;flex:0 0 auto;min-height:0;background:var(--bg2,#0f1320);
@@ -149,6 +152,27 @@ const STYLE = `
 #editorDock .ed-preview .md a{color:#7fb0ff}
 #editorDock .ed-foot{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line,#26304a)}
 #editorDock.ed-overlay{position:fixed;top:44px;right:0;bottom:0;height:auto;width:min(520px,92vw);z-index:40;box-shadow:-16px 0 40px rgba(0,0,0,.45)}
+/* JAG-453: detachable editor — DOCK (default) ⇄ FLOAT ⇄ FULL. A Windows-style
+   title bar: drag it to move (float), re-attach / fullscreen / close on the right
+   (close turns red on hover), and a bottom-right grip to resize. */
+#editorDock.ed-float{position:fixed;z-index:44;width:min(780px,92vw);height:min(640px,82vh);
+  border:1px solid var(--line,#26304a);border-radius:10px;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.55)}
+#editorDock.ed-full{position:fixed;z-index:44;left:0;top:0;right:0;bottom:0;width:auto;height:auto;
+  border:0;border-radius:0;box-shadow:none}
+#editorDock.ed-float .ed-resize,#editorDock.ed-full .ed-resize{display:none}
+#editorDock.ed-float .ed-head{cursor:move;user-select:none}
+#editorDock .ed-win{display:flex;align-items:center;gap:2px;margin-left:6px}
+#editorDock .ed-wbtn{background:transparent;border:0;color:var(--txt,#e6edf7);width:26px;height:22px;border-radius:5px;
+  cursor:pointer;font:inherit;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0}
+#editorDock .ed-wbtn:hover{background:rgba(255,255,255,.13)}
+#editorDock .ed-wbtn[hidden]{display:none}
+#editorDock .ed-wbtn.ed-x:hover{background:#e81123;color:#fff}
+#editorDock .ed-grip{position:absolute;right:0;bottom:0;width:18px;height:18px;z-index:7;display:none;
+  cursor:nwse-resize;touch-action:none;
+  background:linear-gradient(135deg,transparent 52%,rgba(255,255,255,.30) 52%,rgba(255,255,255,.30) 62%,transparent 62%,
+    transparent 74%,rgba(255,255,255,.30) 74%,rgba(255,255,255,.30) 84%,transparent 84%)}
+#editorDock.ed-float .ed-grip{display:block}
 .ed-tab-note{color:var(--warn,#e0b341)}
 #editorDock.ed-drop{outline:2px dashed var(--accent,#8b7bf0);outline-offset:-4px}
 #edCtx{position:fixed;z-index:60;background:var(--toolbar-menu-bg,#0f172a);border:1px solid var(--line,#26304a);
@@ -173,10 +197,15 @@ function buildDock() {
   dock.hidden = true;
   dock.innerHTML = `
     <div class="ed-resize"></div>
+    <div class="ed-grip" title="drag to resize"></div>
     <div class="ed-head"><span class="ed-title">Editor</span><span class="ed-status"></span>
       <button class="ed-files ghost" title="show/hide the file tree">🗂 files</button>
       <button class="ed-refresh ghost" title="reload the tree">↻</button>
-      <button class="ed-x ghost" title="close (Esc)">✕</button></div>
+      <span class="ed-win">
+        <button class="ed-wbtn ed-winfloat" title="detach — open as a floating window">⇱</button>
+        <button class="ed-wbtn ed-winmax" title="fullscreen — fill the browser" hidden>⛶</button>
+        <button class="ed-wbtn ed-x" title="close (Esc)">✕</button>
+      </span></div>
     <div class="ed-body">
       <div class="ed-tree"></div>
       <div class="ed-tree-resize" title="drag to resize the file tree"></div>
@@ -201,7 +230,15 @@ function buildDock() {
   state.preview = dock.querySelector(".ed-preview");
   state.toggleBtn = dock.querySelector(".ed-toggle");
   state.resizeEl = dock.querySelector(".ed-resize");
+  state.mode = localStorage.getItem(LS_MODE) || "dock";
+  state.floatReady = false;
+  dock.classList.toggle("ed-float", state.mode === "float");
+  dock.classList.toggle("ed-full", state.mode === "full");
   dock.querySelector(".ed-x").onclick = close;
+  // JAG-453: detach ⇄ re-attach, and fullscreen (fills the BROWSER, not the screen).
+  dock.querySelector(".ed-winfloat").onclick = () => _setMode(state.mode === "dock" ? "float" : "dock");
+  dock.querySelector(".ed-winmax").onclick = () => _setMode(state.mode === "full" ? "float" : "full");
+  _syncWinButtons();
   dock.querySelector(".ed-save").onclick = save;
   dock.querySelector(".ed-revert").onclick = revert;
   state.toggleBtn.onclick = toggleRender;
@@ -223,8 +260,8 @@ function buildDock() {
   document.addEventListener("click", (e) => { if (!$id("edCtx")) return; if (!(e.target.closest && e.target.closest("#edCtx"))) hideTreeMenu(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTreeMenu(); });
 
-  const saved = parseInt(localStorage.getItem(LS_W) || "", 10);
-  if (saved) dock.style.width = Math.min(saved, _dockMaxW()) + "px";
+  // JAG-453: the docked width is applied by applyResponsive() (which routes by mode),
+  // so it is NOT set here — an inline width would shadow the float/full geometry.
   // JAG-3xx: POINTER events, not mouse — a phone/tablet only fires pointerdown/move/up,
   // so the old mousedown drag made the grip dead on touch (the dock width could not be
   // changed at all on a mobile device).
@@ -288,11 +325,54 @@ function buildDock() {
   treeResize.addEventListener("pointermove", _treeMove);
   treeResize.addEventListener("pointerup", _treeUp);
   treeResize.addEventListener("pointercancel", _treeUp);
+
+  // JAG-453: in FLOAT mode the title bar drags the window and the bottom-right grip
+  // resizes it; both persist to LS_POS so the window reopens where it was left.
+  const head = dock.querySelector(".ed-head");
+  const grip = dock.querySelector(".ed-grip");
+  let winDrag = null, winResize = null;
+  head.addEventListener("pointerdown", (e) => {
+    if (state.mode !== "float") return;
+    if (e.target.closest && e.target.closest("button")) return;
+    const r = dock.getBoundingClientRect();
+    winDrag = { x: e.clientX, y: e.clientY, left: r.left, top: r.top };
+    try { head.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  head.addEventListener("pointermove", (e) => {
+    if (!winDrag) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const left = Math.min(Math.max(0, winDrag.left + (e.clientX - winDrag.x)), Math.max(0, vw - dock.offsetWidth));
+    const top = Math.min(Math.max(0, winDrag.top + (e.clientY - winDrag.y)), Math.max(0, vh - 32));
+    dock.style.left = left + "px"; dock.style.top = top + "px";
+  });
+  const _winUp = () => { if (winDrag) { winDrag = null; _saveFloatPos(); } };
+  head.addEventListener("pointerup", _winUp);
+  head.addEventListener("pointercancel", _winUp);
+  grip.addEventListener("pointerdown", (e) => {
+    if (state.mode !== "float") return;
+    winResize = { x: e.clientX, y: e.clientY, w: dock.offsetWidth, h: dock.offsetHeight };
+    try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault(); e.stopPropagation();
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!winResize) return;
+    dock.style.width = Math.max(320, winResize.w + (e.clientX - winResize.x)) + "px";
+    dock.style.height = Math.max(220, winResize.h + (e.clientY - winResize.y)) + "px";
+  });
+  const _gripUp = () => { if (winResize) { winResize = null; _saveFloatPos(); } };
+  grip.addEventListener("pointerup", _gripUp);
+  grip.addEventListener("pointercancel", _gripUp);
+
   window.addEventListener("resize", applyResponsive);
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || dock.hidden) return;
     const modal = document.querySelector("#diffView:not([hidden]), #skillView:not([hidden])");
-    if (!modal) close();
+    if (modal) return;
+    // JAG-453: Escape in FULL leaves fullscreen (back to float) — it does not close
+    // the editor, which would be a surprising way to lose a maximised window.
+    if (state.mode === "full") { _setMode("float"); return; }
+    close();
   });
 }
 
@@ -326,22 +406,111 @@ function _bottomChromeH() {
 }
 function applyResponsive() {
   if (!state.dock) return;
+  const d = state.dock;
+  // JAG-453: geometry depends on the window mode. FLOAT/FULL take the dock OUT of the
+  // flex row entirely (position:fixed), so the docked overlay/width rules must not run.
+  if (state.mode !== "dock") {
+    d.classList.remove("ed-overlay");
+    if (state.mode === "full") {
+      d.style.left = "0"; d.style.top = "0"; d.style.right = "0"; d.style.bottom = "0";
+      d.style.width = ""; d.style.height = "";
+      return;
+    }
+    if (!state.floatReady) { _applyFloatGeom(); state.floatReady = true; }
+    else if (!d.hidden) _clampFloat();
+    return;
+  }
+  state.floatReady = false;
   const overlay = _vw() < 1024;
-  state.dock.classList.toggle("ed-overlay", overlay);
+  d.classList.toggle("ed-overlay", overlay);
   const saved = parseInt(localStorage.getItem(LS_W) || "420", 10);
   if (overlay) {
     // JAG-3xx: the fixed overlay ran top:44px -> bottom:0, so on a phone it covered
     // the chat composer (send) AND the whole bottom tab bar — those buttons looked
     // DEAD because the dock received every tap. Keep the dock between the real header
     // and the bottom chrome so both stay visible and tappable.
-    state.dock.style.top = _headerH() + "px";
-    state.dock.style.bottom = _bottomChromeH() + "px";
-    state.dock.style.width = "";
+    // JAG-453: clear any float/full inline geometry so it cannot fight the CSS overlay.
+    d.style.left = ""; d.style.right = ""; d.style.height = "";
+    d.style.top = _headerH() + "px";
+    d.style.bottom = _bottomChromeH() + "px";
+    d.style.width = "";
   } else {
-    state.dock.style.top = "";
-    state.dock.style.bottom = "";
-    state.dock.style.width = Math.min(saved, _dockMaxW()) + "px";
+    d.style.top = ""; d.style.bottom = ""; d.style.left = ""; d.style.right = ""; d.style.height = "";
+    d.style.width = Math.min(saved, _dockMaxW()) + "px";
   }
+}
+
+/* JAG-453: switch the editor between DOCK (default, in the app row), FLOAT (a movable,
+   resizable window over the app) and FULL (fills the whole BROWSER viewport — not the
+   OS screen, so the browser chrome stays). */
+function _setMode(m) {
+  const d = state.dock; if (!d) return;
+  state.mode = m;
+  localStorage.setItem(LS_MODE, m);
+  d.style.cssText = "";                       // drop any previous mode's geometry
+  d.classList.toggle("ed-float", m === "float");
+  d.classList.toggle("ed-full", m === "full");
+  d.classList.remove("ed-overlay");
+  state.floatReady = false;
+  _syncWinButtons();
+  applyResponsive();
+  _notifyLayout();
+  // the dock/float/full switch changes the editor's box — let CodeMirror re-measure.
+  if (state.host && state.host.view) state.host.view.requestMeasure();
+}
+/* The small Windows-style controls: the left one detaches / re-attaches, the middle
+   one toggles fullscreen, the right one closes. */
+function _syncWinButtons() {
+  const d = state.dock; if (!d) return;
+  const fb = d.querySelector(".ed-winfloat"), mb = d.querySelector(".ed-winmax");
+  if (fb) {
+    fb.textContent = state.mode === "dock" ? "⇱" : "⇲";
+    fb.title = state.mode === "dock"
+      ? "detach — open the editor as a floating window"
+      : "re-attach to the WebUI (docked)";
+  }
+  if (mb) {
+    mb.hidden = state.mode === "dock";
+    mb.textContent = state.mode === "full" ? "❐" : "⛶";
+    mb.title = state.mode === "full"
+      ? "exit fullscreen (back to the floating window)"
+      : "fullscreen — fill the browser";
+  }
+}
+/* FLOAT geometry: restore the last saved position/size, else centre it under the header. */
+function _applyFloatGeom() {
+  const d = state.dock;
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem(LS_POS) || "null"); } catch (e) { p = null; }
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const w = Math.max(320, Math.min((p && p.w) || Math.min(780, Math.round(vw * 0.72)), vw - 16));
+  const h = Math.max(220, Math.min((p && p.h) || Math.min(640, Math.round(vh * 0.82)), vh - 16));
+  const left = (p && typeof p.left === "number") ? p.left : Math.round((vw - w) / 2);
+  const top = (p && typeof p.top === "number") ? p.top : Math.round(_headerH() + 14);
+  d.style.width = w + "px"; d.style.height = h + "px";
+  d.style.left = left + "px"; d.style.top = top + "px";
+  d.style.right = "auto"; d.style.bottom = "auto";
+  if (!d.hidden) _clampFloat();
+}
+/* Keep a floating window on-screen (never fully above the top / off to the right). */
+function _clampFloat() {
+  const d = state.dock; if (!d) return;
+  const r = d.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const left = Math.max(0, Math.min(r.left, vw - Math.max(80, r.width)));
+  const top = Math.max(0, Math.min(r.top, vh - 32));
+  d.style.left = left + "px"; d.style.top = top + "px";
+}
+function _saveFloatPos() {
+  const d = state.dock;
+  if (!d || state.mode !== "float") return;
+  const r = d.getBoundingClientRect();
+  try {
+    localStorage.setItem(LS_POS, JSON.stringify({
+      left: Math.round(r.left), top: Math.round(r.top),
+      w: Math.round(r.width), h: Math.round(r.height),
+    }));
+  } catch (e) { /* ignore */ }
 }
 
 function activeTab() { return state.tabs[state.active] || null; }
@@ -438,7 +607,9 @@ function renderTabs() {
     const x = document.createElement("span"); x.className = "x"; x.textContent = "✕";
     x.onclick = (e) => { e.stopPropagation(); closeTab(i); };
     b.appendChild(x);
-    b.onclick = () => activate(i);
+    // JAG-494: clicking a tab activates it AND reveals the file in the tree
+    // (the reveal action moved off the context menu onto the click itself).
+    b.onclick = () => { activate(i); if (!temp && _inWorkspace(t.path)) revealInTree(t.path); };
     b.oncontextmenu = (e) => { e.preventDefault(); showTabMenu(e.clientX, e.clientY, i); };
     el.appendChild(b);
   });
@@ -586,6 +757,19 @@ function closeTab(i) {
   renderTabs();
   renderActive();
   persistTabs();
+}
+
+/* JAG-494: close every open file in the editor (one confirmation if any is
+   dirty), then hide the dock since there is nothing left to show. */
+function closeAllTabs() {
+  if (!state.tabs.length) return;
+  const dirty = state.tabs.filter((t) => t.dirty).length;
+  if (dirty && !window.confirm("Close all " + state.tabs.length + " tabs? " + dirty + " have unsaved changes.")) return;
+  state.tabs.forEach((t) => { if (t.temp && t.objectUrl) { try { URL.revokeObjectURL(t.objectUrl); } catch (e) { /* ignore */ } } });
+  state.tabs = [];
+  state.active = -1;
+  persistTabs();
+  close();
 }
 
 async function save() {
@@ -750,11 +934,13 @@ function showTabMenu(x, y, i) {
   } else {
     mk("⧉ copy path", () => copyPath(t.path));
     mk("⧉ copy name", () => copyPath(basename(t.path)));
-    if (_inWorkspace(t.path)) mk("🔎 reveal in file tree", () => revealInTree(t.path));
-    else mk("⚠ outside the workspace", () => {});
+    // JAG-494: "reveal in file tree" is gone from the menu — it now runs on the
+    // tab click itself. Kept only the out-of-workspace warning for clarity.
+    if (!_inWorkspace(t.path)) mk("⚠ outside the workspace", () => {});
     mk("⇩ download", () => downloadPath(t.path));
   }
   mk("✕ close tab", () => closeTab(i));
+  mk("✕✕ close all", () => closeAllTabs());
   document.body.appendChild(m);
   const r = m.getBoundingClientRect();
   m.style.left = Math.min(x, window.innerWidth - r.width - 8) + "px";

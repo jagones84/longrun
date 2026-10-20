@@ -74,6 +74,23 @@ with tempfile.TemporaryDirectory() as tmp:
               and "NUCLEUS (Immutable)" in rendered["matrix"]
               and "Always log hypothesis in HANDOFF.md" in rendered["matrix"])
 
+        # JAG-497: a clipped rule must SAY it was clipped — a silent truncation is
+        # indistinguishable from a complete rule (the model believes it read it all).
+        big = os.path.join(tmp, ".Matrix", "rules", "20-big.md")
+        with open(big, "w", encoding="utf-8") as f:
+            f.write("BIGRULE " + ("x" * 9000))
+        r2 = prompt.section_texts()
+        check("D2 an over-long Matrix rule is clipped WITH a visible truncation marker",
+              "BIGRULE" in r2["matrix"] and "TRUNCATED" in r2["matrix"])
+        os.remove(big)
+
+        # JAG-497: the planner and the subagent loop do NOT go through render_sections,
+        # so they need the Matrix rules through the explicit helper or the rule has
+        # only half its reach (chat yes, dispatched agents no).
+        from longrun.agent import agent as agent_mod
+        check("D3 matrix_context carries .Matrix/rules to the planner and subagent prompt",
+              "Always log hypothesis in HANDOFF.md" in agent_mod.matrix_context())
+
         sk_dir = os.path.join(tmp, ".Matrix", "skills", "auto_probe")
         os.makedirs(sk_dir, exist_ok=True)
         with open(os.path.join(sk_dir, "SKILL.md"), "w", encoding="utf-8") as f:

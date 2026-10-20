@@ -123,10 +123,19 @@ check("C3 the nameThreads prompt points at the [UNTITLED] marker",
 # (Compaction is triggered at 70% of the model budget, read from config/compaction.yaml.)
 from longrun.model import compaction_config as cc   # noqa: E402
 from longrun.model import rllm                      # noqa: E402
-check("D1 the trigger threshold lives in config/compaction.yaml (70%)",
-      float(cc.load()["trigger_pct"]) == 70.0 and float(rllm.AUTOCOMPACT_PCT) == 70.0,
-      cc.load()["trigger_pct"])
-check("D2 the target_pct is also file-driven", float(rllm.AUTOCOMPACT_TARGET_PCT) == 30.0)
+# The per-machine WebUI overlay (compaction.local.yaml) must never decide an
+# acceptance assertion: point it at a scratch path so only the SHIPPED file rules.
+_orig_cc_local = cc._LOCAL_PATH
+cc._LOCAL_PATH = os.path.join(TMP, "compaction.local.yaml")
+cc.reset_cache()
+try:
+    check("D1 the trigger threshold lives in config/compaction.yaml (70%)",
+          float(cc.load()["trigger_pct"]) == 70.0 and float(rllm.AUTOCOMPACT_PCT) == 70.0,
+          cc.load()["trigger_pct"])
+    check("D2 the target_pct is also file-driven", float(rllm.AUTOCOMPACT_TARGET_PCT) == 30.0)
+finally:
+    cc._LOCAL_PATH = _orig_cc_local
+    cc.reset_cache()
 
 # the safety net: every untitled free group gets a deterministic name + summary
 sid4 = "v453-titles"

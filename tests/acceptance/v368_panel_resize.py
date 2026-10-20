@@ -75,7 +75,7 @@ check("C1 the panel clamp accounts for the open editor dock",
       and "over = (lw + rw) - (avail - CHAT_MIN_W - _dockRoomW(z) - _toolsRoomW(z))" in HTML, "")
 check("C2 opening/closing the dock re-fits the panels",
       "function _notifyLayout()" in EDITOR and "window._settleHandles" in EDITOR
-      and EDITOR.count("_notifyLayout();") == 3, "")
+      and EDITOR.count("_notifyLayout();") == 4, "")
 
 # --- D: the dock can NEVER shove the inspector off-screen (JAG-369) ------------
 # The dock is `flex: 0 0 auto`, so the flex algorithm never shrinks it. Dragging its
@@ -108,7 +108,7 @@ check("D6 both editor grips are touch-capable (pointer events + touch-action:non
       and "setPointerCapture" in EDITOR, "")
 check("D7 the mobile overlay stays clear of the chat composer + tab bar",
       "function _bottomChromeH()" in EDITOR
-      and "state.dock.style.bottom = _bottomChromeH()" in EDITOR, "")
+      and "d.style.bottom = _bottomChromeH() + " in EDITOR, "")
 
 # --- E: the mobile bottom tab bar drives the REAL drawers (JAG-381) ------------
 # Tapping a tab used to add `#aside.open` + `#backdrop.show`: the screen just dimmed

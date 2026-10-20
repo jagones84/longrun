@@ -216,7 +216,7 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
 # `server.agent_run`, `server.chat_once`, `server.system_prompt`, ... still resolve
 # for `httpapi` (imported just below) and every other caller.
 from longrun.agent.agent import (SYSTEM_PROMPT, PMCP_PROMPT, system_prompt, RULES_POLICY,
-                    rules_context, PLANNER_PROMPT, MEMORY_POLICY, CHAT_APPROVAL_WAIT,
+                    rules_context, matrix_context, PLANNER_PROMPT, MEMORY_POLICY, CHAT_APPROVAL_WAIT,
                     SKILLS_POLICY, self_summary, self_knowledge, context_summary,
                     state_block, start_run_graph, finish_run_graph, graph_post,
                     CHAT_TOOL_MAX_STEPS, CHAT_TOOL_MAX_ITERS, PLAN_ONLY_MAX_STEPS,

@@ -69,13 +69,17 @@ def _read(rel: str) -> str:
 _p = os.path.join(TMP, "compaction.yaml")
 with open(_p, "w", encoding="utf-8") as f:
     f.write("compaction:\n  trigger_pct: 12\n  target_pct: 5\n  keep_recent: 2\n")
-_orig_cc_path = cc._PATH
+_orig_cc_path, _orig_cc_local = cc._PATH, cc._LOCAL_PATH
 cc._PATH = _p
+# The loader reads TWO files since JAG-487: the shipped policy AND the per-machine
+# WebUI overlay (`compaction.local.yaml`). Isolate BOTH, or a machine with a saved
+# overlay leaks its values into this assertion.
+cc._LOCAL_PATH = os.path.join(TMP, "compaction.local.yaml")
 cc.reset_cache()
 try:
     _pol = cc.load(force=True)
 finally:
-    cc._PATH = _orig_cc_path
+    cc._PATH, cc._LOCAL_PATH = _orig_cc_path, _orig_cc_local
     cc.reset_cache()
 check("A1 config/compaction.yaml is READ, not silently replaced by the defaults",
       _pol.get("trigger_pct") == 12 and _pol.get("keep_recent") == 2,

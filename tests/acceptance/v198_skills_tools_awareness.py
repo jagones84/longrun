@@ -61,9 +61,12 @@ check("B1 skills policy present", "installed skill library" in sp, "")
 sk = skills.list_skills()
 check("B2 at least one skill installed", len(sk) > 0, "count=%d" % len(sk))
 if sk:
-    nm = sk[0]["name"]
-    check("B3 prompt names installed skills", nm in sp, nm)
-    check("B4 skills list carries name + description", "\u2014" in skills.skills_context(), "")
+    _cats = sorted({s["category"] for s in sk})
+    check("B3 prompt orients on the installed library (count + categories)",
+          str(len(sk)) in sp and _cats[0] in sp, "cats=%s" % _cats[:3])
+    check("B4 skills block tells HOW to find one (search/list/read)",
+          '"action":"search"' in skills.skills_context()
+          and '"action":"read"' in skills.skills_context(), "")
 check("B5 skills index is bounded (not a dump)", len(skills.skills_context(max_chars=200)) <= 320,
       "len=%d" % len(skills.skills_context(max_chars=200)))
 check("B6 a truncated index points to search",
