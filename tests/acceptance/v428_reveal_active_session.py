@@ -49,6 +49,12 @@ tt = HTML[HTML.index('id="toolsBar"'):]
 tt = tt[:tt.index("</aside>")]
 check("1c it lives inside #toolsBar (the chat tools bar)",
       'id="revealSessionBtn"' in tt, "")
+check("1f chat refresh lives in #toolsBar",
+      'id="chatReloadBtn"' in tt, "")
+check("1g chat refresh calls the transcript reload path",
+      'id="chatReloadBtn"' in tt and '$("chatReloadBtn").onclick = () => reloadChat();' in HTML
+      and "function reloadChat()" in HTML
+      and "loadHistory(); loadPlan(); loadCtx();" in HTML, "")
 check("1d #toolsBar starts hidden (shown only with an open session)",
       re.search(r'id="toolsBar"[^>]*hidden', HTML) is not None, "")
 check("1e visibility is driven by _updateTreeTools()",

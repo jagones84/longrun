@@ -1601,7 +1601,7 @@
 <main id="app">
   <aside id="aside" data-col="sessions">
     <section>
-      <h2>Sessions<span class="srail-tools"><button type="button" id="railReload" title="re-read this chat: transcript, todos and their chronological order">↻</button><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
+      <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
       <button type="button" id="runsBar" class="runs-bar" aria-controls="runsPanel"
               aria-expanded="false"
               title="agents in flight · sessions that finished while you were elsewhere">
@@ -1699,6 +1699,9 @@
     </div>
   </div>
   <aside id="toolsBar" data-col="tools" hidden aria-label="chat tools">
+    <button class="ghost" type="button" id="chatReloadBtn"
+            title="refresh this chat and rebuild its transcript in chronological order"
+            aria-label="refresh this chat">↻</button>
     <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession"
             title="reveal this session in the sessions panel — expand its group and center it"
             aria-label="reveal the current session in the sessions panel">🎯</button>
@@ -4800,7 +4803,7 @@ function pickCurrentDir() {
   closeDirPicker();
   if (target === "wsPath") setWorkspace();   // JAG-496: browse → save, automatically
 }
-/* JAG-516: one-click "re-read this chat" (the ↻ button in the Sessions header).
+/* JAG-516: one-click "re-read this chat" (the ↻ button in the vertical chat tools bar).
    It takes the SAME path a page reload takes: loadHistory() blanks #log and
    rebuilds the transcript in chronological order, nesting every card inside the
    todo node it belongs to, then reopens the sections that already hold content.
@@ -11324,7 +11327,7 @@ $("chatSearchInput").addEventListener("keydown", e => {
   if (e.key === "Escape") { e.preventDefault(); closeChatSearch(); }
   else if (e.key === "Enter") { e.preventDefault(); _chatSearchMove(e.shiftKey ? -1 : 1); }
 });
-$("railReload").onclick = () => reloadChat();
+$("chatReloadBtn").onclick = () => reloadChat();
 $("railCollapseAll").onclick = () => _setAllGroups(true);
 $("railExpandAll").onclick = () => _setAllGroups(false);
 $("inspCollapseAll").onclick = () => _setAllInspector(false);
