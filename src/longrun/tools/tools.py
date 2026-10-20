@@ -223,6 +223,42 @@ def _glob(args, run_id):
 
 # ------------------------------------------------------------------- fs ------
 
+# JAG-509: how many bytes a LINE-RANGE read may scan. A range request must not
+# pull a multi-hundred-MB file into memory just to return 20 lines; past this
+# the read is marked truncated.
+FS_LINE_SCAN_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _int_or_none(value):
+    """Parse an int argument, or None when absent/not a number."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _line_view(text, start_line=None, end_line=None, scan_capped=False):
+    """A 1-based inclusive line window over `text` (JAG-509).
+
+    `fs.read` could only return a BYTE prefix, so reading lines 40-60 of a large
+    file meant guessing byte offsets and eye-filtering a truncated dump. This
+    returns the exact window plus honest bounds: the file's line count, the
+    first/last line actually returned, how many lines came back, and whether the
+    window was clipped (EOF, or the scan cap — then `total_lines` is a LOWER
+    bound of the file's real line count).
+    """
+    lines = str(text or "").splitlines(keepends=True)
+    total = len(lines)
+    first = max(1, _int_or_none(start_line) or 1)
+    requested_end = _int_or_none(end_line)
+    last = total if requested_end is None else min(max(first, requested_end), total)
+    picked = lines[first - 1:last] if first <= total else []
+    return {"content": "".join(picked), "total_lines": total, "start_line": first,
+            "end_line": last, "returned_lines": len(picked),
+            "truncated": bool(scan_capped
+                              or (requested_end is not None and requested_end > last))}
+
+
 def _fs_read(args, run_id):
     roots = registry.tool_spec("fs.read")["roots"]
     path, err = registry.resolve_path(str(args.get("path", "")), roots,
@@ -232,6 +268,27 @@ def _fs_read(args, run_id):
     if not os.path.isfile(path):
         return {"ok": False, "error": "no such file: %s" % path}
     max_bytes = int(args.get("max_bytes", 65536))
+    start_line = args.get("start_line")
+    end_line = args.get("end_line")
+    want_range = start_line is not None or end_line is not None
+
+    def _window(text, scan_capped=False):
+        """Shape a text blob into the reply: whole-file bytes, or a line window."""
+        if not want_range:
+            content = text[:max_bytes]
+            return {"content": content, "truncated": len(text) > len(content)}
+        view = _line_view(text, start_line, end_line, scan_capped=scan_capped)
+        content = view.pop("content")
+        if len(content) > max_bytes:
+            # Keep the byte budget honest AND line-aligned: cut at the last
+            # newline that still fits, never mid-line.
+            cut = content.rfind("\n", 0, max_bytes)
+            content = content[:cut + 1] if cut > 0 else content[:max_bytes]
+            view["truncated"] = True
+        view["content"] = content
+        view["bytes"] = len(content)
+        return view
+
     # JAG-490: a PDF/DOCX/image attached to the chat is a PATH the model is told
     # to read. Decoding its bytes as UTF-8 returned binary garbage, so binary
     # documents go through the same extractor the knowledge base uses.
@@ -248,14 +305,23 @@ def _fs_read(args, run_id):
                     "engine": res.get("engine"),
                     "recommend_visual": res.get("recommend_visual"),
                     "exit_code": 1}
-        content = text[:max_bytes]
-        return {"ok": True, "path": path, "content": content, "bytes": len(content),
-                "engine": res.get("engine"), "quality": res.get("quality"),
-                "truncated": len(text) > len(content),
-                "backend": "host", "sandboxed": False, "exit_code": 0}
+        shaped = _window(text)
+        shaped.update({"bytes": len(shaped["content"])})
+        return {"ok": True, "path": path, "engine": res.get("engine"),
+                "quality": res.get("quality"), "backend": "host", "sandboxed": False,
+                "exit_code": 0, **shaped}
+    if want_range:
+        # A range may live far past the byte prefix, so scan further — bounded.
+        size = os.path.getsize(path)
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read(FS_LINE_SCAN_MAX_BYTES)
+        shaped = _window(text, scan_capped=size > FS_LINE_SCAN_MAX_BYTES)
+        return {"ok": True, "path": path, "backend": "host", "sandboxed": False,
+                "exit_code": 0, **shaped}
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read(max_bytes)
     return {"ok": True, "path": path, "content": content, "bytes": len(content),
+            "truncated": len(content) >= max_bytes,
             "backend": "host", "sandboxed": False, "exit_code": 0}
 
 

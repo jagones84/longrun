@@ -72,9 +72,17 @@ _LEGACY_SCHEMAS = {
         "subject": "command",
     },
     "fs.read": {
-        "description": "Read a text file from the harness filesystem (inside allowed roots).",
+        "description": ("Read a text file from the harness filesystem (inside allowed "
+                        "roots). Return the whole file, or ONE LINE RANGE with "
+                        "start_line/end_line (1-based, inclusive) — use that to inspect "
+                        "a slice of a large file instead of re-reading it truncated. "
+                        "max_bytes caps the returned content."),
         "type": "object",
         "properties": {"path": {"type": "string"},
+                       "start_line": {"type": "integer",
+                                      "description": "first line to return (1-based; omit for the start of the file)"},
+                       "end_line": {"type": "integer",
+                                    "description": "last line to return (1-based, inclusive; omit for end of file)"},
                        "max_bytes": {"type": "integer", "default": 65536}},
         "required": ["path"],
         "subject": "path",
