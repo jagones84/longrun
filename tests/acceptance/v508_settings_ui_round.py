@@ -115,6 +115,19 @@ check("G2 the Models panel points at the composer + Subagents",
       "The composer's model dropdown overrides the chat role for ONE session" in IDX
       and "Settings ▸ Subagents" in IDX, "")
 
+# --- H: the Hooks panel states what is ACTUALLY loaded (JAG-512) -------------
+check("H1 the hooks panel carries a live block wired to GET /api/hooks",
+      'id="hooksLive"' in IDX and "async function loadHooksLive()" in IDX
+      and 'api("GET", "/api/hooks")' in IDX, "")
+check("H2 the loader is called when the category opens",
+      'else if (name === "hooks") { loadHooksLive(); }' in IDX, "")
+check("H3 it says which file wins (overlay vs shipped)",
+      "hooks.overlay" in IDX and "the <b>WebUI overlay</b> replaces the shipped list" in IDX, "")
+check("H4 it names the block contract in the panel text",
+      "exiting <b>2</b> blocks the call" in IDX, "")
+check("H5 the runtime sub-agent depth is flagged as the same key as Subagents",
+      "Same key as Subagents ▸ Limits" in IDX, "")
+
 print("---")
 ok = sum(results)
 print("\nv508: %d/%d PASS" % (ok, len(results)))

@@ -324,7 +324,7 @@ LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
 The full command ran successfully during the original README update: **218/218 passed**.
-The acceptance suite now contains **228/228 test files**.
+The acceptance suite now contains **229/229 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

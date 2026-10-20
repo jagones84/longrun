@@ -1803,7 +1803,11 @@
       </section>
       <div class="sw-cat" data-cat="hooks" hidden>
         <h2>Hooks · tool lifecycle</h2>
-        <div class="remaining u-mb8">Deterministic commands run before or after tool calls. Configure lifecycle hooks below.</div>
+        <div class="remaining u-mb8">Deterministic commands run before or after tool calls. A <b>PreToolUse</b> hook exiting <b>2</b> blocks the call; any other non-zero exit is advisory unless <b>block on failure</b> is set. Configure lifecycle hooks below.</div>
+        <!-- JAG-512: the panel was ONLY a form — it never said what is loaded right
+             now, nor which file wins. Read from GET /api/hooks so the answer is the
+             same state the harness uses (overlay beats the shipped file). -->
+        <div class="card" id="hooksLive"><div class="remaining">loading…</div></div>
         <div class="setFormsHost"></div>
       </div>
       <div class="sw-cat" data-cat="harness" hidden>
@@ -1815,7 +1819,7 @@
             <label title="Maximum number of automatic continuations after the first reply (0 = disabled).">max continuations <input id="rtKgMax" type="number" min="0" value="8"></label>
             <label title="After how many consecutive rounds without progress the agent stops (0 = never).">rounds without progress <input id="rtNoProg" type="number" min="0" value="2"></label>
             <label title="Maximum time for the whole run, in seconds (0 = no limit).">time limit (s) <input id="rtWall" type="number" min="0" value="3600"></label>
-            <label title="How many levels of sub-agents an agent may spawn (0 = none).">sub-agent levels <input id="rtDepth" type="number" min="0" value="2"></label>
+            <label title="How many levels of sub-agents an agent may spawn (0 = none). Same key as Subagents ▸ Limits (config/tools.yaml ▸ runtime.subagent_max_depth) — one value, two places to reach it.">sub-agent levels <input id="rtDepth" type="number" min="0" value="2"></label>
             <label title="If enabled the harness keeps going on its own until the todos are closed, then asks you. If disabled, as soon as steps remain open it hands over to the human (HUMAN IN THE LOOP).">autocontinue <input id="rtAuto" type="checkbox" checked></label>
           </div>
           <button class="ghost config-save" data-call="saveRuntime" disabled title="no changes to save">save runtime</button>
@@ -8289,6 +8293,35 @@ function editProvider(p) {
   $("provResult").textContent = "editing '" + p.id + "' — press save provider";
   gateEnroll($("provCard"));   // JAG-496: baseline = the provider just loaded
 }
+/* JAG-512: what is ACTUALLY loaded right now (GET /api/hooks) — the form below only
+   shows the editable table, which cannot tell the operator whether an overlay is
+   shadowing the shipped file. */
+async function loadHooksLive() {
+  const box = $("hooksLive");
+  if (!box) return;
+  try {
+    const d = await api("GET", "/api/hooks");
+    const hs = d.hooks || [];
+    const byEv = {};
+    hs.forEach(h => { byEv[h.event] = (byEv[h.event] || 0) + 1; });
+    const src = d.config || "";
+    const overlayWin = String(src).indexOf("hooks.overlay") !== -1;
+    const evLine = ["PreToolUse", "PostToolUse", "Stop"]
+      .map(e => "<b>" + e + "</b> " + (byEv[e] || 0)).join(" · ");
+    box.innerHTML =
+      '<div class="u-df u-aic u-g8 u-fww"><b>' + hs.length + ' hook(s) loaded</b>' +
+      '<span class="remaining u-f1">' + evLine + "</span>" +
+      '<button class="ghost" data-call="loadHooksLive" title="re-read the effective hook list">↻</button></div>' +
+      '<div class="remaining u-mt4">source: <code>' + esc(String(src).split("/").slice(-2).join("/")) +
+      "</code>" + (overlayWin ? " — the <b>WebUI overlay</b> replaces the shipped list" : " — the shipped file") +
+      "</div>" +
+      (hs.length ? '<div class="u-mt6" style="font-size:11px;font-family:ui-monospace,monospace">' +
+        hs.map(h => '<div class="remaining">' + esc(h.event) + " · " + esc(h.matcher || "(any)") +
+          " · exit " + (h.block_on_fail ? "≠0 blocks" : "2 blocks") + " · " +
+          esc(String(h.command).slice(0, 70)) + "</div>").join("") + "</div>"
+        : '<div class="remaining u-mt6">no hook is active — every tool call runs bare</div>');
+  } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
 async function loadRuntime() {
   const d = await api("GET", "/api/tools");
   const r = (d && d.runtime) || {};
@@ -8970,6 +9003,7 @@ function settingsCategory(name) {
   else if (name === "harness") {
     loadRuntime(); loadVerifier(); loadBestofn(); loadDifficulty(); loadSelfevolve(); loadReasoning();
   }
+  else if (name === "hooks") { loadHooksLive(); }
   else if (name === "config") {
     if (typeof loadSettingsForms === "function") loadSettingsForms();
     if (typeof loadConfigFiles === "function") loadConfigFiles();
