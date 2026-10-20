@@ -1127,7 +1127,9 @@
   /* JAG-159: Harness + Tool-policy cards, restyled with the archify design tokens
      (slate panel, accent dot header, compact inline labels). */
   #swMain .sw-cat[data-cat="harness"] > .card,
-  #swMain .sw-cat[data-cat="tools"] > .card {
+  #swMain .sw-cat[data-cat="tools"] > .card,
+  #swMain .sw-cat[data-cat="harness"] .setFormsHost > .card,
+  #swMain .sw-cat[data-cat="tools"] .setFormsHost > .card {
     background: var(--panel);
     border: 1px solid var(--line-2); border-radius: 12px; padding: 13px 15px; margin-bottom: 10px;
   }
@@ -1151,7 +1153,8 @@
   #swMain .sw-cat[data-cat="harness"] #vfPaths,
   #swMain .sw-cat[data-cat="harness"] #seCat { width: 190px; }
   #swMain .sw-cat[data-cat="harness"] > .card > .ghost,
-  #swMain .sw-cat[data-cat="tools"] > .card > .ghost { margin-top: 8px; }
+  #swMain .sw-cat[data-cat="tools"] > .card > .ghost,
+  #swMain .sw-cat .setFormsHost > .card > .ghost { margin-top: 8px; }
   #settingsWin .sw-resize { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px;
     cursor: nwse-resize; color: var(--dim); touch-action: none; }
   /* JAG-152: MCP JSON "configure manually" (read the final config + paste your own) */
@@ -1781,11 +1784,17 @@
           <button class="ghost config-save" data-call="saveSelfevolve" disabled title="no changes to save">save selfevolve</button>
         </div>
       </div>
+      <!-- DO NOT REMOVE! ITS BACKUP — Settings ▸ Config (its structured forms and
+           the raw YAML editor below) is kept only as an emergency fallback. Every
+           knob in config/*.yaml is settable from its own Settings panel
+           (Harness / Tools / Models / Subagents / MCP / Knowledge): the structured
+           forms are routed to those panels at render time, so this panel should
+           not be needed for a normal change. -->
       <div class="sw-cat" data-cat="config" hidden>
-        <h2>Settings · structured forms <span class="remaining">— every knob as a control, never hand-typed YAML</span></h2>
+        <h2>Settings · config files <span class="remaining">— backup surface: the real controls live in their own panels</span></h2>
         <div id="setForms"><div class="remaining">loading…</div></div>
         <div class="card" id="setDedicated"></div>
-        <h2>Advanced · raw YAML <span class="remaining">— the complete fallback</span></h2>
+        <h2>Advanced · raw YAML <span class="remaining">— DO NOT REMOVE! ITS BACKUP (the complete fallback)</span></h2>
         <div class="card">
           <div class="hrow">
             <label title="A top-level YAML file under config/">file <select id="cfgFileName" onchange="loadConfigFile()"></select></label>
@@ -5376,6 +5385,27 @@ async function saveConfigFile() {
 /* JAG-491: structured settings — one schema-driven renderer for every config
    file that has no bespoke panel. The backend declares the fields (type, bounds,
    options, rows); this code only paints controls and posts typed values. */
+/* JAG-499b: a structured form's home is its OWN Settings panel. The backend tags
+   every section with `panel` (harness / tools / models / subagents / mcp /
+   knowledge); this resolves the container inside that panel, creating it on
+   first use. A section with no declared panel — or an unknown one — falls back
+   to the Config backup. */
+function _settingsSectionHost(panel) {
+  const box = $("setForms");
+  if (!panel) return box;
+  const cat = document.querySelector('#swMain .sw-cat[data-cat="' + panel + '"]');
+  if (!cat) return box;
+  let host = cat.querySelector(".setFormsHost");
+  if (!host) {
+    host = document.createElement("div");
+    host.className = "setFormsHost";
+    const h = document.createElement("h2");
+    h.innerHTML = 'Structured settings <span class="remaining">— the config knobs for this area</span>';
+    cat.appendChild(h);
+    cat.appendChild(host);
+  }
+  return host;
+}
 async function loadSettingsForms() {
   const box = $("setForms"), ded = $("setDedicated");
   if (!box) return;
@@ -5385,7 +5415,18 @@ async function loadSettingsForms() {
   catch (e) { box.innerHTML = '<div class="remaining" style="color:var(--err)">' + esc(String(e)) + '</div>'; return; }
   if (!d || !d.ok) { box.innerHTML = '<div class="remaining">' + esc((d && d.error) || "unavailable") + '</div>'; return; }
   box.innerHTML = "";
-  (d.sections || []).forEach(sec => box.appendChild(_setSectionEl(sec)));
+  document.querySelectorAll("#swMain .setFormsHost").forEach(h => { h.innerHTML = ""; });
+  let here = 0;
+  (d.sections || []).forEach(sec => {
+    const host = _settingsSectionHost(sec.panel) || box;
+    host.appendChild(_setSectionEl(sec));
+    if (host === box) here += 1;
+  });
+  if (!here) {
+    box.innerHTML = '<div class="remaining">Every structured form is rendered inside its own ' +
+      'Settings panel (Harness · Tools · Models · Subagents · MCP · Knowledge). ' +
+      'This Config panel is the backup surface.</div>';
+  }
   if (ded) {
     const rows = [];
     Object.keys(d.dedicated || {}).forEach(f => Object.keys(d.dedicated[f]).forEach(p =>
@@ -8611,6 +8652,12 @@ function buildSettingsWin() {
 }
 function openSettings(cat) {
   buildSettingsWin(); settingsWin().hidden = false;
+  // JAG-499b: every structured config form lives in its OWN Settings panel, so
+  // load them as soon as the window opens (not only when the Config tab is viewed).
+  if (typeof loadSettingsForms === "function" && !loadSettingsForms._loaded) {
+    loadSettingsForms._loaded = true;
+    loadSettingsForms();
+  }
   _clampBox(settingsWin());   // JAG-3xx: re-clamp on every open (viewport may have changed)
   const saved = cat || localStorage.getItem("sf_settings_cat") || "models";
   const known = SETTINGS_CATS.some(([k]) => k === saved);

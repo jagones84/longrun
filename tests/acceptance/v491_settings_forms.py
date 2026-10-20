@@ -9,7 +9,9 @@ repeatable row per hook. This test pins:
      ``core.settings`` (a real form) or owned by a documented dedicated panel;
   B. the coercion rules (types, bounds, selects, string lists, repeatable rows);
   C. ``update()`` rejects unknown paths/types and accepts a valid section;
-  D. the API + WebUI wiring (endpoint, renderer, advanced per-tool editor).
+  D. the API + WebUI wiring (endpoint, renderer, advanced per-tool editor);
+  E. the Config panel is a backup — every structured form declares its home
+     Settings panel and the WebUI routes it there (settings.py `panel`).
 
 Deterministic: no network, no model, no live config write.
 
@@ -188,6 +190,18 @@ check("D5 the approval policy POST accepts outside_workspace/timeout",
       "outside_workspace" in API and "timeout_secs" in API)
 check("D6 the dedicated panels are listed, not duplicated",
       "setDedicated" in UI and bool(settings.DEDICATED))
+
+# ---- E) the Config panel is a backup; every form lives in its own panel -----
+_panels = {"harness", "tools", "models", "subagents", "mcp", "knowledge"}
+check("E1 every structured section declares a real home panel",
+      all(s.get("panel") in _panels for s in settings._sections()),
+      sorted({s.get("panel") for s in settings._sections()}))
+check("E2 view() exposes the panel for every section",
+      all(sec.get("panel") for sec in settings.view()["sections"]))
+check("E3 the WebUI routes each form to its declared panel",
+      "_settingsSectionHost" in UI and "sec.panel" in UI)
+check("E4 Settings ▸ Config is marked DO NOT REMOVE! ITS BACKUP",
+      "DO NOT REMOVE! ITS BACKUP" in UI)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

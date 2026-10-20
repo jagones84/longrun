@@ -20,6 +20,12 @@ Files (or individual keys) owned by a dedicated panel are listed in
 per setting. ``tests/acceptance/v491_settings_forms.py`` walks every leaf of
 every config file and fails if it is covered by neither.
 
+JAG-499b: each section also declares its home Settings ``panel`` (harness /
+tools / models / mcp / knowledge). The WebUI renders every section inside that
+panel, so Settings ▸ Config — marked ``DO NOT REMOVE! ITS BACKUP`` — is no longer
+needed for a normal change: everything in ``config/*.yaml`` is settable from the
+panels around the Settings window.
+
 Writes reuse the existing per-domain persistence:
   * ``index.yaml``      -> ``indexcfg.save_config`` (gitignored overlay)
   * ``compaction.yaml`` -> ``compaction_config.save`` (compaction.local.yaml)
@@ -49,7 +55,7 @@ def _f(path, label, type_="text", **kw):
 # --------------------------------------------------------------- sections ----
 SECTIONS = [
     {
-        "file": "index.yaml", "id": "index",
+        "file": "index.yaml", "id": "index", "panel": "knowledge",
         "title": "Indexing & knowledge",
         "help": ("How the codebase index and the knowledge base cut, cap and "
                  "skip content. The embedding MODEL itself lives in Models."),
@@ -79,7 +85,7 @@ SECTIONS = [
         ],
     },
     {
-        "file": "compaction.yaml", "id": "compaction_summarizer",
+        "file": "compaction.yaml", "id": "compaction_summarizer", "panel": "harness",
         "title": "Compaction · summarizer",
         "help": ("What the summarizer reads, how long its summary may be, and the "
                  "instruction it follows. Trigger/target/keep are in the Context panel."),
@@ -93,7 +99,7 @@ SECTIONS = [
         ],
     },
     {
-        "file": "routing.yaml", "id": "routing",
+        "file": "routing.yaml", "id": "routing", "panel": "models",
         "title": "Routing · every role",
         "help": ("Which model each role uses. A `model` is a <provider>:<model> ref "
                  "(verbatim); `pattern` only applies to chat/agent and follows the "
@@ -101,7 +107,7 @@ SECTIONS = [
         "fields": [],          # filled per role in _sections()
     },
     {
-        "file": "decisions.yaml", "id": "decisions",
+        "file": "decisions.yaml", "id": "decisions", "panel": "harness",
         "title": "Decision layer & speculation",
         "help": ("A pluggable cheap-model layer in front of the loop (route / prune / "
                  "validate). `null` is a strict no-op; every hook fails open."),
@@ -114,7 +120,7 @@ SECTIONS = [
         ],
     },
     {
-        "file": "hooks.yaml", "id": "hooks",
+        "file": "hooks.yaml", "id": "hooks", "panel": "tools",
         "title": "Lifecycle hooks",
         "help": ("Deterministic shell commands around every tool call. Exit 2 on "
                  "PreToolUse BLOCKS the call. Saved to a gitignored overlay, so the "
@@ -133,7 +139,7 @@ SECTIONS = [
         ],
     },
     {
-        "file": "mcp_clients.yaml", "id": "mcp_env",
+        "file": "mcp_clients.yaml", "id": "mcp_env", "panel": "mcp",
         "title": "MCP · env files",
         "help": ("Files loaded (KEY=VALUE) before ${VAR} expansion in MCP headers. "
                  "The clients themselves are managed by Settings ▸ MCP."),
@@ -340,6 +346,7 @@ def view():
         doc = _effective(sec["file"])
         out.append({
             "file": sec["file"], "id": sec["id"], "title": sec["title"],
+            "panel": sec.get("panel", ""),   # JAG-499b: the Settings panel that owns it
             "help": sec.get("help", ""),
             "fields": sec["fields"],
             "values": {f["path"]: _get(doc, f["path"]) for f in sec["fields"]},
