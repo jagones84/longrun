@@ -8958,16 +8958,6 @@ async function saveCompactionModel() {
   const el = $("compactionResult");
   if (el) el.textContent = r.error ? ("error: " + r.error) : ("saved: summarizer = " + m);
 }
-async function saveSubagentModel() {
-  const sel = $("subagentModel");
-  if (!sel) return;
-  const m = sel.value;
-  const r = await api("POST", "/api/routing", { roles: { subagent: { model: m } } });
-  const el = $("subagentResult");
-  if (el) el.textContent = r.error ? ("error: " + r.error)
-    : (m ? ("saved: subagent = " + m) : "cleared — resolved by pattern again");
-  if (typeof loadRouting === "function") loadRouting();
-}
 /* JAG-451: Settings > Subagents — model + failover (routing.yaml), depth
    (tools.yaml), parallel cap + role briefs (config/subagents.yaml). */
 async function loadSubagents() {
