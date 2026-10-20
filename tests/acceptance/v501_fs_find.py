@@ -101,6 +101,9 @@ check("B6 the attach-file picker searches the whole tree",
       "_pickRemoteRun" in HTML and "{ kind: \"any\", base:" in HTML)
 check("B7 arrow keys move the picker selection",
       'e.key === "ArrowDown" || e.key === "ArrowUp"' in HTML)
+check("B8 the FILES panel reuses the same controller (third browser, no copy)",
+      'id="fileSearch"' in HTML and 'id="fileHits"' in HTML
+      and "F.bindSearch(inp, box" in HTML)
 
 # --- C: a workspace change refreshes every browser --------------------------
 check("C1 saving a workspace refreshes the panels + the editor tree",

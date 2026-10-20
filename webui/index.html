@@ -1953,7 +1953,9 @@
             <button class="ghost" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock (CodeMirror; markdown/images preview)">🗔 editor</button>
             <button class="ghost" data-call="loadFiles" title="reload tree">↻</button>
           </div>
+          <input id="fileSearch" class="inp u-mt6" placeholder="search this workspace — ↑/↓ then Enter" autocomplete="off" aria-label="search files in this workspace">
           <div id="fileTree" class="u-mt6"><div class="remaining">open a session first</div></div>
+          <div id="fileHits"></div>
           <div class="remaining u-mt4" id="fileMsg"></div>
         </div>
         <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
@@ -9572,11 +9574,42 @@ function _fmtSize(n) {
   return (n / 1048576).toFixed(1) + " MB";
 }
 
-async function loadFiles() {
+/* JAG-501: the FILES panel is the third file browser — same keyboard search,
+   same controller (fsfind.js), no second implementation. `path` lets a search
+   hit re-root the tree on the folder that matched. */
+let _fileSearchBound = false;
+function _bindFileSearch() {
+  if (_fileSearchBound) return;
+  const inp = $("fileSearch"), box = $("fileHits");
+  if (!inp || !box) return;
+  const F = window.FsFind;
+  if (!F || !F.bindSearch) {
+    // the ES module (which publishes window.FsFind) may still be loading at boot
+    inp.addEventListener("focus", _bindFileSearch, { once: true });
+    return;
+  }
+  _fileSearchBound = true;
+  F.bindSearch(inp, box, {
+    kind: "any",
+    empty: "no file or folder matches",
+    onResults: () => { $("fileTree").hidden = true; },
+    onEmpty: () => { box.innerHTML = ""; $("fileTree").hidden = false; },
+    onPick: (hit) => {
+      inp.value = ""; box.innerHTML = ""; $("fileTree").hidden = false;
+      if (hit.dir) loadFiles(hit.path); else openFile(hit.path);
+    },
+  });
+}
+async function loadFiles(path) {
   const tree = $("fileTree");
+  _bindFileSearch();
+  tree.hidden = false;
+  if ($("fileSearch") && $("fileSearch").value.trim()) return;   // a live search owns the panel
   tree.innerHTML = '<div class="remaining">loading…</div>';
+  const qs = new URLSearchParams({ session: sessionId || "" });
+  if (path) qs.set("path", path);
   try {
-    const d = await api("GET", "/api/fs/list?session=" + encodeURIComponent(sessionId || ""));
+    const d = await api("GET", "/api/fs/list?" + qs.toString());
     if (d.error) { tree.innerHTML = '<div class="remaining">' + esc(d.error) + '</div>'; return; }
     _filesRoot = d.path;
     $("filesRoot").textContent = d.path;
