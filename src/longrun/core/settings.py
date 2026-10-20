@@ -101,9 +101,14 @@ SECTIONS = [
     {
         "file": "routing.yaml", "id": "routing", "panel": "models",
         "title": "Routing · every role",
-        "help": ("Which model each role uses. A `model` is a <provider>:<model> ref "
-                 "(verbatim); `pattern` only applies to chat/agent and follows the "
-                 "local router roster. Fallbacks are literal refs tried in order."),
+        "help": ("THE DEFAULTS for every session — which model each ROLE uses, and the "
+                 "fallback chain tried when it fails. Not a duplicate of anything else: "
+                 "the composer's model picker overrides the CHAT role for one session "
+                 "only, and the subagent model lives in Settings ▸ Subagents. "
+                 "`model` is a verbatim <provider>:<model> ref; `pattern` is a substring "
+                 "of the local llama.cpp router roster and applies to chat/agent only; "
+                 "fallbacks are literal refs tried in order. Clear a field to fall back "
+                 "to the shipped default."),
         "fields": [],          # filled per role in _sections()
     },
     {

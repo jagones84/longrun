@@ -528,6 +528,15 @@
   .sk-auto { color: var(--acc); border-color: var(--acc); }
   .sk-user { color: var(--acc2); }
   .sk-core { color: var(--dim); }
+  .sk-matrix { color: var(--warn); border-color: var(--warn); }
+  .sk-mcp { color: var(--acc2); border-color: var(--acc2); }
+  /* JAG-511: collapsible provenance sections (skills + tool origins). */
+  .sk-sec { margin-bottom: 6px; }
+  .sk-sec-sum { cursor: pointer; padding: 4px 2px; }
+  .sk-sec[open] > .sk-sec-sum { margin-bottom: 6px; }
+  .tg-origin { margin: 10px 0 4px; }
+  .tg-origin-sum { cursor: pointer; padding: 4px 2px; border-top: 1px solid var(--bd); }
+  .tg-origin[open] > .tg-origin-sum { margin-bottom: 6px; }
 
   /* ---------------- chat ---------------- */
   #chat { display: flex; flex-direction: column; min-height: 0; position: relative; }
@@ -1919,10 +1928,10 @@
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
             <label class="remaining u-df u-g6 u-aic">max artifacts
               <input id="impReviewLimit" type="number" min="1" max="60" value="24" class="inp" style="width:70px;padding:6px 8px;font-size:12px"></label>
-            <button class="ghost" data-call="runImprovementReview" title="run the LLM audit now (bounded, one call per batch)">🧠 review with LLM</button>
+            <button class="ghost" id="impReviewRun" data-call="runImprovementReview" title="run the LLM audit now (bounded, one call per batch)">🧠 review with LLM</button>
             <button class="ghost" data-call="loadImprovement" title="reload the last stored review">↻ reload</button>
           </div>
-          <div class="remaining u-mt6" id="impReviewMsg"></div>
+          <div class="remaining u-mt6" id="impReviewMsg" role="status" aria-live="polite"></div>
           <div id="impReview"></div>
         </div>
         <h2>Files · what the loop reads &amp; writes <span class="remaining">— click to open</span></h2>
@@ -2000,11 +2009,16 @@
       <div class="sw-cat" data-cat="skills" hidden>
         <h2>Install from zip</h2>
         <div class="card">
-          <input type="file" id="skillZip" accept=".zip" class="u-fs12">
-          <input id="skillName" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="name (optional · from file)">
+          <!-- JAG-511: one compact row — picker · optional name · install. The
+               previous stacked layout (5 rows) wasted half the panel on a
+               once-in-a-while action. -->
+          <div class="u-df u-g6 u-aic u-fww">
+            <input type="file" id="skillZip" accept=".zip" class="u-fs12" style="flex:1;min-width:170px">
+            <input id="skillName" class="inp u-p610 u-fs12" style="flex:1;min-width:130px" placeholder="name (optional · from file)">
+            <button class="ghost" data-call="installSkillZip">install</button>
+          </div>
           <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="skillOverwrite"> overwrite if exists</label>
-          <button class="ghost u-mt8" data-call="installSkillZip">install</button>
-          <div id="skillResult" class="remaining u-mt6"></div>
+          <div id="skillResult" class="remaining u-mt4" role="status" aria-live="polite"></div>
         </div>
         <h2>Skills · installed</h2>
         <div class="card">
@@ -2025,15 +2039,13 @@
             <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
             <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]' title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁 browse…</button>
             <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
-            <button class="ghost ws-ed" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock on this workspace (tree, keyboard search, tabs)">🗔 editor</button>
           </div>
         </div>
         <h2>Files · workspace</h2>
         <div class="card">
-          <div class="remaining" id="filesRoot">…</div>
           <div class="u-df u-g6 u-mt6 u-aic u-fww">
             <button class="ghost" onclick="window.SparkEditor&&window.SparkEditor.toggle()" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔 open in editor</button>
-            <span class="remaining u-f1">tree + search live in the editor dock — one implementation</span>
+            <span class="remaining u-f1" id="filesRoot">…</span>
           </div>
           <div class="remaining u-mt4" id="fileMsg"></div>
         </div>
@@ -2266,11 +2278,14 @@
           <div class="remaining u-mt4">depth writes <code>config/tools.yaml</code> ▸ runtime.subagent_max_depth · parallel writes <code>config/subagents.yaml</code>.</div>
         </div>
         <h2>Role briefs <span class="remaining">— the standing instruction a delegation can attach</span></h2>
-        <div class="card" id="subRolesBox"><div class="remaining">loading…</div></div>
+        <!-- JAG-511: the "add role" bar sat BELOW a list that can grow long, so after
+             adding a few briefs you had to scroll to the bottom of the panel to add
+             the next one. It now lives directly under the heading. -->
         <div class="u-df u-g6 u-mt6 u-aic">
           <input id="subNewRole" class="inp u-f1 u-p610 u-fs12" placeholder="new role name…">
           <button class="ghost" data-call="subAddRole">+ add role</button>
         </div>
+        <div class="card u-mt6" id="subRolesBox"><div class="remaining">loading…</div></div>
         <div class="remaining u-mt8" id="subResult">changes are saved automatically</div>
       </div>
       <div class="sw-cat" data-cat="knowledge" hidden>
@@ -5545,6 +5560,25 @@ function _settingsSectionHost(panel) {
     host.className = "setFormsHost";
     const h = document.createElement("h2");
     h.innerHTML = 'Structured settings <span class="remaining">— the config knobs for this area</span>';
+    // JAG-511: say WHAT these knobs are, so they do not read as duplicates of the
+    // controls above them.
+    const NOTE = {
+      models: "These are the DEFAULTS for every session (config/routing.yaml ▸ roles). " +
+        "The composer's model dropdown overrides the chat role for ONE session; " +
+        "the subagent model/fallback lives in Settings ▸ Subagents.",
+      subagents: "Model + fallback for subagents are set above; everything else here is " +
+        "the rest of config/subagents.yaml.",
+    };
+    if (NOTE[panel]) {
+      const n = document.createElement("div");
+      n.className = "remaining";
+      n.style.cssText = "margin:0 0 6px";
+      n.textContent = NOTE[panel];
+      cat.appendChild(h);
+      cat.appendChild(n);
+      cat.appendChild(host);
+      return host;
+    }
     cat.appendChild(h);
     cat.appendChild(host);
   }
@@ -6519,21 +6553,58 @@ function _impSection(title, count, open) {
   det.innerHTML = '<summary class="imp-s">' + esc(title) + ' <span class="remaining">(' + count + ')</span></summary>';
   return det;
 }
+/* JAG-511: the review is a SYNCHRONOUS LLM pass (one call per batch, up to 180 s
+   each), so with a bare fetch the panel looked frozen: no spinner, no clock, no
+   way to tell "working" from "dead", and a second click fired a second pass. The
+   button is now disabled for the duration and the status line carries a live
+   elapsed clock plus the batch count, so progress is visible. */
 async function runImprovementReview() {
   const msg = $("impReviewMsg");
+  const btn = $("impReviewRun");
+  if (btn && btn.disabled) return;                 // one pass at a time
   const n = parseInt(($("impReviewLimit") || {}).value || "24", 10) || 24;
-  if (msg) msg.textContent = "auditing up to " + n + " artifacts against the current code…";
+  const started = Date.now();
+  let tick = null;
+  const paint = extra => {
+    if (!msg) return;
+    const s = Math.round((Date.now() - started) / 1000);
+    msg.innerHTML = "⏳ <b>LLM audit running</b> · " + s + "s elapsed" +
+      (extra ? " · " + esc(extra) : "") +
+      ' · <span class="remaining">one model call per batch of 6 — this can take a few minutes</span>';
+  };
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ auditing…"; }
+  paint("up to " + n + " artifacts");
+  tick = setInterval(() => paint("up to " + n + " artifacts"), 1000);
   try {
     const r = await api("POST", "/api/improvement/review", { limit: n });
+    clearInterval(tick); tick = null;
     if (!r || !r.ok) {
-      if (msg) msg.textContent = "review failed — " + ((r && r.error) || "?");
+      if (msg) {
+        msg.innerHTML = '❌ <b>review failed</b> — ' + esc((r && r.error) || "no response") +
+          (r && r.items && r.items.length ? " (audited " + r.items.length + " before failing)" : "");
+      }
+      if (typeof toast === "function") toast("backlog review failed", "err");
       return;
     }
-    if (msg) msg.textContent = "done — " + ((r.items || []).length) +
-      " artifacts audited" + (r.model ? " (" + r.model + ")" : "");
+    const items = r.items || [];
+    const counts = r.counts || {};
+    const byVerdict = Object.keys(counts).filter(k => counts[k])
+      .map(k => k + " " + counts[k]).join(" · ");
+    if (msg) {
+      msg.innerHTML = "✅ <b>done</b> — " + items.length + " artifacts audited in " +
+        Math.round((Date.now() - started) / 1000) + "s" +
+        (r.model ? " with <code>" + esc(r.model) + "</code>" : " (no model reported)") +
+        (byVerdict ? " · " + esc(byVerdict) : "") +
+        (r.unrated ? " · " + r.unrated + " unrated" : "");
+    }
     if (typeof toast === "function") toast("backlog review complete", "ok");
     loadImprovement();
-  } catch (e) { if (msg) msg.textContent = String(e); }
+  } catch (e) {
+    if (msg) msg.innerHTML = "❌ <b>review failed</b> — " + esc(String(e));
+  } finally {
+    if (tick) clearInterval(tick);
+    if (btn) { btn.disabled = false; btn.textContent = "🧠 review with LLM"; }
+  }
 }
 async function loadImprovement() {
   const props = $("impProps"), ledgerBox = $("impLedger"), mem = $("impMemory"), recs = $("impRecords");
@@ -7477,6 +7548,15 @@ function renderTools(el, d) {
   // both the text and the data-* attribute sinks must be escaped.
   // JAG-463: the data-* attributes must carry the RAW name — they used to reuse
   // the esc()'d text, so a name with & or a quote POSTed a mangled tool name.
+  // JAG-511: every row states WHERE the tool comes from. `origin` is already
+  // emitted by registry.catalog() (nucleus | mcp | matrix) — the panel used to hide
+  // it, so a native harness tool and a third-party MCP tool looked identical.
+  const ORIGIN_BADGE = {
+    nucleus: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
+    mcp: '<span class="sk-badge sk-mcp" title="discovered from a configured MCP server">MCP</span>',
+    matrix: '<span class="sk-badge sk-matrix" title="Matrix zone — editable, outside the Nucleus">matrix</span>'
+  };
+  const originBadge = t => ORIGIN_BADGE[String(t.origin || "nucleus")] || ORIGIN_BADGE.nucleus;
   const toolRow = t => {
     const on = t.enabled !== false;
     const ap = t.approval || "auto";
@@ -7488,7 +7568,7 @@ function renderTools(el, d) {
       : "";
     return `<div class="card" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">` +
       `<span style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
-      `<span style="font-weight:600">${nm}</span>` + eff +
+      `<span style="font-weight:600">${nm}</span>${originBadge(t)}` + eff +
       `<button class="ghost" style="margin-left:auto;font-size:10px;color:${apColor}" data-ap="${nmRaw}" data-cur="${ap}" title="stored per-tool policy — click to cycle">${esc(ap)} ⟳</button>` +
       `<button class="ghost" style="font-size:10px" data-adv="${nmRaw}" title="roots · deny · allow_hosts · auto_approve">⚙</button>` +
       `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button></div>` +
@@ -7497,7 +7577,17 @@ function renderTools(el, d) {
   const gNames = Array.from(groups.keys()).filter(g => g)
     .sort((a, b) => (groups.get(b).length - groups.get(a).length) || a.localeCompare(b));
   const _flat = groups.get("") || [];
-  const tree = gNames.map(g => {
+  // JAG-511: the namespaces are now nested under ONE collapsible section per origin
+  // (built-in / MCP / Matrix), mirroring the skills panel. A group's origin is the
+  // most common origin among its tools.
+  const _originKey = g => {
+    const list = groups.get(g) || [];
+    const counts = {};
+    list.forEach(t => { const o = String(t.origin || "nucleus"); counts[o] = (counts[o] || 0) + 1; });
+    const best = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+    return best === "mcp" ? "mcp" : (best === "matrix" ? "matrix" : "nucleus");
+  };
+  const nsTree = names => names.map(g => {
     const list = groups.get(g);
     const gOn = list.filter(t => t.enabled !== false).length;
     const aps = Array.from(new Set(list.map(t => t.approval || "auto")));
@@ -7518,10 +7608,28 @@ function renderTools(el, d) {
       `<div class="tg-body" style="display:${open ? "block" : "none"};margin-top:6px">` +
         list.map(toolRow).join("") + `</div></div>`;
   }).join("");
-  const flatHtml = _flat.length
-    ? '<div class="remaining" style="margin:10px 0 6px">no namespace — standalone tools</div>' +
-      _flat.map(toolRow).join("")
-    : "";
+  let _openO = {};
+  try { _openO = JSON.parse(localStorage.getItem("longrun:toolOrigins") || "{}") || {}; }
+  catch (_e) { _openO = {}; }
+  const ORIGIN_SECTIONS = [
+    ["nucleus", "Built-in", "shipped with the harness — the registry's own tool schemas"],
+    ["mcp", "MCP · external servers", "discovered from the configured MCP clients; opt-in"],
+    ["matrix", "Matrix", "live zone outside the Nucleus — promote to make it permanent"],
+  ];
+  const tree = ORIGIN_SECTIONS.map(([key, title, note]) => {
+    const ns = gNames.filter(g => _originKey(g) === key);
+    const flats = _flat.filter(t => String(t.origin || "nucleus") === key);
+    const count = ns.reduce((n, g) => n + (groups.get(g) || []).length, 0) + flats.length;
+    if (!count) return "";
+    const o = _openO[key] === undefined ? true : !!_openO[key];
+    const inner = nsTree(ns) + (flats.length
+      ? '<div class="remaining" style="margin:10px 0 6px">no namespace — standalone tools</div>' +
+        flats.map(toolRow).join("")
+      : "");
+    return '<details class="tg-origin" data-origin="' + key + '"' + (o ? " open" : "") + ">" +
+      '<summary class="remaining tg-origin-sum"><b>' + esc(title) + "</b> (" + count + ")" +
+        ' — ' + esc(note) + "</summary>" + inner + "</details>";
+  }).join("");
   const _onN = tools.filter(t => t.enabled !== false).length;
   el.innerHTML = policyCard + kindsCard + (tools.length
     ? '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
@@ -7532,7 +7640,7 @@ function renderTools(el, d) {
         '<button class="ghost" data-bulk="enable" title="enable EVERY tool (native + external MCP) in one request">enable all</button>' +
         '<button class="ghost" data-bulk="disable" title="disable every tool (native + external MCP)">disable all</button>' +
       "</div>" +
-      '<div id="toolAdv"></div>' + tree + flatHtml
+      '<div id="toolAdv"></div>' + tree
     : '<div class="remaining">no tools</div>');
   el.querySelectorAll("button[data-pol]").forEach(b =>
     b.onclick = () => scheduleApprovalSave(el, b.dataset.val));
@@ -7561,6 +7669,12 @@ function renderTools(el, d) {
       _open[g.dataset.group] = !isOpen;
       try { localStorage.setItem("longrun:toolGroups", JSON.stringify(_open)); } catch (_e) { /* private mode */ }
     });
+  // JAG-511: remember which ORIGIN sections are open.
+  el.querySelectorAll("details.tg-origin").forEach(d =>
+    d.addEventListener("toggle", () => {
+      _openO[d.dataset.origin] = d.open;
+      try { localStorage.setItem("longrun:toolOrigins", JSON.stringify(_openO)); } catch (_e) { /* private mode */ }
+    }));
   // JAG-498: set ONE approval policy for EVERY tool of the group (one request).
   el.querySelectorAll("button[data-gap]").forEach(b =>
     b.onclick = () => {
@@ -7973,13 +8087,19 @@ function renderSkills() {
   const query = String(($("skillsFilter") && $("skillsFilter").value) || "").trim().toLowerCase();
   const ranked = _rankSkills(_skillsCache, query);
   const matches = ranked.map(x => x.s);
-  const auto = matches.filter(s => s.auto);
+  // JAG-511: four provenance buckets, and NOTHING is called "built-in" any more.
+  // The folders under skills/<category>/ ship with the repo but are operator-added
+  // content, not harness built-ins — they are "registered". Only the two machine
+  // buckets (skills/created and .Matrix/skills) are generated, and Matrix is a
+  // SEPARATE zone because it lives outside the Nucleus.
+  const auto = matches.filter(s => s.auto && !s.matrix);
+  const matrix = matches.filter(s => s.matrix);
   const local = matches.filter(s => s.local);
-  const core = matches.filter(s => !s.auto && !s.local);
+  const core = matches.filter(s => !s.auto && !s.local && !s.matrix);
   summary.innerHTML = query
     ? "<b>" + matches.length + "</b> of " + _skillsCache.length + " skills match “" + esc(query) + "”"
-    : _skillsCache.length + " skills · <b>" + auto.length +
-      "</b> self-generated (auto) · " + local.length + " user · " + core.length + " built-in";
+    : _skillsCache.length + " skills · <b>" + auto.length + "</b> self-generated · " +
+      matrix.length + " matrix · " + local.length + " uploaded · " + core.length + " registered";
   box.innerHTML = "";
   if (query && !matches.length) {
     box.innerHTML = '<div class="remaining">No skills match “' + esc(query) + '”.</div>';
@@ -7991,11 +8111,12 @@ function renderSkills() {
     row.style.cssText = "padding:6px 8px;margin-bottom:6px;display:flex;gap:8px;align-items:center";
     row.title = "click to open " + (s.path || "SKILL.md") + " in the editor";
     row.onclick = () => openSkillInEditor(s.name);
-    const dot = document.createElement("span"); dot.textContent = s.auto ? "🧠" : (s.local ? "🟢" : "🏠");
+    const dot = document.createElement("span"); dot.textContent = s.matrix ? "🧩" : (s.auto ? "🧠" : (s.local ? "🟢" : "🏠"));
     const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
     const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = s.name;
-    const badge = s.auto ? '<span class="sk-badge sk-auto">self-generated</span>'
-      : (s.local ? '<span class="sk-badge sk-user">user</span>' : '<span class="sk-badge sk-core">built-in</span>');
+    const badge = s.matrix ? '<span class="sk-badge sk-matrix">matrix</span>'
+      : (s.auto ? '<span class="sk-badge sk-auto">self-generated</span>'
+        : (s.local ? '<span class="sk-badge sk-user">uploaded</span>' : '<span class="sk-badge sk-core">registered</span>'));
     const sub = document.createElement("div"); sub.className = "remaining";
     sub.innerHTML = badge + esc(s.category || "") + " · " + esc(s.title || "") +
       (s.path ? ' · <code>' + esc(s.path) + "</code>" : "");
@@ -8016,22 +8137,37 @@ function renderSkills() {
     }
     return row;
   };
-  const section = (title, list, note) => {
+  // JAG-511: collapsible sections (they are long lists; the operator asked for the
+  // same fold/unfold behaviour the tool groups already have). Open state persists.
+  let _open = {};
+  try { _open = JSON.parse(localStorage.getItem("longrun:skillSections") || "{}") || {}; }
+  catch (_e) { _open = {}; }
+  const section = (key, title, list, note, openByDefault) => {
     if (query && !list.length) return;
-    const h = document.createElement("div"); h.className = "remaining u-mt8";
-    h.innerHTML = "<b>" + esc(title) + "</b> (" + list.length + ")" + (note ? " — " + esc(note) : "");
-    box.appendChild(h);
+    const open = (_open[key] === undefined) ? !!openByDefault : !!_open[key];
+    const det = document.createElement("details");
+    det.className = "sk-sec";
+    det.open = open;
+    det.innerHTML = '<summary class="remaining sk-sec-sum"><b>' + esc(title) + "</b> (" +
+      list.length + ")" + (note ? " — " + esc(note) : "") + "</summary>";
+    det.addEventListener("toggle", () => {
+      _open[key] = det.open;
+      try { localStorage.setItem("longrun:skillSections", JSON.stringify(_open)); } catch (_e) { /* ignore */ }
+    });
+    box.appendChild(det);
     if (!list.length) {
-      const e = document.createElement("div"); e.className = "remaining";
-      e.textContent = title.indexOf("Self-generated") === 0
+      const e = document.createElement("div"); e.className = "remaining u-mt4";
+      e.textContent = key === "auto"
         ? "none — the harness has not mined + promoted any skill yet" : "none";
-      box.appendChild(e); return;
+      det.appendChild(e);
+      return;
     }
-    list.forEach(s => box.appendChild(rowEl(s)));
+    list.forEach(s => det.appendChild(rowEl(s)));
   };
-  section("Self-generated (auto)", auto, "mined by the harness and promoted into skills/created/");
-  section("Built-in", core, "");
-  section("User (local)", local, "uploaded by you");
+  section("auto", "Self-generated", auto, "mined by the harness and promoted into skills/created/", true);
+  section("matrix", "Matrix", matrix, "live zone outside the Nucleus (.Matrix/skills) — promote to make it permanent", true);
+  section("local", "Uploaded", local, "installed from a zip by you", true);
+  section("core", "Registered", core, "skill folders present on disk (skills/<category>/)", false);
 }
 async function loadSkills() {
   try {
@@ -10426,16 +10562,35 @@ async function _termTick() {
 }
 function _termStart() { if (!_termTimer) _termTimer = setInterval(_termTick, 700); }
 if ($("termInp")) { $("termInp").onkeydown = termKey; _termStart(); }
-/* JAG-156: Memories — the harness' persistent memory (/api/memory). */
+/* JAG-156: Memories — the harness' persistent memory (/api/memory).
+   JAG-511: a query used to run KEYWORD ONLY (substring / AND-of-words), while the
+   panel advertised "semantic index active" right next to it — so a search for a
+   word that was not literally in the text returned "0 match" and looked broken.
+   Now: keyword first, and when that finds nothing the SAME query is retried
+   against the vector index; the status line always says which mode answered. */
 async function loadMemories() {
   const box = $("memList"), st = $("memStats"); if (!box) return;
   const q = ($("memQuery").value || "").trim();
   try {
+    if (q) st.textContent = "searching…";
     const d = await api("GET", "/api/memory" + (q ? ("?query=" + encodeURIComponent(q) + "&limit=20") : ""));
     if (q) {
-      const rs = d.results || [];
-      st.textContent = rs.length + " match";
-      box.innerHTML = rs.length ? "" : '<div class="remaining">no results</div>';
+      let rs = d.results || [];
+      let mode = "keyword";
+      let note = "";
+      if (!rs.length) {
+        st.textContent = "0 keyword matches · trying the semantic index…";
+        try {
+          const s = await api("GET", "/api/memory?query=" + encodeURIComponent(q) +
+            "&limit=20&semantic=1");
+          rs = s.results || [];
+          mode = "semantic";
+        } catch (e) { note = " · semantic unavailable (" + String(e) + ")"; }
+      }
+      st.textContent = rs.length + " match · " + mode + note;
+      box.innerHTML = rs.length ? "" :
+        '<div class="remaining">no match in either mode — keyword is a literal substring/AND-of-words, ' +
+        "semantic falls back to the local vector index when that is active</div>";
       rs.forEach(r => {
         const row = document.createElement("div"); row.style.marginBottom = "6px";
         row.innerHTML = '<span class="remaining">' + (r.score != null ? Number(r.score).toFixed(2) + " · " : "") + "</span>" + esc(r.content || "") +

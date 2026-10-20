@@ -120,10 +120,17 @@ const STYLE = `
   border-left:1px solid var(--line,#26304a);display:flex;flex-direction:column;z-index:5;font-size:12px}
 #editorDock[hidden]{display:none}
 #editorDock .ed-resize{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:6;touch-action:none}
-#editorDock .ed-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line,#26304a)}
-#editorDock .ed-title{font-weight:600}
-#editorDock .ed-status{flex:1;opacity:.7;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#editorDock .ed-tabs{display:flex;gap:4px;overflow-x:auto;padding:6px 8px;border-bottom:1px solid var(--line,#26304a)}
+/* JAG-511: the header used to be ONE wrapping row (title + path + 6 buttons), so on
+   a 320px dock it broke into two ~30px lines of chrome above the code. It is now a
+   compact two-line block: a 9px eyebrow with the window buttons, then the path with
+   the four tree buttons. The title no longer competes with the path for width. */
+#editorDock .ed-head{display:flex;flex-direction:column;gap:1px;padding:3px 8px 4px;border-bottom:1px solid var(--line,#26304a)}
+#editorDock .ed-hrow{display:flex;align-items:center;gap:4px;min-width:0}
+#editorDock .ed-title{font-size:9px;line-height:1.1;letter-spacing:.14em;text-transform:uppercase;opacity:.55;font-weight:600}
+#editorDock .ed-hrow .ed-win{margin-left:auto}
+#editorDock .ed-head .ghost{padding:0 4px;font-size:11px;line-height:1.35;min-height:0;border-radius:4px}
+#editorDock .ed-status{flex:1;min-width:0;opacity:.7;font-family:monospace;font-size:10px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#editorDock .ed-tabs{display:flex;gap:4px;overflow-x:auto;padding:3px 6px;border-bottom:1px solid var(--line,#26304a)}
 #editorDock .ed-tab{display:flex;gap:6px;align-items:center;padding:3px 8px;border:1px solid var(--line,#26304a);border-radius:6px;cursor:pointer;white-space:nowrap;font-family:monospace;font-size:11px}
 #editorDock .ed-tab.active{border-color:var(--accent,#8b7bf0);background:rgba(139,123,240,.14)}
 #editorDock .ed-tab .dirty{color:var(--warn,#e0b341)}
@@ -172,7 +179,7 @@ const STYLE = `
 #editorDock .ed-preview .md code{background:rgba(255,255,255,.07);padding:1px 4px;border-radius:4px}
 #editorDock .ed-preview .md pre{background:rgba(255,255,255,.05);padding:8px;border-radius:6px;overflow:auto}
 #editorDock .ed-preview .md a{color:#7fb0ff}
-#editorDock .ed-foot{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line,#26304a)}
+#editorDock .ed-foot{display:flex;gap:6px;padding:4px 8px;border-top:1px solid var(--line,#26304a)}
 #editorDock.ed-overlay{position:fixed;top:44px;right:0;bottom:0;height:auto;width:min(520px,92vw);z-index:40;box-shadow:-16px 0 40px rgba(0,0,0,.45)}
 /* JAG-453: detachable editor — DOCK (default) ⇄ FLOAT ⇄ FULL. A Windows-style
    title bar: drag it to move (float), re-attach / fullscreen / close on the right
@@ -185,8 +192,8 @@ const STYLE = `
 #editorDock.ed-float .ed-resize,#editorDock.ed-full .ed-resize{display:none}
 #editorDock.ed-float .ed-head{cursor:move;user-select:none}
 #editorDock .ed-win{display:flex;align-items:center;gap:2px;margin-left:6px}
-#editorDock .ed-wbtn{background:transparent;border:0;color:var(--txt,#e6edf7);width:26px;height:22px;border-radius:5px;
-  cursor:pointer;font:inherit;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0}
+#editorDock .ed-wbtn{background:transparent;border:0;color:var(--txt,#e6edf7);width:22px;height:18px;border-radius:4px;
+  cursor:pointer;font:inherit;font-size:11px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0}
 #editorDock .ed-wbtn:hover{background:rgba(255,255,255,.13)}
 #editorDock .ed-wbtn[hidden]{display:none}
 #editorDock .ed-wbtn.ed-x:hover{background:#e81123;color:#fff}
@@ -220,16 +227,21 @@ function buildDock() {
   dock.innerHTML = `
     <div class="ed-resize"></div>
     <div class="ed-grip" title="drag to resize"></div>
-    <div class="ed-head"><span class="ed-title">Editor</span><span class="ed-status"></span>
-      <button class="ed-files ghost" title="show/hide the file tree">🗂 files</button>
-      <button class="ed-expand ghost" title="expand every loaded folder" aria-label="expand all folders">⊞</button>
-      <button class="ed-collapse ghost" title="collapse every folder" aria-label="collapse all folders">⊟</button>
-      <button class="ed-refresh ghost" title="reload the tree">↻</button>
-      <span class="ed-win">
-        <button class="ed-wbtn ed-winfloat" title="detach — open as a floating window">⇱</button>
-        <button class="ed-wbtn ed-winmax" title="fullscreen — fill the browser" hidden>⛶</button>
-        <button class="ed-wbtn ed-x" title="close (Esc)">✕</button>
-      </span></div>
+    <div class="ed-head">
+      <div class="ed-hrow"><span class="ed-title">Editor</span>
+        <span class="ed-win">
+          <button class="ed-wbtn ed-winfloat" title="detach — open as a floating window">⇱</button>
+          <button class="ed-wbtn ed-winmax" title="fullscreen — fill the browser" hidden>⛶</button>
+          <button class="ed-wbtn ed-x" title="close (Esc)">✕</button>
+        </span></div>
+      <div class="ed-hrow">
+        <button class="ed-files ghost" title="show/hide the file tree">🗂</button>
+        <button class="ed-expand ghost" title="expand every loaded folder" aria-label="expand all folders">⊞</button>
+        <button class="ed-collapse ghost" title="collapse every folder" aria-label="collapse all folders">⊟</button>
+        <button class="ed-refresh ghost" title="reload the tree">↻</button>
+        <span class="ed-status"></span>
+      </div>
+    </div>
     <div class="ed-body">
       <div class="ed-tree"><input class="ed-search" placeholder="🔍 jump to a file…" autocomplete="off" aria-label="search files in the workspace"><div class="ed-hits"></div></div>
       <div class="ed-tree-resize" title="drag to resize the file tree"></div>

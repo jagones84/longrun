@@ -77,9 +77,13 @@ check("B1 list_skills flags auto-generated skills",
       '"auto": cat == "created"' in skills_src)
 check("B2 the panel badges + separates self-generated skills",
       "sk-badge" in idx and "sk-auto" in idx
-      and 'section("Self-generated (auto)"' in idx and "sk-core" in idx and "sk-user" in idx)
-check("B3 the summary counts self-generated vs user vs built-in",
-      "self-generated (auto)" in idx and "built-in" in idx)
+      and 'section("auto", "Self-generated"' in idx and "sk-core" in idx and "sk-user" in idx)
+# JAG-511: nothing under skills/<category>/ is a harness built-in — it ships in the
+# repo but is operator-added content. The panel calls it "registered"; only the
+# machine-made buckets keep a generated label, and Matrix is its own section.
+check("B3 the summary counts self-generated vs matrix vs uploaded vs registered",
+      "self-generated · " in idx and "registered" in idx and "matrix" in idx
+      and 'sk-core">built-in' not in idx)
 
 
 # ---- C) org chart -> Agents panel focus ------------------------------------

@@ -143,8 +143,9 @@ check("D1 the Files panel no longer renders its own tree or search",
       'id="fileTree"' not in idx and 'id="fileSearch"' not in idx)
 check("D2 the Files panel offers an editor hand-off instead",
       "open in editor" in idx and "window.SparkEditor.toggle()" in idx)
-check("D3 the workspace-folder card carries the editor button",
-      re.search(r'id="wsSave"[^\n]*\n[^\n]*ws-ed', idx) is not None)
+check("D3 exactly ONE editor hand-off in the rail (JAG-511 removed the duplicate)",
+      idx.count("window.SparkEditor.toggle()") == 2 and  # the topbar/toolbar one + D2's
+      'class="ghost ws-ed"' not in idx)
 check("D4 there is no second workspace-tree implementation",
       "function loadFiles" not in idx and "function _renderDir" not in idx)
 check("D5 focusInsp can skip the scroll",
