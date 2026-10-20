@@ -1100,7 +1100,15 @@ class Constellation {
     try { this.data = await this.api.get("/api/orbit/constellation" + q); }
     catch (e) { this.data = this.data || {agents:[], jobs:[], graphs:{}}; }
     return this.data; }
-  async open(agent, mode){ if (agent) this.focus = agent; if (mode) this.mode = mode;
+  async open(agent, mode){
+    // JAG-513: picking a DIFFERENT agent must only SELECT it — the camera (the
+    // zoom/pan viewBox) must not jump to a new fit. A mode switch (agent ⇄ all) is
+    // different content, so that one re-fits as before.
+    const sameMode = (mode === undefined) || (mode === this.mode);
+    if (agent && (!this.focus || this.focus.session !== agent.session) && sameMode) {
+      this._keepCam = true;
+    }
+    if (agent) this.focus = agent; if (mode) this.mode = mode;
     await this.load(); this.setMode(this.mode); }
   setMode(m){ this.mode = m; $("constAgent").classList.toggle("on", m === "agent");
     $("constAll").classList.toggle("on", m === "all"); this.draw(); }
@@ -1171,10 +1179,29 @@ class Constellation {
     const base = "0 0 " + vb.w + " " + vb.h;
     // JAG-424f: keep the user's zoom/pan across a plain redraw (the 5s poll) — re-fit ONLY
     // when the CONTENT box really changed (mode switch, or a different graph size).
-    const keep = (svg.__baseVB === base) ? svg.getAttribute("viewBox") : null;
+    const prevBase = svg.__baseVB;
+    const prevVB = svg.getAttribute("viewBox");
+    const keep = (prevBase === base) ? prevVB : null;
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
     svg.innerHTML = vb.body;
-    svg.setAttribute("viewBox", keep || base);
+    if (keep) {
+      svg.setAttribute("viewBox", keep);
+    } else if (this._keepCam && prevBase && prevVB) {
+      // JAG-513: a different agent's graph has its own size, but selecting it must
+      // not move the camera. Carry the SAME relative viewport over: scale the old
+      // viewBox by the ratio between the two content boxes.
+      const ob = prevBase.split(/\s+/).map(Number), ov = prevVB.split(/\s+/).map(Number);
+      if (ob[2] > 0 && ob[3] > 0 && ov[2] > 0 && ov[3] > 0) {
+        const sx = vb.w / ob[2], sy = vb.h / ob[3];
+        svg.setAttribute("viewBox", (ov[0] * sx) + " " + (ov[1] * sy) + " " +
+          (ov[2] * sx) + " " + (ov[3] * sy));
+      } else {
+        svg.setAttribute("viewBox", base);
+      }
+    } else {
+      svg.setAttribute("viewBox", base);
+    }
+    this._keepCam = false;
     svg.__baseVB = base;
     this._wire(svg);
     this._zoomPan(svg);
@@ -1592,13 +1619,18 @@ class OrbitApp {
   }
   renderTeams(){
     const sel = $("teamSel");
+    // JAG-513: the "No team" bucket the AGENTS table already shows (stray agents)
+    // had no voice in the scope filter, so those agents could never be isolated.
     sel.innerHTML = '<option value="ALL">ALL teams</option>' +
+      '<option value="__none__">No team</option>' +
       this.teams.map(t => '<option value="' + esc(t.id) + '">' + esc(t.symbol || "") + ' ' +
         esc(t.name) + ' (' + ((t.members || []).length) + ')</option>').join("");
-    sel.value = this.teams.some(t => t.id === this.team) ? this.team : "ALL";
+    sel.value = (this.team === "__none__" || this.teams.some(t => t.id === this.team))
+      ? this.team : "ALL";
     this.team = sel.value;
   }
   async applyModelPolicy(){
+    if (this.team === "__none__"){ alert("'No team' is not a team — pick a team or ALL"); return; }
     const ids = this.team === "ALL" ? this.teams.map(t => t.id) : [this.team];
     if (!ids.length){ alert("no team selected"); return; }
     const msg = [];
@@ -1637,14 +1669,16 @@ class OrbitApp {
     if (tms) this.teams = tms.teams || [];
     this.renderTeams();
     // JAG-339: the selected team scopes agents, org chart, jobs and constellation.
+    // JAG-513: `__none__` = the stray agents (no team), the same bucket the AGENTS
+    // table groups under "No team".
     const team = this.team;
-    const inTeam = (a) => (!team || team === "ALL" || ((a.teams || []).includes(team)));
+    const inTeam = (a) => (!team || team === "ALL"
+      || (team === "__none__" ? !((a.teams || []).length) : ((a.teams || []).includes(team))));
+    const allRoutines = (routines && routines.routines) || [];
     const fTree = tree ? Object.assign({}, tree, {agents: (tree.agents || []).filter(inTeam)}) : null;
     const ids = new Set(((fTree && fTree.agents) || []).map(a => a.id));
     const fJobs = jobs ? {jobs: (jobs.jobs || []).filter(j => (j.agents || []).some(x => ids.has(x)))} : null;
-    // JAG-424: the scope must filter EVERYTHING it claims to — routines too (they
-    // belong to one agent, so keep the ones owned by an agent in scope).
-    const fRoutines = routines ? {routines: (routines.routines || []).filter(r => !team || team === "ALL" || ids.has(r.agent))} : null;
+    const fRoutines = routines ? {routines: allRoutines.filter(r => !team || team === "ALL" || ids.has(r.agent))} : null;
     const list = models ? ((models.providers) || []).reduce((acc, p) =>
       acc.concat((p.models || []).map(m => ({ref: m.ref || (p.id + ":" + m.id), label: m.id}))), []) : [];
     const running = new Set(((sess && sess.sessions) || []).filter(s => s.running).map(s => s.id));

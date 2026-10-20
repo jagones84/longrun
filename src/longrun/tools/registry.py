@@ -46,6 +46,14 @@ DEFAULT_CONFIG = {
     "tools": {},
 }
 
+# JAG-513: one authoritative sentence for every `path` argument. The model was
+# guessing between absolute/relative and (on a miss) retried with the repo root,
+# so the contract is stated where the model actually reads it: the schema.
+_P_PATH = ("file path. RELATIVE paths resolve against the session workspace "
+           "(the repo when no workspace is open); ABSOLUTE paths are accepted "
+           "only inside the tool's allowed roots. Prefer a relative path, e.g. "
+           "'src/longrun/tools/registry.py'.")
+
 # JSON-schema-ish descriptions exposed to the agent prompt and to MCP clients.
 _LEGACY_SCHEMAS = {
     "shell": {
@@ -78,20 +86,24 @@ _LEGACY_SCHEMAS = {
                         "a slice of a large file instead of re-reading it truncated. "
                         "max_bytes caps the returned content."),
         "type": "object",
-        "properties": {"path": {"type": "string"},
+        "properties": {"path": {"type": "string", "description": _P_PATH},
                        "start_line": {"type": "integer",
                                       "description": "first line to return (1-based; omit for the start of the file)"},
                        "end_line": {"type": "integer",
                                     "description": "last line to return (1-based, inclusive; omit for end of file)"},
-                       "max_bytes": {"type": "integer", "default": 65536}},
+                       "max_bytes": {"type": "integer", "default": 65536,
+                                     "description": "cap on returned bytes (default 65536)"}},
         "required": ["path"],
         "subject": "path",
     },
     "fs.write": {
         "description": "Write a text file (inside allowed roots; default: the sandbox workspace).",
         "type": "object",
-        "properties": {"path": {"type": "string"}, "content": {"type": "string"},
-                       "append": {"type": "boolean", "default": False}},
+        "properties": {"path": {"type": "string", "description": _P_PATH},
+                       "content": {"type": "string",
+                                   "description": "full text to write (the whole file, not a patch)"},
+                       "append": {"type": "boolean", "default": False,
+                                  "description": "append instead of overwriting (default: overwrite)"}},
         "required": ["path", "content"],
         "subject": "path",
     },
@@ -101,10 +113,11 @@ _LEGACY_SCHEMAS = {
                         "occurrence). Fails if the search string is not found or is "
                         "ambiguous (multiple matches with replace_all=false)."),
         "type": "object",
-        "properties": {"path": {"type": "string"},
+        "properties": {"path": {"type": "string", "description": _P_PATH},
                        "search": {"type": "string", "description": "exact text to find"},
                        "replace": {"type": "string", "description": "replacement text"},
-                       "replace_all": {"type": "boolean", "default": False}},
+                       "replace_all": {"type": "boolean", "default": False,
+                                       "description": "replace every occurrence (default: only if unambiguous)"}},
         "required": ["path", "search", "replace"],
         "subject": "path",
     },
@@ -121,8 +134,11 @@ _LEGACY_SCHEMAS = {
                         "127.0.0.1/localhost). For anything on the public internet "
                         "use the `web` tool instead. Host allowlist enforced."),
         "type": "object",
-        "properties": {"url": {"type": "string"}, "method": {"type": "string", "default": "GET"},
-                       "max_bytes": {"type": "integer", "default": 32768}},
+        "properties": {"url": {"type": "string", "description": "absolute http(s) URL to fetch"},
+                       "method": {"type": "string", "default": "GET",
+                                  "description": "HTTP method (default GET)"},
+                       "max_bytes": {"type": "integer", "default": 32768,
+                                     "description": "cap on returned body bytes (default 32768)"}},
         "required": ["url"],
         "subject": "url",
     },
@@ -130,7 +146,9 @@ _LEGACY_SCHEMAS = {
         "description": ("Fetch a page and extract readable text (lightweight; not a headless browser). "
                         "Disabled by default."),
         "type": "object",
-        "properties": {"url": {"type": "string"}, "max_bytes": {"type": "integer", "default": 32768}},
+        "properties": {"url": {"type": "string", "description": "absolute http(s) URL to fetch"},
+                       "max_bytes": {"type": "integer", "default": 32768,
+                                     "description": "cap on returned text bytes (default 32768)"}},
         "required": ["url"],
         "subject": "url",
     },
@@ -141,7 +159,11 @@ _LEGACY_SCHEMAS = {
                         "state. action=diagnose: live health (cpu/mem/disk/gpu/service/"
                         "ports). action=logs: this session's event history. "
                         "action=context: how full this session's context window is. "
-                        "action=tools: the tools enabled right now + their policy. "
+                        "action=tools: TOOL DISCOVERY — every enabled tool with its "
+                        "one-line description; add `query` to filter, or `tool` to get "
+                        "that tool's FULL input schema (properties, types, defaults, "
+                        "required). ALWAYS read the schema before the first use of a "
+                        "tool you have not called in this session. "
                         "Read-only, always safe, no external dependency."),
         "type": "object",
         "properties": {
@@ -152,6 +174,12 @@ _LEGACY_SCHEMAS = {
                         "description": "session id for action=logs|context (default: this run's session)"},
             "limit": {"type": "integer", "description": "max log rows for action=logs (default 100)"},
             "kind": {"type": "string", "description": "event kind filter for action=logs"},
+            "tool": {"type": "string",
+                     "description": ("action=tools: exact tool name, e.g. 'fs.read' — "
+                                     "returns its FULL input schema")},
+            "query": {"type": "string",
+                      "description": ("action=tools: substring filter over name + "
+                                      "description, e.g. 'pdf' or 'read'")},
         },
     },
     "reconcile": {
@@ -317,11 +345,13 @@ _LEGACY_SCHEMAS = {
             "action": {"type": "string",
                        "enum": ["store", "recall", "recent", "core", "set_core",
                                 "invalidate", "forget", "purge", "health"],
-                       "default": "recall"},
+                       "default": "recall",
+                       "description": "what to do (default: recall = search)"},
             "content": {"type": "string", "description": "text to save (action=store)"},
             "query": {"type": "string", "description": "what to look for (recall/invalidate/forget)"},
             "kind": {"type": "string", "description": "optional category filter"},
-            "limit": {"type": "integer", "default": 5},
+            "limit": {"type": "integer", "default": 5,
+                      "description": "max records to return (default 5)"},
             "source": {"type": "string", "description": "provenance tag (store)"},
             "ttl_secs": {"type": "number", "description": "optional lifetime in seconds (store)"},
             "target": {"type": "string", "description": "memory id to retire or delete"},
@@ -345,11 +375,15 @@ _LEGACY_SCHEMAS = {
                                 "review"],
                        "default": "propose"},
             "scope": {"type": "string",
-                      "enum": ["skill", "project", "global", "mine", "review"]},
-            "content": {"type": "string"},
+                      "enum": ["skill", "project", "global", "mine", "review"],
+                      "description": ("what the proposal targets: skill | project | "
+                                      "global | mine (distilled lessons) | review")},
+            "content": {"type": "string",
+                        "description": "the proposed rule/skill text (action=propose)"},
             "path": {"type": "string",
                      "description": "proposal folder (for verify/promote)"},
-            "reason": {"type": "string"},
+            "reason": {"type": "string",
+                       "description": "why this proposal exists (action=propose)"},
             "limit": {"type": "integer",
                       "description": "review: how many artifacts to audit (max 60)"},
             "model": {"type": "string",
@@ -370,8 +404,10 @@ _LEGACY_SCHEMAS = {
             "action": {"type": "string", "enum": ["search", "fetch"], "default": "search"},
             "query": {"type": "string", "description": "search query (action=search)"},
             "url": {"type": "string", "description": "page URL (action=fetch)"},
-            "max_results": {"type": "integer", "default": 5},
-            "max_bytes": {"type": "integer", "default": 8192},
+            "max_results": {"type": "integer", "default": 5,
+                            "description": "number of hits to return (action=search, default 5)"},
+            "max_bytes": {"type": "integer", "default": 8192,
+                          "description": "cap on returned page text (action=fetch, default 8192)"},
         },
         "required": [],
         "subject": "query",
@@ -387,7 +423,8 @@ _LEGACY_SCHEMAS = {
             "b": {"type": "string", "description": "second file path (action=files)"},
             "text_a": {"type": "string", "description": "first text (action=text)"},
             "text_b": {"type": "string", "description": "second text (action=text)"},
-            "context": {"type": "integer", "default": 3},
+            "context": {"type": "integer", "default": 3,
+                        "description": "unified-diff context lines (default 3)"},
         },
         "required": [],
         "subject": "a",
@@ -413,7 +450,8 @@ _LEGACY_SCHEMAS = {
         "properties": {
             "action": {"type": "string", "enum": ["list", "kill"], "default": "list"},
             "match": {"type": "string", "description": "cmdline substring filter (action=list)"},
-            "limit": {"type": "integer", "default": 40},
+            "limit": {"type": "integer", "default": 40,
+                      "description": "max rows to return (default 40)"},
             "pid": {"type": "integer", "description": "target pid (action=kill)"},
         },
         "required": [],
@@ -426,7 +464,8 @@ _LEGACY_SCHEMAS = {
         "properties": {
             "pattern": {"type": "string", "description": "glob pattern (supports **)"},
             "root": {"type": "string", "description": "directory to search (default: the workspace/repo)"},
-            "limit": {"type": "integer", "default": 200},
+            "limit": {"type": "integer", "default": 200,
+                      "description": "max paths to return (default 200)"},
         },
         "required": ["pattern"],
         "subject": "pattern",
@@ -458,11 +497,14 @@ _LEGACY_SCHEMAS = {
             "name": {"type": "string", "description": "artifact name to verify or promote to Nucleus"},
             "install_deps": {"type": "array", "items": {"type": "string"},
                              "description": "pip packages to install in .Matrix/venv (action=test)"},
-            "timeout_secs": {"type": "integer", "default": 60},
-            "keep_recent": {"type": "integer", "default": 0},
+            "timeout_secs": {"type": "integer", "default": 60,
+                             "description": "command timeout in seconds (default 60)"},
+            "keep_recent": {"type": "integer", "default": 0,
+                            "description": "keep only the N most recent artifacts (0 = keep all)"},
             "session": {"type": "string", "description": "session id to resume after warm restart"},
             "reason": {"type": "string", "description": "reason for warm restart"},
-            "dry_run": {"type": "boolean", "default": False},
+            "dry_run": {"type": "boolean", "default": False,
+                        "description": "report what would change without changing anything"},
         },
         "required": [],
         "subject": "action",
@@ -527,11 +569,17 @@ def _build_canonical_schemas():
             actions.append("search")
         sub_props = {pk: pv for pk, pv in props.items() if pk != "action"}
         sub_req = [r for r in (sch.get("required") or []) if r != "action"]
-        base_desc = str(sch.get("description") or "").split(".")[0].strip()
+        # JAG-513: keep the WHOLE description. Cutting at the first sentence threw
+        # away exactly the usage instructions a model needs (fs.read's line range,
+        # knowledge's "do not re-add an attached path", improve's review contract),
+        # so the canonical tool looked like a bare name in the prompt and in
+        # `self {action:"tools"}`.
+        base_desc = str(sch.get("description") or "").strip().rstrip(".")
         for act in actions:
             cname = "%s.%s" % (k, act)
             out[cname] = {
-                "description": "%s — %s (%s)." % (cname, base_desc, act),
+                "description": ("%s — %s (action=%s)." % (cname, base_desc, act)
+                                if base_desc else cname),
                 "type": "object",
                 "properties": dict(sub_props),
                 "required": list(sub_req),

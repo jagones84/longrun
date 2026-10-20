@@ -170,8 +170,20 @@ def context(session) -> dict:
 
 # ------------------------------------------------------------------- tools ----
 
-def tools_report() -> dict:
-    """What the harness can do right now: native tools + their policy + MCP."""
+def tools_report(tool=None, query=None) -> dict:
+    """What the harness can do right now: native tools + their policy + MCP.
+
+    JAG-513: this is the TOOL DISCOVERY surface the system prompt points at, so
+    it answers three questions and nothing more:
+      * no args          -> the compact INDEX (names + one-line descriptions);
+      * `query="words"`  -> the same index, filtered by name/description;
+      * `tool="fs.read"` -> that tool's FULL input schema (every property with
+        its type, default and required marker), which is what the model must read
+        BEFORE calling a tool it has not used in this session.
+
+    A name the registry does not know is an ERROR with near-miss suggestions —
+    never a silent empty answer, which is how the model used to start guessing.
+    """
     try:
         from longrun.tools import registry
         cat = registry.catalog()
@@ -185,10 +197,86 @@ def tools_report() -> dict:
         (external if "__" in name else native).append(name)
         if t.get("enabled", True):
             enabled.append(name)
-    return {"ok": True, "count": len(native), "external_count": len(external),
-            "native": sorted(native), "external": sorted(external),
-            "enabled_count": len(enabled),
-            "tools": {t["name"]: {"enabled": t.get("enabled", True),
-                                  "approval": t.get("approval"),
-                                  "description": (t.get("description") or "")[:120]}
-                      for t in cat if t.get("name")}}
+    index = {t["name"]: {"enabled": t.get("enabled", True),
+                         "origin": t.get("origin"),
+                         "approval": t.get("approval"),
+                         "description": (t.get("description") or "").strip()}
+             for t in cat if t.get("name")}
+    if tool:
+        want = str(tool).strip()
+        entry = index.get(want)
+        if entry is None:
+            # Accept a bare subtool name when it is UNIQUE ("read" -> fs.read) and
+            # otherwise suggest the real candidates instead of failing blind.
+            hits = [n for n in sorted(index)
+                    if n.split(".")[-1] == want or n.split("__")[-1] == want]
+            if len(hits) == 1:
+                want, entry = hits[0], index[hits[0]]
+            else:
+                near = hits or [n for n in sorted(index) if want.lower() in n.lower()]
+                return {"ok": False, "error": "unknown tool %r" % tool,
+                        "suggestions": near[:20],
+                        "hint": ("call self {action:'tools', query:'<words>'} to "
+                                 "search the registry")}
+        spec = registry.tool_spec(want) or {}
+        schema = spec.get("schema") or {}
+        props = schema.get("properties") or {}
+        return {"ok": True, "tool": {
+            "name": want,
+            "enabled": entry["enabled"],
+            "origin": entry["origin"],
+            "approval": entry["approval"],
+            "description": entry["description"],
+            "required": list(schema.get("required") or []),
+            "properties": props,
+            "example_args": _example_args(props, list(schema.get("required") or [])),
+            "roots": spec.get("roots"),
+        }, "hint": ("`args` is ALWAYS a JSON OBJECT: {\"action\":\"tool\","
+                    "\"tool\":\"%s\",\"args\":{...}}" % want)}
+    if query:
+        q = str(query).strip().lower()
+        index = {n: e for n, e in index.items()
+                 if q in n.lower() or q in (e.get("description") or "").lower()}
+        native = [n for n in native if n in index]
+        external = [n for n in external if n in index]
+        enabled = [n for n in enabled if n in index]
+    out = {"ok": True, "count": len(native), "external_count": len(external),
+           "native": sorted(native), "external": sorted(external),
+           "enabled_count": len(enabled), "tools": index}
+    if query:
+        out["query"] = query
+    out["hint"] = ("read a schema with self {action:'tools', tool:'<name>'} "
+                   "BEFORE calling a tool you have not used in this session")
+    return out
+
+
+def _example_args(props, required) -> dict:
+    """The smallest valid call: the REQUIRED args, else `action`, else the first two."""
+    if not isinstance(props, dict) or not props:
+        return {}
+    keys = [k for k in required if k in props]
+    if not keys and "action" in props:
+        keys = ["action"]
+    if not keys:
+        keys = list(props)[:2]
+    return {k: _example(props[k]) for k in keys}
+
+
+def _example(value) -> object:
+    """A short plausible value for a schema property, for the discovery example."""
+    if not isinstance(value, dict):
+        return "?"
+    if value.get("enum"):
+        return value["enum"][0]
+    if value.get("default") is not None:
+        return value["default"]
+    kind = value.get("type")
+    if kind == "integer" or kind == "number":
+        return 1
+    if kind == "boolean":
+        return False
+    if kind == "array":
+        return []
+    if kind == "object":
+        return {}
+    return "<%s>" % (value.get("description", "value").split(".")[0][:40] or "value")

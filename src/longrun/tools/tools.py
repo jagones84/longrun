@@ -780,6 +780,11 @@ def _self(args, run_id):
     """
     import subprocess as sp
     action = str((args or {}).get("action", "info") or "info").strip().lower()
+    # JAG-513: `tool`/`query` only make sense for discovery, so passing one is an
+    # unambiguous request for it — the model should not have to repeat `action`.
+    if (args or {}).get("tool") or (args or {}).get("query"):
+        if action in ("info", ""):
+            action = "tools"
     # JAG-347: report the LIVE version, not a stale hardcoded string - a wrong
     # self-report is exactly the kind of misleading guidance this review targets.
     try:
@@ -891,7 +896,8 @@ def _self(args, run_id):
         elif action in ("context", "ctx"):
             info["context"] = diag_mod.context((args or {}).get("session") or run_id)
         elif action in ("tools", "tooling"):
-            info["tools"] = diag_mod.tools_report()
+            info["tools"] = diag_mod.tools_report(tool=(args or {}).get("tool"),
+                                                  query=(args or {}).get("query"))
         else:
             info["error"] = ("unknown action %r — use info|diagnose|logs|context|tools" % action)
     info["action"] = action
@@ -1708,7 +1714,48 @@ _DISPATCH = {"shell": _shell, "shell.exec": _shell,
              "matrix": _matrix}
 
 
+def _missing_required(tool, args):
+    """REQUIRED arguments the call did not supply, read from the registry schema.
+
+    JAG-513: the tools answered a malformed call with whatever the implementation
+    happened to notice — `shell.exec {}` said "empty command", `fs.read` with no
+    `path` said "outside allowed roots". Neither told the model WHICH argument was
+    missing, so it retried blind. The schema already knows; use it.
+    """
+    try:
+        from longrun.tools import registry
+        schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
+        req = list(schema.get("required") or [])
+    except Exception:  # noqa: BLE001 — validation must never block a call
+        return []
+    got = args if isinstance(args, dict) else {}
+    return [r for r in req if got.get(r) is None or got.get(r) == ""]
+
+
+def _missing_args_reply(tool, missing):
+    """A failure that teaches: which args are required, their types, the example."""
+    try:
+        from longrun.tools import diag
+        full = (diag.tools_report(tool=tool) or {}).get("tool") or {}
+    except Exception:  # noqa: BLE001
+        full = {}
+    props = full.get("properties") or {}
+    return {"ok": False, "tool": tool, "exit_code": 64, "missing_args": missing,
+            "error": ("%s: missing REQUIRED argument(s) %s. Required: %s. "
+                      "Arg types: %s. Example call: %s"
+                      % (tool, ", ".join(repr(m) for m in missing),
+                         ", ".join(full.get("required") or missing),
+                         {m: (props.get(m) or {}).get("type") for m in missing},
+                         {"action": "tool", "tool": tool,
+                          "args": full.get("example_args") or {}})),
+            "schema": {"required": full.get("required") or missing,
+                       "properties": props}}
+
+
 def _dispatch_execute(tool, args, run_id=None):
+    missing = _missing_required(tool, args)
+    if missing:
+        return _missing_args_reply(tool, missing)
     fn = _DISPATCH.get(tool)
     injected_action = None
     if fn is None and "." in str(tool or "") and "__" not in str(tool or ""):

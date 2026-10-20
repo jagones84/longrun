@@ -50,11 +50,15 @@ def check(name, ok, detail=""):
 sp = _srv._system_prompt(None)
 
 # ---- A: tools are declared ----
-check("A1 prompt lists a tool registry", "Tool registry" in sp, "")
+# JAG-513: the prompt no longer DUMPS the registry; it carries the discovery
+# contract (`self {action:"tools"}`) plus the enabled NAMES, grouped.
+check("A1 prompt carries the tool-discovery contract",
+      "Tool discovery" in sp and 'action:"tools"' in sp, "")
 names = [t["name"] for t in registry.catalog()]
 check("A2 a `self` tool exists (self-knowledge)", "self" in names or "self.info" in names, str(names)[:140])
 check("A3 a `skills` tool exists", "skills" in names or "skills.list" in names, str(names)[:140])
-check("A4 registry block is non-empty", ("  - " in sp), "")
+check("A4 registry block lists the enabled names, grouped by namespace",
+      "fs{" in sp and "shell{" in sp, "")
 
 # ---- B: skills known WITHOUT a discovery round-trip ----
 check("B1 skills policy present", "installed skill library" in sp, "")

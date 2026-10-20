@@ -7,6 +7,38 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **Tools are self-describing and discoverable instead of dumped in the prompt,
+  and the Control/chat UI stops fighting the operator (JAG-513).**
+  - **The system prompt no longer carries the tool registry.** It carried every
+    subtool with its argument list, its approval policy and an 140-char synopsis —
+    10 000 chars that went stale and still left the model guessing the arguments.
+    It is now a 1 948-char **discovery contract** (args is always ONE JSON object;
+    read the schema before the first call) plus the ENABLED names grouped by
+    namespace, so nothing has to be invented. 80.5% smaller.
+  - **`self {action:"tools"}` is the discovery surface**, in the same shape as
+    skills: no args → the index with one-line descriptions; `query:"words"` →
+    filtered; `tool:"fs.read"` → the FULL input schema (every property, its type,
+    its default, the REQUIRED list, roots and one valid example call). An unknown
+    name answers with suggestions, never with an empty result.
+  - **Every tool and every argument now carries an authoritative description**
+    (`v510` fails otherwise), and a canonical `<ns>.<subtool>` keeps the WHOLE
+    usage text instead of its first sentence — the line-range contract of
+    `fs.read`, "do not re-add an attached path" in `knowledge`, the review
+    contract of `improve` were being cut away.
+  - **A call missing a REQUIRED argument now TEACHES**: `shell.exec {}` answers
+    `missing REQUIRED argument(s) 'command'` with the required list, the types and
+    a ready-to-send example, instead of "empty command".
+  - **Control ▸ AGENTS**: clicking another agent only SELECTS it — the
+    constellation carries the same relative viewport over instead of re-fitting
+    (a mode switch agent ⇄ all still re-fits); and the scope filter gained the
+    **No team** bucket the AGENTS table already grouped, understood by both the
+    client filter and `GET /api/constellation`.
+  - **Chat**: the chain-of-thought is collapsed by default, LIVE included (it used
+    to open itself, and was re-opened after every tool card), only the user opens
+    one, and the chat sidebar has a dedicated 🧠 control that collapses them all.
+  - **Composer**: `/` opens the command/skill menu ANYWHERE in the text, not only
+    when the whole input is a lone `/`. The picker replaces just that token, so
+    the rest of the message survives.
 - **Every config knob is now an OBJECT in the WebUI, and the improvement backlog is
   reviewed by an LLM (JAG-491).**
   - **Structured settings** (`src/longrun/core/settings.py` + `GET|POST /api/settings`):

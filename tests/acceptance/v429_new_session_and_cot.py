@@ -89,7 +89,13 @@ cbody = _fn(HTML, "function collapseAllTodos(")
 check("3b collapseAllTodos closes the groups",
       "_allGroups()" in cbody and "d.open = false" in cbody, "")
 check("3c collapseAllTodos ALSO closes chain-of-thought",
-      "details.think" in cbody, "")
+      "collapseThoughts()" in cbody, "")
+# JAG-513: the CoT has its own one-way control, so the groups can stay open.
+tbody = _fn(HTML, "function collapseThoughts(")
+check("3f a dedicated control collapses every chain-of-thought",
+      "details.think" in tbody and "d.open = false" in tbody, "")
+check("3g the CoT control is wired in the chat sidebar",
+      'data-call="collapseThoughts"' in HTML, "")
 
 ebody = _fn(HTML, "function expandAllTodos(")
 check("3d expandAllTodos re-opens the groups",

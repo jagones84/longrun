@@ -36,7 +36,7 @@ TOOL_SCHEMAS = {
     "sysprobe.snapshot": dict(TOOL_SCHEMA),
     "sysprobe.cpu": {"description": "[MATRIX experimental] Host CPU load & cores via /proc.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
     "sysprobe.mem": {"description": "[MATRIX experimental] Host RAM & swap usage via /proc/meminfo.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
-    "sysprobe.disk": {"description": "[MATRIX experimental] Filesystem capacity & free space.", "type": "object", "properties": {"path": {"type": "string"}}, "required": [], "approval": "auto"},
+    "sysprobe.disk": {"description": "[MATRIX experimental] Filesystem capacity & free space.", "type": "object", "properties": {"path": {"type": "string", "description": "Filesystem path to measure (default: cwd)."}}, "required": [], "approval": "auto"},
     "sysprobe.runtime": {"description": "[MATRIX experimental] Python/OS runtime snapshot.", "type": "object", "properties": {}, "required": [], "approval": "auto"},
 }
 

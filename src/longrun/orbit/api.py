@@ -95,8 +95,13 @@ def _constellation(team=None):
     jbs = _jobs.JOBS.list().get("jobs", [])
     tms = _teams.REGISTRY.list().get("teams", [])
     if team and team != "ALL":
-        member_ids = set(_teams.REGISTRY.members_of(team))
-        ags = [a for a in ags if a.get("id") in member_ids]
+        # JAG-513: `__none__` is the "No team" bucket — the stray agents the AGENTS
+        # table already groups separately. It is a real scope, not a team id.
+        if team == "__none__":
+            ags = [a for a in ags if not (a.get("teams") or [])]
+        else:
+            member_ids = set(_teams.REGISTRY.members_of(team))
+            ags = [a for a in ags if a.get("id") in member_ids]
         keep = {a.get("id") for a in ags}
         jbs = [j for j in jbs if keep & set(j.get("agents") or [])]
     graphs = {}

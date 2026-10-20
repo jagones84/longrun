@@ -441,7 +441,8 @@ CHAT_TOOL_PROMPT = (
     '{"action":"dispatch","agent":"<A-id>","goal":"<the subtask>"} to run a real turn '
     "in that teammate's own session (their role and model) and get their reply back. "
     "Prefer dispatching independent work to teammates over doing everything yourself. "
-    "Tool registry (allowlist):\n"
+    # JAG-513: no tool list here — the discovery contract + name index lives in
+    # api_v02.tool_context(), which is appended right after this block.
 )
 
 

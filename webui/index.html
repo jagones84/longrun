@@ -1693,6 +1693,7 @@
             aria-label="reveal the current session in the sessions panel">🎯</button>
     <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
     <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
+    <button class="ghost" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks">🧠</button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups">🏷</button>
   </aside>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
@@ -2894,8 +2895,15 @@ function collapseAllTodos() {
   // JAG-428: collapsing also tucks away the chain-of-thought blocks (the reasoning
   // noise). Deliberately ONE-WAY: ⊞ expands the GROUPS only and never re-opens the
   // CoT the user chose to hide.
-  const l = $("log"); if (l) [...l.querySelectorAll("details.think")].forEach(d => { d.open = false; });
+  collapseThoughts();
   _updateTreeTools();
+}
+/* JAG-513: the reasoning noise has its OWN control, so a user who keeps the task
+   groups open can still tuck the chain-of-thought away. One-way on purpose: CoT
+   blocks are collapsed by default (live included) and only the user opens one. */
+function collapseThoughts() {
+  const l = $("log");
+  if (l) [...l.querySelectorAll("details.think")].forEach(d => { d.open = false; });
 }
 /* JAG-457: the vertical tools bar holds the reveal-session control (visible with an
    open session) plus the todo expand/collapse/title buttons (shown only when groups
@@ -3189,7 +3197,9 @@ function toolCard(tool, args, ts) {
   // JAG-163: start a FRESH reasoning block after each tool card, so the model's
   // next `thought` renders BETWEEN this tool call and the next one (previously
   // every think delta piled into the first block, hiding the reasoning).
-  if (curThink) { const _t = curThink.querySelector("details"); if (_t) _t.open = true; }
+  // JAG-513: the block just ENDED, so it is CLOSED, never re-opened — a CoT is
+  // collapsed by default and only the user may open one.
+  if (curThink) { const _t = curThink.querySelector("details"); if (_t) _t.open = false; }
   curThink = null;
   scroll(); return d;
 }
@@ -3262,7 +3272,10 @@ function ensureThink() {
   if (!curThink) {
     _tidyThink();
     const d = document.createElement("div"); d.className = "msg ai";
-    d.innerHTML = `<div class="who">LONGRUN</div><details class="think" open><summary>🧠 chain-of-thought (live)…</summary><div class="t"></div></details>`;
+    // JAG-513: a live chain-of-thought is COLLAPSED like a persisted one. It used
+    // to open itself, so a reasoning model buried the actual answer under a wall
+    // of text that kept growing. Only the user opens it (click on the summary).
+    d.innerHTML = `<div class="who">LONGRUN</div><details class="think"><summary>🧠 chain-of-thought (live)…</summary><div class="t"></div></details>`;
     // JAG-219b: keep the chain-of-thought ABOVE its answer regardless of which
     // channel streams first. A reasoning-first model put it above the answer, but
     // when the answer arrived first the CoT was appended BELOW — the position
@@ -3836,6 +3849,8 @@ function _plusAction(a) {
     openTextModal();
   } else if (a === "commands") {
     inp.value = (inp.value.replace(/\s*$/, " ") + "/").replace(/^\s+/, "");
+    // JAG-513: the menu now reads the token at the CARET, so park it after the "/".
+    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
     inp.focus(); inp.dispatchEvent(new Event("input"));
   } else if (a === "skills") {
     openSkillPicker();
@@ -3984,6 +3999,7 @@ async function openSkillPicker() {
     if (!it || !it._name) return;
     const inp = $("inp");
     inp.value = (inp.value.replace(/\s*$/, " ") + "/" + it._name + " ").replace(/^\s+/, "");
+    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
     inp.focus(); inp.dispatchEvent(new Event("input"));
     toast("skill /" + it._name + " inserted", "ok");
   });
@@ -8745,9 +8761,29 @@ function skillsAutocomplete() {
   const inp = $("inp"); if (!inp) return;
   const box = $("slashMenu");
   _slashItems = []; _slashHi = 0;
-  const v = inp.value;
-  if (!v.startsWith("/") || v.includes(" ")) { box.hidden = true; return; }
-  const q = v.slice(1).toLowerCase();
+  const v = inp.value || "";
+  // JAG-513: the menu opens for a "/" ANYWHERE in the composer. It used to require
+  // the WHOLE input to be a lone command (`v.startsWith("/") && !v.includes(" ")`),
+  // so "/" typed after a word — the normal way to say "this word is a skill" —
+  // did nothing at all. Locate the slash token that contains the caret instead:
+  // it starts at a "/" that begins the text or follows whitespace.
+  const caret = (inp.selectionStart == null) ? v.length : inp.selectionStart;
+  const upto = v.slice(0, caret);
+  const hit = Math.max(upto.lastIndexOf(" /"), upto.lastIndexOf("\n/"),
+                       upto.startsWith("/") ? 0 : -1);
+  const tokenStart = hit < 0 ? -1 : (upto.charAt(hit) === "/" ? hit : hit + 1);
+  const raw = tokenStart < 0 ? "" : upto.slice(tokenStart + 1);
+  if (tokenStart < 0 || /[\s]/.test(raw)) { box.hidden = true; return; }
+  // Replacing the TOKEN (not the whole input) keeps the rest of the message.
+  const _apply = (text) => {
+    const before = v.slice(0, tokenStart), after = v.slice(caret);
+    inp.value = before + text + after;
+    const pos = (before + text).length;
+    try { inp.setSelectionRange(pos, pos); } catch (_) {}
+    box.hidden = true; inp.focus();
+    _slashItems = []; _slashHi = 0;
+  };
+  const q = raw.toLowerCase();
   const cmds = SLASH_COMMANDS.filter(c => c.cmd.startsWith(q));
   // JAG-465: the picker only ever offered the first EIGHT skills whose NAME started
   // with the query, so with 174 installed skills most of them were unreachable from
@@ -8776,9 +8812,9 @@ function skillsAutocomplete() {
     h.className = "remaining"; h.style.cssText = "padding:4px 10px;font-size:10px;text-transform:uppercase";
     h.textContent = "commands"; box.appendChild(h);
     cmds.forEach(c => addRow("/" + c.cmd, c.hint, () => {
-      if (c.cmd === "skills") { inp.value = ""; box.hidden = true; openPanel("skills"); }
-      else if (c.cmd === "compact") { inp.value = ""; box.hidden = true; compactNow(); }
-      else { inp.value = "/goal "; box.hidden = true; inp.focus(); }
+      if (c.cmd === "skills") { _apply(""); openPanel("skills"); }
+      else if (c.cmd === "compact") { _apply(""); compactNow(); }
+      else { _apply("/goal "); }
     }));
   }
   if (hits.length) {
@@ -8786,7 +8822,7 @@ function skillsAutocomplete() {
     h.className = "remaining"; h.style.cssText = "padding:4px 10px;font-size:10px;text-transform:uppercase";
     h.textContent = "skills · " + hits.length + (_more ? " of " + _matched.length : ""); box.appendChild(h);
     hits.forEach(s => addRow("/" + s.name, s.title || s.description || "", () => {
-      inp.value = "/" + s.name + " "; box.hidden = true; inp.focus();
+      _apply("/" + s.name + " ");
     }));
   }
   _slashHi = Math.min(_slashHi, Math.max(0, _slashItems.length - 1));

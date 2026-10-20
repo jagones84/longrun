@@ -315,12 +315,25 @@ _GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
 
 
 def tool_context():
-    """Render the enabled tools + their approval policy for the chat prompt."""
-    lines = ["Tool registry (allowlist — only enabled `<namespace>.<subtool>` tools may be called):"]
+    """Render the tool DISCOVERY contract + a compact name index for the prompt.
+
+    JAG-513: the prompt used to carry the whole registry (every subtool with its
+    argument list, its approval policy and a truncated description). That is a
+    large, always-stale block: the model read the SYNOPSIS and still guessed the
+    arguments, and a truncated description ("fs.read — Read a text file from the
+    harness filesystem") hid the line-range contract that matters. The registry is
+    now DISCOVERABLE at call time — the same shape skills use — so the prompt only
+    carries what the prompt alone can answer:
+      * the protocol (args is one JSON object, never positional/`key=value`),
+      * HOW to look a tool up (`self {action:"tools"}` / `{...,tool:"<name>"}`),
+      * the ENABLED NAMES, grouped by namespace, so nothing has to be invented.
+
+    Only ENABLED tools are listed: a disabled tool is not callable, and naming it
+    here used to make the model insist on it.
+    """
+    groups, singles = {}, []
     gw_collapsed = 0
     disabled = 0
-    ns_groups = {}
-    ns_order = []
     for t in registry.catalog():
         if not t["enabled"]:
             disabled += 1
@@ -331,36 +344,33 @@ def tool_context():
             if short not in _GATEWAY_KEEP:
                 gw_collapsed += 1
                 continue
-        if "." in nm and "__" not in nm and not nm.startswith("fs."):
+        if "." in nm and "__" not in nm:
             ns, sub = nm.split(".", 1)
-            if ns not in ns_groups:
-                ns_groups[ns] = {"subs": [], "props": [], "approval": t["approval"], "desc": t["description"]}
-                ns_order.append(("ns", ns))
-            ns_groups[ns]["subs"].append(sub)
-            for pk in ((t.get("inputSchema") or {}).get("properties") or {}).keys():
-                if pk not in ns_groups[ns]["props"]:
-                    ns_groups[ns]["props"].append(pk)
+            groups.setdefault(ns, []).append(sub)
         else:
-            ns_order.append(("single", t))
-    for kind, item in ns_order:
-        if kind == "single":
-            t = item
-            props = ", ".join((t["inputSchema"].get("properties") or {}).keys())
-            lines.append("  - %-9s(%s) approval=%s :: %s"
-                         % (t["name"], props, t["approval"], t["description"]))
-        else:
-            ns = item
-            g = ns_groups[ns]
-            subs = g["subs"]
-            label = ("%s.%s" % (ns, subs[0])) if len(subs) == 1 else ("%s.{%s}" % (ns, "|".join(subs)))
-            props = ", ".join(g["props"][:6])
-            raw_desc = str(g["desc"] or "")
-            if " — " in raw_desc:
-                raw_desc = raw_desc.split(" — ", 1)[1]
-            lines.append("  - %-9s(%s) approval=%s :: %s"
-                         % (label, props, g["approval"], raw_desc[:140]))
+            singles.append(nm)
+    lines = [
+        "## Tool discovery — read before you call",
+        "The index below is the ONLY allowlist: a tool that is not here (or not "
+        "enabled) cannot be called. Never invent a name and never guess an argument.",
+        '- `self {action:"tools", query:"<words>"}` → the tools matching those '
+        "words, each with its one-line description.",
+        '- `self {action:"tools", tool:"<name>"}` → that tool\'s FULL input '
+        "schema: every property, its type, its default and which ones are "
+        "REQUIRED. Read it BEFORE the first call of a tool you have not used in "
+        "this session — the schema is authoritative, your memory is not.",
+        "`args` is ALWAYS one JSON object — never positional, never "
+        "`key=value`, never a JSON string:",
+        '  {"action":"tool","tool":"fs.read","args":{"path":"src/foo.py",'
+        '"start_line":1,"end_line":60}}',
+        "Enabled tools, grouped by namespace (name{s sub-tools}):",
+    ]
+    for ns in sorted(groups):
+        lines.append("  %s{%s}" % (ns, ",".join(sorted(groups[ns]))))
+    for nm in sorted(singles):
+        lines.append("  " + nm)
     if gw_collapsed:
-        lines.append("  (+ %d more `%s*` tools enabled — reach them via "
+        lines.append("  (+ %d more `%s*` tools — reach them via "
                      "`%scatalog_search` -> `describe` -> `invoke`)"
                      % (gw_collapsed, _GATEWAY_PREFIX, _GATEWAY_PREFIX))
     if disabled:

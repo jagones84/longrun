@@ -106,7 +106,8 @@ with open(os.path.join(REPO, ".Matrix", "docs", "MANUAL.md"), encoding="utf-8") 
 check("E Matrix prompt, MANUAL.md, and api_v02.tool_context() expose <namespace>.<subtool> syntax",
       "<namespace>.<subtool>" in prompt_txt
       and "<namespace>.<subtool>" in manual_txt
-      and "Tool registry" in tctx and "memory." in tctx and "matrix." in tctx)
+      # JAG-513: the prompt index groups them as `namespace{a,b,c}`.
+      and "Tool discovery" in tctx and "memory{" in tctx and "matrix{" in tctx)
 
 print("---")
 okc = sum(results)
