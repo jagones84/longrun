@@ -9,6 +9,11 @@
 #
 # `chat`/`agent` keep a pattern because they intentionally follow whatever local
 # model is loaded; set an explicit `model:` to pin them (never a pattern).
+#
+# JAG-509: `model: "@chat"` on ANY role means "follow the model the chat turn is
+# using right now" (the session pin, else the harness default) — resolved at call
+# time, so it never goes stale. Settings ▸ Models offers it as the
+# "same as chat model (dynamic)" voice of the compaction picker.
 roles:
   chat:
     pattern: qwen

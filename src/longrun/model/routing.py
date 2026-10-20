@@ -45,6 +45,20 @@ DEFAULT_CONFIG = {
     "default_fallbacks": [],
 }
 
+# JAG-509: a role may FOLLOW the model the chat is using right now instead of a
+# fixed ref. `roles.<role>.model: "@chat"` stores that intent; the caller that
+# knows the session resolves it at call time (`httpapi._summarize_with_llm`). A
+# sentinel is never a real model ref, so it is kept OUT of `model_chain()` — the
+# failover chain must never try to send "@chat" to a provider.
+CHAT_MODEL_REF = "@chat"
+_DYNAMIC_REFS = (CHAT_MODEL_REF,)
+
+
+def is_dynamic_ref(ref):
+    """True when `ref` is a call-time sentinel, not a `provider:model` ref."""
+    return str(ref or "").strip().lower() in _DYNAMIC_REFS
+
+
 _lock = threading.RLock()
 _cache = None
 
@@ -206,6 +220,9 @@ def model_chain(role):
     (e.g. the subagent's OpenRouter GLM with a Meta contributor fallback). Every
     entry is a string from config — NOTHING is hardcoded — and returns [] when
     the role has no explicit model/fallbacks, so callers keep ``pick()``.
+
+    JAG-509: a call-time sentinel (``@chat``) is DROPPED — it is not a
+    ``provider:model`` ref, so it can never sit in the failover chain.
     """
     cfg = load_config()
     entry = (cfg.get("roles") or {}).get(role) or {}
@@ -214,7 +231,7 @@ def model_chain(role):
     out, seen = [], set()
     for ref in chain:
         ref = str(ref or "").strip()
-        if ref and ref not in seen:
+        if ref and ref not in seen and not is_dynamic_ref(ref):
             out.append(ref)
             seen.add(ref)
     return out

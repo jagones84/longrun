@@ -968,7 +968,7 @@ def prepare_session_for_turn(sess, model=None):
         return sess
 
 
-def _summarize_with_llm(messages, model=None, meta=None, cancel=None):
+def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=None):
     """JAG-103: let the MODEL do the compaction.
 
     Summarize the OLDER turns into one faithful, compact block (decisions, facts,
@@ -1015,10 +1015,17 @@ def _summarize_with_llm(messages, model=None, meta=None, cancel=None):
         rllm.SUMMARIZER_INSTRUCTION.rstrip() + "\n\nTRANSCRIPT:\n" + transcript)
     # JAG-160: honour an explicitly pinned summarizer model (Settings -> Models)
     # before falling back to pattern-based routing for the "summarizer" role.
+    # JAG-509: `model: "@chat"` is the DYNAMIC choice — compaction then runs on
+    # whatever model the chat turn is using right now (the session pin, else the
+    # harness default), so the summary is produced by the same LLM as the chat.
     if not model:
         try:
             from longrun.model import routing as _routing
-            model = _routing.role_model("summarizer")
+            pinned = _routing.role_model("summarizer")
+            if pinned and _routing.is_dynamic_ref(pinned):
+                model = _routing.turn_model(session) if session else None
+            else:
+                model = pinned
         except Exception:  # noqa: BLE001
             model = None
     try:
@@ -1260,6 +1267,7 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     tok = None if already_active else _ev.turn_begin(session)
     try:
         kwargs = {"summarizer": lambda old: _summarize_with_llm(old, meta=meta,
+                                                               session=session,
                                                                cancel=_cancelled),
                   "force": manual}
         if keep_recent is not None:

@@ -8970,12 +8970,17 @@ async function loadRouting() {
     _compactRef = curRef;
     const groups = {};
     models.forEach(m => { (groups[m.provider] = groups[m.provider] || { name: m.pname, items: [] }).items.push(m); });
-    sel.innerHTML = Object.keys(groups).map(pid => {
+    const rosterOptions = Object.keys(groups).map(pid => {
       const g = groups[pid];
       return '<optgroup label="' + _attr(g.name) + '">' + g.items.map(m =>
         '<option value="' + _attr(m.ref) + '"' + (m.ref === curRef ? " selected" : "") + '>' +
         esc(m.ref) + (m.available ? "" : " · no key") + '</option>').join("") + '</optgroup>';
     }).join("");
+    // JAG-509: the first voice follows the chat model DYNAMICALLY — compaction then
+    // runs on whatever model the chat turn is using right now, instead of a ref
+    // that has to be kept in sync by hand.
+    sel.innerHTML = '<option value="@chat">same as chat model (dynamic)</option>' + rosterOptions;
+    if (curRef === "@chat") sel.value = "@chat";
     if (!curRef && cur.pattern) {
       // legacy config: preselect the first ref whose alias matches the pattern
       const pat = String(cur.pattern).toLowerCase();
@@ -8996,7 +9001,9 @@ async function saveCompactionModel() {
   const r = await api("POST", "/api/routing", { roles: { summarizer: { model: m } } });
   _compactRef = m;
   const el = $("compactionResult");
-  if (el) el.textContent = r.error ? ("error: " + r.error) : ("saved: summarizer = " + m);
+  if (el) el.textContent = r.error ? ("error: " + r.error)
+    : (m === "@chat" ? "saved: compaction follows the chat model"
+                     : ("saved: summarizer = " + m));
 }
 /* JAG-451: Settings > Subagents — model + failover (routing.yaml), depth
    (tools.yaml), parallel cap + role briefs (config/subagents.yaml). */

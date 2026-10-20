@@ -95,7 +95,8 @@ check("A5 the team model policy is not a hardcoded literal in Python",
 
 # ---- B) Stop aborts a running compaction (transcript untouched) --------------
 _orig_sum = httpapi._summarize_with_llm
-httpapi._summarize_with_llm = lambda messages, model=None, meta=None, cancel=None: "S"
+httpapi._summarize_with_llm = (lambda messages, model=None, session=None, meta=None,
+                               cancel=None: "S")
 SID = "v458abort"
 _sess = S.get_or_create_session(SID)
 for _i in range(12):
@@ -116,7 +117,8 @@ check("B2 the abort path never claims a summary",
       _res.get("summary") is None and _res.get("compacted") == 0, str(_res)[:120])
 
 # ---- C) a MANUAL compaction always leaves a visible card ---------------------
-httpapi._summarize_with_llm = lambda messages, model=None, meta=None, cancel=None: "S"
+httpapi._summarize_with_llm = (lambda messages, model=None, session=None, meta=None,
+                               cancel=None: "S")
 SID2 = "v458card"
 _s2 = S.get_or_create_session(SID2)
 for _i in range(10):
@@ -171,6 +173,58 @@ with mock.patch.object(A, "model_supports_vision", return_value=False):
 check("F3 a text-only model is told the truth (it cannot see the image)",
       isinstance(_txt[-1]["content"], str) and "cannot" in _txt[-1]["content"]
       and "[harness]" in _txt[-1]["content"])
+
+# ---- G) compaction can follow the CHAT model dynamically (JAG-509) ----------
+# The operator asked for a "same as chat model" voice in the compaction picker, so
+# compaction uses whichever model the chat turn is using right now.
+check("G1 routing defines the chat-following sentinel and keeps it out of the chain",
+      getattr(routing, "CHAT_MODEL_REF", None) == "@chat"
+      and routing.is_dynamic_ref("@chat") is True
+      and routing.is_dynamic_ref("openrouter:a/b") is False)
+_prev_load = routing.load_config
+routing.load_config = lambda reload=False: {
+    "roles": {"summarizer": {"model": "@chat", "fallbacks": ["openrouter:backup"]}},
+    "default_fallbacks": []}
+try:
+    _sentinel_chain = routing.model_chain("summarizer")
+finally:
+    routing.load_config = _prev_load
+check("G2 the sentinel is never a literal fallback candidate",
+      _sentinel_chain == ["openrouter:backup"], str(_sentinel_chain))
+
+_used: dict = {}
+_prev_swf, _prev_role_model, _prev_turn_model = (
+    httpapi.stream_with_fallback, routing.role_model, routing.turn_model)
+httpapi.stream_with_fallback = lambda msgs, model, role, on_delta, **kw: (
+    _used.update(model=model, role=role) or ("SUMMARY", "", model))
+routing.role_model = lambda role: "@chat"
+routing.turn_model = lambda sess=None, model=None: "openrouter:chat-live"
+try:
+    _dyn_ok = True
+    try:
+        _dyn = httpapi._summarize_with_llm(
+            [{"role": "user", "content": "old turns"}], meta={}, session="sess-9")
+    except TypeError as _e:
+        _dyn_ok, _dyn = False, "TypeError: %s" % _e
+    _dyn_used = dict(_used)
+    _used.clear()
+    routing.role_model = lambda role: "openrouter:pinned-compaction"
+    routing.turn_model = lambda sess=None, model=None: "openrouter:chat-live"
+    _pinned = httpapi._summarize_with_llm(
+        [{"role": "user", "content": "old turns"}], meta={}, session="sess-9")
+    _pinned_used = dict(_used)
+finally:
+    httpapi.stream_with_fallback = _prev_swf
+    routing.role_model, routing.turn_model = _prev_role_model, _prev_turn_model
+check("G3 the sentinel resolves to the model the CHAT is using right now",
+      _dyn_ok and _dyn_used.get("model") == "openrouter:chat-live"
+      and _dyn_used.get("role") == "summarizer" and _dyn == "SUMMARY",
+      "used=%s dyn=%s" % (_dyn_used.get("model"), _dyn))
+check("G4 an explicitly pinned compaction model is still used verbatim",
+      _pinned_used.get("model") == "openrouter:pinned-compaction" and _pinned == "SUMMARY",
+      str(_pinned_used.get("model")))
+check("G5 the Models compaction picker offers the dynamic chat option",
+      '"@chat"' in _html and "same as chat model" in _html)
 
 print("---")
 okc = sum(results)
