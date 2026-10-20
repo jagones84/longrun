@@ -293,7 +293,9 @@ function buildDock() {
     const t = state.treeEl;
     t.hidden = !t.hidden;
     localStorage.setItem("sf_ed_tree", t.hidden ? "0" : "1");
-    if (!t.hidden && !t.childElementCount) loadTree();
+    // JAG-504: the pane now always holds the search input + hit box, so
+    // `childElementCount` is never 0 — ask for an actual TREE ROW instead.
+    if (!t.hidden && !t.querySelector(".ed-trow")) loadTree();
   };
   dock.querySelector(".ed-refresh").onclick = () => refreshAll();
 
@@ -1110,7 +1112,7 @@ async function revealInTree(path, opts) {
   } else if (state.treeEl.hidden) {
     return;                                    // the pane is closed: nothing to reveal
   }
-  if (!state.treeEl.childElementCount) await loadTree();
+  if (!state.treeEl.querySelector(".ed-trow")) await loadTree();   // JAG-504: rows, not children
   let hit = _treeRow(path);
   if (!hit) { await _expandTo(path); hit = _treeRow(path); }
   if (!hit) {
