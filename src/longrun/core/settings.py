@@ -10,7 +10,7 @@ files that have no bespoke panel (and the keys the bespoke panels do not show):
 
   * ``index.yaml``            chunking, size caps, knowledge knobs
   * ``compaction.yaml``       summarizer input/output caps + instruction
-  * ``routing.yaml``          every role (model / pattern / fallbacks)
+  * ``routing.yaml``          role patterns/models/fallbacks not owned by Subagents
   * ``decisions.yaml``        decision layer + speculative execution
   * ``hooks.yaml``            the lifecycle-hook table
   * ``mcp_clients.yaml``      env_files (clients are the MCP panel's job)
@@ -153,6 +153,10 @@ SECTIONS = [
 # Settings owned by a dedicated panel: file -> {path prefix: panel}.
 # A leaf is covered when it is under one of these prefixes (or its exact path).
 DEDICATED = {
+    "routing.yaml": {
+        "roles.subagent.model": "Settings ▸ Subagents",
+        "roles.subagent.fallbacks": "Settings ▸ Subagents",
+    },
     "tools.yaml": {
         "sandbox": "Settings ▸ Tools & approvals",
         "approvals": "Settings ▸ Tools & approvals",
@@ -286,7 +290,7 @@ def _coerce(field, raw):
 
 
 def _routing_sections():
-    """One section per configured role, so a new role appears without code."""
+    """Expose role routing without duplicating the Subagents model controls."""
     try:
         from longrun.model import routing
         cfg = routing.load_config()
@@ -295,12 +299,14 @@ def _routing_sections():
     roles = cfg.get("roles") if isinstance(cfg.get("roles"), dict) else {}
     fields = []
     for name, spec in roles.items():
-        fields.append(_f("roles.%s.model" % name, "%s · model" % name, "text",
-                         placeholder="openrouter:vendor/model"))
+        if name != "subagent":
+            fields.append(_f("roles.%s.model" % name, "%s · model" % name, "text",
+                             placeholder="openrouter:vendor/model"))
         fields.append(_f("roles.%s.pattern" % name, "%s · pattern" % name, "text",
                          help="Local roster substring (chat/agent only)."))
-        fields.append(_f("roles.%s.fallbacks" % name, "%s · fallbacks" % name,
-                         "strlist"))
+        if name != "subagent":
+            fields.append(_f("roles.%s.fallbacks" % name, "%s · fallbacks" % name,
+                             "strlist"))
     fields.append(_f("default_fallbacks", "global fallbacks", "strlist"))
     sec = dict(_FILE_SECTIONS["routing.yaml"])
     sec["fields"] = fields

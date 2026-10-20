@@ -216,10 +216,109 @@ finally:
     K._cfg.embed_model = _old_embed_model
 session_results = K.search("amber quartz", session="sid-A", k=5)
 global_results = K.search("amber quartz", k=5)
+listed = toolmod._knowledge({"action": "list_notebooks"}, "sid-A")
+listed_nbs = listed.get("notebooks", [])
+search_tool = toolmod._knowledge({"action": "search", "query": "amber quartz"}, "sid-A")
+read_tool = toolmod._knowledge(
+    {"action": "read_source", "ref": attached_path}, "sid-A")
+limited_read = toolmod._knowledge(
+    {"action": "read_source", "ref": attached_path, "max_chars": 10}, "sid-A")
+other_session_read = toolmod._knowledge(
+    {"action": "read_source", "ref": attached_path}, "sid-B")
+_old_embed_model = K._cfg.embed_model
+try:
+    K._cfg.embed_model = lambda: ""
+    large_note = K.add_text(None, "Large session note",
+                            "START " + ("body " * 10000) + " END",
+                            session_id="sid-A")
+finally:
+    K._cfg.embed_model = _old_embed_model
+bounded_read = K.read_source(
+    large_note.get("ref"), session="sid-A", max_chars=64)
+spoofed_session_list = toolmod._knowledge(
+    {"action": "list_notebooks", "session": "sid-A"}, "sid-B")
+spoofed_session_search = toolmod._knowledge(
+    {"action": "search", "session": "sid-A", "query": "amber quartz"}, "sid-B")
+cross_session_search = toolmod._knowledge(
+    {"action": "search", "notebook": root_nb, "query": "amber quartz"}, "sid-B")
+spoofed_session_read = toolmod._knowledge(
+    {"action": "read_source", "session": "sid-A", "ref": attached_path}, "sid-B")
+spoofed_session_write = toolmod._knowledge(
+    {"action": "add_text", "session": "sid-A", "title": "foreign note",
+     "text": "must not be written"}, "sid-B")
+cross_session_write = toolmod._knowledge(
+    {"action": "add_text", "notebook": root_nb, "title": "foreign note",
+     "text": "must not be written"}, "sid-B")
 db = K._connect()
 source_count = db.execute("SELECT count(*) AS n FROM sources WHERE ref=?",
                           (attached_path,)).fetchone()["n"]
 db.close()
+check("3f1 Knowledge lists the current session notebook without exposing other sessions",
+      any(n.get("id") == root_nb and n.get("is_session") is True
+          and n.get("owner") == "sid-A" for n in listed_nbs)
+      and all(n.get("owner") != "sid-B" for n in listed_nbs if n.get("is_session")),
+      {"notebooks": listed_nbs})
+check("3f2 session search returns the full matched chunk, not only a snippet",
+      any("Unique session attachment marker: amber quartz." in r.get("text", "")
+          for r in search_tool.get("results", []))
+      and "Unique session attachment marker: amber quartz." in search_tool.get("stdout", "")
+      and search_tool.get("scope") == "current session notebook",
+      {"results": search_tool.get("results", [])})
+check("3f2a direct Knowledge search keeps the compact snippet-only response by default",
+      all("text" not in r for r in session_results.get("results", [])),
+      session_results.get("results", []))
+check("3f3 read_source returns the complete indexed attachment from this session",
+      read_tool.get("ok") and
+      "Unique session attachment marker: amber quartz." in read_tool.get("text", "")
+      and read_tool.get("truncated") is False,
+      read_tool)
+check("3f4 read_source enforces its character limit and marks truncation",
+      limited_read.get("ok") and limited_read.get("truncated") is True
+      and len(limited_read.get("text", "")) == 10,
+      limited_read)
+check("3f4a read_source bounds a multi-chunk document and reports complete stats",
+      bounded_read.get("ok") and bounded_read.get("truncated") is True
+      and bounded_read.get("chunks") == large_note.get("chunks")
+      and bounded_read.get("total_chars") > 64
+      and len(bounded_read.get("text", "")) == 64
+      and bounded_read.get("text", "").startswith("START "),
+      bounded_read)
+check("3f5 a session cannot read another session's indexed attachment",
+      not other_session_read.get("ok") and
+      "not found" in other_session_read.get("error", ""),
+      other_session_read)
+check("3f6 a tool cannot override its trusted run_id with another session id",
+      all(not result.get("ok") and
+          "session must match the current chat" in result.get("error", "")
+          for result in (spoofed_session_list, spoofed_session_search,
+                         spoofed_session_read, spoofed_session_write)),
+      {"list": spoofed_session_list, "search": spoofed_session_search,
+       "read": spoofed_session_read, "write": spoofed_session_write})
+check("3f7 an explicit notebook cannot expose another session's search results",
+      not cross_session_search.get("ok") and
+      "outside the current session" in cross_session_search.get("error", ""),
+      cross_session_search)
+check("3f8 an explicit notebook cannot be modified by another session",
+      not cross_session_write.get("ok") and
+      "outside the current session" in cross_session_write.get("error", ""),
+      cross_session_write)
+
+
+class _CollisionDigest:
+    """Return session A's digest to simulate a session notebook ID collision."""
+    def hexdigest(self):
+        return root_nb.split("-", 1)[1]
+
+
+_old_sha1 = K.hashlib.sha1
+K.hashlib.sha1 = lambda _value: _CollisionDigest()
+try:
+    collision_search = K.search("amber quartz", session="sid-B", k=5)
+finally:
+    K.hashlib.sha1 = _old_sha1
+check("3f9 a colliding session notebook ID fails closed on owner mismatch",
+      not collision_search.get("results"),
+      collision_search.get("results", []))
 check("3f knowledge.add_source defaults to the chat session notebook",
       add1.get("ok") and add1.get("added") == 1
       and add1.get("results", [{}])[0].get("notebook") == root_nb

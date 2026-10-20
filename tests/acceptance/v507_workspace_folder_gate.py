@@ -147,7 +147,7 @@ check("every save/apply button of the settings class is gated the same way",
 check("every gated panel enrolls the gate when it loads and re-bases after a save",
       UI.count("gateEnroll(") >= 20
       and 'gateEnroll($("wsCard"))' in load_rules
-      and "gateEnroll(el.querySelector(\"#sbxCard\"))" in UI
+      and 'gateEnroll(sandboxEl.querySelector("#sbxCard"))' in UI
       and "gateEnroll(box);" in UI
       and UI.count("re-base after a save") >= 5,
       "%d gateEnroll calls" % UI.count("gateEnroll("))

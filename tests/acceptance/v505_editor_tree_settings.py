@@ -67,7 +67,7 @@ check("A10 a session switch does not wipe the reveal-built tree",
 # ---- B) Settings categories: the operator's order, no duplicates -------------
 m = re.search(r"const SETTINGS_CATS = \[(.*?)\n\];", idx, re.S)
 cats = re.findall(r'\[\s*"([a-z]+)"\s*,', m.group(1)) if m else []
-want = ["appearance", "keys", "models", "subagents", "tools", "mcp", "skills",
+want = ["appearance", "keys", "models", "subagents", "tools", "sandbox", "mcp", "skills",
         "rules", "knowledge", "improvement", "diagnostics", "hooks", "harness", "config"]
 check("B1 SETTINGS_CATS is parseable", bool(cats), "found %r" % (cats,))
 check("B2 categories follow the operator's order",
@@ -79,7 +79,6 @@ check("B4a Hooks is a dedicated panel immediately above Harness",
       "harness" in cats and cats.index("hooks") + 1 == cats.index("harness")
       and '"file": "hooks.yaml", "id": "hooks", "panel": "hooks"' in
       _read("src", "longrun", "core", "settings.py"))
-
 # no duplicate subagent picker inside Models; the single one lives in Subagents
 def _cat_block(name):
     start = idx.find('data-cat="%s"' % name)
@@ -88,6 +87,21 @@ def _cat_block(name):
     nxt = idx.find('class="sw-cat"', start)
     return idx[start:nxt if nxt > start else len(idx)]
 
+
+check("B4b Sandbox has its own Settings panel immediately below Tools & approvals",
+      "sandbox" in cats and cats.index("sandbox") == cats.index("tools") + 1
+      and 'data-cat="sandbox"' in idx
+      and 'id="sandboxPanel"' in _cat_block("sandbox")
+      and 'id="sbxBackend"' not in _cat_block("tools")
+      and "sandboxEl.innerHTML = sbCard" in idx
+      and 'gateEnroll(sandboxEl.querySelector("#sbxCard"))' in idx)
+check("B4c routing.yaml explains its raw-backup role and structured ownership",
+      "Why routing.yaml is listed" in idx
+      and "Settings → Subagents owns" in idx
+      and "This editor is the raw advanced fallback, not a second config." in idx)
+check("B4d Subagents no longer claims a duplicate Models picker",
+      "No duplicate model/fallback controls live in Models." in idx
+      and "the same value as the Models picker" not in idx)
 
 models = _cat_block("models")
 subs = _cat_block("subagents")

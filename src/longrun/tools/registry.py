@@ -192,24 +192,32 @@ _LEGACY_SCHEMAS = {
     "knowledge": {
         "description": ("Knowledge has shared notebooks and a private notebook for this chat. "
                         "Binary documents attached through Chat > Attach files are auto-indexed "
-                        "once into the session notebook. For an attached file, use `search` "
-                        "first; do NOT call `add_source` for the same path again. Without an "
-                        "explicit notebook, add_source/add_text/import target this session; "
-                        "name a notebook explicitly to add shared content. "
+                        "once into the session notebook. `list_notebooks` shows shared notebooks "
+                        "and only this chat's session notebook. `search` returns full matching "
+                        "chunks from the session first, then shared notebooks; use `read_source` "
+                        "to read the full extracted document (bounded by `max_chars`). Do NOT "
+                        "call `add_source` for an attached path again. Without an explicit "
+                        "notebook, add_source/add_text/import target this session; name a "
+                        "notebook explicitly to add shared content. "
                         "action=list_notebooks | create_notebook | add_source | add_text | "
-                        "search | discover (web search -> candidate URLs) | import (URLs -> a "
-                        "notebook) | status."),
+                        "search | read_source | discover (web search -> candidate URLs) | "
+                        "import (URLs -> a notebook) | status."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["search", "list_notebooks", "create_notebook", "add_source",
-                                "add_text", "discover", "import", "status"],
+                       "enum": ["search", "read_source", "list_notebooks", "create_notebook",
+                                "add_source", "add_text", "discover", "import", "status"],
                        "default": "search"},
             "notebook": {"type": "string",
-                         "description": "optional explicit shared notebook id; omit to use this session notebook for writes"},
-            "session": {"type": "string", "description": "optional session scope (defaults to the current chat)"},
+                         "description": "optional notebook id/name; omit to use this session for reads and writes"},
+            "session": {"type": "string",
+                        "description": "optional assertion only; must match the current chat session"},
             "name": {"type": "string", "description": "notebook name (action=create_notebook)"},
             "query": {"type": "string", "description": "search text / discovery query"},
+            "ref": {"type": "string",
+                    "description": "exact indexed source path or source id (action=read_source)"},
+            "max_chars": {"type": "integer", "default": 20000,
+                          "description": "maximum extracted source chars to return (action=read_source; capped at 50000)"},
             "refs": {"type": "string", "description": "one new URL/path per line; existing session paths are skipped"},
             "title": {"type": "string", "description": "note title (action=add_text)"},
             "text": {"type": "string", "description": "pasted note body (action=add_text)"},

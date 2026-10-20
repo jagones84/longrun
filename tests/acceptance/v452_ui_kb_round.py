@@ -96,16 +96,17 @@ check("C4 a single org-chart click also focuses the agent in the Agents panel",
 
 # ---- D) session-scoped knowledge retrieval --------------------------------
 check("D1 the knowledge tool searches the session notebook first",
-      "kb.search(query, None, k=k, kind=args.get(\"kind\"), session=sid)" in tools_src
-      and "sid = str(args.get(\"session\")" in tools_src)
+      "session=sid,\n                        include_text=True)" in tools_src
+      and "sid = str(run_id or \"\").strip() or None" in tools_src
+      and "session must match the current chat" in tools_src)
 check("D2 it falls back to a global search when the session has no hit",
       "if not res.get(\"results\"):" in tools_src
-      and "kb.search(query, None, k=k, kind=args.get(\"kind\"))" in tools_src)
+      and "kb.search(query, None, k=k, kind=args.get(\"kind\"), include_text=True)" in tools_src)
 check("D3 an explicit notebook still wins",
-      "res = kb.search(query, notebook, k=k, kind=args.get(\"kind\"))" in tools_src)
+      "res = kb.search(query, notebook, k=k, kind=args.get(\"kind\"), include_text=True)" in tools_src)
 check("D4 the tool schema says chat attachments are session-indexed and must not be re-added",
-      "auto-indexed " in reg_src and "session notebook" in reg_src
-      and "do NOT call `add_source`" in reg_src)
+      "auto-indexed" in reg_src and "session notebook" in reg_src
+      and "do not" in reg_src.lower() and "read_source" in reg_src)
 check("D5 the attach preamble tells the model to use the knowledge tool",
       "ALREADY indexed into THIS session's knowledge" in idx
       and 'action":"search"' in idx)

@@ -1418,26 +1418,48 @@ def _knowledge(args, run_id):
     """JAG-401: shared notebooks plus per-session attachment knowledge.
 
     action=list_notebooks | create_notebook | add_source | add_text | search |
-    discover (web -> candidate URLs) | import (URLs -> a notebook) | status.
+    read_source | discover (web -> candidate URLs) | import (URLs -> a notebook) | status.
     """
     from longrun.memory import knowledge as kb
     args = args or {}
     action = (args.get("action") or "search").lower()
+    sid = str(run_id or "").strip() or None
+    requested_session = str(args.get("session") or "").strip()
+    if requested_session and requested_session != (sid or ""):
+        return {"ok": False, "exit_code": 1,
+                "error": "session must match the current chat",
+                "stdout": "session must match the current chat"}
+    notebook_ref = str(args.get("notebook") or "").strip()
+    if notebook_ref:
+        selected_session_nb = next(
+            (n for n in kb.list_sessions()
+             if notebook_ref in (n.get("id"), n.get("name"))),
+            None,
+        )
+        if selected_session_nb and selected_session_nb.get("owner") != sid:
+            return {"ok": False, "exit_code": 1,
+                    "error": "notebook is outside the current session",
+                    "stdout": "notebook is outside the current session"}
     if action in ("status", "info"):
         return {"ok": True, "exit_code": 0, "stdout": "knowledge: %s" % kb.status()}
     if action in ("notebooks", "list_notebooks"):
-        nbs = kb.list_notebooks()
+        global_nbs = kb.list_notebooks()
+        session_nbs = [n for n in kb.list_sessions()
+                       if sid and n.get("owner") == sid]
+        nbs = ([dict(n, scope="shared") for n in global_nbs] +
+               [dict(n, scope="current session") for n in session_nbs])
         # JAG-427 fix: show the notebook ID — `search` scopes by ID, so a list that
         # omits it forces the model to guess (it guessed the NAME -> zero hits).
         return {"ok": True, "exit_code": 0, "notebooks": nbs,
-                "stdout": "\n".join("%s  id=%s  (%s sources)" % (n["name"], n["id"], n["sources"])
+                "global_notebooks": global_nbs, "session_notebooks": session_nbs,
+                "stdout": "\n".join("%s  id=%s  (%s sources; %s)" %
+                                    (n["name"], n["id"], n["sources"], n["scope"])
                                     for n in nbs) or "(no notebooks)"}
     if action == "create_notebook":
         r = kb.create_notebook(args.get("name"))
         return {"ok": bool(r.get("ok")), "notebooks": kb.list_notebooks(),
                 "stdout": "notebook %s" % r.get("name"), **r}
     if action == "add_text":
-        sid = str(args.get("session") or run_id or "").strip() or None
         session_scope = sid if not args.get("notebook") else None
         r = kb.add_text(args.get("notebook"), args.get("title"),
                         args.get("text") or args.get("content"),
@@ -1445,7 +1467,6 @@ def _knowledge(args, run_id):
         return {"ok": bool(r.get("ok")), "stdout": "stored %s chunk(s)" % r.get("chunks"), **r}
     if action in ("add_source", "add"):
         vals = args.get("refs") or args.get("ref") or args.get("url") or args.get("query") or ""
-        sid = str(args.get("session") or run_id or "").strip() or None
         session_scope = sid if not args.get("notebook") else None
         r = kb.add_sources(args.get("notebook"), vals, session_id=session_scope)
         return {"ok": bool(r.get("ok")), "added": r.get("added"),
@@ -1457,34 +1478,70 @@ def _knowledge(args, run_id):
     if action == "discover":
         return kb.discover(args.get("query") or args.get("q"), args.get("n", 5))
     if action == "import":
-        sid = str(args.get("session") or run_id or "").strip() or None
         session_scope = sid if not args.get("notebook") else None
         return kb.import_candidates(args.get("notebook"),
                                     args.get("urls") or args.get("refs"),
                                     session_id=session_scope)
+    if action == "read_source":
+        result = kb.read_source(
+            args.get("ref") or args.get("source"),
+            notebook=args.get("notebook"),
+            session=sid,
+            max_chars=args.get("max_chars") or 20000,
+        )
+        if not result.get("ok"):
+            return {"ok": False, "exit_code": 1, "stdout": result.get("error", ""),
+                    **result}
+        header = ("%s · %s chunks · %s/%s chars%s" %
+                  (result.get("title") or result.get("ref"), result["chunks"],
+                   min(result["total_chars"], result["max_chars"]),
+                   result["total_chars"], " · truncated" if result["truncated"] else ""))
+        return {"ok": True, "exit_code": 0, "stdout": header + "\n\n" + result["text"],
+                **result}
     query = args.get("query") or args.get("q") or ""
     if not str(query).strip():
         return {"ok": False, "exit_code": 1, "error": "query required for action=search"}
     try:
-        k = int(args.get("k") or 8)
+        k = max(1, min(12, int(args.get("k") or 8)))
     except (TypeError, ValueError):
         k = 8
     # JAG-451: docs attached to a chat are auto-ingested into the session's own
-    # hidden notebook. Query THAT first (so an attached PDF is retrievable without
+    # notebook. Query THAT first (so an attached PDF is retrievable without
     # raw text extraction), then fall back to the global notebooks. An explicitly
     # named notebook still wins.
     notebook = args.get("notebook")
-    sid = str(args.get("session") or "").strip() or str(run_id or "").strip()
     if not notebook and sid:
-        res = kb.search(query, None, k=k, kind=args.get("kind"), session=sid)
+        res = kb.search(query, None, k=k, kind=args.get("kind"), session=sid,
+                        include_text=True)
+        scope = "current session notebook"
         if not res.get("results"):
-            res = kb.search(query, None, k=k, kind=args.get("kind"))
+            res = kb.search(query, None, k=k, kind=args.get("kind"), include_text=True)
+            scope = "shared notebooks (no session match)"
     else:
-        res = kb.search(query, notebook, k=k, kind=args.get("kind"))
-    lines = ["%s:%s  %s" % (r.get("ref") or r.get("path"), r.get("start"),
-                            (r.get("snippet") or "").replace("\n", " ")[:200])
-             for r in res.get("results", [])]
-    stdout = "\n".join(lines) or "(no matches)"
+        res = kb.search(query, notebook, k=k, kind=args.get("kind"), include_text=True)
+        scope = "selected notebook" if notebook else "shared notebooks"
+    lines = ["scope: %s" % scope]
+    remaining = 24000 - len(lines[0])
+    for result in res.get("results", []):
+        location = result.get("path") or result.get("ref") or "(source)"
+        if result.get("start") is not None:
+            location += ":%s" % result["start"]
+            if result.get("end") not in (None, result.get("start")):
+                location += "-%s" % result["end"]
+        title = result.get("title") or result.get("ref") or "(source)"
+        entry = "\n\n%s\n%s" % (title + " · " + location,
+                                 result.get("text") or result.get("snippet") or "")
+        if remaining <= 0:
+            break
+        if len(entry) > remaining:
+            lines.append(entry[:remaining] + "\n...[TRUNCATED]")
+            remaining = 0
+            break
+        lines.append(entry)
+        remaining -= len(entry)
+    if not res.get("results"):
+        lines.append("(no matches)")
+    stdout = "".join(lines)
     # JAG-427 fix: a scoped search that finds nothing is usually a bad notebook name/id —
     # tell the model the valid options instead of leaving it stuck on "(no matches)".
     if not res.get("results") and args.get("notebook"):
@@ -1496,7 +1553,7 @@ def _knowledge(args, run_id):
             pass
     return {"ok": True, "exit_code": 0, "stdout": stdout,
             "results": res.get("results", []), "mode": res.get("mode"),
-            "count": len(res.get("results", []))}
+            "count": len(res.get("results", [])), "scope": scope}
 
 
 def _matrix(args, run_id):

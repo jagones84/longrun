@@ -384,20 +384,32 @@ def _session_notebook(db, sid, create=True):
 
     The notebook id is DETERMINISTIC (``sess-<sha1(sid)>``) so the same session
     always routes to the same session notebook without a lookup. It is flagged
-    is_session=1 with owner=<sid>, so it is excluded from the global corpus and
-    surfaced in the Knowledge UI's dedicated "Session" tab — reachable only via
-    an explicit session scope (the FULL-approval path).
+    is_session=1 with owner=<sid>, so global searches exclude it. The Knowledge UI
+    lists session notebooks separately; the agent tool lists only the current
+    session's notebook and scopes retrieval to its owner.
     """
     if not sid:
         return None
     short = hashlib.sha1(str(sid).encode("utf-8")).hexdigest()[:12]
     nid = "sess-" + short
-    row = db.execute("SELECT id FROM notebooks WHERE id=?", (nid,)).fetchone()
-    if not row and create:
-        name = "Session " + str(sid).replace("-", "").upper()[:8]
-        db.execute("INSERT INTO notebooks(id, name, created, hidden, owner, is_session) "
-                   "VALUES(?,?,?,1,?,1)", (nid, name, time.time(), str(sid)))
-    return nid if (row or create) else None
+    row = db.execute(
+        "SELECT owner, hidden, is_session FROM notebooks WHERE id=?", (nid,)
+    ).fetchone()
+    if row:
+        if row["is_session"] and row["owner"] == str(sid):
+            return nid
+        if row["hidden"] and row["owner"] == str(sid):
+            db.execute("UPDATE notebooks SET is_session=1 WHERE id=? AND owner=?",
+                       (nid, str(sid)))
+            db.commit()
+            return nid
+        return None
+    if not create:
+        return None
+    name = "Session " + str(sid).replace("-", "").upper()[:8]
+    db.execute("INSERT INTO notebooks(id, name, created, hidden, owner, is_session) "
+               "VALUES(?,?,?,1,?,1)", (nid, name, time.time(), str(sid)))
+    return nid
 
 
 def _existing_source(db: sqlite3.Connection, notebook: str, ref: str) -> dict | None:
@@ -755,6 +767,88 @@ def list_sources(notebook=None):
         db.close()
 
 
+def read_source(ref: str, notebook: str | None = None,
+                session: str | None = None, max_chars: int = 20000) -> dict:
+    """Read indexed source text inside one global or current-session notebook."""
+    ref = str(ref or "").strip()
+    if not ref:
+        return {"ok": False, "error": "source ref or id required"}
+    try:
+        limit = int(max_chars)
+    except (TypeError, ValueError):
+        limit = 20000
+    limit = max(1, min(limit, 50000))
+    session = str(session or "").strip() or None
+    db = _connect()
+    try:
+        _init(db)
+        if notebook:
+            notebook = _resolve_id_db(db, notebook)
+            nb_row = db.execute(
+                "SELECT is_session, owner FROM notebooks WHERE id=?", (notebook,)
+            ).fetchone()
+            if not nb_row:
+                return {"ok": False, "error": "no such notebook: %s" % notebook}
+            if nb_row["is_session"] and nb_row["owner"] != session:
+                return {"ok": False, "error": "session notebook is outside the current session"}
+        elif session:
+            notebook = _session_notebook(db, session, create=False)
+            if not notebook:
+                return {"ok": False, "error": "no indexed source in this session"}
+        else:
+            return {"ok": False, "error": "session or notebook required"}
+
+        source = db.execute(
+            "SELECT id, notebook, kind, ref, title, chunks FROM sources "
+            "WHERE notebook=? AND (id=? OR ref=?) ORDER BY added DESC LIMIT 1",
+            (notebook, ref, ref),
+        ).fetchone()
+        if not source:
+            return {"ok": False, "error": "source not found in the selected Knowledge scope"}
+        stats = db.execute(
+            "SELECT count(*) AS chunks, coalesce(sum(length(text)), 0) AS text_chars, "
+            "coalesce(sum(CASE WHEN vec IS NOT NULL THEN 1 ELSE 0 END), 0) AS embedded "
+            "FROM chunks WHERE source=?",
+            (source["id"],),
+        ).fetchone()
+        chunk_count = int(stats["chunks"] or 0)
+        total_chars = int(stats["text_chars"] or 0) + max(0, chunk_count - 1) * 2
+        parts = []
+        remaining = limit
+        for index, row in enumerate(db.execute(
+                "SELECT text FROM chunks WHERE source=? ORDER BY id",
+                (source["id"],))):
+            separator = "\n\n" if index else ""
+            if separator:
+                part = separator[:remaining]
+                parts.append(part)
+                remaining -= len(part)
+                if remaining <= 0:
+                    break
+            chunk_text = str(row["text"] or "")
+            part = chunk_text[:remaining]
+            parts.append(part)
+            remaining -= len(part)
+            if len(part) < len(chunk_text) or remaining <= 0:
+                break
+        return {
+            "ok": True,
+            "source_id": source["id"],
+            "notebook": source["notebook"],
+            "kind": source["kind"],
+            "ref": source["ref"],
+            "title": source["title"],
+            "chunks": chunk_count,
+            "embedded_chunks": int(stats["embedded"] or 0),
+            "total_chars": total_chars,
+            "max_chars": limit,
+            "truncated": total_chars > limit,
+            "text": "".join(parts),
+        }
+    finally:
+        db.close()
+
+
 def remove_source(sid):
     with LOCK:
         db = _connect()
@@ -816,14 +910,16 @@ def reembed():
             db.close()
 
 
-def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None):
-    """Search the knowledge base.
+def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None,
+           include_text=False):
+    """Return top-k chunks using BM25 or hybrid BM25/vector retrieval.
 
-    JAG-431r6: ``session`` (optional) scopes the search to the HIDDEN notebook
+    JAG-431r6: ``session`` (optional) scopes the search to the session-owned notebook
     owned by that session (see ``_session_notebook``) — useful for "what did we
     learn in THIS chat?" without polluting the global notebooks.
+    ``include_text=True`` adds each full extracted chunk for agent retrieval;
+    API/UI callers keep the smaller snippet-only response by default.
     """
-    """Top-k chunks. Optionally scoped to ONE notebook. bm25, or bm25+cosine (RRF)."""
     query = str(query or "").strip()
     out = {"query": query, "notebook": notebook, "results": [], "mode": "bm25"}
     if not query:
@@ -833,7 +929,7 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
         _init(db)
         if not db.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
             return out
-        # JAG-431r6: a session scope resolves to that session's phantom notebook
+        # JAG-431r6: a session scope resolves to that session's notebook
         # (lookup only — never create one just for a search).
         if session:
             notebook = _session_notebook(db, session, create=False)
@@ -897,13 +993,16 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None)
                 out["mode"] = "hybrid"
         for r in rows[:k]:
             score = r.get("rrf")
-            out["results"].append({
+            result = {
                 "notebook": r["notebook"], "source": r["source"], "ref": r["ref"],
                 "title": r["title"], "path": r["path"], "name": r["name"], "kind": r["kind"],
                 "lang": r["lang"], "start": r["start"], "end": r["end"],
                 "score": round(score, 6) if score is not None else round(-(r["rank"] or 0), 6),
                 "snippet": r.get("snip") or (r["text"] or "")[:200],
-            })
+            }
+            if include_text:
+                result["text"] = r["text"] or ""
+            out["results"].append(result)
         return out
     finally:
         db.close()

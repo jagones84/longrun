@@ -100,10 +100,15 @@ _ids = {s["id"] for s in settings._sections()}
 check("A3 the six structured sections exist",
       {"index", "compaction_summarizer", "routing", "decisions",
        "hooks", "mcp_env"} <= _ids, sorted(_ids))
-check("A4 routing exposes every configured role",
-      any(s["id"] == "routing" and any(f["path"].startswith("roles.")
-                                         for f in s["fields"])
-          for s in settings._sections()))
+_routing_form = next((s for s in settings._sections() if s["id"] == "routing"), {})
+check("A4 Models routing leaves subagent model and fallbacks to the Subagents panel",
+      any(f["path"].startswith("roles.") for f in _routing_form.get("fields", []))
+      and not any(f["path"] in ("roles.subagent.model", "roles.subagent.fallbacks")
+                  for f in _routing_form.get("fields", []))
+      and settings.DEDICATED.get("routing.yaml", {}).get("roles.subagent.model")
+      == "Settings ▸ Subagents"
+      and settings.DEDICATED.get("routing.yaml", {}).get("roles.subagent.fallbacks")
+      == "Settings ▸ Subagents")
 
 # ---- B) coercion rules ------------------------------------------------------
 def _field(**kw):
