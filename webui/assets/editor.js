@@ -694,21 +694,22 @@ async function expandAll() {
   let budget = 400;                     // hard cap: max folders opened by one click
   const seen = new Set();
   for (let pass = 0; pass < 8 && budget > 0; pass++) {
-    const rows = Array.from(state.treeEl.querySelectorAll('.ed-trow[data-dir="1"]'));
-    let opened = 0;
-    for (const row of rows) {
+    const pending = [];
+    for (const row of state.treeEl.querySelectorAll('.ed-trow[data-dir="1"]')) {
       if (budget <= 0) break;
       if (seen.has(row)) continue;
       seen.add(row);
       const kids = row.nextElementSibling;
       if (!kids || !kids.hidden) continue;
       budget -= 1;
-      opened += 1;
-      await toggleDir(row, kids,
-                      { name: _dirName(row), path: row.dataset.path },
-                      parseInt(row.dataset.depth || "0", 10));
+      // One pass loads a whole level at once: 400 serial requests would make
+      // the click feel stuck.
+      pending.push(toggleDir(row, kids,
+                             { name: _dirName(row), path: row.dataset.path },
+                             parseInt(row.dataset.depth || "0", 10)));
     }
-    if (!opened) break;
+    if (!pending.length) break;
+    await Promise.all(pending);
   }
   setStatus(budget > 0 ? "folders expanded" : "folders expanded (limit reached)");
 }
