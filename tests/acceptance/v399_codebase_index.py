@@ -11,6 +11,11 @@ import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 tmp = tempfile.mkdtemp(prefix="v399-")
+data_dir = os.path.join(tmp, "data")
+os.makedirs(data_dir, exist_ok=True)
+os.environ["LONGRUN_DATA_DIR"] = data_dir
+with open(os.path.join(data_dir, "index.overlay.yaml"), "w", encoding="utf-8") as f:
+    f.write("embed_model: ''\n")
 os.environ["LONGRUN_CODEBASE_DIR"] = os.path.join(tmp, "codebase")
 os.environ["LONGRUN_KNOWLEDGE_DIR"] = os.path.join(tmp, "knowledge")
 os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(tmp, "sessions")
@@ -48,7 +53,11 @@ def _mkws(name):
 
 
 ws = _mkws("wsA")
-st = ci.build(ws)
+progress = []
+st = ci.build(ws, progress=progress.append)
+check("A0 build reports scan and completion progress",
+      any(x.get("phase") == "scan" for x in progress) and
+      any(x.get("phase") == "complete" for x in progress), progress)
 check("A1 build indexes the workspace code + docs files", st["files"] == 4, st)
 check("A2 built-in ignores drop .git and .gitignore'd dirs/files",
       not any(r["path"].endswith("big.py") or r["path"].endswith("secret.py") or r["path"].endswith(".log")
@@ -119,6 +128,10 @@ check("G3 the codebase dir is a paths constant (overridable)",
 check("G4 the CLI exposes `forge index` for the codebase", "def cmd_index(" in forge)
 check("G5 the old per-session/global store is gone",
       not os.path.exists(os.path.join(REPO, "src", "longrun", "memory", "index.py")))
+check("G6 build publishes progress and durable errors",
+      '"index.error"' in apiv02 and "progress=_index_progress" in apiv02)
+check("G7 the WebUI renders live index progress and failures",
+      '"index.progress"' in webui and '"index.error"' in webui)
 
 print("----")
 print("%d/%d PASS" % (sum(results), len(results)))

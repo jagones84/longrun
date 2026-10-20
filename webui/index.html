@@ -1103,6 +1103,10 @@
   .diag-issue-head { display: flex; align-items: flex-start; gap: 8px; }
   .diag-issue-title { flex: 1; font-weight: 600; }
   .diag-severity { color: var(--dim); font-size: 10px; text-transform: uppercase; }
+  /* JAG-505: a healthy diagnostics run must LOOK healthy. */
+  .diag-ok { color: var(--ok); font-weight: 600; }
+  .card.diag-ok { border-left: 3px solid var(--ok);
+    background: color-mix(in srgb, var(--ok) 6%, transparent); }
   /* JAG-3xx: on a phone the fixed 190px nav column left almost no room for the content
      and it could NOT be reduced (there was no handle). Turn the nav into a compact TOP
      tab strip and let the window fill the screen, so there is no "left width" to fight. */
@@ -1144,6 +1148,69 @@
   .hcard-hd b { font-size: 13px; color: var(--txt); letter-spacing: .01em; }
   .hcard-hd .hc-sub { font-size: 12px; color: var(--dim); }
   .hrow { display: flex; flex-wrap: wrap; align-items: center; }
+  #settingsWin .sw-main, #inspector .insp-body {
+    font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    font-size: 13px; line-height: 1.5;
+  }
+  #settingsWin code, #inspector code, .cb-path {
+    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+  #settingsWin .sub-limits { gap: 8px; }
+  #settingsWin .sub-limits label { font-size: 11px; font-weight: 600; }
+  #settingsWin .sub-limits input.inp {
+    min-height: 34px; padding: 6px 9px; font-size: 12px; font-variant-numeric: tabular-nums;
+    border-radius: 8px;
+  }
+  #settingsWin .sub-fl { font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+  .sbx-state { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px;
+    margin-bottom: 12px; background: var(--panel2); }
+  .sbx-state-head { display: flex; align-items: center; gap: 9px; }
+  .sbx-state-head > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .sbx-state-head b { color: var(--txt); font: 600 13px ui-monospace, monospace; }
+  .sbx-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex: 0 0 auto; }
+  .sbx-state.is-host .sbx-dot { background: var(--warn); }
+  .sbx-mode { margin-left: auto; color: var(--ok); font-size: 9px; font-weight: 700;
+    letter-spacing: .1em; white-space: nowrap; }
+  .sbx-state.is-host .sbx-mode { color: var(--warn); }
+  .sbx-description { margin-top: 6px; }
+  .sbx-availability { margin-top: 7px; color: var(--dim); font-size: 11px; }
+  .sbx-availability summary { cursor: pointer; width: fit-content; }
+  .sbx-availability div { margin-top: 5px; overflow-wrap: anywhere; }
+  .sbx-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .sbx-grid > label { display: flex; flex-direction: column; gap: 5px; min-width: 0;
+    color: var(--dim); font-size: 11px; font-weight: 600; }
+  .sbx-grid .inp { width: 100%; min-width: 0; min-height: 36px;
+    padding: 7px 9px; border-radius: 8px; font: inherit; font-size: 12px; line-height: 1.4; }
+  .sbx-grid > label.sbx-check { flex-direction: row; align-items: center; justify-content: space-between;
+    min-height: 36px; padding: 6px 9px; border: 1px solid var(--line-2);
+    border-radius: 8px; background: var(--panel2); cursor: pointer; }
+  .sbx-check input { accent-color: var(--accent); }
+  .cb-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .cb-metric { min-width: 0; padding: 7px 8px; border: 1px solid var(--line-2);
+    border-radius: 8px; background: var(--panel2); }
+  .cb-metric span { display: block; color: var(--dim); font-size: 9px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; }
+  .cb-metric b { display: block; margin-top: 2px; color: var(--txt);
+    font-size: 14px; font-variant-numeric: tabular-nums; }
+  .cb-location, .cb-embedding { margin-top: 8px; color: var(--dim); font-size: 11px; }
+  .cb-location { display: flex; gap: 6px; min-width: 0; }
+  .cb-location .cb-path { color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cb-embedding b { color: var(--txt); overflow-wrap: anywhere; }
+  .cb-empty, .cb-error { display: block; margin-top: 8px; padding: 7px 9px;
+    border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+    border-radius: 8px; color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
+  .cb-error { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent);
+    background: color-mix(in srgb, var(--err) 7%, transparent); overflow-wrap: anywhere; }
+  .cb-progress { display: flex; align-items: center; gap: 8px; margin-top: 9px; padding: 7px 9px;
+    border: 1px solid var(--line); border-radius: 8px; color: var(--info);
+    background: color-mix(in srgb, var(--info) 7%, transparent); font-size: 11px; }
+  .cb-progress[hidden] { display: none; }
+  .cb-spinner { width: 12px; height: 12px; flex: 0 0 auto; border: 2px solid var(--line);
+    border-top-color: currentColor; border-radius: 50%; animation: cbspin .8s linear infinite; }
+  .cb-progress.is-ok { color: var(--ok); }
+  .cb-progress.is-error { color: var(--err); }
+  @keyframes cbspin { to { transform: rotate(360deg); } }
+  @media (max-width: 580px) { .sbx-grid { grid-template-columns: minmax(0, 1fr); } }
   #swMain .sw-cat[data-cat="harness"] label {
     display: inline-flex; align-items: center; gap: 7px; background: var(--chipbg);
     border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 9px; margin: 3px 6px 3px 0;
@@ -1973,10 +2040,13 @@
         <button class="insp-hd" data-call="toggleInsp" data-args='["codebase"]'>Codebase<span class="ihd-s" id="sCodebase"></span></button>
         <div class="insp-body">
         <h2>Codebase index · <span id="cbStat" class="remaining"></span></h2>
-        <div class="card">
-          <div class="remaining" id="cbMeta">Search THIS workspace's code + docs (per path, like project rules). Build once, then query.</div>
-          <div class="u-df u-g6 u-mt8 u-fww">
-            <button class="ghost" data-call="cbBuild" data-args='[false]' title="re-index this workspace's code + docs">⚡ build</button>
+        <div class="card cb-card">
+          <div class="remaining" id="cbMeta" role="status" aria-live="polite">Search this workspace's code and docs. Build once, then query.</div>
+          <div class="cb-progress" id="cbProgress" role="status" aria-live="polite" hidden>
+            <span class="cb-spinner" aria-hidden="true"></span><span id="cbProgressText"></span>
+          </div>
+          <div class="u-df u-g6 u-mt8 u-fww cb-actions">
+            <button class="ghost" id="cbBuildBtn" data-call="cbBuild" data-args='[false]' title="re-index this workspace's code and docs">⚡ build</button>
             <button class="ghost" data-call="cbFiles" title="which files are indexed">files</button>
             <button class="ghost" data-call="cbStatus" title="refresh the counts">status</button>
             <button class="ghost" data-call="cbClear" title="delete this workspace's codebase index">clear</button>
@@ -2087,11 +2157,8 @@
           <select id="compactionModel" data-change="saveCompactionModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="compactionResult"></div>
         </div>
-        <h2>Subagent model</h2>
-        <div class="card">
-          <select id="subagentModel" data-change="saveSubagentModel" class="inp u-w100 u-p610 u-fs12"></select>
-          <div class="remaining u-mt6" id="subagentResult"></div>
-        </div>
+        <!-- JAG-505: the subagent model + failover live in Settings ▸ Subagents —
+             this card was a duplicate of it. -->
         <h2>Embedding · knowledge index</h2>
         <div class="card">
           <div class="remaining u-m006">Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (<b>bm25</b>). The catalogue lives in your PERSONAL config (<code>config/embedding.yaml</code>) — the shipped entries are editable, and you can add your own below.</div>
@@ -2183,9 +2250,9 @@
         <h2>Limits</h2>
         <div class="card">
           <div class="sub-limits">
-            <label title="Maximum nesting depth of subagents (0 = none).">max depth<input id="subDepth" type="number" min="0" value="2"></label>
-            <label title="Maximum subagents running at once across the harness (0 = no cap).">max parallel<input id="subParallel" type="number" min="0" value="4"></label>
-            <label title="Subagents currently running.">running<input id="subRunning" type="number" readonly></label>
+            <label title="Maximum nesting depth of subagents (0 = none).">Max depth<input class="inp" id="subDepth" type="number" min="0" value="2"></label>
+            <label title="Maximum subagents running at once across the harness (0 = no cap).">Max parallel<input class="inp" id="subParallel" type="number" min="0" value="4"></label>
+            <label title="Subagents currently running.">Running<input class="inp" id="subRunning" type="number" readonly></label>
           </div>
           <div class="remaining u-mt4">depth writes <code>config/tools.yaml</code> ▸ runtime.subagent_max_depth · parallel writes <code>config/subagents.yaml</code>.</div>
         </div>
@@ -6943,6 +7010,10 @@ function _feedReplay(ev) {
     scheduleDiagnosticsRefresh();
     return;
   }
+  if (kind === "index.progress" || kind === "index.done" || kind === "index.error") {
+    _applyCodebaseEvent(ev);
+    return;
+  }
   if (kind === "graph.node.added" || kind === "graph.node.updated") { applyGraphEvent(d); return; }
   if (kind === "chat.run") { if (d.session) { _streamedDone[d.session] = false; setRunning(d.session, true); } return; }
   if (kind === "chat.done") {
@@ -6980,6 +7051,15 @@ function connectFeed() {
     while (f.children.length > 60) f.removeChild(f.firstChild);
     _feedN++; _isum("sFeed", _feedN + " events", "");   // JAG-403g: live feed counter
   };
+  ["index.progress", "index.done", "index.error"].forEach(kind =>
+    es.addEventListener(kind, e => {
+      let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+      d.kind = kind;
+      _feedReplay(d);
+      if (kind === "index.done")
+        push("codebase build complete · " + (d.files || 0) + " files · " + (d.chunks || 0) + " chunks");
+      else if (kind === "index.error") push("codebase build failed · " + (d.error || "unknown error"));
+    }));
   es.addEventListener("backlog", e => {
     let arr = []; try { arr = JSON.parse(e.data) || []; } catch (_) {}
     // v0.8.2: iterate instead of Math.max(...arr) — the spread overflows the
@@ -7322,17 +7402,28 @@ function renderTools(el, d) {
     '<option value="' + v + '"' + ((sbc.backend || "none") === v ? " selected" : "") + ">" + v + "</option>").join("");
   const sbCard =
     `<div class="card" id="sbxCard" style="margin-bottom:10px">
-       <div style="font-weight:600;margin-bottom:6px">🧱 Sandbox · isolation for shell / python</div>
-       <div class="remaining" style="margin-bottom:8px">Now: <b>${esc(probe.backend || "?")}</b>${probe.isolated ? " (isolated)" : " (host execution)"} · requested <b>${esc(probe.requested || "?")}</b>. <b>auto</b> picks the first working of docker → bwrap → nsjail; <b>none</b> runs on the host (still approval-gated and deny-listed).${probe.error ? '<br><span style="color:var(--err)">' + esc(probe.error) + "</span>" : ""}${availTxt ? "<br>" + esc(availTxt) : ""}</div>
-       <div class="hrow">
-         <label title="Which isolation backend to use">backend <select id="sbxBackend">${sbOpts}</select></label>
-         <label title="Container image for the docker backend">image <input id="sbxImage" type="text" value="${esc(sbc.image || "alpine:latest")}"></label>
-         <label title="Give the docker container the host network">network <input id="sbxNetwork" type="checkbox"${sbc.network ? " checked" : ""}></label>
-         <label title="Per-command wall clock">timeout (s) <input id="sbxTimeout" type="number" min="1" value="${Number(sbc.timeout_secs || 900)}"></label>
-         <label title="Container memory cap">memory (MB) <input id="sbxMem" type="number" min="16" value="${Number(sbc.memory_mb || 256)}"></label>
-         <label title="Maximum number of processes in the container">pids limit <input id="sbxPids" type="number" min="8" value="${Number(sbc.pids_limit || 128)}"></label>
-         <label title="CPU quota for the container">cpus <input id="sbxCpus" type="number" min="0.1" max="64" step="0.1" value="${Number(sbc.cpus || 1)}"></label>
-         <label title="Mount point for the per-run scratch dir, relative to the repo">workspace <input id="sbxWorkspace" type="text" value="${esc(sbc.workspace || "data/sandbox")}"></label>
+       <div class="hcard-hd"><span class="dot" style="--hc:${probe.isolated ? "var(--ok)" : "var(--warn)"}"></span>
+         <b>Sandbox</b><span class="hc-sub">shell and Python isolation</span></div>
+       <div class="sbx-state ${probe.isolated ? "is-isolated" : "is-host"}" role="status" aria-live="polite">
+         <div class="sbx-state-head"><span class="sbx-dot" aria-hidden="true"></span>
+           <div><span class="remaining">Active backend</span><b>${esc(probe.backend || "?")}</b></div>
+           <span class="sbx-mode">${probe.isolated ? "ISOLATED" : "HOST EXECUTION"}</span>
+         </div>
+         <div class="remaining sbx-description">Requested <b>${esc(probe.requested || "?")}</b>.
+           Auto selects the first available backend: Docker, bubblewrap, then nsjail.
+           <b>none</b> runs on the host.</div>
+         ${probe.error ? '<div class="cb-error">' + esc(probe.error) + "</div>" : ""}
+         ${availTxt ? '<details class="sbx-availability"><summary>Backend checks</summary><div>' + esc(availTxt) + "</div></details>" : ""}
+       </div>
+       <div class="sbx-grid">
+         <label title="Which isolation backend to use">Backend<select class="inp" id="sbxBackend">${sbOpts}</select></label>
+         <label title="Container image for the Docker backend">Container image<input class="inp" id="sbxImage" type="text" value="${esc(sbc.image || "alpine:latest")}"></label>
+         <label class="sbx-check" title="Give the Docker container host network access"><span>Host network</span><input id="sbxNetwork" type="checkbox"${sbc.network ? " checked" : ""}></label>
+         <label title="Per-command wall clock">Timeout (seconds)<input class="inp" id="sbxTimeout" type="number" min="1" value="${Number(sbc.timeout_secs || 900)}"></label>
+         <label title="Container memory cap">Memory (MB)<input class="inp" id="sbxMem" type="number" min="16" value="${Number(sbc.memory_mb || 256)}"></label>
+         <label title="Maximum number of processes in the container">Process limit<input class="inp" id="sbxPids" type="number" min="8" value="${Number(sbc.pids_limit || 128)}"></label>
+         <label title="CPU quota for the container">CPU cores<input class="inp" id="sbxCpus" type="number" min="0.1" max="64" step="0.1" value="${Number(sbc.cpus || 1)}"></label>
+         <label title="Mount point for the per-run scratch dir, relative to the repo">Scratch workspace<input class="inp" id="sbxWorkspace" type="text" value="${esc(sbc.workspace || "data/sandbox")}"></label>
        </div>
        <button class="ghost config-save" id="sbxSave" disabled title="no changes to save">save sandbox</button>
        <div class="remaining" id="sbxMsg"></div>
@@ -8481,11 +8572,15 @@ function skillsAutocomplete() {
 }
 
 /* JAG-150: movable settings window (non-blocking). */
+/* JAG-505: the operator's order. Appearance first, then the daily drivers; the
+   two panels that were NOT in that list (Knowledge, Harness) sit at the end so
+   nothing is lost — they can be dropped on request. */
 const SETTINGS_CATS = [
-  ["keys", "Keys"], ["diagnostics", "Diagnostics"], ["models", "Models"], ["subagents", "Subagents"], ["knowledge", "Knowledge"],
-  ["mcp", "MCP"], ["skills", "Skills"],
-  ["rules", "Rules"], ["harness", "Harness"], ["config", "Config files"], ["tools", "Tools & approvals"],
-  ["improvement", "Improvement"], ["appearance", "Appearance"], ["info", "\u24D8 Info"],
+  ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
+  ["subagents", "Subagents"], ["tools", "Tools & approvals"], ["mcp", "MCP"],
+  ["skills", "Skills"], ["rules", "Rules"], ["improvement", "Improvements"],
+  ["diagnostics", "Diagnostics"], ["config", "Config files"],
+  ["knowledge", "Knowledge"], ["harness", "Harness"], ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
    by the inline boot script above, these helpers just re-render and save. */
@@ -8556,10 +8651,20 @@ function renderDiagnostics(report) {
   box.replaceChildren();
   if (!issues.length) {
     const empty = document.createElement("div");
-    empty.className = "card remaining";
-    empty.textContent = report && report.ok === false
-      ? "Diagnostics could not complete. Check the Longrun connection and retry."
-      : "No configuration issues found. Provider credentials and remote model IDs are not tested until a model request.";
+    if (report && report.ok === false) {
+      empty.className = "card remaining";
+      empty.textContent = "Diagnostics could not complete. Check the Longrun connection and retry.";
+    } else {
+      // JAG-505: "0 errors · 0 warnings" alone reads as if nothing ran. State the
+      // verdict explicitly, in green, so a healthy run is unmistakable.
+      const checks = Number(counts.checked || counts.checks || 0);
+      summary.innerHTML = '<span class="diag-ok">✓ All checks passed</span> — '
+        + (checks ? (checks + " checked · ") : "")
+        + countLabel(errors, "error") + " · " + countLabel(warnings, "warning");
+      empty.className = "card diag-ok";
+      empty.innerHTML = '<b>Healthy.</b> Every local settings check passed. '
+        + "Provider credentials and remote model IDs are only tested on a real model request.";
+    }
     box.appendChild(empty);
     return;
   }
@@ -8837,25 +8942,7 @@ async function loadRouting() {
       const match = models.find(m => m.ref.toLowerCase().includes(pat) || m.id.toLowerCase().includes(pat));
       if (match) sel.value = match.ref;
     }
-    // JAG-448: the subagent role is the same picker pattern — explicit `model`
-    // plus a configured failover list (literal provider:model refs).
-    const ssel = $("subagentModel");
-    if (ssel) {
-      const sub = ((d.config || {}).roles || {}).subagent || {};
-      const subRef = sub.model || "";
-      ssel.innerHTML = '<option value="">auto (by pattern: ' + _attr(sub.pattern || "—") + ')</option>' +
-        Object.keys(groups).map(pid => {
-          const g = groups[pid];
-          return '<optgroup label="' + _attr(g.name) + '">' + g.items.map(m =>
-            '<option value="' + _attr(m.ref) + '"' + (m.ref === subRef ? " selected" : "") + '>' +
-            esc(m.ref) + (m.available ? "" : " · no key") + '</option>').join("") + '</optgroup>';
-        }).join("");
-      const fb = (sub.fallbacks || []);
-      const sres = $("subagentResult");
-      if (sres) sres.innerHTML = subRef
-        ? ("saved: <b>" + esc(subRef) + "</b>" + (fb.length ? (" · failover → <b>" + esc(fb.join(" › ")) + "</b>") : ""))
-        : "auto — resolved by the local router pattern (glm)";
-    }
+    // JAG-505: the duplicate subagent picker is gone — Settings ▸ Subagents owns it.
     const fb = ((d.config || {}).default_fallbacks || []);
     const box = $("modelsList");
     if (box) box.innerHTML = '<div class="remaining">models available: <b>' + models.length + '</b>' +
@@ -9051,20 +9138,91 @@ function openPanel(name) { focusInsp(name); }
 
 /* ---- JAG-400: CODEBASE index — PER WORKSPACE (like project rules) ---- */
 function _cbQS() { return sessionId ? ("?session=" + encodeURIComponent(sessionId)) : ""; }
+let _cbWorkspace = "", _cbBuildBusy = false, _cbProgressTimer = null;
+function _setCbBuildBusy(busy) {
+  _cbBuildBusy = !!busy;
+  const btn = $("cbBuildBtn");
+  if (btn) {
+    btn.disabled = _cbBuildBusy;
+    btn.setAttribute("aria-busy", _cbBuildBusy ? "true" : "false");
+    btn.textContent = _cbBuildBusy ? "Indexing…" : "⚡ build";
+  }
+}
+function _applyCodebaseEvent(ev) {
+  const kind = ev && ev.kind, d = ev || {};
+  if (!kind || !kind.startsWith("index.")) return;
+  if (d.session && d.session !== sessionId) return;
+  if (d.workspace && _cbWorkspace && d.workspace !== _cbWorkspace) return;
+  const progress = $("cbProgress"), text = $("cbProgressText"), spinner = progress && progress.querySelector(".cb-spinner");
+  if (!progress || !text) return;
+  clearTimeout(_cbProgressTimer);
+  if (kind === "index.progress") {
+    _setCbBuildBusy(true);
+    progress.hidden = false;
+    progress.className = "cb-progress";
+    if (spinner) spinner.hidden = false;
+    if (d.phase === "scan") {
+      text.textContent = "Scanning workspace · " + Number(d.scanned_files || 0).toLocaleString("en-US") + " files discovered";
+    } else if (d.phase === "embedding") {
+      text.textContent = "Embedding vectors · " +
+        Number(d.embedded || 0).toLocaleString("en-US") + " / " +
+        Number(d.total_embeddings || 0).toLocaleString("en-US") + " chunks";
+    } else {
+      text.textContent = "Preparing codebase index…";
+    }
+    return;
+  }
+  _setCbBuildBusy(false);
+  progress.hidden = false;
+  if (kind === "index.error") {
+    progress.className = "cb-progress is-error";
+    if (spinner) spinner.hidden = true;
+    text.textContent = "Build failed · " + String(d.error || "unknown error");
+    return;
+  }
+  progress.className = "cb-progress is-ok";
+  if (spinner) spinner.hidden = true;
+  text.textContent = "Complete · " + Number(d.files || 0).toLocaleString("en-US") +
+    " files · " + Number(d.chunks || 0).toLocaleString("en-US") + " chunks" +
+    (d.duration_ms ? " · " + Math.round(Number(d.duration_ms) / 1000) + "s" : "") +
+    (d.embed_error ? " · vectors incomplete" : "");
+  cbStatus();
+  _cbProgressTimer = setTimeout(() => { progress.hidden = true; }, 10000);
+}
 async function cbStatus() {
   try {
     const s = await api("GET", "/api/codebase/status" + _cbQS());
-    const ws = "<b title=\"" + _attr(s.workspace) + "\">" + esc(_short(s.workspace)) + "</b>";
+    const prevWorkspace = _cbWorkspace;
+    _cbWorkspace = s.workspace || "";
+    if (prevWorkspace && prevWorkspace !== _cbWorkspace) {
+      _setCbBuildBusy(false);
+      const progress = $("cbProgress");
+      if (progress) progress.hidden = true;
+    }
     const meta = $("cbMeta");
+    if (s.error) {
+      if (meta) meta.innerHTML = '<span class="cb-error">Could not read index status · ' + esc(s.error) + "</span>";
+      return s;
+    }
+    const files = Number(s.files || 0), chunks = Number(s.chunks || 0), embedded = Number(s.embedded || 0);
+    const count = n => n.toLocaleString("en-US");
     if (meta) meta.innerHTML = (s.exists
-      ? ("<b>" + (s.files || 0) + "</b> files · <b>" + (s.chunks || 0) + "</b> chunks · " +
-         _fmtSize((s.size_kb || 0) * 1024) + "<br>workspace: " + ws +
-         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" +
-         (s.embed_model ? (" · " + (s.embedded || 0) + "/" + (s.chunks || 0) + " embedded" + (s.dim ? (" · dim " + s.dim) : "")) : "") +
-         (s.embed_error ? ("<br>⚠ embed failed: " + esc(s.embed_error)) : ""))
-      : ("workspace: " + ws + " — not built yet, press build."));
-    const st = $("cbStat"); if (st) st.textContent = s.exists ? ((s.chunks || 0) + " chunks") : "empty";
-    _isum("sCodebase", s.exists ? ((s.files || 0) + " files \u00b7 " + (s.chunks || 0) + " chunks") : "empty", s.exists ? "" : "warn");
+      ? '<div class="cb-metrics">' +
+        '<div class="cb-metric"><span>Files</span><b>' + count(files) + "</b></div>" +
+        '<div class="cb-metric"><span>Chunks</span><b>' + count(chunks) + "</b></div>" +
+        '<div class="cb-metric"><span>Vectors</span><b>' + count(embedded) + " / " + count(chunks) + "</b></div></div>" +
+        '<div class="cb-location"><span>Workspace</span><b class="cb-path" title="' + _attr(_cbWorkspace) + '">' +
+        esc(_short(_cbWorkspace)) + "</b></div>" +
+        '<div class="cb-embedding">Embedding · <b>' + esc(s.embed_model || "lexical only") + "</b>" +
+        (s.dim ? " · " + count(Number(s.dim)) + " dimensions" : "") +
+        " · DB " + esc(_fmtSize((s.size_kb || 0) * 1024)) + "</div>" +
+        (s.embed_error ? '<span class="cb-error">Embedding incomplete · ' + esc(s.embed_error) + "</span>" : "") +
+        (files === 0 ? '<span class="cb-empty">No indexable files found. Check this workspace and its ignore patterns.</span>' : "")
+      : '<div class="cb-location"><span>Workspace</span><b class="cb-path" title="' +
+        _attr(_cbWorkspace) + '">' + esc(_short(_cbWorkspace)) + '</b></div>' +
+        '<span class="cb-empty">No index yet. Build to scan this workspace.</span>');
+    const st = $("cbStat"); if (st) st.textContent = s.exists ? (count(chunks) + " chunks") : "not built";
+    _isum("sCodebase", s.exists ? (count(files) + " files · " + count(chunks) + " chunks") : "empty", s.exists && files ? "" : "warn");
     return s;
   } catch (e) { const meta = $("cbMeta"); if (meta) meta.textContent = "error: " + e; }
 }
@@ -9084,12 +9242,32 @@ async function cbFiles() {
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
 async function cbBuild(force) {
-  const meta = $("cbMeta"); if (meta) meta.textContent = "indexing…";
+  if (_cbBuildBusy) return;
+  _setCbBuildBusy(true);
+  _applyCodebaseEvent({ kind: "index.progress", phase: "start",
+                        session: sessionId, workspace: _cbWorkspace });
   try {
     const r = await api("POST", "/api/codebase/build", { session: sessionId || undefined, force: !!force });
-    if (typeof toast === "function") toast("codebase: " + (r.files || 0) + " files / " + (r.chunks || 0) + " chunks", r.error ? "err" : "ok");
-    cbStatus();
-  } catch (e) { if (meta) meta.textContent = "error: " + e; }
+    if (r.error || r.ok === false) {
+      _applyCodebaseEvent({ kind: "index.error", session: sessionId,
+                            workspace: _cbWorkspace, error: r.error || "request failed" });
+      if (typeof toast === "function") toast("Codebase build failed", "err");
+    } else if (!Number(r.files || 0)) {
+      if (typeof toast === "function") toast("No indexable files found in this workspace", "err");
+      await cbStatus();
+    } else {
+      if (typeof toast === "function") toast(
+        "Codebase ready · " + r.files + " files / " + r.chunks + " chunks",
+        r.embed_error ? "err" : "ok");
+      await cbStatus();
+    }
+  } catch (e) {
+    _applyCodebaseEvent({ kind: "index.error", session: sessionId,
+                          workspace: _cbWorkspace, error: String(e) });
+    if (typeof toast === "function") toast("Codebase build failed", "err");
+  } finally {
+    if (_cbBuildBusy) _setCbBuildBusy(false);
+  }
 }
 async function cbSearch() {
   const q = $("cbQuery") ? $("cbQuery").value.trim() : "";

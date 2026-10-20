@@ -11,6 +11,7 @@ import os
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 
 from longrun.memory import chunk as _chunk
 from longrun.memory import indexcfg as _cfg
@@ -92,18 +93,31 @@ def _insert_chunks(db, path, lang, kind, pieces, fts):
     return _sqlkit.insert_chunks(db, pieces, path, lang, kind, fts)
 
 
-def build(ws, force=False):
+def build(ws: str, force: bool = False,
+          progress: Callable[[dict], None] | None = None) -> dict:
     """(Re)index the workspace incrementally. Returns the status dict."""
     cfg = _cfg.load_config()
     globs = cfg
     maxk = cfg.get("max_file_kb") or 512
+    started = time.monotonic()
+
+    def emit(phase: str, **details: object) -> None:
+        if progress:
+            try:
+                progress({"phase": phase, **details})
+            except Exception:  # noqa: BLE001 — progress reporting must not break indexing
+                pass
+
     with LOCK:
         db = _connect(ws)
         try:
             fts = _init(db)
             ws = os.path.realpath(ws)
             seen = set()
+            scanned = 0
+            emit("scan", scanned_files=scanned)
             for rel, abspath, lang, kind in _chunk.walk(ws, globs):
+                scanned += 1
                 seen.add(abspath)
                 try:
                     st = os.stat(abspath)
@@ -123,11 +137,16 @@ def build(ws, force=False):
                            (abspath, st.st_mtime, st.st_size,
                             hashlib.sha1(text.encode("utf-8", "replace")).hexdigest(), lang))
                 del ids
+                if scanned % 25 == 0:
+                    emit("scan", scanned_files=scanned)
             for r in db.execute("SELECT path FROM files").fetchall():
                 if r["path"] not in seen:
                     _drop_path(db, r["path"])
+            file_count = db.execute("SELECT count(*) AS n FROM files").fetchone()["n"]
+            chunk_count = db.execute("SELECT count(*) AS n FROM chunks").fetchone()["n"]
             em = _cfg.embed_model()
             embed_err = None
+            embedded_now = 0
             if em:
                 # JAG-403j: a failing embedder (missing key / no local server) must
                 # NEVER break the build — degrade to bm25-only.
@@ -135,14 +154,31 @@ def build(ws, force=False):
                 # swallowed, so `status()`/the UI can show that vectors are missing.
                 try:
                     rows = [(r["id"], r["text"]) for r in db.execute("SELECT id, text FROM chunks WHERE vec IS NULL")]
-                    _embed_chunks(db, rows, em, int(cfg.get("embed_batch") or 32),
-                                  scope="codebase", scope_id=str(ws), op="build")
+                    emit("embedding", files=file_count, scanned_files=scanned,
+                         chunks=chunk_count, embedded=0, total_embeddings=len(rows))
+                    embedded_now = _embed_chunks(
+                        db, rows, em, int(cfg.get("embed_batch") or 32),
+                        scope="codebase", scope_id=str(ws), op="build",
+                        progress=lambda done, total: emit(
+                            "embedding", files=file_count, scanned_files=scanned,
+                            chunks=chunk_count, embedded=done, total_embeddings=total))
+                    if embedded_now < len(rows):
+                        embed_err = "Embedding incomplete: %d of %d chunks completed" % (
+                            embedded_now, len(rows))
                 except Exception as e:  # noqa: BLE001
                     embed_err = "%s: %s" % (type(e).__name__, e)
+            else:
+                emit("lexical", files=file_count, scanned_files=scanned,
+                     chunks=chunk_count, embedded=0, total_embeddings=0)
             db.commit()
             _set_meta(db, {"built_at": time.time(), "embed_model": em, "dim": _dim(db),
                            "fts": bool(fts), "workspace": ws, "embed_error": embed_err})
-            return status(ws)
+            result = status(ws)
+            emit("complete", files=result.get("files", 0),
+                 chunks=result.get("chunks", 0), embedded=result.get("embedded", 0),
+                 embed_error=embed_err,
+                 duration_ms=int((time.monotonic() - started) * 1000))
+            return result
         finally:
             db.close()
 

@@ -9,6 +9,7 @@ direct providers (price from the catalogue × tokens).
 """
 import array
 import os
+from collections.abc import Callable
 
 from longrun.memory import costlog, embedcfg
 from longrun.model import embed
@@ -29,11 +30,13 @@ def dim(db):
     return len(blob_vec(row["vec"])) if row and row["vec"] else 0
 
 
-def embed_chunks(db, rows, ref, batch, scope=None, scope_id=None, op=None):
+def embed_chunks(db, rows, ref, batch, scope=None, scope_id=None, op=None,
+                 progress: Callable[[int, int], None] | None = None):
     """Embed rows in batches and persist the vectors.
 
     `rows` is a list of (id, text). `scope` / `scope_id` / `op` tag the cost
     log (e.g. scope="codebase", scope_id="<ws hash>", op="build").
+    `progress` receives the completed and total row counts after each batch.
 
     Returns the number of rows successfully embedded.
     """
@@ -76,6 +79,11 @@ def embed_chunks(db, rows, ref, batch, scope=None, scope_id=None, op=None):
                                est_cost_usd=est, real_cost_usd=real,
                                scope=scope, scope_id=scope_id, op=op)
             except Exception:  # noqa: BLE001 — cost logging must never break indexing
+                pass
+        if progress:
+            try:
+                progress(done, len(rows))
+            except Exception:  # noqa: BLE001 — progress reporting must not break indexing
                 pass
     db.commit()
     return done

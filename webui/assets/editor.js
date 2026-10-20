@@ -216,6 +216,8 @@ function buildDock() {
     <div class="ed-grip" title="drag to resize"></div>
     <div class="ed-head"><span class="ed-title">Editor</span><span class="ed-status"></span>
       <button class="ed-files ghost" title="show/hide the file tree">🗂 files</button>
+      <button class="ed-expand ghost" title="expand every loaded folder" aria-label="expand all folders">⊞</button>
+      <button class="ed-collapse ghost" title="collapse every folder" aria-label="collapse all folders">⊟</button>
       <button class="ed-refresh ghost" title="reload the tree">↻</button>
       <span class="ed-win">
         <button class="ed-wbtn ed-winfloat" title="detach — open as a floating window">⇱</button>
@@ -298,6 +300,8 @@ function buildDock() {
     if (!t.hidden && !t.querySelector(".ed-trow")) loadTree();
   };
   dock.querySelector(".ed-refresh").onclick = () => refreshAll();
+  dock.querySelector(".ed-expand").onclick = () => expandAll();
+  dock.querySelector(".ed-collapse").onclick = () => collapseAll();
 
   // JAG-159: drop a file from the OS into the dock -> open it as a temp tab.
   dock.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; dock.classList.add("ed-drop"); });
@@ -668,6 +672,47 @@ async function toggleDir(row, kids, dir, depth) {
   } catch (e) { kids.dataset.loaded = ""; }
 }
 
+/* JAG-505: expand/collapse ALL folders, like the session list and the right-rail
+   panels. Expand walks the rendered levels in passes (bounded: a deep repo must
+   never freeze the dock); collapse is instant and keeps what was loaded. */
+function _dirName(row) {
+  return String(row.textContent || "").replace(/^[▸▾]\s*📁\s*/, "");
+}
+function collapseAll() {
+  if (!state.treeEl) return;
+  state.treeEl.querySelectorAll('.ed-trow[data-dir="1"]').forEach((row) => {
+    const kids = row.nextElementSibling;
+    if (kids && !kids.hidden) {
+      kids.hidden = true;
+      row.textContent = "▸ 📁 " + _dirName(row);
+    }
+  });
+  setStatus("folders collapsed");
+}
+async function expandAll() {
+  if (!state.treeEl) return;
+  let budget = 400;                     // hard cap: max folders opened by one click
+  const seen = new Set();
+  for (let pass = 0; pass < 8 && budget > 0; pass++) {
+    const rows = Array.from(state.treeEl.querySelectorAll('.ed-trow[data-dir="1"]'));
+    let opened = 0;
+    for (const row of rows) {
+      if (budget <= 0) break;
+      if (seen.has(row)) continue;
+      seen.add(row);
+      const kids = row.nextElementSibling;
+      if (!kids || !kids.hidden) continue;
+      budget -= 1;
+      opened += 1;
+      await toggleDir(row, kids,
+                      { name: _dirName(row), path: row.dataset.path },
+                      parseInt(row.dataset.depth || "0", 10));
+    }
+    if (!opened) break;
+  }
+  setStatus(budget > 0 ? "folders expanded" : "folders expanded (limit reached)");
+}
+
 /* JAG-500: the file tree and the editor tabs must highlight the SAME file both
    ways. Clicking a tree row opens the file (open -> renderTabs); clicking a tab
    activates it and calls revealInTree. Every path pushes the highlight down to
@@ -966,7 +1011,9 @@ async function onSessionChange() {
   if (state.tabsEl) renderTabs();
   if (localStorage.getItem(LS_OPEN) === "false") return;
   await restoreTabs();
-  if (state.treeEl) loadTree();
+  // JAG-505: restoreTabs' reveal already loads (and expands) the tree; loading it
+  // again here would wipe the expansion it just made.
+  if (state.treeEl && !state.treeEl.querySelector(".ed-trow")) await loadTree();
 }
 
 async function restoreTabs() {
@@ -982,6 +1029,11 @@ async function restoreTabs() {
     state.active = saved.active; renderTabs(); renderActive();
   }
   show();
+  // JAG-505: after a reload the ACTIVE restored file must still be LOCATED in the
+  // tree (its folders expanded, its row highlighted). Restoring expands nothing
+  // per file (JAG-503), so reveal the visible one exactly once here.
+  const _t = activeTab();
+  if (_t && !_t.temp) revealInTree(_t.path, { showPane: false });
 }
 
 function init() {

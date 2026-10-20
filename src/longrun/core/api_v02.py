@@ -1245,10 +1245,36 @@ def handle(handler, method, path, qs, body):
         # JAG-400: CODEBASE index (per workspace) + KNOWLEDGE base (global notebooks)
         if path == "/api/codebase/build":
             from longrun.memory import codeindex as _ci
-            ws, _ = _session_ws((body or {}).get("session"))
-            _publish("index.progress", phase="start")
-            res = _ci.build(ws, force=bool((body or {}).get("force")))
-            _publish("index.done", files=res.get("files"), chunks=res.get("chunks"))
+            b = body or {}
+            sid = b.get("session")
+            ws, _ = _session_ws(sid)
+            started = time.monotonic()
+            _publish("index.progress", phase="start", session=sid, workspace=ws)
+
+            def _index_progress(details: dict[str, object]) -> None:
+                _publish("index.progress", session=sid, workspace=ws, **details)
+
+            try:
+                res = _ci.build(ws, force=bool(b.get("force")), progress=_index_progress)
+            except Exception as exc:  # noqa: BLE001 — report failures to UI and durable feed
+                message = str(exc).replace("\n", " ").strip()
+                try:
+                    import re as _re
+                    message = _re.sub(
+                        r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]+",
+                        r"\1[redacted]", message)
+                    message = _re.sub(
+                        r"(?i)(api[_-]?key|authorization|token|secret)(\s*[:=]\s*)"
+                        r"[^,\s;]+", r"\1\2[redacted]", message)
+                except Exception:  # noqa: BLE001 — redaction failure must not hide the build error
+                    message = type(exc).__name__
+                error = "%s: %s" % (type(exc).__name__, message[:400])
+                _publish("index.error", session=sid, workspace=ws, error=error)
+                return _r(handler, 500, {"ok": False, "error": error})
+            _publish("index.done", session=sid, workspace=ws,
+                     files=res.get("files"), chunks=res.get("chunks"),
+                     embedded=res.get("embedded"), embed_error=res.get("embed_error"),
+                     duration_ms=int((time.monotonic() - started) * 1000))
             return _r(handler, 200, res)
         if path == "/api/codebase/search":
             return _r(handler, 200, codebase_search(body or {}))
