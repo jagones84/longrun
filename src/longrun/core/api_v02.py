@@ -2225,11 +2225,25 @@ def _safe_fs_path(path, roots=None):
     return p
 
 
+FS_TREE_SKIP = {"node_modules", "__pycache__", ".git", ".hg", ".svn", ".venv",
+                "venv", "dist", "build", "target", ".mypy_cache", ".pytest_cache",
+                ".ruff_cache", ".ipynb_checkpoints"}
+
+FS_TREE_DIR_MAX = 1000
+FS_TREE_FILE_MAX = 2000
+
+
 def fs_list(qs=None) -> dict:
     """GET /api/fs/list — list one directory (dirs first, then files).
 
     `?session=` roots the browse at that session's workspace; `?path=` selects
-    the directory. Hidden dotfiles are skipped. Read-only, never mutates.
+    the directory. JAG-509: the operator works INSIDE dot-directories and
+    gitignored folders (`.Matrix`, `.agent`, `data/`), and the editor tree used to
+    drop every dot-entry — those files were invisible and unopenable. Only VCS
+    internals and dependency/build caches stay out (they are thousands of files
+    nobody hand-edits). Reading was never restricted by that filter —
+    `/api/fs/read` already served any path inside the browse roots — so this
+    makes the tree match the filesystem. Read-only, never mutates.
     """
     import os as _os
     q = qs or {}
@@ -2245,9 +2259,9 @@ def fs_list(qs=None) -> dict:
         with _os.scandir(p) as it:
             for e in it:
                 try:
-                    if e.name.startswith("."):
-                        continue
                     if e.is_dir(follow_symlinks=False):
+                        if e.name in FS_TREE_SKIP:
+                            continue
                         dirs.append({"name": e.name, "path": e.path, "type": "dir"})
                     elif e.is_file(follow_symlinks=False):
                         files.append({"name": e.name, "path": e.path, "type": "file",
@@ -2258,7 +2272,8 @@ def fs_list(qs=None) -> dict:
         return {"error": str(e), "root": root, "path": p}
     dirs.sort(key=lambda d: d["name"].lower())
     files.sort(key=lambda d: d["name"].lower())
-    return {"root": root, "path": p, "dirs": dirs[:1000], "files": files[:2000],
+    return {"root": root, "path": p, "dirs": dirs[:FS_TREE_DIR_MAX],
+            "files": files[:FS_TREE_FILE_MAX],
             "count": len(dirs) + len(files)}
 
 
@@ -2293,7 +2308,7 @@ def fs_find(qs=None) -> dict:
         return {"error": "path outside allowed roots", "root": root, "results": []}
     if not _os.path.isdir(start):
         return {"error": "not a directory: %s" % start, "root": root, "results": []}
-    skip = {"node_modules", "__pycache__", ".git", "venv", "dist", "build", "target"}
+    skip = FS_TREE_SKIP
     hits, scanned, queue = [], 0, [start]
     while queue and scanned < FS_FIND_MAX:
         cur = queue.pop(0)
@@ -2306,13 +2321,13 @@ def fs_find(qs=None) -> dict:
             if scanned >= FS_FIND_MAX:
                 break
             name = e.name
-            if name.startswith("."):
-                continue
             try:
                 is_dir = e.is_dir(follow_symlinks=False)
             except OSError:
                 continue
             if is_dir:
+                # JAG-509: same visibility rule as the editor tree — hidden and
+                # gitignored folders are searchable; only VCS/cache noise is not.
                 if name.lower() in skip:
                     continue
                 queue.append(e.path)

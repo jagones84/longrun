@@ -185,6 +185,37 @@ check("B5 the task graph itself is untouched by compaction",
 check("B6 the always-on state section still names the open step",
       "open task XY" in S.context_summary(session_id="cc1"), "")
 
+# --- B8: the editor tree shows hidden + gitignored entries (JAG-509) --------
+# The tree used to drop every dot-entry, so .Matrix / .agent / .env were absent
+# from the editor: the operator could not see or open them at all.
+_tree_root = os.path.join(TMP, "tree")
+for _rel in (".Matrix/docs/MANUAL.md", ".agent/HANDOFF.md", ".env", "src.py",
+             "node_modules/pkg/index.js", ".git/config"):
+    _fp = os.path.join(_tree_root, *_rel.split("/"))
+    os.makedirs(os.path.dirname(_fp), exist_ok=True)
+    with open(_fp, "w", encoding="utf-8") as _fh:
+        _fh.write("x")
+_prev_tree_roots = os.environ.get("LONGRUN_BROWSE_ROOTS")
+os.environ["LONGRUN_BROWSE_ROOTS"] = _tree_root
+try:
+    _tree = API_MOD.fs_list({"path": _tree_root})
+    _hidden_read = API_MOD.fs_read(
+        {"path": os.path.join(_tree_root, ".Matrix", "docs", "MANUAL.md")})
+finally:
+    if _prev_tree_roots is None:
+        os.environ.pop("LONGRUN_BROWSE_ROOTS", None)
+    else:
+        os.environ["LONGRUN_BROWSE_ROOTS"] = _prev_tree_roots
+_tree_names = ({e["name"] for e in _tree.get("dirs", [])}
+               | {e["name"] for e in _tree.get("files", [])})
+check("A11 the editor tree lists hidden + gitignored entries",
+      {".Matrix", ".agent", ".env", "src.py"} <= _tree_names,
+      str(sorted(_tree_names)))
+check("A12 the tree still hides VCS internals and dependency folders",
+      not ({".git", "node_modules"} & _tree_names), str(sorted(_tree_names)))
+check("A13 a hidden entry stays readable through the same sandboxed API",
+      _hidden_read.get("text") == "x", str(_hidden_read))
+
 # --- B7: the context PREVIEW uses the REAL system prompt (JAG-366) -----------
 _pv = CE.preview(S.get_or_create_session(None, title="preview-probe")["id"])
 check("B7 preview reports the REAL section-registry system prompt (not the legacy constant)",
