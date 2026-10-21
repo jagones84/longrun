@@ -33,7 +33,11 @@ const LS_TABS_S = "sf_ed_tabs_";     // JAG-157: per-session tab set
 const LS_OPEN = "sf_dock_open";      // JAG-157: "false" = the user closed the dock
 const LS_MODE = "sf_ed_mode";        // JAG-453: "dock" (default) | "float" | "full"
 const LS_POS = "sf_ed_pos";          // JAG-453: floating window geometry {left,top,w,h}
-const IMG_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif"]);
+// JAG-232/JAG-526: NO "svg" here. The server's `/api/fs/raw` allow-list refuses
+// `image/svg+xml` on purpose (a served SVG runs its embedded JS at this origin),
+// so the old `"image"` viewer painted a broken <img> AND a 415 in the console on
+// every SVG tab. An SVG is XML: the code editor opens it as text.
+const IMG_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "avif"]);
 const LANG_BY_EXT = {
   js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
   ts: "javascript", tsx: "javascript", py: "python", json: "json",

@@ -1843,17 +1843,30 @@ def _dsml_action(text):
     meta envelope (``invoke name="tool"`` with ``tool`` + ``args`` parameters,
     copying the JSON protocol's own example). Both are accepted here; otherwise
     the call was dropped as "invalid JSON" and the turn ended mid-work.
+
+    JAG-526: the Tool Tests session showed a THIRD live shape — extra attributes
+    on the invoke (``<invoke name="tool" string="true">``), the real tool name as
+    the element TEXT (``>shell.exec<``) and a mismatched ``</|DSML| parameter>``
+    close. The old regex required ``name="X">`` immediately, so nine such calls
+    were dropped and every retry reported "That JSON was invalid" (a JSON error
+    for text that contained no action JSON at all).
     """
     if not _looks_like_dsml(text):
         return None
-    m = re.search(_DSML + r'\s*invoke\s+name="([^"]+)"\s*>(.*?)</' + _DSML
-                  + r'\s*(?:invoke)?>', text, re.S)
+    m = re.search(_DSML + r"\s*(?:invoke|invocation)\b([^>]*)>", text, re.S)
     if not m:
         return None
-    name = m.group(1).strip()
+    attrs = m.group(1)
+    tail = text[m.end():]
+    # The invoke body ends at its OWN close tag; a stray `</… parameter>` inside
+    # (the malformed dialect) must not truncate it.
+    endm = re.search(r"</" + _DSML + r"\s*(?:invoke|invocation)?\s*>", tail)
+    body = tail[:endm.start()] if endm else tail
+    nm = re.search(r'\bname\s*=\s*"([^"]*)"', attrs)
+    name = nm.group(1).strip() if nm else ""
     args = {}
     for pm in re.finditer(_DSML + r'\s*parameter\s+name="([^"]+)"([^>]*)>(.*?)</'
-                          + _DSML + r'\s*(?:parameter)?>', m.group(2), re.S):
+                          + _DSML + r"\s*(?:parameter)?>", body, re.S):
         key = pm.group(1).strip()
         val = pm.group(3)
         if 'string="false"' in pm.group(2):
@@ -1862,20 +1875,31 @@ def _dsml_action(text):
             except Exception:  # noqa: BLE001
                 pass
         args[key] = val
+    # JAG-526: the tool name can be the element TEXT of a meta envelope
+    # (`<invoke name="tool">shell.exec</…>`), not only a `tool` parameter.
+    if name in ("", "tool"):
+        cut = body.find("<" + _DSML + " parameter")
+        lead = body[:cut] if cut >= 0 else body
+        lead = re.sub(r"</?" + _DSML + r"[^>]*>", "", lead).strip()
+        if isinstance(args.get("tool"), str) and args["tool"].strip():
+            name = args.pop("tool").strip()
+        elif re.fullmatch(r"[A-Za-z_][\w.\-]*", lead or ""):
+            name = lead
     if not name:
         return None
     # JAG-501: unwrap the meta envelope the model copies from the protocol's own
     # example: <invoke name="tool"> <parameter name="tool">X</parameter>
     #                     <parameter name="args">{...}</parameter> </invoke>
-    if name == "tool" and isinstance(args.get("tool"), str) and args.get("tool").strip():
-        inner = args.get("args")
-        if isinstance(inner, str):
-            try:
-                inner = json.loads(inner)
-            except Exception:  # noqa: BLE001
-                inner = {}
-        return {"action": "tool", "tool": args["tool"].strip(), "args": inner or {}}
-    return {"action": "tool", "tool": name, "args": args}
+    # JAG-526: the args parameter may now be the ONLY one (the tool name sits in
+    # the element text), so unwrap it without requiring a `tool` parameter.
+    if len(args) == 1 and isinstance(args.get("args"), str):
+        try:
+            inner = json.loads(args["args"])
+        except Exception:  # noqa: BLE001
+            inner = None
+        if isinstance(inner, dict):
+            args = inner
+    return {"action": "tool", "tool": name, "args": args or {}}
 
 
 def _tool_markup_action(text):
@@ -2806,6 +2830,23 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 'Emit either {"action":"tool","tool":"<name>","args":{...}} for a real '
                 "tool, a top-level harness action (todo.write / todo.update / "
                 "todo.replan), or answer the user in plain prose (no JSON).", "retry")
+            continue
+        if _looks_like_dsml(answer):
+            # JAG-526: recognised native markup that carries no usable tool name
+            # (e.g. `<invocation><parameter name="cmd">…`). The JSON message below
+            # was a lie — the reply holds no action JSON — so name the real
+            # problem and the exact shape the harness executes.
+            msgs.append({"role": "assistant", "content": answer})
+            _invalid_streak += 1
+            if _invalid_streak >= 4:
+                _kg_stop_reason = "no_valid_action"
+                on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
+                break
+            _inject(
+                "Your reply used the model's native <|DSML|> tool-call markup, but it "
+                "named no tool the harness can run. Emit ONLY plain JSON: "
+                '{"action":"tool","tool":"<tool name>","args":{...}} — no <|DSML|> '
+                "markup and no wrapper. Or answer the user in plain prose.", "retry")
             continue
         if _looks_like_json_action(answer):
             # JAG-64: malformed/TRUNCATED tool-call JSON (extract_json failed, so

@@ -1703,6 +1703,9 @@
     </div>
   </div>
   <aside id="toolsBar" data-col="tools" hidden aria-label="chat tools">
+    <button class="ghost" id="kbSessionBtn" data-call="openSessionNotebook"
+            title="open this session's knowledge notebook (Settings ▸ Knowledge)"
+            aria-label="open this session's knowledge notebook">📖</button>
     <button class="ghost" type="button" id="chatReloadBtn"
             title="refresh this chat and rebuild its transcript in chronological order"
             aria-label="refresh this chat">↻</button>
@@ -1775,7 +1778,7 @@
               <span class="cmp-lbl">target %</span>
               <input id="cmpTarget" class="cmp-num" type="number" min="0" max="99" step="1" inputmode="numeric"
                      data-change="saveCompactionPolicy"></label>
-            <label class="cmp-field" title="how many newest turns stay verbatim">
+            <label class="cmp-field" title="how many newest MESSAGES stay verbatim (a user+assistant turn is 2)">
               <span class="cmp-lbl">keep</span>
               <input id="cmpKeep" class="cmp-num" type="number" min="1" max="50" step="1" inputmode="numeric"
                      data-change="saveCompactionPolicy"></label>
@@ -9904,7 +9907,7 @@ async function kbLoadSessions() {
     box.innerHTML = s.map(n => {
       const sel = n.id === kbState.notebook;
       const owner = (n.owner || "");
-      return '<div class="kb-row" style="opacity:.92">' +
+      return '<div class="kb-row" data-owner="' + _attr(owner) + '" style="opacity:.92">' +
         '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
         '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this session notebook">' + (sel ? "●" : "○") + '</button>' +
         '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px" readonly title="' + _attr(owner) + '">' +
@@ -9916,6 +9919,30 @@ async function kbLoadSessions() {
     box.querySelectorAll("[data-use]").forEach(el => el.onclick = () => { kbState.notebook = el.getAttribute("data-use"); kbLoadSources(); kbLoadSessions(); });
     box.querySelectorAll("[data-del]").forEach(el => el.onclick = () => kbDeleteNotebook(el.getAttribute("data-del")));
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+/* JAG-526: the chat tools bar exposes THIS session's knowledge notebook. One
+   click opens Settings ▸ Knowledge, expands "Session notebooks", selects the
+   notebook whose `owner` is the live session (the id is deterministic on the
+   server, so no guessing) and scrolls it into view. Without a match it says so
+   instead of leaving the operator to scan every session's notebook. */
+async function openSessionNotebook() {
+  if (!sessionId) { toast("no active session", "warn"); return; }
+  openSettings("knowledge");
+  const box = $("kbSessionBox");
+  if (box) box.open = true;
+  await kbLoadSessions();
+  let hit = null;
+  document.querySelectorAll("#kbSessions .kb-row").forEach(r => {
+    if (!hit && r.dataset.owner === sessionId) hit = r;
+  });
+  if (hit) {
+    const use = hit.querySelector("[data-use]");
+    if (use) use.click();
+  } else if (typeof toast === "function") {
+    toast("no knowledge notebook for this session yet — attach a file to create it", "warn");
+  }
+  const target = box || $("kbSessions");
+  if (target) target.scrollIntoView({block: "center", behavior: "smooth"});
 }
 async function kbCreateNotebook() {
   const name = $("kbNewName") ? $("kbNewName").value.trim() : "";

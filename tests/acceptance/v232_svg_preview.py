@@ -85,6 +85,15 @@ check("_fs_raw no longer blanket-allows image/*",
 check("responses carry X-Content-Type-Options: nosniff",
       '"X-Content-Type-Options", "nosniff"' in sv)
 
+# JAG-526: the editor must not ask for the preview the server refuses. SVG is
+# not in IMG_EXT, so an .svg tab opens in the code editor instead of a broken
+# <img> plus a 415 in the console.
+with open(os.path.join(REPO, "webui", "assets", "editor.js"), encoding="utf-8") as f:
+    ed = f.read()
+_imgline = next((ln for ln in ed.splitlines() if ln.startswith("const IMG_EXT")), "")
+check("the editor never requests a raw preview for SVG",
+      bool(_imgline) and '"svg"' not in _imgline, _imgline)
+
 print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))

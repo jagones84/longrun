@@ -128,6 +128,38 @@ All notable changes to Longrun are documented here. The format follows
   A Matrix verification script's own return code is reported as `script_exit_code`
   evidence and can no longer masquerade as a harness verdict. `v523` locks the
   table and `v347` locks the renderer.
+- **Native DSML tool calls in the live dialect are executed, not retried as "invalid
+  JSON".** The `Tool Tests` session (`0e13bdb23c5b`) collapsed after a compaction: the
+  model (`deepseek:deepseek-reasoner`) answered with DeepSeek's native markup in a
+  THIRD shape — `<invoke name="tool" string="true">shell.exec</…>` (extra attribute, tool
+  name as element TEXT, mismatched `</… parameter>` close). `_dsml_action` required
+  `name="X">` immediately, returned `None` for all nine calls, and the loop reported
+  *"That JSON was invalid or incomplete"* although the reply held no action JSON — no
+  tool ever ran and four retries stopped the turn with five steps still open. The
+  parser now reads the invoke body to its real close, accepts `invoke`/`invocation`
+  and both tool-name sources, and unwraps a lone `args` object. A genuinely nameless
+  markup now gets a DSML-specific retry that names the protocol instead of blaming
+  JSON. Pinned by `v369` E1–E5 (24/24; E1–E3 RED at the previous commit).
+- **A manual compaction keeps the `keep` the Context panel shows.** The 🗜 button
+  forced a hidden 2-MESSAGE window: `40 → 3` messages while the panel said
+  `keep_recent: 8` (live card: *"target 16% of budget"*, a target that path never
+  uses). It now honours `KEEP_RECENT` from `config/compaction.yaml` (or the WebUI
+  overlay) and reports the real window (*"kept the newest N messages verbatim"*). The
+  dead `COMPACT_MANUAL_KEEP_RECENT` constant is gone. Pinned by `v458` C3–C4
+  (RED `after=3` at the previous commit) and `v485` pins its own 2-message window for
+  the artifact horizon.
+- **An SVG tab no longer requests a preview the server refuses.** The editor treated
+  `.svg` as an image and pointed an `<img>` at `/api/fs/raw`, which answers **415** by
+  design (an inline SVG runs its embedded JS at this origin — JAG-232). Every SVG tab
+  painted a broken image and logged the 415. SVG is XML: it now opens in the code
+  editor. Pinned by `v232`.
+
+### Added
+- **A book button in the chat tools bar opens this session's knowledge notebook.**
+  Above the transcript refresh (↻), `📖` opens Settings ▸ Knowledge with *Session
+  notebooks* already expanded, selects the notebook whose `owner` is the live session
+  and scrolls it into view; with no notebook yet it says so instead of leaving the
+  operator to scan every session. Pinned by `v428` 1h–1i.
 
 ### Changed
 - **`/goal` keeps working until evidence-backed completion (JAG-517).**

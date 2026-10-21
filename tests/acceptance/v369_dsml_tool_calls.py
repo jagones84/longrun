@@ -110,6 +110,57 @@ check("non-DSML text yields no action", a._dsml_action("plain prose") is None)
 check("DSML with no invocation yields no action",
       a._dsml_action(OPEN + " calls>" + CLOSE + " calls>") is None)
 
+# ---------------------------------------------- the Tool Tests dialect (JAG-526)
+# Verbatim shapes from session 0e13bdb23c5b after a compaction: an EXTRA
+# attribute on the invoke, the real tool name as the element TEXT, and a
+# mismatched `</… parameter>` close. Every one of these used to return None and
+# trigger the (wrong) "That JSON was invalid" retry.
+REAL = (
+    OPEN + " calls>\n"
+    + OPEN + ' invoke name="tool" string="true">shell.exec</' + D + " parameter>\n"
+    + OPEN + ' parameter name="args" string="true">{"command": "ls -la /tmp"}</' + D + " parameter>\n"
+    + CLOSE + " invoke>\n"
+    + CLOSE + " calls>"
+)
+REAL_EMPTY = (
+    OPEN + " calls>\n"
+    + OPEN + ' invoke name="tool" string="true">self.info</' + D + " parameter>\n"
+    + OPEN + ' parameter name="args" string="true">{}</' + D + " parameter>\n"
+    + CLOSE + " invoke>\n"
+    + CLOSE + " calls>"
+)
+# An invocation with NO tool name at all is still unusable — but it must be
+# recognised as DSML so the retry names the markup, not "invalid JSON".
+NO_NAME = (
+    OPEN + " invocation>\n"
+    + OPEN + ' parameter name="cmd">ls -la</' + D + " parameter>\n"
+    + CLOSE + " invocation>"
+)
+# The original meta envelope (tool name as a parameter) must keep working.
+ENVELOPE = (
+    OPEN + " calls>\n"
+    + OPEN + ' invoke name="tool">\n'
+    + OPEN + ' parameter name="tool">fs.read</' + D + " parameter>\n"
+    + OPEN + ' parameter name="args">{"path": "/tmp/a"}</' + D + " parameter>\n"
+    + CLOSE + " invoke>\n"
+    + CLOSE + " calls>"
+)
+_real_want = {"action": "tool", "tool": "shell.exec",
+              "args": {"command": "ls -la /tmp"}}
+check("E1 extra invoke attributes + tool name as text parse",
+      a._dsml_action(REAL) == _real_want, str(a._dsml_action(REAL)))
+check("E2 the full pipeline resolves that markup (no JSON retry)",
+      a._extract_action(REAL) == _real_want, str(a._extract_action(REAL)))
+check("E3 an empty args object parses",
+      a._dsml_action(REAL_EMPTY) == {"action": "tool", "tool": "self.info", "args": {}},
+      str(a._dsml_action(REAL_EMPTY)))
+check("E4 a nameless invocation is still DSML (truthful retry, not 'invalid JSON')",
+      a._looks_like_dsml(NO_NAME) and a._dsml_action(NO_NAME) is None)
+check("E5 the tool-parameter envelope still parses",
+      a._dsml_action(ENVELOPE) == {"action": "tool", "tool": "fs.read",
+                                   "args": {"path": "/tmp/a"}},
+      str(a._dsml_action(ENVELOPE)))
+
 # ----------------------------------------- Hermes XML tool-call dialect ----
 _xml_action = {
     "action": "tool",

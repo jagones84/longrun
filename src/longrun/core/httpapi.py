@@ -33,7 +33,7 @@ from longrun.core import server as _sf_server  # only for the AUTH_TOKEN mirror 
 from longrun.model import rllm
 from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      CHAT_STREAM_IDLE, CHAT_TOOL_PROMPT, COMPACT_FORCE_RATIO,
-                     COMPACT_MANUAL_KEEP_RECENT, DATA_DIR, FEED_REPLAY_MAX,
+                     DATA_DIR, FEED_REPLAY_MAX,
                      HARNESS_MARK, MAX_BODY_BYTES, REPO, ROUTER_BASE, RunTrace,
                      SESSIONS_DIR, SUMMARIZER_MAX_CHARS, ThinkCoalescer, VERSION,
                      WEBUI_DIR, _ACTIVE_CHAT, _ACTIVE_CHAT_LOCK, _DELETED_SESSIONS,
@@ -1201,11 +1201,11 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     button appeared to do nothing. The single source of this policy lives here, so
     the WebUI and the app need no duplicated logic.
 
-    JAG-110: the manual action also FORCES compaction and keeps only
-    `COMPACT_MANUAL_KEEP_RECENT` recent turns, so a short session actually shrinks
-    and the LLM summarizer runs (previously `keep_recent=8` left <=8-message
-    sessions untouched: no model call, no GPU). The automatic path is unchanged
-    (engine default 8, never forced).
+    JAG-110: the manual action also FORCES compaction so a short session actually
+    shrinks and the LLM summarizer runs (previously `keep_recent=8` left <=8-message
+    sessions untouched: no model call, no GPU). JAG-526: it keeps `KEEP_RECENT`
+    from the Context panel — the same window as the automatic path — instead of a
+    hidden 2-message constant.
     """
     from longrun.model import context_engine
     sess = load_session(session) if session else None
@@ -1226,7 +1226,11 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
         room = max(256, int(current * COMPACT_FORCE_RATIO))
     manual = not budget_tokens
     if manual and keep_recent is None:
-        keep_recent = COMPACT_MANUAL_KEEP_RECENT
+        # JAG-526: the button used a HIDDEN 2-message window, so a 326-message
+        # session collapsed to 3 messages while the Context panel said keep=8.
+        # The panel's policy is the contract for BOTH paths; `force` below still
+        # guarantees the button actually shrinks the transcript.
+        keep_recent = rllm.KEEP_RECENT
     # JAG-431r: the AUTO path used the engine's DEFAULT_KEEP_RECENT (8) which
     # let the OLD half of the transcript survive a compact — so a 22-msg
     # session only shrunk to 11 and the meter barely moved. The policy file
@@ -1337,12 +1341,18 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
                       if n.get("status") in _tg.OPEN_STATUSES]
         _verb = ("Auto-compacted the chat context: " if origin == "auto"
                  else "Compacted the chat context (manual): ")
+        # JAG-526: a MANUAL compaction does not target a share of the model
+        # budget (it forces a shrink of the CURRENT transcript). Naming the
+        # target_pct there claimed a policy it never used; report the real
+        # verbatim window instead.
+        _policy_note = ("target %d%% of budget" % int(round(rllm.AUTOCOMPACT_TARGET_PCT))
+                        if origin == "auto"
+                        else "kept the newest %d messages verbatim" % keep_recent)
         lines = ["[harness] \U0001f5dc " + _verb
-                 + "%d \u2192 %d messages, freed ~%d tokens (target %d%% of budget). "
+                 + "%d \u2192 %d messages, freed ~%d tokens (%s). "
                    "The oldest turns were merged into the leading summary block so the "
                    "next reply has room to land under the %d%% trigger."
-                 % (before_n, after_n, freed,
-                    int(round(rllm.AUTOCOMPACT_TARGET_PCT)),
+                 % (before_n, after_n, freed, _policy_note,
                     int(round(rllm.AUTOCOMPACT_PCT)))]
         if free_groups:
             titled = [(g.get("id"), g.get("title") or "(untitled)") for g in free_groups]

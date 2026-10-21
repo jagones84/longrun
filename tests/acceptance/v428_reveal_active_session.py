@@ -55,6 +55,17 @@ check("1g chat refresh calls the transcript reload path",
       'id="chatReloadBtn"' in tt and '$("chatReloadBtn").onclick = () => reloadChat();' in HTML
       and "function reloadChat()" in HTML
       and "loadHistory(); loadPlan(); loadCtx();" in HTML, "")
+# JAG-526: the book button opens Settings ▸ Knowledge already expanded on THIS
+# session's notebook (the row carries data-owner, so no list scanning).
+check("1h the session-notebook book button sits ABOVE the chat refresh",
+      'id="kbSessionBtn"' in tt
+      and tt.index('id="kbSessionBtn"') < tt.index('id="chatReloadBtn"'), "")
+check("1i it opens Knowledge expanded on the session's own notebook",
+      'data-call="openSessionNotebook"' in tt
+      and "async function openSessionNotebook(" in HTML
+      and "box.open = true" in HTML
+      and "r.dataset.owner === sessionId" in HTML
+      and 'data-owner="' in HTML, "")
 check("1d #toolsBar starts hidden (shown only with an open session)",
       re.search(r'id="toolsBar"[^>]*hidden', HTML) is not None, "")
 check("1e visibility is driven by _updateTreeTools()",

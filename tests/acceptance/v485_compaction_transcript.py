@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.memory import stores            # noqa: E402
 from longrun.core import server as _srv      # noqa: E402,F401  (httpapi<->server import order)
 from longrun.core import httpapi             # noqa: E402
+from longrun.model import rllm               # noqa: E402
 
 results = []
 
@@ -73,7 +74,15 @@ check("1a the fixture has 10 messages and 5 cards + 5 injects",
 
 # ---- 2. the REAL manual compaction -------------------------------------------
 httpapi._summarize_with_llm = lambda messages, model=None, meta=None: None
-stats = httpapi.compact_session(sid)
+# JAG-526: the manual action now keeps the policy's `keep_recent` (default 8, a
+# deliberate shrink no longer collapses a long chat). This fixture wants an
+# unambiguous horizon — cards at 1/3 summarized, the rest kept — so it PINS the
+# window to 2. v458 C3 owns the "policy keep_recent is honoured" contract.
+rllm.set_policy_override(keep_recent=2)
+try:
+    stats = httpapi.compact_session(sid)
+finally:
+    rllm.clear_policy_override()
 after = stores.load_session(sid)
 n = len(after["messages"])
 check("2a the transcript really shrank", stats.get("compacted", 0) > 0 and n < 10,

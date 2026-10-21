@@ -184,11 +184,10 @@ def refresh_compaction_policy():
 # fraction of the transcript's CURRENT size — using the full model budget made
 # the button a no-op for any session under 100% (so it "did nothing").
 COMPACT_FORCE_RATIO = float(os.environ.get("LONGRUN_COMPACT_FORCE_RATIO", "0.5"))
-# JAG-110: how many newest turns the MANUAL "compact now" keeps verbatim. The
-# automatic path keeps 8; the manual action is a deliberate shrink, so it keeps
-# only this few — otherwise a short session (<=8 msgs) compacted nothing and the
-# summarizer was never called (no GPU activity, "0 msgs compacted").
-COMPACT_MANUAL_KEEP_RECENT = int(os.environ.get("LONGRUN_COMPACT_MANUAL_KEEP_RECENT", "2"))
+# JAG-110/JAG-526: the manual "compact now" action always FORCES a shrink, but
+# it keeps the SAME `keep_recent` window the Context panel exposes (KEEP_RECENT).
+# It used to keep a hidden 2 messages, which collapsed a 326-message session to 3
+# while the panel said keep=8.
 # JAG-214: cap the transcript handed to the LLM summarizer. A session can be
 # dominated by ONE huge paste; sending it whole to the summarizer would overflow
 # the summarizer's own window and fail. Keep the head + tail (the summarizer only

@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import server as S            # noqa: E402
 from longrun.core import httpapi                 # noqa: E402
-from longrun.model import routing, context_engine  # noqa: E402
+from longrun.model import routing, context_engine, rllm  # noqa: E402
 from longrun.agent import agent as A             # noqa: E402
 from longrun.util import steering                # noqa: E402
 
@@ -132,6 +132,31 @@ check("C1 a MANUAL compaction leaves a visible compact card",
       (_cards[-1].get("text", "")[:90] if _cards else "no card"))
 check("C2 it reports the failure honestly (no silent 'done')",
       _res2.get("summary") in ("llm", "extractive"), str(_res2.get("summary")))
+
+# JAG-526: the MANUAL button used a hidden 2-message window, so a 326-message
+# session collapsed to 3 messages while the Context panel said keep=8. It must
+# honour the SAME policy the panel edits.
+SID3 = "v458policy"
+_s3 = S.get_or_create_session(SID3)
+for _i in range(20):
+    S.append_message(_s3, "user", "u%d %s" % (_i, "k" * 200))
+    S.append_message(_s3, "assistant", "a%d" % _i)
+httpapi._summarize_with_llm = (lambda messages, model=None, session=None, meta=None,
+                               cancel=None: "S")
+rllm.set_policy_override(keep_recent=6)
+try:
+    _res3 = S.compact_session(SID3)
+finally:
+    rllm.clear_policy_override()
+    httpapi._summarize_with_llm = _orig_sum
+check("C3 a MANUAL compaction keeps the policy's keep_recent verbatim",
+      _res3.get("messages_after") == 7,
+      "after=%s compacted=%s" % (_res3.get("messages_after"), _res3.get("compacted")))
+_cards3 = [r for r in (S.load_session(SID3).get("injects") or [])
+           if r.get("kind") == "compact"]
+check("C4 the manual card reports the REAL window (not an unused budget target)",
+      bool(_cards3) and "kept the newest 6 messages" in _cards3[-1].get("text", ""),
+      (_cards3[-1].get("text", "")[:150] if _cards3 else "no card"))
 
 # ---- D) the extractive fallback drops harness scaffolding --------------------
 _msgs = [{"role": "user", "content": "[harness] Observation for tool shell: LARGE output"},
