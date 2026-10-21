@@ -219,6 +219,44 @@ with tempfile.TemporaryDirectory() as tmp:
           "png kept=%s rogue removed=%s" % (os.path.isfile(keep_png),
                                             not os.path.exists(created_yaml)))
 
+    # ---- P) a SYMLINK to the Nucleus is a write channel ----------------------
+    # Live audit bypass: `ln -sfn <nucleus>/tools /tmp/nl && echo probe >
+    # /tmp/nl/_p.txt` exited 0 and the file was born inside the Nucleus. The gate
+    # judges the path AS WRITTEN before the command runs, so at check time
+    # /tmp/nl did not exist and resolved to itself. Linking a Nucleus source is
+    # now refused outright.
+    p_ln, p_ln_err = matrix_guard.check_shell_command(
+        "ln -sfn %s /tmp/nl_probe" % os.path.join(tmp, "src", "longrun", "core"),
+        cwd=tmp, repo_root=tmp)
+    p_chain, p_chain_err = matrix_guard.check_shell_command(
+        "ln -sfn %s /tmp/nl_probe && echo probe > /tmp/nl_probe/_p.txt"
+        % os.path.join(tmp, "src", "longrun"),
+        cwd=tmp, repo_root=tmp)
+    p_ok, _ = matrix_guard.check_shell_command(
+        "ln -sfn /tmp/somewhere /tmp/elsewhere", cwd=tmp, repo_root=tmp)
+    check("P a symlink whose source is in the Nucleus is refused (chain form too)",
+          not p_ln and "write channel" in p_ln_err
+          and not p_chain and "NUCLEUS_PROTECTED" in p_chain_err
+          and p_ok,
+          " ".join((p_ln_err, p_chain_err)))
+
+    # ---- Q) a creation is removed whatever its extension --------------------
+    # The snapshot used to track only known extensions, so a created
+    # `_probe.txt` inside src/longrun survived every restore.
+    keep_txt = os.path.join(tmp, "webui", "assets", "notes.txt")
+    os.makedirs(os.path.dirname(keep_txt), exist_ok=True)
+    with open(keep_txt, "w", encoding="utf-8") as f:
+        f.write("keep me\n")
+    snap_txt = matrix_guard.snapshot_nucleus_digests(tmp)
+    created_txt = os.path.join(tmp, "src", "longrun", "core", "_probe.txt")
+    with open(created_txt, "w", encoding="utf-8") as f:
+        f.write("probe\n")
+    matrix_guard.restore_if_nucleus_tampered(snap_txt, tmp)
+    check("Q a created file of ANY extension inside the Nucleus is removed",
+          not os.path.exists(created_txt), created_txt)
+    check("Q2 a pre-existing file of an untracked extension survives the sweep",
+          os.path.isfile(keep_txt), keep_txt)
+
 print("---")
 print("%d/%d PASS" % (sum(checks), len(checks)))
 sys.exit(0 if all(checks) else 1)

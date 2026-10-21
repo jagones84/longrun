@@ -6,6 +6,47 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Sessions can talk to each other.** `sessions` gained `action=send`
+  (`session`/`to` + `message`/`text`). A RUNNING peer receives the text inside its
+  current turn through the operator's steer inbox; an IDLE peer gets a real
+  server-side turn through the `Orchestrator`, so the message is never queued
+  forever. Every delivery is prefixed with `[message from session <id>]`, a peer
+  cannot message itself, and the reply is read back with `sessions.read`. The
+  isolation the audit asked for was explicitly NOT wanted: the operator asked for
+  sessions to be able to dialogue. Pinned by `v507` F–F4 and `v350` A4.
+
+### Fixed
+- **`memory.forget`/`memory.invalidate` with `query` deleted nothing and said it
+  worked.** The ids came only from semantic search, and a semantic backend scores an
+  exact ID-like token below `min_score`: live, `forget query="PROBE-STORE-9c1d"`
+  answered `forgot 0 memory(ies)` while the string was literally in
+  `data/memory/user_memories.md`. Both actions now resolve ids by case-insensitive
+  LITERAL substring (never the AND-of-words fallback, never similarity — a delete has
+  no undo), and a query that matches nothing is an explicit failure instead of an
+  empty success. Verified live: the audit's leftover was removed (`count=1`, token
+  gone from disk). Pinned by `v317` E1–E7 (RED at the previous commit: 19/24).
+- **`index.search` no longer cites files that were deleted.** A rebuild pruned a
+  removed file from the index but a search did not, so the agent could quote
+  `_idx_probe.md:1` after `rm`. Hits are now filtered by `os.path.isfile(path)` before
+  ranking/fusion. Pinned by `v399` C4a/C4b (RED at the previous commit).
+- **The Nucleus write gate no longer loses a symlink race it cannot see.** The gate
+  judges paths AS WRITTEN before the command runs, so
+  `ln -sfn <nucleus>/tools /tmp/nl && echo probe > /tmp/nl/_p.txt` passed (at check
+  time the link did not exist) and wrote through it into the Nucleus. Creating a
+  symlink whose SOURCE resolves inside the Nucleus is now refused outright. Pinned by
+  `v498` P.
+- **A file created inside the Nucleus is removed whatever its extension.** The
+  snapshot only tracked a fixed extension list, so a created `_probe.txt` survived
+  every restore while `.py`/`.md` creations were removed. The snapshot now records an
+  existence set for every file and keeps content bytes only for tracked extensions;
+  pre-existing untracked files (`webui/assets/*.png`) are still never deleted. Pinned
+  by `v498` Q/Q2.
+- **`memory.clear_core` no longer claims a clean wipe.** The CORE block is injected
+  into every prompt, so earlier copies are already part of the session transcripts,
+  the thread ledger and the event log (the audit found the marker in five files). The
+  tool now says so instead of implying the text is gone. Pinned by `v317` E8.
+
 ### Fixed
 - **The Editor's keyboard search follows the session too.** The tree pane's search
   box is session-scoped (`/api/fs/find` reads `sf_session` when it fires), but a

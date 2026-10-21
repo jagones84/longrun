@@ -908,6 +908,33 @@ def _self(args, run_id):
     return info
 
 
+def _memory_match_ids(mem, query, kind):
+    """Resolve a free-text query to memory ids for forget/invalidate.
+
+    JAG-529: `memory.forget query=...` answered "forgot 0 memory(ies)" while the
+    string was literally on disk. The ids came only from `mem.search(...,
+    semantic=True)`, and a semantic backend scores an exact ID-like token below
+    `min_score` — so the tool reported a successful deletion that deleted
+    nothing.
+
+    A DESTRUCTIVE action resolves ids by LITERAL case-insensitive substring only.
+    Neither the AND-of-words fallback of `mem.query` nor semantic similarity is
+    allowed here: both can return records that merely share vocabulary, and a
+    delete has no undo. When nothing matches literally, the caller reports an
+    error and points at `recall`.
+    """
+    needle = str(query or "").strip().lower()
+    ids, seen = [], set()
+    if not needle:
+        return ids
+    for rec in mem.query("", kind, 100000):
+        mid = rec.get("mid")
+        if mid and mid not in seen and needle in str(rec.get("content") or "").lower():
+            seen.add(mid)
+            ids.append(mid)
+    return ids
+
+
 def _memory(args, run_id):
     """Agent memory (JAG-73): store a durable note, or recall/search memories.
 
@@ -933,8 +960,15 @@ def _memory(args, run_id):
                 "stdout": txt or "(core memory is empty)", "backend": "host",
                 "sandboxed": False}
     if action == "clear_core":
+        # JAG-529: be honest about the blast radius. The CORE block is injected
+        # into every prompt, so earlier snapshots are already part of the session
+        # transcripts, thread ledgers and event log — clearing the block does not
+        # (and must not) rewrite history.
         mem.core_write("")
-        return {"ok": True, "count": 0, "stdout": "core memory cleared",
+        return {"ok": True, "count": 0,
+                "stdout": ("core memory cleared (data/memory/core.md is empty). Past "
+                           "transcripts/events still contain the copies that were "
+                           "already injected into earlier prompts."),
                 "backend": "host", "sandboxed": False}
     if action in ("set_core", "core_write", "write_core"):
         content = (args.get("content") or "").strip()
@@ -990,8 +1024,13 @@ def _memory(args, run_id):
                     "stdout": "forgot %s (%d record removed)"
                               % (target, res.get("removed", 0)),
                     "backend": "host", "sandboxed": False}
-        ids = [r.get("mid") for _s, r in mem.search(query, args.get("kind"), 20, True)
-               if r.get("mid")]
+        ids = _memory_match_ids(mem, query, args.get("kind"))
+        if not ids:
+            return {"ok": False, "exit_code": 1, "count": 0,
+                    "error": ("no memory matched %r (case-insensitive literal "
+                              "substring) — nothing was deleted. Use action=recall "
+                              "or action=health to see what is stored." % query),
+                    "backend": "host", "sandboxed": False}
         removed = sum(mem.forget(i).get("removed", 0) for i in ids)
         return {"ok": True, "count": removed,
                 "stdout": "forgot %d memory(ies): %s" % (removed, ", ".join(ids)),
@@ -1006,8 +1045,12 @@ def _memory(args, run_id):
                 return {"ok": False,
                         "error": "target or query required for action=invalidate",
                         "backend": "host", "sandboxed": False}
-            ids = [r.get("mid") for _s, r in mem.search(q, args.get("kind"), 20, True)
-                   if r.get("mid")]
+            ids = _memory_match_ids(mem, q, args.get("kind"))
+            if not ids:
+                return {"ok": False, "exit_code": 1, "count": 0,
+                        "error": ("no memory matched %r (case-insensitive literal "
+                                  "substring) — nothing was invalidated." % q),
+                        "backend": "host", "sandboxed": False}
             for i in ids:
                 mem.invalidate(i, reason=reason or ("query:" + q))
             return {"ok": True, "count": len(ids),
@@ -1303,6 +1346,48 @@ def _sessions(args, run_id):
     """
     from longrun.core import server
     action = str(args.get("action", "list") or "list").strip().lower()
+    if action in ("send", "message", "tell", "ask"):
+        # JAG-532: sessions may TALK to each other. A running peer receives the
+        # message inside its current turn (the same steer inbox the operator uses);
+        # an idle peer gets a real server-side turn through the Orchestrator, so the
+        # message is not queued forever. The reply is read back with action=read.
+        target = str(args.get("session") or args.get("to") or "").strip()
+        text = str(args.get("message") or args.get("text") or "").strip()
+        if not target or not text:
+            return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
+                    "error": "session and message required for action=send",
+                    "backend": "host", "sandboxed": False}
+        if not server.load_session(target):
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
+                    "error": "no such session: %s (use action=list to find it, "
+                             "action=read to check the reply)" % target,
+                    "backend": "host", "sandboxed": False}
+        if run_id and target == run_id:
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
+                    "error": "refusing to send a message to the calling session",
+                    "backend": "host", "sandboxed": False}
+        payload = ("[message from session %s]\n%s" % (run_id or "unknown", text))
+        if target in getattr(server, "_ACTIVE_CHAT", {}):
+            from longrun.util import steering
+            depth = steering.push_steer(target, payload)
+            return {"ok": True, "exit_code": 0, "session": target, "mode": "steer",
+                    "stdout": ("delivered into the peer's RUNNING turn (queue depth %d); "
+                               "read the reply with action=read session=%s"
+                               % (depth, target)),
+                    "stderr": "", "backend": "host", "sandboxed": False}
+        from longrun.orbit.orchestrator import Orchestrator
+        res = Orchestrator().dispatch([target], payload, mode="chat")
+        if not res.get("ok"):
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
+                    "error": res.get("error") or "dispatch failed",
+                    "backend": "host", "sandboxed": False}
+        job = (res.get("jobs") or [{}])[0]
+        return {"ok": True, "exit_code": 0, "session": target, "mode": "turn",
+                "job": job.get("job"),
+                "stdout": ("peer was idle: started a server-side turn (%s). Read the "
+                           "reply with action=read session=%s (action=list shows "
+                           "RUNNING while it works)." % (job.get("job"), target)),
+                "stderr": "", "backend": "host", "sandboxed": False}
     if action in ("read", "get", "show", "transcript"):
         sid = str(args.get("session") or args.get("id") or "").strip()
         if not sid:

@@ -49,7 +49,8 @@ check("A3 it is read-only (approval=auto)", (spec or {}).get("approval") == "aut
       str((spec or {}).get("approval")))
 sch = registry.TOOL_SCHEMAS.get("sessions") or {}
 _actions = set((sch.get("properties", {}).get("action", {}) or {}).get("enum", []))
-check("A4 it documents list + read", _actions == {"list", "read"}, str(sorted(_actions)))
+check("A4 it documents list + read + send", _actions == {"list", "read", "send"},
+      str(sorted(_actions)))
 
 # --- B: list — discovery (which session?) -----------------------------------
 base = {"id": "sess1", "title": "coder 1 build", "created": 1, "workspace": "ws",

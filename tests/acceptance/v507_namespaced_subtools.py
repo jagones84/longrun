@@ -113,6 +113,70 @@ check("E Matrix prompt, MANUAL.md, and api_v02.tool_context() expose <namespace>
       # JAG-513: the prompt index groups them as `namespace{a,b,c}`.
       and "Tool discovery" in tctx and "memory{" in tctx and "matrix{" in tctx)
 
+# F: sessions can TALK to each other (JAG-532).
+# A running peer gets the message inside its current turn (the operator's steer
+# inbox); an idle peer gets a REAL server-side turn through the Orchestrator, so
+# the message is never queued forever. The reply is read back with sessions.read.
+from longrun.core import server  # noqa: E402
+from longrun.orbit import orchestrator as orch_mod  # noqa: E402
+from longrun.util import steering  # noqa: E402
+
+_KNOWN = {"peer-run", "peer-idle"}
+_orig_load = server.load_session
+_orig_active = server._ACTIVE_CHAT
+_orig_orch = orch_mod.Orchestrator
+dispatched = []
+
+
+class _FakeOrch:
+    def dispatch(self, targets, goal, model=None, mode="goal"):
+        dispatched.append({"targets": list(targets), "goal": goal, "mode": mode})
+        return {"ok": True, "count": 1,
+                "jobs": [{"job": "j1", "session": targets[0], "state": "running"}]}
+
+
+try:
+    server.load_session = lambda sid: ({"id": sid, "messages": []}
+                                       if sid in _KNOWN else None)
+    server._ACTIVE_CHAT = {"peer-run": {"ev0": 0, "ts": 0}}
+    orch_mod.Orchestrator = _FakeOrch
+    steering.STEER_INBOX.clear()
+    r_send_run = tools._sessions(
+        {"action": "send", "session": "peer-run", "message": "status?"}, "me-1")
+    r_send_idle = tools._sessions(
+        {"action": "send", "to": "peer-idle", "text": "status?"}, "me-1")
+    r_send_missing = tools._sessions(
+        {"action": "send", "session": "nope", "message": "x"}, "me-1")
+    r_send_self = tools._sessions(
+        {"action": "send", "session": "peer-run", "message": "x"}, "peer-run")
+    r_send_empty = tools._sessions(
+        {"action": "send", "session": "peer-run", "message": "   "}, "me-1")
+    steered = steering.drain_steer("peer-run")
+finally:
+    server.load_session = _orig_load
+    server._ACTIVE_CHAT = _orig_active
+    orch_mod.Orchestrator = _orig_orch
+    steering.STEER_INBOX.clear()
+
+_send_spec = (registry.tool_spec("sessions.send") or {}).get("schema") or {}
+check("F a RUNNING peer gets the message through the steer inbox",
+      r_send_run.get("ok") is True and r_send_run.get("mode") == "steer"
+      and any("[message from session me-1]" in t for t in steered), str(steered))
+check("F2 an IDLE peer gets a real server-side turn (Orchestrator dispatch)",
+      r_send_idle.get("ok") is True and r_send_idle.get("mode") == "turn"
+      and dispatched and dispatched[0]["targets"] == ["peer-idle"]
+      and dispatched[0]["mode"] == "chat"
+      and "[message from session me-1]" in dispatched[0]["goal"], str(dispatched))
+check("F3 a missing session, a self-send and an empty message are refused",
+      r_send_missing.get("ok") is False and "no such session" in r_send_missing.get("error", "")
+      and r_send_self.get("ok") is False
+      and r_send_empty.get("ok") is False and r_send_empty.get("exit_code") == 64,
+      " ".join(str(r.get("error")) for r in (r_send_missing, r_send_self, r_send_empty)))
+check("F4 the schema teaches the new subtool (required session + message|text)",
+      "session" in (_send_spec.get("required") or [])
+      and len(_send_spec.get("anyOf") or []) == 2
+      and "message" in (_send_spec.get("properties") or {}), str(_send_spec)[:200])
+
 print("---")
 okc = sum(results)
 print("v507: %d/%d PASS" % (okc, len(results)))

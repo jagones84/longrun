@@ -274,11 +274,19 @@ _LEGACY_SCHEMAS = {
                         "action=list -> sessions with agent name, title, age, "
                         "running. action=read -> one session's FULL transcript "
                         "(session=<id>): messages, tool calls + results, harness "
-                        "injections, in order. Read-only."),
+                        "injections, in order. action=send -> talk to another "
+                        "session (session=<id>, message=<text>): a running peer "
+                        "receives it inside its current turn, an idle peer starts "
+                        "a server-side turn; read the reply with action=read."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "read"], "default": "list"},
-            "session": {"type": "string", "description": "session id (action=read)"},
+            "action": {"type": "string", "enum": ["list", "read", "send"],
+                       "default": "list"},
+            "session": {"type": "string",
+                        "description": "session id (action=read|send)"},
+            "to": {"type": "string", "description": "alias for session (action=send)"},
+            "message": {"type": "string",
+                        "description": "text delivered to the peer (action=send)"},
             "query": {"type": "string",
                       "description": "filter by agent name/title/id (action=list)"},
             "limit": {"type": "integer", "default": 30,
@@ -345,7 +353,9 @@ _LEGACY_SCHEMAS = {
                         "source=provenance); action=recall searches; action=recent "
                         "lists newest; action=invalidate tombstones a wrong/outdated "
                         "memory (target=id|query) so recall stops surfacing it; "
-                        "action=forget TRULY deletes it (target=id|query); "
+                        "action=forget TRULY deletes it (target=id, or query as a "
+                        "case-insensitive LITERAL substring; nothing else is "
+                        "touched); "
                         "action=purge drops invalidated/expired records; "
                         "action=health reports counts. action=core reads / set_core "
                         "rewrites / clear_core clears the always-visible CORE block. Relevant memories are "
@@ -588,6 +598,7 @@ _SUBTOOL_FIELDS = {
     },
     "sessions": {
         "list": ["query", "limit"], "read": ["session", "limit", "tail"],
+        "send": ["session", "to", "message", "text"],
     },
     "chapters": {
         "list": ["session"], "untitled": ["session", "limit"],
@@ -640,6 +651,7 @@ _SUBTOOL_REQUIRED = {
     "knowledge.search": ["query"], "knowledge.read_source": ["ref"],
     "knowledge.create_notebook": ["name"], "knowledge.discover": ["query"],
     "sessions.read": ["session"],
+    "sessions.send": ["session"],
     "chapters.read": ["id"], "chapters.title": ["id", "title"],
     "memory.store": ["content"], "memory.recall": ["query"],
     "memory.set_core": ["content"],
@@ -670,6 +682,7 @@ _SUBTOOL_ANY_OF = {
     "knowledge.import": [{"required": ["urls"]}, {"required": ["refs"]}],
     "memory.invalidate": [{"required": ["target"]}, {"required": ["query"]}],
     "memory.forget": [{"required": ["target"]}, {"required": ["query"]}],
+    "sessions.send": [{"required": ["message"]}, {"required": ["text"]}],
 }
 
 _SUBTOOL_GUIDANCE = {
@@ -722,9 +735,15 @@ _SUBTOOL_GUIDANCE = {
         "explicitly selects global approvals.mode=full."
     ),
     "memory.forget": (
-        "Permanently delete the memory identified by `target`, or matching "
-        "records found by `query`. Verify the target before use. Requires approval "
-        "unless the operator explicitly selects global approvals.mode=full."
+        "Permanently delete the memory identified by `target`, or the records whose "
+        "content contains `query` as a case-insensitive substring. Verify the target "
+        "before use. Requires approval unless the operator explicitly selects global "
+        "approvals.mode=full."
+    ),
+    "sessions.send": (
+        "Talk to another session: `session` is its id (or `to`), `message`/`text` "
+        "the text to deliver. A running peer reads it inside its current turn; an "
+        "idle peer starts a server-side turn. Then read the reply with sessions.read."
     ),
     "memory.purge": (
         "Permanently remove all invalidated or expired memory records. This is "

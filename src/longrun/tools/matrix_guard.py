@@ -324,6 +324,31 @@ def _resolve_target(target, whence):
     return os.path.normpath(os.path.realpath(t))
 
 
+def _segment_link_sources(toks):
+    """Sources of symlink-creating commands in one command segment.
+
+    JAG-531: the target gate judges a path AS WRITTEN, before the command runs.
+    `ln -sfn <nucleus>/tools /tmp/nl && echo probe > /tmp/nl/_p.txt` therefore
+    PASSED (at check time `/tmp/nl` did not exist, so it resolved to itself) and
+    the shell then wrote THROUGH the link into the Nucleus. A symlink whose
+    source is inside the Nucleus is a write channel, so creating one is refused.
+    """
+    out = []
+    for i, tok in enumerate(toks):
+        base = os.path.basename(tok).lower()
+        if base == "ln":
+            pass
+        elif base == "cp":
+            flags = [t for t in toks[i + 1:] if t.startswith("-")]
+            if not any("s" in f.lstrip("-") for f in flags):
+                continue
+        else:
+            continue
+        args = [t for t in toks[i + 1:] if not t.startswith("-")]
+        out.extend(args[:-1])  # the LAST argument is the link itself
+    return out
+
+
 def _segment_writes(toks, whence):
     """Return `(write targets, resulting cwd)` for one command segment."""
     targets = []
@@ -393,6 +418,21 @@ def check_shell_command(command, cwd=None, repo_root=None):
         if not toks:
             continue
         targets, whence = _segment_writes(toks, whence)
+        for source in _segment_link_sources(toks):
+            resolved = _resolve_target(source, whence)
+            if not resolved or not _under(resolved, root):
+                continue
+            if is_nucleus_path(resolved, root):
+                try:
+                    rel = os.path.relpath(resolved, os.path.realpath(root)).replace("\\", "/")
+                except ValueError:
+                    rel = source
+                return False, (
+                    "NUCLEUS_PROTECTED: a symlink whose SOURCE is inside the immutable "
+                    "Nucleus (%s) is a write channel — a later write through the link "
+                    "would land in the Nucleus. Copy or import the content instead."
+                    % rel
+                )
         for target in targets:
             resolved = _resolve_target(target, whence)
             if resolved is None:
@@ -417,20 +457,24 @@ def check_shell_command(command, cwd=None, repo_root=None):
     return True, ""
 
 
-def _iter_nucleus_files(repo_root=None):
-    """Yield every Nucleus artefact the snapshot tracks.
+def _walk_nucleus(repo_root=None, exts=None):
+    """Yield `(path, size)` for every file under the snapshot roots.
 
-    INVARIANT (JAG-510): the creation sweep in `restore_if_nucleus_tampered` uses
-    this SAME iterator, so "what appeared" is judged by exactly the predicate used
-    to build the snapshot. A pre-existing file with an unlisted extension (the
-    WebUI icons, an icon font, a `.png`) therefore can never be mistaken for a
-    creation and deleted.
+    `exts=None` means EVERY extension: that is the EXISTENCE set the restore
+    judges creations against (JAG-531). `exts=NUCLEUS_SNAPSHOT_EXTS` is the
+    CONTENT set whose bytes are restored. Realpath is used so a symlinked
+    directory cannot hide files from either set.
     """
     root, _msrc, _mdot = _roots(repo_root)
     for rel in NUCLEUS_SNAPSHOT_REL:
         target = os.path.join(root, *rel.split("/"))
         if os.path.isfile(target):
-            yield target
+            try:
+                size = os.path.getsize(target)
+            except OSError:
+                continue
+            if exts is None or os.path.splitext(target)[1].lower() in exts:
+                yield target, size
             continue
         if not os.path.isdir(target):
             continue
@@ -440,27 +484,41 @@ def _iter_nucleus_files(repo_root=None):
             for fn in filenames:
                 if fn.startswith("."):
                     continue
-                ext = os.path.splitext(fn)[1].lower()
-                if ext not in NUCLEUS_SNAPSHOT_EXTS:
+                if exts is not None and os.path.splitext(fn)[1].lower() not in exts:
                     continue
                 p = os.path.join(dirpath, fn)
                 try:
-                    if os.path.getsize(p) <= _SNAPSHOT_MAX_BYTES:
-                        yield p
+                    yield p, os.path.getsize(p)
                 except OSError:
                     continue
 
 
+def _iter_nucleus_files(repo_root=None):
+    """Yield every Nucleus artefact whose CONTENT the snapshot tracks."""
+    for p, size in _walk_nucleus(repo_root, NUCLEUS_SNAPSHOT_EXTS):
+        if size <= _SNAPSHOT_MAX_BYTES:
+            yield p
+
+
 def snapshot_nucleus_digests(repo_root=None):
-    """Capture content snapshots of Nucleus files before an untrusted command runs."""
+    """Capture the Nucleus before an untrusted command runs.
+
+    Every file is recorded, whatever its extension, as ``(None, None)`` when its
+    bytes are not tracked; tracked files carry ``(sha256, bytes)``. The existence
+    set is what the creation sweep uses, so a created `_probe.txt` cannot survive
+    just because `.txt` is not a content extension (JAG-531).
+    """
     snap = {}
-    for p in _iter_nucleus_files(repo_root):
+    for p, size in _walk_nucleus(repo_root):
+        if size > _SNAPSHOT_MAX_BYTES or os.path.splitext(p)[1].lower() not in NUCLEUS_SNAPSHOT_EXTS:
+            snap[p] = (None, None)
+            continue
         try:
             with open(p, "rb") as f:
                 data = f.read()
             snap[p] = (hashlib.sha256(data).hexdigest(), data)
         except OSError:
-            continue
+            snap.setdefault(p, (None, None))
     return snap
 
 
@@ -475,6 +533,8 @@ def restore_if_nucleus_tampered(before_digests, repo_root=None):
     root, _msrc, _mdot = _roots(repo_root)
     reverted = []
     for p, (digest, raw) in before_digests.items():
+        if digest is None or raw is None:
+            continue  # existence-only entry: nothing to restore, nothing to compare
         try:
             if not os.path.isfile(p):
                 os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -491,7 +551,7 @@ def restore_if_nucleus_tampered(before_digests, repo_root=None):
         except OSError:
             continue
     keep = {os.path.normpath(os.path.join(root, *rel.split("/"))) for rel in _KEEP_REL}
-    for p in _iter_nucleus_files(repo_root):
+    for p, _size in _walk_nucleus(repo_root):
         if p in before_digests or os.path.normpath(p) in keep:
             continue
         try:

@@ -93,6 +93,21 @@ ci.build(ws)
 check("C3 a deleted file is dropped from the index",
       not any(r["path"].endswith("util.py") for r in ci.search(ws, "compute total", k=10)["results"]))
 
+# JAG-530 (live audit): after `rm _idx_probe.md` the index still returned
+# `_idx_probe.md:1` as a hit, so the agent cited a file that no longer existed.
+# A search must never return a chunk whose source is gone, even before a rebuild.
+stale_path = os.path.join(ws, "stale_probe.md")
+with open(stale_path, "w") as f:
+    f.write("# Probe\n\nThe token QWXZLEMON47 lives here.\n")
+ci.build(ws)
+check("C4a the new file is searchable after a build",
+      any(r["path"] == os.path.realpath(stale_path)
+          for r in ci.search(ws, "QWXZLEMON47", k=5)["results"]))
+os.remove(stale_path)
+check("C4b a DELETED file is never a hit, even before a rebuild",
+      ci.search(ws, "QWXZLEMON47", k=5)["results"] == [],
+      ci.search(ws, "QWXZLEMON47", k=5)["results"])
+
 # ---- per-workspace isolation (the whole point) -------------------------------
 ws_b = _mkws("wsB")
 open(os.path.join(ws_b, "only_b.py"), "w").write("def only_in_workspace_b_marker():\n    return 42\n")

@@ -93,6 +93,65 @@ check("D2 memory.purge_invalidated exists", "def purge_invalidated(" in msrc)
 asrc = open(os.path.join(REPO, "src", "longrun", "core/api_v02.py"), encoding="utf-8").read()
 check("D3 DELETE /api/memory is wired", 'if path == "/api/memory":' in asrc)
 
+# ---- E: forget/invalidate by QUERY must find what is literally on disk ------
+# JAG-529 (live audit): `memory.forget query="PROBE-STORE-9c1d"` answered
+# "forgot 0 memory(ies)" while the token was literally in user_memories.md. The
+# ids came only from semantic search, and a semantic backend scores an exact
+# ID-like token below min_score. A delete that silently deletes nothing is worse
+# than no tool: it convinces the operator the data is gone.
+r5 = mem.store("memory.store", "PROBE-STORE-9c1d marks a throwaway record")
+r6 = mem.store("memory.store", "unrelated note about widgets")
+_orig_search = mem.search
+try:
+    # a semantic backend that does NOT surface the exact token (the live failure)
+    mem.search = lambda *a, **k: []
+    out3 = tools._memory({"action": "forget", "query": "PROBE-STORE-9c1d"}, "run-317")
+finally:
+    mem.search = _orig_search
+check("E1 forget query=... still finds a LITERAL match when semantics miss it",
+      out3.get("ok") is True and out3.get("count") == 1, str(out3))
+check("E2 the matched record is physically gone", not on_disk(r5["mid"]))
+check("E3 the unrelated record is untouched", on_disk(r6["mid"]))
+
+out4 = tools._memory({"action": "forget", "query": "NO-SUCH-TOKEN-zzz"}, "run-317")
+check("E4 a query that matches nothing is an explicit FAILURE, not a silent 0",
+      out4.get("ok") is False and out4.get("count") == 0
+      and "nothing was deleted" in str(out4.get("error")), str(out4))
+
+r7 = mem.store("memory.store", "LEGACY-TOKEN-71c2 must be retired")
+_orig_search = mem.search
+try:
+    mem.search = lambda *a, **k: []
+    out5 = tools._memory({"action": "invalidate", "query": "LEGACY-TOKEN-71c2"}, "run-317")
+finally:
+    mem.search = _orig_search
+check("E5 invalidate query=... resolves the same literal match",
+      out5.get("ok") is True and out5.get("count") == 1
+      and r7["mid"] in mem.invalid_targets(), str(out5))
+out6 = tools._memory({"action": "invalidate", "query": "NO-SUCH-TOKEN-zzz"}, "run-317")
+check("E6 invalidate with no match reports an error",
+      out6.get("ok") is False and "nothing was invalidated" in str(out6.get("error")),
+      str(out6))
+
+# E7: a DESTRUCTIVE query must not over-delete. The first version resolved ids
+# with the AND-of-words fallback, and a prose query deleted four records that
+# merely shared its vocabulary (live, while correcting a wrong memory note).
+ra = mem.store("memory.store", "honest note one: validator flakiness, not your payload")
+rb = mem.store("memory.store", "honest note two: your payload is validated by the flakiness check")
+out7 = tools._memory({"action": "forget",
+                      "query": "validator flakiness, not your payload"}, "run-317")
+check("E7 forget by query deletes only the LITERAL match",
+      out7.get("ok") is True and out7.get("count") == 1
+      and not on_disk(ra["mid"]) and on_disk(rb["mid"]), str(out7))
+
+# E8: the CORE block is injected into every prompt, so clearing it cannot reach
+# the copies already stored in transcripts and events. The tool must SAY that
+# instead of claiming a clean wipe (live audit: the marker survived in 5 files).
+r_core = tools._memory({"action": "clear_core"}, "run-317")
+check("E8 clear_core states that earlier injected copies remain in history",
+      r_core.get("ok") is True and "transcripts" in str(r_core.get("stdout")),
+      str(r_core))
+
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))

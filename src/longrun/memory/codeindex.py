@@ -254,6 +254,14 @@ def search(ws, query, k=8, kind=None, embed_model=None):
             rows = [dict(r) for r in db.execute(sql, args)]
         else:
             return out
+        # JAG-530: a chunk whose source file no longer exists is NOT a hit. Live
+        # audit: `index.search QWXZLEMON47` kept returning `_idx_probe.md:1` after
+        # that file was deleted (a rebuild pruned it, a search did not), so the
+        # agent could cite a file that is not on disk. Existence is cheap to check
+        # and is the ground truth the index is only a cache of.
+        rows = [r for r in rows if os.path.isfile(r["path"])]
+        if not rows:
+            return out
         ref = embed_model if embed_model is not None else _cfg.embed_model()
         if ref and rows:
             # JAG-483: the query vector, the candidate vectors and the RRF fusion are
