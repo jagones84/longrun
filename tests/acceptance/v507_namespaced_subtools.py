@@ -10,8 +10,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.core import matrix  # noqa: E402
 from longrun.tools import matrix_guard, registry, tools  # noqa: E402
 
-# This test covers the loc
-# al registry and Matrix loader, not operator MCP
+# This test covers the local registry and Matrix loader, not operator MCP
 # servers. Keep registry.catalog() deterministic and offline.
 registry._external_tools = lambda: {}
 
@@ -122,29 +121,50 @@ from longrun.core import server  # noqa: E402
 from longrun.orbit import api as orbit_api  # noqa: E402
 from longrun.util import steering  # noqa: E402
 
-_KNOWN = {"peer-run", "peer-idle"}
+_KNOWN = {"peer-run", "peer-idle", "peer-poll"}
 _orig_load = server.load_session
 _orig_active = server._ACTIVE_CHAT
 _orig_dispatch = orbit_api.dispatch_message
+_orig_job_status = getattr(orbit_api, "job_status", None)
 dispatched = []
 fake_sessions = {sid: {"id": sid, "messages": []} for sid in _KNOWN}
+job_states = {"job-peer-idle": {
+    "job": "job-peer-idle", "session": "peer-idle", "state": "error",
+    "ended": 100, "error": "provider failed",
+}, "job-peer-poll": [
+    {"job": "job-peer-poll", "session": "peer-poll", "state": "running"},
+    {"job": "job-peer-poll", "session": "peer-poll", "state": "done", "ended": 200},
+]}
 
 
-def _fake_dispatch(session, message, model=None):
+def _fake_dispatch(session: str, message: str, model: str | None = None) -> dict:
     dispatched.append({"session": session, "message": message, "model": model})
     return {"ok": True, "count": 1,
-            "jobs": [{"job": "j1", "session": session, "state": "running"}]}
+            "jobs": [{"job": "job-" + session, "session": session, "state": "running"}]}
 
 
+def _fake_job_status(job_id: str) -> dict | None:
+    status = job_states.get(job_id)
+    if isinstance(status, list):
+        return status.pop(0) if len(status) > 1 else status[0]
+    return status
+
+
+r_send_run = r_send_idle = r_send_poll = None
+r_send_missing = r_send_self = r_send_empty = None
+r_wait = r_wait_error = r_wait_poll = r_wait_poll_retry = None
 try:
     server.load_session = lambda sid: fake_sessions.get(sid)
     server._ACTIVE_CHAT = {"peer-run": {"ev0": 0, "ts": 0, "tok": object()}}
     orbit_api.dispatch_message = _fake_dispatch
+    orbit_api.job_status = _fake_job_status
     steering.STEER_INBOX.clear()
     r_send_run = tools._sessions(
         {"action": "send", "session": "peer-run", "message": "status?"}, "me-1")
     r_send_idle = tools._sessions(
         {"action": "send", "to": "peer-idle", "text": "status?"}, "me-1")
+    r_send_poll = tools._sessions(
+        {"action": "send", "session": "peer-poll", "message": "status?"}, "me-1")
     r_send_missing = tools._sessions(
         {"action": "send", "session": "nope", "message": "x"}, "me-1")
     r_send_self = tools._sessions(
@@ -158,13 +178,30 @@ try:
     r_wait = tools._sessions(
         {"action": "wait", "message_id": r_send_run.get("message_id"),
          "timeout_secs": 0}, "me-1")
+    r_wait_error = tools._sessions(
+        {"action": "wait", "message_id": r_send_idle.get("message_id"),
+         "timeout_secs": 0}, "me-1")
+    fake_sessions["peer-poll"]["messages"].append(
+        {"role": "assistant", "content": "poll reply", "ts": 100})
+    r_wait_poll = tools._sessions(
+        {"action": "wait", "message_id": r_send_poll.get("message_id"),
+         "timeout_secs": 0.4}, "me-1")
+    job_states["job-peer-poll"] = None
+    r_wait_poll_retry = tools._sessions(
+        {"action": "wait", "message_id": r_send_poll.get("message_id"),
+         "timeout_secs": 0}, "me-1")
 finally:
     server.load_session = _orig_load
     server._ACTIVE_CHAT = _orig_active
     orbit_api.dispatch_message = _orig_dispatch
+    if _orig_job_status is None:
+        delattr(orbit_api, "job_status")
+    else:
+        orbit_api.job_status = _orig_job_status
     steering.STEER_INBOX.clear()
     with tools._SESSION_SENDS_LOCK:
-        for _mid in (r_send_run.get("message_id"), r_send_idle.get("message_id")):
+        for _mid in (r_send_run.get("message_id"), r_send_idle.get("message_id"),
+                     r_send_poll.get("message_id")):
             tools._SESSION_SENDS.pop(_mid, None)
 
 _send_spec = (registry.tool_spec("sessions.send") or {}).get("schema") or {}
@@ -190,6 +227,27 @@ check("F5 wait returns the peer's final assistant reply after the turn ends",
       r_wait.get("ok") is True and r_wait.get("state") == "done"
       and r_wait.get("reply") == "pong" and r_wait.get("message_id")
       and "sessions.read" in _wait_spec.get("description", ""), str(r_wait))
+check("F6 wait reports an idle job failure even when no assistant reply was persisted",
+      r_wait_error.get("ok") is False and r_wait_error.get("exit_code") == 1
+      and r_wait_error.get("state") == "error"
+      and r_wait_error.get("error") == "provider failed",
+      str(r_wait_error))
+bad_send = tools._dispatch_execute(
+    "sessions.send", {"action": "send", "text": "message without recipient"}, "me-1")
+check("F7 anyOf rejects a send without a target before session lookup",
+      bad_send.get("exit_code") == 64
+      and bad_send.get("missing_any_of") == [
+          ["session", "message"], ["session", "text"],
+          ["to", "message"], ["to", "text"],
+      ], str(bad_send))
+check("F8 wait observes an idle job transition from running to done",
+      r_wait_poll.get("ok") is True and r_wait_poll.get("state") == "done"
+      and r_wait_poll.get("ended") == 200 and r_wait_poll.get("reply") == "poll reply",
+      str(r_wait_poll))
+check("F9 repeating wait returns the cached reply after Orbit evicts the job",
+      r_wait_poll_retry.get("ok") is True and r_wait_poll_retry.get("state") == "done"
+      and r_wait_poll_retry.get("ended") == 200
+      and r_wait_poll_retry.get("reply") == "poll reply", str(r_wait_poll_retry))
 
 print("---")
 okc = sum(results)

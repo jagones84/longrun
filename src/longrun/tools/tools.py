@@ -78,6 +78,12 @@ def _shell(args, run_id):
     if not ok_cmd:
         return {"ok": False, "exit_code": 126, "error": err_cmd,
                 "backend": "host", "sandboxed": False}
+    if matrix_guard.shell_command_is_read_only(command):
+        res = sandbox.run(command, run_id=run_id,
+                          timeout=args.get("timeout_secs"),
+                          workspace=cwd)
+        res["ok"] = res.get("exit_code") == 0
+        return res
     res, reverted = matrix_guard.run_nucleus_guarded(
         lambda: sandbox.run(command, run_id=run_id,
                              timeout=args.get("timeout_secs"),
@@ -1364,6 +1370,21 @@ def _sessions(args, run_id):
             return {"ok": False, "exit_code": 1,
                     "error": "no pending session message: %s" % message_id,
                     "backend": "host", "sandboxed": False}
+        if rec.get("state") == "error":
+            return {"ok": False, "exit_code": 1, "state": "error",
+                    "message_id": message_id, "session": rec["session"],
+                    "job": rec.get("job"), "ended": rec.get("ended"),
+                    "error": rec.get("error") or "peer job failed",
+                    "backend": "host", "sandboxed": False}
+        if rec.get("state") == "done":
+            reply = rec.get("reply") or ""
+            return {"ok": True, "exit_code": 0, "state": "done",
+                    "message_id": message_id, "session": rec["session"],
+                    "job": rec.get("job"), "ended": rec.get("ended"),
+                    "reply": reply,
+                    "stdout": ("peer completed; response follows:\n" + reply
+                               if reply else "peer completed without a final text reply"),
+                    "backend": "host", "sandboxed": False}
         try:
             timeout = float(args.get("timeout_secs", 180))
         except (TypeError, ValueError):
@@ -1371,6 +1392,26 @@ def _sessions(args, run_id):
         timeout = max(0.0, min(timeout, 900.0))
         deadline = time.monotonic() + timeout
         while True:
+            job_info = None
+            if rec.get("mode") == "turn":
+                from longrun.orbit import api as orbit_api
+                job_info = orbit_api.job_status(rec.get("job"))
+                if job_info is None:
+                    return {"ok": False, "exit_code": 1, "state": "unknown",
+                            "message_id": message_id, "session": rec["session"],
+                            "error": "peer job is no longer tracked: %s" % rec.get("job"),
+                            "backend": "host", "sandboxed": False}
+                if job_info.get("state") == "error":
+                    rec["state"] = "error"
+                    rec["ended"] = job_info.get("ended")
+                    rec["error"] = job_info.get("error") or "peer job failed"
+                    with _SESSION_SENDS_LOCK:
+                        _SESSION_SENDS[message_id] = rec
+                    return {"ok": False, "exit_code": 1, "state": "error",
+                            "message_id": message_id, "session": rec["session"],
+                            "job": rec.get("job"), "ended": rec["ended"],
+                            "error": rec["error"],
+                            "backend": "host", "sandboxed": False}
             sess = server.load_session(rec["session"]) or {}
             msgs = sess.get("messages") or []
             with server._ACTIVE_CHAT_LOCK:
@@ -1383,27 +1424,24 @@ def _sessions(args, run_id):
             tail = msgs[int(rec.get("before_messages") or 0):]
             replies = [str(m.get("content") or "").strip() for m in tail
                        if m.get("role") == "assistant" and str(m.get("content") or "").strip()]
-            turn_finished = (
-                bool(rec.get("active_token")) and active_token is None
-            ) or (
-                rec.get("active_token") is not None
-                and active_token is not rec.get("active_token")
-                and active_token is None
-            )
-            # A very fast idle turn may begin and finish between polls. Its
-            # persisted assistant response is the durable completion evidence.
-            completed = turn_finished or (active_token is None and bool(replies))
+            if rec.get("mode") == "turn":
+                completed = job_info.get("state") == "done"
+            else:
+                completed = (rec.get("active_token") is not None
+                             and active_token is None)
             if rec.get("state") == "done":
                 completed = True
             if completed:
                 rec["state"] = "done"
-                rec["ended"] = rec.get("ended") or time.time()
+                rec["ended"] = (rec.get("ended") or
+                                (job_info or {}).get("ended") or time.time())
                 reply = replies[-1] if replies else ""
                 rec["reply"] = reply
                 with _SESSION_SENDS_LOCK:
                     _SESSION_SENDS[message_id] = rec
                 return {"ok": True, "exit_code": 0, "state": "done",
                         "message_id": message_id, "session": rec["session"],
+                        "job": rec.get("job"), "ended": rec["ended"],
                         "reply": reply,
                         "stdout": ("peer completed; response follows:\n" + reply
                                    if reply else "peer completed without a final text reply"),
@@ -1862,6 +1900,7 @@ def _knowledge(args, run_id):
 def _matrix(args, run_id):
     """Execute Matrix self-evolution suite actions."""
     from longrun.core import matrix
+    from longrun.tools import matrix_guard
     action = str((args or {}).get("action") or "status").strip().lower()
     if action in ("status", "info"):
         return matrix.status()
@@ -1904,7 +1943,9 @@ def _matrix(args, run_id):
     if action == "verify_target":
         return matrix.verify_target(args.get("kind") or "tool", args.get("name") or "")
     if action == "promote_to_nucleus":
-        return matrix.promote_to_nucleus(args.get("kind") or "tool", args.get("name") or "")
+        with matrix_guard.NUCLEUS_EXEC_LOCK:
+            return matrix.promote_to_nucleus(
+                args.get("kind") or "tool", args.get("name") or "")
     if action == "clean_trash":
         return matrix.clean_trash(keep_recent=args.get("keep_recent") or 0)
     if action == "webui_init":

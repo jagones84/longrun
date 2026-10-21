@@ -56,12 +56,15 @@ class Orchestrator:
                                           autonomous=(mode == "goal"))
                 for _ in gen:      # drain the SSE generator: runs the whole turn
                     pass
-                rec["state"] = "done"
             except Exception as exc:  # noqa: BLE001
-                rec["state"] = "error"
-                rec["error"] = str(exc)
+                with self._lock:
+                    rec["state"] = "error"
+                    rec["error"] = str(exc)
             finally:
-                rec["ended"] = round(time.time(), 3)
+                with self._lock:
+                    if rec["state"] == "running":
+                        rec["state"] = "done"
+                    rec["ended"] = round(time.time(), 3)
 
         threading.Thread(target=_run, name="orbit-job-" + sid, daemon=True).start()
         return {"job": rec["job"], "session": sid, "state": "running"}
@@ -78,3 +81,8 @@ class Orchestrator:
                           reverse=True)[:limit]
         return {"jobs": rows}
 
+    def job(self, job_id: str) -> dict | None:
+        """Return one job by its exact id, including terminal state."""
+        with self._lock:
+            rec = self._jobs.get(str(job_id or ""))
+            return dict(rec) if rec else None

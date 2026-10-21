@@ -28,6 +28,11 @@ def dispatch_message(session: str, message: str, model: str | None = None) -> di
     return _ORCH.dispatch([session], message, model=model, mode="chat")
 
 
+def job_status(job_id: str) -> dict | None:
+    """Return the current or terminal state of one shared Orbit job."""
+    return _ORCH.job(job_id)
+
+
 def _retry_run(ref):
     """Re-dispatch a failed background run, addressed by its job key."""
     for j in _ORCH.jobs().get("jobs", []):

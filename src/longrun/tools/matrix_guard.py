@@ -19,10 +19,12 @@ The gate now judges the write TARGETS (with `cd` tracking) and fails CLOSED on a
 target it cannot resolve, and the restore also removes creations. Everything is
 unlocked only by the DANGEROUS `approvals.allow_nucleus_write` operator opt-in.
 """
+import ast
 import hashlib
 import json
 import os
 import re
+import shlex
 import threading
 
 from longrun.util.paths import REPO_ROOT as REPO
@@ -405,6 +407,52 @@ def _segment_writes(toks, whence):
             continue
         i += 1
     return targets, whence
+
+
+def shell_command_is_read_only(command: str) -> bool:
+    """True only for small commands proven not to write files.
+
+    Avoid taking a whole-Nucleus snapshot for a pure wait/read command. In
+    particular, `sleep 20` and `python3 -c 'import time; time.sleep(40)'` cannot
+    mutate source files, so another session's legitimate edit must never be
+    attributed to them. Unknown commands remain guarded.
+    """
+    try:
+        tokens = shlex.split(str(command or ""), posix=True)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    executable = os.path.basename(tokens[0])
+    if executable == "sleep":
+        return len(tokens) > 1 and all(
+            re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)", item) for item in tokens[1:])
+    if executable not in ("python", "python3") or len(tokens) != 3 or tokens[1] != "-c":
+        return False
+    try:
+        tree = ast.parse(tokens[2], mode="exec")
+    except SyntaxError:
+        return False
+    imported_time = False
+    saw_sleep = False
+    for node in tree.body:
+        if (isinstance(node, ast.Import) and len(node.names) == 1
+                and node.names[0].name == "time" and node.names[0].asname is None):
+            imported_time = True
+            continue
+        if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+            return False
+        call = node.value
+        if (not isinstance(call.func, ast.Attribute)
+                or not isinstance(call.func.value, ast.Name)
+                or call.func.value.id != "time" or call.func.attr != "sleep"
+                or len(call.args) != 1 or call.keywords):
+            return False
+        arg = call.args[0]
+        if not isinstance(arg, ast.Constant) or not isinstance(arg.value, (int, float)):
+            return False
+        saw_sleep = True
+    return imported_time and saw_sleep
 
 
 def check_shell_command(command, cwd=None, repo_root=None):

@@ -854,10 +854,12 @@ def compaction_policy():
 def set_compaction_policy(body):
     """Validate + persist a WebUI policy change (JAG-487). Returns the new policy."""
     from longrun.model import compaction_config as _ccfg
+    from longrun.tools import matrix_guard
     try:
-        _ccfg.save(trigger_pct=(body or {}).get("trigger_pct"),
-                   target_pct=(body or {}).get("target_pct"),
-                   keep_recent=(body or {}).get("keep_recent"))
+        with matrix_guard.NUCLEUS_EXEC_LOCK:
+            _ccfg.save(trigger_pct=(body or {}).get("trigger_pct"),
+                       target_pct=(body or {}).get("target_pct"),
+                       keep_recent=(body or {}).get("keep_recent"))
     except (TypeError, ValueError) as e:
         return {"error": str(e)}
     return compaction_policy()

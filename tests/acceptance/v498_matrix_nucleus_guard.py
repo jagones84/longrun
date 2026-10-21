@@ -306,6 +306,53 @@ with tempfile.TemporaryDirectory() as tmp:
           {"benign_entered_during_peer": entered_during_peer,
            "peer_reverted": peer_result.get("reverted"),
            "benign_reverted": benign_result.get("reverted")})
+    check("S only proven read-only waits bypass snapshots; arbitrary Python stays guarded",
+          matrix_guard.shell_command_is_read_only("sleep 20")
+          and matrix_guard.shell_command_is_read_only(
+              'python3 -c "import time; time.sleep(40)"')
+          and not matrix_guard.shell_command_is_read_only(
+              'python3 -c "import os; os.remove(\\\"src/longrun/core/server.py\\\")"')
+          and not matrix_guard.shell_command_is_read_only("bash unknown-script.sh"))
+
+    # T) every application writer into protected paths shares the snapshot lock.
+    from longrun.core import server as _server
+    from longrun.core import httpapi, matrix
+    from longrun.model import compaction_config
+    from longrun.tools import tools
+    promote_entered = threading.Event()
+    original_promote = matrix.promote_to_nucleus
+    matrix.promote_to_nucleus = lambda *a, **kw: (
+        promote_entered.set() or {"ok": True})
+    try:
+        with matrix_guard.NUCLEUS_EXEC_LOCK:
+            promote_thread = threading.Thread(
+                target=lambda: tools._matrix(
+                    {"action": "promote_to_nucleus", "name": "probe"}, "v498"))
+            promote_thread.start()
+            promote_entered_during_guard = promote_entered.wait(0.1)
+        promote_thread.join(2)
+    finally:
+        matrix.promote_to_nucleus = original_promote
+    check("T Matrix promotion waits until a guarded snapshot transaction ends",
+          not promote_entered_during_guard and promote_entered.is_set())
+
+    policy_entered = threading.Event()
+    original_save = compaction_config.save
+    original_policy = httpapi.compaction_policy
+    compaction_config.save = lambda **kw: (policy_entered.set() or {})
+    httpapi.compaction_policy = lambda: {"ok": True}
+    try:
+        with matrix_guard.NUCLEUS_EXEC_LOCK:
+            policy_thread = threading.Thread(
+                target=lambda: httpapi.set_compaction_policy({"trigger_pct": 70}))
+            policy_thread.start()
+            policy_entered_during_guard = policy_entered.wait(0.1)
+        policy_thread.join(2)
+    finally:
+        compaction_config.save = original_save
+        httpapi.compaction_policy = original_policy
+    check("T2 legacy compaction-policy writes wait for guarded snapshots",
+          not policy_entered_during_guard and policy_entered.is_set())
 
 print("---")
 print("%d/%d PASS" % (sum(checks), len(checks)))
