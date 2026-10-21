@@ -228,8 +228,11 @@ def tools_report(tool=None, query=None) -> dict:
             "approval": entry["approval"],
             "description": entry["description"],
             "required": list(schema.get("required") or []),
+            "anyOf": list(schema.get("anyOf") or []),
             "properties": props,
-            "example_args": _example_args(props, list(schema.get("required") or [])),
+            "example_args": _example_args(
+                props, list(schema.get("required") or []),
+                list(schema.get("anyOf") or [])),
             "roots": spec.get("roots"),
         }, "hint": ("`args` is ALWAYS a JSON OBJECT: {\"action\":\"tool\","
                     "\"tool\":\"%s\",\"args\":{...}}" % want)}
@@ -250,11 +253,17 @@ def tools_report(tool=None, query=None) -> dict:
     return out
 
 
-def _example_args(props, required) -> dict:
+def _example_args(props, required, any_of=None) -> dict:
     """The smallest valid call: the REQUIRED args, else `action`, else the first two."""
     if not isinstance(props, dict) or not props:
         return {}
     keys = [k for k in required if k in props]
+    if not keys:
+        for alternative in any_of or []:
+            candidate = [k for k in alternative.get("required", []) if k in props]
+            if candidate:
+                keys = candidate
+                break
     if not keys and "action" in props:
         keys = ["action"]
     if not keys:

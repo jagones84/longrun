@@ -1,7 +1,8 @@
 # Longrun tool registry — v0.2
 # Declarative allowlist + approval policy. Edit and POST /api/tools to reload
-# (or just restart the server). Nothing here is enabled for destructive use:
-# unknown tools are denied, and every mutating action needs an approval gate.
+# (or just restart the server). Unknown tools are denied; destructive subtools
+# override namespace defaults in normal mode. Global approvals.mode=full is an
+# explicit opt-out that bypasses per-tool approval gates.
 version: "0.2"
 
 # ---- real sandbox (bubblewrap / nsjail / container) --------------------------
@@ -270,11 +271,26 @@ tools:
     enabled: true
     approval: auto
 
-  # agent memory (JAG-73): store/recall durable notes across sessions; the file
-  # writes are append-only under data/memory, so it is always safe.
+  # agent memory (JAG-73): ordinary store/recall is automatic; destructive
+  # memory operations below override this namespace default.
   memory:
     enabled: true
     approval: auto
+
+  # Replacing/clearing core memory or permanently deleting stored records requires
+  # approval in normal mode (global approvals.mode=full bypasses all such gates).
+  memory.set_core:
+    enabled: true
+    approval: required
+  memory.clear_core:
+    enabled: true
+    approval: required
+  memory.forget:
+    enabled: true
+    approval: required
+  memory.purge:
+    enabled: true
+    approval: required
 
   improve:
     enabled: true
@@ -283,6 +299,21 @@ tools:
   matrix:
     enabled: true
     approval: auto
+
+  # Destructive Matrix actions override the namespace's automatic policy in
+  # normal mode; global approvals.mode=full remains the operator's opt-out.
+  matrix.git_reset:
+    enabled: true
+    approval: required
+  matrix.checkpoint_rollback:
+    enabled: true
+    approval: required
+  matrix.clean_trash:
+    enabled: true
+    approval: required
+  matrix.webui_reset:
+    enabled: true
+    approval: required
 
   # ---- JAG-426: baseline tools every standard harness ships ------------------
   # Native Python execution (previously only reachable via the pmcp MCP client,

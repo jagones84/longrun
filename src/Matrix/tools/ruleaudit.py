@@ -40,7 +40,8 @@ TOOL_SCHEMA_SCAN = {
     "description": (
         "[MATRIX] Audit whether `.Matrix/rules/*.md` are really present inside a given prompt: "
         "PASS/FAIL per rule with quoted evidence, explicit MISSING otherwise. Read-only. "
-        "An empty prompt FAILS (no vacuous pass)."
+        "Provide `prompt_text` or `prompt_file` (at least one). An empty prompt FAILS "
+        "(no vacuous pass)."
     ),
     "type": "object",
     "properties": {
@@ -55,6 +56,7 @@ TOOL_SCHEMA_SCAN = {
         "context": {"type": "integer", "default": 60, "description": "Characters of evidence around a hit."},
     },
     "required": [],
+    "anyOf": [{"required": ["prompt_text"]}, {"required": ["prompt_file"]}],
     "approval": "auto",
 }
 

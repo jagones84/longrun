@@ -859,6 +859,7 @@ def _extract_module_subtools(tname, mod, p, origin):
                 "type": sch.get("type", "object"),
                 "properties": sch.get("properties", {}),
                 "required": sch.get("required", []),
+                "anyOf": sch.get("anyOf", []),
             },
             "approval": str(sch.get("approval") or "auto"),
             "execute": exec_fn,
@@ -1584,4 +1585,3 @@ def scaffold(kind, name, description="", repo_root=None):
         f.write(body)
     hl = hotload(repo_root)
     return {"ok": True, "kind": k, "name": nm, "path": fpath, "hotload": hl, "stdout": "scaffolded %s at %s" % (k, fpath)}
-

@@ -200,12 +200,14 @@ _LEGACY_SCHEMAS = {
     },
     "skills": {
         "description": ("Agent skills registry: list available skills (from the "
-                        "skills/ tree, one SKILL.md per skill) or read a full "
-                        "SKILL.md to follow its instructions/entrypoint."),
+                        "skills/ tree, search by keyword, or read a full SKILL.md "
+                        "to follow its instructions/entrypoint."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "read"], "default": "list"},
+            "action": {"type": "string", "enum": ["list", "search", "read"], "default": "list"},
             "name": {"type": "string", "description": "skill name (for action=read)"},
+            "query": {"type": "string", "description": "keywords to find matching skills (action=search)"},
+            "limit": {"type": "integer", "default": 10, "description": "max skills to return (action=search)"},
         },
     },
     "index": {
@@ -223,6 +225,8 @@ _LEGACY_SCHEMAS = {
             "k": {"type": "integer", "default": 8, "description": "max results (action=search)"},
             "kind": {"type": "string", "enum": ["code", "doc"],
                      "description": "restrict to code or docs (action=search)"},
+            "workspace": {"type": "string", "description": "workspace path (default: this session's workspace)"},
+            "force": {"type": "boolean", "default": False, "description": "force a full rebuild (action=reindex)"},
         },
     },
     "knowledge": {
@@ -245,7 +249,7 @@ _LEGACY_SCHEMAS = {
                                 "add_source", "add_text", "discover", "import", "status"],
                        "default": "search"},
             "notebook": {"type": "string",
-                         "description": "optional notebook id/name; omit to use this session for reads and writes"},
+                         "description": "notebook ID or exact name from list_notebooks; omit to use this session"},
             "session": {"type": "string",
                         "description": "optional assertion only; must match the current chat session"},
             "name": {"type": "string", "description": "notebook name (action=create_notebook)"},
@@ -255,8 +259,10 @@ _LEGACY_SCHEMAS = {
             "max_chars": {"type": "integer", "default": 20000,
                           "description": "maximum extracted source chars to return (action=read_source; capped at 50000)"},
             "refs": {"type": "string", "description": "one new URL/path per line; existing session paths are skipped"},
+            "url": {"type": "string", "description": "one source URL (action=add_source)"},
             "title": {"type": "string", "description": "note title (action=add_text)"},
             "text": {"type": "string", "description": "pasted note body (action=add_text)"},
+            "content": {"type": "string", "description": "alias for text (action=add_text)"},
             "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs (action=import)"},
             "k": {"type": "integer", "default": 8, "description": "max results (action=search)"},
             "n": {"type": "integer", "default": 5, "description": "max web hits (action=discover)"},
@@ -338,13 +344,13 @@ _LEGACY_SCHEMAS = {
                         "action=forget TRULY deletes it (target=id|query); "
                         "action=purge drops invalidated/expired records; "
                         "action=health reports counts. action=core reads / set_core "
-                        "rewrites the always-visible CORE block. Relevant memories are "
+                        "rewrites / clear_core clears the always-visible CORE block. Relevant memories are "
                         "also auto-injected each turn, so store what's worth keeping."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["store", "recall", "recent", "core", "set_core",
-                                "invalidate", "forget", "purge", "health"],
+                                "clear_core", "invalidate", "forget", "purge", "health"],
                        "default": "recall",
                        "description": "what to do (default: recall = search)"},
             "content": {"type": "string", "description": "text to save (action=store)"},
@@ -357,6 +363,8 @@ _LEGACY_SCHEMAS = {
             "target": {"type": "string", "description": "memory id to retire or delete"},
             "reason": {"type": "string", "description": "why it's retired (action=invalidate)"},
             "include_invalid": {"type": "boolean", "description": "also return expired/invalidated (action=recall)"},
+            "semantic": {"type": "boolean", "default": False,
+                         "description": "use semantic embedding search (action=recall; default false uses keyword search)"},
         },
         "required": [],
         "subject": "action",
@@ -499,6 +507,8 @@ _LEGACY_SCHEMAS = {
                              "description": "pip packages to install in .Matrix/venv (action=test)"},
             "timeout_secs": {"type": "integer", "default": 60,
                              "description": "command timeout in seconds (default 60)"},
+            "limit": {"type": "integer", "default": 20,
+                      "description": "maximum commits to return (action=git_log)"},
             "keep_recent": {"type": "integer", "default": 0,
                             "description": "keep only the N most recent artifacts (0 = keep all)"},
             "session": {"type": "string", "description": "session id to resume after warm restart"},
@@ -546,6 +556,206 @@ LEGACY_DEFAULT_SUBTOOL = {
     "matrix": "matrix.status",
 }
 
+# Canonical schemas are per-subtool contracts, not copies of every property in
+# a namespace-level compatibility schema.
+_SUBTOOL_FIELDS = {
+    "self": {
+        "info": [], "diagnose": [], "logs": ["session", "limit", "kind"],
+        "context": ["session"], "tools": ["tool", "query"],
+    },
+    "skills": {
+        "list": [], "search": ["query", "limit"], "read": ["name"],
+    },
+    "index": {
+        "search": ["query", "k", "kind"], "reindex": ["workspace", "force"],
+        "status": ["workspace"],
+    },
+    "knowledge": {
+        "search": ["query", "notebook", "session", "k", "kind"],
+        "read_source": ["ref", "notebook", "session", "max_chars"],
+        "list_notebooks": [], "create_notebook": ["name"],
+        "add_source": ["notebook", "session", "refs", "ref", "url", "query"],
+        "add_text": ["notebook", "session", "title", "text", "content"],
+        "discover": ["query", "n"], "import": ["notebook", "session", "urls", "refs"],
+        "status": [],
+    },
+    "sessions": {
+        "list": ["query", "limit"], "read": ["session", "limit", "tail"],
+    },
+    "chapters": {
+        "list": ["session"], "untitled": ["session", "limit"],
+        "read": ["session", "id"], "title": ["session", "id", "title", "summary"],
+    },
+    "context": {"status": ["session"], "compact": ["session"]},
+    "memory": {
+        "store": ["content", "kind", "source", "ttl_secs"],
+        "recall": ["query", "kind", "limit", "include_invalid", "semantic"],
+        "recent": ["kind", "limit"], "list": ["kind", "limit"],
+        "core": [], "set_core": ["content"], "clear_core": [],
+        "invalidate": ["target", "query", "kind", "reason"],
+        "forget": ["target", "query", "kind"], "purge": [], "health": [],
+    },
+    "improve": {
+        "propose": ["scope", "content", "reason"],
+        "mine": ["scope", "reason"], "evolve": ["scope"],
+        "verify": ["scope", "path"], "promote": ["scope", "path"],
+        "review": ["scope", "limit", "model"],
+    },
+    "web": {
+        "search": ["query", "max_results"], "fetch": ["url", "max_bytes"],
+    },
+    "diff": {
+        "files": ["a", "b", "context"],
+        "text": ["text_a", "text_b", "context"],
+    },
+    "process": {
+        "list": ["match", "limit"], "kill": ["pid"],
+    },
+    "matrix": {
+        "status": [], "seams": [], "scaffold": ["kind", "name", "description"],
+        "hotload": [], "enable": [], "disable": [],
+        "checkpoint_save": ["slot", "label"],
+        "checkpoint_rollback": ["slot"],
+        "git_commit": ["message"], "git_log": ["limit"],
+        "git_diff": ["rev"], "git_reset": ["rev"],
+        "test": ["script", "code", "target", "install_deps", "timeout_secs"],
+        "clean_trash": ["keep_recent"], "webui_init": [], "webui_reset": [],
+        "restart": ["session", "reason", "dry_run"],
+        "verify_target": ["kind", "name"],
+        "promote_to_nucleus": ["kind", "name"],
+    },
+}
+
+_SUBTOOL_REQUIRED = {
+    "skills.search": ["query"], "skills.read": ["name"],
+    "index.search": ["query"],
+    "knowledge.search": ["query"], "knowledge.read_source": ["ref"],
+    "knowledge.create_notebook": ["name"], "knowledge.discover": ["query"],
+    "sessions.read": ["session"],
+    "chapters.read": ["id"], "chapters.title": ["id", "title"],
+    "memory.store": ["content"], "memory.recall": ["query"],
+    "memory.set_core": ["content"],
+    "improve.propose": ["scope", "content"],
+    "improve.mine": ["scope"],
+    "improve.evolve": ["scope"],
+    "improve.verify": ["scope", "path"],
+    "improve.promote": ["scope", "path"],
+    "improve.review": [],
+    "web.search": ["query"], "web.fetch": ["url"],
+    "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
+    "process.kill": ["pid"],
+    "matrix.checkpoint_save": ["slot"],
+    "matrix.checkpoint_rollback": ["slot"],
+    "matrix.verify_target": ["name"],
+    "matrix.promote_to_nucleus": ["name"],
+}
+
+_SUBTOOL_ANY_OF = {
+    "knowledge.add_source": [
+        {"required": ["refs"]}, {"required": ["ref"]},
+        {"required": ["url"]}, {"required": ["query"]},
+    ],
+    "knowledge.add_text": [
+        {"required": ["title", "text"]},
+        {"required": ["title", "content"]},
+    ],
+    "knowledge.import": [{"required": ["urls"]}, {"required": ["refs"]}],
+    "memory.invalidate": [{"required": ["target"]}, {"required": ["query"]}],
+    "memory.forget": [{"required": ["target"]}, {"required": ["query"]}],
+}
+
+_SUBTOOL_GUIDANCE = {
+    "self.tools": (
+        "Discover enabled tools. Set `query` to filter names/descriptions, or "
+        "`tool` to return one exact tool schema; provide one of those fields."
+    ),
+    "skills.search": (
+        "Find skills by keyword. Use the returned exact skill name with "
+        "`skills.read` before following that skill."
+    ),
+    "skills.read": "Read the complete SKILL.md for the exact `name` returned by skills.search.",
+    "knowledge.read_source": (
+        "Read one indexed source. `ref` is its exact indexed path or source ID; "
+        "when scoping with `notebook`, use its ID or exact name from "
+        "`knowledge.list_notebooks`."
+    ),
+    "knowledge.list_notebooks": (
+        "List shared notebooks and this chat's notebook. Use the returned `id` "
+        "as `notebook` in other knowledge tools."
+    ),
+    "knowledge.search": (
+        "Search indexed text. Omit `notebook` to search this chat and shared "
+        "content; use an ID from knowledge.list_notebooks to select one notebook. "
+        "Do NOT call add_source for an attached chat path; attachments are indexed automatically."
+    ),
+    "knowledge.add_source": (
+        "Index new paths or URLs. Supply one or more newline-separated values "
+        "in `refs` (or one `ref`, `url`, or `query`); do not add an attached "
+        "chat path again."
+    ),
+    "knowledge.add_text": "Add a note by providing `title` and either `text` or `content`.",
+    "knowledge.create_notebook": "Create a shared notebook with the requested `name`.",
+    "knowledge.discover": "Search the web for candidate sources; this does not index them.",
+    "knowledge.import": "Index the supplied candidate URLs or refs into the selected notebook.",
+    "memory.recall": (
+        "Search persistent memory by required `query`. This uses keyword search "
+        "by default; set `semantic=true` only to request embedding search."
+    ),
+    "memory.recent": "List recent memory records, newest first; optional `kind` and `limit` filters.",
+    "memory.invalidate": "Soft-retire a memory by `target` ID or search `query`; provide one.",
+    "memory.set_core": (
+        "Replace the always-visible CORE block. `content` must be non-empty; "
+        "use memory.clear_core for intentional clearing. Requires approval unless "
+        "the operator explicitly selects global approvals.mode=full."
+    ),
+    "memory.clear_core": (
+        "Clear all always-visible CORE memory. This is an explicit destructive "
+        "action with no recovery; requires approval unless the operator "
+        "explicitly selects global approvals.mode=full."
+    ),
+    "memory.forget": (
+        "Permanently delete the memory identified by `target`, or matching "
+        "records found by `query`. Verify the target before use. Requires approval "
+        "unless the operator explicitly selects global approvals.mode=full."
+    ),
+    "memory.purge": (
+        "Permanently remove all invalidated or expired memory records. This is "
+        "bulk cleanup; use memory.forget to delete one known record. Requires approval "
+        "unless the operator explicitly selects global approvals.mode=full."
+    ),
+    "matrix.git_commit": (
+        "Commit Matrix changes in its separate Git repository: git dir "
+        "`.Matrix/git`, worktree `src/Matrix`. This does not commit the Longrun repo."
+    ),
+    "matrix.git_log": "Read commit history from Matrix's separate `.Matrix/git` repository (worktree `src/Matrix`).",
+    "matrix.git_diff": "Compare revisions in Matrix's separate `.Matrix/git` repository (worktree `src/Matrix`).",
+    "matrix.git_reset": (
+        "Reset Matrix's separate `.Matrix/git` repository (worktree `src/Matrix`). "
+        "This discards tracked and untracked Matrix worktree changes; inspect "
+        "matrix.status and matrix.git_diff first. Requires approval unless the "
+        "operator explicitly selects global approvals.mode=full."
+    ),
+    "matrix.checkpoint_rollback": (
+        "Restore a Matrix checkpoint slot. This replaces the current checkpointed "
+        "Matrix code, rules, skills, and docs; inspect the slot before rollback. "
+        "Requires approval unless the operator explicitly selects global approvals.mode=full."
+    ),
+    "matrix.clean_trash": (
+        "Delete scratch files from `.Matrix/trash`. `keep_recent=0` deletes all "
+        "entries; set a positive value to retain that many newest entries. "
+        "Requires approval unless the operator explicitly selects global approvals.mode=full."
+    ),
+    "matrix.webui_reset": (
+        "Delete the Matrix shadow `src/Matrix/webui/index.html`, making the "
+        "Nucleus WebUI serve at `/`. Requires approval unless the operator "
+        "explicitly selects global approvals.mode=full."
+    ),
+    "matrix.promote_to_nucleus": (
+        "Promote a verified Matrix artifact into protected Nucleus code. Requires "
+        "the configured dangerous-write gate and successful verification."
+    ),
+}
+
 
 def _build_canonical_schemas():
     out = {}
@@ -567,7 +777,7 @@ def _build_canonical_schemas():
             actions.insert(0, "list")
         if k == "skills" and "search" not in actions:
             actions.append("search")
-        sub_props = {pk: pv for pk, pv in props.items() if pk != "action"}
+        field_map = _SUBTOOL_FIELDS.get(k, {})
         sub_req = [r for r in (sch.get("required") or []) if r != "action"]
         # JAG-513: keep the WHOLE description. Cutting at the first sentence threw
         # away exactly the usage instructions a model needs (fs.read's line range,
@@ -577,12 +787,21 @@ def _build_canonical_schemas():
         base_desc = str(sch.get("description") or "").strip().rstrip(".")
         for act in actions:
             cname = "%s.%s" % (k, act)
-            action_required = sub_req
+            fields = field_map.get(act)
+            sub_props = ({pk: props[pk] for pk in fields if pk in props}
+                         if fields is not None else
+                         {pk: pv for pk, pv in props.items() if pk != "action"})
+            action_required = _SUBTOOL_REQUIRED.get(cname, sub_req)
             if k == "web":
                 action_required = {"search": ["query"], "fetch": ["url"]}.get(act, sub_req)
+            guidance = _SUBTOOL_GUIDANCE.get(cname)
+            if guidance is None:
+                fields_note = ", ".join(sub_props) or "no arguments"
+                guidance = ("%s This tool performs only action=%s; use only: %s."
+                            % (base_desc, act, fields_note))
             out[cname] = {
-                "description": ("%s — %s (action=%s)." % (cname, base_desc, act)
-                                if base_desc else cname),
+                "description": ("%s — %s" % (cname, guidance)
+                                if guidance else cname),
                 "type": "object",
                 "properties": dict(sub_props),
                 "required": list(action_required),
@@ -590,6 +809,9 @@ def _build_canonical_schemas():
                 "_namespace": k,
                 "_subtool": act,
             }
+            alternatives = _SUBTOOL_ANY_OF.get(cname)
+            if alternatives:
+                out[cname]["anyOf"] = [dict(item) for item in alternatives]
     return out
 
 
@@ -862,7 +1084,8 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
             schema = {"description": ext.get("description", ""),
                       "type": ins.get("type", "object"),
                       "properties": ins.get("properties", {}),
-                      "required": ins.get("required", [])}
+                      "required": ins.get("required", []),
+                      "anyOf": ins.get("anyOf", [])}
     tools_cfg = load_config()["tools"] or {}
     ns_entry = None
     if "." in name and "__" not in name:
@@ -954,7 +1177,7 @@ def catalog():
             "roots": spec["roots"],
             "description": (spec["schema"] or {}).get("description", ""),
             "inputSchema": {k: v for k, v in (spec["schema"] or {}).items()
-                            if k in ("type", "properties", "required")},
+                            if k in ("type", "properties", "required", "anyOf")},
         })
     return out
 

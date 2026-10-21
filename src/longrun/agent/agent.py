@@ -622,6 +622,16 @@ def _looks_like_promise(text):
     return bool(t) and len(t) <= 400 and bool(_PROMISE_RE.search(t))
 
 
+def _advance_tool_failure_streak(previous_tool, previous_streak, tool,
+                                 failed, gate_only=False):
+    """Count consecutive execution failures for one tool, not across tools."""
+    if not failed or gate_only:
+        return 0
+    if previous_tool == tool:
+        return previous_streak + 1
+    return 1
+
+
 def _skill_hints(text, limit=3):
     """JAG-178: names of installed skills that best match `text`. Cheap keyword
     scoring — a name/title hit weighs more than a description hit — so a stuck
@@ -2060,6 +2070,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _close_todo_rounds = 0
     _close_todo_max = 4
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
+    _fail_streak_tool = None
     _last_tool_hash = None  # JAG-178: detect a repeated identical call
     _tool_repeat = 0
     _last_failed_hash = None  # JAG-183: last FAILED (tool,args) -> verbatim re-run blocked
@@ -2639,7 +2650,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # JAG-431r4b: a gate-only outcome is neutral — do not feed the failure
             # streak (two approval timeouts must not trigger the "YOU ARE STUCK"
             # socratic nudge for a tool that never executed).
-            _fail_streak = (_fail_streak + 1) if (_tool_failed and not _gate_only) else 0
+            _fail_streak = _advance_tool_failure_streak(
+                _fail_streak_tool, _fail_streak, tool, _tool_failed,
+                gate_only=_gate_only)
+            _fail_streak_tool = (tool if _tool_failed and not _gate_only else None)
             # JAG-183: remember the (tool,args) of a FAILED call so the next verbatim
             # re-issue is blocked (a SUCCESS clears it — only failed calls are frozen).
             if _tool_failed and not _gate_only:

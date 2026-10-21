@@ -6,6 +6,18 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **Tool schemas now teach the exact subtool contract, and destructive actions
+  require approval.** Canonical tools expose only arguments used by that action,
+  including required source/query/skill inputs; Knowledge clarifies notebook
+  names and IDs, and Matrix Git tools identify their separate repo. Matrix reset,
+  rollback, cleanup, and WebUI reset, plus permanent memory deletion/core
+  writes/clears, now override namespace auto-approval in normal mode;
+  `approvals.mode=full` remains the global opt-out. Alternative required fields
+  are exposed and validated by the schema; an empty `memory.forget` can no longer
+  fall through to bulk purge. Failure coaching counts consecutive failures per
+  tool, so `http.fetch` errors cannot mislabel a later `browser.fetch`.
+
 ### Changed
 - **`/goal` keeps working until evidence-backed completion (JAG-517).**
   - Explicit user goals now have a distinct mode from headless jobs. They continue

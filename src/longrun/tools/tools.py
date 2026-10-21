@@ -932,6 +932,10 @@ def _memory(args, run_id):
         return {"ok": True, "count": 1 if txt else 0,
                 "stdout": txt or "(core memory is empty)", "backend": "host",
                 "sandboxed": False}
+    if action == "clear_core":
+        mem.core_write("")
+        return {"ok": True, "count": 0, "stdout": "core memory cleared",
+                "backend": "host", "sandboxed": False}
     if action in ("set_core", "core_write", "write_core"):
         content = (args.get("content") or "").strip()
         if not content:
@@ -969,11 +973,16 @@ def _memory(args, run_id):
         # below stays a soft, append-only tombstone (the audit trail is kept).
         target = str(args.get("target") or args.get("id") or "").strip()
         query = str(args.get("query") or "").strip()
-        if action == "purge" or (not target and not query):
+        if action == "purge":
             res = mem.purge_invalidated()
             return {"ok": True, "count": res.get("removed", 0),
                     "stdout": "purged %d invalidated/expired memory(ies)"
                               % res.get("removed", 0),
+                    "backend": "host", "sandboxed": False}
+        if not target and not query:
+            return {"ok": False,
+                    "error": "target or query required for action=forget; "
+                             "use action=purge for bulk cleanup",
                     "backend": "host", "sandboxed": False}
         if target:
             res = mem.forget(target)
@@ -1776,10 +1785,33 @@ def _empty_required(tool: str, args: Any) -> list[str]:
             and not got[key].strip()]
 
 
+def _missing_any_of(tool: str, args: Any) -> list[list[str]]:
+    """Return required-field alternatives when none of their branches match."""
+    try:
+        from longrun.tools import registry
+        schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
+        alternatives = list(schema.get("anyOf") or [])
+    except Exception:  # noqa: BLE001 — validation must never block a call
+        return []
+    got = args if isinstance(args, dict) else {}
+    groups = []
+    for branch in alternatives:
+        required = list(branch.get("required") or [])
+        if all(key in got and got[key] is not None
+               and not (isinstance(got[key], str) and not got[key].strip())
+               for key in required):
+            return []
+        if required:
+            groups.append(required)
+    return groups
+
+
 def _missing_args_reply(tool: str, missing: list[str],
-                        empty: list[str] | None = None) -> dict[str, Any]:
+                        empty: list[str] | None = None,
+                        missing_any: list[list[str]] | None = None) -> dict[str, Any]:
     """A failure that teaches: which args are required, their types, the example."""
     empty = list(empty or [])
+    missing_any = list(missing_any or [])
     try:
         from longrun.tools import diag
         full = (diag.tools_report(tool=tool) or {}).get("tool") or {}
@@ -1793,17 +1825,27 @@ def _missing_args_reply(tool: str, missing: list[str],
     if empty:
         problems.append("REQUIRED argument(s) present but empty %s"
                         % ", ".join(repr(name) for name in empty))
+    if missing_any:
+        groups = [" + ".join(group) for group in missing_any]
+        problems.append("provide at least one REQUIRED argument set: %s"
+                        % " OR ".join(groups))
     required = list(full.get("required") or missing or empty)
+    arg_names = list(dict.fromkeys(
+        required + [name for group in missing_any for name in group]))
     return {"ok": False, "tool": tool, "exit_code": 64,
             "missing_args": missing, "empty_args": empty,
+            "missing_any_of": missing_any,
             "error": ("%s: %s. Required: %s. "
                       "Arg types: %s. Example call: %s"
-                      % (tool, "; ".join(problems), ", ".join(required),
+                      % (tool, "; ".join(problems),
+                         ", ".join(required) or (" OR ".join(
+                             " + ".join(group) for group in missing_any)),
                          {name: (props.get(name) or {}).get("type")
-                          for name in required},
+                          for name in arg_names},
                          {"action": "tool", "tool": tool,
                           "args": full.get("example_args") or {}})),
             "schema": {"required": required,
+                       "anyOf": full.get("anyOf") or [],
                        "properties": props}}
 
 
@@ -1811,8 +1853,9 @@ def _dispatch_execute(tool, args, run_id=None):
     args = normalize_args(tool, args)
     missing = _missing_required(tool, args)
     empty = _empty_required(tool, args)
-    if missing or empty:
-        return _missing_args_reply(tool, missing, empty)
+    missing_any = _missing_any_of(tool, args)
+    if missing or empty or missing_any:
+        return _missing_args_reply(tool, missing, empty, missing_any)
     fn = _DISPATCH.get(tool)
     injected_action = None
     if fn is None and "." in str(tool or "") and "__" not in str(tool or ""):
