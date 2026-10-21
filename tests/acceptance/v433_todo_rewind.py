@@ -71,8 +71,8 @@ def _graph(nodes):
     return {"key": SID, "run_id": SID, "session_id": SID, "plan": 0, "nodes": nodes}
 
 
-def _ids():
-    return [n["id"] for n in (taskgraph.load(SID) or {}).get("nodes", [])]
+def _ids(sid=SID):
+    return [n["id"] for n in (taskgraph.load(sid) or {}).get("nodes", [])]
 
 
 # ---- case A: real turn anchor present --------------------------------------
@@ -99,6 +99,66 @@ check("B2 it drops the target step", _ids() == ["n1"], _ids())
 # ---- case C: unknown node --------------------------------------------------
 resC = rewind.rewind_to_node(SID, "nZZ")
 check("C1 unknown node is a clean error", resC.get("ok") is False and "not found" in str(resC.get("error")), resC)
+
+# ---- case D: the anchor is a PRE-turn snapshot (the real live case) --------
+# A turn anchor is stamped BEFORE the turn ran, so its graph holds no node from
+# that turn. Rewinding to a step of the CURRENT turn therefore restored an empty
+# graph and the steps BEFORE the target vanished too — contradicting the
+# documented contract ("it and every later one vanish", JAG-431d). Live symptom:
+# ⏮ on `n2` left NO todos while n1 was untouched work.
+# `created` is IDENTICAL for a whole batch: ONE `todo.write` stamps every node it
+# writes with the same value (live: n1 and n2 both 1792595473.483), so the prune
+# must go by position, never by timestamp.
+SID2 = "sess-pre"
+taskgraph.save({"key": SID2, "run_id": SID2, "session_id": SID2, "plan": 0, "nodes": []})
+checkpoints.create_turn(SID2, 0)                     # PRE-turn anchor: empty graph
+taskgraph.save({"key": SID2, "run_id": SID2, "session_id": SID2, "plan": 0,
+                "nodes": [_node("n1", 500), _node("n2", 500), _node("n3", 500)]})
+resD = rewind.rewind_to_node(SID2, "n2")
+check("D1 the pre-target step survives a same-turn rewind",
+      _ids(SID2) == ["n1"], _ids(SID2))
+check("D2 the graph outcome reports the survivors",
+      (resD.get("graph") or {}).get("nodes") == 1, resD.get("graph"))
+check("D3 the target and later steps are gone", "n2" not in _ids(SID2) and "n3" not in _ids(SID2),
+      _ids(SID2))
+check("D4 a same-`created` batch is pruned by POSITION, not timestamp",
+      _ids(SID2) == ["n1"], _ids(SID2))
+
+# D5: the workspace revert must stop at the last tool call of the SURVIVING step.
+# The journal has no node id, so the cut is a timestamp: the target's own
+# `created` is shared by its whole batch and reverted n1's file too, leaving a
+# `done` todo whose evidence points at a deleted file.
+from longrun.memory.stores import save_session  # noqa: E402
+save_session({"id": SID2, "messages": [], "tool_cards": [
+    {"node": "n1", "tool": "fs.write", "ts": 10, "after": 0},
+    {"node": "n2", "tool": "fs.write", "ts": 20, "after": 0}]})
+_caps = {}
+_orig_ws = rewind.restore_workspace
+
+
+def _cap_ws(sid, upto_ts):
+    _caps["cut"] = upto_ts
+    return {"ok": True, "restored": [], "files": []}
+
+
+rewind.restore_workspace = _cap_ws
+taskgraph.save({"key": SID2, "run_id": SID2, "session_id": SID2, "plan": 0,
+                "nodes": [_node("n1", 500), _node("n2", 500), _node("n3", 500)]})
+rewind.rewind_to_node(SID2, "n2")
+rewind.restore_workspace = _orig_ws
+check("D5 the workspace revert cuts at the surviving step's last tool call",
+      _caps.get("cut") == 10, _caps)
+
+# D6: the survivors must land in the SESSION's own graph file. `_restore_graph`
+# ARCHIVES that file when the anchor had no graph, so a re-load after the rollback
+# returned None and `save({})` wrote data/graphs/unknown.json — a graph keyed by a
+# name no session owns (live: an orphan `unknown.json` appeared on the DGX).
+check("D6 the survivors are written to the session's own graph file",
+      os.path.isfile(os.path.join(taskgraph.GRAPH_DIR, SID2 + ".json")),
+      os.path.join(taskgraph.GRAPH_DIR, SID2 + ".json"))
+check("D7 no graph is ever written under a foreign/unknown key",
+      not os.path.isfile(os.path.join(taskgraph.GRAPH_DIR, "unknown.json")),
+      os.path.join(taskgraph.GRAPH_DIR, "unknown.json"))
 
 # ---- static wiring ---------------------------------------------------------
 rw = open(os.path.join(REPO, "src", "longrun", "memory", "rewind.py"), encoding="utf-8").read()

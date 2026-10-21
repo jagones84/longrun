@@ -165,6 +165,39 @@ def rewind_to_node(session_id, node_id, by="api"):
     if not node:
         return {"ok": False, "error": "node %s not found" % node_id}
     cut = float(node.get("created") or 0)
+    # JAG-523: "it and every later one vanish" (JAG-431d) must be decided by the
+    # node's POSITION in the live graph, never by its timestamp. One `todo.write`
+    # stamps its whole batch with the SAME `created` (verified live: n1 and n2 both
+    # held 1792595473.483), so a timestamp prune dropped the ENTIRE batch; and for
+    # a node created by the CURRENT turn the anchor is a PRE-turn snapshot holding
+    # no node of that turn, so nothing came back. Net effect: ⏮ on `n2` emptied the
+    # whole todo list instead of leaving `[n1]`.
+    kept = None
+    dropped = 0
+    try:
+        nodes = list((g or {}).get("nodes", []))
+        idx = next((i for i, n in enumerate(nodes) if n.get("id") == node_id), None)
+        if idx is not None:
+            kept, dropped = nodes[:idx], len(nodes) - idx
+    except Exception:  # noqa: BLE001 — the prune must never break the rewind
+        kept = None
+    # The workspace boundary: the LAST tool call of the last SURVIVING step. The
+    # edit journal carries no node id, so a timestamp is the only handle — and the
+    # target's own `created` is shared by its whole batch, which reverted the
+    # surviving step's files as well (the todo stayed `done` with its evidence
+    # pointing at a file the rewind had just deleted).
+    cut_ws = cut
+    if kept:
+        try:
+            from longrun.memory.stores import load_session as _ls
+            surv = {n.get("id") for n in kept}
+            ts = [float(c.get("ts") or 0)
+                  for c in ((_ls(session_id) or {}).get("tool_cards") or [])
+                  if c.get("node") in surv]
+            if ts:
+                cut_ws = max(ts)
+        except Exception:  # noqa: BLE001
+            cut_ws = cut
 
     # nearest turn anchor at or before the node (transcript/plan/events boundary)
     anchors = marks(session_id)
@@ -187,11 +220,23 @@ def rewind_to_node(session_id, node_id, by="api"):
             pre = None
         if anch:
             restored = checkpoints.rollback(anch["id"])
-        # prune AT the node: drop it and every later step
+        # fallback prune (timestamp-based, legacy sessions): overridden below when
+        # the target's position in the live graph is known.
         graph_info = checkpoints._prune_graph_at(session_id, cut)
     except Exception as e:  # noqa: BLE001
         restored = {"error": str(e)}
-    ws = restore_workspace(session_id, cut)
+    if kept and g:  # JAG-523: the steps before the target survive
+        try:
+            # Write through the graph loaded at the top: it carries the session
+            # key. Re-loading here returned None after `_restore_graph` had
+            # archived the file, and saving `{}` then landed in
+            # data/graphs/unknown.json (a graph under a key no session owns).
+            g["nodes"] = kept
+            taskgraph.save(g)
+            graph_info = {"ok": True, "nodes": len(kept), "removed": dropped}
+        except Exception:  # noqa: BLE001 — a graph hiccup must not fail the rewind
+            pass
+    ws = restore_workspace(session_id, cut_ws)
     ev = truncate_events(session_id, (anch or {}).get("events_upto"))
     try:  # JAG-431j: the thread ledger follows the transcript
         from longrun.memory import threads as threads_mod

@@ -7,6 +7,22 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Rewinding to a todo no longer deletes the todo list, the prompt, or the steps
+  before it.** The per-todo ⏮ promises "undo this step and everything done after
+  it", but the prune was timestamp-based: ONE `todo.write` stamps its whole batch
+  with the SAME `created` (verified live: `n1` and `n2` both `1792595473.483`), so
+  the cut dropped the entire batch. Worse, a turn anchor is a PRE-turn snapshot, so
+  for a step of the current turn the rollback restored a graph that never contained
+  the earlier steps and nothing came back — live: ⏮ on `n2` emptied the whole list
+  instead of leaving `[n1]`. The prune now goes by the target's POSITION in the live
+  graph, and the workspace revert cuts at the last tool call of the last SURVIVING
+  step (the edit journal has no node id, so the target's own `created` also reverted
+  the surviving step's file, leaving a `done` todo whose evidence pointed at a file
+  the rewind had just deleted). Writing the survivors also goes through the graph
+  loaded from the session: re-loading after `_restore_graph` archived the file
+  returned `None` and `save({})` wrote `data/graphs/unknown.json`, a graph no session
+  owns (an orphan of that shape was found on the DGX). Pinned by `v433` (17/17,
+  4 new checks + a D5 workspace-cut assertion).
 - **A failed manual compaction is now a 400, not a 404.** `POST /api/context/compact`
   answered 404 for every semantic failure (unknown session, nothing to compact), so a
   logic error looked like a missing route and disagreed with `/api/compaction/policy`
