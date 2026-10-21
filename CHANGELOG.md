@@ -10,11 +10,13 @@ All notable changes to Longrun are documented here. The format follows
 - **Sessions can talk to each other.** `sessions` gained `action=send`
   (`session`/`to` + `message`/`text`). A RUNNING peer receives the text inside its
   current turn through the operator's steer inbox; an IDLE peer gets a real
-  server-side turn through the `Orchestrator`, so the message is never queued
-  forever. Every delivery is prefixed with `[message from session <id>]`, a peer
-  cannot message itself, and the reply is read back with `sessions.read`. The
-  isolation the audit asked for was explicitly NOT wanted: the operator asked for
-  sessions to be able to dialogue. Pinned by `v507` F–F4 and `v350` A4.
+  server-side turn through the shared `Orchestrator`. `send` returns immediately
+  with a `message_id`; `sessions.read` can inspect the peer while it works, and
+  `sessions.wait` follows that exact job/turn to return its reply, completion time,
+  or failure. Repeating `wait` returns its cached terminal result. Every delivery
+  is prefixed with `[message from session <id>]`, a peer cannot message itself,
+  and the operator explicitly chose session dialogue over isolation. Pinned by
+  `v507` F–F9 and `v350` A4.
 
 ### Fixed
 - **Compaction now reads the WHOLE old transcript instead of dropping its middle.**
@@ -25,12 +27,24 @@ All notable changes to Longrun are documented here. The format follows
   context era enorme"). Summarization is now map-reduce: every part of the old
   transcript is summarized and the part summaries are merged, bounded by
   `summarizer.max_parts` (default 24). Past that bound the omission is stated IN the
-  input, never silent. A reasoning summarizer (e.g. `meta/muse-spark`) that spends its
-  whole budget thinking teaches the working token budget on the first part, so the
-  failed attempt is paid once per compaction, not once per part. `summarizer.max_parts`
-  is editable in **Settings ▸ Harness ▸ Compaction · summarizer**; the compaction
-  result reports `summary_parts`. Pinned by `v487` G1–G9 (RED at HEAD: 17 of 30
-  markers never reached the model) and `v491` A1.
+  input, never silent. Retry behavior remains independent for each part; it does
+  not carry a learned token budget between parts. The global policy and summarizer
+  settings now live together in **Settings ▸ Knowledge ▸ Compaction**; the RH policy
+  editor is removed. Config paths link to the integrated editor, including the local
+  overlay after its first save. Pinned by `v487` G1–G9 (including a deterministic
+  180,720-token-equivalent transcript with all 240 markers reaching map parts) and
+  `v491` A1–A6.
+- **Nucleus snapshot restores no longer blame concurrent Longrun writers.**
+  Protected shell/Python operations already use snapshot → execute → restore; parallel
+  sessions could make one operation attribute another's edits to its own command.
+  A process-wide reentrant lock now covers guarded executions, Matrix promotion, and
+  config writers, while model generation remains parallel. Only narrowly proven
+  read-only waits bypass the snapshot. External processes cannot share this in-process
+  lock. Pinned by `v498` R–T2.
+- **Skill search filters weak multi-term matches.** A single generic word found only
+  in a skill body no longer qualifies a multiword query; two distinct terms must
+  match unless the skill name/title matches. Single-term searches require a match in
+  the name, title, or description. Pinned by `v198` F4b.
 - **`memory.forget`/`memory.invalidate` with `query` deleted nothing and said it
   worked.** The ids came only from semantic search, and a semantic backend scores an
   exact ID-like token below `min_score`: live, `forget query="PROBE-STORE-9c1d"`

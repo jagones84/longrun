@@ -50,6 +50,8 @@ and [sandbox](#sandbox).
 - Tracks agent tasks with a persistent graph; team jobs can assign work across sessions.
 - Uses bounded context, tool-output offload, and configurable verification gates.
 - Provides session memory, a per-workspace codebase index, and a server-wide Knowledge Base.
+- Shares one automatic/manual compaction policy in **Settings → Knowledge → Compaction**.
+- Lets agents message peer sessions asynchronously, inspect their live transcript, and wait for a job-specific reply.
 - Connects to local or hosted model providers; supports a CLI and MCP integrations.
 
 See [Architecture](docs/ARCHITECTURE.md) for system behavior and
@@ -331,6 +333,12 @@ this directory. `LONGRUN_DATA_DIR` can move the data root.
 Manage notebooks and sources in **Settings → Knowledge**. Build or search the active
 workspace index in the right-rail **Codebase** panel. Both stores support keyword
 search; vector search is optional. See [CLI reference](docs/CLI.md) for commands.
+
+The Compaction form owns the global policy and summarizer settings. Manual and
+automatic compaction use the same policy; large transcripts are summarized in parts.
+For agent collaboration, `sessions.send` returns immediately with a `message_id`;
+`sessions.read` inspects the peer while it works, and `sessions.wait` returns the
+matching job's final reply or failure.
 
 ---
 

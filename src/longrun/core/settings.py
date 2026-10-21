@@ -453,5 +453,11 @@ def update(body):
         doc = _save(name, clean)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
+    files = ["config/" + name]
+    if name == "compaction.yaml":
+        from longrun.model import compaction_config
+        if os.path.isfile(compaction_config.local_path()):
+            files.append("config/compaction.local.yaml")
     return {"ok": True, "file": name,
+            "files": files,
             "values": {p: _get(doc, p) for p in clean}}

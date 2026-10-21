@@ -96,6 +96,27 @@ res = tools.execute("skills", {"action": "search", "query": "connect dgx spark"}
 check("F4 the `skills` tool exposes action=search",
       isinstance(res, dict) and res.get("ok") and res.get("count", 0) >= 1,
       "count=%s" % (res.get("count") if isinstance(res, dict) else res))
+_original_skill_list = skills.list_skills
+_original_skill_cache = skills._cache
+_skill_fixtures = [
+    {"name": "compaction-policy", "category": "test", "title": "Compaction policy",
+     "description": "Manage shared context compaction settings.", "abspath": "/skill/relevant"},
+    {"name": "unrelated", "category": "test", "title": "Unrelated",
+     "description": "Handle unrelated tasks.", "abspath": "/skill/noise"},
+]
+skills.list_skills = lambda: _skill_fixtures
+skills._cache = {"bodies": {
+    "/skill/relevant": "Configure context compaction policy.",
+    "/skill/noise": "A generic note mentions context once.",
+}}
+try:
+    _relevance_hits = skills.search_skills("context compaction policy", limit=10)
+finally:
+    skills.list_skills = _original_skill_list
+    skills._cache = _original_skill_cache
+check("F4b multi-term search excludes body-only one-word noise",
+      [hit["name"] for hit in _relevance_hits] == ["compaction-policy"],
+      str([hit["name"] for hit in _relevance_hits]))
 bad = tools.execute("skills", {"action": "search"})
 check("F5 search without a query fails gracefully",
       isinstance(bad, dict) and bad.get("ok") is False, str(bad)[:80])

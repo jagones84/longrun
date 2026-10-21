@@ -366,7 +366,9 @@ def search_skills(query, limit=10):
     after the always-on index was dropped from the prompt. Weights: name/title 3x,
     description 2x, body 1x. Pure lexical + deterministic — no model, no network
     (an embedding index would add a model dependency and non-deterministic tests
-    for a 175-file library a keyword scan covers instantly).
+    for a 175-file library a keyword scan covers instantly). Multiword queries
+    need two distinct term matches unless the skill name/title matches; a
+    single-word query must match its name, title, or description.
     Returns a list of {name, category, title, description, score}, best first.
     """
     words = set(re.findall(r"[a-z]{3,}", str(query or "").lower())) - _SKILL_STOP
@@ -378,6 +380,15 @@ def search_skills(query, limit=10):
         strong = (str(s.get("name") or "") + " " + str(s.get("title") or "")).lower()
         weak = str(s.get("description") or "").lower()
         body = bodies.get(s.get("abspath") or "", "")
+        name_hits = {w for w in words if w in strong}
+        description_hits = {w for w in words if w in weak}
+        body_hits = {w for w in words if w in body}
+        matched = name_hits | description_hits | body_hits
+        if len(words) == 1:
+            if not (name_hits or description_hits):
+                continue
+        elif len(matched) < min(2, len(words)) and not name_hits:
+            continue
         score = (sum(3 for w in words if w in strong)
                  + sum(2 for w in words if w in weak)
                  + sum(1 for w in words if w in body))

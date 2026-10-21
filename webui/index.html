@@ -5715,16 +5715,18 @@ function _syncSectionDirty(card, sec) {
   save.title = isDirty ? "save changed settings" : "no changes to save";
   return isDirty;
 }
+function _settingsFileLinks(files) {
+  return (files || []).map(path =>
+    '<a href="#" class="filelink" data-config-file="' + esc(path) +
+    '" title="open ' + esc(path) + ' in the editor">' + esc(path) + "</a>").join(" · ");
+}
 function _setSectionEl(sec) {
   const card = document.createElement("div");
   card.className = "card"; card.style.marginBottom = "10px";
   card.dataset.file = sec.file; card.dataset.sid = sec.id;
   const files = (sec.files && sec.files.length) ? sec.files : ["config/" + sec.file];
-  const fileLinks = files.map(path =>
-    '<a href="#" class="filelink" data-config-file="' + esc(path) +
-    '" title="open ' + esc(path) + ' in the editor">' + esc(path) + "</a>").join(" · ");
   card.innerHTML = '<div style="font-weight:600;margin-bottom:2px">' + esc(sec.title) +
-    ' <span class="remaining">· ' + fileLinks + '</span></div>' +
+    ' <span class="remaining" data-config-files>· ' + _settingsFileLinks(files) + '</span></div>' +
     (sec.help ? '<div class="remaining" style="margin-bottom:8px">' + esc(sec.help) + '</div>' : "") +
     '<div class="hrow" data-fields></div>' +
     '<button class="ghost config-save" data-save disabled style="margin-top:8px">save ' + esc(sec.id) + '</button>' +
@@ -5865,6 +5867,10 @@ async function saveSettingsSection(card, sec) {
     const r = await api("POST", "/api/settings", { file: sec.file, values });
     if (!r || !r.ok) { if (msg) msg.textContent = "not saved — " + ((r && r.error) || "?"); return; }
     card._savedValues = JSON.stringify(r.values || values);
+    if (Array.isArray(r.files)) {
+      const fileList = card.querySelector("[data-config-files]");
+      if (fileList) fileList.innerHTML = "· " + _settingsFileLinks(r.files);
+    }
     if (msg) msg.textContent = "saved — live now";
     if (typeof toast === "function") toast(sec.file + ": saved", "ok");
   } catch (e) { if (msg) msg.textContent = String(e); }

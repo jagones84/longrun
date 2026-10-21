@@ -11,7 +11,8 @@ Three operator asks, each pinned at the level where it can actually regress:
      while the group is collapsed) and posts to the session-scoped endpoint;
   C  the right rail lost the duplicate card: save sits next to the path, the editor
      hand-off sits next to browse, and the old Files card is gone from markup AND code;
-  D  the auto-compact policy names the file in force AND links it into the editor.
+  D  one shared Compaction settings form owns policy fields and clickable files;
+     the Context rail has no duplicate policy editor.
 
 Deterministic: temp graph dir, no server, no model, no network.
 Run: python3 tests/acceptance/v512_plan_delete_workspace.py
@@ -106,13 +107,19 @@ check("C5 the hand-off still goes through ONE function (no inline handler)",
       and HTML.count('data-call="SparkEditorToggle"') == 2)
 
 # ------------------------------- D: the policy file is clickable ------------
-check("D1 the auto-compact policy links the file that is in force",
-      'a.className = "filelink"' in HTML and '"(config/" +' in HTML,
-      "")
-check("D2 the link opens it in the editor",
-      'openInEditor(f, { mode: "code" })' in HTML)
-check("D3 the link prefers the WebUI overlay when it exists",
-      "p.local_exists ? (p.local || p.source) : p.source" in HTML)
+SETTINGS = _read("src", "longrun", "core", "settings.py")
+check("D1 Context has no duplicate auto-compaction policy controls",
+      all(token not in HTML for token in (
+          'id="cmpTrigger"', 'id="cmpTarget"', 'id="cmpKeep"',
+          "saveCompactionPolicy", "loadCompactionPolicy")))
+check("D2 Compaction Settings links config files into the editor",
+      'data-cat="compaction"' in HTML and "data-config-files" in HTML
+      and "function _settingsFileLinks(files)" in HTML
+      and 'openInEditor(link.dataset.configFile, { mode: "code" })' in HTML)
+check("D3 saving Compaction refreshes links for the new local overlay",
+      "config/compaction.local.yaml" in SETTINGS
+      and "if (Array.isArray(r.files))" in HTML
+      and "fileList.innerHTML = \"· \" + _settingsFileLinks(r.files)" in HTML)
 
 print("---")
 ok = sum(results)

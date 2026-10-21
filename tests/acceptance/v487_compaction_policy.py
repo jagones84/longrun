@@ -103,15 +103,22 @@ api = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding=
 check("E1 the API exposes GET/POST /api/compaction/policy",
       api.count('"/api/compaction/policy"') >= 2
       and "def compaction_policy(" in api and "def set_compaction_policy(" in api)
-check("E2 the Context panel has trigger/target/keep inputs that auto-save on change",
-      'id="cmpTrigger"' in ui and 'id="cmpTarget"' in ui and 'id="cmpKeep"' in ui
-      and "async function saveCompactionPolicy(" in ui
-      and ui.count('data-change="saveCompactionPolicy"') == 3
-      and 'data-call="saveCompactionPolicy"' not in ui)
-check("E3 the panel shows the live policy and where it is stored",
-      "async function loadCompactionPolicy(" in ui
-      and 'api("GET", "/api/compaction/policy")' in ui
-      and "config/compaction.local.yaml" in ui)
+check("E2 Context has no duplicate auto-compaction policy editor",
+      all(token not in ui for token in (
+          'id="cmpTrigger"', 'id="cmpTarget"', 'id="cmpKeep"',
+          "saveCompactionPolicy", "loadCompactionPolicy")))
+from longrun.core import settings as _settings  # noqa: E402
+_compact_form = next((s for s in _settings._sections()
+                      if s.get("id") == "compaction"), {})
+_compact_view = next((s for s in _settings.view()["sections"]
+                      if s.get("id") == "compaction"), {})
+check("E3 Settings Compaction owns the shared live policy and file links",
+      _compact_form.get("panel") == "compaction"
+      and {"trigger_pct", "target_pct", "keep_recent"} <= {
+          field["path"] for field in _compact_form.get("fields", [])}
+      and "config/compaction.yaml" in (_compact_view.get("files") or [])
+      and 'data-cat="compaction"' in ui
+      and "data-config-file=" in ui)
 check("E4 the panel names the current trigger in the context detail",
       "auto-compact at" in api)
 # JAG-523: a manual compaction that fails for a SEMANTIC reason (unknown session,
@@ -216,6 +223,36 @@ _big = _h._summarizer_parts(["user: " + ("z" * 5000)], 1000, 8)
 check("G8 an oversized single message is truncated with a visible marker",
       len(_big) == 1 and len(_big[0]) <= 1200 and "oversized message truncated" in _big[0],
       len(_big[0]))
+
+# G9: a >100k-token-equivalent transcript reaches the summarizer without gaps.
+_long_prompts = []
+
+
+def _fake_long_map(messages: list[dict], model: str, role: str, cb: object, **kw: object) -> tuple[str, str, str]:
+    _long_prompts.append(messages[0]["content"])
+    return "SUMMARY-%d" % len(_long_prompts), "", model
+
+
+_orig_stream = _h.stream_with_fallback
+try:
+    _h.stream_with_fallback = _fake_long_map
+    _long_markers = ["LONGMARK%03d" % i for i in range(240)]
+    _long_messages = [
+        {"role": "user", "content": marker + " " + ("x" * 3000)}
+        for marker in _long_markers
+    ]
+    _long_meta = {}
+    _h._summarize_with_llm(_long_messages, meta=_long_meta)
+    _map_prompts = [p for p in _long_prompts if "PART " in p and " of " in p]
+    _long_joined = "\n".join(_map_prompts)
+    _estimated_tokens = sum(len(m["content"]) for m in _long_messages) // 4
+    check("G9 >100k-token-equivalent transcript is split and fully represented",
+          _estimated_tokens > 100000 and 10 < len(_map_prompts) <= 24
+          and all(marker in _long_joined for marker in _long_markers),
+          (_estimated_tokens, len(_map_prompts),
+           [m for m in _long_markers if m not in _long_joined][:5]))
+finally:
+    _h.stream_with_fallback = _orig_stream
 
 print("---")
 okc = sum(results)
