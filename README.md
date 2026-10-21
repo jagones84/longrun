@@ -272,6 +272,28 @@ systemctl --user status longrun.service
 The unit expects the checkout at `~/Repositories/longrun`. Edit its paths if your
 checkout is elsewhere. It binds `0.0.0.0:8790`.
 
+Once the service is installed, these are the three commands you need day to day.
+**A backend Python change (anything under `src/`) only takes effect after a
+restart**; static WebUI files are served from disk and only need a page reload.
+
+```bash
+systemctl --user restart longrun.service   # apply Python changes
+systemctl --user stop longrun.service      # stop the app
+systemctl --user start longrun.service     # start it again
+journalctl --user -u longrun.service -n 100 --no-pager   # recent logs
+```
+
+Before restarting, check that no turn is running — a restart kills an in-flight
+turn. With a token configured:
+
+```bash
+curl -s -H "Authorization: Bearer $LONGRUN_TOKEN" \
+  http://127.0.0.1:8790/api/chat/live     # proceed only when "active" is []
+```
+
+Use `systemctl --user`, never `sudo systemctl`: the unit runs in your user session
+and a system-level restart starts it under the wrong account.
+
 ### Optional document extraction
 
 `requirements.txt` lists optional document extractors (`docling` and `markitdown`).
