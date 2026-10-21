@@ -114,6 +114,14 @@ check("E3 the panel shows the live policy and where it is stored",
       and "config/compaction.local.yaml" in ui)
 check("E4 the panel names the current trigger in the context detail",
       "auto-compact at" in api)
+# JAG-523: a manual compaction that fails for a SEMANTIC reason (unknown session,
+# nothing to compact) used to answer 404 — a logic error disguised as a missing
+# route, and inconsistent with /api/compaction/policy right below it.
+_route_head = 'if path == "/api/context/compact":'
+_cmp_route = api.split(_route_head, 1)[1].split("if path == ", 1)[0] if _route_head in api else ""
+check("E5 a failed manual compaction is a 400 (bad request), never a 404",
+      "else 400, res)" in _cmp_route and "else 404, res)" not in _cmp_route,
+      _cmp_route.strip().splitlines()[0][:90] if _cmp_route.strip() else "route missing")
 
 # ---- F) a reasoning summarizer that returns ONLY thoughts must be retried ----
 from longrun.core import server as _srv      # noqa: E402,F401  (import order)

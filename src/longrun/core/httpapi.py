@@ -2271,7 +2271,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, taskgraph.reset(run_id))
         if path == "/api/context/compact":
             res = compact_session(body.get("session"), body.get("budget_tokens"), origin="manual")
-            return self._send(200 if "error" not in res else 404, res)
+            # JAG-523: a semantic failure (unknown session, nothing to compact) is a
+            # BAD REQUEST, not a missing route — 404 hid a logic error behind
+            # "not found" and disagreed with /api/compaction/policy.
+            return self._send(200 if "error" not in res else 400, res)
         if path == "/api/compaction/policy":
             # JAG-487: set trigger / target / keep_recent from the Context panel.
             res = set_compaction_policy(body)

@@ -7,6 +7,11 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **A failed manual compaction is now a 400, not a 404.** `POST /api/context/compact`
+  answered 404 for every semantic failure (unknown session, nothing to compact), so a
+  logic error looked like a missing route and disagreed with `/api/compaction/policy`
+  immediately below it. The unrelated ~7 s latency suspected on `/api/skills` and
+  `/api/self` was measured and dismissed: every warm route answers in under 50 ms.
 - **The WebUI script no longer dies at load, and `.json` attachments upload.**
   `_syncAttachmentBusyUI()` was invoked at script top level although it reads
   `runningSessions`, declared thousands of lines later: a Temporal Dead Zone
