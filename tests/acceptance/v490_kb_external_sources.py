@@ -212,7 +212,47 @@ check("F1 a query with ZERO lexical overlap still returns a semantic hit",
       bool(res.get("results")) and res.get("mode") == "hybrid",
       {"mode": res.get("mode"), "n": len(res.get("results") or [])})
 
-# ---- G) fs.read extracts a binary document instead of decoding it -----------
+# ---- G) orphaned FTS rows must not block the next indexed chunk -------------
+orphan_pdf = os.path.join(TMP, "orphan.pdf")
+with open(orphan_pdf, "wb") as f:
+    f.write(b"%PDF-1.4 test upload")
+db = kb._connect()
+next_id = db.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM chunks").fetchone()[0]
+orphan_ids = range(next_id, next_id + 5)
+for rowid in orphan_ids:
+    db.execute("INSERT INTO chunks_fts(rowid, text, name, path) VALUES(?,?,?,?)",
+               (rowid, "stale orphan marker", "", "stale.txt"))
+db.commit()
+db.close()
+_orig_orphan_extract = docio.extract
+
+
+def _fake_orphan_extract(path, max_kb=25600):
+    result = _fake_extract(path, max_kb=max_kb)
+    result["text"] = "\n".join("FTS orphan recovery line %d." % i for i in range(900))
+    result["chars"] = len(result["text"])
+    return result
+
+
+try:
+    docio.extract = _fake_orphan_extract
+    orphan_ingest = kb.add_source("auto", orphan_pdf, session_id="sid-fts-orphan")
+except Exception as e:
+    orphan_ingest = {"ok": False, "error": str(e)}
+finally:
+    docio.extract = _orig_orphan_extract
+db = kb._connect()
+orphan_count = db.execute(
+    "SELECT count(*) FROM chunks_fts WHERE rowid NOT IN (SELECT id FROM chunks)"
+).fetchone()[0]
+db.close()
+check("G1 a PDF is indexed into its session notebook despite an orphan FTS row",
+      orphan_ingest.get("ok") and orphan_ingest.get("notebook", "").startswith("sess-")
+      and orphan_ingest.get("chunks", 0) > len(orphan_ids) and orphan_count == 0, {
+          "ingest": orphan_ingest, "orphan_fts_rows": orphan_count,
+      })
+
+# ---- H) fs.read extracts a binary document instead of decoding it -----------
 from longrun.tools import tools as toolmod  # noqa: E402
 
 pdf = os.path.join(TMP, "attached.pdf")
@@ -229,21 +269,21 @@ try:
 finally:
     docio.extract = _orig_read_extract
     toolmod.registry.tool_spec = _orig_spec
-check("G1 fs.read returns the EXTRACTED text of a PDF",
+check("H1 fs.read returns the EXTRACTED text of a PDF",
       got.get("ok") and got.get("content") == "Extracted document body"
       and got.get("engine") == "fake", got)
 
-# ---- H) the WebUI attaches images too --------------------------------------
+# ---- I) the WebUI attaches images too --------------------------------------
 UI = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 RX = ("pdf|docx?|odt|rtf|pptx|xlsx|epub|png|jpe?g|gif|bmp|webp|tiff?")
-check("H1 the composer auto-ingests images as well as documents", RX in UI)
-check("H2 the attach hint knows images are documents", RX in UI)
+check("I1 the composer auto-ingests images as well as documents", RX in UI)
+check("I2 the attach hint knows images are documents", RX in UI)
 IDXCFG = open(os.path.join(REPO, "config", "index.yaml"), encoding="utf-8").read()
-check("H3 index.yaml documents the knowledge knobs",
+check("I3 index.yaml documents the knowledge knobs",
       all(k in IDXCFG for k in ("knowledge_ignore", "url_max_kb",
                                 "image_caption_model", "image_min_chars")))
 
-# ---- I) a cloud vision model is detected from live vendor metadata ----------
+# ---- J) a cloud vision model is detected from live vendor metadata ----------
 from longrun.model import providers, rllm  # noqa: E402
 
 _orig_resolve = providers.resolve
@@ -256,21 +296,21 @@ try:
     providers.resolve = lambda ref: ({"id": "openrouter", "kind": "openrouter",
                                       "local": False, "models": []},
                                      ref.split(":", 1)[-1])
-    check("I1 an OpenRouter model with an image input modality is vision-capable",
+    check("J1 an OpenRouter model with an image input modality is vision-capable",
           rllm.model_supports_vision("openrouter:vendor/vision-model") is True)
-    check("I2 an OpenRouter text-only model stays text-only",
+    check("J2 an OpenRouter text-only model stays text-only",
           rllm.model_supports_vision("openrouter:vendor/text-model") is False)
     providers.resolve = lambda ref: ({"id": "deepseek", "kind": "deepseek",
                                       "local": False, "models": []},
                                      ref.split(":", 1)[-1])
-    check("I3 a non-OpenRouter remote provider is never granted vision implicitly",
+    check("J3 a non-OpenRouter remote provider is never granted vision implicitly",
           rllm.model_supports_vision("deepseek:vendor/vision-model") is False)
 finally:
     providers.resolve = _orig_resolve
     providers._OPENROUTER_MODAL.clear()
     providers._OPENROUTER_MODAL.update(_orig_modal)
     providers._OPENROUTER_CTX["map"] = _orig_ctx
-check("I4 both vendor modality spellings are understood",
+check("J4 both vendor modality spellings are understood",
       providers._normalise_modalities("text+image->text") == ["text", "image"]
       and providers._normalise_modalities(["text", "image"]) == ["text", "image"])
 

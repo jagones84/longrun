@@ -64,6 +64,7 @@ def insert_chunks(db, pieces, path, lang, kind, fts, source=None):
         ", ".join("?" * (len(lead) + len(_CHUNK_TAIL_COLS))))
     lead_vals = (source,) if source is not None else ()
     ids = []
+    fts_sql = "INSERT INTO chunks_fts(rowid, text, name, path) VALUES(?,?,?,?)"
     for p in pieces or []:
         text = p.get("text") or ""
         if not text.strip():
@@ -72,8 +73,19 @@ def insert_chunks(db, pieces, path, lang, kind, fts, source=None):
             path, lang, kind, p.get("name") or "", int(p.get("start") or 0),
             int(p.get("end") or 0), max(1, len(text) // 4), text))
         if fts:
-            db.execute("INSERT INTO chunks_fts(rowid, text, name, path) VALUES(?,?,?,?)",
-                       (cur.lastrowid, text, p.get("name") or "", path))
+            values = (cur.lastrowid, text, p.get("name") or "", path)
+            try:
+                db.execute(fts_sql, values)
+            except sqlite3.IntegrityError:
+                # A deleted chunk can leave its FTS row behind; a reused ID then
+                # collides. Since this chunk ID was just allocated, that FTS row
+                # cannot belong to a live chunk, so replace only the collision.
+                stale = db.execute("SELECT 1 FROM chunks_fts WHERE rowid=?",
+                                   (cur.lastrowid,)).fetchone()
+                if not stale:
+                    raise
+                db.execute("DELETE FROM chunks_fts WHERE rowid=?", (cur.lastrowid,))
+                db.execute(fts_sql, values)
         ids.append(cur.lastrowid)
     return ids
 

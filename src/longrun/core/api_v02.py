@@ -2477,11 +2477,12 @@ def attach_save(data, name=None, session=None) -> dict:
     """POST /api/attach — persist an uploaded attachment and return its path.
 
     The filename is sanitized and a timestamp suffix deduplicates instead of
-    overwriting. Returns {"ok", "path", "name", "size"} or {"ok": False, "error"}.
+    overwriting. Success includes whether the file is knowledge-indexable.
     """
     import os as _os
     import re as _re
     import time as _time
+    from longrun.memory import chunk as _chunk
     cap = int(_os.environ.get("LONGRUN_ATTACH_MAX", str(32 * 1024 * 1024)))
     if not data:
         return {"ok": False, "error": "empty upload"}
@@ -2501,7 +2502,9 @@ def attach_save(data, name=None, session=None) -> dict:
             f.write(data)
     except OSError as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "path": path, "name": _os.path.basename(path), "size": len(data)}
+    indexable = bool(_chunk.lang_for(base)[0])
+    return {"ok": True, "path": path, "name": _os.path.basename(path),
+            "size": len(data), "indexable": indexable}
 
 
 # ---------------------------------------------------------------------------

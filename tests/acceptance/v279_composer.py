@@ -52,12 +52,17 @@ check("the file lives under data/attachments/<session>",
       os.path.join("attachments", "s1") in (r.get("path") or ""))
 check("the returned path is absolute for the model to fs.read",
       os.path.isabs(r.get("path") or ""))
+check("the upload API marks text documents as knowledge-indexable",
+      r.get("indexable") is True)
 
 r_dup = A.attach_save(b"second", name="note.txt", session="s1")
 check("a duplicate name does not overwrite the first",
       r_dup["path"] != r["path"] and os.path.isfile(r["path"]))
 check("both copies exist", open(r["path"], "rb").read() == b"hello world"
       and open(r_dup["path"], "rb").read() == b"second")
+binary = A.attach_save(b"\x00\x01", name="opaque.bin", session="s1")
+check("unknown binary uploads are not marked as knowledge-indexable",
+      binary.get("indexable") is False)
 
 r_trav = A.attach_save(b"x", name="../../etc/passwd", session="s1")
 check("a path-traversal name is neutralised (kept inside the folder)",
@@ -121,4 +126,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

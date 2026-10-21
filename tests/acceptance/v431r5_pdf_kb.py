@@ -404,7 +404,7 @@ check("6a the WebUI calls /api/knowledge/auto-route on attach",
 check("6b the WebUI tags the ingest with the active session",
       "session: sessionId" in HTML)
 check("6e the WebUI reports automatic Knowledge ingest failures",
-      "knowledge indexing failed for " in HTML and "don't block attach on a KB error" not in HTML)
+      "ingest failed for " in HTML and "remove it before sending." in HTML)
 # JAG-431r6b: the dedicated, request-expanded "Session notebooks" tab exists and
 # renders r.sessions from GET /api/knowledge/notebooks.
 check("6c the WebUI has a dedicated Session notebooks panel",

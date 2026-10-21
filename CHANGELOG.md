@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Chat attachments now finish Knowledge ingestion before the next message can
+  be sent.** The upload response identifies every supported/indexable file, and
+  the UI routes it into the notebook owned by the session captured at upload
+  start. The composer stays disabled until indexing finishes; failures remain
+  visible and must be removed before sending. Images still travel directly to
+  vision-capable models as well as through optional OCR/caption indexing. The
+  Session notebooks list refreshes as soon as ingestion succeeds. Knowledge
+  chunk insertion also replaces a colliding orphan FTS5 rowid, fixing
+  `constraint failed` errors that blocked both attached PDFs and text sources.
 - **Tool schemas now teach the exact subtool contract, and destructive actions
   require approval.** Canonical tools expose only arguments used by that action,
   including required source/query/skill inputs; Knowledge clarifies notebook

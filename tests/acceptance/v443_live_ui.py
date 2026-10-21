@@ -57,6 +57,20 @@ check("1a the composer has a paste listener that reads clipboard file items",
       and "getAsFile" in HTML, "")
 check("1b a pasted clipboard image is uploaded through the SAME attach path",
       "attachFiles(named)" in HTML and "attachFiles(" in HTML, "")
+check("1c chat attachment ingestion is scoped to the session captured at start",
+      "const attachSession = sessionId;" in HTML
+      and "session: attachSession" in HTML, "")
+check("1d indexing disables the composer and the send handler also gates sends",
+      "function _setAttachmentBusy(" in HTML
+      and "inp.disabled = busy" in HTML
+      and "if (_attachmentPending(sessionId)) {" in HTML, "")
+check("1e every backend-indexable attachment is routed before it is added to chat",
+      "if (r.indexable)" in HTML
+      and "finally" in HTML[HTML.index("async function attachFiles"):HTML.index("function togglePlus")],
+      "")
+check("1f a successful ingest refreshes the Session notebooks view",
+      "kbLoadSessions();" in HTML[HTML.index("async function attachFiles"):HTML.index("function togglePlus")],
+      "")
 
 # --- 2) one shared render binder for own-turn + re-attach streams -----------
 check("2a a single _bindRenderStream() binder exists",
