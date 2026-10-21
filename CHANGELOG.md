@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The Editor's keyboard search follows the session too.** The tree pane's search
+  box is session-scoped (`/api/fs/find` reads `sf_session` when it fires), but a
+  session switch left the PREVIOUS session's hits on screen: `loadTree()` gives up on
+  the pane while a search is active (JAG-501) and nothing re-ran the query, so the flat
+  hit list kept naming files of the old workspace. Live: with `hitl` typed in a session
+  whose workspace was `…/TESTS/harness-e2e` (3 hits) switching to one rooted at
+  `…/TESTS/kb-agent` now re-runs the query (no match, and `page-1` returns that
+  workspace's files); before, the old hits stayed. The switch also refreshes the
+  workspace root the tab markers read (`_syncRoot()`), because a search replaces the
+  tree rows and the pane is never repainted. The guarded listing fetch is now ONE
+  helper (`_sessionListing()`) shared by both callers. Pinned by `v505` A12/A15/A17–A19
+  (45/45; RED at the previous commit = 40/45).
 - **Switching session now repaints the Editor's file tree.** The dock's tree pane
   mirrors ONE session's workspace, but nothing recorded WHICH session it was showing:
   on a switch the only test was "does the pane already have rows?", and the rows of the

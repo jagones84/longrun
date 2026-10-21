@@ -618,6 +618,23 @@ function syncActive() {
    load of a sessionless page would be considered up to date). */
 function _treeStale() { return state.treeSid !== SESSION(); }
 
+/* JAG-524: the ONE place that asks the server for the session's listing. It claims
+   the pane before the await (so a concurrent caller sees `_treeStale()` false and
+   does not fire a second identical load) and throws away a reply that landed after
+   the operator switched session — that reply used to be painted anyway, which put
+   the PREVIOUS workspace root on screen (a first load of a page whose session is
+   not in localStorage yet showed the parent `/home/jagones`). Returns `null` when
+   the reply must not be painted. */
+async function _sessionListing() {
+  const sid = localStorage.getItem("sf_session") || "";
+  state.treeSid = sid;
+  try {
+    const d = await jget("/api/fs/list?session=" + encodeURIComponent(sid));
+    if (sid !== (localStorage.getItem("sf_session") || "")) return null;
+    return d;
+  } catch (e) { return { error: String(e) }; }
+}
+
 async function loadTree() {
   const box = state.treeEl;
   if (!box) return;
@@ -625,33 +642,23 @@ async function loadTree() {
   // hits (a manual ↻ or a late async load used to show both lists at once).
   if (state.searchInput && state.searchInput.value.trim()) return;
   setTreeMsg("loading…");
-  const sid = localStorage.getItem("sf_session") || "";
-  // JAG-524: claim the pane for this session BEFORE the await, so a concurrent
-  // caller (_treeStale now false) does not fire a second identical load.
-  state.treeSid = sid;
-  try {
-    const d = await jget("/api/fs/list?session=" + encodeURIComponent(sid));
-    // JAG-524: a reply that lands AFTER the operator switched session used to be
-    // painted anyway — it put the PREVIOUS workspace root on screen (a first load
-    // of a page whose session is not yet in localStorage showed the parent
-    // `/home/jagones`). Drop it: the switch already owns the pane.
-    if (sid !== (localStorage.getItem("sf_session") || "")) return;
-    if (d.error) { setTreeMsg(d.error); return; }
-    state.root = d.root || "";
-    treeClear();
-    const root = document.createElement("div");
-    root.className = "remaining ed-root";
-    root.style.marginBottom = "4px";
-    root.textContent = (d.root ? basename(d.root) : "workspace") + "/";
-    box.appendChild(root);
-    renderTree(box, d, 0);
-    // JAG-524: `_inWorkspace` reads `state.root`, which has just changed — re-render
-    // the tabs or a file of the NEW session keeps the ⚠ "outside the workspace"
-    // marker it was given while the OLD root was still in memory.
-    renderTabs();
-    syncTreeActive();   // JAG-500: a freshly loaded tree must highlight the open file
-    if (!d.count) setTreeMsg("empty folder");
-  } catch (e) { setTreeMsg(String(e)); }
+  const d = await _sessionListing();
+  if (!d) return;                      // a switch landed mid-flight: it owns the pane
+  if (d.error) { setTreeMsg(d.error); return; }
+  state.root = d.root || "";
+  treeClear();
+  const root = document.createElement("div");
+  root.className = "remaining ed-root";
+  root.style.marginBottom = "4px";
+  root.textContent = (d.root ? basename(d.root) : "workspace") + "/";
+  box.appendChild(root);
+  renderTree(box, d, 0);
+  // JAG-524: `_inWorkspace` reads `state.root`, which has just changed — re-render
+  // the tabs or a file of the NEW session keeps the ⚠ "outside the workspace"
+  // marker it was given while the OLD root was still in memory.
+  renderTabs();
+  syncTreeActive();   // JAG-500: a freshly loaded tree must highlight the open file
+  if (!d.count) setTreeMsg("empty folder");
 }
 
 /* JAG-501: the tree pane also hosts the keyboard search, so a reload must clear
@@ -1083,7 +1090,30 @@ async function onSessionChange() {
   // switch is — and the pane still held the PREVIOUS session's rows, so the old
   // guard (`!querySelector(".ed-trow")`) skipped the one reload that mattered and
   // the operator kept reading the wrong folder. `_treeStale()` is the true test.
-  if (state.treeEl && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) await loadTree();
+  if (state.searchInput && state.searchInput.value.trim()) {
+    // JAG-525: the search box is session-scoped too — `findPaths` reads `sf_session`
+    // when it fires — but a switch left the PREVIOUS session's hits on screen,
+    // because `loadTree()` gives up on the pane while a search owns it (JAG-501).
+    // Re-run the query against the new workspace instead of mirroring the old one.
+    state.treeHits.innerHTML = "";
+    setTreeMsg("searching…");
+    state.search.run();
+    // The flat hits REPLACE the tree, so the pane is never repainted and the
+    // workspace root the tab markers read would stay on the previous session.
+    _syncRoot();
+  } else if (state.treeEl && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) {
+    await loadTree();
+  }
+}
+
+/* JAG-525: refresh ONLY the workspace root (and the tab markers that depend on it)
+   for the session that is live now, without touching the tree rows an active search
+   has replaced. */
+async function _syncRoot() {
+  const d = await _sessionListing();
+  if (!d || d.error) return;
+  state.root = d.root || "";
+  renderTabs();
 }
 
 async function restoreTabs() {

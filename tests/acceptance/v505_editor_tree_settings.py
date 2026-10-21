@@ -75,18 +75,32 @@ check("A11 the tree records the session it mirrors (never an empty-string guess)
       "function _treeStale()" in ed and "state.treeSid !== SESSION()" in ed
       and "treeSid: null" in ed)
 check("A12 a session switch reloads the tree even when it already holds rows",
-      'if (state.treeEl && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) await loadTree();' in ed)
+      'else if (state.treeEl && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) {' in ed)
 check("A13 show() reloads a tree that still belongs to another session",
       'if (state.treeEl && !state.treeEl.hidden && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) loadTree();' in ed)
 check("A14 the reveal reloads a tree that still belongs to another session",
       'if (_treeStale() || !state.treeEl.querySelector(".ed-trow")) await loadTree()' in ed)
 check("A15 a tree reply that lands after the switch is dropped, never painted",
       "state.treeSid = sid;" in ed
-      and 'if (sid !== (localStorage.getItem("sf_session") || "")) return;' in ed)
+      and 'if (sid !== (localStorage.getItem("sf_session") || "")) return null;' in ed)
 _lt = ed[ed.find("async function loadTree()"):]
 _lt = _lt[:_lt.find("\n}\n")]      # the loadTree body only — a bare file-wide search
 check("A16 the workspace-root change re-renders the tabs (no stale ⚠ marker)",
       "state.root = d.root" in _lt and "renderTabs();" in _lt)
+
+# JAG-525: the search box is session-scoped too, but a switch left the PREVIOUS
+# session's hits on screen — loadTree() gives up on the pane while a search owns it
+# (JAG-501), so nothing re-anchored the pane to the new workspace.
+check("A17 a session switch re-runs the active search instead of keeping its hits",
+      'if (state.searchInput && state.searchInput.value.trim()) {' in ed
+      and 'state.treeHits.innerHTML = "";' in ed
+      and "state.search.run();" in ed)
+check("A18 the pane still learns the new root while a search owns it",
+      "async function _syncRoot()" in ed and "_syncRoot();" in ed)
+check("A19 ONE session-guarded listing fetch feeds both callers",
+      "async function _sessionListing()" in ed
+      and ed.count("_sessionListing()") >= 3
+      and ed.count("/api/fs/list?session=") == 2)   # the helper + a sub-folder expand
 
 # ---- B) Settings categories: the operator's order, no duplicates -------------
 m = re.search(r"const SETTINGS_CATS = \[(.*?)\n\];", idx, re.S)
