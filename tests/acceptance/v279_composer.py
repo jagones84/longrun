@@ -10,6 +10,8 @@ failed on the DGX because the page is served over plain HTTP (insecure origin).
 Locked here:
   * /api/attach stores an uploaded file and returns a path the model can read;
   * the filename is sanitized, duplicates do not overwrite, oversize/empty rejected;
+  * JAG-523: the route accepts EVERY content type (a .json body used to 404) and the
+    composer's busy-state sync never runs in the Temporal Dead Zone;
   * the composer uploads via a native <input type=file>, not prompt();
   * Workspace file + Skill open searchable pickers (not the editor / a literal);
   * the Context Web-Search list has per-URL copy + a "copy all URLs" button;
@@ -87,6 +89,10 @@ with open(os.path.join(REPO, "src", "longrun", "core/httpapi.py"), encoding="utf
     srv += f.read()
 check("server exposes the raw upload route", 'path == "/api/attach"' in srv)
 check("the route calls attach_save", "api_v02.attach_save(" in srv)
+# JAG-523: the route has NO JSON body contract, so `application/json` is raw bytes
+# too. Excluding it (the zip guard, copy-pasted) made a .json attachment 404.
+check("attach accepts EVERY content type (no application/json exclusion)",
+      'not ctype.startswith("application/json")' not in srv)
 
 # --- 3) composer UI (JAG-279) -------------------------------------------------
 with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
@@ -94,6 +100,17 @@ with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
 check("a native file input backs the attach action", 'id="attachInput"' in ui)
 check("the attach action uploads the picked files", "function attachFiles" in ui
       and '"/api/attach?"' in ui)
+# JAG-523: `_syncAttachmentBusyUI()` reaches `runningSessions` via refreshSendBtn,
+# and that state is declared LATER in the same script. Calling it at top level was a
+# Temporal Dead Zone crash ("Cannot access 'runningSessions' before initialization")
+# that aborted the WHOLE WebUI script, so nothing after it was wired at all.
+_busy_call = ui.find("\n_syncAttachmentBusyUI();")
+_decl = ui.find("let runningSessions")
+check("the busy-state sync never runs before its state is declared",
+      _busy_call == -1 or _decl < _busy_call,
+      "top-level call at %d, declaration at %d" % (_busy_call, _decl))
+check("the busy-state sync still runs from the init chain",
+      "_syncAttachmentBusyUI(); refreshSendBtn();" in ui)
 check("the old prompt()-based path attach is gone", 'prompt("file path to attach' not in ui)
 check("a searchable picker modal exists", 'id="pickModal"' in ui and "function openPick" in ui)
 check("workspace files open a picker (not the editor)",

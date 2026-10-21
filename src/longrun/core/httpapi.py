@@ -1973,7 +1973,10 @@ class Handler(BaseHTTPRequestHandler):
         # JAG-279: raw attachment upload from the composer's native file picker.
         # A browser cannot expose a client path, so the picker sends the bytes and
         # we store them server-side; the model then gets a real absolute path.
-        if path == "/api/attach" and ctype and not ctype.startswith("application/json"):
+        # JAG-523: this route has NO JSON body contract, so every content type is a
+        # raw upload. Excluding `application/json` (a copy of the zip guard) made a
+        # plain `.json` attachment fall through to the API dispatcher and 404.
+        if path == "/api/attach":
             n = self._content_length()
             if not n:
                 return self._send(400, {"error": "empty body"})

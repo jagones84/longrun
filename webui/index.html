@@ -3913,7 +3913,10 @@ function _plusAction(a) {
 }
 $("plusBtn").onclick = (e) => { e.stopPropagation(); togglePlus(); };
 $("attachInput").onchange = () => { attachFiles($("attachInput").files); $("attachInput").value = ""; };
-_syncAttachmentBusyUI();
+/* JAG-523: the busy-state sync touches `runningSessions` (via refreshSendBtn), which
+   is declared later in this script — calling it here was a Temporal Dead Zone crash
+   that aborted the whole script. It now runs from the init chain, after every
+   declaration exists. */
 document.addEventListener("click", (e) => {
   const m = $("plusMenu");
   if (m && !m.hidden && !(e.target.closest && e.target.closest("#plusMenu"))
@@ -11583,7 +11586,7 @@ $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
-  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); refreshSendBtn();
+  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn();
   // auto-open the pending changes of a restored-open Files panel (no manual ↻)
   { const _fs = document.querySelector('#inspector section[data-insp="files"]');
     if (_fs && _fs.classList.contains("insp-open")) loadEdits(); }

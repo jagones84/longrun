@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **The WebUI script no longer dies at load, and `.json` attachments upload.**
+  `_syncAttachmentBusyUI()` was invoked at script top level although it reads
+  `runningSessions`, declared thousands of lines later: a Temporal Dead Zone
+  `ReferenceError` that aborted the entire WebUI script, so every binding after it
+  (composer wiring, the editor layout constants) was never applied — surfaced as a
+  second `Cannot access 'CHAT_MIN_W' before initialization` from `editor.js`. It now
+  runs only from the init chain. `POST /api/attach` also accepts EVERY content type:
+  the guard that excluded `application/json` (a copy of the zip-upload guard) made a
+  plain `.json` attachment fall through to the JSON dispatcher and answer 404.
 - **Chat attachments now finish Knowledge ingestion before the next message can
   be sent.** The upload response identifies every supported/indexable file, and
   the UI routes it into the notebook owned by the session captured at upload
