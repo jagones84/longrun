@@ -129,6 +129,51 @@ uG = server.context_usage("sG")
 check("G1 a raw-huge session is over_threshold WITHOUT a router hint",
       uG["over_threshold"] is True, "pct=%s" % uG["pct"])
 
+# ---- H: the MODEL's context.compact tool respects the policy trigger -------
+# JAG-528: live, the Tool Tests audit compacted 160 -> 16 messages at 16.2%
+# (trigger 70) and lost its own context. The 🗜 button is a human decision and
+# still forces; the tool must refuse below the trigger unless force=true.
+from longrun.tools import tools as _tools   # noqa: E402
+from longrun.tools import registry as _reg  # noqa: E402
+
+mk("sH", [("user", "hello")])
+_orig_compact = httpapi.compact_session
+_hits = []
+
+
+def _fake_compact(*a, **k):
+    _hits.append(k)
+    return {"compacted": 1, "kept": 1, "summary": "llm", "input_messages": 2,
+            "input_tokens": 10, "output_tokens": 5}
+
+
+httpapi.compact_session = _fake_compact
+_orig_usage = httpapi.context_usage
+# The v214 fixture runs with a 5000-token budget, so even one message reads as
+# over-threshold. Pin the meter to the live situation the bug came from.
+httpapi.context_usage = lambda *a, **k: {"session": "sH", "pct": 16.2,
+                                         "over_threshold": False,
+                                         "auto_compact_pct": 70,
+                                         "tokens_used": 42000,
+                                         "budget_tokens": 258048, "messages": 160}
+try:
+    below = _tools._context({"action": "compact", "session": "sH"}, "sH")
+    _hits_below = len(_hits)
+    forced = _tools._context({"action": "compact", "session": "sH", "force": True}, "sH")
+finally:
+    httpapi.compact_session = _orig_compact
+    httpapi.context_usage = _orig_usage
+check("H1 context.compact refuses BELOW the policy trigger",
+      below.get("ok") is False and _hits_below == 0, str(below)[:170])
+check("H2 the refusal names the real pct and the trigger",
+      "below the policy threshold" in (below.get("error") or "")
+      and "trigger" in (below.get("error") or ""), below.get("error"))
+check("H3 force=true still compacts (explicit user request)",
+      forced.get("ok") is True and len(_hits) == 1, str(forced)[:120])
+check("H4 the context schema exposes force",
+      "force" in (_reg.TOOL_SCHEMAS["context"].get("properties") or {}),
+      str(sorted((_reg.TOOL_SCHEMAS["context"].get("properties") or {}).keys())))
+
 shutil.rmtree(tmp, ignore_errors=True)
 ok = sum(results)
 print("\nv214: %d/%d PASS" % (ok, len(results)))

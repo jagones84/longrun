@@ -323,14 +323,18 @@ _LEGACY_SCHEMAS = {
     "context": {
         "description": ("THIS session's context meter + compaction. "
                         "action=status -> tokens/budget/pct + over_threshold flag. "
-                        "action=compact -> manual compaction now (summarizer model, "
-                        "merges old turns into one summary). The harness auto-compacts "
-                        "at the trigger %, so use compact only to free headroom early."),
+                        "action=compact -> compaction now (summarizer model, merges "
+                        "old turns into one summary). It REFUSES below the policy "
+                        "trigger; pass force=true only when the user explicitly asked "
+                        "to compact early. The harness auto-compacts at the trigger %."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["status", "compact"], "default": "status"},
             "session": {"type": "string",
                         "description": "session id (default: this run's session)"},
+            "force": {"type": "boolean", "default": False,
+                      "description": "compact even below the policy trigger (only on "
+                                     "an explicit user request)"},
         },
         "required": [],
         "subject": "action",

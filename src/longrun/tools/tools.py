@@ -1457,6 +1457,23 @@ def _context(args, run_id):
         return {"ok": True, "exit_code": 0, "session": sid, "info": info,
                 "stdout": out, "backend": "host", "sandboxed": False}
     if action == "compact":
+        # JAG-528: the MODEL may call this tool. A compaction is destructive and
+        # irreversible, and the transcript is only worth shrinking once the
+        # policy trigger is reached. Live: the Tool Tests audit compacted
+        # 160 -> 16 messages at 16.2% (trigger 70) and lost its own context.
+        # The 🗜 button is a human decision and still forces; the tool does not.
+        info = httpapi.context_usage(session_id=sid)
+        if info.get("error"):
+            return {"ok": False, "error": info["error"], "backend": "host",
+                    "sandboxed": False}
+        if not bool(args.get("force")) and not info.get("over_threshold"):
+            return {"ok": False, "exit_code": 0, "session": sid, "info": info,
+                    "error": ("context is at %.1f%% (trigger %s%%) — below the policy "
+                              "threshold; refusing a destructive compaction. Pass "
+                              "force=true only when the user explicitly asked."
+                              % (float(info.get("pct") or 0),
+                                 info.get("auto_compact_pct", 70))),
+                    "backend": "host", "sandboxed": False}
         stats = httpapi.compact_session(sid, origin="tool")
         if stats.get("error"):
             return {"ok": False, "error": stats["error"], "backend": "host",

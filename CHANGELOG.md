@@ -160,6 +160,13 @@ All notable changes to Longrun are documented here. The format follows
   `config/prices.yaml`), so the Cost panel sees a new table immediately. A price
   change is still never retroactive: each ledger record keeps the `usd` it was priced
   at. Pinned by `v527` B2/C4.
+- **The model can no longer compact its own context below the policy trigger.** The
+  `context.compact` tool called the MANUAL path, which forces: live, the Tool Tests
+  audit compacted `160 → 16` messages at **16.2%** with `trigger=70` and lost its own
+  transcript (the worst finding of its own report). The tool now refuses below
+  `trigger_pct` and names the real pct/trigger; `force: true` (explicit user request)
+  still compacts, and the 🗜 button remains a human decision that forces. Pinned by
+  `v214` H1–H4 (RED 15/19 → GREEN 19/19); `v521` exercises the force path.
 
 ### Added
 - **"Refresh prices" now regenerates BOTH price sources, deterministically.** The Cost

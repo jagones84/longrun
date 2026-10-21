@@ -129,7 +129,10 @@ httpapi.compact_session = lambda sid, *args, **kwargs: (
     compact_calls.append((sid, kwargs.get("origin")))
     or {"compacted": 2, "messages_after": 2, "summary": "extractive"})
 try:
-    compact_result = T._context({"action": "compact"}, "v521")
+    # JAG-528: the tool refuses below the policy trigger; this check is about
+    # DELEGATION, so it exercises the explicit-force path. The refusal itself is
+    # pinned by v214 H1–H4.
+    compact_result = T._context({"action": "compact", "force": True}, "v521")
 finally:
     httpapi.compact_session = old_compact
 check("context.compact uses the shared manual compaction procedure",
