@@ -6588,6 +6588,12 @@ function _markWrappedTasks(box) {
     if (lines.size > 2) el.classList.add("stacked");
   });
 }
+async function decideImproveProposal(id, decision) {
+  const r = await api("POST", "/api/improve", { id, decision });
+  if (!r || !r.ok) throw new Error((r && r.error) || "proposal decision failed");
+  return r;
+}
+
 /* JAG-128B: la proposta di self-improvement arriva come evento SSE e resta
  * azionabile dalla chat (accetta/rifiuta -> POST /api/improve). */
 function improveCard(d) {
@@ -6602,12 +6608,29 @@ function improveCard(d) {
   const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:4px";
   const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ accept";
   const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ reject";
-  ok.onclick = () => api("POST", "/api/improve", { id: d.id_id || d.id, decision: "approve" })
-    .then(() => { ok.textContent = "✅ accepted"; no.remove(); });
-  no.onclick = () => api("POST", "/api/improve", { id: d.id_id || d.id, decision: "deny" })
-    .then(() => { no.textContent = "⛔ rejected"; ok.remove(); });
+  const feedback = document.createElement("div"); feedback.className = "remaining";
+  feedback.setAttribute("role", "status");
+  if (d.scope === "skill") {
+    ok.disabled = true;
+    ok.title = "Skill application is not implemented";
+    feedback.textContent = "Skill apply is not implemented; reject to clear this proposal.";
+  }
+  const choose = async decision => {
+    ok.disabled = true; no.disabled = true;
+    try {
+      await decideImproveProposal(d.id_id || d.id, decision);
+      if (decision === "approve") { ok.textContent = "✅ accepted"; no.remove(); }
+      else { no.textContent = "⛔ rejected"; ok.remove(); }
+    } catch (e) {
+      feedback.textContent = String(e);
+      ok.disabled = d.scope === "skill";
+      no.disabled = false;
+    }
+  };
+  ok.onclick = () => choose("approve");
+  no.onclick = () => choose("deny");
   row.appendChild(ok); row.appendChild(no);
-  bub.appendChild(head); bub.appendChild(body); bub.appendChild(row);
+  bub.appendChild(head); bub.appendChild(body); bub.appendChild(row); bub.appendChild(feedback);
   card.appendChild(bub); _logAppend(card); scroll();
 }
 
@@ -6818,9 +6841,25 @@ async function loadImprovement() {
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:6px";
     const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "accept";
     const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "reject";
-    ok.onclick = (e) => { e.preventDefault(); e.stopPropagation(); api("POST", "/api/improve", { id: p.id, decision: "approve" }).then(loadImprovement); };
-    no.onclick = (e) => { e.preventDefault(); e.stopPropagation(); api("POST", "/api/improve", { id: p.id, decision: "deny" }).then(loadImprovement); };
+    const feedback = document.createElement("div"); feedback.className = "remaining";
+    feedback.setAttribute("role", "status");
+    if (p.scope === "skill") {
+      ok.disabled = true;
+      ok.title = "Skill application is not implemented";
+      feedback.textContent = "Skill apply is not implemented; reject to clear this proposal.";
+    }
+    ok.onclick = async (e) => {
+      e.preventDefault(); e.stopPropagation(); ok.disabled = true;
+      try { await decideImproveProposal(p.id, "approve"); await loadImprovement(); }
+      catch (err) { feedback.textContent = String(err); ok.disabled = p.scope === "skill"; }
+    };
+    no.onclick = async (e) => {
+      e.preventDefault(); e.stopPropagation(); no.disabled = true;
+      try { await decideImproveProposal(p.id, "deny"); await loadImprovement(); }
+      catch (err) { feedback.textContent = String(err); no.disabled = false; }
+    };
     row.appendChild(ok); row.appendChild(no); det.appendChild(row);
+    det.appendChild(feedback);
     props.appendChild(det);
   });
   // ---- decided history (so an all-decided panel is not empty) ----
@@ -10185,8 +10224,33 @@ function editsChip(files) {
     const op = r.querySelector(".efopen"); if (op) op.onclick = () => openFile(p);
     const st = r.querySelector(".efstat"); if (st) st.onclick = () => showDiff(p);
   });
-  d.querySelector(".eap").onclick = () => approveEdits(null);
-  d.querySelector(".erj").onclick = () => rejectEdits(null);
+  d.querySelector(".eap").onclick = () => _settleEditChip(d, "approved");
+  d.querySelector(".erj").onclick = () => _settleEditChip(d, "rejected");
+}
+
+async function _settleEditChip(card, decision) {
+  const buttons = Array.from(card.querySelectorAll(".eap, .erj"));
+  buttons.forEach(button => { button.disabled = true; });
+  try {
+    const ok = decision === "approved"
+      ? await approveEdits(null) : await rejectEdits(null);
+    if (!ok) {
+      buttons.forEach(button => { button.disabled = false; });
+      return;
+    }
+    const decided = card.querySelector(decision === "approved" ? ".eap" : ".erj");
+    const other = card.querySelector(decision === "approved" ? ".erj" : ".eap");
+    if (decided) {
+      decided.textContent = decision === "approved" ? "✓ approved" : "↩ rejected";
+      decided.title = decision === "approved" ? "changes approved" : "changes rejected";
+      decided.disabled = true;
+    }
+    if (other) other.remove();
+  } catch (error) {
+    const details = card.querySelector(".ehead .remaining");
+    if (details) details.textContent = "review failed: " + String(error);
+    buttons.forEach(button => { button.disabled = false; });
+  }
 }
 
 /* After each chat turn: diff against the baseline and emit a change chip. */
@@ -10297,27 +10361,29 @@ async function undoDiff() {
    from the pending list (no disk change); REJECT restores the pre-image (removing a
    created file). Applies to one path, or to every pending file when path is null. */
 async function approveEdits(path) {
-  if (!sessionId) return;
+  if (!sessionId) return false;
   const body = { session: sessionId };
   if (path) body.path = path;
   const r = await api("POST", "/api/edits/approve", body);
-  if (r && r.error) { if ($("editsStat")) $("editsStat").textContent = r.error; return; }
+  if (r && r.error) { if ($("editsStat")) $("editsStat").textContent = r.error; return false; }
   _editsBase = null;
   await loadEdits();
+  return true;
 }
 
 async function rejectEdits(path) {
-  if (!sessionId) return;
+  if (!sessionId) return false;
   const msg = path ? ("Reject changes to " + _short(path) + "? (restore its pre-image)")
                    : "Reject ALL pending changes in this session? (restore their pre-images)";
-  if (!(await confirmDelete(msg))) return;
+  if (!(await confirmDelete(msg))) return false;
   const body = { session: sessionId };
   if (path) body.path = path;
   const r = await api("POST", "/api/edits/undo", body);
-  if (r && r.error) { if ($("editsStat")) $("editsStat").textContent = r.error; return; }
+  if (r && r.error) { if ($("editsStat")) $("editsStat").textContent = r.error; return false; }
   _editsBase = null;
   await loadEdits();
   if (_openFile && (!path || _openFile.path === path) && window.SparkEditor) window.SparkEditor.refresh(_openFile.path);
+  return true;
 }
 async function undoEdits(path) { return rejectEdits(path); }
 

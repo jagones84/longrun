@@ -62,6 +62,17 @@ SAMPLE_BRACED = (
     + CLOSE + " calls>"
 )
 
+HERMES_TOOL_CALL = """<tool_call>
+<function=tool>
+<parameter=tool>
+matrix.test
+</parameter>
+<parameter=args>
+{"target":"tool:toolcontract","code":"from Matrix.tools import toolcontract\\nr = toolcontract.audit({'scope':'all'})\\nassert r['ok']"}
+</parameter>
+</function>
+</tool_call>"""
+
 results = []
 
 
@@ -99,6 +110,23 @@ check("non-DSML text yields no action", a._dsml_action("plain prose") is None)
 check("DSML with no invocation yields no action",
       a._dsml_action(OPEN + " calls>" + CLOSE + " calls>") is None)
 
+# ----------------------------------------- Hermes XML tool-call dialect ----
+_xml_action = {
+    "action": "tool",
+    "tool": "matrix.test",
+    "args": {
+        "target": "tool:toolcontract",
+        "code": "from Matrix.tools import toolcontract\n"
+                "r = toolcontract.audit({'scope':'all'})\n"
+                "assert r['ok']",
+    },
+}
+check("Hermes XML wrapper is detected as a tool call",
+      a._looks_like_json_action(HERMES_TOOL_CALL))
+check("Hermes XML wrapper parses its meta tool and JSON args",
+      a._extract_action(HERMES_TOOL_CALL) == _xml_action,
+      str(a._extract_action(HERMES_TOOL_CALL)))
+
 # ------------------------------------------------- never leak to the user ----
 check("DSML is never shown as a chat reply",
       a._looks_like_json_action(SAMPLE))
@@ -134,4 +162,3 @@ print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

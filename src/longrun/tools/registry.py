@@ -597,9 +597,9 @@ _SUBTOOL_FIELDS = {
     },
     "improve": {
         "propose": ["scope", "content", "reason"],
-        "mine": ["scope", "reason"], "evolve": ["scope"],
-        "verify": ["scope", "path"], "promote": ["scope", "path"],
-        "review": ["scope", "limit", "model"],
+        "mine": ["reason"], "evolve": [],
+        "verify": ["path"], "promote": ["path"],
+        "review": ["limit", "model"],
     },
     "web": {
         "search": ["query", "max_results"], "fetch": ["url", "max_bytes"],
@@ -636,10 +636,9 @@ _SUBTOOL_REQUIRED = {
     "memory.store": ["content"], "memory.recall": ["query"],
     "memory.set_core": ["content"],
     "improve.propose": ["scope", "content"],
-    "improve.mine": ["scope"],
-    "improve.evolve": ["scope"],
-    "improve.verify": ["scope", "path"],
-    "improve.promote": ["scope", "path"],
+    "improve.mine": [], "improve.evolve": [],
+    "improve.verify": ["path"],
+    "improve.promote": ["path"],
     "improve.review": [],
     "web.search": ["query"], "web.fetch": ["url"],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
@@ -723,6 +722,21 @@ _SUBTOOL_GUIDANCE = {
         "bulk cleanup; use memory.forget to delete one known record. Requires approval "
         "unless the operator explicitly selects global approvals.mode=full."
     ),
+    "improve.propose": (
+        "Create one proposal. `scope` must be exactly `skill`, `project`, or "
+        "`global`; include the proposal `content`."
+    ),
+    "improve.mine": "Mine repeated tool patterns and write draft skill proposals.",
+    "improve.evolve": "Mine patterns, verify each draft, and archive only passing skills.",
+    "improve.verify": (
+        "Verify one proposal directory returned by improve.mine; provide its `path`. "
+        "The harness supplies the mine scope."
+    ),
+    "improve.promote": (
+        "Promote one verified proposal directory; provide its `path`. "
+        "The harness supplies the mine scope."
+    ),
+    "improve.review": "Review the proposal and distilled-memory backlog; returns a report without deciding proposals.",
     "matrix.git_commit": (
         "Commit Matrix changes in its separate Git repository: git dir "
         "`.Matrix/git`, worktree `src/Matrix`. This does not commit the Longrun repo."
@@ -791,6 +805,12 @@ def _build_canonical_schemas():
             sub_props = ({pk: props[pk] for pk in fields if pk in props}
                          if fields is not None else
                          {pk: pv for pk, pv in props.items() if pk != "action"})
+            if k == "improve" and act == "propose":
+                sub_props["scope"] = {
+                    **(props.get("scope") or {}),
+                    "enum": ["skill", "project", "global"],
+                    "description": "exact proposal scope (singular)",
+                }
             action_required = _SUBTOOL_REQUIRED.get(cname, sub_req)
             if k == "web":
                 action_required = {"search": ["query"], "fetch": ["url"]}.get(act, sub_req)

@@ -1109,6 +1109,8 @@ def _improve(args, run_id=None):
     args = args or {}
     scope = str(args.get("scope", "")).strip()
     action = str(args.get("action", "propose") or "propose").strip()
+    if action in ("mine", "evolve", "verify", "promote"):
+        scope = "mine"
     content = str(args.get("content", "")).strip()
     # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
     # against the current codebase. One implementation shared with the panel.
@@ -1201,8 +1203,12 @@ def _improve(args, run_id=None):
             recs.append(rec)
             _pub("improve.proposal", **rec)
         return {"ok": True, "mined": len(recs), "proposals": recs}
-    if scope not in ("skill", "project", "global") or not content:
-        return {"error": "scope in {skill,project,global,mine} and content required"}
+    if scope not in ("skill", "project", "global"):
+        return {"ok": False,
+                "error": "invalid scope %r; use exactly skill, project, or global"
+                         % scope}
+    if not content:
+        return {"ok": False, "error": "content required for action=propose"}
     if improve.AGENT_WRITE.get(scope) == "forbidden":
         return {"error": "scope not writable"}
     # JAG-451: honour the `proposals` approval policy (Settings ▸ Tools & approvals).

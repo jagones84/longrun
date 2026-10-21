@@ -557,12 +557,18 @@ def _looks_like_dsml(text):
     return _DSML in (text or "")
 
 
+def _looks_like_tool_markup(text):
+    """True for the XML-like Hermes tool-call wrapper used by some local models."""
+    t = str(text or "")
+    return bool(re.search(r"<tool_call\b", t, re.I)
+                and re.search(r"<function\s*=", t, re.I))
+
+
 def _looks_like_json_action(text):
     """True when `text` is a (possibly malformed/truncated) tool-call JSON OR the
-    model's native DSML markup — i.e. machine text we must NEVER show to the user
-    as a chat reply."""
+    model's native DSML/Hermes markup — machine text never shown as a chat reply."""
     t = (text or "").strip()
-    if _DSML in t:
+    if _DSML in t or _looks_like_tool_markup(t):
         return True
     if not t.startswith(("{", "[")):
         return False
@@ -1721,6 +1727,19 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     return msgs, ctx_stats
 
 
+def _sync_compacted_turn(sess, msgs, turn_base, message, tool_ctx, model,
+                         autonomous=False):
+    """Adopt a manual compaction before the active turn next saves its history."""
+    latest = server.load_session(sess.get("id"))
+    if not latest:
+        return msgs, turn_base, None
+    in_flight = list(msgs[turn_base:])
+    sess.clear()
+    sess.update(latest)
+    rebuilt, stats = assemble_turn(sess, message, tool_ctx, model, autonomous)
+    return rebuilt + in_flight, len(rebuilt), stats
+
+
 # JAG-515: the task-list actions are a NAMESPACE like every other tool
 # (`fs.read`, `shell.exec`, `git.run`), so the chat shows `todo.write` /
 # `todo.update` / `todo.replan` in the SAME card structure and the tools panel
@@ -1859,8 +1878,50 @@ def _dsml_action(text):
     return {"action": "tool", "tool": name, "args": args}
 
 
+def _tool_markup_action(text):
+    """Parse the XML-like `<tool_call><function=...>` dialect from local models."""
+    if not _looks_like_tool_markup(text):
+        return None
+    outer = re.search(r"<tool_call\b[^>]*>(.*?)</tool_call\s*>", text,
+                      re.I | re.S)
+    if not outer:
+        return None
+    fn = re.search(r"<function\s*=\s*([^>\s]+)\s*>(.*?)</function\s*>",
+                   outer.group(1), re.I | re.S)
+    if not fn:
+        return None
+    name = fn.group(1).strip()
+    params = {}
+    pattern = r"<parameter\s*=\s*([^>\s]+)\s*>(.*?)</parameter\s*>"
+    for match in re.finditer(pattern, fn.group(2), re.I | re.S):
+        key, raw = match.group(1).strip(), match.group(2).strip()
+        if key == "args":
+            try:
+                value = json.loads(raw)
+            except (TypeError, ValueError):
+                return None
+            if not isinstance(value, dict):
+                return None
+        else:
+            try:
+                value = json.loads(raw)
+            except (TypeError, ValueError):
+                value = raw
+        params[key] = value
+    if name in ("tool", "functions.tool"):
+        tool = params.get("tool")
+        args = params.get("args") or {}
+    else:
+        tool = name.removeprefix("functions.")
+        args = params.get("args") or {
+            key: value for key, value in params.items() if key != "tool"}
+    if not isinstance(tool, str) or not tool.strip() or not isinstance(args, dict):
+        return None
+    return {"action": "tool", "tool": tool.strip(), "args": args}
+
+
 def _extract_action(answer):
-    """JAG-369/JAG-501: turn the model's raw answer into a harness action (or None).
+    """Turn JSON, DSML, or Hermes-native tool calls into a harness action.
 
     JAG-501: when the answer is DSML, it is parsed AS DSML ONLY. The old fallback
     ran `extract_json` first, which happily returned the JSON *inside* the markup
@@ -1873,6 +1934,8 @@ def _extract_action(answer):
     """
     if _looks_like_dsml(answer):
         return _normalize_action(_dsml_action(answer))
+    if _looks_like_tool_markup(answer):
+        return _normalize_action(_tool_markup_action(answer))
     act = _normalize_action(extract_json(answer))
     if not act:
         act = _dsml_action(answer)
@@ -2600,6 +2663,25 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     obs = "Action '%s' DENIED by the user." % tool
                 _exec_ok = status == "executed"
                 sub = res.get("result") or {}
+                _compact_action = (
+                    tool == "context.compact"
+                    or (tool == "context" and args.get("action") == "compact"))
+                _current_session = (
+                    not args.get("session")
+                    or str(args.get("session")) == str(sess["id"]))
+                _compact_stats = sub.get("stats") or {}
+                if (_exec_ok and sub.get("ok") is True and _compact_action
+                        and _current_session):
+                    try:
+                        _compacted = int(_compact_stats.get("compacted") or 0)
+                    except (TypeError, ValueError):
+                        _compacted = 0
+                    if _compacted:
+                        msgs, _turn_base, _ctx_stats = _sync_compacted_turn(
+                            sess, msgs, _turn_base, message, tool_ctx, model,
+                            autonomous)
+                        if _ctx_stats is not None:
+                            ctx_stats = _ctx_stats
                 # JAG-178: `ok` means "the tool executed"; a tool can execute and
                 # still FAIL (nonzero exit / ok:false). Track failure separately.
                 _tool_failed = ((not _exec_ok) or (sub.get("ok") is False)

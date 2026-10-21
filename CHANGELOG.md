@@ -17,6 +17,18 @@ All notable changes to Longrun are documented here. The format follows
   are exposed and validated by the schema; an empty `memory.forget` can no longer
   fall through to bulk purge. Failure coaching counts consecutive failures per
   tool, so `http.fetch` errors cannot mislabel a later `browser.fetch`.
+- **Agent tool actions now match their handlers.** `improve.verify`/`promote`
+  infer the `mine` scope and require only a proposal path; proposal scope errors
+  list exact singular values. Agent-triggered `context.compact` now reloads the
+  shared compacted transcript into the active turn before it saves again.
+  Hermes-style XML tool calls are parsed instead of being shown as final text.
+- **Improvement decisions are distinct from tool approvals.** Skill proposals
+  cannot be accepted until skill application exists; UI disables that action
+  and shows failures instead of claiming success. `v521` adds a deterministic
+  batch smoke test for basic tools and these UI contracts.
+- **Resolved file-change cards no longer offer stale actions.** After a
+  successful approve/reject, the chat card shows the decision and removes the
+  opposite action; failed or cancelled decisions remain actionable.
 
 ### Changed
 - **`/goal` keeps working until evidence-backed completion (JAG-517).**
