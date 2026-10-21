@@ -8,8 +8,7 @@ edit to `config/compaction.yaml` was dead — while the old source-lock tests pa
 because the defaults equal the shipped values.
 
 This test drives the REAL loader against a scratch pair of files, proves the overlay
-precedence and validation, and source-locks the WebUI half (Context-panel inputs +
-`/api/compaction/policy`).
+precedence and validation, and source-locks the shared Settings > Compaction form and compatibility API.
 
 Run: python3 tests/acceptance/v487_compaction_policy.py
 """
