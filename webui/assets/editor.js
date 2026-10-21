@@ -113,7 +113,8 @@ class EditorHost {
 }
 
 const state = { tabs: [], active: -1, host: null, preview: null, tabsEl: null, statusEl: null, toggleBtn: null, resizeEl: null, dock: null, root: "",
-  mode: "dock", floatReady: false };   // JAG-453: window mode dock|float|full
+  mode: "dock", floatReady: false,   // JAG-453: window mode dock|float|full
+  treeSid: null };   // JAG-524: which session's workspace the rendered tree mirrors
 
 const STYLE = `
 #editorDock{position:relative;flex:0 0 auto;min-height:0;background:var(--bg2,#0f1320);
@@ -610,6 +611,13 @@ function syncActive() {
   }
 }
 
+/* JAG-524: the tree pane mirrors ONE session's workspace (its rows, its root), so
+   it must know WHICH session it is showing — the pane itself carries no session
+   identity, and `state.root` only said what the last load returned. `null` means
+   "never loaded for any session" (it must not default to "", or the very first
+   load of a sessionless page would be considered up to date). */
+function _treeStale() { return state.treeSid !== SESSION(); }
+
 async function loadTree() {
   const box = state.treeEl;
   if (!box) return;
@@ -618,8 +626,16 @@ async function loadTree() {
   if (state.searchInput && state.searchInput.value.trim()) return;
   setTreeMsg("loading…");
   const sid = localStorage.getItem("sf_session") || "";
+  // JAG-524: claim the pane for this session BEFORE the await, so a concurrent
+  // caller (_treeStale now false) does not fire a second identical load.
+  state.treeSid = sid;
   try {
     const d = await jget("/api/fs/list?session=" + encodeURIComponent(sid));
+    // JAG-524: a reply that lands AFTER the operator switched session used to be
+    // painted anyway — it put the PREVIOUS workspace root on screen (a first load
+    // of a page whose session is not yet in localStorage showed the parent
+    // `/home/jagones`). Drop it: the switch already owns the pane.
+    if (sid !== (localStorage.getItem("sf_session") || "")) return;
     if (d.error) { setTreeMsg(d.error); return; }
     state.root = d.root || "";
     treeClear();
@@ -629,6 +645,10 @@ async function loadTree() {
     root.textContent = (d.root ? basename(d.root) : "workspace") + "/";
     box.appendChild(root);
     renderTree(box, d, 0);
+    // JAG-524: `_inWorkspace` reads `state.root`, which has just changed — re-render
+    // the tabs or a file of the NEW session keeps the ⚠ "outside the workspace"
+    // marker it was given while the OLD root was still in memory.
+    renderTabs();
     syncTreeActive();   // JAG-500: a freshly loaded tree must highlight the open file
     if (!d.count) setTreeMsg("empty folder");
   } catch (e) { setTreeMsg(String(e)); }
@@ -1026,7 +1046,7 @@ function show() {
     }
     renderEmpty();
   }
-  if (state.treeEl && !state.treeEl.hidden && !state.treeEl.querySelector(".ed-trow")) loadTree();
+  if (state.treeEl && !state.treeEl.hidden && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) loadTree();
   _notifyLayout();
 }
 function close() {
@@ -1059,7 +1079,11 @@ async function onSessionChange() {
   await restoreTabs();
   // JAG-505: restoreTabs' reveal already loads (and expands) the tree; loading it
   // again here would wipe the expansion it just made.
-  if (state.treeEl && !state.treeEl.querySelector(".ed-trow")) await loadTree();
+  // JAG-524: a re-`open` of the SAME session is not a workspace change, but a real
+  // switch is — and the pane still held the PREVIOUS session's rows, so the old
+  // guard (`!querySelector(".ed-trow")`) skipped the one reload that mattered and
+  // the operator kept reading the wrong folder. `_treeStale()` is the true test.
+  if (state.treeEl && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) await loadTree();
 }
 
 async function restoreTabs() {
@@ -1212,7 +1236,7 @@ async function revealInTree(path, opts) {
   } else if (state.treeEl.hidden) {
     return;                                    // the pane is closed: nothing to reveal
   }
-  if (!state.treeEl.querySelector(".ed-trow")) await loadTree();   // JAG-504: rows, not children
+  if (_treeStale() || !state.treeEl.querySelector(".ed-trow")) await loadTree();   // JAG-504/524: rows of THIS session
   let hit = _treeRow(path);
   if (!hit) { await _expandTo(path); hit = _treeRow(path); }
   if (!hit) {

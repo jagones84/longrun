@@ -61,8 +61,32 @@ check("A8 a restored active tab is revealed too (reload keeps the location)",
       and re.search(r"if \(_t && !_t\.temp\) revealInTree\(_t\.path", ed) is not None)
 check("A9 the reveal walks collapsed levels level-by-level",
       "function _expandTo" in ed and "await _expandTo" in ed)
-check("A10 a session switch does not wipe the reveal-built tree",
+check("A10 never a blank tree on a session switch",          # JAG-505 guard kept
       'state.treeEl.querySelector(".ed-trow")' in ed)
+
+# JAG-524: the tree pane mirrors ONE session's workspace, so it must know WHICH
+# session it is showing. It used to survive a switch untouched — the old guard only
+# asked "does the pane have rows?", and the PREVIOUS session's rows satisfied it, so
+# the operator kept reading the wrong folder (live repro: session B showed
+# `harness-e2e/` while GET /api/fs/list?session=B answered
+# `/home/jagones/Repositories/TESTS`). A late reply could also paint the old root
+# over the new session.
+check("A11 the tree records the session it mirrors (never an empty-string guess)",
+      "function _treeStale()" in ed and "state.treeSid !== SESSION()" in ed
+      and "treeSid: null" in ed)
+check("A12 a session switch reloads the tree even when it already holds rows",
+      'if (state.treeEl && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) await loadTree();' in ed)
+check("A13 show() reloads a tree that still belongs to another session",
+      'if (state.treeEl && !state.treeEl.hidden && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) loadTree();' in ed)
+check("A14 the reveal reloads a tree that still belongs to another session",
+      'if (_treeStale() || !state.treeEl.querySelector(".ed-trow")) await loadTree()' in ed)
+check("A15 a tree reply that lands after the switch is dropped, never painted",
+      "state.treeSid = sid;" in ed
+      and 'if (sid !== (localStorage.getItem("sf_session") || "")) return;' in ed)
+_lt = ed[ed.find("async function loadTree()"):]
+_lt = _lt[:_lt.find("\n}\n")]      # the loadTree body only — a bare file-wide search
+check("A16 the workspace-root change re-renders the tabs (no stale ⚠ marker)",
+      "state.root = d.root" in _lt and "renderTabs();" in _lt)
 
 # ---- B) Settings categories: the operator's order, no duplicates -------------
 m = re.search(r"const SETTINGS_CATS = \[(.*?)\n\];", idx, re.S)

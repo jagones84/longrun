@@ -7,6 +7,21 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Switching session now repaints the Editor's file tree.** The dock's tree pane
+  mirrors ONE session's workspace, but nothing recorded WHICH session it was showing:
+  on a switch the only test was "does the pane already have rows?", and the rows of the
+  PREVIOUS session satisfied it, so the reload that mattered was skipped. Live repro:
+  after selecting a session whose workspace is `/home/jagones/Repositories/TESTS` the
+  tree still read `harness-e2e/` (the previous session's folder) while
+  `GET /api/fs/list?session=…` answered `TESTS` (8 entries). A reply that landed after
+  the switch was painted too, which is how a first load with no session yet in
+  `localStorage` showed the parent `/home/jagones`. The pane now stamps the session it
+  belongs to (`state.treeSid`, `null` = never loaded), every load is gated by that
+  stamp (`_treeStale()`, used by the switch, `show()` and the reveal), a stale reply is
+  discarded instead of painted, and the tab bar is re-rendered once the workspace root
+  arrives — the ⚠ "outside the workspace" marker was otherwise computed against the
+  previous session's root. Pinned by `v505` (A11–A16, 42/42; 6 new checks RED at HEAD)
+  and `v295`.
 - **Rewinding to a todo no longer deletes the todo list, the prompt, or the steps
   before it.** The per-todo ⏮ promises "undo this step and everything done after
   it", but the prune was timestamp-based: ONE `todo.write` stamps its whole batch

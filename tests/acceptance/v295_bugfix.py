@@ -79,7 +79,9 @@ check("closing the last tab keeps the editor open on an empty state",
 check("opening an empty editor reveals and loads the file tree",
       'if (state.treeEl && state.treeEl.hidden)' in ed
       and 'localStorage.setItem("sf_ed_tree", "1")' in ed
-      and 'if (state.treeEl && !state.treeEl.hidden && !state.treeEl.querySelector(".ed-trow")) loadTree();' in ed
+      # JAG-524: the load is now ALSO owed whenever the pane still mirrors another
+      # session (`_treeStale()`), not only when it happens to have no rows.
+      and 'if (state.treeEl && !state.treeEl.hidden && (_treeStale() || !state.treeEl.querySelector(".ed-trow"))) loadTree();' in ed
       and 'if (!saved || !Array.isArray(saved.paths) || !saved.paths.length) { show(); return; }' in ed)
 
 # ------------------------------------------------------------- longrun/orbit api
