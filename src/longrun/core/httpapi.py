@@ -970,6 +970,65 @@ def prepare_session_for_turn(sess, model=None):
         return sess
 
 
+_SUMMARIZER_PART_CHARS = 1500
+
+
+def _summarizer_parts(lines, limit, max_parts):
+    """Split role-prefixed transcript lines into chunks that fit ONE call.
+
+    JAG-533: the old code cut the whole transcript to `head 70% + tail 30%` and
+    DROPPED the middle, so a 100k-token session was summarized from ~10k tokens:
+    the call was cheap and the summary could not contain what the model never
+    read. Now every part is summarized and the parts are merged.
+    """
+    parts, cur, size = [], [], 0
+    for line in lines:
+        if len(line) > limit:
+            if cur:
+                parts.append("\n".join(cur))
+                cur, size = [], 0
+            parts.append(line[:limit] + "\n…[one oversized message truncated]…")
+            continue
+        if cur and size + len(line) + 1 > limit:
+            parts.append("\n".join(cur))
+            cur, size = [], 0
+        cur.append(line)
+        size += len(line) + 1
+    if cur:
+        parts.append("\n".join(cur))
+    if len(parts) > max_parts:
+        head = max(1, max_parts // 2)
+        tail = max(0, max_parts - head)
+        omitted = len(parts) - head - tail
+        kept = parts[:head] + (parts[len(parts) - tail:] if tail else [])
+        # State the omission IN the input: a silent gap reads as "nothing happened".
+        kept[head - 1] = kept[head - 1] + (
+            "\n…[%d part(s) omitted from the middle: transcript longer than %d "
+            "parts]…" % (omitted, max_parts))
+        parts = kept
+    return parts
+
+
+def _summarizer_prompt(body, index, total):
+    """Prompt for one part (or the whole transcript when `total == 1`)."""
+    head = rllm.SUMMARIZER_INSTRUCTION.rstrip()
+    if total > 1:
+        head += ("\n\nThis is PART %d of %d of one long conversation. Compress ONLY "
+                 "this part; the parts are merged into one summary afterwards."
+                 % (index + 1, total))
+    return head + "\n\nTRANSCRIPT:\n" + body
+
+
+def _merge_prompt(answers):
+    """Prompt that folds the part summaries into ONE block."""
+    return ("Merge the %d partial summaries of ONE long conversation into a single "
+            "compact summary. Keep every decision and its rationale, every concrete "
+            "fact (numbers, paths, names, ids, error messages), user preferences and "
+            "every still-open task. Drop repetition, narration and partial reasoning. "
+            "Write in the language of the summaries.\n\nPARTIAL SUMMARIES:\n%s"
+            % (len(answers), "\n\n".join(answers)))
+
+
 def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=None):
     """JAG-103: let the MODEL do the compaction.
 
@@ -988,6 +1047,11 @@ def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=No
     asks the model to TARGET ~10x compression and drop narration / repetition /
     partial reasoning — what the user sees as "the harness ordered the LLM to
     compact the chat's context".
+
+    JAG-533: map-reduce. `SUMMARIZER_INPUT_CHARS` is the window of ONE call, not
+    the amount of context summarized. Every part of the old transcript is
+    summarized and the part summaries are merged, with `SUMMARIZER_MAX_PARTS`
+    bounding the cost. `meta["parts"]` reports how many calls it took.
     """
     lines = []
     for m in messages:
@@ -1001,20 +1065,12 @@ def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=No
     transcript = "\n".join(lines)
     if not transcript.strip():
         return None
-    # JAG-431r2: separate input cap from output cap. The summarizer must SEE enough
-    # of the old transcript to produce a faithful ~10x-compressed summary. The
-    # previous single `max_chars` capped both at 800 chars — the model saw less
-    # than one full turn and emitted a 200-token stub. Now:
-    #   input_max_chars  -> how much of the OLD transcript the summarizer reads
-    #   output_max_chars -> how long the resulting summary may be
     input_chars = rllm.SUMMARIZER_INPUT_CHARS
     output_chars = rllm.SUMMARIZER_OUTPUT_CHARS
-    if len(transcript) > input_chars:
-        head = int(input_chars * 0.7)
-        tail = input_chars - head
-        transcript = transcript[:head] + "\n…[middle omitted]…\n" + transcript[-tail:]
-    prompt = (
-        rllm.SUMMARIZER_INSTRUCTION.rstrip() + "\n\nTRANSCRIPT:\n" + transcript)
+    try:
+        max_parts = int(rllm.SUMMARIZER_MAX_PARTS)
+    except Exception:  # noqa: BLE001
+        max_parts = 24
     # JAG-160: honour an explicitly pinned summarizer model (Settings -> Models)
     # before falling back to pattern-based routing for the "summarizer" role.
     # JAG-509: `model: "@chat"` is the DYNAMIC choice — compaction then runs on
@@ -1030,37 +1086,61 @@ def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=No
                 model = pinned
         except Exception:  # noqa: BLE001
             model = None
-    try:
-        # JAG-431r2: the answer cap is now `output_max_chars` (chars) tokens
-        # (~output_chars/4 tokens). With ~10x compression on a 40k-char input
-        # we expect ~4k chars of summary; the cap is the safety net if the model
-        # writes a verbose preamble anyway.
-        base_mt = max(120, output_chars // 4)
+    # JAG-431r2: the answer cap is separate from the input cap.
+    base_mt = max(120, output_chars // 4)
+    # A part only needs to carry the gist forward; the merge pass writes the final
+    # block, so parts are shorter than the whole summary.
+    part_mt = max(120, min(output_chars, _SUMMARIZER_PART_CHARS) // 4)
 
-        def _attempt(mt):
-            return stream_with_fallback(
-                [{"role": "user", "content": prompt}], model, "summarizer",
-                lambda ch, t: None, timeout=180,
-                max_tokens=mt,
-                # JAG-461: Stop must abort a running compaction too — plumb the session's
-                # abort flag into the stream so pressing ■ kills the summarizer call
-                # (it used to ignore Stop and keep decoding until it finished).
-                cancel=cancel)
-
-        answer, _think, used = _attempt(base_mt)
+    def _call(prompt, mt):
+        """One summarizer call; retries once when a reasoning model only thought."""
+        answer, think, used = stream_with_fallback(
+            [{"role": "user", "content": prompt}], model, "summarizer",
+            lambda ch, t: None, timeout=180,
+            max_tokens=mt,
+            # JAG-461: Stop must abort a running compaction too — plumb the session's
+            # abort flag into the stream so pressing ■ kills the summarizer call
+            # (it used to ignore Stop and keep decoding until it finished).
+            cancel=cancel)
         # JAG-487: a REASONING summarizer can spend the ENTIRE budget thinking and
         # emit no answer at all — the call "succeeds", the summary is empty, and the
         # compaction silently degrades to the extractive merge. Measured on a
         # 317-message session with meta/muse-spark: 1500 and 3000 tokens → 0 chars of
-        # answer; 4500 → the real summary. Retry ONCE with a budget big enough for
-        # thoughts + the compressed bullets before giving up on the model.
-        if not (answer or "").strip() and (_think or "").strip():
-            answer, _think, used = _attempt(max(base_mt, int(output_chars * 3 // 4)))
-        answer = (answer or "").strip()
+        # answer; 4500 → the real summary. Retry ONCE with a bigger budget.
+        if not (answer or "").strip() and (think or "").strip():
+            answer, think, used = stream_with_fallback(
+                [{"role": "user", "content": prompt}], model, "summarizer",
+                lambda ch, t: None, timeout=180,
+                max_tokens=max(mt, int(output_chars * 3 // 4)),
+                cancel=cancel)
+        return (answer or "").strip(), used
+
+    try:
+        if len(transcript) <= input_chars:
+            bodies = [transcript]
+        else:
+            bodies = _summarizer_parts(lines, input_chars, max_parts)
+        answers, used_model = [], None
+        total = len(bodies)
+        for i, body in enumerate(bodies):
+            ans, used = _call(_summarizer_prompt(body, i, total),
+                              base_mt if total == 1 else part_mt)
+            if not ans:
+                return None
+            used_model = used_model or used
+            answers.append(ans)
+        answer = answers[0] if total == 1 else "\n\n".join(answers)
+        if total > 1 and len(answer) > output_chars:
+            merged, used = _call(_merge_prompt(answers), base_mt)
+            if not merged:
+                return None
+            answer = merged
+            used_model = used_model or used
+        if meta is not None:
+            meta["model"] = used_model
+            meta["parts"] = total
         if len(answer) > output_chars:
             answer = answer[:output_chars].rstrip() + "…"
-        if answer and meta is not None:
-            meta["model"] = used
         return answer or None
     except Exception:  # noqa: BLE001 — never let summarization break compaction
         return None
@@ -1303,6 +1383,7 @@ def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
     stats.update({"session": session, "budget_tokens": budget,
                   "transcript_room": room,
                   "summarizer": meta.get("model"),
+                  "summary_parts": meta.get("parts", 1),
                   "messages_after": len(msgs),
                   "tokens_after": sum(context_engine.count_tokens(m.get("content", ""))
                                       for m in msgs)})

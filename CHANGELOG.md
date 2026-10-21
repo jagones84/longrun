@@ -17,6 +17,20 @@ All notable changes to Longrun are documented here. The format follows
   sessions to be able to dialogue. Pinned by `v507` F–F4 and `v350` A4.
 
 ### Fixed
+- **Compaction now reads the WHOLE old transcript instead of dropping its middle.**
+  `input_max_chars` (40 000 chars ≈ 10k tokens) was applied to the entire transcript
+  as `head 70% + tail 30%` with `…[middle omitted]…`: on a 100k-token session the
+  summarizer saw ~10k tokens, so the call was cheap and the summary could not contain
+  what the model never read (operator report: "ho pagato pochissimo anche se il
+  context era enorme"). Summarization is now map-reduce: every part of the old
+  transcript is summarized and the part summaries are merged, bounded by
+  `summarizer.max_parts` (default 24). Past that bound the omission is stated IN the
+  input, never silent. A reasoning summarizer (e.g. `meta/muse-spark`) that spends its
+  whole budget thinking teaches the working token budget on the first part, so the
+  failed attempt is paid once per compaction, not once per part. `summarizer.max_parts`
+  is editable in **Settings ▸ Harness ▸ Compaction · summarizer**; the compaction
+  result reports `summary_parts`. Pinned by `v487` G1–G9 (RED at HEAD: 17 of 30
+  markers never reached the model) and `v491` A1.
 - **`memory.forget`/`memory.invalidate` with `query` deleted nothing and said it
   worked.** The ids came only from semantic search, and a semantic backend scores an
   exact ID-like token below `min_score`: live, `forget query="PROBE-STORE-9c1d"`

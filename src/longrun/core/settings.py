@@ -88,12 +88,17 @@ SECTIONS = [
         "file": "compaction.yaml", "id": "compaction_summarizer", "panel": "harness",
         "title": "Compaction · summarizer",
         "help": ("What the summarizer reads, how long its summary may be, and the "
-                 "instruction it follows. Trigger/target/keep are in the Context panel."),
+                 "instruction it follows. Trigger/target/keep are in the Context panel. "
+                 "A transcript larger than `input cap` is summarized part by part and "
+                 "the parts are merged, bounded by `max parts`."),
         "fields": [
             _f("summarizer.input_max_chars", "input cap (chars)", "int",
                min=1000, max=1000000),
             _f("summarizer.output_max_chars", "output cap (chars)", "int",
                min=200, max=100000),
+            _f("summarizer.max_parts", "max parts per compaction", "int",
+               min=1, max=64,
+               help="Upper bound on the summarizer calls one compaction may make."),
             _f("summarizer.instruction", "instruction", "textarea",
                rows=10, help="Reply language follows the transcript."),
         ],

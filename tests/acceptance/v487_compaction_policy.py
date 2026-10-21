@@ -158,8 +158,64 @@ out = httpapi._summarize_with_llm([{"role": "user", "content": "x"}])
 check("F3 a normal answer is NOT retried", len(_calls) == 1 and out == "- already good",
       (_calls, out))
 check("F4 the retry is source-locked in httpapi",
-      "if not (answer or \"\").strip() and (_think or \"\").strip():" in api
+      "if not (answer or \"\").strip() and (think or \"\").strip():" in api
       and "output_chars * 3 // 4" in api)
+
+# ---- G) JAG-533: the summarizer reads the WHOLE old transcript --------------
+# `input_max_chars` is the window of ONE call. The old code cut the transcript to
+# head 70% + tail 30% and DROPPED the middle, so a 100k-token session was
+# summarized from ~10k tokens: a cheap call whose summary could not contain what
+# the model never read. Now every part is summarized and the parts are merged.
+from longrun.core import httpapi as _h  # noqa: E402
+
+prompts = []
+
+
+def _fake_map(messages, model, role, cb, **kw):
+    body = messages[0]["content"]
+    prompts.append(body)
+    n = len(prompts)
+    return ("SUM%d:" % n) + ("s" * 2500), "", model
+
+
+_orig_stream = _h.stream_with_fallback
+try:
+    _h.stream_with_fallback = _fake_map
+    markers = ["MARKER%02d" % i for i in range(30)]
+    msgs = [{"role": "user", "content": m + " " + ("x" * 3000)} for m in markers]
+    meta = {}
+    out = _h._summarize_with_llm(msgs, meta=meta)
+    joined = "\n".join(prompts)
+    window = int(rllm.SUMMARIZER_INPUT_CHARS)
+    check("G1 a transcript bigger than one window is split into several calls",
+          len(prompts) > 1, len(prompts))
+    check("G2 NO message is dropped: every marker reaches the model",
+          all(m in joined for m in markers)
+          and "middle omitted" not in joined,
+          [m for m in markers if m not in joined])
+    check("G3 each part says which part it is", "PART 1 of" in prompts[0])
+    check("G4 no prompt exceeds the per-call window",
+          all(len(p) <= window + 1200 for p in prompts),
+          [len(p) for p in prompts])
+    check("G5 the part summaries are merged into one block",
+          "PARTIAL SUMMARIES" in joined and out.startswith("SUM"))
+    check("G6 meta reports how many parts were summarized",
+          meta.get("parts") == 3 and int(meta.get("parts")) == len(prompts) - 1,
+          (meta, len(prompts)))
+finally:
+    _h.stream_with_fallback = _orig_stream
+
+# G7: the part cap is stated in the input, never a silent gap.
+_lines = ["user: " + ("y" * 900) for _ in range(20)]
+_parts = _h._summarizer_parts(_lines, 1000, 4)
+check("G7 past max_parts the omission is STATED in the input, not silent",
+      len(_parts) == 4 and any("omitted from the middle" in p for p in _parts),
+      len(_parts))
+# G8: one oversized message is truncated with a marker instead of overflowing.
+_big = _h._summarizer_parts(["user: " + ("z" * 5000)], 1000, 8)
+check("G8 an oversized single message is truncated with a visible marker",
+      len(_big) == 1 and len(_big[0]) <= 1200 and "oversized message truncated" in _big[0],
+      len(_big[0]))
 
 print("---")
 okc = sum(results)

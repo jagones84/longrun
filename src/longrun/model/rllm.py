@@ -146,6 +146,7 @@ def _policy():
         return {"trigger_pct": 70.0, "target_pct": 30.0, "keep_recent": 4,
                 "summarizer": {"input_max_chars": 40000,
                                "output_max_chars": 6000,
+                               "max_parts": 24,
                                "instruction": "Compress aggressively."}}
     return base
 
@@ -169,6 +170,9 @@ def __getattr__(name):
         return int(_policy().get("summarizer", {}).get("input_max_chars", 40000))
     if name == "SUMMARIZER_OUTPUT_CHARS":
         return int(_policy().get("summarizer", {}).get("output_max_chars", 6000))
+    if name == "SUMMARIZER_MAX_PARTS":
+        # JAG-533: cap on the map-reduce part-calls one compaction may make.
+        return int(_policy().get("summarizer", {}).get("max_parts", 24))
     raise AttributeError("module %r has no attribute %r" % (__name__, name))
 
 
