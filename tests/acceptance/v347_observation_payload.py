@@ -65,10 +65,11 @@ check("F2 stdout tools get NO clutter fallback", "result:" not in o, repr(o))
 o = tools.observation({"tool": "fs.read", "path": "/f", "content": "FILEBODY", **HDR})
 check("F3 fs.read content still shown", "FILEBODY" in o, "")
 
-# --- G: error still short-circuits -------------------------------------------
-check("G1 an error is still reported first",
-      tools.observation({"tool": "x", "ok": False, "error": "boom"}) == "[x] ERROR: boom",
-      "")
+# --- G: error still short-circuits, but the verdict stays visible -------------
+_err = tools.observation({"tool": "x", "ok": False, "exit_code": 1, "error": "boom"})
+check("G1 an error is still reported first with its verdict",
+      _err.startswith("[x] exit=1 ok=False") and "ERROR: boom" in _err,
+      repr(_err))
 
 # --- H: the fallback is bounded ----------------------------------------------
 o = tools.observation({"tool": "self", "blob": "z" * 50000, **HDR}, max_chars=800)

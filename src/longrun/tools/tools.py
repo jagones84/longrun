@@ -468,7 +468,7 @@ def _git(args, run_id):
                 "duration_ms": int((time.time() - t0) * 1000),
                 "backend": "host(git)", "sandboxed": False}
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": "git failed: %s" % e, "exit_code": 125}
+        return {"ok": False, "error": "git failed: %s" % e, "exit_code": 1}
 
 
 # ----------------------------------------------------------------- http ------
@@ -1857,7 +1857,7 @@ def _missing_args_reply(tool: str, missing: list[str],
                        "properties": props}}
 
 
-def _dispatch_execute(tool, args, run_id=None):
+def _dispatch_execute_raw(tool, args, run_id=None):
     args = normalize_args(tool, args)
     missing = _missing_required(tool, args)
     empty = _empty_required(tool, args)
@@ -1888,7 +1888,7 @@ def _dispatch_execute(tool, args, run_id=None):
                 return res
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": "Matrix tool dispatch failed: %s" % e,
-                    "tool": tool, "origin": "matrix"}
+                    "tool": tool, "origin": "matrix", "exit_code": 1}
         # external MCP tools (<client>__<tool>) route through the MCP client
         if "__" in tool:
             try:
@@ -1899,8 +1899,9 @@ def _dispatch_execute(tool, args, run_id=None):
                 return res
             except Exception as e:  # noqa: BLE001
                 return {"ok": False, "error": "external MCP call failed: %s" % e,
-                        "tool": tool}
-        return {"ok": False, "error": "no implementation for tool %r" % tool, "tool": tool}
+                        "tool": tool, "exit_code": 1}
+        return {"ok": False, "error": "no implementation for tool %r" % tool,
+                "tool": tool, "exit_code": 127}
     args = dict(args or {})
     if injected_action is not None:
         args.setdefault("action", injected_action)
@@ -1910,7 +1911,59 @@ def _dispatch_execute(tool, args, run_id=None):
         res = {"ok": False, "error": "tool error: %s" % e}
     res["tool"] = tool
     res["args"] = args
-    res.setdefault("exit_code", 0 if res.get("ok") else 125)
+    return res
+
+
+def _verdict_exit_code(res):
+    """Map a tool result to the ONE deterministic exit-code table.
+
+    0 success · 1 semantic failure · 64 usage · 124 timeout
+    125 sandbox exec error (only the sandbox sets it) · 126 blocked
+    127 unknown tool / no implementation · 130 cancelled
+    """
+    if res.get("missing_args") or res.get("empty_args") or res.get("missing_any_of"):
+        return 64
+    if res.get("hook_blocked") or res.get("decision_blocked"):
+        return 126
+    if res.get("timeout"):
+        return 124
+    if res.get("cancelled"):
+        return 130
+    raw = res.get("exit_code")
+    if raw is not None:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    if res.get("ok"):
+        return 0
+    error = str(res.get("error") or "")
+    if "no implementation" in error or "unknown tool" in error:
+        return 127
+    return 1
+
+
+def _dispatch_execute(tool, args, run_id=None):
+    """Execute one tool and normalize its verdict before anyone reads it.
+
+    Every return path (usage error, unknown tool, Matrix/MCP dispatch failure,
+    handler result, crash) gets exactly one integer `exit_code` and a boolean
+    `ok`. A handler that reports `ok:false` without a code becomes 1; only the
+    sandbox may claim 125. `ok` and `exit_code` can never disagree.
+    """
+    res = _dispatch_execute_raw(tool, args, run_id)
+    if not isinstance(res, dict):
+        res = {"ok": True, "stdout": str(res)}
+    res.setdefault("tool", tool)
+    res.setdefault("args", args or {})
+    code = _verdict_exit_code(res)
+    if "ok" not in res:
+        res["ok"] = code == 0
+    elif res.get("ok") is True and code != 0:
+        res["ok"] = False
+    elif res.get("ok") is False and code == 0:
+        code = 1
+    res["exit_code"] = code
     return res
 
 
@@ -1937,7 +1990,7 @@ def execute(tool, args, run_id=None):
         from longrun.model import decision as _decision
         _v = _decision.pre_tool(tool, args)
         if not _v.get("ok", True):
-            return {"ok": False, "tool": tool, "args": args or {}, "exit_code": 127,
+            return {"ok": False, "tool": tool, "args": args or {}, "exit_code": 126,
                     "decision_blocked": True, "decision_model": _v.get("model"),
                     "error": "blocked by the decision layer: %s" % _v.get("reason")}
     except Exception:  # noqa: BLE001 — the decision layer must never break a tool
@@ -1974,11 +2027,33 @@ def observation(res, max_chars=1600):
     acted blind. Now: stdout/stderr/content/path, then an explicit `observation`
     string, and - when the tool produced none of those - a JSON fallback of its
     remaining fields, so no tool can ever render as empty again.
+
+    JAG-523: the FIRST line is always the deterministic verdict
+    ``[tool] exit=<code> ok=<bool> backend=… sandboxed=…``. The harness is not an
+    LLM, so this line carries the same exit-code table as `_verdict_exit_code`.
+    A failure no longer collapses into a bare ``[tool] ERROR: …`` line: the
+    verdict header, the message, any partial stdout/stderr and the remaining
+    structured fields (kind/name/path/line/sha256/…) all survive.
     """
+    head = ("[%s] exit=%s ok=%s backend=%s sandboxed=%s"
+            % (res.get("tool"), res.get("exit_code"), res.get("ok"),
+               res.get("backend"), res.get("sandboxed")))
     if not res.get("ok") and res.get("error"):
-        return "[%s] ERROR: %s" % (res.get("tool"), res["error"])
-    bits = ["[%s] exit=%s backend=%s sandboxed=%s"
-            % (res.get("tool"), res.get("exit_code"), res.get("backend"), res.get("sandboxed"))]
+        bits = [head, "ERROR: " + _truncate(str(res["error"]).strip(), max_chars)]
+        if res.get("stdout"):
+            bits.append("stdout: " + _truncate(str(res["stdout"]).strip(), max_chars))
+        if res.get("stderr"):
+            bits.append("stderr: " + _truncate(str(res["stderr"]).strip(), max_chars))
+        if res.get("content") is not None and not res.get("stdout"):
+            bits.append("content: " + _truncate(str(res["content"]).strip(), max_chars))
+        extras = {k: v for k, v in res.items()
+                  if k not in _OBS_NOISE
+                  and k not in ("error", "args", "observation", "content", "stdout", "stderr")}
+        if extras:
+            bits.append("result: " + _truncate(
+                json.dumps(extras, ensure_ascii=False, default=str), max_chars))
+        return "\n".join(bits)
+    bits = [head]
     has_body = False
     if res.get("stdout"):
         bits.append("stdout: " + _truncate(str(res["stdout"]).strip(), max_chars))

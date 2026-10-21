@@ -46,6 +46,22 @@ All notable changes to Longrun are documented here. The format follows
 - **A pending proposal is no longer hidden by a decided duplicate.** The
   Improvements panel deduplicates by `(scope, content)` but now keeps the
   pending copy, so its count agrees with the approval inbox.
+- **A tool's verdict is now one deterministic exit code, and a failure keeps its
+  evidence (JAG-523).** `_dispatch_execute` normalises every return path (usage
+  error, unknown tool, Matrix/MCP dispatch failure, handler result, crash) to the
+  single table `0` success · `1` semantic failure · `64` usage · `124` timeout ·
+  `125` sandbox exec error · `126` blocked · `127` unknown/no implementation ·
+  `130` cancelled, and `ok` can no longer disagree with it. A handler that
+  reported `ok:false` without a code used to inherit an invented `125` (the
+  legacy Matrix wrapper's default), so a missing file or a failed verification
+  looked like a sandbox failure. The observation renderer now always prints the
+  verdict header `[tool] exit=N ok=B backend=… sandboxed=…`: the old
+  short-circuit reduced a failure to `[tool] ERROR: …` and dropped
+  `kind/name/path/line/sha256`, partial stdout/stderr and the remaining
+  structured fields. A local decision-layer block is `126` (blocked), not `127`.
+  A Matrix verification script's own return code is reported as `script_exit_code`
+  evidence and can no longer masquerade as a harness verdict. `v523` locks the
+  table and `v347` locks the renderer.
 
 ### Changed
 - **`/goal` keeps working until evidence-backed completion (JAG-517).**

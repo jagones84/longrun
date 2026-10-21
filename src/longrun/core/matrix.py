@@ -544,7 +544,12 @@ def run_test(script_name="test_matrix.py", code=None, install_deps=None,
                     verified_targets.append("hook:%s" % m_hook)
         return {
             "ok": ok,
-            "exit_code": p.returncode,
+            # JAG-523: the harness owns the exit-code table. A Matrix script's own
+            # return code is evidence, not a harness verdict — passing it through
+            # would let a script masquerade as "sandbox exec error" (125) or
+            # "timeout" (124). The verdict is 0/1; the raw code stays visible.
+            "exit_code": 0 if ok else 1,
+            "script_exit_code": p.returncode,
             "stdout": p.stdout or "",
             "stderr": p.stderr or "",
             "path": script_path,
@@ -552,10 +557,10 @@ def run_test(script_name="test_matrix.py", code=None, install_deps=None,
             "duration_ms": int((time.time() - t0) * 1000),
         }
     except subprocess.TimeoutExpired:
-        return {"ok": False, "exit_code": 124, "error": "timeout after %ss" % timeout_secs,
-                "path": script_path}
+        return {"ok": False, "exit_code": 124, "timeout": True,
+                "error": "timeout after %ss" % timeout_secs, "path": script_path}
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "exit_code": 125, "error": str(e), "path": script_path}
+        return {"ok": False, "exit_code": 1, "error": str(e), "path": script_path}
 
 
 def clean_trash(keep_recent=0, repo_root=None):
