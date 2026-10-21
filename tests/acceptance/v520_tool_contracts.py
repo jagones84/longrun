@@ -92,7 +92,7 @@ check("Matrix git log exposes its supported limit",
 check("destructive Matrix subtools override namespace auto-approval",
       all((registry.tool_spec(name) or {}).get("approval") == "required"
           for name in ("matrix.git_reset", "matrix.checkpoint_rollback",
-                       "matrix.clean_trash", "matrix.webui_reset")))
+                       "matrix.clean_trash", "matrix.webui_reset", "matrix.remove")))
 check("destructive memory subtools override namespace auto-approval",
       all((registry.tool_spec(name) or {}).get("approval") == "required"
           for name in ("memory.set_core", "memory.clear_core",

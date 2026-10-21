@@ -432,6 +432,22 @@ def list_proposals(status=None):
     return out
 
 
+def dedupe_proposals(rows):
+    """One proposal per (scope, content); a pending duplicate wins over decided.
+
+    The improvement panel is a signal, not a flood, but hiding a still-actionable
+    proposal behind a denied copy made the panel disagree with the approval inbox.
+    """
+    bucket = {}
+    for rec in rows or []:
+        key = (rec.get("scope"), str(rec.get("content") or "").strip())
+        prev = bucket.get(key)
+        if prev is None or (rec.get("status") == "pending"
+                            and prev.get("status") != "pending"):
+            bucket[key] = rec
+    return sorted(bucket.values(), key=lambda r: r.get("ts", 0), reverse=True)
+
+
 def diff_preview(rec):
     """What APPROVING this proposal would actually write, as a unified diff.
 

@@ -479,20 +479,23 @@ _LEGACY_SCHEMAS = {
         "subject": "pattern",
     },
     "matrix": {
-        "description": ("Self-evolving Matrix suite (src/Matrix & .Matrix). "
-                        "Actions: status | hotload | checkpoint_save/checkpoint_rollback (slot 1..3) | "
-                        "git_commit/git_log/git_diff/git_reset (local 20-commit repo) | "
-                        "test/clean_trash (.Matrix/trash) | webui_init/webui_reset | restart (warm resume)."),
+        "description": ("Self-evolving Matrix suite (src/Matrix & .Matrix). Full tool lifecycle: "
+                        "scaffold -> edit the generated schema/description -> hotload -> "
+                        "test -> verify_target -> promote_to_nucleus, or remove to uninstall. "
+                        "Actions: status | seams | scaffold | remove | hotload | "
+                        "enable/disable | checkpoint_save/checkpoint_rollback (slot 1..3) | "
+                        "git_commit/git_log/git_diff/git_reset (separate .Matrix/git repo) | "
+                        "test/clean_trash (.Matrix/trash) | webui_init/webui_reset | restart."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["status", "seams", "scaffold", "hotload", "enable", "disable",
+                       "enum": ["status", "seams", "scaffold", "remove", "hotload", "enable", "disable",
                                 "checkpoint_save", "checkpoint_rollback",
                                 "git_commit", "git_log", "git_diff", "git_reset",
                                 "test", "clean_trash", "webui_init", "webui_reset", "restart",
                                 "verify_target", "promote_to_nucleus"],
                        "default": "status"},
-            "description": {"type": "string", "description": "short description for matrix.scaffold"},
+            "description": {"type": "string", "description": "for matrix.scaffold: one sentence stating exactly what the artifact does"},
             "slot": {"type": "integer", "description": "checkpoint slot (1, 2, or 3)"},
             "label": {"type": "string", "description": "checkpoint label (action=checkpoint_save)"},
             "message": {"type": "string", "description": "commit message (action=git_commit)"},
@@ -501,8 +504,8 @@ _LEGACY_SCHEMAS = {
             "code": {"type": "string", "description": "optional Python code to write & run in .Matrix/trash (action=test)"},
             "target": {"type": "string", "description": "target tested e.g. 'tool:foo' or 'hook:plan' (action=test)"},
             "kind": {"type": "string", "enum": ["tool", "hook", "module", "skill", "rule", "webui"],
-                     "description": "artifact kind to verify or promote to Nucleus"},
-            "name": {"type": "string", "description": "artifact name to verify or promote to Nucleus"},
+                     "description": "artifact kind to remove, verify, or promote"},
+            "name": {"type": "string", "description": "artifact name (tool namespace or <ns>.<subtool>); required for remove/verify/promote"},
             "install_deps": {"type": "array", "items": {"type": "string"},
                              "description": "pip packages to install in .Matrix/venv (action=test)"},
             "timeout_secs": {"type": "integer", "default": 60,
@@ -613,6 +616,7 @@ _SUBTOOL_FIELDS = {
     },
     "matrix": {
         "status": [], "seams": [], "scaffold": ["kind", "name", "description"],
+        "remove": ["kind", "name"],
         "hotload": [], "enable": [], "disable": [],
         "checkpoint_save": ["slot", "label"],
         "checkpoint_rollback": ["slot"],
@@ -645,6 +649,7 @@ _SUBTOOL_REQUIRED = {
     "process.kill": ["pid"],
     "matrix.checkpoint_save": ["slot"],
     "matrix.checkpoint_rollback": ["slot"],
+    "matrix.remove": ["name"],
     "matrix.verify_target": ["name"],
     "matrix.promote_to_nucleus": ["name"],
 }
@@ -737,6 +742,38 @@ _SUBTOOL_GUIDANCE = {
         "The harness supplies the mine scope."
     ),
     "improve.review": "Review the proposal and distilled-memory backlog; returns a report without deciding proposals.",
+    "matrix.status": (
+        "Report the live Matrix inventory: discovered tools and hooks, load errors, "
+        "checkpoints, verified targets, skills, and the active WebUI shadow. "
+        "Call this before and after creating or removing an artifact."
+    ),
+    "matrix.seams": (
+        "List the 13 live Matrix -> Nucleus seams with the exact file path and function "
+        "signature each artifact must implement. Read this before scaffolding a hook or module."
+    ),
+    "matrix.scaffold": (
+        "Create a compliant Matrix artifact file (`tool`, `hook`, `module`, `skill`, `rule`, "
+        "`webui`) and hotload it immediately. For a tool, `name` must be `<namespace>` or "
+        "`<namespace>.<subtool>`. The generated tool is a skeleton: next use fs.read + fs.edit "
+        "to replace its placeholder description with a precise one (what it does, every input, "
+        "the output), define real properties and required fields, then call matrix.hotload and "
+        "matrix.test with target='tool:<namespace>'. The tool is live after hotload; no restart "
+        "and no manual registry edit are needed. It is not permanent until promote_to_nucleus."
+    ),
+    "matrix.hotload": (
+        "Rescan `src/Matrix/tools/*.py` and Matrix hook modules and replace the live tool map. "
+        "Discovery also reloads automatically when a tool file mtime changes, so call this to "
+        "confirm and to surface load errors. A broken module is isolated and reported in "
+        "`errors`; it never crashes the harness."
+    ),
+    "matrix.remove": (
+        "Uninstall one Matrix artifact from every live surface: source file, compiled bytecode, "
+        "imported module, discovery cache, matching tool-policy entries, and verification record, "
+        "then hotload. `kind` defaults to `tool`; `name` is required. A tool module that defines "
+        "several subtools must be removed by namespace (the call says which subtools would go). "
+        "A promoted Nucleus copy is reported, never deleted. Requires approval unless the "
+        "operator explicitly selects global approvals.mode=full."
+    ),
     "matrix.git_commit": (
         "Commit Matrix changes in its separate Git repository: git dir "
         "`.Matrix/git`, worktree `src/Matrix`. This does not commit the Longrun repo."
@@ -1033,6 +1070,29 @@ def save_config(cfg):
         _write_overlay(_diff_overlay(cfg, base))
         _cfg = cfg
         return cfg
+
+
+def forget_tool_policies(names):
+    """Drop policy entries for uninstalled tools from the live config + overlay.
+
+    A key that also exists in the hand-edited `config/tools.yaml` cannot be
+    deleted through the overlay; it is reported as `base_locked` so the caller
+    can tell the operator the truth instead of claiming a complete cleanup.
+    """
+    global _cfg
+    wanted = [str(n) for n in (names or []) if str(n).strip()]
+    with _lock:
+        cfg = load_config()
+        tools_cfg = cfg.get("tools") or {}
+        removed = [n for n in wanted if n in tools_cfg]
+        for n in removed:
+            tools_cfg.pop(n, None)
+        base, _src = _load_raw()
+        base_tools = base.get("tools") or {}
+        base_locked = [n for n in wanted if n in base_tools]
+        if removed:
+            save_config(cfg)
+        return {"removed": removed, "base_locked": base_locked}
 
 
 def workspace_dir():

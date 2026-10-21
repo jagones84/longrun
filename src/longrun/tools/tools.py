@@ -1675,6 +1675,8 @@ def _matrix(args, run_id):
         return matrix.set_enabled(False)
     if action in ("hotload", "reload"):
         return matrix.hotload()
+    if action in ("remove", "uninstall"):
+        return matrix.remove(args.get("kind") or "tool", args.get("name") or "")
     if action == "checkpoint_save":
         return matrix.checkpoint_save(args.get("slot"), label=args.get("label") or "")
     if action == "checkpoint_rollback":

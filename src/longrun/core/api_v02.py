@@ -986,10 +986,11 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, sandbox.probe(force=qs.get("force") == "1"))
         if path == "/api/approvals":
             return _r(handler, 200, {
-                "approvals": approvals.list_all(qs.get("status"), _int(qs.get("limit", 100), 100)),
-                "stats": approvals.stats()})
+                "approvals": approvals.list_unified(
+                    qs.get("status"), _int(qs.get("limit", 100), 100)),
+                "stats": approvals.stats_unified()})
         if path.startswith("/api/approvals/"):
-            rec = approvals.get(path.rsplit("/", 1)[-1])
+            rec = approvals.get_any(path.rsplit("/", 1)[-1])
             return _r(handler, 200, rec) if rec else _r(handler, 404, {"error": "approval not found"})
         if path == "/api/feed/recent":
             since, limit = _int(qs.get("since", 0), 0), _int(qs.get("limit", 40), 40)
@@ -1423,10 +1424,13 @@ def handle(handler, method, path, qs, body):
             _publish("tool.cancel", job=job, cancelled=res.get("cancelled"))
             return _r(handler, 200, res)
         if path.startswith("/api/approvals/"):
-            rec = approvals.decide(path.rsplit("/", 1)[-1], body.get("decision"),
-                                   body.get("by", "webui"))
-            if not rec:
-                return _r(handler, 404, {"error": "approval not found"})
+            aid = path.rsplit("/", 1)[-1]
+            res = approvals.decide_any(aid, body.get("decision"),
+                                       body.get("by", "webui"))
+            if not res.get("ok"):
+                code = 404 if "not found" in str(res.get("error") or "") else 400
+                return _r(handler, code, res)
+            rec = res["approval"]
             _publish("approval.decided", id=rec["id"], decision=body.get("decision"),
                      by=rec.get("decided_by"), status=rec["status"])
             return _r(handler, 200, rec)

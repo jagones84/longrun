@@ -220,17 +220,20 @@ check("skill proposal chat cards disable unsupported accept",
       'd.scope === "skill"' in _chat_proposal and "ok.disabled = true" in _chat_proposal)
 _proposal_panel = ui[ui.index("// ---- proposals (collapsible"):
                      ui.index("// ---- decided history")]
-check("proposal panel has no bulk-approve action",
-      "approve all" not in _proposal_panel)
+check("proposal panel has no duplicate decision controls",
+      "approve all" not in _proposal_panel
+      and 'ok.textContent = "accept"' not in _proposal_panel
+      and "showApprovalsInbox()" in _proposal_panel)
 _approval_panel = ui[ui.index("async function loadApprovals()"):
                      ui.index("async function decide(id, decision)")]
-check("RH approvals query only the tool approval queue",
+check("RH approvals is the single inbox for tool gates and improvement proposals",
       '"/api/approvals?status=pending"' in _approval_panel
-      and "/api/improve" not in _approval_panel)
-check("proposal decisions remain outside the RH tool-approval queue",
-      'es.addEventListener("improve.proposal"' in ui
-      and 'api("POST", "/api/improve"' in ui
-      and "/api/approvals?status=pending" in _approval_panel)
+      and 'a.kind === "improvement"' in _approval_panel
+      and "a.can_approve === false" in _approval_panel)
+check("one decision endpoint handles both approval kinds",
+      'api("POST", "/api/approvals/" + id' in ui
+      and "decide_any(" in open(os.path.join(
+          REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8").read())
 
 print("---")
 passed = sum(results)

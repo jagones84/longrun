@@ -1736,16 +1736,9 @@ class Handler(BaseHTTPRequestHandler):
             # the methodology config so the operator can see HOW it works.
             from longrun.util import improve as improve_mod
             raw = improve_mod.list_proposals()
-            # Collapse DUPLICATE proposals: the same (scope, content) was proposed
-            # again and again (5x "usa sempre pytest -q", all denied) — keep the
-            # newest per pair so the panel is a signal, not a flood.
-            dedup, seen = [], set()
-            for p in raw:
-                key = (p.get("scope"), str(p.get("content") or "").strip())
-                if key in seen:
-                    continue
-                seen.add(key)
-                dedup.append(p)
+            # Collapse DUPLICATE proposals; a still-pending duplicate wins over an
+            # older decided copy (see improve.dedupe_proposals).
+            dedup = improve_mod.dedupe_proposals(raw)
             for p in dedup:
                 if p.get("status") == "pending":
                     p["preview"] = improve_mod.diff_preview(p)

@@ -11,16 +11,16 @@ on any clone, with no machine-specific paths.
 
 ## 1. Read order (the map)
 
-Read in this order; each file is small and tracked in every clone:
+Read in this order; the first four are tracked in every clone:
 
 1. `AGENTS.md` — the 60-second mental model + non-negotiables.
 2. `docs/ARCHITECTURE.md` — object model, component table, safety model, data stores.
 3. `docs/CLI.md` — every HTTP route and its `forge.py` command.
 4. `docs/TESTING-PLAYBOOK.md` — how the harness is tested live.
-5. `docs/diagrams/longrun-architecture.architecture.json` — the **archify** machine
-   map: 16 components, their `sources` (file paths), boundaries and connections.
-   The matching `longrun-architecture.html` is the human view; the `.json` is what
-   you parse for a precise "which module does X" answer.
+5. `docs/diagrams/longrun-architecture.architecture.json` — **local only**
+   (gitignored): the **archify** machine map with 16 components, their `sources`,
+   boundaries and connections. The matching HTML is the human view. If the file
+   is absent on this machine, say so instead of claiming it was read.
 
 ## 2. Mental model (recite before explaining)
 

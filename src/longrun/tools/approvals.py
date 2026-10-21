@@ -113,6 +113,100 @@ def stats():
     return out
 
 
+def _improvement_view(proposal):
+    """Shape one improvement proposal as an approval-queue entry."""
+    pid = str((proposal or {}).get("id") or "")
+    scope = str((proposal or {}).get("scope") or "")
+    status = str((proposal or {}).get("status") or "pending")
+    blocked = ("skill apply is not implemented (JAG-128B deferred)"
+               if scope == "skill" else "")
+    return {
+        "id": "imp:" + pid,
+        "ts": proposal.get("ts"),
+        "run_id": None,
+        "tool": "improve.%s" % scope,
+        "args": {"proposal": pid, "scope": scope},
+        "summary": str(proposal.get("content") or "")[:200],
+        "status": status,
+        "reason": proposal.get("reason") or "",
+        "decided_by": None if status == "pending" else "operator",
+        "decided_ts": None,
+        "kind": "improvement",
+        "source": "improvement",
+        "scope": scope,
+        "origin": proposal.get("origin"),
+        "can_approve": bool(scope and scope != "skill" and status == "pending"),
+        "blocked_reason": blocked,
+    }
+
+
+def _improvement_records(status=None):
+    """Pending (or decided) improvement proposals, newest first. Never raises."""
+    try:
+        from longrun.util import improve
+        proposals = improve.list_proposals(status=status)
+    except Exception:  # noqa: BLE001 — a missing proposal store is simply empty
+        return []
+    return [_improvement_view(p) for p in proposals if p.get("id")]
+
+
+def list_unified(status=None, limit=100):
+    """The operator's single approval inbox: tool gates + improvement proposals."""
+    rows = list_all(None, 100000)
+    for rec in rows:
+        rec.setdefault("kind", "tool")
+        rec.setdefault("source", "tool")
+        rec.setdefault("can_approve", rec.get("status") == "pending")
+        rec.setdefault("blocked_reason", "")
+    rows.extend(_improvement_records(status))
+    if status:
+        rows = [r for r in rows if r.get("status") == status]
+    rows.sort(key=lambda r: r.get("ts") or 0, reverse=True)
+    return rows[:limit]
+
+
+def stats_unified():
+    """Tool-gate stats plus the improvement backlog, without changing old keys."""
+    out = stats()
+    impro = _improvement_records("pending")
+    out["improvement_pending"] = len(impro)
+    out["pending_total"] = out.get("pending", 0) + len(impro)
+    return out
+
+
+def get_any(aid):
+    """Look up a tool approval or an `imp:<proposal-id>` improvement request."""
+    key = str(aid or "")
+    if key.startswith("imp:"):
+        try:
+            from longrun.util import improve
+            proposal = improve.get_proposal(key[4:])
+            return _improvement_view(proposal) if proposal else None
+        except Exception:  # noqa: BLE001
+            return None
+    return get(key)
+
+
+def decide_any(aid, decision, by="human"):
+    """Decide either queue from one entry point. Returns {ok, approval|error}."""
+    key = str(aid or "")
+    if key.startswith("imp:"):
+        try:
+            from longrun.util import improve
+            res = improve.decide(key[4:], "approve" if decision in ("approve", "accept") else decision)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": "proposal decision failed: %s" % e}
+        if not res.get("ok"):
+            return {"ok": False, "error": res.get("error") or "proposal decision failed"}
+        return {"ok": True, "approval": _improvement_view(res)}
+    rec = decide(key, decision, by)
+    if not rec:
+        return {"ok": False, "error": "approval not found"}
+    rec.setdefault("kind", "tool")
+    rec.setdefault("source", "tool")
+    return {"ok": True, "approval": rec}
+
+
 def decide(aid, decision, by="human"):
     """decision: approve | deny | expire. Returns the updated record or None."""
     status = {"approve": "approved", "deny": "denied", "expire": "expired"}.get(decision)

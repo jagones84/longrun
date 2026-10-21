@@ -314,6 +314,9 @@ tools:
   matrix.webui_reset:
     enabled: true
     approval: required
+  matrix.remove:
+    enabled: true
+    approval: required
 
   # ---- JAG-426: baseline tools every standard harness ships ------------------
   # Native Python execution (previously only reachable via the pmcp MCP client,

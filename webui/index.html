@@ -6446,7 +6446,9 @@ async function loadStatus() {
   } catch { /* /api/status is best-effort: the meter keeps its last value */ }
 }
 
-/* ---- approvals (v0.2: HITL gate) ---- */
+/* ---- approvals (v0.2: HITL gate) ----
+   ONE inbox: gated tool actions AND improvement proposals. The backend merges
+   both queues under /api/approvals; improvement ids are prefixed `imp:`. */
 async function loadApprovals() {
   let out;
   try { out = await api("GET", "/api/approvals?status=pending"); }
@@ -6457,19 +6459,42 @@ async function loadApprovals() {
   if (!pend.length) { box.textContent = "no pending approvals"; return; }
   pend.forEach(a => {
     const d = document.createElement("div"); d.className = "card";
-    d.innerHTML = `<div style="font-size:11px;color:var(--dim)">${esc(a.tool)} · ${esc(a.id)}</div>
+    const kind = a.kind === "improvement" ? "improvement" : "tool";
+    d.innerHTML = `<div style="font-size:11px;color:var(--dim)">${esc(kind)} · ${esc(a.tool)} · ${esc(a.id)}</div>
       <div style="margin:4px 0;white-space:pre-wrap;word-break:break-all">${esc(a.summary)}</div>`;
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px";
     row.innerHTML = `<button class="ghost" style="color:var(--ok)">approve</button>
                      <button class="ghost" style="color:var(--err)">deny</button>`;
-    row.children[0].onclick = () => decide(a.id, "approve");
-    row.children[1].onclick = () => decide(a.id, "deny");
-    d.appendChild(row); box.appendChild(d);
+    const feedback = document.createElement("div"); feedback.className = "remaining";
+    feedback.setAttribute("role", "status");
+    if (a.can_approve === false) {
+      row.children[0].disabled = true;
+      row.children[0].title = a.blocked_reason || "this request cannot be approved";
+      feedback.textContent = a.blocked_reason || "";
+    }
+    row.children[0].onclick = () => decide(a.id, "approve")
+      .catch(e => { feedback.textContent = String(e); });
+    row.children[1].onclick = () => decide(a.id, "deny")
+      .catch(e => { feedback.textContent = String(e); });
+    d.appendChild(row); d.appendChild(feedback); box.appendChild(d);
   });
 }
 async function decide(id, decision) {
-  await api("POST", "/api/approvals/" + id, { decision, by: "webui" });
+  const r = await api("POST", "/api/approvals/" + id, { decision, by: "webui" });
+  if (r && r.error) throw new Error(r.error);
   loadApprovals();
+  if (typeof loadImprovement === "function") loadImprovement();
+}
+/* The single decision inbox lives in the Inspector. Proposals shown in Settings
+   link here instead of carrying a second set of buttons. */
+function showApprovalsInbox() {
+  const sec = document.querySelector('section[data-insp="approvals"]');
+  if (sec && !sec.classList.contains("insp-open")) {
+    const hd = sec.querySelector(".insp-hd");
+    if (hd) hd.click();
+  }
+  const box = $("approvals");
+  if (box) box.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 /* JAG-318: a true delete for the decided part of the approval queue. */
 async function approvalsClear() {
@@ -6839,27 +6864,14 @@ async function loadImprovement() {
         ? '<pre class="imp-diff">' + esc(prev.diff || "") + "</pre>"
         : '<div class="remaining">' + esc(prev.note || "") + "</div>");
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:6px";
-    const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "accept";
-    const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "reject";
-    const feedback = document.createElement("div"); feedback.className = "remaining";
-    feedback.setAttribute("role", "status");
+    const go = document.createElement("button"); go.className = "ghost"; go.textContent = "→ decide in Inspector ▸ Approvals";
+    go.onclick = (e) => { e.preventDefault(); e.stopPropagation(); showApprovalsInbox(); };
+    row.appendChild(go); det.appendChild(row);
     if (p.scope === "skill") {
-      ok.disabled = true;
-      ok.title = "Skill application is not implemented";
-      feedback.textContent = "Skill apply is not implemented; reject to clear this proposal.";
+      const note = document.createElement("div"); note.className = "remaining";
+      note.textContent = "Skill apply is not implemented; deny it in the approval inbox to clear it.";
+      det.appendChild(note);
     }
-    ok.onclick = async (e) => {
-      e.preventDefault(); e.stopPropagation(); ok.disabled = true;
-      try { await decideImproveProposal(p.id, "approve"); await loadImprovement(); }
-      catch (err) { feedback.textContent = String(err); ok.disabled = p.scope === "skill"; }
-    };
-    no.onclick = async (e) => {
-      e.preventDefault(); e.stopPropagation(); no.disabled = true;
-      try { await decideImproveProposal(p.id, "deny"); await loadImprovement(); }
-      catch (err) { feedback.textContent = String(err); no.disabled = false; }
-    };
-    row.appendChild(ok); row.appendChild(no); det.appendChild(row);
-    det.appendChild(feedback);
     props.appendChild(det);
   });
   // ---- decided history (so an all-decided panel is not empty) ----

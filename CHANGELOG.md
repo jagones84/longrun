@@ -23,12 +23,29 @@ All notable changes to Longrun are documented here. The format follows
   shared compacted transcript into the active turn before it saves again.
   Hermes-style XML tool calls are parsed instead of being shown as final text.
 - **Improvement decisions are distinct from tool approvals.** Skill proposals
-  cannot be accepted until skill application exists; UI disables that action
+  cannot be accepted until skill application exists; the UI disables that action
   and shows failures instead of claiming success. `v521` adds a deterministic
   batch smoke test for basic tools and these UI contracts.
+- **One approval inbox for tools and improvement proposals.** `GET /api/approvals`
+  now merges gated tool calls with pending proposal requests (`imp:<id>`), and the
+  Inspector's Approvals panel decides both. Settings ▸ Improvements links to that
+  inbox instead of carrying a second set of buttons; unsupported skill approvals
+  stay disabled with the real reason.
+- **Matrix artifacts can be uninstalled completely and live.** `matrix.remove`
+  deletes the source file, bytecode, imported module, discovery cache, matching
+  tool-policy entries and verification record, then hot-reloads with post-checks.
+  Multi-subtool modules must be removed by namespace; a promoted Nucleus copy is
+  reported but never touched.
+- **Matrix lifecycle descriptions now tell the model the real sequence.** Scaffold
+  responses return `next_steps` (edit schema/description → hotload → test →
+  verify → promote), and the generated tool description is an explicit placeholder
+  that must be replaced with precise behavior, inputs and output.
 - **Resolved file-change cards no longer offer stale actions.** After a
   successful approve/reject, the chat card shows the decision and removes the
   opposite action; failed or cancelled decisions remain actionable.
+- **A pending proposal is no longer hidden by a decided duplicate.** The
+  Improvements panel deduplicates by `(scope, content)` but now keeps the
+  pending copy, so its count agrees with the approval inbox.
 
 ### Changed
 - **`/goal` keeps working until evidence-backed completion (JAG-517).**

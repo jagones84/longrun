@@ -88,6 +88,9 @@ MATRIX_SYSTEM_PROMPT = (
     "(e.g. `src/Matrix/plan/hooks.py`, `src/Matrix/util/<mod>.py`, `.Matrix/skills/<name>/SKILL.md`, `.Matrix/rules/<NN>-<name>.md`, `src/Matrix/webui/plugins.js`).\n"
     "- **Lifecycle & Promotion:** test in `.Matrix/trash/` via `matrix.test` (`target='<kind>:<name>'`), "
     "check with `matrix.verify_target`, and promote to Nucleus with `matrix.promote_to_nucleus`. "
+    "Uninstall completely and live with `matrix.remove` (`kind`, `name`): it deletes the file, "
+    "bytecode, imported module, discovery cache, policy overlay entries and verification record, "
+    "then hot-reloads. "
     "Use `matrix.checkpoint_save` (slots 1..3), `matrix.git_commit` (max 20), `matrix.hotload`, `matrix.enable`/`matrix.disable`."
 )
 
@@ -1474,6 +1477,184 @@ def promote_to_nucleus(kind, name, repo_root=None):
     }
 
 
+def _purge_module_cache(kind, name):
+    """Drop import caches for one Matrix artifact so a re-create loads fresh code."""
+    import importlib
+    key = str(name or "")
+    prefixes = []
+    if kind == "tool":
+        prefixes = ["Matrix.tools.%s" % key.split(".")[0]]
+    elif kind == "hook":
+        prefixes = ["Matrix.%s.hooks" % key]
+    elif kind == "module":
+        prefixes = ["Matrix." + key.replace("/", ".")]
+    removed = []
+    for mod_name in list(sys.modules):
+        if any(mod_name == p or mod_name.startswith(p + ".") for p in prefixes):
+            sys.modules.pop(mod_name, None)
+            removed.append(mod_name)
+    try:
+        importlib.invalidate_caches()
+    except Exception:  # noqa: BLE001 — cache invalidation is best-effort
+        pass
+    return removed
+
+
+def _purge_compiled(path):
+    """Delete cached bytecode next to a removed Matrix source file."""
+    directory = os.path.dirname(path)
+    stem = os.path.splitext(os.path.basename(path))[0]
+    cache = os.path.join(directory, "__pycache__")
+    removed = []
+    if not os.path.isdir(cache):
+        return removed
+    for fn in os.listdir(cache):
+        if fn.startswith(stem + ".") and fn.endswith(".pyc"):
+            try:
+                os.remove(os.path.join(cache, fn))
+                removed.append(fn)
+            except OSError:
+                pass
+    return removed
+
+
+def remove(kind, name, repo_root=None):
+    """Uninstall one Matrix artifact from every live surface, then hot-reload.
+
+    Complete removal means: the source file, compiled bytecode, imported module,
+    the discovered-tool cache, matching policy entries in the tool overlay, and
+    the verification record. The artifact is then absent from discovery without
+    a service restart. A promoted Nucleus copy is reported, never touched.
+    """
+    matrix_guard.ensure_layout(repo_root)
+    root, msrc, mdot = _roots(repo_root)
+    k, nm, fpath = _resolve_target_path(kind, name, repo_root)
+    if k not in ("tool", "hook", "module", "skill", "rule", "webui"):
+        return {"ok": False, "error": "kind must be tool, hook, module, skill, rule, or webui"}
+    if not nm or not fpath:
+        return {"ok": False, "error": "name is required"}
+    norm = nm.replace("\\", "/")
+    if os.path.isabs(norm) or ".." in norm.split("/"):
+        return {"ok": False, "error": "name must be relative and must not contain '..'"}
+    if k == "hook" and nm not in HOOK_SUBPACKAGES:
+        return {"ok": False, "error": "hook subpackage must be one of %s" % (list(HOOK_SUBPACKAGES),)}
+    allowed_root = os.path.realpath(mdot if k in ("skill", "rule") else msrc)
+    real = os.path.realpath(fpath)
+    if not (real == allowed_root or real.startswith(allowed_root + os.sep)):
+        return {"ok": False, "error": "resolved path escapes the Matrix zone: %s" % fpath}
+
+    removed_names = []
+    if k == "tool":
+        namespace = norm.split(".")[0]
+        fpath = os.path.join(msrc, "tools", namespace + ".py")
+        real = os.path.realpath(fpath)
+        if not real.startswith(os.path.realpath(os.path.join(msrc, "tools")) + os.sep):
+            return {"ok": False, "error": "resolved path escapes src/Matrix/tools: %s" % fpath}
+        subtools = []
+        if os.path.isfile(fpath):
+            try:
+                spec = importlib.util.spec_from_file_location("Matrix.tools.%s" % namespace, fpath)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                raw = getattr(mod, "TOOL_SCHEMAS", None)
+                if isinstance(raw, dict):
+                    subtools = [str(x) for x in raw]
+                elif isinstance(getattr(mod, "TOOL_SCHEMA", None), dict):
+                    explicit = str((getattr(mod, "TOOL_SCHEMA") or {}).get("name") or "").strip()
+                    subtools = [explicit or "%s.run" % namespace]
+            except Exception:  # noqa: BLE001 — a broken module is still removable
+                subtools = []
+        if "." in norm and len(subtools) > 1:
+            return {
+                "ok": False,
+                "error": (
+                    "tool module %r defines several subtools (%s); remove the namespace "
+                    "%r to uninstall all of them" % (namespace, ", ".join(subtools), namespace)
+                ),
+            }
+        removed_names = sorted(set(subtools + ["%s.%s" % (namespace, s) if "." not in s else s
+                                               for s in subtools] + [namespace]))
+
+    existed = os.path.isdir(fpath) if k == "skill" else os.path.isfile(fpath)
+    removed_path = None
+    compiled = []
+    if existed:
+        try:
+            if k == "skill":
+                shutil.rmtree(fpath)
+            else:
+                os.remove(fpath)
+            removed_path = fpath
+            if k != "skill":
+                compiled = _purge_compiled(fpath)
+        except OSError as e:
+            return {"ok": False, "error": "removal failed: %s" % e}
+
+    module_cache = _purge_module_cache(k, nm)
+
+    policy = {"removed": [], "base_locked": []}
+    if k == "tool":
+        try:
+            from longrun.tools import registry
+            policy = registry.forget_tool_policies(removed_names)
+        except Exception as e:  # noqa: BLE001 — policy cleanup must be reported, not fatal
+            policy = {"error": str(e)}
+
+    verified = []
+    vp = _verified_store_path(repo_root)
+    vstore = read_json(vp, {})
+    if isinstance(vstore, dict):
+        keys = ["%s:%s" % (k, x) for x in ([nm] + removed_names if k == "tool" else [nm])]
+        for key in keys:
+            if key in vstore:
+                vstore.pop(key, None)
+                verified.append(key)
+        if verified:
+            write_json(vp, vstore)
+
+    hl = hotload(repo_root)
+    live_map = ((_TOOL_CACHE.get(msrc) or {}).get("tools") or {}) if k == "tool" else \
+               ((_HOOK_CACHE.get(msrc) or {}).get("modules") or {}) if k == "hook" else {}
+    if k == "tool":
+        still_live = [x for x in removed_names if x in live_map]
+    elif k == "hook":
+        still_live = [nm] if nm in live_map else []
+    else:
+        still_live = [] if not existed else ([] if not os.path.exists(fpath) else [nm])
+    warned = []
+    promoted = os.path.join(root, "src", "longrun", "tools", "promoted", norm.split(".")[0] + ".py")
+    if k == "tool" and os.path.isfile(promoted):
+        warned.append(
+            "a promoted Nucleus copy also exists at %s; this removal leaves it in place "
+            "and Nucleus writes require explicit authorization" % promoted
+        )
+    _ledger("matrix.remove", artifact_kind=k, name=nm, path=removed_path or fpath,
+            existed=existed, policy_removed=policy.get("removed") or [])
+    complete = bool(not still_live
+                    and not (policy.get("base_locked") or [])
+                    and not warned)
+    return {
+        "ok": True,
+        "kind": k,
+        "name": nm,
+        "path": fpath,
+        "existed": existed,
+        "removed": [removed_path] if removed_path else [],
+        "removed_subtools": removed_names if k == "tool" else [],
+        "compiled_removed": compiled,
+        "module_cache_cleared": module_cache,
+        "policy": policy,
+        "verified_records_removed": verified,
+        "hotload": hl,
+        "still_live": still_live,
+        "verified_absent": not still_live,
+        "complete": complete,
+        "warnings": warned,
+        "stdout": ("removed %s %r and hot-reloaded" % (k, nm)) if existed
+                  else ("%s %r is already absent; caches and policy were reconciled" % (k, nm)),
+    }
+
+
 SEAMS_SPEC = {
     "tools": {
         "path": "src/Matrix/tools/<namespace>.py",
@@ -1528,6 +1709,9 @@ def scaffold(kind, name, description="", repo_root=None):
         sub = re.sub(r"[^a-zA-Z0-9_]", "_", sub).strip("_") or "run"
         full_tool = "%s.%s" % (ns, sub)
         fpath = os.path.join(msrc, "tools", ns + ".py")
+        if not str(description or "").strip():
+            desc = ("REPLACE THIS DESCRIPTION: state exactly what %s does, each input, "
+                    "and the output it returns." % full_tool)
         body = (
             '"""Matrix tool namespace: %s."""\n\n'
             "TOOL_SCHEMAS = {\n"
@@ -1584,4 +1768,22 @@ def scaffold(kind, name, description="", repo_root=None):
     with open(fpath, "w", encoding="utf-8", newline="\n") as f:
         f.write(body)
     hl = hotload(repo_root)
-    return {"ok": True, "kind": k, "name": nm, "path": fpath, "hotload": hl, "stdout": "scaffolded %s at %s" % (k, fpath)}
+    next_steps = []
+    if k == "tool":
+        _ns = str(nm).split(".")[0]
+        next_steps = [
+            "fs.edit %s: replace the placeholder description with what the tool does, "
+            "every input, and its output; define real properties and required fields." % fpath,
+            "matrix{action:'hotload'} — also automatic when the file mtime changes.",
+            "matrix{action:'test', target:'tool:%s', code:'...'} with an assertion that can fail." % _ns,
+            "matrix{action:'verify_target', kind:'tool', name:'%s'} before any promotion." % _ns,
+            "After hotload the tool is directly callable by name; no restart, no manual registry edit.",
+        ]
+    elif k == "hook":
+        next_steps = [
+            "fs.edit %s: implement the exact seam signature from matrix{action:'seams'}." % fpath,
+            "matrix{action:'hotload'} to activate the hook live.",
+        ]
+    return {"ok": True, "kind": k, "name": nm, "path": fpath, "hotload": hl,
+            "next_steps": next_steps,
+            "stdout": "scaffolded %s at %s" % (k, fpath)}

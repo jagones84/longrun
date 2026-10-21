@@ -87,6 +87,11 @@ docs/diagrams/longrun-architecture.html
 docs/archive/
 tests/legacy/
 
+# Design/research workspaces and generated diagram bundles are local artifacts:
+# keep them on disk for reference, never in the shipped repository.
+docs/superpowers/
+docs/diagrams/
+
 # Hypothesis property-test database (tests/properties).
 .hypothesis/
 
