@@ -726,8 +726,8 @@ def _open_plan_steps(sess):
         g = taskgraph.load(sess["id"])
         if not g or not g.get("nodes"):
             return 0
-        c = taskgraph.counts(g)
-        return sum(c.get(s, 0) for s in taskgraph.OPEN_STATUSES)
+        nodes = taskgraph.plan_nodes(g)
+        return sum(1 for n in nodes if n.get("status") in taskgraph.OPEN_STATUSES)
     except Exception:  # noqa: BLE001
         return 0
 
@@ -746,6 +746,8 @@ def _open_todo_brief(sess, limit=10):
         opn = [n for n in nodes if n.get("status") in taskgraph.OPEN_STATUSES]
     except Exception:  # noqa: BLE001
         return 0, ""
+    if not nodes:
+        return 0, "(none — the current plan is empty)"
     if not opn:
         return 0, "(none — every step is closed)"
     lines = ["  - %s [%s] %s" % (n.get("id"), n.get("status"), n.get("label", ""))
@@ -777,6 +779,15 @@ def _nudge_open_todos(sess, errors=None):
                 "with concrete evidence when it is really finished. Never redo a [x] "
                 "step; close an unwanted one as 'superseded' WITH a reason."
                 % (on, brief, _refused))
+    try:
+        _has_current_plan = bool(taskgraph.plan_nodes(
+            taskgraph.load(sess["id"]) or {}))
+    except Exception:  # noqa: BLE001
+        _has_current_plan = False
+    if not _has_current_plan:
+        return ("There is no current task list. Continue from the user's request. "
+                "If multiple steps remain, create them with todo.write before "
+                "continuing." + _refused)
     return ("Noted — every step is now closed. If the user's request is fully answered, "
             "give the final plain-text answer now; otherwise say what still needs doing.")
 
@@ -960,7 +971,7 @@ def _apply_chat_todos(sess, act, on_event, node=None, after=None):
                 n.get("status", "open"), n.get("id", ""), n.get("label", ""),
                 ("  (%s: %s)" % (n.get("status"), n.get("reason"))
                  if n.get("reason") else ""))
-            for n in (taskgraph.plan_nodes(graph) or graph.get("nodes", [])))
+            for n in taskgraph.plan_nodes(graph))
         on_event("tool.result", session=sess["id"], tool="todo.write", ok=True,
                  exit_code=0, backend="harness", args=todo_args,
                  output=out[:2000] or ("+%d node(s)" % len(added)),
@@ -998,10 +1009,12 @@ def _resolve_graph_node(graph, step):
     step as `doing` instead of touching the first open one. Prefer the OPEN list,
     then fall back to the full plan (no open steps, or an index that only fits it).
     """
-    nodes = taskgraph.plan_nodes(graph) or graph.get("nodes", [])
+    nodes = taskgraph.plan_nodes(graph)
     node = None
     if step.get("id") is not None:
-        node = taskgraph.find(graph, node_id=str(step["id"]))
+        found = taskgraph.find(graph, node_id=str(step["id"]))
+        if found and any(n.get("id") == found.get("id") for n in nodes):
+            node = found
     if node is None and step.get("label"):
         _lbl = str(step["label"]).strip().lower()
         for _n in nodes:
@@ -1118,7 +1131,7 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
             return "- [%s] %s %s%s" % (_n.get("status", "open"), _n.get("id", ""),
                                        _n.get("label", ""), _extra)
         _out = ("\n".join(_render_line(n)
-                          for n in (taskgraph.plan_nodes(graph) or graph.get("nodes", [])))[:2000]
+                          for n in taskgraph.plan_nodes(graph))[:2000]
                 or "no step changed")
         if errors:
             _out = (_out + "\n! " + "\n! ".join(str(e) for e in errors))[:2000]
@@ -2064,7 +2077,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # instruction ("no todo list needed") was hijacked by the old list (session
     # a7d2794d8f88: "I'll continue on my own — 2/3 steps open" after a plain answer).
     try:
-        _open0 = [n for n in (taskgraph.load(sess["id"]) or {}).get("nodes", [])
+        _open0 = [n for n in taskgraph.plan_nodes(
+            taskgraph.load(sess["id"]) or {})
                   if n.get("status") in taskgraph.OPEN_STATUSES]
     except Exception:  # noqa: BLE001
         _open0 = []
@@ -2089,7 +2103,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
 
     def _diff_signals(_msg, _used, _stale=0):
         try:
-            _nodes = (taskgraph.load(sess["id"]) or {}).get("nodes", [])
+            _nodes = taskgraph.plan_nodes(taskgraph.load(sess["id"]) or {})
         except Exception:  # noqa: BLE001
             _nodes = []
         _open_n = len([n for n in _nodes if n.get("status") in taskgraph.OPEN_STATUSES])
@@ -2241,7 +2255,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # decides whether to refill the tool budget or stop for a typed reason.
         if (tool_ctx or goal_mode) and work_steps >= max_steps:
             _g = taskgraph.load(sess["id"]) or {}
-            _nodes = taskgraph.plan_nodes(_g) if goal_mode else _g.get("nodes", [])
+            _nodes = taskgraph.plan_nodes(_g)
             _open = [n for n in _nodes if n.get("status") in taskgraph.OPEN_STATUSES]
             # JAG-344: a PLAN-ONLY turn never continues. The master's own todos are
             # its DELEGATION plan, not work for it to close itself; the continuation
@@ -2303,7 +2317,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # a nudge to act on the user's new directive.
                 _inject(
                     "USER_STEER — the user typed a new directive while the "
-                    "previous task list is fully CLOSED. Acknowledge it and "
+                    "current task list has no open steps. Acknowledge it and "
                     "act on it now (start with `todo.write` if multi-step).",
                     "steer_only")
             else:
@@ -2733,7 +2747,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # only ENFORCES and REMINDS; it never auto-closes a step, because closing
             # a step that is not truly done is "lying about completion".
             _g = taskgraph.load(sess["id"]) or {}
-            _nodes = taskgraph.plan_nodes(_g) if goal_mode else _g.get("nodes", [])
+            _nodes = taskgraph.plan_nodes(_g)
             _open = [n for n in _nodes if n.get("status") in taskgraph.OPEN_STATUSES]
             _cur = _kg.state_hash(_nodes)
             # JAG-268: see the note at the budget branch — a round that ran tools is
@@ -2904,7 +2918,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             and not _is_aborted(sess["id"])):
         try:
             _g2 = taskgraph.load(sess["id"]) or {}
-            _all2 = taskgraph.plan_nodes(_g2) if goal_mode else (_g2.get("nodes") or [])
+            _all2 = taskgraph.plan_nodes(_g2)
             _open2 = [n for n in _all2 if n.get("status") in taskgraph.OPEN_STATUSES]
             _goal_incomplete = goal_mode and not taskgraph.goal_complete(_g2)
         except Exception:  # noqa: BLE001 — the gate must never break a turn
@@ -2954,7 +2968,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # is the model's ANSWER and must pass this guard untouched.
         try:
             _g = taskgraph.load(sess["id"])
-            _nodes = (_g or {}).get("nodes", [])
+            _nodes = taskgraph.plan_nodes(_g)
             _done = sum(1 for x in _nodes if x.get("status") == "done")
         except Exception:  # noqa: BLE001
             _nodes, _done = [], 0
@@ -3012,7 +3026,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # coexists with `plan.stopped` emitted by the loop.
     try:
         _g = taskgraph.load(sess["id"])
-        _nodes = (_g or {}).get("nodes", [])
+        _nodes = taskgraph.plan_nodes(_g)
         # JAG-308: count only TRULY-open steps. `status not in ("done","cancelled")`
         # also counted `superseded` (a CLOSED state), so a session whose every step
         # was closed still reported "N open" and re-nagged on the next turn.

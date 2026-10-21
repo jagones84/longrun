@@ -33,7 +33,7 @@ that built this.
 ## The one command that matters
 
 ```bash
-bash tests/battery.sh     # 130/130 GREEN required before any commit
+bash tests/battery.sh     # FAST deterministic gate; trust its reported count
 ```
 
 ## Non-negotiables
@@ -44,7 +44,10 @@ bash tests/battery.sh     # 130/130 GREEN required before any commit
   (self-orientation for an LLM landing here). See `.gitignore`.
 - **No secrets in the repo.** `.env.template` is the only tracked env file.
 - **Evidence over belief.** A claim needs a number (test count, HTTP status, file field).
-- **`ast.parse` after any scripted patch**; `git checkout -- <file>` if you break it.
-- **Checkpoint before refactor**, then `git reset --hard <checkpoint>` to roll back.
-- **Trash goes to `trash/`**, temp scripts never pollute `scripts/` or the repo root.
+- **`ast.parse` after any scripted patch.** Inspect the diff and restore only the
+  affected hunk if a patch breaks; never overwrite unrelated user changes.
+- **Checkpoint large refactors**, but never use destructive rollback commands
+  (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
+- **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
+  or the repo-root `trash/` data directory.
 - **Maintainers: update the local (gitignored) `.agent/HANDOFF.md` + the matching `README-*.md` in the same session.**

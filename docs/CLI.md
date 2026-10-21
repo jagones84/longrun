@@ -161,8 +161,8 @@ python3 forge.py tasks set t_42 done
 
 ```bash
 python3 forge.py tools ls
-python3 forge.py tools call shell '{"cmd":"ls -la"}'
-python3 forge.py tools policy shell --approval always
+python3 forge.py tools call shell.exec '{"command":"ls -la"}'
+python3 forge.py tools policy shell.exec --approval always
 python3 forge.py approvals ls
 python3 forge.py approvals approve ap_123
 ```

@@ -44,9 +44,10 @@ check("panel no longer falls back to the union of all plans",
       "_nodes = _pn.length ? _pn : (graph.nodes || []);" not in ui)
 check("panel falls back to the LATEST plan that has steps", "_maxp" in ui
       and "=== _maxp" in ui)
+check("fallback explicitly labels the prior plan as history",
+      "Current plan " in ui and "is empty; showing historical plan " in ui)
 
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
 sys.exit(0 if passed == len(results) else 1)
-

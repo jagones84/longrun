@@ -64,13 +64,16 @@ stores can never drift. Todo ids are `AX.nY` — the `T` namespace belongs to te
 ## Request / turn lifecycle (one chat turn)
 
 `assemble_turn` builds the exact prompt (system sections + compacted transcript +
-message + tool registry + skills index); the provider is called over an
-OpenAI-compatible stream; the model may answer **or** emit a harness action
-(`tool`, `write_todos`, `update_todos`, `replan_todos`, `subagent`). Tool calls go
-through the **approval gate** and the **sandbox**; observations are fed back; the
-**completion loop** (`keepgoing.py`) decides whether to continue, with typed stops
-(`goal_reached · no_progress · budget · blocked`). Every step is published to the event
-bus and persisted, so a reload rebuilds the transcript and the task graph.
+message + enabled-tool name index + skills index); full tool schemas are discovered
+through `self.tools` instead of dumping the registry into every prompt. The provider
+is called over an OpenAI-compatible stream; the model may answer **or** emit a
+harness action (`tool`, `todo.write`, `todo.update`, `todo.replan`, `subagent`).
+Tool calls go through the **approval gate** and the **sandbox**; observations are
+fed back. The **completion loop** (`keepgoing.py`) applies ordinary turn limits to
+chat and headless jobs. Explicit `/goal` continues past ordinary round/iteration
+limits until the current plan is evidence-backed complete, blocked/cancelled, or
+the configured wall-clock safety cap stops it incomplete. Every step is published
+to the event bus and persisted, so a reload rebuilds the transcript and task graph.
 
 ## Components (`src/longrun/`, organised in subpackages)
 

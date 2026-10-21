@@ -469,20 +469,22 @@
   .costhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .costtot { font-size: 20px; font-weight: 700; color: var(--txt); letter-spacing: -.02em; }
   .costlist { margin-top: 7px; max-height: 240px; overflow-y: auto; }
-  .costrow { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim);
+  .costrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
+    font-size: 11px; color: var(--dim);
     padding: 3px 2px; border-bottom: 1px solid var(--line); }
-  .costrow .cm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .costrow .cm { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
   .costrow .ct { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
   .costrow .cu { font-weight: 600; color: var(--txt); min-width: 52px; text-align: right; }
   /* JAG-403f: calls are grouped PER RUN (one user turn). Each run is a collapsed
      row with its own total; click the header to expand the individual calls. */
   .runrow { border-bottom: 1px solid var(--line); }
-  .runhd { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim);
+  .runhd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
+    font-size: 11px; color: var(--dim);
     padding: 5px 2px; cursor: pointer; }
   .runhd:hover { color: var(--txt); }
   .runhd .caret { width: 9px; color: var(--muted); flex: none; }
   .runhd .rt { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
-  .runhd .rm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runhd .rm { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
   .runhd .rn { color: var(--muted); font-size: 10px; }
   .runhd .cu { font-weight: 700; color: var(--txt); min-width: 52px; text-align: right; }
   .runbody { padding-left: 14px; border-left: 1px solid var(--line); margin-left: 3px; }
@@ -1050,6 +1052,8 @@
   /* JAG-127f: warning banner when the plan still has open steps at end of turn */
   .planwarn { border: 1px solid rgba(251,191,36,.45); background: rgba(251,191,36,.10);
     border-radius: 10px; padding: 8px 10px; }
+  .plan-history-note { display: block; margin-bottom: 6px; padding: 6px 8px;
+    border-left: 2px solid var(--dim); color: var(--dim); white-space: normal; }
   .planwarn ul { margin: 6px 0 6px 18px; padding: 0; }
   .planwarn li { font-size: 12px; }
   /* JAG-127: a produced readable file renders as a link in the reply */
@@ -6013,25 +6017,25 @@ function renderGraph() {
   }
   // JAG-194: the graph keeps EVERY plan's nodes (so the transcript can resolve
   // old card ids on reload); the panel shows only the CURRENT plan.
-  // JAG-307: when the current plan has no steps, fall back to the most recent plan
-  // that DID have steps — never to the UNION of every plan, which resurfaced
-  // long-closed steps from older plans as if they were still open ("old todos").
+  // JAG-307: when the current plan has no steps, keep the latest non-empty plan
+  // visible, but label it as history so it cannot be mistaken for current work.
   const _pn = planNodes(graph);
   const _curP = (graph.plan != null) ? graph.plan : 0;
   let _nodes = _pn;
   let _shownP = _curP;
+  let _historyNote = "";
   if (!_nodes.length && (graph.nodes || []).length) {
     const _maxp = Math.max.apply(null, graph.nodes.map(n => (n.plan == null ? 0 : n.plan)));
     _nodes = graph.nodes.filter(n => (n.plan == null ? 0 : n.plan) === _maxp);
     _shownP = _maxp;
+    _historyNote = "Current plan " + _curP + " is empty; showing historical plan " + _shownP + ".";
   }
   // JAG-431r8: the panel used to show ONLY the current plan, so a session whose
   // todos span successive plans looked like it had just a couple (the Master showed
   // n18/n19 while 19 todos existed across 5 plans). Show EVERY other plan in a
-  // collapsible section (collapsed by default) so nothing is hidden, while the
-  // current plan still leads and old closed steps are never presented as the ACTIVE
-  // plan (JAG-307). NOTE: the MODEL's todo rendering (taskgraph.render_todos) is
-  // untouched — the model must keep seeing only the current plan.
+  // collapsible section (collapsed by default) so nothing is hidden. When a fallback
+  // plan is shown, the note above identifies it as history. The MODEL's todo rendering
+  // remains scoped to the current plan.
   const _older = (graph.nodes || []).filter(n => (n.plan == null ? 0 : n.plan) !== _shownP);
   const c = countNodes(_nodes);
   $("graphHead").textContent = _jid + "run " + (graph.run_id || "").slice(0, 8) + " · " +
@@ -6061,7 +6065,10 @@ function renderGraph() {
         p + '">✕</button></div>';
     }).join("");
   }
-  box.innerHTML = taskTree(_nodes) + _olderHtml;
+  const _historyHtml = _historyNote
+    ? '<div class="plan-history-note" role="status">' + esc(_historyNote) + "</div>"
+    : "";
+  box.innerHTML = _historyHtml + taskTree(_nodes) + _olderHtml;
   box.querySelectorAll(".task").forEach(el => {
     // JAG-431r8: resolve against ALL nodes (not just the shown plan) so the rows in
     // the collapsible "older plans" sections are clickable too.

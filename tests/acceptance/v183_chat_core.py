@@ -41,6 +41,10 @@ import py_compile  # noqa: E402
 py_compile.compile(os.path.join(REPO, "src", "longrun", "core/server.py"), doraise=True)
 print("[compile] server.py OK")
 
+from longrun.tools import registry  # noqa: E402
+
+registry._external_tools = lambda: {}
+
 from longrun.core import server  # noqa: E402
 
 results = []
@@ -171,6 +175,7 @@ check("C5 subagent card PERSISTED for reload (JAG-190)",
 # ---- scenario D: a fresh user message is not hijacked by a stale plan ------
 _gd = server.taskgraph.ensure("v183d", session_id="v183d")
 server.taskgraph.add_node(_gd, "old step from an earlier request")
+server.taskgraph.begin_plan(_gd)
 
 def script_plain(n):
     return "risposta diretta all'utente, nessun tool."
@@ -178,12 +183,45 @@ def script_plain(n):
 ev_d, _ = run_turn("v183d", script_plain, gated_ok)
 _cont = [d for k, d in ev_d if k == "harness.inject"
          and "still has" in (d.get("text") or "")]
-check("D1 stale plan does NOT force a continuation (JAG-189)", not _cont,
-      "continue_injects=%d" % len(_cont))
+_continued = [d for k, d in ev_d if k == "plan.continuing"]
+check("D1 archived plan does NOT trigger a continuation",
+      not _cont and not _continued,
+      "continue_injects=%d plan_continuing=%d" % (len(_cont), len(_continued)))
 _ds = (server.load_session("v183d") or {}).get("messages", [{}])[-1]
 check("D2 the direct answer is persisted",
       _ds.get("role") == "assistant" and "risposta diretta" in (_ds.get("content") or ""),
       "%r" % (_ds.get("content") or "")[:40])
+_incomplete_d = [d for k, d in ev_d if k == "plan.incomplete"]
+check("D3 archived open work does not publish current-plan incompleteness",
+      not _incomplete_d, str(_incomplete_d))
+
+
+# ---- scenario J: archived open work cannot bypass current-plan closure -----
+_gj = server.taskgraph.ensure("v183j", session_id="v183j")
+server.taskgraph.add_node(_gj, "archived open step")
+server.taskgraph.begin_plan(_gj)
+server.taskgraph.add_node(_gj, "current open step")
+_J_UPDATE = ('{"action":"todo.update","steps":[{"index":0,"status":"done",'
+             '"evidence":"verified current result"}]}')
+
+
+def script_current_plan(n: int) -> str:
+    """Return a premature answer, a plan close, then the final result."""
+    seq = ("premature answer", _J_UPDATE, "current plan completed")
+    return seq[n] if n < len(seq) else "current plan completed"
+
+
+ev_j, _ = run_turn("v183j", script_current_plan, gated_ok)
+_rejected_j = [d for k, d in ev_j if k == "harness.inject"
+               and "REJECTED" in (d.get("text") or "")]
+check("J1 archived open work cannot bypass the current-plan close gate",
+      bool(_rejected_j), "rejected_injects=%d" % len(_rejected_j))
+_gj = server.taskgraph.load("v183j") or {}
+_current_j = server.taskgraph.plan_nodes(_gj)
+check("J2 the current plan closes while archived work stays untouched",
+      len(_current_j) == 1 and _current_j[0].get("status") == "done"
+      and any(n.get("status") == "todo" and n.get("plan") != _gj.get("plan")
+              for n in _gj.get("nodes", [])), str(_gj.get("nodes", [])))
 
 
 # ---- scenario E: harness-action cards are PERSISTED for reload (JAG-190) ---
@@ -315,4 +353,3 @@ check("I3 no todo is left open at the end of the turn",
 
 print("\n==== %d/%d checks passed ====" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
-

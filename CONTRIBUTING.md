@@ -21,10 +21,10 @@ deliberate and load-bearing, so please respect it.
 
 Install and run instructions live in
 [README → Install & run](README.md#install--run) (clone, `cp .env.template .env`,
-`./run.sh` on Linux/macOS or `.\run.ps1` on Windows). Then verify your checkout:
+`./run.sh` on Linux or `.\run.ps1` on Windows). Then verify your checkout:
 
 ```bash
-bash tests/battery.sh          # → === battery: 125/125 GREEN ===
+bash tests/battery.sh          # FAST gate; reports the current pass count
 ```
 
 ## The loop
@@ -46,7 +46,7 @@ Everything is stdlib Python — no framework, no network, no model for the gate.
 
 ```bash
 bash tests/battery.sh      # the gate: all acceptance tests, isolated, deterministic
-python3 tests/acceptance/v391_<topic>.py   # one test
+python3 tests/acceptance/vNNN_<topic>.py   # one test
 pytest tests/properties/   # Hypothesis property tests
 ```
 
@@ -63,7 +63,10 @@ pytest tests/properties/   # Hypothesis property tests
 - English only in code, comments, docstrings, log messages, UI strings and commits.
 - Explicit type hints and structured docstrings for functions.
 - Log lines: `[Level] | [Timestamp] | [Module]`.
-- Temp/one-off scripts go to `trash/` (gitignored) — never the repo root or `scripts/`.
+- Temp/one-off agent scripts go to `.agent/trash/` (gitignored), not the application
+  data directory `trash/`, repo root, or `scripts/`.
+- Inspect `git status` and diffs before restoring files. Never discard uncommitted
+  user work with `git reset --hard`, `git checkout --`, or `git clean`.
 - Write a `## [Unreleased]` entry in [`CHANGELOG.md`](CHANGELOG.md) with any user-visible
   change.
 

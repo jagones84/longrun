@@ -35,6 +35,9 @@ for d in ("cfg", "sessions", "graphs", "edits", "runs"):
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.tools import registry  # noqa: E402
+
+registry._external_tools = lambda: {}
+
 from longrun.plan import taskgraph  # noqa: E402
 from longrun.tools import tools  # noqa: E402
 from longrun.core import server as _srv  # noqa: E402
@@ -118,15 +121,22 @@ _cases = [
                  "replace": "y", "workspace": wa}),                        # no match
     ("fs.read", {"path": "/etc/hostname"}),                                # outside roots
 ]
-for tool, args in _cases:
-    try:
-        rr = tools.execute(tool, args)
-        if not isinstance(rr, dict) or rr.get("ok") is not False:
+_real_load = registry.load_config
+_cfg = json.loads(json.dumps(_real_load()))
+_cfg.setdefault("approvals", {})["mode"] = "normal"
+registry.load_config = lambda reload=False: _cfg
+try:
+    for tool, args in _cases:
+        try:
+            rr = tools.execute(tool, args)
+            if not isinstance(rr, dict) or rr.get("ok") is not False:
+                d_ok = False
+                d_detail.append("%s -> ok=%s" % (tool, rr.get("ok") if isinstance(rr, dict) else rr))
+        except Exception as e:  # noqa: BLE001
             d_ok = False
-            d_detail.append("%s -> ok=%s" % (tool, rr.get("ok") if isinstance(rr, dict) else rr))
-    except Exception as e:  # noqa: BLE001
-        d_ok = False
-        d_detail.append("%s raised %r" % (tool, e))
+            d_detail.append("%s raised %r" % (tool, e))
+finally:
+    registry.load_config = _real_load
 check("D1 malformed inputs fail gracefully (no raise, ok=False)", d_ok, "; ".join(d_detail))
 
 
@@ -308,4 +318,3 @@ finally:
 
 print("\n==== %d/%d checks passed ====" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
-

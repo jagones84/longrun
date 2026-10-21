@@ -232,7 +232,9 @@ def render_todos(graph, limit=12, compact=False):
     """
     if not graph or not graph.get("nodes"):
         return ""
-    nodes = plan_nodes(graph) or graph.get("nodes", [])
+    nodes = plan_nodes(graph)
+    if not nodes:
+        return "TASK LIST (the current plan is empty; historical steps are not active)."
     open_nodes = [n for n in nodes if n.get("status") in OPEN_STATUSES]
     open_n, total_n = len(open_nodes), len(nodes)
     if compact:
@@ -268,8 +270,8 @@ def render_todos(graph, limit=12, compact=False):
 
 
 def all_done(graph):
-    """True when the list has nodes and none are still open."""
-    nodes = graph.get("nodes", []) if graph else []
+    """True when the current plan has nodes and none are still open."""
+    nodes = plan_nodes(graph)
     if not nodes:
         return False
     return all(n.get("status") in CLOSED_STATUSES for n in nodes)
@@ -600,7 +602,7 @@ def apply_write_todos(graph, todos, source="model:write_todos", index_map=None, 
     _seen = {}
     if skip_existing:
         _seen = {str(n.get("label", "")).strip().lower(): n["id"]
-                 for n in (plan_nodes(graph) or graph.get("nodes", []))}
+                 for n in plan_nodes(graph)}
     for i, item in enumerate(todos or []):
         if isinstance(item, str):
             item = {"label": item}
@@ -843,7 +845,7 @@ def _missing(graph, todos):
     label ("run pwd" again) create no nodes at all.
     """
     seen = {n["label"].strip().lower()
-            for n in (plan_nodes(graph) or graph.get("nodes", []))}
+            for n in plan_nodes(graph)}
     out = []
     for t in todos or []:
         label = t if isinstance(t, str) else (t.get("label") or t.get("title") or t.get("task"))
@@ -911,7 +913,8 @@ def replan_from_model(graph, note=None, model=None, on_event=None):
     changes or a step turns out to be blocked. Existing nodes are preserved.
     """
     from longrun.core import server as srv
-    existing = [n["label"] for n in graph.get("nodes", []) if n.get("status") != "cancelled"]
+    existing = [n["label"] for n in plan_nodes(graph)
+                if n.get("status") != "cancelled"]
     prompt = (WRITE_TODOS_PROMPT + "\n\nThe task graph already contains: " +
               json.dumps(existing, ensure_ascii=False) +
               "\nEmit ONLY the NEW steps still missing (never repeat an existing label).")

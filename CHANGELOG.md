@@ -43,6 +43,12 @@ All notable changes to Longrun are documented here. The format follows
     (env > config > cache) instead of first-writer-wins.
 
 ### Fixed
+- **Archived plan tasks stay out of the current model plan (JAG-519).** When the
+  current plan is empty, prompt rendering, todo deduplication, completion checks,
+  re-plan prompts, open-step counts, ordinary-chat pivot/keepgoing gates, and
+  update lookup no longer treat historical nodes as active. Empty plans are not
+  described as completed. The Plan panel labels its latest-nonempty fallback as
+  historical. Narrow cost-panel rows and model labels wrap instead of clipping.
 - **Tool calls now reject incomplete web inputs clearly and recover valid nested
   argument wrappers (JAG-518).** `web.search` requires `query`; `web.fetch`
   requires `url`. Missing and blank required values receive distinct errors, and

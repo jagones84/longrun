@@ -19,9 +19,9 @@ Written down so a future session does not have to rediscover it.
 2. **Test the seams, not the straight line.** The bugs live in transitions:
    refresh, session switch, switching *while* a turn runs, a new message arriving
    *while* a plan is open, a big observation, a deleted session, an approval.
-3. **Drive the app the way the user does.** Reproduce real flows (`send(...)`,
-   clicking a session row) instead of poking internals — the bug is usually in the
-   wiring between UI and server, which internal calls can hide.
+3. **Drive the app through its real controls.** Use Chrome DevTools MCP `fill` /
+   `click` / keyboard actions on a disposable test session. Use `evaluate_script`
+   only for read-only inspection; never call UI mutation functions from page JS.
 4. **Know the three layers** (test all three, they fail independently):
    - **Static** — unit tests / the battery (`tests/battery.sh`).
    - **Runtime data** — the artifacts on disk: `data/sessions/<sid>.json`,
@@ -35,6 +35,8 @@ Written down so a future session does not have to rediscover it.
    (e.g. `TESTS/harness-e2e`) — **not** `Repositories/longrun`. Driving an
    agent/tool loop in the harness's own repo pollutes `data/`, risks edits to the
    source and muddies git state.
+7. Before a browser reload, check `/api/chat/live` and the editor's dirty/save
+   state. Never reload a page with an unsaved editor buffer.
 
 ---
 
@@ -82,13 +84,13 @@ They are the "eyes" for the seams.
 
 **B. Which server-side turns are running** (multi-session, background work)
 ```js
-async () => await (await fetch('/api/chat/live' + location.search)).json()   // {active:[sid,...]}
+async () => await api("GET", "/api/chat/live")   // {active:[sid,...]}
 ```
 
 **C. Session state in one shot**
 ```js
-() => ({ active: localStorage.getItem('sf_session'),
-         sessions: [...document.querySelectorAll('.sess')].map(d => ({
+() => ({ selected: document.querySelector('.sess.active')?.dataset.sid || null,
+         sessions: [...document.querySelectorAll('.sess[data-sid]')].map(d => ({
            sid: d.dataset.sid, t: (d.querySelector('.t')||{}).textContent,
            running: d.classList.contains('running') })) })
 ```
@@ -98,7 +100,7 @@ async () => await (await fetch('/api/chat/live' + location.search)).json()   // 
 `/api/status` + `/api/approvals`).
 
 **E. Static files on disk** — read `data/sessions/<sid>.json`: does `tool_cards`
-contain the cards you just saw? (`write_todos` / `update_todos` / `subagent` cards
+contain the cards you just saw? (`todo.write` / `todo.update` / `subagent` cards
 must be there, not only `shell`.) This catches "shown live, never persisted".
 
 ---
@@ -110,29 +112,32 @@ have actually broken.
 
 1. **Refresh after a turn.** → reload the tab; run probe A. Pass: `hidden_* === 0`
    and the card/reply/node counts match the pre-refresh counts. Watch: harness-action
-   cards (`write_todos`, `subagent`) must survive (they are usually the first to vanish).
-2. **Refresh WHILE a turn runs.** → `send(...)`, immediately `navigate_page reload`,
-   then poll probe B + A. Pass: `/api/chat/live` still lists the session right after
-   reload, and the final reply + cards appear without a second send (JAG-181 re-attach).
+   cards (`todo.write`, `todo.update`, `subagent`) must survive (they are usually the
+   first to vanish).
+2. **Refresh WHILE a turn runs.** In a disposable session, send through the composer
+   with MCP `fill` + `click`, immediately reload that same test tab, then poll probes
+   B + A. Pass: `/api/chat/live` still lists the session right after reload, and the
+   final reply + cards appear without a second send (JAG-181 re-attach).
 3. **Session switch away and back.** → click session B, then A. Pass: B is clean
    (0 cards/0 nodes), A is fully restored (counts equal to before). Watch: no
    cross-session bleed, no stale plan from A painted into B.
-4. **Switch away DURING a running turn.** → `send(...)` in A, click B, wait, check
-   probe B (`active` still contains A) and the A row has class `running`; click A
-   again. Pass: the turn was NOT interrupted and its output is there on return
-   (JAG-168). Watch: switching must never abort a turn.
+4. **Switch away DURING a running turn.** In a disposable test session A, submit via
+   MCP controls, click B, wait, check probe B (`active` still contains A) and the A
+   row has class `running`; click A again. Pass: the turn was NOT interrupted and its
+   output is there on return (JAG-168). Never interrupt a user's active turn.
 5. **Topic pivot with an open plan.** → with ≥1 open todo, send an unrelated
    question ("ignore the plan, answer …"). Pass: a direct answer, the plan is left
    untouched, and NO `CONTINUE — your TASK LIST still has …` is forced (JAG-189).
    Verify in `data/sessions/<sid>.json`: new injects of kind `continue` should not
    appear for that turn.
-6. **Long task to completion.** → a multi-step task that produces `write_todos`
-   then several `update_todos … done`. Pass: steps get closed with evidence, the
-   loop stops on `goal_reached` (not `budget`/`no_progress`), and the reply reports
-   the RESULT (not a promise). Watch: keepgoing rounds, `plan.stopped` reason.
-7. **Two sessions, two turns at once.** → start a turn in A, switch to B, start a
-   turn in B. Pass: both streams stay independent; output never paints into the
-   wrong log (JAG-168); both appear in probe B.
+6. **Goal to completion.** In a disposable test session, submit `/goal <task>` via
+   MCP controls. Pass: the current plan closes with evidence and the loop stops on
+   `goal_reached`. A configured wall-clock cap, blocker, error, or Stop is explicitly
+   incomplete, never completion. Watch `plan.stopped` and the persisted result.
+7. **Two sessions, two turns at once.** In disposable sessions A and B, start a
+   turn in A, switch to B, then start a turn in B. Pass: both streams stay
+   independent; output never paints into the wrong log (JAG-168); both appear in
+   probe B.
 8. **Big observation (offload).** → a command with >6 KB output. Pass: the model
    gets a head+tail preview + a `FULL OUTPUT FILE: data/offload/<sid>/…` reference;
    nothing is truncated in the file (JAG-181).
@@ -142,8 +147,8 @@ have actually broken.
 10. **Delete a session with artifacts.** → delete a session that has a graph /
     edits / offload. Pass: all artifacts removed (v177), UI drops the dead id, no
     404 churn afterwards (JAG-189/JAG-190).
-11. **Slash commands / skills.** → `/` palette, `/goal <task>`, a skill read.
-    Pass: no raw JSON ever reaches the chat; the command is parsed, not sent as text.
+11. **Slash commands / skills.** Use MCP controls for the `/` palette and a skill read.
+    Pass: no raw JSON reaches the chat and the command is parsed, not sent as text.
 12. **Model / provider swap + context meter.** → change model, run a turn. Pass:
     the `ctx` meter grows with real `prompt_tokens` and never lies (JAG-98/172).
 13. **Responsive / small viewport.** → `resize_page` narrow. Pass: rail and panels
@@ -167,8 +172,9 @@ have actually broken.
 
 ## 6. Rules of thumb (being smart about it)
 
-- **Reproduce with the app's own functions**: `send("…")`, clicking
-  `.sess[data-sid="…"]`. It exercises the real wiring; internal shortcuts don't.
+- **Reproduce through the actual UI**: fill the composer and click Send with DevTools
+  MCP, or select `.sess[data-sid="…"]`. It exercises the real wiring; internal
+  shortcuts can hide integration defects.
 - **Measure before and after**, and report the numbers (cards, nodes, `active`).
 - **Prefer a scripted async probe** that triggers + waits + measures in one call
   (fewer round-trips, no races): `const sleep=ms=>new Promise(r=>setTimeout(r,ms));`.
