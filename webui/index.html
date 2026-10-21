@@ -599,6 +599,12 @@
     border-radius: 8px; background: var(--panel2); border: 1px solid var(--line);
     color: var(--txt); transition: color .12s, border-color .12s; }
   #toolsBar button:hover { color: var(--accent); border-color: var(--acc); }
+  /* JAG-527: the 🧠 button CLOSES the chain-of-thought blocks; a diagonal bar
+     over the glyph makes the "collapse / hide" meaning obvious. */
+  #toolsBar button.slashed { position: relative; }
+  #toolsBar button.slashed::after { content: ""; position: absolute; left: 5px; right: 5px;
+    top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; background: currentColor;
+    transform: rotate(-45deg); pointer-events: none; }
   #toolsBar button[hidden] { display: none; }
   .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc2); transition: box-shadow .25s; }
   /* JAG-428: flash the session row the topbar's "reveal" button centered. */
@@ -1147,6 +1153,11 @@
   #swMain .kb-row { display: flex; gap: 8px; align-items: center; padding: 6px 8px;
     margin-bottom: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
   #swMain .kb-row:hover { border-color: var(--acc); }
+  /* JAG-526: the notebook that belongs to the chat on screen is ALWAYS marked
+     (a `*` plus an accent edge), so opening Knowledge never requires guessing. */
+  #swMain .kb-row.kb-current { border-color: var(--acc); box-shadow: inset 3px 0 0 var(--acc); }
+  #swMain .kb-cur { flex: 0 0 auto; color: var(--acc); font-weight: 700; font-size: 11px;
+    letter-spacing: .04em; white-space: nowrap; }
   #swMain .kb-row .cn { flex: 0 0 auto; min-width: 22px; text-align: center;
     color: var(--acc2); font-size: 10px; }
   #swMain .kb-list { max-height: 320px; overflow: auto; padding-right: 4px; }
@@ -1714,7 +1725,7 @@
             aria-label="reveal the current session in the sessions panel">🎯</button>
     <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
     <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
-    <button class="ghost" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks">🧠</button>
+    <button class="ghost slashed" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks">🧠</button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups">🏷</button>
   </aside>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
@@ -1747,7 +1758,7 @@
             <span id="costSub" class="remaining"></span>
           </div>
           <div class="ctxrow"><span id="costCalls">–</span><span id="costIn">–</span><span id="costOut">–</span></div>
-          <div class="u-mt6"><button class="ghost" id="costRefresh" title="fetch real per-1M prices from OpenRouter's public model list (no key needed) and cache them">↻ prices</button></div>
+          <div class="u-mt6"><button class="ghost" id="costRefresh" title="re-read both price sources now: OpenRouter's public model list AND DeepSeek's official table (config/prices.yaml). Applies from now on — past calls keep the price they were charged at.">↻ refresh prices</button></div>
         </div>
         <div id="costList" class="costlist"></div>
         </div>
@@ -4284,6 +4295,7 @@ function send(text, display, atts) {
     if (turnSession || !s) return;
     turnSession = s; turnSSE[s] = es; setRunning(s, true);
     sessionId = s; localStorage.setItem("sf_session", sessionId);
+    _kbSyncCurrent();   // JAG-526: a brand-new chat has its own (future) notebook
   };
   const end = (reload, flush) => {
     try { es.close(); } catch (e) {}
@@ -4293,7 +4305,7 @@ function send(text, display, atts) {
     if (turnSession && !live()) markDone(turnSession);
     if (live()) {
       endStream();
-      if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll();
+      if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll(); loadCosts();
         // JAG-506: the Files panel carries no tree anymore; the pending-changes
         // list refreshes through refreshEdits() above.
         // JAG-431j/431p: a finished turn may have added/renamed Free.* groups — refresh
@@ -4408,6 +4420,7 @@ function selectSession(s) {
   curRunId = null; localStorage.removeItem("sf_run"); graph = null;
   if (window.SparkEditor && SparkEditor.onSessionChange) SparkEditor.onSessionChange();
   loadSessions(); loadHistory(); loadCtx(); loadRole(); loadRules(); loadPlan(); loadCosts(); cbStatus();
+  _kbSyncCurrent();   // JAG-526: move the `* current` mark to this session's notebook
   scheduleDiagnosticsRefresh();
   modelLabel(); closeAside();
   attachIfRunning(sessionId);   // JAG-181: resume following a still-running turn
@@ -5500,10 +5513,20 @@ function costLive(call) {
   renderCosts();
 }
 if ($("costRefresh")) $("costRefresh").onclick = async () => {
-  const b = $("costRefresh"); const t = b.textContent; b.textContent = "\u21bb fetching\u2026";
-  const r = await api("POST", "/api/costs/refresh", {});
-  b.textContent = t;
-  toast(r && r.ok ? ("cached " + r.count + " model prices") : ("price refresh failed: " + ((r && r.error) || "?")), r && r.ok ? "ok" : "err");
+  const b = $("costRefresh"); const t = b.textContent;
+  b.disabled = true; b.textContent = "\u21bb refreshing\u2026";
+  let r = {};
+  try { r = await api("POST", "/api/costs/refresh", {}); }
+  finally { b.disabled = false; b.textContent = t; }
+  // JAG-527: two independent sources — report BOTH, never a vague "done".
+  const cloud = (r && r.openrouter) || {}, direct = (r && r.deepseek) || {};
+  const bits = [
+    cloud.ok ? (cloud.count + " OpenRouter prices cached") : ("OpenRouter: " + (cloud.error || "failed")),
+    direct.ok ? ("official table updated (" + ((direct.models || []).length) + " models)")
+              : ("official table: " + (direct.error || "failed")),
+  ];
+  toast(((r && r.ok) ? "\u21bb " : "price refresh failed \u2014 ") + bits.join(" \u00b7 "),
+        (r && r.ok) ? "ok" : "warn");
   loadCosts();
 };
 /* JAG-487: the auto-compaction policy is live config (config/compaction.yaml, plus
@@ -9907,10 +9930,12 @@ async function kbLoadSessions() {
     box.innerHTML = s.map(n => {
       const sel = n.id === kbState.notebook;
       const owner = (n.owner || "");
-      return '<div class="kb-row" data-owner="' + _attr(owner) + '" style="opacity:.92">' +
+      const cur = !!owner && owner === sessionId;
+      return '<div class="kb-row' + (cur ? " kb-current" : "") + '" data-owner="' + _attr(owner) + '" style="opacity:.92">' +
         '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
         '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this session notebook">' + (sel ? "●" : "○") + '</button>' +
         '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px" readonly title="' + _attr(owner) + '">' +
+        (cur ? '<span class="kb-cur" title="the chat you are in right now">* current</span>' : '') +
         '<span style="color:var(--acc);border:1px solid var(--acc);border-radius:6px;padding:0 5px;font-size:10px" title="session-scoped notebook — ' + _attr(owner) + '">session</span>' +
         '<span class="cn">' + (n.sources || 0) + '</span>' +
         '<button class="ghost" style="padding:2px 6px" data-del="' + _attr(n.id) + '" title="delete this session notebook (purges sources + chunks too)">🗑</button>' +
@@ -9919,6 +9944,15 @@ async function kbLoadSessions() {
     box.querySelectorAll("[data-use]").forEach(el => el.onclick = () => { kbState.notebook = el.getAttribute("data-use"); kbLoadSources(); kbLoadSessions(); });
     box.querySelectorAll("[data-del]").forEach(el => el.onclick = () => kbDeleteNotebook(el.getAttribute("data-del")));
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+/* JAG-526: the `* current` mark must track the chat the operator switches to.
+   Re-render the session list only while Knowledge is the visible panel. */
+function _kbSyncCurrent() {
+  const w = $("settingsWin");
+  if (!w || w.hidden) return;
+  const cat = document.querySelector('#swMain .sw-cat[data-cat="knowledge"]');
+  if (!cat || cat.hidden) return;
+  kbLoadSessions();
 }
 /* JAG-526: the chat tools bar exposes THIS session's knowledge notebook. One
    click opens Settings ▸ Knowledge, expands "Session notebooks", selects the

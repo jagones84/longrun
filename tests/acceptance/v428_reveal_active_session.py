@@ -66,6 +66,20 @@ check("1i it opens Knowledge expanded on the session's own notebook",
       and "box.open = true" in HTML
       and "r.dataset.owner === sessionId" in HTML
       and 'data-owner="' in HTML, "")
+# JAG-527: the 🧠 button HIDES the chain-of-thought blocks; a diagonal bar over
+# the glyph makes that meaning unmistakable.
+check("1j the collapse-thoughts button carries a diagonal bar",
+      'class="ghost slashed" data-call="collapseThoughts"' in tt
+      and "#toolsBar button.slashed::after" in HTML
+      and "rotate(-45deg)" in HTML, "")
+# JAG-526: the notebook that belongs to the chat on screen is marked `* current`
+# and the mark moves on every session switch while Knowledge is open.
+_sel = HTML[HTML.index("function selectSession("):]
+_sel = _sel[:_sel.index("\n}\n")]
+check("1k the session notebook of the live chat is always marked",
+      "kb-current" in HTML and "* current" in HTML
+      and "function _kbSyncCurrent(" in HTML
+      and "_kbSyncCurrent();" in _sel, "")
 check("1d #toolsBar starts hidden (shown only with an open session)",
       re.search(r'id="toolsBar"[^>]*hidden', HTML) is not None, "")
 check("1e visibility is driven by _updateTreeTools()",

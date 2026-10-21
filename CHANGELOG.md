@@ -153,13 +153,34 @@ All notable changes to Longrun are documented here. The format follows
   design (an inline SVG runs its embedded JS at this origin — JAG-232). Every SVG tab
   painted a broken image and logged the 415. SVG is XML: it now opens in the code
   editor. Pinned by `v232`.
+- **A price change is visible on the next lookup, with no restart.** `_prices_table()`
+  cached the merged table for the life of the PROCESS, so a refreshed (or hand-edited)
+  `config/prices.yaml` stayed invisible until a service restart. The cache is now
+  stamped with the mtime+size of all three sources (cache, `config/prices.json`,
+  `config/prices.yaml`), so the Cost panel sees a new table immediately. A price
+  change is still never retroactive: each ledger record keeps the `usd` it was priced
+  at. Pinned by `v527` B2/C4.
 
 ### Added
+- **"Refresh prices" now regenerates BOTH price sources, deterministically.** The Cost
+  panel's button used to refresh only the OpenRouter cache. It now also rewrites
+  `config/prices.yaml` from DeepSeek's OFFICIAL table: the parser reads the model
+  header + the three PEAK rows, requires `cache-hit < cache-miss < output` for every
+  model, and writes atomically ONLY when the whole shape validates — a changed,
+  truncated or unreachable page aborts and leaves the file untouched. Entries the page
+  does not list are preserved, and the legacy provider ids (`deepseek-chat`,
+  `deepseek-reasoner`, …) follow the Flash rate. The UI reports both sources
+  separately. Pinned by `v527` (22/22; 7/22 RED at the previous commit).
 - **A book button in the chat tools bar opens this session's knowledge notebook.**
   Above the transcript refresh (↻), `📖` opens Settings ▸ Knowledge with *Session
   notebooks* already expanded, selects the notebook whose `owner` is the live session
   and scrolls it into view; with no notebook yet it says so instead of leaving the
-  operator to scan every session. Pinned by `v428` 1h–1i.
+  operator to scan every session. The notebook of the chat on screen is ALWAYS marked
+  `* current` (accent edge) and the mark moves on every session switch while Knowledge
+  is open. Pinned by `v428` 1h–1i/1k.
+- **The collapse-thoughts control is unmistakable.** The 🧠 button in the chat tools
+  bar now carries a diagonal bar over the glyph, so "hide the chain-of-thought" reads
+  as an action instead of a category. Pinned by `v428` 1j.
 
 ### Changed
 - **`/goal` keeps working until evidence-backed completion (JAG-517).**

@@ -1254,9 +1254,9 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, edits_undo(body))
         if path == "/api/edits/approve":  # JAG-275: ACCEPT changes, drop the pending diff
             return _r(handler, 200, edits_approve(body))
-        if path == "/api/costs/refresh":  # JAG-355: refresh cloud prices (OpenRouter, public)
+        if path == "/api/costs/refresh":  # JAG-355/JAG-527: cloud cache + official provider table
             from longrun.model import costs
-            return _r(handler, 200, costs.refresh_openrouter())
+            return _r(handler, 200, costs.refresh_prices())
         if path == "/api/costs/reset":  # JAG-355: clear this session's ledger
             from longrun.model import costs
             return _r(handler, 200, costs.reset((body or {}).get("session")))
