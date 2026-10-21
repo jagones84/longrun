@@ -986,22 +986,24 @@ def execute_tool(name, args, run_id=None, repo_root=None):
         return {"ok": False, "tool": name, "origin": "matrix",
                 "error": "unknown or broken Matrix tool %r" % name, "exit_code": 127}
     t0 = time.time()
-    snap = matrix_guard.snapshot_nucleus_digests(repo_root)
-    try:
-        res = _invoke_matrix_tool_fn(entry["execute"], args or {}, run_id, subtool=entry.get("subtool"))
-        if not isinstance(res, dict):
-            res = {"ok": True, "stdout": str(res)}
-    except Exception as e:  # noqa: BLE001
-        err_info = _format_matrix_error(e, entry.get("file"))
-        res = {
-            "ok": False,
-            "error": "Matrix tool %r failed — %s" % (name, err_info["error"]),
-            "line": err_info["line"],
-            "code_line": err_info["code_line"],
-            "stderr": err_info["traceback"],
-            "exit_code": 1,
-        }
-    reverted = matrix_guard.restore_if_nucleus_tampered(snap, repo_root)
+
+    def _invoke():
+        try:
+            result = _invoke_matrix_tool_fn(
+                entry["execute"], args or {}, run_id, subtool=entry.get("subtool"))
+            return result if isinstance(result, dict) else {"ok": True, "stdout": str(result)}
+        except Exception as e:  # noqa: BLE001
+            err_info = _format_matrix_error(e, entry.get("file"))
+            return {
+                "ok": False,
+                "error": "Matrix tool %r failed — %s" % (name, err_info["error"]),
+                "line": err_info["line"],
+                "code_line": err_info["code_line"],
+                "stderr": err_info["traceback"],
+                "exit_code": 1,
+            }
+
+    res, reverted = matrix_guard.run_nucleus_guarded(_invoke, repo_root)
     if reverted:
         res = {
             "ok": False,

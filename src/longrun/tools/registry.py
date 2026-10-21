@@ -274,19 +274,28 @@ _LEGACY_SCHEMAS = {
                         "action=list -> sessions with agent name, title, age, "
                         "running. action=read -> one session's FULL transcript "
                         "(session=<id>): messages, tool calls + results, harness "
-                        "injections, in order. action=send -> talk to another "
-                        "session (session=<id>, message=<text>): a running peer "
-                        "receives it inside its current turn, an idle peer starts "
-                        "a server-side turn; read the reply with action=read."),
+                        "injections, in order. action=send -> asynchronously message "
+                        "another session (session|to + message|text); it steers a "
+                        "running peer or starts a turn for an idle peer, then returns "
+                        "a message_id. Continue other work. action=wait with that id "
+                        "waits for the peer turn to finish and returns its reply; "
+                        "action=read can inspect the live transcript meanwhile."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "read", "send"],
+            "action": {"type": "string", "enum": ["list", "read", "send", "wait"],
                        "default": "list"},
             "session": {"type": "string",
                         "description": "session id (action=read|send)"},
             "to": {"type": "string", "description": "alias for session (action=send)"},
             "message": {"type": "string",
                         "description": "text delivered to the peer (action=send)"},
+            "text": {"type": "string",
+                     "description": "alias for message (action=send)"},
+            "message_id": {"type": "string",
+                           "description": "message_id returned by action=send (action=wait)"},
+            "timeout_secs": {"type": "integer", "minimum": 0, "maximum": 900,
+                             "default": 180,
+                             "description": "maximum wait; 0 checks once, then retry with the same id"},
             "query": {"type": "string",
                       "description": "filter by agent name/title/id (action=list)"},
             "limit": {"type": "integer", "default": 30,
@@ -599,6 +608,7 @@ _SUBTOOL_FIELDS = {
     "sessions": {
         "list": ["query", "limit"], "read": ["session", "limit", "tail"],
         "send": ["session", "to", "message", "text"],
+        "wait": ["message_id", "timeout_secs"],
     },
     "chapters": {
         "list": ["session"], "untitled": ["session", "limit"],
@@ -651,7 +661,7 @@ _SUBTOOL_REQUIRED = {
     "knowledge.search": ["query"], "knowledge.read_source": ["ref"],
     "knowledge.create_notebook": ["name"], "knowledge.discover": ["query"],
     "sessions.read": ["session"],
-    "sessions.send": ["session"],
+    "sessions.wait": ["message_id"],
     "chapters.read": ["id"], "chapters.title": ["id", "title"],
     "memory.store": ["content"], "memory.recall": ["query"],
     "memory.set_core": ["content"],
@@ -682,7 +692,10 @@ _SUBTOOL_ANY_OF = {
     "knowledge.import": [{"required": ["urls"]}, {"required": ["refs"]}],
     "memory.invalidate": [{"required": ["target"]}, {"required": ["query"]}],
     "memory.forget": [{"required": ["target"]}, {"required": ["query"]}],
-    "sessions.send": [{"required": ["message"]}, {"required": ["text"]}],
+    "sessions.send": [
+        {"required": ["session", "message"]}, {"required": ["session", "text"]},
+        {"required": ["to", "message"]}, {"required": ["to", "text"]},
+    ],
 }
 
 _SUBTOOL_GUIDANCE = {
@@ -741,9 +754,17 @@ _SUBTOOL_GUIDANCE = {
         "approvals.mode=full."
     ),
     "sessions.send": (
-        "Talk to another session: `session` is its id (or `to`), `message`/`text` "
-        "the text to deliver. A running peer reads it inside its current turn; an "
-        "idle peer starts a server-side turn. Then read the reply with sessions.read."
+        "Asynchronously send `message` (or `text`) to `session` (or `to`). A running "
+        "peer receives a steer; an idle peer gets a server-side chat turn. This returns "
+        "a `message_id` immediately so you can continue your work. Use `sessions.read` "
+        "to inspect the peer's live transcript and `sessions.wait` with that id to get "
+        "the final assistant reply after its turn ends."
+    ),
+    "sessions.wait": (
+        "Wait for a message sent by `sessions.send` to finish. Pass its exact "
+        "`message_id`; returns the peer's last assistant reply when the turn ends. "
+        "Default timeout is 180 seconds; if state is `running`, continue other work "
+        "and retry with the same id. Use `sessions.read` to inspect the live chat."
     ),
     "memory.purge": (
         "Permanently remove all invalidated or expired memory records. This is "

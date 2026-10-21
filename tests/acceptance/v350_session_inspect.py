@@ -49,7 +49,8 @@ check("A3 it is read-only (approval=auto)", (spec or {}).get("approval") == "aut
       str((spec or {}).get("approval")))
 sch = registry.TOOL_SCHEMAS.get("sessions") or {}
 _actions = set((sch.get("properties", {}).get("action", {}) or {}).get("enum", []))
-check("A4 it documents list + read + send", _actions == {"list", "read", "send"},
+check("A4 it documents list + read + send + wait",
+      _actions == {"list", "read", "send", "wait"},
       str(sorted(_actions)))
 
 # --- B: list — discovery (which session?) -----------------------------------
@@ -120,4 +121,3 @@ print("---")
 ok = sum(results)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-

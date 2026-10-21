@@ -23,6 +23,11 @@ _ORCH = Orchestrator()
 _ATTN = AttentionFeed(_REGISTRY, lambda: _ORCH.jobs().get("jobs", []))
 
 
+def dispatch_message(session: str, message: str, model: str | None = None) -> dict:
+    """Start a chat turn through the shared Orbit orchestrator/job registry."""
+    return _ORCH.dispatch([session], message, model=model, mode="chat")
+
+
 def _retry_run(ref):
     """Re-dispatch a failed background run, addressed by its job key."""
     for j in _ORCH.jobs().get("jobs", []):
@@ -190,4 +195,3 @@ def handle(handler, method, path, qs, body):
                 data.get("id"), data.get("action"), by=data.get("by") or "orbit"))
         return _json(handler, 404, {"error": "unknown orbit route"})
     return _json(handler, 405, {"error": "method not allowed"})
-

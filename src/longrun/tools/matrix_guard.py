@@ -23,8 +23,16 @@ import hashlib
 import json
 import os
 import re
+import threading
 
 from longrun.util.paths import REPO_ROOT as REPO
+
+# Snapshot/execute/restore must be one process-wide critical section. Otherwise
+# concurrent sessions can each snapshot the same source tree and one command's
+# legitimate Nucleus write is misattributed to another command, which then
+# restores it. Model generation stays parallel; only host-side guarded executions
+# serialize for the short interval where their mutations are attributed.
+NUCLEUS_EXEC_LOCK = threading.RLock()
 
 MATRIX_SUBDIRS = (
     "agent", "core", "integrations", "interop", "memory", "model",
@@ -520,6 +528,24 @@ def snapshot_nucleus_digests(repo_root=None):
         except OSError:
             snap.setdefault(p, (None, None))
     return snap
+
+
+def run_nucleus_guarded(operation, repo_root=None):
+    """Run one operation with an exclusive Nucleus snapshot/restore transaction.
+
+    The lock prevents a parallel session's guarded command from changing the
+    baseline while this operation runs. On exceptions, restore is still attempted
+    before the original exception is re-raised.
+    """
+    with NUCLEUS_EXEC_LOCK:
+        before = snapshot_nucleus_digests(repo_root)
+        try:
+            result = operation()
+        except BaseException:
+            restore_if_nucleus_tampered(before, repo_root)
+            raise
+        reverted = restore_if_nucleus_tampered(before, repo_root)
+        return result, reverted
 
 
 def restore_if_nucleus_tampered(before_digests, repo_root=None):

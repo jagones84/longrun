@@ -1384,8 +1384,10 @@ def handle(handler, method, path, qs, body):
         if path == "/api/config/file":
             # JAG-488: validate + atomically write any config/*.yaml, then reload.
             from longrun.core import configfiles
+            from longrun.tools import matrix_guard
             try:
-                res = configfiles.write_file(body.get("name"), body.get("text"))
+                with matrix_guard.NUCLEUS_EXEC_LOCK:
+                    res = configfiles.write_file(body.get("name"), body.get("text"))
             except ValueError as e:
                 return _r(handler, 400, {"ok": False, "error": str(e)})
             _publish("config.saved", name=body.get("name"), ok=bool(res.get("ok")))
@@ -1393,8 +1395,10 @@ def handle(handler, method, path, qs, body):
         if path == "/api/settings":
             # JAG-491: apply ONE structured section (validated paths + types).
             from longrun.core import settings as _settings
+            from longrun.tools import matrix_guard
             try:
-                res = _settings.update(body)
+                with matrix_guard.NUCLEUS_EXEC_LOCK:
+                    res = _settings.update(body)
             except ValueError as e:
                 return _r(handler, 400, {"ok": False, "error": str(e)})
             if res.get("ok"):
@@ -2458,8 +2462,10 @@ def fs_write(body) -> dict:
     if len(raw) > FS_TEXT_MAX:
         return {"error": "content too large (%d bytes > %d)" % (len(raw), FS_TEXT_MAX)}
     try:
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(content)
+        from longrun.tools import matrix_guard
+        with matrix_guard.NUCLEUS_EXEC_LOCK:
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(content)
     except OSError as e:
         return {"error": str(e)}
     _publish("fs.write", path=p, bytes=len(raw))

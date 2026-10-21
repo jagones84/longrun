@@ -85,13 +85,16 @@ SECTIONS = [
         ],
     },
     {
-        "file": "compaction.yaml", "id": "compaction_summarizer", "panel": "harness",
-        "title": "Compaction · summarizer",
-        "help": ("What the summarizer reads, how long its summary may be, and the "
-                 "instruction it follows. Trigger/target/keep are in the Context panel. "
-                 "A transcript larger than `input cap` is summarized part by part and "
-                 "the parts are merged, bounded by `max parts`."),
+        "file": "compaction.yaml", "id": "compaction", "panel": "compaction",
+        "title": "Compaction",
+        "help": ("One shared policy for automatic and manual compaction. A transcript "
+                 "larger than `input cap` is summarized part by part; the parts are "
+                 "merged, bounded by `max parts`. These values are global, not "
+                 "session-specific."),
         "fields": [
+            _f("trigger_pct", "auto trigger (%)", "int", min=1, max=100),
+            _f("target_pct", "auto target (%)", "int", min=0, max=99),
+            _f("keep_recent", "keep recent messages", "int", min=1, max=50),
             _f("summarizer.input_max_chars", "input cap (chars)", "int",
                min=1000, max=1000000),
             _f("summarizer.output_max_chars", "output cap (chars)", "int",
@@ -182,7 +185,7 @@ DEDICATED = {
     "providers.yaml": {"*": "Settings ▸ Models"},
     # gitignored user overlays written by those same panels
     "providers.local.yaml": {"*": "Settings ▸ Models"},
-    "compaction.local.yaml": {"*": "right rail ▸ Context"},
+    "compaction.local.yaml": {"*": "Settings ▸ Compaction"},
     "embedding.yaml": {"*": "Settings ▸ Models"},
     # JAG-516: hand-maintained rate table for models the OpenRouter cache cannot
     # price (provider-direct APIs). Model METADATA, so it belongs to the Models
@@ -197,12 +200,6 @@ DEDICATED = {
         "disabled_models": "Settings ▸ Models",
         "research_model": "Settings ▸ Knowledge ▸ Research",
         "research_active": "Settings ▸ Knowledge ▸ Research",
-    },
-    # Paths are relative to the UNWRAPPED policy (what the form edits).
-    "compaction.yaml": {
-        "trigger_pct": "right rail ▸ Context",
-        "target_pct": "right rail ▸ Context",
-        "keep_recent": "right rail ▸ Context",
     },
 }
 
@@ -367,6 +364,11 @@ def view():
         out.append({
             "file": sec["file"], "id": sec["id"], "title": sec["title"],
             "panel": sec.get("panel", ""),   # JAG-499b: the Settings panel that owns it
+            "files": (["config/" + sec["file"]] +
+                      (["config/compaction.local.yaml"]
+                       if sec["file"] == "compaction.yaml" and
+                       os.path.isfile(os.path.join(CONFIG_DIR, "compaction.local.yaml"))
+                       else [])),
             "help": sec.get("help", ""),
             "fields": sec["fields"],
             "values": {f["path"]: _get(doc, f["path"]) for f in sec["fields"]},
@@ -395,7 +397,10 @@ def _save(name, clean):
         for path, val in clean.items():
             if path.startswith("summarizer."):
                 patch.setdefault("summarizer", {})[path.split(".", 1)[1]] = val
-        compaction_config.save(patch=patch)
+        compaction_config.save(trigger_pct=clean.get("trigger_pct"),
+                               target_pct=clean.get("target_pct"),
+                               keep_recent=clean.get("keep_recent"),
+                               patch=patch)
     elif name == "routing.yaml":
         from longrun.model import routing
         cur = routing.load_config()

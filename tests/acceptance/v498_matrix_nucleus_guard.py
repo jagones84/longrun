@@ -2,7 +2,9 @@
 """v498 — Matrix scaffold & deterministic Nucleus write-guard."""
 import os
 import sys
+import threading
 import tempfile
+import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(REPO, "src")
@@ -256,6 +258,54 @@ with tempfile.TemporaryDirectory() as tmp:
           not os.path.exists(created_txt), created_txt)
     check("Q2 a pre-existing file of an untracked extension survives the sweep",
           os.path.isfile(keep_txt), keep_txt)
+
+    # ---- R) concurrent guarded turns cannot blame each other's writes --------
+    # Live audit: `sleep 20` was reported as NUCLEUS_PROTECTED because another
+    # session changed a source file between this command's snapshot and restore.
+    # Guarded transactions now share one process-wide lock.
+    guarded_path = srv_file
+    peer_mutated = threading.Event()
+    peer_release = threading.Event()
+    benign_entered = threading.Event()
+    peer_result, benign_result = {}, {}
+
+    def _peer_write():
+        with open(guarded_path, "w", encoding="utf-8") as f:
+            f.write("# concurrent peer edit\n")
+        peer_mutated.set()
+        peer_release.wait(2)
+        return "peer"
+
+    def _benign_command():
+        benign_entered.set()
+        return "sleep"
+
+    def _run_peer():
+        peer_result["value"], peer_result["reverted"] = \
+            matrix_guard.run_nucleus_guarded(_peer_write, tmp)
+
+    def _run_benign():
+        benign_result["value"], benign_result["reverted"] = \
+            matrix_guard.run_nucleus_guarded(_benign_command, tmp)
+
+    peer_thread = threading.Thread(target=_run_peer)
+    benign_thread = threading.Thread(target=_run_benign)
+    peer_thread.start()
+    peer_mutated.wait(2)
+    benign_thread.start()
+    # If the shared lock is missing, the benign operation enters while the peer's
+    # source edit is in flight and its later restore falsely claims that edit.
+    entered_during_peer = benign_entered.wait(0.1)
+    peer_release.set()
+    peer_thread.join(2)
+    benign_thread.join(2)
+    check("R a benign parallel command is serialized, not blamed for a peer edit",
+          not entered_during_peer and peer_result.get("reverted")
+          and benign_result.get("value") == "sleep"
+          and benign_result.get("reverted") == [],
+          {"benign_entered_during_peer": entered_during_peer,
+           "peer_reverted": peer_result.get("reverted"),
+           "benign_reverted": benign_result.get("reverted")})
 
 print("---")
 print("%d/%d PASS" % (sum(checks), len(checks)))

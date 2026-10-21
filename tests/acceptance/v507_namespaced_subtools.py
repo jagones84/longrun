@@ -10,7 +10,8 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.core import matrix  # noqa: E402
 from longrun.tools import matrix_guard, registry, tools  # noqa: E402
 
-# This test covers the local registry and Matrix loader, not operator MCP
+# This test covers the loc
+# al registry and Matrix loader, not operator MCP
 # servers. Keep registry.catalog() deterministic and offline.
 registry._external_tools = lambda: {}
 
@@ -36,7 +37,7 @@ expected_subtools = {
     "reconcile.run", "skills.list", "skills.read",
     "index.search", "index.reindex", "index.status",
     "knowledge.search", "knowledge.list_notebooks", "knowledge.status",
-    "sessions.list", "sessions.read",
+    "sessions.list", "sessions.read", "sessions.send", "sessions.wait",
     "chapters.list", "chapters.untitled", "chapters.read", "chapters.title",
     "context.status", "context.compact",
     "memory.list", "memory.recall", "memory.store", "memory.recent", "memory.core",
@@ -118,28 +119,27 @@ check("E Matrix prompt, MANUAL.md, and api_v02.tool_context() expose <namespace>
 # inbox); an idle peer gets a REAL server-side turn through the Orchestrator, so
 # the message is never queued forever. The reply is read back with sessions.read.
 from longrun.core import server  # noqa: E402
-from longrun.orbit import orchestrator as orch_mod  # noqa: E402
+from longrun.orbit import api as orbit_api  # noqa: E402
 from longrun.util import steering  # noqa: E402
 
 _KNOWN = {"peer-run", "peer-idle"}
 _orig_load = server.load_session
 _orig_active = server._ACTIVE_CHAT
-_orig_orch = orch_mod.Orchestrator
+_orig_dispatch = orbit_api.dispatch_message
 dispatched = []
+fake_sessions = {sid: {"id": sid, "messages": []} for sid in _KNOWN}
 
 
-class _FakeOrch:
-    def dispatch(self, targets, goal, model=None, mode="goal"):
-        dispatched.append({"targets": list(targets), "goal": goal, "mode": mode})
-        return {"ok": True, "count": 1,
-                "jobs": [{"job": "j1", "session": targets[0], "state": "running"}]}
+def _fake_dispatch(session, message, model=None):
+    dispatched.append({"session": session, "message": message, "model": model})
+    return {"ok": True, "count": 1,
+            "jobs": [{"job": "j1", "session": session, "state": "running"}]}
 
 
 try:
-    server.load_session = lambda sid: ({"id": sid, "messages": []}
-                                       if sid in _KNOWN else None)
-    server._ACTIVE_CHAT = {"peer-run": {"ev0": 0, "ts": 0}}
-    orch_mod.Orchestrator = _FakeOrch
+    server.load_session = lambda sid: fake_sessions.get(sid)
+    server._ACTIVE_CHAT = {"peer-run": {"ev0": 0, "ts": 0, "tok": object()}}
+    orbit_api.dispatch_message = _fake_dispatch
     steering.STEER_INBOX.clear()
     r_send_run = tools._sessions(
         {"action": "send", "session": "peer-run", "message": "status?"}, "me-1")
@@ -152,30 +152,44 @@ try:
     r_send_empty = tools._sessions(
         {"action": "send", "session": "peer-run", "message": "   "}, "me-1")
     steered = steering.drain_steer("peer-run")
+    fake_sessions["peer-run"]["messages"].append(
+        {"role": "assistant", "content": "pong", "ts": 99})
+    server._ACTIVE_CHAT = {}
+    r_wait = tools._sessions(
+        {"action": "wait", "message_id": r_send_run.get("message_id"),
+         "timeout_secs": 0}, "me-1")
 finally:
     server.load_session = _orig_load
     server._ACTIVE_CHAT = _orig_active
-    orch_mod.Orchestrator = _orig_orch
+    orbit_api.dispatch_message = _orig_dispatch
     steering.STEER_INBOX.clear()
+    with tools._SESSION_SENDS_LOCK:
+        for _mid in (r_send_run.get("message_id"), r_send_idle.get("message_id")):
+            tools._SESSION_SENDS.pop(_mid, None)
 
 _send_spec = (registry.tool_spec("sessions.send") or {}).get("schema") or {}
+_wait_spec = (registry.tool_spec("sessions.wait") or {}).get("schema") or {}
 check("F a RUNNING peer gets the message through the steer inbox",
       r_send_run.get("ok") is True and r_send_run.get("mode") == "steer"
+      and r_send_run.get("message_id")
       and any("[message from session me-1]" in t for t in steered), str(steered))
 check("F2 an IDLE peer gets a real server-side turn (Orchestrator dispatch)",
       r_send_idle.get("ok") is True and r_send_idle.get("mode") == "turn"
-      and dispatched and dispatched[0]["targets"] == ["peer-idle"]
-      and dispatched[0]["mode"] == "chat"
-      and "[message from session me-1]" in dispatched[0]["goal"], str(dispatched))
+      and r_send_idle.get("message_id")
+      and dispatched and dispatched[0]["session"] == "peer-idle"
+      and "[message from session me-1]" in dispatched[0]["message"], str(dispatched))
 check("F3 a missing session, a self-send and an empty message are refused",
       r_send_missing.get("ok") is False and "no such session" in r_send_missing.get("error", "")
       and r_send_self.get("ok") is False
       and r_send_empty.get("ok") is False and r_send_empty.get("exit_code") == 64,
       " ".join(str(r.get("error")) for r in (r_send_missing, r_send_self, r_send_empty)))
-check("F4 the schema teaches the new subtool (required session + message|text)",
-      "session" in (_send_spec.get("required") or [])
-      and len(_send_spec.get("anyOf") or []) == 2
-      and "message" in (_send_spec.get("properties") or {}), str(_send_spec)[:200])
+check("F4 send schema declares every alias and paired target/message alternatives",
+      {"session", "to", "message", "text"} <= set(_send_spec.get("properties") or {})
+      and len(_send_spec.get("anyOf") or []) == 4, str(_send_spec)[:200])
+check("F5 wait returns the peer's final assistant reply after the turn ends",
+      r_wait.get("ok") is True and r_wait.get("state") == "done"
+      and r_wait.get("reply") == "pong" and r_wait.get("message_id")
+      and "sessions.read" in _wait_spec.get("description", ""), str(r_wait))
 
 print("---")
 okc = sum(results)

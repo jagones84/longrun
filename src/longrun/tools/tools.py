@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import socket
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -24,6 +25,10 @@ from longrun.tools import registry
 from longrun.tools import sandbox
 
 REPO = registry.REPO
+
+_SESSION_SENDS = {}
+_SESSION_SENDS_LOCK = threading.Lock()
+_SESSION_SENDS_KEEP = 256
 
 
 def _truncate(s, n):
@@ -73,11 +78,10 @@ def _shell(args, run_id):
     if not ok_cmd:
         return {"ok": False, "exit_code": 126, "error": err_cmd,
                 "backend": "host", "sandboxed": False}
-    snap = matrix_guard.snapshot_nucleus_digests()
-    res = sandbox.run(command, run_id=run_id,
-                      timeout=args.get("timeout_secs"),
-                      workspace=cwd)
-    reverted = matrix_guard.restore_if_nucleus_tampered(snap)
+    res, reverted = matrix_guard.run_nucleus_guarded(
+        lambda: sandbox.run(command, run_id=run_id,
+                             timeout=args.get("timeout_secs"),
+                             workspace=cwd))
     if reverted:
         return {"ok": False, "exit_code": 126,
                 "error": "NUCLEUS_PROTECTED: shell command modified Nucleus files (reverted %d file(s))" % len(reverted),
@@ -107,24 +111,26 @@ def _python(args, run_id):
     name = "_repl_%s.py" % os.urandom(4).hex()
     path = os.path.join(ws, name)
     from longrun.tools import matrix_guard
-    snap = matrix_guard.snapshot_nucleus_digests()
-    res = None
+
+    def _run_snippet():
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(code)
+            return sandbox.run("python3 " + name, run_id=run_id,
+                               timeout=args.get("timeout_secs"), workspace=ws)
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(code)
-        res = sandbox.run("python3 " + name, run_id=run_id,
-                          timeout=args.get("timeout_secs"), workspace=ws)
+        res, reverted = matrix_guard.run_nucleus_guarded(_run_snippet)
     except OSError as e:
         # JAG-431r4: the sandbox workspace can be missing/read-only; report the real
         # I/O error instead of a NameError on the (unbound) `res` below.
         return {"ok": False, "exit_code": 1, "error": "cannot stage the script: %s" % e,
                 "backend": "host", "sandboxed": False}
-    finally:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-    reverted = matrix_guard.restore_if_nucleus_tampered(snap)
     if reverted:
         return {"ok": False, "exit_code": 126,
                 "error": "NUCLEUS_PROTECTED: python snippet modified Nucleus files (reverted %d file(s))" % len(reverted),
@@ -1335,22 +1341,85 @@ def _render_transcript(sess, limit=30, tail=False):
 
 
 def _sessions(args, run_id):
-    """JAG-350: read-only view of OTHER sessions — the coordinator's missing eye.
+    """Inspect, message and await responses from another session.
 
     The Master could delegate a subjob to a teammate but had NO tool to look at
     that teammate's chat: no DISCOVERY (which session is 'coder 1'?) and no clean
     transcript (raw `data/sessions/*.json` is unusable in context). So "understand
-    why coder 1 is failing and help it" was impossible. This tool closes both
-    gaps: `action=list` maps sessions to agent names, `action=read` renders the
-    full transcript (messages + tool calls + harness injections).
+    why coder 1 is failing and help it" was impossible. `action=send` is
+    asynchronous; the sender can continue other work. `action=wait` returns the
+    peer's assistant reply after its current turn finishes. `action=read` can
+    inspect the live transcript while the peer is working.
     """
     from longrun.core import server
     action = str(args.get("action", "list") or "list").strip().lower()
+    if action == "wait":
+        message_id = str(args.get("message_id") or "").strip()
+        if not message_id:
+            return {"ok": False, "exit_code": 64, "error": "message_id required for action=wait",
+                    "backend": "host", "sandboxed": False}
+        with _SESSION_SENDS_LOCK:
+            rec = _SESSION_SENDS.get(message_id)
+        if not rec:
+            return {"ok": False, "exit_code": 1,
+                    "error": "no pending session message: %s" % message_id,
+                    "backend": "host", "sandboxed": False}
+        try:
+            timeout = float(args.get("timeout_secs", 180))
+        except (TypeError, ValueError):
+            timeout = 180.0
+        timeout = max(0.0, min(timeout, 900.0))
+        deadline = time.monotonic() + timeout
+        while True:
+            sess = server.load_session(rec["session"]) or {}
+            msgs = sess.get("messages") or []
+            with server._ACTIVE_CHAT_LOCK:
+                active = server._ACTIVE_CHAT.get(rec["session"])
+                active_token = (active or {}).get("tok")
+            if active_token is not None:
+                rec["observed_active"] = True
+                if rec.get("active_token") is None:
+                    rec["active_token"] = active_token
+            tail = msgs[int(rec.get("before_messages") or 0):]
+            replies = [str(m.get("content") or "").strip() for m in tail
+                       if m.get("role") == "assistant" and str(m.get("content") or "").strip()]
+            turn_finished = (
+                bool(rec.get("active_token")) and active_token is None
+            ) or (
+                rec.get("active_token") is not None
+                and active_token is not rec.get("active_token")
+                and active_token is None
+            )
+            # A very fast idle turn may begin and finish between polls. Its
+            # persisted assistant response is the durable completion evidence.
+            completed = turn_finished or (active_token is None and bool(replies))
+            if rec.get("state") == "done":
+                completed = True
+            if completed:
+                rec["state"] = "done"
+                rec["ended"] = rec.get("ended") or time.time()
+                reply = replies[-1] if replies else ""
+                rec["reply"] = reply
+                with _SESSION_SENDS_LOCK:
+                    _SESSION_SENDS[message_id] = rec
+                return {"ok": True, "exit_code": 0, "state": "done",
+                        "message_id": message_id, "session": rec["session"],
+                        "reply": reply,
+                        "stdout": ("peer completed; response follows:\n" + reply
+                                   if reply else "peer completed without a final text reply"),
+                        "backend": "host", "sandboxed": False}
+            if time.monotonic() >= deadline:
+                return {"ok": True, "exit_code": 0, "state": "running",
+                        "message_id": message_id, "session": rec["session"],
+                        "stdout": ("peer is still working. Continue your own work, inspect "
+                                   "with sessions.read, then call sessions.wait again with "
+                                   "this message_id."),
+                        "backend": "host", "sandboxed": False}
+            time.sleep(0.25)
     if action in ("send", "message", "tell", "ask"):
-        # JAG-532: sessions may TALK to each other. A running peer receives the
-        # message inside its current turn (the same steer inbox the operator uses);
-        # an idle peer gets a real server-side turn through the Orchestrator, so the
-        # message is not queued forever. The reply is read back with action=read.
+        # JAG-532/534: send never waits. A running peer gets a steer; an idle
+        # peer gets a real server-side turn. `sessions.wait` is a separate call,
+        # so the sender can continue other work while the peer responds.
         target = str(args.get("session") or args.get("to") or "").strip()
         text = str(args.get("message") or args.get("text") or "").strip()
         if not target or not text:
@@ -1366,27 +1435,59 @@ def _sessions(args, run_id):
             return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
                     "error": "refusing to send a message to the calling session",
                     "backend": "host", "sandboxed": False}
-        payload = ("[message from session %s]\n%s" % (run_id or "unknown", text))
-        if target in getattr(server, "_ACTIVE_CHAT", {}):
+        message_id = "%s:%d:%s" % (target, time.time_ns(), os.urandom(4).hex())
+        rec = {"message_id": message_id, "session": target,
+               "from_session": run_id or "unknown", "before_messages":
+                   len(server.load_session(target).get("messages") or []),
+               "state": "running", "created": time.time()}
+        with server._ACTIVE_CHAT_LOCK:
+            active_info = server._ACTIVE_CHAT.get(target)
+        if active_info:
+            rec["active_token"] = active_info.get("tok")
+            rec["observed_active"] = True
+        payload = ("[message from session %s]\n%s\n\n"
+                   "Reply to this message in your next assistant response. "
+                   "The sender can inspect this chat with sessions.read and wait "
+                   "for your turn with sessions.wait."
+                   % (run_id or "unknown", text))
+        if active_info:
             from longrun.util import steering
             depth = steering.push_steer(target, payload)
+            rec["mode"] = "steer"
+            rec["queue_depth"] = depth
+        else:
+            from longrun.orbit import api as orbit_api
+            res = orbit_api.dispatch_message(target, payload)
+            if not res.get("ok"):
+                return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
+                        "error": res.get("error") or "dispatch failed",
+                        "backend": "host", "sandboxed": False}
+            job = (res.get("jobs") or [{}])[0]
+            rec["mode"] = "turn"
+            rec["job"] = job.get("job")
+        with _SESSION_SENDS_LOCK:
+            _SESSION_SENDS[message_id] = rec
+            if len(_SESSION_SENDS) > _SESSION_SENDS_KEEP:
+                oldest = sorted(_SESSION_SENDS, key=lambda mid: _SESSION_SENDS[mid].get("created", 0))
+                for old_id in oldest:
+                    if len(_SESSION_SENDS) <= _SESSION_SENDS_KEEP:
+                        break
+                    if _SESSION_SENDS[old_id].get("state") == "done":
+                        _SESSION_SENDS.pop(old_id, None)
+        if rec["mode"] == "steer":
             return {"ok": True, "exit_code": 0, "session": target, "mode": "steer",
-                    "stdout": ("delivered into the peer's RUNNING turn (queue depth %d); "
-                               "read the reply with action=read session=%s"
-                               % (depth, target)),
+                    "message_id": message_id,
+                    "stdout": ("delivered into the peer's RUNNING turn (queue depth %d). "
+                               "Continue your work; call sessions.wait with message_id=%s "
+                               "to receive its final reply, or sessions.read to inspect "
+                               "the live transcript." % (rec["queue_depth"], message_id)),
                     "stderr": "", "backend": "host", "sandboxed": False}
-        from longrun.orbit.orchestrator import Orchestrator
-        res = Orchestrator().dispatch([target], payload, mode="chat")
-        if not res.get("ok"):
-            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
-                    "error": res.get("error") or "dispatch failed",
-                    "backend": "host", "sandboxed": False}
-        job = (res.get("jobs") or [{}])[0]
         return {"ok": True, "exit_code": 0, "session": target, "mode": "turn",
-                "job": job.get("job"),
-                "stdout": ("peer was idle: started a server-side turn (%s). Read the "
-                           "reply with action=read session=%s (action=list shows "
-                           "RUNNING while it works)." % (job.get("job"), target)),
+                "job": rec.get("job"), "message_id": message_id,
+                "stdout": ("peer was idle: started a server-side turn (%s). Continue "
+                           "your work; call sessions.wait with message_id=%s to receive "
+                           "the reply, or sessions.read to inspect the live transcript."
+                           % (rec.get("job"), message_id)),
                 "stderr": "", "backend": "host", "sandboxed": False}
     if action in ("read", "get", "show", "transcript"):
         sid = str(args.get("session") or args.get("id") or "").strip()
@@ -1407,7 +1508,8 @@ def _sessions(args, run_id):
         limit = max(1, min(limit, 400))
         text = _render_transcript(sess, limit=limit, tail=bool(args.get("tail")))
         return {"ok": True, "exit_code": 0, "stdout": text, "stderr": "",
-                "session": sid, "backend": "host", "sandboxed": False}
+                "session": sid, "running": sid in getattr(server, "_ACTIVE_CHAT", {}),
+                "backend": "host", "sandboxed": False}
     # action=list — every session, annotated with its agent name when it has one
     try:
         from longrun.agent import agents as agents_mod

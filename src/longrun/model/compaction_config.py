@@ -45,6 +45,7 @@ _DEFAULTS = {
     "summarizer": {
         "input_max_chars": 40000,
         "output_max_chars": 6000,
+        "max_parts": 24,
         "instruction": (
             "Compress the OLDER turns above into the smallest faithful summary "
             "possible. TARGET: ~10x compression of the input. KEEP (one line "
@@ -230,7 +231,8 @@ def save(trigger_pct=None, target_pct=None, keep_recent=None, patch=None):
     summ = merged.get("summarizer")
     if isinstance(summ, dict):
         for k, lo, hi in (("input_max_chars", 1000, 1000000),
-                          ("output_max_chars", 200, 100000)):
+                          ("output_max_chars", 200, 100000),
+                          ("max_parts", 1, 64)):
             if k in summ:
                 try:
                     n = int(summ[k])

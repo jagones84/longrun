@@ -98,8 +98,28 @@ check("A1 every config leaf is a form field or a documented dedicated panel",
 check("A2 the audit actually walked the config store", checked >= 25, checked)
 _ids = {s["id"] for s in settings._sections()}
 check("A3 the six structured sections exist",
-      {"index", "compaction_summarizer", "routing", "decisions",
+      {"index", "compaction", "routing", "decisions",
        "hooks", "mcp_env"} <= _ids, sorted(_ids))
+_compact_form = next((s for s in settings._sections() if s["id"] == "compaction"), {})
+_compact_paths = {f["path"] for f in _compact_form.get("fields", [])}
+check("A5 one Compaction form owns auto policy and summarizer settings",
+      _compact_form.get("panel") == "compaction"
+      and {"trigger_pct", "target_pct", "keep_recent",
+           "summarizer.input_max_chars", "summarizer.output_max_chars",
+           "summarizer.max_parts", "summarizer.instruction"} <= _compact_paths
+      and "compaction.yaml" not in settings.DEDICATED,
+      (_compact_form.get("panel"), sorted(_compact_paths),
+       settings.DEDICATED.get("compaction.yaml")))
+_compact_view = next((s for s in settings.view()["sections"]
+                      if s.get("id") == "compaction"), {})
+check("A6 the Compaction module exposes clickable editor paths for its files",
+      "config/compaction.yaml" in (_compact_view.get("files") or [])
+      and (("config/compaction.local.yaml" in (_compact_view.get("files") or []))
+           == os.path.isfile(os.path.join(settings.CONFIG_DIR, "compaction.local.yaml")))
+      and "config/compaction.yaml" in _read("webui/index.html")
+      and 'data-config-file="' in _read("webui/index.html")
+      and "openInEditor(link.dataset.configFile" in _read("webui/index.html"),
+      _compact_view.get("files"))
 _routing_form = next((s for s in settings._sections() if s["id"] == "routing"), {})
 check("A4 Models routing leaves subagent model and fallbacks to the Subagents panel",
       any(f["path"].startswith("roles.") for f in _routing_form.get("fields", []))
@@ -198,6 +218,7 @@ check("D6 the dedicated panels are listed, not duplicated",
 
 # ---- E) the Config panel is a backup; every form lives in its own panel -----
 _panels = {"harness", "hooks", "tools", "models", "subagents", "mcp", "knowledge"}
+_panels.add("compaction")
 check("E1 every structured section declares a real home panel",
       all(s.get("panel") in _panels for s in settings._sections()),
       sorted({s.get("panel") for s in settings._sections()}))
@@ -210,6 +231,13 @@ check("E3 the WebUI routes each form to its declared panel",
       "_settingsSectionHost" in UI and "sec.panel" in UI)
 check("E4 Settings ▸ Config is marked DO NOT REMOVE! ITS BACKUP",
       "DO NOT REMOVE! ITS BACKUP" in UI)
+check("E5 the Context rail has no duplicate auto-compact controls",
+      "cmpTrigger" not in UI and "cmpPolicyCard" not in UI
+      and "loadCompactionPolicy" not in UI and "saveCompactionPolicy" not in UI
+      and 'data-call="openSettings" data-args=\'["compaction"]\'' in UI)
+check("E6 Info credits the maintainer's GitHub identity",
+      "Giovanni J. Agones (@jagones84)" in UI
+      and "https://github.com/jagones84" in UI)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

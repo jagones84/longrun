@@ -393,32 +393,6 @@
   .ctxstate.near { color: var(--warn); }
   .ctxstate.over { color: var(--err); }
   .ctxrow { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--dim); }
-  /* JAG-495: the auto-compact policy editor. Three numeric fields sit on ONE line as
-     a fixed 3-column grid (each label ABOVE its box), instead of the old wrapping row
-     of wide inputs with the label glued to the LEFT of each box. No save button: a
-     `change` saves automatically (data-change). */
-  #cmpPolicyCard { padding: 10px 12px; }
-  .cmp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-  .cmp-title { font-size: 10px; font-weight: 600; letter-spacing: .07em;
-    text-transform: uppercase; color: var(--dim); }
-  .cmp-src { font-size: 10px; color: var(--dim); opacity: .75; min-width: 0;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cmp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px; margin-top: 8px; }
-  .cmp-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; cursor: pointer; }
-  .cmp-lbl { font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cmp-num { width: 100%; min-width: 0; background: var(--panel2); border: 1px solid var(--line);
-    color: var(--txt); border-radius: 8px; padding: 6px 4px; font: inherit; font-size: 13px;
-    font-variant-numeric: tabular-nums; text-align: center; outline: none;
-    transition: border-color .15s, box-shadow .15s; }
-  .cmp-num:hover { border-color: var(--acc); }
-  .cmp-num:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,140,255,.12); }
-  .cmp-num.bad { border-color: var(--err); box-shadow: 0 0 0 3px rgba(248,113,113,.14); }
-  .cmp-msg { font-size: 10.5px; margin-top: 7px; min-height: 0; color: var(--dim); }
-  .cmp-msg:empty { display: none; }
-  .cmp-msg.ok { color: var(--ok); }
-  .cmp-msg.err { color: var(--err); }
   /* JAG-267: Context-panel category breakdown (session-scoped).
      JAG-269: clickable items (open in the editor) + a per-category token meter. */
   .ctxmeter { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px;
@@ -1775,27 +1749,8 @@
           <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
         </div>
         <button id="compactBtn" title="summarize this session's transcript now to free up context">🗜 Compact context</button>
-        <div class="card" id="cmpPolicyCard">
-          <div class="cmp-head">
-            <span class="cmp-title">auto-compact policy</span>
-            <span id="cmpPolicySrc" class="cmp-src"></span>
-          </div>
-          <div class="cmp-grid">
-            <label class="cmp-field" title="auto-compact when the prompt reaches this share of the model budget">
-              <span class="cmp-lbl">trigger %</span>
-              <input id="cmpTrigger" class="cmp-num" type="number" min="1" max="100" step="1" inputmode="numeric"
-                     data-change="saveCompactionPolicy"></label>
-            <label class="cmp-field" title="the prompt must land at or below this share after an auto-compaction">
-              <span class="cmp-lbl">target %</span>
-              <input id="cmpTarget" class="cmp-num" type="number" min="0" max="99" step="1" inputmode="numeric"
-                     data-change="saveCompactionPolicy"></label>
-            <label class="cmp-field" title="how many newest MESSAGES stay verbatim (a user+assistant turn is 2)">
-              <span class="cmp-lbl">keep</span>
-              <input id="cmpKeep" class="cmp-num" type="number" min="1" max="50" step="1" inputmode="numeric"
-                     data-change="saveCompactionPolicy"></label>
-          </div>
-          <div class="cmp-msg" id="cmpPolicyMsg" role="status" aria-live="polite"></div>
-        </div>
+        <button class="ghost u-mt6" data-call="openSettings" data-args='["compaction"]'
+                title="open the shared automatic and manual compaction policy">⚙ Compaction settings</button>
         <div id="ctxCats"></div>
         </div>
       </section>
@@ -2406,6 +2361,11 @@
           <div id="kbCandidates" class="u-mt6"></div>
         </div>
         </div><!-- /data-insp=knowledge -->
+      </div>
+      <div class="sw-cat" data-cat="compaction" hidden>
+        <h2>Compaction · shared policy</h2>
+        <div class="remaining u-mb8">Automatic and manual compaction use the same global policy. The summarizer reads the full old transcript in bounded parts; this is not session-specific. Click a config filename to open it in the editor.</div>
+        <div class="setFormsHost"></div>
       </div>
       <div class="sw-cat" data-cat="appearance" hidden>
         <h2>Theme</h2>
@@ -5203,7 +5163,6 @@ async function saveRuleSource(kind) {
 }
 
 async function loadCtx() {
-  loadCompactionPolicy();   // JAG-487: the editable policy works with or without a session
   if (!sessionId) { ctxNa("no session"); loadCtxItems(); return; }
   const sid = sessionId;   // JAG-214: guard against an out-of-order response
   loadCtxItems();          // JAG-267: keep the category breakdown in sync
@@ -5694,6 +5653,7 @@ function _settingsSectionHost(panel) {
         "the subagent model/fallback lives in Settings ▸ Subagents.",
       subagents: "Model + fallback for subagents are set above; everything else here is " +
         "the rest of config/subagents.yaml.",
+      compaction: "Automatic and manual compaction share this one global policy and overlay.",
     };
     if (NOTE[panel]) {
       const n = document.createElement("div");
@@ -5759,8 +5719,12 @@ function _setSectionEl(sec) {
   const card = document.createElement("div");
   card.className = "card"; card.style.marginBottom = "10px";
   card.dataset.file = sec.file; card.dataset.sid = sec.id;
+  const files = (sec.files && sec.files.length) ? sec.files : ["config/" + sec.file];
+  const fileLinks = files.map(path =>
+    '<a href="#" class="filelink" data-config-file="' + esc(path) +
+    '" title="open ' + esc(path) + ' in the editor">' + esc(path) + "</a>").join(" · ");
   card.innerHTML = '<div style="font-weight:600;margin-bottom:2px">' + esc(sec.title) +
-    ' <span class="remaining">· ' + esc(sec.file) + '</span></div>' +
+    ' <span class="remaining">· ' + fileLinks + '</span></div>' +
     (sec.help ? '<div class="remaining" style="margin-bottom:8px">' + esc(sec.help) + '</div>' : "") +
     '<div class="hrow" data-fields></div>' +
     '<button class="ghost config-save" data-save disabled style="margin-top:8px">save ' + esc(sec.id) + '</button>' +
@@ -5769,6 +5733,12 @@ function _setSectionEl(sec) {
   (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));
   card._savedValues = JSON.stringify(_setSectionValues(card, sec));
   card._saving = false;
+  card.addEventListener("click", e => {
+    const link = e.target instanceof Element ? e.target.closest("[data-config-file]") : null;
+    if (!link) return;
+    e.preventDefault();
+    openInEditor(link.dataset.configFile, { mode: "code" });
+  });
   card.addEventListener("input", () => _syncSectionDirty(card, sec));
   card.addEventListener("change", () => _syncSectionDirty(card, sec));
   card.addEventListener("click", e => {
@@ -5902,60 +5872,6 @@ async function saveSettingsSection(card, sec) {
     card._saving = false;
     _syncSectionDirty(card, sec);
   }
-}
-let _policyLoadedAt = 0;
-async function loadCompactionPolicy(force) {
-  if (!force && Date.now() - _policyLoadedAt < 15000) return;
-  try {
-    const p = await api("GET", "/api/compaction/policy");
-    if (!p || p.error) return;
-    _policyLoadedAt = Date.now();
-    const set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = v; };
-    set("cmpTrigger", Math.round(p.trigger_pct));
-    set("cmpTarget", Math.round(p.target_pct));
-    set("cmpKeep", p.keep_recent);
-    ["cmpTrigger", "cmpTarget", "cmpKeep"].forEach((id) => { const e = $(id); if (e) e.classList.remove("bad"); });
-    const src = $("cmpPolicySrc");
-    if (src) {
-      // JAG-514: the panel NAMED the file that supplies the policy but gave no way
-      // to open it. Link the file that is actually in force (the WebUI overlay when
-      // it exists, else the shipped config) straight into the editor.
-      const f = p.local_exists ? (p.local || p.source) : p.source;
-      const label = "(config/" + String(f || "").split("/").pop() + ")";
-      src.innerHTML = "";
-      if (f) {
-        const a = document.createElement("a");
-        a.href = "#"; a.className = "filelink"; a.textContent = label;
-        a.title = "open " + f + " in the editor";
-        a.onclick = (e) => { e.preventDefault(); openInEditor(f, { mode: "code" }); };
-        src.appendChild(a);
-      } else {
-        src.textContent = label;
-      }
-    }
-  } catch (e) { /* the panel is informational — never break the chat */ }
-}
-/* JAG-495: auto-saved from the three number inputs (data-change) — no Save button.
-   Invalid values mark the offending box red and are NOT written. */
-async function saveCompactionPolicy() {
-  const tr = $("cmpTrigger"), tg = $("cmpTarget"), kp = $("cmpKeep"), msg = $("cmpPolicyMsg");
-  const t = parseFloat((tr || {}).value), g = parseFloat((tg || {}).value);
-  const k = parseInt((kp || {}).value, 10);
-  const mark = (el, ok) => { if (el) el.classList.toggle("bad", !ok); };
-  const okT = t > 0 && t <= 100, okG = g >= 0 && g < t, okK = k >= 1 && k <= 50;
-  mark(tr, okT); mark(tg, okG); mark(kp, okK);
-  const say = (text, kind) => { if (msg) { msg.className = "cmp-msg " + (kind || ""); msg.textContent = text; } };
-  if (!(okT && okG && okK)) {
-    say("invalid — need 0 < trigger \u2264 100, 0 \u2264 target < trigger, 1 \u2264 keep \u2264 50", "err");
-    return;
-  }
-  const r = await api("POST", "/api/compaction/policy",
-                      {trigger_pct: t, target_pct: g, keep_recent: k});
-  if (r && r.error) { say("error: " + r.error, "err"); return; }
-  say("\u2713 auto-saved \u2014 fires at " + Math.round(t) + "% \u2192 lands \u2264 " +
-      Math.round(g) + "% (no restart)", "ok");
-  loadCompactionPolicy(true);
-  loadCtx();
 }
 async function compactNow() {
   if (!sessionId) { alert("no active session"); return; }
@@ -8028,9 +7944,11 @@ function renderSelf(el, d) {
   pick("name", "name"); pick("version", "version"); pick("repo_path", "repo"); pick("data_dir", "data");
   pick("router", "router"); pick("port", "port");
   if (d.service && d.service.restart_cmd) rows.push(["restart", d.service.restart_cmd]);
-  if (!rows.length) { json_pre(el, d); return; }
   el.innerHTML = rows.map(([l, v]) =>
-    `<div class="remaining" style="margin-bottom:6px"><b>${l}</b><br><code style="word-break:break-all">${String(v).replace(/</g, "&lt;")}</code></div>`).join("");
+    `<div class="remaining" style="margin-bottom:6px"><b>${esc(l)}</b><br><code style="word-break:break-all">${esc(v)}</code></div>`).join("") +
+    '<div class="remaining" style="margin-top:10px"><b>Author</b><br>' +
+    '<a href="https://github.com/jagones84" target="_blank" rel="noopener noreferrer">' +
+    'Giovanni J. Agones (@jagones84)</a></div>';
 }
 
 function renderProviders(el, d) {
@@ -9048,6 +8966,7 @@ const SETTINGS_CATS = [
   ["subagents", "Subagents"], ["tools", "Tools & approvals"], ["sandbox", "Sandbox"],
   ["mcp", "MCP"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
+  ["compaction", "Compaction"],
   ["improvement", "Improvements"], ["diagnostics", "Diagnostics"],
   ["hooks", "Hooks"],
   ["harness", "Harness"], ["config", "Config files"], ["info", "\u24D8 Info"],
