@@ -2076,26 +2076,35 @@ def normalize_args(tool: str, args: Any) -> Any:
     return normalized
 
 
-def _missing_required(tool: str, args: Any) -> list[str]:
-    """Required argument names absent from the schema-level object."""
+def _required_names(tool: str, args: Any) -> list[str]:
+    """Required argument names for THIS call.
+
+    JAG-530: a schema may declare ``required_waived_by`` (e.g. `shell` requires
+    `command` for action=run but not for the actions that execute nothing), so a
+    flat `required` list is honoured only when the request does not waive it.
+    """
     try:
         from longrun.tools import registry
         schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
-        required = list(schema.get("required") or [])
     except Exception:  # noqa: BLE001 — validation must never block a call
         return []
+    got = args if isinstance(args, dict) else {}
+    for key, waived in (schema.get("required_waived_by") or {}).items():
+        if key in got and got[key] in (waived or []):
+            return []
+    return list(schema.get("required") or [])
+
+
+def _missing_required(tool: str, args: Any) -> list[str]:
+    """Required argument names absent from the schema-level object."""
+    required = _required_names(tool, args)
     got = args if isinstance(args, dict) else {}
     return [key for key in required if key not in got or got[key] is None]
 
 
 def _empty_required(tool: str, args: Any) -> list[str]:
     """Required string arguments supplied as empty or whitespace-only values."""
-    try:
-        from longrun.tools import registry
-        schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
-        required = list(schema.get("required") or [])
-    except Exception:  # noqa: BLE001 — validation must never block a call
-        return []
+    required = _required_names(tool, args)
     got = args if isinstance(args, dict) else {}
     return [key for key in required if isinstance(got.get(key), str)
             and not got[key].strip()]

@@ -86,12 +86,20 @@ tools._shell_terminal = lambda sid, cwd: None
 # --- A: the schema advertises cwd --------------------------------------------
 _props = registry.TOOL_SCHEMAS["shell"]["properties"]
 check("A1 the shell schema advertises cwd", "cwd" in _props, str(sorted(_props)))
-check("A2 `command` is declared but not globally required (action=read|reset need none)",
+check("A2 `command` is declared required for action=run and waived for read|reset",
       "command" in _props
-      and registry.TOOL_SCHEMAS["shell"]["required"] == [],
-      str(registry.TOOL_SCHEMAS["shell"]["required"]))
+      and registry.TOOL_SCHEMAS["shell"]["required"] == ["command"]
+      and registry.TOOL_SCHEMAS["shell"].get("required_waived_by") == {
+          "action": ["read", "reset"]},
+      str(registry.TOOL_SCHEMAS["shell"].get("required")))
 check("A2b action=run with no command is still refused at runtime",
       tools._shell({"action": "run"}, "r0").get("ok") is False)
+check("A2c the validator enforces command for a run and waives it for a read",
+      tools._missing_required("shell", {}) == ["command"]
+      and tools._missing_required("shell", {"action": "read"}) == []
+      and tools._missing_required("shell", {"action": "reset"}) == [],
+      str((tools._missing_required("shell", {}),
+           tools._missing_required("shell", {"action": "read"}))))
 
 # --- B: an explicit cwd reaches the sandbox ----------------------------------
 b = wsdir("B")

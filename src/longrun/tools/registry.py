@@ -89,9 +89,12 @@ _LEGACY_SCHEMAS = {
                                     "against the session workspace, mirroring "
                                     "shell.rs implementation")},
         },
-        # JAG-2.9: `command` is required only for action=run (read/reset take none);
-        # the runtime refuses an empty command for a real run.
-        "required": [],
+        # JAG-530: `command` IS required for action=run (the default), so it stays
+        # declared — that is what makes the model supply it and what lets the
+        # validator name it when it is missing. The actions that execute nothing
+        # (read/reset) waive it, declared below instead of hidden in code.
+        "required": ["command"],
+        "required_waived_by": {"action": ["read", "reset"]},
         "subject": "command",
     },
     "fs.read": {
