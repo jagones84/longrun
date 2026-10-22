@@ -49,6 +49,20 @@ def read(session_id):
             return ""
 
 
+def _announce(session_id, action):
+    """Tell the UI that a ROLE.md changed (JAG-532).
+
+    The role is part of the prompt STACK shown in the Sessions inspector, so a
+    write made by another surface (Orbit, the CLI, an agent) must repaint it —
+    otherwise the panel keeps showing the previous role until F5.
+    """
+    try:
+        from longrun.core.events import publish
+        publish("roles.update", session=session_id, action=action)
+    except Exception:  # noqa: BLE001 — an event must never block a write
+        pass
+
+
 def write(session_id, text):
     """Set a session's role. An empty text clears it (file removed)."""
     if not session_id:
@@ -63,12 +77,14 @@ def write(session_id, text):
                 os.remove(p)
             except OSError:
                 pass
+            _announce(session_id, "cleared")
             return {"ok": True, "session": session_id, "cleared": True, "path": p}
         os.makedirs(roles_dir(), exist_ok=True)
         tmp = "%s.%s.tmp" % (p, os.getpid())
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(text)
         os.replace(tmp, p)
+        _announce(session_id, "saved")
         return {"ok": True, "session": session_id, "path": p,
                 "bytes": len(text.encode("utf-8"))}
 
@@ -81,6 +97,7 @@ def delete(session_id):
         p = path_for(session_id)
         try:
             os.remove(p)
+            _announce(session_id, "deleted")
             return {"ok": True, "deleted": True, "path": p}
         except OSError:
             return {"ok": True, "deleted": False, "path": p}

@@ -30,6 +30,13 @@ def _load():
 
 def _save(d):
     write_json(ROUTINES_FILE, d)
+    # JAG-532: the only writer of the routines file also announces the change, so
+    # Orbit and any other view follow the EVENT instead of polling a stale list.
+    try:
+        from longrun.core.events import publish
+        publish("routines.updated", routines=len(d.get("routines") or {}))
+    except Exception:  # noqa: BLE001 — an event must never block a write
+        pass
 
 
 def _run_agent(session_id, goal, model=None):

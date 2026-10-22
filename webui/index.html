@@ -1859,7 +1859,7 @@
         <h2>Settings · config files <span class="remaining">— backup surface: the real controls live in their own panels</span></h2>
         <div id="setForms"><div class="remaining">loading…</div></div>
         <div class="card" id="setDedicated"></div>
-        <h2>Advanced · raw YAML <span class="remaining">— DO NOT REMOVE! ITS BACKUP (the complete fallback)</span></h2>
+        <h2>Advanced · raw YAML <span class="remaining">— the complete fallback: every key is editable here</span></h2>
         <div class="card">
           <div class="hrow">
             <label title="A top-level YAML file under config/">file <select id="cfgFileName" onchange="loadConfigFile()"></select></label>
@@ -2310,7 +2310,7 @@
         </details>
         <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
         <div class="card">
-          <div class="remaining u-m006"><b>Manual sources for the selected notebook.</b> Chat attachments are automatically indexed in their own session notebook; you do not need to add them again here. Raw files stay in <code>data/attachments/&lt;session&gt;/</code>. Extracted chunks and optional vectors live in the single SQLite RAG database at <code>data/knowledge/knowledge.db</code>; global and session notebooks are separate scopes in that database. URLs are fetched; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs). Text is searchable lexically; vectors are added only when an embedding model is configured.</div>
+          <div class="remaining u-m006"><b>Manual sources for the selected notebook.</b> Chat attachments are indexed automatically in their own session notebook; you do not need to add them again here. URLs are fetched; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs). Text is searchable lexically; vectors are added only when an embedding model is configured.</div>
           <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
           <div class="u-df u-g6 u-mt6 u-fww">
             <button class="ghost" data-call="kbAddSource">+ add + index</button>
@@ -7305,6 +7305,37 @@ function _rebuildOnFeedDone(sid) {
    LIVE event and a REPLAYED backlog event after a reconnect, so a disconnect no
    longer silently drops graph/todo updates — the reason the Plan panel and chat rows
    kept a stale `doing`/status and only corrected themselves after a manual reload. */
+/* JAG-532: every MUTATING event re-reads the panel it invalidates. The WebUI, a CLI
+   batch and an agent all write through the SAME layer-2 routes, so a panel must
+   follow the EVENT — not the click that happened to cause it — or the other writers
+   leave it stale until F5. One table, used by BOTH the replay dispatcher and the
+   live EventSource subscriptions, so a kind can never be half-wired. */
+const _FEED_REFRESH = {
+  "mcp.clients": () => loadMcpClients(),
+  "skills.install": () => loadSkills(),
+  "skills.remove": () => loadSkills(),
+  "memory.forget": () => loadMemories(),
+  "memory.purge": () => loadMemories(),
+  "tools.update": () => loadRuntime(),
+  "edits.recorded": () => loadEdits(),
+  "edits.undone": () => loadEdits(),
+  "edits.approved": () => loadEdits(),
+  "knowledge.docs": () => loadIndexCfg(),
+  "workspace.update": () => loadIndexCfg(),
+  "graph.reset": () => { loadPlan(); loadGraph(); },
+  "graph.plan_dropped": () => loadPlan(),
+  "subagent.start": () => loadPlan(),
+  "subagent.done": () => loadPlan(),
+  "sj.created": () => loadPlan(),
+  "sj.running": () => loadPlan(),
+  "sj.subjob.start": () => loadPlan(),
+  "sj.subjob.done": () => loadPlan(),
+  "sj.done": () => loadPlan(),
+  "session.updated": () => { loadSessions(); loadAgents(); loadSettingsForms(); },
+  "session.cleared": () => { loadSessions(); if (sessionId) loadHistory(); },
+  "teams.updated": () => loadAgents(),
+  "roles.update": () => { loadRulesPanel(); loadSessions(); }
+};
 function _feedReplay(ev) {
   const kind = ev && ev.kind, d = ev || {};
   if (!kind) return;
@@ -7335,6 +7366,10 @@ function _feedReplay(ev) {
   if (kind === "session.created" || kind === "session.deleted" || kind === "session.renamed") loadSessions();
   // JAG-2.8: agent metadata changes (reports_to, role, etc.) must re-sort the rail
   if (kind === "agent.updated" || kind === "agent.released") loadSessions();
+  // JAG-532: every other MUTATING event re-reads the panel it invalidates (see the
+  // table above). Addressed through ONE table so live and replayed events agree.
+  const _hit = _FEED_REFRESH[kind];
+  if (_hit) { try { _hit(); } catch (e) {} }
 }
 /* JAG-465: after a feed gap the DURABLE stores are the truth — re-read them so the
    UI cannot stay stale until the operator hits reload. */
@@ -7350,6 +7385,15 @@ function connectFeed() {
   ["config.saved", "providers.update", "rules.update", "settings.changed",
    "settings.diagnostic"].forEach(kind =>
     es.addEventListener(kind, scheduleDiagnosticsRefresh));
+  // JAG-532: subscribe to EVERY kind in the refresh table. The feed sends named SSE
+  // events, so an unregistered kind is silently dropped no matter what
+  // _feedReplay knows how to do with it.
+  Object.keys(_FEED_REFRESH).forEach(kind =>
+    es.addEventListener(kind, e => {
+      let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+      d.kind = kind;
+      _feedReplay(d);
+    }));
   const push = line => {
     const f = $("feed"); const d = document.createElement("div");
     d.textContent = line; f.appendChild(d); f.scrollTop = f.scrollHeight;
@@ -7476,9 +7520,9 @@ function connectFeed() {
     const bits = [d.tool, (d.exit_code != null ? "exit=" + d.exit_code : ""), (d.backend ? "backend=" + d.backend : ""), (d.ok === false ? "FAILED" : "")].filter(Boolean);
     push("🛠 " + bits.join(" ")); });
   es.addEventListener("tool.blocked", e => { const d = JSON.parse(e.data); push("⛔ blocked " + d.tool + ": " + (d.reason || "").slice(0, 50)); });
-  // JAG-128B finalfix: la publish del tool `improve` NON porta `session`, quindi
-  // il fan-out raggiunge SOLO gli abbonati a /api/feed. La card va agganciata QUI,
-  // altrimenti resta irraggiungibile (il listener della chat non la vede mai).
+  // JAG-128B finalfix: the `improve` tool's publish carries NO `session`, so the
+  // fan-out reaches ONLY /api/feed subscribers. The card must be wired HERE, or it
+  // stays unreachable (the chat listener never sees it).
   es.addEventListener("improve.proposal", e => { const d = JSON.parse(e.data); if (!d.session || d.session === sessionId) improveCard(d); loadImprovement(); });
   // JAG-449: the nudge no longer prints a chat bubble — the operator could not ACT
   // on it there ("I can't do anything with that"). It is a global artifact view,

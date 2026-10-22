@@ -493,6 +493,7 @@ def _set_session_model(sid, model):
         return None
     ref = str(model or "")[:120]
     sess = load_session(sid)
+    _prev = (sess or {}).get("model") if sess is not None else None
     if sess is not None:
         sess["model"] = ref
         save_session(sess)
@@ -502,6 +503,12 @@ def _set_session_model(sid, model):
             agents_mod.REGISTRY.designate(sid, model=ref)
     except Exception:  # noqa: BLE001 — the agent layer is optional for a session
         pass
+    # JAG-532: this is the single writer for the session model, so it is also the
+    # single place that must TELL the UI — a model set by Orbit, the composer or the
+    # CLI used to leave the other surface showing the previous one until F5. Only a
+    # REAL change is announced, so the startup reconcile stays silent.
+    if str(_prev or "") != ref:
+        publish("session.updated", session=sid, model=ref)
     return ref
 
 

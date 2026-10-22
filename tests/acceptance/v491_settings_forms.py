@@ -229,8 +229,9 @@ check("E2 view() exposes the panel for every section",
       all(sec.get("panel") for sec in settings.view()["sections"]))
 check("E3 the WebUI routes each form to its declared panel",
       "_settingsSectionHost" in UI and "sec.panel" in UI)
-check("E4 Settings ▸ Config is marked DO NOT REMOVE! ITS BACKUP",
-      "DO NOT REMOVE! ITS BACKUP" in UI)
+check("E4 Settings ▸ Config keeps the raw-YAML fallback, stated plainly",
+      "— the complete fallback: every key is editable here" in UI
+      and "DO NOT REMOVE! ITS BACKUP (the complete fallback)" not in UI)
 check("E5 the Context rail has no duplicate auto-compact controls",
       "cmpTrigger" not in UI and "cmpPolicyCard" not in UI
       and "loadCompactionPolicy" not in UI and "saveCompactionPolicy" not in UI

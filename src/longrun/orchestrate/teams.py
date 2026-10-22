@@ -129,6 +129,21 @@ def _load():
 
 def _save(d):
     write_json(TEAMS_FILE, d)
+    _announce(d)
+
+
+def _announce(d):
+    """Tell the UI that the team registry changed (JAG-532).
+
+    `_save` is the ONLY writer of the team file, so it is also the only place that
+    has to announce a change: the WebUI, Orbit, the CLI and an agent all end up
+    here, and no view can stay stale waiting for a click that will not come.
+    """
+    try:
+        from longrun.core.events import publish
+        publish("teams.updated", teams=len(d.get("teams") or {}))
+    except Exception:  # noqa: BLE001 — an event must never block a write
+        pass
 
 
 class TeamRegistry:
