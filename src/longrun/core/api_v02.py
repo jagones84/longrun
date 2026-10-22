@@ -300,6 +300,8 @@ AGENT_PROMPT_V2 = (
     'object, always with a "thought" field. Actions:\n'
     '  {"action":"todo.write","todos":[{"label":"...","deps":[]}]}\n'
     '  {"action":"tool","tool":"<name>","args":{...}}   run a registered tool\n'
+    '  {"action":"batch","calls":[{...},{...}]}   run INDEPENDENT calls in '
+    "parallel (each item is a full action: a tool call or a subagent)\n"
     '  {"action":"plan_step","title":"...","detail":"..."}\n'
     '  {"action":"complete_plan_step","id":"..."}\n'
     '  {"action":"add_task","title":"..."}\n'
@@ -370,6 +372,17 @@ def tool_context():
         "`args` object.",
         '  {"action":"tool","tool":"fs.read","args":{"path":"src/foo.py",'
         '"start_line":1,"end_line":60}}',
+        "One call per turn is the default. When several calls are INDEPENDENT "
+        "(none needs another's output), you MAY issue them together and the "
+        "harness runs them CONCURRENTLY:",
+        '  {"action":"batch","calls":[{"tool":"fs.read","args":{"path":"a.py"}},'
+        '{"tool":"fs.read","args":{"path":"b.py"}}]}',
+        "Each item of `calls` is a FULL action — a tool call, or "
+        '{"action":"subagent","goal":"..."}. At most `runtime.max_parallel_tools` '
+        "tools run at once (config/tools.yaml); subagents are capped by "
+        "`max_parallel` (config/subagents.yaml). Never batch calls that must run "
+        "in a specific order, and never batch an approval-gated mutation with a "
+        "read that depends on it.",
         "Enabled tools, grouped by namespace (name{s sub-tools}):",
     ]
     for ns in sorted(groups):
@@ -1864,7 +1877,7 @@ def _update_policy(body):
     if isinstance(body.get("runtime"), dict):
         cfg.setdefault("runtime", {})
         for k in ("keepgoing_max", "no_progress_rounds", "max_wall_secs",
-                  "subagent_max_depth"):
+                  "subagent_max_depth", "max_parallel_tools"):
             if k in body["runtime"] and body["runtime"][k] is not None:
                 cfg["runtime"][k] = int(body["runtime"][k])
         # JAG-431r4: `autocontinue` is a BOOL consumed by plan/keepgoing.py but was

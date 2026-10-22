@@ -53,6 +53,11 @@ runtime:
   no_progress_rounds: 2     # giri senza progresso prima dello stop 'no_progress'
   max_wall_secs: 3600       # tetto di tempo per run
   subagent_max_depth: 2     # profondita' massima della matrioska
+  # JAG-533: how many TOOL calls of one `batch` action the agent may run at the
+  # same time (0 or negative = 1). The `batch` action lets the model issue
+  # several INDEPENDENT calls in one turn instead of one per turn. The matching
+  # cap for parallel SUBAGENTS is `max_parallel` in config/subagents.yaml.
+  max_parallel_tools: 4
 
 # ---- verifier "apply-only-if-green" (JAG-131) -------------------------------
 # Quando attivo, dopo OGNI fs.write/fs.edit l'harness esegue `command` nella

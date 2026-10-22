@@ -1391,6 +1391,188 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
         return "dispatch error: %s" % e
 
 
+# ---------------------------------------------------------------- JAG-533 ----
+# Parallel execution of INDEPENDENT calls. Both the tool loop and the subagent
+# path used to process exactly ONE call per turn, so N independent reads (or N
+# delegated subtasks) cost N turns. The model may now emit
+#   {"action":"batch","calls":[<action>, <action>, ...]}
+# and the harness runs the items CONCURRENTLY. Two GLOBAL caps bound it, both
+# editable from Settings and stored in config/:
+#   * runtime.max_parallel_tools (config/tools.yaml)       — tool calls at once
+#   * max_parallel               (config/subagents.yaml)   — subagents at once
+def _runtime_int(key, default):
+    """Read `runtime.<key>` from config/tools.yaml (hot-reload; never raises)."""
+    try:
+        from longrun.tools import registry
+        rt = (registry.load_config() or {}).get("runtime") or {}
+        return int(rt.get(key, default))
+    except Exception:  # noqa: BLE001 — a bad config must never break a turn
+        return default
+
+
+def _parallel_tool_cap():
+    """How many tool calls of one `batch` action run at once (always >= 1)."""
+    n = _runtime_int("max_parallel_tools", 4)
+    return n if n > 0 else 1
+
+
+def _parallel_subagent_cap():
+    """How many subagents run at once (config/subagents.yaml `max_parallel`)."""
+    try:
+        from longrun.agent import subagent as _sub
+        n = int((_sub.load_cfg() or {}).get("max_parallel") or 0)
+    except Exception:  # noqa: BLE001
+        n = 4
+    return n if n > 0 else 1
+
+
+def _batch_items(act):
+    """The full-action dicts carried by a `batch` action (JAG-533)."""
+    if not isinstance(act, dict):
+        return []
+    raw = None
+    for k in ("calls", "tool_calls", "batch", "parallel"):
+        v = act.get(k)
+        if isinstance(v, list):
+            raw = v
+            break
+    return [c for c in (raw or []) if isinstance(c, dict)]
+
+
+def _spawn_batch_subagent(sess, act, on_event):
+    """Spawn ONE subagent item of a batch; return its id or None (JAG-533)."""
+    try:
+        from longrun.agent import subagent as _sub
+        _args = act.get("args") if isinstance(act.get("args"), dict) else {}
+        goal = str(act.get("goal") or _args.get("goal") or act.get("detail")
+                   or "").strip()
+        if not goal:
+            on_event("tool.result", session=sess["id"], tool="subagent", ok=False,
+                     backend="harness", exit_code=1,
+                     summary="subagent: goal required")
+            return None
+        try:
+            max_steps = int(act.get("max_steps", _args.get("max_steps", 4)))
+        except (TypeError, ValueError):
+            max_steps = 4
+        model = act.get("model") or _args.get("model") or None
+        role = str(act.get("role") or _args.get("role") or "").strip() or None
+        on_event("tool.call", session=sess["id"], tool="subagent",
+                 args={"goal": goal, "max_steps": max_steps, "model": model,
+                       "role": role}, inline=True)
+        spawned = _sub.spawn(goal, parent_run_id=sess["id"], max_steps=max_steps,
+                             model=model, depth=_sub.depth_of(sess["id"]) + 1,
+                             role=role) or {}
+        sid = spawned.get("subagent_id")
+        if not sid:
+            on_event("tool.result", session=sess["id"], tool="subagent", ok=False,
+                     backend="harness", exit_code=1,
+                     summary="subagent: "
+                             + str(spawned.get("error") or "spawn failed"))
+            return None
+        return sid
+    except Exception as e:  # noqa: BLE001 — one item must not sink the batch
+        try:
+            on_event("tool.result", session=sess["id"], tool="subagent", ok=False,
+                     backend="harness", exit_code=1,
+                     summary="subagent: %s" % str(e)[:200])
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
+def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
+    """Run the INDEPENDENT calls of a `batch` action concurrently (JAG-533).
+
+    Tool calls share a thread pool sized by `runtime.max_parallel_tools`;
+    subagent items are spawned + collected in WAVES of `max_parallel` (the spawn
+    cap is also enforced inside `subagent.spawn`). One tool.call/tool.result pair
+    and one persisted card are emitted per item, in the model's order, and the
+    combined observation is fed back as the next step. A batch of fewer than two
+    items is NOT handled here — the loop routes it through the single-call path.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _one_tool(it):
+        tc = _chat_tool_call(it, av02)
+        if not tc:
+            return {"tool": str(it.get("tool") or it.get("action") or "?"),
+                    "ok": False,
+                    "obs": "batch item is not a valid tool call: %s"
+                           % json.dumps(it, ensure_ascii=False, default=str)[:200]}
+        tool, args = tc
+        on_event("tool.call", session=sess["id"], tool=tool, args=args, inline=True)
+        try:
+            res = av02.gated_call(tool, args, run_id=sess["id"],
+                                  timeout=CHAT_APPROVAL_WAIT,
+                                  workspace=_chat_workspace(sess),
+                                  obs_max=CHAT_OBS_FULL)
+        except Exception as e:  # noqa: BLE001
+            return {"tool": tool, "ok": False,
+                    "obs": "tool %s raised: %s" % (tool, str(e)[:200])}
+        status = res.get("status")
+        sub = res.get("result") or {}
+        ok = status == "executed" and sub.get("ok") is not False
+        obs = res.get("observation") or res.get("error") or str(status)
+        obs = str(obs)[:4000]
+        on_event("tool.result", session=sess["id"], tool=tool, ok=ok, args=args,
+                 output=obs, summary="%s: %s" % (tool, "ok" if ok else (status or "error")))
+        try:
+            persist_tool_card(sess, tool, ok, args=args, result=obs,
+                              exit_code=0 if ok else 1, node=node, after=after)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"tool": tool, "ok": ok, "obs": obs}
+
+    tool_items = [it for it in _batch_items(act)
+                  if str(it.get("action") or "") != "subagent" and not it.get("goal")]
+    sub_items = [it for it in _batch_items(act)
+                 if str(it.get("action") or "") == "subagent" or it.get("goal")]
+    results = []
+    if tool_items:
+        with ThreadPoolExecutor(max_workers=_parallel_tool_cap()) as pool:
+            results.extend(list(pool.map(_one_tool, tool_items)))
+    if sub_items:
+        from longrun.agent import subagent as _sub
+        cap = _parallel_subagent_cap()
+        for i in range(0, len(sub_items), cap):
+            wave = sub_items[i:i + cap]
+            for it in wave:
+                sid = _spawn_batch_subagent(sess, it, on_event)
+                if not sid:
+                    results.append({"tool": "subagent", "ok": False,
+                                    "obs": "subagent did not start (see the card)."})
+                    continue
+                try:
+                    res = _sub.collect(sid, timeout=SUBAGENT_WAIT) or {}
+                except Exception as e:  # noqa: BLE001
+                    res = {"ok": False, "error": str(e)[:200]}
+                ok = bool(res.get("ok"))
+                out = (str(res.get("summary") or "").strip()
+                       or json.dumps(res, ensure_ascii=False, default=str)[:1500])
+                out = out[:4000]
+                on_event("tool.result", session=sess["id"], tool="subagent", ok=ok,
+                         exit_code=0 if ok else 1, backend="subagent",
+                         args={"subagent_id": sid}, output=out,
+                         summary="subagent %s: %s" % (sid, "done" if ok else "error"))
+                try:
+                    persist_tool_card(sess, "subagent", ok,
+                                      args={"subagent_id": sid}, result=out,
+                                      exit_code=0 if ok else 1, backend="subagent",
+                                      node=node, after=after)
+                except Exception:  # noqa: BLE001
+                    pass
+                results.append({"tool": "subagent", "ok": ok, "obs": out})
+    lines = ["Batch of %d call(s) ran concurrently (tools: %d, subagents: %d)."
+             % (len(tool_items) + len(sub_items), len(tool_items), len(sub_items))]
+    for r in results:
+        lines.append("\n### %s %s\n%s"
+                     % (r.get("tool"), "OK" if r.get("ok") else "FAILED",
+                        r.get("obs") or ""))
+    lines.append("\nContinue: call the next tool, delegate, or report the result.")
+    return "\n".join(lines)
+
+
 # JAG-93: post-turn reflection -> one append-only lesson in the memory store
 # (self-improvement). A reflection must never break a turn: everything here is
 # guarded and bounded, and a per-session cooldown keeps short bursts from
@@ -1753,6 +1935,7 @@ _TODO_ACTION_ALIASES = {
 }
 
 _HARNESS_ACTION_NAMES = ("todo.write", "todo.update", "todo.replan", "subagent",
+                         "batch",
                          "plan_step", "complete_plan_step", "add_task",
                          "complete_task", "note", "finish") + tuple(_TODO_ACTION_ALIASES)
 
@@ -1801,7 +1984,7 @@ def _normalize_action(act):
             inner = dict(act.get("args") or {})
             inner["action"] = _TODO_ACTION_ALIASES.get(name, name)
             for k in ("thought", "note", "todos", "steps", "goal", "detail",
-                      "model", "max_steps"):
+                      "model", "max_steps", "calls", "tool_calls"):
                 if k in act and k not in inner:
                     inner[k] = act[k]
             return inner
@@ -2620,6 +2803,34 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                     "observation")
             continue
+        _batch = _batch_items(act) if isinstance(act, dict) else []
+        if isinstance(act, dict) and act.get("action") == "batch" and _batch:
+            # JAG-533: several INDEPENDENT calls in one turn, run concurrently.
+            if len(_batch) < 2:
+                # A one-item batch is just a normal call: route it through the
+                # single-call path below (keeps the JAG-183 repeat guard).
+                act = dict(_batch[0], thought=act.get("thought"))
+            elif plan_only:
+                msgs.append({"role": "assistant", "content": answer})
+                _inject("SYSTEM (harness) — PLAN-ONLY turn: batching calls is not "
+                        "allowed while planning. Record the plan and stop.", "nudge")
+                work_steps += 1
+                _total_work_steps += 1
+                continue
+            else:
+                work_steps += 1
+                _total_work_steps += 1
+                used_tools.append("batch")
+                _th = str(act.get("thought") or "").strip()
+                if _th:
+                    _think_buf["t"] += _th + "\n"
+                    on_delta("think", _th + "\n")
+                obs = _apply_chat_batch(sess, act, on_event, api_v02,
+                                        node=_cur_node(), after=_after())
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(obs + "\n\nContinue: call the next tool, or report the result.",
+                        "observation")
+                continue
         tc = _chat_tool_call(act, api_v02) if tool_ctx else None
         if tc:
             # JAG-127b: surface the model's own `thought` for this step as a

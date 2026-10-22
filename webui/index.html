@@ -777,16 +777,6 @@
     min-height: 0; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
     background: transparent; color: var(--txt); font-size: 12px; font-weight: 500; }
   #moreMenu .mi:hover { background: var(--hover); }
-  /* JAG-415: topbar app menu — settings / bridge / sandbox moved off the bar itself
-     into a single tidy "☰" so the header reads as one clean row. */
-  .appmenu-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
-  #appMenu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 216px;
-    padding: 4px; z-index: 60; background: var(--menubg); }
-  #appMenu .amline { padding: 6px 10px 8px; }
-  #appMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-    padding: 8px 10px; border: 0; border-radius: 8px; background: transparent;
-    color: var(--txt); font-size: 12px; font-weight: 500; }
-  #appMenu .mi:hover { background: var(--hover); }
   /* JAG-416: top-level section tabs (Session / Control) — a segmented control, the
      primary navigation. Session = this app; Control = the agent control deck. */
   .topTabs { display: inline-flex; align-items: center; gap: 2px; padding: 3px;
@@ -1575,12 +1565,9 @@
   <button class="ghost" id="settingsBtn" title="settings" data-call="toggleSettings">⚙</button>
   <button class="ghost diag-badge" id="settingsDiagBadge" data-call="openSettings"
           data-args='["diagnostics"]' aria-label="settings diagnostics" title="configuration diagnostics" hidden></button>
-  <div class="appmenu-wrap">
-    <button class="ghost" id="appmenuBtn" title="more — command palette" aria-haspopup="true" aria-expanded="false">☰</button>
-    <div id="appMenu" class="card" hidden>
-      <button class="ghost mi" id="palette-open" title="command palette (Cmd/Ctrl+K)">⌘K command palette</button>
-    </div>
-  </div>
+  <!-- JAG-533: the command palette is a DIRECT button — the top-right "☰" app
+       menu that used to hold it was a wrapper around a single item. -->
+  <button class="ghost" id="palette-open" title="command palette (Cmd/Ctrl+K)" aria-label="command palette">⌘K</button>
 </header>
 <div id="controlView" aria-hidden="true"><iframe id="controlFrame" title="Control deck"></iframe></div>
 <button class="edge-handle" id="handle-left" type="button"
@@ -1808,6 +1795,7 @@
             <label title="After how many consecutive rounds without progress the agent stops (0 = never).">rounds without progress <input id="rtNoProg" type="number" min="0" value="2"></label>
             <label title="Maximum time for the whole run, in seconds (0 = no limit).">time limit (s) <input id="rtWall" type="number" min="0" value="3600"></label>
             <label title="How many levels of sub-agents an agent may spawn (0 = none). Same key as Subagents ▸ Limits (config/tools.yaml ▸ runtime.subagent_max_depth) — one value, two places to reach it.">sub-agent levels <input id="rtDepth" type="number" min="0" value="2"></label>
+            <label title="How many INDEPENDENT tool calls of one batch action run at the same time (0 = 1). The agent emits a batch action to parallelize work; the parallel-subagent cap is in Subagents. Same key as config/tools.yaml ▸ runtime.max_parallel_tools.">parallel tools <input id="rtParallel" type="number" min="0" value="4"></label>
             <label title="If enabled the harness keeps going on its own until the todos are closed, then asks you. If disabled, as soon as steps remain open it hands over to the human (HUMAN IN THE LOOP).">autocontinue <input id="rtAuto" type="checkbox" checked></label>
           </div>
           <button class="ghost config-save" data-call="saveRuntime" disabled title="no changes to save">save runtime</button>
@@ -2261,10 +2249,10 @@
         <div class="card">
           <div class="sub-limits">
             <label title="Maximum nesting depth of subagents (0 = none).">Max depth<input class="inp" id="subDepth" type="number" min="0" value="2"></label>
-            <label title="Maximum subagents running at once across the harness (0 = no cap).">Max parallel<input class="inp" id="subParallel" type="number" min="0" value="4"></label>
+            <label title="Maximum subagents running at once across the harness (0 = no cap). A batch action may spawn several subagents; they run in waves of this size.">Max parallel agents<input class="inp" id="subParallel" type="number" min="0" value="4"></label>
             <label title="Subagents currently running.">Running<input class="inp" id="subRunning" type="number" readonly></label>
           </div>
-          <div class="remaining u-mt4">depth writes <code>config/tools.yaml</code> ▸ runtime.subagent_max_depth · parallel writes <code>config/subagents.yaml</code>.</div>
+          <div class="remaining u-mt4">depth writes <code>config/tools.yaml</code> ▸ runtime.subagent_max_depth · parallel agents write <code>config/subagents.yaml</code> ▸ max_parallel · parallel tools write <code>config/tools.yaml</code> ▸ runtime.max_parallel_tools.</div>
         </div>
         <h2>Role briefs <span class="remaining">— the standing instruction a delegation can attach</span></h2>
         <!-- JAG-511: the "add role" bar sat BELOW a list that can grow long, so after
@@ -8480,6 +8468,7 @@ async function loadRuntime() {
   if ($("rtNoProg")) $("rtNoProg").value = r.no_progress_rounds ?? 2;
   if ($("rtWall")) $("rtWall").value = r.max_wall_secs ?? 3600;
   if ($("rtDepth")) $("rtDepth").value = r.subagent_max_depth ?? 2;
+  if ($("rtParallel")) $("rtParallel").value = r.max_parallel_tools ?? 4;
   if ($("rtAuto")) $("rtAuto").checked = (r.autocontinue !== false);   // JAG-171
   if ($("rtKgMax")) gateEnroll($("rtKgMax").closest(".card"));   // JAG-496
 }
@@ -8489,6 +8478,7 @@ async function saveRuntime() {
     no_progress_rounds: numField("rtNoProg", 2),
     max_wall_secs: numField("rtWall", 3600),
     subagent_max_depth: numField("rtDepth", 2),
+    max_parallel_tools: numField("rtParallel", 4),
     autocontinue: !!(($("rtAuto") || {}).checked),   // JAG-171
   }});
   who("ai", "✅ runtime updated");
@@ -11050,14 +11040,6 @@ window.addEventListener("DOMContentLoaded", () => { if (location.hash === "#cont
 window.addEventListener("hashchange", () => {
   if (location.hash === "#control") showControl(); else showSessions();
 });
-/* JAG-415: topbar "☰" app menu (settings · bridge · sandbox). */
-(function () {
-  const btn = $("appmenuBtn"), menu = $("appMenu");
-  if (!btn || !menu) return;
-  btn.onclick = (e) => { e.stopPropagation(); const open = menu.hidden; menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
-  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".appmenu-wrap")) menu.hidden = true; });
-})();
-
 /* ---- v0.8.1 resizable columns + panel toggles ---- */
 /* JAG-361: the centre column's floor, in CSS px. A side panel may never grow so
    far that the chat drops below this. */
