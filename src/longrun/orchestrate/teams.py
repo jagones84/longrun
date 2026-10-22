@@ -36,6 +36,19 @@ _PALETTE = [
 ]
 
 
+def symbol_for_name(name):
+    """JAG-2.9: pick an icon+colour FROM THE PALETTE based on the TEAM NAME.
+
+    Deterministic (same name -> same icon on every machine and every run) and
+    independent of creation order, so two boards that create the same team in a
+    different sequence still agree. An explicit symbol always wins.
+    """
+    import hashlib
+    key = str(name or "").strip().lower().encode("utf-8")
+    h = hashlib.sha1(key).hexdigest()
+    return _PALETTE[int(h[:8], 16) % len(_PALETTE)]
+
+
 # JAG-343: model policy. A team may use at most `LOCAL_SLOTS` LOCAL model per machine
 # (dgx / win / any provider with `local: true`); everyone else runs a cheap cloud model,
 # and the LEADS / coordinator get the strongest cheap cloud.
@@ -161,7 +174,8 @@ class TeamRegistry:
                 return {"ok": False, "error": "team name already in use: %s" % nm}
             d["seq"] += 1
             n = d["seq"]
-            sym, col = _PALETTE[(n - 1) % len(_PALETTE)]
+            # JAG-2.9: the icon is derived from the NAME (stable), not the sequence.
+            sym, col = symbol_for_name(nm)
             t = {"id": "T%d" % n, "n": n, "name": nm,
                  "symbol": str(symbol or sym)[:8], "color": str(color or col)[:16],
                  "description": str(description or "")[:400],

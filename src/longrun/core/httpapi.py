@@ -2652,6 +2652,15 @@ def main():
         routines.start_scheduler()  # JAG-287 D: agents wake on a cadence
     except Exception:  # noqa: BLE001 — the heartbeat scheduler is optional
         pass
+    # JAG-2.9: automatic background codebase indexing for the default workspace, so
+    # the first `index` search of a session finds a WARM index instead of paying the
+    # walk. Same incremental builder, just off the request path.
+    try:
+        from longrun.memory import autoidx as _autoidx
+        from longrun.memory import rules as _rules
+        _autoidx.start(_rules.get_workspace())
+    except Exception:  # noqa: BLE001 — indexing is best-effort
+        pass
     print("Longrun v%s on http://%s:%d  (router: %s)" % (
         VERSION, args.host, args.port, ROUTER_BASE), flush=True)
     if args.host == "0.0.0.0":

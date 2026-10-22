@@ -2787,6 +2787,12 @@ def workspace_set(body):
         _publish("workspace.update", session=sid, workspace=real, ok=True)
         return {"ok": True, "scope": "session", "session": sid, "workspace": real}
     res = _RULES.set_workspace(real)
+    # JAG-2.9: a new DEFAULT workspace must get the automatic background index too.
+    try:
+        from longrun.memory import autoidx as _autoidx
+        _autoidx.start(real)
+    except Exception:  # noqa: BLE001 — indexing is best-effort
+        pass
     _publish("workspace.update", workspace=real, ok=bool(res.get("ok")))
     return dict(res, scope="default")
 

@@ -25,6 +25,11 @@ DEFAULT_CONFIG = {
     # a second agent — several agents on one workspace simply serialize on the
     # build lock, and the refresh is cheap when nothing changed.
     "auto_index": True,
+    # JAG-2.9: seconds between background automatic re-index passes (see
+    # memory/autoidx.py). Bounded to 10..60s at runtime; the pass is INCREMENTAL and
+    # a no-op when nothing changed, so the default keeps the index warm for search
+    # without ever walking the tree on the request path.
+    "auto_index_interval_s": 10,
     # JAG-403j: binary documents (PDF/DOCX/…) may be much larger than code files.
     "doc_max_kb": 25600,
     # JAG-490: the KNOWLEDGE base has its own size cap + ignore globs. The code

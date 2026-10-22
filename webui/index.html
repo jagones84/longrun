@@ -2059,8 +2059,8 @@
             <button class="ghost" data-call="cbClear" title="delete this workspace's codebase index">clear</button>
           </div>
           <label class="remaining u-df u-g6 u-aic u-mt8"
-                 title="Before an agent searches this workspace, run a quick INCREMENTAL re-index and make the agent WAIT for it — so it never queries a stale or half-built index. Safe with several agents on one workspace.">
-            <input type="checkbox" id="cbAutoIndex"> auto-index before an agent searches</label>
+                 title="Automatic background indexing (like an IDE): the workspace index is built and kept UP TO DATE off the request path, so an agent's search is instant. Off = index only when you press build. The pre-search refresh still runs on top of this.">
+            <input type="checkbox" id="cbAutoIndex"> automatic indexing (background)</label>
           <div id="cbFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
         </div>
         <h2>Search codebase</h2>
@@ -9808,13 +9808,15 @@ async function cbClear() {
   if (typeof confirmDelete === "function" && !(await confirmDelete("delete THIS workspace's codebase index?"))) return;
   try { await api("POST", "/api/codebase/clear", { session: sessionId || undefined }); cbStatus(); } catch (e) {}
 }
-/* JAG-415: the "auto-index before an agent searches" flag (shared index config). */
+/* JAG-415 + JAG-2.9: automatic indexing — a background pass keeps the workspace
+   index warm (memory/autoidx.py), and a quick incremental refresh still runs right
+   before an agent searches so it never reads a stale or half-built index. */
 async function loadIndexCfg() {
   try { const c = await api("GET", "/api/index/config"); const cfg = (c && c.config) || c || {}; const el = $("cbAutoIndex"); if (el) el.checked = cfg.auto_index !== false; } catch (e) {}
 }
 { const el = $("cbAutoIndex"); if (el) el.onchange = async () => {
     const r = await api("POST", "/api/index/config", { auto_index: el.checked });
-    if (typeof toast === "function") toast("auto-index " + ((r && r.auto_index) ? "on" : "off"), "ok");
+    if (typeof toast === "function") toast("automatic indexing " + ((r && r.auto_index) ? "on" : "off"), "ok");
   }; }
 
 /* ---- JAG-403: EMBEDDING model catalogue + cost log ---- */
