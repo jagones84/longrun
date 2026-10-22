@@ -149,6 +149,11 @@
   .grp-h .caret{color:var(--dim)}
   .grp-h .gc{color:var(--dim);font-size:11px;font-weight:400}
   .aid{font-family:ui-monospace,monospace;color:var(--acc2);font-size:11px}
+  /* JAG-2.9: the A-id is the row's selection handle — flat, focusable, obvious on hover */
+  .aidbtn{font-family:ui-monospace,monospace;color:var(--acc2);font-size:11px;background:none;
+    border:1px solid transparent;border-radius:6px;padding:1px 5px;cursor:pointer}
+  .aidbtn:hover{border-color:var(--acc);background:var(--hover)}
+  .aidbtn:focus-visible{outline:1px solid var(--acc);outline-offset:1px}
   .rl{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 7px;white-space:nowrap}
   .dotr{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc2);box-shadow:0 0 6px currentColor;margin-left:5px;vertical-align:middle}
   /* org chart */
@@ -584,7 +589,9 @@ class AgentsView {
     // JAG-2.3: the team currently scoping the board ("ALL", a team id, "__none__").
     // groupsOf needs it to keep the SELECTED team visible even when it is empty.
     this.scope = "ALL";
-    this._seen = new Set(); this.focusSid = null; }
+    this._seen = new Set(); this.focusSid = null;
+    // JAG-2.9: set by OrbitApp — mirrors a row selection into the org chart node.
+    this.onHighlight = null; }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams, roster, pool){
     if (tree) this.agents = tree.agents || [];
@@ -645,6 +652,7 @@ class AgentsView {
     }
     this.focusSid = sid;
     this.render();
+    if (this.onHighlight) this.onHighlight(sid);   // JAG-2.9: same node stays selected
   }
   _applyFocus(){
     const sid = this.focusSid; if (!sid) return;
@@ -678,8 +686,10 @@ class AgentsView {
     const ropts = '<option value="">— none —</option>' +
       roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.name || x.id) + ' · ' + esc(x.id) + '</option>').join("");
     // JAG-2.4: a plain session has no agent id yet — show a dash that says so.
-    const idCell = a.id ? esc(a.id)
-      : '<span class="muted" title="plain session — not designated as an agent yet; editing or assigning this row designates it">—</span>';
+    // JAG-2.9: the id is a button: clicking it selects the agent (row + org node).
+    const idCell = a.id
+      ? '<button class="aidbtn" data-org="1" title="select this agent in the table and the organigram">' + esc(a.id) + '</button>'
+      : '<span class="muted" data-org="1" style="cursor:pointer" title="plain session — not designated as an agent yet; click to select it, or edit the row to designate it">—</span>';
     const open = this.open === a.session;
     const run = this.running.has(a.session) ? '<span class="dotr" title="running"></span>' : "";
     // JAG-2.8: a VOID prompt (no ROLE.md) is a real state, not a cosmetic one — such
@@ -710,6 +720,13 @@ class AgentsView {
   }
   bind(){
     const body = $("agBody");
+    // JAG-2.9: the A-id is the row's handle — click it to select this agent in BOTH
+    // the table (persistent .rowsel) and the org chart node (.sel, survives polling).
+    body.querySelectorAll("tr[data-sid] td.aid [data-org]").forEach(el => { el.onclick = (ev) => {
+      ev.stopPropagation();
+      const tr = el.closest("tr");
+      if (tr) this.focusAgent(tr.dataset.sid);
+    }; });
     // JAG-2.1: collapsible group header rows inside the SAME table.
     body.querySelectorAll("tr.grp-head .grp-h").forEach(h => {
       const toggleGroup = () => {
@@ -1058,8 +1075,25 @@ class AgentsView {
 class OrgChartView {
   constructor(onPick, onGoTo){ this.onPick = onPick; this.onGoTo = onGoTo; this.bySid = {};
     this.box = $("orgtree"); this.canvas = null; this.k = 1; this.tx = 0; this.ty = 0;
+    this.selSid = null;   // JAG-2.9: the selected node SURVIVES the 5s re-render
     this.auto = true;   // true while in "fit" mode; a manual zoom/pan turns it off
     this._sig = null; this.drag = null; this._bindControls(); }
+  /* JAG-2.9: select one node by session id and remember it, so a poll re-render
+     repaints the same node as .sel instead of silently dropping the highlight. */
+  selectNode(sid){
+    this.selSid = sid || null;
+    if (!this.box) return;
+    let hit = null;
+    this.box.querySelectorAll(".node").forEach(x => {
+      const on = !!sid && x.dataset.sid === sid;
+      x.classList.toggle("sel", on);
+      if (on) hit = x;
+    });
+    // JAG-2.9: bring the node into view when the selection arrives from OUTSIDE
+    // (session menu / A-id click) — an off-screen highlight is not a selection.
+    if (hit) { try { hit.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); }
+               catch (_) { try { hit.scrollIntoView(); } catch (_) {} } }
+  }
   /* JAG-342-zoom: fit / zoom / pan on a transform-scaled inner canvas. */
   _bindControls(){
     const box = this.box;
@@ -1240,8 +1274,11 @@ class OrgChartView {
     box.innerHTML = '<div class="orgcanvas" style="width:' + cw + 'px;height:' + ch + 'px">' +
       '<svg class="orgsvg" width="' + cw + '" height="' + ch + '">' + links + '</svg>' + nodes + '</div>';
     this.canvas = box.firstElementChild;
+    // JAG-2.9: repaint the remembered selection after every rebuild (5s poll).
+    if (this.selSid) box.querySelectorAll(".node").forEach(x =>
+      x.classList.toggle("sel", x.dataset.sid === this.selSid));
     box.querySelectorAll(".node").forEach(n => { n.onclick = () => {
-      box.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x === n));
+      this.selectNode(n.dataset.sid);
       // JAG-403h: single click ONLY previews the constellation — no jumping the
       // AGENTS table around (that scroll was pointless and disorienting).
       if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);
@@ -1250,7 +1287,7 @@ class OrgChartView {
     // JAG-403f: right-click = quick actions. All of them reuse EXISTING stores
     // and endpoints (no third synced data entry is created).
     n.oncontextmenu = (ev) => { ev.preventDefault();
-      box.querySelectorAll(".node").forEach(x => x.classList.toggle("sel", x === n));
+      this.selectNode(n.dataset.sid);
       this.menu(ev, this.bySid[n.dataset.sid]); };
     });
     // JAG-342-zoom: re-fit only when the tree shape (or its wrap width) changed; a 5s
@@ -1810,6 +1847,9 @@ class OrbitApp {
     this.teams = [];
     this.tac = new Constellation(this.api);
     this.org = new OrgChartView((a) => { this.tac.open(a, "agent"); if (this.agents && a) this.agents.focusAgent(a.session); }, (a) => this.tac.gotoAgent(a));
+    // JAG-2.9: picking a row's A-id selects the matching node in the organigram, and
+    // the selection is REMEMBERED (org.selSid) so the 5s poll cannot drop it.
+    this.agents.onHighlight = (sid) => { try { this.org.selectNode(sid); } catch (_) {} };
     if (window.ResizeObserver) new ResizeObserver(() => { try { if (this.org.auto) this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.routines = new RoutinesView(this.api, () => this.refresh());
@@ -1872,6 +1912,14 @@ class OrbitApp {
   openAgent(aid){
     const a = (this.lastAgents || []).find(x => x.id === aid);
     if (a) this.tac.gotoAgent(a);
+  }
+  /* JAG-2.9: select ONE session everywhere it is visible — the AGENTS row (persistent
+     .rowsel, its team group revealed and scrolled into view) and the org chart node
+     (.sel, remembered across the 5s poll). Used by the Sessions rail menu. */
+  focusAgentSession(sid){
+    if (!sid || !this.agents) return;
+    this.agents.focusAgent(sid);
+    if (this.org) this.org.selectNode(sid);
   }
   async refresh(){
     const [tree, jobs, routines, models, sess, tms] = await Promise.all([
@@ -2051,8 +2099,15 @@ function focusConstellationNode(id, tries){
 window.addEventListener("message", (e) => {
   const d = e.data || {};
   if (d && d.type === "longrun-focus-node") focusConstellationNode(d.id);
+  // JAG-2.9: the Sessions rail's "Show in organigram" hands us a session id —
+  // select that agent in the AGENTS table AND in the org chart, and keep it.
+  if (d && d.type === "longrun-focus-agent" && window.__orbitApp) {
+    try { window.__orbitApp.focusAgentSession(d.session); } catch (_) {}
+  }
 });
-window.addEventListener("DOMContentLoaded", () => { new OrbitApp().start(); initPanels(); });
+window.addEventListener("DOMContentLoaded", () => {
+  window.__orbitApp = new OrbitApp(); window.__orbitApp.start(); initPanels();
+});
 </script>
 <script>async function clearOrbitSession(sid){if(!sid)return;var t=localStorage.getItem('sf_token')||'';var h=t?{Authorization:'Bearer '+t}:{};try{await fetch('/api/sessions/'+encodeURIComponent(sid)+'/clear',{method:'POST',headers:h});}catch(e){}location.reload();}</script></body>
 </html>

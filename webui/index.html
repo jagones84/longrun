@@ -4416,12 +4416,13 @@ async function openSessMenu(row, s, ag) {
   const m = document.createElement("div");
   m.className = "sess-menu";
   const pinned = _pinned().includes(s.id);
-  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="role">Edit role (ROLE.md)</button><button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button><button data-a="del" class="danger">Delete session</button>`;
+  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="org">⬢ Show in organigram</button><button data-a="role">Edit role (ROLE.md)</button><button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button><button data-a="del" class="danger">Delete session</button>`;
   row.appendChild(m);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
     if (a === "pin") { _togglePin(s.id); }
+    if (a === "org") { closeSessMenu(); _showAgentInOrganigram(s.id); return; }
     if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
     if (a === "role") { let rp = null, rt = ""; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; rt = (r && r.text) || ""; } catch (e) {} if (!rp || !rt) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
     if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
@@ -6207,6 +6208,24 @@ function _showInConstellation(n) {
       }
     } catch (e) {}
     if (++n2 >= 10) clearInterval(iv);
+  }, 350);
+}
+/* JAG-2.9: the Sessions rail's "Show in organigram" — open the Control deck and
+   hand the iframe a session id. The deck selects that agent's row AND its org-chart
+   node, and REMEMBERS the selection across its 5s polling refresh. */
+function _showAgentInOrganigram(sid) {
+  if (!sid) return;
+  showControl();
+  const f = document.getElementById("controlFrame");
+  let n = 0;
+  const iv = setInterval(() => {
+    try {
+      if (f && f.contentWindow && f.contentDocument
+          && f.contentDocument.readyState === "complete") {
+        f.contentWindow.postMessage({ type: "longrun-focus-agent", session: sid }, "*");
+      }
+    } catch (e) {}
+    if (++n >= 10) clearInterval(iv);
   }, 350);
 }
 /* JAG-431r10: the "◇ constellation" button target — the task the RH panel last
