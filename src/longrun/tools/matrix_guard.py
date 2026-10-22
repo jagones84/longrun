@@ -15,6 +15,9 @@ COMMAND TEXT, so it was a spelling check rather than a boundary:
   * C5 a `SRC/LONGRUN/...` spelling slipped past the case-sensitive compare;
   * C6 the snapshot covered only 131 files (no `deploy/`, `tests/`, `.trae/`);
   * C7 the gate was skipped entirely when `cwd` sat outside the repository.
+C1, C2, C4, C5 and C7 are fixed IN the write-target gate below. C3 and C6
+belonged to the snapshot/restore machinery, which was REMOVED entirely (see the
+paragraph below): with nothing reverting, there is no creation sweep to fool.
 The gate judges the write TARGETS (with `cd` tracking) and fails CLOSED on a
 target it cannot resolve. NOTHING is ever reverted: enforcement is deny-only,
 by operator decision — a post-hoc whole-tree diff cannot attribute a change to
