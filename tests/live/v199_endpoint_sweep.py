@@ -16,7 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-ENV = os.path.expanduser("~/.config/longrun/env")
+ENV = os.path.expanduser("~/.longrun/config/env")
 TOK = ""
 try:
     for line in open(ENV):

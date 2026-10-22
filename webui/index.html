@@ -6546,9 +6546,9 @@ async function loadHome() {
   const h = d.home || {}, m = d.move || {};
   box.innerHTML = "";
   const rows = [
-    ["data home", h.home], ["source", h.source],
+    ["data home", h.home], ["source", h.source], ["settings", h.config_dir],
     ["data dir", h.data_dir], ["workspaces", h.workspaces_dir],
-    ["self-evolution", h.matrix_dir]
+    ["project state", h.projects_dir], ["self-evolution", h.matrix_dir]
   ];
   rows.forEach(([k, v]) => {
     const line = document.createElement("div");

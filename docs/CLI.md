@@ -12,14 +12,14 @@ the UI, its endpoint is reachable from here.
 ```bash
 cd /home/jagones/Repositories/longrun
 export LONGRUN_URL=http://127.0.0.1:8790          # default already
-export LONGRUN_TOKEN=$(grep '^LONGRUN_TOKEN=' ~/.config/longrun/env | cut -d= -f2)
+export LONGRUN_TOKEN=$(grep '^LONGRUN_TOKEN=' ~/.longrun/config/env | cut -d= -f2)
 python3 forge.py --help
 ```
 
 * **Data commands** print pretty JSON (or aligned tables for `ls` commands).
 * **Streaming commands** print live text: `chat --stream`, `agent`, `feed`,
   `blackboard watch`, `swarm` finishes with a summary.
-* The token is **never** stored in the repo; it lives in `~/.config/longrun/env`.
+* The token is **never** stored in the repo; it lives in `~/.longrun/config/env`.
 
 ---
 

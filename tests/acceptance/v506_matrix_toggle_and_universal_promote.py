@@ -101,13 +101,18 @@ with tempfile.TemporaryDirectory() as tmp:
         p_wui = matrix.promote_to_nucleus("webui", "plugins.js", repo_root=tmp)
         registry.load_config = orig_load
 
+        from longrun.util import paths as _paths
+        _promoted_rule = os.path.join(_paths.workspace_state_dir(tmp), "prompt.d", "20-style.md")
+
         check("C promote_to_nucleus supports module, skill, rule, and webui (moves to Nucleus and deletes from Matrix)",
               p_mod.get("ok") is True and not os.path.exists(mod_file)
               and os.path.isfile(os.path.join(tmp, "src", "longrun", "util", "math_ext.py"))
               and p_sk.get("ok") is True and not os.path.exists(sk_dir)
               and os.path.isfile(os.path.join(tmp, "skills", "created", "mtx_skill", "SKILL.md"))
               and p_rul.get("ok") is True and not os.path.exists(os.path.join(tmp, ".Matrix", "rules", "20-style.md"))
-              and os.path.isfile(os.path.join(tmp, ".longrun", "prompt.d", "20-style.md"))
+              # JAG-534: the promoted rule becomes a PROJECT addendum in the data
+              # home, never a `.longrun/` inside the checkout.
+              and os.path.isfile(_promoted_rule)
               and p_wui.get("ok") is True and not os.path.exists(os.path.join(tmp, "src", "Matrix", "webui", "plugins.js"))
               and os.path.isfile(os.path.join(tmp, "webui", "assets", "matrix_promoted_plugins.js")))
 

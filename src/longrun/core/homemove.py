@@ -108,7 +108,27 @@ def _copy_tree(source, dest, on_bytes):
     return copied
 
 
-def _run(source_data, target_home, remove_source, move_matrix):
+def _merge_move(old, new):
+    """Move `old` into `new`, merging when `new` already exists.
+
+    The target home often already has an (empty) `matrix/` or `workspaces/`
+    created at startup, so a plain rename would fail and strand the old tree.
+    """
+    if not os.path.isdir(old) or _inside(old, new):
+        return
+    try:
+        if not os.path.exists(new):
+            shutil.move(old, new)
+            return
+        for name in os.listdir(old):
+            src, dst = os.path.join(old, name), os.path.join(new, name)
+            if not os.path.exists(dst):
+                shutil.move(src, dst)
+    except OSError:
+        pass
+
+
+def _run(source_data, target_home, remove_source, move_matrix, move_workspaces):
     """The worker: copy, verify, delete the source, then persist the choice."""
     try:
         _set(phase="scanning", done=0, total=0, copied=0, error=None,
@@ -134,14 +154,19 @@ def _run(source_data, target_home, remove_source, move_matrix):
                  error="copied %d of %d files — nothing was deleted, the source is "
                        "still authoritative" % (copied, files))
             return
+        old_home = os.path.dirname(source_data)
         if move_matrix:
-            old = os.path.join(paths.REPO_ROOT, ".Matrix")
-            new = os.path.join(target_home, "matrix")
-            if os.path.isdir(old) and not os.path.isdir(new):
-                try:
-                    shutil.move(old, new)
-                except OSError:
-                    pass
+            # The repo-root `.Matrix` is the pre-JAG-533 location; `<old home>/matrix`
+            # is where it lives now. Both must follow the data home.
+            _merge_move(os.path.join(paths.REPO_ROOT, ".Matrix"),
+                        os.path.join(target_home, "matrix"))
+            _merge_move(os.path.join(old_home, "matrix"),
+                        os.path.join(target_home, "matrix"))
+        # JAG-534: the operator's PROJECTS live in `<home>/workspaces` too; a
+        # home move that left them behind would orphan every default workspace.
+        if move_workspaces:
+            _merge_move(os.path.join(old_home, "workspaces"),
+                        os.path.join(target_home, "workspaces"))
         # The copy IS the user's data now, so the choice is persisted BEFORE the
         # source is touched: a delete that hits a root-owned file (seen on the DGX:
         # a Root-owned `uname.txt` inside a sandbox dir) must never leave the
@@ -179,7 +204,7 @@ def _publish(phase):
         pass
 
 
-def start(target, remove_source=True, move_matrix=True):
+def start(target, remove_source=True, move_matrix=True, move_workspaces=True):
     """Begin a move in the background. Returns the initial status/validation."""
     v = validate(target)
     if not v.get("ok"):
@@ -193,7 +218,7 @@ def start(target, remove_source=True, move_matrix=True):
     _set(source=source_data, target=v["home"])
     threading.Thread(target=_run,
                      args=(source_data, v["home"], bool(remove_source),
-                           bool(move_matrix)),
+                           bool(move_matrix), bool(move_workspaces)),
                      daemon=True, name="home-move").start()
     return {"ok": True, "started": True, "source": source_data, "target": v["home"]}
 

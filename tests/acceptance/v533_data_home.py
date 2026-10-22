@@ -13,7 +13,9 @@ Locks:
   D  a move is real: copy, verify, delete the source, persist the choice;
   E  a move refuses a target inside the repo (the whole point);
   F  the status/percentages the progress bar reads;
-  G  the sandbox scratch root follows the data home too.
+  G  the sandbox scratch root follows the data home too;
+  H  workspace project state (rules, prompt.d) never lands in the workspace;
+  I  the pre-JAG-534 ~/.config/longrun is adopted into ~/.longrun/config.
 
 Deterministic: temp dirs, no live model, no network.
 Run: python3 tests/acceptance/v533_data_home.py
@@ -77,19 +79,18 @@ finally:
 
 # --- B: OS defaults are the real conventions -------------------------------
 _p = paths.platform_home()
-check("B1 the platform default is absolute and named for the product",
-      os.path.isabs(_p) and os.path.basename(_p).lower() == "longrun", _p)
+check("B1 the platform default is absolute and names the product", os.path.isabs(_p), _p)
 if os.name == "nt":
-    check("B2 windows defaults under LOCALAPPDATA", "appdata" in _p.lower(), _p)
-elif sys.platform == "darwin":
-    check("B2 macOS defaults under Application Support", "Application Support" in _p, _p)
+    check("B2 windows defaults under LOCALAPPDATA",
+          "appdata" in _p.lower() and os.path.basename(_p).lower() == "longrun", _p)
 else:
-    check("B2 linux defaults under the XDG data home",
-          "/.local/share/" in _p or _p.startswith(os.environ.get("XDG_DATA_HOME", "/nonexistent")),
-          _p)
+    check("B2 posix defaults to ONE dotted folder (~/.longrun)",
+          os.path.basename(_p) == ".longrun"
+          and "/.local/share/" not in _p and "Application Support" not in _p, _p)
 check("B3 the home status payload names every root the UI shows",
-      {"home", "source", "default", "data_dir", "legacy_in_repo", "matrix_dir",
-       "workspaces_dir"} <= set(paths.home_status()), sorted(paths.home_status()))
+      {"home", "source", "default", "config_dir", "data_dir", "legacy_in_repo",
+       "matrix_dir", "workspaces_dir", "projects_dir"} <= set(paths.home_status()),
+      sorted(paths.home_status()))
 
 # --- C: nothing mutable is still derived from the repo root ----------------
 _src = []
@@ -115,6 +116,54 @@ check("C3 the legacy in-repo data dir is still recognised (a move must find it)"
       "legacy = os.path.join(REPO_ROOT, \"data\")" in
       open(os.path.join(REPO, "src", "longrun", "util", "paths.py"),
            encoding="utf-8").read(), "")
+
+# --- H: workspace project state never lands inside the workspace ------------
+_ws = os.path.join(TMP, "ws")
+os.makedirs(os.path.join(_ws, ".longrun", "rules"), exist_ok=True)
+with open(os.path.join(_ws, ".longrun", "Project_rules.md"), "w", encoding="utf-8") as f:
+    f.write("legacy project rule")
+_state = paths.workspace_state_dir(_ws)
+check("H1 workspace state lives under the data home, not the workspace",
+      os.path.realpath(_state).startswith(os.path.realpath(paths.DATA_DIR) + os.sep)
+      and not os.path.realpath(_state).startswith(os.path.realpath(_ws) + os.sep), _state)
+check("H2 the legacy <ws>/.longrun is ADOPTED (moved), not duplicated",
+      os.path.isfile(os.path.join(_state, "Project_rules.md"))
+      and not os.path.isdir(os.path.join(_ws, ".longrun")), _state)
+check("H3 the same workspace always maps to the same state dir",
+      paths.workspace_state_dir(_ws) == _state, _state)
+_rules_src = open(os.path.join(REPO, "src", "longrun", "memory", "rules.py"),
+                  encoding="utf-8").read()
+check("H4 project rules resolve through paths.workspace_state_dir (never <ws>/.longrun)",
+      "paths.workspace_state_dir" in _rules_src and 'get_workspace(), ".longrun"' not in _rules_src)
+
+# --- I: the pre-JAG-534 preferences are adopted, never stranded -------------
+if os.name != "nt":
+    _fake = os.path.join(TMP, "fakehome")
+    os.makedirs(os.path.join(_fake, ".config", "longrun"), exist_ok=True)
+    # ONLY the pre-rename name: proves both the legacy copy AND the rename.
+    with open(os.path.join(_fake, ".config", "longrun", "RULES.md"), "w",
+              encoding="utf-8") as f:
+        f.write("pre-rename global rule")
+    _prev_cfg_dir = os.environ.pop("LONGRUN_CONFIG_DIR", None)
+    _prev_home_env = os.environ.get("HOME")
+    os.environ["HOME"] = _fake
+    try:
+        _pth = importlib.reload(paths)
+        check("I1 the settings dir is <default home>/config (~/.longrun/config)",
+              _pth.config_dir() == os.path.join(_fake, ".longrun", "config"),
+              _pth.config_dir())
+        check("I2 ~/.config/longrun is copied into it on first import",
+              os.path.isfile(os.path.join(_fake, ".longrun", "config", "RULES.md")),
+              _pth.config_dir())
+        check("I3 a pre-rename RULES.md is adopted as Global_rules.md",
+              os.path.isfile(os.path.join(_fake, ".longrun", "config", "Global_rules.md")),
+              _pth.config_dir())
+    finally:
+        if _prev_home_env is not None:
+            os.environ["HOME"] = _prev_home_env
+        if _prev_cfg_dir:
+            os.environ["LONGRUN_CONFIG_DIR"] = _prev_cfg_dir
+        paths = importlib.reload(paths)
 
 # --- G: the sandbox scratch root is user data too --------------------------
 # `registry.workspace_dir()` used to be `os.path.join(REPO, cfg["sandbox"]
@@ -150,6 +199,13 @@ os.makedirs(os.path.join(_src_dir, "sessions"), exist_ok=True)
 with open(os.path.join(_src_dir, "sessions", "s1.json"), "w", encoding="utf-8") as f:
     json.dump({"id": "s1"}, f)
 _target = os.path.join(TMP, "newhome")
+# The self-evolution runtime lives beside `data/` in the old home, and the TARGET
+# home already has an EMPTY `matrix/` (created at startup) — the move must MERGE
+# instead of leaving 444 KB of git history behind.
+os.makedirs(os.path.join(TMP, "old", "matrix", "git"), exist_ok=True)
+with open(os.path.join(TMP, "old", "matrix", "git", "HEAD"), "w", encoding="utf-8") as f:
+    f.write("ref: refs/heads/main\n")
+os.makedirs(os.path.join(_target, "matrix"), exist_ok=True)
 _start = homemove.start(_target)
 check("D1 the move starts against the CURRENT data dir",
       _start.get("ok") is True and _start.get("source") == _src_dir, _start)
@@ -170,6 +226,9 @@ with open(paths.config_file(), encoding="utf-8") as f:
     _cfg = json.load(f)
 check("D5 config.json records the new home and asks for a restart",
       _cfg.get("data_home") == _target and _st.get("restart_required") is True, _cfg)
+check("D6 the self-evolution runtime followed the move (merged, not stranded)",
+      os.path.isfile(os.path.join(_target, "matrix", "git", "HEAD"))
+      and not os.path.isdir(os.path.join(TMP, "old", "matrix", "git")), _target)
 
 # --- E: a dangerous target is refused --------------------------------------
 _inside = homemove.validate(os.path.join(REPO, "data-moved"))

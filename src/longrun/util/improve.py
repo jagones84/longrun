@@ -21,8 +21,8 @@ PROPOSAL_DIR = os.path.join(DATA_DIR, "proposals")
 AGENT_WRITE = {
     "memory": "auto",       # data/memory/**  -> free write (silent)
     "skill": "propose",     # skills/**       -> proposal, threshold
-    "project": "propose",   # <ws>/.longrun/Project_rules.md -> PROPOSAL only
-    "global": "propose",    # ~/.config/longrun/Global_rules.md -> PROPOSAL only
+    "project": "propose",   # <data>/projects/<ws>/Project_rules.md -> PROPOSAL only
+    "global": "propose",    # <config>/Global_rules.md (~/.longrun/config) -> PROPOSAL only
     "code": "forbidden",    # longrun/*.py -> out of scope
 }
 

@@ -214,22 +214,29 @@ Other variables used by configured MCP servers can also be added in **Settings �
 
 ### Where your data lives (not in the repository)
 
-Everything mutable — sessions, the event log, indexes, costs, the self-evolution
-checkout — lives under ONE **data home**, never inside the checkout: a `git pull`,
-a fresh clone or a container image must not be able to replace or expose it.
-Resolution order:
+Everything the harness owns lives under ONE root, `~/.longrun` (`%LOCALAPPDATA%\Longrun`
+on Windows), never inside the checkout: a `git pull`, a fresh clone or a container
+image must not be able to replace or expose sessions, the event log, indexes, costs,
+the self-evolution runtime or your project rules.
 
-1. `LONGRUN_DATA_HOME` (explicit override);
-2. `data_home` in `~/.config/longrun/config.json` (what **Settings → Info → Data
-   home** writes);
-3. the platform default:
-   - Windows `%LOCALAPPDATA%\Longrun`
-   - macOS `~/Library/Application Support/Longrun`
-   - Linux `$XDG_DATA_HOME/longrun` (else `~/.local/share/longrun`)
+```
+~/.longrun/
+  config/       config.json, Global_rules.md, AGENTS.md, prompt.d/   (tiny, human-editable)
+  data/         sessions, events.db, knowledge/, codebase/, costs/, projects/ ...
+  matrix/       the self-evolution runtime (ex .Matrix)
+  workspaces/   default root for new projects
+```
 
-Inside the home: `data/` (sessions, events, knowledge, codebase index, costs,
-roles, checkpoints) and `matrix/` (the self-evolution runtime). Workspaces created
-by the harness go to `<home>/workspaces`.
+The data root can be moved: `LONGRUN_DATA_HOME` (explicit override) →
+`data_home` in `~/.longrun/config/config.json` (what **Settings → Info → Data home**
+writes) → the platform default above. `config/` always stays at the DEFAULT
+location, because it is the file that records where the data root is.
+
+Per-workspace PROJECT state (`Project_rules.md`, `rules/`, `prompt.d/`) is kept in
+`<data>/projects/<slug>-<sha8>/`, exactly like the per-workspace codebase index —
+a harness checkout must not drop a `.longrun/` folder into your projects. A legacy
+`<workspace>/.longrun` is moved there the first time that workspace is used, so
+nothing is lost.
 
 **Settings → Info → Data home** shows the current location and can MOVE it: the
 old tree is copied, the copy is verified file by file, and only then is the source

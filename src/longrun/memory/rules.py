@@ -5,12 +5,16 @@ Mirrors the AGENTS.md convention: instructions are discovered at two scopes and
 concatenated broadest -> most specific (project wins), then injected into the
 system prompt of both chat and the agent loop.
 
-  * GLOBAL (user, all sessions):  ~/.config/longrun/Global_rules.md
-                                  (also loaded, additive: ~/.config/longrun/AGENTS.md)
-  * PROJECT (the selected workspace): <ws>/.longrun/Project_rules.md + <ws>/.longrun/rules/*.md
+  * GLOBAL (user, all sessions):  <config dir>/Global_rules.md  (~/.longrun/config/)
+                                  (also loaded, additive: <config dir>/AGENTS.md)
+  * PROJECT (the selected workspace): <data>/projects/<ws>-<sha>/Project_rules.md
+                                  + rules/*.md beside it
                                   (also loaded, additive: <ws>/AGENTS.md)
 
-The workspace is selectable and persisted in ~/.config/longrun/config.json.
+Project state is kept OUT of the workspace (never a `.longrun/` in the user's
+checkout); a legacy `<ws>/.longrun` is adopted on first use.
+
+The workspace is selectable and persisted in <config dir>/config.json.
 No secret ever belongs here.
 """
 
@@ -200,7 +204,9 @@ def set_workspace(path):
 
 
 def project_dir(ws=None):
-    return os.path.join(ws or get_workspace(), ".longrun")
+    """JAG-534: the workspace's harness state, under the DATA HOME — never a
+    `.longrun/` inside the operator's checkout."""
+    return paths.workspace_state_dir(ws or get_workspace())
 
 
 def project_rules_path(ws=None):

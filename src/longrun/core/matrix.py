@@ -25,6 +25,7 @@ import traceback
 
 from longrun.tools import matrix_guard
 from longrun.util.fswrite import read_json, write_json
+from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO
 
 SLOT_IDS = (1, 2, 3)
@@ -1442,7 +1443,9 @@ def promote_to_nucleus(kind, name, repo_root=None):
             shutil.rmtree(src_sdir, ignore_errors=True)
             dst_path = os.path.join(dst_pdir, "SKILL.md")
         elif k == "rule":
-            pddir = os.path.join(root, ".longrun", "prompt.d")
+            # JAG-534: project addenda live in the data home, never a `.longrun/`
+            # inside the Nucleus checkout.
+            pddir = os.path.join(paths.workspace_state_dir(root), "prompt.d")
             os.makedirs(pddir, exist_ok=True)
             dst_path = os.path.join(pddir, nm)
             shutil.copy2(src_path, dst_path)

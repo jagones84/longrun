@@ -14,7 +14,7 @@ Nothing here imports `longrun.*`: the point is to measure the deployed harness
 the same way any external benchmark would.
 
 Auth: `Authorization: Bearer <LONGRUN_TOKEN>` (falls back to
-~/.config/longrun/env, then the query token). Stdlib only.
+~/.longrun/config/env, then the query token). Stdlib only.
 """
 import json
 import os
@@ -26,7 +26,7 @@ import urllib.request
 
 from .protocol import AgentRef, HarnessResult
 
-_ENV_FILE = os.path.expanduser("~/.config/longrun/env")
+_ENV_FILE = os.path.expanduser("~/.longrun/config/env")
 
 
 def _token_from_env_file():

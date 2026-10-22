@@ -6,15 +6,17 @@ The prompt is NOT a monolith: it is an ordered list of sections. Each section is
   - kind="dynamic" -> provider in code, generated at runtime (tools/skills/...)
 
 Overlay file (ADDITIVE, not replacements):
-  - global:   ~/.config/longrun/prompt.d/<NN>-<id>.md
-  - project:  <workspace>/.longrun/prompt.d/<NN>-<id>.md
+  - global:   <config dir>/prompt.d/<NN>-<id>.md   (default ~/.longrun/config/)
+  - project:  <data>/projects/<ws>-<sha>/prompt.d/<NN>-<id>.md
 In case of CONTRADICTION the more specific level wins:
   PROJECT > GLOBAL > DEFAULT.
 """
 import glob
 import os
 
-GLOBAL_DDIR = os.path.expanduser(os.path.join("~", ".config", "longrun", "prompt.d"))
+from longrun.util import paths
+
+GLOBAL_DDIR = os.path.join(paths.config_dir(), "prompt.d")
 
 # Section order and nature. A `<NN>-` prefix on a prompt.d addendum orders it.
 #
@@ -72,8 +74,8 @@ def _manifest_text():
         "runtime, some are text you can EXTEND with files (adding, never replacing). "
         "In case of CONTRADICTION the more specific level wins: PROJECT > GLOBAL > DEFAULT.\n"
         "- global section addenda: %s/<NN>-<id>.md\n"
-        "- project section addenda: <workspace>/.longrun/prompt.d/<NN>-<id>.md\n"
-        "- sections: %s" % (GLOBAL_DDIR, pretty)
+        "- project section addenda: %s/<ws-slug>/prompt.d/<NN>-<id>.md\n"
+        "- sections: %s" % (GLOBAL_DDIR, paths.PROJECTS_DIR, pretty)
     )
 
 
@@ -88,7 +90,7 @@ def capability_text():
 
 
 def project_ddir(ws):
-    return os.path.join(ws or "", ".longrun", "prompt.d")
+    return os.path.join(paths.workspace_state_dir(ws), "prompt.d")
 
 
 def _read(path):
