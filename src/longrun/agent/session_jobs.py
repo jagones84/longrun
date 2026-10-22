@@ -327,6 +327,18 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
         ok = bool(res.get("ok"))
         out = (str(res.get("summary") or "").strip()
                or str(res.get("error") or "no summary"))
+        # A child that SPUN produced nothing, so it cannot be a dependency. The
+        # api_v02 no-progress guard ends such a run with status "done" +
+        # termination "no_progress", which used to mark the subjob `done` and hand
+        # the sentinel text ("no progress: 'note' repeated; concluding run") to
+        # every dependent as if it were input (observed live, 2026-10-22: a child
+        # of a spinning child spun too). Record it as a FAILURE instead, so golden
+        # rule 3 blocks the dependents loudly. Cause of the spin is usually a long
+        # or ambiguous child goal: keep child goals short and literal.
+        if ok and str((res.get("result") or {}).get("termination") or "") == "no_progress":
+            ok = False
+            res = dict(res, error="no progress: the subagent spun and produced no "
+                                  "usable output (keep child goals short and literal)")
         with _LOCK:
             doc = _load(sid)
             spec = doc["subjobs"][sub_id]

@@ -201,6 +201,36 @@ check("C7 a raising spawn is recorded as a failed subjob, not propagated",
               for s in res7.get("subjobs") or []),
       str(res7.get("subjobs")))
 
+# C8 — REGRESSION (live, 2026-10-22): a child that SPUN is not a dependency. The
+# api_v02 anti-spin guard ends that run with status "done" + termination
+# "no_progress", so the old code marked the subjob `done` and fed the sentinel
+# text to the dependents as if it were input — the dependent then spun too.
+# It must be recorded as an ERROR so rule 3 blocks the dependents loudly.
+SJ.delete(SID)
+spin_plan = SJ.create(SID, "spinning", [
+    {"label": "spin", "goal": "TASK spin"},
+    {"label": "after", "goal": "TASK after", "deps": ["spin"]}])
+w4 = FakeWorkers(delay=0.01)
+
+
+def _spin_collect(sub_id, timeout=None):
+    return {"ok": True, "status": "done",
+            "summary": "no progress: 'note' repeated; concluding run",
+            "result": {"status": "done", "termination": "no_progress",
+                       "summary": "no progress: 'note' repeated; concluding run"}}
+
+
+res8 = SJ.run(SID, spin_plan["job"], spawn_fn=w4.spawn, collect_fn=_spin_collect, cap=2)
+_spin = [s for s in res8.get("subjobs") or [] if s.get("label") == "spin"]
+_after = [s for s in res8.get("subjobs") or [] if s.get("label") == "after"]
+check("C8 a `no_progress` child is an ERROR and its dependent is BLOCKED",
+      res8.get("status") == "error"
+      and _spin and _spin[0].get("status") == "error"
+      and "no progress" in str(_spin[0].get("error"))
+      and _after and _after[0].get("status") == "blocked"
+      and "dependency failed" in str(_after[0].get("error")),
+      str(res8.get("subjobs")))
+
 # ------------------------------------------------------- D: durable results ---
 rec = SUB._persist({"id": "sb_durable", "parent": SID, "status": "done",
                     "summary": "durable summary", "steps": 3})
@@ -210,6 +240,9 @@ check("D1 a subagent result survives losing the in-memory entry (served from dis
       and got.get("from_disk") is True, str(got))
 check("D2 a session's subagent records die with it (purge_parent)",
       bool(SUB.purge_parent(SID)) and SUB.load_record("sb_durable") is None)
+check("D3 the durable record keeps the run's `termination` (why it ended)",
+      SUB._shrink({"status": "done", "termination": "no_progress",
+                   "trace": []}).get("termination") == "no_progress")
 
 # ---------------------------------------------------------------- E: shared ---
 from longrun.orchestrate import jobs as JOBS  # noqa: E402

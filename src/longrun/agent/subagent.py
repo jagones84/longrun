@@ -175,6 +175,10 @@ def _shrink(result):
     return {
         "ok": result.get("status") == "done",
         "status": result.get("status"),
+        # The termination is what tells a consumer WHY the run ended: "no_progress"
+        # (the anti-spin guard) means there is no usable output, so a Session Job
+        # must not treat the disk record as a satisfied dependency (SJ, 2026-10-22).
+        "termination": result.get("termination"),
         "error": str(result.get("error") or "")[:500],
         "summary": str(result.get("summary") or "")[:_MAX_SUMMARY],
         "steps": len(result.get("trace") or []),
