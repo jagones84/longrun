@@ -34,7 +34,7 @@ DEFAULT_CONFIG = {
     "sandbox": {
         "backend": "auto", "image": "alpine:latest", "timeout_secs": 25,
         "network": False, "memory_mb": 256, "pids_limit": 128, "cpus": "1.0",
-        "workspace": "data/sandbox",
+        "workspace": "sandbox",
     },
     "approvals": {"timeout_secs": 300},
     "runtime": {},
@@ -1164,7 +1164,16 @@ def forget_tool_policies(names):
 
 
 def workspace_dir():
-    return os.path.join(REPO, load_config()["sandbox"]["workspace"])
+    """The sandbox scratch root (JAG-533: USER DATA, so it lives under the data
+    home). A relative `sandbox.workspace` is resolved against DATA_DIR; an
+    absolute one is honoured. A leading "data/" is dropped so a config written
+    before the move does not nest `<home>/data/data/sandbox`."""
+    rel = str(load_config()["sandbox"].get("workspace") or "sandbox").strip()
+    if os.path.isabs(rel):
+        return rel
+    if rel.startswith("data/"):
+        rel = rel[5:]
+    return os.path.join(APP_DATA_DIR, rel)
 
 
 # ------------------------------------------------------------------ tools ----

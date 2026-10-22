@@ -33,8 +33,6 @@ import time
 from longrun.util import osutil
 from longrun.tools import registry
 
-REPO = registry.REPO
-
 _probe_lock = threading.Lock()
 _probe_cache = None
 
@@ -304,8 +302,9 @@ def workspace_for(run_id):
     "/abs/path", trailing slashes) used to escape the workspace root via
     os.path.join. Sanitize to a single basename + length cap before joining.
     """
-    cfg = registry.load_config()
-    root = os.path.realpath(os.path.join(REPO, cfg["sandbox"]["workspace"]))
+    # JAG-533: the scratch root is USER DATA — registry.workspace_dir() resolves
+    # it against the data home, never the checkout.
+    root = os.path.realpath(registry.workspace_dir())
     raw = (run_id or "adhoc").strip()
     # JAG-431r4b: allow only the safe ASCII set, then take the last path
     # component so a malformed id never escapes the workspace.

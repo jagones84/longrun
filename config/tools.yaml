@@ -22,7 +22,8 @@ sandbox:
   memory_mb: 256
   pids_limit: 128
   cpus: "1.0"
-  workspace: data/sandbox       # per-run scratch dir bind-mounted as /work
+  workspace: sandbox            # per-run scratch dir bind-mounted as /work,
+                                # RELATIVE to the data home (never the checkout)
 
 # ---- approvals ---------------------------------------------------------------
 approvals:

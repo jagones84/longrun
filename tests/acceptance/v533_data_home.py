@@ -12,7 +12,8 @@ Locks:
   C  no module still derives a mutable path from the repo root;
   D  a move is real: copy, verify, delete the source, persist the choice;
   E  a move refuses a target inside the repo (the whole point);
-  F  the status/percentages the progress bar reads.
+  F  the status/percentages the progress bar reads;
+  G  the sandbox scratch root follows the data home too.
 
 Deterministic: temp dirs, no live model, no network.
 Run: python3 tests/acceptance/v533_data_home.py
@@ -114,6 +115,32 @@ check("C3 the legacy in-repo data dir is still recognised (a move must find it)"
       "legacy = os.path.join(REPO_ROOT, \"data\")" in
       open(os.path.join(REPO, "src", "longrun", "util", "paths.py"),
            encoding="utf-8").read(), "")
+
+# --- G: the sandbox scratch root is user data too --------------------------
+# `registry.workspace_dir()` used to be `os.path.join(REPO, cfg["sandbox"]
+# ["workspace"])`, so every run re-created `<repo>/data/sandbox/<run>` even
+# after the migration (found live: data/sandbox/v521). The resolver is patched
+# here so the test never depends on the operator's tracked tools.yaml.
+from longrun.tools import registry  # noqa: E402
+
+_orig_cfg = registry.load_config
+try:
+    registry.load_config = lambda reload=False: {"sandbox": {"workspace": "sandbox"}}
+    _ws = registry.workspace_dir()
+    check("G1 a relative sandbox workspace resolves under the data home",
+          os.path.realpath(_ws) == os.path.realpath(os.path.join(paths.DATA_DIR, "sandbox")),
+          _ws)
+    registry.load_config = lambda reload=False: {"sandbox": {"workspace": "data/sandbox"}}
+    check("G2 a pre-migration `data/sandbox` does not nest <home>/data/data",
+          os.path.realpath(registry.workspace_dir())
+          == os.path.realpath(os.path.join(paths.DATA_DIR, "sandbox")),
+          registry.workspace_dir())
+    _abs = os.path.join(TMP, "scratch")
+    registry.load_config = lambda reload=False: {"sandbox": {"workspace": _abs}}
+    check("G3 an absolute sandbox workspace is honoured as-is",
+          registry.workspace_dir() == _abs, registry.workspace_dir())
+finally:
+    registry.load_config = _orig_cfg
 
 # --- D: a move copies, verifies, deletes the source and persists the choice --
 _src_dir = paths.DATA_DIR
