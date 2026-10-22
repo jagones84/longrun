@@ -138,7 +138,7 @@ SECTIONS = [
         "help": ("Deterministic shell commands around every tool call. Exit 2 on "
                  "PreToolUse BLOCKS the call. Saved to a gitignored overlay, so the "
                  "shipped file and its examples stay intact (delete "
-                 "data/hooks.overlay.yaml to revert)."),
+                 "the data home's hooks.overlay.yaml to revert)."),
         "fields": [
             _f("hooks", "hooks", "rows", item_label="hook", item=[
                 _f("event", "event", "select",

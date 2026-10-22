@@ -7,7 +7,7 @@ as the ``agent-role`` section, so it applies to chat, jobs and routines alike.
 Because the key is the SESSION id (unique), two agents sharing the same workspace
 folder never collide, and the file lives OUTSIDE any workspace:
 
-    <LONGRUN_ROLES_DIR or <repo>/data/roles>/<session_id>.md
+    <LONGRUN_ROLES_DIR or <data home>/roles>/<session_id>.md
 
 Reset = write an empty role (the file is removed) or DELETE the session's role.
 """

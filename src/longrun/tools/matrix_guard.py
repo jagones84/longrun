@@ -86,12 +86,14 @@ _DEFAULT_MANUAL = (
     "- `src/Matrix/`: live-editable Python packages mirroring `src/longrun/` (`agent`, `core`, "
     "`integrations`, `interop`, `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, "
     "`tools`, `util`, `webui`).\n"
-    "- `.Matrix/trash/`: temporary test scripts and sandbox experiments (clean up after use).\n"
-    "- `.Matrix/docs/`: `HANDOFF.md` (short-term state) and `MANUAL.md` (verified recipes); "
+    "- The Matrix RUNTIME dir (reported by `matrix.status.matrix_dot`, default `~/.longrun/matrix`; "
+    "`.Matrix/` is only its pre-JAG-533 name) holds:\n"
+    "  - `trash/`: temporary test scripts and sandbox experiments (clean up after use).\n"
+    "  - `docs/`: `HANDOFF.md` (short-term state) and `MANUAL.md` (verified recipes); "
     "included in `checkpoint_save` / `checkpoint_rollback`.\n"
-    "- `.Matrix/rules/`: `<NN>-<section>.md` system prompt addenda automatically hooked into the prompt.\n"
-    "- `.Matrix/skills/`: `<name>/SKILL.md` auto-created skills segregated from external skills.\n"
-    "- `.Matrix/checkpoints/`: 3 atomic rollback slots (`slot_1`, `slot_2`, `slot_3`).\n\n"
+    "  - `rules/`: `<NN>-<section>.md` system prompt addenda automatically hooked into the prompt.\n"
+    "  - `skills/`: `<name>/SKILL.md` auto-created skills segregated from external skills.\n"
+    "  - `checkpoints/`: 3 atomic rollback slots (`slot_1`, `slot_2`, `slot_3`).\n\n"
     "## 13 Live Seams into Nucleus (Fail-Open Isolated)\n"
     "1. `src/Matrix/tools/<namespace>.py`: define `TOOL_SCHEMAS = {'<namespace>.<subtool>': {...}}` "
     "+ `def execute(args, run_id=None, subtool=None) -> dict` (every tool MUST be namespaced `<namespace>.<subtool>`, never plain).\n"
@@ -258,8 +260,8 @@ def check_write_allowed(path, repo_root=None):
             rel = str(path)
         return False, (
             "NUCLEUS_PROTECTED: '%s' belongs to the immutable Nucleus. "
-            "Agent self-evolution writes inside the harness repository are strictly "
-            "restricted to src/Matrix/ and .Matrix/." % rel
+            "Agent self-evolution writes are restricted to `src/Matrix/` (code) and "
+            "the Matrix runtime dir (`matrix.status.matrix_dot`, default ~/.longrun/matrix)." % rel
         )
     return True, ""
 
@@ -309,7 +311,8 @@ def check_python_write(code, workspace=None, repo_root=None):
             rel = what
         return (False,
                 "NUCLEUS_PROTECTED: python snippet %s inside the immutable "
-                "Nucleus (%s). Modify only src/Matrix/ or .Matrix/." % (what, rel))
+                "Nucleus (%s). Modify only `src/Matrix/` or the Matrix runtime dir "
+                "(`matrix.status.matrix_dot`)." % (what, rel))
 
     def _is_nucleus(resolved):
         return (resolved is not None and _under(resolved, os.path.realpath(root))
@@ -566,7 +569,8 @@ def check_shell_command(command, cwd=None, repo_root=None):
                     rel = target
                 return False, (
                     "NUCLEUS_PROTECTED: shell command targets immutable Nucleus path (%s). "
-                    "Modify only src/Matrix/ or .Matrix/." % rel
+                    "Modify only `src/Matrix/` or the Matrix runtime dir "
+                    "(`matrix.status.matrix_dot`)." % rel
                 )
     return True, ""
 

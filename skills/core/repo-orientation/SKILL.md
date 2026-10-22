@@ -58,7 +58,7 @@ To answer "what can it do", map the feature to its source (all under `src/longru
 - **Interop** (bidirectional MCP, ACP) → `mcp.py`, `mcp_client.py`, `mcp_server.py`, `acp.py`.
 - **Self-improvement** → `selfevolve.py`, `improve.py`, `meta.py`.
 - **Interfaces**: WebUI `webui/index.html`, Orbit `src/longrun/orbit/`, CLI `forge.py`.
-- **State** (gitignored `data/`): sessions, task graphs, runs, edits, memory, checkpoints, `events.db`.
+- **State** (the data home, `~/.longrun/data` by default; never in the checkout): sessions, task graphs, runs, edits, memory, checkpoints, `events.db`.
 
 ## 5. Golden rules
 

@@ -77,7 +77,8 @@ MATRIX_SYSTEM_PROMPT = (
     "## Matrix Self-Evolution (Nucleus vs. Matrix)\n"
     "- **NUCLEUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `Global_rules.md` / `Project_rules.md` "
     "are hard-protected (`NUCLEUS_PROTECTED`). Import Nucleus functions freely; never edit them.\n"
-    "- **MATRIX (`src/Matrix/` & `.Matrix/`):** all 13 subpackages (`agent`, `core`, `integrations`, "
+    "- **MATRIX — code in `src/Matrix/`, runtime in the matrix dir shown by `matrix.status.matrix_dot` "
+    "(default `~/.longrun/matrix`; `.Matrix/` is only its legacy name):** all 13 subpackages (`agent`, `core`, `integrations`, "
     "`interop`, `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `tools`, `util`, `webui`) "
     "are live-hooked via `src/Matrix/<subpkg>/hooks.py` (fail-open `matrix.call_hook`).\n"
     "- **Creating Matrix Tools (strict `<namespace>.<subtool>` syntax):** write `src/Matrix/tools/<namespace>.py` "
@@ -86,8 +87,8 @@ MATRIX_SYSTEM_PROMPT = (
     "NEVER create plain un-namespaced tool names; every tool MUST be `<namespace>.<subtool>`.\n"
     "- **Creating Hooks, Modules, Skills, Rules, WebUI:** call `matrix.seams` to inspect all 13 hook signatures, "
     "or `matrix.scaffold` (`kind` in `tool|hook|module|skill|rule|webui`, `name=...`) to generate a compliant skeleton "
-    "(e.g. `src/Matrix/plan/hooks.py`, `src/Matrix/util/<mod>.py`, `.Matrix/skills/<name>/SKILL.md`, `.Matrix/rules/<NN>-<name>.md`, `src/Matrix/webui/plugins.js`).\n"
-    "- **Lifecycle & Promotion:** test in `.Matrix/trash/` via `matrix.test` (`target='<kind>:<name>'`), "
+    "(e.g. `src/Matrix/plan/hooks.py`, `src/Matrix/util/<mod>.py`, `<matrix dir>/skills/<name>/SKILL.md`, `<matrix dir>/rules/<NN>-<name>.md`, `src/Matrix/webui/plugins.js`).\n"
+    "- **Lifecycle & Promotion:** test in `<matrix dir>/trash/` via `matrix.test` (`target='<kind>:<name>'`), "
     "check with `matrix.verify_target`, and promote to Nucleus with `matrix.promote_to_nucleus`. "
     "Uninstall completely and live with `matrix.remove` (`kind`, `name`): it deletes the file, "
     "bytecode, imported module, discovery cache, policy overlay entries and verification record, "
@@ -603,7 +604,7 @@ _HOOK_CHARS = 4000         # Matrix prompt-hook extra
 
 
 def prompt_section_text(sess=None, ws=None, repo_root=None):
-    """Render the Matrix system prompt block: hardcoded instructions + `.Matrix/rules/*.md`."""
+    """Render the Matrix system prompt block: hardcoded instructions + `<matrix dir>/rules/*.md`."""
     _root, msrc, mdot = _roots(repo_root)
     parts = [MATRIX_SYSTEM_PROMPT]
     if not is_enabled():
@@ -626,7 +627,7 @@ def prompt_section_text(sess=None, ws=None, repo_root=None):
             except OSError:
                 continue
         if rule_texts:
-            block = "## Matrix Dynamic Rules (`.Matrix/rules/`)\n" + "\n\n".join(rule_texts)
+            block = ("## Matrix Dynamic Rules (`%s/rules/`)\n" % mdot) + "\n\n".join(rule_texts)
             if len(block) > _RULES_BLOCK_CHARS:
                 block = block[:_RULES_BLOCK_CHARS] + (
                     "\n\n…[Matrix rules block TRUNCATED at %d chars — %d rule file(s) on disk; "
@@ -1319,8 +1320,8 @@ def verify_target(kind, name, repo_root=None):
             "ok": False,
             "error": (
                 "PROMOTE_UNVERIFIED: '%s:%s' has not been tested with its current content. "
-                "You MUST first run matrix{action:'test', target:'%s:%s', ...} in .Matrix/trash/ "
-                "and verify it passes with exit_code=0 before promoting to Nucleus." % (k, nm, k, nm)
+                "You MUST first run matrix{action:'test', target:'%s:%s', ...} in the matrix "
+                "trash dir and verify it passes with exit_code=0 before promoting to Nucleus." % (k, nm, k, nm)
             ),
         }
     if k in ("tool", "hook", "module"):
@@ -1691,8 +1692,10 @@ SEAMS_SPEC = {
     "integrations": {"path": "src/Matrix/integrations/hooks.py", "hooks": ["def transform_bridge_payload(payload) -> dict"]},
     "util": {"path": "src/Matrix/util/hooks.py", "hooks": ["def on_ledger_add(entry) -> dict"]},
     "webui": {"path": "src/Matrix/webui/plugins.js", "contract": "Browser JS auto-loaded at /api/matrix/plugins.js"},
-    "skill": {"path": ".Matrix/skills/<name>/SKILL.md", "contract": "Markdown skill instructions with title & steps"},
-    "rule": {"path": ".Matrix/rules/<NN>-<name>.md", "contract": "Standing rule automatically appended to system prompt"},
+    # The RUNTIME dir (matrix.status.matrix_dot, default ~/.longrun/matrix) — the
+    # old `.Matrix/<x>` wording is kept in the docs only as its legacy name.
+    "skill": {"path": "<matrix dir>/skills/<name>/SKILL.md", "contract": "Markdown skill instructions with title & steps"},
+    "rule": {"path": "<matrix dir>/rules/<NN>-<name>.md", "contract": "Standing rule automatically appended to system prompt"},
 }
 
 

@@ -1649,7 +1649,7 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
             if lesson:
                 wrote.append({"kind": "memory", "origin": "reflect",
                               "summary": lesson,
-                              "path": "data/memory/agent_notes.md"})
+                              "path": os.path.join(DATA_DIR, "memory", "agent_notes.md")})
         # 3. cross-trajectory abstraction on a high-signal turn
         if (errored or corrected) and n_tools >= 3 and k_skills != "denied":
             for p in improve_mod.mine_once(note="auto: %s" % sess.get("id", ""),

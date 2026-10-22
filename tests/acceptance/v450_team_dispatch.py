@@ -136,11 +136,10 @@ check("D4 the panel renders the methodology + thresholds",
       and "importance_threshold" in idx)
 check("D5 the panel shows per-section counts",
       "impRecCount" in idx and "impLedCount" in idx)
-# JAG-451: the improvement files must OPEN in the editor — the API exposes an
-# absolute repo root + the harness file list, and the panel resolves repo-relative
-# links against it (a bare `data/memory/...` cannot resolve vs a session workspace).
+# JAG-534: the improvement files live under the DATA HOME now, so the API exposes
+# the home as the absolute base and the panel resolves `data/...` links against it.
 check("D6 /api/improvement exposes an absolute root + harness files",
-      '"root": improve_mod.REPO' in htt and '"data/memory/agent_notes.md"' in htt)
+      '"root": _paths.HOME_DIR' in htt and '"data/memory/agent_notes.md"' in htt)
 check("D7 the panel resolves repo-relative file links against that root",
       "let _impRoot" in idx and "_impRoot = d.root" in idx and "function _impAbs" in idx
       and "data-p=\"' + _attr(_impAbs(" in idx)

@@ -6,7 +6,7 @@ PROMPT (the ``.md`` body) was never written, so the Bridge prompt and the main-a
 ``ROLE.md`` were empty (void) for every agent that came from the clone.
 
 This module reads the clone and materialises that body as the session's ROLE.md —
-the SAME file both UIs edit/read (``data/roles/<session>.md``). It is
+the SAME file both UIs edit/read (`<data home>/roles/<session>.md`). It is
 NON-DESTRUCTIVE: it only fills an EMPTY role unless ``force=True``, so a role the
 user has already written is never clobbered.
 

@@ -1858,6 +1858,7 @@ class Handler(BaseHTTPRequestHandler):
             # which file), and a changelog filtered to MEANINGFUL events — plus
             # the methodology config so the operator can see HOW it works.
             from longrun.util import improve as improve_mod
+            from longrun.util import paths as _paths
             raw = improve_mod.list_proposals()
             # Collapse DUPLICATE proposals; a still-pending duplicate wins over an
             # older decided copy (see improve.dedupe_proposals).
@@ -1907,10 +1908,10 @@ class Handler(BaseHTTPRequestHandler):
                 "origins": list(improve_mod.ORIGINS),
                 # JAG-491: the last LLM backlog audit (None until the first run).
                 "review": improve_mod.latest_review(),
-                # JAG-451: the harness files the loop reads/writes live under the
-                # repo root; expose an ABSOLUTE base so the panel's file links open
-                # in the editor regardless of the session workspace.
-                "root": improve_mod.REPO,
+                # JAG-534: the improvement files live under the DATA HOME now (not
+                # the checkout), so the absolute base the panel resolves them
+                # against is the home itself.
+                "root": _paths.HOME_DIR,
                 "files": [
                     {"path": "data/improvement/ledger.jsonl", "kind": "audit ledger"},
                     {"path": "data/memory/agent_notes.md", "kind": "distilled lessons"},

@@ -525,13 +525,15 @@ _LEGACY_SCHEMAS = {
         "subject": "pattern",
     },
     "matrix": {
-        "description": ("Self-evolving Matrix suite (src/Matrix & .Matrix). Full tool lifecycle: "
+        "description": ("Self-evolving Matrix suite (code in src/Matrix, runtime in the matrix "
+                        "dir from `matrix.status.matrix_dot`; `.Matrix` is its legacy name). "
+                        "Full tool lifecycle: "
                         "scaffold -> edit the generated schema/description -> hotload -> "
                         "test -> verify_target -> promote_to_nucleus, or remove to uninstall. "
                         "Actions: status | seams | scaffold | remove | hotload | "
                         "enable/disable | checkpoint_save/checkpoint_rollback (slot 1..3) | "
-                        "git_commit/git_log/git_diff/git_reset (separate .Matrix/git repo) | "
-                        "test/clean_trash (.Matrix/trash) | webui_init/webui_reset | restart."),
+                        "git_commit/git_log/git_diff/git_reset (separate matrix git repo) | "
+                        "test/clean_trash (matrix trash dir) | webui_init/webui_reset | restart."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
@@ -546,8 +548,8 @@ _LEGACY_SCHEMAS = {
             "label": {"type": "string", "description": "checkpoint label (action=checkpoint_save)"},
             "message": {"type": "string", "description": "commit message (action=git_commit)"},
             "rev": {"type": "string", "description": "git revision (action=git_diff|git_reset)"},
-            "script": {"type": "string", "description": "script filename in .Matrix/trash (action=test)"},
-            "code": {"type": "string", "description": "optional Python code to write & run in .Matrix/trash (action=test)"},
+            "script": {"type": "string", "description": "script filename in the matrix trash dir (action=test)"},
+            "code": {"type": "string", "description": "optional Python code to write & run in the matrix trash dir (action=test)"},
             "target": {"type": "string", "description": "target tested e.g. 'tool:foo' or 'hook:plan' (action=test)"},
             "kind": {"type": "string", "enum": ["tool", "hook", "module", "skill", "rule", "webui"],
                      "description": "artifact kind to remove, verify, or promote"},

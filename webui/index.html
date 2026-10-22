@@ -6838,7 +6838,7 @@ function improveCard(d) {
    changelog (what the harness wrote on its own) and the memory provenance split
    (auto-generated vs. user-authored). */
 /* JAG-450/451: helpers for the Improvement panel — clickable file links + day groups. */
-let _impRoot = "";   // absolute repo root from /api/improvement (resolves repo-relative links)
+let _impRoot = "";   // absolute DATA HOME from /api/improvement (resolves data/... links)
 function _impAbs(p) {
   const path = String(p || "");
   if (!path) return "";
@@ -6930,7 +6930,7 @@ async function loadImprovement() {
   let d;
   try { d = await api("GET", "/api/improvement"); }
   catch (e) { if (mem) mem.textContent = "error: " + e; return; }
-  _impRoot = d.root || "";   // JAG-451: repo-relative file links resolve against this
+  _impRoot = d.root || "";   // JAG-534: data-home-relative file links resolve against this
   const pend = (d.proposals || []).filter(p => p.status === "pending");
   const cnt = $("impCount"); if (cnt) cnt.textContent = pend.length ? ("· " + pend.length + " pending") : "";
   const pc = $("impPropCount");
