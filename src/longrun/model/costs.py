@@ -196,16 +196,52 @@ def _int(v):
     return as_int(v, default=None)
 
 
-def _usage_tokens(usage):
-    """(prompt, completion, cached) from a provider `usage` dict."""
+def usage_tokens(usage):
+    """(prompt, completion, cache_read, cache_write) from a provider `usage` dict.
+
+    Every documented provider shape is accepted, because a missed cache counter is
+    not cosmetic — it prices cached input at the FULL input rate:
+      * OpenAI-compatible  ``prompt_tokens_details.cached_tokens``
+      * DeepSeek           ``prompt_cache_hit_tokens`` / ``prompt_cache_miss_tokens``
+      * Anthropic          ``cache_read_input_tokens`` / ``cache_creation_input_tokens``
+      * llama.cpp          ``timings.cache_n``
+    The returned `prompt` is ALWAYS the inclusive total, so callers can subtract the
+    cached part without double-counting.
+    """
     u = usage or {}
     pt = _int(u.get("prompt_tokens"))
     ct = _int(u.get("completion_tokens"))
+    # Anthropic-native usage names them `input_tokens` / `output_tokens`.
+    if pt is None:
+        pt = _int(u.get("input_tokens"))
+    if ct is None:
+        ct = _int(u.get("output_tokens"))
     det = u.get("prompt_tokens_details") or {}
-    cached = _int(det.get("cached_tokens"))
-    if cached is None:
-        cached = _int((u.get("timings") or {}).get("cache_n"))
-    return pt, ct, cached
+    read = _int(det.get("cached_tokens"))
+    write = _int(det.get("cache_creation_tokens"))
+
+    # DeepSeek: hit + miss are reported separately and are INCLUDED in prompt_tokens.
+    if read is None:
+        read = _int(u.get("prompt_cache_hit_tokens"))
+    if read is None:
+        miss = _int(u.get("prompt_cache_miss_tokens"))
+        if miss is not None and pt is not None:
+            read = max(0, pt - miss)
+
+    # Anthropic: `input_tokens` EXCLUDES the cache, so make `pt` inclusive here.
+    a_read = _int(u.get("cache_read_input_tokens"))
+    a_write = _int(u.get("cache_creation_input_tokens"))
+    if a_read is not None or a_write is not None:
+        base = pt if pt is not None else (_int(u.get("input_tokens")) or 0)
+        if a_read is not None:
+            read = a_read
+        pt = base + (a_read or 0) + (a_write or 0)
+        if write is None:
+            write = a_write
+
+    if read is None:
+        read = _int((u.get("timings") or {}).get("cache_n"))
+    return pt, ct, read, write
 
 
 def provider_cost(usage):
@@ -238,12 +274,13 @@ def provider_cost(usage):
     return None
 
 
-def cost_from_rates(rates, prompt, completion, cached):
+def cost_from_rates(rates, prompt, completion, cached, cached_write=None):
     """USD for one call from REAL token counts + a rate set (USD per 1M).
 
-    Cached prompt tokens are billed at the cache-read rate (falling back to the
-    normal input rate), the rest at the input rate, the completion at the output
-    rate, plus the fixed per-request fee when the provider charges one.
+    Cached prompt READS are billed at the cache-read rate, cache WRITES at the
+    cache-write rate (both falling back to the normal input rate when the provider
+    does not publish a separate one), the rest at the input rate, the completion at
+    the output rate, plus the fixed per-request fee when the provider charges one.
     """
     if rates is None:
         return None
@@ -252,10 +289,13 @@ def cost_from_rates(rates, prompt, completion, cached):
         return None
     pt = int(prompt or 0)
     ct = int(completion or 0)
-    cr = max(0, min(int(cached or 0), pt))
-    plain = max(0, pt - cr)
+    cw = max(0, min(int(cached_write or 0), pt))
+    cr = max(0, min(int(cached or 0), max(0, pt - cw)))
+    plain = max(0, pt - cr - cw)
     read_rate = rates["cache_read"] if rates["cache_read"] is not None else _f_or_zero(pin)
-    usd = (plain / 1e6 * _f_or_zero(pin)) + (cr / 1e6 * read_rate) + (ct / 1e6 * _f_or_zero(pout))
+    write_rate = rates["cache_write"] if rates.get("cache_write") is not None else _f_or_zero(pin)
+    usd = (plain / 1e6 * _f_or_zero(pin)) + (cr / 1e6 * read_rate) \
+        + (cw / 1e6 * write_rate) + (ct / 1e6 * _f_or_zero(pout))
     if rates["request"]:
         usd += _f_or_zero(rates["request"])
     return round(usd, 6)
@@ -299,12 +339,13 @@ def _save(session, led):
 def _summarise(led):
     tot = 0.0
     priced = unknown = 0
-    tin = tout = tcached = 0
+    tin = tout = tcached = tcached_w = 0
     by_model = {}
     for c in led:
         tin += c.get("prompt") or 0
         tout += c.get("completion") or 0
         tcached += c.get("cached") or 0
+        tcached_w += c.get("cache_write") or 0
         if c.get("usd") is None:
             unknown += 1
         else:
@@ -318,7 +359,7 @@ def _summarise(led):
         else:
             b["usd"] = round(b["usd"] + float(c["usd"]), 6)
     return {"calls": len(led), "tokens_in": tin, "tokens_out": tout,
-            "cached": tcached, "total_usd": round(tot, 6),
+            "cached": tcached, "cache_write": tcached_w, "total_usd": round(tot, 6),
             "priced_calls": priced, "unknown_calls": unknown, "by_model": by_model}
 
 
@@ -335,17 +376,18 @@ def record(session, model, usage, run=None):
     Returns the call record (with the running session total) or None when the
     usage carried no token counts.
     """
-    pt, ct, cached = _usage_tokens(usage)
+    pt, ct, cached, cache_write = usage_tokens(usage)
     if not pt and not ct:
         return None
     exact = provider_cost(usage)
     if exact is not None:
         usd, src = round(float(exact), 6), "provider"
     else:
-        usd = cost_from_rates(rates_for(model), pt, ct, cached)
+        usd = cost_from_rates(rates_for(model), pt, ct, cached, cache_write)
         src = "estimate" if usd is not None else None
     rec = {"ts": round(time.time(), 3), "model": str(model or ""),
            "prompt": pt or 0, "completion": ct or 0, "cached": cached or 0,
+           "cache_write": cache_write or 0,
            "usd": usd, "src": src, "run": (run or None)}
     with _lock:
         led = _load(session)

@@ -1031,6 +1031,27 @@ def _merge_prompt(answers):
             % (len(answers), "\n\n".join(answers)))
 
 
+def _record_llm_cost(session, model, usage, tag=None):
+    """JAG-531: price a NON-chat LLM call into the session ledger.
+
+    Compaction, auto-title and the other background helpers used to call the
+    model without `usage=`, so their tokens (and money) never reached the Cost
+    panel. Never raises — accounting must not break a turn.
+    """
+    if not session or not usage:
+        return None
+    try:
+        from longrun.model import costs as _costs
+        rec = _costs.record(session, model, usage)
+        if rec:
+            if tag:
+                rec["tag"] = tag
+            publish("cost.usage", session=session, call=rec)
+        return rec
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=None):
     """JAG-103: let the MODEL do the compaction.
 
@@ -1096,25 +1117,31 @@ def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=No
 
     def _call(prompt, mt):
         """One summarizer call; retries once when a reasoning model only thought."""
+        _u = {}
         answer, think, used = stream_with_fallback(
             [{"role": "user", "content": prompt}], model, "summarizer",
             lambda ch, t: None, timeout=180,
             max_tokens=mt,
+            usage=_u,
             # JAG-461: Stop must abort a running compaction too — plumb the session's
             # abort flag into the stream so pressing ■ kills the summarizer call
             # (it used to ignore Stop and keep decoding until it finished).
             cancel=cancel)
+        _record_llm_cost(session, used or model, _u, "summarizer")
         # JAG-487: a REASONING summarizer can spend the ENTIRE budget thinking and
         # emit no answer at all — the call "succeeds", the summary is empty, and the
         # compaction silently degrades to the extractive merge. Measured on a
         # 317-message session with meta/muse-spark: 1500 and 3000 tokens → 0 chars of
         # answer; 4500 → the real summary. Retry ONCE with a bigger budget.
         if not (answer or "").strip() and (think or "").strip():
+            _u2 = {}
             answer, think, used = stream_with_fallback(
                 [{"role": "user", "content": prompt}], model, "summarizer",
                 lambda ch, t: None, timeout=180,
                 max_tokens=max(mt, int(output_chars * 3 // 4)),
+                usage=_u2,
                 cancel=cancel)
+            _record_llm_cost(session, used or model, _u2, "summarizer")
         return (answer or "").strip(), used
 
     try:
@@ -1241,11 +1268,14 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
             items.append('id=%s request="%s" context="%s"' % (g.get("id"), req, ctx))
         prompt = _NAME_INSTRUCTION + "\n".join(items)
         try:
+            _u = {}
             answer, _think, used_one = stream_with_fallback(
                 [{"role": "user", "content": prompt}], ref, "chat",
                 lambda ch, t: None, timeout=180,
                 max_tokens=max(400, min(4000, 80 + 60 * len(groups))),
+                usage=_u,
                 cancel=cancel)
+            _record_llm_cost(sid, used_one or ref, _u, "title")
         except Exception:  # noqa: BLE001 — naming must never break the button
             answer, used_one = None, None
         used = used_one or used

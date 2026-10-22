@@ -2235,32 +2235,36 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
 
     def _record_usage():
         nonlocal _total_prompt, _total_completion
-        pt = chat_usage.get("prompt_tokens")
+        try:
+            from longrun.model import costs as _costs
+        except Exception:  # noqa: BLE001 — accounting must never break a turn
+            _costs = None
+        # One source of truth for the usage shape: the SAME parser the ledger uses
+        # (OpenAI / DeepSeek / Anthropic / llama.cpp), so the ctx meter cannot
+        # disagree with the billed row about what the provider reported.
+        _pt, _ct, _cached, _cw = (_costs.usage_tokens(chat_usage) if _costs
+                                  else (chat_usage.get("prompt_tokens"), 0, None, None))
+        pt = _pt
         _total_prompt += int(pt or 0)
-        _total_completion += int(chat_usage.get("completion_tokens") or 0)
+        _total_completion += int(_ct or 0)
         if pt:
             try:
                 _REAL_PROMPT_TOKENS[sess["id"]] = int(pt)
             except (TypeError, ValueError):
                 pass
         # JAG-273: the provider's prefix (KV) cache hit for this call.
-        _det = chat_usage.get("prompt_tokens_details") or {}
-        _c = _det.get("cached_tokens")
-        if _c is None:
-            _c = (chat_usage.get("timings") or {}).get("cache_n")
-        if _c is not None:
+        if _cached is not None:
             try:
-                _REAL_CACHED_TOKENS[sess["id"]] = int(_c)
+                _REAL_CACHED_TOKENS[sess["id"]] = int(_cached)
             except (TypeError, ValueError):
                 pass
         # JAG-355: price this call from its REAL usage, append it to the live cost
         # ledger, and push it so the Cost panel updates mid-run.
         try:
-            from longrun.model import costs as _costs
             # JAG-403f: tag every call of this turn with the turn's run id, so the
             # UI can group the ledger "per run" (one collapsible row per turn).
-            _call = _costs.record(sess["id"], model, chat_usage,
-                                  run=getattr(trace, "id", None))
+            _call = (_costs.record(sess["id"], model, chat_usage,
+                                   run=getattr(trace, "id", None)) if _costs else None)
             if _call:
                 on_event("cost.usage", session=sess["id"], call=_call)
         except Exception:  # noqa: BLE001 — accounting must never break a turn
@@ -2634,14 +2638,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # JAG-431r4b: each extra best-of-N sample refills `chat_usage` in
             # stream_with_fallback, and `_record_usage()` is only called once for
             # the first sample — every extra sample's tokens (and cost) were
-            # silently dropped from the ledger. Snapshot before/after each
-            # sample and emit a per-sample `cost.usage` for the delta.
-            def _usage_delta():
-                cu = chat_usage or {}
-                pt = int(cu.get("prompt_tokens") or 0)
-                cp = int(cu.get("completion_tokens") or 0)
-                return pt, cp, cu
-            _tot_pt, _tot_cp, _last_cu = _usage_delta()
+            # silently dropped from the ledger.
+            # `chat_usage` is CLEARED before every attempt, so after a sample it
+            # holds THAT sample's own usage (never a running total): record it
+            # verbatim. Provider-charged fields (`cost`/`cost_details`) must ride
+            # along, otherwise the sample is priced less accurately than the rest.
+            _USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens",
+                           "prompt_tokens_details", "timings", "cost",
+                           "total_cost", "cost_details",
+                           "prompt_cache_hit_tokens", "prompt_cache_miss_tokens",
+                           "cache_read_input_tokens", "cache_creation_input_tokens")
             for _ in range(_bN - 1):
                 if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
                     _kg_stop_reason = "budget"
@@ -2653,25 +2659,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 except Exception:  # noqa: BLE001
                     break
                 _cands.append(_a2)
-                # JAG-431r4b: price THIS sample's usage delta and emit it.
+                # JAG-431r4b: price THIS sample's usage and emit it.
                 try:
-                    npt, ncp, ncu = _usage_delta()
-                    dpt, dcp = max(0, npt - _tot_pt), max(0, ncp - _tot_cp)
-                    if dpt or dcp:
-                        _sample = {"prompt_tokens": dpt,
-                                   "completion_tokens": dcp,
-                                   "total_tokens": dpt + dcp}
-                        # preserve provider's cache-hint if present on the call
-                        for k in ("prompt_tokens_details", "timings"):
-                            if (ncu or {}).get(k):
-                                _sample[k] = ncu[k]
+                    _sample = {k: chat_usage[k] for k in _USAGE_KEYS
+                               if chat_usage.get(k) not in (None, {}, 0)}
+                    if _sample.get("prompt_tokens") or _sample.get("completion_tokens"):
                         from longrun.model import costs as _costs
-                        _call = _costs.record(sess["id"], model, _sample,
+                        _call = _costs.record(sess["id"], _m2 or model, _sample,
                                               getattr(trace, "id", None))
                         if _call:
                             _call["tag"] = "bestofn"
                             on_event("cost.usage", session=sess["id"], call=_call)
-                    _tot_pt, _tot_cp = npt, ncp
                 except Exception:  # noqa: BLE001
                     pass
                 if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
