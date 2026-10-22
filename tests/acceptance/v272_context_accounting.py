@@ -27,7 +27,7 @@ registry._external_tools = lambda: {}
 
 os.makedirs(S.SESSIONS_DIR, exist_ok=True)
 os.makedirs(os.environ["LONGRUN_CONFIG_DIR"], exist_ok=True)
-with open(os.path.join(os.environ["LONGRUN_CONFIG_DIR"], "RULES.md"), "w",
+with open(os.path.join(os.environ["LONGRUN_CONFIG_DIR"], "Global_rules.md"), "w",
           encoding="utf-8") as f:
     f.write("# Rules\nPlan before act.\n")
 

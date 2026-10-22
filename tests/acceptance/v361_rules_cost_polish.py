@@ -58,10 +58,10 @@ check("A6 the panel is role-only (global/project rules moved to Settings)",
       '"global rules (all projects)"' not in HTML
       and '"project rules (this workspace)"' not in HTML, "")
 check("A7 the session inspector identifies ROLE.md and links global rules to Settings",
-      'data-args=\'["rules"]\'>Session role<' in HTML
-      and "Per-session ROLE.md only" in HTML
-      and "Global and project RULES.md: Settings → Rules." in HTML, "")
-check("A8 global and project RULES.md editors remain in Settings",
+      'data-args=\'["rules"]\'>Rules<' in HTML
+      and "ROLE.md" in HTML
+      and "Global_rules.md" in HTML, "")
+check("A8 global and project Global_rules.md / Project_rules.md editors remain in Settings",
       'data-cat="rules"' in HTML and 'id="rulesGlobalText"' in HTML
       and 'id="rulesProjectText"' in HTML, "")
 check("A9 Settings includes a diagnostics category and panel",

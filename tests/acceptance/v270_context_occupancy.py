@@ -26,7 +26,7 @@ registry._external_tools = lambda: {}
 
 os.makedirs(S.SESSIONS_DIR, exist_ok=True)
 os.makedirs(os.environ["LONGRUN_CONFIG_DIR"], exist_ok=True)
-with open(os.path.join(os.environ["LONGRUN_CONFIG_DIR"], "RULES.md"), "w",
+with open(os.path.join(os.environ["LONGRUN_CONFIG_DIR"], "Global_rules.md"), "w",
           encoding="utf-8") as f:
     f.write("# Rules\nPlan before act.\nSource driven development.\n")
 
@@ -80,7 +80,7 @@ check("web output -> 'web' tokens", tok["web"] > 0, str(tok))
 check("skills output -> 'skills' tokens", tok["skills"] > 0, str(tok))
 check("harness reminder -> 'harness' tokens", tok["harness"] > 0, str(tok))
 check("plain messages -> 'conversation' tokens", tok["conversation"] > 0, str(tok))
-check("global RULES.md -> 'rules' tokens", tok["rules"] > 0, str(tok))
+check("global Global_rules.md -> 'rules' tokens", tok["rules"] > 0, str(tok))
 check("tokens_total is the sum of the buckets",
       r["tokens_total"] == sum(tok.values()), str(r["tokens_total"]))
 check("budget/pct are present and non-negative",

@@ -29,7 +29,7 @@ approvals:
   timeout_secs: 300             # how long a run waits for a human decision
   # JAG-510 — DANGEROUS, leave it false. When true it unlocks writes into the
   # immutable Nucleus (`src/longrun/`, `webui/`, `config/`, `deploy/`, `tests/`,
-  # `docs/`, `.longrun/`, `RULES.md`, `AGENTS.md`, ...) for EVERY tool: the shell
+  # `docs/`, `.longrun/`, `Global_rules.md` / `Project_rules.md`, `AGENTS.md`, ...) for EVERY tool: the shell
   # write-target gate, `fs.write`/`fs.edit` and the tamper-restore all stand down,
   # so the agent can rewrite the harness mid-run. It is the only kill-switch for
   # the Nucleus and it is enabled exclusively from the checkbox marked DANGEROUS

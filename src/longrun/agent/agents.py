@@ -246,6 +246,13 @@ class AgentRegistry:
         # updates the main app immediately (the reverse is the /rename endpoint).
         if name:
             self.sync_title(sid, _res["agent"].get("name"))
+        # JAG-2.8: publish so the WebUI hot-reloads the sessions rail on ANY
+        # agent metadata change (reports_to, role, model, workspace, budget).
+        try:
+            from longrun.core import server
+            server.publish("agent.updated", session=sid, agent=dict(_res["agent"]))
+        except Exception:  # noqa: BLE001 — publish must never fail a designate
+            pass
         return _res
 
     def sync_title(self, session_id, name):
@@ -356,6 +363,12 @@ class AgentRegistry:
                 routines_mod.REGISTRY.delete_for_agent(released)
             except Exception:  # noqa: BLE001
                 pass
+        # JAG-2.8: publish so the WebUI hot-reloads the sessions rail
+        try:
+            from longrun.core import server
+            server.publish("agent.released", session=session_id, agent=released)
+        except Exception:  # noqa: BLE001
+            pass
         return {"ok": True, "released": released}
 
     def tree(self):

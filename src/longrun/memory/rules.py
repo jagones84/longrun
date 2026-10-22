@@ -5,9 +5,9 @@ Mirrors the AGENTS.md convention: instructions are discovered at two scopes and
 concatenated broadest -> most specific (project wins), then injected into the
 system prompt of both chat and the agent loop.
 
-  * GLOBAL (user, all sessions):  ~/.config/longrun/RULES.md
+  * GLOBAL (user, all sessions):  ~/.config/longrun/Global_rules.md
                                   (also loaded, additive: ~/.config/longrun/AGENTS.md)
-  * PROJECT (the selected workspace): <ws>/.longrun/RULES.md + <ws>/.longrun/rules/*.md
+  * PROJECT (the selected workspace): <ws>/.longrun/Project_rules.md + <ws>/.longrun/rules/*.md
                                   (also loaded, additive: <ws>/AGENTS.md)
 
 The workspace is selectable and persisted in ~/.config/longrun/config.json.
@@ -29,7 +29,7 @@ def _config_dir():
 
 
 def global_rules_path():
-    return os.path.join(_config_dir(), "RULES.md")
+    return os.path.join(_config_dir(), "Global_rules.md")
 
 
 def global_agents_path():
@@ -210,7 +210,7 @@ def project_dir(ws=None):
 
 
 def project_rules_path(ws=None):
-    return os.path.join(project_dir(ws), "RULES.md")
+    return os.path.join(project_dir(ws), "Project_rules.md")
 
 
 def project_agents_path(ws=None):
@@ -226,9 +226,9 @@ def _read(path):
 
 
 def _collect_scope(native, agents, extra_dir=None):
-    """(text, files): the native RULES.md PLUS the AGENTS.md addendum.
+    """(text, files): the native Global_rules.md / Project_rules.md PLUS the AGENTS.md addendum.
 
-    The scope's AGENTS.md is ADDITIVE, not a mere fallback: when RULES.md exists
+    The scope's AGENTS.md is ADDITIVE, not a mere fallback: when the rules file exists
     its text is composed first and the AGENTS.md content is appended after it, so
     BOTH instruction sources reach the model (JAG-128A).
     """
@@ -329,7 +329,7 @@ def rules_prompt_block(max_bytes=None, ws=None):
              "Your standing rules — their text is ALREADY LOADED below, so you do NOT "
              "need to open these files (read them only if you intend to edit). Global "
              "rules apply to every project; project rules win on "
-             "conflict. Within each scope RULES.md and AGENTS.md are BOTH loaded "
+             "conflict. Within each scope Global_rules.md/Project_rules.md and AGENTS.md are BOTH loaded "
              "(additive, not a fallback).\n"
              "- GLOBAL file: %s   (AGENTS.md also loaded, additive: %s)\n"
              "- PROJECT file: %s   (AGENTS.md also loaded, additive: %s)\n"
@@ -349,7 +349,7 @@ def rules_prompt_block(max_bytes=None, ws=None):
 
 
 def save(scope, content, ws=None):
-    """Write the global or project RULES.md atomically. scope in {global,project}."""
+    """Write the global or project rules file atomically. scope in {global,project}."""
     if scope == "global":
         path = global_rules_path()
     elif scope == "project":

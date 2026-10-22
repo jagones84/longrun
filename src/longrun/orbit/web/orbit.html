@@ -829,6 +829,14 @@ class AgentsView {
   _orgRank(agents){
     const byId = {}; agents.forEach(a => { byId[a.id] = a; });
     const by = {}; agents.forEach(a => { const p = a.reports_to || ""; (by[p] = by[p] || []).push(a); });
+    // JAG-2.8: orchestrators (agents with reports) rank before leaves among siblings
+    for (const p of Object.keys(by)) {
+      by[p].sort((a, b) => {
+        const ha = by[a.id] ? 1 : 0, hb = by[b.id] ? 1 : 0;
+        if (ha !== hb) return hb - ha;  // has reports = first
+        return (a.n || 0) - (b.n || 0);
+      });
+    }
     const rank = {}; const seen = {}; let i = 0;
     const walk = a => { if (!a || seen[a.id]) return; seen[a.id] = 1; rank[a.session] = i++; (by[a.id] || []).forEach(walk); };
     (by[""] || []).slice().forEach(walk);

@@ -44,8 +44,8 @@ m = _markers()
 check("A2 the first turn writes exactly one durable start marker", len(m) == 1, str(len(m)))
 txt = (m[0].get("text") if m else "") or ""
 check("A3 the marker names the harness wiring", "harness wiring" in txt, txt[:60])
-check("A4 the marker reports RULES.md + skills + tools + prompt size",
-      "RULES.md" in txt and "skills index" in txt
+check("A4 the marker reports Global_rules.md / Project_rules.md + skills + tools + prompt size",
+      "Global_rules.md" in txt and "skills index" in txt
       and "tool registry" in txt and "system prompt" in txt)
 check("A5 the marker carries the session boundary (after=0)", m and m[0].get("after") == 0)
 check("A7 the system-prompt line is ACCURATE (re-sent per request, KV-cached)",

@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
     os.makedirs(os.path.join(tmp, "webui"), exist_ok=True)
     os.makedirs(os.path.join(tmp, "config"), exist_ok=True)
     srv_file = os.path.join(tmp, "src", "longrun", "core", "server.py")
-    rules_file = os.path.join(tmp, "RULES.md")
+    rules_file = os.path.join(tmp, "Global_rules.md")
     with open(srv_file, "w", encoding="utf-8") as f:
         f.write("# nucleus\n")
     with open(rules_file, "w", encoding="utf-8") as f:
@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     ok_nuc, err_nuc = matrix_guard.check_write_allowed(srv_file, tmp)
     ok_rul, err_rul = matrix_guard.check_write_allowed(rules_file, tmp)
-    check("B check_write_allowed deterministically rejects Nucleus and RULES.md",
+    check("B check_write_allowed deterministically rejects Nucleus and Global_rules.md",
           not ok_nuc and "NUCLEUS_PROTECTED" in err_nuc
           and not ok_rul and "NUCLEUS_PROTECTED" in err_rul)
 
@@ -183,7 +183,7 @@ with tempfile.TemporaryDirectory() as tmp:
           str(res_py.get("error")))
 
     # ---- I) the prompt-bearing surfaces are Nucleus now ----------------------
-    prompt_files = [os.path.join(tmp, ".longrun", "RULES.md"),
+    prompt_files = [os.path.join(tmp, ".longrun", "Project_rules.md"),
                     os.path.join(tmp, ".longrun", "rules", "01-evil.md"),
                     os.path.join(tmp, "AGENTS.md")]
     for p in prompt_files:

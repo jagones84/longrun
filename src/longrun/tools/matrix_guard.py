@@ -55,7 +55,8 @@ NUCLEUS_PROTECTED_REL = (
     # change but a persistent prompt injection, so they are part of the Nucleus.
     ".longrun",
     "docs",
-    "RULES.md",
+    "Global_rules.md",
+    "Project_rules.md",
     "AGENTS.md",
     "CONTRIBUTING.md",
     "README.md",
@@ -76,7 +77,7 @@ _DEFAULT_HANDOFF = (
     "## Recent Changes & Verification\n"
     "- Initialized Matrix layout.\n\n"
     "## Failed Attempts / Do Not Repeat\n"
-    "- Never attempt to modify Nucleus files (`src/longrun/`, `webui/`, `config/`, `RULES.md`).\n"
+    "- Never attempt to modify Nucleus files (`src/longrun/`, `webui/`, `config/`, `Global_rules.md` / `Project_rules.md`).\n"
 )
 
 _DEFAULT_MANUAL = (

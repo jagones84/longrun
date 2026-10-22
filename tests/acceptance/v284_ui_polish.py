@@ -44,8 +44,8 @@ check("the Context inspector section sits above Plan",
 check("the per-session role section is distinct from global Rules",
       # JAG-425: the inline handler became a delegated data-call attribute — assert
       # the INTENT (session-only role; global rules in Settings) without locking syntax.
-      '>Session role<span class="ihd-s"' in ui
-      and "Global and project RULES.md: Settings → Rules." in ui
+      '>Rules<span class="ihd-s"' in ui
+      and "Global_rules.md" in ui
       and 'data-insp="rules"' in ui)
 check("clicking a donut slice highlights its bar (seg + bar share a data-i key)",
       'class="seg" data-i="' in ui and 'class="bdbar" data-i="' in ui

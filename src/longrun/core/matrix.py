@@ -74,7 +74,7 @@ def set_enabled(enabled):
 
 MATRIX_SYSTEM_PROMPT = (
     "## Matrix Self-Evolution (Nucleus vs. Matrix)\n"
-    "- **NUCLEUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `RULES.md` "
+    "- **NUCLEUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `Global_rules.md` / `Project_rules.md` "
     "are hard-protected (`NUCLEUS_PROTECTED`). Import Nucleus functions freely; never edit them.\n"
     "- **MATRIX (`src/Matrix/` & `.Matrix/`):** all 13 subpackages (`agent`, `core`, `integrations`, "
     "`interop`, `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `tools`, `util`, `webui`) "

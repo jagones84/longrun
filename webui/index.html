@@ -372,6 +372,9 @@
   .sess .jid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); flex-shrink: 0;
     background: var(--hover); border: 1px solid var(--accent);
     border-radius: 6px; padding: 1px 5px; }
+  /* JAG-2.8: agent role label in the session rail (e.g. "Senior Project Manager") */
+  .sess .nrl { font-size: 9px; color: var(--dim); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; max-width: 120px; flex-shrink: 1; }
 
   /* context meter */
   .meter { height: 14px; border-radius: 999px; background: var(--chipbg);
@@ -1767,10 +1770,10 @@
         </div>
       </section>
       <section data-insp="rules" class="insp-open">
-        <button class="insp-hd" data-call="toggleInsp" data-args='["rules"]'>Session role<span class="ihd-s" id="sRoles"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["rules"]'>Rules<span class="ihd-s" id="sRoles"></span></button>
         <div class="insp-body">
         <div class="card">
-          <div class="remaining u-mb6">Per-session ROLE.md only. Global and project RULES.md: Settings → Rules.</div>
+          <div class="remaining u-mb6">Full prompt stack for this session. <b>ROLE.md</b> is editable here (same as the AGENTS panel PROMPT). Global and project <b>Global_rules.md / Project_rules.md</b> are read-only references — edit them in Settings → Rules.</div>
           <div id="rulesWho" class="rwho"></div>
           <div id="rulesList"></div>
         </div>
@@ -4475,6 +4478,14 @@ function _orgRankMap() {
   const byId = {}; agents.forEach(a => { byId[a.id] = a; });
   const by = {};   // reports_to id ("" = root) -> [agent]
   agents.forEach(a => { const p = a.reports_to || ""; (by[p] = by[p] || []).push(a); });
+  // JAG-2.8: orchestrators (agents with reports) rank before leaves among siblings
+  for (const p of Object.keys(by)) {
+    by[p].sort((a, b) => {
+      const ha = by[a.id] ? 1 : 0, hb = by[b.id] ? 1 : 0;
+      if (ha !== hb) return hb - ha;  // has reports = first
+      return (a.n || 0) - (b.n || 0);
+    });
+  }
   const rank = {}; const seen = {}; let i = 0;
   const walk = a => { if (!a || seen[a.id]) return; seen[a.id] = 1; rank[a.session] = i++; (by[a.id] || []).forEach(walk); };
   (by[""] || []).slice().forEach(walk);
@@ -4513,10 +4524,12 @@ function _sessRowEl(s, pinnedIds, ag) {
   // JAG-339: the team symbol(s) this agent belongs to (may be several).
   const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];
     return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
+  // JAG-2.8: show the agent's role from the roster (e.g. "Senior Project Manager")
+  const roleBadge = (ag && ag.role) ? `<span class="nrl" title="agent role: ${esc(ag.role)}">${esc(ag.role)}</span>` : "";
   const pin = pinnedIds.includes(s.id) ? '<span class="pin" title="pinned session">📌</span>' : "";
   // JAG-424g: the ctx ring sits on LINE 1 of the active row (before the full-width
   // title, which always wraps to its own line) so it never lands under the title text.
-  d.innerHTML = `${pin}${agtag}${jid}${tchips}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span>${_ctxRingHtml(s)}<span class="t">${esc(s.title || s.id)}</span>`;
+  d.innerHTML = `${pin}${agtag}${jid}${tchips}${roleBadge}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span>${_ctxRingHtml(s)}<span class="t">${esc(s.title || s.id)}</span>`;
   d.onclick = e => {
     if (e.target.classList.contains("menu-btn")) { openSessMenu(d, s, ag); return; }
     if (e.target.closest && e.target.closest(".sess-menu")) return;
@@ -5095,10 +5108,11 @@ function ctxNa(reason) {
   const _cp = $("ctxPctTop"); if (_cp) _cp.textContent = "–";
   const _cr = $("ctxRing"); if (_cr) _cr.style.strokeDashoffset = "100";
 }
-/* JAG-361: this panel shows the ONE editable, per-session prompt source — the agent
-   role (ROLE.md, via roles.py), opened at its real absolute path and edited in place.
-   Global/project RULES.md live in Settings > Rules; the identity and policy sections
-   (server.py constants) are code, not files. */
+/* JAG-361: this panel shows the full prompt stack for a session:
+   (1) ROLE.md — per-session, editable here (same as the AGENTS panel PROMPT button)
+   (2) Global_rules.md — read-only reference, edit in Settings > Rules
+   (3) Project_rules.md — read-only reference, edit in Settings > Rules
+   The identity and policy sections (server.py constants) are code, not files. */
 async function loadRole() { return loadRulesPanel(); }   // JAG-361: kept as an alias
 async function loadRulesPanel() {
   const box = $("rulesList"); if (!box) return;
@@ -5134,7 +5148,31 @@ async function loadRulesPanel() {
   if (sessionId) rows.push(_rulesRow("role", "session role", (role && role.path) || "(no session)",
                                      (role && role.text) || "", "ROLE.md", !!(role && role.text), true));
   else rows.push('<div class="remaining">open a session to see its ROLE.md</div>');
+  // JAG-2.8: show global and project Global_rules.md / Project_rules.md as read-only reference —
+  // they apply to this session but are edited in Settings > Rules.
+  if (d.global && d.global.path) {
+    rows.push(_rulesRefRow("global", "global rules", d.global));
+  }
+  if (d.project && d.project.path) {
+    rows.push(_rulesRefRow("project", "project rules", d.project));
+  }
   box.innerHTML = rows.join("");
+}
+/* JAG-2.8: read-only reference row for global/project Global_rules.md / Project_rules.md — shows the
+   path, char count, and a preview of the text. Edit in Settings > Rules. */
+function _rulesRefRow(kind, label, src) {
+  const id = "rule_" + kind;
+  const chars = src.chars || 0;
+  const badge = src.exists ? (chars + " chars") : "does not exist";
+  const ok = src.exists && chars > 0;
+  return '<details class="rulesrc">'
+    + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (ok ? " ok" : "") + '">'
+    + esc(badge) + '</span></summary>'
+    + '<div class="rpath" title="' + esc(src.path) + '">' + esc(src.path) + '</div>'
+    + '<textarea class="inp" id="' + id + '" readonly style="width:100%;min-height:80px;font-size:12px;'
+    + 'font-family:ui-monospace,monospace;opacity:0.7">' + esc(src.text || "") + '</textarea>'
+    + '<div class="rrow"><span class="remaining">read-only here — edit in '
+    + '<a href="#" onclick="openSettings(\'rules\');return false">Settings → Rules</a></span></div></details>';
 }
 function _rulesRow(kind, label, path, text, filesNote, ok, open) {
   const id = "rule_" + kind;
@@ -7273,6 +7311,8 @@ function _feedReplay(ev) {
     return;
   }
   if (kind === "session.created" || kind === "session.deleted" || kind === "session.renamed") loadSessions();
+  // JAG-2.8: agent metadata changes (reports_to, role, etc.) must re-sort the rail
+  if (kind === "agent.updated" || kind === "agent.released") loadSessions();
 }
 /* JAG-465: after a feed gap the DURABLE stores are the truth — re-read them so the
    UI cannot stay stale until the operator hits reload. */
@@ -7395,6 +7435,9 @@ function connectFeed() {
     if (d.session) _forgetTodoOpenState(d.session);
     if (d.session) _forgetChatScrollState(d.session);
     push("🗂 session deleted"); loadSessions(); });
+  // JAG-2.8: agent metadata changes (reports_to, role, model, etc.) hot-reload the rail
+  es.addEventListener("agent.updated", e => { loadSessions(); });
+  es.addEventListener("agent.released", e => { const d = JSON.parse(e.data); push("🔓 agent released"); loadSessions(); });
   // JAG-465: a suspended/backgrounded tab receives no feed events at all. Re-read the
   // durable state when it becomes visible again, so returning to the tab shows the
   // real state without a manual reload.
@@ -7614,14 +7657,14 @@ function renderTools(el, d) {
          </label>
          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;color:var(--err)" title="DANGEROUS — unlocks writes into the immutable Nucleus for every tool: the shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, so the agent can rewrite the harness mid-run. Off by default; never unlocked by FULL approval mode.">
            <input id="apNucleusUnlock" type="checkbox"${pol.allow_nucleus_write ? " checked" : ""}>
-           <span><b>DANGEROUS — unlock Nucleus writes</b> <span class="remaining">(lets the agent modify <code>src/longrun</code>, <code>webui</code>, <code>config</code>, <code>deploy</code>, <code>tests</code>, <code>docs</code>, <code>.longrun</code>, <code>RULES.md</code>, <code>AGENTS.md</code>; off by default)</span></span>
+           <span><b>DANGEROUS — unlock Nucleus writes</b> <span class="remaining">(lets the agent modify <code>src/longrun</code>, <code>webui</code>, <code>config</code>, <code>deploy</code>, <code>tests</code>, <code>docs</code>, <code>.longrun</code>, <code>Global_rules.md</code> / <code>Project_rules.md</code>, <code>AGENTS.md</code>; off by default)</span></span>
          </label>
        </div>
      </div>`;
   // JAG-451: approval policy BY CATEGORY — everything the harness emits on its own.
   const KINDS = [
     ["skills", "Self-generated skills", "mined skill drafts → promoted into skills/created/"],
-    ["proposals", "Rule / skill proposals", "agent-proposed changes to RULES.md or skills"],
+    ["proposals", "Rule / skill proposals", "agent-proposed changes to Global_rules.md / Project_rules.md or skills"],
     ["memory", "Distilled memory", "auto-written lessons in data/memory/"],
     ["subagent", "Subagent spawns", "delegating a subtask to a child agent"],
   ];
@@ -7902,7 +7945,7 @@ function renderTools(el, d) {
   if (apNucUnlock) apNucUnlock.onchange = () => {
     if (apNucUnlock.checked && !confirm(
       "DANGEROUS\n\nThis unlocks writes into the immutable Nucleus "
-      + "(src/longrun, webui, config, deploy, tests, docs, .longrun, RULES.md, AGENTS.md).\n"
+      + "(src/longrun, webui, config, deploy, tests, docs, .longrun, Global_rules.md / Project_rules.md, AGENTS.md).\n"
       + "The shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, "
       + "so the agent can rewrite the harness itself mid-run.\n\nEnable it?")) {
       apNucUnlock.checked = false;
@@ -8848,7 +8891,7 @@ async function loadRules() {
     $("rulesProjectPath").textContent = "file: " + (p.path || "—") + (p.exists ? "" : " (does not exist)");
     $("rulesGlobalText").value = g.text || "";
     $("rulesProjectText").value = p.text || "";
-    gateEnroll($("rulesGlobalCard"));     // JAG-496: RULES.md Save buttons follow the shared dirty-gate
+    gateEnroll($("rulesGlobalCard"));     // JAG-496: Global_rules.md / Project_rules.md Save buttons follow the shared dirty-gate
     gateEnroll($("rulesProjectCard"));
     const files = [];
     (g.files || []).forEach(f => files.push("G " + f));

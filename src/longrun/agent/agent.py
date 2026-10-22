@@ -2140,7 +2140,7 @@ def _harness_start_note(sess):
         secs = prompt_mod.section_texts(sess, ws=ws, tool_ctx=None)
         text = ("session started \u2014 harness wiring\n"
                 "- workspace: %s\n"
-                "- rules loaded (RULES.md): %d chars\n"
+                "- rules loaded (Global_rules.md / Project_rules.md): %d chars\n"
                 "- skills index: %d chars \u2014 search a skill with skills{action:'search'}\n"
                 "- tool registry: %d chars\n"
                 "- system prompt: %d chars (re-sent with each request; the provider reuses "
