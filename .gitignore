@@ -104,9 +104,9 @@ docs/diagrams/
 # on disk — untracked, not deleted (`git rm -r --cached .trae`).
 .trae/
 
-# JAG-2.9: `.longrun/` is per-machine operational state (project rules, prompt
-# addenda, workspaces, the codebase index). It is CREATED ON DEMAND by the harness
-# (rules.save / workspaces_root), never committed, and never needs a manual mkdir.
+# JAG-2.9: `.longrun/` is per-machine operational state. It is no longer created
+# by the harness (JAG-534 moved project rules to the data home), but a stale
+# checkout must not suddenly start tracking it. `.gitignore`d, never committed.
 .longrun/
 
 # OS / editor cruft (never share a machine's local state).

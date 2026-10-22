@@ -6559,11 +6559,15 @@ async function loadHome() {
   });
   const warn = $("homeWarn");
   if (warn) {
-    warn.hidden = !h.legacy_in_repo;
-    warn.textContent = h.legacy_in_repo
+    // JAG-534: two ways the data can be somewhere else than the chosen home —
+    // still in the checkout (cycle 19), or in the pre-534 XDG/macOS location.
+    const stale = h.legacy_in_repo ? h.data_dir : (h.legacy_home_dir || "");
+    warn.hidden = !stale;
+    warn.textContent = !stale ? "" : (h.legacy_in_repo
       ? "Your data still lives inside the repository (" + h.data_dir + "). A git pull, " +
         "a fresh clone or a container image can replace or expose it — move it below."
-      : "";
+      : "Your data is still in the previous location (" + h.legacy_home_dir + ") — " +
+        "move it below so everything sits under " + h.home + ".");
   }
   const inp = $("homePath");
   // The field holds the HOME (the folder that will contain data/ and matrix/),

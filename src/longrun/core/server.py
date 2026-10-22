@@ -9,7 +9,8 @@ Wraps the local llama.cpp router (127.0.0.1:8080) with:
   - an SSE loopback feed (/api/feed) for WebUI + mobile live views
   - a mobile command API (bind 0.0.0.0 to reach the phone over Tailscale)
 
-Stdlib only. Data lives in ./data (gitignored). Optional bearer token auth.
+Stdlib only. User data lives in the DATA HOME (see ``longrun.util.paths``), never
+in the checkout. Optional bearer token auth.
 """
 
 import argparse

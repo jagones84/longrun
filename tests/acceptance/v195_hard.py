@@ -52,9 +52,8 @@ def check(name, ok, detail=""):
 
 
 def wsdir(name):
-    """A workspace under an allowed root (REPO) so resolve_path accepts it."""
-    p = os.path.join(REPO, "data", "v195-%s-%d" % (name, os.getpid()))
-    os.makedirs(p, exist_ok=True)
+    """A workspace under an allowed root, OUTSIDE the checkout (JAG-534)."""
+    p = tempfile.mkdtemp(prefix="sf-v195-%s-" % name, dir=os.path.dirname(REPO))
     atexit.register(lambda: shutil.rmtree(p, ignore_errors=True))
     return p
 
@@ -100,7 +99,7 @@ _real_load = registry.load_config
 registry.load_config = lambda reload=False: _cfg
 try:
     wc = wsdir("C")
-    outside = os.path.join(REPO, "data", "v195-outside.txt")
+    outside = os.path.join(os.path.dirname(REPO), "sf-v195-outside-%d.txt" % os.getpid())
     check("C1 fs.read INSIDE the workspace stays auto",
           registry.classify("fs.read", {"path": "in.txt"}, workspace=wc)[0] == "auto",
           str(registry.classify("fs.read", {"path": "in.txt"}, workspace=wc)))

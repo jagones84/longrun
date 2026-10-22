@@ -89,8 +89,8 @@ else:
           and "/.local/share/" not in _p and "Application Support" not in _p, _p)
 check("B3 the home status payload names every root the UI shows",
       {"home", "source", "default", "config_dir", "data_dir", "legacy_in_repo",
-       "matrix_dir", "workspaces_dir", "projects_dir"} <= set(paths.home_status()),
-      sorted(paths.home_status()))
+       "legacy_home_dir", "matrix_dir", "workspaces_dir", "projects_dir"}
+      <= set(paths.home_status()), sorted(paths.home_status()))
 
 # --- C: nothing mutable is still derived from the repo root ----------------
 _src = []
@@ -163,6 +163,39 @@ if os.name != "nt":
             os.environ["HOME"] = _prev_home_env
         if _prev_cfg_dir:
             os.environ["LONGRUN_CONFIG_DIR"] = _prev_cfg_dir
+        paths = importlib.reload(paths)
+
+# --- J: an install from the cycle-19 XDG home keeps its data ----------------
+# Moving the default from `~/.local/share/longrun` to `~/.longrun` must NOT
+# blank an existing install: the old data dir is served (and flagged) until the
+# operator moves it, exactly like the in-repo rescue.
+if os.name != "nt":
+    _fake2 = os.path.join(TMP, "home2")
+    _old = os.path.join(_fake2, ".local", "share", "longrun", "data")
+    os.makedirs(_old, exist_ok=True)
+    with open(os.path.join(_old, "marker.txt"), "w", encoding="utf-8") as f:
+        f.write("cycle 19 data")
+    _saved = {k: os.environ.get(k) for k in
+              ("LONGRUN_DATA_DIR", "LONGRUN_DATA_HOME", "LONGRUN_CONFIG_DIR",
+               "HOME", "XDG_DATA_HOME")}
+    for _k in ("LONGRUN_DATA_DIR", "LONGRUN_DATA_HOME", "LONGRUN_CONFIG_DIR"):
+        os.environ.pop(_k, None)
+    os.environ["HOME"] = _fake2
+    os.environ["XDG_DATA_HOME"] = os.path.join(_fake2, ".local", "share")
+    try:
+        _p2 = importlib.reload(paths)
+        check("J1 an upgrade from the XDG home keeps serving its data",
+              os.path.realpath(_p2.DATA_DIR) == os.path.realpath(_old)
+              and bool(_p2.LEGACY_HOME_DATA), _p2.DATA_DIR)
+        check("J2 the status flags it so the UI offers the move",
+              _p2.home_status().get("legacy_home_dir") == _p2.DATA_DIR,
+              _p2.home_status().get("legacy_home_dir"))
+    finally:
+        for _k, _v in _saved.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
         paths = importlib.reload(paths)
 
 # --- G: the sandbox scratch root is user data too --------------------------

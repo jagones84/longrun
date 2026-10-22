@@ -53,6 +53,8 @@ NUCLEUS_PROTECTED_REL = (
     ".trae",
     # JAG-510/C4: the surfaces the system prompt READS. Writing here is not a code
     # change but a persistent prompt injection, so they are part of the Nucleus.
+    # JAG-534: project rules moved to the data home, so `.longrun/` is only a
+    # LEGACY alias — kept protected in case such a folder reappears in a checkout.
     ".longrun",
     "docs",
     "Global_rules.md",
@@ -65,9 +67,10 @@ NUCLEUS_PROTECTED_REL = (
 
 MATRIX_ALLOWED_REL = (
     os.path.join("src", "Matrix"),
-    ".Matrix",
-    "data",
     os.path.join("skills", "created"),
+    # JAG-534: the runtime dir and the data dir are checked ABSOLUTELY in
+    # `is_matrix_writable` (they live under the data home, not the checkout), so
+    # no repo-relative `data/` or `.Matrix` entry is needed here any more.
 )
 
 _DEFAULT_HANDOFF = (

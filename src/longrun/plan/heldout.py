@@ -12,7 +12,12 @@ import os
 import shlex
 import time
 
-DEFAULT_DIR = "~/.longrun/heldout"
+from longrun.util import paths
+
+# JAG-534: the sealed judge lives in the DATA HOME (outside any workspace and
+# outside the checkout), so a home move carries it and nothing can resolve it
+# from the agent's cwd.
+DEFAULT_DIR = os.path.join(paths.DATA_DIR, "heldout")
 
 
 def dir():

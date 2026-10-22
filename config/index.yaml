@@ -1,10 +1,10 @@
 # Knowledge index (JAG-397) — codebase + documentation retrieval for the agent.
 #
 # Design: ONE sqlite database per workspace, kept OUTSIDE the project in the app
-# data dir (data/index/<slug>.db) — the same convention the big IDEs use
-# (VS Code / Cursor `workspaceStorage` / `globalStorage`). Retrieval is SQLite
-# **FTS5 with bm25()** (built into CPython, zero dependencies). Set `embed_model`
-# to a provider ref to enable hybrid (vector + keyword) retrieval.
+# data dir (`<data home>/data/codebase/<sha1(workspace)>.db`) — the same
+# convention the big IDEs use (VS Code / Cursor `workspaceStorage` / `globalStorage`).
+# Retrieval is SQLite **FTS5 with bm25()** (built into CPython, zero dependencies).
+# Set `embed_model` to a provider ref to enable hybrid (vector + keyword) retrieval.
 enabled: true
 automatic: false          # true = incremental rebuild on demand; the UI has a manual button
 max_file_kb: 512          # skip files larger than this (avoids huge generated blobs)

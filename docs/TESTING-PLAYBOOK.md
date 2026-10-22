@@ -24,9 +24,10 @@ Written down so a future session does not have to rediscover it.
    only for read-only inspection; never call UI mutation functions from page JS.
 4. **Know the three layers** (test all three, they fail independently):
    - **Static** — unit tests / the battery (`tests/battery.sh`).
-   - **Runtime data** — the artifacts on disk: `data/sessions/<sid>.json`,
-     `data/graphs/<sid>.json`, `data/runs/`, `data/edits/`, `data/events.db`,
-     `data/offload/<sid>/`.
+   - **Runtime data** — the artifacts on disk, all RELATIVE TO THE DATA HOME
+     (`~/.longrun/data`, resolved by `util/paths.py`; never inside the checkout):
+     `sessions/<sid>.json`, `graphs/<sid>.json`, `runs/`, `edits/`, `events.db`,
+     `offload/<sid>/`.
    - **Live UI** — the browser: DOM, console, network, screenshots (chrome-devtools MCP).
 5. **Always restore state.** Delete throwaway sessions/test artifacts when done;
    never leave the harness polluted (that was itself a past complaint).

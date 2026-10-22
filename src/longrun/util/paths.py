@@ -38,6 +38,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 
 # src/longrun/util/paths.py -> src/longrun/util -> src/longrun -> src -> <repo root>
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -145,23 +146,45 @@ _adopt_legacy_config()
 HOME_DIR, HOME_SOURCE = resolve_home()
 
 
+def _legacy_home_data():
+    """The DATA dir of the pre-JAG-534 platform home, or "" when impossible.
+
+    Cycle 19 kept real data in `$XDG_DATA_HOME/longrun` (Linux) /
+    `~/Library/Application Support/Longrun` (macOS). An install upgraded from
+    there must keep being served until the operator moves it: the alternative is
+    a silent empty start, which reads exactly like data loss.
+    """
+    if os.name == "nt":
+        return ""              # the Windows default never changed
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/Longrun/data")
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "longrun", "data")
+
+
 def _pick_data_dir():
     """The data dir + whether it is the LEGACY in-repo one."""
     env = os.environ.get("LONGRUN_DATA_DIR")
     if env:
         return os.path.abspath(os.path.expanduser(env)), False
     home_data = os.path.join(HOME_DIR, "data")
-    legacy = os.path.join(REPO_ROOT, "data")
-    # A configured/moved home always wins; the legacy dir is only a rescue for a
-    # checkout that has not been migrated yet (never override real data at HOME).
-    if HOME_SOURCE in ("env", "config") and os.path.isdir(home_data):
+    if os.path.isdir(home_data):
         return home_data, False
-    if not os.path.isdir(home_data) and os.path.isdir(legacy):
+    old_home = _legacy_home_data()
+    if old_home and os.path.isdir(old_home):
+        return old_home, False
+    legacy = os.path.join(REPO_ROOT, "data")
+    if os.path.isdir(legacy):
         return legacy, True
     return home_data, False
 
 
+_LEGACY_HOME_DATA = _legacy_home_data()
 DATA_DIR, LEGACY_DATA_IN_REPO = _pick_data_dir()
+# Non-empty ONLY while a cycle-19 (XDG/macOS) home is still being served.
+LEGACY_HOME_DATA = (DATA_DIR if _LEGACY_HOME_DATA
+                    and os.path.realpath(DATA_DIR) == os.path.realpath(_LEGACY_HOME_DATA)
+                    else "")
 # Where the operator WANTS the data (what a move targets; differs from DATA_DIR
 # while a legacy checkout is still being served).
 TARGET_DATA_DIR = os.path.join(HOME_DIR, "data")
@@ -229,6 +252,7 @@ def home_status():
         "data_dir": DATA_DIR,
         "target_data_dir": TARGET_DATA_DIR,
         "legacy_in_repo": LEGACY_DATA_IN_REPO,
+        "legacy_home_dir": LEGACY_HOME_DATA,
         "repo_data_dir": os.path.join(REPO_ROOT, "data"),
         "matrix_dir": MATRIX_DOT_DIR,
         "workspaces_dir": WORKSPACES_DIR,

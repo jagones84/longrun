@@ -91,15 +91,18 @@ to the event bus and persisted, so a reload rebuilds the transcript and task gra
 | `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
 | `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |
 
-## Data stores (`data/`, gitignored)
+## Data stores (the data home — `~/.longrun/data`, never the checkout)
 
 `sessions/` (transcripts) · `graphs/` (per-session task graphs) · `runs/` (traces +
 token/cost) · `edits/` (diff journal) · `memory/` · `checkpoints/` · `offload/` (oversized
 observations spilled to files) · `codebase/` (per-workspace FTS+vector index) ·
 `knowledge/` + `embedding/` (global notebook index + its cost log) · `costs/` (per-session
 model-call ledger) · `prices.json` · `tls/` (auto self-signed cert for HTTPS) ·
-`agents.json` · `teams.json` · `jobs.json` · `events.db` (durable SSE feed). Writes are
-atomic (`tmp` + `os.replace`).
+`agents.json` · `teams.json` · `jobs.json` · `events.db` (durable SSE feed) ·
+`projects/` (per-workspace Project_rules.md, rules/, prompt.d/). Writes are
+atomic (`tmp` + `os.replace`). The root is resolved by `util/paths.py`
+(`LONGRUN_DATA_HOME` → `data_home` in `~/.longrun/config/config.json` → platform
+default) and can be moved from Settings ▸ Info.
 
 ## Safety model
 
@@ -116,8 +119,9 @@ or `bwrap` / `nsjail`) so the agent never touches the host. Hard-denied patterns
   constellation, job create/dispatch, team selector, model policy.
 - **CLI** `forge.py` — chat, agent runs, tasks, models, MCP.
 - **HTTP API** — see [CLI.md](CLI.md); optional bearer auth (`--token`). The server also
-  listens over **HTTPS** on `--port + 1` (self-signed cert auto-generated in `data/tls/`,
-  `LONGRUN_TLS=0` to disable) so the page is a *secure context* and browser voice input works.
+  listens over **HTTPS** on `--port + 1` (self-signed cert auto-generated in
+  `<data home>/data/tls/`, `LONGRUN_TLS=0` to disable) so the page is a *secure context*
+  and browser voice input works.
 
 ## Entry points
 

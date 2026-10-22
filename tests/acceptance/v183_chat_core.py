@@ -247,8 +247,9 @@ check("E2 todo.update card persisted (JAG-190)", "todo.update" in _tools,
 # resolve against the workspace (like the shell tool's cwd), not REPO.
 from longrun.tools import registry as _reg  # noqa: E402
 from longrun.tools import tools as _tools  # noqa: E402
-_ws = os.path.join(REPO, "data", "v183ws-%d" % os.getpid())
-os.makedirs(_ws, exist_ok=True)
+# JAG-534: a scratch workspace must live under an allowed root but NEVER inside
+# the checkout — `<repo>/data` no longer exists and must not be recreated.
+_ws = tempfile.mkdtemp(prefix="sf-v183ws-", dir=os.path.dirname(REPO))
 atexit.register(lambda: shutil.rmtree(_ws, ignore_errors=True))
 _rp, _rerr = _reg.resolve_path("HELLO.txt", _reg.tool_spec("fs.write")["roots"],
                                base=_ws)
