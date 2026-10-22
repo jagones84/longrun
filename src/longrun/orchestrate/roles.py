@@ -15,6 +15,7 @@ import os
 import re
 import threading
 
+from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -23,7 +24,7 @@ _MAX = 20000
 
 def roles_dir():
     """The directory holding the per-session ROLE.md files."""
-    return os.environ.get("LONGRUN_ROLES_DIR") or os.path.join(REPO, "data", "roles")
+    return os.environ.get("LONGRUN_ROLES_DIR") or os.path.join(paths.DATA_DIR, "roles")
 
 
 def key(session_id):

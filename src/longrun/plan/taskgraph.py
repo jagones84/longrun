@@ -28,9 +28,10 @@ import re
 import threading
 import time
 
+from longrun.util import paths
 from longrun.util.fswrite import read_json, write_json
 from longrun.util.paths import REPO_ROOT as REPO
-GRAPH_DIR = os.path.join(os.environ.get("LONGRUN_GRAPH_DIR", os.path.join(REPO, "data")),
+GRAPH_DIR = os.path.join(os.environ.get("LONGRUN_GRAPH_DIR", paths.DATA_DIR),
                          "graphs")
 
 GRAPH_LOCK = threading.RLock()

@@ -958,6 +958,12 @@ def handle(handler, method, path, qs, body):
 
     if method == "GET":
         # v0.2 core GET routes
+        # JAG-533: WHERE the user's data lives, and the state of a running move.
+        if path == "/api/home":
+            from longrun.core import homemove
+            from longrun.util import paths as _paths
+            return _r(handler, 200, {"home": _paths.home_status(),
+                                     "move": homemove.status()})
         if path == "/api/tools":
             # JAG-488: an explicitly requested backend that is unavailable raises
             # from probe() (never silently run on the host) — report it in the
@@ -1732,6 +1738,18 @@ def handle(handler, method, path, qs, body):
         # --- JAG-114: global/project rules + workspace selection --------------
         if path == "/api/rules":
             res = rules_save(body)
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        # JAG-533: change the data home; the move runs in the BACKGROUND (its
+        # progress is polled at GET /api/home and pushed as `home.move`).
+        if path == "/api/home/move":
+            from longrun.core import homemove
+            res = homemove.start(body.get("path") or body.get("home"),
+                                 remove_source=body.get("remove_source", True),
+                                 move_matrix=body.get("move_matrix", True))
+            return _r(handler, 202 if res.get("ok") else 400, res)
+        if path == "/api/home/restart":
+            from longrun.core import homemove
+            res = homemove.restart_supervised()
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/workspace":
             res = workspace_set(body)

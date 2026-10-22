@@ -208,9 +208,34 @@ Other variables used by configured MCP servers can also be added in **Settings �
 |---|---|
 | Keys and server token | `<repository>/.env` |
 | User provider settings | `config/providers.local.yaml` |
-| Sessions, events, indexes, and other app data | `data/` |
+| Sessions, events, indexes, and other app data | the **data home** (see below) |
 | User MCP definitions | `config/mcp_clients.local.json` |
 | User-installed skills | `skills/local/` |
+
+### Where your data lives (not in the repository)
+
+Everything mutable — sessions, the event log, indexes, costs, the self-evolution
+checkout — lives under ONE **data home**, never inside the checkout: a `git pull`,
+a fresh clone or a container image must not be able to replace or expose it.
+Resolution order:
+
+1. `LONGRUN_DATA_HOME` (explicit override);
+2. `data_home` in `~/.config/longrun/config.json` (what **Settings → Info → Data
+   home** writes);
+3. the platform default:
+   - Windows `%LOCALAPPDATA%\Longrun`
+   - macOS `~/Library/Application Support/Longrun`
+   - Linux `$XDG_DATA_HOME/longrun` (else `~/.local/share/longrun`)
+
+Inside the home: `data/` (sessions, events, knowledge, codebase index, costs,
+roles, checkpoints) and `matrix/` (the self-evolution runtime). Workspaces created
+by the harness go to `<home>/workspaces`.
+
+**Settings → Info → Data home** shows the current location and can MOVE it: the
+old tree is copied, the copy is verified file by file, and only then is the source
+removed — with a progress bar, then a restart. A repository that still has a
+legacy `<repository>/data` keeps being served from there (nothing is lost) and the
+panel flags it as "still inside the repository" until you move it.
 
 These paths are gitignored. Knowledge Base is shared across sessions within one
 Longrun instance; the codebase index is separate for each workspace.
@@ -354,7 +379,7 @@ LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
 The full command ran successfully during the original README update: **218/218 passed**.
-The acceptance suite now contains **244/244 test files**.
+The acceptance suite now contains **245/245 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

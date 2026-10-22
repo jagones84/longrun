@@ -24,10 +24,13 @@ import shutil
 import tempfile
 import time
 
+from longrun.util import paths
 from longrun.util.paths import REPO_ROOT
 
 CONFIG_DIR = os.path.join(REPO_ROOT, "config")
-BACKUP_DIR = os.path.join(REPO_ROOT, "data", "config-backups")
+# JAG-533: backups are USER STATE (they hold your edits), so they live in the data
+# home — a `git pull` must never be able to discard them.
+BACKUP_DIR = os.path.join(paths.DATA_DIR, "config-backups")
 MAX_BYTES = 1024 * 1024  # a config file is not a dataset
 _NAME_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$")
 

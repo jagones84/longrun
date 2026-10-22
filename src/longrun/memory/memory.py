@@ -26,9 +26,11 @@ import time
 import uuid
 
 from longrun.tools import registry
+from longrun.util import paths
 
 REPO = registry.REPO
-DATA_DIR = os.path.join(REPO, "data", "memory")
+# JAG-533: persistent memory is user state -> the data home, never the checkout.
+DATA_DIR = os.path.join(paths.DATA_DIR, "memory")
 
 _lock = threading.RLock()
 _writes_since_index = 0

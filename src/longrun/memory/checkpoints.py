@@ -22,10 +22,12 @@ import time
 import uuid
 
 from longrun.tools import registry
+from longrun.util import paths
 from longrun.util.fswrite import read_json, write_json
 
 REPO = registry.REPO
-CKPT_DIR = os.path.join(REPO, "data", "checkpoints")
+# JAG-533: checkpoints are user state (they hold your rewind history).
+CKPT_DIR = os.path.join(paths.DATA_DIR, "checkpoints")
 MAX_CHECKPOINTS = 100
 
 _lock = threading.RLock()

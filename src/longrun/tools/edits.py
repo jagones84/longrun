@@ -21,6 +21,7 @@ import re
 import threading
 import time
 
+from longrun.util import paths
 from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 MAX_ENTRIES = 500
@@ -31,7 +32,7 @@ _lock = threading.RLock()
 
 
 def _dir():
-    return os.environ.get("LONGRUN_EDITS_DIR") or os.path.join(REPO, "data", "edits")
+    return os.environ.get("LONGRUN_EDITS_DIR") or os.path.join(paths.DATA_DIR, "edits")
 
 
 def _key_file(key):

@@ -15,9 +15,10 @@ import threading
 import time
 from collections import deque
 
-from longrun.util.paths import REPO_ROOT as REPO
+from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR as _PATH_DATA_DIR
 
-DATA_DIR = os.path.join(REPO, "data")
+# JAG-533: the durable event log is user state -> the data home, never the checkout.
+DATA_DIR = _PATH_DATA_DIR
 MAX_FEED_EVENTS = 800
 
 # --------------------------------------------------------------- sqlite ----

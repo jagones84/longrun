@@ -15,11 +15,13 @@ import os
 import threading
 import time
 
+from longrun.util import paths
 from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
-AGENTS_FILE = os.environ.get("LONGRUN_AGENTS_FILE") or os.path.join(REPO, "data", "agents.json")
+AGENTS_FILE = os.environ.get("LONGRUN_AGENTS_FILE") or os.path.join(
+    paths.DATA_DIR, "agents.json")
 
 
 def _load():

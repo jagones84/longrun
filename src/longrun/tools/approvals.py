@@ -18,9 +18,11 @@ import time
 import uuid
 
 from longrun.tools import registry
+from longrun.util import paths
 from longrun.util.fswrite import write_json
 
-DATA_DIR = os.path.join(registry.REPO, "data")
+# JAG-533: approvals are user state, so they live in the data home.
+DATA_DIR = paths.DATA_DIR
 # Distinct file name: another harness build may own data/approvals.json.
 PATH = os.environ.get("LONGRUN_APPROVALS",
                       os.path.join(DATA_DIR, "approvals-v02.json"))

@@ -8,9 +8,10 @@ import json
 import os
 import time
 
+from longrun.util import paths
 from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
-RUNS_DIR = os.environ.get("LONGRUN_RUNS_DIR", os.path.join(REPO, "data", "runs"))
+RUNS_DIR = os.environ.get("LONGRUN_RUNS_DIR", os.path.join(paths.DATA_DIR, "runs"))
 _START = {}
 
 

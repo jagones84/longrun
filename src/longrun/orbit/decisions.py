@@ -15,13 +15,14 @@ import threading
 import time
 
 from longrun.util.fswrite import write_json
+from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO
 
 from .attention import AttentionFeed
 
 _LOCK = threading.RLock()
 FILE = os.environ.get("LONGRUN_DECISIONS_FILE") or os.path.join(
-    REPO, "data", "orbit_decisions.json")
+    paths.DATA_DIR, "orbit_decisions.json")
 
 _DISMISSABLE = ("dismiss", "ack")
 

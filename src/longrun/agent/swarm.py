@@ -34,10 +34,12 @@ import uuid
 
 from longrun.core.sse import sse_tail
 from longrun.tools import registry
+from longrun.util import paths
 from longrun.util.fswrite import write_json
 
 REPO = registry.REPO
-DATA_DIR = os.path.join(REPO, "data", "blackboard")
+# JAG-533: mutable state lives in the USER DATA HOME, never in the checkout.
+DATA_DIR = os.path.join(paths.DATA_DIR, "blackboard")
 
 _lock = threading.RLock()
 _entries = []           # ordered list of entries (memory cache + on-demand)

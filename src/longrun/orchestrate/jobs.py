@@ -23,11 +23,13 @@ import time
 
 from longrun.util.dag import blockers_state as _dag_blockers_state
 from longrun.util.dag import waves  # noqa: F401 — shared DAG helper (was local, JAG-533)
+from longrun.util import paths
 from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
-JOBS_FILE = os.environ.get("LONGRUN_JOBS_FILE") or os.path.join(REPO, "data", "jobs.json")
+JOBS_FILE = os.environ.get("LONGRUN_JOBS_FILE") or os.path.join(
+    paths.DATA_DIR, "jobs.json")
 
 
 def _load():

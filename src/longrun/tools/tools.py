@@ -21,6 +21,7 @@ import urllib.request
 from typing import Any
 
 from longrun.util import osutil
+from longrun.util import paths as _paths
 from longrun.tools import registry
 from longrun.tools import sandbox
 
@@ -866,13 +867,13 @@ def _self(args, run_id):
         "ok": True, "backend": "host", "sandboxed": False, "exit_code": 0,
         "name": "Longrun", "version": _version,
         "repo_path": REPO,
-        "data_dir": os.path.join(REPO, "data"),
-        "sessions_dir": os.path.join(REPO, "data", "sessions"),
+        "data_dir": _paths.DATA_DIR,
+        "sessions_dir": _paths.SESSIONS_DIR,
         "webui": os.path.join(REPO, "webui"),
         "entrypoint": os.path.join(REPO, "server.py"), "port": 8790,
         "router": os.environ.get("LONGRUN_ROUTER", "http://127.0.0.1:8080"),
         "config": {"tools": os.path.join(REPO, "config", "tools.yaml"),
-                   "tools_overlay": os.path.join(REPO, "data", "tools.overlay.yaml"),
+                   "tools_overlay": os.path.join(_paths.DATA_DIR, "tools.overlay.yaml"),
                    "routing": os.path.join(REPO, "config", "routing.yaml"),
                    "mcp_clients": os.path.join(REPO, "config", "mcp_clients.yaml")},
         "docs": {"plan": os.path.join(REPO, "docs", "PLAN.md"),
@@ -1261,7 +1262,7 @@ def _improve(args, run_id=None):
                 "stdout": "\n".join(rows) or "(nothing to review)"}
     if scope == "mine":
         from longrun.util import selfevolve
-        out = os.path.join(registry.REPO, "data", "proposals", "skills")
+        out = os.path.join(_paths.DATA_DIR, "proposals", "skills")
         path = str(args.get("path", "") or "").strip()
 
         def _pub(ev, **kw):

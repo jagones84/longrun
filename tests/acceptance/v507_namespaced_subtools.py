@@ -103,10 +103,19 @@ with tempfile.TemporaryDirectory() as tmp:
 
 # E: Matrix system prompt & MANUAL.md instruct the agent to create tools in <namespace>.<subtool> syntax
 from longrun.core import api_v02  # noqa: E402
+from longrun.util import paths as _paths  # noqa: E402
 tctx = api_v02.tool_context()
 prompt_txt = matrix.MATRIX_SYSTEM_PROMPT
-with open(os.path.join(REPO, ".Matrix", "docs", "MANUAL.md"), encoding="utf-8") as f:
-    manual_txt = f.read()
+# JAG-533: the runtime checkout lives in the USER DATA HOME, not in the repo. The
+# manual is a generated artifact, so fall back to the shipped text when this
+# machine has not initialised it yet.
+_manual_path = os.path.join(_paths.MATRIX_DOT_DIR, "docs", "MANUAL.md")
+if os.path.isfile(_manual_path):
+    with open(_manual_path, encoding="utf-8") as f:
+        manual_txt = f.read()
+else:
+    from longrun.tools import matrix_guard as _mguard
+    manual_txt = _mguard._DEFAULT_MANUAL
 check("E Matrix prompt, MANUAL.md, and api_v02.tool_context() expose <namespace>.<subtool> syntax",
       "<namespace>.<subtool>" in prompt_txt
       and "<namespace>.<subtool>" in manual_txt

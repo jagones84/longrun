@@ -15,11 +15,12 @@ import threading
 import time
 
 from longrun.util.fswrite import read_registry, write_json
+from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
 ROUTINES_FILE = (os.environ.get("LONGRUN_ROUTINES_FILE")
-                 or os.path.join(REPO, "data", "routines.json"))
+                 or os.path.join(paths.DATA_DIR, "routines.json"))
 MIN_EVERY = 30
 DEFAULT_TICK = 20
 

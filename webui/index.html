@@ -1929,6 +1929,22 @@
       <div class="sw-cat" data-cat="info" hidden>
         <h2>ⓘ Info · harness</h2>
         <div class="card" id="selfPanel"><div class="remaining">loading…</div></div>
+        <h2>Data home <span class="remaining">— where YOUR data lives (outside this checkout)</span></h2>
+        <div class="card" id="homeCard">
+          <div class="remaining" id="homeSummary">loading…</div>
+          <div class="remaining" id="homeWarn" hidden
+               style="margin-top:8px;color:var(--warn,#e0a400)"></div>
+          <div class="u-df u-g6 u-aic u-mt8">
+            <input id="homePath" class="inp u-f1 u-p610 u-fs12" placeholder="folder that will hold data/ and matrix/">
+            <button class="ghost" data-call="homeMove"
+                    title="copy the current data there, verify it, remove the old copy">move…</button>
+            <button class="ghost" id="homeRestartBtn" data-call="homeRestart" hidden>restart now</button>
+          </div>
+          <div id="homeProgWrap" class="u-mt8" hidden>
+            <progress id="homeProg" value="0" max="100" style="width:100%;height:10px"></progress>
+            <div class="remaining" id="homeProgTxt" role="status" aria-live="polite"></div>
+          </div>
+        </div>
       </div>
       <div class="sw-cat" data-cat="keys" hidden>
         <h2>Longrun token</h2>
@@ -6514,6 +6530,92 @@ async function loadStatus() {
         (sb.isolated ? " — sandboxed (isolated)" : " — host execution, no sandbox");
     }
   } catch { /* /api/status is best-effort: the meter keeps its last value */ }
+  loadHome();
+}
+
+/* ---- data home (JAG-533) ----
+   User state must live OUTSIDE the checkout, so the Info panel shows WHERE it is,
+   WARNS when it is still inside the repository, and can move it with a progress
+   bar (the move runs server-side; its progress arrives as `home.move` events and
+   is also polled, so a reload mid-move still shows the truth). */
+let _homePoll = null;
+async function loadHome() {
+  const box = $("homeSummary"); if (!box) return;
+  let d;
+  try { d = await api("GET", "/api/home"); } catch (e) { box.textContent = "error: " + e; return; }
+  const h = d.home || {}, m = d.move || {};
+  box.innerHTML = "";
+  const rows = [
+    ["data home", h.home], ["source", h.source],
+    ["data dir", h.data_dir], ["workspaces", h.workspaces_dir],
+    ["self-evolution", h.matrix_dir]
+  ];
+  rows.forEach(([k, v]) => {
+    const line = document.createElement("div");
+    line.className = "remaining u-mt4";
+    line.textContent = k + ": " + (v || "—");
+    line.title = v || "";
+    box.appendChild(line);
+  });
+  const warn = $("homeWarn");
+  if (warn) {
+    warn.hidden = !h.legacy_in_repo;
+    warn.textContent = h.legacy_in_repo
+      ? "Your data still lives inside the repository (" + h.data_dir + "). A git pull, " +
+        "a fresh clone or a container image can replace or expose it — move it below."
+      : "";
+  }
+  const inp = $("homePath");
+  // The field holds the HOME (the folder that will contain data/ and matrix/),
+  // never the data dir itself — moving to "<x>/data" would nest "<x>/data/data".
+  if (inp && !inp.value) inp.value = h.home || "";
+  applyHomeProgress(m);
+}
+function applyHomeProgress(m) {
+  const wrap = $("homeProgWrap"), bar = $("homeProg"), txt = $("homeProgTxt");
+  if (!wrap || !bar || !txt) return;
+  const moving = m && (m.phase === "scanning" || m.phase === "copying");
+  wrap.hidden = !m || m.phase === "idle";
+  if (wrap.hidden) { clearInterval(_homePoll); _homePoll = null; return; }
+  bar.value = Number(m.pct || 0);
+  const mb = n => (Number(n || 0) / 1048576).toFixed(1) + " MB";
+  txt.textContent = m.phase === "scanning" ? "measuring…"
+    : m.phase === "copying" ? ("copying " + mb(m.done) + " / " + mb(m.total) +
+                               " · " + (m.copied || 0) + "/" + (m.files || 0) + " files")
+    : m.phase === "copied" ? "verifying…"
+    : m.phase === "done" ? ("done — moved to " + (m.target || "") +
+                            (m.restart_required ? " · restart to apply" : ""))
+    : m.phase === "error" ? ("error: " + (m.error || "unknown")) : "";
+  const rb = $("homeRestartBtn");
+  if (rb) rb.hidden = !(m.phase === "done" && m.restart_required);
+  if (moving && !_homePoll) {
+    _homePoll = setInterval(async () => {
+      try {
+        const d = await api("GET", "/api/home");
+        applyHomeProgress(d.move || {});
+      } catch (e) { /* transient: the next tick retries */ }
+    }, 700);
+  }
+}
+async function homeMove() {
+  const inp = $("homePath");
+  const path = (inp && inp.value || "").trim();
+  if (!path) return;
+  if (!confirm("Move ALL Longrun data to:\n" + path +
+               "\n\nThe current data is copied, verified, then the old copy is removed. " +
+               "Keep the window open: the progress bar shows the copy.")) return;
+  let r;
+  try { r = await api("POST", "/api/home/move", { path: path }); }
+  catch (e) { alert("move failed: " + e); return; }
+  if (!r || r.ok === false) { alert("move refused: " + ((r && r.error) || "unknown")); return; }
+  applyHomeProgress({ phase: "scanning", pct: 0 });
+}
+async function homeRestart() {
+  try {
+    const r = await api("POST", "/api/home/restart", {});
+    if (!r.ok) { alert(r.error || "restart unavailable"); return; }
+    setTimeout(() => location.reload(), 3000);
+  } catch (e) { alert("restart failed: " + e); }
 }
 
 /* ---- approvals (v0.2: HITL gate) ----
@@ -7334,7 +7436,8 @@ const _FEED_REFRESH = {
   "session.updated": () => { loadSessions(); loadAgents(); loadSettingsForms(); },
   "session.cleared": () => { loadSessions(); if (sessionId) loadHistory(); },
   "teams.updated": () => loadAgents(),
-  "roles.update": () => { loadRulesPanel(); loadSessions(); }
+  "roles.update": () => { loadRulesPanel(); loadSessions(); },
+  "home.move": () => loadHome()
 };
 function _feedReplay(ev) {
   const kind = ev && ev.kind, d = ev || {};

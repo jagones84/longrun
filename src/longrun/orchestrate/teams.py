@@ -17,11 +17,13 @@ import os
 import threading
 import time
 
+from longrun.util import paths
 from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
-TEAMS_FILE = os.environ.get("LONGRUN_TEAMS_FILE") or os.path.join(REPO, "data", "teams.json")
+TEAMS_FILE = os.environ.get("LONGRUN_TEAMS_FILE") or os.path.join(
+    paths.DATA_DIR, "teams.json")
 
 # A small, deterministic palette so a team always has a usable symbol + colour.
 _PALETTE = [

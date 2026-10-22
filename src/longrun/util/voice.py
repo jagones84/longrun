@@ -7,9 +7,10 @@ import os
 import uuid
 
 from longrun.core.events import publish
+from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO
 
-DATA_DIR = os.path.join(REPO, "data")
+DATA_DIR = paths.DATA_DIR
 
 WHISPER_BIN = os.environ.get("LONGRUN_WHISPER_BIN", "whisper-cli")
 WHISPER_MODEL = os.environ.get("LONGRUN_WHISPER_MODEL", "")

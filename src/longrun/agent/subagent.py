@@ -28,6 +28,7 @@ from longrun.core import api_v02  # for the RunState / agent_run_v2 machinery
 from longrun.tools import approvals
 from longrun.tools import registry
 from longrun.tools import sandbox
+from longrun.util import paths
 from longrun.plan import taskgraph  # per-run task graph (child gets its own todo list)
 from longrun.tools import tools as toolmod
 
@@ -104,7 +105,7 @@ _DEPTH = {}       # run_id -> depth of nesting (matrioska); 0 = top level
 # Every spawn writes a small durable record here; `collect`/`status` fall back
 # to it. Deleted with the parent session (see `purge_parent`).
 SUBAGENT_DIR = os.environ.get("LONGRUN_SUBAGENT_DIR") or os.path.join(
-    registry.REPO, "data", "subagents")
+    paths.DATA_DIR, "subagents")
 _MAX_SUMMARY = 8000
 
 

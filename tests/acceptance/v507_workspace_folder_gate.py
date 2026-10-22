@@ -204,8 +204,8 @@ check("server: the picker allows the browse roots PLUS the session workspace",
       "roots = _fs_allowed_roots(qs)" in _fs_dirs,
       "same rule as the file tree")
 
-check("server: the default workspace is DERIVED from the checkout, never hardcoded",
-      'os.path.join(os.path.dirname(REPO), ".longrun", "workspaces")' in RULES
+check("server: the default workspace is DERIVED from the user data home, never hardcoded",
+      "base = paths.WORKSPACES_DIR" in RULES
       and 'LONGRUN_WORKSPACES_ROOT' in RULES
       and "base = workspaces_root()" in RULES,
       "workspaces_root()")

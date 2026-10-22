@@ -31,9 +31,10 @@ import uuid
 
 from longrun.tools import registry
 from longrun.tools import sandbox
+from longrun.util import paths
 
 REPO = registry.REPO
-DATA_DIR = os.path.join(REPO, "data", "meta")
+DATA_DIR = os.path.join(paths.DATA_DIR, "meta")
 
 _lock = threading.RLock()
 _history = []  # list of candidate results

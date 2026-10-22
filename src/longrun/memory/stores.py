@@ -116,7 +116,7 @@ _load_tombstones()
 # deletes a row by mistake (or deletes DURING a run, while the turn worker is still
 # writing) can recover it, and the oldest files are pruned so the trash cannot grow
 # without bound. Repeated DELETE is now a clean 404 (the file is already gone).
-TRASH_DIR = os.path.join(REPO, "data", "trash")
+TRASH_DIR = os.path.join(DATA_DIR, "trash")
 _TRASH_KEEP = 200
 _TRASH_KEEP_SECS = 30 * 86400
 

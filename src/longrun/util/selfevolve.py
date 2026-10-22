@@ -15,6 +15,7 @@ import os
 import re
 import time
 
+from longrun.util import paths
 from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
@@ -127,8 +128,7 @@ def scan(sequences, out_dir, c=None, note=""):
 # ------------------------------------------------------------- history -------
 
 def _history_path():
-    base = os.environ.get("LONGRUN_DATA_DIR") or os.path.join(REPO, "data")
-    return os.path.join(base, "sequences.json")
+    return os.path.join(paths.DATA_DIR, "sequences.json")
 
 
 def record(key, tools, path=None):

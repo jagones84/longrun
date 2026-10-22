@@ -14,18 +14,17 @@ The workspace is selectable and persisted in ~/.config/longrun/config.json.
 No secret ever belongs here.
 """
 
-import json
 import os
 import re
 
+from longrun.util import paths
 from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 MAX_BYTES = int(os.environ.get("LONGRUN_RULES_MAX", str(32 * 1024)))
 
 
 def _config_dir():
-    return os.environ.get("LONGRUN_CONFIG_DIR") or \
-        os.path.join(os.path.expanduser("~"), ".config", "longrun")
+    return paths.config_dir()
 
 
 def global_rules_path():
@@ -37,16 +36,12 @@ def global_agents_path():
 
 
 def _config_file():
-    return os.path.join(_config_dir(), "config.json")
+    return paths.config_file()
 
 
 def _read_config():
     """The config.json dict (empty on any error — never raises)."""
-    try:
-        with open(_config_file(), "r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception:  # noqa: BLE001 — a bad config must not break anything
-        return {}
+    return paths.read_config()
 
 
 def _write_config(cfg):
@@ -55,15 +50,14 @@ def _write_config(cfg):
 
 
 def workspaces_root():
-    """The dynamic default home for workspaces (JAG-2.8).
+    """The default home for new workspaces (JAG-2.8, JAG-533).
 
-    `<repo parent>/.longrun/workspaces` — DERIVED from the checkout, never a
-    hardcoded absolute path, so a clone anyone downloads lands somewhere sane
-    without an edit. Created on demand; `LONGRUN_WORKSPACES_ROOT` overrides it
-    (tests point it at a temp dir and never touch the real tree).
+    `paths.WORKSPACES_DIR` — under the USER DATA HOME, never beside the checkout:
+    a workspace is the operator's project, and a `git pull` in the harness repo
+    must not be able to touch it. Created on demand; `LONGRUN_WORKSPACES_ROOT`
+    overrides it (tests point it at a temp dir and never touch the real tree).
     """
-    env = os.environ.get("LONGRUN_WORKSPACES_ROOT")
-    base = env or os.path.join(os.path.dirname(REPO), ".longrun", "workspaces")
+    base = paths.WORKSPACES_DIR
     try:
         os.makedirs(base, exist_ok=True)
     except OSError:

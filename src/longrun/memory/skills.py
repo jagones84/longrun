@@ -19,6 +19,7 @@ import stat
 import tempfile
 import zipfile
 
+from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO
 SKILLS_DIR = os.path.join(REPO, "skills")
 
@@ -71,7 +72,7 @@ def _matrix_skills_dir():
         _root, _msrc, mdot = matrix_guard._roots()
         return os.path.join(mdot, "skills")
     except Exception:  # noqa: BLE001
-        return os.path.join(REPO, ".Matrix", "skills")
+        return os.path.join(paths.MATRIX_DOT_DIR, "skills")
 
 
 def _skills_sig():

@@ -115,6 +115,12 @@ _DEFAULT_MANUAL = (
 
 
 def _roots(repo_root=None):
+    """(repo root, Matrix nucleus dir, Matrix RUNTIME dir).
+
+    JAG-533: the runtime dir (a rewritten git checkout) is NOT part of the
+    repository any more — it lives under the user data home. An explicit
+    `repo_root` (tests) still gets `<root>/.Matrix`, so a fixture stays a fixture.
+    """
     root = os.path.abspath(repo_root or REPO)
     if repo_root is None and os.environ.get("LONGRUN_MATRIX_SRC"):
         msrc = os.path.abspath(os.environ["LONGRUN_MATRIX_SRC"])
@@ -122,6 +128,9 @@ def _roots(repo_root=None):
         msrc = os.path.abspath(os.path.join(root, "src", "Matrix"))
     if repo_root is None and os.environ.get("LONGRUN_MATRIX_DOT"):
         mdot = os.path.abspath(os.environ["LONGRUN_MATRIX_DOT"])
+    elif repo_root is None:
+        from longrun.util import paths
+        mdot = os.path.abspath(paths.MATRIX_DOT_DIR)
     else:
         mdot = os.path.abspath(os.path.join(root, ".Matrix"))
     return root, msrc, mdot
@@ -173,10 +182,12 @@ def ensure_layout(repo_root=None):
 
 
 def is_matrix_writable(path, repo_root=None):
-    """True when `path` resolves inside `src/Matrix/`, `.Matrix/`, `data/`, or `skills/created/`."""
+    """True when `path` resolves inside `src/Matrix/`, the Matrix runtime dir,
+    the app data dir, or `skills/created/`."""
+    from longrun.util import paths
     root, msrc, mdot = _roots(repo_root)
     p = os.path.realpath(path if os.path.isabs(path) else os.path.join(root, path))
-    if _under(p, msrc) or _under(p, mdot):
+    if _under(p, msrc) or _under(p, mdot) or _under(p, paths.DATA_DIR):
         return True
     for rel in MATRIX_ALLOWED_REL:
         if _under(p, os.path.join(root, rel)):
