@@ -57,12 +57,25 @@ _P_PATH = ("file path. RELATIVE paths resolve against the session workspace "
 # JSON-schema-ish descriptions exposed to the agent prompt and to MCP clients.
 _LEGACY_SCHEMAS = {
     "shell": {
-        "description": ("Run a shell command inside the sandbox (no network, "
-                        "read-only rootfs, tmpfs /tmp, scratch /work). Returns "
-                        "exit code + captured stdout/stderr."),
+        "description": ("Run a shell command. When the sandbox backend is 'none' the "
+                        "command runs in THIS SESSION'S persistent terminal — the same "
+                        "one the operator sees in the Terminal panel — so they can watch "
+                        "it, its cwd/env carry over between calls, and you can read what "
+                        "they typed. Under docker/bwrap/nsjail it runs isolated instead. "
+                        "Returns exit code + captured stdout/stderr. "
+                        "action=read returns the last `lines` of the terminal session "
+                        "(including the operator's own commands); action=reset kills it."),
         "type": "object",
         "properties": {
-            "command": {"type": "string", "description": "shell command to execute"},
+            "action": {"type": "string",
+                       "enum": ["run", "read", "reset"],
+                       "default": "run",
+                       "description": ("run (default) = execute `command`; read = the "
+                                       "recent terminal session; reset = fresh shell")},
+            "command": {"type": "string",
+                        "description": "shell command to execute (action=run)"},
+            "lines": {"type": "integer",
+                      "description": "action=read: how many trailing lines (default 80)"},
             "timeout_secs": {"type": "integer", "description": "optional timeout override"},
             # JAG-386: the model naturally reaches for `cwd` (the `git` tool
             # documents it), but the shell only honoured an undocumented
@@ -76,7 +89,9 @@ _LEGACY_SCHEMAS = {
                                     "against the session workspace, mirroring "
                                     "shell.rs implementation")},
         },
-        "required": ["command"],
+        # JAG-2.9: `command` is required only for action=run (read/reset take none);
+        # the runtime refuses an empty command for a real run.
+        "required": [],
         "subject": "command",
     },
     "fs.read": {

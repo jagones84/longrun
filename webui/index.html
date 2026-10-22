@@ -2077,6 +2077,9 @@
         <button class="insp-hd" data-call="toggleInsp" data-args='["terminal"]'>Terminal<span class="ihd-s" id="sTerm"></span></button>
         <div class="insp-body">
         <div class="card">
+          <div class="remaining u-mb6" title="one persistent shell per session, shared with the agent's shell tool when it runs on the host">
+            One shell per session — <b>shared with the agent</b>: its commands appear here (🤖), and your <code>cd</code>/exports are still in effect when it runs. Ask it to <code>shell{action:"read"}</code> to see what you typed.
+          </div>
           <div class="u-df u-aic u-g6 u-mb6">
             <span class="remaining" id="termCwd" style="flex:1;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="the shell's working directory">…</span>
             <button class="ghost" data-call="termClear" title="clear the screen (keeps the shell)">⌫ clear</button>
@@ -10930,6 +10933,7 @@ async function _termTick() {
     if (d.reset) termClear();
     (d.events || []).forEach(ev => {
       if (ev.kind === "out") _termLine(ev.text, "tout");
+      else if (ev.kind === "cmd" && ev.origin === "agent") _termLine("🤖 $ " + ev.text, "tcmd");
       else if (ev.kind === "done") _termLine("· exit " + ev.code, "remaining");
       else if (ev.kind === "exit") _termLine("[shell exited]", "remaining");
     });

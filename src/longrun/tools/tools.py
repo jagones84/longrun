@@ -56,7 +56,51 @@ def _host_allowed(url, allow_hosts):
 
 # ------------------------------------------------------------------ shell ----
 
+def _shell_terminal(sid, cwd):
+    """The shared per-session terminal, but only when this host would run the
+    command anyway (sandbox backend `none`). Returns None otherwise.
+
+    JAG-2.9: under docker/bwrap/nsjail the agent MUST stay inside the sandbox, so a
+    host terminal is never used — the isolation would be silently lost.
+    """
+    if not sid:
+        return None
+    try:
+        if sandbox.probe().get("backend") != "none":
+            return None
+    except Exception:  # noqa: BLE001 — a broken probe falls back to the sandbox
+        return None
+    from longrun.tools import term
+    return term.get(sid, cwd)
+
+
 def _shell(args, run_id):
+    """Run a command, or manage the session terminal.
+
+    JAG-2.9 — the command runs in the SAME persistent terminal the human sees in
+    the RH Terminal panel (when the sandbox would run on the host anyway). So the
+    agent's commands appear there, the operator's `cd`/exports are still in effect,
+    and the agent can read or reset that session with `action`.
+    """
+    action = str(args.get("action") or "run").strip().lower()
+    sid = str(run_id or "")
+
+    if action in ("read", "tail", "history"):
+        from longrun.tools import term
+        sh = term.peek(sid)
+        if not sh:
+            return {"ok": True, "stdout": "", "terminal": True,
+                    "note": "no terminal session for this session yet"}
+        try:
+            n = int(args.get("lines") if args.get("lines") is not None else 80)
+        except (TypeError, ValueError):
+            n = 80
+        return {"ok": True, "stdout": sh.tail(n), "terminal": True,
+                "cwd": sh.cwd, "shell": sh.kind}
+    if action in ("reset", "clear"):
+        from longrun.tools import term
+        return {"ok": True, "reset": bool(term.reset(sid)), "terminal": True}
+
     command = str(args.get("command", ""))
     if not command.strip():
         return {"ok": False, "error": "empty command"}
@@ -78,6 +122,22 @@ def _shell(args, run_id):
     if not ok_cmd:
         return {"ok": False, "exit_code": 126, "error": err_cmd,
                 "backend": "host", "sandboxed": False}
+    # JAG-2.9: run in the session's persistent terminal when the command would hit
+    # the host anyway — the panel and the agent then share ONE shell.
+    sh = _shell_terminal(sid, cwd or os.getcwd())
+    if sh is not None:
+        r = sh.run_capture(command, timeout=args.get("timeout_secs"),
+                           origin="agent", cwd=cwd)
+        res = {"ok": bool(r.get("ok")),
+               "exit_code": (int(r["exit_code"]) if r.get("exit_code") is not None else 1),
+               "stdout": r.get("stdout") or "", "stderr": "",
+               "backend": "terminal", "sandboxed": False, "terminal": True,
+               "workspace": sh.cwd, "command": command}
+        if r.get("error"):
+            res["error"] = r["error"]
+        if r.get("timed_out"):
+            res["timed_out"] = True
+        return res
     # Deny-only, never revert: what passes the gate runs untouched, and no
     # whole-tree diff runs afterwards (it could not attribute a concurrent
     # edit to this command and destroyed legitimate work).

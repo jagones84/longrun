@@ -79,13 +79,19 @@ def _fake_run(command, run_id=None, timeout=None, workspace=None, **kw):
 
 
 tools.sandbox.run = _fake_run
+# JAG-2.9: with sandbox.backend=none the shell normally runs in the session's
+# persistent terminal. This test is about the SANDBOX argv, so force that path.
+tools._shell_terminal = lambda sid, cwd: None
 
 # --- A: the schema advertises cwd --------------------------------------------
 _props = registry.TOOL_SCHEMAS["shell"]["properties"]
 check("A1 the shell schema advertises cwd", "cwd" in _props, str(sorted(_props)))
-check("A2 only `command` is required (cwd is optional)",
-      registry.TOOL_SCHEMAS["shell"]["required"] == ["command"],
+check("A2 `command` is declared but not globally required (action=read|reset need none)",
+      "command" in _props
+      and registry.TOOL_SCHEMAS["shell"]["required"] == [],
       str(registry.TOOL_SCHEMAS["shell"]["required"]))
+check("A2b action=run with no command is still refused at runtime",
+      tools._shell({"action": "run"}, "r0").get("ok") is False)
 
 # --- B: an explicit cwd reaches the sandbox ----------------------------------
 b = wsdir("B")
