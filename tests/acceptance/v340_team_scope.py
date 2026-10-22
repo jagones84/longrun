@@ -117,6 +117,25 @@ check("E5 Control lists EVERY session (designated + plain) and posts a session r
       and 'data-asg="\' + esc(a.session)' in orbit
       and '{session: ref, action:' in orbit)
 
+# --- F: keyboard-reachable menus (live complaint, 2026-10-22) ----------------
+# Operator: "the menu bars in AGENTS panel, report to, model search do not go to item
+# by keyboard, example pressing ab shall go to agents starting name ab". A native
+# <select> type-ahead matches the option TEXT PREFIX only, and the agent options led
+# with the A-id ("A8 Master"), so typing a NAME hit nothing. And the deck's popovers
+# were click-only: no arrow keys, no Enter.
+check("F1 the Reports-to / assign options lead with the NAME, then the A-id",
+      "esc(x.name || x.id) + ' · ' + esc(x.id)" in orbit
+      and "esc(a.name || a.id) +\n      ' · ' + esc(a.id)" in orbit)
+check("F2 every popover is keyboard navigable (arrows + Enter + Escape)",
+      "function _popoverKeys" in orbit and "_popoverKeys(m)" in orbit
+      and "ArrowDown" in orbit and "if (m.__nav) m.removeEventListener" in orbit)
+check("F3 keyboard browsing in a select does not write on every keystroke",
+      # A native <select> commits on every change and type-ahead fires one per key:
+      # typing "m" instantly WROTE a model and tripped the team local-model guard.
+      # Keyboard changes are browsing; the write happens on Enter or blur.
+      "el.__browse = true" in orbit and "if (el.__browse) return;" in orbit
+      and "el.onblur = () => {" in orbit)
+
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))

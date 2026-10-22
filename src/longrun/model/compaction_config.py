@@ -39,8 +39,8 @@ _LOCAL_PATH = os.path.join(os.path.dirname(_PATH), "compaction.local.yaml")
 # disappears or a key is missing we still behave sensibly (the values match
 # the file the user just shipped, so the user never sees a sudden policy shift).
 _DEFAULTS = {
-    "trigger_pct": 70.0,
-    "target_pct": 30.0,
+    "trigger_pct": 70,
+    "target_pct": 30,
     "keep_recent": 4,
     "summarizer": {
         "input_max_chars": 40000,
@@ -199,6 +199,18 @@ def local_path():
     return _LOCAL_PATH
 
 
+def _pct(x):
+    """A percentage as an INT when it is whole (16 -> 16, 16.5 -> 16.5).
+
+    JAG-2.5: `save` used to write `float(...)` unconditionally, so the overlay stored
+    `trigger_pct: 70.0`. The settings schema declares those keys as `int`, and the
+    diagnostics then reported TWO identical false errors ("Saved setting is invalid")
+    for one perfectly valid policy (live, 2026-10-22). Keep the declared type.
+    """
+    f = float(x)
+    return int(f) if f.is_integer() else f
+
+
 def save(trigger_pct=None, target_pct=None, keep_recent=None, patch=None):
     """Persist the user-tunable policy keys into the local overlay.
 
@@ -222,7 +234,8 @@ def save(trigger_pct=None, target_pct=None, keep_recent=None, patch=None):
     if not (1 <= keep <= 50):
         raise ValueError("keep_recent must be between 1 and 50")
     merged = dict(_read_file(_LOCAL_PATH))
-    merged.update({"trigger_pct": trig, "target_pct": targ, "keep_recent": keep})
+    merged.update({"trigger_pct": _pct(trig), "target_pct": _pct(targ),
+                   "keep_recent": keep})
     for key, val in (patch or {}).items():
         if isinstance(val, dict) and isinstance(merged.get(key), dict):
             merged[key] = {**merged[key], **val}

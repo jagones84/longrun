@@ -478,8 +478,12 @@ const esc = (s) => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<
 const short = (s, n) => { s = String(s==null?"":s); return s.length > n ? s.slice(0, n-1) + "…" : s; };
 const fillSelect = (sel, agents, ph) => {
   const keep = sel.value;
+  // JAG-2.6: the NAME comes FIRST so the browser's own type-ahead (which matches the
+  // option text PREFIX only) finds an item by typing its name. With the old
+  // "A8 Master" text, typing anything but the id hit nothing.
   sel.innerHTML = '<option value="">' + esc(ph) + '</option>' +
-    agents.map(a => '<option value="' + esc(a.id) + '">' + esc(a.id) + ' ' + esc(a.name||"") + '</option>').join("");
+    agents.map(a => '<option value="' + esc(a.id) + '">' + esc(a.name || a.id) +
+      ' · ' + esc(a.id) + '</option>').join("");
   sel.value = keep;
 };
 
@@ -491,6 +495,36 @@ const fillSelect = (sel, agents, ph) => {
    screen and wires the two dismiss gestures (outside-click, Escape);
    `closePopover` removes it. Callers keep the returned element for their rows. */
 let _POP = null;
+/* JAG-2.6: make a popover operable from the KEYBOARD. These menus (agent→teams
+   picker, team bulk actions, constellation node actions) were click-only: they could
+   be opened with the mouse and then not navigated at all. The first item takes focus,
+   ArrowUp/Down walk the items, Enter/Space activate, Escape closes (wired by
+   `openPopover`). A focused <input>/<button> keeps its own native keys. */
+function _popoverKeys(m){
+  const items = () => [...m.querySelectorAll("input,button,[data-a]")]
+    .filter(el => !el.disabled && el.offsetParent !== null);
+  items().forEach(el => { if (el.tabIndex < 0) el.tabIndex = -1; });
+  const first = items()[0];
+  if (first) setTimeout(() => { try { first.focus(); } catch (_) {} }, 0);
+  m.__nav = (e) => {
+    const list = items();
+    if (!list.length) return;
+    const at = list.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+      e.preventDefault();
+      const step = (e.key === "ArrowDown" ? 1 : -1);
+      const next = at < 0 ? 0 : (at + step + list.length) % list.length;
+      try { list[next].focus(); } catch (_) {}
+    } else if (e.key === "Enter" && at >= 0 &&
+               typeof document.activeElement.click === "function" &&
+               document.activeElement.hasAttribute("data-a")){
+      // A plain div opens nothing on Enter, so activate it explicitly.
+      e.preventDefault();
+      document.activeElement.click();
+    }
+  };
+  m.addEventListener("keydown", m.__nav);
+}
 function openPopover(ev, html, opts){
   const o = opts || {};
   closePopover();
@@ -504,11 +538,13 @@ function openPopover(ev, html, opts){
   const k = (e) => { if (e.key === "Escape") closePopover(); };
   m.__h = h; m.__k = k;
   setTimeout(() => { document.addEventListener("mousedown", h); document.addEventListener("keydown", k); }, 0);
+  _popoverKeys(m);   // JAG-2.6: keyboard access, not mouse-only
   return m;
 }
 function closePopover(){ const m = _POP; if (!m) return;
   if (m.__h) document.removeEventListener("mousedown", m.__h);
   if (m.__k) document.removeEventListener("keydown", m.__k);
+  if (m.__nav) m.removeEventListener("keydown", m.__nav);
   m.remove(); _POP = null; }
 
 /* ----------------------------------------------------- Agents (table) ---- */
@@ -613,8 +649,11 @@ class AgentsView {
       this.models.map(m => '<option value="' + esc(m.ref) + '"' + (a.model === m.ref ? " selected" : "") + '>' + esc(m.label) + '</option>').join("");
     const roster = (this.roster && this.roster.length) ? this.roster : this.agents;
     // JAG-2.4: only a DESIGNATED agent can be a manager (reports_to is an agent id).
+    // JAG-2.6: the option TEXT is the searchable part — the browser's type-ahead
+    // matches the prefix of the text only, so the NAME must lead and the A-id follow
+    // ("Master · A8"). Typing "ma" now finds Master; with "A8 Master" nothing matched.
     const ropts = '<option value="">— none —</option>' +
-      roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.id) + ' ' + esc(x.name||"") + '</option>').join("");
+      roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.name || x.id) + ' · ' + esc(x.id) + '</option>').join("");
     // JAG-2.4: a plain session has no agent id yet — show a dash that says so.
     const idCell = a.id ? esc(a.id)
       : '<span class="muted" title="plain session — not designated as an agent yet; editing or assigning this row designates it">—</span>';
@@ -658,7 +697,36 @@ class AgentsView {
       ev.stopPropagation();
       this.openAssignPicker(ev, b.dataset.tmadd);
     }; });
-    body.querySelectorAll("select[data-f],input[data-f]").forEach(el => {
+    body.querySelectorAll("select[data-f]").forEach(el => {
+      // JAG-2.6: a <select> COMMITS on every change, and the browser's own type-ahead
+      // fires a change per keystroke — so typing "m" to FIND a model immediately WROTE
+      // that model, and the team's local-model guard answered with an alert ("typing in
+      // the Model menu shows an error instead of navigating"). Navigate freely now: a
+      // keyboard change (type-ahead or arrows) is browsing and is written ONCE, on
+      // Enter or when the control loses focus; a MOUSE pick still saves at once.
+      el.dataset.saved = el.value;
+      el.__browse = false;
+      el.onkeydown = (e) => {
+        if (e.key === "Enter"){ e.preventDefault(); el.__browse = false; el.blur(); return; }
+        if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key.length === 1) el.__browse = true;
+      };
+      el.onchange = () => {
+        if (el.__browse) return;                    // keyboard browsing: not a pick yet
+        const tr = el.closest("tr");
+        if (!tr) return;
+        el.dataset.saved = el.value;
+        this.save(tr.dataset.sid, {[el.dataset.f]: el.value});
+      };
+      el.onblur = () => {
+        if (!el.__browse) return;
+        el.__browse = false;
+        const tr = el.closest("tr");
+        if (!tr || el.value === el.dataset.saved) return;
+        el.dataset.saved = el.value;
+        this.save(tr.dataset.sid, {[el.dataset.f]: el.value});
+      };
+    });
+    body.querySelectorAll("input[data-f]").forEach(el => {
       el.onchange = () => { const sid = el.closest("tr").dataset.sid; this.save(sid, {[el.dataset.f]: el.value}); };
     });
     // JAG-2.0: the Teams cell opens a checkbox picker (one or more teams per agent).

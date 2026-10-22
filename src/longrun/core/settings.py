@@ -205,6 +205,18 @@ DEDICATED = {
 
 _FILE_SECTIONS = {s["file"]: s for s in SECTIONS}
 
+# JAG-2.5: the human name of every Settings panel that can own a config section.
+# ONE declaration: the WebUI's SETTINGS_CATS labels match these, and the diagnostics
+# report names the panel the operator must open to fix an invalid setting.
+PANEL_LABELS = {
+    "appearance": "Appearance", "keys": "Keys", "models": "Models",
+    "subagents": "Subagents", "tools": "Tools & approvals", "sandbox": "Sandbox",
+    "mcp": "MCP", "skills": "Skills", "rules": "Rules", "knowledge": "Knowledge",
+    "compaction": "Compaction", "hooks": "Hooks", "harness": "Harness",
+    "config": "Config files", "improvement": "Improvements",
+    "diagnostics": "Diagnostics", "info": "Info",
+}
+
 
 # ---------------------------------------------------------------- helpers ----
 def _get(doc, path):

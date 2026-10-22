@@ -9076,6 +9076,15 @@ function renderDiagnostics(report) {
     source.className = "remaining u-mt4";
     source.textContent = issue.source || "Settings";
     card.append(head, message, source);
+    // JAG-2.5: ISOLATION — name the exact file + control so two invalid values can
+    // never read as one repeated message, and let the button open the OWNING panel.
+    if (issue.file || issue.field) {
+      const where = document.createElement("div");
+      where.className = "remaining u-mt4";
+      where.textContent = (issue.file ? "File: config/" + issue.file : "")
+        + (issue.field ? (issue.file ? " · " : "") + "Field: " + issue.field : "");
+      card.appendChild(where);
+    }
     if (issue.model) {
       const model = document.createElement("div");
       model.className = "remaining u-mt4";
@@ -9088,7 +9097,15 @@ function renderDiagnostics(report) {
       time.textContent = "Observed: " + new Date(issue.occurred_at * 1000).toLocaleString();
       card.appendChild(time);
     }
-    if (labels[issue.action]) {
+    const panelCat = issue.panel && SETTINGS_CATS.some(([k]) => k === issue.panel)
+      ? issue.panel : null;
+    if (panelCat) {
+      const action = document.createElement("button");
+      action.className = "ghost u-mt8";
+      action.textContent = "Open " + panelLabel(panelCat);
+      action.addEventListener("click", () => openSettings(panelCat));
+      card.appendChild(action);
+    } else if (labels[issue.action]) {
       const action = document.createElement("button");
       action.className = "ghost u-mt8";
       action.textContent = labels[issue.action];
@@ -9154,6 +9171,11 @@ async function loadDiagnostics() {
   }
 }
 function settingsWin() { return $("settingsWin"); }
+/* JAG-2.5: the label of a Settings category, from the ONE list that declares them. */
+function panelLabel(cat) {
+  const hit = SETTINGS_CATS.find(([k]) => k === cat);
+  return hit ? hit[1] : String(cat || "");
+}
 function settingsCategory(name) {
   document.querySelectorAll("#swNav button").forEach(b => b.classList.toggle("active", b.dataset.cat === name));
   document.querySelectorAll("#swMain .sw-cat").forEach(c => { c.hidden = c.dataset.cat !== name; });

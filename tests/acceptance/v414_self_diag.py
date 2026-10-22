@@ -176,6 +176,36 @@ if D is not None:
           and setting_issues[0].get("action") == "config"
           and "not-a-number" not in repr(setting_issues), setting_issues)
 
+    # 7b3/7b4 — REGRESSION (live, 2026-10-22): compaction reported TWO identical
+    # "Saved setting is invalid" errors for a perfectly valid policy. The overlay
+    # stores percentages as floats (`trigger_pct: 70.0`) while the schema declares
+    # `int`, and the old check asked `isinstance(value, int)` only. An INTEGRAL float
+    # is a valid integer setting, and every issue must be ISOLATED (file + field +
+    # panel + a specific reason) so two issues can never read as one.
+    int_field = [{"path": "trigger_pct", "label": "auto trigger (%)",
+                  "type": "int", "min": 1, "max": 100},
+                 {"path": "target_pct", "label": "auto target (%)",
+                  "type": "int", "min": 0, "max": 99}]
+    ok_float = D.validate_setting_values([{
+        "file": "compaction.yaml", "panel": "compaction", "fields": int_field,
+        "values": {"trigger_pct": 70.0, "target_pct": 16.0},
+    }])
+    check("7b3 an integral float is accepted for an int setting (no false positive)",
+          ok_float == [], ok_float)
+    iso = D.validate_setting_values([{
+        "file": "compaction.yaml", "panel": "compaction", "fields": int_field,
+        # a real decimal, and an out-of-range value: two DIFFERENT defects
+        "values": {"trigger_pct": 70.5, "target_pct": 120},
+    }])
+    check("7b4 each invalid setting is isolated (file + field + panel + own reason)",
+          len(iso) == 2
+          and all(i.get("file") == "compaction.yaml" and i.get("panel") == "compaction"
+                  for i in iso)
+          and {i.get("field") for i in iso} == {"trigger_pct", "target_pct"}
+          and iso[0]["message"] != iso[1]["message"]
+          and "decimal part" in iso[0]["message"]
+          and "Settings → Compaction" in iso[0]["message"], iso)
+
     provider_cfg = {
         "default": "openai:gpt-not-listed",
         "providers": [

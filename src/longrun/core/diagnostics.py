@@ -79,8 +79,15 @@ def _safe_session(value: object) -> str | None:
 def _issue(code: str, severity: str, title: str, message: str,
            source: str, action: str | None = None, scope: str = "global",
            session: str | None = None, model: str | None = None,
-           occurred_at: float | None = None) -> dict:
-    """Create the stable, safe issue shape used by API and WebUI."""
+           occurred_at: float | None = None, file: str | None = None,
+           field: str | None = None, panel: str | None = None) -> dict:
+    """Create the stable, safe issue shape used by API and WebUI.
+
+    JAG-2.5: `file`/`field`/`panel` carry the ISOLATION of one issue — WHICH file,
+    WHICH control and WHICH Settings panel own it. Without them every invalid value
+    produced the same generic sentence and two issues were indistinguishable (live
+    complaint, 2026-10-22).
+    """
     out = {
         "code": code,
         "severity": severity,
@@ -97,6 +104,15 @@ def _issue(code: str, severity: str, title: str, message: str,
         out["session"] = safe_session
     if safe_model:
         out["model"] = safe_model
+    if file:
+        out["file"] = _safe_label(file)
+    if field:
+        out["field"] = _safe_label(field)
+    if panel and panel in ("keys", "models", "subagents", "tools", "sandbox", "mcp",
+                           "skills", "rules", "knowledge", "compaction", "hooks",
+                           "harness", "config", "appearance", "diagnostics",
+                           "improvement", "info"):
+        out["panel"] = panel
     if occurred_at is not None:
         try:
             out["occurred_at"] = float(occurred_at)
@@ -143,8 +159,65 @@ def validate_config_sources(sources: list[dict]) -> list[dict]:
     return issues
 
 
+def _setting_reason(field: dict, value) -> str:
+    """WHY `value` is not usable for `field` — "" when it is fine (JAG-2.5).
+
+    The reason NEVER repeats the field label: the caller puts it in front once, so the
+    message reads "auto trigger (%) in compaction.yaml must be <= 100", not the label
+    twice.
+
+    The old check asked only `isinstance(value, int)` and reported a generic
+    sentence, so ONE float surfaced as two identical errors and nothing said which
+    value, why, or where to fix it. This returns a specific, human reason instead.
+
+    An integral float (``70.0``) IS a valid integer setting: YAML/JSON numbers reach
+    the harness as floats (``compaction.yaml`` ships ``trigger_pct: 70``, the overlay
+    writes ``70.0``), so refusing it was a FALSE POSITIVE — the exact live bug.
+    """
+    from longrun.core import settings
+
+    kind = field.get("type")
+    if kind == "bool":
+        if not isinstance(value, bool):
+            return "must be true or false"
+    elif kind == "int":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return "must be a whole number"
+        if isinstance(value, float) and not float(value).is_integer():
+            return "must be a whole number, but it has a decimal part"
+    elif kind == "float":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return "must be a number"
+    elif kind in ("text", "textarea", "select"):
+        if not isinstance(value, str):
+            return "must be text"
+    elif kind == "strlist":
+        if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+            return "must be a list of strings"
+    elif kind == "rows":
+        if not isinstance(value, list) or not all(isinstance(x, dict) for x in value):
+            return "must be a list of rows"
+    try:
+        settings._coerce(field, value)
+    except ValueError as exc:
+        # `_coerce` names the field and the bound it broke ("auto trigger (%) must be
+        # <= 100"); drop the leading label because the caller adds it once.
+        text = str(exc)
+        label = str(field.get("label") or field.get("path") or "")
+        prefix = label + " "
+        return text[len(prefix):] if label and text.startswith(prefix) else text
+    except Exception:  # noqa: BLE001 — an exotic value must not break the report
+        return "is not accepted here"
+    return ""
+
+
 def validate_setting_values(sections: list[dict]) -> list[dict]:
-    """Validate effective structured form values without returning bad values."""
+    """Validate effective structured form values without returning bad values.
+
+    Every issue is ISOLATED (JAG-2.5): it names the file, the field path, the owning
+    Settings panel and the concrete reason, so two invalid values can never read as
+    one duplicated message.
+    """
     from longrun.core import settings
 
     issues = []
@@ -152,6 +225,8 @@ def validate_setting_values(sections: list[dict]) -> list[dict]:
         if not isinstance(section, dict):
             continue
         filename = _safe_label(section.get("file"))
+        panel = str(section.get("panel") or "")
+        panel_label = settings.PANEL_LABELS.get(panel, "Config files")
         values = section.get("values") if isinstance(section.get("values"), dict) else {}
         for field in section.get("fields") or []:
             if not isinstance(field, dict):
@@ -160,31 +235,18 @@ def validate_setting_values(sections: list[dict]) -> list[dict]:
             value = values.get(path)
             if value is None:
                 continue
-            kind = field.get("type")
-            valid_type = True
-            if kind == "bool":
-                valid_type = isinstance(value, bool)
-            elif kind == "int":
-                valid_type = isinstance(value, int) and not isinstance(value, bool)
-            elif kind == "float":
-                valid_type = isinstance(value, (int, float)) and not isinstance(value, bool)
-            elif kind in ("text", "textarea", "select"):
-                valid_type = isinstance(value, str)
-            elif kind == "strlist":
-                valid_type = isinstance(value, list) and all(isinstance(x, str) for x in value)
-            elif kind == "rows":
-                valid_type = isinstance(value, list) and all(isinstance(x, dict) for x in value)
-            try:
-                if not valid_type:
-                    raise ValueError("wrong type")
-                settings._coerce(field, value)
-            except Exception:  # noqa: BLE001 — report the field, never its value
-                label = str(field.get("label") or path or "setting")
-                issues.append(_issue(
-                    "config.value_invalid", "error", "Saved setting is invalid",
-                    "Review this setting's type and allowed range in Settings → Config files.",
-                    "%s · %s" % (filename, label), action="config"))
+            reason = _setting_reason(field, value)
+            if not reason:
+                continue
+            label = str(field.get("label") or path or "setting")
+            issues.append(_issue(
+                "config.value_invalid", "error", "Invalid saved setting",
+                "%s in %s %s. Fix it in Settings → %s, or edit the file directly."
+                % (label, filename, reason, panel_label),
+                "%s · %s" % (filename, label), action="config",
+                file=filename, field=path, panel=panel))
     return issues
+
 
 
 def auth_issues(token_configured: bool, host: str) -> list[dict]:
@@ -543,6 +605,7 @@ def _structured_setting_issues(config_issues: list[dict]) -> list[dict]:
             }
             issues.extend(validate_setting_values([{
                 "file": filename,
+                "panel": section.get("panel") or "",
                 "fields": section.get("fields") or [],
                 "values": values,
             }]))
