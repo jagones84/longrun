@@ -168,6 +168,11 @@
   .tmmenu label.tmopt{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
   .tmmenu label.tmopt:hover{background:var(--brief);color:#fff}
   .tmmenu label.tmopt input{accent-color:var(--acc)}
+  /* JAG-2.3: the per-team assign picker (34+ agents must scroll, not overflow). */
+  .tmmenu{max-height:62vh;overflow:auto}
+  .tmmenu .tmhead{padding:5px 10px 7px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);margin-bottom:2px}
+  tr.grp-head .tmadd{font-size:10px;padding:1px 7px;white-space:nowrap}
+  tr.grp-head .tmadd + .kebab{margin-left:2px}
   /* JAG-2.1: ONE agents list — the editable table grouped by team with collapsible
      group header rows (the separate "table / by team" views are gone). */
   tr.grp-head td{padding:0;border-bottom:1px solid var(--line);background:var(--brief)}
@@ -322,6 +327,10 @@
     <!-- Agents: available agents, creatable with +, each with a model + reports-to -->
     <section class="panel ag">
       <h2><span class="led" id="led" title="feed connected"></span> Agents <span class="n" id="agCount">—</span>
+        <!-- JAG-2.3: this panel lists DESIGNATED agents (a session becomes one when it
+             is designated), never every chat session. The hint states that gap out loud
+             so "my agent is missing" is answered in place instead of looking broken. -->
+        <span class="hint" id="agHint"></span>
         <span class="ctools">
           <button class="btn ghost mini" id="rzReset" title="reset panel sizes">reset layout</button>
           <button class="btn ghost mini" id="agCollapseAll" title="collapse all groups">▲</button>
@@ -511,6 +520,9 @@ class AgentsView {
     // selected team vanishes and its edge can be silently cleared.
     this.roster = [];
     this.sort = "default"; this.closed = new Set(); this._groupIds = [];
+    // JAG-2.3: the team currently scoping the board ("ALL", a team id, "__none__").
+    // groupsOf needs it to keep the SELECTED team visible even when it is empty.
+    this.scope = "ALL";
     this._seen = new Set(); this.focusSid = null; }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
   render(tree, models, running, teams, roster){
@@ -519,7 +531,9 @@ class AgentsView {
     if (models && models.length) this.models = models;
     if (running) this.running = running;
     if (teams) this.teams = teams;
-    $("agCount").textContent = this.agents.length ? this.agents.length + " agents" : "—";
+    // JAG-2.3: report the REAL count — a scoped, empty team must read "0 agents",
+    // not the pre-load dash, or the panel looks like it failed to load.
+    $("agCount").textContent = this.agents.length + " agents";
     // JAG-2.1: ONE list — the editable table grouped by team (collapsible header rows).
     const groups = this.groupsOf(this._sorted(this.agents));
     this._groupIds = groups.map(g => g.id);
@@ -622,6 +636,12 @@ class AgentsView {
       ev.stopPropagation();
       this.openTeamMenu(ev, b.dataset.tmbulk);
     }; });
+    // JAG-2.3: the per-team assign picker — same stopPropagation rule (it sits in
+    // the group header, which toggles the group on click).
+    body.querySelectorAll("[data-tmadd]").forEach(b => { b.onclick = (ev) => {
+      ev.stopPropagation();
+      this.openAssignPicker(ev, b.dataset.tmadd);
+    }; });
     body.querySelectorAll("select[data-f],input[data-f]").forEach(el => {
       el.onchange = () => { const sid = el.closest("tr").dataset.sid; this.save(sid, {[el.dataset.f]: el.value}); };
     });
@@ -716,18 +736,26 @@ class AgentsView {
     else list.sort((a, b) => (a.n || 0) - (b.n || 0));
     return list;
   }
-  /* JAG-2.1: one collapsible group per team (plus stray teams and "No team"). */
+  /* JAG-2.1: one collapsible group per team (plus stray teams and "No team").
+     JAG-2.3: a team with ZERO agents is still shown when it is the SELECTED scope —
+     otherwise creating a team and selecting it rendered an empty table with no way
+     to see the team, let alone add anyone to it. Out of scope, an empty team is
+     noise and stays hidden. */
   groupsOf(agents){
     const groups = [];
+    const scope = this.scope || "ALL";
+    const scoped = id => scope === "ALL" || scope === id;
     (this.teams || []).forEach(t => {
       const ms = agents.filter(a => (a.teams || []).includes(t.id));
-      if (ms.length) groups.push({id: t.id, name: t.name, symbol: t.symbol, ms});
+      if (ms.length || scoped(t.id)) groups.push({id: t.id, name: t.name, symbol: t.symbol, ms});
     });
     // agents in a team id the deck does not know about (defensive: never hide them).
     const stray = {};
     agents.forEach(a => (a.teams || []).forEach(id => { if (!this.teamById(id)) (stray[id] = stray[id] || []).push(a); }));
     Object.keys(stray).sort().forEach(id => groups.push({id, name: id, symbol: "", ms: stray[id]}));
-    groups.push({id: "__none__", name: "No team", symbol: "", ms: agents.filter(a => !(a.teams || []).length)});
+    const none = agents.filter(a => !(a.teams || []).length);
+    if (none.length || scope === "ALL" || scope === "__none__")
+      groups.push({id: "__none__", name: "No team", symbol: "", ms: none});
     return groups;
   }
   groupHtml(g){
@@ -740,12 +768,19 @@ class AgentsView {
       '<div class="grp-h"><span class="caret">' + (closed ? '▸' : '▾') + '</span>' +
       (g.symbol ? '<span>' + esc(g.symbol) + '</span>' : '') +
       '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span>' +
+      // JAG-2.3: assign ANY agent to THIS team from the header — before this the only
+      // picker lived on an agent row, so an empty team (or a scoped view) had nothing
+      // to click: you could not add an agent to a new team at all.
+      (isTeam ? '<button class="btn ghost mini tmadd" data-tmadd="' + esc(g.id) + '" ' +
+        'title="assign agents to ' + esc(g.name) + '">＋ assign</button>' : '') +
       (isTeam ? '<button class="kebab" data-tmbulk="' + esc(g.id) + '" aria-label="team actions" ' +
         'aria-haspopup="menu" title="team actions — all sessions of this team">\u22EF</button>' : '') +
       '</div></td></tr>';
     const rows = (g.ms || []).length
       ? (g.ms || []).map(a => this.row(a, g.id)).join("")
-      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="8" class="empty">no agents in this group.</td></tr>';
+      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="8" class="empty">' +
+        (isTeam ? 'no agents in this team yet — use ＋ assign (or the Teams cell of any agent).'
+                : 'no agents in this group.') + '</td></tr>';
     return head + rows;
   }
   /* JAG-2.1: show/hide a group's rows in place (keeps any in-progress edit alive). */
@@ -774,12 +809,41 @@ class AgentsView {
       cb.onchange = () => this.setTeamMembership(a.id, cb.dataset.tid, cb.checked);
     });
   }
-  async setTeamMembership(aid, tid, add){
+  async setTeamMembership(aid, tid, add, keepOpen){
     const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/members",
       {agent: aid, action: add ? "add" : "remove"});
     if (!r || r.ok === false){ alert((r && r.error) || "membership update failed"); return; }
+    if (keepOpen){
+      // JAG-2.3: the assign picker stays open for a multi-select. Keep the local
+      // roster truthful so a second toggle does not fight a stale membership list;
+      // the next poll re-reads the server anyway.
+      const a = (this.roster || []).find(x => x.id === aid);
+      if (a){ const s = new Set(a.teams || []); add ? s.add(tid) : s.delete(tid); a.teams = [...s]; }
+      if (this.onChanged) this.onChanged();
+      return;
+    }
     closePopover();
     if (this.onChanged) this.onChanged();
+  }
+  /* JAG-2.3: assign ANY agent to one team from that team's header. The agent rows
+     only offer a picker on THEIR row, so an empty team (or a scoped view) offered
+     nothing to click and a brand-new team could not be filled at all. The pool is
+     the FULL roster, not the team-scoped list, or a scoped board could only ever
+     re-confirm its own members. */
+  openAssignPicker(ev, tid){
+    const t = this.teamById(tid); if (!t) return;
+    const pool = (this.roster && this.roster.length) ? this.roster : (this.agents || []);
+    const html = pool.length
+      ? '<div class="tmhead">' + esc(t.symbol || "") + ' ' + esc(t.name || tid) +
+        ' <span class="muted">— tick to assign</span></div>' +
+        pool.map(a => '<label class="tmopt"><input type="checkbox" data-asg="' + esc(a.id) + '"' +
+          (((a.teams || []).includes(tid)) ? " checked" : "") + '> ' +
+          '<span class="aid">' + esc(a.id) + '</span> ' + esc(a.name || "") + '</label>').join("")
+      : '<div class="muted small" style="padding:6px 10px">no agents exist yet — create one with ＋ new agent.</div>';
+    const m = openPopover(ev, html, {cls: "tmmenu", w: 300, h: 320});
+    m.querySelectorAll('input[data-asg]').forEach(cb => {
+      cb.onchange = () => this.setTeamMembership(cb.dataset.asg, tid, cb.checked, true);
+    });
   }
   /* JAG-482: TEAM-wide bulk actions. The kebab on a team header row opens this
      menu; both actions hit ONE server route that walks the team's member
@@ -1682,7 +1746,22 @@ class OrbitApp {
     const list = models ? ((models.providers) || []).reduce((acc, p) =>
       acc.concat((p.models || []).map(m => ({ref: m.ref || (p.id + ":" + m.id), label: m.id}))), []) : [];
     const running = new Set(((sess && sess.sessions) || []).filter(s => s.running).map(s => s.id));
+    // JAG-2.3: state the roster's BOUNDARY out loud. This panel lists designated
+    // agents only, but the Sessions page creates plain chat sessions — so a session
+    // named e.g. "kb test" never appears here and the panel looked out of sync with
+    // the session list. `agents` = sessions designated as agents.
+    if (sess && tree){
+      const sids = new Set((tree.agents || []).map(a => a.session));
+      const other = ((sess.sessions) || []).filter(s => !sids.has(s.id));
+      const hint = "designated agents only · " + other.length + " session(s) are not agents";
+      $("agHint").textContent = hint;
+      $("agHint").title = other.length
+        ? "A session becomes an agent when it is designated (＋ new agent, or POST /api/agents).\n" +
+          "Not agents: " + other.slice(0, 12).map(s => s.title || s.id).join(" · ")
+        : "Every chat session is a designated agent.";
+    }
     if (fTree) this.lastAgents = fTree.agents || [];
+    this.agents.scope = team;
     if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null, tree ? tree.agents : null);
     if (fTree) this.org.render(fTree);
     if (fJobs) this.jobs.render(fJobs.jobs);

@@ -70,6 +70,24 @@ check("C3 Orbit renders AX.nY everywhere (label + SVG node text + hint)",
 check("C4 Orbit has a team selector that scopes the board",
       'id="teamSel"' in orbit and "renderTeams" in orbit and "inTeam" in orbit)
 
+# --- D: an EMPTY team is assignable and visible (live bug, 2026-10-22) --------
+# Operator: "i cant add agents to a team, i created a new team and where are the
+# list of agents that can be assigned?" — an empty team was filtered OUT of the
+# grouped table (`if (ms.length)`), so a brand-new team rendered nothing and the
+# only membership picker lived on an agent row that did not exist.
+check("D1 a team with zero agents is still rendered when it is the scoped team",
+      "if (ms.length || scoped(t.id))" in orbit and 'this.scope = "ALL"' in orbit)
+check("D2 every team header can assign agents (＋ assign -> full-roster picker)",
+      "data-tmadd=" in orbit and "openAssignPicker" in orbit
+      and "this.roster && this.roster.length" in orbit)
+check("D3 the assign picker stays open for a multi-select",
+      "setTeamMembership(cb.dataset.asg, tid, cb.checked, true)" in orbit
+      and "keepOpen" in orbit)
+check("D4 an empty team says HOW to fill it instead of a blank panel",
+      "no agents in this team yet" in orbit)
+check("D5 the panel states its boundary: agents are DESIGNATED sessions",
+      'id="agHint"' in orbit and "designated agents only" in orbit)
+
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))
