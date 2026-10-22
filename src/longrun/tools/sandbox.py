@@ -14,6 +14,12 @@ Backends (auto-detected, first working wins):
 The probe result is cached. `backend='auto'` never silently degrades to `none`:
 it falls back only to another real sandbox, and reports `none` only when the
 operator explicitly asked for it.
+
+JAG-2.7: the SAME rule applies to a backend the harness cannot even name. An
+unknown value is a typo, not a request for `auto`: `probe()` raises and
+`sandbox.run(backend=...)` refuses instead of executing on the host. Before this,
+`sandbox.backend: docker` misspelled as `dockerr` slipped into the auto branch
+and ran unchecked on the host (live proof, 2026-10-22).
 """
 
 import json
@@ -42,6 +48,11 @@ _RUN_LOCK = threading.Lock()
 # not pipes, and we only pull MAX_OUTPUT_BYTES per stream).
 MAX_OUTPUT_BYTES = int(os.environ.get("LONGRUN_SANDBOX_MAX_OUTPUT",
                                       str(2 * 1024 * 1024)))
+
+# JAG-2.7: the only backend values this module understands. Anything else is a
+# typo (or a future backend the harness does not know yet) and must NEVER be
+# treated as `auto` — that is how an "isolated" run silently became a host run.
+BACKENDS = ("auto", "docker", "bwrap", "nsjail", "none")
 
 
 def _read_capped(fh, cap=MAX_OUTPUT_BYTES):
@@ -227,7 +238,11 @@ def _probe_nsjail():
 
 
 def probe(force=False):
-    """{'backend': str, 'requested': str, 'available': {name: {'ok','detail'}}, 'isolated': bool}"""
+    """{'backend': str, 'requested': str, 'available': {name: {'ok','detail'}}, 'isolated': bool}
+
+    Raises when the configured `sandbox.backend` is explicit and unusable — either
+    unavailable after probing (JAG-431r4b) or not a name this module knows (JAG-2.7).
+    """
     global _probe_cache
     with _probe_lock:
         if _probe_cache is not None and not force:
@@ -255,8 +270,17 @@ def probe(force=False):
                     % (requested, checks[requested]["detail"]))
         elif requested == "none":
             chosen = "none"
-        else:  # auto
+        elif requested == "auto":
             chosen = next((n for n in ("docker", "bwrap", "nsjail") if checks[n]["ok"]), "none")
+        else:
+            # JAG-2.7: the misspelling branch. `auto` was the implicit `else`, so
+            # ANY unrecognized value ("dockerr", "podman", "") silently became an
+            # auto-pick — and auto-picking with nothing available is host
+            # execution. Name the value and refuse; the operator fixes the typo.
+            raise RuntimeError(
+                "sandbox: unknown backend %r (expected one of: %s); refusing to "
+                "guess — a typo must not silently choose another backend."
+                % (requested, ", ".join(BACKENDS)))
         _probe_cache = {"requested": requested, "backend": chosen,
                         "isolated": chosen != "none", "available": checks}
         return _probe_cache
@@ -334,6 +358,15 @@ def run(command, run_id=None, timeout=None, workspace=None, backend=None, job_id
     """
     cfg = registry.load_config()
     sb = cfg["sandbox"]
+    # JAG-2.7: an explicit `backend=` argument is checked BEFORE the probe, so an
+    # unknown name is refused on its own terms (and even a broken config cannot
+    # turn it into host execution). Only the four real backends + `none` pass.
+    if backend is not None and backend not in BACKENDS:
+        return {"ok": False, "exit_code": 126, "sandboxed": False,
+                "backend": "refused(%s)" % backend, "command": command,
+                "workspace": workspace,
+                "error": "sandbox: unknown backend %r (expected one of: %s); "
+                         "refusing to run on the host." % (backend, ", ".join(BACKENDS))}
     p = probe()
     chosen = backend or p["backend"]
     if chosen == "auto":
