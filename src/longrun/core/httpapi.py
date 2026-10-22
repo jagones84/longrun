@@ -1999,6 +1999,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, taskgraph.public(g) or {
                 "session_id": sess_id, "run_id": sess_id, "nodes": [],
                 "counts": {}, "status": "empty", "node_count": 0})
+        if path.startswith("/api/sessions/") and path.endswith("/sj"):
+            # JAG-533/SJ: the SESSION-scoped job graph (the dependency-ordered
+            # subagents of this chat). Read-only introspection for the model and
+            # the WebUI; the ledger dies with the session.
+            sid = path[len("/api/sessions/"):-len("/sj")].strip("/")
+            if not sid or "/" in sid or ".." in sid:
+                return self._send(404, {"error": "session not found"})
+            from longrun.agent import session_jobs as _sj
+            return self._send(200, _sj.describe(sid, (qs or {}).get("job")))
         if path == "/api/eval/tasks":
             return self._send(200, eval_list_tasks())
         if path == "/api/voice/status":

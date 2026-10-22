@@ -164,14 +164,19 @@ _LEGACY_SCHEMAS = {
                         "that tool's FULL input schema (properties, types, defaults, "
                         "required). ALWAYS read the schema before the first use of a "
                         "tool you have not called in this session. "
+                        "action=sj: this session's Session Jobs (SJ) — the "
+                        "dependency-ordered subagents a `batch` action spawned, with "
+                        "each subjob's deps, status and output. "
                         "Read-only, always safe, no external dependency."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["info", "diagnose", "logs", "context", "tools"],
+                       "enum": ["info", "diagnose", "logs", "context", "tools", "sj"],
                        "description": "what to report (default: info)"},
             "session": {"type": "string",
-                        "description": "session id for action=logs|context (default: this run's session)"},
+                        "description": "session id for action=logs|context|sj (default: this run's session)"},
+            "job": {"type": "string",
+                    "description": "action=sj: one Session Job id (e.g. 'SJ1'); omit for every job of the session"},
             "limit": {"type": "integer", "description": "max log rows for action=logs (default 100)"},
             "kind": {"type": "string", "description": "event kind filter for action=logs"},
             "tool": {"type": "string",
@@ -588,6 +593,7 @@ _SUBTOOL_FIELDS = {
     "self": {
         "info": [], "diagnose": [], "logs": ["session", "limit", "kind"],
         "context": ["session"], "tools": ["tool", "query"],
+        "sj": ["session", "job"],
     },
     "skills": {
         "list": [], "search": ["query", "limit"], "read": ["name"],

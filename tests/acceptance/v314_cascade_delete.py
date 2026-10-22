@@ -132,7 +132,13 @@ check("session delete calls agents release", "agents_mod.REGISTRY.release(sid)" 
 check("purge includes the role file", "roles_mod.path_for(sid)" in open(os.path.join(REPO, "src", "longrun", "memory/stores.py"), encoding="utf-8").read())
 jbs = open(os.path.join(REPO, "src", "longrun", "orchestrate/jobs.py"), encoding="utf-8").read()
 check("job delete scrubs dependents", "_scrub_blocker" in jbs)
-check("missing blocker is tolerated", 'if bj is None:' in jbs)
+# JAG-533/SJ: the blocker evaluation moved to the SHARED `util.dag` helper so the
+# multi-session jobs and the session-scoped SJs cannot drift. The "a blocker that
+# no longer exists is tolerated" rule now lives there (`missing_ok`).
+_dag_src = open(os.path.join(REPO, "src", "longrun", "util/dag.py"), encoding="utf-8").read()
+check("missing blocker is tolerated",
+      "if missing_ok:" in _dag_src
+      and "from longrun.util.dag import blockers_state" in jbs)
 ags = open(os.path.join(REPO, "src", "longrun", "agent/agents.py"), encoding="utf-8").read()
 check("agent release scrubs jobs + routines",
       "scrub_agent" in ags and "delete_for_agent" in ags)

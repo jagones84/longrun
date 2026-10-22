@@ -21,6 +21,8 @@ import re
 import threading
 import time
 
+from longrun.util.dag import blockers_state as _dag_blockers_state
+from longrun.util.dag import waves  # noqa: F401 — shared DAG helper (was local, JAG-533)
 from longrun.util.fswrite import read_registry, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
@@ -39,20 +41,6 @@ def _save(d):
 def _srv():
     from longrun.core import server
     return server
-
-
-def waves(agents, deps):
-    """Topological waves of agents whose dependencies are already satisfied."""
-    left = list(dict.fromkeys(agents))
-    out = []
-    while left:
-        ready = [a for a in left if not (set(deps.get(a, [])) & set(left))]
-        if not ready:              # a cycle: break it rather than hang
-            ready = [left[0]]
-        out.append(ready)
-        for a in ready:
-            left.remove(a)
-    return out
 
 
 def subjob_id(jid, n, parent_sub=None):
@@ -350,21 +338,13 @@ class JobRegistry:
         dependent of a job that ended `partial` — a NORMAL outcome (one worker
         failed) — was neither released nor failed: it stayed `blocked` FOREVER
         (open loop). Terminal-and-not-done must fail the dependent loudly.
+        A blocker that no longer EXISTS is satisfied (JAG-314), never a wedge.
+        JAG-533/SJ: the evaluation itself is the shared ``util.dag`` helper.
         """
-        all_done, failed = True, []
-        for b in job.get("blocked_by") or []:
-            bj = d["jobs"].get(b)
-            if bj is None:
-                # JAG-314: the blocker no longer exists (deleted). Treat it as
-                # satisfied rather than leaving this job blocked forever.
-                continue
-            st = bj.get("status")
-            if st == "done":
-                continue
-            if st in ("error", "partial"):
-                failed.append(b)
-            all_done = False
-        return all_done, failed
+        status = {k: (v or {}).get("status")
+                  for k, v in (d.get("jobs") or {}).items()}
+        return _dag_blockers_state(job.get("blocked_by") or [], status,
+                                   missing_ok=True)
 
     def _update(self, jid, fn):
         with _LOCK:

@@ -97,6 +97,89 @@ _lock = threading.RLock()
 _running = {}     # subagent_id -> {state, parent_run_id, goal, result}
 _DEPTH = {}       # run_id -> depth of nesting (matrioska); 0 = top level
 
+# JAG-533/SJ: a finished subagent used to live ONLY in the in-memory `_running`
+# dict, so a harness restart lost every result — the parent's `collect()` then
+# answered "not found" for work that had actually completed, and the session's
+# Session Job (SJ) ledger could reference a result nobody could read any more.
+# Every spawn writes a small durable record here; `collect`/`status` fall back
+# to it. Deleted with the parent session (see `purge_parent`).
+SUBAGENT_DIR = os.environ.get("LONGRUN_SUBAGENT_DIR") or os.path.join(
+    registry.REPO, "data", "subagents")
+_MAX_SUMMARY = 8000
+
+
+def _safe(ident):
+    """A subagent/session id safe to use as a file name."""
+    return "".join(c for c in str(ident or "") if c.isalnum() or c in "-_.")[:120]
+
+
+def _rec_path(subagent_id):
+    return os.path.join(SUBAGENT_DIR, _safe(subagent_id) + ".json")
+
+
+def _persist(rec):
+    """Atomically write one durable subagent record (never raises)."""
+    try:
+        from longrun.util.fswrite import write_json
+        os.makedirs(SUBAGENT_DIR, exist_ok=True)
+        write_json(_rec_path(rec.get("id")), rec)
+    except Exception:  # noqa: BLE001 — persistence must never break a spawn
+        pass
+
+
+def load_record(subagent_id):
+    """The durable record of one subagent, or None (survives a restart)."""
+    try:
+        from longrun.util.fswrite import read_json
+        return read_json(_rec_path(subagent_id), None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def purge_parent(parent_run_id):
+    """Delete every durable subagent record whose parent is `parent_run_id`.
+
+    Called from the session-delete cascade so a session's subagents do not leak
+    as orphans — like the transcript, its graph and its runs. Returns the names
+    of the records removed.
+    """
+    if not parent_run_id:
+        return []
+    removed = []
+    try:
+        if not os.path.isdir(SUBAGENT_DIR):
+            return []
+        for fn in os.listdir(SUBAGENT_DIR):
+            if not fn.endswith(".json"):
+                continue
+            p = os.path.join(SUBAGENT_DIR, fn)
+            try:
+                from longrun.util.fswrite import read_json
+                rec = read_json(p, None) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            if rec.get("parent") == parent_run_id:
+                try:
+                    os.remove(p)
+                    removed.append("subagent:" + fn[:-len(".json")])
+                except OSError:
+                    pass
+    except Exception:  # noqa: BLE001 — cleanup must not break the delete
+        pass
+    return removed
+
+
+def _shrink(result):
+    """The persisted slice of a run result: status/summary kept, trace counted."""
+    result = result or {}
+    return {
+        "ok": result.get("status") == "done",
+        "status": result.get("status"),
+        "error": str(result.get("error") or "")[:500],
+        "summary": str(result.get("summary") or "")[:_MAX_SUMMARY],
+        "steps": len(result.get("trace") or []),
+    }
+
 
 def depth_of(run_id):
     """Depth of a run: 0 for top-level, +1 for each delegated level."""
@@ -173,6 +256,13 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
 
     with _lock:
         _running[sid] = entry
+    # JAG-533/SJ: the durable twin of `_running[sid]`, so the result survives the
+    # process. Rewritten on completion with the terminal status + summary.
+    _persist({
+        "id": sid, "run_id": st.id, "goal": goal, "max_steps": max_steps,
+        "model": model, "role": role, "parent": parent_run_id,
+        "status": "running", "created": round(entry["created"], 3),
+    })
 
     def _run():
         try:
@@ -197,6 +287,12 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
             status_txt, steps_n = "error", 0
         finally:
             entry["done"].set()
+        _persist({
+            "id": sid, "run_id": st.id, "goal": goal, "max_steps": max_steps,
+            "model": model, "role": role, "parent": parent_run_id,
+            "status": status_txt or "error", "created": round(entry["created"], 3),
+            "ended": round(time.time(), 3), **_shrink(entry.get("result")),
+        })
         try:
             from longrun.core.server import publish as _publish
             _publish("subagent.done", subagent_id=sid, parent=parent_run_id,
@@ -221,6 +317,16 @@ def collect(subagent_id, timeout=None):
     with _lock:
         entry = _running.get(subagent_id)
     if entry is None:
+        # JAG-533/SJ: the run may have finished in a PREVIOUS process (a restart
+        # dropped `_running`). Serve the durable record instead of "not found",
+        # so a Session Job's dependency can still read its input after a restart.
+        rec = load_record(subagent_id)
+        if rec and rec.get("status") not in (None, "running"):
+            return {"ok": rec.get("status") == "done", "status": rec.get("status"),
+                    "result": dict(rec), "trace": [],
+                    "summary": str(rec.get("summary") or ""),
+                    "steps": rec.get("steps") or 0,
+                    "subagent_id": subagent_id, "from_disk": True}
         return {"ok": False, "error": "subagent %r not found" % subagent_id}
     if not entry["done"].wait(timeout=timeout):
         return {"ok": False, "error": "subagent timeout", "subagent_id": subagent_id}
@@ -265,7 +371,18 @@ def status(subagent_id=None):
         if subagent_id:
             e = _running.get(subagent_id)
             if not e:
-                return None
+                # JAG-533/SJ: fall back to the durable record (post-restart).
+                rec = load_record(subagent_id)
+                if not rec:
+                    return None
+                return {
+                    "id": rec.get("id"),
+                    "goal": str(rec.get("goal") or "")[:120],
+                    "state": rec.get("status") or "unknown",
+                    "done": rec.get("status") not in (None, "running"),
+                    "created": rec.get("created"),
+                    "from_disk": True,
+                }
             return {
                 "id": e["id"],
                 "goal": e["goal"][:120],

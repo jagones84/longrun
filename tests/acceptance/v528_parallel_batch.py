@@ -52,6 +52,7 @@ check("A2 config/subagents.yaml ships max_parallel for parallel agents",
 from longrun.core import server as _server  # noqa: E402,F401
 from longrun.agent import agent as A  # noqa: E402
 from longrun.agent import subagent as SA  # noqa: E402
+from longrun.agent import session_jobs as SJw  # noqa: E402
 
 check("B1 _parallel_tool_cap() reads runtime.max_parallel_tools (4)",
       A._parallel_tool_cap() == 4, A._parallel_tool_cap())
@@ -63,11 +64,11 @@ A._runtime_int = lambda k, d: -5
 check("B3 a negative tool cap clamps to 1", A._parallel_tool_cap() == 1)
 A._runtime_int = _orig_ri
 
-check("B4 _parallel_subagent_cap() reads subagents.yaml max_parallel (4)",
-      A._parallel_subagent_cap() == 4, A._parallel_subagent_cap())
+check("B4 the parallel-subagent cap reads subagents.yaml max_parallel (4)",
+      SJw._worker_cap() == 4, SJw._worker_cap())
 _orig_load = SA.load_cfg
 SA.load_cfg = lambda reload=False: {"max_parallel": 0}
-check("B5 a subagent cap of 0 clamps to 1", A._parallel_subagent_cap() == 1)
+check("B5 a subagent cap of 0 clamps to 1", SJw._worker_cap() == 1)
 SA.load_cfg = _orig_load
 
 check("C _batch_items reads calls / tool_calls / batch / parallel",

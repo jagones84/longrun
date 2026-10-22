@@ -908,8 +908,17 @@ def _self(args, run_id):
         elif action in ("tools", "tooling"):
             info["tools"] = diag_mod.tools_report(tool=(args or {}).get("tool"),
                                                   query=(args or {}).get("query"))
+        elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):
+            # JAG-533/SJ: the SESSION-scoped job graph (the dependency-ordered
+            # subagents of this chat). Not the multi-session Orbit jobs (those
+            # are `J<n>` and live in /api/orbit/jobs) — SJ is `SJ<n>` / `SJ<n>.<k>`
+            # and dies with its session.
+            from longrun.agent import session_jobs as _sj
+            info["sj"] = _sj.describe((args or {}).get("session") or run_id,
+                                      (args or {}).get("job"))
         else:
-            info["error"] = ("unknown action %r — use info|diagnose|logs|context|tools" % action)
+            info["error"] = ("unknown action %r — use info|diagnose|logs|context|"
+                             "tools|sj" % action)
     info["action"] = action
     return info
 

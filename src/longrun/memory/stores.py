@@ -215,6 +215,18 @@ def _purge_session_artifacts(sid):
         bases.append(costs._path(sid))          # JAG-462: the per-session cost ledger
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from longrun.agent import session_jobs
+        bases.append(session_jobs.path_for(sid))  # JAG-533/SJ: the Session Job ledger
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from longrun.agent import subagent as subagent_mod
+        # JAG-533/SJ: the durable subagent records of this session (every SJ subjob
+        # wrote one). Without this a session's children outlive the chat.
+        subagent_mod.purge_parent(sid)
+    except Exception:  # noqa: BLE001
+        pass
     removed = []
     for base in bases:
         for f in glob.glob(glob.escape(base) + "*"):

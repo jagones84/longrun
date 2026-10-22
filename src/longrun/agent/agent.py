@@ -1416,16 +1416,6 @@ def _parallel_tool_cap():
     return n if n > 0 else 1
 
 
-def _parallel_subagent_cap():
-    """How many subagents run at once (config/subagents.yaml `max_parallel`)."""
-    try:
-        from longrun.agent import subagent as _sub
-        n = int((_sub.load_cfg() or {}).get("max_parallel") or 0)
-    except Exception:  # noqa: BLE001
-        n = 4
-    return n if n > 0 else 1
-
-
 def _batch_items(act):
     """The full-action dicts carried by a `batch` action (JAG-533)."""
     if not isinstance(act, dict):
@@ -1439,54 +1429,14 @@ def _batch_items(act):
     return [c for c in (raw or []) if isinstance(c, dict)]
 
 
-def _spawn_batch_subagent(sess, act, on_event):
-    """Spawn ONE subagent item of a batch; return its id or None (JAG-533)."""
-    try:
-        from longrun.agent import subagent as _sub
-        _args = act.get("args") if isinstance(act.get("args"), dict) else {}
-        goal = str(act.get("goal") or _args.get("goal") or act.get("detail")
-                   or "").strip()
-        if not goal:
-            on_event("tool.result", session=sess["id"], tool="subagent", ok=False,
-                     backend="harness", exit_code=1,
-                     summary="subagent: goal required")
-            return None
-        try:
-            max_steps = int(act.get("max_steps", _args.get("max_steps", 4)))
-        except (TypeError, ValueError):
-            max_steps = 4
-        model = act.get("model") or _args.get("model") or None
-        role = str(act.get("role") or _args.get("role") or "").strip() or None
-        on_event("tool.call", session=sess["id"], tool="subagent",
-                 args={"goal": goal, "max_steps": max_steps, "model": model,
-                       "role": role}, inline=True)
-        spawned = _sub.spawn(goal, parent_run_id=sess["id"], max_steps=max_steps,
-                             model=model, depth=_sub.depth_of(sess["id"]) + 1,
-                             role=role) or {}
-        sid = spawned.get("subagent_id")
-        if not sid:
-            on_event("tool.result", session=sess["id"], tool="subagent", ok=False,
-                     backend="harness", exit_code=1,
-                     summary="subagent: "
-                             + str(spawned.get("error") or "spawn failed"))
-            return None
-        return sid
-    except Exception as e:  # noqa: BLE001 — one item must not sink the batch
-        try:
-            on_event("tool.result", session=sess["id"], tool="subagent", ok=False,
-                     backend="harness", exit_code=1,
-                     summary="subagent: %s" % str(e)[:200])
-        except Exception:  # noqa: BLE001
-            pass
-        return None
-
-
 def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
-    """Run the INDEPENDENT calls of a `batch` action concurrently (JAG-533).
+    """Run the calls of a `batch` action concurrently (JAG-533).
 
-    Tool calls share a thread pool sized by `runtime.max_parallel_tools`;
-    subagent items are spawned + collected in WAVES of `max_parallel` (the spawn
-    cap is also enforced inside `subagent.spawn`). One tool.call/tool.result pair
+    TOOL items share a thread pool sized by `runtime.max_parallel_tools`.
+    SUBAGENT items become ONE Session Job (SJ, JAG-533/SJ): a persisted,
+    dependency-ordered graph run by the ready-queue scheduler in
+    ``longrun.agent.session_jobs`` — a subjob starts only when its `deps` are
+    done and then receives their output as input. One tool.call/tool.result pair
     and one persisted card are emitted per item, in the model's order, and the
     combined observation is fed back as the next step. A batch of fewer than two
     items is NOT handled here — the loop routes it through the single-call path.
@@ -1533,36 +1483,56 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
         with ThreadPoolExecutor(max_workers=_parallel_tool_cap()) as pool:
             results.extend(list(pool.map(_one_tool, tool_items)))
     if sub_items:
-        from longrun.agent import subagent as _sub
-        cap = _parallel_subagent_cap()
-        for i in range(0, len(sub_items), cap):
-            wave = sub_items[i:i + cap]
-            for it in wave:
-                sid = _spawn_batch_subagent(sess, it, on_event)
-                if not sid:
-                    results.append({"tool": "subagent", "ok": False,
-                                    "obs": "subagent did not start (see the card)."})
-                    continue
+        # JAG-533/SJ: the subagent items of a batch become ONE Session Job (SJ) —
+        # a persisted, dependency-ordered graph. A subjob STARTS only when the
+        # subjobs it names in `deps` finished, and then receives their output
+        # (`## Input from dependencies`). Items with no deps still start together
+        # under the parallel-subagent cap: same wall clock as the naive waves,
+        # now durable and introspectable.
+        from longrun.agent import session_jobs as _sj
+        created = _sj.create(sess["id"],
+                             str(act.get("goal") or act.get("thought") or "batch"),
+                             sub_items)
+        if not created.get("ok"):
+            for it in sub_items:
+                results.append({"tool": "subagent", "ok": False,
+                                "obs": "batched subagent refused: %s"
+                                       % created.get("error")})
+        else:
+            def _sj_hook(kind, spec):
+                if kind == "start":
+                    on_event("tool.call", session=sess["id"], tool="subagent",
+                             args={"sj": spec.get("id"), "label": spec.get("label"),
+                                   "deps": spec.get("deps") or []}, inline=True)
+                    return
+                _ok = spec.get("status") == "done"
+                _out = str(spec.get("result") or spec.get("error") or "")[:4000]
+                on_event("tool.result", session=sess["id"], tool="subagent", ok=_ok,
+                         exit_code=0 if _ok else 1, backend="subagent",
+                         args={"sj": spec.get("id"),
+                               "subagent_id": spec.get("subagent_id")},
+                         output=_out,
+                         summary="subagent %s (%s): %s"
+                                 % (spec.get("id"), spec.get("label") or "",
+                                    "done" if _ok else "error"))
                 try:
-                    res = _sub.collect(sid, timeout=SUBAGENT_WAIT) or {}
-                except Exception as e:  # noqa: BLE001
-                    res = {"ok": False, "error": str(e)[:200]}
-                ok = bool(res.get("ok"))
-                out = (str(res.get("summary") or "").strip()
-                       or json.dumps(res, ensure_ascii=False, default=str)[:1500])
-                out = out[:4000]
-                on_event("tool.result", session=sess["id"], tool="subagent", ok=ok,
-                         exit_code=0 if ok else 1, backend="subagent",
-                         args={"subagent_id": sid}, output=out,
-                         summary="subagent %s: %s" % (sid, "done" if ok else "error"))
-                try:
-                    persist_tool_card(sess, "subagent", ok,
-                                      args={"subagent_id": sid}, result=out,
-                                      exit_code=0 if ok else 1, backend="subagent",
-                                      node=node, after=after)
+                    persist_tool_card(sess, "subagent", _ok,
+                                      args={"sj": spec.get("id"),
+                                            "label": spec.get("label"),
+                                            "subagent_id": spec.get("subagent_id")},
+                                      result=_out, exit_code=0 if _ok else 1,
+                                      backend="subagent", node=node, after=after)
                 except Exception:  # noqa: BLE001
                     pass
-                results.append({"tool": "subagent", "ok": ok, "obs": out})
+            ran = _sj.run(sess["id"], created["job"], hook=_sj_hook,
+                          timeout=SUBAGENT_WAIT)
+            for s in ran.get("subjobs") or []:
+                results.append({"tool": "subagent",
+                                "ok": s.get("status") == "done",
+                                "obs": "SJ %s (%s) %s\n%s"
+                                       % (s.get("id"), s.get("label"),
+                                          s.get("status"),
+                                          s.get("result") or s.get("error") or "")})
     lines = ["Batch of %d call(s) ran concurrently (tools: %d, subagents: %d)."
              % (len(tool_items) + len(sub_items), len(tool_items), len(sub_items))]
     for r in results:

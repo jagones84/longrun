@@ -380,9 +380,20 @@ def tool_context():
         "Each item of `calls` is a FULL action — a tool call, or "
         '{"action":"subagent","goal":"..."}. At most `runtime.max_parallel_tools` '
         "tools run at once (config/tools.yaml); subagents are capped by "
-        "`max_parallel` (config/subagents.yaml). Never batch calls that must run "
-        "in a specific order, and never batch an approval-gated mutation with a "
-        "read that depends on it.",
+        "`max_parallel` (config/subagents.yaml). Never batch an approval-gated "
+        "mutation with a read that depends on it.",
+        "A SUBAGENT item may declare ORDER over other subagent items of the same "
+        "batch, and the whole batch becomes one Session Job (SJ) you can inspect "
+        "with `self {action:\"sj\"}`:",
+        '  {"action":"batch","calls":['
+        '{"action":"subagent","label":"data","goal":"collect the numbers"},'
+        '{"action":"subagent","label":"report","goal":"write the summary",'
+        '"deps":["data"]}]}',
+        "`label` names the item; `deps` lists the labels that must FINISH first — "
+        "the item starts only then and automatically receives their output under "
+        "`## Input from dependencies` (use `input_from:\"<label>\"` to take just "
+        "one dependency's output). Never invent `deps` you do not need: items with "
+        "no `deps` start together, which is faster.",
         "Enabled tools, grouped by namespace (name{s sub-tools}):",
     ]
     for ns in sorted(groups):
