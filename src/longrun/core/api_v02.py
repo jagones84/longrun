@@ -241,6 +241,64 @@ def tool_action(st, tool, args, on_event, workspace=None):
     return toolmod.observation(res), meta
 
 
+def batch_action(st, items, on_event, srv, workspace=None):
+    """Run the calls of a `batch` action inside the v2 loop (JAG-533).
+
+    `AGENT_PROMPT_V2`/`tool_context` have always advertised `batch`, and the CHAT
+    loop implemented it, but this loop did not: the action fell through to
+    ``apply_agent_action`` and came back as "unknown action". A subagent that
+    followed the prompt therefore burned a step on a dead end and — because the
+    repeat guard hashed two different batches identically — was then killed at
+    step 2 with ``no_progress`` (live: SJ1.3, 2026-10-23).
+
+    TOOL items run CONCURRENTLY under `runtime.max_parallel_tools`. Every other
+    item (subagent / plan_step / note / …) runs SEQUENTIALLY afterwards, because
+    those mutate harness state (plan.json, the task graph) and must not race.
+    Returns ``(observation, results)`` in the model's order.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from longrun.agent.agent import _parallel_tool_cap
+
+    def _is_tool(it):
+        return str(it.get("action") or "") in ("", "tool") and bool(it.get("tool"))
+
+    def _one_tool(it):
+        tool = it.get("tool")
+        args = dict(it.get("args") or {})
+        for k in ("command", "path", "content", "url"):
+            if k in it and k not in args:
+                args[k] = it[k]
+        obs, meta = tool_action(st, tool, args, on_event, workspace=workspace)
+        return {"tool": tool, "ok": (meta or {}).get("ok") is not False,
+                "observation": obs}
+
+    tool_items = [it for it in items if _is_tool(it)]
+    other_items = [it for it in items if not _is_tool(it)]
+    results = []
+    if tool_items:
+        with ThreadPoolExecutor(max_workers=_parallel_tool_cap()) as pool:
+            results.extend(list(pool.map(_one_tool, tool_items)))
+    for it in other_items:
+        if str(it.get("action") or "") == "batch":
+            obs = ("nested `batch` is not supported — put its calls in the TOP-LEVEL "
+                   "`calls` list")
+            ok = False
+        else:
+            try:
+                obs, ok = srv.apply_agent_action(it, run_id=st.id), True
+            except Exception as e:  # noqa: BLE001 — one item must not kill the batch
+                obs, ok = "batch item failed: %s" % str(e)[:300], False
+        results.append({"tool": str(it.get("action") or it.get("tool") or "?"),
+                        "ok": ok, "observation": obs})
+    lines = ["batch: %d call(s) — %d tool, %d other"
+             % (len(items), len(tool_items), len(other_items))]
+    for n, r in enumerate(results, 1):
+        lines.append("%d. %s -> %s" % (n, r.get("tool"),
+                                       str(r.get("observation") or "")[:1500]))
+    return "\n".join(lines)[:12000], results
+
+
 def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, workspace=None,
                obs_max=1600):
     """One-shot gated tool call used by POST /api/tools/call and the chat loop.
@@ -576,7 +634,11 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                             continue
                         raise last_err if last_err else RuntimeError("no model available")
                     break
-                act = srv.extract_json(answer) or {}
+                # JAG-534: use the SAME parser as the chat loop. `extract_json`
+                # alone sees no action in the model's native DSML markup, so a
+                # subagent whose model emitted it turned every iteration into a
+                # no-op "note" and the run died at max_steps / on the repeat guard.
+                act = srv._extract_action(answer) or {}
                 if not isinstance(act, dict) or not act.get("action"):
                     act = {"thought": answer[:200], "action": "note", "detail": answer[:400]}
                 thought = str(act.get("thought", ""))[:400]
@@ -597,18 +659,22 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
             # max_steps having "worked" but never concluded. If the same action
             # (tool+args, or step+id+title) repeats, conclude the run instead of
             # re-executing it — deterministic termination for any model.
+            # JAG-533: the signature is the WHOLE action. It used to be built from
+            # `args` + command/path/url/content only, so a `batch` — whose payload
+            # lives in `calls` — hashed identically every time: the SECOND batch
+            # of a run, even with completely different calls, counted as a repeat
+            # and killed the run at step 2 (live: SJ1.3, 2026-10-23). `thought`
+            # fluctuates every turn and volatile timeouts must not defeat the guard.
             try:
-                raw_args = dict(act.get("args") or {})
+                norm_args = dict(act.get("args") or {})
                 for k in ("command", "path", "url", "content"):
-                    if k in act and k not in raw_args:
-                        raw_args[k] = act[k]
-                # volatile keys a small model flips between otherwise-identical
-                # calls (e.g. timeout) must not defeat the guard.
-                norm_args = {k: v for k, v in raw_args.items()
-                             if k not in ("timeout_secs", "timeout", "args")}
-                sig = (action, act.get("tool"),
-                       json.dumps(norm_args, sort_keys=True, default=str),
-                       act.get("id"), act.get("title"))
+                    if k in act and k not in norm_args:
+                        norm_args[k] = act[k]
+                rest = {k: v for k, v in act.items()
+                        if k not in ("args", "thought", "timeout_secs", "timeout",
+                                     "command", "path", "url", "content")}
+                sig = json.dumps({"args": norm_args, "rest": rest},
+                                 sort_keys=True, default=str)
             except (TypeError, ValueError):
                 sig = str(action)
             if sig == last_sig:
@@ -625,6 +691,16 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                                  "summary": summary})
                 return _result(st, goal, model)
 
+            items = []
+            if action == "batch":
+                from longrun.agent.agent import _batch_items
+                items = _batch_items(act)
+                if len(items) == 1:
+                    # A one-item batch is just a normal call: unwrap it so it
+                    # keeps the ordinary single-action semantics (and its gate).
+                    act = dict(items[0], thought=thought)
+                    action = act.get("action") or ("tool" if act.get("tool") else "note")
+
             if action == "tool":
                 tool = act.get("tool")
                 args = dict(act.get("args") or {})
@@ -637,6 +713,20 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 obs, meta = tool_action(st, tool, args, on_event, workspace=workspace)
                 entry["observation"] = obs
                 entry["tool_result"] = meta
+            elif action == "batch":
+                if items:
+                    checkpoint(st)
+                    obs, _results = batch_action(st, items, on_event, srv,
+                                                 workspace=workspace)
+                    entry = {"i": i + 1, "thought": thought, "action": "batch",
+                             "calls": items, "observation": obs, "results": _results}
+                else:
+                    obs = ('batch needs a non-empty `calls` list of full actions, e.g. '
+                           '{"action":"batch","calls":[{"tool":"fs.read",'
+                           '"args":{"path":"a.py"}},{"tool":"glob.list",'
+                           '"args":{"pattern":"*.py"}}]}')
+                    entry = {"i": i + 1, "thought": thought, "action": "batch",
+                             "observation": obs}
             else:
                 obs = srv.apply_agent_action(act, run_id=st.id)
                 entry = {"i": i + 1, "thought": thought, "action": action,

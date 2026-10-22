@@ -549,12 +549,80 @@ def _next_stale(prev_stale, prev_hash, cur_hash, worked):
 # the A8 "Master" session: the model re-emitted the same markup every turn). We now
 # recognise and parse it, exactly like the near-miss dialects `_normalize_action`
 # already accepts.
-_DSML = "\uff5c\uff5cDSML\uff5c\uff5c"
+#
+# JAG-534: the marker DRIFTS between model builds. Live sessions carry TWO bars
+# (<｜｜DSML｜｜ calls>), ONE (<｜DSML｜ calls>), mixed case, stray spaces, and the
+# inner tags sometimes lose the marker altogether (<parameter name="code">). An
+# exact-string check knew only the double-bar form, so single-bar replies were
+# treated as PROSE: the raw markup was shown to the operator as the final answer
+# and the turn ended mid-work (session 18c103e0d9a1, 2026-10-23 — "gli agenti
+# muoiono"). Detection is therefore a tolerant regex, and the tag regexes below
+# accept the marker as OPTIONAL.
+_DSML_MARK = r"[|｜]{1,3}\s*DSML\s*[|｜]{1,3}"
+# `<｜DSML｜ invoke …>` / `<invoke …>` / `<parameter …>`
+_DSML_TAG = r"<\s*(?:" + _DSML_MARK + r")?\s*"
+# The names a model invents for the wrapper itself (never a real tool).
+_DSML_WRAPPERS = ("", "tool", "tools", "action", "call", "calls", "tool_call",
+                  "tool_calls", "toolcall", "function", "function_call", "invoke",
+                  "invocation", "permission")
 
 
 def _looks_like_dsml(text):
     """True when `text` carries the model's native (DSML) tool-call markup."""
-    return _DSML in (text or "")
+    return bool(re.search(r"<\s*" + _DSML_MARK, str(text or ""), re.I))
+
+
+def _dsml_coerce(act):
+    """Decode the JSON-typed payloads a model writes as strings (JAG-534).
+
+    The markup only carries a `string="false"` hint most of the time; without it
+    `steps` / `todos` / `calls` arrived as raw JSON text and the harness silently
+    dropped them (`_apply_chat_todos` keeps only a list, `_batch_items` the same),
+    so a perfectly parsed todo.update did nothing.
+    """
+    for k in ("steps", "todos", "calls", "tool_calls"):
+        v = act.get(k)
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(v, (list, dict)):
+                act = dict(act)
+                act[k] = v
+    return act
+
+
+def _dsml_unwrap_args(args):
+    """`<parameter name="args">{…}</parameter>` as the ONLY parameter (JAG-501/526).
+
+    The model copies the JSON protocol's own example, so the real tool arguments
+    sit one level down. Applied before AND after naming the tool: the name may be
+    a sibling `tool` parameter that the wrapper unwrap consumes.
+    """
+    if len(args) == 1 and "args" in args:
+        inner = args["args"]
+        if isinstance(inner, str):
+            try:
+                inner = json.loads(inner)
+            except Exception:  # noqa: BLE001
+                inner = _json_prefix(inner)
+        if isinstance(inner, dict):
+            return inner
+    return args
+
+
+def _json_prefix(text):
+    """Decode the FIRST JSON value in `text`, ignoring trailing junk (JAG-534).
+
+    A live `string="false"` parameter carried a valid object followed by the
+    model's stray `"}}`, so `json.loads` raised "Extra data" and the whole call
+    was dropped.
+    """
+    try:
+        return json.JSONDecoder().raw_decode(str(text or "").lstrip())[0]
+    except (TypeError, ValueError):
+        return None
 
 
 def _looks_like_tool_markup(text):
@@ -568,7 +636,7 @@ def _looks_like_json_action(text):
     """True when `text` is a (possibly malformed/truncated) tool-call JSON OR the
     model's native DSML/Hermes markup — machine text never shown as a chat reply."""
     t = (text or "").strip()
-    if _DSML in t or _looks_like_tool_markup(t):
+    if _looks_like_dsml(t) or _looks_like_tool_markup(t):
         return True
     if not t.startswith(("{", "[")):
         return False
@@ -2003,56 +2071,96 @@ def _dsml_action(text):
     close. The old regex required ``name="X">`` immediately, so nine such calls
     were dropped and every retry reported "That JSON was invalid" (a JSON error
     for text that contained no action JSON at all).
+
+    JAG-534: every tag now tolerates +/- bars, any case and a MISSING marker
+    (``<parameter name="code">`` inside a marked block), and the wrapper names a
+    model invents (``permission``, ``action``, ``tool_call``) are unwrapped to the
+    real action inside: harness action in ``action``, tool in ``tool``, tool as
+    the element text, or a raw JSON action as the element body.
     """
     if not _looks_like_dsml(text):
         return None
-    m = re.search(_DSML + r"\s*(?:invoke|invocation)\b([^>]*)>", text, re.S)
-    if not m:
-        return None
-    attrs = m.group(1)
-    tail = text[m.end():]
-    # The invoke body ends at its OWN close tag; a stray `</… parameter>` inside
-    # (the malformed dialect) must not truncate it.
-    endm = re.search(r"</" + _DSML + r"\s*(?:invoke|invocation)?\s*>", tail)
-    body = tail[:endm.start()] if endm else tail
-    nm = re.search(r'\bname\s*=\s*"([^"]*)"', attrs)
-    name = nm.group(1).strip() if nm else ""
+    m = re.search(_DSML_TAG + r"(?:invoke|invocation)\b([^>]*)>", text, re.S | re.I)
+    if m:
+        attrs = m.group(1)
+        tail = text[m.end():]
+        # The invoke body ends at its OWN close tag; a stray `</… parameter>`
+        # inside (the malformed dialect) must not truncate it.
+        endm = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*(?:invoke|invocation)?\s*>",
+                         tail, re.I)
+        body = tail[:endm.start()] if endm else tail
+        nm = re.search(r'\bname\s*=\s*"([^"]*)"', attrs)
+        name = nm.group(1).strip() if nm else ""
+    else:
+        # JAG-534: no <invoke> at all. Either the call IS the JSON after the
+        # marker (`<｜DSML｜ calls>[{"action":"todo.update",…}]`) or the
+        # parameters hang directly off `<calls>`.
+        attrs, body, name = "", text, ""
+        parsed = extract_json(text)
+        candidates = [parsed] if isinstance(parsed, dict) else (
+            parsed if isinstance(parsed, list) else [])
+        for cand in candidates:
+            if isinstance(cand, dict) and (cand.get("action") or cand.get("tool")):
+                return _normalize_action(_dsml_coerce(cand))
+        if not re.search(_DSML_TAG + r"parameter\b", text, re.I):
+            return None
     args = {}
-    for pm in re.finditer(_DSML + r'\s*parameter\s+name="([^"]+)"([^>]*)>(.*?)</'
-                          + _DSML + r"\s*(?:parameter)?>", body, re.S):
+    for pm in re.finditer(_DSML_TAG + r'parameter\s+name\s*=\s*"([^"]+)"([^>]*)>(.*?)'
+                          r"</\s*(?:" + _DSML_MARK + r")?\s*(?:parameter)?\s*>",
+                          body, re.S | re.I):
         key = pm.group(1).strip()
         val = pm.group(3)
         if 'string="false"' in pm.group(2):
             try:
                 val = json.loads(val)
             except Exception:  # noqa: BLE001
-                pass
+                val = _json_prefix(val) if val.lstrip()[:1] in ("{", "[") else val
         args[key] = val
-    # JAG-526: the tool name can be the element TEXT of a meta envelope
-    # (`<invoke name="tool">shell.exec</…>`), not only a `tool` parameter.
-    if name in ("", "tool"):
-        cut = body.find("<" + _DSML + " parameter")
-        lead = body[:cut] if cut >= 0 else body
-        lead = re.sub(r"</?" + _DSML + r"[^>]*>", "", lead).strip()
+    args = _dsml_coerce(args)
+    if not args:
+        # JAG-534: another live shape puts the arguments as ATTRIBUTES of the
+        # invoke — `<invoke name="skills" action="search" query="…">` — with no
+        # <parameter> children at all, so the call arrived with empty args.
+        for am in re.finditer(r'([A-Za-z_][\w\-]*)\s*=\s*"([^"]*)"', attrs):
+            if am.group(1) in ("name", "string"):
+                continue
+            args[am.group(1)] = am.group(2)
+    # JAG-501/JAG-526: unwrap the `args` envelope BEFORE naming the tool — it is
+    # both the arguments and (in `<calls><parameter name="args">{…}`) the only
+    # clue to which tool the model meant.
+    args = _dsml_unwrap_args(args)
+    # JAG-526/JAG-534: the real name sits in a parameter, in the element TEXT, or
+    # the whole call is a harness action wrapped in an invented envelope.
+    if name.lower() in _DSML_WRAPPERS:
+        cut = re.search(_DSML_TAG + r"parameter\b", body, re.I)
+        lead = body[:cut.start()] if cut else body
+        lead = re.sub(r"</?\s*(?:" + _DSML_MARK + r")?\s*[A-Za-z_][\w-]*\s*>",
+                      "", lead).strip()
+        inner = str(args.get("action") or "").strip()
+        if inner in _HARNESS_ACTION_NAMES or inner in _TODO_ACTION_ALIASES:
+            # `<invoke name="permission"><parameter name="action">todo.update<…`
+            rest = {k: v for k, v in args.items() if k != "action"}
+            return dict(rest, action=_TODO_ACTION_ALIASES.get(inner, inner))
         if isinstance(args.get("tool"), str) and args["tool"].strip():
             name = args.pop("tool").strip()
+            args = _dsml_unwrap_args(args)
         elif re.fullmatch(r"[A-Za-z_][\w.\-]*", lead or ""):
             name = lead
+        elif "command" in args:
+            # `<calls><parameter name="args">{"command": …}` names no tool at all;
+            # `command` is shell.exec's argument, so the intent is unambiguous.
+            name = "shell.exec"
+        else:
+            # `<invoke name="tool_call">{…full action JSON…}</tool_call>`
+            try:
+                maybe = json.loads(lead) if lead.startswith("{") else None
+            except (TypeError, ValueError):
+                maybe = None
+            if isinstance(maybe, dict) and (maybe.get("action") or maybe.get("tool")):
+                return _normalize_action(_dsml_coerce(maybe))
     if not name:
         return None
-    # JAG-501: unwrap the meta envelope the model copies from the protocol's own
-    # example: <invoke name="tool"> <parameter name="tool">X</parameter>
-    #                     <parameter name="args">{...}</parameter> </invoke>
-    # JAG-526: the args parameter may now be the ONLY one (the tool name sits in
-    # the element text), so unwrap it without requiring a `tool` parameter.
-    if len(args) == 1 and isinstance(args.get("args"), str):
-        try:
-            inner = json.loads(args["args"])
-        except Exception:  # noqa: BLE001
-            inner = None
-        if isinstance(inner, dict):
-            args = inner
-    return {"action": "tool", "tool": name, "args": args or {}}
+    return {"action": "tool", "tool": name, "args": _dsml_coerce(args) or {}}
 
 
 def _tool_markup_action(text):
@@ -2115,7 +2223,7 @@ def _extract_action(answer):
         return _normalize_action(_tool_markup_action(answer))
     act = _normalize_action(extract_json(answer))
     if not act:
-        act = _dsml_action(answer)
+        act = _normalize_action(_dsml_action(answer))
     return act
 
 

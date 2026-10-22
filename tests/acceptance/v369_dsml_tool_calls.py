@@ -209,6 +209,94 @@ check("_extract_action still prefers a valid JSON action",
 check("_extract_action returns no action for plain prose",
       not a._extract_action("just a normal answer"))
 
+# ---------------------------------------------- the drifting marker (JAG-534) ----
+# Live session 18c103e0d9a1 (2026-10-23): the model switched to ONE bar per side
+# (<｜DSML｜ calls>). The exact-string check missed it, `_extract_action` returned
+# the JSON *inside* the markup, the chat showed the raw markup as the answer and
+# the turn ended mid-work ("gli agenti muoiono").
+ONE = "<\uff5cDSML\uff5c"
+C1 = "</\uff5cDSML\uff5c"
+SINGLE = (ONE + " calls>\n" + ONE + ' invoke name="todo.update">\n'
+          + ONE + ' parameter name="steps" string="false">[{"id": "n1", "status": "doing"}]'
+          + C1 + " parameter>\n" + C1 + " invoke>\n" + C1 + " calls>")
+check("F1 a ONE-bar marker is detected", a._looks_like_dsml(SINGLE))
+check("F2 one-bar markup is never shown as a chat reply",
+      a._looks_like_json_action(SINGLE))
+check("F3 one-bar todo.update becomes the harness action",
+      a._extract_action(SINGLE) == {"action": "todo.update",
+                                    "steps": [{"id": "n1", "status": "doing"}]},
+      str(a._extract_action(SINGLE)))
+
+# The Master session: the inner tags lost the marker entirely.
+BARE = (OPEN + " calls>\n" + OPEN + ' invoke name="python.run">\n'
+        + '<parameter name="code">print(1)</parameter>\n'
+        + "</invoke>\n" + CLOSE + " calls>")
+check("F4 bare <parameter>/</invoke> inside a marked block still parse",
+      a._extract_action(BARE) == {"action": "tool", "tool": "python.run",
+                                  "args": {"code": "print(1)"}},
+      str(a._extract_action(BARE)))
+
+# The model wrapped a HARNESS action in an invented `permission` envelope.
+PERM = (OPEN + " calls>\n" + OPEN + ' invoke name="permission">bash' + CLOSE + " parameter>\n"
+        + OPEN + ' parameter name="action">todo.update</' + D + " parameter>\n"
+        + OPEN + ' parameter name="steps">[{"id": "n61", "status": "doing"}]</'
+        + D + " parameter>\n" + CLOSE + " invoke>\n" + CLOSE + " calls>")
+check("F5 an invented `permission` envelope unwraps to the harness action",
+      a._extract_action(PERM) == {"action": "todo.update",
+                                  "steps": [{"id": "n61", "status": "doing"}]},
+      str(a._extract_action(PERM)))
+
+# Arguments written as ATTRIBUTES of the invoke, no <parameter> children.
+ATTR = (ONE + " calls>\n" + ONE
+        + ' invoke name="skills" action="search" query="web sources">'
+        + C1 + " invoke>\n" + C1 + " calls>")
+check("F6 arguments written as invoke ATTRIBUTES are captured",
+      a._extract_action(ATTR) == {"action": "tool", "tool": "skills",
+                                  "args": {"action": "search", "query": "web sources"}},
+      str(a._extract_action(ATTR)))
+
+# Tool name as the element TEXT + a JSON `args` parameter carrying the payload.
+TEXT_ARGS = (ONE + " calls>\n" + ONE + ' invoke name="action" string="true">shell.exec'
+             + C1 + " parameter>\n" + ONE + ' parameter name="args" string="false">{"cmd": "ls"}'
+             + C1 + " parameter>\n" + C1 + " invoke>\n" + C1 + " calls>")
+check("F7 element-text tool name + JSON args parameter parse",
+      a._extract_action(TEXT_ARGS) == {"action": "tool", "tool": "shell.exec",
+                                       "args": {"cmd": "ls"}},
+      str(a._extract_action(TEXT_ARGS)))
+
+# The invocation body IS a full action JSON.
+JSON_BODY = (OPEN + " calls>\n" + OPEN + ' invoke name="tool_call">\n'
+             + '{"action": "tool", "tool": "shell.exec", "args": {"command": "ls"}}\n'
+             + "</tool_call>")
+check("F8 an invocation whose body is a JSON action is used as-is",
+      a._extract_action(JSON_BODY) == {"action": "tool", "tool": "shell.exec",
+                                       "args": {"command": "ls"}},
+      str(a._extract_action(JSON_BODY)))
+
+# No <invoke> at all: the action JSON follows the marker, or the parameters hang
+# directly off <calls> (and `command` names the only tool that takes it).
+NO_INVOKE_JSON = (OPEN + ' calls>[{"action": "todo.update", "steps": '
+                  '[{"id": "n13", "status": "done", "evidence": "x"}]}]')
+check("F9 a bare action JSON after the marker is used",
+      a._extract_action(NO_INVOKE_JSON) == {"action": "todo.update",
+                                            "steps": [{"id": "n13", "status": "done",
+                                                       "evidence": "x"}]},
+      str(a._extract_action(NO_INVOKE_JSON)))
+NO_INVOKE_PARAMS = (OPEN + " calls>\n" + OPEN + ' parameter name="args" string="false">'
+                    + '{"command": "ls -la"}' + CLOSE + ">\n" + CLOSE + " calls>")
+check("F10 parameters without an <invoke> infer shell.exec from `command`",
+      a._extract_action(NO_INVOKE_PARAMS) == {"action": "tool", "tool": "shell.exec",
+                                              "args": {"command": "ls -la"}},
+      str(a._extract_action(NO_INVOKE_PARAMS)))
+
+# A string="false" value followed by the model's stray `"}}` still decodes.
+JUNK = (OPEN + " calls>\n" + OPEN + ' parameter name="args" string="false">{"command": "ls"}"}}'
+        + CLOSE + ">\n" + CLOSE + " calls>")
+check("F11 trailing junk after a string=\"false\" value is ignored",
+      a._extract_action(JUNK) == {"action": "tool", "tool": "shell.exec",
+                                  "args": {"command": "ls"}},
+      str(a._extract_action(JUNK)))
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

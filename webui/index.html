@@ -7971,7 +7971,10 @@ function renderTools(el, d) {
     const gCol = gAp === "auto" ? "var(--ok)" : (gAp === "denied" ? "var(--err)"
       : (gAp === "mixed" ? "var(--dim)" : "var(--warn)"));
     const gid = _attr(g);
-    const open = !!_open[g];
+    // JAG-534: a Matrix namespace is where the agent's own tools land at runtime;
+    // its groups start OPEN so a freshly generated tool is visible instead of
+    // hidden behind a collapsed "▸ cost" row ("non li vedo nel pannello tool").
+    const open = _open[g] !== undefined ? !!_open[g] : (_originKey(g) === "matrix");
     return `<div class="card" data-group="${gid}" style="padding:6px 8px;margin-bottom:6px">` +
       `<div class="tg-head" style="display:flex;align-items:center;gap:8px;cursor:pointer">` +
         `<span class="tg-caret" style="width:10px;color:var(--dim)">${open ? "▾" : "▸"}</span>` +
