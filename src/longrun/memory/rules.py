@@ -54,14 +54,32 @@ def _write_config(cfg):
     write_json(_config_file(), cfg)
 
 
+def workspaces_root():
+    """The dynamic default home for workspaces (JAG-2.8).
+
+    `<repo parent>/.longrun/workspaces` — DERIVED from the checkout, never a
+    hardcoded absolute path, so a clone anyone downloads lands somewhere sane
+    without an edit. Created on demand; `LONGRUN_WORKSPACES_ROOT` overrides it
+    (tests point it at a temp dir and never touch the real tree).
+    """
+    env = os.environ.get("LONGRUN_WORKSPACES_ROOT")
+    base = env or os.path.join(os.path.dirname(REPO), ".longrun", "workspaces")
+    try:
+        os.makedirs(base, exist_ok=True)
+    except OSError:
+        return ""
+    return base if os.path.isdir(base) else ""
+
+
 def get_workspace():
     """The default project root for a session that has no folder of its own.
 
     JAG-126: precedence is the EXPLICIT default (config.json `workspace`, set by
     the user) -> `LONGRUN_WORKSPACE` -> the LAST workspace actually used
-    (config.json `last_workspace`) -> the user's home. The harness repo is no
-    longer the silent default: opening a folder once makes the NEXT new session
-    start there, and a fresh install starts at home, never inside longrun.
+    (config.json `last_workspace`) -> `workspaces_root()` — the dynamic
+    `.longrun/workspaces` beside this checkout (JAG-2.8) -> the user's home. The
+    harness repo is never the silent default: opening a folder once makes the NEXT
+    new session start there, and a fresh install starts in its own workspaces dir.
     """
     cfg = _read_config()
     ws = cfg.get("workspace")
@@ -73,6 +91,9 @@ def get_workspace():
     last = cfg.get("last_workspace")
     if last and os.path.isdir(last):
         return last
+    base = workspaces_root()
+    if base:
+        return base
     home = os.path.expanduser("~")
     return home if os.path.isdir(home) else REPO
 

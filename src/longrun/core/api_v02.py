@@ -2138,8 +2138,19 @@ def _browse_roots():
     """Allowed roots, separated with the current platform's path-list separator."""
     import os as _os
     env = _os.environ.get("LONGRUN_BROWSE_ROOTS")
-    roots = [r.strip() for r in env.split(_os.pathsep) if r.strip()] \
-        if env else [_os.path.expanduser("~")]
+    if env:
+        roots = [r.strip() for r in env.split(_os.pathsep) if r.strip()]
+    else:
+        # JAG-2.8: the home directory PLUS the dynamic workspaces root, so the
+        # default workspace of a fresh clone is browsable instead of a dead end.
+        roots = [_os.path.expanduser("~")]
+        try:
+            from longrun.memory import rules as _rm
+            base = _rm.workspaces_root()
+            if base and base not in roots:
+                roots.append(base)
+        except Exception:  # noqa: BLE001 — browsing must work without rules
+            pass
     return [_os.path.realpath(_os.path.expanduser(r)) for r in roots]
 
 
@@ -2154,9 +2165,16 @@ def _path_is_within(path: str, root: str) -> bool:
 
 
 def fs_dirs(qs=None):
-    """GET /api/fs/dirs — list sub-directories for the workspace folder picker."""
+    """GET /api/fs/dirs — list sub-directories for the workspace folder picker.
+
+    JAG-2.8: the allowed set is `_fs_allowed_roots`, i.e. the browse roots PLUS the
+    session's own workspace — the SAME rule the file-tree endpoints use. The picker
+    used to be limited to the browse roots alone, so opening it from a session whose
+    workspace lives elsewhere dead-ended with "path outside browse roots" and an
+    empty list: the operator could not browse at all from that session.
+    """
     import os as _os
-    roots = _browse_roots()
+    roots = _fs_allowed_roots(qs)
     p = _os.path.realpath(_os.path.expanduser((qs or {}).get("path") or roots[0]))
     if not any(_path_is_within(p, r) for r in roots):
         return {"error": "path outside browse roots", "roots": roots, "path": p}

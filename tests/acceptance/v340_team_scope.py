@@ -136,6 +136,42 @@ check("F3 keyboard browsing in a select does not write on every keystroke",
       "el.__browse = true" in orbit and "if (el.__browse) return;" in orbit
       and "el.onblur = () => {" in orbit)
 
+# --- G: a VOID prompt is visible, and the lead leads (JAG-2.8) ---------------
+# Operator: "if in AGENTS panel the prompt is void, highlight the prompt button
+# somehow with an asterisk red of warning"; and "in sessions, in teams, the
+# orchestrator agents shall be up in the display order".
+from longrun.core import server as _srv  # noqa: E402
+from longrun.orchestrate import roles as roles_mod  # noqa: E402
+
+_srv.get_or_create_session("sess-void", title="Void Bot")
+roles_mod.delete("sess-void")
+_roster = {r["id"]: r for r in orbit_api._REGISTRY.list()["sessions"]}
+check("G1 the session roster reports the prompt size (0 = VOID)",
+      _roster.get("sess-void", {}).get("prompt_chars") == 0,
+      str(_roster.get("sess-void")))
+roles_mod.write("sess-void", "Role: tester")
+_roster = {r["id"]: r for r in orbit_api._REGISTRY.list()["sessions"]}
+check("G2 a written prompt reports its real size",
+      _roster.get("sess-void", {}).get("prompt_chars") == len("Role: tester"),
+      str(_roster.get("sess-void")))
+check("G3 the deck marks the empty prompt on the button (red asterisk + title)",
+      'const voidP = (a.prompt_chars === 0);' in orbit
+      and 'class="req"' in orbit and "pbtn" in orbit and "missing" in orbit
+      and "This prompt is <b>EMPTY</b>" in orbit)
+check("G4 the header counts the rows whose prompt is empty",
+      '" with an EMPTY prompt"' in orbit and "haswarn" in orbit)
+check("G5 leadership first is the DEFAULT order, with the flat id order kept",
+      'this.sort = "org";' in orbit and '<option value="id">agent id' in orbit
+      and '<option value="default" selected>' in orbit)
+check("G6 the deck's default sort ranks by the reports_to tree (orchestrator first)",
+      "const r = this._orgRank(list);" in orbit and "depth-first reports_to walk" in orbit)
+check("G7 a team group header is keyboard-operable (groups start collapsed)",
+      'class="grp-h" tabindex="0" role="button" aria-expanded="' in orbit
+      and 'if (e.key === "Enter" || e.key === " "){ e.preventDefault(); toggleGroup(); }' in orbit
+      and ".grp-h:focus-visible{outline:1px solid var(--acc)" in orbit)
+check("G8 an in-place toggle keeps the caret and aria-expanded in sync",
+      'h.setAttribute("aria-expanded", closed ? "false" : "true");' in orbit)
+
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))

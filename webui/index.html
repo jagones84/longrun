@@ -2015,7 +2015,7 @@
         <h2>Workspace · folder (this session)</h2>
         <div class="card" id="wsCard">
           <div class="u-df u-g6 u-aic">
-            <input id="wsPath" class="inp u-f1 u-p610 u-fs12" placeholder="folder path (e.g. /home/jagones/Repositories/longrun)">
+            <input id="wsPath" class="inp u-f1 u-p610 u-fs12" placeholder="folder path — use 📁 browse… (any folder the harness host can read)">
             <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
           </div>
           <div class="u-df u-g8 u-aic u-mt6 u-fww">
@@ -2025,6 +2025,9 @@
                  action (open the editor) now lives here, next to browse. -->
             <button class="ghost" data-call="SparkEditorToggle" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔 open editor</button>
           </div>
+          <!-- JAG-2.8: say what "save" will actually do BEFORE it is pressed — the
+               session/default ambiguity made a correct save look like a no-op. -->
+          <div class="remaining u-mt6" id="wsTarget" role="status" aria-live="polite"></div>
         </div>
         <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
         <div class="card">
@@ -2399,7 +2402,7 @@
   <input id="nsTitle" class="inp u-w100 u-p610 u-fs12 u-mt4">
   <label class="remaining u-db u-mt10" for="nsWs">folder (local workspace)</label>
   <div class="u-df u-g6 u-mt4">
-    <input id="nsWs" class="inp u-f1 u-p610 u-fs12" placeholder="/home/jagones/Repositories/…">
+    <input id="nsWs" class="inp u-f1 u-p610 u-fs12" placeholder="folder (empty = the current default) — 📁 browse…">
     <button class="ghost" data-call="openDirPicker" title="browse folders">📁 browse…</button>
   </div>
   <div class="u-df u-g8 u-mt12 u-jcfe">
@@ -4805,8 +4808,24 @@ async function openDirPicker(target) {
 function closeDirPicker() { $("dirPicker").hidden = true; $("dirBackdrop").hidden = true; $("dirResult").textContent = ""; if (_dirCtl) _dirCtl.clear(); }
 async function loadDirs(path) {
   const qs = path ? ("?path=" + encodeURIComponent(path)) : "";
-  const d = await api("GET", "/api/fs/dirs" + qs);
-  if (d.error) { $("dirResult").textContent = "error: " + d.error; return; }
+  // JAG-2.8: name the SESSION so the server also allows that session's own workspace
+  // as a root — the same rule the file tree uses. Without it, opening the picker from
+  // a session whose folder lies outside the browse roots returned "path outside browse
+  // roots" with an EMPTY list: browsing was impossible, with no way forward.
+  const sid = (typeof sessionId !== "undefined" && sessionId) ? sessionId : "";
+  const d = await api("GET", "/api/fs/dirs" + qs + (qs ? "&" : "?") + "session=" + encodeURIComponent(sid));
+  if (d.error) {
+    const roots = d.roots || [];
+    // Never dead-end: fall back to the first allowed root and SAY why.
+    if (roots.length && _dirState.path !== roots[0]) {
+      await loadDirs(roots[0]);
+      $("dirResult").textContent = "“" + path + "” is outside the browsable roots — showing " +
+        roots[0] + " (roots: " + roots.join(" : ") + ")";
+      return;
+    }
+    $("dirResult").textContent = "error: " + d.error + (roots.length ? (" (roots: " + roots.join(" : ") + ")") : "");
+    return;
+  }
   _dirState = d; $("dirPath").textContent = d.path;
   $("dirUp").disabled = !d.parent;
   _dirOpts.root = (d.roots || [])[0] || "";
@@ -8824,6 +8843,7 @@ async function loadRules() {
     $("wsPath").value = d.workspace || "";
     gateEnroll($("wsCard"));   // JAG-496: this is the baseline the workspace Save compares against
     _isum("sWorkspace", _base(d.workspace), "");
+    _wsTargetHint();           // JAG-2.8: say WHERE a save will land
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
     $("rulesProjectPath").textContent = "file: " + (p.path || "—") + (p.exists ? "" : " (does not exist)");
     $("rulesGlobalText").value = g.text || "";
@@ -8858,6 +8878,18 @@ async function setWorkspace() {
   }
   if (!r.error) { _afterWorkspaceChange(); }
 }
+/* JAG-2.8: state the SCOPE of a save BEFORE it is pressed. Checking "set as default"
+   routes the save to the GLOBAL default and leaves THIS session's folder untouched —
+   a correct save that looked like nothing happened. Now the card says which one it is. */
+function _wsTargetHint() {
+  const el = $("wsTarget"); if (!el) return;
+  const asDefault = !!($("wsDefault") && $("wsDefault").checked);
+  el.textContent = (asDefault || !sessionId)
+    ? "save writes this folder as the DEFAULT for new sessions" + (sessionId ? "" : " (no session is open)")
+    : "save links this folder to THIS session";
+  el.style.color = asDefault ? "var(--warn, inherit)" : "";
+}
+if ($("wsDefault")) $("wsDefault").addEventListener("change", _wsTargetHint);
 /* JAG-501: a workspace change re-roots EVERY browser at once — the Files panel
    (right rail), the pending-changes list, the editor tree and the Codebase badge.
    The manual ↻ buttons stay, but only for a forced re-read: the normal path is

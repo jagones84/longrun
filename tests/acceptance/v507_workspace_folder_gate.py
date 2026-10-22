@@ -13,7 +13,14 @@ The WebUI has a single save/apply behaviour for every settings panel:
     whatever the harness host is (Windows, Linux, ARM64);
   * the oversized "use this folder" label is gone: the action reads `save`.
 
-This test is a source contract: it never starts a server and never calls a model.
+JAG-2.8 adds the two halves that made the card look broken: the picker names the
+SESSION (so a workspace outside the browse roots is still browsable instead of a
+dead end), and the card states whether a save targets THIS session or the global
+default. The shipped default workspace is DERIVED from the checkout
+(`<repo parent>/.longrun/workspaces`), never a hardcoded absolute path.
+
+This test is a source contract, plus four executed checks: it never starts a
+server and never calls a model.
 
 Run: python3 tests/acceptance/v507_workspace_folder_gate.py
 """
@@ -163,6 +170,83 @@ check("the highlight reuses the existing accent token",
       "button.config-save.dirty:not(:disabled)" in UI
       and "color: var(--acc)" in UI,
       ".config-save.dirty")
+
+# --- F: the picker is session-aware and never dead-ends (JAG-2.8) -------------
+check("the picker names the SESSION, so that session's own workspace is a root",
+      'const sid = (typeof sessionId !== "undefined" && sessionId) ? sessionId : "";' in load_dirs
+      and '"session=" + encodeURIComponent(sid)' in load_dirs,
+      "GET /api/fs/dirs?…&session=<sid>")
+
+check("a folder outside the roots falls back to the first root and says why",
+      "await loadDirs(roots[0]);" in load_dirs
+      and "is outside the browsable roots" in load_dirs
+      and "roots: \" + roots.join" in load_dirs,
+      "no empty dead-end list")
+
+check("the Workspace card states WHERE a save will land before it is pressed",
+      'id="wsTarget"' in UI
+      and "function _wsTargetHint()" in UI
+      and "_wsTargetHint();" in load_rules
+      and '$("wsDefault").addEventListener("change", _wsTargetHint)' in UI,
+      "session vs default is explicit")
+
+check("the UI carries no hardcoded absolute folder example",
+      "/home/jagones" not in UI and "folder path — use 📁 browse…" in UI,
+      "placeholders are host-agnostic")
+
+with open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8") as fh:
+    API = fh.read()
+_fs_dirs = _function_body(API, "def fs_dirs(qs=None)", "def _ws_root")
+with open(os.path.join(REPO, "src", "longrun", "memory", "rules.py"), encoding="utf-8") as fh:
+    RULES = fh.read()
+
+check("server: the picker allows the browse roots PLUS the session workspace",
+      "roots = _fs_allowed_roots(qs)" in _fs_dirs,
+      "same rule as the file tree")
+
+check("server: the default workspace is DERIVED from the checkout, never hardcoded",
+      'os.path.join(os.path.dirname(REPO), ".longrun", "workspaces")' in RULES
+      and 'LONGRUN_WORKSPACES_ROOT' in RULES
+      and "base = workspaces_root()" in RULES,
+      "workspaces_root()")
+
+# --- G: the same rules, executed (no server, no network) ----------------------
+import tempfile  # noqa: E402
+import shutil  # noqa: E402
+
+TMP = tempfile.mkdtemp(prefix="sf-v507-")
+os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
+os.environ["LONGRUN_DATA_DIR"] = os.path.join(TMP, "data")
+os.environ["LONGRUN_CONFIG_DIR"] = os.path.join(TMP, "cfg")   # no config.json at all
+os.environ["LONGRUN_WORKSPACES_ROOT"] = os.path.join(TMP, "ws")
+os.environ.pop("LONGRUN_WORKSPACE", None)
+sys.path.insert(0, os.path.join(REPO, "src"))
+
+from longrun.memory import rules as rules_mod  # noqa: E402
+
+check("G1 with nothing configured the default workspace is the derived workspaces root",
+      rules_mod.get_workspace() == os.path.join(TMP, "ws"), rules_mod.get_workspace())
+check("G2 that root is created on demand", os.path.isdir(os.path.join(TMP, "ws")))
+
+from longrun.core import api_v02  # noqa: E402
+
+ROOTS = os.path.join(TMP, "roots")
+OUTSIDE = os.path.join(TMP, "outside")
+os.makedirs(os.path.join(OUTSIDE, "sub"))
+os.makedirs(ROOTS)
+os.environ["LONGRUN_BROWSE_ROOTS"] = ROOTS
+
+_refused = api_v02.fs_dirs({"path": OUTSIDE})
+check("G3 without a session, a path outside the browse roots is still refused",
+      _refused.get("error") == "path outside browse roots", _refused.get("error"))
+
+_orig_ws = api_v02._session_ws
+api_v02._session_ws = lambda sid: (OUTSIDE, {"id": sid})
+_allowed = api_v02.fs_dirs({"path": OUTSIDE, "session": "s1"})
+api_v02._session_ws = _orig_ws
+check("G4 naming the session allows that session's workspace (was the dead end)",
+      not _allowed.get("error") and _allowed.get("count") == 1, _allowed)
+shutil.rmtree(TMP, ignore_errors=True)
 
 print("---")
 print("%d/%d PASS" % (sum(results), len(results)))

@@ -14,6 +14,21 @@ def _server():
     return server
 
 
+def _prompt_chars(sid):
+    """Size of the session's ROLE.md; 0 means the PROMPT IS VOID (JAG-2.8).
+
+    The Control ▸ AGENTS panel used to render every row identically whether the
+    agent had a prompt or not, so an agent that ran on the bare system prompt was
+    indistinguishable from a configured one. Exposing the size lets the deck mark
+    the empty ones. None = could not be read (never claim "empty" on an error).
+    """
+    try:
+        from longrun.orchestrate import roles
+        return len(roles.read(sid))
+    except Exception:  # noqa: BLE001 — a roster must never fail on one bad file
+        return None
+
+
 class SessionRegistry:
     """The roster of sessions, with live run status."""
 
@@ -32,6 +47,7 @@ class SessionRegistry:
                 "messages": s.get("messages", 0),
                 "updated": s.get("updated"),
                 "running": sid in active,
+                "prompt_chars": _prompt_chars(sid),
             })
         return {"sessions": rows, "count": len(rows), "active": len(active)}
 

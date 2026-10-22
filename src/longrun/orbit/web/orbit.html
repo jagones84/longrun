@@ -107,27 +107,47 @@
   /* JAG-403f: the table is CONTENT-SIZED and packed to the LEFT (width:auto +
      table-layout:fixed + explicit <col> widths). A full-width table spread the
      columns across the whole panel and left a dead gap on the right. */
-  table.at{width:auto;table-layout:fixed;border-collapse:collapse;font-size:12px}
-  table.at col.c-id{width:50px} table.at col.c-name{width:190px} table.at col.c-role{width:128px}
-  table.at col.c-model{width:166px} table.at col.c-rep{width:156px} table.at col.c-teams{width:104px}
-  table.at col.c-file{width:92px}
-  table.at col.c-act{width:118px}
+  /* JAG-2.8 (restyle): sticky header, zebra rows, aligned control heights and pill
+     buttons — the board is read top-to-bottom, so the header must stay put and the
+     eye must not have to re-find the columns on every scroll. */
+  table.at{width:auto;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
+  table.at col.c-id{width:54px} table.at col.c-name{width:200px} table.at col.c-role{width:134px}
+  table.at col.c-model{width:172px} table.at col.c-rep{width:160px} table.at col.c-teams{width:112px}
+  table.at col.c-file{width:106px}
+  table.at col.c-act{width:110px}
   /* JAG-424: keep the row actions (reset · delete) on ONE line — they wrapped and the
      × stacked under reset, wasting a whole row of height per agent. */
   table.at td.c-act{white-space:nowrap}
   table.at td.c-act .btn{padding:2px 6px}
-  table.at th{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);text-align:left;
-    padding:5px 8px;border-bottom:1px solid var(--line);font-weight:500}
-  table.at td{padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
-  table.at tr:hover td{background:rgba(108,140,255,.04)}
+  table.at thead th{position:sticky;top:0;z-index:3;background:var(--panel);
+    box-shadow:0 1px 0 var(--line)}
+  table.at th{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
+    text-align:left;padding:6px 9px;font-weight:600;white-space:nowrap}
+  table.at td{padding:3px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.at tbody tr:nth-child(even) td{background:rgba(255,255,255,.014)}
+  table.at tbody tr:hover td{background:rgba(108,140,255,.075)}
   /* JAG-451: an agent picked from the org chart is highlighted here so the user
      lands on the right row, ready to edit it. */
   table.at tr.rowsel td{background:rgba(108,140,255,.16)}
   table.at tr.rowsel td.aid{box-shadow:inset 3px 0 0 var(--acc)}
   table.at tr.rowsel{outline:1px solid var(--acc);outline-offset:-1px}
   table.at select.inp.mini{max-width:190px}
-  table.at tr.brief td{background:rgba(9,14,26,.6);padding:8px}
+  table.at tr.brief td{background:rgba(9,14,26,.6);padding:9px}
   table.at tr.brief textarea{min-height:190px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical}
+  /* JAG-2.8: the two row buttons read as compact pills with a fixed box, so the
+     "prompt" cell stops jumping when the label gains the empty-prompt marker. */
+  table.at .tmbtn,table.at .pbtn{border-radius:999px;padding:2px 9px;line-height:1.5;
+    min-height:22px;min-width:66px;justify-content:center}
+  table.at .pbtn.missing{border-color:rgba(224,106,106,.55);color:var(--err)}
+  table.at .pbtn.missing:hover{border-color:var(--err);background:rgba(224,106,106,.10)}
+  .req{color:var(--err);font-weight:700;margin-left:3px;font-size:13px;line-height:1}
+  .warnbox{border:1px solid rgba(224,106,106,.45);background:rgba(224,106,106,.09);
+    color:#ffd9d9;border-radius:8px;padding:6px 9px;margin:0 0 7px}
+  .haswarn{color:var(--warn)}
+  /* JAG-2.8: the group header is Tab-reachable now, so it needs a focus ring. */
+  .grp-h:focus-visible{outline:1px solid var(--acc);outline-offset:-2px;border-radius:6px}
+  .grp-h .caret{color:var(--dim)}
+  .grp-h .gc{color:var(--dim);font-size:11px;font-weight:400}
   .aid{font-family:ui-monospace,monospace;color:var(--acc2);font-size:11px}
   .rl{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 7px;white-space:nowrap}
   .dotr{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc2);box-shadow:0 0 6px currentColor;margin-left:5px;vertical-align:middle}
@@ -341,12 +361,13 @@
         <select class="inp" id="teamSel" title="filter + focus the WHOLE board on one team — agents · routines · jobs · org chart · constellation" style="max-width:210px;width:auto"></select>
         <span class="lbl">sort</span>
         <select class="inp" id="agSort" title="sort agents" style="max-width:210px;width:auto">
-          <option value="default">default (id)</option>
+          <option value="default" selected>leadership first (org)</option>
+          <option value="org">org chart (leadership first)</option>
           <option value="name">name (A→Z)</option>
           <option value="role">role</option>
           <option value="model">model</option>
           <option value="team">team</option>
-          <option value="org">org chart (leadership first)</option>
+          <option value="id">agent id (A1, A2, …)</option>
           <option value="running">running first</option>
         </select>
         <span class="sp"></span>
@@ -557,7 +578,9 @@ class AgentsView {
     this.roster = [];
     // JAG-2.4: every SESSION (designated agents + plain sessions) — the assign pool.
     this.pool = [];
-    this.sort = "default"; this.closed = new Set(); this._groupIds = [];
+    // JAG-2.8: leadership first is the DEFAULT order — an orchestrator must sit at the
+    // top of its team, not wherever its A-id lands. "id" keeps the old flat order.
+    this.sort = "org"; this.closed = new Set(); this._groupIds = [];
     // JAG-2.3: the team currently scoping the board ("ALL", a team id, "__none__").
     // groupsOf needs it to keep the SELECTED team visible even when it is empty.
     this.scope = "ALL";
@@ -659,8 +682,13 @@ class AgentsView {
       : '<span class="muted" title="plain session — not designated as an agent yet; editing or assigning this row designates it">—</span>';
     const open = this.open === a.session;
     const run = this.running.has(a.session) ? '<span class="dotr" title="running"></span>' : "";
+    // JAG-2.8: a VOID prompt (no ROLE.md) is a real state, not a cosmetic one — such
+    // an agent runs on the bare system prompt. Say so on the button itself.
+    const voidP = (a.prompt_chars === 0);
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
     const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="7">' +
+      (voidP ? '<div class="small warnbox">This prompt is <b>EMPTY</b> — the agent runs on the bare ' +
+        'system prompt with no role of its own. Write two or three lines and save.</div>' : "") +
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the Sessions tab (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
       '<textarea class="inp" name="agent-prompt" aria-label="agent prompt (ROLE.md)" data-p="role" placeholder="Role: API designer&#10;- answer only with the endpoint list and JSON schema">' + roleText + '</textarea>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button class="btn primary" data-save="' + esc(a.session) + '">save prompt</button>' +
@@ -672,7 +700,11 @@ class AgentsView {
       '<td><select class="inp mini" name="agent-model" aria-label="agent model" data-f="model">' + mopts + '</select></td>' +
       '<td><select class="inp mini" name="agent-reports-to" aria-label="agent reports to" data-f="reports_to">' + ropts + '</select></td>' +
       '<td><button class="btn ghost mini tmbtn" data-sid="' + esc(a.session) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
-      '<td><button class="btn ghost" data-brief="1" title="role + behaviour notes (ROLE.md)">✎ prompt</button></td>' +
+      '<td><button class="btn ghost mini pbtn' + (voidP ? ' missing' : '') + '" data-brief="1" title="' +
+        (voidP ? "EMPTY prompt — this agent runs on the bare system prompt; click to write its ROLE.md"
+               : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
+                                 : "role + behaviour notes (ROLE.md)")) + '">✎ prompt' +
+        (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button></td>' +
       '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)">\u21BA reset</button>' +
       '<button class="btn ghost mini no" data-del="1" title="release agent">×</button></td></tr>' + brief;
   }
@@ -680,10 +712,15 @@ class AgentsView {
     const body = $("agBody");
     // JAG-2.1: collapsible group header rows inside the SAME table.
     body.querySelectorAll("tr.grp-head .grp-h").forEach(h => {
-      h.onclick = () => {
+      const toggleGroup = () => {
         const id = h.closest("tr.grp-head").getAttribute("data-grp");
         if (this.closed.has(id)) this.closed.delete(id); else this.closed.add(id);
         this._applyGroupState(id);
+      };
+      h.onclick = toggleGroup;
+      // JAG-2.8: Enter/Space do the same thing — the header is reachable by Tab.
+      h.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); toggleGroup(); }
       };
     });
     // JAG-482: the team kebab must NOT toggle the group — stop the header click.
@@ -818,7 +855,17 @@ class AgentsView {
       });
     }
     else if (k === "running") list.sort((a, b) => (this.running.has(b.session) ? 1 : 0) - (this.running.has(a.session) ? 1 : 0) || ((a.n || 0) - (b.n || 0)));
-    else list.sort((a, b) => (a.n || 0) - (b.n || 0));
+    else if (k === "id") list.sort((a, b) => (a.n || 0) - (b.n || 0));
+    else {   // default: leadership first (the same order as the Sessions rail)
+      const r = this._orgRank(list);
+      list.sort((a, b) => {
+        const ra = r[a.session], rb = r[b.session];
+        const ha = ra === undefined ? 1 : 0, hb = rb === undefined ? 1 : 0;
+        if (ha !== hb) return ha - hb;
+        if (!ha && ra !== rb) return ra - rb;
+        return (a.n || 0) - (b.n || 0);
+      });
+    }
     return list;
   }
   /* JAG-2.1: one collapsible group per team (plus stray teams and "No team").
@@ -850,7 +897,11 @@ class AgentsView {
     // "No team" bucket and unknown/stray group ids have no team to act on.
     const isTeam = !!this.teamById(g.id);
     const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="8">' +
-      '<div class="grp-h"><span class="caret">' + (closed ? '▸' : '▾') + '</span>' +
+      // JAG-2.8: the header is a real control — groups start COLLAPSED, so without
+      // tabindex/Enter a keyboard-only operator could not open a single group.
+      '<div class="grp-h" tabindex="0" role="button" aria-expanded="' + (closed ? "false" : "true") +
+      '" aria-label="' + esc(g.name) + ' team group">' +
+      '<span class="caret">' + (closed ? '▸' : '▾') + '</span>' +
       (g.symbol ? '<span>' + esc(g.symbol) + '</span>' : '') +
       '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span>' +
       // JAG-2.3: assign ANY agent to THIS team from the header — before this the only
@@ -873,7 +924,12 @@ class AgentsView {
     const body = $("agBody"); if (!body) return;
     const closed = this.closed.has(id);
     const head = [...body.querySelectorAll("tr.grp-head")].find(tr => tr.getAttribute("data-grp") === id);
-    if (head){ const c = head.querySelector(".caret"); if (c) c.textContent = closed ? "▸" : "▾"; }
+    if (head){
+      const c = head.querySelector(".caret"); if (c) c.textContent = closed ? "▸" : "▾";
+      // JAG-2.8: keep the a11y state truthful on an in-place toggle (the attribute is
+      // only rendered at build time, so without this it lagged one interaction behind).
+      const h = head.querySelector(".grp-h"); if (h) h.setAttribute("aria-expanded", closed ? "false" : "true");
+    }
     [...body.querySelectorAll("tr[data-grp]")].forEach(tr => {
       if (tr !== head && tr.getAttribute("data-grp") === id) tr.hidden = closed;
     });
@@ -1833,10 +1889,17 @@ class OrbitApp {
     // one is assigned, which designates it server-side.
     const designated = (tree && tree.agents) || [];
     const dsids = new Set(designated.map(a => a.session));
-    const extras = ((sess && sess.sessions) || []).filter(s => !dsids.has(s.id))
+    const sessRows = (sess && sess.sessions) || [];
+    // JAG-2.8: the prompt size comes from the SESSION roster (the tree does not carry
+    // it), so attach it to both kinds of row — then the deck can mark a VOID prompt.
+    const promptChars = {};
+    sessRows.forEach(s => { promptChars[s.id] = s.prompt_chars; });
+    designated.forEach(a => { a.prompt_chars = promptChars[a.session]; });
+    const extras = sessRows.filter(s => !dsids.has(s.id))
       .map(s => ({session: s.id, id: null, undesignated: true, n: 1e9,
                   name: s.title || ("session " + String(s.id).slice(0, 6)),
-                  role: "", model: s.model || "", teams: [], reports_to: null}));
+                  role: "", model: s.model || "", teams: [], reports_to: null,
+                  prompt_chars: s.prompt_chars}));
     const pool = designated.concat(extras);
     const dTree = tree ? Object.assign({}, tree, {agents: designated.filter(inTeam)}) : null;
     const fTree = tree ? Object.assign({}, tree,
@@ -1846,16 +1909,23 @@ class OrbitApp {
     const fRoutines = routines ? {routines: allRoutines.filter(r => !team || team === "ALL" || ids.has(r.agent))} : null;
     const list = models ? ((models.providers) || []).reduce((acc, p) =>
       acc.concat((p.models || []).map(m => ({ref: m.ref || (p.id + ":" + m.id), label: m.id}))), []) : [];
-    const running = new Set(((sess && sess.sessions) || []).filter(s => s.running).map(s => s.id));
+    const running = new Set(sessRows.filter(s => s.running).map(s => s.id));
     // JAG-2.4: state the roster in full. The panel mirrors the Sessions page, so the
     // hint reports the ONE real gap left: chats with no agent id yet (they are rows).
+    // JAG-2.8: and the SECOND real gap — rows whose prompt (ROLE.md) is VOID.
     if (sess && tree){
+      const voidN = pool.filter(a => a.prompt_chars === 0).length;
       $("agHint").textContent = pool.length + " sessions · " + extras.length +
-        " without an agent id (assign or edit a row to designate it)";
+        " without an agent id (assign or edit a row to designate it)" +
+        (voidN ? " · " + voidN + " with an EMPTY prompt" : "");
       $("agHint").title = extras.length
         ? "Every session is listed here, like in the Sessions page.\n" +
           "Not designated yet: " + extras.slice(0, 12).map(a => a.name).join(" · ")
         : "Every session is a designated agent.";
+      if (voidN) $("agHint").title += "\n" +
+        "EMPTY prompt (runs on the bare system prompt, marked *): " +
+        pool.filter(a => a.prompt_chars === 0).slice(0, 12).map(a => a.name).join(" · ");
+      $("agHint").classList.toggle("haswarn", voidN > 0);
     }
     if (fTree) this.lastAgents = fTree.agents || [];
     this.agents.scope = team;
