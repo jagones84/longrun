@@ -78,20 +78,12 @@ def _shell(args, run_id):
     if not ok_cmd:
         return {"ok": False, "exit_code": 126, "error": err_cmd,
                 "backend": "host", "sandboxed": False}
-    if matrix_guard.shell_command_is_read_only(command):
-        res = sandbox.run(command, run_id=run_id,
-                          timeout=args.get("timeout_secs"),
-                          workspace=cwd)
-        res["ok"] = res.get("exit_code") == 0
-        return res
-    res, reverted = matrix_guard.run_nucleus_guarded(
-        lambda: sandbox.run(command, run_id=run_id,
-                             timeout=args.get("timeout_secs"),
-                             workspace=cwd))
-    if reverted:
-        return {"ok": False, "exit_code": 126,
-                "error": "NUCLEUS_PROTECTED: shell command modified Nucleus files (reverted %d file(s))" % len(reverted),
-                "backend": res.get("backend", "host"), "sandboxed": res.get("sandboxed", False)}
+    # Deny-only, never revert: what passes the gate runs untouched, and no
+    # whole-tree diff runs afterwards (it could not attribute a concurrent
+    # edit to this command and destroyed legitimate work).
+    res = sandbox.run(command, run_id=run_id,
+                      timeout=args.get("timeout_secs"),
+                      workspace=cwd)
     res["ok"] = res.get("exit_code") == 0
     return res
 
@@ -117,6 +109,12 @@ def _python(args, run_id):
     name = "_repl_%s.py" % os.urandom(4).hex()
     path = os.path.join(ws, name)
     from longrun.tools import matrix_guard
+    # Deny-only: a literal Nucleus write target is refused BEFORE anything
+    # runs. Nothing is snapshotted or reverted afterwards.
+    ok_py, err_py = matrix_guard.check_python_write(code, workspace=ws)
+    if not ok_py:
+        return {"ok": False, "exit_code": 126, "error": err_py,
+                "backend": "host", "sandboxed": False}
 
     def _run_snippet():
         try:
@@ -131,16 +129,12 @@ def _python(args, run_id):
                 pass
 
     try:
-        res, reverted = matrix_guard.run_nucleus_guarded(_run_snippet)
+        res = _run_snippet()
     except OSError as e:
         # JAG-431r4: the sandbox workspace can be missing/read-only; report the real
         # I/O error instead of a NameError on the (unbound) `res` below.
         return {"ok": False, "exit_code": 1, "error": "cannot stage the script: %s" % e,
                 "backend": "host", "sandboxed": False}
-    if reverted:
-        return {"ok": False, "exit_code": 126,
-                "error": "NUCLEUS_PROTECTED: python snippet modified Nucleus files (reverted %d file(s))" % len(reverted),
-                "backend": res.get("backend", "host"), "sandboxed": res.get("sandboxed", False)}
     res["ok"] = res.get("exit_code") == 0
     return res
 

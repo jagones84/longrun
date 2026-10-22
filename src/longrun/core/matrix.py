@@ -1003,13 +1003,13 @@ def execute_tool(name, args, run_id=None, repo_root=None):
                 "exit_code": 1,
             }
 
-    res, reverted = matrix_guard.run_nucleus_guarded(_invoke, repo_root)
-    if reverted:
-        res = {
-            "ok": False,
-            "error": "NUCLEUS_PROTECTED: Matrix tool attempted to modify Nucleus files (reverted: %d)" % len(reverted),
-            "exit_code": 126,
-        }
+    # Deny-only, never revert: in-process Matrix code runs with the same
+    # filesystem rights as the harness, so a post-hoc whole-tree diff could
+    # not attribute a change to this call and destroyed concurrent work.
+    # Literal Nucleus writes through fs/shell/python tools are still refused
+    # at those boundaries; direct open() inside Matrix code is reviewed at
+    # verify/promote time, not reverted at runtime.
+    res = _invoke()
     res.setdefault("ok", res.get("exit_code", 0) == 0)
     res.setdefault("exit_code", 0 if res.get("ok") else 1)
     res["tool"] = name

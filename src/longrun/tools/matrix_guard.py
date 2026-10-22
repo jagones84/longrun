@@ -15,25 +15,24 @@ COMMAND TEXT, so it was a spelling check rather than a boundary:
   * C5 a `SRC/LONGRUN/...` spelling slipped past the case-sensitive compare;
   * C6 the snapshot covered only 131 files (no `deploy/`, `tests/`, `.trae/`);
   * C7 the gate was skipped entirely when `cwd` sat outside the repository.
-The gate now judges the write TARGETS (with `cd` tracking) and fails CLOSED on a
-target it cannot resolve, and the restore also removes creations. Everything is
+The gate judges the write TARGETS (with `cd` tracking) and fails CLOSED on a
+target it cannot resolve. NOTHING is ever reverted: enforcement is deny-only,
+by operator decision — a post-hoc whole-tree diff cannot attribute a change to
+its author, so it destroyed concurrent legitimate work. Everything is
 unlocked only by the DANGEROUS `approvals.allow_nucleus_write` operator opt-in.
 """
 import ast
-import hashlib
 import json
 import os
 import re
-import shlex
 import threading
 
 from longrun.util.paths import REPO_ROOT as REPO
 
-# Snapshot/execute/restore must be one process-wide critical section. Otherwise
-# concurrent sessions can each snapshot the same source tree and one command's
-# legitimate Nucleus write is misattributed to another command, which then
-# restores it. Model generation stays parallel; only host-side guarded executions
-# serialize for the short interval where their mutations are attributed.
+# One process-wide critical section for the cooperative Nucleus writers (config
+# saves, Matrix promotions). It exists ONLY to serialize those legitimate
+# operator writes; the old snapshot/execute/restore transaction is gone and
+# nothing is ever reverted (see `run_nucleus_guarded`).
 NUCLEUS_EXEC_LOCK = threading.RLock()
 
 MATRIX_SUBDIRS = (
@@ -58,38 +57,6 @@ NUCLEUS_PROTECTED_REL = (
     "CONTRIBUTING.md",
     "README.md",
     "pyproject.toml",
-)
-
-# JAG-510/C6: what the snapshot protects (content revert + creation removal).
-# `docs/` and `.longrun/` stay in the WRITE gate above but out of the snapshot:
-# both receive machine-written artefacts (archify diagrams, `.longrun/prompt.d/`
-# promotions) that a restore must not mistake for tampering.
-NUCLEUS_SNAPSHOT_REL = (
-    os.path.join("src", "longrun"),
-    "webui",
-    "config",
-    "deploy",
-    "tests",
-    ".trae",
-    "RULES.md",
-    "AGENTS.md",
-    "CONTRIBUTING.md",
-    "README.md",
-    "pyproject.toml",
-)
-NUCLEUS_SNAPSHOT_EXTS = (
-    ".py", ".yaml", ".yml", ".json", ".html", ".js", ".css", ".md", ".sh",
-    ".toml", ".cfg", ".ini", ".ts", ".mjs", ".service", ".webmanifest", ".svg",
-)
-_SNAPSHOT_MAX_BYTES = 2_000_000
-_SKIP_DIRS = frozenset({"__pycache__", "node_modules", "venv"})
-# Runtime-written config overlays (WebUI auto-save, not an agent command): a
-# concurrent save must survive the creation sweep.
-_KEEP_REL = (
-    "config/compaction.local.yaml",
-    "config/providers.local.yaml",
-    "config/mcp_clients.local.yaml",
-    "config/mcp_clients.local.json",
 )
 
 MATRIX_ALLOWED_REL = (
@@ -282,7 +249,129 @@ def check_write_allowed(path, repo_root=None):
     return True, ""
 
 
+def check_python_write(code, workspace=None, repo_root=None):
+    """Refuse a Python snippet whose LITERAL write target is inside the Nucleus.
+
+    The shell gate cannot see what Python code does (`open("src/longrun/x",
+    "w")` sails through target parsing), so without this `python.run` was the
+    open front door \u2014 previously "covered" only by the post-hoc restore, which
+    is now gone by operator decision. Only string-literal paths are judged;
+    dynamic paths (variables, f-strings, joins) are allowed through: refusing
+    them would break legitimate code, and nothing reverts anything anymore, so
+    a miss only means "not blocked", never "data destroyed". Non-literal and
+    unparseable snippets fail OPEN here; a SyntaxError fails at runtime anyway.
+    `workspace` is the snippet's cwd (relative targets resolve against it);
+    `repo_root` defaults to the harness checkout.
+    """
+    src = str(code or "")
+    if not src.strip():
+        return True, ""
+    if nucleus_write_unlocked():
+        return True, ""
+    try:
+        tree = ast.parse(src, mode="exec")
+    except SyntaxError:
+        return True, ""
+    root, _msrc, _mdot = _roots(repo_root)
+    base = os.path.realpath(workspace) if workspace else os.path.realpath(root)
+
+    def _resolve_literal(lit):
+        t = str(lit or "").strip()
+        if not t or "$" in t or "`" in t or "{" in t:
+            return None
+        if t.startswith("~"):
+            return None
+        p = t if os.path.isabs(t) else os.path.join(base, t)
+        try:
+            return os.path.normpath(os.path.realpath(p))
+        except OSError:
+            return None
+
+    def _deny(resolved, what):
+        try:
+            rel = os.path.relpath(resolved, os.path.realpath(root)).replace("\\", "/")
+        except ValueError:
+            rel = what
+        return (False,
+                "NUCLEUS_PROTECTED: python snippet %s inside the immutable "
+                "Nucleus (%s). Modify only src/Matrix/ or .Matrix/." % (what, rel))
+
+    def _is_nucleus(resolved):
+        return (resolved is not None and _under(resolved, os.path.realpath(root))
+                and is_nucleus_path(resolved, root))
+
+    _WRITE_MODES = ("w", "a", "x", "+")
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        # open(path, mode) / io.open / os.fdopen / pathlib.Path.open
+        if isinstance(func, ast.Name) and func.id in ("open",):
+            if not node.args or not isinstance(node.args[0], ast.Constant):
+                continue
+            mode = ""
+            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
+                mode = str(node.args[1].value or "")
+            for kw in node.keywords or []:
+                if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                    mode = str(kw.value.value or "")
+            if not any(m in mode for m in _WRITE_MODES):
+                continue
+            if isinstance(node.args[0], ast.Constant):
+                resolved = _resolve_literal(node.args[0].value)
+                if _is_nucleus(resolved):
+                    return _deny(resolved, "writes")
+            continue
+        if not isinstance(func, ast.Attribute):
+            continue
+        attr = func.attr
+        # os.remove/unlink/rmdir/.../replace/rename/symlink, os.makedirs/mkdir
+        if isinstance(func.value, ast.Name) and func.value.id == "os":
+            if attr in ("remove", "unlink", "rmdir", "removedirs", "replace",
+                        "rename", "renames", "symlink", "makedirs", "mkdir",
+                        "mknod", "mkfifo", "truncate"):
+                for arg in list(node.args or [])[:2]:
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        resolved = _resolve_literal(arg.value)
+                        if _is_nucleus(resolved):
+                            return _deny(resolved, "writes")
+            continue
+        # shutil.copy/copy2/copytree/move/rmtree(dst, ...)
+        if isinstance(func.value, ast.Name) and func.value.id == "shutil":
+            idx = 1 if attr in ("copy", "copy2", "copytree", "move") else 0
+            if attr in ("copy", "copy2", "copytree", "move", "rmtree"):
+                if len(node.args or []) > idx and isinstance(node.args[idx], ast.Constant):
+                    resolved = _resolve_literal(node.args[idx].value)
+                    if _is_nucleus(resolved):
+                        return _deny(resolved, "writes")
+            continue
+        # pathlib: Path("...").write_text/write_bytes/unlink/mkdir/touch/...,
+        # or Path("...").open(mode) with a write mode.
+        if attr in ("write_text", "write_bytes", "unlink", "mkdir", "touch",
+                    "rename", "replace", "symlink_to", "hardlink_to", "rmdir",
+                    "open"):
+            recv = func.value
+            lit = None
+            if attr == "open":
+                mode = ""
+                if len(node.args) >= 1 and isinstance(node.args[0], ast.Constant):
+                    mode = str(node.args[0].value or "")
+                if not any(m in mode for m in _WRITE_MODES):
+                    continue
+            if (isinstance(recv, ast.Call) and isinstance(recv.func, ast.Name)
+                    and recv.func.id == "Path"):
+                if recv.args and isinstance(recv.args[0], ast.Constant):
+                    lit = recv.args[0].value
+            if lit is not None:
+                resolved = _resolve_literal(lit)
+                if _is_nucleus(resolved):
+                    return _deny(resolved, "writes")
+            continue
+    return True, ""
+
+
 _SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;|&()\n]")
+
 # Every argument is a write target.
 _WRITE_ALL_ARGS = frozenset({
     "tee", "rm", "rmdir", "unlink", "touch", "truncate", "dd", "shred",
@@ -409,52 +498,6 @@ def _segment_writes(toks, whence):
     return targets, whence
 
 
-def shell_command_is_read_only(command: str) -> bool:
-    """True only for small commands proven not to write files.
-
-    Avoid taking a whole-Nucleus snapshot for a pure wait/read command. In
-    particular, `sleep 20` and `python3 -c 'import time; time.sleep(40)'` cannot
-    mutate source files, so another session's legitimate edit must never be
-    attributed to them. Unknown commands remain guarded.
-    """
-    try:
-        tokens = shlex.split(str(command or ""), posix=True)
-    except ValueError:
-        return False
-    if not tokens:
-        return False
-    executable = os.path.basename(tokens[0])
-    if executable == "sleep":
-        return len(tokens) > 1 and all(
-            re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)", item) for item in tokens[1:])
-    if executable not in ("python", "python3") or len(tokens) != 3 or tokens[1] != "-c":
-        return False
-    try:
-        tree = ast.parse(tokens[2], mode="exec")
-    except SyntaxError:
-        return False
-    imported_time = False
-    saw_sleep = False
-    for node in tree.body:
-        if (isinstance(node, ast.Import) and len(node.names) == 1
-                and node.names[0].name == "time" and node.names[0].asname is None):
-            imported_time = True
-            continue
-        if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
-            return False
-        call = node.value
-        if (not isinstance(call.func, ast.Attribute)
-                or not isinstance(call.func.value, ast.Name)
-                or call.func.value.id != "time" or call.func.attr != "sleep"
-                or len(call.args) != 1 or call.keywords):
-            return False
-        arg = call.args[0]
-        if not isinstance(arg, ast.Constant) or not isinstance(arg.value, (int, float)):
-            return False
-        saw_sleep = True
-    return imported_time and saw_sleep
-
-
 def check_shell_command(command, cwd=None, repo_root=None):
     """Reject shell commands that could write inside the immutable Nucleus.
 
@@ -513,124 +556,18 @@ def check_shell_command(command, cwd=None, repo_root=None):
     return True, ""
 
 
-def _walk_nucleus(repo_root=None, exts=None):
-    """Yield `(path, size)` for every file under the snapshot roots.
-
-    `exts=None` means EVERY extension: that is the EXISTENCE set the restore
-    judges creations against (JAG-531). `exts=NUCLEUS_SNAPSHOT_EXTS` is the
-    CONTENT set whose bytes are restored. Realpath is used so a symlinked
-    directory cannot hide files from either set.
-    """
-    root, _msrc, _mdot = _roots(repo_root)
-    for rel in NUCLEUS_SNAPSHOT_REL:
-        target = os.path.join(root, *rel.split("/"))
-        if os.path.isfile(target):
-            try:
-                size = os.path.getsize(target)
-            except OSError:
-                continue
-            if exts is None or os.path.splitext(target)[1].lower() in exts:
-                yield target, size
-            continue
-        if not os.path.isdir(target):
-            continue
-        for dirpath, dirnames, filenames in os.walk(target):
-            dirnames[:] = [d for d in dirnames
-                           if not d.startswith(".") and d not in _SKIP_DIRS]
-            for fn in filenames:
-                if fn.startswith("."):
-                    continue
-                if exts is not None and os.path.splitext(fn)[1].lower() not in exts:
-                    continue
-                p = os.path.join(dirpath, fn)
-                try:
-                    yield p, os.path.getsize(p)
-                except OSError:
-                    continue
-
-
-def _iter_nucleus_files(repo_root=None):
-    """Yield every Nucleus artefact whose CONTENT the snapshot tracks."""
-    for p, size in _walk_nucleus(repo_root, NUCLEUS_SNAPSHOT_EXTS):
-        if size <= _SNAPSHOT_MAX_BYTES:
-            yield p
-
-
-def snapshot_nucleus_digests(repo_root=None):
-    """Capture the Nucleus before an untrusted command runs.
-
-    Every file is recorded, whatever its extension, as ``(None, None)`` when its
-    bytes are not tracked; tracked files carry ``(sha256, bytes)``. The existence
-    set is what the creation sweep uses, so a created `_probe.txt` cannot survive
-    just because `.txt` is not a content extension (JAG-531).
-    """
-    snap = {}
-    for p, size in _walk_nucleus(repo_root):
-        if size > _SNAPSHOT_MAX_BYTES or os.path.splitext(p)[1].lower() not in NUCLEUS_SNAPSHOT_EXTS:
-            snap[p] = (None, None)
-            continue
-        try:
-            with open(p, "rb") as f:
-                data = f.read()
-            snap[p] = (hashlib.sha256(data).hexdigest(), data)
-        except OSError:
-            snap.setdefault(p, (None, None))
-    return snap
-
-
 def run_nucleus_guarded(operation, repo_root=None):
-    """Run one operation with an exclusive Nucleus snapshot/restore transaction.
+    """Run one operation holding the Nucleus mutex. NEVER snapshots, NEVER reverts.
 
-    The lock prevents a parallel session's guarded command from changing the
-    baseline while this operation runs. On exceptions, restore is still attempted
-    before the original exception is re-raised.
+    Policy (operator decision): the harness must NEVER auto-revert files — a
+    whole-tree before/after diff cannot attribute a change to the calling
+    command, so a concurrent legitimate edit (another agent, the operator) was
+    silently destroyed. Protection is DENY-AT-THE-BOUNDARY only
+    (`check_write_allowed`, `check_shell_command`, `check_python_write`): a
+    command that targets the Nucleus is refused BEFORE it runs. What already
+    passed the gates runs untouched, and whatever is on disk stays on disk.
+    The lock only serializes legitimate operator writers (config saves).
+    Returns `(result, [])`; the empty list keeps the call shape stable.
     """
     with NUCLEUS_EXEC_LOCK:
-        before = snapshot_nucleus_digests(repo_root)
-        try:
-            result = operation()
-        except BaseException:
-            restore_if_nucleus_tampered(before, repo_root)
-            raise
-        reverted = restore_if_nucleus_tampered(before, repo_root)
-        return result, reverted
-
-
-def restore_if_nucleus_tampered(before_digests, repo_root=None):
-    """Revert every Nucleus change a command made: edits, deletions AND creations.
-
-    JAG-510/C3: the previous version iterated only the snapshot, so a file created
-    *ex novo* inside `src/longrun/`, `tests/` or `deploy/` survived untouched.
-    """
-    if not before_digests or nucleus_write_unlocked():
-        return []
-    root, _msrc, _mdot = _roots(repo_root)
-    reverted = []
-    for p, (digest, raw) in before_digests.items():
-        if digest is None or raw is None:
-            continue  # existence-only entry: nothing to restore, nothing to compare
-        try:
-            if not os.path.isfile(p):
-                os.makedirs(os.path.dirname(p), exist_ok=True)
-                with open(p, "wb") as f:
-                    f.write(raw)
-                reverted.append(p)
-                continue
-            with open(p, "rb") as f:
-                cur = f.read()
-            if hashlib.sha256(cur).hexdigest() != digest:
-                with open(p, "wb") as f:
-                    f.write(raw)
-                reverted.append(p)
-        except OSError:
-            continue
-    keep = {os.path.normpath(os.path.join(root, *rel.split("/"))) for rel in _KEEP_REL}
-    for p, _size in _walk_nucleus(repo_root):
-        if p in before_digests or os.path.normpath(p) in keep:
-            continue
-        try:
-            os.remove(p)
-            reverted.append(p)
-        except OSError:
-            continue
-    return reverted
+        return operation(), []

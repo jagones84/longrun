@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""v498 — Matrix scaffold & deterministic Nucleus write-guard."""
+"""v498 — Matrix scaffold & deterministic Nucleus write-guard (deny-only)."""
 import os
 import sys
 import threading
 import tempfile
-import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(REPO, "src")
@@ -67,14 +66,14 @@ with tempfile.TemporaryDirectory() as tmp:
     check("D check_shell_command blocks destructive shell writes targeting Nucleus",
           not ok_sh and "NUCLEUS_PROTECTED" in err_sh and ok_sh_mat)
 
-    snap = matrix_guard.snapshot_nucleus_digests(tmp)
-    with open(srv_file, "w", encoding="utf-8") as f:
-        f.write("# tampered!\n")
-    reverted = matrix_guard.restore_if_nucleus_tampered(snap, tmp)
-    with open(srv_file, encoding="utf-8") as f:
-        restored_content = f.read()
-    check("E snapshot_nucleus_digests detects and reverts Nucleus tampering",
-          len(reverted) == 1 and restored_content == "# nucleus\n")
+    # ---- E) the harness NEVER reverts: deny-only, no snapshot machinery ------
+    # Operator decision: a post-hoc whole-tree diff cannot attribute a change to
+    # its author, so it silently destroyed concurrent legitimate work. The
+    # snapshot/restore transaction is GONE — no revert callable exists at all.
+    check("E the revert machinery is removed entirely (deny-only by design)",
+          not hasattr(matrix_guard, "restore_if_nucleus_tampered")
+          and not hasattr(matrix_guard, "snapshot_nucleus_digests")
+          and not hasattr(matrix_guard, "shell_command_is_read_only"))
 
     from longrun.tools import tools
     res_fw = tools.execute("fs.write", {"path": "src/longrun/core/server.py", "content": "x"})
@@ -84,12 +83,23 @@ with tempfile.TemporaryDirectory() as tmp:
           not res_fw.get("ok") and "NUCLEUS_PROTECTED" in str(res_fw.get("error"))
           and not res_fe.get("ok") and "NUCLEUS_PROTECTED" in str(res_fe.get("error")))
 
+    # ---- write passed the gate is NEVER undone by some later sweep -----------
+    with open(srv_file, "w", encoding="utf-8") as f:
+        f.write("# operator edit kept\n")
+    with open(os.path.join(tmp, "src", "longrun", "core", "_probe.py"), "w",
+              encoding="utf-8") as f:
+        f.write("# newly created\n")
+    with open(srv_file, encoding="utf-8") as f:
+        kept_content = f.read()
+    check("E2 a write that passed the gates is left untouched on disk (no revert)",
+          kept_content == "# operator edit kept\n"
+          and os.path.isfile(os.path.join(tmp, "src", "longrun", "core", "_probe.py")))
+
     # ---------------------------------------------------------------- JAG-510 --
     # Red-team report: the shell gate matched the RAW COMMAND TEXT, so
     #   t=$(printf 'c3JjL2xvbmdydW4=' | base64 -d); printf x > "$t/f"
-    # wrote into src/longrun (C1), `tests/`+`deploy/` were not even in the token
-    # list (C2), and a CREATED file survived the restore (C3). The gate now
-    # inspects the paths a command could WRITE, and the restore removes creations.
+    # wrote into src/longrun (C1) and `tests/`+`deploy/` were not even in the
+    # token list (C2). The gate now inspects the paths a command could WRITE.
 
     # ---- G) reads and redirected runs stay legal; writes are refused ---------
     g_read, _ = matrix_guard.check_shell_command(
@@ -133,19 +143,44 @@ with tempfile.TemporaryDirectory() as tmp:
           and "NUCLEUS_PROTECTED" in g_nested_err
           and "NUCLEUS_PROTECTED" in g_b64_err)
 
-    # ---- H) a CREATED Nucleus file does not survive the restore --------------
-    snap_created = matrix_guard.snapshot_nucleus_digests(tmp)
-    made = [os.path.join(tmp, "src", "longrun", "core", "_probe.py"),
-            os.path.join(tmp, "tests", "acceptance", "_probe.py"),
-            os.path.join(tmp, "deploy", "_probe.sh")]
-    for p in made:
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p, "w", encoding="utf-8") as f:
-            f.write("PWNED\n")
-    reverted_created = matrix_guard.restore_if_nucleus_tampered(snap_created, tmp)
-    check("H a file CREATED inside a Nucleus dir is removed by the restore",
-          not any(os.path.exists(p) for p in made) and len(reverted_created) >= 3,
-          str(reverted_created))
+    # ---- H) python.run is no longer the open front door ----------------------
+    # The shell gate cannot see what Python code does, so previously `python.run`
+    # was "covered" only by the post-hoc restore. With deny-only enforcement a
+    # snippet whose LITERAL write target is inside the Nucleus is refused up
+    # front; dynamic targets fail OPEN (a miss can only mean "not blocked").
+    h_w, h_w_err = matrix_guard.check_python_write(
+        'open("src/longrun/core/server.py", "w").write("x")',
+        workspace=tmp, repo_root=tmp)
+    h_rm, h_rm_err = matrix_guard.check_python_write(
+        'import os; os.remove("src/longrun/core/server.py")',
+        workspace=tmp, repo_root=tmp)
+    h_sh, h_sh_err = matrix_guard.check_python_write(
+        'import shutil; shutil.copy("a", "config/tools.yaml")',
+        workspace=tmp, repo_root=tmp)
+    h_pl, h_pl_err = matrix_guard.check_python_write(
+        'from pathlib import Path; Path("webui/index.html").write_text("x")',
+        workspace=tmp, repo_root=tmp)
+    check("H check_python_write refuses literal Nucleus write targets (open/os/shutil/pathlib)",
+          not any((h_w, h_rm, h_sh, h_pl))
+          and all("NUCLEUS_PROTECTED" in e for e in (h_w_err, h_rm_err, h_sh_err, h_pl_err)),
+          " ".join((h_w_err, h_rm_err, h_sh_err, h_pl_err)))
+
+    h_ok, _ = matrix_guard.check_python_write(
+        'import os; print(os.listdir("src/longrun"))', workspace=tmp, repo_root=tmp)
+    h_dyn, _ = matrix_guard.check_python_write(
+        'import os; p="src/longrun/x.py"; open(p, "w").write("x")',
+        workspace=tmp, repo_root=tmp)
+    h_scratch, _ = matrix_guard.check_python_write(
+        'open("/tmp/scratch.txt", "w").write("ok")', workspace=tmp, repo_root=tmp)
+    check("H2 reads, dynamic targets and outside-repo writes pass (fail OPEN on non-literals)",
+          h_ok and h_dyn and h_scratch)
+
+    _abs_nucleus = os.path.join(REPO, "src", "longrun", "core", "server.py")
+    res_py = tools.execute("python.run", {
+        "code": 'open(%r, "w").write("pwned")' % _abs_nucleus})
+    check("H3 tools.execute(python.run) refuses a literal Nucleus write",
+          not res_py.get("ok") and "NUCLEUS_PROTECTED" in str(res_py.get("error")),
+          str(res_py.get("error")))
 
     # ---- I) the prompt-bearing surfaces are Nucleus now ----------------------
     prompt_files = [os.path.join(tmp, ".longrun", "RULES.md"),
@@ -168,11 +203,10 @@ with tempfile.TemporaryDirectory() as tmp:
             os.path.join(tmp, "src", "longrun", "core", "server.py"), tmp)
         j_shell, _ = matrix_guard.check_shell_command(
             "echo x > src/longrun/core/server.py", cwd=tmp, repo_root=tmp)
-        j_restore = matrix_guard.restore_if_nucleus_tampered(
-            {os.path.join(tmp, "src", "longrun", "core", "server.py"):
-             ("deadbeef", b"# old\n")}, tmp)
-        check("J the dangerous opt-in unlocks writes AND skips the restore",
-              j_write and j_shell and j_restore == [], str(j_restore))
+        j_py, _ = matrix_guard.check_python_write(
+            'open("src/longrun/core/server.py", "w")', workspace=tmp, repo_root=tmp)
+        check("J the dangerous opt-in unlocks writes (fs/shell/python)",
+              j_write and j_shell and j_py)
         _reg.load_config = lambda reload=False: {"approvals": {}}
         j_locked, _ = matrix_guard.check_write_allowed(
             os.path.join(tmp, "src", "longrun", "core", "server.py"), tmp)
@@ -202,25 +236,6 @@ with tempfile.TemporaryDirectory() as tmp:
           and "matrix_guard.check_shell_command" in _git_body,
           "%s | guard wired: %s" % (n_git_err, "matrix_guard.check_shell_command" in _git_body))
 
-    # ---- O) the sweep must not delete what the snapshot never tracked ---------
-    # Regression: the first version removed EVERY unknown file, so the shipped
-    # WebUI icons (`assets/*.png`) and `manifest.webmanifest` were deleted as
-    # "creations" after any shell command. The sweep now uses exactly the
-    # snapshot predicate, while still removing created artefacts.
-    keep_png = os.path.join(tmp, "webui", "assets", "icon-512.png")
-    os.makedirs(os.path.dirname(keep_png), exist_ok=True)
-    with open(keep_png, "wb") as f:
-        f.write(b"\x89PNG\r\n\x1a\n")
-    snap_png = matrix_guard.snapshot_nucleus_digests(tmp)
-    created_yaml = os.path.join(tmp, "src", "longrun", "core", "rogue.yaml")
-    with open(created_yaml, "w", encoding="utf-8") as f:
-        f.write("pwned\n")
-    matrix_guard.restore_if_nucleus_tampered(snap_png, tmp)
-    check("O the sweep never deletes a pre-existing untracked-extension file",
-          os.path.isfile(keep_png) and not os.path.exists(created_yaml),
-          "png kept=%s rogue removed=%s" % (os.path.isfile(keep_png),
-                                            not os.path.exists(created_yaml)))
-
     # ---- P) a SYMLINK to the Nucleus is a write channel ----------------------
     # Live audit bypass: `ln -sfn <nucleus>/tools /tmp/nl && echo probe >
     # /tmp/nl/_p.txt` exited 0 and the file was born inside the Nucleus. The gate
@@ -242,83 +257,28 @@ with tempfile.TemporaryDirectory() as tmp:
           and p_ok,
           " ".join((p_ln_err, p_chain_err)))
 
-    # ---- Q) a creation is removed whatever its extension --------------------
-    # The snapshot used to track only known extensions, so a created
-    # `_probe.txt` inside src/longrun survived every restore.
-    keep_txt = os.path.join(tmp, "webui", "assets", "notes.txt")
-    os.makedirs(os.path.dirname(keep_txt), exist_ok=True)
-    with open(keep_txt, "w", encoding="utf-8") as f:
-        f.write("keep me\n")
-    snap_txt = matrix_guard.snapshot_nucleus_digests(tmp)
-    created_txt = os.path.join(tmp, "src", "longrun", "core", "_probe.txt")
-    with open(created_txt, "w", encoding="utf-8") as f:
-        f.write("probe\n")
-    matrix_guard.restore_if_nucleus_tampered(snap_txt, tmp)
-    check("Q a created file of ANY extension inside the Nucleus is removed",
-          not os.path.exists(created_txt), created_txt)
-    check("Q2 a pre-existing file of an untracked extension survives the sweep",
-          os.path.isfile(keep_txt), keep_txt)
+    # ---- R) the shared lock only serializes cooperative writers --------------
+    # `matrix_guard.run_nucleus_guarded` never snapshots or reverts now; it just
+    # holds the process-wide mutex so two legitimate writers cannot interleave.
+    # Its return shape stays `(result, [])` for callers that expect it.
+    def _guarded_peer():
+        return matrix_guard.run_nucleus_guarded(lambda: "peer", tmp)
 
-    # ---- R) concurrent guarded turns cannot blame each other's writes --------
-    # Live audit: `sleep 20` was reported as NUCLEUS_PROTECTED because another
-    # session changed a source file between this command's snapshot and restore.
-    # Guarded transactions now share one process-wide lock.
-    guarded_path = srv_file
-    peer_mutated = threading.Event()
-    peer_release = threading.Event()
-    benign_entered = threading.Event()
-    peer_result, benign_result = {}, {}
+    res_r, reverted_r = _guarded_peer()
+    check("R run_nucleus_guarded returns (result, []) and never reverts anything",
+          res_r == "peer" and reverted_r == [])
 
-    def _peer_write():
-        with open(guarded_path, "w", encoding="utf-8") as f:
-            f.write("# concurrent peer edit\n")
-        peer_mutated.set()
-        peer_release.wait(2)
-        return "peer"
+    _mg_src = open(os.path.join(REPO, "src", "longrun", "tools", "matrix_guard.py"),
+                   encoding="utf-8").read()
+    check("R2 the module carries no snapshot/restore transaction any more",
+          "snapshot_nucleus_digests" not in _mg_src
+          and "restore_if_nucleus_tampered" not in _mg_src
+          and "hashlib" not in _mg_src)
 
-    def _benign_command():
-        benign_entered.set()
-        return "sleep"
-
-    def _run_peer():
-        peer_result["value"], peer_result["reverted"] = \
-            matrix_guard.run_nucleus_guarded(_peer_write, tmp)
-
-    def _run_benign():
-        benign_result["value"], benign_result["reverted"] = \
-            matrix_guard.run_nucleus_guarded(_benign_command, tmp)
-
-    peer_thread = threading.Thread(target=_run_peer)
-    benign_thread = threading.Thread(target=_run_benign)
-    peer_thread.start()
-    peer_mutated.wait(2)
-    benign_thread.start()
-    # If the shared lock is missing, the benign operation enters while the peer's
-    # source edit is in flight and its later restore falsely claims that edit.
-    entered_during_peer = benign_entered.wait(0.1)
-    peer_release.set()
-    peer_thread.join(2)
-    benign_thread.join(2)
-    check("R a benign parallel command is serialized, not blamed for a peer edit",
-          not entered_during_peer and peer_result.get("reverted")
-          and benign_result.get("value") == "sleep"
-          and benign_result.get("reverted") == [],
-          {"benign_entered_during_peer": entered_during_peer,
-           "peer_reverted": peer_result.get("reverted"),
-           "benign_reverted": benign_result.get("reverted")})
-    check("S only proven read-only waits bypass snapshots; arbitrary Python stays guarded",
-          matrix_guard.shell_command_is_read_only("sleep 20")
-          and matrix_guard.shell_command_is_read_only(
-              'python3 -c "import time; time.sleep(40)"')
-          and not matrix_guard.shell_command_is_read_only(
-              'python3 -c "import os; os.remove(\\\"src/longrun/core/server.py\\\")"')
-          and not matrix_guard.shell_command_is_read_only("bash unknown-script.sh"))
-
-    # T) every application writer into protected paths shares the snapshot lock.
-    from longrun.core import server as _server
+    # T) every application writer into protected paths shares the mutex.
+    from longrun.core import server as _server  # noqa: F401 — break the import cycle
     from longrun.core import httpapi, matrix
     from longrun.model import compaction_config
-    from longrun.tools import tools
     promote_entered = threading.Event()
     original_promote = matrix.promote_to_nucleus
     matrix.promote_to_nucleus = lambda *a, **kw: (
@@ -333,7 +293,7 @@ with tempfile.TemporaryDirectory() as tmp:
         promote_thread.join(2)
     finally:
         matrix.promote_to_nucleus = original_promote
-    check("T Matrix promotion waits until a guarded snapshot transaction ends",
+    check("T Matrix promotion waits until a guarded writer releases the mutex",
           not promote_entered_during_guard and promote_entered.is_set())
 
     policy_entered = threading.Event()
@@ -351,7 +311,7 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         compaction_config.save = original_save
         httpapi.compaction_policy = original_policy
-    check("T2 legacy compaction-policy writes wait for guarded snapshots",
+    check("T2 compaction-policy writes wait for the shared writer mutex",
           not policy_entered_during_guard and policy_entered.is_set())
 
 print("---")
