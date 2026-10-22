@@ -519,21 +519,30 @@ class AgentsView {
     // must not be used to build the REPORTS-TO dropdown, or a manager outside the
     // selected team vanishes and its edge can be silently cleared.
     this.roster = [];
+    // JAG-2.4: every SESSION (designated agents + plain sessions) — the assign pool.
+    this.pool = [];
     this.sort = "default"; this.closed = new Set(); this._groupIds = [];
     // JAG-2.3: the team currently scoping the board ("ALL", a team id, "__none__").
     // groupsOf needs it to keep the SELECTED team visible even when it is empty.
     this.scope = "ALL";
     this._seen = new Set(); this.focusSid = null; }
   teamById(id){ return (this.teams || []).find(t => t.id === id); }
-  render(tree, models, running, teams, roster){
+  render(tree, models, running, teams, roster, pool){
     if (tree) this.agents = tree.agents || [];
     if (roster) this.roster = roster;
+    // JAG-2.4: `pool` = EVERY session (designated agents + plain sessions), the list
+    // the assign picker offers. `roster` stays designated-only because a reports-to
+    // edge needs a real agent id.
+    if (pool) this.pool = pool;
     if (models && models.length) this.models = models;
     if (running) this.running = running;
     if (teams) this.teams = teams;
-    // JAG-2.3: report the REAL count — a scoped, empty team must read "0 agents",
-    // not the pre-load dash, or the panel looks like it failed to load.
-    $("agCount").textContent = this.agents.length + " agents";
+    // JAG-2.4: report what is really there — agents AND the sessions that are not
+    // designated yet (they are listed, exactly like in the Sessions page).
+    const nAg = this.agents.filter(a => a.id).length;
+    const nSes = this.agents.length - nAg;
+    $("agCount").textContent = nSes ? (nAg + " agents · " + nSes + " sessions")
+                                    : (nAg + " agents");
     // JAG-2.1: ONE list — the editable table grouped by team (collapsible header rows).
     const groups = this.groupsOf(this._sorted(this.agents));
     this._groupIds = groups.map(g => g.id);
@@ -559,8 +568,11 @@ class AgentsView {
       ? groups.map(g => this.groupHtml(g)).join("")
       : '<tr><td colspan="8" class="empty">no agents — create one with ＋ above.</td></tr>';
     this.bind();
-    fillSelect($("jobTo"), this.agents, "assign to…");
-    fillSelect($("rtAgent"), this.agents, "agent…");
+    // JAG-2.4: these two selects hand an id to the JOBS layer, so they only ever list
+    // DESIGNATED agents — a plain session has no A-id to schedule yet.
+    const withId = this.agents.filter(a => a.id);
+    fillSelect($("jobTo"), withId, "assign to…");
+    fillSelect($("rtAgent"), withId, "agent…");
     this._applyFocus();
   }
   /* JAG-451: highlight + scroll to the agent picked elsewhere (e.g. the org chart)
@@ -600,8 +612,12 @@ class AgentsView {
     const mopts = '<option value=""' + (a.model ? "" : " selected") + '>default</option>' +
       this.models.map(m => '<option value="' + esc(m.ref) + '"' + (a.model === m.ref ? " selected" : "") + '>' + esc(m.label) + '</option>').join("");
     const roster = (this.roster && this.roster.length) ? this.roster : this.agents;
+    // JAG-2.4: only a DESIGNATED agent can be a manager (reports_to is an agent id).
     const ropts = '<option value="">— none —</option>' +
-      roster.filter(x => x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.id) + ' ' + esc(x.name||"") + '</option>').join("");
+      roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.id) + ' ' + esc(x.name||"") + '</option>').join("");
+    // JAG-2.4: a plain session has no agent id yet — show a dash that says so.
+    const idCell = a.id ? esc(a.id)
+      : '<span class="muted" title="plain session — not designated as an agent yet; editing or assigning this row designates it">—</span>';
     const open = this.open === a.session;
     const run = this.running.has(a.session) ? '<span class="dotr" title="running"></span>' : "";
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
@@ -611,12 +627,12 @@ class AgentsView {
       '<div class="row" style="margin-top:6px;gap:6px"><button class="btn primary" data-save="' + esc(a.session) + '">save prompt</button>' +
       '<button class="btn ghost" data-close="1">close</button></div></td></tr>' : "";
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
-      '<td class="aid">' + esc(a.id) + run + '</td>' +
+      '<td class="aid">' + idCell + run + '</td>' +
       '<td><input class="inp mini" name="agent-name" aria-label="agent name" data-f="name" value="' + esc(a.name||"") + '"></td>' +
       '<td><input class="inp mini" name="agent-role" aria-label="agent role" data-f="role" value="' + esc(a.role||"") + '"></td>' +
       '<td><select class="inp mini" name="agent-model" aria-label="agent model" data-f="model">' + mopts + '</select></td>' +
       '<td><select class="inp mini" name="agent-reports-to" aria-label="agent reports to" data-f="reports_to">' + ropts + '</select></td>' +
-      '<td><button class="btn ghost mini tmbtn" data-aid="' + esc(a.id) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
+      '<td><button class="btn ghost mini tmbtn" data-sid="' + esc(a.session) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
       '<td><button class="btn ghost" data-brief="1" title="role + behaviour notes (ROLE.md)">✎ prompt</button></td>' +
       '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)">\u21BA reset</button>' +
       '<button class="btn ghost mini no" data-del="1" title="release agent">×</button></td></tr>' + brief;
@@ -646,9 +662,10 @@ class AgentsView {
       el.onchange = () => { const sid = el.closest("tr").dataset.sid; this.save(sid, {[el.dataset.f]: el.value}); };
     });
     // JAG-2.0: the Teams cell opens a checkbox picker (one or more teams per agent).
+    // JAG-2.4: addressed by SESSION, so a plain (not yet designated) session works too.
     body.querySelectorAll("[data-tm]").forEach(b => { b.onclick = (ev) => {
       ev.stopPropagation();
-      const a = this.agents.find(x => x.id === b.dataset.aid);
+      const a = this.agents.find(x => x.session === b.dataset.sid);
       if (a) this.openTeamPicker(ev, a);
     }; });
     body.querySelectorAll("[data-brief]").forEach(b => { b.onclick = async () => {
@@ -806,18 +823,21 @@ class AgentsView {
       : '<div class="muted small" style="padding:6px 10px">no teams yet — create one above.</div>',
       {cls: "tmmenu", w: 240, h: 220});
     m.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      cb.onchange = () => this.setTeamMembership(a.id, cb.dataset.tid, cb.checked);
+      cb.onchange = () => this.setTeamMembership(a.session, cb.dataset.tid, cb.checked);
     });
   }
-  async setTeamMembership(aid, tid, add, keepOpen){
+  /* JAG-2.4: `ref` is a SESSION id. The server resolves it to an agent id and, when
+     the session was never designated, designates it first — so "assign this chat to a
+     team" works for every row, not only the designated ones. */
+  async setTeamMembership(ref, tid, add, keepOpen){
     const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/members",
-      {agent: aid, action: add ? "add" : "remove"});
+      {session: ref, action: add ? "add" : "remove"});
     if (!r || r.ok === false){ alert((r && r.error) || "membership update failed"); return; }
     if (keepOpen){
       // JAG-2.3: the assign picker stays open for a multi-select. Keep the local
       // roster truthful so a second toggle does not fight a stale membership list;
       // the next poll re-reads the server anyway.
-      const a = (this.roster || []).find(x => x.id === aid);
+      const a = (this.pool || []).concat(this.roster || []).find(x => x.session === ref);
       if (a){ const s = new Set(a.teams || []); add ? s.add(tid) : s.delete(tid); a.teams = [...s]; }
       if (this.onChanged) this.onChanged();
       return;
@@ -825,21 +845,21 @@ class AgentsView {
     closePopover();
     if (this.onChanged) this.onChanged();
   }
-  /* JAG-2.3: assign ANY agent to one team from that team's header. The agent rows
-     only offer a picker on THEIR row, so an empty team (or a scoped view) offered
-     nothing to click and a brand-new team could not be filled at all. The pool is
-     the FULL roster, not the team-scoped list, or a scoped board could only ever
-     re-confirm its own members. */
+  /* JAG-2.3/2.4: assign ANY session to one team from that team's header. The pool is
+     EVERY session (this.pool), not the team-scoped list, so a scoped board can still
+     fill the team it is showing — including chats that were never designated. */
   openAssignPicker(ev, tid){
     const t = this.teamById(tid); if (!t) return;
-    const pool = (this.roster && this.roster.length) ? this.roster : (this.agents || []);
+    const pool = (this.pool && this.pool.length) ? this.pool
+      : ((this.roster && this.roster.length) ? this.roster : (this.agents || []));
     const html = pool.length
       ? '<div class="tmhead">' + esc(t.symbol || "") + ' ' + esc(t.name || tid) +
         ' <span class="muted">— tick to assign</span></div>' +
-        pool.map(a => '<label class="tmopt"><input type="checkbox" data-asg="' + esc(a.id) + '"' +
+        pool.map(a => '<label class="tmopt"><input type="checkbox" data-asg="' + esc(a.session) + '"' +
           (((a.teams || []).includes(tid)) ? " checked" : "") + '> ' +
-          '<span class="aid">' + esc(a.id) + '</span> ' + esc(a.name || "") + '</label>').join("")
-      : '<div class="muted small" style="padding:6px 10px">no agents exist yet — create one with ＋ new agent.</div>';
+          (a.id ? '<span class="aid">' + esc(a.id) + '</span> '
+                : '<span class="muted small">session</span> ') + esc(a.name || "") + '</label>').join("")
+      : '<div class="muted small" style="padding:6px 10px">no sessions exist yet — create one with ＋ new agent.</div>';
     const m = openPopover(ev, html, {cls: "tmmenu", w: 300, h: 320});
     m.querySelectorAll('input[data-asg]').forEach(cb => {
       cb.onchange = () => this.setTeamMembership(cb.dataset.asg, tid, cb.checked, true);
@@ -1739,31 +1759,40 @@ class OrbitApp {
     const inTeam = (a) => (!team || team === "ALL"
       || (team === "__none__" ? !((a.teams || []).length) : ((a.teams || []).includes(team))));
     const allRoutines = (routines && routines.routines) || [];
-    const fTree = tree ? Object.assign({}, tree, {agents: (tree.agents || []).filter(inTeam)}) : null;
-    const ids = new Set(((fTree && fTree.agents) || []).map(a => a.id));
+    // JAG-2.4: the roster is EVERY session, exactly like the Sessions page — a chat
+    // does not need to be designated first. Designated agents carry an A-id; the rest
+    // are listed as plain sessions (id null) and live in the "No team" bucket until
+    // one is assigned, which designates it server-side.
+    const designated = (tree && tree.agents) || [];
+    const dsids = new Set(designated.map(a => a.session));
+    const extras = ((sess && sess.sessions) || []).filter(s => !dsids.has(s.id))
+      .map(s => ({session: s.id, id: null, undesignated: true, n: 1e9,
+                  name: s.title || ("session " + String(s.id).slice(0, 6)),
+                  role: "", model: s.model || "", teams: [], reports_to: null}));
+    const pool = designated.concat(extras);
+    const dTree = tree ? Object.assign({}, tree, {agents: designated.filter(inTeam)}) : null;
+    const fTree = tree ? Object.assign({}, tree,
+      {agents: designated.filter(inTeam).concat(extras.filter(inTeam))}) : null;
+    const ids = new Set(designated.filter(inTeam).map(a => a.id));
     const fJobs = jobs ? {jobs: (jobs.jobs || []).filter(j => (j.agents || []).some(x => ids.has(x)))} : null;
     const fRoutines = routines ? {routines: allRoutines.filter(r => !team || team === "ALL" || ids.has(r.agent))} : null;
     const list = models ? ((models.providers) || []).reduce((acc, p) =>
       acc.concat((p.models || []).map(m => ({ref: m.ref || (p.id + ":" + m.id), label: m.id}))), []) : [];
     const running = new Set(((sess && sess.sessions) || []).filter(s => s.running).map(s => s.id));
-    // JAG-2.3: state the roster's BOUNDARY out loud. This panel lists designated
-    // agents only, but the Sessions page creates plain chat sessions — so a session
-    // named e.g. "kb test" never appears here and the panel looked out of sync with
-    // the session list. `agents` = sessions designated as agents.
+    // JAG-2.4: state the roster in full. The panel mirrors the Sessions page, so the
+    // hint reports the ONE real gap left: chats with no agent id yet (they are rows).
     if (sess && tree){
-      const sids = new Set((tree.agents || []).map(a => a.session));
-      const other = ((sess.sessions) || []).filter(s => !sids.has(s.id));
-      const hint = "designated agents only · " + other.length + " session(s) are not agents";
-      $("agHint").textContent = hint;
-      $("agHint").title = other.length
-        ? "A session becomes an agent when it is designated (＋ new agent, or POST /api/agents).\n" +
-          "Not agents: " + other.slice(0, 12).map(s => s.title || s.id).join(" · ")
-        : "Every chat session is a designated agent.";
+      $("agHint").textContent = pool.length + " sessions · " + extras.length +
+        " without an agent id (assign or edit a row to designate it)";
+      $("agHint").title = extras.length
+        ? "Every session is listed here, like in the Sessions page.\n" +
+          "Not designated yet: " + extras.slice(0, 12).map(a => a.name).join(" · ")
+        : "Every session is a designated agent.";
     }
     if (fTree) this.lastAgents = fTree.agents || [];
     this.agents.scope = team;
-    if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null, tree ? tree.agents : null);
-    if (fTree) this.org.render(fTree);
+    if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null, designated, pool);
+    if (dTree) this.org.render(dTree);
     if (fJobs) this.jobs.render(fJobs.jobs);
     if (fRoutines) this.routines.render(fRoutines.routines);
     // JAG-297: the constellation is a docked panel — keep it fresh, but never

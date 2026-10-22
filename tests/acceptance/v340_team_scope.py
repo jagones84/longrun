@@ -85,8 +85,37 @@ check("D3 the assign picker stays open for a multi-select",
       and "keepOpen" in orbit)
 check("D4 an empty team says HOW to fill it instead of a blank panel",
       "no agents in this team yet" in orbit)
-check("D5 the panel states its boundary: agents are DESIGNATED sessions",
-      'id="agHint"' in orbit and "designated agents only" in orbit)
+check("D5 the panel states the roster in full (sessions without an agent id)",
+      'id="agHint"' in orbit and "without an agent id" in orbit)
+
+# --- E: a PLAIN session is listed and assignable (live complaint, 2026-10-22) --
+# Operator: "in agents no teams ... non ci sono delle sessioni del sessions page ...
+# tipo kb test ... non sono sincronizzate". Control must show the SAME roster as the
+# Sessions page, and assigning a chat that was never designated must work instead of
+# dead-ending: the server designates it on the spot (title -> agent name).
+from longrun.core import server as _server  # noqa: E402
+from longrun.orchestrate import orchestration as orch  # noqa: E402
+
+_server.save_session({"id": "s_plain_kb", "title": "kb test", "messages": []})
+aid, err = orch.member_aid(agents.REGISTRY, "s_plain_kb")
+check("E1 a plain session gets an agent id on demand (title becomes the name)",
+      bool(aid) and not err
+      and (agents.REGISTRY.get("s_plain_kb") or {}).get("name") == "kb test",
+      "%s | %s" % (aid, err))
+added = teams.REGISTRY.add_member("T1", aid)
+check("E2 that new agent can then join a team",
+      added.get("ok") is True and aid in (teams.REGISTRY.get("T1") or {}).get("members", []))
+missing, merr = orch.member_aid(agents.REGISTRY, "no_such_session")
+check("E3 an unknown session is refused (never a silent no-op)",
+      missing is None and "unknown session" in str(merr))
+check("E4 the members route designates on demand instead of answering 'required'",
+      "aid, err = member_aid(reg, data.get(\"agent\") or data.get(\"session\"))"
+      in open(os.path.join(REPO, "src", "longrun", "orchestrate",
+                           "orchestration.py"), encoding="utf-8").read())
+check("E5 Control lists EVERY session (designated + plain) and posts a session ref",
+      "designated.concat(extras)" in orbit and "undesignated: true" in orbit
+      and 'data-asg="\' + esc(a.session)' in orbit
+      and '{session: ref, action:' in orbit)
 
 print("---")
 ok = sum(1 for r in results if r)

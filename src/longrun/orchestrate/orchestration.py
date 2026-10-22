@@ -45,6 +45,38 @@ def _aid_of(reg, ref):
     return a["id"] if a else None
 
 
+def member_aid(reg, ref):
+    """Resolve a TEAM-MEMBER reference to an agent id; designate a plain session.
+
+    JAG-2.4: Control ▸ AGENTS lists EVERY session (the same roster as the Sessions
+    page), so a membership request may name a chat that was never designated. Rather
+    than dead-ending with "agent or session required", designate it on the spot (its
+    session title becomes the agent name when that name is free) and use the new id.
+
+    Returns ``(aid, error)`` — exactly one of them is None.
+    """
+    aid = _aid_of(reg, ref)
+    if aid:
+        return aid, None
+    sid = str(ref or "").strip()
+    if not sid:
+        return None, "agent or session required"
+    try:
+        from longrun.core import server as _srv
+        sess = _srv.load_session(sid) or {}
+    except Exception:  # noqa: BLE001 — a session lookup must never 500 the route
+        sess = {}
+    if not sess:
+        return None, "unknown session: %s" % sid
+    made = reg.designate(sid, name=str(sess.get("title") or "").strip()[:80] or None)
+    if not made.get("ok"):
+        made = reg.designate(sid)   # a title collision must not block the assignment
+    aid = (made.get("agent") or {}).get("id")
+    if not aid:
+        return None, made.get("error") or "could not designate the session"
+    return aid, None
+
+
 def _member_row(reg, aid):
     a = reg.by_id(aid) or {}
     return {"id": aid, "name": a.get("name") or aid, "session": a.get("session"),
@@ -120,9 +152,10 @@ def _teams(handler, method, path, qs, body, reg):
         parts = path[len("/api/teams/"):].split("/")
         tid = parts[0]
         if len(parts) >= 2 and parts[1] == "members":
-            aid = _aid_of(reg, data.get("agent") or data.get("session"))
-            if not aid:
-                return _json(handler, 400, {"ok": False, "error": "agent or session required"})
+            # JAG-2.4: a plain session is designated on the spot (see member_aid).
+            aid, err = member_aid(reg, data.get("agent") or data.get("session"))
+            if err:
+                return _json(handler, 400, {"ok": False, "error": err})
             if str(data.get("action") or "add").lower() == "remove":
                 return _json(handler, 200, R.remove_member(tid, aid))
             return _json(handler, 200, R.add_member(tid, aid))
