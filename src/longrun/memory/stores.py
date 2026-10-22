@@ -341,7 +341,12 @@ def list_sessions():
         for fn in sorted(os.listdir(SESSIONS_DIR)):
             if fn.endswith(".json"):
                 s = read_json(os.path.join(SESSIONS_DIR, fn), None)
-                if not s:
+                # JAG-533/SJ: a JSON in this directory that is NOT a session (a
+                # stray per-session ledger, a partial write, a hand-placed file)
+                # must never take the endpoint down. ONE file without "id" here
+                # raised KeyError and /api/sessions answered an EMPTY response,
+                # so the WebUI showed "Sessions unavailable" (live, 2026-10-22).
+                if not isinstance(s, dict) or not s.get("id"):
                     continue
                 msgs = s.get("messages", [])
                 stamps = [s.get("created") or 0]

@@ -74,11 +74,31 @@ check("A5 a valid plan returns SJ1 with SJ1.1 / SJ1.2 and the label map",
 
 # --------------------------------------------------------------- B: storage ---
 ledger = SJ.path_for(SID)
-check("B1 the ledger lives with the session (data/sessions/<sid>.sj.json)",
-      ledger.endswith(os.path.join("sessions", SID + ".sj.json"))
-      and os.path.isfile(ledger), ledger)
+_sessions_dir = os.environ["LONGRUN_SESSIONS_DIR"]
+check("B1 the ledger gets its OWN directory (never inside data/sessions/)",
+      os.path.isfile(ledger)
+      and os.path.basename(ledger) == SID + ".json"
+      and os.path.realpath(os.path.dirname(ledger)) != os.path.realpath(_sessions_dir),
+      ledger)
 check("B2 the ledger is the persisted SJ graph, not an in-memory stub",
       "SJ1.2" in open(ledger, encoding="utf-8").read())
+
+# B3 — REGRESSION (live, 2026-10-22): writing the ledger INTO data/sessions made
+# `stores.list_sessions()` raise KeyError: 'id' (it globs *.json there and reads
+# s["id"]), so /api/sessions answered an EMPTY response and the WebUI showed
+# "Sessions unavailable". A foreign JSON in that directory must be ignored.
+from longrun.memory import stores as ST  # noqa: E402
+with open(os.path.join(_sessions_dir, "stray_not_a_session.sj.json"), "w",
+          encoding="utf-8") as _f:
+    _f.write('{"seq": 1, "jobs": {}}')
+with open(os.path.join(_sessions_dir, "real_session.json"), "w",
+          encoding="utf-8") as _f:
+    _f.write('{"id": "s_probe", "title": "probe", "messages": []}')
+_rows = ST.list_sessions()
+check("B3 a foreign JSON in data/sessions does not break the session list",
+      any(r.get("id") == "s_probe" for r in _rows)
+      and all(r.get("id") for r in _rows),
+      "%d rows" % len(_rows))
 
 # ------------------------------------------------------------- C: scheduler ---
 class FakeWorkers:

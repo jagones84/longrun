@@ -13,7 +13,7 @@ store, different lifecycle — while REUSING the shared primitives instead of
 duplicating them:
 
   * ids      ``SJ<n>`` / ``SJ<n>.<k>``          vs  ``J<n>`` / ``J<n>.<k>``
-  * store    ``data/sessions/<sid>.sj.json``    (lives and dies with the session)
+  * store    ``data/session_jobs/<sid>.json``   (own dir, dies with the session)
   * graph    ``longrun.util.dag``               (waves / ready / blockers_state)
   * workers  ``longrun.agent.subagent``         (spawn / collect, now durable)
 
@@ -21,6 +21,13 @@ Lifecycle: ``create`` → ``run`` (ready-queue scheduler, capped workers) →
 ``describe`` (model + REST introspection). ``delete(sid)`` is called by the
 session-delete cascade in ``longrun.memory.stores._purge_session_artifacts``, so
 an SJ never outlives the chat that created it.
+
+**The ledger MUST NOT live in ``data/sessions/``.** The first version wrote
+``data/sessions/<sid>.sj.json``: ``stores.list_sessions()`` globs that directory
+for ``*.json`` and reads ``s["id"]``, so ONE SJ ledger raised ``KeyError: 'id'``
+and the whole ``/api/sessions`` endpoint died with an empty response — the WebUI
+showed "Sessions unavailable" (live, 2026-10-22). A per-session store gets its
+OWN directory, exactly like graphs/runs/edits/threads.
 """
 from __future__ import annotations
 
@@ -29,9 +36,9 @@ import threading
 import time
 
 from longrun.util import dag
-from longrun.util.paths import SESSIONS_DIR
+from longrun.util.paths import DATA_DIR
 
-STORE_SUFFIX = ".sj.json"
+STORE_DIR = os.environ.get("LONGRUN_SJ_DIR") or os.path.join(DATA_DIR, "session_jobs")
 TERMINAL = ("done", "error", "blocked")
 _LOCK = threading.RLock()
 
@@ -47,7 +54,7 @@ def _safe(ident):
 
 def path_for(sid):
     """The SJ ledger of one session (the cascade deletes exactly this file)."""
-    return os.path.join(SESSIONS_DIR, _safe(sid) + STORE_SUFFIX)
+    return os.path.join(STORE_DIR, _safe(sid) + ".json")
 
 
 def _empty(sid):
@@ -68,7 +75,7 @@ def _load(sid):
 
 def _save(sid, doc):
     from longrun.util.fswrite import write_json
-    os.makedirs(SESSIONS_DIR, exist_ok=True)
+    os.makedirs(STORE_DIR, exist_ok=True)
     write_json(path_for(sid), doc)
 
 
