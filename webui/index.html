@@ -2183,6 +2183,12 @@
           <select id="compactionModel" data-change="saveCompactionModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="compactionResult"></div>
         </div>
+        <h2>longrunAgent · VEO automation model</h2>
+        <div class="card">
+          <div class="remaining u-m006">Stateless system automation agent (<code>longrunAgent</code>) for Teamorg and WebUI section automation. Prefers lightweight, cost-effective cloud models (or follows the active session's model).</div>
+          <select id="longrunAgentModel" data-change="saveLongrunAgentModel" class="inp u-w100 u-p610 u-fs12"></select>
+          <div class="remaining u-mt6" id="longrunAgentResult"></div>
+        </div>
         <!-- JAG-505: the subagent model + failover live in Settings ▸ Subagents —
              this card was a duplicate of it. -->
         <h2>Embedding · knowledge index</h2>
@@ -4435,13 +4441,24 @@ async function openSessMenu(row, s, ag) {
   const m = document.createElement("div");
   m.className = "sess-menu";
   const pinned = _pinned().includes(s.id);
-  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="org">⬢ Show in organigram</button><button data-a="role">Edit role (ROLE.md)</button><button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button><button data-a="del" class="danger">Delete session</button>`;
+  const isSys = !!(s.system || s.undeletable || s.id === "longrunAgent");
+  const hasLra = !!(s.allow_longrun_agent || isSys);
+  const lraBtn = isSys ? "" : `<button data-a="lra">${hasLra ? "✓ Revoke Teamorg / longrunAgent" : "⚡ Grant Teamorg / longrunAgent"}</button>`;
+  const delBtn = isSys ? "" : `<button data-a="del" class="danger">Delete session</button>`;
+  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="org">⬢ Show in organigram</button><button data-a="role">Edit role (ROLE.md)</button>${lraBtn}<button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button>${delBtn}`;
   row.appendChild(m);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
     if (a === "pin") { _togglePin(s.id); }
     if (a === "org") { closeSessMenu(); _showAgentInOrganigram(s.id); return; }
+    if (a === "lra") {
+      closeSessMenu();
+      await api("POST", "/api/longrun-agent/access", { session: s.id, allow_longrun_agent: !hasLra });
+      toast((!hasLra ? "granted" : "revoked") + " Teamorg / longrunAgent access for " + (s.title || s.id));
+      loadSessions();
+      return;
+    }
     if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
     if (a === "role") { let rp = null, rt = ""; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; rt = (r && r.text) || ""; } catch (e) {} if (!rp || !rt) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
     if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
@@ -5817,6 +5834,9 @@ function _setSectionEl(sec) {
   });
   _syncSectionDirty(card, sec);
   card.querySelector("[data-save]").onclick = () => saveSettingsSection(card, sec);
+  card.appendChild(makeAutomateWidget(sec.id || "settings", () => ({
+    file: sec.file, section_id: sec.id, values: _setSectionValues(card, sec)
+  })));
   return card;
 }
 function _setFieldEl(f, val) {
@@ -7441,6 +7461,7 @@ const _FEED_REFRESH = {
   "session.cleared": () => { loadSessions(); if (sessionId) loadHistory(); },
   "teams.updated": () => loadAgents(),
   "roles.update": () => { loadRulesPanel(); loadSessions(); },
+  "longrun_agent.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); },
   "home.move": () => loadHome()
 };
 function _feedReplay(ev) {
@@ -7929,6 +7950,7 @@ function renderTools(el, d) {
   // it, so a native harness tool and a third-party MCP tool looked identical.
   const ORIGIN_BADGE = {
     nucleus: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
+    exclusive: '<span class="sk-badge sk-core" title="exclusive built-in tool — dual-permission gated (longrunAgent / granted sessions only)">exclusive</span>',
     mcp: '<span class="sk-badge sk-mcp" title="discovered from a configured MCP server">MCP</span>',
     matrix: '<span class="sk-badge sk-matrix" title="Matrix zone — editable, outside the Nucleus">matrix</span>'
   };
@@ -7961,7 +7983,7 @@ function renderTools(el, d) {
     const counts = {};
     list.forEach(t => { const o = String(t.origin || "nucleus"); counts[o] = (counts[o] || 0) + 1; });
     const best = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
-    return best === "mcp" ? "mcp" : (best === "matrix" ? "matrix" : "nucleus");
+    return best === "exclusive" ? "exclusive" : (best === "mcp" ? "mcp" : (best === "matrix" ? "matrix" : "nucleus"));
   };
   const nsTree = names => names.map(g => {
     const list = groups.get(g);
@@ -7992,6 +8014,7 @@ function renderTools(el, d) {
   catch (_e) { _openO = {}; }
   const ORIGIN_SECTIONS = [
     ["nucleus", "Built-in", "shipped with the harness — the registry's own tool schemas"],
+    ["exclusive", "Exclusive built-in · longrunAgent", "dual-permission gated — callable only by longrunAgent or explicitly granted sessions when enabled here"],
     ["mcp", "MCP · external servers", "discovered from the configured MCP clients; opt-in"],
     ["matrix", "Matrix", "live zone outside the Nucleus — promote to make it permanent"],
   ];
@@ -9069,6 +9092,12 @@ async function loadRules() {
     $("rulesProjectText").value = p.text || "";
     gateEnroll($("rulesGlobalCard"));     // JAG-496: Global_rules.md / Project_rules.md Save buttons follow the shared dirty-gate
     gateEnroll($("rulesProjectCard"));
+    [["rulesGlobalCard", "global"], ["rulesProjectCard", "project"]].forEach(([cid, scope]) => {
+      const c = $(cid);
+      if (c && !c.querySelector(".lra-auto-bar")) {
+        c.appendChild(makeAutomateWidget("rules", () => ({ scope })));
+      }
+    });
     const files = [];
     (g.files || []).forEach(f => files.push("G " + f));
     (p.files || []).forEach(f => files.push("P " + f));
@@ -9609,6 +9638,24 @@ async function loadRouting() {
       const match = models.find(m => m.ref.toLowerCase().includes(pat) || m.id.toLowerCase().includes(pat));
       if (match) sel.value = match.ref;
     }
+    const lraSel = $("longrunAgentModel");
+    if (lraSel) {
+      const lraCur = (((d.config || {}).roles || {}).longrun_agent || {}).model || "";
+      const cheapModels = models.filter(m => !m.local);
+      if (lraCur && lraCur !== "@chat" && !cheapModels.some(m => m.ref === lraCur)) {
+        cheapModels.unshift({ ref: lraCur, id: lraCur, provider: "configured", pname: "Configured", local: false, available: true });
+      }
+      const cheapGroups = {};
+      cheapModels.forEach(m => { (cheapGroups[m.provider] = cheapGroups[m.provider] || { name: m.pname, items: [] }).items.push(m); });
+      const lraOpts = Object.keys(cheapGroups).map(pid => {
+        const g = cheapGroups[pid];
+        return '<optgroup label="' + _attr(g.name) + ' (remote)">' + g.items.map(m =>
+          '<option value="' + _attr(m.ref) + '"' + (m.ref === lraCur ? " selected" : "") + '>' +
+          esc(m.ref) + (m.available ? "" : " · no key") + '</option>').join("") + '</optgroup>';
+      }).join("");
+      lraSel.innerHTML = '<option value="@chat">same as active session model (dynamic)</option>' + (lraOpts || rosterOptions);
+      lraSel.value = (lraCur && [...lraSel.options].some(o => o.value === lraCur)) ? lraCur : "@chat";
+    }
     // JAG-505: the duplicate subagent picker is gone — Settings ▸ Subagents owns it.
     const fb = ((d.config || {}).default_fallbacks || []);
     const box = $("modelsList");
@@ -9626,6 +9673,65 @@ async function saveCompactionModel() {
   if (el) el.textContent = r.error ? ("error: " + r.error)
     : (m === "@chat" ? "saved: compaction follows the chat model"
                      : ("saved: summarizer = " + m));
+}
+async function saveLongrunAgentModel() {
+  const sel = $("longrunAgentModel");
+  const m = sel ? sel.value : "";
+  if (!m) return;
+  const r = await api("POST", "/api/routing", { roles: { longrun_agent: { model: m } } });
+  const el = $("longrunAgentResult");
+  if (el) el.textContent = r.error ? ("error: " + r.error)
+    : (m === "@chat" ? "saved: longrunAgent follows the active session model"
+                     : ("saved: longrun_agent = " + m));
+}
+function makeAutomateWidget(section, getContext) {
+  const bar = document.createElement("div");
+  bar.className = "lra-auto-bar";
+  bar.dataset.automateSection = section;
+  bar.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap";
+  bar.innerHTML =
+    '<button type="button" class="ghost lra-auto-toggle" title="Automate this section with longrunAgent (VEO — stateless system automation)">⚡ Automate</button>' +
+    '<input type="text" class="inp lra-auto-inp" placeholder="Ask longrunAgent to configure this section…" hidden style="flex:1;min-width:200px;padding:5px 8px;font-size:12px">' +
+    '<button type="button" class="ghost lra-auto-run" hidden>Run</button>' +
+    '<span class="remaining lra-auto-status" role="status" aria-live="polite"></span>';
+  const toggleBtn = bar.querySelector(".lra-auto-toggle");
+  const inp = bar.querySelector(".lra-auto-inp");
+  const runBtn = bar.querySelector(".lra-auto-run");
+  const st = bar.querySelector(".lra-auto-status");
+  toggleBtn.onclick = () => {
+    const show = inp.hidden;
+    inp.hidden = !show;
+    runBtn.hidden = !show;
+    if (show) inp.focus();
+  };
+  const trigger = async () => {
+    const instruction = (inp.value || "").trim();
+    if (!instruction) { st.textContent = "enter an instruction"; return; }
+    runBtn.disabled = true;
+    st.textContent = "longrunAgent running…";
+    try {
+      const ctx = typeof getContext === "function" ? (getContext() || {}) : (getContext || {});
+      const r = await api("POST", "/api/longrun-agent/automate", {
+        section, instruction, context: ctx, session: sessionId || ""
+      });
+      if (r && r.ok) {
+        st.textContent = "✓ " + (r.result || "done").slice(0, 140);
+        inp.value = "";
+        loadSettingsForms();
+        loadRulesPanel();
+        loadSessions();
+      } else {
+        st.textContent = "✗ " + ((r && r.error) || "automation failed");
+      }
+    } catch (e) {
+      st.textContent = "✗ " + String(e);
+    } finally {
+      runBtn.disabled = false;
+    }
+  };
+  runBtn.onclick = trigger;
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); trigger(); } });
+  return bar;
 }
 /* JAG-451: Settings > Subagents — model + failover (routing.yaml), depth
    (tools.yaml), parallel cap + role briefs (config/subagents.yaml). */
