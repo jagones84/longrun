@@ -593,15 +593,10 @@ class JobRegistry:
         you already have") AFTER the real deliverable. Returning the LAST message
         therefore lost the work — a job goal asking for content got back a one-line
         description of it. The longest assistant message is the one carrying the
-        deliverable; `reasoning` is a separate field, so it never wins by accident.
+        deliverable. Shared with the `dispatch` path via `stores.turn_reply`.
         """
-        best = ""
-        for m in messages or []:
-            if isinstance(m, dict) and m.get("role") == "assistant":
-                c = str(m.get("content") or "").strip()
-                if len(c) > len(best):
-                    best = c
-        return best
+        from longrun.memory import stores
+        return stores.turn_reply(messages, longest=True)
 
     @staticmethod
     def _close_open_todos(sid):
@@ -659,20 +654,13 @@ class JobRegistry:
                                      sender=sender, subjob=subjob, plan_only=plan_only):
             pass
         s = srv.load_session(sid) or {}
-        turn = s.get("messages", [])[before:]
         # JAG-303: return THIS turn's substantial reply, not the trailing summary.
-        out = self._best_reply(s.get("messages", [])[before:])
-        if out:
-            return out
-        # JAG-310: only THIS turn may answer. The old fallback scanned the WHOLE
-        # session and returned the last assistant message from a PREVIOUS run, so a
-        # job could be marked `done` with a stale/duplicate "reply" — the coordinator
-        # looked like it had answered a report it never answered. If this turn
-        # produced nothing, return nothing and let the job fail loudly.
-        for m in reversed(turn):
-            if m.get("role") == "assistant" and (m.get("content") or "").strip():
-                return m.get("content")
-        return ""
+        # JAG-310: only THIS turn may answer. Scanning the WHOLE session returned
+        # the last assistant message from a PREVIOUS run, so a job could be marked
+        # `done` with a stale/duplicate "reply" — the coordinator looked like it
+        # had answered a report it never answered. If this turn produced nothing,
+        # return nothing and let the job fail loudly.
+        return self._best_reply(s.get("messages", [])[before:])
 
     def _run(self, jid):
         from longrun.agent import agents as agents_mod

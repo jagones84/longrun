@@ -76,6 +76,22 @@ check("no assistant message -> empty",
       JobRegistry._best_reply([{"role": "user", "content": "x"}]) == "")
 check("an empty turn -> empty", JobRegistry._best_reply([]) == "")
 
+# --- one shared reply extractor: the job path and `dispatch` must not diverge ---
+from longrun.memory import stores as _stores
+check("the shared turn-reply extractor exists", callable(getattr(_stores, "turn_reply", None)))
+check("turn_reply(last) keeps the trailing message",
+      _stores.turn_reply(TURN) == "The design is complete.")
+check("turn_reply(longest) keeps the deliverable",
+      _stores.turn_reply(TURN, longest=True).startswith("# Deliverable"))
+check("turn_reply ignores empty/foreign messages",
+      _stores.turn_reply([{"role": "user", "content": "x"},
+                          {"role": "assistant", "content": "  "},
+                          "not-a-dict"]) == "")
+check("_best_reply delegates to the shared extractor",
+      "stores.turn_reply(messages, longest=True)" in read("src", "longrun", "orchestrate/jobs.py"))
+check("the dispatch tool delegates to the shared extractor",
+      "_stores.turn_reply(turn)" in read("src", "longrun", "agent/agent.py"))
+
 # --- _close_open_todos: the coordinator's plan is closed after the team ran ----
 SID = "v303close"
 g = tg.ensure(SID, session_id=SID, goal="x")

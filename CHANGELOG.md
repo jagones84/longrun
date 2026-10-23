@@ -27,6 +27,15 @@ All notable changes to Longrun are documented here. The format follows
   attempt, then marked `failed` with the provider reason, and the coordinator's
   planning/final turns fail loudly instead of synthesising from an error string.
   Locked by `v337` G1–G5.
+- **The turn-reply extractor is written once.** `dispatch` and the job runner each
+  carried their own copy of "which assistant message is the reply", so a fix in one
+  path could silently miss the other. `stores.turn_reply(messages, longest=False)`
+  is now the single implementation (`longest=True` keeps the deliverable over a
+  trailing harness summary, JAG-303); `v303` locks both call sites.
+- **`v536` G10 no longer races the cancel result.** The check read the tracked
+  job's result as soon as the process left the registry, before `_run_tracked` had
+  published stdout/stderr — it failed intermittently under parallel battery load.
+  It now waits (bounded) for the real result.
 
 ### Changed
 - **Cost panel states its scope and prices DeepSeek by time of day.** The header is

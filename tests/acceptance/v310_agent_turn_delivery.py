@@ -113,10 +113,11 @@ check("a job IS accepted when the coordinator answers", st2 == "done", "st=%r" %
 
 # ------------------------------------------------------------------ source locks
 j = read("src", "longrun", "orchestrate/jobs.py")
-check("the reply fallback is scoped to THIS turn",
-      'turn = s.get("messages", [])[before:]' in j and "for m in reversed(turn):" in j)
+check("the reply is extracted from THIS turn only",
+      '_best_reply(s.get("messages", [])[before:])' in j)
 check("the whole-session stale fallback is gone",
-      'for m in reversed(s.get("messages", [])):' not in j)
+      'for m in reversed(s.get("messages", [])):' not in j
+      and "for m in reversed(turn):" not in j)
 check("a job is refused when the coordinator produced no reply",
       "coordinator produced no final reply" in j)
 

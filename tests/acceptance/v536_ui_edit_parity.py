@@ -335,6 +335,13 @@ for _ in range(60):
 check("G8 the cancelled job leaves the queue", _gone, sandbox.running())
 check("G9 cancel() is idempotent once it stopped",
       sandbox.cancel("v536live").get("cancelled") is False)
+# G8 only proves the process LEFT the registry; `_run_tracked` publishes its
+# result AFTER reaping stdout/stderr, so under parallel battery load `res` can
+# still be unset here. Wait for the real result instead of racing it.
+for _ in range(100):
+    if _job.get("res"):
+        break
+    time.sleep(0.1)
 check("G10 the cancelled run reports cancelled + exit 130",
       (_job.get("res") or {}).get("cancelled") is True
       and (_job.get("res") or {}).get("exit_code") == 130, _job.get("res"))

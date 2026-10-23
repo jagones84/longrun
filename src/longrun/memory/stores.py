@@ -781,6 +781,30 @@ def has_reply_since(sess, since):
     return any(m.get("role") == "assistant" for m in sess.get("messages", [])[since:])
 
 
+def turn_reply(messages, longest=False):
+    """The prose reply of a TURN (`messages` already sliced to that turn).
+
+    `longest=False` returns the LAST non-empty assistant message — the normal
+    "what did the model say" read. `longest=True` returns the MOST substantial
+    one (JAG-303): a turn can end with a short harness-prompted summary
+    ("report the RESULT you already have") AFTER the real deliverable, so the
+    last message is not always the work. `reasoning` is a separate field, so it
+    never wins by accident. Empty string when the turn produced no reply.
+    """
+    best = ""
+    for m in messages or []:
+        if not isinstance(m, dict) or m.get("role") != "assistant":
+            continue
+        c = str(m.get("content") or "").strip()
+        if not c:
+            continue
+        if not longest:
+            best = c
+        elif len(c) > len(best):
+            best = c
+    return best
+
+
 def ensure_reply_persisted(sess, since, error=None, model=None):
     """JAG-51 invariant: a request never leaves an orphan `user` message.
 

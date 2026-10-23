@@ -1424,11 +1424,8 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
                 pass
             s2 = _srv.load_session(sid2) or {}
             turn = (s2.get("messages") or [])[before:]
-            reply = ""
-            for m in reversed(turn):
-                if m.get("role") == "assistant" and (m.get("content") or "").strip():
-                    reply = m.get("content")
-                    break
+            from longrun.memory import stores as _stores
+            reply = _stores.turn_reply(turn)
         except Exception as e:  # noqa: BLE001
             return _fail("teammate turn failed: %s" % str(e)[:200])
         ok = bool(reply)
