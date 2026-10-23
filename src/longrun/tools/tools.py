@@ -1986,6 +1986,17 @@ def _matrix(args, run_id):
     return {"ok": False, "error": "unknown matrix action %r" % action}
 
 
+def _longrun_agent(args, run_id=None):
+    from longrun.agent import longrun_agent as _lra
+    sub = str((args or {}).get("action") or "").strip()
+    tool_name = ("longrunAgent." + sub) if sub and not sub.startswith("longrunAgent.") else (sub or "longrunAgent")
+    clean = {k: v for k, v in (args or {}).items() if k != "action"}
+    res = _lra.execute(tool_name, clean, run_id=run_id)
+    res.setdefault("backend", "host")
+    res.setdefault("sandboxed", False)
+    return res
+
+
 _DISPATCH = {"shell": _shell, "shell.exec": _shell,
              "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
              "diff": _diff,
@@ -2001,7 +2012,8 @@ _DISPATCH = {"shell": _shell, "shell.exec": _shell,
              "python": _python, "python.run": _python,
              "process": _process,
              "glob": _glob, "glob.list": _glob,
-             "matrix": _matrix}
+             "matrix": _matrix,
+             "longrunAgent": _longrun_agent}
 
 
 def normalize_args(tool: str, args: Any) -> Any:

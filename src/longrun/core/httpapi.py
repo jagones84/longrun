@@ -1939,6 +1939,11 @@ class Handler(BaseHTTPRequestHandler):
                 },
             })
         if path == "/api/sessions":
+            try:
+                from longrun.agent import longrun_agent as _lra
+                _lra.ensure_system_session()
+            except Exception:  # noqa: BLE001
+                pass
             return self._send(200, {"sessions": list_sessions()})
         if path == "/api/sessions/new":
             # JAG-127: an explicitly requested folder must be honored — never silently
@@ -2537,6 +2542,8 @@ class Handler(BaseHTTPRequestHandler):
             sid = path[len("/api/sessions/"):]
             if not _valid_sid(sid):
                 return self._send(404, {"error": "session not found"})
+            if sid == "longrunAgent":
+                return self._send(403, {"ok": False, "error": "longrunAgent is a permanent system session and cannot be deleted"})
             fpath = os.path.join(SESSIONS_DIR, sid + ".json")
             if not os.path.isfile(fpath):
                 return self._send(404, {"error": "session not found"})

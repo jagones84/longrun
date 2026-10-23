@@ -349,6 +349,13 @@ tools:
       - "."
       - "/home/jagones/Repositories"
 
+  # ---- JAG-535: longrunAgent (VEO — exclusive built-in automation tools) -----
+  # Dual-permission gated: callable ONLY when enabled here AND the calling
+  # session is `longrunAgent` or has `allow_longrun_agent: true`.
+  longrunAgent:
+    enabled: true
+    approval: auto
+
   # external MCP tools appear as <client>__<tool> (config/mcp_clients.yaml);
   # default policy is approval=required. Read-only pmcp gateway probes are
   # auto-approved so the agent can observe real MCP output.

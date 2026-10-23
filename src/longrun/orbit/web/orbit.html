@@ -378,9 +378,17 @@
         <span class="sp"></span>
         <button class="btn primary" id="agNewBtn" aria-expanded="false">＋ new agent</button>
         <button class="btn" id="tmNewBtn" aria-expanded="false">＋ new team</button>
+        <button class="btn" id="lraAutoBtn" aria-expanded="false" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">⚡ automate (Teamorg)</button>
         <button class="btn ghost" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
+      <div class="toolbar addbar" id="lraAutoBar" hidden>
+        <span class="lbl">longrunAgent · Teamorg</span>
+        <input class="inp" id="lraAutoInp" placeholder="e.g. Create team 'Backend Core' with lead 'API Architect' and member 'DB Specialist'…" style="flex:1;min-width:260px">
+        <button class="btn primary" id="lraAutoRun">run Teamorg</button>
+        <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
+        <span class="small muted" id="lraAutoStatus"></span>
+      </div>
       <div class="toolbar addbar" id="agAddBar" hidden>
         <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
         <input class="inp" id="agNewRole" placeholder="role (optional)" style="width:170px;flex:none">
@@ -1825,13 +1833,15 @@ class RoutinesView {
 
 /* ---------------------------------------------------------------- Feed --- */
 class FeedView {
-  constructor(api){ this.api = api; this.es = null; }
+  constructor(api, onSync){ this.api = api; this.onSync = onSync; this.es = null; }
   connect(){
     try { this.es = this.api.es("/api/feed"); } catch(e){ return; }
     ["chat.run","chat.user","tool.call","tool.result","graph.node.added","graph.node.updated","graph.plan_dropped","plan.update","chat.done","error"].forEach(k => this.es.addEventListener(k, (e) => {
       let d = {}; try { d = JSON.parse(e.data); } catch(_){}
       const f = $("feed"); f.insertAdjacentHTML("afterbegin", '<div><b>' + esc(k) + '</b> ' + esc(d.session ? String(d.session).slice(0,8) : "") + ' ' + esc(d.text || d.label || d.title || d.tool || "") + '</div>');
       while (f.childElementCount > 100) f.removeChild(f.lastChild); }));
+    ["agent.updated","agent.released","teams.updated","roles.update","session.updated","session.renamed","session.created","session.deleted","longrun_agent.done"].forEach(k =>
+      this.es.addEventListener(k, () => { if (this.onSync) this.onSync(); }));
     this.es.onopen = () => $("led").classList.add("on");
     this.es.onerror = () => $("led").classList.remove("on");
   }
@@ -1853,7 +1863,7 @@ class OrbitApp {
     if (window.ResizeObserver) new ResizeObserver(() => { try { if (this.org.auto) this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.routines = new RoutinesView(this.api, () => this.refresh());
-    this.feed = new FeedView(this.api);
+    this.feed = new FeedView(this.api, () => this.refresh());
     this.tac.mount();
     $("agNew").onclick = () => this.agents.create();
     $("agPolicy").onclick = () => this.applyModelPolicy();
@@ -1872,6 +1882,30 @@ class OrbitApp {
     $("tmNewBtn").onclick = () => addBar("tmAddBar", "tmNewBtn", "tmNewName");
     $("agAddCancel").onclick = () => addBar("agAddBar", "agNewBtn");
     $("tmAddCancel").onclick = () => addBar("tmAddBar", "tmNewBtn");
+    if ($("lraAutoBtn")) $("lraAutoBtn").onclick = () => addBar("lraAutoBar", "lraAutoBtn", "lraAutoInp");
+    if ($("lraAutoCancel")) $("lraAutoCancel").onclick = () => addBar("lraAutoBar", "lraAutoBtn");
+    if ($("lraAutoRun")) $("lraAutoRun").onclick = () => this.runTeamorgAutomate();
+  }
+  async runTeamorgAutomate(){
+    const inp = $("lraAutoInp"), btn = $("lraAutoRun"), st = $("lraAutoStatus");
+    const instruction = (inp && inp.value || "").trim();
+    if (!instruction){ if (st) st.textContent = "enter an instruction"; return; }
+    if (btn) btn.disabled = true;
+    if (st) st.textContent = "longrunAgent running…";
+    try {
+      const r = await this.api.post("/api/longrun-agent/automate", {
+        section: "teamorg", instruction, context: { team_scope: this.team }
+      });
+      if (r && r.ok){
+        if (st) st.textContent = "✓ " + (r.result || "done").slice(0, 120);
+        if (inp) inp.value = "";
+        this.refresh();
+      } else {
+        if (st) st.textContent = "✗ " + ((r && r.error) || "failed");
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
   renderTeams(){
     const sel = $("teamSel");

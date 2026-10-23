@@ -1096,6 +1096,19 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200 if res.get("ok") else 404, res)
         # JAG-491: structured (object) editors for the config files — every field
         # is a checkbox/number/select/row, never hand-typed YAML.
+        if path == "/api/longrun-agent/status":
+            from longrun.agent import longrun_agent as _lra
+            sess = _lra.ensure_system_session()
+            sid = qs.get("session") or ""
+            return _r(handler, 200, {
+                "ok": True,
+                "system_session": sess["id"],
+                "undeletable": True,
+                "stateless": True,
+                "model": _lra.resolve_automation_model(active_session_id=sid),
+                "preferred_cheap_models": list(_lra.PREFERRED_CHEAP_MODELS),
+                "session_access": _lra.session_has_access(sid) if sid else False,
+            })
         if path == "/api/settings":
             from longrun.core import settings as _settings
             try:
@@ -1844,6 +1857,26 @@ def handle(handler, method, path, qs, body):
         if path == "/api/workspace":
             res = workspace_set(body)
             return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/longrun-agent/access":
+            from longrun.agent import longrun_agent as _lra
+            res = _lra.set_session_access(
+                (body or {}).get("session"),
+                bool((body or {}).get("allow_longrun_agent", (body or {}).get("allowed", False))),
+            )
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path == "/api/longrun-agent/automate":
+            from longrun.agent import longrun_agent as _lra
+            b = body or {}
+            res = _lra.automate(
+                section=b.get("section") or "teamorg",
+                instruction=b.get("instruction") or b.get("goal") or "",
+                context=b.get("context"),
+                session=b.get("session"),
+                model=b.get("model"),
+                max_steps=_int(b.get("max_steps", 6), 6),
+            )
+            code = 200 if res.get("ok") else (403 if res.get("permission_denied") else 400)
+            return _r(handler, code, res)
 
         return False
 

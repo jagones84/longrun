@@ -939,6 +939,12 @@ def _build_canonical_schemas():
             alternatives = _SUBTOOL_ANY_OF.get(cname)
             if alternatives:
                 out[cname]["anyOf"] = [dict(item) for item in alternatives]
+    try:
+        from longrun.agent import longrun_agent as _lra
+        for cname, csch in (_lra.TOOL_SCHEMAS or {}).items():
+            out[cname] = dict(csch)
+    except Exception:  # noqa: BLE001
+        pass
     return out
 
 
@@ -1271,6 +1277,9 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     is_mtx_family = bool(mtx or prom or name == "matrix" or name.startswith("matrix."))
     if entry is None and is_mtx_family:
         entry = {"enabled": True, "approval": (mtx or prom or {}).get("approval", "auto")}
+    is_exclusive = bool((schema or {}).get("_origin") == "exclusive" or name.startswith("longrunAgent."))
+    if entry is None and is_exclusive:
+        entry = {"enabled": True, "approval": "auto"}
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
     # server is NOT connected has no schema — the tool does not exist. Return None
     # so a clone without pmcp never advertises (nor tries) a tool it lacks; the
@@ -1282,7 +1291,7 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     entry = entry or {}
     return {
         "name": name,
-        "origin": "matrix" if mtx else ("mcp" if ext else "nucleus"),
+        "origin": "exclusive" if is_exclusive else ("matrix" if mtx else ("mcp" if ext else "nucleus")),
         # JAG-80: external MCP tools (the pmcp gateway) are OPT-IN. Shipping 26
         # gateway tools (23 of them approval-gated) into the chat prompt made the
         # model call `pmcp__gateway.request_capability` instead of its own
@@ -1501,6 +1510,19 @@ def classify(tool, args, workspace=None):
         return "denied", "matches hard-deny pattern %r" % hit
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
+    # JAG-535: `longrunAgent.*` tools enforce a dual-permission model — the tool
+    # must be enabled here AND the calling session must be `longrunAgent` or have
+    # `allow_longrun_agent: true`. Even `approvals.mode=full` never bypasses the
+    # session privilege check when `run_id` / `session` is provided in `args`.
+    if str(tool or "").startswith("longrunAgent.") or tool == "longrunAgent":
+        sess_ref = (args or {}).get("_session") or (args or {}).get("run_id")
+        if sess_ref is not None:
+            from longrun.agent import longrun_agent as _lra
+            if not _lra.session_has_access(sess_ref):
+                return "denied", (
+                    "session %r is not authorized to use %r (requires longrunAgent "
+                    "system session or allow_longrun_agent grant)" % (sess_ref, tool)
+                )
     # PT3: `matrix.promote_to_nucleus` / `matrix{action:"promote_to_nucleus"}` is gated EXCLUSIVELY
     # by the dedicated `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
     if tool == "matrix.promote_to_nucleus" or (

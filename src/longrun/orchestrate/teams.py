@@ -191,8 +191,15 @@ class TeamRegistry:
                 return {"ok": False, "error": "team name already in use: %s" % nm}
             d["seq"] += 1
             n = d["seq"]
-            # JAG-2.9: the icon is derived from the NAME (stable), not the sequence.
-            sym, col = symbol_for_name(nm)
+            # JAG-535: longrunAgent picks the icon+colour semantically from the
+            # palette (falling back to deterministic SHA1 symbol_for_name).
+            try:
+                from longrun.agent import longrun_agent as _lra
+                sym, col = _lra.choose_team_symbol(nm, description or "",
+                                                   explicit_symbol=symbol,
+                                                   explicit_color=color)
+            except Exception:  # noqa: BLE001
+                sym, col = symbol_for_name(nm)
             t = {"id": "T%d" % n, "n": n, "name": nm,
                  "symbol": str(symbol or sym)[:8], "color": str(color or col)[:16],
                  "description": str(description or "")[:400],
