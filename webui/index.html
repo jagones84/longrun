@@ -2254,6 +2254,7 @@
         <h2>Providers</h2>
         <div class="card">
           <div class="remaining" id="provSummary">loading…</div>
+          <div class="u-mt8"><button class="ghost" data-call="reloadProviders" title="re-read the provider list and the model catalog from config and the live router">↻ reload providers</button></div>
           <div id="provList" class="u-mt8"></div>
         </div>
         <h2>Available models</h2>
@@ -7845,6 +7846,27 @@ function scheduleApprovalSave(el, mode) {
   }, 350);
 }
 
+/* JAG-536: uninstall ONE Matrix tool. `matrix.remove` deletes the namespace FILE
+   (src/Matrix/tools/<namespace>.py) and hot-reloads, so every `<namespace>.*`
+   sub-tool goes with it — the confirm says so before asking. A promoted Nucleus
+   copy is reported by the server, never deleted, and a built-in tool has no door
+   here at all (the button only exists on origin=matrix rows). */
+async function uninstallMatrixTool(name, el) {
+  const ns = String(name || "").split(".")[0];
+  const go = await confirmDelete(
+    "Uninstall the Matrix tool " + name + "?\n\n" +
+    "This deletes src/Matrix/tools/" + ns + ".py and hot-reloads, so EVERY " +
+    ns + ".* sub-tool disappears (one file holds a whole namespace).\n" +
+    "A promoted Nucleus copy is never touched. This cannot be undone from here.");
+  if (!go) return;
+  let r = {};
+  try { r = await api("POST", "/api/matrix/remove", { kind: "tool", name: name }); }
+  catch (e) { r = { ok: false, error: String(e) }; }
+  if (r && r.ok === false) { toast("uninstall failed: " + (r.error || "?")); return; }
+  toast("uninstalled " + name + " — " + ((r && r.removed) ? r.removed : "removed"));
+  renderTools(el, await api("GET", "/api/tools"));
+}
+
 function renderTools(el, d) {
   const tools = (d && d.tools) || d || [];
   const sandboxEl = $("sandboxPanel") || el;
@@ -7994,6 +8016,9 @@ function renderTools(el, d) {
     const ap = t.approval || "auto";
     const nm = esc(t.name || t.id || "?");
     const nmRaw = _attr(t.name || t.id || "?");
+    // JAG-536: ONLY a Matrix tool can be uninstalled from here. The built-in set is
+    // never removable, so the button is rendered from the registry's own origin.
+    const isMatrix = String(t.origin || "") === "matrix";
     const apColor = ap === "auto" ? "var(--ok)" : (ap === "denied" ? "var(--err)" : "var(--warn)");
     const eff = (globalAuto && ap !== "auto")
       ? '<span class="remaining" style="color:var(--err)" title="global approval mode is FULL: this tool is auto-approved no matter what is stored here">FULL ⇒ auto</span>'
@@ -8003,7 +8028,9 @@ function renderTools(el, d) {
       `<span style="font-weight:600">${nm}</span>${originBadge(t)}` + eff +
       `<button class="ghost" style="margin-left:auto;font-size:10px;color:${apColor}" data-ap="${nmRaw}" data-cur="${ap}" title="stored per-tool policy — click to cycle">${esc(ap)} ⟳</button>` +
       `<button class="ghost" style="font-size:10px" data-adv="${nmRaw}" title="roots · deny · allow_hosts · auto_approve">⚙</button>` +
-      `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button></div>` +
+      `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button>` +
+      (isMatrix ? `<button class="ghost" style="font-size:10px;color:var(--err)" data-mtxrm="${nmRaw}" title="uninstall this Matrix tool: delete its source file, drop its policy entries and hot-reload. The built-in set is never removable.">uninstall</button>` : "") +
+      `</div>` +
       (t.description ? `<div class="remaining" style="margin:-4px 0 8px 22px">${esc(t.description)}</div>` : "");
   };
   const gNames = Array.from(groups.keys()).filter(g => g)
@@ -8093,6 +8120,9 @@ function renderTools(el, d) {
   el.querySelectorAll("button[data-tool]").forEach(b =>
     b.onclick = () => api("POST", "/api/tools", { tool: b.dataset.tool, enabled: b.dataset.on !== "true" })
       .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2)));
+  // JAG-536: the matrix-only uninstall door.
+  el.querySelectorAll("button[data-mtxrm]").forEach(b =>
+    b.onclick = () => uninstallMatrixTool(b.dataset.mtxrm, el));
   // JAG-498: collapse/expand a NAMESPACE group; the state is remembered across
   // renders and page loads (localStorage).
   el.querySelectorAll("[data-group]").forEach(g =>
@@ -8411,9 +8441,14 @@ async function loadMcpClients() {
       info.append(title, sub);
       const edit = document.createElement("button"); edit.className = "ghost"; edit.textContent = "✎";
       edit.onclick = () => editMcp(n);
+      // JAG-536: the door to POST /api/mcp/clients/test — connect once WITHOUT
+      // saving and report the tools the server really exposes.
+      const test = document.createElement("button"); test.className = "ghost"; test.textContent = "⚡";
+      test.title = "test this server: connect once WITHOUT saving and report the tools it exposes";
+      test.onclick = () => testMcpClient(n, c);
       const del = document.createElement("button"); del.className = "ghost"; del.textContent = "🗑";
       del.onclick = () => removeMcpClient(n);
-      row.append(dot, info, edit, del);
+      row.append(dot, info, edit, test, del);
       box.appendChild(row);
     });
   } catch (e) { $("mcpSummary").textContent = "error: " + e; }
@@ -8425,6 +8460,22 @@ async function removeMcpClient(name) {
   const r = await api("POST", "/api/mcp/clients/remove", { name: name });
   $("mcpResult").textContent = r.ok ? ("removed: " + name) : "error";
   loadMcpClients();
+}
+/* JAG-536: validate a server BEFORE saving it — connect once, read the tool list,
+   drop the connection. The spec is the stored one, so this tests what is live. */
+async function testMcpClient(name, spec) {
+  const box = $("mcpResult");
+  box.textContent = "testing " + name + "…";
+  try {
+    const r = await api("POST", "/api/mcp/clients/test", Object.assign({ name: name }, spec || {}));
+    if (r && r.ok) {
+      const names = r.tools || [];
+      box.textContent = "✓ " + name + " — " + (r.count || 0) + " tool(s)"
+        + (names.length ? ": " + names.slice(0, 8).join(", ") + (names.length > 8 ? " …" : "") : "");
+    } else {
+      box.textContent = "✗ " + name + " — " + ((r && r.error) || "test failed");
+    }
+  } catch (e) { box.textContent = "✗ " + name + " — " + e; }
 }
 async function reloadMcp() {
   $("mcpResult").textContent = "reloading…";
@@ -8642,6 +8693,18 @@ async function installSkillZip() {
 }
 /* ---- providers (JAG-112) ---- */
 let _provCache = [];
+/* JAG-536: POST /api/providers/reload — re-read the provider list + the model
+   catalog from config and the live router. The door that was missing here. */
+async function reloadProviders() {
+  $("provResult").textContent = "reloading providers…";
+  try {
+    const r = await api("POST", "/api/providers/reload", {});
+    await loadProviders();
+    await loadModels();
+    $("provResult").textContent = (r && r.error) ? ("error: " + r.error)
+      : ("reloaded — " + _provCache.length + " provider(s)");
+  } catch (e) { $("provResult").textContent = "error: " + e; }
+}
 async function loadProviders() {
   try {
     const d = await api("GET", "/api/providers");

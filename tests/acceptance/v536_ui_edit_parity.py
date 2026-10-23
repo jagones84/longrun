@@ -193,6 +193,31 @@ check("D6 the routine edit posts to the routine-update route",
 check("D7 both edit forms reopen through the ONE popover primitive",
       deck.count("openPopover(ev,") >= 3)
 
+# --- E: the other write routes that had no UI door ---------------------------
+with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
+    gui = f.read()
+check("E1 every MCP client row can be TESTED before saving",
+      '"/api/mcp/clients/test"' in gui and "function testMcpClient(" in gui
+      and "test.onclick = () => testMcpClient(" in gui)
+check("E2 the provider catalog can be RELOADED from Settings > Models",
+      '"/api/providers/reload"' in gui and "function reloadProviders(" in gui
+      and 'data-call="reloadProviders"' in gui)
+with open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8") as f:
+    api = f.read()
+check("E3 the operator route for a Matrix uninstall exists",
+      'path == "/api/matrix/remove"' in api and "_matrix_mod.remove(" in api)
+check("E4 that route refuses any kind other than tool",
+      'only kind=tool is exposed on this route' in api)
+check("E5 the UI uninstall button exists and is gated on origin=matrix",
+      'data-mtxrm=' in gui.replace('"', '')
+      and "const isMatrix = String(t.origin || \"\") === \"matrix\";" in gui
+      and "function uninstallMatrixTool(" in gui)
+check("E6 the uninstall warns that a whole namespace file is removed",
+      "one file holds a whole namespace" in gui
+      and "promoted Nucleus copy is never touched" in gui)
+check("E7 the uninstall button is emitted ONLY under the isMatrix conditional",
+      "(isMatrix ? " in gui and gui.count("data-mtxrm") == 2)
+
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))

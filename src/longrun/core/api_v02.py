@@ -1767,6 +1767,25 @@ def handle(handler, method, path, qs, body):
             report = coord.run_swarm(goal, n_workers, max_steps, body.get("model"))
             return _r(handler, 200, report)
 
+        if path == "/api/matrix/remove":   # JAG-536: the operator's uninstall door
+            # The Tools panel is the operator's surface, so the click is the
+            # authorisation: no agent-approval round-trip. Only kind=tool is
+            # exposed here — `matrix.remove` genuinely uninstalls the whole
+            # namespace file and hot-reloads, and it never touches a promoted
+            # Nucleus copy. Other kinds stay on the agent/review path.
+            kind = str(body.get("kind") or "tool").strip()
+            mx_name = str(body.get("name") or "").strip()
+            if not mx_name:
+                return _r(handler, 400, {"ok": False, "error": "name required"})
+            if kind != "tool":
+                return _r(handler, 400, {"ok": False,
+                                         "error": "only kind=tool is exposed on this route"})
+            from longrun.core import matrix as _matrix_mod
+            res = _matrix_mod.remove(kind, mx_name)
+            if res.get("ok"):
+                _publish("tools.changed", action="matrix.remove", name=mx_name)
+            return _r(handler, 200 if res.get("ok") else 400, res)
+
         # --- v0.3 POST routes: checkpoints / context / routing ---
         if path == "/api/checkpoints":
             _lazy('checkpoints')
