@@ -395,7 +395,7 @@ def tool_context():
     now DISCOVERABLE at call time — the same shape skills use — so the prompt only
     carries what the prompt alone can answer:
       * the protocol (args is one JSON object, never positional/`key=value`),
-      * HOW to look a tool up (`self {action:"tools"}` / `{...,tool:"<name>"}`),
+      * HOW to look a tool up (`self.tools {query:"<words>"}` / `{tool:"<name>"}`),
       * the ENABLED NAMES, grouped by namespace, so nothing has to be invented.
 
     Only ENABLED tools are listed: a disabled tool is not callable, and naming it
@@ -423,9 +423,9 @@ def tool_context():
         "## Tool discovery — read before you call",
         "The index below is the ONLY allowlist: a tool that is not here (or not "
         "enabled) cannot be called. Never invent a name and never guess an argument.",
-        '- `self {action:"tools", query:"<words>"}` → the tools matching those '
+        '- `self.tools {query:"<words>"}` → the tools matching those '
         "words, each with its one-line description.",
-        '- `self {action:"tools", tool:"<name>"}` → that tool\'s FULL input '
+        '- `self.tools {tool:"<name>"}` → that tool\'s FULL input '
         "schema: every property, its type, its default and which ones are "
         "REQUIRED. Read it BEFORE the first call of a tool you have not used in "
         "this session — the schema is authoritative, your memory is not.",
@@ -447,7 +447,7 @@ def tool_context():
         "mutation with a read that depends on it.",
         "A SUBAGENT item may declare ORDER over other subagent items of the same "
         "batch, and the whole batch becomes one Session Job (SJ) you can inspect "
-        "with `self {action:\"sj\"}`:",
+        "with `self.sj`:",
         '  {"action":"batch","calls":['
         '{"action":"subagent","label":"data","goal":"collect the numbers"},'
         '{"action":"subagent","label":"report","goal":"write the summary",'
@@ -457,7 +457,8 @@ def tool_context():
         "`## Input from dependencies` (use `input_from:\"<label>\"` to take just "
         "one dependency's output). Never invent `deps` you do not need: items with "
         "no `deps` start together, which is faster.",
-        "Enabled tools, grouped by namespace (name{s sub-tools}):",
+        "Enabled tools, grouped by namespace — `ns{a,b}` means the two callable "
+        "names `ns.a` and `ns.b`:",
     ]
     for ns in sorted(groups):
         lines.append("  %s{%s}" % (ns, ",".join(sorted(groups[ns]))))

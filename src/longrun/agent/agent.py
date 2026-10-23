@@ -976,6 +976,31 @@ def _card_tool_name(tool, args=None):
         return tool
 
 
+def _card_args(tool, args):
+    """The args a chat card shows: a copy WITHOUT the redundant `action` selector.
+
+    JAG-536: once the card's name is canonical the `action` field that merely
+    SELECTED that subtool is an echo — the chat showed `self.sj` together with
+    `{"action":"sj"}`. It is dropped only when the canonical name was BUILT from it:
+    a plain tool (`fs.read`), a genuine sub-action, or a bag call whose `action` is
+    not a canonical subtool are returned untouched. The executor keeps the original
+    args (this is a DISPLAY copy), so nothing about the call changes.
+    """
+    if not isinstance(args, dict) or "action" not in args:
+        return args
+    try:
+        from longrun.tools import registry as _reg
+        act = str(args.get("action") or "").strip()
+        base = str(tool or "").strip()
+        if act and base and ("%s.%s" % (base, act)) == _reg.canonical_name(base, args):
+            out = dict(args)
+            out.pop("action", None)
+            return out
+    except Exception:  # noqa: BLE001 — a naming nicety must never drop an event
+        pass
+    return args
+
+
 def _apply_chat_todos(sess, act, on_event, node=None, after=None):
     """Harness action `write_todos`: persist the model-authored todo list.
 
@@ -1493,8 +1518,10 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
                     "obs": "batch item is not a valid tool call: %s"
                            % json.dumps(it, ensure_ascii=False, default=str)[:200]}
         tool, args = tc
-        tool = _card_tool_name(tool, args)   # JAG-535: one tool, one name in the card
-        on_event("tool.call", session=sess["id"], tool=tool, args=args, inline=True)
+        _raw_tool = tool
+        tool = _card_tool_name(_raw_tool, args)   # JAG-535: one tool, one name in the card
+        on_event("tool.call", session=sess["id"], tool=tool,
+                 args=_card_args(_raw_tool, args), inline=True)   # JAG-536: no echo action
         try:
             res = av02.gated_call(tool, args, run_id=sess["id"],
                                   timeout=CHAT_APPROVAL_WAIT,
@@ -2918,9 +2945,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 continue
             work_steps += 1
             _total_work_steps += 1
-            tool = _card_tool_name(tool, args)
+            _raw_tool = tool
+            tool = _card_tool_name(_raw_tool, args)
             used_tools.append(tool)
-            on_event("tool.call", session=sess["id"], tool=tool, args=args, inline=True)
+            on_event("tool.call", session=sess["id"], tool=tool,
+                     args=_card_args(_raw_tool, args), inline=True)   # JAG-536: no echo action
             try:
                 # JAG-80: a `required` tool must never freeze the turn. We wait a
                 # SHORT, bounded time (CHAT_APPROVAL_WAIT) so a quick tap on the

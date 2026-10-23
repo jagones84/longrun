@@ -51,9 +51,13 @@ sp = _srv._system_prompt(None)
 
 # ---- A: tools are declared ----
 # JAG-513: the prompt no longer DUMPS the registry; it carries the discovery
-# contract (`self {action:"tools"}`) plus the enabled NAMES, grouped.
-check("A1 prompt carries the tool-discovery contract",
-      "Tool discovery" in sp and 'action:"tools"' in sp, "")
+# contract plus the enabled NAMES, grouped.
+# JAG-536: the contract is the CANONICAL `namespace.sub` form (`self.tools`), not
+# the legacy `self {action:"tools"}` alias — the prompt taught the alias while the
+# registry advertised the dotted name, so the model echoed both.
+check("A1 prompt carries the tool-discovery contract in the canonical form",
+      "Tool discovery" in sp and "self.tools {" in sp
+      and 'action:"tools"' not in sp, "")
 names = [t["name"] for t in registry.catalog()]
 check("A2 a `self` tool exists (self-knowledge)", "self" in names or "self.info" in names, str(names)[:140])
 check("A3 a `skills` tool exists", "skills" in names or "skills.list" in names, str(names)[:140])

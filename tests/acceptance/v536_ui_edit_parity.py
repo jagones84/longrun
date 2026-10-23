@@ -218,6 +218,30 @@ check("E6 the uninstall warns that a whole namespace file is removed",
 check("E7 the uninstall button is emitted ONLY under the isMatrix conditional",
       "(isMatrix ? " in gui and gui.count("data-mtxrm") == 2)
 
+# --- F: ONE naming law — the `action` echo is gone (JAG-536) -----------------
+from longrun.agent import agent as A  # noqa: E402
+from longrun.core import api_v02  # noqa: E402
+from longrun.tools import registry as _REG  # noqa: E402
+
+# Acceptance tests must be hermetic: `tool_context()` reads `registry.catalog()`,
+# whose external branch would connect to the machine's configured MCP servers.
+_REG._external_tools = lambda: {}
+
+_tctx = api_v02.tool_context()
+check("F1 the prompt teaches the CANONICAL form, never the `action` alias",
+      'self.tools {query:"<words>"}' in _tctx and 'self.tools {tool:"<name>"}' in _tctx
+      and 'action:"tools"' not in _tctx and "with `self.sj`" in _tctx)
+check("F2 the compact index notation is explained",
+      "`ns{a,b}` means the two callable " in _tctx)
+check("F3 a legacy `self` + action reaches the card as the canonical name",
+      A._card_tool_name("self", {"action": "sj"}) == "self.sj")
+check("F4 the card DROPS the echo `action` once the name carries it",
+      A._card_args("self", {"action": "sj", "job": "SJ1"}) == {"job": "SJ1"})
+check("F5 a plain tool keeps every argument",
+      A._card_args("fs.read", {"path": "a.py"}) == {"path": "a.py"})
+check("F6 an action that is NOT a canonical subtool is preserved",
+      A._card_args("bash", {"action": "run", "cmd": "ls"}) == {"action": "run", "cmd": "ls"})
+
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))

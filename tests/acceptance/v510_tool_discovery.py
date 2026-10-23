@@ -12,7 +12,7 @@ This locks the replacement contract:
   A1-A2  every tool (and every argument) carries an authoritative description;
   A3     the prompt carries the DISCOVERY contract + a compact name index, not
          the per-tool policy dump, and it says args is one JSON object;
-  A4-A6  `self {action:"tools", tool:"<name>"}` returns the FULL input schema,
+  A4-A6  `self.tools {tool:"<name>"}` returns the FULL input schema,
          `query` filters, an unknown name answers with suggestions;
   A7-A8  a call missing a REQUIRED argument fails with the argument name, its
          type and a valid example — never "empty command" or "outside roots";
@@ -74,7 +74,8 @@ from longrun.agent import agent as _agent   # noqa: E402
 from longrun.core import api_v02           # noqa: E402
 tctx = api_v02.tool_context()
 check("A3 prompt states the discovery contract instead of a registry dump",
-      "Tool discovery" in tctx and 'self {action:"tools", tool:"<name>"}' in tctx
+      "Tool discovery" in tctx and 'self.tools {tool:"<name>"}' in tctx
+      and 'action:"tools"' not in tctx
       and "approval=" not in tctx,
       "%d chars" % len(tctx))
 check("A3b prompt states that args is ONE JSON object",

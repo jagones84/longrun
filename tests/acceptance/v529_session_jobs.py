@@ -272,7 +272,7 @@ check("F1 a batch's subagent items are routed through the SJ engine",
       "from longrun.agent import session_jobs as _sj" in agent_src
       and "_sj.create(" in agent_src and "_sj.run(" in agent_src
       and "_spawn_batch_subagent" not in agent_src)
-check("F2 `self {action:'sj'}` is implemented, documented and accepted",
+check("F2 `self.sj` (alias `self {action:'sj'}`) is implemented, documented and accepted",
       'action in ("sj", "session-jobs"' in tools_src
       and '"sj", "session-jobs", "sessionjobs", "subjobs"' in tools_src
       and '"sj": ["session", "job"]' in reg_src
