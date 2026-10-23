@@ -2,17 +2,21 @@
 
 Permanent, undeletable, stateless system automation agent that manages the
 substrate (Layer 2) of the Longrun harness:
-  - Teamorg (`longrunAgent.teamorg.*`): full lifecycle of Orbit AGENTS & TEAMS
-    (creating teams with semantic icon/colour chosen from the palette,
-    provisioning agent records + dedicated workspace folders, assigning cheap
-    remote LLM models, setting functional roles, writing system prompts in
-    ROLE.md, and assigning agents to teams).
-  - Universal WebUI substrate automation (`longrunAgent.webui.*`): reading and
-    updating any configurable section of the platform (settings forms, rules,
-    routing, compaction) while strictly enforcing safety boundaries (NEVER
-    allowed to enable `allow_nucleus_write` or `allow_matrix_promote` — those
-    belong exclusively to the human operator).
-  - Dual-permission gate: a `longrunAgent.*` tool can execute ONLY when:
+  - Teamorg (`agent.*`, `team.*`, `job.*`, `routine.*`, `session.*`): full
+    lifecycle of Orbit AGENTS & TEAMS (creating teams with semantic icon/colour
+    chosen from the palette, provisioning agent records + dedicated workspace
+    folders, assigning cheap remote LLM models, setting functional roles,
+    writing system prompts in ROLE.md, and assigning agents to teams).
+  - Universal WebUI substrate automation (`webui.*`, `provider.*`, `mcp.*`,
+    `skill.*`, `kb.*`): reading and updating any configurable section of the
+    platform (settings forms, rules, routing, compaction) while strictly
+    enforcing safety boundaries (NEVER allowed to enable `allow_nucleus_write`
+    or `allow_matrix_promote` — those belong exclusively to the human operator).
+  - Naming: every exclusive tool is exactly `namespace.tool` (two segments, one
+    object namespace, one explicative verb: `agent.prompt_set`, `team.member_add`,
+    `kb.notebook_add`). No deeper dotted paths: they produced unreadable names
+    (`longrunAgent.teamorg.agents.prompt.set`) and unordered panels.
+  - Dual-permission gate: an exclusive tool can execute ONLY when:
       1) the tool is enabled in the global Tool registry (`config/tools.yaml` /
          overlay), AND
       2) the calling session is either the permanent `longrunAgent` system
@@ -105,9 +109,9 @@ def choose_team_symbol(name, description="", explicit_symbol=None, explicit_colo
 # ------------------------------------------------------------------ schemas ---
 
 TOOL_SCHEMAS = {
-    "longrunAgent.teamorg.agents.create": {
+    "agent.create": {
         "description": (
-            "longrunAgent.teamorg.agents.create — Provision a new org agent record (and its underlying "
+            "agent.create — Provision a new org agent record (and its underlying "
             "session + dedicated workspace directory under ~/.longrun/workspaces), optionally setting its "
             "functional role, cheap remote LLM model, system prompt (ROLE.md), manager (`reports_to`), "
             "and team membership in one atomic substrate operation."
@@ -125,12 +129,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["name"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.create",
+        "_namespace": "agent",
+        "_subtool": "create",
     },
-    "longrunAgent.teamorg.agents.update": {
+    "agent.update": {
         "description": (
-            "longrunAgent.teamorg.agents.update — Update the editable properties of an existing org agent "
+            "agent.update — Update the editable properties of an existing org agent "
             "in ONE call: display name, functional role, manager (`reports_to`), LLM model, workspace "
             "folder and daily budget. Only the properties you pass are touched, so this one tool replaces "
             "the old per-property setters. `model:'auto'` re-picks a cheap remote cloud model."
@@ -147,12 +151,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["agent"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.update",
+        "_namespace": "agent",
+        "_subtool": "update",
     },
-    "longrunAgent.teamorg.agents.get": {
+    "agent.get": {
         "description": (
-            "longrunAgent.teamorg.agents.get — Read ONE agent's full record (id, session, name, role, model, "
+            "agent.get — Read ONE agent's full record (id, session, name, role, model, "
             "manager, teams, budget) plus its ROLE.md size. Ground truth before any update or delete."
         ),
         "type": "object",
@@ -161,24 +165,24 @@ TOOL_SCHEMAS = {
         },
         "required": ["agent"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.get",
+        "_namespace": "agent",
+        "_subtool": "get",
     },
-    "longrunAgent.teamorg.agents.list": {
+    "agent.list": {
         "description": (
-            "longrunAgent.teamorg.agents.list — List every designated agent with its role, model, manager "
+            "agent.list — List every designated agent with its role, model, manager "
             "and team memberships, as an org tree."
         ),
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.list",
+        "_namespace": "agent",
+        "_subtool": "list",
     },
-    "longrunAgent.teamorg.agents.delete": {
+    "agent.delete": {
         "description": (
-            "longrunAgent.teamorg.agents.delete — Remove an agent COMPLETELY: un-designate it (its direct "
+            "agent.delete — Remove an agent COMPLETELY: un-designate it (its direct "
             "reports are re-parented to nobody), scrub it from jobs and teams, delete its routines, and by "
             "default also delete its session (with graph/run artifacts and its knowledge notebook) and its "
             "workspace folder. Session and workspace are only removed when they are safe to remove."
@@ -191,12 +195,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["agent"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.delete",
+        "_namespace": "agent",
+        "_subtool": "delete",
     },
-    "longrunAgent.teamorg.agents.prompt.set": {
+    "agent.prompt_set": {
         "description": (
-            "longrunAgent.teamorg.agents.prompt.set — Write an agent's system prompt (`ROLE.md`) in the "
+            "agent.prompt_set — Write an agent's system prompt (`ROLE.md`) in the "
             "substrate and broadcast `roles.update` so the WebUI and Orbit table refresh immediately."
         ),
         "type": "object",
@@ -206,12 +210,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["agent", "prompt"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.prompt.set",
+        "_namespace": "agent",
+        "_subtool": "prompt_set",
     },
-    "longrunAgent.teamorg.agents.prompt.get": {
+    "agent.prompt_get": {
         "description": (
-            "longrunAgent.teamorg.agents.prompt.get — Read an agent's system prompt (`ROLE.md`) together "
+            "agent.prompt_get — Read an agent's system prompt (`ROLE.md`) together "
             "with its path and size, so an edit is never blind."
         ),
         "type": "object",
@@ -220,12 +224,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["agent"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.prompt.get",
+        "_namespace": "agent",
+        "_subtool": "prompt_get",
     },
-    "longrunAgent.teamorg.agents.prompt.clear": {
+    "agent.prompt_clear": {
         "description": (
-            "longrunAgent.teamorg.agents.prompt.clear — Delete an agent's `ROLE.md` system prompt, so the "
+            "agent.prompt_clear — Delete an agent's `ROLE.md` system prompt, so the "
             "agent falls back to the harness defaults. Broadcasts `roles.update`."
         ),
         "type": "object",
@@ -234,12 +238,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["agent"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.prompt.clear",
+        "_namespace": "agent",
+        "_subtool": "prompt_clear",
     },
-    "longrunAgent.teamorg.teams.create": {
+    "team.create": {
         "description": (
-            "longrunAgent.teamorg.teams.create — Spin up a new team (`TN`) with a semantic icon and colour "
+            "team.create — Spin up a new team (`TN`) with a semantic icon and colour "
             "selected by longrunAgent from the official palette based on the team name/purpose, plus a dedicated "
             "team workspace directory, and optionally provision or assign member agents in one call."
         ),
@@ -256,12 +260,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["name"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.teams.create",
+        "_namespace": "team",
+        "_subtool": "create",
     },
-    "longrunAgent.teamorg.teams.update": {
+    "team.update": {
         "description": (
-            "longrunAgent.teamorg.teams.update — Edit a team's own properties: name, description, symbol, "
+            "team.update — Edit a team's own properties: name, description, symbol, "
             "colour, and (with `regenerate_icon`) re-ask longrunAgent for the palette icon that matches the "
             "current name + description. Members are NOT touched here."
         ),
@@ -276,12 +280,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["team"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.teams.update",
+        "_namespace": "team",
+        "_subtool": "update",
     },
-    "longrunAgent.teamorg.teams.delete": {
+    "team.delete": {
         "description": (
-            "longrunAgent.teamorg.teams.delete — Delete a team. Member agents are NOT deleted: they only "
+            "team.delete — Delete a team. Member agents are NOT deleted: they only "
             "lose the team link. This cannot be undone."
         ),
         "type": "object",
@@ -290,12 +294,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["team"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.teams.delete",
+        "_namespace": "team",
+        "_subtool": "delete",
     },
-    "longrunAgent.teamorg.teams.get": {
+    "team.get": {
         "description": (
-            "longrunAgent.teamorg.teams.get — Read ONE team's record (id, name, description, symbol, colour, "
+            "team.get — Read ONE team's record (id, name, description, symbol, colour, "
             "members) plus the official palette."
         ),
         "type": "object",
@@ -304,23 +308,23 @@ TOOL_SCHEMAS = {
         },
         "required": ["team"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.teams.get",
+        "_namespace": "team",
+        "_subtool": "get",
     },
-    "longrunAgent.teamorg.teams.list": {
+    "team.list": {
         "description": (
-            "longrunAgent.teamorg.teams.list — List every team with its members, plus the official icon palette."
+            "team.list — List every team with its members, plus the official icon palette."
         ),
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.teams.list",
+        "_namespace": "team",
+        "_subtool": "list",
     },
-    "longrunAgent.teamorg.teams.member.add": {
+    "team.member_add": {
         "description": (
-            "longrunAgent.teamorg.teams.member.add — Put an existing agent into a team and sync the Orbit "
+            "team.member_add — Put an existing agent into a team and sync the Orbit "
             "constellation."
         ),
         "type": "object",
@@ -330,12 +334,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["team", "agent"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.teams.member.add",
+        "_namespace": "team",
+        "_subtool": "member_add",
     },
-    "longrunAgent.teamorg.teams.member.remove": {
+    "team.member_remove": {
         "description": (
-            "longrunAgent.teamorg.teams.member.remove — Take an agent out of a team (the agent itself is "
+            "team.member_remove — Take an agent out of a team (the agent itself is "
             "untouched) and sync the Orbit constellation."
         ),
         "type": "object",
@@ -345,14 +349,14 @@ TOOL_SCHEMAS = {
         },
         "required": ["team", "agent"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.teams.member.remove",
+        "_namespace": "team",
+        "_subtool": "member_remove",
     },
-    "longrunAgent.teamorg.jobs.create": {
+    "job.create": {
         "description": (
-            "longrunAgent.teamorg.jobs.create — Create a job: a goal assigned to a coordinator agent and "
+            "job.create — Create a job: a goal assigned to a coordinator agent and "
             "optional workers, with optional dependencies. It is created NOT dispatched; use "
-            "`longrunAgent.teamorg.jobs.dispatch` to run it."
+            "`job.dispatch` to run it."
         ),
         "type": "object",
         "properties": {
@@ -365,12 +369,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["goal"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.jobs.create",
+        "_namespace": "job",
+        "_subtool": "create",
     },
-    "longrunAgent.teamorg.jobs.dispatch": {
+    "job.dispatch": {
         "description": (
-            "longrunAgent.teamorg.jobs.dispatch — Run an existing job (coordinator + workers in dependency "
+            "job.dispatch — Run an existing job (coordinator + workers in dependency "
             "waves). This spends real model calls."
         ),
         "type": "object",
@@ -379,12 +383,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["job"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.jobs.dispatch",
+        "_namespace": "job",
+        "_subtool": "dispatch",
     },
-    "longrunAgent.teamorg.jobs.get": {
+    "job.get": {
         "description": (
-            "longrunAgent.teamorg.jobs.get — Read ONE job in full: workers, subjobs, their todos and state."
+            "job.get — Read ONE job in full: workers, subjobs, their todos and state."
         ),
         "type": "object",
         "properties": {
@@ -392,21 +396,21 @@ TOOL_SCHEMAS = {
         },
         "required": ["job"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.jobs.get",
+        "_namespace": "job",
+        "_subtool": "get",
     },
-    "longrunAgent.teamorg.jobs.list": {
-        "description": "longrunAgent.teamorg.jobs.list — List every job with its state, coordinator and workers.",
+    "job.list": {
+        "description": "job.list — List every job with its state, coordinator and workers.",
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.jobs.list",
+        "_namespace": "job",
+        "_subtool": "list",
     },
-    "longrunAgent.teamorg.jobs.delete": {
+    "job.delete": {
         "description": (
-            "longrunAgent.teamorg.jobs.delete — Delete a job. Refused while the job is still running."
+            "job.delete — Delete a job. Refused while the job is still running."
         ),
         "type": "object",
         "properties": {
@@ -414,12 +418,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["job"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.jobs.delete",
+        "_namespace": "job",
+        "_subtool": "delete",
     },
-    "longrunAgent.teamorg.routines.create": {
+    "routine.create": {
         "description": (
-            "longrunAgent.teamorg.routines.create — Schedule a recurring goal for one agent (a heartbeat "
+            "routine.create — Schedule a recurring goal for one agent (a heartbeat "
             "routine). `every_seconds` is the cadence."
         ),
         "type": "object",
@@ -432,12 +436,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["agent", "goal", "every_seconds"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.routines.create",
+        "_namespace": "routine",
+        "_subtool": "create",
     },
-    "longrunAgent.teamorg.routines.update": {
+    "routine.update": {
         "description": (
-            "longrunAgent.teamorg.routines.update — Edit a routine in place: re-target the agent, rewrite the "
+            "routine.update — Edit a routine in place: re-target the agent, rewrite the "
             "goal, change the cadence or flip the switch. Only the fields you pass are touched."
         ),
         "type": "object",
@@ -451,43 +455,43 @@ TOOL_SCHEMAS = {
         },
         "required": ["routine"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.routines.update",
+        "_namespace": "routine",
+        "_subtool": "update",
     },
-    "longrunAgent.teamorg.routines.get": {
-        "description": "longrunAgent.teamorg.routines.get — Read ONE routine (agent, goal, cadence, runs, last_run).",
+    "routine.get": {
+        "description": "routine.get — Read ONE routine (agent, goal, cadence, runs, last_run).",
         "type": "object",
         "properties": {
             "routine": {"type": "string", "description": "Routine ID ('R1')."},
         },
         "required": ["routine"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.routines.get",
+        "_namespace": "routine",
+        "_subtool": "get",
     },
-    "longrunAgent.teamorg.routines.list": {
-        "description": "longrunAgent.teamorg.routines.list — List every routine with its agent, cadence and last run.",
+    "routine.list": {
+        "description": "routine.list — List every routine with its agent, cadence and last run.",
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.routines.list",
+        "_namespace": "routine",
+        "_subtool": "list",
     },
-    "longrunAgent.teamorg.routines.delete": {
-        "description": "longrunAgent.teamorg.routines.delete — Remove a routine (it stops being scheduled).",
+    "routine.delete": {
+        "description": "routine.delete — Remove a routine (it stops being scheduled).",
         "type": "object",
         "properties": {
             "routine": {"type": "string", "description": "Routine ID ('R1')."},
         },
         "required": ["routine"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.routines.delete",
+        "_namespace": "routine",
+        "_subtool": "delete",
     },
-    "longrunAgent.teamorg.sessions.create": {
+    "session.create": {
         "description": (
-            "longrunAgent.teamorg.sessions.create — Open a new bare session (optionally with its own workspace "
+            "session.create — Open a new bare session (optionally with its own workspace "
             "folder). Sessions are the substrate under every agent, job and routine."
         ),
         "type": "object",
@@ -497,11 +501,11 @@ TOOL_SCHEMAS = {
         },
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.sessions.create",
+        "_namespace": "session",
+        "_subtool": "create",
     },
-    "longrunAgent.teamorg.sessions.rename": {
-        "description": "longrunAgent.teamorg.sessions.rename — Rename a session.",
+    "session.rename": {
+        "description": "session.rename — Rename a session.",
         "type": "object",
         "properties": {
             "session": {"type": "string", "description": "Session ID."},
@@ -509,21 +513,21 @@ TOOL_SCHEMAS = {
         },
         "required": ["session", "title"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.sessions.rename",
+        "_namespace": "session",
+        "_subtool": "rename",
     },
-    "longrunAgent.teamorg.sessions.list": {
-        "description": "longrunAgent.teamorg.sessions.list — List every session (id, title, workspace, model).",
+    "session.list": {
+        "description": "session.list — List every session (id, title, workspace, model).",
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.sessions.list",
+        "_namespace": "session",
+        "_subtool": "list",
     },
-    "longrunAgent.teamorg.sessions.delete": {
+    "session.delete": {
         "description": (
-            "longrunAgent.teamorg.sessions.delete — Delete a session with its full cascade: running turn "
+            "session.delete — Delete a session with its full cascade: running turn "
             "aborted, graph, run metrics, edit journal and its knowledge notebook removed. The permanent "
             "`longrunAgent` session itself can never be deleted."
         ),
@@ -533,12 +537,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["session"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.sessions.delete",
+        "_namespace": "session",
+        "_subtool": "delete",
     },
-    "longrunAgent.webui.inspect": {
+    "webui.inspect": {
         "description": (
-            "longrunAgent.webui.inspect — Read the current live substrate state of ANY WebUI "
+            "webui.inspect — Read the current live substrate state of ANY WebUI "
             "section (`agents`, `teams`, `models`, `subagents`, `providers`, `settings`, `rules`, "
             "`compaction`, `tools`, `skills`, `mcp`, `knowledge`, `index`, `keys`) so longrunAgent "
             "has exact ground truth before applying an automation update."
@@ -556,12 +560,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["section"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.inspect",
+        "_namespace": "webui",
+        "_subtool": "inspect",
     },
-    "longrunAgent.webui.configure": {
+    "webui.configure": {
         "description": (
-            "longrunAgent.webui.configure — Write a CONFIGURATION SECTION of the substrate: the "
+            "webui.configure — Write a CONFIGURATION SECTION of the substrate: the "
             "structured settings forms, the rules files, the compaction policy, the role routing "
             "table, the team model policy, the subagent policy, the tool policy, the code index "
             "config and raw `config/*.yaml`. Emits live-sync SSE events. Object CRUD (providers, "
@@ -585,12 +589,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["target"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.configure",
+        "_namespace": "webui",
+        "_subtool": "configure",
     },
-    "longrunAgent.webui.providers.upsert": {
+    "provider.upsert": {
         "description": (
-            "longrunAgent.webui.providers.upsert — Add or update ONE provider (its `id`, base URL, "
+            "provider.upsert — Add or update ONE provider (its `id`, base URL, "
             "model list). Reference API keys by environment NAME (`${VAR}`), never by value."
         ),
         "type": "object",
@@ -600,22 +604,22 @@ TOOL_SCHEMAS = {
         },
         "required": ["id"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.providers.upsert",
+        "_namespace": "provider",
+        "_subtool": "upsert",
     },
-    "longrunAgent.webui.providers.remove": {
-        "description": "longrunAgent.webui.providers.remove — Remove (or disable) one provider by id.",
+    "provider.remove": {
+        "description": "provider.remove — Remove (or disable) one provider by id.",
         "type": "object",
         "properties": {
             "id": {"type": "string", "description": "Provider id to remove."},
         },
         "required": ["id"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.providers.remove",
+        "_namespace": "provider",
+        "_subtool": "remove",
     },
-    "longrunAgent.webui.providers.add_model": {
-        "description": "longrunAgent.webui.providers.add_model — Add ONE `<provider>:<model>` to a provider's roster.",
+    "provider.add_model": {
+        "description": "provider.add_model — Add ONE `<provider>:<model>` to a provider's roster.",
         "type": "object",
         "properties": {
             "provider": {"type": "string", "description": "Provider id."},
@@ -623,11 +627,11 @@ TOOL_SCHEMAS = {
         },
         "required": ["provider", "model"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.providers.add_model",
+        "_namespace": "provider",
+        "_subtool": "add_model",
     },
-    "longrunAgent.webui.providers.remove_model": {
-        "description": "longrunAgent.webui.providers.remove_model — Remove ONE model from a provider's roster.",
+    "provider.remove_model": {
+        "description": "provider.remove_model — Remove ONE model from a provider's roster.",
         "type": "object",
         "properties": {
             "provider": {"type": "string", "description": "Provider id."},
@@ -635,32 +639,32 @@ TOOL_SCHEMAS = {
         },
         "required": ["provider", "model"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.providers.remove_model",
+        "_namespace": "provider",
+        "_subtool": "remove_model",
     },
-    "longrunAgent.webui.providers.default": {
-        "description": "longrunAgent.webui.providers.default — Set the harness default model reference.",
+    "provider.set_default": {
+        "description": "provider.set_default — Set the harness default model reference.",
         "type": "object",
         "properties": {
             "ref": {"type": "string", "description": "Model reference, e.g. 'openrouter:z-ai/glm-5.3-flash'."},
         },
         "required": ["ref"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.providers.default",
+        "_namespace": "provider",
+        "_subtool": "set_default",
     },
-    "longrunAgent.webui.providers.reload": {
-        "description": "longrunAgent.webui.providers.reload — Re-read the provider catalogue and `.env` (hot reload).",
+    "provider.reload": {
+        "description": "provider.reload — Re-read the provider catalogue and `.env` (hot reload).",
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.providers.reload",
+        "_namespace": "provider",
+        "_subtool": "reload",
     },
-    "longrunAgent.webui.skills.remove": {
+    "skill.remove": {
         "description": (
-            "longrunAgent.webui.skills.remove — Uninstall one local skill by name. Installing a new "
+            "skill.remove — Uninstall one local skill by name. Installing a new "
             "skill needs a zip upload and stays manual."
         ),
         "type": "object",
@@ -669,12 +673,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["name"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.skills.remove",
+        "_namespace": "skill",
+        "_subtool": "remove",
     },
-    "longrunAgent.webui.mcp.upsert": {
+    "mcp.upsert": {
         "description": (
-            "longrunAgent.webui.mcp.upsert — Add or update ONE external MCP client (transport, "
+            "mcp.upsert — Add or update ONE external MCP client (transport, "
             "command/url). Reference secrets by NAME, never by value."
         ),
         "type": "object",
@@ -684,53 +688,53 @@ TOOL_SCHEMAS = {
         },
         "required": ["name", "values"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.mcp.upsert",
+        "_namespace": "mcp",
+        "_subtool": "upsert",
     },
-    "longrunAgent.webui.mcp.remove": {
-        "description": "longrunAgent.webui.mcp.remove — Remove ONE external MCP client by name.",
+    "mcp.remove": {
+        "description": "mcp.remove — Remove ONE external MCP client by name.",
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "MCP client name."},
         },
         "required": ["name"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.mcp.remove",
+        "_namespace": "mcp",
+        "_subtool": "remove",
     },
-    "longrunAgent.webui.mcp.test": {
-        "description": "longrunAgent.webui.mcp.test — Probe ONE configured MCP client and report whether it answers.",
+    "mcp.test": {
+        "description": "mcp.test — Probe ONE configured MCP client and report whether it answers.",
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "MCP client name to test."},
         },
         "required": ["name"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.mcp.test",
+        "_namespace": "mcp",
+        "_subtool": "test",
     },
-    "longrunAgent.webui.mcp.reload": {
-        "description": "longrunAgent.webui.mcp.reload — Re-read the MCP client configuration and reconnect.",
+    "mcp.reload": {
+        "description": "mcp.reload — Re-read the MCP client configuration and reconnect.",
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.mcp.reload",
+        "_namespace": "mcp",
+        "_subtool": "reload",
     },
-    "longrunAgent.webui.knowledge.notebook.create": {
-        "description": "longrunAgent.webui.knowledge.notebook.create — Create ONE knowledge notebook.",
+    "kb.notebook_add": {
+        "description": "kb.notebook_add — Create ONE knowledge notebook.",
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "Notebook name."},
         },
         "required": ["name"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.knowledge.notebook.create",
+        "_namespace": "kb",
+        "_subtool": "notebook_add",
     },
-    "longrunAgent.webui.knowledge.notebook.rename": {
-        "description": "longrunAgent.webui.knowledge.notebook.rename — Rename ONE knowledge notebook.",
+    "kb.notebook_rename": {
+        "description": "kb.notebook_rename — Rename ONE knowledge notebook.",
         "type": "object",
         "properties": {
             "id": {"type": "string", "description": "Notebook id."},
@@ -738,12 +742,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["id", "name"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.knowledge.notebook.rename",
+        "_namespace": "kb",
+        "_subtool": "notebook_rename",
     },
-    "longrunAgent.webui.knowledge.notebook.delete": {
+    "kb.notebook_delete": {
         "description": (
-            "longrunAgent.webui.knowledge.notebook.delete — Delete ONE knowledge notebook and its "
+            "kb.notebook_delete — Delete ONE knowledge notebook and its "
             "sources. This cannot be undone."
         ),
         "type": "object",
@@ -752,12 +756,12 @@ TOOL_SCHEMAS = {
         },
         "required": ["id"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.knowledge.notebook.delete",
+        "_namespace": "kb",
+        "_subtool": "notebook_delete",
     },
-    "longrunAgent.webui.knowledge.source.add": {
+    "kb.source_add": {
         "description": (
-            "longrunAgent.webui.knowledge.source.add — Attach ONE source (file path / URL / inline "
+            "kb.source_add — Attach ONE source (file path / URL / inline "
             "text) to a knowledge notebook and index it."
         ),
         "type": "object",
@@ -769,30 +773,40 @@ TOOL_SCHEMAS = {
         },
         "required": ["notebook"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.knowledge.source.add",
+        "_namespace": "kb",
+        "_subtool": "source_add",
     },
-    "longrunAgent.webui.knowledge.source.remove": {
-        "description": "longrunAgent.webui.knowledge.source.remove — Detach ONE source from the knowledge base.",
+    "kb.source_remove": {
+        "description": "kb.source_remove — Detach ONE source from the knowledge base.",
         "type": "object",
         "properties": {
             "source": {"type": "string", "description": "Source id/ref to remove."},
         },
         "required": ["source"],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.knowledge.source.remove",
+        "_namespace": "kb",
+        "_subtool": "source_remove",
     },
-    "longrunAgent.webui.knowledge.reembed": {
-        "description": "longrunAgent.webui.knowledge.reembed — Re-embed the whole knowledge base (spends compute).",
+    "kb.reembed": {
+        "description": "kb.reembed — Re-embed the whole knowledge base (spends compute).",
         "type": "object",
         "properties": {},
         "required": [],
         "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "webui.knowledge.reembed",
+        "_namespace": "kb",
+        "_subtool": "reembed",
     },
 }
+
+# The dual-permission gate and the SAFETY_GUARD both key off this set: every
+# exclusive tool lives in one of these namespaces, so protecting the namespace
+# protects the whole surface even when a caller sends a bare namespace key.
+EXCLUSIVE_NAMESPACES = frozenset(k.split(".", 1)[0] for k in TOOL_SCHEMAS)
+
+
+def is_exclusive_name(name):
+    """True when `name` is an exclusive tool or one of its namespaces."""
+    return str(name or "").split(".", 1)[0] in EXCLUSIVE_NAMESPACES
 
 
 # --------------------------------------------------- session & access gate ---
@@ -868,7 +882,7 @@ def reset_stateless_session():
 
 
 def session_has_access(sid):
-    """True when `sid` is permitted to invoke `longrunAgent.*` tools.
+    """True when `sid` is permitted to invoke the exclusive (`namespace.tool`) tools.
 
     Dual-permission model:
       1) `longrunAgent` itself (or a stateless `longrunAgent` run id
@@ -904,7 +918,7 @@ def set_session_access(sid, allowed):
 
 
 def check_dual_permission(tool, run_id=None):
-    """Verify BOTH global tool enablement AND session privilege for `longrunAgent.*`.
+    """Verify BOTH global tool enablement AND session privilege for an exclusive tool.
 
     Returns `(ok, reason)`.
     """
@@ -2001,12 +2015,12 @@ def _webui_configure(args):
     if target == "tools":
         from longrun.core import api_v02
         body = dict(values)
-        # The dual-permission gate on `longrunAgent.*` is operator-only: the agent
-        # may flip policy for ANY other tool, but never for its own namespace.
+        # The dual-permission gate on the exclusive namespaces is operator-only: the
+        # agent may flip policy for ANY other tool, but never for its own tools.
         targets = [str(k) for k in body]
         targets += [str(body.get("tool") or ""), str(body.get("name") or "")]
         targets += [str(x) for x in (body.get("tools") or []) if isinstance(body.get("tools"), list)]
-        self_hit = next((t for t in targets if t.startswith("longrunAgent")), None)
+        self_hit = next((t for t in targets if is_exclusive_name(t)), None)
         if self_hit:
             return {
                 "ok": False,
@@ -2043,7 +2057,7 @@ def _webui_providers(args, op):
     """JAG-537: the provider/model roster, one typed tool per operation.
 
     `op` is fixed by the tool NAME (see `_SUBTOOL_MAP`), never chosen by the model,
-    so `longrunAgent.webui.providers.remove` can only ever remove.
+    so `provider.remove` can only ever remove.
     """
     from longrun.core import api_v02
     from longrun.core.events import publish
@@ -2142,65 +2156,66 @@ def _webui_knowledge(args, op):
 
 
 _SUBTOOL_MAP = {
-    "longrunAgent.teamorg.agents.create": _agent_create,
-    "longrunAgent.teamorg.agents.update": _agent_update,
-    "longrunAgent.teamorg.agents.get": _agent_get,
-    "longrunAgent.teamorg.agents.list": _agent_list,
-    "longrunAgent.teamorg.agents.delete": _agent_delete,
-    "longrunAgent.teamorg.agents.prompt.set": _agent_prompt_set,
-    "longrunAgent.teamorg.agents.prompt.get": _agent_prompt_get,
-    "longrunAgent.teamorg.agents.prompt.clear": _agent_prompt_clear,
-    "longrunAgent.teamorg.teams.create": _team_create,
-    "longrunAgent.teamorg.teams.update": _team_update,
-    "longrunAgent.teamorg.teams.get": _team_get,
-    "longrunAgent.teamorg.teams.list": _team_list,
-    "longrunAgent.teamorg.teams.delete": _team_delete,
-    "longrunAgent.teamorg.teams.member.add": _team_member_add,
-    "longrunAgent.teamorg.teams.member.remove": _team_member_remove,
-    "longrunAgent.teamorg.jobs.create": _job_create,
-    "longrunAgent.teamorg.jobs.dispatch": _job_dispatch,
-    "longrunAgent.teamorg.jobs.get": _job_get,
-    "longrunAgent.teamorg.jobs.list": _job_list,
-    "longrunAgent.teamorg.jobs.delete": _job_delete,
-    "longrunAgent.teamorg.routines.create": _routine_create,
-    "longrunAgent.teamorg.routines.update": _routine_update,
-    "longrunAgent.teamorg.routines.get": _routine_get,
-    "longrunAgent.teamorg.routines.list": _routine_list,
-    "longrunAgent.teamorg.routines.delete": _routine_delete,
-    "longrunAgent.teamorg.sessions.create": _session_create,
-    "longrunAgent.teamorg.sessions.rename": _session_rename,
-    "longrunAgent.teamorg.sessions.list": _session_list,
-    "longrunAgent.teamorg.sessions.delete": _session_delete,
-    "longrunAgent.webui.inspect": _webui_inspect,
-    "longrunAgent.webui.configure": _webui_configure,
+    "agent.create": _agent_create,
+    "agent.update": _agent_update,
+    "agent.get": _agent_get,
+    "agent.list": _agent_list,
+    "agent.delete": _agent_delete,
+    "agent.prompt_set": _agent_prompt_set,
+    "agent.prompt_get": _agent_prompt_get,
+    "agent.prompt_clear": _agent_prompt_clear,
+    "team.create": _team_create,
+    "team.update": _team_update,
+    "team.get": _team_get,
+    "team.list": _team_list,
+    "team.delete": _team_delete,
+    "team.member_add": _team_member_add,
+    "team.member_remove": _team_member_remove,
+    "job.create": _job_create,
+    "job.dispatch": _job_dispatch,
+    "job.get": _job_get,
+    "job.list": _job_list,
+    "job.delete": _job_delete,
+    "routine.create": _routine_create,
+    "routine.update": _routine_update,
+    "routine.get": _routine_get,
+    "routine.list": _routine_list,
+    "routine.delete": _routine_delete,
+    "session.create": _session_create,
+    "session.rename": _session_rename,
+    "session.list": _session_list,
+    "session.delete": _session_delete,
+    "webui.inspect": _webui_inspect,
+    "webui.configure": _webui_configure,
     # Typed object tools: the operation is bound HERE, by name, so the model can only
     # pick the verb it asked for (no `op` string to get wrong).
-    "longrunAgent.webui.providers.upsert": lambda a: _webui_providers(a, "upsert"),
-    "longrunAgent.webui.providers.remove": lambda a: _webui_providers(a, "remove"),
-    "longrunAgent.webui.providers.add_model": lambda a: _webui_providers(a, "add_model"),
-    "longrunAgent.webui.providers.remove_model": lambda a: _webui_providers(a, "remove_model"),
-    "longrunAgent.webui.providers.default": lambda a: _webui_providers(a, "default"),
-    "longrunAgent.webui.providers.reload": lambda a: _webui_providers(a, "reload"),
-    "longrunAgent.webui.skills.remove": _webui_skills_remove,
-    "longrunAgent.webui.mcp.upsert": lambda a: _webui_mcp(a, "upsert"),
-    "longrunAgent.webui.mcp.remove": lambda a: _webui_mcp(a, "remove"),
-    "longrunAgent.webui.mcp.test": lambda a: _webui_mcp(a, "test"),
-    "longrunAgent.webui.mcp.reload": lambda a: _webui_mcp(a, "reload"),
-    "longrunAgent.webui.knowledge.notebook.create": lambda a: _webui_knowledge(a, "notebook.create"),
-    "longrunAgent.webui.knowledge.notebook.rename": lambda a: _webui_knowledge(a, "notebook.rename"),
-    "longrunAgent.webui.knowledge.notebook.delete": lambda a: _webui_knowledge(a, "notebook.delete"),
-    "longrunAgent.webui.knowledge.source.add": lambda a: _webui_knowledge(a, "source.add"),
-    "longrunAgent.webui.knowledge.source.remove": lambda a: _webui_knowledge(a, "source.remove"),
-    "longrunAgent.webui.knowledge.reembed": lambda a: _webui_knowledge(a, "reembed"),
+    "provider.upsert": lambda a: _webui_providers(a, "upsert"),
+    "provider.remove": lambda a: _webui_providers(a, "remove"),
+    "provider.add_model": lambda a: _webui_providers(a, "add_model"),
+    "provider.remove_model": lambda a: _webui_providers(a, "remove_model"),
+    "provider.set_default": lambda a: _webui_providers(a, "default"),
+    "provider.reload": lambda a: _webui_providers(a, "reload"),
+    "skill.remove": _webui_skills_remove,
+    "mcp.upsert": lambda a: _webui_mcp(a, "upsert"),
+    "mcp.remove": lambda a: _webui_mcp(a, "remove"),
+    "mcp.test": lambda a: _webui_mcp(a, "test"),
+    "mcp.reload": lambda a: _webui_mcp(a, "reload"),
+    "kb.notebook_add": lambda a: _webui_knowledge(a, "notebook.create"),
+    "kb.notebook_rename": lambda a: _webui_knowledge(a, "notebook.rename"),
+    "kb.notebook_delete": lambda a: _webui_knowledge(a, "notebook.delete"),
+    "kb.source_add": lambda a: _webui_knowledge(a, "source.add"),
+    "kb.source_remove": lambda a: _webui_knowledge(a, "source.remove"),
+    "kb.reembed": lambda a: _webui_knowledge(a, "reembed"),
 }
 
 
 def execute(tool, args, run_id=None):
-    """Execute a `longrunAgent.*` tool after enforcing the dual-permission gate."""
+    """Execute ONE `namespace.tool` exclusive tool after the dual-permission gate."""
     args = dict(args or {})
-    if not str(tool or "").startswith("longrunAgent."):
-        sub = str(args.pop("action", "") or "").strip()
-        tool = "longrunAgent." + sub if sub else "longrunAgent"
+    # `action` is RESERVED: no schema carries it, and the dispatcher already
+    # resolved the verb from the tool NAME (`team.member_add`), never from args.
+    args.pop("action", None)
+    tool = str(tool or "").strip()
     ok, reason = check_dual_permission(tool, run_id=run_id)
     if not ok:
         return {
@@ -2216,7 +2231,7 @@ def execute(tool, args, run_id=None):
             "ok": False,
             "tool": tool,
             "exit_code": 127,
-            "error": "unknown longrunAgent subtool %r — available: %s"
+            "error": "unknown exclusive tool %r — available: %s"
                      % (tool, ", ".join(sorted(_SUBTOOL_MAP))),
         }
     return fn(args)
@@ -2230,14 +2245,14 @@ def execute(tool, args, run_id=None):
 SECTION_PROMPTS = {
     "teamorg": (
         "You are `longrunAgent` (VEO, the burattino of agents), operating inside the "
-        "Orbit Control / AGENTS & TEAMS panel. Use ONLY `longrunAgent.teamorg.*` tools "
-        "to fulfill the user's request on the substrate. Every object you can create, "
-        "you can also read and remove: "
-        "`teams.create|update|delete|get|list|member.add|member.remove`, "
-        "`agents.create|update|delete|get|list|prompt.set|prompt.get|prompt.clear`, "
-        "`jobs.create|dispatch|delete|get|list`, "
-        "`routines.create|update|delete|get|list`, "
-        "`sessions.create|rename|delete|list`. "
+        "Orbit Control / AGENTS & TEAMS panel. Use ONLY the exclusive object tools "
+        "(`namespace.tool`) to fulfill the user's request on the substrate. Every "
+        "object you can create, you can also read and remove: "
+        "`team.create|update|delete|get|list|member_add|member_remove`, "
+        "`agent.create|update|delete|get|list|prompt_set|prompt_get|prompt_clear`, "
+        "`job.create|dispatch|delete|get|list`, "
+        "`routine.create|update|delete|get|list`, "
+        "`session.create|rename|delete|list`. "
         "Always pick lightweight, cost-effective remote cloud models (e.g. "
         "`openrouter:deepseek/deepseek-v4.1-flash`, `deepseek:deepseek-flash`, "
         "`openrouter:z-ai/glm-5.3-flash`, "
@@ -2246,95 +2261,95 @@ SECTION_PROMPTS = {
     ),
     "models": (
         "You are `longrunAgent` automating the Settings ▸ Models & Routing section. "
-        "Inspect with `longrunAgent.webui.inspect` (`section:'models'`) and apply updates "
-        "with `longrunAgent.webui.configure` (`target:'routing'`). Prefer cheap remote models."
+        "Inspect with `webui.inspect` (`section:'models'`) and apply updates "
+        "with `webui.configure` (`target:'routing'`). Prefer cheap remote models."
     ),
     "compaction": (
         "You are `longrunAgent` automating the Settings ▸ Compaction section. "
-        "Inspect with `longrunAgent.webui.inspect` (`section:'compaction'`) and apply updates "
-        "with `longrunAgent.webui.configure` (`target:'compaction'`)."
+        "Inspect with `webui.inspect` (`section:'compaction'`) and apply updates "
+        "with `webui.configure` (`target:'compaction'`)."
     ),
     "rules": (
         "You are `longrunAgent` automating the Rules section (`Global_rules.md` / `Project_rules.md`). "
-        "Inspect with `longrunAgent.webui.inspect` (`section:'rules'`) and write updated rules "
-        "with `longrunAgent.webui.configure` (`target:'rules'`)."
+        "Inspect with `webui.inspect` (`section:'rules'`) and write updated rules "
+        "with `webui.configure` (`target:'rules'`)."
     ),
     "settings": (
         "You are `longrunAgent` automating a structured WebUI Settings section. "
-        "Inspect with `longrunAgent.webui.inspect` (`section:'settings'`) and apply validated "
-        "changes with `longrunAgent.webui.configure` (`target:'settings'`). Never touch "
+        "Inspect with `webui.inspect` (`section:'settings'`) and apply validated "
+        "changes with `webui.configure` (`target:'settings'`). Never touch "
         "safety checkboxes (`allow_nucleus_write`, `allow_matrix_promote`)."
     ),
     "subagents": (
         "You are `longrunAgent` automating the Settings ▸ Subagents panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'subagents'`) and update with "
-        "`longrunAgent.webui.configure` (`target:'subagents'`, values: model / fallbacks / "
+        "`webui.inspect` (`section:'subagents'`) and update with "
+        "`webui.configure` (`target:'subagents'`, values: model / fallbacks / "
         "max_parallel / max_depth / roles). Prefer cheap remote models; keep role briefs concise."
     ),
     "providers": (
         "You are `longrunAgent` automating the Settings ▸ Providers / Models roster. Inspect "
-        "with `longrunAgent.webui.inspect` (`section:'providers'`) and change it with the typed "
-        "tools `longrunAgent.webui.providers.upsert|remove|add_model|remove_model|default|reload`. "
+        "with `webui.inspect` (`section:'providers'`) and change it with the typed "
+        "tools `provider.upsert|remove|add_model|remove_model|default|reload`. "
         "Never read or write secret keys."
     ),
     "tools": (
         "You are `longrunAgent` automating the Settings ▸ Tools policy panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'tools'`) and flip per-tool `enabled`/`approval` "
-        "with `longrunAgent.webui.configure` (`target:'tools'`). You may NOT change any "
-        "`longrunAgent.*` entry — that gate is operator-only."
+        "`webui.inspect` (`section:'tools'`) and flip per-tool `enabled`/`approval` "
+        "with `webui.configure` (`target:'tools'`). You may NOT change any "
+        "exclusive tool entry (`agent.*`, `team.*`, `kb.*`, …) — that gate is operator-only."
     ),
     "skills": (
         "You are `longrunAgent` automating the Settings ▸ Skills panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'skills'`) and uninstall a local skill with "
-        "`longrunAgent.webui.skills.remove`. Installing a new skill requires a zip upload and "
+        "`webui.inspect` (`section:'skills'`) and uninstall a local skill with "
+        "`skill.remove`. Installing a new skill requires a zip upload and "
         "stays manual."
     ),
     "mcp": (
         "You are `longrunAgent` automating the Settings ▸ MCP panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'mcp'`) and manage external servers with the "
-        "typed tools `longrunAgent.webui.mcp.upsert|remove|test|reload`. "
+        "`webui.inspect` (`section:'mcp'`) and manage external servers with the "
+        "typed tools `mcp.upsert|remove|test|reload`. "
         "Reference secrets by NAME (`${VAR}`), never by value."
     ),
     "knowledge": (
         "You are `longrunAgent` automating the Settings ▸ Knowledge panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'knowledge'`) and manage notebooks and sources "
-        "with `longrunAgent.webui.knowledge.notebook.create|rename|delete`, "
-        "`longrunAgent.webui.knowledge.source.add|remove` and "
-        "`longrunAgent.webui.knowledge.reembed`."
+        "`webui.inspect` (`section:'knowledge'`) and manage notebooks and sources "
+        "with `kb.notebook_add|rename|delete`, "
+        "`kb.source_add|remove` and "
+        "`kb.reembed`."
     ),
     "index": (
         "You are `longrunAgent` automating the Settings ▸ Codebase index configuration. Inspect "
-        "with `longrunAgent.webui.inspect` (`section:'index'`) and update with "
-        "`longrunAgent.webui.configure` (`target:'index'`)."
+        "with `webui.inspect` (`section:'index'`) and update with "
+        "`webui.configure` (`target:'index'`)."
     ),
     "config": (
         "You are `longrunAgent` editing a raw `config/*.yaml` file through the Config-files panel. "
-        "Inspect with `longrunAgent.webui.inspect` (`section:'all'`) and write with "
-        "`longrunAgent.webui.configure` (`target:'config'`, file + text). Never name the "
+        "Inspect with `webui.inspect` (`section:'all'`) and write with "
+        "`webui.configure` (`target:'config'`, file + text). Never name the "
         "operator-only safety switches (`allow_nucleus_write`, `allow_matrix_promote`)."
     ),
     "routing": (
         "You are `longrunAgent` automating the model ROUTING table (which model backs each "
-        "role). Inspect with `longrunAgent.webui.inspect` (`section:'models'`) and update with "
-        "`longrunAgent.webui.configure` (`target:'routing'`, `values:{'roles.<role>.model': ref}`). "
+        "role). Inspect with `webui.inspect` (`section:'models'`) and update with "
+        "`webui.configure` (`target:'routing'`, `values:{'roles.<role>.model': ref}`). "
         "Prefer cheap remote models."
     ),
     "team_policy": (
         "You are `longrunAgent` re-applying the cheap remote model policy across Orbit teams. "
-        "Inspect with `longrunAgent.webui.inspect` (`section:'teams'`) and apply with "
-        "`longrunAgent.webui.configure` (`target:'team_policy'`, `team:'T1'` or `'ALL'`)."
+        "Inspect with `webui.inspect` (`section:'teams'`) and apply with "
+        "`webui.configure` (`target:'team_policy'`, `team:'T1'` or `'ALL'`)."
     ),
     "harness": (
         "You are `longrunAgent` automating the Settings ▸ Harness / Sandbox runtime policy "
         "(`config/tools.yaml` ▸ runtime: keepgoing, verifier, best-of-n, difficulty, self-evolve, "
-        "thinking effort, sandbox limits). Inspect with `longrunAgent.webui.inspect` "
-        "(`section:'tools'`) and apply with `longrunAgent.webui.configure` (`target:'tools'`, "
-        "`values:{runtime:{...}}`). You may NOT change any `longrunAgent.*` tool entry or the "
+        "thinking effort, sandbox limits). Inspect with `webui.inspect` "
+        "(`section:'tools'`) and apply with `webui.configure` (`target:'tools'`, "
+        "`values:{runtime:{...}}`). You may NOT change any exclusive tool entry or the "
         "self-improvement policy that edits `src/longrun` — those are operator-only."
     ),
 }
 
-# Automate section -> `longrunAgent.webui.inspect` section, so the subscriber
+# Automate section -> `webui.inspect` section, so the subscriber
 # snapshot injected into the goal is NEVER empty for a valid automation request.
 AUTOMATE_INSPECT_SECTIONS = {
     "teamorg": "agents",
@@ -2356,6 +2371,14 @@ AUTOMATE_INSPECT_SECTIONS = {
 }
 
 
+# 2026-10-23: automation is limited to text the operator already edits by hand.
+# `rules` writes Global/Project rules; the Teamorg aliases create agents/teams and
+# their prompts. Every other section rewrites runtime configuration (tools policy,
+# routing, providers, subagents, MCP, index): an agent must never flip those
+# autonomously, so the endpoint refuses even when a client calls it directly.
+AUTOMATE_ALLOWED_SECTIONS = ("rules", "teamorg", "agents", "teams", "orbit")
+
+
 def automate(section, instruction, context=None, session=None, model=None, max_steps=6):
     """Run a stateless `longrunAgent` automation turn for a WebUI section.
 
@@ -2372,13 +2395,21 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
 
     section = str(section or "teamorg").strip().lower()
     instruction = str(instruction or "").strip()
+    if section not in AUTOMATE_ALLOWED_SECTIONS:
+        return {
+            "ok": False, "disabled": True,
+            "error": ("automation is disabled for section %r: only text surfaces "
+                      "(rules) and Teamorg prompts may be automated; runtime config "
+                      "stays manual" % section),
+            "allowed_sections": list(AUTOMATE_ALLOWED_SECTIONS),
+        }
     if not instruction:
         return {"ok": False, "error": "instruction required"}
 
     # Verify global tool enablement before launching
-    probe_tool = ("longrunAgent.teamorg.teams.create"
+    probe_tool = ("team.create"
                   if section in ("teamorg", "agents", "teams", "orbit")
-                  else "longrunAgent.webui.configure")
+                  else "webui.configure")
     ok_perm, reason = check_dual_permission(probe_tool, run_id=LONGRUN_AGENT_SESSION_ID)
     if not ok_perm:
         return {"ok": False, "error": reason, "permission_denied": True}
@@ -2398,7 +2429,7 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
         "Current section context from UI: %s\n"
         "Current substrate state: %s\n\n"
         "Operator instruction: %s\n"
-        "Execute the required `longrunAgent.*` tool calls now, then conclude with `final`."
+        "Execute the required exclusive (`namespace.tool`) calls now, then conclude with `final`."
         % (section, sec_prompt, ctx_json, snap_json, instruction)
     )
 

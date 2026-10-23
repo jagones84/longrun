@@ -19,6 +19,18 @@ All notable changes to Longrun are documented here. The format follows
   `v507` F–F9 and `v350` A4.
 
 ### Changed
+- **Exclusive tools are named `namespace.tool` (two segments, no deep paths).**
+  The 48 VEO tools were renamed from `longrunAgent.teamorg.agents.prompt.set`
+  style to one object namespace + one explicative verb: `agent.prompt_set`,
+  `team.member_add`, `job.dispatch`, `routine.list`, `session.rename`,
+  `webui.inspect`/`configure`, `provider.set_default`, `mcp.test`, `skill.remove`,
+  `kb.notebook_add`. `_namespace`/`_subtool` follow the key, the dual-permission
+  gate and the `SAFETY_GUARD` key off the registry's `_origin: exclusive` (not a
+  prefix), and dispatch routes exclusive tools by that same origin. The Tools
+  panel therefore shows ten short, alphabetically ordered namespaces instead of
+  scattered nested paths. Live overlay keys were migrated in place
+  (`longrunAgent.webui.configure` → `webui.configure`,
+  `longrunAgent.teamorg.teams.create` → `team.create`). Locked by `v537` A1–A3b.
 - **Sidebar reorder is name-only and synchronized.** Mouse drag starts on a team or
   session name; touch requires a hold before dragging. A normal click/tap still
   selects a session or toggles a team. Mobile reorder has no arrow or grab icons.

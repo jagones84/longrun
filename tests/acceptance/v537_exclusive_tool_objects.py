@@ -2,11 +2,12 @@
 """v537 — longrunAgent (VEO) exclusive tools are COMPLETE objects (JAG-537).
 
 Locks:
-  A  Completeness contract for the exclusive namespace:
-     - every `longrunAgent.*` schema has exactly ONE handler and vice versa;
-     - the namespace is mirrored on the object model: `teamorg.<object>.<verb>`
-       for teams / agents / jobs / routines / sessions, and typed
-       `webui.<object>.<verb>` for providers / skills / mcp / knowledge;
+  A  Completeness contract for the exclusive namespaces:
+     - every exclusive schema has exactly ONE handler and vice versa;
+     - every name is EXACTLY `namespace.tool` (one object namespace, one
+       explicative verb): `agent.*`, `team.*`, `job.*`, `routine.*`, `session.*`,
+       `webui.*`, `provider.*`, `mcp.*`, `skill.*`, `kb.*` — never a deeper
+       `a.b.c.d` path;
      - no tool takes an `op` sub-operation string any more (the verb is bound by
        the tool NAME), and the WebUI-facing prompt says so.
   B  TEAMS: create -> update (description + regenerate_icon) -> member.add/remove
@@ -70,28 +71,36 @@ def call(tool, args):
 LRA.ensure_system_session()
 
 # --- A: completeness contract ------------------------------------------------
-schemas = {k for k in LRA.TOOL_SCHEMAS if k.startswith("longrunAgent.")}
+schemas = {k for k in LRA.TOOL_SCHEMAS if LRA.is_exclusive_name(k)}
 handlers = set(LRA._SUBTOOL_MAP)
 check("A1 every exclusive schema has ONE handler and no handler is orphaned",
       schemas == handlers, sorted(schemas ^ handlers))
-check("A2 the namespace mirrors the object model (teams/agents/jobs/routines/sessions)",
-      all(("longrunAgent.%s.%s" % (pref, verb)) in handlers
-          for pref, verbs in {
-              "teamorg.teams": ("create", "update", "delete", "get", "list"),
-              "teamorg.agents": ("create", "update", "delete", "get", "list"),
-              "teamorg.jobs": ("create", "dispatch", "delete", "get", "list"),
-              "teamorg.routines": ("create", "update", "delete", "get", "list"),
-              "teamorg.sessions": ("create", "rename", "delete", "list"),
+check("A2 the namespace mirrors the object model (agent/team/job/routine/session)",
+      all(("%s.%s" % (ns, verb)) in handlers
+          for ns, verbs in {
+              "agent": ("create", "update", "delete", "get", "list"),
+              "team": ("create", "update", "delete", "get", "list"),
+              "job": ("create", "dispatch", "delete", "get", "list"),
+              "routine": ("create", "update", "delete", "get", "list"),
+              "session": ("create", "rename", "delete", "list"),
           }.items() for verb in verbs),
       sorted(handlers))
-check("A3 typed webui object tools exist next to the config writer",
-      all(("longrunAgent.webui.%s" % n) in handlers for n in (
-          "providers.upsert", "providers.remove", "providers.add_model",
-          "providers.remove_model", "providers.default", "providers.reload",
-          "skills.remove", "mcp.upsert", "mcp.remove", "mcp.test", "mcp.reload",
-          "knowledge.notebook.create", "knowledge.notebook.rename",
-          "knowledge.notebook.delete", "knowledge.source.add",
-          "knowledge.source.remove", "knowledge.reembed")))
+check("A3 typed object tools exist next to the config writer",
+      all(n in handlers for n in (
+          "provider.upsert", "provider.remove", "provider.add_model",
+          "provider.remove_model", "provider.set_default", "provider.reload",
+          "skill.remove", "mcp.upsert", "mcp.remove", "mcp.test", "mcp.reload",
+          "kb.notebook_add", "kb.notebook_rename", "kb.notebook_delete",
+          "kb.source_add", "kb.source_remove", "kb.reembed",
+          "webui.inspect", "webui.configure")))
+check("A3b naming contract: every exclusive tool is EXACTLY `namespace.tool`",
+      all(len(k.split(".")) == 2 for k in handlers)
+      and all(k.split(".", 1)[0] in LRA.EXCLUSIVE_NAMESPACES for k in handlers)
+      and LRA.EXCLUSIVE_NAMESPACES == {"agent", "team", "job", "routine",
+                                       "session", "webui", "provider", "mcp",
+                                       "skill", "kb"}
+      and not any(k.startswith("longrunAgent.") for k in handlers),
+      sorted(handlers))
 check("A4 no exclusive tool takes an `op` sub-operation string any more",
       not any("op" in (s.get("properties") or {})
               for s in LRA.TOOL_SCHEMAS.values() if isinstance(s, dict))
@@ -103,7 +112,7 @@ check("A5 every tool description names itself (self-documenting namespace)",
        if isinstance(s, dict) and not str(s.get("description") or "").startswith(k + " ")])
 
 # --- B: teams ----------------------------------------------------------------
-t_new = call("longrunAgent.teamorg.teams.create",
+t_new = call("team.create",
              {"name": "Finance Ops", "description": "budget, cost and billing"})
 tid = (t_new.get("team") or {}).get("id")
 check("B1 teams.create stores the description and picks the matching palette icon",
@@ -111,9 +120,9 @@ check("B1 teams.create stores the description and picks the matching palette ico
       and (t_new["team"].get("symbol"), t_new["team"].get("color")) == ("\U0001f4b0", "#22C55E"),
       t_new.get("team"))
 
-t_upd = call("longrunAgent.teamorg.teams.update",
+t_upd = call("team.update",
              {"team": tid, "description": "security incident triage and red team"})
-t_regen = call("longrunAgent.teamorg.teams.update", {"team": tid, "regenerate_icon": True})
+t_regen = call("team.update", {"team": tid, "regenerate_icon": True})
 check("B2 teams.update edits name/description and re-asks longrunAgent for the icon",
       t_upd.get("ok") is True
       and "security" in (TE.REGISTRY.get(tid) or {}).get("description", "")
@@ -121,8 +130,8 @@ check("B2 teams.update edits name/description and re-asks longrunAgent for the i
       and (t_regen["team"].get("symbol"), t_regen["team"].get("color")) == ("\U0001f6a8", "#EF4444"),
       (t_upd.get("changed"), t_regen.get("team")))
 
-t_get = call("longrunAgent.teamorg.teams.get", {"team": tid})
-t_list = call("longrunAgent.teamorg.teams.list", {})
+t_get = call("team.get", {"team": tid})
+t_list = call("team.list", {})
 check("B3 teams.get/list read the real store and publish the palette",
       t_get.get("ok") is True and len(t_get.get("palette") or []) == 8
       and t_list.get("ok") is True
@@ -130,27 +139,27 @@ check("B3 teams.get/list read the real store and publish the palette",
       (t_list.get("count"), len(t_get.get("palette") or [])))
 
 # an agent to move in and out of the team (also used by C/D/E)
-a_new = call("longrunAgent.teamorg.agents.create",
+a_new = call("agent.create",
              {"name": "Sre Bot", "role": "sre", "prompt": "You watch uptime."})
 aid, asid = (a_new.get("agent") or {}).get("id"), a_new.get("session")
 
-m_add = call("longrunAgent.teamorg.teams.member.add", {"team": tid, "agent": aid})
+m_add = call("team.member_add", {"team": tid, "agent": aid})
 in_team = aid in TE.REGISTRY.members_of(tid)
-m_del = call("longrunAgent.teamorg.teams.member.remove", {"team": tid, "agent": aid})
+m_del = call("team.member_remove", {"team": tid, "agent": aid})
 out_team = aid not in TE.REGISTRY.members_of(tid)
 check("B4 teams.member.add/remove move the agent in and out of the team",
       m_add.get("ok") is True and in_team and m_del.get("ok") is True and out_team,
       (in_team, out_team))
 
-t_del = call("longrunAgent.teamorg.teams.delete", {"team": tid})
+t_del = call("team.delete", {"team": tid})
 check("B5 teams.delete removes the team but keeps its member agents",
       t_del.get("ok") is True
       and TE.REGISTRY.get(tid) is None
       and A.REGISTRY.get(asid) is not None, t_del)
 check("B6 team tools answer with an error (never a crash) on an unknown team",
-      call("longrunAgent.teamorg.teams.get", {"team": "T999"}).get("ok") is False
-      and call("longrunAgent.teamorg.teams.delete", {"team": "T999"}).get("ok") is False
-      and call("longrunAgent.teamorg.teams.update", {"team": "T999", "name": "x"}).get("ok") is False)
+      call("team.get", {"team": "T999"}).get("ok") is False
+      and call("team.delete", {"team": "T999"}).get("ok") is False
+      and call("team.update", {"team": "T999", "name": "x"}).get("ok") is False)
 
 # --- C: agents ---------------------------------------------------------------
 ws = (a_new.get("agent") or {}).get("workspace") or a_new.get("workspace")
@@ -158,7 +167,7 @@ check("C1 agents.create provisions the record, the session, ROLE.md and a worksp
       a_new.get("ok") is True and os.path.isdir(ws)
       and "uptime" in R.read(asid), (ws, a_new.get("model")))
 
-a_upd = call("longrunAgent.teamorg.agents.update",
+a_upd = call("agent.update",
              {"agent": aid, "name": "Sre Bot II", "role": "senior-sre",
               "model": "openrouter:z-ai/glm-5.3-flash", "daily_budget": 5})
 rec = A.REGISTRY.get(asid) or {}
@@ -169,39 +178,39 @@ check("C2 agents.update touches ONLY the properties it was given",
       and stores.load_session(asid).get("model") == "openrouter:z-ai/glm-5.3-flash",
       (a_upd.get("changed"), rec))
 check("C3 agents.update refuses an empty patch",
-      call("longrunAgent.teamorg.agents.update", {"agent": aid}).get("ok") is False)
+      call("agent.update", {"agent": aid}).get("ok") is False)
 
-p_set = call("longrunAgent.teamorg.agents.prompt.set",
+p_set = call("agent.prompt_set",
              {"agent": aid, "prompt": "You are the SRE on call."})
-p_get = call("longrunAgent.teamorg.agents.prompt.get", {"agent": aid})
-p_clr = call("longrunAgent.teamorg.agents.prompt.clear", {"agent": aid})
+p_get = call("agent.prompt_get", {"agent": aid})
+p_clr = call("agent.prompt_clear", {"agent": aid})
 check("C4 prompt.set/get/clear operate on the real ROLE.md",
       p_set.get("ok") is True
       and "SRE on call" in (p_get.get("prompt") or "")
       and p_clr.get("ok") is True
       and not os.path.isfile(R.path_for(asid)), (p_get.get("chars"), p_clr))
 
-a_get = call("longrunAgent.teamorg.agents.get", {"agent": aid})
-a_list = call("longrunAgent.teamorg.agents.list", {})
+a_get = call("agent.get", {"agent": aid})
+a_list = call("agent.list", {})
 check("C5 agents.get/list read the real org",
       a_get.get("ok") is True and a_get.get("agent", {}).get("id") == aid
       and a_list.get("ok") is True and a_list.get("count", 0) >= 1)
 
-a_del = call("longrunAgent.teamorg.agents.delete", {"agent": aid})
+a_del = call("agent.delete", {"agent": aid})
 check("C6 agents.delete cascades: designation + session + workspace folder all gone",
       a_del.get("ok") is True
       and A.REGISTRY.get(asid) is None
       and stores.load_session(asid) is None
       and not os.path.exists(ws), a_del)
 check("C7 agents.delete never removes the permanent longrunAgent session",
-      call("longrunAgent.teamorg.agents.delete", {"agent": "longrunAgent"}).get("ok") is False)
+      call("agent.delete", {"agent": "longrunAgent"}).get("ok") is False)
 
 # --- D: jobs -----------------------------------------------------------------
-boss = call("longrunAgent.teamorg.agents.create", {"name": "Job Boss", "role": "lead"})
+boss = call("agent.create", {"name": "Job Boss", "role": "lead"})
 boss_id, boss_sid = (boss.get("agent") or {}).get("id"), boss.get("session")
-worker = call("longrunAgent.teamorg.agents.create", {"name": "Job Worker", "role": "coder"})
+worker = call("agent.create", {"name": "Job Worker", "role": "coder"})
 worker_id = (worker.get("agent") or {}).get("id")
-j_new = call("longrunAgent.teamorg.jobs.create",
+j_new = call("job.create",
              {"goal": "ship the release notes", "coordinator": boss_id, "agents": [worker_id]})
 jid = (j_new.get("job") or {}).get("id")
 check("D1 jobs.create stores goal + coordinator + workers",
@@ -209,26 +218,26 @@ check("D1 jobs.create stores goal + coordinator + workers",
       and (j_new["job"].get("goal") == "ship the release notes")
       and worker_id in (j_new["job"].get("agents") or []), j_new.get("job"))
 check("D2 jobs.create requires at least one worker agent",
-      call("longrunAgent.teamorg.jobs.create", {"goal": "x", "agents": []}).get("ok") is False)
-j_get = call("longrunAgent.teamorg.jobs.get", {"job": jid})
-j_list = call("longrunAgent.teamorg.jobs.list", {})
+      call("job.create", {"goal": "x", "agents": []}).get("ok") is False)
+j_get = call("job.get", {"job": jid})
+j_list = call("job.list", {})
 check("D3 jobs.get/list read the real registry",
       j_get.get("ok") is True and (j_get.get("job") or {}).get("id") == jid
       and j_list.get("ok") is True
       and any(j.get("id") == jid for j in (j_list.get("jobs") or [])))
-j_del = call("longrunAgent.teamorg.jobs.delete", {"job": jid})
+j_del = call("job.delete", {"job": jid})
 check("D4 jobs.delete removes the job from the real registry",
       j_del.get("ok") is True and (J.JOBS.get(jid) is None))
 
 # --- E: routines -------------------------------------------------------------
-rt_new = call("longrunAgent.teamorg.routines.create",
+rt_new = call("routine.create",
               {"agent": boss_sid, "goal": "check the queue", "every_seconds": 120})
 rid = (rt_new.get("routine") or {}).get("id")
 check("E1 routines.create schedules the goal for the resolved agent session",
       rt_new.get("ok") is True and rid
       and (rt_new["routine"].get("agent") == boss_sid)
       and (rt_new["routine"].get("every_seconds") == 120), rt_new.get("routine"))
-rt_upd = call("longrunAgent.teamorg.routines.update",
+rt_upd = call("routine.update",
               {"routine": rid, "goal": "check the queue harder", "every_seconds": 300,
                "enabled": False})
 rt_rec = RT.REGISTRY.get(rid) or {}
@@ -238,33 +247,33 @@ check("E2 routines.update edits only the fields passed (id and runs survive)",
       and rt_rec.get("every_seconds") == 300 and rt_rec.get("enabled") is False
       and rt_rec.get("id") == rid, rt_rec)
 check("E3 routines.get/list read the real registry",
-      call("longrunAgent.teamorg.routines.get", {"routine": rid}).get("ok") is True
+      call("routine.get", {"routine": rid}).get("ok") is True
       and any(r.get("id") == rid
-              for r in (call("longrunAgent.teamorg.routines.list", {}).get("routines") or [])))
+              for r in (call("routine.list", {}).get("routines") or [])))
 check("E4 routines.create refuses an unknown agent",
-      call("longrunAgent.teamorg.routines.create",
+      call("routine.create",
            {"agent": "nobody", "goal": "x", "every_seconds": 60}).get("ok") is False)
-rt_del = call("longrunAgent.teamorg.routines.delete", {"routine": rid})
+rt_del = call("routine.delete", {"routine": rid})
 check("E5 routines.delete removes the routine",
       rt_del.get("ok") is True and RT.REGISTRY.get(rid) is None)
 
 # --- F: sessions -------------------------------------------------------------
-s_new = call("longrunAgent.teamorg.sessions.create", {"title": "JAG-537 probe"})
+s_new = call("session.create", {"title": "JAG-537 probe"})
 psid = s_new.get("session")
-s_ren = call("longrunAgent.teamorg.sessions.rename",
+s_ren = call("session.rename",
              {"session": psid, "title": "JAG-537 probe (renamed)"})
-s_list = call("longrunAgent.teamorg.sessions.list", {})
+s_list = call("session.list", {})
 check("F1 sessions.create/rename/list operate on the real store",
       s_new.get("ok") is True and (stores.load_session(psid) or {}).get("title") == "JAG-537 probe (renamed)"
       and s_ren.get("ok") is True
       and any(s.get("id") == psid for s in (s_list.get("sessions") or [])),
       (psid, s_new.get("title")))
-s_del = call("longrunAgent.teamorg.sessions.delete", {"session": psid})
+s_del = call("session.delete", {"session": psid})
 check("F2 sessions.delete removes the session file",
       s_del.get("ok") is True and stores.load_session(psid) is None, s_del)
 check("F3 sessions.delete refuses the permanent longrunAgent session and unknown ids",
-      call("longrunAgent.teamorg.sessions.delete", {"session": "longrunAgent"}).get("ok") is False
-      and call("longrunAgent.teamorg.sessions.delete", {"session": "no-such-session"}).get("ok") is False)
+      call("session.delete", {"session": "longrunAgent"}).get("ok") is False
+      and call("session.delete", {"session": "no-such-session"}).get("ok") is False)
 
 # --- G: bounded destructive paths -------------------------------------------
 outside = os.path.join(TMP, "not-a-workspace")
@@ -276,12 +285,12 @@ check("G1 a folder outside the workspaces root is NEVER deleted",
 
 # --- H: typed webui object tools --------------------------------------------
 KB = __import__("longrun.memory.knowledge", fromlist=["knowledge"])
-nb = call("longrunAgent.webui.knowledge.notebook.create", {"name": "jag537-nb"})
+nb = call("kb.notebook_add", {"name": "jag537-nb"})
 nb_id = nb.get("id")
-nb_ren = call("longrunAgent.webui.knowledge.notebook.rename",
+nb_ren = call("kb.notebook_rename",
               {"id": nb_id, "name": "jag537-nb-renamed"})
 names = [str(n) for n in KB.list_notebooks()]
-nb_del = call("longrunAgent.webui.knowledge.notebook.delete", {"id": nb_id})
+nb_del = call("kb.notebook_delete", {"id": nb_id})
 check("H1 webui.knowledge.notebook.create/rename/delete are real CRUD",
       nb.get("ok") is True and nb_ren.get("ok") is True
       and any("jag537-nb" in n for n in names)
@@ -289,12 +298,12 @@ check("H1 webui.knowledge.notebook.create/rename/delete are real CRUD",
       and not any(nb_id in str(n) for n in KB.list_notebooks()),
       (nb_id, names[:3], nb_del))
 check("H2 webui.providers.reload reaches the provider engine",
-      call("longrunAgent.webui.providers.reload", {}).get("ok") is True)
+      call("provider.reload", {}).get("ok") is True)
 check("H3 webui.skills.remove / webui.mcp.remove answer with a real result, never a crash",
-      isinstance(call("longrunAgent.webui.skills.remove", {"name": "no-such-skill"}).get("ok"), bool)
-      and isinstance(call("longrunAgent.webui.mcp.remove", {"name": "no-such-client"}).get("ok"), bool))
+      isinstance(call("skill.remove", {"name": "no-such-skill"}).get("ok"), bool)
+      and isinstance(call("mcp.remove", {"name": "no-such-client"}).get("ok"), bool))
 check("H4 the old catch-all still writes CONFIG targets only",
-      set(LRA.TOOL_SCHEMAS["longrunAgent.webui.configure"]["properties"]["target"]["enum"])
+      set(LRA.TOOL_SCHEMAS["webui.configure"]["properties"]["target"]["enum"])
       == {"settings", "rules", "compaction", "routing", "team_policy", "subagents",
           "tools", "index", "config"})
 
@@ -327,7 +336,7 @@ check("I5 the selector is wired on boot and restored from the last choice",
 
 # cleanup the probe agents so the shared stores stay clean
 for ref in (worker_id, boss_id):
-    call("longrunAgent.teamorg.agents.delete", {"agent": ref})
+    call("agent.delete", {"agent": ref})
 
 print("---")
 print("v537: %d/%d PASS" % (sum(results), len(results)))

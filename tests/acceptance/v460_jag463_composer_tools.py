@@ -82,6 +82,11 @@ check("B6 a row shows why a stored `required` does not ask under global FULL",
 check("B7 an MCP tool with no dot (`<client>__<tool>`) groups under its client",
       'const sep = dot > 0 ? dot : nm0.indexOf("__");' in _html
       and 'const g = sep > 0 ? nm0.slice(0, sep) : "";' in _html)
+check("B7b namespaces and rows are ordered by sub-namespace (natural A→Z), not by tool count",
+      'const _nat = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });' in _html
+      and 'groups.forEach(list => list.sort((a, b) => _nat(a.name || a.id || "?", b.name || b.id || "?")));' in _html
+      and 'const gNames = Array.from(groups.keys()).filter(g => g).sort(_nat);' in _html
+      and 'groups.get(b).length - groups.get(a).length' not in _html)
 
 # ---- B8) a rejected policy update is atomic -------------------------------
 _policy_fixture = {"tools": {"fixture__tool": {"enabled": False, "approval": "required"}}}

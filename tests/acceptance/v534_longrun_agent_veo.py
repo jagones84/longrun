@@ -8,21 +8,22 @@ Locks:
      - `DELETE /api/sessions/longrunAgent` is refused with 403;
      - `reset_stateless_session()` wipes messages, tool_cards, injects, and graph.
   B  Exclusive built-in tools & Dual-Permission Gate:
-     - `longrunAgent.teamorg.*` and `longrunAgent.webui.*` are registered with
-       `origin == "exclusive"` and segregated under the `Exclusive built-in`
-       origin dropdown in `webui/index.html`;
-     - calling a `longrunAgent.*` tool from an ungranted session is denied (exit 126);
+     - the exclusive tools (`agent.*`, `team.*`, `job.*`, `routine.*`,
+       `session.*`, `webui.*`, `provider.*`, `mcp.*`, `skill.*`, `kb.*`) are
+       registered with `origin == "exclusive"` and segregated under the
+       `Exclusive built-in` origin dropdown in `webui/index.html`;
+     - calling an exclusive tool from an ungranted session is denied (exit 126);
      - granting `allow_longrun_agent` on a session unlocks it ONLY when the tool
        is also enabled in the global registry (dual-permission).
-  C  Teamorg lifecycle (`longrunAgent.teamorg.*`):
-     - `teams.create` picks a semantic icon+colour from `teams._PALETTE` via
+  C  Teamorg lifecycle (`agent.*` / `team.*`):
+     - `team.create` picks a semantic icon+colour from `teams._PALETTE` via
        `longrunAgent.choose_team_symbol` (e.g. Security -> 🚨, AI/ML -> 🧠,
        Finance -> 💰) while explicit symbol still wins;
-     - `agents.create`, `agents.setllm`, `agents.setrole`, `agents.setprompt`,
-       `agents.assignagent` update the substrate (`agents.json`, `teams.json`,
+     - `agent.create` + `agent.update` + `agent.prompt_set` + `team.member_add`
+       update the substrate (`agents.json`, `teams.json`,
        `ROLE.md`, dedicated workspace folder) and emit live-sync SSE events.
   D  Safety boundary & WebUI automation:
-     - `longrunAgent.webui.configure` refuses `allow_nucleus_write` and
+     - `webui.configure` refuses `allow_nucleus_write` and
        `allow_matrix_promote` (operator-only safety checkboxes);
      - Models panel offers `longrunAgentModel` (`roles.longrun_agent.model` + `@chat`);
      - `makeAutomateWidget` and Orbit `lraAutoBtn` wire UI sections to
@@ -32,14 +33,14 @@ Locks:
        knowledge / index / keys with real substrate ground truth;
      - `webui.configure` writes subagents, per-tool policy, index config,
        knowledge notebooks and MCP clients through the SAME Layer-2 writers the
-       WebUI uses, never its own `longrunAgent.*` policy;
+       WebUI uses, never its own exclusive tool policy;
      - raw `config/*.yaml` writes are text-scanned for the safety switches;
      - every configure target owns a context-specific system prompt, and the WebUI
        auto-generates one `⚡ Automate` control per editable Settings panel
        (`AUTOMATE_CATS` / `mountCategoryAutomate`); the Codebase inspector keeps
        only its explicit `auto_index` toggle (no free-form agent bar).
   F/G  The VEO aware of itself, and permanently pinned:
-     - the `longrun-agent` prompt section lists EVERY live `longrunAgent.*` subtool
+     - the `longrun-agent` prompt section lists EVERY live exclusive subtool
        (generated from the registry) plus the hard rules, and is injected only for
        the system session or a session explicitly granted `allow_longrun_agent`;
      - the `longrunAgent` session is ALWAYS pinned above the whole rail, its pin is
@@ -135,41 +136,41 @@ check("A4 DELETE /api/sessions/longrunAgent is blocked at the HTTP layer with 40
 # --- B: Exclusive built-in tools & Dual-Permission Gate ----------------------
 cat = {t["name"]: t for t in registry.catalog()}
 expected_tools = {
-    "longrunAgent.teamorg.agents.create",
-    "longrunAgent.teamorg.agents.update",
-    "longrunAgent.teamorg.agents.get",
-    "longrunAgent.teamorg.agents.list",
-    "longrunAgent.teamorg.agents.delete",
-    "longrunAgent.teamorg.agents.prompt.set",
-    "longrunAgent.teamorg.agents.prompt.get",
-    "longrunAgent.teamorg.agents.prompt.clear",
-    "longrunAgent.teamorg.teams.create",
-    "longrunAgent.teamorg.teams.update",
-    "longrunAgent.teamorg.teams.get",
-    "longrunAgent.teamorg.teams.list",
-    "longrunAgent.teamorg.teams.delete",
-    "longrunAgent.teamorg.teams.member.add",
-    "longrunAgent.teamorg.teams.member.remove",
-    "longrunAgent.teamorg.jobs.create",
-    "longrunAgent.teamorg.jobs.dispatch",
-    "longrunAgent.teamorg.jobs.get",
-    "longrunAgent.teamorg.jobs.list",
-    "longrunAgent.teamorg.jobs.delete",
-    "longrunAgent.teamorg.routines.create",
-    "longrunAgent.teamorg.routines.update",
-    "longrunAgent.teamorg.routines.get",
-    "longrunAgent.teamorg.routines.list",
-    "longrunAgent.teamorg.routines.delete",
-    "longrunAgent.teamorg.sessions.create",
-    "longrunAgent.teamorg.sessions.rename",
-    "longrunAgent.teamorg.sessions.list",
-    "longrunAgent.teamorg.sessions.delete",
-    "longrunAgent.webui.providers.upsert",
-    "longrunAgent.webui.skills.remove",
-    "longrunAgent.webui.mcp.reload",
-    "longrunAgent.webui.knowledge.notebook.delete",
-    "longrunAgent.webui.configure",
-    "longrunAgent.webui.inspect",
+    "agent.create",
+    "agent.update",
+    "agent.get",
+    "agent.list",
+    "agent.delete",
+    "agent.prompt_set",
+    "agent.prompt_get",
+    "agent.prompt_clear",
+    "team.create",
+    "team.update",
+    "team.get",
+    "team.list",
+    "team.delete",
+    "team.member_add",
+    "team.member_remove",
+    "job.create",
+    "job.dispatch",
+    "job.get",
+    "job.list",
+    "job.delete",
+    "routine.create",
+    "routine.update",
+    "routine.get",
+    "routine.list",
+    "routine.delete",
+    "session.create",
+    "session.rename",
+    "session.list",
+    "session.delete",
+    "provider.upsert",
+    "skill.remove",
+    "mcp.reload",
+    "kb.notebook_delete",
+    "webui.configure",
+    "webui.inspect",
 }
 check("B1 all longrunAgent subtools are registered in registry.catalog()",
       expected_tools.issubset(set(cat)), sorted(expected_tools - set(cat)))
@@ -179,7 +180,7 @@ check("B2 every longrunAgent tool has origin='exclusive'",
 # Create a normal session WITHOUT access
 user_sess = stores.get_or_create_session("normal-user", "Normal Chat")
 denied_call = T.execute(
-    "longrunAgent.teamorg.teams.create",
+    "team.create",
     {"name": "Unauthorized Team"},
     run_id="normal-user",
 )
@@ -195,19 +196,19 @@ check("B4 set_session_access grants allow_longrun_agent on the session",
 
 # Disable globally -> even longrunAgent session is denied (dual-permission)
 cfg = registry.load_config()
-orig_entry = dict((cfg.get("tools") or {}).get("longrunAgent") or {"enabled": True, "approval": "auto"})
+orig_entry = dict((cfg.get("tools") or {}).get("team") or {"enabled": True, "approval": "auto"})
 try:
-    cfg.setdefault("tools", {})["longrunAgent"] = {"enabled": False, "approval": "auto"}
+    cfg.setdefault("tools", {})["team"] = {"enabled": False, "approval": "auto"}
     disabled_call = T.execute(
-        "longrunAgent.teamorg.teams.create",
+        "team.create",
         {"name": "Blocked When Globally Disabled"},
         run_id="longrunAgent",
     )
-    check("B5 disabling longrunAgent globally blocks even the privileged session",
+    check("B5 disabling an exclusive namespace globally blocks even the privileged session",
           disabled_call.get("ok") is False and disabled_call.get("exit_code") == 126,
           disabled_call)
 finally:
-    cfg.setdefault("tools", {})["longrunAgent"] = orig_entry
+    cfg.setdefault("tools", {})["team"] = orig_entry
 
 # --- C: Teamorg end-to-end lifecycle & semantic team symbols -----------------
 sym_sec, col_sec = LRA.choose_team_symbol("Security Red Team")
@@ -220,7 +221,7 @@ check("C1 longrunAgent chooses semantic team symbols from the palette (and honou
       (sym_sec, sym_ai, sym_fin, sym_exp))
 
 t_res = T.execute(
-    "longrunAgent.teamorg.teams.create",
+    "team.create",
     {
         "name": "Security Red Team",
         "description": "Incident response and vulnerability audit",
@@ -238,7 +239,7 @@ tid = t_res["team"]["id"]
 lead_id = t_res["provisioned_members"][0]
 
 a_res = T.execute(
-    "longrunAgent.teamorg.agents.create",
+    "agent.create",
     {
         "name": "Scanner Bot",
         "role": "vuln-scanner",
@@ -255,22 +256,22 @@ scanner_id = a_res["agent"]["id"]
 scanner_sid = a_res["session"]
 
 r_llm = T.execute(
-    "longrunAgent.teamorg.agents.update",
+    "agent.update",
     {"agent": scanner_id, "model": "openrouter:z-ai/glm-5.3-flash"},
     run_id="longrunAgent",
 )
 r_role = T.execute(
-    "longrunAgent.teamorg.agents.update",
+    "agent.update",
     {"agent": scanner_id, "role": "senior-vuln-scanner"},
     run_id="longrunAgent",
 )
 r_prompt = T.execute(
-    "longrunAgent.teamorg.agents.prompt.set",
+    "agent.prompt_set",
     {"agent": scanner_id, "prompt": "You are Senior Vuln Scanner. Check OWASP Top 10."},
     run_id="longrunAgent",
 )
 r_assign = T.execute(
-    "longrunAgent.teamorg.teams.member.add",
+    "team.member_add",
     {"agent": scanner_id, "team": tid},
     run_id="longrunAgent",
 )
@@ -290,12 +291,12 @@ check("C5 substrate mutations publish live-sync SSE events (teams.updated, agent
 
 # --- D: Safety boundary & WebUI integration ----------------------------------
 bad_nuc = T.execute(
-    "longrunAgent.webui.configure",
+    "webui.configure",
     {"target": "settings", "file": "tools.yaml", "values": {"allow_nucleus_write": True}},
     run_id="longrunAgent",
 )
 bad_prom = T.execute(
-    "longrunAgent.webui.configure",
+    "webui.configure",
     {"target": "settings", "file": "tools.yaml", "values": {"approvals.allow_matrix_promote": True}},
     run_id="longrunAgent",
 )
@@ -305,7 +306,7 @@ check("D1 safety guard deterministically blocks allow_nucleus_write and allow_ma
       (bad_nuc, bad_prom))
 
 ok_rules = T.execute(
-    "longrunAgent.webui.configure",
+    "webui.configure",
     {"target": "rules", "scope": "global", "content": "# Automated Global Rule\nBe concise."},
     run_id="longrunAgent",
 )
@@ -352,7 +353,7 @@ check("E1 webui.inspect covers every manually editable section with real substra
       {s: sorted(inspected[s].keys()) for s in INS_SECTIONS})
 
 r_sub = T.execute(
-    "longrunAgent.webui.configure",
+    "webui.configure",
     {"target": "subagents",
      "values": {"max_parallel": 3, "max_depth": 4,
                 "model": "openrouter:z-ai/glm-5.3-flash"}},
@@ -370,13 +371,13 @@ check("E2 configure target='subagents' writes config/subagents.yaml + tools.yaml
 _restore_routing()
 
 r_tool = T.execute(
-    "longrunAgent.webui.configure",
+    "webui.configure",
     {"target": "tools", "values": {"tool": "grep", "approval": "required"}},
     run_id="longrunAgent",
 )
 self_pol = T.execute(
-    "longrunAgent.webui.configure",
-    {"target": "tools", "values": {"tool": "longrunAgent.teamorg.teams.create", "enabled": False}},
+    "webui.configure",
+    {"target": "tools", "values": {"tool": "team.create", "enabled": False}},
     run_id="longrunAgent",
 )
 check("E3 configure target='tools' flips real tool policy but refuses its own namespace",
@@ -386,7 +387,7 @@ check("E3 configure target='tools' flips real tool policy but refuses its own na
       (r_tool, self_pol))
 
 r_idx = T.execute(
-    "longrunAgent.webui.configure",
+    "webui.configure",
     {"target": "index", "values": {"auto_index": False}},
     run_id="longrunAgent",
 )
@@ -395,7 +396,7 @@ check("E4 configure target='index' writes the shared index configuration",
       and indexcfg.load_config().get("auto_index") is False, r_idx)
 
 r_kb = T.execute(
-    "longrunAgent.webui.knowledge.notebook.create",
+    "kb.notebook_add",
     {"name": "veo-notebook"},
     run_id="longrunAgent",
 )
@@ -404,7 +405,7 @@ check("E5 webui.knowledge.notebook.create creates a real notebook",
       and any("veo-notebook" in str(n) for n in KB.list_notebooks()), r_kb)
 
 r_mcp = T.execute(
-    "longrunAgent.webui.mcp.upsert",
+    "mcp.upsert",
     {"name": "!!not-a-valid-name!!", "values": {"command": "true"}},
     run_id="longrunAgent",
 )
@@ -412,7 +413,7 @@ check("E6 webui.mcp.upsert routes to the real mcp_client engine (rejects invalid
       r_mcp.get("ok") is False and "error" in r_mcp, r_mcp)
 
 bad_cfg = T.execute(
-    "longrunAgent.webui.configure",
+    "webui.configure",
     {"target": "config", "file": "tools.yaml",
      "text": "approvals:\n  allow_matrix_promote: true\n"},
     run_id="longrunAgent",
@@ -420,7 +421,7 @@ bad_cfg = T.execute(
 check("E7 raw config writes are text-scanned — the safety switches cannot be smuggled",
       bad_cfg.get("ok") is False and "SAFETY_GUARD" in str(bad_cfg.get("error")), bad_cfg)
 
-targets = set(LRA.TOOL_SCHEMAS["longrunAgent.webui.configure"]["properties"]["target"]["enum"])
+targets = set(LRA.TOOL_SCHEMAS["webui.configure"]["properties"]["target"]["enum"])
 check("E8 every configure target has its own context-specific system prompt",
       targets.issubset(set(LRA.SECTION_PROMPTS)), sorted(targets - set(LRA.SECTION_PROMPTS)))
 check("E8b every automate section injects a NON-empty substrate snapshot from a real inspect section",
@@ -452,21 +453,21 @@ sys_text = P._provider_longrun_agent({"id": "longrunAgent", "system": True}, Non
 granted_text = P._provider_longrun_agent({"id": "normal-user", "allow_longrun_agent": True}, None, None)
 plain_text = P._provider_longrun_agent({"id": "normal-user"}, None, None)
 check("F2 the namespace section is gated: full VEO framing only for the system session",
-      "longrunAgent.webui.configure" in sys_text
+      "webui.configure" in sys_text
       and "You are longrunAgent" in sys_text
-      and "longrunAgent.webui.configure" in granted_text
+      and "webui.configure" in granted_text
       and "You are longrunAgent" not in granted_text
       and plain_text == "",
       (plain_text, granted_text[:120]))
 
 expected_tools = [
-    "longrunAgent.teamorg.agents.create", "longrunAgent.teamorg.agents.update",
-    "longrunAgent.teamorg.agents.delete", "longrunAgent.teamorg.agents.prompt.set",
-    "longrunAgent.teamorg.teams.create", "longrunAgent.teamorg.teams.update",
-    "longrunAgent.teamorg.teams.delete", "longrunAgent.teamorg.teams.member.add",
-    "longrunAgent.teamorg.jobs.delete", "longrunAgent.teamorg.routines.delete",
-    "longrunAgent.teamorg.sessions.delete",
-    "longrunAgent.webui.configure", "longrunAgent.webui.inspect",
+    "agent.create", "agent.update",
+    "agent.delete", "agent.prompt_set",
+    "team.create", "team.update",
+    "team.delete", "team.member_add",
+    "job.delete", "routine.delete",
+    "session.delete",
+    "webui.configure", "webui.inspect",
 ]
 check("F3 the section lists EVERY live longrunAgent subtool (generated, never hardcoded)",
       all(("`%s`" % n) in sys_text for n in expected_tools), sys_text[:400])

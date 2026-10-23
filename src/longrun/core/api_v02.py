@@ -387,10 +387,10 @@ _GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
 def _brace_index(subs):
     """Render subtool names as a COMPACT nested index (`{a, b{c,d}}`).
 
-    JAG-537: the exclusive namespace grew to one tool per object per verb
-    (`longrunAgent.teamorg.teams.member.add`), and a flat comma list repeated the
-    `teamorg.`/`teams.` prefixes on every entry. Nesting shares them, so the index
-    stays a name index instead of becoming a catalogue.
+    JAG-537/538: an exclusive namespace holds one tool per object per verb
+    (`team.member_add`, `agent.prompt_set`). Nesting the two-segment names in the
+    prompt index shares the namespace, so the index stays a name index instead of
+    becoming a catalogue.
     """
     tree = {}
     for s in subs:
@@ -2838,10 +2838,22 @@ def _session_ws(session_id):
 
 
 def codebase_status(qs=None):
-    """GET /api/codebase/status — the CODEBASE index for the session's workspace."""
+    """GET /api/codebase/status — the CODEBASE index for the session's workspace.
+
+    Also reports the background indexer, so the panel can say WHEN the automatic
+    pass last ran instead of leaving the operator guessing.
+    """
     from longrun.memory import codeindex as _ci
     ws, _ = _session_ws((qs or {}).get("session"))
-    return _ci.status(ws)
+    out = _ci.status(ws)
+    try:
+        from longrun.memory import autoidx as _autoidx
+        from longrun.memory import indexcfg as _indexcfg
+        out["auto"] = {"enabled": bool(_indexcfg.auto_index()),
+                       "watcher": _autoidx.watch_state(ws)}
+    except Exception:  # noqa: BLE001 — status must survive a broken watcher
+        out["auto"] = {"enabled": False, "watcher": {"watched": False}}
+    return out
 
 
 def codebase_files(qs=None):
@@ -2979,6 +2991,14 @@ def workspace_set(body):
         try:
             _RULES.remember_workspace(real)  # JAG-126: next new session defaults here
         except Exception:  # noqa: BLE001 — convenience only
+            pass
+        # A session-scoped workspace is a real workspace: it gets the same
+        # background indexer as the default one, otherwise its rail shows a
+        # cold index forever and only a manual search pays the walk.
+        try:
+            from longrun.memory import autoidx as _autoidx
+            _autoidx.start(real)
+        except Exception:  # noqa: BLE001 — indexing is best-effort
             pass
         _publish("workspace.update", session=sid, workspace=real, ok=True)
         return {"ok": True, "scope": "session", "session": sid, "workspace": real}

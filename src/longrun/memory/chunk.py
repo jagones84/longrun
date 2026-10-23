@@ -7,6 +7,8 @@ for documents, and a line window is the fallback for other languages.
 import ast
 import os
 import re
+import shutil
+import subprocess
 from fnmatch import fnmatch
 
 from longrun.memory import docio
@@ -59,61 +61,153 @@ def lang_for(rel):
 
 
 # ---------------------------------------------------------------- gitignore ---
-def load_gitignore(root):
+def _read_gitignore(path, base=""):
+    """Rules from ONE .gitignore, with the directory they apply to.
+
+    Negations (`!pattern`) are kept: git evaluates rules in order and the LAST
+    match wins, so a re-included file must override an earlier ignore.
+    """
     rules = []
     try:
-        with open(os.path.join(root, ".gitignore"), encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             for raw in f:
                 line = raw.strip()
-                if not line or line.startswith("#") or line.startswith("!"):
+                if not line or line.startswith("#"):
                     continue
-                rules.append({"pat": line.strip("/"), "dir": line.endswith("/"),
-                              "anchored": line.startswith("/")})
+                neg = line.startswith("!")
+                if neg:
+                    line = line[1:].strip()
+                if not line:
+                    continue
+                rules.append({"base": base, "pat": line.strip("/"),
+                              "dir": line.endswith("/"),
+                              "anchored": line.startswith("/"), "neg": neg})
     except Exception:  # noqa: BLE001
         pass
     return rules
 
 
+def load_gitignore(root):
+    return _read_gitignore(os.path.join(root, ".gitignore"))
+
+
 def _git_ignored(rel, name, is_dir, rules):
+    """True when git-ignore `rules` exclude this path (last match wins)."""
+    rel = str(rel or "").replace("\\", "/")
+    ignored = False
     for r in rules:
+        base = str(r["base"] or "").replace("\\", "/")
+        if base:
+            if not (rel == base or rel.startswith(base + "/")):
+                continue
+            sub = rel[len(base) + 1:]
+        else:
+            sub = rel
+        if not sub:
+            continue
         pat = r["pat"]
         if r["anchored"] or "/" in pat:
-            if rel == pat or rel.startswith(pat + "/") or fnmatch(rel, pat):
-                return True
-        elif fnmatch(name, pat):
-            return True
-        if r["dir"] and is_dir and fnmatch(name, pat):
-            return True
-    return False
+            matched = (fnmatch(sub, pat) or sub == pat
+                       or (is_dir and sub.startswith(pat + "/")))
+        else:
+            matched = fnmatch(name, pat)
+        if matched:
+            ignored = not r["neg"]
+    return ignored
 
 
 def extra_ignored(name, rel, globs):
     return any(fnmatch(name, g) or fnmatch(rel, g) for g in (globs or []))
 
 
+def _git_listed_files(root):
+    """Paths git considers part of this work tree, or None when git cannot say.
+
+    `git ls-files --cached --others --exclude-standard` is the AUTHORITATIVE
+    definition of "not ignored": it applies every nested .gitignore, negation
+    rules, `.git/info/exclude` and the user's global excludes. The fallback walk
+    below approximates only the workspace-root file.
+    """
+    exe = shutil.which("git")
+    if not exe:
+        return None
+    try:
+        probe = subprocess.run([exe, "-C", root, "rev-parse", "--is-inside-work-tree"],
+                               capture_output=True, text=True, timeout=5)
+        if probe.returncode != 0 or probe.stdout.strip().lower() != "true":
+            return None
+        out = subprocess.run([exe, "-C", root, "ls-files", "-z", "--cached",
+                              "--others", "--exclude-standard"],
+                             capture_output=True, timeout=30)
+        if out.returncode != 0:
+            return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    rows = out.stdout.decode("utf-8", "replace").split("\0")
+    return sorted({row for row in rows if row})
+
+
+def _rel_dir(root, dirpath):
+    rel = os.path.relpath(dirpath, root)
+    return "" if rel == "." else rel
+
+
 def walk(root, cfg):
-    """Yield (rel, abspath, lang, kind) for indexable files under `root`."""
-    gi = load_gitignore(root)
+    """Yield (rel, abspath, lang, kind) for indexable files under `root`.
+
+    Git-ignored content is NEVER indexed: when `root` is a git work tree the
+    exact `git ls-files` roster decides (nested .gitignore, negations, global
+    excludes); otherwise the workspace-root .gitignore plus any nested
+    .gitignore found while descending are applied.
+    """
     globs = cfg.get("ignore") or []
     maxb = int(cfg.get("max_file_kb") or 512) * 1024
     docmax = int(cfg.get("doc_max_kb") or 25600) * 1024   # JAG-403j: docs are bigger
     root = os.path.realpath(root)
+
+    listed = _git_listed_files(root)
+    if listed is not None:
+        for rel in listed:
+            parts = rel.replace("\\", "/").split("/")
+            if any(p in SKIP_DIRS or p.startswith(".") for p in parts[:-1]):
+                continue
+            lang, kind = lang_for(rel)
+            if not lang:
+                continue
+            fn = parts[-1]
+            if extra_ignored(fn, rel, globs):
+                continue
+            abspath = os.path.join(root, *parts)
+            try:
+                if os.path.getsize(abspath) > (docmax if docio.supported(fn) else maxb):
+                    continue
+            except OSError:
+                continue
+            yield rel, abspath, lang, kind
+        return
+
+    rules = load_gitignore(root)
     for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = _rel_dir(root, dirpath)
+        if rel_dir:
+            # Nested rules apply only under their own directory (the base filter
+            # in _git_ignored enforces that, so siblings are unaffected).
+            rules = rules + _read_gitignore(
+                os.path.join(dirpath, ".gitignore"), rel_dir)
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
-        rel_dir = os.path.relpath(dirpath, root)
         keep = []
         for d in dirnames:
-            rd = d if rel_dir == "." else os.path.join(rel_dir, d)
-            if _git_ignored(rd, d, True, gi) or extra_ignored(d, rd, globs):
+            rd = d if not rel_dir else os.path.join(rel_dir, d)
+            if _git_ignored(rd, d, True, rules) or extra_ignored(d, rd, globs):
                 continue
             keep.append(d)
         dirnames[:] = keep
         for fn in filenames:
-            rel = fn if rel_dir == "." else os.path.join(rel_dir, fn)
+            rel = fn if not rel_dir else os.path.join(rel_dir, fn)
             lang, kind = lang_for(rel)
             if not lang:
                 continue
-            if _git_ignored(rel, fn, False, gi) or extra_ignored(fn, rel, globs):
+            if _git_ignored(rel, fn, False, rules) or extra_ignored(fn, rel, globs):
                 continue
             abspath = os.path.join(dirpath, fn)
             try:
@@ -122,6 +216,7 @@ def walk(root, cfg):
             except OSError:
                 continue
             yield rel, abspath, lang, kind
+
 
 
 def read_text(abspath, max_kb):

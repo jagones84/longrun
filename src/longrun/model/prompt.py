@@ -263,14 +263,14 @@ def _provider_tools(sess, ws, ctx):
 
 
 def _longrun_agent_tool_lines():
-    """One `- name — first sentence` line per `longrunAgent.*` subtool, from LIVE state.
+    """One `- name — first sentence` line per EXCLUSIVE subtool, from LIVE state.
 
     Read from the registry, never hardcoded: a new subtool shows up in the prompt
     the moment it is registered, so the agent can never be unaware of its own tools.
     """
     try:
         from longrun.tools import registry
-        rows = [t for t in registry.catalog() if str(t.get("name") or "").startswith("longrunAgent.")]
+        rows = [t for t in registry.catalog() if str(t.get("origin") or "") == "exclusive"]
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         return []
     out = []
@@ -288,10 +288,10 @@ def _provider_longrun_agent(sess, ws, ctx):
     """The `longrun-agent` section — longrunAgent's OWN namespace + hard rules.
 
     JAG-535: the permanent system agent had no idea it was the VEO or which
-    `longrunAgent.*` subtools it owned (the generic Tool registry block is
+    exclusive subtools it owned (the generic Tool registry block is
     summarised and truncated). This section is generated from the live registry and
     injected only for the system session or for a session that was GRANTED
-    `allow_longrun_agent`, so the namespace is explicit and never drifts.
+    `allow_longrun_agent`, so the surface is explicit and never drifts.
     """
     try:
         from longrun.agent import longrun_agent as lra
@@ -314,14 +314,16 @@ def _provider_longrun_agent(sess, ws, ctx):
             "agent. You own the substrate: you act on the backend state, never on the "
             "graphical objects \u2014 the WebUI re-paints itself from the events your "
             "calls emit, so never try to \u201cclick\u201d or scrape the UI.\n"
-            "Your exclusive tool namespace is `longrunAgent.*` and these are ALL of "
-            "them right now:\n"
+            "Your exclusive tools use two-segment names `namespace.tool` "
+            "(`agent.prompt_set`, `team.member_add`, `kb.notebook_add`) and these "
+            "are ALL of them right now:\n"
         )
     else:
         intro = (
             "## longrunAgent namespace (granted to this session)\n"
-            "You were granted access to the VEO's exclusive `longrunAgent.*` "
-            "namespace. Use it to manage the harness substrate; the WebUI re-paints "
+            "You were granted access to the VEO's exclusive tools (`namespace.tool`, "
+            "e.g. `agent.create`, `team.list`, `webui.configure`). Use them to "
+            "manage the harness substrate; the WebUI re-paints "
             "itself from the events your calls emit. Available subtools:\n"
         )
 
@@ -330,14 +332,15 @@ def _provider_longrun_agent(sess, ws, ctx):
         "\nHow to call them (enforced in code, not by you):\n"
         "- call a tool by its FULL dotted name and pass that OBJECT's own fields: every "
         "object has one tool per verb (`create`/`update`/`delete`/`get`/`list`), so there "
-        "is no sub-operation to choose. An argument named `action` is RESERVED: the "
-        "dispatcher uses it to carry the subtool name \u2014 never send it.\n"
-        "- Dual permission: a `longrunAgent.*` call runs only when the tool is enabled "
+        "is no sub-operation to choose. An argument named `action` is RESERVED and "
+        "never part of any schema \u2014 never send it: the verb is already in the "
+        "tool name.\n"
+        "- Dual permission: an exclusive call runs only when the tool is enabled "
         "in the global registry AND the calling session is `longrunAgent*` or carries "
         "`allow_longrun_agent`. Both halves are checked outside you \u2014 do not try to "
         "grant yourself access.\n"
         "- REFUSED, always: `allow_nucleus_write` / `allow_matrix_promote` (the human "
-        "operator alone owns those checkboxes), any change to your own `longrunAgent.*` "
+        "operator alone owns those checkboxes), any change to your own exclusive "
         "tool policy, and any edit of `src/longrun` or the self-improvement policy.\n"
         "- Nothing is remembered between runs: your transcript is reset before and "
         "after every automation turn, so plan from the live substrate you inspect, "
@@ -351,10 +354,10 @@ def _provider_longrun_agent(sess, ws, ctx):
         pass
     body += (
         "- Working rhythm: inspect the real state first (`webui.inspect` for any "
-        "settings/config section; the `longrunAgent.teamorg.*` tools are themselves the "
+        "settings/config section; the `agent.*` / `team.*` tools are themselves the "
         "read+write path for agents and teams), apply the change, then report exactly "
         "what changed. You also own the semantic team icon+colour choice "
-        "(`teamorg.teams.create` decides it from the palette \u2014 an explicit `symbol` "
+        "(`team.create` decides it from the palette \u2014 an explicit `symbol` "
         "still wins).\n"
     )
     return body

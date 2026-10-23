@@ -60,14 +60,40 @@ def _loop(ws, stop, slot):
             t0 = time.monotonic()
             res = _codeindex.build(ws)
             took = time.monotonic() - t0
+            counts = {"files": (res or {}).get("files"),
+                      "chunks": (res or {}).get("chunks"),
+                      "embedded": (res or {}).get("embedded")}
             slot["last"] = {"at": time.time(), "duration_s": round(took, 2),
-                            "files": (res or {}).get("files"),
-                            "chunks": (res or {}).get("chunks")}
+                            **counts}
+            _announce(ws, counts, res or {}, slot)
             # Back off when the tree is quiet; a real edit costs one extra pass.
             interval = POLL_MAX_S if took < 0.25 else POLL_MIN_S
         except Exception as e:  # noqa: BLE001 — indexing must never kill the thread
             slot["last"] = {"at": time.time(), "error": "%s: %s" % (type(e).__name__, e)}
             interval = POLL_MAX_S
+
+
+def _announce(ws, counts, res, slot):
+    """Publish `index.done` ONLY when a pass changed the index.
+
+    The background pass used to be invisible: the Codebase panel kept showing a
+    stale "Embedding incomplete" line until the operator clicked status. A feed
+    event re-renders the panel (the WebUI already handles `index.done`) without
+    spamming clients on the many no-op passes.
+    """
+    previous = slot.get("counts")
+    if counts == previous:
+        return
+    slot["counts"] = counts
+    try:
+        from longrun.core.events import publish
+        publish("index.done", workspace=ws, auto=True,
+                files=counts.get("files"), chunks=counts.get("chunks"),
+                embedded=counts.get("embedded"),
+                embed_error=(res or {}).get("embed_error"))
+    except Exception:  # noqa: BLE001 — visibility must never break indexing
+        pass
+
 
 
 def start(ws):
@@ -121,3 +147,19 @@ def status():
     return {"workspaces": [{"workspace": ws,
                             "alive": bool(s["thread"] and s["thread"].is_alive()),
                             "last": s["last"]} for ws, s in items]}
+
+
+def watch_state(ws):
+    """State of the background indexer for ONE workspace (never raises)."""
+    try:
+        real = os.path.realpath(ws or "")
+    except OSError:
+        return {"watched": False, "interval_s": _interval()}
+    with _LOCK:
+        slot = _STATE.get(real)
+        interval = _interval()
+    if not slot:
+        return {"watched": False, "interval_s": interval}
+    return {"watched": bool(slot["thread"] and slot["thread"].is_alive()),
+            "interval_s": interval, "last": slot.get("last")}
+

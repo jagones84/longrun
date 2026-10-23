@@ -2548,7 +2548,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/sessions/"):
             # JAG-537: the cascade lives in `delete_session` so the HTTP door and
-            # `longrunAgent.teamorg.sessions.delete` share ONE implementation.
+            # `session.delete` share ONE implementation.
             res = delete_session(path[len("/api/sessions/"):])
             return self._send(res.pop("status", 200), res)
         return self._send(404, {"error": "not found"})
@@ -2562,7 +2562,7 @@ def delete_session(sid):
 
     JAG-537: this cascade used to live inline in `do_DELETE`; it is now a module
     function so the HTTP door (`DELETE /api/sessions/<sid>`) and the
-    `longrunAgent.teamorg.sessions.delete` tool cannot drift apart. The caller maps
+    `session.delete` tool cannot drift apart. The caller maps
     the returned `status` onto its own transport.
 
     The cascade is the union of JAG-179 (graph / run metrics / edit journal),

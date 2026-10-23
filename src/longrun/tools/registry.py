@@ -1315,7 +1315,7 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     is_mtx_family = bool(mtx or prom or name == "matrix" or name.startswith("matrix."))
     if entry is None and is_mtx_family:
         entry = {"enabled": True, "approval": (mtx or prom or {}).get("approval", "auto")}
-    is_exclusive = bool((schema or {}).get("_origin") == "exclusive" or name.startswith("longrunAgent."))
+    is_exclusive = bool((schema or {}).get("_origin") == "exclusive")
     if entry is None and is_exclusive:
         entry = {"enabled": True, "approval": "auto"}
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
@@ -1548,11 +1548,13 @@ def classify(tool, args, workspace=None):
         return "denied", "matches hard-deny pattern %r" % hit
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
-    # JAG-535: `longrunAgent.*` tools enforce a dual-permission model — the tool
-    # must be enabled here AND the calling session must be `longrunAgent` or have
+    # JAG-535/538: exclusive tools enforce a dual-permission model — the tool must
+    # be enabled here AND the calling session must be `longrunAgent` or have
     # `allow_longrun_agent: true`. Even `approvals.mode=full` never bypasses the
     # session privilege check when `run_id` / `session` is provided in `args`.
-    if str(tool or "").startswith("longrunAgent.") or tool == "longrunAgent":
+    # The marker is the schema's own `_origin`, not a name prefix: exclusive tools
+    # are now named `namespace.tool` (`agent.prompt_set`), with no shared prefix.
+    if (spec.get("schema") or {}).get("_origin") == "exclusive":
         sess_ref = (args or {}).get("_session") or (args or {}).get("run_id")
         if sess_ref is not None:
             from longrun.agent import longrun_agent as _lra

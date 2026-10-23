@@ -349,12 +349,20 @@ tools:
       - "."
       - "/home/jagones/Repositories"
 
-  # ---- JAG-535: longrunAgent (VEO — exclusive built-in automation tools) -----
+  # ---- JAG-535/538: exclusive built-in automation tools (VEO) ---------------
   # Dual-permission gated: callable ONLY when enabled here AND the calling
   # session is `longrunAgent` or has `allow_longrun_agent: true`.
-  longrunAgent:
-    enabled: true
-    approval: auto
+  # One namespace per object; each tool is exactly `namespace.tool`.
+  agent:      { enabled: true, approval: auto }   # agent.create|update|get|list|delete|prompt_*
+  team:       { enabled: true, approval: auto }   # team.create|update|get|list|delete|member_*
+  job:        { enabled: true, approval: auto }   # job.create|dispatch|get|list|delete
+  routine:    { enabled: true, approval: auto }   # routine.create|update|get|list|delete
+  session:    { enabled: true, approval: auto }   # session.create|rename|list|delete
+  webui:      { enabled: true, approval: auto }   # webui.inspect|configure
+  provider:   { enabled: true, approval: auto }   # provider.upsert|remove|add_model|remove_model|set_default|reload
+  mcp:        { enabled: true, approval: auto }   # mcp.upsert|remove|test|reload
+  skill:      { enabled: true, approval: auto }   # skill.remove
+  kb:         { enabled: true, approval: auto }   # kb.notebook_*|source_*|reembed
 
   # external MCP tools appear as <client>__<tool> (config/mcp_clients.yaml);
   # default policy is approval=required. Read-only pmcp gateway probes are

@@ -1202,10 +1202,13 @@
     letter-spacing: .08em; text-transform: uppercase; }
   .cb-metric b { display: block; margin-top: 2px; color: var(--txt);
     font-size: 14px; font-variant-numeric: tabular-nums; }
-  .cb-location, .cb-embedding { margin-top: 8px; color: var(--dim); font-size: 11px; }
+  .cb-location, .cb-embedding, .cb-auto { margin-top: 8px; color: var(--dim); font-size: 11px; }
   .cb-location { display: flex; gap: 6px; min-width: 0; }
   .cb-location .cb-path { color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cb-embedding b { color: var(--txt); overflow-wrap: anywhere; }
+  .cb-auto b { color: var(--txt); }
+  .cb-auto .cb-off { color: var(--warn); }
+  .cb-auto .cb-err { color: var(--err); }
   .cb-empty, .cb-error { display: block; margin-top: 8px; padding: 7px 9px;
     border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
     border-radius: 8px; color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
@@ -2352,6 +2355,9 @@
             read and write here. One source of truth: <code>GET / POST /api/blackboard</code>.</span>
             <button class="ghost" data-call="loadBlackboard" title="re-read the entries">↻</button>
           </div>
+          <div class="remaining u-mt4">Stored in <code>data/blackboard/blackboard.json</code> (inside the Longrun data
+          home). Agents reach the same entries through the MCP tool <code>longrun_blackboard</code> and the CLI
+          <code>forge blackboard</code>; this panel is only another door to that state.</div>
           <div class="u-df u-g6 u-mt6 u-fww">
             <input id="bbTopic" class="inp u-p610 u-fs12" style="width:130px" placeholder="topic" value="general">
             <input id="bbContent" class="inp u-f1 u-p610 u-fs12" placeholder="post an entry to the blackboard…">
@@ -2366,6 +2372,9 @@
           <div class="remaining"><b>This spends real model calls:</b> the coordinator decomposes the goal, spawns N
           subagents (each with a fresh context) and synthesises their summaries. The goal, the partial results and the
           synthesis land on the blackboard above.</div>
+          <div class="remaining u-mt4">It runs <code>agent/swarm.py::run</code> through the same subagent engine as a
+          <code>batch</code> turn: one coordinator call plus one call per worker, so the cost is N+1 model turns.
+          Nothing is stored outside the blackboard; the activity is visible in the Feed.</div>
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
             <input id="swGoal" class="inp u-f1 u-p610 u-fs12" placeholder="the goal to decompose…">
             <label class="remaining u-df u-g6 u-aic">workers<input id="swWorkers" type="number" min="1" max="8" value="3" class="inp u-p610 u-fs12" style="width:56px"></label>
@@ -8699,8 +8708,13 @@ function renderTools(el, d) {
       `</div>` +
       (t.description ? `<div class="remaining" style="margin:-4px 0 8px 22px">${esc(t.description)}</div>` : "");
   };
-  const gNames = Array.from(groups.keys()).filter(g => g)
-    .sort((a, b) => (groups.get(b).length - groups.get(a).length) || a.localeCompare(b));
+  // Order namespaces like a filesystem tree: natural A→Z on the namespace path,
+  // so sibling namespaces (`agent`, `team`, `webui`) and their sub-namespaces
+  // stay adjacent instead of being scattered by their tool count. Rows inside a
+  // namespace follow the same order.
+  const _nat = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+  groups.forEach(list => list.sort((a, b) => _nat(a.name || a.id || "?", b.name || b.id || "?")));
+  const gNames = Array.from(groups.keys()).filter(g => g).sort(_nat);
   const _flat = groups.get("") || [];
   // JAG-511: the namespaces are now nested under ONE collapsible section per origin
   // (built-in / MCP / Matrix), mirroring the skills panel. A group's origin is the
@@ -10449,8 +10463,21 @@ async function saveLongrunAgentModel() {
     : (m === "@chat" ? "saved: longrunAgent follows the active session model"
                      : ("saved: longrun_agent = " + m));
 }
+/* 2026-10-23: longrunAgent automation is restricted to surfaces the operator
+   already edits by hand and that cannot change runtime safety config. Rules and
+   Teamorg (agent/team prompts) stay; Models, Subagents, Tools, Sandbox, MCP,
+   Config files, Index and Knowledge rewrite config and are NOT mounted. The
+   server refuses them too, so hiding the button is not the only guard. */
+const AUTOMATE_ALLOWED_SECTIONS = new Set(["rules", "teamorg"]);
+function _automateAllowed(section) {
+  return AUTOMATE_ALLOWED_SECTIONS.has(String(section || "").trim());
+}
 function makeAutomateWidget(section, getContext) {
   const bar = document.createElement("div");
+  if (!_automateAllowed(section)) {
+    bar.hidden = true;   // code stays, control is neither active nor visible
+    return bar;
+  }
   bar.className = "lra-auto-bar";
   bar.dataset.automateSection = section;
   bar.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap";
@@ -10531,6 +10558,7 @@ const AUTOMATE_CATS = {
 function mountCategoryAutomate(name) {
   const spec = AUTOMATE_CATS[name];
   if (!spec) return;
+  if (!_automateAllowed(spec.section)) return;
   mountSectionAutomate('#swMain .sw-cat[data-cat="' + name + '"]', spec.section, spec.ctx);
 }
 /* JAG-536 W4: Settings > Orchestration — the blackboard and the swarm runner.
@@ -10860,6 +10888,12 @@ function _applyCodebaseEvent(ev) {
   cbStatus();
   _cbProgressTimer = setTimeout(() => { progress.hidden = true; }, 10000);
 }
+function _cbAgo(ts) {
+  const secs = Math.max(0, Math.round((Date.now() / 1000) - Number(ts || 0)));
+  if (secs < 60) return secs + "s ago";
+  if (secs < 3600) return Math.round(secs / 60) + "m ago";
+  return Math.round(secs / 3600) + "h ago";
+}
 async function cbStatus() {
   try {
     const s = await api("GET", "/api/codebase/status" + _cbQS());
@@ -10877,6 +10911,19 @@ async function cbStatus() {
     }
     const files = Number(s.files || 0), chunks = Number(s.chunks || 0), embedded = Number(s.embedded || 0);
     const count = n => n.toLocaleString("en-US");
+    // "I see what is real": the automatic pass is silent by design, so the panel
+    // must say whether a watcher exists and when it last ran.
+    const auto = s.auto || {}, watcher = auto.watcher || {}, last = watcher.last || null;
+    const autoOn = auto.enabled !== false;
+    let autoHow = "";
+    if (!autoOn) autoHow = " · automatic indexing is off";
+    else if (!watcher.watched) autoHow = " · <span class=\"cb-off\">no watcher for this workspace</span>";
+    else if (!last) autoHow = " · waiting for the first pass";
+    else if (last.error) autoHow = " · <span class=\"cb-err\">last pass failed · " + esc(last.error) + "</span>";
+    else if (last.skipped) autoHow = " · " + esc(last.skipped);
+    else autoHow = " · last pass " + _cbAgo(last.at) + " · " + count(Number(last.files || 0)) +
+      " files · every " + Number(watcher.interval_s || 10) + "s";
+    const autoHtml = '<div class="cb-auto">Auto-index · <b>' + (autoOn ? "on" : "off") + "</b>" + autoHow + "</div>";
     if (meta) meta.innerHTML = (s.exists
       ? '<div class="cb-metrics">' +
         '<div class="cb-metric"><span>Files</span><b>' + count(files) + "</b></div>" +
@@ -10887,10 +10934,12 @@ async function cbStatus() {
         '<div class="cb-embedding">Embedding · <b>' + esc(s.embed_model || "lexical only") + "</b>" +
         (s.dim ? " · " + count(Number(s.dim)) + " dimensions" : "") +
         " · DB " + esc(_fmtSize((s.size_kb || 0) * 1024)) + "</div>" +
+        autoHtml +
         (s.embed_error ? '<span class="cb-error">Embedding incomplete · ' + esc(s.embed_error) + "</span>" : "") +
         (files === 0 ? '<span class="cb-empty">No indexable files found. Check this workspace and its ignore patterns.</span>' : "")
       : '<div class="cb-location"><span>Workspace</span><b class="cb-path" title="' +
         _attr(_cbWorkspace) + '">' + esc(_short(_cbWorkspace)) + '</b></div>' +
+        autoHtml +
         '<span class="cb-empty">No index yet. Build to scan this workspace.</span>');
     const st = $("cbStat"); if (st) st.textContent = s.exists ? (count(chunks) + " chunks") : "not built";
     _isum("sCodebase", s.exists ? (count(files) + " files · " + count(chunks) + " chunks") : "empty", s.exists && files ? "" : "warn");

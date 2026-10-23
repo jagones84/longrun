@@ -1995,11 +1995,18 @@ def _matrix(args, run_id):
 
 
 def _longrun_agent(args, run_id=None):
+    """Legacy meta entry point (`longrunAgent` + action) — kept only so an old
+    persisted call fails with a clear name instead of 'no implementation'."""
+    return {"ok": False, "exit_code": 127,
+            "error": ("the `longrunAgent` meta tool is gone: exclusive tools are "
+                      "called by their own two-segment name (`agent.prompt_set`, "
+                      "`team.member_add`, `kb.notebook_add`)")}
+
+
+def _exclusive_tool(tool, args, run_id=None):
+    """Run one exclusive tool (`_origin: exclusive` in the registry schema)."""
     from longrun.agent import longrun_agent as _lra
-    sub = str((args or {}).get("action") or "").strip()
-    tool_name = ("longrunAgent." + sub) if sub and not sub.startswith("longrunAgent.") else (sub or "longrunAgent")
-    clean = {k: v for k, v in (args or {}).items() if k != "action"}
-    res = _lra.execute(tool_name, clean, run_id=run_id)
+    res = _lra.execute(tool, args, run_id=run_id)
     res.setdefault("backend", "host")
     res.setdefault("sandboxed", False)
     return res
@@ -2169,6 +2176,19 @@ def _dispatch_execute_raw(tool, args, run_id=None):
         if ns in _DISPATCH and ns not in ("fs",):
             fn = _DISPATCH[ns]
             injected_action = sub
+    if fn is None:
+        # JAG-538: exclusive tools are `namespace.tool` with no prefix to key on,
+        # so the registry schema's own `_origin` is the routing contract.
+        try:
+            from longrun.tools import registry as _registry
+            _sch = ((_registry.tool_spec(tool) or {}).get("schema") or {})
+        except Exception:  # noqa: BLE001
+            _sch = {}
+        if _sch.get("_origin") == "exclusive":
+            res = _exclusive_tool(tool, args, run_id=run_id)
+            res["tool"] = tool
+            res["args"] = args or {}
+            return res
     if fn is None:
         try:
             from longrun.core import matrix as _mtx
