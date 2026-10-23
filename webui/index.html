@@ -2113,6 +2113,16 @@
       <section data-insp="feed" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["feed"]'>Feed<span class="ihd-s" id="sFeed"></span></button>
         <div class="insp-body">
+        <!-- JAG-536: the LIVE half of the feed — what is running RIGHT NOW, with the
+             cancel / pause / resume / abort doors that had no UI at all. Read from
+             the registries, never mirrored: /api/tools/running + /api/agent/runs. -->
+        <div class="card" id="runningNow" style="font-size:11px">
+          <div class="u-df u-g6 u-aic"><b>Running now</b>
+            <span class="remaining" id="runningNowCount" style="margin-left:auto">—</span>
+            <button class="ghost" data-call="loadRunning" title="re-read the running tool jobs and background agent runs">↻</button>
+          </div>
+          <div id="runningNowList" class="u-mt6 remaining">—</div>
+        </div>
         <div class="card" id="feed" style="font-size:11px;color:var(--dim);max-height:220px;overflow-y:auto">connecting…</div>
         </div>
       </section>
@@ -7541,6 +7551,69 @@ function _resyncDurable() {
   try { loadCtx(); } catch (e) {}
   try { loadSessions(); } catch (e) {}
 }
+/* JAG-536: what is RUNNING right now. Two real registries, one surface:
+   `/api/tools/running` (sandbox jobs, cancellable) and `/api/agent/runs`
+   (background agent runs, pausable/resumable/abortable). Both routes existed with
+   NO UI door. Polls only while the Feed rail is actually visible. */
+async function loadRunning() {
+  const box = $("runningNowList"), cnt = $("runningNowCount");
+  if (!box || box.offsetParent === null) return;   // panel collapsed — do not poll
+  let tools = [], runs = [];
+  try { tools = ((await api("GET", "/api/tools/running")) || {}).running || []; } catch (e) {}
+  try { runs = ((await api("GET", "/api/agent/runs")) || {}).runs || []; } catch (e) {}
+  if (cnt) cnt.textContent = (tools.length + runs.length) + " active";
+  box.innerHTML = "";
+  if (!tools.length && !runs.length) { box.textContent = "nothing running"; return; }
+  const mkRow = (label, title, actions) => {
+    const row = document.createElement("div");
+    row.className = "u-df u-g6 u-aic u-mt6";
+    const s = document.createElement("span");
+    s.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    s.textContent = label; s.title = title || label;
+    row.append(s);
+    (actions || []).forEach(a => {
+      const b = document.createElement("button");
+      b.className = "ghost"; b.textContent = a.t; b.title = a.title || "";
+      b.onclick = a.fn;
+      row.append(b);
+    });
+    return row;
+  };
+  tools.forEach(t => box.appendChild(mkRow(
+    "▶ " + t.job + " · pid " + t.pid + " · " + t.seconds + "s · " + t.command, t.command,
+    [{ t: "cancel", title: "terminate this tool job and its children (POST /api/tools/cancel)",
+       fn: async () => {
+         if (!(await confirmDelete("cancel the tool job " + t.job + "?"))) return;
+         await api("POST", "/api/tools/cancel", { job: t.job });
+         toast("cancel requested: " + t.job); loadRunning();
+       } }])));
+  runs.forEach(r => {
+    const id = r.id || r.run_id;
+    const terminal = ["done", "aborted", "error"].includes(String(r.status));
+    const acts = [];
+    if (!terminal) {
+      acts.push({
+        t: r.status === "paused" ? "resume" : "pause",
+        title: "POST /api/agent/control",
+        fn: async () => {
+          await api("POST", "/api/agent/control",
+                    { runId: id, action: r.status === "paused" ? "resume" : "pause" });
+          loadRunning();
+        } });
+      acts.push({
+        t: "abort", title: "stop this background run (POST /api/agent/control)",
+        fn: async () => {
+          if (!(await confirmDelete("abort the background run " + id + "?"))) return;
+          await api("POST", "/api/agent/control", { runId: id, action: "abort" });
+          loadRunning();
+        } });
+    }
+    box.appendChild(mkRow(
+      "⚙ " + id + " · " + (r.status || "?") + " · " + String(r.goal || "").slice(0, 60),
+      r.goal, acts));
+  });
+}
+
 function connectFeed() {
   const _qs = (authQS() ? "?" + authQS() + "&" : "?") + "since=" + feedSince;
   const es = new EventSource("/api/feed" + _qs);
@@ -10021,6 +10094,7 @@ function _loadInspector(name) {
   else if (key === "cost") { loadCosts(); }
   else if (key === "rules") { loadRulesPanel(); }
   else if (key === "approvals") { loadApprovals(); }
+  else if (key === "feed") { loadRunning(); }
   else if (key === "files") { loadEdits(); loadRules(); }
   else if (key === "codebase") { cbStatus(); loadIndexCfg(); }
 }
@@ -12119,6 +12193,7 @@ document.addEventListener("visibilitychange", function () {
 });
 setInterval(loadStatus, 5000);
 setInterval(loadApprovals, 4000);
+setInterval(loadRunning, 5000);   // JAG-536: the live running list, while it is visible
 /* JAG-425 (#6): ONE delegated dispatcher drives every control converted out of an
    inline handler (static markup now carries data-call / data-change / data-key-fn).
    The target name is resolved on the global object and MUST be a function — no eval,

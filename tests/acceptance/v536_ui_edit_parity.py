@@ -23,7 +23,9 @@ Locked here:
     keeping the id + ``runs``/``last_run``, and validates its inputs;
   * ``POST /api/routines/<rid>`` routes to it;
   * the Orbit deck exposes both (an edit form + a delete item) and they hit exactly
-    those routes.
+    those routes;
+  * G — the LIVE half: `/api/tools/running` + the cancel, `/api/agent/runs` + the
+    pause/resume/abort, and the Feed-rail "Running now" card that reads them.
 
 Deterministic: no model, no network, no server.
 Run: python3 tests/acceptance/v536_ui_edit_parity.py
@@ -241,6 +243,78 @@ check("F5 a plain tool keeps every argument",
       A._card_args("fs.read", {"path": "a.py"}) == {"path": "a.py"})
 check("F6 an action that is NOT a canonical subtool is preserved",
       A._card_args("bash", {"action": "run", "cmd": "ls"}) == {"action": "run", "cmd": "ls"})
+
+# --- G: the LIVE running surface — what is running NOW, and how to stop it ---
+# Two registries had routes and NO door: /api/tools/running (+ the cancel) and
+# /api/agent/runs (+ pause/resume/abort). Locked: the routes, the panel that reads
+# them, the four actions, and that the panel stops polling while collapsed.
+import threading                                                  # noqa: E402
+import time                                                       # noqa: E402
+from longrun.tools import sandbox                                 # noqa: E402
+
+check("G1 GET /api/tools/running reads the sandbox registry",
+      'path == "/api/tools/running"' in api and "sandbox.running()" in api)
+check("G2 POST /api/tools/cancel routes to sandbox.cancel",
+      'path == "/api/tools/cancel"' in api and "sandbox.cancel(job)" in api)
+check("G3 GET /api/agent/runs publishes the run registry",
+      'path == "/api/agent/runs"' in api and "r.public() for r in" in api)
+check("G4 POST /api/agent/control routes to run_control",
+      'path == "/api/agent/control"' in api and "run_control(rid, action)" in api)
+
+# A real tracked process (no docker, no network): the primitive the four backends
+# all end in. spawn -> appears in running() -> cancel -> leaves the queue.
+_job = {}
+
+
+def _spawn():
+    _job["res"] = sandbox._run_tracked(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        timeout=40, job_id="v536live")
+
+
+threading.Thread(target=_spawn, daemon=True).start()
+_seen = []
+for _ in range(40):
+    _seen = [j for j in sandbox.running() if j["job"] == "v536live"]
+    if _seen:
+        break
+    time.sleep(0.2)
+check("G5 a tracked job shows up in running() while it executes", bool(_seen),
+      sandbox.running())
+check("G6 the row carries the job / pid / command / seconds the panel shows",
+      bool(_seen) and all(k in _seen[0] for k in ("job", "pid", "command", "seconds")),
+      _seen)
+_can = sandbox.cancel("v536live")
+check("G7 cancel() accepts the job id the UI posts", _can.get("cancelled") is True, _can)
+_gone = False
+for _ in range(60):
+    if not [j for j in sandbox.running() if j["job"] == "v536live"]:
+        _gone = True
+        break
+    time.sleep(0.1)
+check("G8 the cancelled job leaves the queue", _gone, sandbox.running())
+check("G9 cancel() is idempotent once it stopped",
+      sandbox.cancel("v536live").get("cancelled") is False)
+check("G10 the cancelled run reports cancelled + exit 130",
+      (_job.get("res") or {}).get("cancelled") is True
+      and (_job.get("res") or {}).get("exit_code") == 130, _job.get("res"))
+
+check("G11 the Feed rail carries the live Running-now card",
+      'id="runningNow"' in gui and 'id="runningNowList"' in gui
+      and 'id="runningNowCount"' in gui)
+check("G12 the card reads BOTH real registries, never a mirror",
+      '"/api/tools/running"' in gui and '"/api/agent/runs"' in gui
+      and "async function loadRunning(" in gui)
+check("G13 the cancel button posts the job id to the cancel route",
+      '"/api/tools/cancel", { job: t.job }' in gui)
+check("G14 pause / resume / abort post runId + action to the control route",
+      '{ runId: id, action: r.status === "paused" ? "resume" : "pause" }' in gui
+      and '{ runId: id, action: "abort" }' in gui)
+check("G15 it never polls while the panel is collapsed",
+      "box.offsetParent === null) return;" in gui
+      and "setInterval(loadRunning, 5000)" in gui)
+check("G16 opening the Feed section populates it immediately",
+      'else if (key === "feed") { loadRunning(); }' in gui)
 
 print("---")
 ok = sum(1 for r in results if r)
