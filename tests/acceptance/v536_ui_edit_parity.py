@@ -28,6 +28,8 @@ Locked here:
     pause/resume/abort, and the Feed-rail "Running now" card that reads them.
   * H — Settings ▸ Orchestration: the blackboard (post/get/thread/stats) and the
     swarm runner (`POST /api/swarm/run`), exposed where they had no panel.
+  * I — the manifest checkpoints (create / rollback / delete / prune), the context
+    dry run (`POST /api/context/preview`) and `POST /api/costs/reset`.
 
 Deterministic: no model, no network, no server.
 Run: python3 tests/acceptance/v536_ui_edit_parity.py
@@ -354,6 +356,65 @@ check("H11 opening the category populates the blackboard at once",
       'else if (name === "orchestrate") { loadBlackboard(); }' in gui)
 check("H12 the swarm control warns that it spends real model calls",
       "spends real model calls" in gui)
+
+# --- I: manifest checkpoints + context preview + cost reset ------------------
+# Three more write routes with no door: the MANIFEST checkpoints (create /
+# rollback / delete / prune — the UI only had the msg-index rewind),
+# POST /api/context/preview and POST /api/costs/reset.
+from longrun.memory import checkpoints as CP                      # noqa: E402
+from longrun.model import context_engine as CE                    # noqa: E402
+
+server.save_plan({"steps": [{"id": "s1", "title": "before the checkpoint"}]})
+_cp = CP.create(label="v536 snap", session_id=s1, by="v536")
+check("I1 create() returns a manifest bound to the session",
+      str(_cp.get("id", "")).startswith("cp_") and _cp.get("session_id") == s1, _cp)
+check("I2 the manifest carries the snapshot sizes",
+      isinstance(_cp.get("sizes"), dict) and "messages" in _cp["sizes"], _cp.get("sizes"))
+_cpa = CP.create(label="idem", session_id=s1, idempotency_key="v536-key", by="v536")
+_cpb = CP.create(label="idem again", session_id=s1, idempotency_key="v536-key", by="v536")
+check("I3 an idempotency key returns the SAME checkpoint",
+      _cpb.get("id") == _cpa.get("id") and _cpb.get("idempotent") is True,
+      (_cpa.get("id"), _cpb))
+
+server.save_plan({"steps": [{"id": "s2", "title": "after the checkpoint"}]})
+_rb = CP.rollback(_cp["id"], by="v536")
+check("I4 rollback() reports the restored manifest", _rb.get("ok") is True, _rb)
+check("I5 the plan really came back to the snapshot",
+      [x.get("id") for x in (server.load_plan().get("steps") or [])] == ["s1"],
+      server.load_plan())
+check("I6 the rollback is recorded on the manifest",
+      (CP.get(_cp["id"]) or {}).get("rolled_back") is True)
+check("I7 delete() removes the checkpoint",
+      CP.delete(_cpa["id"]).get("ok") is True and CP.get(_cpa["id"]) is None)
+check("I8 prune() is a clean no-op below the cap", CP.prune(keep=100).get("ok") is True)
+check("I9 a missing checkpoint answers with an error, never a crash",
+      "error" in (CP.rollback("cp_nope") or {})
+      and CP.delete("cp_nope").get("ok") is False)
+
+_pv = CE.preview(s1, "what is next?", 8000)
+check("I10 the context preview is a dry run over the session",
+      _pv.get("session_id") == s1 and "final_tokens" in _pv
+      and _pv.get("budget_tokens") == 8000, _pv)
+check("I11 the preview reports the compaction outcome",
+      isinstance(_pv.get("compaction"), dict) and "kept" in _pv["compaction"],
+      _pv.get("compaction"))
+check("I12 an unknown session is refused, not raised", "error" in CE.preview("s_nope"))
+
+check("I13 the rewind dialog grew a Manifest checkpoints block",
+      'id="cpLabel"' in gui and 'id="cpList"' in gui
+      and "async function loadCheckpoints(" in gui)
+check("I14 create / rollback / delete / prune hit the four real routes",
+      '"/api/checkpoints", { label:' in gui and '"/rollback", { by: "webui" }' in gui
+      and 'api("DELETE", "/api/checkpoints/" + encodeURIComponent(cpId)' in gui
+      and 'api("DELETE", "/api/checkpoints?keep=100"' in gui)
+check("I15 the checkpoints load on open, even with no turn anchors",
+      "loadCheckpoints(sid);" in gui)
+check("I16 the Context panel can dry-run the next turn",
+      'id="ctxPvMsg"' in gui and 'id="ctxPvOut"' in gui and "async function ctxPreview(" in gui
+      and '"/api/context/preview"' in gui and "r.retrieval_hits" in gui)
+check("I17 the Cost panel can reset this session's ledger",
+      'data-call="resetCosts"' in gui and "async function resetCosts(" in gui
+      and '"/api/costs/reset", { session: sessionId }' in gui)
 
 print("---")
 ok = sum(1 for r in results if r)

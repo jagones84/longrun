@@ -1722,7 +1722,10 @@
             <span id="costSub" class="remaining"></span>
           </div>
           <div class="ctxrow"><span id="costCalls">–</span><span id="costIn">–</span><span id="costOut">–</span></div>
-          <div class="u-mt6"><button class="ghost" id="costRefresh" title="re-read both price sources now: OpenRouter's public model list AND DeepSeek's official table (config/prices.yaml). Applies from now on — past calls keep the price they were charged at.">↻ refresh prices</button></div>
+          <div class="u-df u-g6 u-aic u-mt6">
+            <button class="ghost" id="costRefresh" title="re-read both price sources now: OpenRouter's public model list AND DeepSeek's official table (config/prices.yaml). Applies from now on — past calls keep the price they were charged at.">↻ refresh prices</button>
+            <button class="ghost" data-call="resetCosts" title="POST /api/costs/reset — clear THIS session's ledger (the calls stay spent)">⟲ reset ledger</button>
+          </div>
         </div>
         <div id="costList" class="costlist"></div>
         </div>
@@ -1742,6 +1745,18 @@
         <button class="ghost u-mt6" data-call="openSettings" data-args='["compaction"]'
                 title="open the shared automatic and manual compaction policy">⚙ Compaction settings</button>
         <div id="ctxCats"></div>
+        <!-- JAG-536 W5: POST /api/context/preview had no door — the assembler's own
+             dry run (compaction outcome, token totals, memories) was CLI-only. -->
+        <div class="card u-mt6">
+          <div class="remaining"><b>Dry-run the next turn</b> — exactly what the assembler would send,
+          without a model call: the compaction outcome, the token totals and the memories retrieval
+          would inject.</div>
+          <div class="u-df u-g6 u-aic u-mt6">
+            <input id="ctxPvMsg" class="inp u-f1 u-p610 u-fs12" placeholder="the message you are about to send…">
+            <button class="ghost" data-call="ctxPreview" title="POST /api/context/preview">▶ preview</button>
+          </div>
+          <div id="ctxPvOut" class="u-mt6" style="font-size:11px"></div>
+        </div>
         </div>
       </section>
       <section data-insp="plan" class="insp-open">
@@ -2509,6 +2524,17 @@
   <div class="remaining">Restore the plan, task list, transcript and the files the harness wrote
   back to just BEFORE one of your messages. Your own hand-edits are never touched.</div>
   <div id="rwList"></div>
+  <!-- JAG-536 W5: the MANIFEST checkpoints — a named snapshot set with its own
+       create / rollback / delete / prune routes, none of which had a door. -->
+  <h2 style="margin:14px 0 6px">Manifest checkpoints</h2>
+  <div class="remaining">A checkpoint snapshots the plan, the task list, the todo graph and this
+  session's transcript on demand — independent of the turn anchors above.</div>
+  <div class="u-df u-g6 u-mt6 u-aic">
+    <input id="cpLabel" class="inp u-f1 u-p610 u-fs12" placeholder="checkpoint label (e.g. before the refactor)">
+    <button class="ghost" data-call="cpCreate" title="POST /api/checkpoints">＋ create</button>
+    <button class="ghost" data-call="cpPrune" title="DELETE /api/checkpoints?keep=100 — drop everything older than the newest 100">⟲ prune</button>
+  </div>
+  <div id="cpList" class="u-mt6"></div>
   <div class="u-df u-g8 u-mt10 u-jcfe">
     <button class="ghost" data-call="closeRewindDlg">cancel</button>
   </div>
@@ -4843,6 +4869,7 @@ async function openRewindDlg(sid) {
   const list = $("rwList"), res = $("rwResult");
   list.innerHTML = "<div class=\"remaining\">loading…</div>"; res.textContent = "";
   $("rwBackdrop").hidden = false; $("rwDlg").hidden = false;
+  loadCheckpoints(sid);
   let data = {};
   try { data = await api("GET", "/api/checkpoints?session=" + encodeURIComponent(sid)); } catch (e) {}
   const marks = (data && data.marks) || [];
@@ -4858,6 +4885,89 @@ async function openRewindDlg(sid) {
   });
 }
 function closeRewindDlg() { $("rwDlg").hidden = true; $("rwBackdrop").hidden = true; }
+/* JAG-536 W5: the MANIFEST checkpoints. `POST /api/checkpoints`,
+   `/<id>/rollback`, `DELETE /<id>` and `DELETE ?keep=N` all existed while the UI
+   exposed ONLY the msg-index rewind — a different mechanism (turn anchors vs a
+   named snapshot of plan + tasks + graph + transcript). Read from the registry. */
+let _rwSid = "";
+async function loadCheckpoints(sid) {
+  _rwSid = sid || _rwSid || sessionId;
+  const box = $("cpList");
+  if (!box || !_rwSid) return;
+  let d = {};
+  try { d = await api("GET", "/api/checkpoints?session=" + encodeURIComponent(_rwSid)); } catch (e) {}
+  const cps = (d && d.checkpoints) || [];
+  box.textContent = "";
+  if (!cps.length) {
+    const e = document.createElement("div");
+    e.className = "remaining"; e.textContent = "no checkpoints for this session yet";
+    box.append(e);
+    return;
+  }
+  cps.forEach(c => {
+    const row = document.createElement("div");
+    row.className = "u-df u-g6 u-aic u-mt6"; row.style.fontSize = "11px";
+    const s = document.createElement("span");
+    s.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    const sz = c.sizes || {};
+    s.textContent = (c.label || c.id) + " · " + (c.ts ? new Date(c.ts * 1000).toLocaleString() : "")
+      + " · " + (sz.messages != null ? sz.messages + " msgs · " : "")
+      + (sz.graph_nodes != null ? sz.graph_nodes + " todo nodes · " : "")
+      + (sz.tasks != null ? sz.tasks + " tasks" : "")
+      + (c.rolled_back ? " · already rolled back" : "");
+    s.title = c.id + " · by " + (c.created_by || "?");
+    const rb = document.createElement("button");
+    rb.className = "ghost"; rb.textContent = "↺ rollback";
+    rb.title = "POST /api/checkpoints/" + c.id + "/rollback";
+    rb.onclick = () => cpRollback(c.id);
+    const del = document.createElement("button");
+    del.className = "ghost"; del.textContent = "✕";
+    del.title = "DELETE /api/checkpoints/" + c.id;
+    del.onclick = () => cpDelete(c.id);
+    row.append(s, rb, del);
+    box.append(row);
+  });
+}
+async function cpCreate() {
+  const res = $("rwResult"), label = (($("cpLabel") || {}).value || "").trim();
+  res.textContent = "creating…";
+  let r = {};
+  try { r = await api("POST", "/api/checkpoints", { label: label || undefined, session: _rwSid || sessionId, by: "webui" }); }
+  catch (e) { r = { error: String(e) }; }
+  if (r.error) { res.textContent = "error: " + r.error; return; }
+  if ($("cpLabel")) $("cpLabel").value = "";
+  res.textContent = "created " + (r.id || "?") + (r.idempotent ? " (already existed)" : "");
+  loadCheckpoints();
+}
+async function cpRollback(cpId) {
+  if (!(await confirmDelete("roll back to checkpoint " + cpId + "?\nThe plan, the task list, the todo graph and the transcript are restored to the snapshot."))) return;
+  const res = $("rwResult"); res.textContent = "rolling back…";
+  let r = {};
+  try { r = await api("POST", "/api/checkpoints/" + encodeURIComponent(cpId) + "/rollback", { by: "webui" }); }
+  catch (e) { r = { error: String(e) }; }
+  if (r.error || r.ok === false) { res.textContent = "error: " + (r.error || "rollback failed"); return; }
+  res.textContent = "rolled back to " + cpId;
+  loadCheckpoints(); loadPlan(); loadCtx();
+}
+async function cpDelete(cpId) {
+  if (!(await confirmDelete("delete checkpoint " + cpId + "? Its snapshot is removed for good."))) return;
+  const res = $("rwResult");
+  let r = {};
+  try { r = await api("DELETE", "/api/checkpoints/" + encodeURIComponent(cpId), {}); }
+  catch (e) { r = { error: String(e) }; }
+  if (r.error || r.ok === false) { res.textContent = "error: " + (r.error || "delete failed"); return; }
+  res.textContent = "deleted " + cpId;
+  loadCheckpoints();
+}
+async function cpPrune() {
+  if (!(await confirmDelete("drop every checkpoint older than the newest 100?"))) return;
+  const res = $("rwResult"); res.textContent = "pruning…";
+  let r = {};
+  try { r = await api("DELETE", "/api/checkpoints?keep=100", {}); } catch (e) { r = { error: String(e) }; }
+  if (r.error) { res.textContent = "error: " + r.error; return; }
+  res.textContent = "removed " + (r.removed != null ? r.removed : "?") + " old checkpoint(s)";
+  loadCheckpoints();
+}
 async function doRewind(sid, idx) {
   if (!(await confirmDelete("rewind session to just BEFORE message #" + idx + "?\nplan, todo list, transcript and the harness's file writes after it will be rolled back."))) return;
   const res = $("rwResult"); res.textContent = "rewinding…";
@@ -5623,6 +5733,57 @@ async function loadCosts() {
   try { const d = await api("GET", "/api/costs?session=" + encodeURIComponent(sessionId)); if (d && !d.error) _cost = d; }
   catch (e) { _cost = null; }
   renderCosts();
+}
+/* JAG-536 W5: `POST /api/costs/reset` had NO door — the counters accumulated for
+   the life of the session with no way to start a measurement clean. */
+async function resetCosts() {
+  if (!sessionId) { toast("open a session first"); return; }
+  if (!(await confirmDelete("reset the cost ledger of this session?\nThe calls stay spent — only the counters are cleared."))) return;
+  let r = {};
+  try { r = await api("POST", "/api/costs/reset", { session: sessionId }); } catch (e) { r = { error: String(e) }; }
+  if (r && r.error) { toast("⛔ " + r.error); return; }
+  toast("cost ledger reset");
+  loadCosts();
+}
+/* JAG-536 W5: `POST /api/context/preview` had NO door either — the assembler's own
+   dry run (compaction outcome, token totals, memories) was CLI/MCP-only. */
+async function ctxPreview() {
+  const out = $("ctxPvOut");
+  if (!out) return;
+  if (!sessionId) { out.textContent = "open a session first"; return; }
+  out.textContent = "previewing…";
+  let r = {};
+  try {
+    r = await api("POST", "/api/context/preview",
+                  { session: sessionId, message: (($("ctxPvMsg") || {}).value || "").trim() });
+  } catch (e) { r = { error: String(e) }; }
+  if (r && r.error) { out.textContent = "⛔ " + r.error; return; }
+  const c = r.compaction || {};
+  out.textContent = "";
+  const kv = (k, v) => {
+    const row = document.createElement("div");
+    row.className = "ctxrow";
+    const a = document.createElement("span"); a.className = "remaining"; a.textContent = k;
+    const b = document.createElement("span"); b.textContent = " " + v;
+    row.append(a, b); out.append(row);
+  };
+  kv("sent", (r.final_messages != null ? r.final_messages : "?") + " msgs · "
+    + (r.final_tokens != null ? r.final_tokens : "?") + " tok of "
+    + (r.budget_tokens != null ? r.budget_tokens : "?"));
+  kv("system prompt", (r.system_prompt_tokens != null ? r.system_prompt_tokens : "?") + " tok");
+  kv("transcript", (r.transcript_messages != null ? r.transcript_messages : "?") + " msgs");
+  kv("compaction", "kept " + (c.kept != null ? c.kept : 0)
+    + " · dropped " + (c.dropped != null ? c.dropped : 0)
+    + " · truncated " + (c.truncated != null ? c.truncated : 0)
+    + (c.summary ? " · " + c.summary : ""));
+  kv("memories", (r.retrieval_hits != null ? r.retrieval_hits : 0) + " injected");
+  (r.retrieval_samples || []).forEach(s => {
+    const d = document.createElement("div");
+    d.className = "remaining";
+    d.style.cssText = "margin-top:4px;white-space:pre-wrap;word-break:break-word";
+    d.textContent = "· " + String(s || "").slice(0, 160);
+    out.append(d);
+  });
 }
 function costLive(call) {
   if (!call) return;
