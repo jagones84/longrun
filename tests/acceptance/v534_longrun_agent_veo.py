@@ -35,8 +35,9 @@ Locks:
        WebUI uses, never its own `longrunAgent.*` policy;
      - raw `config/*.yaml` writes are text-scanned for the safety switches;
      - every configure target owns a context-specific system prompt, and the WebUI
-       auto-generates one `⚡ Automate` control per editable panel
-       (`AUTOMATE_CATS` / `mountCategoryAutomate`).
+       auto-generates one `⚡ Automate` control per editable Settings panel
+       (`AUTOMATE_CATS` / `mountCategoryAutomate`); the Codebase inspector keeps
+       only its explicit `auto_index` toggle (no free-form agent bar).
   F/G  The VEO aware of itself, and permanently pinned:
      - the `longrun-agent` prompt section lists EVERY live `longrunAgent.*` subtool
        (generated from the registry) plus the hard rules, and is injected only for
@@ -426,12 +427,12 @@ check("E8b every automate section injects a NON-empty substrate snapshot from a 
       set(LRA.SECTION_PROMPTS).issubset(set(LRA.AUTOMATE_INSPECT_SECTIONS))
       and set(LRA.AUTOMATE_INSPECT_SECTIONS.values()).issubset(set(INS_SECTIONS + ["all", "agents", "teams", "models", "compaction", "settings", "rules"])),
       sorted(set(LRA.SECTION_PROMPTS) - set(LRA.AUTOMATE_INSPECT_SECTIONS)))
-check("E9 the WebUI auto-generates one Automate control per editable panel",
+check("E9 the WebUI auto-generates one Automate control per editable Settings panel",
       "function mountSectionAutomate(" in HTML
       and "function mountCategoryAutomate(" in HTML
       and "const AUTOMATE_CATS = {" in HTML
       and "mountCategoryAutomate(name)" in HTML
-      and 'mountSectionAutomate(\'section[data-insp="codebase"]\', "index"' in HTML
+      and 'mountSectionAutomate(\'section[data-insp="codebase"]\', "index"' not in HTML
       and all(("  " + k + ": { section:") in HTML
               for k in ("models", "subagents", "tools", "mcp", "skills",
                         "knowledge", "rules", "config")))

@@ -276,7 +276,8 @@ check("F2 `self.sj` (alias `self {action:'sj'}`) is implemented, documented and 
       'action in ("sj", "session-jobs"' in tools_src
       and '"sj", "session-jobs", "sessionjobs", "subjobs"' in tools_src
       and '"sj": ["session", "job"]' in reg_src
-      and '"info", "diagnose", "logs", "context", "tools", "sj"' in reg_src)
+      and '"info", "diagnose", "logs", "context", "tools",' in reg_src
+      and '"diagnostics", "sj"' in reg_src)
 check("F3 the WebUI/REST surface exists: GET /api/sessions/<sid>/sj",
       'path.endswith("/sj")' in http_src and "session_jobs as _sj" in http_src)
 check("F4 deleting a session drops its SJ ledger and its subagent records",

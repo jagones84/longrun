@@ -831,7 +831,8 @@ def _self(args, run_id):
     """v0.5 self-knowledge: paths, config, docs, systemd state, extension recipe.
 
     JAG-426: `action` (default "info") adds DYNAMIC self-diagnosis with no new
-    tool name and no PMC dependency — diagnose | logs | context | tools.
+    tool name and no PMC dependency — diagnose | logs | context | tools |
+    diagnostics (the exact Settings report, filterable by code/source).
     """
     import subprocess as sp
     action = str((args or {}).get("action", "info") or "info").strip().lower()
@@ -932,6 +933,13 @@ def _self(args, run_id):
         elif action in ("tools", "tooling"):
             info["tools"] = diag_mod.tools_report(tool=(args or {}).get("tool"),
                                                   query=(args or {}).get("query"))
+        elif action in ("diagnostics", "settings", "config-check"):
+            info["diagnostics"] = diag_mod.settings_report(
+                session=(args or {}).get("session") or run_id,
+                model=(args or {}).get("model"),
+                code=(args or {}).get("code"),
+                source=(args or {}).get("source"),
+                limit=(args or {}).get("limit") or 50)
         elif action in ("sj", "session-jobs", "sessionjobs", "subjobs"):
             # JAG-533/SJ: the SESSION-scoped job graph (the dependency-ordered
             # subagents of this chat). Not the multi-session Orbit jobs (those
@@ -942,7 +950,7 @@ def _self(args, run_id):
                                       (args or {}).get("job"))
         else:
             info["error"] = ("unknown action %r — use info|diagnose|logs|context|"
-                             "tools|sj" % action)
+                             "tools|diagnostics|sj" % action)
     info["action"] = action
     return info
 

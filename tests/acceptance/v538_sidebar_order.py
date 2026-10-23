@@ -140,6 +140,13 @@ check("A16 pointer drag uses the shared validated commit path",
       and "_sidebarSetDropTarget(state, document.elementFromPoint(x, y), y)" in ui_source
       and "function _finishSidebarDrag(state)" in ui_source
       and "_finishSidebarDrag(state)" in ui_source)
+check("A17 a team's drop midpoint is measured on its HEADER, not the whole group",
+      'state.kind === "team"\n      ? (target.querySelector(".sgroup-h") || target) : target'
+      in ui_source
+      and 'const r = measure.getBoundingClientRect();' in ui_source)
+check("A18 a team header is bound AFTER it is attached (closest finds its group)",
+      ui_source.index("sec.appendChild(head);")
+      < ui_source.index('_bindSidebarDrag(head.querySelector(".gname")'))
 
 print("v538: %d/%d PASS" % (sum(results), len(results)))
 raise SystemExit(0 if all(results) else 1)

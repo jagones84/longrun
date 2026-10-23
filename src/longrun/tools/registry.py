@@ -185,18 +185,28 @@ _LEGACY_SCHEMAS = {
                         "action=sj: this session's Session Jobs (SJ) — the "
                         "dependency-ordered subagents a `batch` action spawned, with "
                         "each subjob's deps, status and output. "
+                        "action=diagnostics: the EXACT Settings diagnostics report "
+                        "(same collector, no duplicate checks) with file/field/panel/"
+                        "session/model isolation; filter with `code` or `source`. "
                         "Read-only, always safe, no external dependency."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["info", "diagnose", "logs", "context", "tools", "sj"],
+                       "enum": ["info", "diagnose", "logs", "context", "tools",
+                                "diagnostics", "sj"],
                        "description": "what to report (default: info)"},
             "session": {"type": "string",
-                        "description": "session id for action=logs|context|sj (default: this run's session)"},
+                        "description": "session id for action=logs|context|diagnostics|sj (default: this run's session)"},
             "job": {"type": "string",
                     "description": "action=sj: one Session Job id (e.g. 'SJ1'); omit for every job of the session"},
-            "limit": {"type": "integer", "description": "max log rows for action=logs (default 100)"},
+            "limit": {"type": "integer", "description": "max rows for action=logs (default 100) or action=diagnostics (default 50)"},
             "kind": {"type": "string", "description": "event kind filter for action=logs"},
+            "model": {"type": "string",
+                      "description": "action=diagnostics: model ref to validate"},
+            "code": {"type": "string",
+                     "description": "action=diagnostics: exact issue code filter, e.g. 'provider.auth_rejected'"},
+            "source": {"type": "string",
+                       "description": "action=diagnostics: case-insensitive source filter, e.g. 'openrouter'"},
             "tool": {"type": "string",
                      "description": ("action=tools: exact tool name, e.g. 'fs.read' — "
                                      "returns its FULL input schema")},
@@ -613,6 +623,7 @@ _SUBTOOL_FIELDS = {
     "self": {
         "info": [], "diagnose": [], "logs": ["session", "limit", "kind"],
         "context": ["session"], "tools": ["tool", "query"],
+        "diagnostics": ["session", "model", "code", "source", "limit"],
         "sj": ["session", "job"],
     },
     "skills": {

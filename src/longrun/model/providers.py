@@ -585,13 +585,17 @@ _LOCAL_CTX_TTL = 600.0
 
 
 def _fetch_local_contexts(p):
-    """One bounded fetch of a LOCAL llama.cpp provider's live windows.
+    """One bounded fetch of a LOCAL llama.cpp provider's live roster.
 
     A llama.cpp router reports each model's REAL `--ctx-size` (in `status.args`)
     or `meta.n_ctx`. The hand-edited `context_length` in providers.yaml drifts
     (declared 96000 while the server runs 200000, or missing entirely), which made
     auto-compaction use the wrong window. Best-effort: on any failure return {}
     so the caller falls back to the declared value.
+
+    The map also carries a model the server reports WITHOUT a window as `0`.
+    The keys are the live roster, so `catalog()` can list a model the operator
+    installed without editing providers.yaml — the server is the truth.
     """
     m = {}
     base = (p.get("base_url") or "").rstrip("/")
@@ -613,15 +617,14 @@ def _fetch_local_contexts(p):
                     if a == "--ctx-size" and i + 1 < len(args):
                         ctx = _to_int(args[i + 1])
                         break
-            if ctx:
-                m[mid] = ctx
+            m[mid] = ctx or 0
     except Exception:  # noqa: BLE001 — metadata is best-effort, never fatal
         pass
     return m
 
 
 def local_contexts(pid, block=False):
-    """{model_id: real_ctx} for a local provider, cached for `_LOCAL_CTX_TTL`.
+    """{model_id: real_ctx or 0 when unknown} for a local provider, cached.
 
     Non-blocking by default: returns the last good snapshot (or {}) and, when it
     is stale, refreshes it in the background — so no request waits on the network.
@@ -713,6 +716,10 @@ def catalog(loaded_aliases=None):
 
     `loaded_aliases` (optional) is the set of model ids the local router reports
     as loaded, so a mobile picker can show which local model is warm.
+
+    A LOCAL provider is completed from its server's live roster: an operator who
+    installs a model in llama.cpp can select it immediately, even though the
+    example list in providers.yaml does not name it.
     """
     loaded = set(loaded_aliases or [])
     out = []
@@ -723,6 +730,7 @@ def catalog(loaded_aliases=None):
             continue
         avail = available(p)
         models = []
+        known = set()
         for m in p["models"]:
             cl = _to_int(m.get("context_length"))
             if p.get("local"):
@@ -730,12 +738,23 @@ def catalog(loaded_aliases=None):
                 cl = _local_live_ctx(p.get("id"), m.get("id")) or cl
             elif not cl and p.get("kind") == "openrouter":
                 cl = _to_int(openrouter_contexts().get(m.get("id")))
+            known.add(m.get("id"))
             models.append({
                 "id": m.get("id"),
                 "ref": ref_of(p, m.get("id")),
                 "context_length": cl,
                 "loaded": m.get("id") in loaded if p.get("local") else None,
             })
+        if p.get("local"):
+            for mid, live_ctx in sorted(local_contexts(p.get("id")).items()):
+                if mid in known:
+                    continue
+                models.append({
+                    "id": mid,
+                    "ref": ref_of(p, mid),
+                    "context_length": _to_int(live_ctx),
+                    "loaded": mid in loaded,
+                })
         out.append({
             "id": p.get("id"), "name": p.get("name") or p.get("id"),
             "kind": p.get("kind"), "base_url": p.get("base_url"),

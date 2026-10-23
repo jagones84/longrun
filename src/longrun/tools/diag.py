@@ -170,6 +170,46 @@ def context(session) -> dict:
 
 # ------------------------------------------------------------------- tools ----
 
+def settings_report(session=None, model=None, code=None, source=None, limit=50) -> dict:
+    """The SAME diagnostics the Settings panel runs, filtered for isolation.
+
+    No check is reimplemented here: `longrun.core.diagnostics.collect()` is the
+    single source. Each finding carries `code`, `severity`, `scope`, `source`
+    and, when known, `file`/`field`/`panel`/`session`/`model`, so an agent can
+    isolate one failure (`code=` / `source=`) instead of guessing from a prose
+    error. Local only: this never contacts a provider.
+    """
+    try:
+        from longrun.core import diagnostics
+        report = diagnostics.collect(session_id=session or None, model=model or None)
+    except Exception as e:  # noqa: BLE001 — diagnosis must degrade, never raise
+        return {"ok": False, "error": "diagnostics failed: %s" % e, "issues": []}
+    issues = [i for i in (report.get("issues") or []) if isinstance(i, dict)]
+    if code:
+        want = str(code).strip().lower()
+        issues = [i for i in issues if str(i.get("code") or "").lower() == want]
+    if source:
+        want = str(source).strip().lower()
+        issues = [i for i in issues if want in str(i.get("source") or "").lower()]
+    try:
+        cap = max(1, min(int(limit or 50), 200))
+    except (TypeError, ValueError):
+        cap = 50
+    filtered = bool(code or source)
+    out = {
+        "ok": bool(report.get("ok", True)),
+        "total": len(issues),
+        "summary": (diagnostics.summarize(issues) if filtered
+                    else (report.get("summary") or {})),
+        "issues": issues[:cap],
+    }
+    if code:
+        out["code"] = code
+    if source:
+        out["source"] = source
+    return out
+
+
 def tools_report(tool=None, query=None) -> dict:
     """What the harness can do right now: native tools + their policy + MCP.
 

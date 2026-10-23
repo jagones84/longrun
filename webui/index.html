@@ -4606,7 +4606,12 @@ function _sidebarSetDropTarget(state, under, clientY) {
     state.dropTarget = target;
     state.targetId = state.kind === "team"
       ? target.dataset.teamOrderId : target.dataset.sessionOrderId;
-    const r = target.getBoundingClientRect();
+    // A team's drop position is measured on its HEADER: the group rect includes
+    // every session row, so an expanded group's midpoint sits far below the
+    // name and a downward drag never counted as "after" (team drag looked dead).
+    const measure = state.kind === "team"
+      ? (target.querySelector(".sgroup-h") || target) : target;
+    const r = measure.getBoundingClientRect();
     state.after = clientY >= r.top + r.height / 2;
     target.classList.add(state.after ? "drop-after" : "drop-before");
   } else if (under && state.container.contains(under)) {
@@ -5133,10 +5138,12 @@ async function loadSessions() {
         if (_consumeSidebarDragClick(e, sec)) return;
         _toggleGroup(g.key);
       };
+      sec.appendChild(head);
+      // Bind AFTER the header is attached: `_bindSidebarDrag` resolves its source
+      // with closest(.sgroup[data-team-order-id]), which is null on a detached head.
       if (g.id) {
         _bindSidebarDrag(head.querySelector(".gname"), "team", g.id, null, box);
       }
-      sec.appendChild(head);
       const bodyEl = document.createElement("div");
       bodyEl.className = "sgroup-b";
       bodyEl.dataset.groupKey = g.key;
@@ -5151,6 +5158,7 @@ async function loadSessions() {
   renderChatHead();   // JAG-480: the chat header names the session you are reading
   _repaintCtx();   // JAG-424g: re-apply the context ring on the freshly rendered active row
   modelLabel();   // JAG-157: reflect the active session's model once the cache is filled
+  _ensureAvailableModel();   // a retired/removed model must not strand this chat
   renderRuns();   // JAG-479: the rail's count + panel rows follow the REAL payload
 }
 /* JAG-117: creating a session asks which local folder to open it in. */
@@ -6975,6 +6983,52 @@ let _sessList = [];      // JAG-479: the last /api/sessions payload (real server
 /* JAG-157: a session remembers its own LLM; fall back to the global default. */
 function currentModel() { return (sessionId && _sessModel[sessionId]) || localStorage.getItem("sf_model") || ""; }
 function _modelShort(ref) { const i = String(ref || "").indexOf(":"); return i >= 0 ? ref.slice(i + 1) : (ref || ""); }
+/* A ref is usable only when the LIVE catalogue still exposes it. The list is
+   generic: local providers merge what their server reports, so an installed
+   model that was never written into providers.yaml is still selectable. */
+function _modelKnown(ref) {
+  const value = String(ref || "");
+  if (!value) return false;
+  return _modelsCache.some(m => m.ref === value || (!value.includes(":") && m.id === value));
+}
+let _defaultModelRef = "";
+function _fallbackModel() {
+  // A model the local router already has LOADED is the only fallback that is
+  // callable without a key or credit check, so it wins over a cloud default.
+  const warmLocal = _modelsCache.find(m => m.local && m.loaded);
+  if (warmLocal) return warmLocal.ref;
+  if (_defaultModelRef && _modelKnown(_defaultModelRef)) return _defaultModelRef;
+  const cloud = _modelsCache.find(m => m.available && !m.local);
+  const any = _modelsCache.find(m => m.available);
+  return (cloud || any || {}).ref || "";
+}
+let _modelFallbackTried = new Set();
+/* When a saved model ID disappears (retired vendor ID, removed local model),
+   keep the chat usable: switch to an available model AND persist the change.
+   Providers that merely lack a key stay selected — that is a key problem, not
+   a missing model. */
+async function _ensureAvailableModel() {
+  if (!sessionId || !_modelsCache.length) return;
+  const ref = _sessModel[sessionId];
+  if (!ref || _modelKnown(ref)) return;
+  const key = sessionId + "|" + ref;
+  if (_modelFallbackTried.has(key)) return;
+  _modelFallbackTried.add(key);
+  const next = _fallbackModel();
+  if (!next || next === ref) return;
+  _sessModel[sessionId] = next;
+  localStorage.setItem("sf_model", next);
+  modelLabel();
+  try {
+    await api("POST", "/api/sessions/" + encodeURIComponent(sessionId) + "/model", { model: next });
+    toast("Model " + _modelShort(ref) + " is no longer available; switched to "
+      + _modelShort(next) + ".", "warn");
+  } catch (e) {
+    toast("Model " + _modelShort(ref) + " is no longer available; pick another model.", "err");
+  }
+  scheduleDiagnosticsRefresh();
+  renderModelMenu();
+}
 function modelLabel() {
   const b = $("model-btn"); if (!b) return;
   const n = b.querySelector(".mname") || b;
@@ -6990,12 +7044,16 @@ async function loadModels() {
       ctx: m.context_length || 0, loaded: !!m.loaded,
     })));
     _modelsCache = flat;
-    const cur = currentModel()
-      || (flat.find(x => x.loaded) || {}).ref
+    _defaultModelRef = d.default && _modelKnown(d.default) ? d.default : "";
+    let cur = currentModel();
+    if (cur && !_modelKnown(cur)) cur = "";
+    cur = cur || (flat.find(x => x.loaded) || {}).ref
       || d.default || (flat[0] || {}).ref || "";
+    if (cur && !_modelKnown(cur)) cur = _fallbackModel() || cur;
     // JAG-157: don't overwrite the global default while a session has its own model.
     if (cur && !(sessionId && _sessModel[sessionId])) localStorage.setItem("sf_model", cur);
     modelLabel(); renderModelMenu();
+    _ensureAvailableModel();
   } catch (e) { /* selector must never break the app */ }
 }
 /* JAG-352: the chat model menu doubles as the compaction-model picker.
@@ -10909,10 +10967,6 @@ async function cbClear() {
    before an agent searches so it never reads a stale or half-built index. */
 async function loadIndexCfg() {
   try { const c = await api("GET", "/api/index/config"); const cfg = (c && c.config) || c || {}; const el = $("cbAutoIndex"); if (el) el.checked = cfg.auto_index !== false; } catch (e) {}
-  // JAG-535: the Codebase inspector is the third manually editable substrate
-  // surface outside Settings — give it the same longrunAgent control.
-  mountSectionAutomate('section[data-insp="codebase"]', "index",
-    () => ({ auto_index: (($("cbAutoIndex") || {}).checked !== false) }));
 }
 { const el = $("cbAutoIndex"); if (el) el.onchange = async () => {
     const r = await api("POST", "/api/index/config", { auto_index: el.checked });

@@ -270,15 +270,26 @@ def auth_issues(token_configured: bool, host: str) -> list[dict]:
 
 
 def _models(provider: dict) -> set[str]:
-    """Normalize a provider's configured model roster."""
+    """Normalize a provider's configured model roster.
+
+    A LOCAL provider is also completed from its live server roster: the UI lists
+    an installed model that providers.yaml does not name, so flagging that same
+    selection as "not configured" would be a false positive. The live map is the
+    one shared cache (`providers.local_contexts`), never a second fetch.
+    """
     result = set()
     rows = provider.get("models") or []
-    if not isinstance(rows, list):
-        return result
-    for entry in rows:
-        value = entry.get("id") if isinstance(entry, dict) else entry
-        if value is not None and str(value).strip():
-            result.add(str(value).strip())
+    if isinstance(rows, list):
+        for entry in rows:
+            value = entry.get("id") if isinstance(entry, dict) else entry
+            if value is not None and str(value).strip():
+                result.add(str(value).strip())
+    if provider.get("local"):
+        try:
+            from longrun.model import providers as _providers
+            result.update(_providers.local_contexts(provider.get("id")) or {})
+        except Exception:  # noqa: BLE001 — live metadata is optional
+            pass
     return result
 
 

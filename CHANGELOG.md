@@ -22,6 +22,25 @@ All notable changes to Longrun are documented here. The format follows
 - **Sidebar reorder is name-only and synchronized.** Mouse drag starts on a team or
   session name; touch requires a hold before dragging. A normal click/tap still
   selects a session or toggles a team. Mobile reorder has no arrow or grab icons.
+- **Team drag actually moves teams.** A team header was bound before it was
+  attached, so `closest(.sgroup[data-team-order-id])` resolved to null and only
+  session rows could be dragged. The bind now runs after attachment, and a team's
+  drop midpoint is measured on its header (never on the whole group body), so a
+  downward drag over the name inserts after that team. Pinned by `v538` A17–A18.
+- **The chat model list follows the live server, not just the example file.**
+  A local provider's catalogue is completed from its `/v1/models` roster, so a
+  model installed in llama.cpp is selectable without editing providers.yaml.
+  Diagnostics read the same live cache and no longer flag such a model as unknown.
+  If a saved model disappears (retired ID, removed local model), the UI switches
+  to a usable model and persists it: a loaded local model first, then the
+  configured default, then another available model. Pinned by `v539`.
+- **The Codebase inspector no longer carries a generic Automate bar.** It has an
+  explicit `automatic indexing` toggle; the free-form longrunAgent control stays in
+  the Settings panels where it can change a section. Pinned by `v534` E9.
+- **Agents can read the exact Settings diagnostics.** `self` gained
+  `action=diagnostics`, optionally filtered by `code`/`source`, returning the same
+  `diagnostics.collect()` report (no duplicated checks) with file/field/panel/
+  session/model isolation. Pinned by `v539` and `v414`.
 - **Mobile side panels use the full content viewport and remain exclusive.**
   Opening Sessions closes the Inspector and vice versa below 900px; desktop layout
   and resizing remain unchanged. The top bar and bottom navigation stay available.
