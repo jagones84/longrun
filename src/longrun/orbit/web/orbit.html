@@ -1029,8 +1029,21 @@ class AgentsView {
     const t = this.teamById(tid); if (!t) return;
     const n = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
     const m = openPopover(ev,
+      '<div data-a="edit">\u270E Edit team\u2026</div>' +
       '<div data-a="reset">\u21BA Reset all sessions\u2026</div>' +
-      '<div data-a="compact">\u2261 Compact all sessions\u2026</div>', {w: 224, h: 110});
+      '<div data-a="compact">\u2261 Compact all sessions\u2026</div>' +
+      '<div class="sep"></div>' +
+      '<div data-a="del">\u2716 Delete team\u2026</div>', {w: 224, h: 190});
+    m.querySelector('[data-a="edit"]').onclick = () => this.openTeamEdit(ev, tid);
+    m.querySelector('[data-a="del"]').onclick = async () => { closePopover();
+      const members = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
+      if (!confirm("Delete team \"" + (t.name || tid) + "\"?\n\n" +
+        (members ? members + " agent(s) stay \u2014 only the team link disappears.\n" : "") +
+        "This cannot be undone.")) return;
+      const r = await this.api.del("/api/teams/" + encodeURIComponent(tid));
+      if (!r || r.ok === false){ alert((r && r.error) || "delete failed"); return; }
+      if (this.onChanged) this.onChanged();
+    };
     m.querySelector('[data-a="reset"]').onclick = () => { closePopover();
       if (confirm("Reset all " + n + " session(s) of " + (t.name || tid) +
         "?\n\nTheir chat history and task list are wiped — the agents, their names and " +
@@ -1040,6 +1053,33 @@ class AgentsView {
       if (confirm("Compact all " + n + " session(s) of " + (t.name || tid) +
         "?\n\nThe older half of each transcript is summarised so the context shrinks."))
         this.teamBulk(tid, "compact"); };
+  }
+  /* JAG-536: a team was create-and-forget — every property was frozen at birth.
+     The server has always supported POST /api/teams/<tid> (name/symbol/colour/
+     description); this form is its only UI door. */
+  openTeamEdit(ev, tid){
+    const t = this.teamById(tid); if (!t) return;
+    const fld = (k, label, val) =>
+      '<span class="lbl" style="padding:0">' + label + '</span>' +
+      '<input class="inp" data-f="' + k + '" value="' + esc(val || "") + '">';
+    const form =
+      '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:5px;' +
+      'padding:4px 2px;white-space:normal;min-width:250px">' +
+      fld("name", "name", t.name) +
+      fld("symbol", "symbol", t.symbol) +
+      fld("color", "color", t.color) +
+      fld("description", "description", t.description) +
+      '<button class="btn primary" data-a="save" type="button" style="margin-top:4px">save</button>' +
+      '</form>';
+    const m = openPopover(ev, form, {w: 300, h: 250});
+    m.querySelector('[data-a="save"]').onclick = async () => {
+      const g = k => (m.querySelector('[data-f="' + k + '"]').value || "").trim();
+      const r = await this.api.post("/api/teams/" + encodeURIComponent(tid), {
+        name: g("name"), symbol: g("symbol"), color: g("color"), description: g("description") });
+      if (!r || r.ok === false){ alert((r && r.error) || "save failed"); return; }
+      closePopover();
+      if (this.onChanged) this.onChanged();
+    };
   }
   async teamBulk(tid, action){
     const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/" + action, {});
@@ -1815,11 +1855,37 @@ class RoutinesView {
         '<span class="nm" title="' + esc(r.goal) + '">' + esc(short(r.goal, 34)) + '</span>' +
         '<span class="rl">' + esc(r.agent) + '</span>' +
         '<span class="rl" title="every ' + esc(r.every_seconds) + 's · next in ' + nxt + 's">' + esc(r.every_seconds) + 's</span>' +
+        '<button class="btn ghost" data-edit="' + esc(r.id) + '" style="padding:2px 8px" title="edit goal / cadence">\u270E</button>' +
         '<button class="btn ghost" data-tog="' + esc(r.id) + '" data-on="' + (r.enabled ? "1" : "0") + '" style="padding:2px 8px">' + (r.enabled ? "pause" : "start") + '</button>' +
         '<button class="btn ghost" data-del="' + esc(r.id) + '" style="padding:2px 8px">✕</button></div>';
     }).join("") || '<div class="empty">no routines — an agent can wake on a cadence.</div>';
     $("routines").querySelectorAll("[data-tog]").forEach(b => { b.onclick = () => this.toggle(b.dataset.tog, b.dataset.on === "1"); });
+    $("routines").querySelectorAll("[data-edit]").forEach(b => { b.onclick = (ev) => this.edit(ev, b.dataset.edit); });
     $("routines").querySelectorAll("[data-del]").forEach(b => { b.onclick = () => this.del(b.dataset.del); });
+  }
+  /* JAG-536: a routine was create-and-forget — the goal and the cadence were frozen
+     at birth. The server now accepts POST /api/routines/<rid>; this form is its door. */
+  edit(ev, rid){
+    const r = this.rows.find(x => x.id === rid); if (!r) return;
+    const fld = (k, label, val, extra) =>
+      '<span class="lbl" style="padding:0">' + label + '</span>' +
+      '<input class="inp" data-f="' + k + '" value="' + esc(val == null ? "" : val) + '" ' + (extra || "") + '>';
+    const form =
+      '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:5px;' +
+      'padding:4px 2px;white-space:normal;min-width:250px">' +
+      fld("goal", "goal", r.goal) +
+      fld("every_seconds", "every (seconds)", r.every_seconds, 'type="number" min="30"') +
+      '<button class="btn primary" data-a="save" type="button" style="margin-top:4px">save</button>' +
+      '</form>';
+    const m = openPopover(ev, form, {w: 300, h: 200});
+    m.querySelector('[data-a="save"]').onclick = async () => {
+      const g = k => (m.querySelector('[data-f="' + k + '"]').value || "").trim();
+      const res = await this.api.post("/api/routines/" + encodeURIComponent(rid), {
+        goal: g("goal"), every_seconds: parseInt(g("every_seconds"), 10) });
+      if (!res || res.ok === false){ alert((res && res.error) || "save failed"); return; }
+      closePopover();
+      if (this.onChanged) this.onChanged();
+    };
   }
   // JAG-431r4: `on` is the CURRENT enabled state; the button must flip it.
   async toggle(rid, on){ await this.api.post("/api/routines/" + encodeURIComponent(rid) + (on ? "/disable" : "/enable"), {}); if (this.onChanged) this.onChanged(); }

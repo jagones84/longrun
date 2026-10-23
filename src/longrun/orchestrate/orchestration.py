@@ -199,6 +199,13 @@ def handle(handler, method, path, qs, body):
             if path.endswith("/enable") or path.endswith("/disable"):
                 rid = path[len("/api/routines/"):].split("/")[0]
                 return _json(handler, 200, rr.set_enabled(rid, path.endswith("/enable")))
+            if path.startswith("/api/routines/"):   # JAG-536: edit in place
+                rid = path[len("/api/routines/"):].split("/")[0]
+                data = _body(body)
+                return _json(handler, 200, rr.update(
+                    rid, agent=data.get("agent"), goal=data.get("goal"),
+                    every_seconds=data.get("every_seconds"), enabled=data.get("enabled"),
+                    model=data.get("model")))
             data = _body(body)
             return _json(handler, 200, rr.create(
                 data.get("agent"), data.get("goal"), data.get("every_seconds"),

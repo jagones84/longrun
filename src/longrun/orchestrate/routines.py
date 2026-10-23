@@ -90,6 +90,53 @@ class RoutineRegistry:
             _save(d)
         return {"ok": True, "routine": rec}
 
+    def update(self, rid, agent=None, goal=None, every_seconds=None, enabled=None,
+               model=None):
+        """JAG-536: edit a routine in place. Only the fields passed are touched, so
+        the deck can re-target the agent, rewrite the goal, change the cadence or
+        flip the switch without delete-then-recreate (which lost ``runs``/``last_run``
+        and reset the id)."""
+        rid = str(rid or "")
+        with _LOCK:
+            d = _load()
+            rec = d["routines"].get(rid)
+            if not rec:
+                return {"ok": False, "error": "routine not found"}
+            if agent is not None:
+                aid = str(agent).strip()
+                if not aid:
+                    return {"ok": False, "error": "agent required"}
+                try:
+                    from longrun.agent import agents as agents_mod
+                    if not agents_mod.REGISTRY.resolve(aid):
+                        return {"ok": False, "error": "unknown agent (designate it first)"}
+                except Exception:  # noqa: BLE001
+                    pass
+                rec["agent"] = aid
+            if goal is not None:
+                g = str(goal).strip()
+                if not g:
+                    return {"ok": False, "error": "goal required"}
+                rec["goal"] = g
+            if every_seconds is not None:
+                try:
+                    every = int(every_seconds)
+                except (TypeError, ValueError):
+                    every = 0
+                if every < MIN_EVERY:
+                    return {"ok": False, "error": "every_seconds must be >= %d" % MIN_EVERY}
+                rec["every_seconds"] = every
+                if rec.get("enabled"):
+                    rec["next_run"] = round(time.time() + every, 3)
+            if enabled is not None:
+                rec["enabled"] = bool(enabled)
+                if rec["enabled"]:
+                    rec["next_run"] = round(time.time() + int(rec.get("every_seconds") or MIN_EVERY), 3)
+            if model is not None:
+                rec["model"] = str(model).strip() or None
+            _save(d)
+            return {"ok": True, "routine": rec}
+
     def delete_for_agent(self, agent):
         """JAG-314: drop every routine bound to a released/deleted agent."""
         agent = str(agent or "")
