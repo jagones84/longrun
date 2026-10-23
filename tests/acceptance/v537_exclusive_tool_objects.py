@@ -298,6 +298,33 @@ check("H4 the old catch-all still writes CONFIG targets only",
       == {"settings", "rules", "compaction", "routing", "team_policy", "subagents",
           "tools", "index", "config"})
 
+# --- I: the deck shows ONE panel at a time -----------------------------------
+with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"),
+          encoding="utf-8") as _f:
+    DECK = _f.read()
+check("I1 the deck has a panel selector with one option per panel",
+      'id="deckView"' in DECK
+      and all(('<option value="%s"' % v) in DECK
+              for v in ("all", "agents", "routines", "jobs", "org", "const", "feed")))
+check("I2 every deck panel is addressable by its view key",
+      all(('data-panel="%s"' % v) in DECK
+          for v in ("agents", "routines", "jobs", "org", "const", "feed")))
+check("I3 applyView hides every other panel, collapses the empty rows, remembers the choice",
+      "applyView(name){" in DECK
+      and 'main.classList.toggle("view-one", one)' in DECK
+      and 'p.hidden = one && p.getAttribute("data-panel") !== view' in DECK
+      and "row.hidden = kids.length > 0 && kids.every(k => k.hidden)" in DECK
+      and 'localStorage.setItem("orbit_view_v1", view)' in DECK)
+check("I4 the single-panel layout takes the full width and drops the column handle",
+      "main.view-one .grid2{grid-template-columns:1fr !important}" in DECK
+      and "main.view-one .rz-cols{display:none}" in DECK
+      and "main.view-one .panel[hidden]{display:none !important}" in DECK
+      and "main .grid2[hidden]{display:none !important}" in DECK)
+check("I5 the selector is wired on boot and restored from the last choice",
+      '$("deckView").onchange = () => this.applyView($("deckView").value);' in DECK
+      and 'localStorage.getItem("orbit_view_v1") || "all"' in DECK
+      and "this.applyView(saved);" in DECK)
+
 # cleanup the probe agents so the shared stores stay clean
 for ref in (worker_id, boss_id):
     call("longrunAgent.teamorg.agents.delete", {"agent": ref})

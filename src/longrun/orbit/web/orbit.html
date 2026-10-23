@@ -334,6 +334,15 @@
     .pad > .row > .inp,.pad > .row > .btn{height:36px}
     .panel.ag table.at tr.brief textarea{min-height:130px}
   }
+  /* JAG-537: the deck can show ONE panel at a time (see `applyView`): the selected
+     panel takes the full width and the empty grid rows + column handles go away.
+     `.panel`/`.grid2` set their own `display`, which beats the UA `[hidden]` rule,
+     so the hide MUST be declared here (same reason as `html.embed header`). */
+  main.view-one .grid2{grid-template-columns:1fr !important}
+  main.view-one .rz-cols{display:none}
+  main.view-one .col{display:block}
+  main.view-one .panel[hidden]{display:none !important}
+  main .grid2[hidden]{display:none !important}
 </style>
 </head>
 <body>
@@ -348,9 +357,26 @@
 </header>
 
 <main class="wrap">
+  <!-- JAG-537: the deck used to stack every panel at once. This bar manages WHICH
+       panel is on screen: one at a time, full width, or the default stacked board
+       ("all panels"). It lives INSIDE main because the deck header is hidden in
+       embed mode (`html.embed header`), where this deck is normally shown. -->
+  <div class="toolbar" id="deckViewBar">
+    <span class="lbl">panel</span>
+    <select class="inp" id="deckView" title="show ONE panel at a time — the other panels are hidden and the selected one takes the full width; 'all panels' restores the stacked board" style="width:auto;max-width:210px">
+      <option value="all" selected>all panels</option>
+      <option value="agents">agents</option>
+      <option value="routines">routines</option>
+      <option value="jobs">jobs</option>
+      <option value="org">org chart</option>
+      <option value="const">constellation</option>
+      <option value="feed">feed</option>
+    </select>
+    <span class="sp"></span>
+  </div>
   <div class="grid2 ab">
     <!-- Agents: available agents, creatable with +, each with a model + reports-to -->
-    <section class="panel ag">
+    <section class="panel ag" data-panel="agents">
       <h2><span class="led" id="led" title="feed connected"></span> Agents <span class="n" id="agCount">—</span>
         <!-- JAG-2.3: this panel lists DESIGNATED agents (a session becomes one when it
              is designated), never every chat session. The hint states that gap out loud
@@ -418,7 +444,7 @@
     <div class="rz-cols" title="drag to resize columns"></div>
 
     <div class="col">
-    <section class="panel">
+    <section class="panel" data-panel="routines">
       <h2>Routines <span class="n" id="routineCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
         <textarea class="inp" id="rtGoal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px;max-height:110px;resize:vertical"></textarea>
@@ -432,7 +458,7 @@
     </section>
 
     <!-- Job: goal + who you give it to (its reports are the team) -->
-    <section class="panel">
+    <section class="panel" data-panel="jobs">
       <h2>Jobs <span class="n" id="jobsCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
         <textarea class="inp" id="jobGoal" placeholder="job goal — the coordinator decomposes it and its team executes…" style="min-height:52px;max-height:120px;resize:vertical"></textarea>
@@ -449,7 +475,7 @@
 
   <div class="grid2 oc">
     <!-- Org chart: boxes + connectors from reports_to -->
-    <section class="panel">
+    <section class="panel" data-panel="org">
       <h2 title="click = preview + highlight the agent in the Agents panel · dbl-click = open · right-click = actions · wheel = zoom · drag = pan">Org chart
         <span class="ctools">
           <button class="btn ghost mini" id="orgOut" title="zoom out">−</button>
@@ -462,7 +488,7 @@
     <div class="rz-cols" title="drag to resize columns"></div>
 
     <!-- Constellation: DOCKED panel (AGENT = one agent, ALL = every agent + jobs) -->
-    <section class="panel cpanel" id="constPanel">
+    <section class="panel cpanel" id="constPanel" data-panel="const">
       <h2>Constellation <span class="n" id="constWho">—</span>
         <span class="ctools">
           <button class="btn ghost mini" id="constAgent">AGENT</button>
@@ -486,7 +512,7 @@
   </div>
 
   <div class="grid2 rf">
-    <section class="panel">
+    <section class="panel" data-panel="feed">
       <h2>Feed</h2>
       <div id="feed"></div>
     </section>
@@ -1986,6 +2012,14 @@ class OrbitApp {
     $("tmNewBtn").onclick = () => addBar("tmAddBar", "tmNewBtn", "tmNewName");
     $("agAddCancel").onclick = () => addBar("agAddBar", "agNewBtn");
     $("tmAddCancel").onclick = () => addBar("tmAddBar", "tmNewBtn");
+    // JAG-537: manage WHICH panel is on screen — one at a time, or the stacked board.
+    if ($("deckView")){
+      let saved = "all";
+      try { saved = localStorage.getItem("orbit_view_v1") || "all"; } catch (e){ saved = "all"; }
+      $("deckView").value = saved;
+      $("deckView").onchange = () => this.applyView($("deckView").value);
+      this.applyView(saved);
+    }
     if ($("lraAutoBtn")) $("lraAutoBtn").onclick = () => addBar("lraAutoBar", "lraAutoBtn", "lraAutoInp");
     if ($("lraAutoCancel")) $("lraAutoCancel").onclick = () => addBar("lraAutoBar", "lraAutoBtn");
     if ($("lraAutoRun")) $("lraAutoRun").onclick = () => this.runTeamorgAutomate();
@@ -2036,6 +2070,25 @@ class OrbitApp {
     }
     alert("model policy\n" + msg.join("\n"));
     this.refresh();
+  }
+  /* JAG-537: show ONE deck panel at a time (or the default stacked board). Hidden
+     panels keep rendering, so switching back is instant and nothing is lost. */
+  applyView(name){
+    const view = (!name || name === "all") ? "all" : String(name);
+    this.view = view;
+    const one = view !== "all";
+    const main = document.querySelector("main");
+    if (main) main.classList.toggle("view-one", one);
+    document.querySelectorAll("section.panel[data-panel]").forEach(p => {
+      p.hidden = one && p.getAttribute("data-panel") !== view;
+    });
+    document.querySelectorAll("main .grid2").forEach(row => {
+      const kids = [...row.querySelectorAll("section.panel[data-panel]")];
+      row.hidden = kids.length > 0 && kids.every(k => k.hidden);
+    });
+    const sel = $("deckView");
+    if (sel && sel.value !== view) sel.value = view;
+    try { localStorage.setItem("orbit_view_v1", view); } catch (e){ /* private mode */ }
   }
   async createTeam(){
     // JAG-2.0: create a team from the deck, persisted via the teams backend.
