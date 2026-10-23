@@ -39,6 +39,7 @@ SECTIONS = [
     {"id": "task-policy",   "order": 45, "kind": "static"},
     {"id": "self-summary",  "order": 50, "kind": "dynamic"},
     {"id": "agent-role",    "order": 52, "kind": "dynamic"},
+    {"id": "longrun-agent", "order": 53, "kind": "dynamic"},
     {"id": "tools",         "order": 55, "kind": "dynamic"},
     {"id": "rules",         "order": 60, "kind": "dynamic"},
     {"id": "matrix",        "order": 62, "kind": "dynamic"},
@@ -261,6 +262,104 @@ def _provider_tools(sess, ws, ctx):
         return ""
 
 
+def _longrun_agent_tool_lines():
+    """One `- name — first sentence` line per `longrunAgent.*` subtool, from LIVE state.
+
+    Read from the registry, never hardcoded: a new subtool shows up in the prompt
+    the moment it is registered, so the agent can never be unaware of its own tools.
+    """
+    try:
+        from longrun.tools import registry
+        rows = [t for t in registry.catalog() if str(t.get("name") or "").startswith("longrunAgent.")]
+    except Exception:  # noqa: BLE001 — the prompt must never break the chat
+        return []
+    out = []
+    for t in sorted(rows, key=lambda r: str(r.get("name"))):
+        desc = " ".join(str(t.get("description") or "").split())
+        # One sentence, and never the boilerplate action-hint tail.
+        head = desc.split(" This tool performs only")[0]
+        if "." in head[:200]:
+            head = head.split(". ")[0] + "."
+        out.append("- `%s` — %s" % (t.get("name"), head[:240]))
+    return out
+
+
+def _provider_longrun_agent(sess, ws, ctx):
+    """The `longrun-agent` section — longrunAgent's OWN namespace + hard rules.
+
+    JAG-535: the permanent system agent had no idea it was the VEO or which
+    `longrunAgent.*` subtools it owned (the generic Tool registry block is
+    summarised and truncated). This section is generated from the live registry and
+    injected only for the system session or for a session that was GRANTED
+    `allow_longrun_agent`, so the namespace is explicit and never drifts.
+    """
+    try:
+        from longrun.agent import longrun_agent as lra
+    except Exception:  # noqa: BLE001
+        return ""
+    sid = (sess or {}).get("id") if isinstance(sess, dict) else sess
+    sid = str(sid or "").strip()
+    is_system = sid == lra.LONGRUN_AGENT_SESSION_ID
+    granted = bool(isinstance(sess, dict) and sess.get("allow_longrun_agent"))
+    if not is_system and not granted:
+        return ""
+    lines = _longrun_agent_tool_lines()
+    if not lines:
+        return ""
+
+    if is_system:
+        intro = (
+            "## You are longrunAgent (the VEO \u2014 \u201cburattinaio of agents\u201d)\n"
+            "You are the harness's PERMANENT, UNDELETABLE, STATELESS system automation "
+            "agent. You own the substrate: you act on the backend state, never on the "
+            "graphical objects \u2014 the WebUI re-paints itself from the events your "
+            "calls emit, so never try to \u201cclick\u201d or scrape the UI.\n"
+            "Your exclusive tool namespace is `longrunAgent.*` and these are ALL of "
+            "them right now:\n"
+        )
+    else:
+        intro = (
+            "## longrunAgent namespace (granted to this session)\n"
+            "You were granted access to the VEO's exclusive `longrunAgent.*` "
+            "namespace. Use it to manage the harness substrate; the WebUI re-paints "
+            "itself from the events your calls emit. Available subtools:\n"
+        )
+
+    body = intro + "\n".join(lines) + "\n"
+    body += (
+        "\nHow to call them (enforced in code, not by you):\n"
+        "- an argument named `action` is RESERVED: the dispatcher uses it to carry the "
+        "subtool name. For `longrunAgent.webui.configure`, pass the sub-operation in "
+        "`op` (upsert|remove|add_model|remove_model|default|reload|test|notebook|"
+        "source|clear|reembed).\n"
+        "- Dual permission: a `longrunAgent.*` call runs only when the tool is enabled "
+        "in the global registry AND the calling session is `longrunAgent*` or carries "
+        "`allow_longrun_agent`. Both halves are checked outside you \u2014 do not try to "
+        "grant yourself access.\n"
+        "- REFUSED, always: `allow_nucleus_write` / `allow_matrix_promote` (the human "
+        "operator alone owns those checkboxes), any change to your own `longrunAgent.*` "
+        "tool policy, and any edit of `src/longrun` or the self-improvement policy.\n"
+        "- Nothing is remembered between runs: your transcript is reset before and "
+        "after every automation turn, so plan from the live substrate you inspect, "
+        "never from earlier context.\n"
+    )
+    try:
+        cheap = ", ".join("`%s`" % m for m in lra.PREFERRED_CHEAP_MODELS[:4])
+        body += ("- Cost: whenever you pick a model, prefer a cheap remote one (%s) and "
+                 "NEVER a heavy local GGUF.\n" % cheap)
+    except Exception:  # noqa: BLE001
+        pass
+    body += (
+        "- Working rhythm: inspect the real state first (`webui.inspect` for any "
+        "settings/config section; the `longrunAgent.teamorg.*` tools are themselves the "
+        "read+write path for agents and teams), apply the change, then report exactly "
+        "what changed. You also own the semantic team icon+colour choice "
+        "(`teamorg.teams.create` decides it from the palette \u2014 an explicit `symbol` "
+        "still wins).\n"
+    )
+    return body
+
+
 def _provider_rules(sess, ws, ctx):
     try:
         from longrun.memory import rules
@@ -342,6 +441,7 @@ def _provider_memory(sess, ws, ctx):
 _PROVIDERS = {
     "self-summary": _provider_self_summary,
     "agent-role": _provider_role,
+    "longrun-agent": _provider_longrun_agent,
     "tools": _provider_tools,
     "rules": _provider_rules,
     "matrix": _provider_matrix,

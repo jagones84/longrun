@@ -37,6 +37,13 @@ Locks:
      - every configure target owns a context-specific system prompt, and the WebUI
        auto-generates one `⚡ Automate` control per editable panel
        (`AUTOMATE_CATS` / `mountCategoryAutomate`).
+  F/G  The VEO aware of itself, and permanently pinned:
+     - the `longrun-agent` prompt section lists EVERY live `longrunAgent.*` subtool
+       (generated from the registry) plus the hard rules, and is injected only for
+       the system session or a session explicitly granted `allow_longrun_agent`;
+     - the `longrunAgent` session is ALWAYS pinned above the whole rail, its pin is
+       derived from the server `system`/`undeletable` flag (not localStorage), it
+       cannot be unpinned, and "hide empty" cannot hide it.
 
 Deterministic: temp dirs, no live model, no network.
 Run: python3 tests/acceptance/v534_longrun_agent_veo.py
@@ -402,6 +409,62 @@ check("E9 the WebUI auto-generates one Automate control per editable panel",
       and all(("  " + k + ": { section:") in HTML
               for k in ("models", "subagents", "tools", "mcp", "skills",
                         "knowledge", "rules", "config")))
+
+# --- F: the agent's OWN namespace is declared in its system prompt -----------
+# The VEO must not have to guess which `longrunAgent.*` subtools it owns: the
+# `longrun-agent` prompt section lists them FROM THE LIVE REGISTRY, and is injected
+# only for the system session (or one explicitly granted access).
+from longrun.model import prompt as P                     # noqa: E402
+
+sec = next((s for s in P.SECTIONS if s["id"] == "longrun-agent"), None)
+check("F1 longrun-agent is a DYNAMIC prompt section in the cache-safe tail",
+      bool(sec) and sec["kind"] == "dynamic" and sec["order"] >= 50,
+      sec)
+
+sys_text = P._provider_longrun_agent({"id": "longrunAgent", "system": True}, None, None)
+granted_text = P._provider_longrun_agent({"id": "normal-user", "allow_longrun_agent": True}, None, None)
+plain_text = P._provider_longrun_agent({"id": "normal-user"}, None, None)
+check("F2 the namespace section is gated: full VEO framing only for the system session",
+      "longrunAgent.webui.configure" in sys_text
+      and "You are longrunAgent" in sys_text
+      and "longrunAgent.webui.configure" in granted_text
+      and "You are longrunAgent" not in granted_text
+      and plain_text == "",
+      (plain_text, granted_text[:120]))
+
+expected_tools = [
+    "longrunAgent.teamorg.agents.assignagent", "longrunAgent.teamorg.agents.create",
+    "longrunAgent.teamorg.agents.setllm", "longrunAgent.teamorg.agents.setprompt",
+    "longrunAgent.teamorg.agents.setrole", "longrunAgent.teamorg.teams.create",
+    "longrunAgent.webui.configure", "longrunAgent.webui.inspect",
+]
+check("F3 the section lists EVERY live longrunAgent subtool (generated, never hardcoded)",
+      all(("`%s`" % n) in sys_text for n in expected_tools), sys_text[:400])
+check("F4 the section states the hard rules: reserved `action`, `op`, dual permission, safety, stateless",
+      "`action` is RESERVED" in sys_text
+      and "`op`" in sys_text
+      and "Dual permission" in sys_text
+      and "allow_nucleus_write" in sys_text and "allow_matrix_promote" in sys_text
+      and "reset before and after every automation turn" in sys_text)
+
+# --- G: the permanent session is ALWAYS pinned, above everything -------------
+check("G1 the permanent system session derives its pin from the SERVER flag, not localStorage",
+      "function _isSystemSess(" in HTML
+      and "function _systemPinnedIds(" in HTML
+      and all(x in HTML for x in ("const sys = _systemPinnedIds(list);",
+                                  "return sys.concat(stored.filter(id => !sys.includes(id)));")))
+check("G2 _togglePin refuses to unpin a system session and can never store it",
+      "function _togglePin(sid) {" in HTML
+      and "if (_systemPinnedIds().includes(sid))" in HTML
+      and 'toast("longrunAgent is a permanent system session' in HTML)
+check("G3 the row menu shows a DISABLED permanent pin instead of an Unpin toggle",
+      'data-a="pin-sys" disabled' in HTML and "📌 Pinned (permanent)" in HTML)
+check("G4 the system session sorts above every other pinned row (and in the flat list)",
+      "const _sysFirst = (a, b) =>" in HTML
+      and "visible.filter(s => isPinned(s.id)).sort(_sysFirst)" in HTML
+      and "visible.slice().sort(_sysFirst)" in HTML)
+check("G5 'hide empty' can never hide the stateless system session",
+      "(_isSystemSess(s) || !hideEmpty || (s.messages || 0) > 0)" in HTML)
 
 print("---")
 passed = sum(1 for r in results if r)

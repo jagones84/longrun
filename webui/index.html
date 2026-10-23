@@ -4432,8 +4432,31 @@ async function loadAgents() {
     (t.teams || []).forEach(x => { _teamsById[x.id] = x; });
   } catch (e) { _agents = {}; }
 }
-function _pinned() { try { return JSON.parse(localStorage.getItem("sf_pinned") || "[]"); } catch (e) { return []; } }
-function _togglePin(sid) { let p = _pinned(); p = p.includes(sid) ? p.filter(x => x !== sid) : [sid].concat(p); localStorage.setItem("sf_pinned", JSON.stringify(p)); loadSessions(); }
+function _isSystemSess(s) { return !!(s && (s.system || s.undeletable || s.id === "longrunAgent")); }
+function _systemPinnedIds(list) {
+  return ((list || _sessList || []).filter(_isSystemSess)).map(s => s.id);
+}
+function _pinned(list) {
+  let stored = [];
+  try { const p = JSON.parse(localStorage.getItem("sf_pinned") || "[]"); stored = Array.isArray(p) ? p : []; } catch (e) { stored = []; }
+  // JAG-535: the permanent system session (longrunAgent) is ALWAYS pinned ABOVE
+  // everything and can never be unpinned. The pin is derived from the SERVER flag
+  // (`system`/`undeletable`), not from localStorage, so clearing browser storage or
+  // hand-editing `sf_pinned` can neither depin it nor duplicate it.
+  const sys = _systemPinnedIds(list);
+  return sys.concat(stored.filter(id => !sys.includes(id)));
+}
+function _togglePin(sid) {
+  if (_systemPinnedIds().includes(sid)) {
+    if (typeof toast === "function") toast("longrunAgent is a permanent system session — it stays pinned", "warn");
+    return;
+  }
+  let p = _pinned(); p = p.includes(sid) ? p.filter(x => x !== sid) : [sid].concat(p);
+  // Never let a user pin/unpin shuffle the permanent system pins.
+  const sys = _systemPinnedIds();
+  localStorage.setItem("sf_pinned", JSON.stringify(p.filter(x => !sys.includes(x))));
+  loadSessions();
+}
 function closeSessMenu() { document.querySelectorAll(".sess-menu").forEach(m => m.remove()); document.querySelectorAll(".sess.menu-open").forEach(d => d.classList.remove("menu-open")); }
 async function openSessMenu(row, s, ag) {
   closeSessMenu();
@@ -4441,11 +4464,15 @@ async function openSessMenu(row, s, ag) {
   const m = document.createElement("div");
   m.className = "sess-menu";
   const pinned = _pinned().includes(s.id);
-  const isSys = !!(s.system || s.undeletable || s.id === "longrunAgent");
+  const isSys = _isSystemSess(s);
   const hasLra = !!(s.allow_longrun_agent || isSys);
   const lraBtn = isSys ? "" : `<button data-a="lra">${hasLra ? "✓ Revoke Teamorg / longrunAgent" : "⚡ Grant Teamorg / longrunAgent"}</button>`;
   const delBtn = isSys ? "" : `<button data-a="del" class="danger">Delete session</button>`;
-  m.innerHTML = `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button><button data-a="rename">Rename</button><button data-a="org">⬢ Show in organigram</button><button data-a="role">Edit role (ROLE.md)</button>${lraBtn}<button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button>${delBtn}`;
+  // JAG-535: a system session cannot be unpinned — show the state, not a toggle.
+  const pinBtn = isSys
+    ? `<button data-a="pin-sys" disabled title="permanent system session — always pinned above the list">📌 Pinned (permanent)</button>`
+    : `<button data-a="pin">${pinned ? "Unpin session" : "Pin session"}</button>`;
+  m.innerHTML = `${pinBtn}<button data-a="rename">Rename</button><button data-a="org">⬢ Show in organigram</button><button data-a="role">Edit role (ROLE.md)</button>${lraBtn}<button data-a="rewind">⏪ Rewind…</button><button data-a="clear">Clear chat + tasks</button>${delBtn}`;
   row.appendChild(m);
   m.onclick = async (e) => {
     const a = e.target.dataset && e.target.dataset.a;
@@ -4638,10 +4665,11 @@ async function loadSessions() {
   const q = ($("session-search") ? $("session-search").value : "").toLowerCase();
   const hideEmpty = $("hide-empty") ? $("hide-empty").checked : false;
   (out.sessions || []).forEach(s => { if (s.id === sessionId) _activeTitle = s.title || s.id; });
-  let pinnedIds = [];
-  try { pinnedIds = _pinned(); } catch (e) {}
   const _all = out.sessions || [];
   _sessList = _all;   // JAG-479: the runs panel reads titles/ages from the REAL payload
+  let pinnedIds = [];
+  try { pinnedIds = _pinned(_all); } catch (e) {}   // JAG-535: passes the live list so
+                                                    // the permanent system pin is included
   const _IDs = new Set(_all.map(s => s.id));
   _all.forEach(s => {
     _sessModel[s.id] = s.model || "";   // JAG-157: cache each session's model
@@ -4661,7 +4689,10 @@ async function loadSessions() {
     updateDoneTitle();
   }
   const visible = (out.sessions || []).filter(s =>
-    (!hideEmpty || (s.messages || 0) > 0) && ((s.title || s.id || "").toLowerCase().includes(q)));
+    // JAG-535: the permanent system session is stateless, so it is ALWAYS empty —
+    // "hide empty" must never make the VEO vanish from the rail.
+    (_isSystemSess(s) || !hideEmpty || (s.messages || 0) > 0)
+    && ((s.title || s.id || "").toLowerCase().includes(q)));
   const isPinned = id => pinnedIds.includes(id);
   visible.sort((a, b) => (pinnedIds.includes(b.id) ? 1 : 0) - (pinnedIds.includes(a.id) ? 1 : 0));
   const teamsOf = s => { const ag = _agents[s.id]; return ag ? (ag.teams || []).filter(t => _teamsById[t]) : []; };
@@ -4676,12 +4707,15 @@ async function loadSessions() {
     if (!ha && ra !== rb) return ra - rb;
     return 0;   // stable: keep the server's order for ties
   };
+  // JAG-535: the permanent system session sorts ABOVE everything — before any other
+  // pinned row, and in the flat (no-team) list too.
+  const _sysFirst = (a, b) => (_isSystemSess(a) ? 0 : 1) - (_isSystemSess(b) ? 0 : 1) || _ord(a, b);
 
   // No teams configured -> keep the flat, header-less list (backward compatible).
   _ctxRingPlaced = false;   // JAG-424g: one ctx ring per render, on the active row
   if (!teams.length) {
     _lastGroupKeys = [];
-    visible.slice().sort(_ord).forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
+    visible.slice().sort(_sysFirst).forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
   } else {
     // JAG-415: expand the active session's own team group ONLY on a redirect or a
     // selection (never on a plain re-render — else the user could not collapse the
@@ -4700,7 +4734,7 @@ async function loadSessions() {
       _forceExpandActive = false;
     }
     const groups = [];
-    const pinGroup = visible.filter(s => isPinned(s.id)).sort(_ord);
+    const pinGroup = visible.filter(s => isPinned(s.id)).sort(_sysFirst);
     if (pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
     // JAG-415: "No team" sits right BELOW Pinned, before the teams.
     const adhoc = visible.filter(s => teamsOf(s).length === 0).sort(_ord);
