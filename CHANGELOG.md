@@ -26,6 +26,16 @@ All notable changes to Longrun are documented here. The format follows
   `v507` F–F9 and `v350` A4.
 
 ### Fixed
+- **Two `shell` calls in one `batch` silently lost one.** The batch ran every tool
+  item in a thread pool, but the shell is ONE persistent terminal per caller with a
+  single `busy` slot: the second `shell.exec` returned "busy — wait for the current
+  command" and its work vanished (reproduced: 1 busy out of 2). Terminal-backed
+  tools are now serialised *inside* the batch, in the model's order, while every
+  other call stays parallel — no extra shells, the shared-terminal contract holds
+  (the operator still sees the same shell, and parallel subagents keep their own
+  per-run terminal). This collision is also what killed delegated work: the child
+  repeated the identical batch and the no-progress guard ended the run at
+  `max_steps=4`. Locked by `v528` G0–G3.
 - **The Codebase panel never said whether a re-index was needed.** The numbers (files,
   chunks, vectors) cannot answer "is a file NEWER than the index?", so a healthy index
   looked identical to a stale one. `codeindex.freshness()` now compares the tree's

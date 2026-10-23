@@ -82,7 +82,7 @@ check("C _batch_items reads calls / tool_calls / batch / parallel",
 
 class _Reg:
     def tool_names(self):
-        return ["fs.read"]
+        return ["fs.read", "shell.exec"]
 
 
 class _Fake:
@@ -106,7 +106,8 @@ class _Fake:
         try:
             time.sleep(self.delay)
             return {"status": "executed", "result": {"ok": True},
-                    "observation": "obs:" + str((args or {}).get("path"))}
+                    "observation": "obs:" + str((args or {}).get("path")
+                                                 or (args or {}).get("command"))}
         finally:
             with self.lock:
                 self.inflight -= 1
@@ -149,6 +150,37 @@ A._apply_chat_batch(sess, three, on_event, f2)
 check("D3 a cap of 1 serialises the batch (max in-flight == 1)",
       f2.maxinflight == 1, "max=%s" % f2.maxinflight)
 A._parallel_tool_cap = _orig_cap
+
+# G) the ONE terminal per caller: shell calls inside a batch must NOT overlap.
+# `batch_action`/`_apply_chat_batch` used to run every tool item in the pool, so a
+# batch with two `shell.exec` calls lost one to "busy — wait for the current
+# command" (reproduced live, 2026-10-23: 1 busy out of 2). The terminal has a
+# single busy slot, so those items are serialised while the rest stays parallel.
+check("G0 the shell is recognised as a terminal-backed tool",
+      A._runs_in_shared_terminal({"tool": "shell.exec", "args": {"command": "x"}}) is True
+      and A._runs_in_shared_terminal({"tool": "shell", "args": {"command": "x"}}) is True
+      and A._runs_in_shared_terminal({"tool": "fs.read", "args": {"path": "a"}}) is False)
+
+g = _Fake(0.2)
+two_shell = {"action": "batch", "calls": [
+    {"tool": "shell.exec", "args": {"command": "echo one"}},
+    {"tool": "shell.exec", "args": {"command": "echo two"}}]}
+obs_g = A._apply_chat_batch(sess, two_shell, on_event, g)
+check("G1 two shell calls in one batch are SERIALISED (max in-flight == 1)",
+      g.maxinflight == 1, "max=%s" % g.maxinflight)
+check("G2 both shell calls still ran, in the model's order",
+      obs_g.count("### shell.exec OK") == 2
+      and obs_g.index("obs:echo one") < obs_g.index("obs:echo two"))
+
+mix = _Fake(0.15)
+mixed = {"action": "batch", "calls": [
+    {"tool": "fs.read", "args": {"path": "x"}},
+    {"tool": "shell.exec", "args": {"command": "echo y"}},
+    {"tool": "fs.read", "args": {"path": "z"}}]}
+obs_m = A._apply_chat_batch(sess, mixed, on_event, mix)
+check("G3 a mixed batch keeps the non-terminal calls parallel and the order",
+      mix.maxinflight == 2 and obs_m.index("obs:x") < obs_m.index("obs:echo y")
+      < obs_m.index("obs:z"), "max=%s" % mix.maxinflight)
 
 A.persist_tool_card = _orig_persist
 A._chat_workspace = _orig_ws

@@ -1493,6 +1493,48 @@ def _batch_items(act):
     return [c for c in (raw or []) if isinstance(c, dict)]
 
 
+# Tools that run INSIDE the one persistent terminal of their caller (term.py).
+# They can never overlap: the terminal has a single `busy` slot, so the second
+# call returns "busy — wait for the current command" and its work is LOST.
+_TERMINAL_TOOLS = frozenset({"shell.exec"})
+
+
+def _runs_in_shared_terminal(item):
+    """True when this batch item must not run concurrently with its siblings.
+
+    `shell` and `shell.exec` are the SAME canonical tool (JAG-535), so the
+    canonical name is the only safe comparison.
+    """
+    try:
+        from longrun.tools import registry
+        name = registry.canonical_name(str(item.get("tool") or item.get("action") or ""),
+                                       item.get("args") or {})
+    except Exception:  # noqa: BLE001 — an unknown item simply runs in the pool
+        return False
+    return name in _TERMINAL_TOOLS
+
+
+def _map_tools(items, cap, fn):
+    """Run batch TOOL items with `cap` workers, SERIALISING the terminal ones.
+
+    Results come back in the ORDER of `items` (the model numbered them that way).
+    The shell is ONE process per caller, so two `shell` calls in one batch used to
+    lose all but the first; the rest of the batch stays parallel.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    out = [None] * len(items)
+    parallel = [(i, it) for i, it in enumerate(items) if not _runs_in_shared_terminal(it)]
+    serial = [(i, it) for i, it in enumerate(items) if _runs_in_shared_terminal(it)]
+    if parallel:
+        with ThreadPoolExecutor(max_workers=max(1, int(cap))) as pool:
+            for (i, _it), r in zip(parallel, pool.map(lambda p: fn(p[1]), parallel)):
+                out[i] = r
+    for i, it in serial:
+        out[i] = fn(it)
+    return out
+
+
 def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
     """Run the calls of a `batch` action concurrently (JAG-533).
 
@@ -1505,8 +1547,6 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
     combined observation is fed back as the next step. A batch of fewer than two
     items is NOT handled here — the loop routes it through the single-call path.
     """
-    from concurrent.futures import ThreadPoolExecutor
-
     def _one_tool(it):
         tc = _chat_tool_call(it, av02)
         if not tc:
@@ -1547,8 +1587,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
                  if str(it.get("action") or "") == "subagent" or it.get("goal")]
     results = []
     if tool_items:
-        with ThreadPoolExecutor(max_workers=_parallel_tool_cap()) as pool:
-            results.extend(list(pool.map(_one_tool, tool_items)))
+        results.extend(_map_tools(tool_items, _parallel_tool_cap(), _one_tool))
     if sub_items:
         # JAG-533/SJ: the subagent items of a batch become ONE Session Job (SJ) —
         # a persisted, dependency-ordered graph. A subjob STARTS only when the

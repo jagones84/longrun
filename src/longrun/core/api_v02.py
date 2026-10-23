@@ -251,14 +251,15 @@ def batch_action(st, items, on_event, srv, workspace=None):
     repeat guard hashed two different batches identically — was then killed at
     step 2 with ``no_progress`` (live: SJ1.3, 2026-10-23).
 
-    TOOL items run CONCURRENTLY under `runtime.max_parallel_tools`. Every other
-    item (subagent / plan_step / note / …) runs SEQUENTIALLY afterwards, because
-    those mutate harness state (plan.json, the task graph) and must not race.
+    TOOL items run CONCURRENTLY under `runtime.max_parallel_tools`, EXCEPT the ones
+    that execute inside the caller's one persistent terminal (`shell`), which are
+    serialised: the terminal has a single busy slot, so overlapping them used to
+    lose every call but the first with "busy — wait for the current command".
+    Every other item (subagent / plan_step / note / …) runs SEQUENTIALLY afterwards,
+    because those mutate harness state (plan.json, the task graph) and must not race.
     Returns ``(observation, results)`` in the model's order.
     """
-    from concurrent.futures import ThreadPoolExecutor
-
-    from longrun.agent.agent import _parallel_tool_cap
+    from longrun.agent.agent import _map_tools, _parallel_tool_cap
 
     def _is_tool(it):
         return str(it.get("action") or "") in ("", "tool") and bool(it.get("tool"))
@@ -277,8 +278,7 @@ def batch_action(st, items, on_event, srv, workspace=None):
     other_items = [it for it in items if not _is_tool(it)]
     results = []
     if tool_items:
-        with ThreadPoolExecutor(max_workers=_parallel_tool_cap()) as pool:
-            results.extend(list(pool.map(_one_tool, tool_items)))
+        results.extend(_map_tools(tool_items, _parallel_tool_cap(), _one_tool))
     for it in other_items:
         if str(it.get("action") or "") == "batch":
             obs = ("nested `batch` is not supported — put its calls in the TOP-LEVEL "
