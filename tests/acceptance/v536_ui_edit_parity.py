@@ -26,6 +26,8 @@ Locked here:
     those routes;
   * G — the LIVE half: `/api/tools/running` + the cancel, `/api/agent/runs` + the
     pause/resume/abort, and the Feed-rail "Running now" card that reads them.
+  * H — Settings ▸ Orchestration: the blackboard (post/get/thread/stats) and the
+    swarm runner (`POST /api/swarm/run`), exposed where they had no panel.
 
 Deterministic: no model, no network, no server.
 Run: python3 tests/acceptance/v536_ui_edit_parity.py
@@ -315,6 +317,43 @@ check("G15 it never polls while the panel is collapsed",
       and "setInterval(loadRunning, 5000)" in gui)
 check("G16 opening the Feed section populates it immediately",
       'else if (key === "feed") { loadRunning(); }' in gui)
+
+# --- H: the blackboard + the swarm (Settings > Orchestration) ----------------
+# Both were reachable ONLY from the agent API / CLI: GET+POST /api/blackboard and
+# POST /api/swarm/run had no panel at all.
+from longrun.agent import swarm as BB                             # noqa: E402
+
+_e1 = BB.post("goal", "ship the orchestration panel", tags=["v536"], author="v536")
+check("H1 post() returns a durable, versioned entry",
+      bool(_e1.get("id")) and _e1.get("version") == 1 and _e1.get("topic") == "goal", _e1)
+_e2 = BB.post("partial_result", "worker done", tags=["v536", "worker"],
+              parent=_e1["id"], author="worker/x")
+check("H2 a child entry points at its parent", _e2.get("parent") == _e1["id"], _e2)
+check("H3 get(topic=) filters", [e["id"] for e in BB.get(topic="goal")] == [_e1["id"]],
+      BB.get(topic="goal"))
+check("H4 get(tags=) matches ANY tag", len(BB.get(tags=["worker"])) == 1)
+check("H5 thread(id) returns the ancestor AND the descendant",
+      {e["id"] for e in BB.thread(_e1["id"])} == {_e1["id"], _e2["id"]}, BB.thread(_e1["id"]))
+_s = BB.stats()
+check("H6 stats() counts the entries and the topics",
+      _s.get("total_entries") == 2 and (_s.get("topics") or {}).get("goal") == 1, _s)
+
+check("H7 GET/POST /api/blackboard and POST /api/swarm/run are routed",
+      'path == "/api/blackboard"' in api and 'path == "/api/swarm/run"' in api
+      and "_SWARM.Coordinator()" in api)
+check("H8 Settings grew an Orchestration panel",
+      '["orchestrate", "Orchestration"]' in gui and 'data-cat="orchestrate"' in gui
+      and 'id="bbList"' in gui and 'id="swReport"' in gui)
+check("H9 the blackboard panel reads and writes the real route",
+      "async function loadBlackboard(" in gui and '"/api/blackboard?limit=30"' in gui
+      and '"/api/blackboard", { topic:' in gui and 'author: "human"' in gui)
+check("H10 the swarm button posts goal/workers/steps and renders the report",
+      "async function runSwarm(" in gui and '"/api/swarm/run"' in gui
+      and "r.synthesis_id" in gui and "r.summaries" in gui)
+check("H11 opening the category populates the blackboard at once",
+      'else if (name === "orchestrate") { loadBlackboard(); }' in gui)
+check("H12 the swarm control warns that it spends real model calls",
+      "spends real model calls" in gui)
 
 print("---")
 ok = sum(1 for r in results if r)

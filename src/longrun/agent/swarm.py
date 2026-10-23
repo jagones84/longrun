@@ -91,6 +91,12 @@ def post(topic, content, tags=None, parent=None, author=None, run_id=None):
 
     Returns the entry dict (with id and version).
     """
+    # JAG-536: `_entries` is rebound below (the max-entries trim), so without this
+    # declaration Python made it a LOCAL for the whole function: the trim silently
+    # updated nothing, and — worse — `for e in _entries` raised UnboundLocalError on
+    # any THREADED post (a child with a `parent`), so the blackboard could never
+    # grow a thread. Verified by v536 H2/H5.
+    global _entries
     with _lock:
         entries = _load()
         entry = {

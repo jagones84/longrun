@@ -2307,6 +2307,43 @@
         <div class="card u-mt6" id="subRolesBox"><div class="remaining">loading…</div></div>
         <div class="remaining u-mt8" id="subResult">changes are saved automatically</div>
       </div>
+      <!-- JAG-536 W4: the blackboard (the swarm's shared memory) and the swarm
+           runner. Both live routes — GET/POST /api/blackboard and POST
+           /api/swarm/run — had NO UI at all. Entries are read from the registry,
+           never mirrored; the swarm button is the only control that spends model
+           calls, so it says so. -->
+      <div class="sw-cat" data-cat="orchestrate" hidden>
+        <h2>Blackboard · the swarm's shared memory <span class="remaining" id="bbStat"></span></h2>
+        <div class="card">
+          <div class="u-df u-g6 u-aic u-fww">
+            <span class="remaining u-f1">Every entry is durable and versioned; the coordinator and its workers
+            read and write here. One source of truth: <code>GET / POST /api/blackboard</code>.</span>
+            <button class="ghost" data-call="loadBlackboard" title="re-read the entries">↻</button>
+          </div>
+          <div class="u-df u-g6 u-mt6 u-fww">
+            <input id="bbTopic" class="inp u-p610 u-fs12" style="width:130px" placeholder="topic" value="general">
+            <input id="bbContent" class="inp u-f1 u-p610 u-fs12" placeholder="post an entry to the blackboard…">
+            <input id="bbTags" class="inp u-p610 u-fs12" style="width:130px" placeholder="tags,comma">
+            <button class="ghost" data-call="bbPost" title="POST /api/blackboard as author=human">＋ post</button>
+          </div>
+          <div class="remaining u-mt4" id="bbMsg" role="status" aria-live="polite"></div>
+          <div id="bbList" class="u-mt6"></div>
+        </div>
+        <h2>Swarm · decompose a goal into parallel workers <span class="remaining" id="swStat"></span></h2>
+        <div class="card">
+          <div class="remaining"><b>This spends real model calls:</b> the coordinator decomposes the goal, spawns N
+          subagents (each with a fresh context) and synthesises their summaries. The goal, the partial results and the
+          synthesis land on the blackboard above.</div>
+          <div class="u-df u-g6 u-aic u-mt6 u-fww">
+            <input id="swGoal" class="inp u-f1 u-p610 u-fs12" placeholder="the goal to decompose…">
+            <label class="remaining u-df u-g6 u-aic">workers<input id="swWorkers" type="number" min="1" max="8" value="3" class="inp u-p610 u-fs12" style="width:56px"></label>
+            <label class="remaining u-df u-g6 u-aic">max steps<input id="swSteps" type="number" min="1" max="12" value="4" class="inp u-p610 u-fs12" style="width:56px"></label>
+            <button class="ghost" id="swRun" data-call="runSwarm" title="POST /api/swarm/run — spawns real subagents">▶ run swarm</button>
+          </div>
+          <div class="remaining u-mt6" id="swMsg" role="status" aria-live="polite"></div>
+          <div id="swReport"></div>
+        </div>
+      </div>
       <div class="sw-cat" data-cat="knowledge" hidden>
         <div data-insp="knowledge">
         <h2>Knowledge · global <span id="indexStat" class="remaining"></span></h2>
@@ -9409,7 +9446,7 @@ function skillsAutocomplete() {
    before Harness, and the Knowledge panel remains near the end. */
 const SETTINGS_CATS = [
   ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
-  ["subagents", "Subagents"], ["tools", "Tools & approvals"], ["sandbox", "Sandbox"],
+  ["subagents", "Subagents"], ["orchestrate", "Orchestration"], ["tools", "Tools & approvals"], ["sandbox", "Sandbox"],
   ["mcp", "MCP"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
   ["compaction", "Compaction"],
@@ -9654,6 +9691,7 @@ function settingsCategory(name) {
   else if (name === "subagents") {
     if (typeof loadSubagents === "function") loadSubagents();
   }
+  else if (name === "orchestrate") { loadBlackboard(); }
   else if (name === "models") {
     // JAG-422: Thinking effort lives in the Models category — load its saved
     // state HERE (it was only loaded by the "harness" branch, so the checkbox /
@@ -9938,6 +9976,96 @@ function mountCategoryAutomate(name) {
   const spec = AUTOMATE_CATS[name];
   if (!spec) return;
   mountSectionAutomate('#swMain .sw-cat[data-cat="' + name + '"]', spec.section, spec.ctx);
+}
+/* JAG-536 W4: Settings > Orchestration — the blackboard and the swarm runner.
+   Nothing here is cached: entries and stats come straight from `/api/blackboard`,
+   and the swarm report from the `POST /api/swarm/run` response. */
+async function loadBlackboard() {
+  const box = $("bbList"), st = $("bbStat");
+  if (!box) return;
+  let d = {};
+  try { d = await api("GET", "/api/blackboard?limit=30"); } catch (e) { d = {}; }
+  if (d && d.error) { box.innerHTML = '<div class="remaining">⛔ ' + esc(String(d.error)) + "</div>"; return; }
+  const es = d.entries || [], stt = d.stats || {};
+  if (st) {
+    const topics = Object.keys(stt.topics || {});
+    st.textContent = (stt.total_entries != null ? stt.total_entries : es.length) + " entries"
+      + (topics.length ? " · " + topics.join(", ") : "");
+  }
+  box.textContent = "";
+  if (!es.length) {
+    const e = document.createElement("div");
+    e.className = "remaining"; e.textContent = "the blackboard is empty";
+    box.append(e);
+    return;
+  }
+  es.forEach(e => {
+    const row = document.createElement("div");
+    row.className = "card u-mt6"; row.style.fontSize = "11px";
+    const head = document.createElement("div");
+    head.className = "remaining";
+    head.textContent = "#" + (e.version != null ? e.version : "?") + " · " + (e.topic || "?")
+      + " · " + (e.author || "?")
+      + " · " + new Date((e.ts || 0) * 1000).toLocaleTimeString()
+      + ((e.tags || []).length ? " · " + e.tags.join(", ") : "");
+    const body = document.createElement("div");
+    body.style.cssText = "white-space:pre-wrap;word-break:break-word;margin-top:4px";
+    body.textContent = String(e.content || "").slice(0, 800);
+    row.append(head, body);
+    box.append(row);
+  });
+}
+async function bbPost() {
+  const msg = $("bbMsg"), inp = $("bbContent");
+  const content = ((inp || {}).value || "").trim();
+  if (!content) { if (msg) msg.textContent = "nothing to post"; return; }
+  const tags = ((($("bbTags") || {}).value || "").split(",").map(s => s.trim()).filter(Boolean));
+  if (msg) msg.textContent = "posting…";
+  let r = {};
+  try {
+    r = await api("POST", "/api/blackboard", { topic: (($("bbTopic") || {}).value || "general").trim(),
+      content: content, tags: tags, author: "human" });
+  } catch (e) { r = { error: String(e) }; }
+  if (r && r.error) { if (msg) msg.textContent = "⛔ " + r.error; return; }
+  if (inp) inp.value = "";
+  if (msg) msg.textContent = "posted #" + (r.version != null ? r.version : "?") + " to " + (r.topic || "general");
+  loadBlackboard();
+}
+async function runSwarm() {
+  const msg = $("swMsg"), out = $("swReport"), btn = $("swRun");
+  const goal = ((($("swGoal") || {}).value) || "").trim();
+  if (!goal) { if (msg) msg.textContent = "a goal is required"; return; }
+  if (msg) msg.textContent = "decomposing the goal, spawning the workers and collecting their results — real model calls…";
+  if (out) out.textContent = "";
+  if (btn) btn.disabled = true;
+  let r = {};
+  try {
+    r = await api("POST", "/api/swarm/run", {
+      goal: goal,
+      n_workers: parseInt(($("swWorkers") || {}).value, 10) || 3,
+      max_steps: parseInt(($("swSteps") || {}).value, 10) || 4 });
+  } catch (e) { r = { error: String(e) }; }
+  finally { if (btn) btn.disabled = false; }
+  if (r && r.error) { if (msg) msg.textContent = "⛔ " + r.error; return; }
+  if (msg) msg.textContent = "done — " + (r.worker_count || 0)
+    + " workers; the goal, the partial results and the synthesis are on the blackboard.";
+  if (out) {
+    const c = document.createElement("div");
+    c.className = "card u-mt6"; c.style.fontSize = "11px";
+    const h = document.createElement("div");
+    h.className = "remaining";
+    h.textContent = "goal " + (r.goal_id || "?") + " · " + ((r.subgoal_ids || []).length)
+      + " sub-goals · synthesis " + (r.synthesis_id || "?");
+    c.append(h);
+    (r.summaries || []).forEach((s, i) => {
+      const d = document.createElement("div");
+      d.style.cssText = "white-space:pre-wrap;word-break:break-word;margin-top:6px";
+      d.textContent = "worker " + (i + 1) + ": " + String(s == null ? "" : s).slice(0, 500);
+      c.append(d);
+    });
+    out.append(c);
+  }
+  loadBlackboard();
 }
 /* JAG-451: Settings > Subagents — model + failover (routing.yaml), depth
    (tools.yaml), parallel cap + role briefs (config/subagents.yaml). */

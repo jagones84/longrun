@@ -105,8 +105,8 @@ check("A19 ONE session-guarded listing fetch feeds both callers",
 # ---- B) Settings categories: the operator's order, no duplicates -------------
 m = re.search(r"const SETTINGS_CATS = \[(.*?)\n\];", idx, re.S)
 cats = re.findall(r'\[\s*"([a-z]+)"\s*,', m.group(1)) if m else []
-want = ["appearance", "keys", "models", "subagents", "tools", "sandbox", "mcp", "skills",
-        "rules", "knowledge", "compaction", "improvement", "diagnostics", "hooks",
+want = ["appearance", "keys", "models", "subagents", "orchestrate", "tools", "sandbox", "mcp",
+        "skills", "rules", "knowledge", "compaction", "improvement", "diagnostics", "hooks",
         "harness", "config"]
 check("B1 SETTINGS_CATS is parseable", bool(cats), "found %r" % (cats,))
 check("B2 categories follow the operator's order",
