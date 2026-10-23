@@ -384,6 +384,34 @@ _GATEWAY_PREFIX = "pmcp__gateway."
 _GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
 
 
+def _brace_index(subs):
+    """Render subtool names as a COMPACT nested index (`{a, b{c,d}}`).
+
+    JAG-537: the exclusive namespace grew to one tool per object per verb
+    (`longrunAgent.teamorg.teams.member.add`), and a flat comma list repeated the
+    `teamorg.`/`teams.` prefixes on every entry. Nesting shares them, so the index
+    stays a name index instead of becoming a catalogue.
+    """
+    tree = {}
+    for s in subs:
+        parts = str(s).split(".")
+        node = tree
+        for p in parts[:-1]:
+            nxt = node.get(p)
+            if not isinstance(nxt, dict):
+                nxt = {}
+                node[p] = nxt
+            node = nxt
+        node.setdefault("", []).append(parts[-1])
+
+    def render(node):
+        leaves = sorted(node.get("", []) or [])
+        kids = sorted(k for k in node if k)
+        return "{%s}" % ",".join(leaves + ["%s%s" % (k, render(node[k])) for k in kids])
+
+    return render(tree)
+
+
 def tool_context():
     """Render the tool DISCOVERY contract + a compact name index for the prompt.
 
@@ -458,10 +486,11 @@ def tool_context():
         "one dependency's output). Never invent `deps` you do not need: items with "
         "no `deps` start together, which is faster.",
         "Enabled tools, grouped by namespace — `ns{a,b}` means the two callable "
-        "names `ns.a` and `ns.b`:",
+        "names `ns.a` and `ns.b`, and a nested group shares its prefix "
+        "(`ns{a{b,c}}` means `ns.a.b` and `ns.a.c`):",
     ]
     for ns in sorted(groups):
-        lines.append("  %s{%s}" % (ns, ",".join(sorted(groups[ns]))))
+        lines.append("  %s%s" % (ns, _brace_index(groups[ns])))
     for nm in sorted(singles):
         lines.append("  " + nm)
     if gw_collapsed:

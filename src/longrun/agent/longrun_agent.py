@@ -128,41 +128,75 @@ TOOL_SCHEMAS = {
         "_namespace": "longrunAgent",
         "_subtool": "teamorg.agents.create",
     },
-    "longrunAgent.teamorg.agents.setllm": {
+    "longrunAgent.teamorg.agents.update": {
         "description": (
-            "longrunAgent.teamorg.agents.setllm — Assign an LLM model (`<provider>:<model>`) to an existing "
-            "agent and its underlying session in lockstep. Prefers lightweight, cost-effective cloud models "
-            "when `model` is 'auto' or omitted."
-        ),
-        "type": "object",
-        "properties": {
-            "agent": {"type": "string", "description": "Target agent ID (e.g. 'A3'), session ID, or agent name."},
-            "model": {"type": "string", "description": "Model reference (`<provider>:<model>`, or 'auto' for cheap remote default)."},
-        },
-        "required": ["agent", "model"],
-        "_origin": "exclusive",
-        "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.setllm",
-    },
-    "longrunAgent.teamorg.agents.setrole": {
-        "description": (
-            "longrunAgent.teamorg.agents.setrole — Define or update an agent's functional role badge "
-            "and optional manager (`reports_to`) in the Orbit organigram."
+            "longrunAgent.teamorg.agents.update — Update the editable properties of an existing org agent "
+            "in ONE call: display name, functional role, manager (`reports_to`), LLM model, workspace "
+            "folder and daily budget. Only the properties you pass are touched, so this one tool replaces "
+            "the old per-property setters. `model:'auto'` re-picks a cheap remote cloud model."
         ),
         "type": "object",
         "properties": {
             "agent": {"type": "string", "description": "Target agent ID ('A3'), session ID, or agent name."},
+            "name": {"type": "string", "description": "New display name."},
             "role": {"type": "string", "description": "Functional role title (e.g. 'qa-engineer', 'researcher')."},
-            "reports_to": {"type": "string", "description": "Optional manager agent ID ('A1') or '' to make root."},
+            "reports_to": {"type": "string", "description": "Manager agent ID ('A1'), or '' to make the agent a root."},
+            "model": {"type": "string", "description": "Model ref (`<provider>:<model>`), or 'auto' for the cheap remote default."},
+            "workspace": {"type": "string", "description": "Workspace folder path (created if missing)."},
+            "daily_budget": {"type": "integer", "description": "Daily run cap (0 = unlimited)."},
         },
-        "required": ["agent", "role"],
+        "required": ["agent"],
         "_origin": "exclusive",
         "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.setrole",
+        "_subtool": "teamorg.agents.update",
     },
-    "longrunAgent.teamorg.agents.setprompt": {
+    "longrunAgent.teamorg.agents.get": {
         "description": (
-            "longrunAgent.teamorg.agents.setprompt — Configure an agent's system prompt (`ROLE.md`) in the "
+            "longrunAgent.teamorg.agents.get — Read ONE agent's full record (id, session, name, role, model, "
+            "manager, teams, budget) plus its ROLE.md size. Ground truth before any update or delete."
+        ),
+        "type": "object",
+        "properties": {
+            "agent": {"type": "string", "description": "Agent ID ('A3'), session ID, or agent name."},
+        },
+        "required": ["agent"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.agents.get",
+    },
+    "longrunAgent.teamorg.agents.list": {
+        "description": (
+            "longrunAgent.teamorg.agents.list — List every designated agent with its role, model, manager "
+            "and team memberships, as an org tree."
+        ),
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.agents.list",
+    },
+    "longrunAgent.teamorg.agents.delete": {
+        "description": (
+            "longrunAgent.teamorg.agents.delete — Remove an agent COMPLETELY: un-designate it (its direct "
+            "reports are re-parented to nobody), scrub it from jobs and teams, delete its routines, and by "
+            "default also delete its session (with graph/run artifacts and its knowledge notebook) and its "
+            "workspace folder. Session and workspace are only removed when they are safe to remove."
+        ),
+        "type": "object",
+        "properties": {
+            "agent": {"type": "string", "description": "Agent ID ('A3'), session ID, or agent name."},
+            "session": {"type": "boolean", "description": "Delete the underlying session too (default true)."},
+            "workspace": {"type": "boolean", "description": "Delete the dedicated workspace folder too (default true; only folders under the workspaces root are removed)."},
+        },
+        "required": ["agent"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.agents.delete",
+    },
+    "longrunAgent.teamorg.agents.prompt.set": {
+        "description": (
+            "longrunAgent.teamorg.agents.prompt.set — Write an agent's system prompt (`ROLE.md`) in the "
             "substrate and broadcast `roles.update` so the WebUI and Orbit table refresh immediately."
         ),
         "type": "object",
@@ -173,23 +207,35 @@ TOOL_SCHEMAS = {
         "required": ["agent", "prompt"],
         "_origin": "exclusive",
         "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.setprompt",
+        "_subtool": "teamorg.agents.prompt.set",
     },
-    "longrunAgent.teamorg.agents.assignagent": {
+    "longrunAgent.teamorg.agents.prompt.get": {
         "description": (
-            "longrunAgent.teamorg.agents.assignagent — Add (or remove) an agent to/from a specific team "
-            "(`T1` or team name) and sync the Orbit constellation."
+            "longrunAgent.teamorg.agents.prompt.get — Read an agent's system prompt (`ROLE.md`) together "
+            "with its path and size, so an edit is never blind."
         ),
         "type": "object",
         "properties": {
             "agent": {"type": "string", "description": "Target agent ID ('A3'), session ID, or agent name."},
-            "team": {"type": "string", "description": "Target team ID ('T1') or team name."},
-            "remove": {"type": "boolean", "description": "When true, remove the agent from the team instead of adding."},
         },
-        "required": ["agent", "team"],
+        "required": ["agent"],
         "_origin": "exclusive",
         "_namespace": "longrunAgent",
-        "_subtool": "teamorg.agents.assignagent",
+        "_subtool": "teamorg.agents.prompt.get",
+    },
+    "longrunAgent.teamorg.agents.prompt.clear": {
+        "description": (
+            "longrunAgent.teamorg.agents.prompt.clear — Delete an agent's `ROLE.md` system prompt, so the "
+            "agent falls back to the harness defaults. Broadcasts `roles.update`."
+        ),
+        "type": "object",
+        "properties": {
+            "agent": {"type": "string", "description": "Target agent ID ('A3'), session ID, or agent name."},
+        },
+        "required": ["agent"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.agents.prompt.clear",
     },
     "longrunAgent.teamorg.teams.create": {
         "description": (
@@ -212,6 +258,283 @@ TOOL_SCHEMAS = {
         "_origin": "exclusive",
         "_namespace": "longrunAgent",
         "_subtool": "teamorg.teams.create",
+    },
+    "longrunAgent.teamorg.teams.update": {
+        "description": (
+            "longrunAgent.teamorg.teams.update — Edit a team's own properties: name, description, symbol, "
+            "colour, and (with `regenerate_icon`) re-ask longrunAgent for the palette icon that matches the "
+            "current name + description. Members are NOT touched here."
+        ),
+        "type": "object",
+        "properties": {
+            "team": {"type": "string", "description": "Team ID ('T1') or team name."},
+            "name": {"type": "string", "description": "New team name."},
+            "description": {"type": "string", "description": "New team mission / description."},
+            "symbol": {"type": "string", "description": "Explicit symbol from the palette."},
+            "color": {"type": "string", "description": "Explicit hex colour."},
+            "regenerate_icon": {"type": "boolean", "description": "Ask longrunAgent to pick the symbol+colour that matches the name and description."},
+        },
+        "required": ["team"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.teams.update",
+    },
+    "longrunAgent.teamorg.teams.delete": {
+        "description": (
+            "longrunAgent.teamorg.teams.delete — Delete a team. Member agents are NOT deleted: they only "
+            "lose the team link. This cannot be undone."
+        ),
+        "type": "object",
+        "properties": {
+            "team": {"type": "string", "description": "Team ID ('T1') or team name."},
+        },
+        "required": ["team"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.teams.delete",
+    },
+    "longrunAgent.teamorg.teams.get": {
+        "description": (
+            "longrunAgent.teamorg.teams.get — Read ONE team's record (id, name, description, symbol, colour, "
+            "members) plus the official palette."
+        ),
+        "type": "object",
+        "properties": {
+            "team": {"type": "string", "description": "Team ID ('T1') or team name."},
+        },
+        "required": ["team"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.teams.get",
+    },
+    "longrunAgent.teamorg.teams.list": {
+        "description": (
+            "longrunAgent.teamorg.teams.list — List every team with its members, plus the official icon palette."
+        ),
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.teams.list",
+    },
+    "longrunAgent.teamorg.teams.member.add": {
+        "description": (
+            "longrunAgent.teamorg.teams.member.add — Put an existing agent into a team and sync the Orbit "
+            "constellation."
+        ),
+        "type": "object",
+        "properties": {
+            "team": {"type": "string", "description": "Team ID ('T1') or team name."},
+            "agent": {"type": "string", "description": "Agent ID ('A3'), session ID, or agent name."},
+        },
+        "required": ["team", "agent"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.teams.member.add",
+    },
+    "longrunAgent.teamorg.teams.member.remove": {
+        "description": (
+            "longrunAgent.teamorg.teams.member.remove — Take an agent out of a team (the agent itself is "
+            "untouched) and sync the Orbit constellation."
+        ),
+        "type": "object",
+        "properties": {
+            "team": {"type": "string", "description": "Team ID ('T1') or team name."},
+            "agent": {"type": "string", "description": "Agent ID ('A3'), session ID, or agent name."},
+        },
+        "required": ["team", "agent"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.teams.member.remove",
+    },
+    "longrunAgent.teamorg.jobs.create": {
+        "description": (
+            "longrunAgent.teamorg.jobs.create — Create a job: a goal assigned to a coordinator agent and "
+            "optional workers, with optional dependencies. It is created NOT dispatched; use "
+            "`longrunAgent.teamorg.jobs.dispatch` to run it."
+        ),
+        "type": "object",
+        "properties": {
+            "goal": {"type": "string", "description": "The job goal, in plain language."},
+            "coordinator": {"type": "string", "description": "Coordinator agent ID/name (optional)."},
+            "agents": {"type": "array", "description": "Worker agent IDs/names (optional)."},
+            "deps": {"type": "array", "description": "Optional dependency list."},
+            "mode": {"type": "string", "description": "'coordinator' (default) or 'swarm'."},
+            "blocked_by": {"type": "array", "description": "Optional list of job IDs that must finish first."},
+        },
+        "required": ["goal"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.jobs.create",
+    },
+    "longrunAgent.teamorg.jobs.dispatch": {
+        "description": (
+            "longrunAgent.teamorg.jobs.dispatch — Run an existing job (coordinator + workers in dependency "
+            "waves). This spends real model calls."
+        ),
+        "type": "object",
+        "properties": {
+            "job": {"type": "string", "description": "Job ID ('J2')."},
+        },
+        "required": ["job"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.jobs.dispatch",
+    },
+    "longrunAgent.teamorg.jobs.get": {
+        "description": (
+            "longrunAgent.teamorg.jobs.get — Read ONE job in full: workers, subjobs, their todos and state."
+        ),
+        "type": "object",
+        "properties": {
+            "job": {"type": "string", "description": "Job ID ('J2')."},
+        },
+        "required": ["job"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.jobs.get",
+    },
+    "longrunAgent.teamorg.jobs.list": {
+        "description": "longrunAgent.teamorg.jobs.list — List every job with its state, coordinator and workers.",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.jobs.list",
+    },
+    "longrunAgent.teamorg.jobs.delete": {
+        "description": (
+            "longrunAgent.teamorg.jobs.delete — Delete a job. Refused while the job is still running."
+        ),
+        "type": "object",
+        "properties": {
+            "job": {"type": "string", "description": "Job ID ('J2')."},
+        },
+        "required": ["job"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.jobs.delete",
+    },
+    "longrunAgent.teamorg.routines.create": {
+        "description": (
+            "longrunAgent.teamorg.routines.create — Schedule a recurring goal for one agent (a heartbeat "
+            "routine). `every_seconds` is the cadence."
+        ),
+        "type": "object",
+        "properties": {
+            "agent": {"type": "string", "description": "Agent ID ('A3'), session ID, or agent name the routine runs as."},
+            "goal": {"type": "string", "description": "The goal the agent re-runs on every tick."},
+            "every_seconds": {"type": "integer", "description": "Cadence in seconds (minimum 30)."},
+            "enabled": {"type": "boolean", "description": "Start enabled (default true)."},
+            "model": {"type": "string", "description": "Optional model override for the tick."},
+        },
+        "required": ["agent", "goal", "every_seconds"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.routines.create",
+    },
+    "longrunAgent.teamorg.routines.update": {
+        "description": (
+            "longrunAgent.teamorg.routines.update — Edit a routine in place: re-target the agent, rewrite the "
+            "goal, change the cadence or flip the switch. Only the fields you pass are touched."
+        ),
+        "type": "object",
+        "properties": {
+            "routine": {"type": "string", "description": "Routine ID ('R1')."},
+            "agent": {"type": "string", "description": "New agent ID/name for the routine."},
+            "goal": {"type": "string", "description": "New goal text."},
+            "every_seconds": {"type": "integer", "description": "New cadence in seconds."},
+            "enabled": {"type": "boolean", "description": "Enable or disable the routine."},
+            "model": {"type": "string", "description": "New model override."},
+        },
+        "required": ["routine"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.routines.update",
+    },
+    "longrunAgent.teamorg.routines.get": {
+        "description": "longrunAgent.teamorg.routines.get — Read ONE routine (agent, goal, cadence, runs, last_run).",
+        "type": "object",
+        "properties": {
+            "routine": {"type": "string", "description": "Routine ID ('R1')."},
+        },
+        "required": ["routine"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.routines.get",
+    },
+    "longrunAgent.teamorg.routines.list": {
+        "description": "longrunAgent.teamorg.routines.list — List every routine with its agent, cadence and last run.",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.routines.list",
+    },
+    "longrunAgent.teamorg.routines.delete": {
+        "description": "longrunAgent.teamorg.routines.delete — Remove a routine (it stops being scheduled).",
+        "type": "object",
+        "properties": {
+            "routine": {"type": "string", "description": "Routine ID ('R1')."},
+        },
+        "required": ["routine"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.routines.delete",
+    },
+    "longrunAgent.teamorg.sessions.create": {
+        "description": (
+            "longrunAgent.teamorg.sessions.create — Open a new bare session (optionally with its own workspace "
+            "folder). Sessions are the substrate under every agent, job and routine."
+        ),
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Optional session title."},
+            "workspace": {"type": "string", "description": "Optional workspace folder path for the session."},
+        },
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.sessions.create",
+    },
+    "longrunAgent.teamorg.sessions.rename": {
+        "description": "longrunAgent.teamorg.sessions.rename — Rename a session.",
+        "type": "object",
+        "properties": {
+            "session": {"type": "string", "description": "Session ID."},
+            "title": {"type": "string", "description": "New title."},
+        },
+        "required": ["session", "title"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.sessions.rename",
+    },
+    "longrunAgent.teamorg.sessions.list": {
+        "description": "longrunAgent.teamorg.sessions.list — List every session (id, title, workspace, model).",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.sessions.list",
+    },
+    "longrunAgent.teamorg.sessions.delete": {
+        "description": (
+            "longrunAgent.teamorg.sessions.delete — Delete a session with its full cascade: running turn "
+            "aborted, graph, run metrics, edit journal and its knowledge notebook removed. The permanent "
+            "`longrunAgent` session itself can never be deleted."
+        ),
+        "type": "object",
+        "properties": {
+            "session": {"type": "string", "description": "Session ID."},
+        },
+        "required": ["session"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "teamorg.sessions.delete",
     },
     "longrunAgent.webui.inspect": {
         "description": (
@@ -238,40 +561,236 @@ TOOL_SCHEMAS = {
     },
     "longrunAgent.webui.configure": {
         "description": (
-            "longrunAgent.webui.configure — Update configurable fields in ANY WebUI substrate "
-            "section: structured settings forms, rules, compaction policy, role routing, team "
-            "model policy, subagents, providers/models, tool policy, skills, MCP clients, "
-            "knowledge notebooks/sources and the index config. Emits live-sync SSE events. "
-            "Strictly refuses safety-gate keys (`allow_nucleus_write`, `allow_matrix_promote`)."
+            "longrunAgent.webui.configure — Write a CONFIGURATION SECTION of the substrate: the "
+            "structured settings forms, the rules files, the compaction policy, the role routing "
+            "table, the team model policy, the subagent policy, the tool policy, the code index "
+            "config and raw `config/*.yaml`. Emits live-sync SSE events. Object CRUD (providers, "
+            "models, skills, MCP clients, knowledge notebooks/sources) has its OWN typed tools. "
+            "Strictly refuses the safety-gate keys (`allow_nucleus_write`, `allow_matrix_promote`)."
         ),
         "type": "object",
         "properties": {
             "target": {
                 "type": "string",
                 "enum": ["settings", "rules", "compaction", "routing", "team_policy",
-                         "subagents", "providers", "tools", "skills", "mcp", "knowledge",
-                         "index", "config"],
-                "description": "Substrate target domain to update.",
+                         "subagents", "tools", "index", "config"],
+                "description": "Substrate configuration section to update.",
             },
-            "file": {"type": "string", "description": "For target='settings': config filename (e.g. 'index.yaml', 'compaction.yaml', 'decisions.yaml')."},
-            "values": {"type": "object", "description": "Key-value map of fields to update (settings / routing / compaction / subagents / tools / index / knowledge)."},
+            "file": {"type": "string", "description": "For target='settings'/'config': config filename (e.g. 'index.yaml', 'compaction.yaml')."},
+            "values": {"type": "object", "description": "Key-value map of the fields to update (settings / routing / compaction / subagents / tools / index)."},
             "scope": {"type": "string", "description": "For target='rules': 'global' or 'project'."},
             "content": {"type": "string", "description": "For target='rules': full markdown content to save."},
             "team": {"type": "string", "description": "For target='team_policy': team ID ('T1') or 'ALL'."},
-            "op": {"type": "string", "description": "Sub-operation for target='providers' (upsert|remove|add_model|remove_model|default|reload), 'skills' (remove), 'mcp' (upsert|remove|test|reload) and 'knowledge' (notebook|source|clear|reembed). NOTE: `action` is reserved by the dispatcher (it carries the subtool name), so always use `op`."},
-            "id": {"type": "string", "description": "Identifier for providers (`id`/`ref`) and knowledge notebooks (`id`)."},
-            "model": {"type": "string", "description": "Model reference for providers / subagents."},
-            "provider": {"type": "string", "description": "For target='providers' model ops: provider id."},
-            "name": {"type": "string", "description": "For target='skills'/'mcp'/'knowledge': target name (or notebook name)."},
-            "notebook": {"type": "string", "description": "For target='knowledge' op='source': notebook id/name."},
-            "title": {"type": "string", "description": "For target='knowledge' op='source': source title."},
-            "ref": {"type": "string", "description": "For target='knowledge' op='source': source URL/path ref. For target='providers' op='default': model ref."},
-            "remove": {"type": "string", "description": "For target='knowledge' op='source': source to remove."},
+            "text": {"type": "string", "description": "For target='config': the full YAML body to persist."},
         },
         "required": ["target"],
         "_origin": "exclusive",
         "_namespace": "longrunAgent",
         "_subtool": "webui.configure",
+    },
+    "longrunAgent.webui.providers.upsert": {
+        "description": (
+            "longrunAgent.webui.providers.upsert — Add or update ONE provider (its `id`, base URL, "
+            "model list). Reference API keys by environment NAME (`${VAR}`), never by value."
+        ),
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "description": "Provider id (e.g. 'openrouter')."},
+            "values": {"type": "object", "description": "Provider fields to upsert (id, base_url, keys, models…)."},
+        },
+        "required": ["id"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.providers.upsert",
+    },
+    "longrunAgent.webui.providers.remove": {
+        "description": "longrunAgent.webui.providers.remove — Remove (or disable) one provider by id.",
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "description": "Provider id to remove."},
+        },
+        "required": ["id"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.providers.remove",
+    },
+    "longrunAgent.webui.providers.add_model": {
+        "description": "longrunAgent.webui.providers.add_model — Add ONE `<provider>:<model>` to a provider's roster.",
+        "type": "object",
+        "properties": {
+            "provider": {"type": "string", "description": "Provider id."},
+            "model": {"type": "string", "description": "Model id to add."},
+        },
+        "required": ["provider", "model"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.providers.add_model",
+    },
+    "longrunAgent.webui.providers.remove_model": {
+        "description": "longrunAgent.webui.providers.remove_model — Remove ONE model from a provider's roster.",
+        "type": "object",
+        "properties": {
+            "provider": {"type": "string", "description": "Provider id."},
+            "model": {"type": "string", "description": "Model id to remove."},
+        },
+        "required": ["provider", "model"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.providers.remove_model",
+    },
+    "longrunAgent.webui.providers.default": {
+        "description": "longrunAgent.webui.providers.default — Set the harness default model reference.",
+        "type": "object",
+        "properties": {
+            "ref": {"type": "string", "description": "Model reference, e.g. 'openrouter:z-ai/glm-5.3-flash'."},
+        },
+        "required": ["ref"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.providers.default",
+    },
+    "longrunAgent.webui.providers.reload": {
+        "description": "longrunAgent.webui.providers.reload — Re-read the provider catalogue and `.env` (hot reload).",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.providers.reload",
+    },
+    "longrunAgent.webui.skills.remove": {
+        "description": (
+            "longrunAgent.webui.skills.remove — Uninstall one local skill by name. Installing a new "
+            "skill needs a zip upload and stays manual."
+        ),
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Skill name to uninstall."},
+        },
+        "required": ["name"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.skills.remove",
+    },
+    "longrunAgent.webui.mcp.upsert": {
+        "description": (
+            "longrunAgent.webui.mcp.upsert — Add or update ONE external MCP client (transport, "
+            "command/url). Reference secrets by NAME, never by value."
+        ),
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "MCP client name."},
+            "values": {"type": "object", "description": "Client spec (command, args, url, headers, env…)."},
+        },
+        "required": ["name", "values"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.mcp.upsert",
+    },
+    "longrunAgent.webui.mcp.remove": {
+        "description": "longrunAgent.webui.mcp.remove — Remove ONE external MCP client by name.",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "MCP client name."},
+        },
+        "required": ["name"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.mcp.remove",
+    },
+    "longrunAgent.webui.mcp.test": {
+        "description": "longrunAgent.webui.mcp.test — Probe ONE configured MCP client and report whether it answers.",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "MCP client name to test."},
+        },
+        "required": ["name"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.mcp.test",
+    },
+    "longrunAgent.webui.mcp.reload": {
+        "description": "longrunAgent.webui.mcp.reload — Re-read the MCP client configuration and reconnect.",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.mcp.reload",
+    },
+    "longrunAgent.webui.knowledge.notebook.create": {
+        "description": "longrunAgent.webui.knowledge.notebook.create — Create ONE knowledge notebook.",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Notebook name."},
+        },
+        "required": ["name"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.knowledge.notebook.create",
+    },
+    "longrunAgent.webui.knowledge.notebook.rename": {
+        "description": "longrunAgent.webui.knowledge.notebook.rename — Rename ONE knowledge notebook.",
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "description": "Notebook id."},
+            "name": {"type": "string", "description": "New notebook name."},
+        },
+        "required": ["id", "name"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.knowledge.notebook.rename",
+    },
+    "longrunAgent.webui.knowledge.notebook.delete": {
+        "description": (
+            "longrunAgent.webui.knowledge.notebook.delete — Delete ONE knowledge notebook and its "
+            "sources. This cannot be undone."
+        ),
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "description": "Notebook id."},
+        },
+        "required": ["id"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.knowledge.notebook.delete",
+    },
+    "longrunAgent.webui.knowledge.source.add": {
+        "description": (
+            "longrunAgent.webui.knowledge.source.add — Attach ONE source (file path / URL / inline "
+            "text) to a knowledge notebook and index it."
+        ),
+        "type": "object",
+        "properties": {
+            "notebook": {"type": "string", "description": "Notebook id or name."},
+            "title": {"type": "string", "description": "Source title (for inline text)."},
+            "ref": {"type": "string", "description": "File path or URL to index."},
+            "content": {"type": "string", "description": "Inline text to add as a source instead of a path."},
+        },
+        "required": ["notebook"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.knowledge.source.add",
+    },
+    "longrunAgent.webui.knowledge.source.remove": {
+        "description": "longrunAgent.webui.knowledge.source.remove — Detach ONE source from the knowledge base.",
+        "type": "object",
+        "properties": {
+            "source": {"type": "string", "description": "Source id/ref to remove."},
+        },
+        "required": ["source"],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.knowledge.source.remove",
+    },
+    "longrunAgent.webui.knowledge.reembed": {
+        "description": "longrunAgent.webui.knowledge.reembed — Re-embed the whole knowledge base (spends compute).",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "longrunAgent",
+        "_subtool": "webui.knowledge.reembed",
     },
 }
 
@@ -595,58 +1114,37 @@ def _agent_create(args):
     }
 
 
-def _agent_setllm(args):
+def _agent_update(args):
+    """JAG-537: ONE update door for every editable property of an agent record.
+
+    Replaces the per-property setters (`agents.setllm` / `agents.setrole`): only the
+    properties the caller passes are touched, so `{agent, model}` behaves exactly as
+    the old `setllm` did, while `{agent, role, reports_to}` covers the old `setrole`.
+    """
     from longrun.agent import agents as agents_mod
+    from longrun.memory import stores
     from longrun.orchestrate import teams as teams_mod
 
-    target = args.get("agent")
-    sid, ag = _resolve_agent_session(target)
+    sid, ag = _resolve_agent_session(args.get("agent"))
     if not sid:
-        return {"ok": False, "error": "agent not found: %s" % target}
+        return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
     if not ag:
         des = agents_mod.REGISTRY.designate(sid)
         if not des.get("ok"):
             return des
         ag = des["agent"]
-    model = str(args.get("model") or "").strip()
-    if not model or model.lower() == "auto":
-        model = pick_cheap_remote_model()
-    conflict = teams_mod.REGISTRY.local_conflict(ag["id"], model)
-    if conflict:
-        return {
-            "ok": False,
-            "error": "local model conflict on %s in team %s (held by %s); prefer a cheap remote model"
-                     % (conflict["machine"], conflict["team"], conflict["other"]),
-            "conflict": conflict,
-        }
-    res = agents_mod.REGISTRY.set_model(sid, model)
-    if not res.get("ok"):
-        return res
-    try:
-        from longrun.memory import stores
-        stores._set_session_model(sid, model)
-    except Exception:  # noqa: BLE001
-        pass
-    return {
-        "ok": True,
-        "agent": res["agent"],
-        "session": sid,
-        "model": model,
-        "stdout": "assigned model %s to agent %s (%s)" % (model, ag["id"], ag.get("name")),
-    }
 
-
-def _agent_setrole(args):
-    from longrun.agent import agents as agents_mod
-
-    target = args.get("agent")
-    sid, ag = _resolve_agent_session(target)
-    if not sid:
-        return {"ok": False, "error": "agent not found: %s" % target}
-    role = str(args.get("role") or "").strip()[:80]
-    if not role:
-        return {"ok": False, "error": "role required"}
-    kw = {"role": role}
+    kw = {}
+    if args.get("name") is not None:
+        nm = str(args.get("name") or "").strip()[:80]
+        if not nm:
+            return {"ok": False, "error": "name cannot be empty"}
+        kw["name"] = nm
+    if args.get("role") is not None:
+        role = str(args.get("role") or "").strip()[:80]
+        if not role:
+            return {"ok": False, "error": "role cannot be empty"}
+        kw["role"] = role
     if "reports_to" in args and args.get("reports_to") is not None:
         rep = str(args.get("reports_to") or "").strip()
         if rep:
@@ -654,21 +1152,164 @@ def _agent_setrole(args):
             kw["reports_to"] = mgr["id"] if mgr else rep
         else:
             kw["reports_to"] = ""
+    if args.get("workspace") is not None and str(args.get("workspace") or "").strip():
+        kw["workspace"] = _ensure_agent_workspace(
+            kw.get("name") or ag.get("name"), args.get("workspace"))
+    if args.get("daily_budget") is not None:
+        kw["daily_budget"] = args.get("daily_budget")
+
+    model = str(args.get("model") or "").strip()
+    if model:
+        if model.lower() == "auto":
+            model = pick_cheap_remote_model()
+        conflict = teams_mod.REGISTRY.local_conflict(ag["id"], model)
+        if conflict:
+            return {
+                "ok": False,
+                "error": "local model conflict on %s in team %s (held by %s); prefer a cheap remote model"
+                         % (conflict["machine"], conflict["team"], conflict["other"]),
+                "conflict": conflict,
+            }
+        kw["model"] = model
+
+    if not kw:
+        return {
+            "ok": False,
+            "error": "nothing to update — pass at least one of "
+                     "name/role/reports_to/model/workspace/daily_budget",
+        }
     res = agents_mod.REGISTRY.designate(sid, **kw)
     if not res.get("ok"):
         return res
+    if "model" in kw:
+        try:
+            stores._set_session_model(sid, kw["model"])
+        except Exception:  # noqa: BLE001
+            pass
+    rec = res["agent"]
     return {
         "ok": True,
-        "agent": res["agent"],
+        "agent": rec,
         "session": sid,
-        "role": role,
-        "stdout": "updated role of %s (%s) -> %s" % (
-            res["agent"]["id"], res["agent"].get("name"), role
+        "changed": sorted(kw),
+        "stdout": "updated agent %s (%s): %s" % (
+            rec["id"], rec.get("name"),
+            ", ".join("%s=%s" % (k, kw[k]) for k in sorted(kw)),
         ),
     }
 
 
-def _agent_setprompt(args):
+def _agent_get(args):
+    from longrun.orchestrate import roles as roles_mod
+
+    sid, ag = _resolve_agent_session(args.get("agent"))
+    if not sid:
+        return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
+    try:
+        text = roles_mod.read(sid) or ""
+        path = roles_mod.path_for(sid)
+    except Exception:  # noqa: BLE001
+        text, path = "", ""
+    return {
+        "ok": True,
+        "agent": ag,
+        "session": sid,
+        "designated": bool(ag),
+        "prompt_path": path,
+        "prompt_chars": len(text),
+    }
+
+
+def _agent_list(_args=None):
+    from longrun.agent import agents as agents_mod
+
+    tree = agents_mod.REGISTRY.tree()
+    agents = tree.get("agents") if isinstance(tree, dict) else tree
+    return {
+        "ok": True,
+        "agents": agents,
+        "count": len(agents or []),
+        "stdout": "%d designated agent(s)" % len(agents or []),
+    }
+
+
+def _remove_workspace_path(path):
+    """Delete a workspace folder, but ONLY when it sits under the workspaces root.
+
+    A workspace is user data: an explicit path outside `paths.WORKSPACES_DIR` (for
+    example the repo itself) is never removed — the caller gets `skipped` instead.
+    """
+    import shutil
+
+    try:
+        target = os.path.realpath(os.path.abspath(os.path.expanduser(str(path))))
+        root = os.path.realpath(paths.WORKSPACES_DIR)
+    except Exception:  # noqa: BLE001
+        return {"removed": False, "skipped": str(path), "error": "unresolvable path"}
+    if target == root or not target.startswith(root + os.sep):
+        return {"removed": False, "skipped": target,
+                "reason": "outside the workspaces root (%s)" % root}
+    if not os.path.isdir(target):
+        return {"removed": False, "skipped": target, "reason": "not a directory"}
+    try:
+        shutil.rmtree(target)
+    except OSError as exc:
+        return {"removed": False, "skipped": target, "error": str(exc)}
+    return {"removed": True, "path": target}
+
+
+def _agent_delete(args):
+    """JAG-537: remove an agent and everything that only exists for it.
+
+    Full cascade (the operator's contract): un-designate + re-parent reports, scrub
+    jobs/teams, drop its routines, delete its ROLE.md, and by default delete the
+    session (its artifacts and knowledge notebook) and the workspace folder.
+    """
+    from longrun.agent import agents as agents_mod
+    from longrun.orchestrate import roles as roles_mod
+
+    sid, ag = _resolve_agent_session(args.get("agent"))
+    if not sid:
+        return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
+    if sid == LONGRUN_AGENT_SESSION_ID:
+        return {"ok": False,
+                "error": "longrunAgent is a permanent system session and cannot be deleted"}
+    aid = (ag or {}).get("id")
+    workspace = (ag or {}).get("workspace") or ""
+
+    released = agents_mod.REGISTRY.release(sid) if ag else {"ok": True, "released": None}
+    try:
+        roles_mod.delete(sid)
+        prompt_removed = True
+    except Exception:  # noqa: BLE001
+        prompt_removed = False
+
+    session_deleted = None
+    if args.get("session") is not False:
+        from longrun.core import httpapi
+        session_deleted = bool(httpapi.delete_session(sid).get("ok"))
+
+    workspace_res = None
+    if args.get("workspace") is not False and workspace:
+        workspace_res = _remove_workspace_path(workspace)
+
+    return {
+        "ok": True,
+        "agent": aid,
+        "session": sid,
+        "released": released.get("released"),
+        "prompt_removed": prompt_removed,
+        "session_deleted": session_deleted,
+        "workspace": workspace_res,
+        "stdout": "deleted agent %s (session deleted=%s, workspace=%s)" % (
+            aid or sid, session_deleted,
+            (workspace_res or {}).get("reason") or ("removed" if (workspace_res or {}).get("removed")
+                                                    else "kept"),
+        ),
+    }
+
+
+def _agent_prompt_set(args):
     from longrun.agent import agents as agents_mod
     from longrun.orchestrate import roles as roles_mod
 
@@ -697,31 +1338,135 @@ def _agent_setprompt(args):
     }
 
 
-def _agent_assign(args):
+def _agent_prompt_get(args):
+    from longrun.orchestrate import roles as roles_mod
+
+    sid, ag = _resolve_agent_session(args.get("agent"))
+    if not sid:
+        return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
+    text = ""
+    try:
+        text = roles_mod.read(sid) or ""
+    except Exception:  # noqa: BLE001
+        text = ""
+    return {
+        "ok": True,
+        "agent": (ag or {}).get("id") or sid,
+        "session": sid,
+        "path": roles_mod.path_for(sid),
+        "chars": len(text),
+        "prompt": text,
+    }
+
+
+def _agent_prompt_clear(args):
+    from longrun.orchestrate import roles as roles_mod
+
+    sid, ag = _resolve_agent_session(args.get("agent"))
+    if not sid:
+        return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
+    res = roles_mod.delete(sid)
+    res.setdefault("ok", True)
+    res["agent"] = (ag or {}).get("id") or sid
+    res["session"] = sid
+    res["stdout"] = "removed ROLE.md for %s" % res["agent"]
+    return res
+
+
+def _team_get(args):
+    from longrun.orchestrate import teams as teams_mod
+
+    t = teams_mod.REGISTRY.get(args.get("team"))
+    if not t:
+        return {"ok": False, "error": "team not found: %s" % args.get("team")}
+    return {"ok": True, "team": t, "palette": teams_mod.palette()}
+
+
+def _team_list(_args=None):
+    from longrun.orchestrate import teams as teams_mod
+
+    out = teams_mod.REGISTRY.list()
+    out["ok"] = True
+    out["palette"] = teams_mod.palette()
+    out["stdout"] = "%d team(s)" % len(out.get("teams") or [])
+    return out
+
+
+def _team_update(args):
+    from longrun.orchestrate import teams as teams_mod
+
+    t = teams_mod.REGISTRY.get(args.get("team"))
+    if not t:
+        return {"ok": False, "error": "team not found: %s" % args.get("team")}
+    kw = {}
+    if args.get("name") is not None:
+        nm = str(args.get("name") or "").strip()[:80]
+        if not nm:
+            return {"ok": False, "error": "name cannot be empty"}
+        kw["name"] = nm
+    for key in ("description", "symbol", "color"):
+        if args.get(key) is not None:
+            kw[key] = str(args.get(key) or "").strip()
+    regen = bool(args.get("regenerate_icon"))
+    if not kw and not regen:
+        return {"ok": False,
+                "error": "nothing to update — pass name/description/symbol/color/regenerate_icon"}
+    res = teams_mod.REGISTRY.update(t["id"], regenerate_icon=regen, **kw)
+    if not res.get("ok"):
+        return res
+    team = res["team"]
+    return {
+        "ok": True,
+        "team": team,
+        "changed": sorted(kw) + (["icon"] if regen else []),
+        "stdout": "updated team %s (%s %s) [%s]" % (
+            team["id"], team.get("symbol"), team.get("name"),
+            ", ".join(sorted(kw)) + (" + icon" if regen else ""),
+        ),
+    }
+
+
+def _team_delete(args):
+    from longrun.orchestrate import teams as teams_mod
+
+    t = teams_mod.REGISTRY.get(args.get("team"))
+    if not t:
+        return {"ok": False, "error": "team not found: %s" % args.get("team")}
+    members = list(t.get("members") or [])
+    res = teams_mod.REGISTRY.delete(t["id"])
+    if not res.get("ok"):
+        return res
+    res["members_kept"] = members
+    res["stdout"] = "deleted team %s (%s); %d member agent(s) kept" % (
+        t["id"], t.get("name"), len(members))
+    return res
+
+
+def _team_member_add(args):
+    return _team_membership(args, remove=False)
+
+
+def _team_member_remove(args):
+    return _team_membership(args, remove=True)
+
+
+def _team_membership(args, remove):
     from longrun.agent import agents as agents_mod
     from longrun.orchestrate import teams as teams_mod
 
-    target = args.get("agent")
-    team_ref = str(args.get("team") or "").strip()
-    if not team_ref:
-        return {"ok": False, "error": "team required"}
-    sid, ag = _resolve_agent_session(target)
+    t = teams_mod.REGISTRY.get(args.get("team"))
+    if not t:
+        return {"ok": False, "error": "team not found: %s" % args.get("team")}
+    sid, ag = _resolve_agent_session(args.get("agent"))
     if not sid:
-        return {"ok": False, "error": "agent not found: %s" % target}
+        return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
     if not ag:
         des = agents_mod.REGISTRY.designate(sid)
         if not des.get("ok"):
             return des
         ag = des["agent"]
-    t = teams_mod.REGISTRY.get(team_ref)
-    if not t:
-        return {"ok": False, "error": "team not found: %s" % team_ref}
-    if args.get("remove"):
-        res = teams_mod.REGISTRY.remove_member(t["id"], ag["id"])
-        verb = "removed from"
-    else:
-        res = teams_mod.REGISTRY.add_member(t["id"], ag["id"])
-        verb = "assigned to"
+    res = (teams_mod.REGISTRY.remove_member(t["id"], ag["id"]) if remove
+           else teams_mod.REGISTRY.add_member(t["id"], ag["id"]))
     if not res.get("ok"):
         return res
     return {
@@ -729,9 +1474,211 @@ def _agent_assign(args):
         "agent": ag["id"],
         "team": res["team"],
         "stdout": "agent %s (%s) %s team %s (%s)" % (
-            ag["id"], ag.get("name"), verb, res["team"]["id"], res["team"]["name"]
+            ag["id"], ag.get("name"), "removed from" if remove else "assigned to",
+            res["team"]["id"], res["team"]["name"]
         ),
     }
+
+
+def _job_create(args):
+    from longrun.orchestrate import jobs as jobs_mod
+
+    goal = str(args.get("goal") or "").strip()
+    if not goal:
+        return {"ok": False, "error": "goal required"}
+    workers = []
+    for item in (args.get("agents") or []):
+        sid, ag = _resolve_agent_session(item)
+        workers.append((ag or {}).get("id") or sid or str(item))
+    coordinator = args.get("coordinator")
+    if coordinator:
+        sid, ag = _resolve_agent_session(coordinator)
+        coordinator = (ag or {}).get("id") or sid or str(coordinator)
+    if not workers:
+        return {"ok": False, "error": "at least one worker agent required in 'agents'"}
+    res = jobs_mod.JOBS.create(
+        goal, coordinator=coordinator, agents=workers, deps=args.get("deps"),
+        mode=str(args.get("mode") or "coordinator"), blocked_by=args.get("blocked_by"))
+    if res.get("ok"):
+        job = res["job"]
+        res["stdout"] = "created job %s [%s, coordinator=%s, workers=%d]" % (
+            job["id"], job.get("status"), job.get("coordinator"), len(job.get("agents") or []))
+    return res
+
+
+def _job_dispatch(args):
+    from longrun.orchestrate import jobs as jobs_mod
+
+    jid = str(args.get("job") or "").strip()
+    if not jid:
+        return {"ok": False, "error": "job required"}
+    res = jobs_mod.JOBS.dispatch(jid)
+    res.setdefault("ok", True)
+    if res.get("ok"):
+        res["stdout"] = "dispatched job %s" % jid
+    return res
+
+
+def _job_get(args):
+    from longrun.orchestrate import jobs as jobs_mod
+
+    jid = str(args.get("job") or "").strip()
+    job = jobs_mod.JOBS.detail(jid) if jid else None
+    if not job:
+        return {"ok": False, "error": "job not found: %s" % jid}
+    return {"ok": True, "job": job}
+
+
+def _job_list(_args=None):
+    from longrun.orchestrate import jobs as jobs_mod
+
+    out = jobs_mod.JOBS.list()
+    out["ok"] = True
+    out["stdout"] = "%d job(s)" % len(out.get("jobs") or [])
+    return out
+
+
+def _job_delete(args):
+    from longrun.orchestrate import jobs as jobs_mod
+
+    jid = str(args.get("job") or "").strip()
+    if not jid:
+        return {"ok": False, "error": "job required"}
+    res = jobs_mod.JOBS.delete(jid)
+    res.setdefault("ok", True)
+    if res.get("ok"):
+        res["stdout"] = "deleted job %s" % jid
+    return res
+
+
+def _routine_create(args):
+    from longrun.orchestrate import routines as routines_mod
+
+    sid, ag = _resolve_agent_session(args.get("agent"))
+    if not sid:
+        return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
+    res = routines_mod.REGISTRY.create(
+        sid, args.get("goal"), args.get("every_seconds"),
+        enabled=bool(args.get("enabled", True)), model=args.get("model"))
+    if res.get("ok"):
+        rec = res["routine"]
+        res["agent"] = (ag or {}).get("id") or sid
+        res["stdout"] = "created routine %s for %s every %ss" % (
+            rec["id"], rec.get("agent"), rec.get("every_seconds"))
+    return res
+
+
+def _routine_update(args):
+    from longrun.orchestrate import routines as routines_mod
+
+    rid = str(args.get("routine") or "").strip()
+    if not rid:
+        return {"ok": False, "error": "routine required"}
+    kw = {}
+    if args.get("agent") is not None:
+        sid, _ag = _resolve_agent_session(args.get("agent"))
+        if not sid:
+            return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
+        kw["agent"] = sid
+    for key in ("goal", "every_seconds", "enabled", "model"):
+        if args.get(key) is not None:
+            kw[key] = args.get(key)
+    if not kw:
+        return {"ok": False, "error": "nothing to update"}
+    res = routines_mod.REGISTRY.update(rid, **kw)
+    res.setdefault("ok", True)
+    if res.get("ok"):
+        res["stdout"] = "updated routine %s (%s)" % (rid, ", ".join(sorted(kw)))
+    return res
+
+
+def _routine_get(args):
+    from longrun.orchestrate import routines as routines_mod
+
+    rid = str(args.get("routine") or "").strip()
+    rec = routines_mod.REGISTRY.get(rid) if rid else None
+    if not rec:
+        return {"ok": False, "error": "routine not found: %s" % rid}
+    return {"ok": True, "routine": rec}
+
+
+def _routine_list(_args=None):
+    from longrun.orchestrate import routines as routines_mod
+
+    out = routines_mod.REGISTRY.list()
+    out["ok"] = True
+    out["stdout"] = "%d routine(s)" % len(out.get("routines") or [])
+    return out
+
+
+def _routine_delete(args):
+    from longrun.orchestrate import routines as routines_mod
+
+    rid = str(args.get("routine") or "").strip()
+    if not rid:
+        return {"ok": False, "error": "routine required"}
+    res = routines_mod.REGISTRY.delete(rid)
+    res["stdout"] = "deleted routine %s" % rid
+    return res
+
+
+def _session_create(args):
+    from longrun.memory import stores
+
+    title = str(args.get("title") or "").strip() or None
+    sess = stores.get_or_create_session(None, title)
+    sid = sess["id"]
+    ws = str(args.get("workspace") or "").strip()
+    if ws:
+        sess["workspace"] = os.path.abspath(os.path.expanduser(ws))
+        stores.save_session(sess)
+    return {
+        "ok": True,
+        "session": sid,
+        "title": sess.get("title"),
+        "workspace": sess.get("workspace"),
+        "stdout": "created session %s (%s)" % (sid, sess.get("title") or "untitled"),
+    }
+
+
+def _session_rename(args):
+    from longrun.memory import stores
+
+    sid = str(args.get("session") or "").strip()
+    title = str(args.get("title") or "").strip()
+    if not sid:
+        return {"ok": False, "error": "session required"}
+    if not title:
+        return {"ok": False, "error": "title required"}
+    sess = stores.load_session(sid)
+    if not sess:
+        return {"ok": False, "error": "session not found: %s" % sid}
+    sess["title"] = title
+    stores.save_session(sess)
+    try:
+        from longrun.core.events import publish
+        publish("session.renamed", session=sid, title=title, by="longrunAgent")
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "session": sid, "title": title,
+            "stdout": "renamed session %s -> %s" % (sid, title)}
+
+
+def _session_list(_args=None):
+    from longrun.memory import stores
+
+    rows = stores.list_sessions()
+    return {"ok": True, "sessions": rows, "count": len(rows or []),
+            "stdout": "%d session(s)" % len(rows or [])}
+
+
+def _session_delete(args):
+    from longrun.core import httpapi
+
+    sid = str(args.get("session") or "").strip()
+    if not sid:
+        return {"ok": False, "error": "session required"}
+    return httpapi.delete_session(sid)
 
 
 def _team_create(args):
@@ -908,9 +1855,6 @@ def _webui_configure(args):
 
     target = str(args.get("target") or "").strip().lower()
     values = args.get("values") if isinstance(args.get("values"), dict) else {}
-    # NOTE: `action` is reserved by the tool dispatcher (it always carries the
-    # subtool name), so the sub-operation travels in `op`.
-    op = str(args.get("op") or args.get("operation") or "").strip().lower()
 
     if target == "config":
         # Raw config/*.yaml write takes a free-form text body, so the KEY-PATH scan
@@ -1054,30 +1998,6 @@ def _webui_configure(args):
             "stdout": "updated subagents policy (%s)" % ", ".join(sorted(values)),
         }
 
-    if target == "providers":
-        from longrun.core import api_v02
-        if op in ("remove", "delete"):
-            res = api_v02.provider_remove(args.get("id") or args.get("provider"))
-        elif op in ("add_model", "model"):
-            res = api_v02.provider_add_model({
-                "provider": args.get("provider") or args.get("id"),
-                "model": args.get("model"),
-                "context_length": args.get("context_length"),
-            })
-        elif op == "remove_model":
-            res = api_v02.provider_remove_model(args.get("provider"), args.get("model"))
-        elif op in ("default", "set_default"):
-            res = api_v02.provider_set_default({"ref": args.get("ref") or args.get("model")})
-        elif op == "reload":
-            api_v02.provider_reload()
-            publish("providers.update", action="reload", by="longrunAgent")
-            return {"ok": True, "stdout": "providers reloaded"}
-        else:
-            res = api_v02.provider_upsert(dict(values or args.get("provider_spec") or {}))
-        if res.get("ok"):
-            res["stdout"] = "providers %s applied" % (op or "upsert")
-        return res
-
     if target == "tools":
         from longrun.core import api_v02
         body = dict(values)
@@ -1106,72 +2026,6 @@ def _webui_configure(args):
             res["stdout"] = "updated tool policy (%s)" % ", ".join(sorted(body))
         return res
 
-    if target == "skills":
-        from longrun.memory import skills as skills_mod
-        nm = str(args.get("name") or args.get("id") or "").strip()
-        if op not in ("remove", "delete"):
-            return {"ok": False, "error": "op='remove' required for target='skills' (install needs a zip upload)"}
-        if not nm:
-            return {"ok": False, "error": "name required for target='skills'"}
-        res = skills_mod.remove(nm)
-        if res.get("ok"):
-            publish("skills.remove", name=nm, ok=True, by="longrunAgent")
-            res["stdout"] = "removed skill %s" % nm
-        res.setdefault("ok", False)
-        return res
-
-    if target == "mcp":
-        from longrun.interop import mcp_client as mcp_client_mod
-        nm = str(args.get("name") or args.get("id") or "").strip()
-        if op == "reload":
-            mcp_client_mod.reload()
-            publish("mcp.clients", action="reload", ok=True, by="longrunAgent")
-            return {"ok": True, "stdout": "reloaded MCP clients"}
-        if op in ("remove", "delete"):
-            res = mcp_client_mod.remove_client(nm)
-        elif op == "test":
-            res = mcp_client_mod.test_client(dict(values or {"name": nm}))
-        else:
-            res = mcp_client_mod.upsert_client(nm, dict(values or args.get("spec") or {}))
-        res.setdefault("ok", False)
-        publish("mcp.clients", action=(op or "upsert"), name=nm, ok=bool(res.get("ok")))
-        if res.get("ok"):
-            res["stdout"] = "MCP client %s %s" % (nm, op or "upsert")
-        return res
-
-    if target == "knowledge":
-        from longrun.core import api_v02
-        if op in ("notebook", "notebooks"):
-            nb_action = str((values.get("action") if isinstance(values, dict) else "") or "").strip().lower()
-            if not nb_action:
-                nb_action = "rename" if args.get("id") else "create"
-            res = api_v02.knowledge_notebook_action({
-                "action": nb_action,
-                "id": args.get("id"),
-                "name": args.get("name"),
-            })
-        elif op in ("source", "sources"):
-            res = api_v02.knowledge_source_action({
-                "notebook": args.get("notebook"),
-                "title": args.get("title"),
-                "text": args.get("content"),
-                "ref": args.get("ref"),
-                "remove": args.get("remove"),
-            })
-        elif op == "clear":
-            from longrun.memory import knowledge as kb
-            res = kb.clear()
-        elif op == "reembed":
-            from longrun.memory import knowledge as kb
-            res = kb.reembed()
-        else:
-            return {"ok": False, "error": "op must be notebook|source|clear|reembed"}
-        res.setdefault("ok", "error" not in res)
-        publish("knowledge.docs", action=op, ok=bool(res.get("ok")), by="longrunAgent")
-        if res.get("ok"):
-            res["stdout"] = "knowledge %s applied" % op
-        return res
-
     if target == "index":
         from longrun.memory import indexcfg as indexcfg_mod
         res = indexcfg_mod.save_config(values)
@@ -1185,15 +2039,159 @@ def _webui_configure(args):
     return {"ok": False, "error": "unknown configure target %r" % target}
 
 
+def _webui_providers(args, op):
+    """JAG-537: the provider/model roster, one typed tool per operation.
+
+    `op` is fixed by the tool NAME (see `_SUBTOOL_MAP`), never chosen by the model,
+    so `longrunAgent.webui.providers.remove` can only ever remove.
+    """
+    from longrun.core import api_v02
+    from longrun.core.events import publish
+
+    pid = str(args.get("id") or args.get("provider") or "").strip()
+    if op == "reload":
+        api_v02.provider_reload()
+        publish("providers.update", action="reload", by="longrunAgent")
+        return {"ok": True, "stdout": "providers reloaded"}
+    if not pid:
+        return {"ok": False, "error": "id required"}
+    if op == "upsert":
+        body = dict(args.get("values") or {})
+        body.setdefault("id", pid)
+        res = api_v02.provider_upsert(body)
+    elif op == "remove":
+        res = api_v02.provider_remove(pid)
+    elif op == "add_model":
+        res = api_v02.provider_add_model({
+            "provider": args.get("provider") or pid, "model": args.get("model")})
+    elif op == "remove_model":
+        res = api_v02.provider_remove_model(args.get("provider") or pid, args.get("model"))
+    else:  # default
+        res = api_v02.provider_set_default({"ref": args.get("ref")})
+    res.setdefault("ok", "error" not in res)
+    if res.get("ok"):
+        res["stdout"] = "providers %s applied" % op
+    return res
+
+
+def _webui_skills_remove(args):
+    from longrun.core.events import publish
+    from longrun.memory import skills as skills_mod
+
+    nm = str(args.get("name") or "").strip()
+    if not nm:
+        return {"ok": False, "error": "name required"}
+    res = skills_mod.remove(nm)
+    res.setdefault("ok", False)
+    if res.get("ok"):
+        publish("skills.remove", name=nm, ok=True, by="longrunAgent")
+        res["stdout"] = "removed skill %s" % nm
+    return res
+
+
+def _webui_mcp(args, op):
+    from longrun.core.events import publish
+    from longrun.interop import mcp_client as mcp_client_mod
+
+    nm = str(args.get("name") or "").strip()
+    if op == "reload":
+        mcp_client_mod.reload()
+        publish("mcp.clients", action="reload", ok=True, by="longrunAgent")
+        return {"ok": True, "stdout": "reloaded MCP clients"}
+    if not nm:
+        return {"ok": False, "error": "name required"}
+    if op == "remove":
+        res = mcp_client_mod.remove_client(nm)
+    elif op == "test":
+        res = mcp_client_mod.test_client({"name": nm})
+    else:  # upsert
+        values = args.get("values") if isinstance(args.get("values"), dict) else {}
+        res = mcp_client_mod.upsert_client(nm, dict(values))
+    res.setdefault("ok", False)
+    publish("mcp.clients", action=op, name=nm, ok=bool(res.get("ok")))
+    if res.get("ok"):
+        res["stdout"] = "MCP client %s %s" % (nm, op)
+    return res
+
+
+def _webui_knowledge(args, op):
+    from longrun.core import api_v02
+    from longrun.core.events import publish
+
+    if op == "notebook.create":
+        res = api_v02.knowledge_notebook_action({"action": "create", "name": args.get("name")})
+    elif op == "notebook.rename":
+        res = api_v02.knowledge_notebook_action({
+            "action": "rename", "id": args.get("id"), "name": args.get("name")})
+    elif op == "notebook.delete":
+        res = api_v02.knowledge_notebook_action({"action": "delete", "id": args.get("id")})
+    elif op == "source.add":
+        res = api_v02.knowledge_source_action({
+            "notebook": args.get("notebook"), "title": args.get("title"),
+            "text": args.get("content"), "ref": args.get("ref")})
+    elif op == "source.remove":
+        res = api_v02.knowledge_source_action({"remove": args.get("source")})
+    else:  # reembed
+        from longrun.memory import knowledge as kb
+        res = kb.reembed()
+    res.setdefault("ok", "error" not in res)
+    publish("knowledge.docs", action=op, ok=bool(res.get("ok")), by="longrunAgent")
+    if res.get("ok"):
+        res["stdout"] = "knowledge %s applied" % op
+    return res
+
+
 _SUBTOOL_MAP = {
     "longrunAgent.teamorg.agents.create": _agent_create,
-    "longrunAgent.teamorg.agents.setllm": _agent_setllm,
-    "longrunAgent.teamorg.agents.setrole": _agent_setrole,
-    "longrunAgent.teamorg.agents.setprompt": _agent_setprompt,
-    "longrunAgent.teamorg.agents.assignagent": _agent_assign,
+    "longrunAgent.teamorg.agents.update": _agent_update,
+    "longrunAgent.teamorg.agents.get": _agent_get,
+    "longrunAgent.teamorg.agents.list": _agent_list,
+    "longrunAgent.teamorg.agents.delete": _agent_delete,
+    "longrunAgent.teamorg.agents.prompt.set": _agent_prompt_set,
+    "longrunAgent.teamorg.agents.prompt.get": _agent_prompt_get,
+    "longrunAgent.teamorg.agents.prompt.clear": _agent_prompt_clear,
     "longrunAgent.teamorg.teams.create": _team_create,
+    "longrunAgent.teamorg.teams.update": _team_update,
+    "longrunAgent.teamorg.teams.get": _team_get,
+    "longrunAgent.teamorg.teams.list": _team_list,
+    "longrunAgent.teamorg.teams.delete": _team_delete,
+    "longrunAgent.teamorg.teams.member.add": _team_member_add,
+    "longrunAgent.teamorg.teams.member.remove": _team_member_remove,
+    "longrunAgent.teamorg.jobs.create": _job_create,
+    "longrunAgent.teamorg.jobs.dispatch": _job_dispatch,
+    "longrunAgent.teamorg.jobs.get": _job_get,
+    "longrunAgent.teamorg.jobs.list": _job_list,
+    "longrunAgent.teamorg.jobs.delete": _job_delete,
+    "longrunAgent.teamorg.routines.create": _routine_create,
+    "longrunAgent.teamorg.routines.update": _routine_update,
+    "longrunAgent.teamorg.routines.get": _routine_get,
+    "longrunAgent.teamorg.routines.list": _routine_list,
+    "longrunAgent.teamorg.routines.delete": _routine_delete,
+    "longrunAgent.teamorg.sessions.create": _session_create,
+    "longrunAgent.teamorg.sessions.rename": _session_rename,
+    "longrunAgent.teamorg.sessions.list": _session_list,
+    "longrunAgent.teamorg.sessions.delete": _session_delete,
     "longrunAgent.webui.inspect": _webui_inspect,
     "longrunAgent.webui.configure": _webui_configure,
+    # Typed object tools: the operation is bound HERE, by name, so the model can only
+    # pick the verb it asked for (no `op` string to get wrong).
+    "longrunAgent.webui.providers.upsert": lambda a: _webui_providers(a, "upsert"),
+    "longrunAgent.webui.providers.remove": lambda a: _webui_providers(a, "remove"),
+    "longrunAgent.webui.providers.add_model": lambda a: _webui_providers(a, "add_model"),
+    "longrunAgent.webui.providers.remove_model": lambda a: _webui_providers(a, "remove_model"),
+    "longrunAgent.webui.providers.default": lambda a: _webui_providers(a, "default"),
+    "longrunAgent.webui.providers.reload": lambda a: _webui_providers(a, "reload"),
+    "longrunAgent.webui.skills.remove": _webui_skills_remove,
+    "longrunAgent.webui.mcp.upsert": lambda a: _webui_mcp(a, "upsert"),
+    "longrunAgent.webui.mcp.remove": lambda a: _webui_mcp(a, "remove"),
+    "longrunAgent.webui.mcp.test": lambda a: _webui_mcp(a, "test"),
+    "longrunAgent.webui.mcp.reload": lambda a: _webui_mcp(a, "reload"),
+    "longrunAgent.webui.knowledge.notebook.create": lambda a: _webui_knowledge(a, "notebook.create"),
+    "longrunAgent.webui.knowledge.notebook.rename": lambda a: _webui_knowledge(a, "notebook.rename"),
+    "longrunAgent.webui.knowledge.notebook.delete": lambda a: _webui_knowledge(a, "notebook.delete"),
+    "longrunAgent.webui.knowledge.source.add": lambda a: _webui_knowledge(a, "source.add"),
+    "longrunAgent.webui.knowledge.source.remove": lambda a: _webui_knowledge(a, "source.remove"),
+    "longrunAgent.webui.knowledge.reembed": lambda a: _webui_knowledge(a, "reembed"),
 }
 
 
@@ -1231,15 +2229,19 @@ def execute(tool, args, run_id=None):
 # section is for, and WHICH data to retrieve before acting).
 SECTION_PROMPTS = {
     "teamorg": (
-        "You are `longrunAgent` (VEO, the burattinaio of agents), operating inside the "
+        "You are `longrunAgent` (VEO, the burattino of agents), operating inside the "
         "Orbit Control / AGENTS & TEAMS panel. Use ONLY `longrunAgent.teamorg.*` tools "
-        "(`longrunAgent.teamorg.teams.create`, `longrunAgent.teamorg.agents.create`, "
-        "`longrunAgent.teamorg.agents.setrole`, `longrunAgent.teamorg.agents.setprompt`, "
-        "`longrunAgent.teamorg.agents.setllm`, `longrunAgent.teamorg.agents.assignagent`) "
-        "to fulfill the user's request on the substrate. Always pick lightweight, "
-        "cost-effective remote cloud models (e.g. `openrouter:deepseek/deepseek-reasoner`, "
-        "`openrouter:z-ai/glm-5.3-flash`, `openrouter:meta/muse-spark-1.3-contributor`), "
-        "never heavy local models, and draft clear, concise `ROLE.md` prompts."
+        "to fulfill the user's request on the substrate. Every object you can create, "
+        "you can also read and remove: "
+        "`teams.create|update|delete|get|list|member.add|member.remove`, "
+        "`agents.create|update|delete|get|list|prompt.set|prompt.get|prompt.clear`, "
+        "`jobs.create|dispatch|delete|get|list`, "
+        "`routines.create|update|delete|get|list`, "
+        "`sessions.create|rename|delete|list`. "
+        "Always pick lightweight, cost-effective remote cloud models (e.g. "
+        "`openrouter:deepseek/deepseek-reasoner`, `openrouter:z-ai/glm-5.3-flash`, "
+        "`openrouter:meta/muse-spark-1.3-contributor`), never heavy local models, and "
+        "draft clear, concise `ROLE.md` prompts."
     ),
     "models": (
         "You are `longrunAgent` automating the Settings ▸ Models & Routing section. "
@@ -1270,9 +2272,9 @@ SECTION_PROMPTS = {
     ),
     "providers": (
         "You are `longrunAgent` automating the Settings ▸ Providers / Models roster. Inspect "
-        "with `longrunAgent.webui.inspect` (`section:'providers'`) and change with "
-        "`longrunAgent.webui.configure` (`target:'providers'`, action: upsert|remove|add_model|"
-        "remove_model|default). Never read or write secret keys."
+        "with `longrunAgent.webui.inspect` (`section:'providers'`) and change it with the typed "
+        "tools `longrunAgent.webui.providers.upsert|remove|add_model|remove_model|default|reload`. "
+        "Never read or write secret keys."
     ),
     "tools": (
         "You are `longrunAgent` automating the Settings ▸ Tools policy panel. Inspect with "
@@ -1282,20 +2284,22 @@ SECTION_PROMPTS = {
     ),
     "skills": (
         "You are `longrunAgent` automating the Settings ▸ Skills panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'skills'`) and remove an installed local skill "
-        "with `longrunAgent.webui.configure` (`target:'skills'`, action:'remove'). Installing "
-        "requires a zip upload and stays manual."
+        "`longrunAgent.webui.inspect` (`section:'skills'`) and uninstall a local skill with "
+        "`longrunAgent.webui.skills.remove`. Installing a new skill requires a zip upload and "
+        "stays manual."
     ),
     "mcp": (
         "You are `longrunAgent` automating the Settings ▸ MCP panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'mcp'`) and manage external servers with "
-        "`longrunAgent.webui.configure` (`target:'mcp'`, action: upsert|remove|test|reload). "
+        "`longrunAgent.webui.inspect` (`section:'mcp'`) and manage external servers with the "
+        "typed tools `longrunAgent.webui.mcp.upsert|remove|test|reload`. "
         "Reference secrets by NAME (`${VAR}`), never by value."
     ),
     "knowledge": (
         "You are `longrunAgent` automating the Settings ▸ Knowledge panel. Inspect with "
-        "`longrunAgent.webui.inspect` (`section:'knowledge'`) and manage notebooks/sources with "
-        "`longrunAgent.webui.configure` (`target:'knowledge'`, action: notebook|source|clear|reembed)."
+        "`longrunAgent.webui.inspect` (`section:'knowledge'`) and manage notebooks and sources "
+        "with `longrunAgent.webui.knowledge.notebook.create|rename|delete`, "
+        "`longrunAgent.webui.knowledge.source.add|remove` and "
+        "`longrunAgent.webui.knowledge.reembed`."
     ),
     "index": (
         "You are `longrunAgent` automating the Settings ▸ Codebase index configuration. Inspect "

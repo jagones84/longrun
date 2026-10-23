@@ -135,13 +135,40 @@ check("A4 DELETE /api/sessions/longrunAgent is blocked at the HTTP layer with 40
 cat = {t["name"]: t for t in registry.catalog()}
 expected_tools = {
     "longrunAgent.teamorg.agents.create",
-    "longrunAgent.teamorg.agents.setllm",
-    "longrunAgent.teamorg.agents.setrole",
-    "longrunAgent.teamorg.agents.setprompt",
-    "longrunAgent.teamorg.agents.assignagent",
+    "longrunAgent.teamorg.agents.update",
+    "longrunAgent.teamorg.agents.get",
+    "longrunAgent.teamorg.agents.list",
+    "longrunAgent.teamorg.agents.delete",
+    "longrunAgent.teamorg.agents.prompt.set",
+    "longrunAgent.teamorg.agents.prompt.get",
+    "longrunAgent.teamorg.agents.prompt.clear",
     "longrunAgent.teamorg.teams.create",
-    "longrunAgent.webui.inspect",
+    "longrunAgent.teamorg.teams.update",
+    "longrunAgent.teamorg.teams.get",
+    "longrunAgent.teamorg.teams.list",
+    "longrunAgent.teamorg.teams.delete",
+    "longrunAgent.teamorg.teams.member.add",
+    "longrunAgent.teamorg.teams.member.remove",
+    "longrunAgent.teamorg.jobs.create",
+    "longrunAgent.teamorg.jobs.dispatch",
+    "longrunAgent.teamorg.jobs.get",
+    "longrunAgent.teamorg.jobs.list",
+    "longrunAgent.teamorg.jobs.delete",
+    "longrunAgent.teamorg.routines.create",
+    "longrunAgent.teamorg.routines.update",
+    "longrunAgent.teamorg.routines.get",
+    "longrunAgent.teamorg.routines.list",
+    "longrunAgent.teamorg.routines.delete",
+    "longrunAgent.teamorg.sessions.create",
+    "longrunAgent.teamorg.sessions.rename",
+    "longrunAgent.teamorg.sessions.list",
+    "longrunAgent.teamorg.sessions.delete",
+    "longrunAgent.webui.providers.upsert",
+    "longrunAgent.webui.skills.remove",
+    "longrunAgent.webui.mcp.reload",
+    "longrunAgent.webui.knowledge.notebook.delete",
     "longrunAgent.webui.configure",
+    "longrunAgent.webui.inspect",
 }
 check("B1 all longrunAgent subtools are registered in registry.catalog()",
       expected_tools.issubset(set(cat)), sorted(expected_tools - set(cat)))
@@ -227,26 +254,26 @@ scanner_id = a_res["agent"]["id"]
 scanner_sid = a_res["session"]
 
 r_llm = T.execute(
-    "longrunAgent.teamorg.agents.setllm",
+    "longrunAgent.teamorg.agents.update",
     {"agent": scanner_id, "model": "openrouter:z-ai/glm-5.3-flash"},
     run_id="longrunAgent",
 )
 r_role = T.execute(
-    "longrunAgent.teamorg.agents.setrole",
+    "longrunAgent.teamorg.agents.update",
     {"agent": scanner_id, "role": "senior-vuln-scanner"},
     run_id="longrunAgent",
 )
 r_prompt = T.execute(
-    "longrunAgent.teamorg.agents.setprompt",
+    "longrunAgent.teamorg.agents.prompt.set",
     {"agent": scanner_id, "prompt": "You are Senior Vuln Scanner. Check OWASP Top 10."},
     run_id="longrunAgent",
 )
 r_assign = T.execute(
-    "longrunAgent.teamorg.agents.assignagent",
+    "longrunAgent.teamorg.teams.member.add",
     {"agent": scanner_id, "team": tid},
     run_id="longrunAgent",
 )
-check("C4 setllm, setrole, setprompt, and assignagent update substrate + ROLE.md + team membership",
+check("C4 agents.update (model+role), prompt.set and teams.member.add update substrate + ROLE.md + team",
       r_llm.get("ok") is True
       and r_role.get("ok") is True
       and r_prompt.get("ok") is True
@@ -367,21 +394,20 @@ check("E4 configure target='index' writes the shared index configuration",
       and indexcfg.load_config().get("auto_index") is False, r_idx)
 
 r_kb = T.execute(
-    "longrunAgent.webui.configure",
-    {"target": "knowledge", "op": "notebook", "name": "veo-notebook"},
+    "longrunAgent.webui.knowledge.notebook.create",
+    {"name": "veo-notebook"},
     run_id="longrunAgent",
 )
-check("E5 configure target='knowledge' creates a real notebook",
+check("E5 webui.knowledge.notebook.create creates a real notebook",
       r_kb.get("ok") is True
       and any("veo-notebook" in str(n) for n in KB.list_notebooks()), r_kb)
 
 r_mcp = T.execute(
-    "longrunAgent.webui.configure",
-    {"target": "mcp", "op": "upsert", "name": "!!not-a-valid-name!!",
-     "values": {"command": "true"}},
+    "longrunAgent.webui.mcp.upsert",
+    {"name": "!!not-a-valid-name!!", "values": {"command": "true"}},
     run_id="longrunAgent",
 )
-check("E6 configure target='mcp' routes to the real mcp_client engine (rejects invalid specs)",
+check("E6 webui.mcp.upsert routes to the real mcp_client engine (rejects invalid specs)",
       r_mcp.get("ok") is False and "error" in r_mcp, r_mcp)
 
 bad_cfg = T.execute(
@@ -433,16 +459,19 @@ check("F2 the namespace section is gated: full VEO framing only for the system s
       (plain_text, granted_text[:120]))
 
 expected_tools = [
-    "longrunAgent.teamorg.agents.assignagent", "longrunAgent.teamorg.agents.create",
-    "longrunAgent.teamorg.agents.setllm", "longrunAgent.teamorg.agents.setprompt",
-    "longrunAgent.teamorg.agents.setrole", "longrunAgent.teamorg.teams.create",
+    "longrunAgent.teamorg.agents.create", "longrunAgent.teamorg.agents.update",
+    "longrunAgent.teamorg.agents.delete", "longrunAgent.teamorg.agents.prompt.set",
+    "longrunAgent.teamorg.teams.create", "longrunAgent.teamorg.teams.update",
+    "longrunAgent.teamorg.teams.delete", "longrunAgent.teamorg.teams.member.add",
+    "longrunAgent.teamorg.jobs.delete", "longrunAgent.teamorg.routines.delete",
+    "longrunAgent.teamorg.sessions.delete",
     "longrunAgent.webui.configure", "longrunAgent.webui.inspect",
 ]
 check("F3 the section lists EVERY live longrunAgent subtool (generated, never hardcoded)",
       all(("`%s`" % n) in sys_text for n in expected_tools), sys_text[:400])
-check("F4 the section states the hard rules: reserved `action`, `op`, dual permission, safety, stateless",
+check("F4 the section states the hard rules: reserved `action`, dual permission, safety, stateless",
       "`action` is RESERVED" in sys_text
-      and "`op`" in sys_text
+      and "never send it" in sys_text
       and "Dual permission" in sys_text
       and "allow_nucleus_write" in sys_text and "allow_matrix_promote" in sys_text
       and "reset before and after every automation turn" in sys_text)

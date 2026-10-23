@@ -2539,48 +2539,58 @@ class Handler(BaseHTTPRequestHandler):
         if _orbit_handle(self, "DELETE", path, qs, None):   # JAG-285: optional beta API
             return
         if path.startswith("/api/sessions/"):
-            sid = path[len("/api/sessions/"):]
-            if not _valid_sid(sid):
-                return self._send(404, {"error": "session not found"})
-            if sid == "longrunAgent":
-                return self._send(403, {"ok": False, "error": "longrunAgent is a permanent system session and cannot be deleted"})
-            fpath = os.path.join(SESSIONS_DIR, sid + ".json")
-            if not os.path.isfile(fpath):
-                return self._send(404, {"error": "session not found"})
-            # JAG-179: cascade — the red X must also remove the session's graph,
-            # run metrics and edit journal (+ backups), else they leak as orphans.
-            # JAG-222: stop a running turn AND tombstone the id first, so the
-            # worker's final write cannot resurrect the just-deleted session.
-            push_abort(sid)
-            with _deleted_lock:
-                _DELETED_SESSIONS.add(sid)
-                _persist_tombstones()   # JAG-315: survive a restart
-            removed = _purge_session_artifacts(sid)
-            _forget_session_runtime(sid)
-            # JAG-431r6: deleting a session also drops its HIDDEN knowledge
-            # notebook (the per-session KB scope) so it cannot leak as orphans
-            # in the single global KB.
-            try:
-                from longrun.memory import knowledge as _kb
-                _kb.purge_session(sid)
-            except Exception:  # noqa: BLE001 — KB cleanup must not break the delete
-                pass
-            # JAG-314: an agent IS a session — deleting the session must also
-            # release the agent designation (and scrub its jobs/routines), else a
-            # later job/routine resurrects it via get_or_create_session.
-            try:
-                from longrun.agent import agents as agents_mod
-                rel = agents_mod.REGISTRY.release(sid)
-                if rel.get("released"):
-                    removed.append("agent:" + str(rel["released"]))
-            except Exception:  # noqa: BLE001
-                pass
-            publish("session.deleted", session=sid, removed=removed)
-            return self._send(200, {"ok": True, "deleted": sid, "removed": removed})
+            # JAG-537: the cascade lives in `delete_session` so the HTTP door and
+            # `longrunAgent.teamorg.sessions.delete` share ONE implementation.
+            res = delete_session(path[len("/api/sessions/"):])
+            return self._send(res.pop("status", 200), res)
         return self._send(404, {"error": "not found"})
 
     def log_message(self, fmt, *args):
         pass
+
+
+def delete_session(sid):
+    """Delete a session and EVERYTHING that only exists for it.
+
+    JAG-537: this cascade used to live inline in `do_DELETE`; it is now a module
+    function so the HTTP door (`DELETE /api/sessions/<sid>`) and the
+    `longrunAgent.teamorg.sessions.delete` tool cannot drift apart. The caller maps
+    the returned `status` onto its own transport.
+
+    The cascade is the union of JAG-179 (graph / run metrics / edit journal),
+    JAG-222 (abort the running turn, tombstone the id first), JAG-315 (persist
+    tombstones), JAG-314 (an agent IS a session: release its designation, scrub its
+    jobs and routines) and JAG-431r6 (drop the hidden per-session knowledge notebook).
+    """
+    sid = str(sid or "")
+    if not _valid_sid(sid):
+        return {"ok": False, "status": 404, "error": "session not found"}
+    if sid == "longrunAgent":
+        return {"ok": False, "status": 403,
+                "error": "longrunAgent is a permanent system session and cannot be deleted"}
+    fpath = os.path.join(SESSIONS_DIR, sid + ".json")
+    if not os.path.isfile(fpath):
+        return {"ok": False, "status": 404, "error": "session not found"}
+    push_abort(sid)
+    with _deleted_lock:
+        _DELETED_SESSIONS.add(sid)
+        _persist_tombstones()
+    removed = _purge_session_artifacts(sid)
+    _forget_session_runtime(sid)
+    try:
+        from longrun.memory import knowledge as _kb
+        _kb.purge_session(sid)
+    except Exception:  # noqa: BLE001 — KB cleanup must not break the delete
+        pass
+    try:
+        from longrun.agent import agents as agents_mod
+        rel = agents_mod.REGISTRY.release(sid)
+        if rel.get("released"):
+            removed.append("agent:" + str(rel["released"]))
+    except Exception:  # noqa: BLE001
+        pass
+    publish("session.deleted", session=sid, removed=removed)
+    return {"ok": True, "status": 200, "deleted": sid, "removed": removed}
 
 
 def _lan_ipv4s():
