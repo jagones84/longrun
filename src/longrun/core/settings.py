@@ -391,11 +391,8 @@ def view():
 
 def _write_overlay(path, doc):
     """Atomic YAML overlay write (gitignored)."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(dataio.dump_yaml(doc or {}))
-    os.replace(tmp, path)
+    from longrun.util.fswrite import write_text
+    write_text(path, dataio.dump_yaml(doc or {}))
 
 
 def _save(name, clean):

@@ -64,16 +64,6 @@ def approval_kind(name):
         return ""
 
 
-def should_nudge(used_tools=0, errored=False, corrected=False):
-    """True when the self-improvement nudge triggers (Hermes pattern)."""
-    if corrected or errored:
-        return True
-    try:
-        return int(used_tools) >= _TOOLCALL_THRESHOLD
-    except (TypeError, ValueError):
-        return False
-
-
 # ------------------------------------------------------------- ledger --------
 # JAG-447: the audit ledger. Every improvement artifact the harness produces —
 # on its own or because the agent asked — is appended here, with its provenance
@@ -223,43 +213,13 @@ def _evidence(text, k=3):
 
 
 def _parse_verdicts(answer):
-    """Lenient: take the first COMPLETE JSON object/array in the model's answer.
-
-    Models wrap JSON in prose or code fences. Find the first `{`/`[`, then walk
-    to its matching close (string-escape aware) and parse exactly that slice.
-    """
-    text = str(answer or "")
-    start = min([i for i in (text.find("{"), text.find("[")) if i >= 0] or [-1])
-    if start < 0:
-        return []
-    opener = text[start]
-    closer = "}" if opener == "{" else "]"
-    depth, in_str, esc = 0, False, False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == opener:
-            depth += 1
-        elif ch == closer:
-            depth -= 1
-            if depth == 0:
-                try:
-                    data = json.loads(text[start:i + 1])
-                except ValueError:
-                    return []
-                if isinstance(data, dict):
-                    data = data.get("verdicts")
-                return [v for v in (data or []) if isinstance(v, dict)] \
-                    if isinstance(data, list) else []
+    """Extract the verdict list from the verifier's reply (JSON array or `{verdicts:[...]}`)."""
+    from longrun.util.textkit import _iter_json_objects as _scan
+    for data in _scan(str(answer or "")):
+        if isinstance(data, dict):
+            data = data.get("verdicts") or data.get("items") or []
+        if isinstance(data, list):
+            return [v for v in data if isinstance(v, dict)]
     return []
 
 

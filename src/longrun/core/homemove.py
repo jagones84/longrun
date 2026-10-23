@@ -60,13 +60,7 @@ def _walk(source):
     return total, files
 
 
-def _inside(path, parent):
-    try:
-        p = os.path.realpath(path)
-        r = os.path.realpath(parent)
-        return p == r or p.startswith(r + os.sep)
-    except OSError:
-        return False
+from longrun.util.fswrite import path_under as _inside
 
 
 def validate(target):

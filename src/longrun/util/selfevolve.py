@@ -193,14 +193,7 @@ STAGE2_DEFAULTS = {
 AUTO_SKILL_CAP = 25
 
 
-def _under(path, root):
-    """True iff `path` is inside `root` (both resolved)."""
-    try:
-        path = os.path.realpath(path)
-        root = os.path.realpath(root)
-        return os.path.commonpath([path, root]) == root
-    except (ValueError, OSError):
-        return False
+from longrun.util.fswrite import path_under as _under
 
 
 def _write_json(path, obj):

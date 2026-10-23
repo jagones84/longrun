@@ -60,3 +60,36 @@ def write_json(path, obj, *, indent=2, ensure_ascii=False, sort_keys=False):
                 os.remove(tmp)
             except OSError:
                 pass
+
+
+def write_text(path, text):
+    """Atomically write ``text`` (UTF-8) to ``path`` using a unique temp file."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = "%s.%s.tmp" % (path, uuid.uuid4().hex)
+    body = text if isinstance(text, str) else ("" if text is None else str(text))
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(body)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def safe_id(val, default="unknown", max_len=96):
+    """Sanitize ``val`` into a safe filename token (alnum + ``._-``)."""
+    s = "".join(c if c.isalnum() or c in "._-" else "_" for c in str(val or default))[:max_len]
+    return s or default
+
+
+def path_under(path, root):
+    """Return True when ``path`` resolves inside ``root`` (both realpath'd)."""
+    try:
+        p = os.path.realpath(path)
+        r = os.path.realpath(root)
+        return p == r or p.startswith(r + os.sep)
+    except Exception:  # noqa: BLE001
+        return False

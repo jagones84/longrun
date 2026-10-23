@@ -492,7 +492,16 @@ def feed_gen(since=0):
             _sse_queues.discard(q)
 
 
+_TELEM_CACHE = {"ts": 0.0, "data": None}
+_TELEM_LOCK = threading.Lock()
+_TELEM_TTL = 4.0
+
+
 def telemetry_summary():
+    now = time.time()
+    with _TELEM_LOCK:
+        if _TELEM_CACHE["data"] is not None and (now - _TELEM_CACHE["ts"]) < _TELEM_TTL:
+            return dict(_TELEM_CACHE["data"])
     out = {"gpu": None, "memory": None}
     try:
         import psutil  # optional
@@ -510,6 +519,9 @@ def telemetry_summary():
             pass
     except ImportError:
         pass
+    with _TELEM_LOCK:
+        _TELEM_CACHE["ts"] = now
+        _TELEM_CACHE["data"] = dict(out)
     return out
 
 
@@ -1564,6 +1576,7 @@ def _runs_status():
 def status_payload():
     plan, tasks = load_plan(), load_tasks()
     probe = sandbox.probe()
+    cat = registry.catalog()
     return {
         "service": "longrun", "version": VERSION, "ts": round(time.time()),
         "router": ROUTER_BASE, "models": router_models(),
@@ -1575,8 +1588,8 @@ def status_payload():
                   "open": len([t for t in tasks.get("tasks", []) if t.get("status") != "done"])},
         "sandbox": {"backend": probe["backend"], "isolated": probe["isolated"],
                     "requested": probe["requested"]},
-        "tools": {"registered": len(registry.catalog()),
-                  "enabled": len([t for t in registry.catalog() if t["enabled"]])},
+        "tools": {"registered": len(cat),
+                  "enabled": len([t for t in cat if t["enabled"]])},
         "approvals": approvals.stats(),
         # JAG-431r4: snapshot RUNS under its lock (new_run mutates/pops it) so this
         # unguarded iteration cannot raise "dictionary changed size during iteration".
@@ -2314,6 +2327,17 @@ class Handler(BaseHTTPRequestHandler):
             # a backward-compatible shape {nodes,counts,goal,steps} (legacy consumers).
             sid = body.get("session") or qs.get("session") or ""
             g = taskgraph.load(sid) if sid else None
+            if sid and ("goal" in body or "steps" in body):
+                g = taskgraph.ensure(sid, goal=body.get("goal") or "", session_id=sid)
+                if body.get("goal") is not None:
+                    g["goal"] = str(body.get("goal") or "")
+                    taskgraph.save(g)
+                if isinstance(body.get("steps"), list):
+                    todos = [{"label": (s.get("title") or s.get("label") or str(s))
+                              if isinstance(s, dict) else str(s)}
+                             for s in body["steps"]]
+                    taskgraph.apply_write_todos(g, todos, skip_existing=True)
+                    g = taskgraph.load(sid)
             pub = taskgraph.public(g) or {"nodes": [], "counts": {}}
             pub["goal"] = (g or {}).get("goal") or ""
             pub["steps"] = [{"id": n.get("id"), "title": n.get("label"),
@@ -2369,14 +2393,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "cleared": sid})
         if path.startswith("/api/sessions/") and path.endswith("/rename"):
             sid = path[len("/api/sessions/"):-len("/rename")].strip("/")
-            sess = load_session(sid)
-            if not sess:
-                return self._send(404, {"error": "session not found"})
             title = str((body or {}).get("title") or "").strip()[:80]
             if not title:
                 return self._send(400, {"error": "title required"})
-            sess["title"] = title
-            save_session(sess)
+            with _turn_lock(sid):
+                sess = load_session(sid)
+                if not sess:
+                    return self._send(404, {"error": "session not found"})
+                sess["title"] = title
+                save_session(sess)
             # JAG-322: an agent IS a session — keep an org agent's NAME in lockstep
             # with its session TITLE so renaming here updates the Orbit table too.
             try:
@@ -2403,7 +2428,9 @@ class Handler(BaseHTTPRequestHandler):
             run_id = path[len("/api/runs/"):-len("/graph/reset")].strip("/")
             return self._send(200, taskgraph.reset(run_id))
         if path == "/api/context/compact":
-            res = compact_session(body.get("session"), body.get("budget_tokens"), origin="manual")
+            sid = body.get("session")
+            with _turn_lock(sid or ""):
+                res = compact_session(sid, body.get("budget_tokens"), origin="manual")
             # JAG-523: a semantic failure (unknown session, nothing to compact) is a
             # BAD REQUEST, not a missing route — 404 hid a logic error behind
             # "not found" and disagreed with /api/compaction/policy.

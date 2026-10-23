@@ -55,8 +55,7 @@ def _publish(kind, **data):
         return None
 
 
-def _safe(key):
-    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(key or "unknown"))[:96]
+from longrun.util.fswrite import safe_id as _safe
 
 
 def path_for(sid):

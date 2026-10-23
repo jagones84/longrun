@@ -206,16 +206,13 @@ def _local_doc():
 
 def _write_local(doc):
     """Atomic write of the overlay (never the versioned base file)."""
-    os.makedirs(os.path.dirname(LOCAL_CONFIG), exist_ok=True)
-    tmp = LOCAL_CONFIG + ".tmp"
+    from longrun.util.fswrite import write_text
     try:
         import yaml
         text = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
     except Exception:  # noqa: BLE001
         text = json.dumps(doc, indent=2, ensure_ascii=False)
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, LOCAL_CONFIG)
+    write_text(LOCAL_CONFIG, text)
     return LOCAL_CONFIG
 
 

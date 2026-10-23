@@ -136,7 +136,7 @@ class MCPSession:
         resolved_command = shutil.which(command, path=full_env.get("PATH")) or command
         self.proc = subprocess.Popen(
             [osutil.resolve_script(resolved_command)] + args, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=full_env,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=full_env,
             cwd=self.config.get("cwd", REPO), **osutil.popen_kwargs())
         log("%s: spawned pid=%d", self.name, self.proc.pid)
 
@@ -317,8 +317,6 @@ class MCPSession:
                               "message": "HTTP transport failure (%s)"
                               % type(e).__name__}}
 
-    def _send_http(self, obj, timeout=20):
-        return self._http_call(obj, timeout)
     # ---- public session lifecycle ----
 
     def initialize(self):
@@ -580,7 +578,6 @@ class MCPClientManager:
     def __init__(self):
         self.sessions = {}        # name -> MCPSession
         self._lock = threading.RLock()
-        self._tool_prefix = {}    # tool_name -> client_name
         self._started = False
         # JAG-464: last CONNECT error per client, so the panel can say WHY a server is
         # down instead of showing a bare "0 tool" next to a red dot.
@@ -652,9 +649,6 @@ class MCPClientManager:
                                 self._errors[name] = (
                                     "%s (%s)" % (detail, connection_error)
                                     if connection_error else detail)
-                            # Register tools
-                            for tname in list(session.tools):
-                                self._tool_prefix[tname] = name
                             if session.connected:
                                 log("%s: connected with %d tools", name, len(tools))
                             else:

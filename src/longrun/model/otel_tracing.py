@@ -50,6 +50,8 @@ class _RunSpanExporter:
                 "status": str(s.status.status_code.name).lower(),
             }
             with _lock:
+                if len(_spans_by_run) > 256 and run_id not in _spans_by_run:
+                    _spans_by_run.pop(next(iter(_spans_by_run)), None)
                 _spans_by_run.setdefault(run_id, []).append(rec)
         return SpanExportResult.SUCCESS
 

@@ -191,52 +191,10 @@ def self_summary():
 
 def self_knowledge():
     """Full self report: paths, config, docs, service state, extension recipe."""
-    import subprocess as sp
-    info = {
-        "name": "Longrun", "version": server.VERSION,
-        "repo_path": REPO, "data_dir": DATA_DIR, "sessions_dir": SESSIONS_DIR,
-        "webui": WEBUI_DIR,
-        "entrypoint": os.path.join(REPO, "server.py"), "port": 8790,
-        "router": ROUTER_BASE,
-        "config": {"tools": os.path.join(REPO, "config", "tools.yaml"),
-                   "routing": os.path.join(REPO, "config", "routing.yaml"),
-                   "mcp_clients": os.path.join(REPO, "config", "mcp_clients.yaml")},
-        "docs": {"plan": os.path.join(REPO, "docs", "PLAN.md"),
-                 "readme": os.path.join(REPO, "README.md"),
-                 "architecture": os.path.join(REPO, "docs", "ARCHITECTURE.md")},
-        "service": {"unit": "longrun.service", "scope": "user",
-                    "unit_file": os.path.join(REPO, "deploy", "longrun.service"),
-                    "restart_cmd": osutil.service_hint()},
-        "skills_dir": os.path.join(REPO, "skills"),
-        "install_skill": (
-            "A skill is a directory with a SKILL.md. Drop/clone it into a "
-            "category under skills/ (e.g. skills/ops/<name>/SKILL.md), or symlink "
-            "an existing distribution dir: `ln -sfn <source-dir> skills/<cat>`. "
-            "Skills are picked up automatically by the `skills` tool (no reload "
-            "needed). External MCP servers: add an entry to "
-            "config/mcp_clients.yaml with either command+args (stdio) or url "
-            "(HTTP); tools are discovered via tools/list and exposed as "
-            "<client>__<tool> in the registry. Harness-native tools go in "
-            "registry.TOOL_SCHEMAS + tools.py with policy in config/tools.yaml. "
-            "Apply with POST /api/tools (reload) or restart: %s."
-        ) % osutil.service_hint(),
-    }
-    try:
-        from longrun.memory import skills as skills_mod
-        sk = skills_mod.list_skills()
-        info["skills"] = {"dir": info["skills_dir"], "count": len(sk),
-                          "categories": sorted({s["category"] for s in sk})}
-    except Exception as e:  # noqa: BLE001
-        info["skills"] = {"error": str(e)}
-    try:
-        if osutil.IS_POSIX:
-            out = sp.run(["systemctl", "--user", "is-active", "longrun.service"],
-                         capture_output=True, text=True, timeout=4).stdout.strip()
-            info["service"]["active"] = out or "unknown"
-        else:
-            info["service"]["active"] = "n/a (no systemd on this host)"
-    except Exception:
-        info["service"]["active"] = "unknown"
+    from longrun.tools import tools as _tmod
+    info = dict(_tmod._self({"action": "info"}, None))
+    for k in ("ok", "backend", "sandboxed", "exit_code", "stdout", "stderr"):
+        info.pop(k, None)
     return info
 
 

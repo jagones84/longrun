@@ -14,8 +14,8 @@ import uuid
 from longrun.memory import threads as threads_mod
 from longrun.plan import taskgraph
 from longrun.core.events import (_ACTIVE_CHAT, _ACTIVE_CHAT_LOCK, _TURN_LOCKS,
-                     _TURN_LOCKS_GUARD, publish)
-from longrun.util.fswrite import read_json, write_json
+                     _TURN_LOCKS_GUARD, _turn_lock, publish)
+from longrun.util.fswrite import read_json, write_json, write_text
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR, REPO_ROOT as REPO, _JOBSEQ_FILE
 from longrun.util.steering import STEER_INBOX, _steer_lock, clear_abort, push_abort
 from longrun.util.tracing import _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
@@ -98,13 +98,8 @@ def _load_tombstones():
 
 def _persist_tombstones():
     """Write the deleted-session ids atomically so a restart cannot forget them."""
-    tmp = "%s.%s.tmp" % (_TOMBSTONE_FILE, os.getpid())
     try:
-        os.makedirs(SESSIONS_DIR, exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            for sid in sorted(_DELETED_SESSIONS):
-                f.write(sid + "\n")
-        os.replace(tmp, _TOMBSTONE_FILE)
+        write_text(_TOMBSTONE_FILE, "".join(sid + "\n" for sid in sorted(_DELETED_SESSIONS)))
     except OSError:
         pass
 
@@ -165,7 +160,14 @@ def save_session(sess):
         threads_mod.sync_chapters(sess)
     except Exception:  # noqa: BLE001
         pass
-    write_json(os.path.join(SESSIONS_DIR, sid + ".json"), sess)
+    p = os.path.join(SESSIONS_DIR, sid + ".json")
+    write_json(p, sess)
+    try:
+        st = os.stat(p)
+        with _SESSION_SUMMARY_LOCK:
+            _SESSION_SUMMARY_CACHE[p] = ((st.st_mtime_ns, st.st_size), _session_summary_row(sess))
+    except OSError:
+        pass
 
 
 def _purge_session_artifacts(sid):
@@ -284,14 +286,17 @@ def clear_session(sid):
     visibly un-cleared. Wipe all three. Returns the session dict, or None when
     the id does not exist.
     """
-    sess = load_session(sid)
-    if not sess:
+    if not _valid_sid(sid):
         return None
     push_abort(sid)
-    sess["messages"] = []
-    sess["tool_cards"] = []
-    sess["injects"] = []
-    save_session(sess)
+    with _turn_lock(sid):
+        sess = load_session(sid)
+        if not sess:
+            return None
+        sess["messages"] = []
+        sess["tool_cards"] = []
+        sess["injects"] = []
+        save_session(sess)
     try:
         taskgraph.reset(sid)
     except Exception:  # noqa: BLE001 — a missing graph must not block the clear
@@ -321,6 +326,33 @@ def _rel_time(ts):
     return "%d d" % int(d // 86400)
 
 
+_SESSION_SUMMARY_CACHE = {}   # path -> ((mtime_ns, size), summary_dict)
+_SESSION_SUMMARY_LOCK = threading.Lock()
+
+
+def _session_summary_row(s):
+    if not isinstance(s, dict) or not s.get("id"):
+        return None
+    msgs = s.get("messages", [])
+    stamps = [s.get("created") or 0]
+    if msgs:
+        stamps.append(msgs[-1].get("ts") or 0)
+    cards = s.get("tool_cards") or []
+    if cards:
+        stamps.append(cards[-1].get("ts") or 0)
+    upd = max(stamps)
+    return {
+        "id": s["id"],
+        "title": s.get("title", ""),
+        "created": s.get("created"),
+        "updated": upd,
+        "messages": len(msgs),
+        "workspace": s.get("workspace"),
+        "job": s.get("job"),
+        "model": s.get("model"),
+    }
+
+
 def list_sessions():
     """JAG-113: sessions ordered by LAST USE (not creation), with an age label.
 
@@ -337,32 +369,44 @@ def list_sessions():
     except Exception:  # noqa: BLE001
         _active = set()
     out = []
+    seen_paths = set()
     try:
-        for fn in sorted(os.listdir(SESSIONS_DIR)):
-            if fn.endswith(".json"):
-                s = read_json(os.path.join(SESSIONS_DIR, fn), None)
+        for entry in sorted(os.scandir(SESSIONS_DIR), key=lambda e: e.name):
+            if not entry.name.endswith(".json"):
+                continue
+            p = entry.path
+            seen_paths.add(p)
+            try:
+                st = entry.stat()
+                stamp = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                continue
+            with _SESSION_SUMMARY_LOCK:
+                cached = _SESSION_SUMMARY_CACHE.get(p)
+            if cached and cached[0] == stamp:
+                row = cached[1]
+            else:
+                s = read_json(p, None)
                 # JAG-533/SJ: a JSON in this directory that is NOT a session (a
                 # stray per-session ledger, a partial write, a hand-placed file)
                 # must never take the endpoint down. ONE file without "id" here
                 # raised KeyError and /api/sessions answered an EMPTY response,
                 # so the WebUI showed "Sessions unavailable" (live, 2026-10-22).
-                if not isinstance(s, dict) or not s.get("id"):
-                    continue
-                msgs = s.get("messages", [])
-                stamps = [s.get("created") or 0]
-                if msgs:
-                    stamps.append(msgs[-1].get("ts") or 0)
-                cards = s.get("tool_cards") or []
-                if cards:
-                    stamps.append(cards[-1].get("ts") or 0)
-                upd = max(stamps)
-                out.append({"id": s["id"], "title": s.get("title", ""),
-                            "created": s.get("created"), "updated": upd,
-                            "age": _rel_time(upd), "messages": len(msgs),
-                            "workspace": s.get("workspace"),
-                            "job": s.get("job"),
-                            "model": s.get("model"),
-                            "running": s["id"] in _active})
+                row = _session_summary_row(s)
+                with _SESSION_SUMMARY_LOCK:
+                    _SESSION_SUMMARY_CACHE[p] = (stamp, row)
+            if not row:
+                continue
+            upd = row["updated"]
+            out.append({
+                **row,
+                "age": _rel_time(upd),
+                "running": row["id"] in _active,
+            })
+        with _SESSION_SUMMARY_LOCK:
+            for k in list(_SESSION_SUMMARY_CACHE):
+                if k not in seen_paths:
+                    _SESSION_SUMMARY_CACHE.pop(k, None)
     except FileNotFoundError:
         pass
     return sorted(out, key=lambda s: s.get("updated") or 0, reverse=True)
@@ -379,16 +423,11 @@ def _max_job():
     ``list_sessions`` never reads it as a session).
     """
     best = _read_seq()
-    try:
-        for fn in os.listdir(SESSIONS_DIR):
-            if fn.endswith(".json"):
-                s = read_json(os.path.join(SESSIONS_DIR, fn), None) or {}
-                try:
-                    best = max(best, int(s.get("job") or 0))
-                except (TypeError, ValueError):
-                    pass
-    except FileNotFoundError:
-        pass
+    for s in list_sessions():
+        try:
+            best = max(best, int(s.get("job") or 0))
+        except (TypeError, ValueError):
+            pass
     return best
 
 
@@ -401,12 +440,8 @@ def _read_seq():
 
 
 def _write_seq(n):
-    tmp = "%s.%s.tmp" % (_JOBSEQ_FILE, os.getpid())
     try:
-        os.makedirs(SESSIONS_DIR, exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(str(int(n)))
-        os.replace(tmp, _JOBSEQ_FILE)
+        write_text(_JOBSEQ_FILE, str(int(n)))
     except OSError:
         pass
 

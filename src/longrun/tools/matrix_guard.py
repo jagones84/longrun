@@ -141,13 +141,7 @@ def _roots(repo_root=None):
     return root, msrc, mdot
 
 
-def _under(path, parent):
-    try:
-        p = os.path.realpath(path)
-        r = os.path.realpath(parent)
-        return p == r or p.startswith(r + os.sep)
-    except OSError:
-        return False
+from longrun.util.fswrite import path_under as _under
 
 
 def ensure_layout(repo_root=None):

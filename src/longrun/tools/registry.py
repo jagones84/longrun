@@ -1108,21 +1108,15 @@ def _diff_overlay(cfg, base_data):
 
 def _write_overlay(overlay):
     """Atomically write the sparse overlay (never touches config/tools.yaml)."""
-    os.makedirs(os.path.dirname(OVERLAY_YAML), exist_ok=True)
+    from longrun.util.fswrite import write_json, write_text
     try:
         import yaml
-        tmp = OVERLAY_YAML + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(_OVERLAY_HEADER)
-            if overlay:
-                yaml.safe_dump(overlay, f, sort_keys=False, allow_unicode=True,
-                               default_flow_style=False)
-            else:
-                f.write("{}\n")
-        os.replace(tmp, OVERLAY_YAML)
+        body = _OVERLAY_HEADER + (
+            yaml.safe_dump(overlay, sort_keys=False, allow_unicode=True,
+                           default_flow_style=False) if overlay else "{}\n")
+        write_text(OVERLAY_YAML, body)
     except ImportError:
-        with open(OVERLAY_JSON, "w", encoding="utf-8") as f:
-            json.dump(overlay, f, indent=2)
+        write_json(OVERLAY_JSON, overlay)
 
 
 def save_config(cfg):
@@ -1386,14 +1380,7 @@ def _match(patterns, text):
     return None
 
 
-def _under(path, root):
-    """True when `path` is inside `root` (both realpath'd)."""
-    try:
-        p = os.path.realpath(path)
-        r = os.path.realpath(root)
-        return p == r or p.startswith(r + os.sep)
-    except Exception:  # noqa: BLE001
-        return False
+from longrun.util.fswrite import path_under as _under
 
 
 # JAG-388: THE session workspace is the boundary for EVERY tool. Anything that

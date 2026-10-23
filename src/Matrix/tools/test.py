@@ -12,6 +12,7 @@ Scope is fixed to ``<repo>/tests`` — no argument can point elsewhere.
 
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -292,10 +293,13 @@ def run_battery(args, repo):
     if only:
         return _run_selected(only, repo, timeout_s)
 
-    env = _isolated_env(tempfile.mkdtemp(prefix="mtx-battery-"))
-    env["LONGRUN_BATTERY_FULL"] = "1" if args.get("full") else "0"
-
-    rc, out, duration_s, timed_out = _run(["bash", str(gate)], repo, env, timeout_s)
+    tmp = tempfile.mkdtemp(prefix="mtx-battery-")
+    try:
+        env = _isolated_env(tmp)
+        env["LONGRUN_BATTERY_FULL"] = "1" if args.get("full") else "0"
+        rc, out, duration_s, timed_out = _run(["bash", str(gate)], repo, env, timeout_s)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     passed, total, failures = _parse_gate(out)
 
     if timed_out:
@@ -361,8 +365,11 @@ def _run_selected(names, repo, timeout_s):
             failures.append({"test": name, "reason": "test not found under tests/"})
             continue
         tmp = tempfile.mkdtemp(prefix="mtx-one-")
-        env = _isolated_env(tmp)
-        rc, out, duration_s, timed_out = _run(["python3", str(path)], repo, env, timeout_s)
+        try:
+            env = _isolated_env(tmp)
+            rc, out, duration_s, timed_out = _run(["python3", str(path)], repo, env, timeout_s)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
         total_duration += duration_s
         entry = {"test": path.stem, "duration_s": duration_s, "returncode": rc}
         if timed_out:
@@ -420,8 +427,12 @@ def run_one(args, repo):
         }
 
     timeout_s = _timeout(args, DEFAULT_ONE_TIMEOUT)
-    env = _isolated_env(tempfile.mkdtemp(prefix="mtx-one-"))
-    rc, out, duration_s, timed_out = _run(["python3", str(path)], repo, env, timeout_s)
+    tmp = tempfile.mkdtemp(prefix="mtx-one-")
+    try:
+        env = _isolated_env(tmp)
+        rc, out, duration_s, timed_out = _run(["python3", str(path)], repo, env, timeout_s)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     if timed_out:
         return {

@@ -273,43 +273,16 @@ def _resolve_id_db(db, ref):
 # JAG-431r5: notebook='auto' routing — match a new source to an existing notebook
 # by FTS5 bm25 over the notebook's chunk corpus, or auto-create a new one when no
 # notebook is close enough. Stdlib only, no embeddings required.
-_AUTO_MATCH_THRESHOLD = float(os.environ.get("LONGRUN_AUTO_MATCH_BM25") or -3.5)
 _AUTO_PREVIEW_CHARS = int(os.environ.get("LONGRUN_AUTO_PREVIEW_CHARS") or 2400)
 _AUTO_NOTEBOOKS_IGNORED = {DEFAULT_ID}
-
-
-def _fts_query_for(text, max_terms=12):
-    """Build a safe FTS5 MATCH expression from arbitrary text.
-
-    Splits on non-alphanumerics, keeps 3+ char tokens, wraps each in double
-    quotes (FTS5 verbatim) and OR-joins them. The query is bounded so a
-    multi-megabyte preview does not explode the bm25 evaluation.
-    """
-    if not text:
-        return None
-    toks = re.findall(r"[A-Za-z0-9]{3,}", text)
-    if not toks:
-        return None
-    seen = set()
-    out = []
-    for t in toks:
-        if t in seen:
-            continue
-        seen.add(t)
-        out.append('"' + t.replace('"', '') + '"')
-        if len(out) >= max_terms:
-            break
-    return " OR ".join(out)
 
 
 def _route_notebook(db, preview_text, fallback_name):
     """Pick a notebook for a new source, or create one.
 
-    The decision is bm25-based: a query is run against every existing notebook
-    (excluding the default catch-all) and the best score is compared to
-    ``_AUTO_MATCH_THRESHOLD`` (the lower the bm25, the better the match). When no
-    notebook is close enough, a new notebook is created using ``fallback_name``
-    (truncated to 60 chars, slugified).
+    The decision is token-coverage based over existing notebooks (excluding the
+    default catch-all). When no notebook has >=50% coverage with a >=15% margin,
+    a new notebook is created using ``fallback_name`` (truncated to 60 chars).
 
     Returns ``(notebook_id, notebook_name, auto_created)``.
     """
@@ -324,7 +297,6 @@ def _route_notebook(db, preview_text, fallback_name):
         return _auto_create_notebook(db, fallback_name)
 
     placeholders = ",".join("?" for _ in _AUTO_NOTEBOOKS_IGNORED)
-    best_nb = None
     second_cov = 0.0
     best_cov = 0.0
     coverages = []
@@ -353,7 +325,7 @@ def _route_notebook(db, preview_text, fallback_name):
     # Match: best coverage >= 0.5 AND margin over the runner-up >= 0.15.
     # The margin prevents pages with lots of shared boilerplate from
     # auto-merging into the wrong notebook.
-    if best_nb is None and best_cov >= 0.5 and (best_cov - second_cov) >= 0.15:
+    if best_cov >= 0.5 and (best_cov - second_cov) >= 0.15:
         return bid, bname, False
     return _auto_create_notebook(db, fallback_name)
 

@@ -156,6 +156,35 @@ with open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="
 check("F3 the route runs the deterministic two-source refresh",
       "costs.refresh_prices()" in api)
 
+# --- G: Ponytail refactor contracts (fswrite, keys.read_secret, Matrix cost/grep) ---
+from longrun.util import fswrite  # noqa: E402
+from longrun.model import keys as _keys  # noqa: E402
+from Matrix.tools import cost as _mtx_cost, grep as _mtx_grep  # noqa: E402
+
+_txt_file = os.path.join(TMP, "atomic.txt")
+fswrite.write_text(_txt_file, "hello atomic")
+check("G1 fswrite.write_text writes atomically and leaves no .tmp behind",
+      open(_txt_file, encoding="utf-8").read() == "hello atomic"
+      and not [n for n in os.listdir(TMP) if n.endswith(".tmp")])
+check("G2 fswrite.safe_id and path_under work on edge cases",
+      fswrite.safe_id("../bad/id", "fb") == ".._bad_id"
+      and fswrite.path_under(_txt_file, TMP)
+      and not fswrite.path_under(REPO, TMP))
+
+os.environ["LONGRUN_TEST_SECRET_XYZ"] = "sec-val-123"
+check("G3 keys.read_secret resolves environment secrets",
+      _keys.read_secret("LONGRUN_TEST_SECRET_XYZ") == "sec-val-123")
+
+_c_res = _mtx_cost.execute({"session": "led"}, subtool="status")
+check("G4 Matrix cost.status returns real ledger aggregates",
+      bool(_c_res.get("ok")) and _c_res.get("calls") == 2
+      and abs(_c_res.get("total_usd", 0) - 1.3) < 1e-6, str(_c_res))
+
+_g_res = _mtx_grep.execute({"pattern": "hello atomic", "path": TMP, "workspace": TMP}, subtool="search")
+check("G5 Matrix grep.search finds regex matches in workspace files",
+      bool(_g_res.get("ok")) and _g_res.get("count") == 1
+      and _g_res["matches"][0]["line"] == 1, str(_g_res))
+
 print("---")
 ok = sum(results)
 print("v527: %d/%d PASS" % (ok, len(results)))

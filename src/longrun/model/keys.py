@@ -94,6 +94,44 @@ def set_key(name, value):
     return out
 
 
+def read_secret(name):
+    """Return the secret value for ``name`` from os.environ, repo .env, or ~/.hermes/.env."""
+    name = (name or "").strip()
+    if not name:
+        return ""
+    val = os.environ.get(name)
+    if val and val.strip():
+        return val.strip()
+    try:
+        from longrun.model import providers
+        providers.load_env()
+        val = os.environ.get(name)
+        if val and val.strip():
+            return val.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    for path in (ENV_FILE, os.path.expanduser("~/.hermes/.env")):
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for ln in f:
+                    ln = ln.strip()
+                    if not ln or ln.startswith("#"):
+                        continue
+                    if ln.startswith("export "):
+                        ln = ln[7:].strip()
+                    if "=" in ln:
+                        k, v = ln.split("=", 1)
+                        if k.strip() == name:
+                            v = v.strip().strip('"').strip("'")
+                            if v:
+                                return v
+        except Exception:  # noqa: BLE001
+            continue
+    return ""
+
+
 def reveal_key(name):
     """POST /api/keys/reveal — return ONE stored value, on demand.
 
@@ -105,18 +143,7 @@ def reveal_key(name):
     name = (name or "").strip()
     if not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
         return {"error": "invalid variable name"}
-    val = os.environ.get(name)
-    if not val and os.path.isfile(ENV_FILE):
-        prefix = name + "="
-        try:
-            with open(ENV_FILE, encoding="utf-8") as f:
-                for ln in f:
-                    ln = ln.rstrip("\n")
-                    if ln.startswith(prefix):
-                        val = ln[len(prefix):]
-                        break
-        except Exception as e:  # noqa: BLE001
-            return {"error": str(e)}
+    val = read_secret(name)
     return {"name": name, "value": val or "", "set": bool(val)}
 
 

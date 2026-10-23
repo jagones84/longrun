@@ -103,32 +103,10 @@ def _extract_json_obj(text):
     """Best-effort: the first balanced {...} object in `text`, or None."""
     if not text:
         return None
-    start = text.find("{")
-    if start < 0:
-        return None
-    depth, in_str, esc = 0, False, False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                try:
-                    obj = json.loads(text[start:i + 1])
-                except ValueError:
-                    return None
-                return obj if isinstance(obj, dict) else None
+    from longrun.util.textkit import _iter_json_objects as _scan
+    for obj in _scan(text):
+        if isinstance(obj, dict):
+            return obj
     return None
 
 

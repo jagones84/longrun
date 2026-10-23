@@ -37,6 +37,10 @@ PRUNE_BATCH = 50000
 _EVENTS_DDL = """CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL)"""
+_EVENTS_IDX_DDL = (
+    "CREATE INDEX IF NOT EXISTS idx_events_kind_id ON events(kind, id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)",
+)
 _RUNS_DDL = """CREATE TABLE IF NOT EXISTS runs (
             id TEXT PRIMARY KEY, kind TEXT NOT NULL, goal TEXT,
             model TEXT, ts REAL NOT NULL, tokens_in INTEGER DEFAULT 0,
@@ -68,6 +72,8 @@ def _connect_events():
         pass
     try:
         conn.execute(_EVENTS_DDL)
+        for idx_sql in _EVENTS_IDX_DDL:
+            conn.execute(idx_sql)
         conn.execute(_RUNS_DDL)
         conn.commit()
     except sqlite3.DatabaseError:
@@ -285,8 +291,9 @@ def turn_begin(sid):
     never un-marked by an older one finishing late.
     """
     tok = object()
+    ev0 = feed_seq()
     with _ACTIVE_CHAT_LOCK:
-        _ACTIVE_CHAT[sid] = {"ev0": _feed_seq, "ts": time.time(), "tok": tok}
+        _ACTIVE_CHAT[sid] = {"ev0": ev0, "ts": time.time(), "tok": tok}
     publish("chat.run", session=sid)
     return tok
 

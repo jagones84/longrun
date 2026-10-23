@@ -80,11 +80,8 @@ def write(session_id, text):
                 pass
             _announce(session_id, "cleared")
             return {"ok": True, "session": session_id, "cleared": True, "path": p}
-        os.makedirs(roles_dir(), exist_ok=True)
-        tmp = "%s.%s.tmp" % (p, os.getpid())
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, p)
+        from longrun.util.fswrite import write_text
+        write_text(p, text)
         _announce(session_id, "saved")
         return {"ok": True, "session": session_id, "path": p,
                 "bytes": len(text.encode("utf-8"))}

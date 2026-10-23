@@ -272,10 +272,21 @@ class Shell:
         return "\n".join(rows[-n:]) if n > 0 else "\n".join(rows)
 
     def kill(self):
+        for pipe in (self.proc.stdin, self.proc.stdout):
+            if pipe:
+                try:
+                    pipe.close()
+                except Exception:  # noqa: BLE001
+                    pass
         try:
             self.proc.terminate()
+            self.proc.wait(timeout=1.5)
         except Exception:  # noqa: BLE001
-            pass
+            try:
+                self.proc.kill()
+                self.proc.wait(timeout=0.5)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 _SHELLS = {}

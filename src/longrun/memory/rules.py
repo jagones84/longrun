@@ -350,20 +350,15 @@ def rules_prompt_block(max_bytes=None, ws=None):
 
 def save(scope, content, ws=None):
     """Write the global or project rules file atomically. scope in {global,project}."""
+    from longrun.util.fswrite import write_text
     if scope == "global":
         path = global_rules_path()
     elif scope == "project":
         path = project_rules_path(ws or get_workspace())
     else:
         return {"ok": False, "error": "scope must be 'global' or 'project'"}
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        # JAG-251: `content` is wire data; a non-string (int/dict) crashed `write`.
-        f.write(content if isinstance(content, str)
-                else ("" if content is None else str(content)))
-    os.replace(tmp, path)
     text = content if isinstance(content, str) else ("" if content is None else str(content))
+    write_text(path, text)
     return {"ok": True, "scope": scope, "path": path, "chars": len(text)}
 
 

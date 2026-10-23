@@ -2883,11 +2883,12 @@ def workspace_set(body):
         return {"ok": False, "error": "no such folder: %s" % (asked or "(empty)")}
     sid = body.get("session")
     if sid:
-        sess = _srv().load_session(sid)
-        if not sess:
-            return {"ok": False, "error": "no such session: %s" % sid}
-        sess["workspace"] = real
-        _srv().save_session(sess)
+        with _srv()._turn_lock(sid):
+            sess = _srv().load_session(sid)
+            if not sess:
+                return {"ok": False, "error": "no such session: %s" % sid}
+            sess["workspace"] = real
+            _srv().save_session(sess)
         try:
             _RULES.remember_workspace(real)  # JAG-126: next new session defaults here
         except Exception:  # noqa: BLE001 — convenience only

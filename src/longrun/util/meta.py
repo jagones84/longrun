@@ -309,6 +309,8 @@ def meta_run(candidates=None, eval_task_id=None):
         }
 
         _history.extend(results)
+        if len(_history) > 500:
+            del _history[:-500]
         _frontier = frontier
 
         # Save to file

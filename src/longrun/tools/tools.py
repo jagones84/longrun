@@ -578,11 +578,7 @@ def _browser(args, run_id):
     if err:
         return {"ok": False, "error": err, "backend": "host(browser)", "sandboxed": False}
     html = data["body"]
-    html = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
-    text = re.sub(r"(?s)<[^>]+>", " ", html)
-    text = re.sub(r"&nbsp;?", " ", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*\n+", "\n", text).strip()
+    text = _strip_html(html)
     return {"ok": True, "exit_code": 0, "stdout": _truncate(text, 8192), "stderr": "",
             "status": data["status"], "bytes": len(html), "backend": "host(browser)",
             "sandboxed": False, "note": "lightweight HTML->text extractor, not a headless browser"}
@@ -595,21 +591,9 @@ _HERMES_ENV = os.path.expanduser("~/.hermes/.env")
 
 
 def _secret(name):
-    """Env var, falling back to ~/.hermes/.env (the DGX's shared secret store)."""
-    val = os.environ.get(name)
-    if val and val.strip():
-        return val.strip()
-    try:
-        with open(_HERMES_ENV, "r", encoding="utf-8", errors="replace") as f:
-            for ln in f:
-                m = re.match(r"\s*(?:export\s+)?%s\s*=\s*(.*)$" % re.escape(name), ln)
-                if m:
-                    v = m.group(1).strip().strip('"').strip("'")
-                    if v:
-                        return v
-    except OSError:
-        pass
-    return None
+    """Env var, falling back to repo .env and ~/.hermes/.env."""
+    from longrun.model import keys as _keys
+    return _keys.read_secret(name) or None
 
 
 def _strip_html(s):
@@ -916,27 +900,6 @@ def _self(args, run_id):
                      "clients live in the gitignored config/mcp_clients.local.json"),
         }
     except Exception:  # noqa: BLE001 — the self report must never fail on MCP
-        pass
-    # JAG-462: report the EFFECTIVE external MCP surface. Without this, a model asked
-    # "what MCP do I have?" read the TRACKED `config/mcp_clients.yaml` (which ships
-    # `clients: {}` as an example) and wrongly answered "no external MCP servers are
-    # active" while the gateway was connected with 26 tools.
-    try:
-        from longrun.interop import mcp_client as _mc
-        _doc = _mc.load_doc() or {}
-        _clients = sorted((_doc.get("clients") or {}).keys())
-        try:
-            _tools = sorted(t.get("name") for t in (_mc.list_tools() or []) if t.get("name"))
-        except Exception:  # noqa: BLE001
-            _tools = []
-        info["mcp"] = {
-            "clients": _clients,
-            "tools_count": len(_tools),
-            "tools_available": _tools[:40],
-            "note": ("the tracked config/mcp_clients.yaml holds EXAMPLES; the real "
-                     "clients live in the gitignored config/mcp_clients.local.json"),
-        }
-    except Exception:  # noqa: BLE001 - the self report must never fail on MCP
         pass
     try:
         from longrun.memory import skills as skills_mod
@@ -1276,13 +1239,10 @@ def _improve(args, run_id=None):
         # the harness proposals root — otherwise a hostile path could promote
         # arbitrary directories. Defence in depth: realpath + startswith check.
         proposals_root = os.path.realpath(out)
+        from longrun.util.fswrite import path_under
 
         def _inside_proposals(p):
-            try:
-                rp = os.path.realpath(p)
-                return rp == proposals_root or rp.startswith(proposals_root + os.sep)
-            except Exception:
-                return False
+            return path_under(p, proposals_root)
 
         if action == "verify":
             if not path:

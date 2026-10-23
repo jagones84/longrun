@@ -60,17 +60,13 @@ RETENTION_DAYS = 30
 
 _lock = threading.RLock()
 _prices = None
+_prices_idx = None
 _price_stamp = None
 
 
 def _sources_stamp():
-    """mtime+size of the three price sources (JAG-527: hot reload).
-
-    The table used to be cached for the life of the PROCESS, so a refreshed (or
-    hand-edited) `config/prices.yaml` was invisible until a restart. Stamping the
-    files makes every `price_for()` see a new table within one call.
-    """
-    out = []
+    """mtime+size of the three price sources + LONGRUN_PRICES env (JAG-527: hot reload)."""
+    out = [os.environ.get("LONGRUN_PRICES")]
     for p in (_CACHE_JSON, _PRICES_JSON, _PRICES_YAML):
         try:
             st = os.stat(p)
@@ -126,8 +122,17 @@ def _rates(v):
     return None
 
 
+def _build_price_index(table):
+    idx = {}
+    for k, v in (table or {}).items():
+        s = str(k)
+        for key in (s, s.split("/")[-1], s.split(":")[-1]):
+            idx[key.lower()] = v
+    return idx
+
+
 def _prices_table():
-    global _prices, _price_stamp
+    global _prices, _prices_idx, _price_stamp
     with _lock:
         cur = _sources_stamp()
         if _prices is not None and cur == _price_stamp:
@@ -146,6 +151,7 @@ def _prices_table():
             except ValueError:
                 pass
         _prices = table
+        _prices_idx = _build_price_index(table)
         _price_stamp = cur
         return table
 
@@ -163,11 +169,10 @@ def _lookup_raw(table, model):
     """
     if not model:
         return None
-    idx = {}
-    for k, v in table.items():
-        s = str(k)
-        for key in (s, s.split("/")[-1], s.split(":")[-1]):
-            idx[key.lower()] = v
+    if table is _prices and _prices_idx is not None:
+        idx = _prices_idx
+    else:
+        idx = _build_price_index(table)
     m = str(model)
     for key in (m, m.split("/")[-1], m.split(":")[-1]):
         v = idx.get(key.lower())
@@ -302,9 +307,8 @@ def cost_from_rates(rates, prompt, completion, cached, cached_write=None):
 
 
 def _path(session):
-    safe = "".join(c if c.isalnum() or c in "._-" else "_"
-                   for c in str(session or "unknown"))[:96]
-    return os.path.join(COSTS_DIR, safe + ".json")
+    from longrun.util.fswrite import safe_id
+    return os.path.join(COSTS_DIR, safe_id(session) + ".json")
 
 
 def _load(session):
@@ -519,10 +523,8 @@ def _write_prices_yaml(table, source, checked_at):
             if r[fld] is not None:
                 lines.append("  %s: %s" % (fld, _num(r[fld])))
         lines.append("")
-    tmp = _PRICES_YAML + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines).rstrip() + "\n")
-    os.replace(tmp, _PRICES_YAML)
+    from longrun.util.fswrite import write_text
+    write_text(_PRICES_YAML, "\n".join(lines).rstrip() + "\n")
 
 
 def refresh_deepseek_prices(url=None, timeout=15):

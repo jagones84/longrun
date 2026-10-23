@@ -8,16 +8,18 @@ import json
 import os
 import time
 
+import threading
+
 from longrun.util import paths
-from longrun.util.fswrite import write_json
+from longrun.util.fswrite import safe_id, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 RUNS_DIR = os.environ.get("LONGRUN_RUNS_DIR", os.path.join(paths.DATA_DIR, "runs"))
 _START = {}
+_LOCK = threading.Lock()
 
 
 def _path(key):
-    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in str(key))[:96]
-    return os.path.join(RUNS_DIR, safe + ".json")
+    return os.path.join(RUNS_DIR, safe_id(key) + ".json")
 
 
 def start(key, model=None):
@@ -25,7 +27,10 @@ def start(key, model=None):
            "ended": None, "duration_s": None, "iterations": 0, "steps": 0,
            "tokens": 0, "outcome": "running", "stop_reason": None,
            "difficulty": None}
-    _START[key] = rec["started"]
+    with _LOCK:
+        if len(_START) > 512:
+            _START.pop(next(iter(_START)), None)
+        _START[key] = rec["started"]
     _write(key, rec)
     return rec
 
@@ -45,7 +50,8 @@ def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=
         rec["model"] = model
     if difficulty is not None:
         rec["difficulty"] = difficulty
-    started = _START.get(key) or rec.get("started") or now
+    with _LOCK:
+        started = _START.pop(key, None) or rec.get("started") or now
     rec["duration_s"] = round(now - float(started), 1)
     _write(key, rec)
     return rec

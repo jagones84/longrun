@@ -78,12 +78,9 @@ def core_read():
 
 def core_write(content):
     """Replace the CORE memory block (capped at CORE_MAX chars). Returns {ok, chars}."""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    from longrun.util.fswrite import write_text
     text = str(content or "")[:CORE_MAX]
-    tmp = CORE_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, CORE_PATH)
+    write_text(CORE_PATH, text)
     return {"ok": True, "chars": len(text)}
 
 
@@ -542,11 +539,8 @@ def invalidate(target, reason=""):
 
 def _rewrite_records(path, recs):
     """Atomically replace an append-only file with `recs` (used by forget)."""
-    tmp = "%s.%s.tmp" % (path, os.getpid())
-    with open(tmp, "w", encoding="utf-8") as f:
-        for r in recs:
-            f.write(_render_md(r) + "\n")
-    os.replace(tmp, path)
+    from longrun.util.fswrite import write_text
+    write_text(path, "".join(_render_md(r) + "\n" for r in recs))
 
 
 def forget(target):

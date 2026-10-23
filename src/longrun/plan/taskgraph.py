@@ -76,8 +76,7 @@ def _publish(kind, **data):
 
 # ------------------------------------------------------------------ storage --
 
-def _safe_id(key):
-    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(key or "unknown"))[:96]
+from longrun.util.fswrite import safe_id as _safe_id
 
 
 def _path(key):
@@ -715,31 +714,8 @@ def finalize(graph, evidence, only_open=True):
 
 def _iter_json_objects(text):
     """All balanced top-level `{...}` objects in `text` (order preserved)."""
-    objs, depth, start, in_str, esc = [], 0, None, False, False
-    for i, ch in enumerate(text):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start is not None:
-                    try:
-                        objs.append(json.loads(text[start:i + 1]))
-                    except Exception:  # noqa: BLE001
-                        pass
-    return objs
+    from longrun.util.textkit import _iter_json_objects as _scan
+    return [o for o in _scan(text or "") if isinstance(o, dict)]
 
 
 def parse_todos(text):
