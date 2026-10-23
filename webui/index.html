@@ -356,6 +356,13 @@
     text-transform: none; letter-spacing: 0; }
   .sgroup-b { padding-left: 5px; margin-left: 4px; border-left: 2px solid var(--tcol, var(--line)); }
   .sgroup.collapsed .sgroup-b { display: none; }
+  .sess .t, .sgroup-h .gname { cursor: grab; }
+  .sess.dragging .t, .sgroup.dragging .gname { cursor: grabbing; user-select: none; }
+  .sess.drop-before { box-shadow: inset 0 2px var(--acc); }
+  .sess.drop-after { box-shadow: inset 0 -2px var(--acc); }
+  .sgroup.drop-before > .sgroup-h { box-shadow: inset 0 2px var(--acc); }
+  .sgroup.drop-after > .sgroup-h { box-shadow: inset 0 -2px var(--acc); }
+  .sess.dragging, .sgroup.dragging { opacity: .45; }
   /* JAG-2.1: collapse / expand ALL groups in the session rail header. */
   .srail-tools { margin-left: auto; display: inline-flex; gap: 4px; }
   .srail-tools button { background: transparent; border: 1px solid var(--line); color: var(--dim);
@@ -956,11 +963,17 @@
      drawer never actually slid in on screen. */
   @media (max-width: 900px) {
     [data-col="sessions"] { display: none; }
-    body.show-left #aside { display: flex !important; position: fixed; left: 0; right: auto; top: 44px; bottom: var(--sf-bottombar, 0px); width: var(--drawer-w-left, 260px) !important; transform: none; z-index: 15; box-shadow: 12px 0 30px rgba(0,0,0,.5); }
+    body.show-left #aside { display: flex !important; position: fixed; left: 0; right: 0; top: 44px; bottom: var(--sf-bottombar, 0px); width: calc(100vw / var(--zoom, 1)) !important; max-width: calc(100vw / var(--zoom, 1)); transform: none; z-index: 15; box-shadow: 12px 0 30px rgba(0,0,0,.5); }
     /* JAG-368: the left DRAWER gets a draggable grip on its inner (right) edge. */
     body.show-left #resize-left { display: block !important; position: fixed; top: 44px; bottom: var(--sf-bottombar, 0px);
       width: 16px; z-index: 16; background: transparent; touch-action: none; }
     body.show-left #resize-left.active { background: var(--accent); }
+    body.show-left #resize-left { display: none !important; }
+    body.show-right [data-col="context"] { left: 0; right: 0;
+      width: calc(100vw / var(--zoom, 1)) !important;
+      max-width: calc(100vw / var(--zoom, 1)); border: 0; }
+    body.show-right #toolsBar { display: none !important; }
+    body.show-right #resize-right { display: none !important; }
   }
   /* JAG-124: workspace file tree + editor */
   .ftrow { cursor: pointer; padding: 3px 6px; border-radius: 6px; font-size: 12px;
@@ -1714,16 +1727,20 @@
         </div>
       </section>
       <section data-insp="cost" class="insp-open">
-        <button class="insp-hd" data-call="toggleInsp" data-args='["cost"]'>Cost<span class="ihd-s" id="sCost"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["cost"]'
+                title="Provider-reported charges are exact when supplied; otherwise cost is estimated from token usage and configured rates. Cache rates apply when reported. Unpriced calls are excluded; vendor-specific storage, tiers, and extra fees may not be represented.">Cost (estimate)<span class="ihd-s" id="sCost"></span></button>
         <div class="insp-body">
         <div class="card">
           <div class="costhead">
             <span id="costTotal" class="costtot">–</span>
             <span id="costSub" class="remaining"></span>
           </div>
-          <div class="ctxrow"><span id="costCalls">–</span><span id="costIn">–</span><span id="costOut">–</span></div>
+          <div class="ctxrow">
+            <span id="costCalls">–</span><span id="costIn">–</span>
+            <span id="costOut">–</span><span id="costCached" title="cached prompt input tokens">–</span>
+          </div>
           <div class="u-df u-g6 u-aic u-mt6">
-            <button class="ghost" id="costRefresh" title="re-read both price sources now: OpenRouter's public model list AND DeepSeek's official table (config/prices.yaml). Applies from now on — past calls keep the price they were charged at.">↻ refresh prices</button>
+            <button class="ghost" id="costRefresh" title="Refresh the OpenRouter catalog and DeepSeek's official table. Other direct-provider rates are manually verified in config/prices.yaml. New prices apply to future calls only.">↻ refresh prices</button>
             <button class="ghost" data-call="resetCosts" title="POST /api/costs/reset — clear THIS session's ledger (the calls stay spent)">⟲ reset ledger</button>
           </div>
         </div>
@@ -4485,6 +4502,248 @@ function selectSession(s) {
 }
 let _agents = {};   // JAG-287: session id -> org-agent record (empty if none)
 let _teamsById = {};   // JAG-339: team id -> team record (symbol/name/colour)
+let _sidebarOrder = { revision: 0, teams: [], sessions: {} };
+let _teamOrderBase = [];
+let _sessionOrderBase = {};
+let _sidebarOrderSaving = false;
+let _sidebarDrag = null;
+async function loadSidebarOrder() {
+  try {
+    const d = await api("GET", "/api/sidebar/order");
+    if (d && !d.error && Number.isInteger(d.revision)
+        && Array.isArray(d.teams) && d.sessions && typeof d.sessions === "object"
+        && d.revision >= _sidebarOrder.revision) {
+      _sidebarOrder = { revision: d.revision, teams: d.teams, sessions: d.sessions };
+    }
+  } catch (e) {}
+  return _sidebarOrder;
+}
+function _sidebarOrdered(items, ids, getId, fallback, systemFirst) {
+  const rank = new Map((ids || []).map((id, i) => [id, i]));
+  const original = new Map(items.map((item, i) => [getId(item), i]));
+  return items.slice().sort((a, b) => {
+    if (systemFirst) {
+      const sys = (_isSystemSess(a) ? 0 : 1) - (_isSystemSess(b) ? 0 : 1);
+      if (sys) return sys;
+    }
+    const ai = getId(a), bi = getId(b);
+    const ar = rank.has(ai) ? rank.get(ai) : Number.POSITIVE_INFINITY;
+    const br = rank.has(bi) ? rank.get(bi) : Number.POSITIVE_INFINITY;
+    if (ar !== br) return ar - br;
+    return (fallback ? fallback(a, b) : 0) || (original.get(ai) - original.get(bi));
+  });
+}
+function _moveSidebarItem(ids, id, targetId, after) {
+  const next = (ids || []).filter(x => x !== id);
+  if (targetId === id) return (ids || []).slice();
+  if (targetId && next.includes(targetId)) {
+    const at = next.indexOf(targetId) + (after ? 1 : 0);
+    next.splice(at, 0, id);
+  } else next.push(id);
+  return next;
+}
+function _announceSidebarOrder(text) {
+  let live = $("sidebarOrderLive");
+  if (!live) {
+    live = document.createElement("div");
+    live.id = "sidebarOrderLive";
+    live.className = "sr";
+    live.setAttribute("aria-live", "polite");
+    document.body.appendChild(live);
+  }
+  live.textContent = text;
+}
+async function _persistSidebarOrder(kind, group, ids) {
+  if (_sidebarOrderSaving) return false;
+  _sidebarOrderSaving = true;
+  const body = { kind, ids, revision: _sidebarOrder.revision };
+  if (kind === "session") body.group = group;
+  try {
+    const d = await api("PATCH", "/api/sidebar/order", body);
+    if (d && d.order) {
+      _sidebarOrder = d.order;
+      await loadSessions();
+      _announceSidebarOrder("Sidebar order changed on another device; latest order restored.");
+      return false;
+    }
+    if (!d || d.error) {
+      _announceSidebarOrder("Could not save sidebar order.");
+      toast("Could not save sidebar order: " + ((d && d.error) || "unknown error"), "error");
+      return false;
+    }
+    _sidebarOrder = { revision: d.revision, teams: d.teams, sessions: d.sessions };
+    await loadSessions();
+    _announceSidebarOrder("Sidebar order saved and synchronized.");
+    return true;
+  } catch (e) {
+    await loadSidebarOrder();
+    await loadSessions();
+    _announceSidebarOrder("Sidebar order could not be saved; showing server order.");
+    toast("Could not save sidebar order.", "error");
+    return false;
+  } finally {
+    _sidebarOrderSaving = false;
+  }
+}
+function _clearSidebarDropMarks() {
+  document.querySelectorAll(".drop-before, .drop-after").forEach(el => {
+    el.classList.remove("drop-before", "drop-after");
+  });
+}
+function _sidebarSetDropTarget(state, under, clientY) {
+  _clearSidebarDropMarks();
+  const selector = state.kind === "team"
+    ? ".sgroup[data-team-order-id]"
+    : ".sess[data-session-order-id]";
+  const target = under && under.closest(selector);
+  state.valid = false;
+  state.targetId = null;
+  state.dropTarget = null;
+  state.after = false;
+  if (target && state.container.contains(target)
+      && (state.kind === "team" || target.dataset.groupKey === state.group)) {
+    state.valid = true;
+    state.dropTarget = target;
+    state.targetId = state.kind === "team"
+      ? target.dataset.teamOrderId : target.dataset.sessionOrderId;
+    const r = target.getBoundingClientRect();
+    state.after = clientY >= r.top + r.height / 2;
+    target.classList.add(state.after ? "drop-after" : "drop-before");
+  } else if (under && state.container.contains(under)) {
+    const region = state.kind === "session"
+      ? under.closest(".sgroup-b") : under.closest(".sgroup");
+    const sameRegion = state.kind === "session"
+      ? ((region && region.dataset.groupKey === state.group)
+         || (!region && state.container.dataset.flatOrderGroup === state.group))
+      : !region;
+    if (sameRegion) state.valid = true;
+  }
+  return state.valid;
+}
+const TOUCH_DRAG_HOLD_MS = 420;
+let _sidebarSuppressedClick = null;
+function _sidebarDragItem(kind, node) {
+  if (!node || !node.closest) return null;
+  return node.closest(kind === "team" ? ".sgroup[data-team-order-id]" : ".sess");
+}
+function _consumeSidebarDragClick(e, source) {
+  const pending = _sidebarSuppressedClick;
+  if (!pending) return false;
+  if (Date.now() > pending.until) {
+    _sidebarSuppressedClick = null;
+    return false;
+  }
+  const item = _sidebarDragItem(pending.kind, source);
+  if (!item || !pending.items.includes(item)) return false;
+  _sidebarSuppressedClick = null;
+  e.preventDefault();
+  e.stopPropagation();
+  return true;
+}
+function _sidebarMoveDrag(state, x, y) {
+  if (!state.active && Math.hypot(x - state.startX, y - state.startY) < 6) return;
+  state.active = true;
+  state.suppressClick = true;
+  state.source.classList.add("dragging");
+  const rail = $("sessions"), rr = rail && rail.getBoundingClientRect();
+  if (rr && y < rr.top + 28) rail.scrollTop -= 12;
+  else if (rr && y > rr.bottom - 28) rail.scrollTop += 12;
+  _sidebarSetDropTarget(state, document.elementFromPoint(x, y), y);
+}
+function _clearSidebarDragState(state) {
+  if (state.holdTimer) clearTimeout(state.holdTimer);
+  if (state.cleanup) state.cleanup();
+  _clearSidebarDropMarks();
+  if (state.source) state.source.classList.remove("dragging");
+  if (_sidebarDrag === state) _sidebarDrag = null;
+}
+function _finishSidebarDrag(state) {
+  if (_sidebarDrag !== state) return;
+  _clearSidebarDragState(state);
+  if (state.suppressClick) {
+    const items = [state.source, _sidebarDragItem(state.kind, state.dropTarget)]
+      .filter((item, i, all) => item && all.indexOf(item) === i);
+    _sidebarSuppressedClick = { kind: state.kind, items, until: Date.now() + 700 };
+  }
+  if (!state.active || !state.valid) return;
+  const base = state.kind === "team"
+    ? _teamOrderBase : (_sessionOrderBase[state.group] || []);
+  const next = _moveSidebarItem(base, state.id, state.targetId, state.after);
+  if (next.some((x, i) => x !== base[i])) {
+    _persistSidebarOrder(state.kind, state.group, next);
+  }
+}
+function _cancelSidebarDrag(state) {
+  if (_sidebarDrag !== state) return;
+  _clearSidebarDragState(state);
+}
+function _bindSidebarDrag(label, kind, id, group, container) {
+  const source = kind === "team"
+    ? label.closest(".sgroup[data-team-order-id]")
+    : label.closest(".sess[data-session-order-id]");
+  const begin = (pointerId, pointerType, x, y) => {
+    if (_sidebarOrderSaving || _sidebarDrag || !source) return null;
+    const state = { kind, id, group, container, source, label, pointerId, pointerType,
+      startX: x, startY: y, active: false, armed: pointerType !== "touch",
+      suppressClick: false, valid: false, targetId: null, dropTarget: null, after: false };
+    _sidebarDrag = state;
+    state.holdTimer = setTimeout(() => {
+      if (_sidebarDrag !== state) return;
+      state.suppressClick = true;
+      if (pointerType === "touch") state.armed = true;
+    }, TOUCH_DRAG_HOLD_MS);
+    return state;
+  };
+  label.onpointerdown = e => {
+    if (e.pointerType === "touch" || e.button !== 0) return;
+    const state = begin(e.pointerId, e.pointerType, e.clientX, e.clientY);
+    if (!state) return;
+    try { label.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = ev => {
+      if (_sidebarDrag !== state || !state.armed) return;
+      _sidebarMoveDrag(state, ev.clientX, ev.clientY);
+    };
+    const finish = () => _finishSidebarDrag(state);
+    const cancel = () => _cancelSidebarDrag(state);
+    label.addEventListener("pointermove", move);
+    label.addEventListener("pointerup", finish);
+    label.addEventListener("pointercancel", cancel);
+    state.cleanup = () => {
+      label.removeEventListener("pointermove", move);
+      label.removeEventListener("pointerup", finish);
+      label.removeEventListener("pointercancel", cancel);
+    };
+  };
+  label.addEventListener("touchstart", e => {
+    if (e.changedTouches.length !== 1) return;
+    const touch = e.changedTouches[0];
+    const state = begin(touch.identifier, "touch", touch.clientX, touch.clientY);
+    if (!state) return;
+    const touchById = list => Array.from(list || []).find(t => t.identifier === state.pointerId);
+    const move = ev => {
+      const current = touchById(ev.touches) || touchById(ev.changedTouches);
+      if (!current || _sidebarDrag !== state) return;
+      if (!state.armed) {
+        if (Math.hypot(current.clientX - state.startX, current.clientY - state.startY) >= 8) {
+          _cancelSidebarDrag(state);
+        }
+        return;
+      }
+      ev.preventDefault();
+      _sidebarMoveDrag(state, current.clientX, current.clientY);
+    };
+    const finish = () => _finishSidebarDrag(state);
+    const cancel = () => _cancelSidebarDrag(state);
+    document.addEventListener("touchmove", move, { passive: false });
+    document.addEventListener("touchend", finish, true);
+    document.addEventListener("touchcancel", cancel, true);
+    state.cleanup = () => {
+      document.removeEventListener("touchmove", move);
+      document.removeEventListener("touchend", finish, true);
+      document.removeEventListener("touchcancel", cancel, true);
+    };
+  }, { passive: true });
+}
 /* JAG-290: the badge and the todo prefix must show the AGENT id (e.g. A3), not the
    session's internal sequence number. For a designated org agent we use its real
    id; other sessions fall back to their sequence number so every row still has one. */
@@ -4650,10 +4909,12 @@ function _repaintCtx() {
   if (ring) ring.style.strokeDashoffset = String(100 - Math.max(0, Math.min(100, _ctxPct || 0)));
 }
 /* One rail row for a session. Called once PER GROUP the session belongs to. */
-function _sessRowEl(s, pinnedIds, ag) {
+function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   const d = document.createElement("div");
   d.className = "sess" + (pinnedIds.includes(s.id) ? " pinned" : "") + (s.id === sessionId ? " active" : "") + (runningSessions[s.id] ? " running" : "") + (doneSessions[s.id] && s.id !== sessionId ? " done" : "");
   d.dataset.sid = s.id;   // JAG-168: lets setRunning() toggle the busy marker (ALL copies)
+  d.dataset.sessionOrderId = s.id;
+  d.dataset.groupKey = groupKey || "__none__";
   const age = s.age ? (" · " + s.age) : "";
   const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
   const _anum = _agentNum(s);
@@ -4668,7 +4929,12 @@ function _sessRowEl(s, pinnedIds, ag) {
   // JAG-424g: the ctx ring sits on LINE 1 of the active row (before the full-width
   // title, which always wraps to its own line) so it never lands under the title text.
   d.innerHTML = `${pin}${agtag}${jid}${tchips}${roleBadge}<span class="n">${s.messages} msg${age}</span><span class="menu-btn" title="session actions">⋮</span>${_ctxRingHtml(s)}<span class="t">${esc(s.title || s.id)}</span>`;
+  if (!_isSystemSess(s)) {
+    _bindSidebarDrag(d.querySelector(".t"), "session", s.id,
+      d.dataset.groupKey, orderContainer || d.parentElement);
+  }
   d.onclick = e => {
+    if (_consumeSidebarDragClick(e, d)) return;
     if (e.target.classList.contains("menu-btn")) { openSessMenu(d, s, ag); return; }
     if (e.target.closest && e.target.closest(".sess-menu")) return;
     selectSession(s);
@@ -4717,7 +4983,11 @@ function sessionErrorCard(error) {
 async function loadSessions() {
   let out;
   try {
-    [out] = await Promise.all([api("GET", "/api/sessions"), loadAgents().catch(() => {})]);
+    [out] = await Promise.all([
+      api("GET", "/api/sessions"),
+      loadAgents().catch(() => {}),
+      loadSidebarOrder()
+    ]);
   } catch (e) {
     sessionErrorCard(e);
     return;
@@ -4769,8 +5039,9 @@ async function loadSessions() {
     && ((s.title || s.id || "").toLowerCase().includes(q)));
   const isPinned = id => pinnedIds.includes(id);
   visible.sort((a, b) => (pinnedIds.includes(b.id) ? 1 : 0) - (pinnedIds.includes(a.id) ? 1 : 0));
+  const visibleIds = new Set(visible.map(s => s.id));
+  const onlyVisible = list => list.filter(s => visibleIds.has(s.id));
   const teamsOf = s => { const ag = _agents[s.id]; return ag ? (ag.teams || []).filter(t => _teamsById[t]) : []; };
-  const teams = Object.values(_teamsById).sort((a, b) => (a.n || 0) - (b.n || 0));
   // JAG-415: within a group, orchestrators (org agents) come FIRST, in ORG-tree
   // order — a depth-first walk of reports_to, never "last used".
   const orgRank = _orgRankMap();
@@ -4784,13 +5055,29 @@ async function loadSessions() {
   // JAG-535: the permanent system session sorts ABOVE everything — before any other
   // pinned row, and in the flat (no-team) list too.
   const _sysFirst = (a, b) => (_isSystemSess(a) ? 0 : 1) - (_isSystemSess(b) ? 0 : 1) || _ord(a, b);
+  const teams = _sidebarOrdered(
+    Object.values(_teamsById).sort((a, b) => (a.n || 0) - (b.n || 0)),
+    _sidebarOrder.teams, t => t.id);
+  _teamOrderBase = teams.map(t => t.id);
+  _sessionOrderBase = {};
 
   // No teams configured -> keep the flat, header-less list (backward compatible).
   _ctxRingPlaced = false;   // JAG-424g: one ctx ring per render, on the active row
   if (!teams.length) {
     _lastGroupKeys = [];
-    visible.slice().sort(_sysFirst).forEach(s => box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
+    box.dataset.flatOrderGroup = "__none__";
+    const defaultFlat = _all.slice().sort((a, b) =>
+      (isPinned(b.id) ? 1 : 0) - (isPinned(a.id) ? 1 : 0) || _sysFirst(a, b));
+    const flatAll = _sidebarOrdered(defaultFlat, _sidebarOrder.sessions.__none__,
+      s => s.id, _sysFirst, true);
+    _sessionOrderBase.__none__ = flatAll.map(s => s.id);
+    const flat = _sidebarOrdered(visible.slice().sort(_sysFirst),
+      _sidebarOrder.sessions.__none__,
+      s => s.id, _sysFirst, true);
+    onlyVisible(flat).forEach(s =>
+      box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id], "__none__", box)));
   } else {
+    delete box.dataset.flatOrderGroup;
     // JAG-415: expand the active session's own team group ONLY on a redirect or a
     // selection (never on a plain re-render — else the user could not collapse the
     // group of their own active session).
@@ -4808,13 +5095,23 @@ async function loadSessions() {
       _forceExpandActive = false;
     }
     const groups = [];
-    const pinGroup = visible.filter(s => isPinned(s.id)).sort(_sysFirst);
+    _sessionOrderBase.__pinned__ = _sidebarOrdered(
+      _all.filter(s => isPinned(s.id)).sort(_sysFirst),
+      _sidebarOrder.sessions.__pinned__, s => s.id, _ord, true).map(s => s.id);
+    const pinGroup = _sidebarOrdered(visible.filter(s => isPinned(s.id)).sort(_sysFirst),
+      _sidebarOrder.sessions.__pinned__, s => s.id, _ord, true);
     if (pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
     // JAG-415: "No team" sits right BELOW Pinned, before the teams.
-    const adhoc = visible.filter(s => teamsOf(s).length === 0).sort(_ord);
+    const adhocAll = _sidebarOrdered(_all.filter(s => teamsOf(s).length === 0).sort(_ord),
+      _sidebarOrder.sessions.__none__, s => s.id, _ord);
+    _sessionOrderBase.__none__ = adhocAll.map(s => s.id);
+    const adhoc = onlyVisible(adhocAll);
     if (adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
     teams.forEach(t => {
-      const ss = visible.filter(s => teamsOf(s).includes(t.id)).sort(_ord);
+      const allMembers = _sidebarOrdered(_all.filter(s => teamsOf(s).includes(t.id)).sort(_ord),
+        _sidebarOrder.sessions[t.id], s => s.id, _ord);
+      _sessionOrderBase[t.id] = allMembers.map(s => s.id);
+      const ss = onlyVisible(allMembers);
       if (ss.length) groups.push({ key: t.id, symbol: t.symbol || "•", name: t.name || t.id, id: t.id, col: t.color || "var(--acc)", sessions: ss });
     });
     _lastGroupKeys = groups.map(g => g.key);
@@ -4822,6 +5119,8 @@ async function loadSessions() {
       const isCol = open.indexOf(g.key) < 0;
       const sec = document.createElement("div");
       sec.className = "sgroup" + (isCol ? " collapsed" : "");
+      sec.dataset.groupKey = g.key;
+      if (g.id) sec.dataset.teamOrderId = g.id;
       if (g.col) sec.style.setProperty("--tcol", g.col);
       const head = document.createElement("div");
       head.className = "sgroup-h";
@@ -4830,11 +5129,19 @@ async function loadSessions() {
         + `<span class="gsym">${esc(g.symbol)}</span>`
         + `<span class="gname">${esc(g.name)}${g.id ? ` <span class="gid">${esc(g.id)}</span>` : ""}</span>`
         + `<span class="gcount">${g.sessions.length}</span>`;
-      head.onclick = () => _toggleGroup(g.key);
+      head.onclick = e => {
+        if (_consumeSidebarDragClick(e, sec)) return;
+        _toggleGroup(g.key);
+      };
+      if (g.id) {
+        _bindSidebarDrag(head.querySelector(".gname"), "team", g.id, null, box);
+      }
       sec.appendChild(head);
       const bodyEl = document.createElement("div");
       bodyEl.className = "sgroup-b";
-      g.sessions.forEach(s => bodyEl.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id])));
+      bodyEl.dataset.groupKey = g.key;
+      g.sessions.forEach(s =>
+        bodyEl.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id], g.key, bodyEl)));
       sec.appendChild(bodyEl);
       box.appendChild(sec);
     });
@@ -5668,7 +5975,9 @@ function _costCallsHtml(calls) {
   return calls.map(r =>
     '<div class="costrow"><span class="cm" title="' + _attr(r.model || "") + '">' + esc(_shortModel(r.model)) + "</span>" +
     '<span class="ct">' + esc(_hhmmss(r.ts)) + "</span>" +
-    '<span class="ct">' + _fmtTok(r.prompt) + "\u2192" + _fmtTok(r.completion) + "</span>" +
+    '<span class="ct">in ' + _fmtTok(r.prompt) + " \u2192 out " + _fmtTok(r.completion) + "</span>" +
+    ((r.cached || r.cache_write) ? '<span class="ct">' + _fmtTok(r.cached) + " cached \u00b7 "
+      + _fmtTok(r.cache_write) + " cache write</span>" : "") +
     '<span class="cu" title="' + (r.src === "provider" ? "exact \u2014 charged by the provider"
       : (r.src === "estimate" ? "estimated from the real token counts \u00d7 rates" : "no price known for this model")) + '">'
       + (r.src === "estimate" ? "\u2248" : "") + _usd(r.usd) + "</span></div>").join("");
@@ -5699,21 +6008,33 @@ function renderCosts() {
   const c = _cost;
   const total = $("costTotal"), sub = $("costSub");
   if (!c) { if (total) total.textContent = "$0"; if (sub) sub.textContent = ""; _isum("sCost", ""); box.innerHTML = '<div class="remaining">no calls yet</div>'; return; }
-  if (total) total.textContent = (c.priced || (c.calls && !c.unknown_calls)) ? _usd(c.total_usd) : (c.calls ? "\u2014" : "$0");
+  const hasPricedCalls = Number(c.priced_calls || 0) > 0;
+  const totalText = c.calls ? (hasPricedCalls ? _usd(c.total_usd)
+    : (c.unknown_calls ? "\u2014" : "$0")) : "$0";
+  if (total) total.textContent = totalText;
   _isum("sCost", c.calls
-    ? (((c.priced || !c.unknown_calls) ? _usd(c.total_usd) : "\u2014") + " \u00b7 " + c.calls + " call" + (c.calls === 1 ? "" : "s"))
-    : "", c.calls && c.unknown_calls && !c.priced ? "warn" : "");
+    ? (totalText + " \u00b7 " + c.calls + " call" + (c.calls === 1 ? "" : "s"))
+    : "", c.calls && c.unknown_calls ? "warn" : "");
   // JAG-361: state whether the money is EXACT (the provider reported the charge
   // itself) or estimated from the real token counts x the rate table.
-  const _exact = (c.recent || []).filter(r => r.src === "provider").length;
+  const _sourceCounts = [];
+  if (c.provider_calls) _sourceCounts.push(c.provider_calls + " exact");
+  if (c.estimated_calls) _sourceCounts.push(c.estimated_calls + " estimated");
+  const _otherPriced = Math.max(0, (c.priced_calls || 0)
+    - (c.provider_calls || 0) - (c.estimated_calls || 0));
+  if (_otherPriced) _sourceCounts.push(_otherPriced + " legacy priced");
+  if (c.unknown_calls) _sourceCounts.push(c.unknown_calls + " unpriced");
   if (sub) sub.textContent = c.calls
     ? (c.calls + " call" + (c.calls === 1 ? "" : "s")
-       + (_exact ? " \u00b7 exact" : (c.priced ? " \u00b7 estimated" : " \u00b7 press \u21bb prices"))
-       + (c.priced && c.unknown_calls ? " \u00b7 " + c.unknown_calls + " unpriced" : ""))
+       + (_sourceCounts.length ? " \u00b7 " + _sourceCounts.join(" \u00b7 ") : ""))
     : "";
   if ($("costCalls")) $("costCalls").textContent = (c.calls || 0) + " calls";
   if ($("costIn")) $("costIn").textContent = _fmtTok(c.tokens_in) + " in";
   if ($("costOut")) $("costOut").textContent = _fmtTok(c.tokens_out) + " out";
+  if ($("costCached")) {
+    $("costCached").textContent = _fmtTok(c.cached) + " cached";
+    $("costCached").title = _fmtTok(c.cache_write) + " cache-write tokens";
+  }
   // JAG-403h: group the (newest-first) calls by run. A call WITHOUT a run id (older
   // ledger rows, non-turn callers) is folded into ONE bucket — before, each became
   // its own row and 60 single-call rows flooded the panel.
@@ -5787,12 +6108,25 @@ async function ctxPreview() {
 }
 function costLive(call) {
   if (!call) return;
-  if (!_cost) _cost = { calls: 0, tokens_in: 0, tokens_out: 0, total_usd: 0, unknown_calls: 0, recent: [], priced: false };
+  if (!_cost) _cost = { calls: 0, tokens_in: 0, tokens_out: 0, cached: 0,
+    cache_write: 0, total_usd: 0, unknown_calls: 0, provider_calls: 0,
+    estimated_calls: 0, recent: [], priced: false };
   _cost.calls = call.calls || (_cost.calls + 1);
   if (call.total_usd != null) _cost.total_usd = call.total_usd;
-  _cost.tokens_in = (_cost.tokens_in || 0) + (call.prompt || 0);
-  _cost.tokens_out = (_cost.tokens_out || 0) + (call.completion || 0);
-  if (call.usd != null) _cost.priced = true; else _cost.unknown_calls = (_cost.unknown_calls || 0) + 1;
+  _cost.tokens_in = call.tokens_in != null ? call.tokens_in : (_cost.tokens_in || 0) + (call.prompt || 0);
+  _cost.tokens_out = call.tokens_out != null ? call.tokens_out : (_cost.tokens_out || 0) + (call.completion || 0);
+  _cost.cached = call.tokens_cached != null
+    ? call.tokens_cached : (_cost.cached || 0) + (call.cached || 0);
+  _cost.cache_write = call.tokens_cache_write != null
+    ? call.tokens_cache_write : (_cost.cache_write || 0) + (call.cache_write || 0);
+  _cost.unknown_calls = call.unknown_calls != null
+    ? call.unknown_calls : (_cost.unknown_calls || 0) + (call.usd == null ? 1 : 0);
+  _cost.provider_calls = call.provider_calls != null
+    ? call.provider_calls : (_cost.provider_calls || 0) + (call.src === "provider" ? 1 : 0);
+  _cost.estimated_calls = call.estimated_calls != null
+    ? call.estimated_calls : (_cost.estimated_calls || 0) + (call.src === "estimate" ? 1 : 0);
+  _cost.priced_calls = call.priced_calls != null
+    ? call.priced_calls : (_cost.priced_calls || 0) + (call.usd != null ? 1 : 0);
   _cost.recent = [call].concat(_cost.recent || []).slice(0, 60);
   renderCosts();
 }
@@ -7703,6 +8037,9 @@ const _FEED_REFRESH = {
   "session.updated": () => { loadSessions(); loadAgents(); loadSettingsForms(); },
   "session.cleared": () => { loadSessions(); if (sessionId) loadHistory(); },
   "teams.updated": () => loadAgents(),
+  "sidebar.order.updated": ev => {
+    if (Number(ev && ev.revision || 0) > _sidebarOrder.revision) loadSessions();
+  },
   "roles.update": () => { loadRulesPanel(); loadSessions(); },
   "longrun_agent.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); },
   "home.move": () => loadHome()
@@ -7740,7 +8077,7 @@ function _feedReplay(ev) {
   // JAG-532: every other MUTATING event re-reads the panel it invalidates (see the
   // table above). Addressed through ONE table so live and replayed events agree.
   const _hit = _FEED_REFRESH[kind];
-  if (_hit) { try { _hit(); } catch (e) {} }
+  if (_hit) { try { _hit(ev); } catch (e) {} }
 }
 /* JAG-465: after a feed gap the DURABLE stores are the truth — re-read them so the
    UI cannot stay stale until the operator hits reload. */
@@ -12121,12 +12458,33 @@ bindResizer($("resize-right"), '[data-col="context"]', -1, "sf_w_right");
 function _vw() { return document.documentElement.clientWidth || window.innerWidth; }
 function _overlayLeft() { return _vw() <= 900; }
 function _overlayRight() { return _vw() <= 1100; }
+function _toggleMobileDrawer(side) {
+  const body = document.body;
+  const cls = side === "left" ? "show-left" : "show-right";
+  const opening = !body.classList.contains(cls);
+  _closeDrawers();
+  if (opening) {
+    body.classList.add(cls);
+    const active = document.querySelector("#tabbar button.active");
+    const activeName = active && active.dataset.tab;
+    const tab = side === "left" ? "sessions"
+      : (["tasks", "context", "feed"].includes(activeName) ? activeName : "context");
+    _setTabbarActive(tab);
+    const backdrop = $("backdrop");
+    if (backdrop) backdrop.classList.add("show");
+  } else {
+    _setTabbarActive("chat");
+  }
+  _settleHandles();
+}
 function toggleLeftPanel() {
-  document.body.classList.toggle(_overlayLeft() ? "show-left" : "collapsed-left");
+  if (_vw() <= 900) return _toggleMobileDrawer("left");
+  else document.body.classList.toggle(_overlayLeft() ? "show-left" : "collapsed-left");
   _settleHandles();
 }
 function toggleRightPanel() {
-  document.body.classList.toggle(_overlayRight() ? "show-right" : "collapsed-right");
+  if (_vw() <= 900) return _toggleMobileDrawer("right");
+  else document.body.classList.toggle(_overlayRight() ? "show-right" : "collapsed-right");
   _settleHandles();
 }
 /* JAG-358: a panel counts as shown only when it is really VISIBLE ON SCREEN — not

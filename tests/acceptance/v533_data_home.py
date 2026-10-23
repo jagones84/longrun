@@ -243,7 +243,7 @@ _start = homemove.start(_target)
 check("D1 the move starts against the CURRENT data dir",
       _start.get("ok") is True and _start.get("source") == _src_dir, _start)
 _deadline = time.time() + 25
-while time.time() < _deadline and homemove.status()["phase"] in ("scanning", "copying"):
+while time.time() < _deadline and homemove.status()["phase"] not in ("done", "error"):
     time.sleep(0.05)
 _st = homemove.status()
 check("D2 it finishes cleanly and reports 100%",

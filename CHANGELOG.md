@@ -18,7 +18,25 @@ All notable changes to Longrun are documented here. The format follows
   and the operator explicitly chose session dialogue over isolation. Pinned by
   `v507` F–F9 and `v350` A4.
 
+### Changed
+- **Sidebar reorder is name-only and synchronized.** Mouse drag starts on a team or
+  session name; touch requires a hold before dragging. A normal click/tap still
+  selects a session or toggles a team. Mobile reorder has no arrow or grab icons.
+- **Mobile side panels use the full content viewport and remain exclusive.**
+  Opening Sessions closes the Inspector and vice versa below 900px; desktop layout
+  and resizing remain unchanged. The top bar and bottom navigation stay available.
+- **Cost is labeled as an estimate and exposes its evidence.** The ledger separates
+  provider-reported exact charges, token-rate estimates, and unpriced calls. Input,
+  output, and cached tokens are visible. Direct prices use exact `provider:model`
+  keys; OpenRouter and DeepSeek refresh from their documented sources, while other
+  verified rates are maintained locally. Unknown or retired models remain unpriced.
+
 ### Fixed
+- **Retired DeepSeek aliases no longer inherit Flash prices.** The direct provider
+  catalog and `longrun_agent` direct fallback now use `deepseek-flash` and
+  `deepseek-v4-pro`; its OpenRouter preference and prompt use configured V4.1 Flash.
+  Only accepted V4 Flash aliases inherit Flash rates. `deepseek-chat` and
+  `deepseek-reasoner` were retired on 2026-07-24.
 - **Compaction now reads the WHOLE old transcript instead of dropping its middle.**
   `input_max_chars` (40 000 chars ≈ 10k tokens) was applied to the entire transcript
   as `head 70% + tail 30%` with `…[middle omitted]…`: on a 100k-token session the

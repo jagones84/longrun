@@ -26,6 +26,11 @@ Prices are resolved, in order, from:
   3. ``data/prices.json`` — the cache written by :func:`refresh_openrouter`, which
      pulls OpenRouter's PUBLIC models endpoint (no API key required).
 
+Provider-qualified references (``provider:model``) use an exact provider/model
+price key. OpenRouter prices are scoped to OpenRouter; direct-provider prices use
+explicit namespaced config or environment entries. Unqualified references retain
+legacy basename matching.
+
 Ledger: ``data/costs/<session>.json`` (override dir with LONGRUN_COSTS_DIR).
 Stdlib only.
 """
@@ -49,10 +54,9 @@ OPENROUTER_MODELS = "https://openrouter.ai/api/v1/models"
 # without it the docs site serves the "Your First API Call" page instead of the
 # pricing table (verified over plain urllib, 49 KB vs 26 KB, no "CACHE HIT").
 DEEPSEEK_PRICING = "https://api-docs.deepseek.com/quick_start/pricing/"
-# Legacy ids that config/providers.yaml still serves. DeepSeek bills them at the
-# Flash price (its own migration note), so a refresh keeps them in sync.
-_FLASH_ALIASES = ("deepseek-chat", "deepseek-reasoner",
-                  "deepseek-v4-flash", "deepseek-v4-flash-vision-exp")
+# These retired V4 identifiers are still accepted and billed at the Flash rate.
+# `deepseek-chat` and `deepseek-reasoner` were retired and are not price aliases.
+_FLASH_ALIASES = ("deepseek-v4-flash", "deepseek-v4-flash-vision-exp")
 MAX_CALLS = 2000
 # JAG-415: keep at most one month of the per-session ledger (space bound). Older
 # calls are dropped on read, so the file shrinks the next time a call is recorded.
@@ -61,6 +65,7 @@ RETENTION_DAYS = 30
 _lock = threading.RLock()
 _prices = None
 _prices_idx = None
+_scoped_prices_idx = None
 _price_stamp = None
 
 
@@ -122,58 +127,102 @@ def _rates(v):
     return None
 
 
+def _provider_ids() -> set:
+    """Return built-in and configured provider IDs used by qualified model refs."""
+    ids = {"openrouter", "deepseek", "openai", "anthropic", "google",
+           "cohere", "voyage", "jina", "mistral", "vllm", "dgx", "win"}
+    try:
+        from longrun.model import providers
+        ids.update(str(p.get("id", "")).lower() for p in providers.providers()
+                   if p.get("id"))
+    except Exception:  # noqa: BLE001 — legacy unqualified pricing must still work
+        pass
+    return ids
+
+
+def _is_scoped_price_key(key: str, provider_ids: set) -> bool:
+    """True when a colon separates a known provider from its model identifier."""
+    value = str(key)
+    colon = value.find(":")
+    slash = value.find("/")
+    return colon > 0 and (slash < 0 or colon < slash) \
+        and value[:colon].lower() in provider_ids
+
+
 def _build_price_index(table):
+    provider_ids = _provider_ids()
     idx = {}
     for k, v in (table or {}).items():
         s = str(k)
+        if _is_scoped_price_key(s, provider_ids):
+            continue
         for key in (s, s.split("/")[-1], s.split(":")[-1]):
             idx[key.lower()] = v
     return idx
 
 
+def _build_scoped_price_index(table, provider_ids=None):
+    """Build exact provider/model mappings without alias or basename matching."""
+    provider_ids = provider_ids or _provider_ids()
+    return {str(k).lower(): v for k, v in (table or {}).items()
+            if _is_scoped_price_key(k, provider_ids)}
+
+
 def _prices_table():
-    global _prices, _prices_idx, _price_stamp
+    global _prices, _prices_idx, _scoped_prices_idx, _price_stamp
     with _lock:
         cur = _sources_stamp()
         if _prices is not None and cur == _price_stamp:
             return _prices
         table = {}
-        for p in (_CACHE_JSON, _PRICES_JSON, _PRICES_YAML):
+        provider_ids = _provider_ids()
+        scoped = {}
+        cache = _read_doc(_CACHE_JSON) or {}
+        if isinstance(cache, dict):
+            table.update(cache)
+            for model_id, value in cache.items():
+                if _is_scoped_price_key(model_id, provider_ids):
+                    scoped[model_id] = value
+                else:
+                    scoped["openrouter:" + str(model_id)] = value
+        for p in (_PRICES_JSON, _PRICES_YAML):
             d = _read_doc(p)
             if d:
                 table.update(d)
+                scoped.update(_build_scoped_price_index(d, provider_ids))
         env = os.environ.get("LONGRUN_PRICES")
         if env:
             try:
                 e = json.loads(env)
                 if isinstance(e, dict):
                     table.update(e)
+                    scoped.update(_build_scoped_price_index(e, provider_ids))
             except ValueError:
                 pass
         _prices = table
         _prices_idx = _build_price_index(table)
+        _scoped_prices_idx = {str(k).lower(): v for k, v in scoped.items()}
         _price_stamp = cur
         return table
 
 
 def _lookup_raw(table, model):
-    """Raw price entry for a model, matched both directions (case-insensitive).
-
-    Both the table key and the query are indexed by their full form AND their
-    last ``/``- or ``:``-segment, so ``deepseek/deepseek-chat``,
-    ``openrouter:deepseek-chat`` and a bare ``deepseek-chat`` all resolve to the
-    same entry. JAG-516: the table is built in ASCENDING priority (cache, then
-    the config files, then LONGRUN_PRICES), so a LATER entry overwrites an
-    earlier one for the same basename — the documented precedence (env >
-    config > OpenRouter cache) holds for basename collisions too.
-    """
+    """Look up exact provider-qualified prices before legacy unqualified aliases."""
     if not model:
         return None
+    provider_ids = _provider_ids()
+    model_ref = str(model)
+    if _is_scoped_price_key(model_ref, provider_ids):
+        if table is _prices and _scoped_prices_idx is not None:
+            scoped = _scoped_prices_idx
+        else:
+            scoped = _build_scoped_price_index(table, provider_ids)
+        return scoped.get(model_ref.lower())
     if table is _prices and _prices_idx is not None:
         idx = _prices_idx
     else:
         idx = _build_price_index(table)
-    m = str(model)
+    m = model_ref
     for key in (m, m.split("/")[-1], m.split(":")[-1]):
         v = idx.get(key.lower())
         if v is not None:
@@ -342,7 +391,7 @@ def _save(session, led):
 
 def _summarise(led):
     tot = 0.0
-    priced = unknown = 0
+    priced = unknown = provider_calls = estimated_calls = 0
     tin = tout = tcached = tcached_w = 0
     by_model = {}
     for c in led:
@@ -355,6 +404,10 @@ def _summarise(led):
         else:
             priced += 1
             tot += float(c["usd"])
+        if c.get("src") == "provider":
+            provider_calls += 1
+        elif c.get("src") == "estimate":
+            estimated_calls += 1
         m = c.get("model") or "?"
         b = by_model.setdefault(m, {"calls": 0, "usd": 0.0, "unknown": 0})
         b["calls"] += 1
@@ -364,7 +417,9 @@ def _summarise(led):
             b["usd"] = round(b["usd"] + float(c["usd"]), 6)
     return {"calls": len(led), "tokens_in": tin, "tokens_out": tout,
             "cached": tcached, "cache_write": tcached_w, "total_usd": round(tot, 6),
-            "priced_calls": priced, "unknown_calls": unknown, "by_model": by_model}
+            "priced_calls": priced, "unknown_calls": unknown,
+            "provider_calls": provider_calls, "estimated_calls": estimated_calls,
+            "by_model": by_model}
 
 
 def record(session, model, usage, run=None):
@@ -398,8 +453,11 @@ def record(session, model, usage, run=None):
         led.append(rec)
         _save(session, led)
         s = _summarise(led)
-    rec["total_usd"] = s["total_usd"]
-    rec["calls"] = s["calls"]
+    rec.update({key: s[key] for key in (
+        "total_usd", "calls", "tokens_in", "tokens_out", "priced_calls", "unknown_calls",
+        "provider_calls", "estimated_calls")})
+    rec["tokens_cached"] = s["cached"]
+    rec["tokens_cache_write"] = s["cache_write"]
     return rec
 
 
@@ -510,13 +568,15 @@ def _write_prices_yaml(table, source, checked_at):
         "# Read: %s" % checked_at,
         "# Unit: USD per 1M tokens. PEAK (upper-bound) rates: an off-peak call may be",
         "# over-reported, never under-reported. Hand edits survive until the next refresh.",
+        "# Direct rates use exact provider:model keys; see .agent/README-cost-provider-pricing.md.",
         "",
     ]
     for k in sorted(table):
         r = _rates(table[k])
         if not r or r["in"] is None or r["out"] is None:
             continue
-        lines.append("%s:" % k)
+        key = '"%s"' % k if _is_scoped_price_key(k, _provider_ids()) else str(k)
+        lines.append("%s:" % key)
         lines.append("  in: %s" % _num(r["in"]))
         lines.append("  out: %s" % _num(r["out"]))
         for fld in ("cache_read", "cache_write", "request"):
@@ -580,10 +640,12 @@ def refresh_deepseek_prices(url=None, timeout=15):
             return {"ok": False, "error": "nonsensical rates for %s: %r"
                                            % (m, (ch, ci, out))}
         parsed[m] = {"in": ci, "out": out, "cache_read": ch}
+        parsed["deepseek:" + m] = dict(parsed[m])
     flash = next((m for m in models if "flash" in m), None)
     if flash:
         for alias in _FLASH_ALIASES:
             parsed[alias] = dict(parsed[flash])
+            parsed["deepseek:" + alias] = dict(parsed[flash])
     old = _read_doc(_PRICES_YAML) or {}
     table = dict(old)
     table.update(parsed)
@@ -594,7 +656,7 @@ def refresh_deepseek_prices(url=None, timeout=15):
         return {"ok": False, "error": "yaml write failed: %s" % e}
     with _lock:
         _prices = None
-    return {"ok": True, "models": sorted(parsed), "source": url, "checked_at": checked}
+    return {"ok": True, "models": sorted(models), "source": url, "checked_at": checked}
 
 
 def refresh_prices():
@@ -604,4 +666,3 @@ def refresh_prices():
     return {"ok": bool(cloud.get("ok")) or bool(direct.get("ok")),
             "count": int(cloud.get("count") or 0),
             "openrouter": cloud, "deepseek": direct}
-

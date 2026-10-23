@@ -37,12 +37,12 @@ LONGRUN_AGENT_TITLE = "longrunAgent · VEO"
 # Prefer cheap remote cloud models by default; never a heavy local GGUF unless
 # the operator explicitly selects one.
 PREFERRED_CHEAP_MODELS = (
-    "openrouter:deepseek/deepseek-reasoner",
+    "openrouter:deepseek/deepseek-v4.1-flash",
     "openrouter:deepseek/deepseek-v4-flash-0731",
     "openrouter:z-ai/glm-5.3-flash",
     "openrouter:meta/muse-spark-1.3-contributor",
-    "deepseek:deepseek-reasoner",
-    "deepseek:deepseek-chat",
+    "deepseek:deepseek-flash",
+    "deepseek:deepseek-v4-pro",
 )
 
 # Safety boundary: keys that longrunAgent is strictly forbidden from mutating.
@@ -2239,7 +2239,8 @@ SECTION_PROMPTS = {
         "`routines.create|update|delete|get|list`, "
         "`sessions.create|rename|delete|list`. "
         "Always pick lightweight, cost-effective remote cloud models (e.g. "
-        "`openrouter:deepseek/deepseek-reasoner`, `openrouter:z-ai/glm-5.3-flash`, "
+        "`openrouter:deepseek/deepseek-v4.1-flash`, `deepseek:deepseek-flash`, "
+        "`openrouter:z-ai/glm-5.3-flash`, "
         "`openrouter:meta/muse-spark-1.3-contributor`), never heavy local models, and "
         "draft clear, concise `ROLE.md` prompts."
     ),

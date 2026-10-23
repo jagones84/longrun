@@ -78,15 +78,50 @@ fixture = write(os.path.join(TMP, "pricing.html"),
                       (OUTPUT, ["1.2", "3.96"])]))
 res = _refresh(url=Path(fixture).as_uri())
 check("A2 the official table refreshes", bool(res.get("ok")), str(res))
+check("A2b refresh reports actual vendor models, not provider-scoped aliases",
+      res.get("models") == ["deepseek-flash", "deepseek-v4-pro"], str(res.get("models")))
 check("A3 the parsed model is priced at its PEAK rates",
       C.price_for("deepseek-flash") == (0.3, 1.2), str(C.price_for("deepseek-flash")))
 check("A4 the cache-hit rate is carried too",
       (C.rates_for("deepseek-flash") or {}).get("cache_read") == 0.006,
       str(C.rates_for("deepseek-flash")))
-check("A5 the legacy provider ids follow the Flash price",
-      C.price_for("deepseek-reasoner") == (0.3, 1.2)
-      and C.price_for("deepseek-chat") == (0.3, 1.2),
-      str(C.price_for("deepseek-reasoner")))
+check("A5 only DeepSeek's still-accepted V4 Flash aliases use the Flash rate",
+      C.price_for("deepseek:deepseek-v4-flash") == (0.3, 1.2)
+      and C.price_for("deepseek:deepseek-v4-flash-vision-exp") == (0.3, 1.2)
+      and C.rates_for("deepseek:deepseek-reasoner") is None
+      and C.rates_for("deepseek:deepseek-chat") is None,
+      str((C.price_for("deepseek:deepseek-v4-flash"),
+       C.price_for("deepseek:deepseek-v4-flash-vision-exp"),
+       C.rates_for("deepseek:deepseek-reasoner"),
+       C.rates_for("deepseek:deepseek-chat"))))
+with open(os.path.join(REPO, "config", "providers.yaml"), encoding="utf-8") as _f:
+    _providers_yaml = _f.read()
+_deepseek_cfg = _providers_yaml.split("  - id: deepseek\n", 1)[1].split(
+    "\n  - id: openai", 1)[0]
+check("A5b shipped DeepSeek provider offers current models, not retired IDs",
+      "{id: deepseek-flash" in _deepseek_cfg
+      and "{id: deepseek-v4-pro" in _deepseek_cfg
+      and "deepseek-chat" not in _deepseek_cfg
+      and "deepseek-reasoner" not in _deepseek_cfg, "")
+with open(os.path.join(REPO, "config", "routing.yaml"), encoding="utf-8") as _f:
+    _routing_yaml = _f.read()
+check("A5c shipped longrun-agent fallback uses active DeepSeek Flash",
+      "- deepseek:deepseek-flash" in _routing_yaml
+      and "- deepseek:deepseek-reasoner" not in _routing_yaml, "")
+with open(os.path.join(REPO, "src", "longrun", "agent", "longrun_agent.py"),
+          encoding="utf-8") as _f:
+    _lra_source = _f.read()
+_preferred = _lra_source.split("PREFERRED_CHEAP_MODELS = (", 1)[1].split(")", 1)[0]
+with open(os.path.join(REPO, "src", "longrun", "model", "prompt.py"),
+          encoding="utf-8") as _f:
+    _prompt_source = _f.read()
+check("A5d longrunAgent preference and prompt avoid retired models",
+      "openrouter:deepseek/deepseek-v4.1-flash" in _preferred
+      and "deepseek:deepseek-flash" in _preferred
+      and "deepseek-reasoner" not in _preferred
+      and "deepseek-chat" not in _preferred
+      and "lra.PREFERRED_CHEAP_MODELS[:4]" in _prompt_source
+      and "openrouter:deepseek/deepseek-reasoner" not in _prompt_source, "")
 check("A6 an entry the page does not list is preserved",
       C.price_for("legacy/keep-me") == (9.0, 18.0), str(C.price_for("legacy/keep-me")))
 

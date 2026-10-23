@@ -3,18 +3,10 @@
 # Read: 2026-10-22 21:18 UTC
 # Unit: USD per 1M tokens. PEAK (upper-bound) rates: an off-peak call may be
 # over-reported, never under-reported. Hand edits survive until the next refresh.
-
-deepseek-chat:
-  in: 0.3
-  out: 1.2
-  cache_read: 0.006
+# Direct-provider rates use exact "provider:model" keys. Other official sources and
+# estimate limitations are recorded in .agent/README-cost-provider-pricing.md.
 
 deepseek-flash:
-  in: 0.3
-  out: 1.2
-  cache_read: 0.006
-
-deepseek-reasoner:
   in: 0.3
   out: 1.2
   cache_read: 0.006
@@ -33,3 +25,121 @@ deepseek-v4-pro:
   in: 1.32
   out: 3.96
   cache_read: 0.044
+
+"deepseek:deepseek-flash":
+  in: 0.3
+  out: 1.2
+  cache_read: 0.006
+
+"deepseek:deepseek-v4-flash":
+  in: 0.3
+  out: 1.2
+  cache_read: 0.006
+
+"deepseek:deepseek-v4-flash-vision-exp":
+  in: 0.3
+  out: 1.2
+  cache_read: 0.006
+
+"deepseek:deepseek-v4-pro":
+  in: 1.32
+  out: 3.96
+  cache_read: 0.044
+
+"openai:gpt-5.5":
+  in: 10
+  out: 45
+  cache_read: 1
+
+"openai:gpt-5.5-pro":
+  in: 60
+  out: 270
+
+"openai:gpt-5.4":
+  in: 5
+  out: 22.5
+  cache_read: 0.5
+
+"openai:gpt-5.4-mini":
+  in: 0.75
+  out: 4.5
+  cache_read: 0.075
+
+"openai:gpt-5.4-nano":
+  in: 0.2
+  out: 1.25
+  cache_read: 0.02
+
+"anthropic:claude-fable-5":
+  in: 10
+  out: 50
+  cache_read: 1
+  cache_write: 20
+
+"anthropic:claude-opus-4-8":
+  in: 5
+  out: 25
+  cache_read: 0.5
+  cache_write: 10
+
+"anthropic:claude-sonnet-5":
+  in: 3
+  out: 15
+  cache_read: 0.3
+  cache_write: 6
+
+"anthropic:claude-haiku-4-5":
+  in: 1
+  out: 5
+  cache_read: 0.1
+  cache_write: 2
+
+"google:gemini-3.1-flash-lite":
+  in: 0.25
+  out: 1.5
+  cache_read: 0.025
+
+"google:gemini-3.1-pro-preview":
+  in: 4
+  out: 18
+  cache_read: 0.4
+
+"mistral:mistral-large-4-0":
+  in: 1.36
+  out: 4.18
+  cache_read: 0.14
+
+"mistral:mistral-large-3-25-12":
+  in: 0.5
+  out: 1.5
+  cache_read: 0.05
+
+"mistral:mistral-medium-3-5-26-04":
+  in: 1.5
+  out: 7.5
+  cache_read: 0.15
+
+"mistral:mistral-small-4-0-26-03":
+  in: 0.15
+  out: 0.6
+  cache_read: 0.015
+
+"mistral:ministral-3-14b-25-12":
+  in: 0.2
+  out: 0.2
+  cache_read: 0.02
+
+"mistral:ministral-3-8b-25-12":
+  in: 0.15
+  out: 0.15
+  cache_read: 0.015
+
+"mistral:ministral-3-3b-25-12":
+  in: 0.1
+  out: 0.1
+  cache_read: 0.01
+
+"mistral:codestral-25-08":
+  in: 0.3
+  out: 0.9
+  cache_read: 0.03

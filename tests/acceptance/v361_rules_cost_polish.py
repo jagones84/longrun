@@ -95,7 +95,8 @@ TMP = tempfile.mkdtemp(prefix="sf-v361-")
 os.environ["LONGRUN_COSTS_DIR"] = os.path.join(TMP, "costs")
 os.environ["LONGRUN_PRICES_FILE"] = os.path.join(TMP, "prices.json")
 os.environ["LONGRUN_PRICES"] = json.dumps({
-    "m/x": {"in": 2.0, "out": 8.0, "cache_read": 0.5, "request": 0.01}})
+    "m/x": {"in": 2.0, "out": 8.0, "cache_read": 0.5, "request": 0.01},
+    "mistral:mistralai/shared-name": {"in": 7.0, "out": 14.0}})
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.model import costs as C  # noqa: E402
@@ -113,24 +114,78 @@ check("B2 estimated from tokens: cache-read rate + output rate + request fee",
 # 3) an unpriced model stays unknown (never a fake zero)
 r3 = C.record(S, "nowhere/unknown", {"prompt_tokens": 10, "completion_tokens": 10})
 check("B3 an unpriced model is usd null / src null",
-      r3 and r3["usd"] is None and r3["src"] is None, r3)
+      r3 and r3["usd"] is None and r3["src"] is None
+      and r3["cached"] == 0 and r3["tokens_cached"] == 1000, r3)
 check("B4 the richer rate set parses (cache_read + request)",
       C.rates_for("m/x") == {"in": 2.0, "out": 8.0, "cache_read": 0.5,
                              "cache_write": None, "request": 0.01}, C.rates_for("m/x"))
 check("B5 price_for still returns the (in, out) pair",
       C.price_for("m/x") == (2.0, 8.0), C.price_for("m/x"))
+_summary = C.summary(S)
+check("B6 session summary counts exact, estimated, and unpriced calls separately",
+      _summary.get("provider_calls") == 1
+      and _summary.get("estimated_calls") == 1
+      and _summary.get("unknown_calls") == 1, _summary)
 _fx = os.path.join(TMP, "openrouter_models.json")
 with open(_fx, "w", encoding="utf-8") as f:
-    json.dump({"data": [{"id": "fx/only", "pricing": {
-        "prompt": "0.000002", "completion": "0.000008",
-        "input_cache_read": "0.0000009", "request": "0.01"}}]}, f)
+    json.dump({"data": [
+        {"id": "fx/only", "pricing": {
+            "prompt": "0.000002", "completion": "0.000008",
+            "input_cache_read": "0.0000009", "request": "0.01"}},
+        {"id": "mistralai/shared-name", "pricing": {
+            "prompt": "0.000002", "completion": "0.000008"}}
+    ]}, f)
 _ref = C.refresh_openrouter(url=Path(_fx).as_uri())
-check("B6 the refresh caches the richer rate set (cache_read + request)",
+check("B7 the refresh caches the richer rate set (cache_read + request)",
       _ref.get("ok") and C.rates_for("fx/only") == {"in": 2.0, "out": 8.0, "cache_read": 0.9,
                                                     "cache_write": None, "request": 0.01},
       (_ref, C.rates_for("fx/only")))
-check("B7 the UI marks an estimated row and names exact vs estimated",
-      'r.src === "estimate" ? "\\u2248"' in HTML and '\\u00b7 exact' in HTML
+check("B8 provider-specific rates never inherit a same-name OpenRouter price",
+      C.rates_for("openrouter:mistralai/shared-name") == {
+          "in": 2.0, "out": 8.0, "cache_read": None, "cache_write": None, "request": None}
+      and C.rates_for("mistral:mistralai/shared-name") == {
+          "in": 7.0, "out": 14.0, "cache_read": None, "cache_write": None, "request": None}
+      and C.rates_for("openai:mistralai/shared-name") is None,
+      (C.rates_for("openrouter:mistralai/shared-name"),
+       C.rates_for("mistral:mistralai/shared-name"),
+       C.rates_for("openai:mistralai/shared-name")))
+check("B9 official direct-provider rates are stored under exact provider/model refs",
+      C.rates_for("deepseek:deepseek-flash") == {
+          "in": 0.3, "out": 1.2, "cache_read": 0.006,
+          "cache_write": None, "request": None}
+      and C.rates_for("deepseek:deepseek-reasoner") is None
+      and C.rates_for("deepseek:deepseek-chat") is None
+      and C.rates_for("mistral:mistral-large-4-0") == {
+          "in": 1.36, "out": 4.18, "cache_read": 0.14,
+          "cache_write": None, "request": None}
+      and C.rates_for("anthropic:claude-opus-4-8") == {
+          "in": 5.0, "out": 25.0, "cache_read": 0.5,
+          "cache_write": 10.0, "request": None}
+      and C.rates_for("google:gemini-3.1-pro-preview") == {
+          "in": 4.0, "out": 18.0, "cache_read": 0.4,
+          "cache_write": None, "request": None}
+      and C.rates_for("openai:gpt-6-astra") is None
+      and C.rates_for("anthropic:claude-fable-5.1") is None
+      and C.rates_for("google:gemini-3.8-flash") is None,
+      (C.rates_for("deepseek:deepseek-flash"),
+       C.rates_for("deepseek:deepseek-reasoner"),
+       C.rates_for("deepseek:deepseek-chat"),
+       C.rates_for("mistral:mistral-large-4-0"),
+       C.rates_for("anthropic:claude-opus-4-8"),
+       C.rates_for("google:gemini-3.1-pro-preview"),
+       C.rates_for("openai:gpt-6-astra"),
+       C.rates_for("anthropic:claude-fable-5.1"),
+       C.rates_for("google:gemini-3.8-flash")))
+check("B10 the Cost panel labels estimates and displays cached input usage",
+      'data-args=\'["cost"]\'' in HTML and ">Cost (estimate)" in HTML
+      and 'id="costCached"' in HTML
+      and 'c.provider_calls' in HTML and 'c.estimated_calls' in HTML
+      and 'c.cached' in HTML
+      and 'Number(c.priced_calls || 0) > 0' in HTML
+      and 'call.tokens_cached' in HTML, "")
+check("B11 the UI marks an estimated row and names exact vs estimated",
+      'r.src === "estimate" ? "\\u2248"' in HTML
+      and 'c.provider_calls + " exact"' in HTML
       and "charged by the provider" in HTML, "")
 
 print("---")

@@ -1775,6 +1775,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "first_run": first_run_setup_available()})
         if not check_auth(self.headers, qs):
             return self._send(401, {"error": "unauthorized"})
+        from longrun.core import sidebar_order as _sidebar_order
+        _order_response = _sidebar_order.handle("GET", path)
+        if _order_response is not None:
+            return self._send(*_order_response)
         if api_v02.handle(self, "GET", path, qs, None):
             return
         if _orbit_handle(self, "GET", path, qs, None):   # JAG-285: optional beta API
@@ -2509,6 +2513,10 @@ class Handler(BaseHTTPRequestHandler):
         if not check_auth(self.headers, qs):
             return self._send(401, {"error": "unauthorized"})
         body = self._body()
+        from longrun.core import sidebar_order as _sidebar_order
+        _order_response = _sidebar_order.handle("PATCH", path, body)
+        if _order_response is not None:
+            return self._send(*_order_response)
         if api_v02.handle(self, "PATCH", path, qs, body):
             return
         if _orbit_handle(self, "PATCH", path, qs, body):   # JAG-285: optional beta API

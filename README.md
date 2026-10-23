@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-247%2F247%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-249%2F249%20tests-blue.svg)](#tests)
 
 Self-hosted AI agent harness with a browser UI, tool-enabled sessions, task graphs,
 team orchestration, HTTP/SSE API, and CLI. Requires Python 3.10+ and PyYAML for the
@@ -52,6 +52,8 @@ and [sandbox](#sandbox).
 - Provides session memory, a per-workspace codebase index, and a server-wide Knowledge Base.
 - Shares one automatic/manual compaction policy in **Settings → Knowledge → Compaction**.
 - Lets agents message peer sessions asynchronously, inspect their live transcript, and wait for a job-specific reply.
+- Reorders teams and sessions by dragging their names; visual order syncs across clients connected to the same server.
+- Reports per-session model cost as exact provider charges, token-rate estimates, or unpriced calls, including cached input usage.
 - Connects to local or hosted model providers; supports a CLI and MCP integrations.
 
 See [Architecture](docs/ARCHITECTURE.md) for system behavior and
@@ -386,7 +388,7 @@ LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
 The full command ran successfully during the original README update: **218/218 passed**.
-The acceptance suite now contains **248/248 test files**.
+The acceptance suite now contains **249/249 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

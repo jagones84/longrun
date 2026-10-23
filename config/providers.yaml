@@ -9,7 +9,7 @@
 #   dgx:glm-5.3-flash-iq2
 #   win:qwen-3.8-27b-abliterated-q4
 #   openrouter:z-ai/glm-5.3-flash
-#   deepseek:deepseek-reasoner
+#   deepseek:deepseek-flash
 # A bare model id (no known provider prefix) is resolved against every provider,
 # local first, so existing configs keep working.
 version: "1"
@@ -103,8 +103,8 @@ providers:
     base_url: https://api.deepseek.com/v1
     api_key_env: DEEPSEEK_API_KEY
     models:
-      - {id: deepseek-chat}
-      - {id: deepseek-reasoner}
+      - {id: deepseek-flash, context_length: 1048576}
+      - {id: deepseek-v4-pro, context_length: 1048576}
 
   # ---- cloud DEFAULTS shipped with the repo (override in providers.local.yaml)
   # These are the best-known hosted providers. The repo lists them + their

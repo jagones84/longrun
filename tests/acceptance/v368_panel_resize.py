@@ -63,7 +63,7 @@ check("B3 each drawer carries a resizable width + a shown grip",
       and 'width: min(var(--drawer-w-right, 300px), calc(100vw - 46px)) !important' in HTML
       and 'body.show-right #toolsBar:not([hidden]) { display: flex; position: fixed; right: 0;' in HTML
       and 'body.show-right #resize-right { display: block !important; position: fixed;' in HTML
-      and 'width: var(--drawer-w-left, 260px) !important' in HTML
+      and 'width: calc(100vw / var(--zoom, 1)) !important' in HTML
       and 'body.show-left #resize-left { display: block !important; position: fixed;' in HTML, "")
 check("B4 a drawer resize is persisted on its own key",
       'localStorage.setItem(key + "_d", String(Math.round(w)));' in HTML
@@ -164,6 +164,28 @@ check("E7 the drawer class is applied BEFORE focusing its section",
       and _OT.find('document.body.classList.add(t.side') < _OT.find('focusInsp(t.insp)'), "")
 check("E8 the inspector scroll is deferred one frame (works on a just-shown rail)",
       'requestAnimationFrame(function () { sec.scrollIntoView({ block: "start" }); });' in HTML, "")
+
+# --- F: mobile panel handles open one full-width surface ---------------------
+check("F1 mobile left and right panels fill the usable viewport width",
+      "body.show-left #aside" in HTML
+      and "width: calc(100vw / var(--zoom, 1)) !important" in HTML
+      and "body.show-right [data-col=\"context\"]" in HTML
+      and "max-width: calc(100vw / var(--zoom, 1))" in HTML
+      and "left: 0; right: 0;" in HTML, "")
+check("F2 fullscreen mobile drawers preserve top and bottom navigation",
+      "top: 44px;" in HTML and "bottom: var(--sf-bottombar, 0px)" in HTML
+      and "position: relative; z-index: 18;" in HTML, "")
+check("F3 mobile panel handles close the opposite drawer and sync the tab state",
+      "function _toggleMobileDrawer(side)" in HTML
+      and '_toggleMobileDrawer("left")' in HTML
+      and '_toggleMobileDrawer("right")' in HTML
+      and "_closeDrawers();" in HTML
+      and "_setTabbarActive" in HTML, "")
+check("F4 full-width mobile mode is breakpoint-scoped and keeps desktop resizing",
+      "@media (max-width: 900px)" in HTML
+      and "if (_vw() <= 900) return _toggleMobileDrawer" in HTML
+      and 'else document.body.classList.toggle(_overlayLeft() ? "show-left" : "collapsed-left");'
+      in HTML, "")
 
 print("---")
 ok = sum(results)
