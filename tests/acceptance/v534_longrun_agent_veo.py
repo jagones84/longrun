@@ -27,6 +27,16 @@ Locks:
      - Models panel offers `longrunAgentModel` (`roles.longrun_agent.model` + `@chat`);
      - `makeAutomateWidget` and Orbit `lraAutoBtn` wire UI sections to
        `POST /api/longrun-agent/automate`.
+  E  Universal automation coverage (every manually editable section):
+     - `webui.inspect` reaches subagents / providers / tools / skills / mcp /
+       knowledge / index / keys with real substrate ground truth;
+     - `webui.configure` writes subagents, per-tool policy, index config,
+       knowledge notebooks and MCP clients through the SAME Layer-2 writers the
+       WebUI uses, never its own `longrunAgent.*` policy;
+     - raw `config/*.yaml` writes are text-scanned for the safety switches;
+     - every configure target owns a context-specific system prompt, and the WebUI
+       auto-generates one `⚡ Automate` control per editable panel
+       (`AUTOMATE_CATS` / `mountCategoryAutomate`).
 
 Deterministic: temp dirs, no live model, no network.
 Run: python3 tests/acceptance/v534_longrun_agent_veo.py
@@ -47,7 +57,29 @@ for _k in ("DATA_DIR", "CONFIG_DIR", "SESSIONS_DIR", "ROLES_DIR", "DB",
     if not _k.endswith("_FILE") and _k != "DB":
         os.makedirs(val, exist_ok=True)
     os.environ["LONGRUN_" + _k] = val
+# JAG-535: `subagent.CFG_PATH` and `routing.CONFIG_PATH` are derived from the REPO,
+# not from LONGRUN_CONFIG_DIR. `subagent` honours LONGRUN_SUBAGENTS_CFG, so point it
+# at the temp dir; `routing` has no override, so its live file is snapshotted here
+# and restored on EVERY exit path (an automation test must never edit the checkout).
 sys.path.insert(0, os.path.join(REPO, "src"))
+
+_ROUTING_YAML = os.path.join(REPO, "config", "routing.yaml")
+os.environ["LONGRUN_SUBAGENTS_CFG"] = os.path.join(TMP, "subagents.yaml")
+with open(_ROUTING_YAML, encoding="utf-8") as _f:
+    _ROUTING_ORIG = _f.read()
+
+
+def _restore_routing():
+    try:
+        with open(_ROUTING_YAML, encoding="utf-8") as _f:
+            if _f.read() != _ROUTING_ORIG:
+                with open(_ROUTING_YAML, "w", encoding="utf-8") as _w:
+                    _w.write(_ROUTING_ORIG)
+    except OSError:
+        pass
+
+
+atexit.register(_restore_routing)
 
 from longrun.tools import registry, tools as T       # noqa: E402
 from longrun.agent import longrun_agent as LRA       # noqa: E402
@@ -260,6 +292,116 @@ check("D5 Shared makeAutomateWidget and Orbit Teamorg automate bar are wired to 
       and '"/api/longrun-agent/automate"' in HTML
       and 'id="lraAutoBtn"' in ORBIT
       and '"/api/longrun-agent/automate"' in ORBIT)
+
+# --- E: Universal WebUI automation coverage ----------------------------------
+# The spec demands longrunAgent reach EVERY manually editable substrate section,
+# not just the first four. Each new section is proven through its real Layer-2
+# writer, and the WebUI must auto-generate a control for each of them.
+from longrun.agent import subagent as SUB                # noqa: E402
+from longrun.memory import indexcfg                      # noqa: E402
+from longrun.memory import knowledge as KB               # noqa: E402
+from longrun.model import routing as RTG                 # noqa: E402
+
+INS_SECTIONS = ["subagents", "providers", "tools", "skills", "mcp", "knowledge", "index", "keys"]
+inspected = {s: LRA._webui_inspect({"section": s}) for s in INS_SECTIONS}
+check("E1 webui.inspect covers every manually editable section with real substrate ground truth",
+      all(inspected[s].get("ok") is True for s in INS_SECTIONS)
+      and "max_parallel" in (inspected["subagents"].get("subagents", {}).get("config") or {})
+      and isinstance(inspected["providers"].get("providers"), dict)
+      and isinstance(inspected["tools"].get("tool_policy"), dict)
+      and isinstance(inspected["knowledge"].get("knowledge"), dict)
+      and isinstance(inspected["mcp"].get("mcp_clients"), dict)
+      and isinstance(inspected["skills"].get("skills"), list)
+      and isinstance(inspected["keys"].get("keys"), list)
+      and isinstance(inspected["index"].get("index"), dict),
+      {s: sorted(inspected[s].keys()) for s in INS_SECTIONS})
+
+r_sub = T.execute(
+    "longrunAgent.webui.configure",
+    {"target": "subagents",
+     "values": {"max_parallel": 3, "max_depth": 4,
+                "model": "openrouter:z-ai/glm-5.3-flash"}},
+    run_id="longrunAgent",
+)
+check("E2 configure target='subagents' writes config/subagents.yaml + tools.yaml runtime + routing",
+      r_sub.get("ok") is True
+      and int(SUB.load_cfg().get("max_parallel")) == 3
+      and RTG.role_model("subagent") == "openrouter:z-ai/glm-5.3-flash"
+      and int((registry.load_config().get("runtime") or {}).get("subagent_max_depth")) == 4,
+      r_sub)
+# `routing` has no env override, so put the checkout back the moment we are done
+# reading it: the battery runs tests in PARALLEL and none of them may observe a
+# rewritten config/routing.yaml.
+_restore_routing()
+
+r_tool = T.execute(
+    "longrunAgent.webui.configure",
+    {"target": "tools", "values": {"tool": "grep", "approval": "required"}},
+    run_id="longrunAgent",
+)
+self_pol = T.execute(
+    "longrunAgent.webui.configure",
+    {"target": "tools", "values": {"tool": "longrunAgent.teamorg.teams.create", "enabled": False}},
+    run_id="longrunAgent",
+)
+check("E3 configure target='tools' flips real tool policy but refuses its own namespace",
+      r_tool.get("ok") is True
+      and ((registry.load_config().get("tools") or {}).get("grep") or {}).get("approval") == "required"
+      and self_pol.get("ok") is False and "SAFETY_GUARD" in str(self_pol.get("error")),
+      (r_tool, self_pol))
+
+r_idx = T.execute(
+    "longrunAgent.webui.configure",
+    {"target": "index", "values": {"auto_index": False}},
+    run_id="longrunAgent",
+)
+check("E4 configure target='index' writes the shared index configuration",
+      r_idx.get("ok") is True
+      and indexcfg.load_config().get("auto_index") is False, r_idx)
+
+r_kb = T.execute(
+    "longrunAgent.webui.configure",
+    {"target": "knowledge", "op": "notebook", "name": "veo-notebook"},
+    run_id="longrunAgent",
+)
+check("E5 configure target='knowledge' creates a real notebook",
+      r_kb.get("ok") is True
+      and any("veo-notebook" in str(n) for n in KB.list_notebooks()), r_kb)
+
+r_mcp = T.execute(
+    "longrunAgent.webui.configure",
+    {"target": "mcp", "op": "upsert", "name": "!!not-a-valid-name!!",
+     "values": {"command": "true"}},
+    run_id="longrunAgent",
+)
+check("E6 configure target='mcp' routes to the real mcp_client engine (rejects invalid specs)",
+      r_mcp.get("ok") is False and "error" in r_mcp, r_mcp)
+
+bad_cfg = T.execute(
+    "longrunAgent.webui.configure",
+    {"target": "config", "file": "tools.yaml",
+     "text": "approvals:\n  allow_matrix_promote: true\n"},
+    run_id="longrunAgent",
+)
+check("E7 raw config writes are text-scanned — the safety switches cannot be smuggled",
+      bad_cfg.get("ok") is False and "SAFETY_GUARD" in str(bad_cfg.get("error")), bad_cfg)
+
+targets = set(LRA.TOOL_SCHEMAS["longrunAgent.webui.configure"]["properties"]["target"]["enum"])
+check("E8 every configure target has its own context-specific system prompt",
+      targets.issubset(set(LRA.SECTION_PROMPTS)), sorted(targets - set(LRA.SECTION_PROMPTS)))
+check("E8b every automate section injects a NON-empty substrate snapshot from a real inspect section",
+      set(LRA.SECTION_PROMPTS).issubset(set(LRA.AUTOMATE_INSPECT_SECTIONS))
+      and set(LRA.AUTOMATE_INSPECT_SECTIONS.values()).issubset(set(INS_SECTIONS + ["all", "agents", "teams", "models", "compaction", "settings", "rules"])),
+      sorted(set(LRA.SECTION_PROMPTS) - set(LRA.AUTOMATE_INSPECT_SECTIONS)))
+check("E9 the WebUI auto-generates one Automate control per editable panel",
+      "function mountSectionAutomate(" in HTML
+      and "function mountCategoryAutomate(" in HTML
+      and "const AUTOMATE_CATS = {" in HTML
+      and "mountCategoryAutomate(name)" in HTML
+      and 'mountSectionAutomate(\'section[data-insp="codebase"]\', "index"' in HTML
+      and all(("  " + k + ": { section:") in HTML
+              for k in ("models", "subagents", "tools", "mcp", "skills",
+                        "knowledge", "rules", "config")))
 
 print("---")
 passed = sum(1 for r in results if r)

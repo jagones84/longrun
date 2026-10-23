@@ -215,15 +215,18 @@ TOOL_SCHEMAS = {
     },
     "longrunAgent.webui.inspect": {
         "description": (
-            "longrunAgent.webui.inspect — Read the current live substrate state of a WebUI section "
-            "(`agents`, `teams`, `models`, `settings`, `rules`, `compaction`, `tools`) so longrunAgent "
+            "longrunAgent.webui.inspect — Read the current live substrate state of ANY WebUI "
+            "section (`agents`, `teams`, `models`, `subagents`, `providers`, `settings`, `rules`, "
+            "`compaction`, `tools`, `skills`, `mcp`, `knowledge`, `index`, `keys`) so longrunAgent "
             "has exact ground truth before applying an automation update."
         ),
         "type": "object",
         "properties": {
             "section": {
                 "type": "string",
-                "enum": ["agents", "teams", "models", "settings", "rules", "compaction", "tools", "all"],
+                "enum": ["agents", "teams", "models", "subagents", "providers", "settings",
+                         "rules", "compaction", "tools", "skills", "mcp", "knowledge",
+                         "index", "keys", "all"],
                 "description": "WebUI section to inspect.",
             },
             "session": {"type": "string", "description": "Optional session ID for session-scoped sections (e.g. rules)."},
@@ -235,23 +238,35 @@ TOOL_SCHEMAS = {
     },
     "longrunAgent.webui.configure": {
         "description": (
-            "longrunAgent.webui.configure — Update configurable fields in the WebUI substrate "
-            "(settings sections, rules, compaction policy, role routing, or team model policy) and "
-            "emit live-sync SSE events. Strictly refuses safety-gate keys (`allow_nucleus_write`, "
-            "`allow_matrix_promote`)."
+            "longrunAgent.webui.configure — Update configurable fields in ANY WebUI substrate "
+            "section: structured settings forms, rules, compaction policy, role routing, team "
+            "model policy, subagents, providers/models, tool policy, skills, MCP clients, "
+            "knowledge notebooks/sources and the index config. Emits live-sync SSE events. "
+            "Strictly refuses safety-gate keys (`allow_nucleus_write`, `allow_matrix_promote`)."
         ),
         "type": "object",
         "properties": {
             "target": {
                 "type": "string",
-                "enum": ["settings", "rules", "compaction", "routing", "team_policy"],
+                "enum": ["settings", "rules", "compaction", "routing", "team_policy",
+                         "subagents", "providers", "tools", "skills", "mcp", "knowledge",
+                         "index", "config"],
                 "description": "Substrate target domain to update.",
             },
             "file": {"type": "string", "description": "For target='settings': config filename (e.g. 'index.yaml', 'compaction.yaml', 'decisions.yaml')."},
-            "values": {"type": "object", "description": "Key-value map of settings/routing/compaction fields to update."},
+            "values": {"type": "object", "description": "Key-value map of fields to update (settings / routing / compaction / subagents / tools / index / knowledge)."},
             "scope": {"type": "string", "description": "For target='rules': 'global' or 'project'."},
             "content": {"type": "string", "description": "For target='rules': full markdown content to save."},
             "team": {"type": "string", "description": "For target='team_policy': team ID ('T1') or 'ALL'."},
+            "op": {"type": "string", "description": "Sub-operation for target='providers' (upsert|remove|add_model|remove_model|default|reload), 'skills' (remove), 'mcp' (upsert|remove|test|reload) and 'knowledge' (notebook|source|clear|reembed). NOTE: `action` is reserved by the dispatcher (it carries the subtool name), so always use `op`."},
+            "id": {"type": "string", "description": "Identifier for providers (`id`/`ref`) and knowledge notebooks (`id`)."},
+            "model": {"type": "string", "description": "Model reference for providers / subagents."},
+            "provider": {"type": "string", "description": "For target='providers' model ops: provider id."},
+            "name": {"type": "string", "description": "For target='skills'/'mcp'/'knowledge': target name (or notebook name)."},
+            "notebook": {"type": "string", "description": "For target='knowledge' op='source': notebook id/name."},
+            "title": {"type": "string", "description": "For target='knowledge' op='source': source title."},
+            "ref": {"type": "string", "description": "For target='knowledge' op='source': source URL/path ref. For target='providers' op='default': model ref."},
+            "remove": {"type": "string", "description": "For target='knowledge' op='source': source to remove."},
         },
         "required": ["target"],
         "_origin": "exclusive",
@@ -787,6 +802,19 @@ def _webui_inspect(args):
         from longrun.model import routing
         out["routing"] = routing.load_config()
         out["preferred_cheap_models"] = list(PREFERRED_CHEAP_MODELS)
+    if section in ("subagents", "all"):
+        from longrun.agent import subagent as sub_mod
+        from longrun.plan import keepgoing as kg
+        out["subagents"] = {
+            "config": sub_mod.load_cfg(),
+            "max_depth": int((kg.cfg() or {}).get("subagent_max_depth", 2)),
+            "running": sub_mod._running_count(),
+            "context": "isolated",
+        }
+    if section in ("providers", "all"):
+        from longrun.model import providers as providers_mod
+        out["providers"] = providers_mod.catalog()
+        out["providers_default"] = providers_mod.default_ref()
     if section in ("settings", "all"):
         from longrun.core import settings as settings_mod
         out["settings"] = settings_mod.view()
@@ -806,6 +834,31 @@ def _webui_inspect(args):
         cfg = registry.load_config()
         out["approvals"] = cfg.get("approvals") or {}
         out["tools_count"] = len(registry.catalog())
+        out["tool_policy"] = {
+            str(t.get("name")): {"enabled": t.get("enabled"), "approval": t.get("approval"),
+                                 "origin": t.get("origin")}
+            for t in registry.catalog() if not t.get("group")
+        }
+    if section in ("skills", "all"):
+        from longrun.memory import skills as skills_mod
+        items = skills_mod.list_skills()
+        out["skills"] = [{"name": (s or {}).get("name"), "source": (s or {}).get("source")}
+                         for s in (items if isinstance(items, list) else items.get("skills", []))]
+    if section in ("mcp", "all"):
+        from longrun.interop import mcp_client as mcp_client_mod
+        out["mcp_clients"] = mcp_client_mod.status()
+    if section in ("knowledge", "all"):
+        from longrun.memory import knowledge as kb
+        out["knowledge"] = {"status": kb.status(), "notebooks": kb.list_notebooks()}
+    if section in ("index", "all"):
+        from longrun.core import api_v02
+        out["index"] = api_v02.index_config_get()
+    if section in ("keys", "all"):
+        # Names only — longrunAgent never reads or writes secret VALUES.
+        from longrun.model import keys as keys_mod
+        ks = keys_mod.keys_status()
+        out["keys"] = sorted([str(k.get("env")) for k in (ks.get("keys") or [])])
+        out["keys_note"] = "secret values are operator-only and never exposed to longrunAgent"
     out["stdout"] = "inspected WebUI substrate section=%s" % section
     return out
 
@@ -821,6 +874,21 @@ def _contains_forbidden_safety_key(obj, prefix=""):
             hit = _contains_forbidden_safety_key(v, path)
             if hit:
                 return hit
+    return None
+
+
+def _contains_forbidden_safety_text(text):
+    """Return the forbidden key name if a raw text body (config/rules content) names one.
+
+    Raw file writes bypass the key-path guard, so any string payload that will be
+    persisted must also be scanned for the safety-only key names.
+    """
+    body = str(text or "")
+    if not body:
+        return None
+    for key in ("allow_nucleus_write", "allow_matrix_promote"):
+        if key in body:
+            return key
     return None
 
 
@@ -840,6 +908,24 @@ def _webui_configure(args):
 
     target = str(args.get("target") or "").strip().lower()
     values = args.get("values") if isinstance(args.get("values"), dict) else {}
+    # NOTE: `action` is reserved by the tool dispatcher (it always carries the
+    # subtool name), so the sub-operation travels in `op`.
+    op = str(args.get("op") or args.get("operation") or "").strip().lower()
+
+    if target == "config":
+        # Raw config/*.yaml write takes a free-form text body, so the KEY-PATH scan
+        # above cannot see it — scan the text itself before it is persisted.
+        hit_text = _contains_forbidden_safety_text(
+            "%s %s" % (args.get("file") or args.get("name") or "", args.get("text") or args.get("content") or "")
+        )
+        if hit_text:
+            return {
+                "ok": False,
+                "error": (
+                    "SAFETY_GUARD: longrunAgent is forbidden from naming %r in a persisted "
+                    "config payload (operator-only safety switch)." % hit_text
+                ),
+            }
 
     if target == "settings":
         from longrun.core import settings as settings_mod
@@ -918,6 +1004,184 @@ def _webui_configure(args):
             "stdout": "applied cheap remote model policy across %d team(s)" % len(results),
         }
 
+    if target == "config":
+        # JAG-488: validated + atomic write of any config/*.yaml, then hot reload.
+        from longrun.core import configfiles
+        from longrun.tools import matrix_guard
+        name = args.get("file") or args.get("name")
+        text = args.get("text") if args.get("text") is not None else args.get("content")
+        try:
+            with matrix_guard.NUCLEUS_EXEC_LOCK:
+                res = configfiles.write_file(name, text)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        if res.get("ok"):
+            publish("config.saved", name=name, ok=True, by="longrunAgent")
+            res["stdout"] = "wrote config file %s" % name
+        return res
+
+    if target == "subagents":
+        # Reuses the exact writers behind POST /api/subagents so the Subagents
+        # panel can never drift from the WebUI.
+        from longrun.agent import subagent as sub_mod
+        from longrun.model import routing
+        cfg = dict(sub_mod.load_cfg())
+        if "max_parallel" in values:
+            try:
+                cfg["max_parallel"] = max(0, int(values["max_parallel"]))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "max_parallel must be an integer"}
+        if isinstance(values.get("roles"), dict):
+            cfg["roles"] = {str(k): str(v) for k, v in values["roles"].items()}
+        upd = {}
+        if "model" in values:
+            upd["model"] = str(values.get("model") or "")
+        if "fallbacks" in values:
+            upd["fallbacks"] = [str(x) for x in (values.get("fallbacks") or [])]
+        if upd:
+            routing.update({"roles": {"subagent": upd}})
+        if "max_depth" in values:
+            from longrun.core import api_v02
+            res = api_v02.update_policy({"runtime": {"subagent_max_depth": values["max_depth"]}})
+            if not res.get("ok", True):
+                return res
+        sub_mod.save_cfg(cfg)
+        publish("settings.changed", file="subagents.yaml", by="longrunAgent")
+        return {
+            "ok": True,
+            "subagents": sub_mod.load_cfg(),
+            "model": routing.role_model("subagent"),
+            "stdout": "updated subagents policy (%s)" % ", ".join(sorted(values)),
+        }
+
+    if target == "providers":
+        from longrun.core import api_v02
+        if op in ("remove", "delete"):
+            res = api_v02.provider_remove(args.get("id") or args.get("provider"))
+        elif op in ("add_model", "model"):
+            res = api_v02.provider_add_model({
+                "provider": args.get("provider") or args.get("id"),
+                "model": args.get("model"),
+                "context_length": args.get("context_length"),
+            })
+        elif op == "remove_model":
+            res = api_v02.provider_remove_model(args.get("provider"), args.get("model"))
+        elif op in ("default", "set_default"):
+            res = api_v02.provider_set_default({"ref": args.get("ref") or args.get("model")})
+        elif op == "reload":
+            api_v02.provider_reload()
+            publish("providers.update", action="reload", by="longrunAgent")
+            return {"ok": True, "stdout": "providers reloaded"}
+        else:
+            res = api_v02.provider_upsert(dict(values or args.get("provider_spec") or {}))
+        if res.get("ok"):
+            res["stdout"] = "providers %s applied" % (op or "upsert")
+        return res
+
+    if target == "tools":
+        from longrun.core import api_v02
+        body = dict(values)
+        # The dual-permission gate on `longrunAgent.*` is operator-only: the agent
+        # may flip policy for ANY other tool, but never for its own namespace.
+        targets = [str(k) for k in body]
+        targets += [str(body.get("tool") or ""), str(body.get("name") or "")]
+        targets += [str(x) for x in (body.get("tools") or []) if isinstance(body.get("tools"), list)]
+        self_hit = next((t for t in targets if t.startswith("longrunAgent")), None)
+        if self_hit:
+            return {
+                "ok": False,
+                "error": (
+                    "SAFETY_GUARD: longrunAgent may not change its own tool policy "
+                    "(%r) — the dual-permission gate is operator-only." % self_hit
+                ),
+            }
+        res = api_v02.update_policy(body)
+        if res.get("ok"):
+            publish("tools.policy", by="longrunAgent")
+            # The writer answers with the FULL catalog (one schema per tool); that is
+            # noise in an agent observation, so report counts + what changed instead.
+            tools = res.pop("tools", None)
+            if isinstance(tools, list):
+                res["tools_count"] = len(tools)
+            res["stdout"] = "updated tool policy (%s)" % ", ".join(sorted(body))
+        return res
+
+    if target == "skills":
+        from longrun.memory import skills as skills_mod
+        nm = str(args.get("name") or args.get("id") or "").strip()
+        if op not in ("remove", "delete"):
+            return {"ok": False, "error": "op='remove' required for target='skills' (install needs a zip upload)"}
+        if not nm:
+            return {"ok": False, "error": "name required for target='skills'"}
+        res = skills_mod.remove(nm)
+        if res.get("ok"):
+            publish("skills.remove", name=nm, ok=True, by="longrunAgent")
+            res["stdout"] = "removed skill %s" % nm
+        res.setdefault("ok", False)
+        return res
+
+    if target == "mcp":
+        from longrun.interop import mcp_client as mcp_client_mod
+        nm = str(args.get("name") or args.get("id") or "").strip()
+        if op == "reload":
+            mcp_client_mod.reload()
+            publish("mcp.clients", action="reload", ok=True, by="longrunAgent")
+            return {"ok": True, "stdout": "reloaded MCP clients"}
+        if op in ("remove", "delete"):
+            res = mcp_client_mod.remove_client(nm)
+        elif op == "test":
+            res = mcp_client_mod.test_client(dict(values or {"name": nm}))
+        else:
+            res = mcp_client_mod.upsert_client(nm, dict(values or args.get("spec") or {}))
+        res.setdefault("ok", False)
+        publish("mcp.clients", action=(op or "upsert"), name=nm, ok=bool(res.get("ok")))
+        if res.get("ok"):
+            res["stdout"] = "MCP client %s %s" % (nm, op or "upsert")
+        return res
+
+    if target == "knowledge":
+        from longrun.core import api_v02
+        if op in ("notebook", "notebooks"):
+            nb_action = str((values.get("action") if isinstance(values, dict) else "") or "").strip().lower()
+            if not nb_action:
+                nb_action = "rename" if args.get("id") else "create"
+            res = api_v02.knowledge_notebook_action({
+                "action": nb_action,
+                "id": args.get("id"),
+                "name": args.get("name"),
+            })
+        elif op in ("source", "sources"):
+            res = api_v02.knowledge_source_action({
+                "notebook": args.get("notebook"),
+                "title": args.get("title"),
+                "text": args.get("content"),
+                "ref": args.get("ref"),
+                "remove": args.get("remove"),
+            })
+        elif op == "clear":
+            from longrun.memory import knowledge as kb
+            res = kb.clear()
+        elif op == "reembed":
+            from longrun.memory import knowledge as kb
+            res = kb.reembed()
+        else:
+            return {"ok": False, "error": "op must be notebook|source|clear|reembed"}
+        res.setdefault("ok", "error" not in res)
+        publish("knowledge.docs", action=op, ok=bool(res.get("ok")), by="longrunAgent")
+        if res.get("ok"):
+            res["stdout"] = "knowledge %s applied" % op
+        return res
+
+    if target == "index":
+        from longrun.memory import indexcfg as indexcfg_mod
+        res = indexcfg_mod.save_config(values)
+        if "ok" not in res:
+            res = {"ok": True, "config": res}
+        if res.get("ok"):
+            publish("settings.changed", file="index.yaml", by="longrunAgent")
+            res["stdout"] = "updated index config (%s)" % ", ".join(sorted(values))
+        return res
+
     return {"ok": False, "error": "unknown configure target %r" % target}
 
 
@@ -962,6 +1226,9 @@ def execute(tool, args, run_id=None):
 
 # ---------------------------------------------- stateless automation runner ---
 
+# Context-specific system prompts, one per automate-able WebUI section (requirement:
+# each section's Automate control must tell longrunAgent WHERE it is, WHAT the
+# section is for, and WHICH data to retrieve before acting).
 SECTION_PROMPTS = {
     "teamorg": (
         "You are `longrunAgent` (VEO, the burattinaio of agents), operating inside the "
@@ -995,6 +1262,92 @@ SECTION_PROMPTS = {
         "changes with `longrunAgent.webui.configure` (`target:'settings'`). Never touch "
         "safety checkboxes (`allow_nucleus_write`, `allow_matrix_promote`)."
     ),
+    "subagents": (
+        "You are `longrunAgent` automating the Settings ▸ Subagents panel. Inspect with "
+        "`longrunAgent.webui.inspect` (`section:'subagents'`) and update with "
+        "`longrunAgent.webui.configure` (`target:'subagents'`, values: model / fallbacks / "
+        "max_parallel / max_depth / roles). Prefer cheap remote models; keep role briefs concise."
+    ),
+    "providers": (
+        "You are `longrunAgent` automating the Settings ▸ Providers / Models roster. Inspect "
+        "with `longrunAgent.webui.inspect` (`section:'providers'`) and change with "
+        "`longrunAgent.webui.configure` (`target:'providers'`, action: upsert|remove|add_model|"
+        "remove_model|default). Never read or write secret keys."
+    ),
+    "tools": (
+        "You are `longrunAgent` automating the Settings ▸ Tools policy panel. Inspect with "
+        "`longrunAgent.webui.inspect` (`section:'tools'`) and flip per-tool `enabled`/`approval` "
+        "with `longrunAgent.webui.configure` (`target:'tools'`). You may NOT change any "
+        "`longrunAgent.*` entry — that gate is operator-only."
+    ),
+    "skills": (
+        "You are `longrunAgent` automating the Settings ▸ Skills panel. Inspect with "
+        "`longrunAgent.webui.inspect` (`section:'skills'`) and remove an installed local skill "
+        "with `longrunAgent.webui.configure` (`target:'skills'`, action:'remove'). Installing "
+        "requires a zip upload and stays manual."
+    ),
+    "mcp": (
+        "You are `longrunAgent` automating the Settings ▸ MCP panel. Inspect with "
+        "`longrunAgent.webui.inspect` (`section:'mcp'`) and manage external servers with "
+        "`longrunAgent.webui.configure` (`target:'mcp'`, action: upsert|remove|test|reload). "
+        "Reference secrets by NAME (`${VAR}`), never by value."
+    ),
+    "knowledge": (
+        "You are `longrunAgent` automating the Settings ▸ Knowledge panel. Inspect with "
+        "`longrunAgent.webui.inspect` (`section:'knowledge'`) and manage notebooks/sources with "
+        "`longrunAgent.webui.configure` (`target:'knowledge'`, action: notebook|source|clear|reembed)."
+    ),
+    "index": (
+        "You are `longrunAgent` automating the Settings ▸ Codebase index configuration. Inspect "
+        "with `longrunAgent.webui.inspect` (`section:'index'`) and update with "
+        "`longrunAgent.webui.configure` (`target:'index'`)."
+    ),
+    "config": (
+        "You are `longrunAgent` editing a raw `config/*.yaml` file through the Config-files panel. "
+        "Inspect with `longrunAgent.webui.inspect` (`section:'all'`) and write with "
+        "`longrunAgent.webui.configure` (`target:'config'`, file + text). Never name the "
+        "operator-only safety switches (`allow_nucleus_write`, `allow_matrix_promote`)."
+    ),
+    "routing": (
+        "You are `longrunAgent` automating the model ROUTING table (which model backs each "
+        "role). Inspect with `longrunAgent.webui.inspect` (`section:'models'`) and update with "
+        "`longrunAgent.webui.configure` (`target:'routing'`, `values:{'roles.<role>.model': ref}`). "
+        "Prefer cheap remote models."
+    ),
+    "team_policy": (
+        "You are `longrunAgent` re-applying the cheap remote model policy across Orbit teams. "
+        "Inspect with `longrunAgent.webui.inspect` (`section:'teams'`) and apply with "
+        "`longrunAgent.webui.configure` (`target:'team_policy'`, `team:'T1'` or `'ALL'`)."
+    ),
+    "harness": (
+        "You are `longrunAgent` automating the Settings ▸ Harness / Sandbox runtime policy "
+        "(`config/tools.yaml` ▸ runtime: keepgoing, verifier, best-of-n, difficulty, self-evolve, "
+        "thinking effort, sandbox limits). Inspect with `longrunAgent.webui.inspect` "
+        "(`section:'tools'`) and apply with `longrunAgent.webui.configure` (`target:'tools'`, "
+        "`values:{runtime:{...}}`). You may NOT change any `longrunAgent.*` tool entry or the "
+        "self-improvement policy that edits `src/longrun` — those are operator-only."
+    ),
+}
+
+# Automate section -> `longrunAgent.webui.inspect` section, so the subscriber
+# snapshot injected into the goal is NEVER empty for a valid automation request.
+AUTOMATE_INSPECT_SECTIONS = {
+    "teamorg": "agents",
+    "models": "models",
+    "routing": "models",
+    "team_policy": "teams",
+    "compaction": "compaction",
+    "rules": "rules",
+    "settings": "settings",
+    "subagents": "subagents",
+    "providers": "providers",
+    "tools": "tools",
+    "harness": "tools",
+    "skills": "skills",
+    "mcp": "mcp",
+    "knowledge": "knowledge",
+    "index": "index",
+    "config": "all",
 }
 
 
@@ -1028,7 +1381,7 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
     reset_stateless_session()
     resolved_model = resolve_automation_model(active_session_id=session, explicit_model=model)
     sec_prompt = SECTION_PROMPTS.get(section, SECTION_PROMPTS["settings"])
-    snap = _webui_inspect({"section": section if section in SECTION_PROMPTS else "all",
+    snap = _webui_inspect({"section": AUTOMATE_INSPECT_SECTIONS.get(section, "all"),
                            "session": session})
     snap_json = json.dumps({k: v for k, v in snap.items() if k not in ("ok", "stdout")},
                            ensure_ascii=False, default=str)[:6000]

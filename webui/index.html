@@ -9460,6 +9460,7 @@ function settingsCategory(name) {
   document.querySelectorAll("#swNav button").forEach(b => b.classList.toggle("active", b.dataset.cat === name));
   document.querySelectorAll("#swMain .sw-cat").forEach(c => { c.hidden = c.dataset.cat !== name; });
   localStorage.setItem("sf_settings_cat", name);
+  mountCategoryAutomate(name);   // JAG-535: one ⚡ Automate control per editable panel
   if (name === "mcp") { loadMcpClients(); if (typeof renderMcpCatalog === "function") renderMcpCatalog(); }
   else if (name === "skills") { loadSkills(); }
   else if (name === "rules") { loadRules(); loadMemories(); }
@@ -9732,6 +9733,41 @@ function makeAutomateWidget(section, getContext) {
   runBtn.onclick = trigger;
   inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); trigger(); } });
   return bar;
+}
+/* JAG-535: auto-generate ONE "⚡ Automate" control per manually editable WebUI
+   section. Every panel loader can call this idempotently: the bar is mounted on
+   its host only once, and it always posts to longrunAgent (the VEO), never to a
+   bespoke endpoint. `settingsCategory()` drives the mapping below, so a new
+   Settings category only has to be added to AUTOMATE_CATS to get its control. */
+function mountSectionAutomate(hostSel, section, getContext) {
+  const host = typeof hostSel === "string" ? document.querySelector(hostSel) : hostSel;
+  if (!host) return null;
+  const sel = '.lra-auto-bar[data-automate-section="' + section + '"]';
+  const existing = host.querySelector(sel);
+  if (existing) return existing;
+  const bar = makeAutomateWidget(section, getContext);
+  host.appendChild(bar);
+  return bar;
+}
+/* Settings category → longrunAgent automation section. Categories that are
+   read-only, purely cosmetic (appearance), operator-only (keys), or that would
+   edit src/longrun (improvement) are deliberately ABSENT. */
+const AUTOMATE_CATS = {
+  models: { section: "models", ctx: () => ({ providers: (_provCache || []).length }) },
+  subagents: { section: "subagents", ctx: () => ({ depth: ($("subDepth") || {}).value }) },
+  tools: { section: "tools", ctx: () => ({ config_file: "config/tools.yaml" }) },
+  sandbox: { section: "harness", ctx: () => ({ config_file: "config/tools.yaml" }) },
+  harness: { section: "harness", ctx: () => ({ config_file: "config/tools.yaml" }) },
+  mcp: { section: "mcp", ctx: () => ({ config_file: "config/mcp_clients.local.json" }) },
+  skills: { section: "skills", ctx: () => ({ installed: (_skillsCache || []).length }) },
+  knowledge: { section: "knowledge", ctx: () => ({ notebook: (typeof kbState === "object" && kbState && kbState.notebook) || "" }) },
+  rules: { section: "rules", ctx: () => ({ scope: "global" }) },
+  config: { section: "config", ctx: () => ({ panel: "Config files" }) },
+};
+function mountCategoryAutomate(name) {
+  const spec = AUTOMATE_CATS[name];
+  if (!spec) return;
+  mountSectionAutomate('#swMain .sw-cat[data-cat="' + name + '"]', spec.section, spec.ctx);
 }
 /* JAG-451: Settings > Subagents — model + failover (routing.yaml), depth
    (tools.yaml), parallel cap + role briefs (config/subagents.yaml). */
@@ -10076,6 +10112,10 @@ async function cbClear() {
    before an agent searches so it never reads a stale or half-built index. */
 async function loadIndexCfg() {
   try { const c = await api("GET", "/api/index/config"); const cfg = (c && c.config) || c || {}; const el = $("cbAutoIndex"); if (el) el.checked = cfg.auto_index !== false; } catch (e) {}
+  // JAG-535: the Codebase inspector is the third manually editable substrate
+  // surface outside Settings — give it the same longrunAgent control.
+  mountSectionAutomate('section[data-insp="codebase"]', "index",
+    () => ({ auto_index: (($("cbAutoIndex") || {}).checked !== false) }));
 }
 { const el = $("cbAutoIndex"); if (el) el.onchange = async () => {
     const r = await api("POST", "/api/index/config", { auto_index: el.checked });
