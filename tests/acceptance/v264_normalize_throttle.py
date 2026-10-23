@@ -75,6 +75,46 @@ r = n({"action": "write_todos", "todos": []})
 check("a legacy-spelled harness action is canonicalised",
       r.get("action") == "todo.write", str(r))
 
+# --------------------------------------------------------------- JAG-535 ----
+# ONE tool had TWO names: the registry advertises `self.info`, but a call written
+# `self` + {"action":"info"} showed up in the chat card as a bare `self`, and its
+# canonical `required` list was never enforced. The PARSER deliberately keeps the
+# model's own spelling (locked by v278/v369), so the canonicalisation happens where
+# the call is turned into a CARD / executed.
+from longrun.tools import registry as reg  # noqa: E402
+from longrun.tools import tools as T       # noqa: E402
+from longrun.agent import agent as A       # noqa: E402
+
+check("canonical_name maps a legacy namespace + action onto the dotted tool",
+      reg.canonical_name("self", {"action": "info"}) == "self.info"
+      and reg.canonical_name("knowledge", {"action": "search"}) == "knowledge.search")
+check("canonical_name falls back to the namespace DEFAULT subtool when no action is given",
+      reg.canonical_name("skills") == "skills.list"
+      and reg.canonical_name("shell") == "shell.exec")
+check("canonical_name leaves unknown / already-dotted / MCP names untouched",
+      reg.canonical_name("bash", {"cmd": "ls"}) == "bash"
+      and reg.canonical_name("fs.read") == "fs.read"
+      and reg.canonical_name("PMCP__gateway__x") == "PMCP__gateway__x")
+
+r = n({"action": "tool", "tool": "self", "args": {"action": "info"}})
+check("the parser still returns the model's spelling untouched (v278/v369 contract)",
+      r.get("tool") == "self", str(r))
+
+check("the chat card name is canonicalised (one tool, one name in the transcript)",
+      A._card_tool_name("self", {"action": "info"}) == "self.info"
+      and A._card_tool_name("skills", {"action": "read", "name": "pdf"}) == "skills.read"
+      and A._card_tool_name("bash", {"cmd": "ls"}) == "bash"
+      and A._card_tool_name("subagent", {"goal": "g"}) == "subagent")
+
+res = T.execute("self", {"action": "info"}, run_id="v264")
+check("the executor records the canonical name too",
+      res.get("tool") == "self.info" and res.get("ok") is True, str(res))
+
+res_bad = T.execute("skills", {"action": "read"}, run_id="v264")
+check("a legacy call now gets the CANONICAL schema's required-list validation",
+      res_bad.get("ok") is False and res_bad.get("tool") == "skills.read"
+      and res_bad.get("missing_args") == ["name"], str(res_bad))
+
 # --------------------------------------------------------------- JAG-265 ----
 
 

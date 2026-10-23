@@ -309,6 +309,11 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     inline Approve/Deny card, and if nobody decides in time the model continues.
     `workspace` (JAG-127) escalates file ops outside the session folder to required.
     """
+    # JAG-535: the ONE place both the chat loop and POST /api/tools/call go
+    # through. A legacy `namespace` + {action: sub} call is the same tool as the
+    # canonical `namespace.sub` the registry advertises, so canonicalise here and
+    # the policy lookup, the approval record and the SSE events all agree.
+    tool = registry.canonical_name(tool, args)
     spec = registry.tool_spec(tool)
     if spec is None:
         return {"status": "error", "error": "unknown tool %r" % tool}

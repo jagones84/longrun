@@ -2264,6 +2264,15 @@ def execute(tool, args, run_id=None):
     observation. Both are deterministic shell scripts — the model is not asked.
     """
     args = normalize_args(tool, args)
+    # JAG-535: a legacy `namespace` + {action: sub} call is the SAME tool as the
+    # canonical `namespace.sub` the registry advertises. Canonicalise BEFORE the
+    # hooks / decision layer / dispatch so the policy lookup, the `required`
+    # validation and the recorded tool name can never disagree.
+    try:
+        from longrun.tools import registry as _reg
+        tool = _reg.canonical_name(tool, args)
+    except Exception:  # noqa: BLE001 — naming nicety must never block a tool call
+        pass
     try:
         from longrun.tools import hooks
         pre = hooks.run("PreToolUse", tool=tool, args=args or {}, run_id=run_id)

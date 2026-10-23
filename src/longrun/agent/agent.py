@@ -960,6 +960,22 @@ def _chat_tool_call(act, av02):
     return str(tool), av02.normalize_tool_args(tool, args)
 
 
+def _card_tool_name(tool, args=None):
+    """The tool name a chat card / SSE event shows: the CANONICAL one.
+
+    JAG-535: `_normalize_action` deliberately preserves the model's own spelling
+    (locked by v369/v278), so a legacy `self` + {"action":"info"} reached the chat
+    as a bare `self` while the registry advertises `self.info` — one tool under two
+    names. The parser keeps the request intact; the CARD and the executor speak the
+    canonical dotted name. Fail-safe: any error returns the original name.
+    """
+    try:
+        from longrun.tools import registry as _reg
+        return str(_reg.canonical_name(tool, args) or tool)
+    except Exception:  # noqa: BLE001 — a naming nicety must never drop an event
+        return tool
+
+
 def _apply_chat_todos(sess, act, on_event, node=None, after=None):
     """Harness action `write_todos`: persist the model-authored todo list.
 
@@ -1477,6 +1493,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
                     "obs": "batch item is not a valid tool call: %s"
                            % json.dumps(it, ensure_ascii=False, default=str)[:200]}
         tool, args = tc
+        tool = _card_tool_name(tool, args)   # JAG-535: one tool, one name in the card
         on_event("tool.call", session=sess["id"], tool=tool, args=args, inline=True)
         try:
             res = av02.gated_call(tool, args, run_id=sess["id"],
@@ -2901,6 +2918,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 continue
             work_steps += 1
             _total_work_steps += 1
+            tool = _card_tool_name(tool, args)
             used_tools.append(tool)
             on_event("tool.call", session=sess["id"], tool=tool, args=args, inline=True)
             try:

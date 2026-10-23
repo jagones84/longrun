@@ -971,8 +971,35 @@ class _NamespacedSchemasDict(dict):
         return super().__contains__(key) or (key in self._legacy)
 
 
-TOOL_SCHEMAS = _NamespacedSchemasDict(_build_canonical_schemas(), _LEGACY_SCHEMAS)
+_CANONICAL_SCHEMAS = _build_canonical_schemas()
+TOOL_SCHEMAS = _NamespacedSchemasDict(_CANONICAL_SCHEMAS, _LEGACY_SCHEMAS)
 KNOWN_NAMESPACES = frozenset(k.split(".", 1)[0] for k in TOOL_SCHEMAS.keys()) | frozenset(_LEGACY_SCHEMAS.keys())
+
+
+def canonical_name(name, args=None):
+    """Canonicalise a LEGACY call onto its `<namespace>.<subtool>` tool name.
+
+    JAG-535: the registry ADVERTISES dotted names (`self.info`, `skills.read`, ...)
+    and the chat card shows the name a call was made with, so a legacy call like
+    `self` + ``{"action": "info"}`` rendered as a bare `self` — the same tool under
+    two names, with its canonical `required` list never enforced. When
+    ``<name>.<action>`` (or the namespace's default subtool) is a registered
+    CANONICAL tool, return it; anything else is returned UNCHANGED, so plain tools,
+    external MCP ``client__tool`` names and Matrix names are never touched.
+    """
+    n = str(name or "").strip()
+    if not n or "." in n or "__" in n:
+        return name
+    act = ""
+    if isinstance(args, dict):
+        act = str(args.get("action") or "").strip()
+    if act and ("%s.%s" % (n, act)) in _CANONICAL_SCHEMAS:
+        return "%s.%s" % (n, act)
+    if not act:
+        d = LEGACY_DEFAULT_SUBTOOL.get(n)
+        if d and d in _CANONICAL_SCHEMAS:
+            return d
+    return name
 
 
 
