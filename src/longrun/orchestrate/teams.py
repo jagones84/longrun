@@ -51,6 +51,30 @@ def symbol_for_name(name):
     return _PALETTE[int(h[:8], 16) % len(_PALETTE)]
 
 
+def palette():
+    """The official icon+colour palette (JAG-536).
+
+    ONE declaration: the deck renders its icon picker from this, `create()` and
+    `regenerate_icon` choose from this, so the browser can never offer an icon the
+    backend would not accept.
+    """
+    return [{"symbol": s, "color": c} for s, c in _PALETTE]
+
+
+def choose_icon(name, description="", symbol=None, color=None):
+    """longrunAgent's semantic pick over `_PALETTE`, with the deterministic fallback.
+
+    An explicit symbol/colour always wins; a broken longrunAgent import falls back
+    to `symbol_for_name(name)` instead of raising.
+    """
+    try:
+        from longrun.agent import longrun_agent as _lra
+        return _lra.choose_team_symbol(name, description or "",
+                                       explicit_symbol=symbol, explicit_color=color)
+    except Exception:  # noqa: BLE001 — an icon is never worth a failed write
+        return symbol_for_name(name)
+
+
 # JAG-343: model policy. A team may use at most `LOCAL_SLOTS` LOCAL model per machine
 # (dgx / win / any provider with `local: true`); everyone else runs a cheap cloud model,
 # and the LEADS / coordinator get the strongest cheap cloud.
@@ -193,13 +217,7 @@ class TeamRegistry:
             n = d["seq"]
             # JAG-535: longrunAgent picks the icon+colour semantically from the
             # palette (falling back to deterministic SHA1 symbol_for_name).
-            try:
-                from longrun.agent import longrun_agent as _lra
-                sym, col = _lra.choose_team_symbol(nm, description or "",
-                                                   explicit_symbol=symbol,
-                                                   explicit_color=color)
-            except Exception:  # noqa: BLE001
-                sym, col = symbol_for_name(nm)
+            sym, col = choose_icon(nm, description or "", symbol, color)
             t = {"id": "T%d" % n, "n": n, "name": nm,
                  "symbol": str(symbol or sym)[:8], "color": str(color or col)[:16],
                  "description": str(description or "")[:400],
@@ -208,7 +226,11 @@ class TeamRegistry:
             _save(d)
             return {"ok": True, "team": dict(t)}
 
-    def update(self, ref, name=None, symbol=None, color=None, description=None):
+    def update(self, ref, name=None, symbol=None, color=None, description=None,
+               regenerate_icon=False):
+        """Edit a team in place. `regenerate_icon` asks longrunAgent for a fresh
+        icon+colour over the CURRENT name/description (JAG-536): the icon was the one
+        property with no way back once the team existed."""
         with _LOCK:
             d = _load()
             t = self._find(d, ref)
@@ -221,12 +243,15 @@ class TeamRegistry:
                         for x in d["teams"].values() if x["id"] != t["id"]):
                     return {"ok": False, "error": "team name already in use: %s" % nm}
                 t["name"] = nm
+            if description is not None:
+                t["description"] = str(description)[:400]
+            if regenerate_icon:
+                sym, col = choose_icon(t.get("name") or "", t.get("description") or "")
+                t["symbol"], t["color"] = str(sym)[:8], str(col)[:16]
             if symbol is not None:
                 t["symbol"] = str(symbol)[:8]
             if color is not None:
                 t["color"] = str(color)[:16]
-            if description is not None:
-                t["description"] = str(description)[:400]
             _save(d)
             return {"ok": True, "team": dict(t)}
 

@@ -116,6 +116,29 @@ res = call("POST", "/api/teams/T404", {"name": "ghost"})
 check("A10 an unknown team refuses the edit",
       res["obj"].get("ok") is False and "not found" in (res["obj"].get("error") or ""), str(res))
 
+# --- A2: the ICON — a palette choice longrunAgent makes, not free text -------
+from longrun.orchestrate import teams as _teams                        # noqa: E402
+
+_pal = _teams.palette()
+check("A11 the palette is exposed to the UI (one declaration)",
+      len(_pal) >= 8 and all("symbol" in p and "color" in p for p in _pal), _pal[:3])
+_plist = call("GET", "/api/teams")
+check("A12 GET /api/teams publishes the palette the picker renders from",
+      _plist["code"] == 200 and _plist["obj"].get("palette") == _pal, str(_plist["obj"].keys()))
+_made = call("POST", "/api/teams", {"name": "Finance Watch",
+                                    "description": "budget, cost and billing for the platform"})
+_fin = (_made["obj"].get("team") or {})
+check("A13 create() lets longrunAgent pick the icon from name + description",
+      _fin.get("symbol") == "\U0001f4b0" and _fin.get("color") == "#22C55E", _fin)
+check("A14 the description is stored at create time",
+      _fin.get("description") == "budget, cost and billing for the platform", _fin)
+_res = call("POST", "/api/teams/T1", {"regenerate_icon": True})
+check("A15 regenerate_icon asks longrunAgent again and keeps the team",
+      _res["obj"].get("ok") is True
+      and (_res["obj"].get("team") or {}).get("id") == "T1"
+      and (_res["obj"].get("team") or {}).get("symbol") in [p["symbol"] for p in _pal],
+      _res["obj"].get("team"))
+
 # --- B: TEAM delete (backend contract) --------------------------------------
 check("B1 the agent is a member before the delete",
       "T1" in agents.REGISTRY.teams_for(a1["id"]),
@@ -192,12 +215,25 @@ check("D2 the team edit form posts to the team-update route",
 check("D3 the team delete calls DELETE /api/teams/<tid>",
       'this.api.del("/api/teams/" + encodeURIComponent(tid))' in deck)
 check("D4 the team edit offers every editable property",
-      all(('fld("%s"' % k) in deck for k in ("name", "symbol", "color", "description")))
+      all(('fld("%s"' % k) in deck for k in ("name", "description"))
+      and 'data-f="symbol"' in deck and 'data-f="color"' in deck)
 check("D5 the routine row has an edit button", 'data-edit="' in deck)
 check("D6 the routine edit posts to the routine-update route",
       '"/api/routines/" + encodeURIComponent(rid), {' in deck)
 check("D7 both edit forms reopen through the ONE popover primitive",
       deck.count("openPopover(ev,") >= 3)
+check("D8 the create bar carries the description and an ICON PICKER, not free text",
+      'id="tmNewDesc"' in deck and 'id="tmNewIcon"' in deck and "tmNewSymbol" not in deck)
+check("D9 create posts the description and the picked icon + colour",
+      'const description = ($("tmNewDesc").value || "").trim();' in deck
+      and "description: description || undefined" in deck
+      and "color: color || undefined" in deck)
+check("D10 the picker renders from the palette the backend publishes",
+      "this.agents.palette = tms.palette" in deck and "this.agents.fillIconPicker()" in deck
+      and "iconOptions(sel){" in deck
+      and 'data-color="' in deck and "longrunAgent picks" in deck)
+check("D11 the edit form can REGENERATE the icon through longrunAgent",
+      "✨ generate icon" in deck and "regenerate_icon: true" in deck)
 
 # --- E: the other write routes that had no UI door ---------------------------
 with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:

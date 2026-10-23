@@ -136,6 +136,9 @@ def _teams(handler, method, path, qs, body, reg):
         if path == "/api/teams":
             d = R.list()
             d["teams"] = [_team_payload(t, reg) for t in d["teams"]]
+            # JAG-536: the icon picker renders from the ONE palette the backend
+            # chooses from, so the UI can never offer an icon it would refuse.
+            d["palette"] = teams_mod.palette()
             return _json(handler, 200, d)
         t = R.get(path[len("/api/teams/"):].split("/")[0])
         if not t:
@@ -172,7 +175,8 @@ def _teams(handler, method, path, qs, body, reg):
             return _json(handler, 404 if res.get("error") else 200, res)
         return _json(handler, 200, R.update(
             tid, name=data.get("name"), symbol=data.get("symbol"),
-            color=data.get("color"), description=data.get("description")))
+            color=data.get("color"), description=data.get("description"),
+            regenerate_icon=bool(data.get("regenerate_icon"))))
     if method == "DELETE":
         return _json(handler, 200, R.delete(path[len("/api/teams/"):].split("/")[0]))
     return _json(handler, 404, {"error": "unknown teams route"})

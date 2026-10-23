@@ -398,7 +398,8 @@
       <div class="toolbar addbar" id="tmAddBar" hidden>
         <span class="lbl">new team</span>
         <input class="inp" id="tmNewName" placeholder="new team — name…" style="width:180px;flex:none">
-        <input class="inp" id="tmNewSymbol" placeholder="symbol/emoji (optional)" style="width:150px;flex:none">
+        <input class="inp" id="tmNewDesc" placeholder="what is this team for? (also steers the icon)" style="width:260px;flex:none">
+        <select class="inp" id="tmNewIcon" title="icon + colour from the palette — 'auto' lets longrunAgent pick the one that matches the name and the description" style="width:180px;flex:none"></select>
         <button class="btn" id="tmNew">create team</button>
         <button class="btn ghost" id="tmAddCancel" type="button">cancel</button>
       </div>
@@ -585,6 +586,10 @@ function closePopover(){ const m = _POP; if (!m) return;
 class AgentsView {
   constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
     this.models = []; this.teams = []; this.open = null; this.running = new Set();
+    // JAG-536: the official icon+colour palette, straight from GET /api/teams — the
+    // create bar and the edit form render their picker from it, so the UI can never
+    // offer an icon the backend would not accept.
+    this.palette = [];
     // JAG-431r4: full (unfiltered) agent roster — the team-scoped `this.agents` list
     // must not be used to build the REPORTS-TO dropdown, or a manager outside the
     // selected team vanishes and its edge can be silently cleared.
@@ -1057,6 +1062,20 @@ class AgentsView {
   /* JAG-536: a team was create-and-forget — every property was frozen at birth.
      The server has always supported POST /api/teams/<tid> (name/symbol/colour/
      description); this form is its only UI door. */
+  /* JAG-536: the icon was free text in the ONLY form that could set it, while every
+     SAVED team shows a palette icon. Create and edit now share ONE picker rendered
+     from the palette the backend itself chooses from; "auto" asks longrunAgent. */
+  iconOptions(sel){
+    return '<option value=""' + (sel ? "" : " selected") + '>auto · longrunAgent picks</option>' +
+      (this.palette || []).map(p =>
+        '<option value="' + esc(p.symbol) + '" data-color="' + esc(p.color) + '"' +
+        (p.symbol === sel ? " selected" : "") + '>' + esc(p.symbol) + '  ' + esc(p.color) +
+        '</option>').join("");
+  }
+  fillIconPicker(){
+    const sel = $("tmNewIcon");
+    if (sel) sel.innerHTML = this.iconOptions(sel.value);
+  }
   openTeamEdit(ev, tid){
     const t = this.teamById(tid); if (!t) return;
     const fld = (k, label, val) =>
@@ -1064,18 +1083,37 @@ class AgentsView {
       '<input class="inp" data-f="' + k + '" value="' + esc(val || "") + '">';
     const form =
       '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:5px;' +
-      'padding:4px 2px;white-space:normal;min-width:250px">' +
+      'padding:4px 2px;white-space:normal;min-width:290px">' +
       fld("name", "name", t.name) +
-      fld("symbol", "symbol", t.symbol) +
-      fld("color", "color", t.color) +
+      '<span class="lbl" style="padding:0">icon · colour</span>' +
+      '<select class="inp" data-f="symbol">' + this.iconOptions(t.symbol) + '</select>' +
+      '<input class="inp" data-f="color" value="' + esc(t.color || "") + '" title="colour hex — follows the icon unless you override it">' +
       fld("description", "description", t.description) +
-      '<button class="btn primary" data-a="save" type="button" style="margin-top:4px">save</button>' +
-      '</form>';
-    const m = openPopover(ev, form, {w: 300, h: 250});
+      '<div style="display:flex;gap:6px;margin-top:4px">' +
+      '<button class="btn ghost" data-a="gen" type="button" title="ask longrunAgent for the icon that matches the name + description">✨ generate icon</button>' +
+      '<button class="btn primary" data-a="save" type="button">save</button>' +
+      '</div></form>';
+    const m = openPopover(ev, form, {w: 320, h: 290});
+    const gv = k => (m.querySelector('[data-f="' + k + '"]').value || "").trim();
+    const selI = m.querySelector('[data-f="symbol"]'), colI = m.querySelector('[data-f="color"]');
+    if (selI && colI) selI.onchange = () => {
+      const o = selI.selectedOptions && selI.selectedOptions[0];
+      if (o && o.dataset.color) colI.value = o.dataset.color;
+    };
+    m.querySelector('[data-a="gen"]').onclick = async (ev2) => {
+      const btn = ev2.currentTarget; btn.disabled = true; btn.textContent = "generating…";
+      const r = await this.api.post("/api/teams/" + encodeURIComponent(tid),
+        { description: gv("description"), regenerate_icon: true });
+      btn.disabled = false; btn.textContent = "✨ generate icon";
+      if (!r || r.ok === false){ alert((r && r.error) || "could not generate the icon"); return; }
+      const team = r.team || {};
+      if (selI && team.symbol) selI.value = team.symbol;
+      if (colI && team.color) colI.value = team.color;
+      if (this.onChanged) this.onChanged();
+    };
     m.querySelector('[data-a="save"]').onclick = async () => {
-      const g = k => (m.querySelector('[data-f="' + k + '"]').value || "").trim();
       const r = await this.api.post("/api/teams/" + encodeURIComponent(tid), {
-        name: g("name"), symbol: g("symbol"), color: g("color"), description: g("description") });
+        name: gv("name"), symbol: gv("symbol"), color: gv("color"), description: gv("description") });
       if (!r || r.ok === false){ alert((r && r.error) || "save failed"); return; }
       closePopover();
       if (this.onChanged) this.onChanged();
@@ -2001,12 +2039,21 @@ class OrbitApp {
   }
   async createTeam(){
     // JAG-2.0: create a team from the deck, persisted via the teams backend.
+    // JAG-536: the description is now a first-class field — longrunAgent reads it
+    // together with the name to pick the icon, and it was unreachable from here.
     const name = $("tmNewName").value.trim();
     if (!name){ alert("give the team a name"); return; }
-    const symbol = $("tmNewSymbol").value.trim();
-    const r = await this.api.post("/api/teams", {name, symbol: symbol || undefined});
+    const description = ($("tmNewDesc").value || "").trim();
+    const sel = $("tmNewIcon");
+    const symbol = sel ? (sel.value || "") : "";
+    const opt = (sel && sel.selectedOptions && sel.selectedOptions[0]) || null;
+    const color = (symbol && opt && opt.dataset.color) || "";
+    const r = await this.api.post("/api/teams", { name,
+      description: description || undefined,
+      symbol: symbol || undefined, color: color || undefined });
     if (!r || !r.ok){ alert((r && r.error) || "could not create team"); return; }
-    $("tmNewName").value = ""; $("tmNewSymbol").value = "";
+    $("tmNewName").value = ""; $("tmNewDesc").value = "";
+    if (sel) sel.value = "";
     this.refresh();
   }
   openAgent(aid){
@@ -2031,6 +2078,10 @@ class OrbitApp {
       this.api.get("/api/teams").catch(() => null)
     ]);
     if (tms) this.teams = tms.teams || [];
+    // JAG-536: the palette lives on the VIEW (it owns the picker), and it is the
+    // palette the backend publishes — never a copy hardcoded in the browser.
+    if (tms && tms.palette && tms.palette.length) this.agents.palette = tms.palette;
+    this.agents.fillIconPicker();
     this.renderTeams();
     // JAG-339: the selected team scopes agents, org chart, jobs and constellation.
     // JAG-513: `__none__` = the stray agents (no team), the same bucket the AGENTS
