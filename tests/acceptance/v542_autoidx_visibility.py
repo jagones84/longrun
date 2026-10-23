@@ -114,8 +114,11 @@ _h = _api._codebase_hint("/nowhere/empty", {"files": 0, "chunks": 0})
 check("D1 an empty workspace is flagged as empty", _h.get("empty") is True, _h)
 check("D2 the hint names the scanned folder and the default workspace",
       "/nowhere/empty" in (_h.get("hint") or "")
-      and _h.get("default_workspace") == os.path.realpath(ws)
-      and os.path.realpath(ws) in (_h.get("hint") or ""), _h)
+      # Windows keeps the case it was given: `TEMP` is uppercase, realpath lowercases
+      # it, so compare normalized paths or this check flips with the environment.
+      and os.path.normcase(_h.get("default_workspace") or "")
+      == os.path.normcase(os.path.realpath(ws))
+      and os.path.normcase(os.path.realpath(ws)) in os.path.normcase(_h.get("hint") or ""), _h)
 _h2 = _api._codebase_hint("/ws", {"files": 7, "chunks": 9})
 check("D3 a non-empty index carries no failure hint",
       not _h2.get("hint") and not _h2.get("empty") and _h2.get("default_workspace"), _h2)
@@ -127,6 +130,56 @@ check("D6 the panel offers the explicit default-workspace action",
 check("D6b linking the folder refreshes the Workspace rail",
       "if (typeof loadRules === \"function\") await loadRules();" in UI)
 check("D7 the empty message renders the backend hint", "esc(s.hint ||" in UI)
+
+# --- E: is the index STALE? the panel says so on its own ---------------------
+# The watcher answers the question by construction; when it cannot (off, missing,
+# failed, overdue) the status call does a BOUNDED scan and the panel shows a badge.
+from longrun.memory import indexcfg as _indexcfg                # noqa: E402
+_indexcfg.save_config({"embed_model": ""})                       # local build, no network
+check("E1 the bounded freshness probe exists",
+      callable(getattr(codeindex, "freshness", None)))
+
+_ws2 = os.path.join(TMP, "ws2")
+os.makedirs(_ws2)
+_f1 = os.path.join(_ws2, "one.py")
+with open(_f1, "w", encoding="utf-8") as f:
+    f.write("def one():\n    return 1\n")
+with open(os.path.join(_ws2, "two.py"), "w", encoding="utf-8") as f:
+    f.write("def two():\n    return 2\n")
+_built = codeindex.build(_ws2)
+check("E2b the build reports the indexed files", int(_built.get("files") or 0) == 2, _built)
+_fr_clean = codeindex.freshness(_ws2)
+check("E2 a just-built index is NOT stale",
+      _fr_clean.get("stale") is False and _fr_clean.get("checked") >= 2, _fr_clean)
+check("E3 the build records the newest mtime it saw",
+      codeindex.status(_ws2).get("newest_mtime") is not None)
+_future = time.time() + 5
+os.utime(_f1, (_future, _future))
+_fr_stale = codeindex.freshness(_ws2)
+check("E4 a file newer than the index makes it stale",
+      _fr_stale.get("stale") is True and _fr_stale.get("newer_files") >= 1, _fr_stale)
+_fr_capped = codeindex.freshness(_ws2, budget_s=0, max_files=1)
+check("E5 the scan is bounded and admits it",
+      _fr_capped.get("partial") is True and _fr_capped.get("checked") == 1, _fr_capped)
+check("E6 the status route always answers: watcher first, bounded scan otherwise",
+      'if _watcher_is_current(out["auto"]):' in API
+      and '"source": "watcher"' in API
+      and 'out["freshness"] = _ci.freshness(ws)' in API)
+_fresh_auto = {"enabled": True, "watcher": {"watched": True, "interval_s": 10,
+                                            "last": {"at": time.time(), "files": 2}}}
+check("E7 a warm watcher short-circuits the scan",
+      _api._watcher_is_current(_fresh_auto) is True
+      and _api._watcher_is_current({"enabled": False, "watcher": {}}) is False
+      and _api._watcher_is_current({"enabled": True, "watcher": {"watched": False}}) is False
+      and _api._watcher_is_current({"enabled": True, "watcher": {
+          "watched": True, "interval_s": 10, "last": {"at": time.time() - 3600}}}) is False)
+check("E8 the panel renders the stale badge, the green OK and the build time",
+      'class="cb-stale"' in UI and "newer than the index" in UI
+      and 'class="cb-fresh"' in UI and "no re-index needed" in UI
+      and "_cbAgo(s.built_at)" in UI)
+check("E9 the indexed file list closes when `files` is clicked again",
+      "if (_cbFilesOpen) { _cbFilesOpen = false;" in UI
+      and 'id="cbFilesBox"' in UI)
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("v542: %d/%d PASS" % (sum(results), len(results)))

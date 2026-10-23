@@ -19,6 +19,17 @@ All notable changes to Longrun are documented here. The format follows
   `v507` F–F9 and `v350` A4.
 
 ### Fixed
+- **The Codebase panel never said whether a re-index was needed.** The numbers (files,
+  chunks, vectors) cannot answer "is a file NEWER than the index?", so a healthy index
+  looked identical to a stale one. `codeindex.freshness()` now compares the tree's
+  newest mtime with the newest mtime the last build SAW (`newest_mtime`, recorded at
+  build time) and the status route always returns a verdict: a warm watcher answers
+  by construction (no walk), otherwise a **bounded** scan (0.5 s / 20k files, and it
+  admits `partial`) answers. The panel shows a green **✓ no re-index needed** or an
+  amber **⚠ N files are newer than the index · press ⚡ build**, plus `built <ago>`
+  next to the DB size. Clicking `files` a second time now CLOSES the file list (it
+  used to stay open forever), and a workspace change closes it too. Locked by
+  `v542` E1–E9.
 - **“No indexable files found” was a dead end for an agent session.** An agent owns
   `<data home>/workspaces/<agent>`, which starts EMPTY, so the Codebase rail's build
   honestly indexed 0 files and the panel only said “no indexable files” with no way

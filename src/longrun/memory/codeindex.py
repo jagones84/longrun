@@ -115,6 +115,7 @@ def build(ws: str, force: bool = False,
             ws = os.path.realpath(ws)
             seen = set()
             scanned = 0
+            newest = 0.0
             emit("scan", scanned_files=scanned)
             for rel, abspath, lang, kind in _chunk.walk(ws, globs):
                 scanned += 1
@@ -123,6 +124,9 @@ def build(ws: str, force: bool = False,
                     st = os.stat(abspath)
                 except OSError:
                     continue
+                # Baseline for `freshness()`: the newest mtime the index has SEEN.
+                if st.st_mtime > newest:
+                    newest = st.st_mtime
                 row = db.execute("SELECT mtime, size FROM files WHERE path=?", (abspath,)).fetchone()
                 # JAG-415b: compare the RAW mtimes (float), not int()-truncated seconds,
                 # or a sub-second edit is missed and stale chunks survive.
@@ -172,7 +176,8 @@ def build(ws: str, force: bool = False,
                      chunks=chunk_count, embedded=0, total_embeddings=0)
             db.commit()
             _set_meta(db, {"built_at": time.time(), "embed_model": em, "dim": _dim(db),
-                           "fts": bool(fts), "workspace": ws, "embed_error": embed_err})
+                           "fts": bool(fts), "workspace": ws, "embed_error": embed_err,
+                           "newest_mtime": newest})
             result = status(ws)
             emit("complete", files=result.get("files", 0),
                  chunks=result.get("chunks", 0), embedded=result.get("embedded", 0),
@@ -286,7 +291,8 @@ def status(ws):
     p = db_path(ws)
     out = {"workspace": os.path.realpath(ws), "db": p, "exists": os.path.isfile(p),
            "embed_model": _cfg.embed_model(), "files": 0, "chunks": 0, "embedded": 0,
-           "dim": 0, "built_at": None, "fts": False, "size_kb": 0, "embed_error": None}
+           "dim": 0, "built_at": None, "fts": False, "size_kb": 0, "embed_error": None,
+           "newest_mtime": None}
     if not out["exists"]:
         return out
     try:
@@ -303,9 +309,69 @@ def status(ws):
         out["built_at"] = _get_meta(db, "built_at")
         out["fts"] = bool(_get_meta(db, "fts", _has_fts(db)))
         out["embed_error"] = _get_meta(db, "embed_error")
+        out["newest_mtime"] = _get_meta(db, "newest_mtime")
         return out
     finally:
         db.close()
+
+
+def freshness(ws, budget_s=0.5, max_files=20000):
+    """Is the index older than the tree? Bounded, never raises.
+
+    The background watcher answers this by construction, so the caller only asks
+    when the watcher cannot (off, missing, or its last pass is old). Even then the
+    scan is CAPPED: `budget_s` and `max_files` stop it early and `partial` says so,
+    so a status call never turns into a full walk on a huge workspace.
+
+    The verdict compares the newest mtime in the tree with the newest mtime the
+    last build SAW (`newest_mtime`). DBs built before that key existed fall back
+    to `built_at`, which is a safe superset (anything edited after the build).
+    """
+    out = {"checked": 0, "partial": False, "stale": False, "newer_files": 0,
+           "indexed_newest": None, "indexed_at": None}
+    try:
+        real = os.path.realpath(ws)
+    except OSError:
+        return out
+    if not os.path.isfile(db_path(ws)):
+        out["stale"] = True
+        out["reason"] = "no index yet"
+        return out
+    db = _connect(ws)
+    try:
+        _init(db)
+        built = _get_meta(db, "built_at")
+        newest = _get_meta(db, "newest_mtime")
+    except Exception as e:  # noqa: BLE001 — a broken DB must not break status
+        out["error"] = "%s: %s" % (type(e).__name__, e)
+        return out
+    finally:
+        db.close()
+    out["indexed_at"] = built
+    out["indexed_newest"] = newest
+    if not built:
+        out["stale"] = True
+        out["reason"] = "no index yet"
+        return out
+    ref = float(newest) if newest is not None else float(built)
+    cfg = _cfg.load_config()
+    t0 = time.monotonic()
+    try:
+        for _rel, abspath, _lang, _kind in _chunk.walk(real, cfg):
+            out["checked"] += 1
+            try:
+                if os.stat(abspath).st_mtime > ref + 1e-6:
+                    out["newer_files"] += 1
+            except OSError:
+                pass
+            if out["checked"] >= max_files or (time.monotonic() - t0) >= budget_s:
+                out["partial"] = True
+                break
+    except Exception as e:  # noqa: BLE001 — freshness is advisory, never fatal
+        out["error"] = "%s: %s" % (type(e).__name__, e)
+        return out
+    out["stale"] = out["newer_files"] > 0
+    return out
 
 
 def list_files(ws):

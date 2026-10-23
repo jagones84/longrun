@@ -2861,6 +2861,28 @@ def _codebase_hint(ws, res):
     return res
 
 
+def _watcher_is_current(auto):
+    """True when the background indexer ALREADY answers "is this index fresh?".
+
+    A live watcher that ran within its own interval (with slack) has just walked
+    the tree, so asking again would be a redundant walk on the request path. Only
+    when it is off, missing, skipped, failed or overdue does the panel need a
+    bounded scan.
+    """
+    try:
+        if not auto.get("enabled", True):
+            return False
+        w = auto.get("watcher") or {}
+        last = w.get("last") or {}
+        if not w.get("watched") or last.get("error") or last.get("skipped"):
+            return False
+        at = float(last.get("at") or 0)
+        interval = float(w.get("interval_s") or 10)
+        return at > 0 and (time.time() - at) <= max(3 * interval, 120)
+    except Exception:  # noqa: BLE001 — a hint must never break the status call
+        return False
+
+
 def codebase_status(qs=None):
     """GET /api/codebase/status — the CODEBASE index for the session's workspace.
 
@@ -2877,6 +2899,17 @@ def codebase_status(qs=None):
                        "watcher": _autoidx.watch_state(ws)}
     except Exception:  # noqa: BLE001 — status must survive a broken watcher
         out["auto"] = {"enabled": False, "watcher": {"watched": False}}
+    # "Is my index stale?" — the panel ALWAYS gets a verdict, so a healthy index
+    # shows a green OK instead of silence. A warm watcher answers by construction;
+    # otherwise a BOUNDED scan answers (never a full walk on the request path).
+    if _watcher_is_current(out["auto"]):
+        out["freshness"] = {"stale": False, "source": "watcher", "checked": 0,
+                            "partial": False, "newer_files": 0}
+    else:
+        try:
+            out["freshness"] = _ci.freshness(ws)
+        except Exception:  # noqa: BLE001 — freshness is advisory
+            pass
     return _codebase_hint(ws, out)
 
 

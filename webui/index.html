@@ -1209,6 +1209,12 @@
   .cb-auto b { color: var(--txt); }
   .cb-auto .cb-off { color: var(--warn); }
   .cb-auto .cb-err { color: var(--err); }
+  .cb-stale, .cb-fresh { display: block; margin-top: 8px; padding: 6px 9px;
+    border-radius: 8px; font-size: 11px; border: 1px solid var(--line-2); }
+  .cb-stale { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+    background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .cb-fresh { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 32%, transparent);
+    background: color-mix(in srgb, var(--ok) 7%, transparent); }
   .cb-empty, .cb-error { display: block; margin-top: 8px; padding: 7px 9px;
     border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
     border-radius: 8px; color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
@@ -10865,6 +10871,7 @@ let _cbWorkspace = "", _cbBuildBusy = false, _cbProgressTimer = null;
 // The session's own folder can be an EMPTY agent workspace. The panel then offers
 // an explicit "index the default workspace" action instead of swapping the scope.
 let _cbDefault = "";
+let _cbFilesOpen = false;
 function _setCbBuildBusy(busy) {
   _cbBuildBusy = !!busy;
   const btn = $("cbBuildBtn");
@@ -10930,6 +10937,10 @@ async function cbStatus() {
       _setCbBuildBusy(false);
       const progress = $("cbProgress");
       if (progress) progress.hidden = true;
+      // The file list belongs to the OLD workspace: close it with the scope change.
+      _cbFilesOpen = false;
+      const fbox = $("cbFilesBox");
+      if (fbox) { fbox.innerHTML = ""; fbox.hidden = true; }
     }
     const meta = $("cbMeta");
     if (s.error) {
@@ -10959,6 +10970,25 @@ async function cbStatus() {
     else autoHow = " · last pass " + _cbAgo(last.at) + " · " + count(Number(last.files || 0)) +
       " files · every " + Number(watcher.interval_s || 10) + "s";
     const autoHtml = '<div class="cb-auto">Auto-index · <b>' + (autoOn ? "on" : "off") + "</b>" + autoHow + "</div>";
+    // The only thing the numbers cannot say: is a file NEWER than the index?
+    // Present only when the watcher could not answer (backend `_watcher_is_current`),
+    // because a warm watcher has just walked the tree itself.
+    const fr = s.freshness || null;
+    let freshHtml = "";
+    if (fr) {
+      if (fr.stale) {
+        const n = Number(fr.newer_files || 0);
+        freshHtml = '<span class="cb-stale">⚠ ' +
+          esc(fr.reason || (count(n) + (n === 1 ? " file is" : " files are") + " newer than the index")) +
+          " · press ⚡ build to re-index</span>";
+      } else {
+        // A warm watcher is proof enough (it just walked the tree), so no scan happened.
+        const how = fr.source === "watcher"
+          ? "auto-index just walked it"
+          : "checked " + count(Number(fr.checked || 0)) + " files" + (fr.partial ? " (partial)" : "");
+        freshHtml = '<span class="cb-fresh">✓ no re-index needed · ' + esc(how) + "</span>";
+      }
+    }
     if (meta) meta.innerHTML = (s.exists
       ? '<div class="cb-metrics">' +
         '<div class="cb-metric"><span>Files</span><b>' + count(files) + "</b></div>" +
@@ -10968,8 +10998,9 @@ async function cbStatus() {
         esc(_short(_cbWorkspace)) + "</b></div>" +
         '<div class="cb-embedding">Embedding · <b>' + esc(s.embed_model || "lexical only") + "</b>" +
         (s.dim ? " · " + count(Number(s.dim)) + " dimensions" : "") +
-        " · DB " + esc(_fmtSize((s.size_kb || 0) * 1024)) + "</div>" +
-        autoHtml +
+        " · DB " + esc(_fmtSize((s.size_kb || 0) * 1024)) +
+        (s.built_at ? " · built " + _cbAgo(s.built_at) : "") + "</div>" +
+        autoHtml + freshHtml +
         (s.embed_error ? '<span class="cb-error">Embedding incomplete · ' + esc(s.embed_error) + "</span>" : "") +
         (files === 0 ? '<span class="cb-empty">' +
           esc(s.hint || "No indexable files found. Check this workspace and its ignore patterns.") +
@@ -10985,6 +11016,9 @@ async function cbStatus() {
 }
 async function cbFiles() {
   const box = $("cbFilesBox"); if (!box) return;
+  // A TOGGLE: clicking `files` again closes the list instead of leaving it stuck open.
+  if (_cbFilesOpen) { _cbFilesOpen = false; box.innerHTML = ""; box.hidden = true; return; }
+  _cbFilesOpen = true; box.hidden = false;
   box.innerHTML = '<div class="remaining">loading…</div>';
   try {
     const r = await api("GET", "/api/codebase/files" + _cbQS());
