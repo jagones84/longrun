@@ -587,11 +587,10 @@ def _browser(args, run_id):
 # ------------------------------------------------------------------ web ------
 
 _WEB_UA = "Mozilla/5.0 (X11; Linux aarch64) Longrun/0.7 (+harness)"
-_HERMES_ENV = os.path.expanduser("~/.hermes/.env")
 
 
 def _secret(name):
-    """Env var, falling back to repo .env and ~/.hermes/.env."""
+    """Env var, falling back to the repo .env (the one Settings > Keys writes)."""
     from longrun.model import keys as _keys
     return _keys.read_secret(name) or None
 

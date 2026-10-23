@@ -15,10 +15,10 @@
 version: "1"
 
 # Keys are loaded from these files at startup (first hit wins, no overwrite):
-#   $LONGRUN_ENV_FILE, <repo>/.env, ~/.hermes/.env
+#   $LONGRUN_ENV_FILE, <repo>/.env
+# The repo `.env` is the ONE place a key lives: Settings > Keys writes it there.
 env_files:
   - .env
-  - ~/.hermes/.env
 
 # The model a bare/absent request falls back to. A GENERAL cloud model, never a
 # local one: the OpenRouter auto-router picks the best general model per request.

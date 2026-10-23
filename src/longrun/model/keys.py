@@ -95,7 +95,12 @@ def set_key(name, value):
 
 
 def read_secret(name):
-    """Return the secret value for ``name`` from os.environ, repo .env, or ~/.hermes/.env."""
+    """Return the secret value for ``name`` from os.environ or the repo .env.
+
+    ONE file: the gitignored `.env` next to the repo (the same file Settings >
+    Keys writes). There is no fallback into another harness' home directory — a
+    key lives where the UI puts it.
+    """
     name = (name or "").strip()
     if not name:
         return ""
@@ -110,11 +115,9 @@ def read_secret(name):
             return val.strip()
     except Exception:  # noqa: BLE001
         pass
-    for path in (ENV_FILE, os.path.expanduser("~/.hermes/.env")):
-        if not os.path.isfile(path):
-            continue
+    if os.path.isfile(ENV_FILE):
         try:
-            with open(path, encoding="utf-8", errors="replace") as f:
+            with open(ENV_FILE, encoding="utf-8", errors="replace") as f:
                 for ln in f:
                     ln = ln.strip()
                     if not ln or ln.startswith("#"):
@@ -128,7 +131,7 @@ def read_secret(name):
                             if v:
                                 return v
         except Exception:  # noqa: BLE001
-            continue
+            pass
     return ""
 
 
@@ -205,7 +208,7 @@ def keys_status():
         r["set"] = bool(os.environ.get(env))
         r.setdefault("description", "Custom environment variable")
         out.append(r)
-    return {"keys": out, "env_files": [".env", "~/.hermes/.env"],
+    return {"keys": out, "env_files": [".env"],
             "env_file": ENV_FILE,
             "note": "Values are never in the repo: set them here and they are written "
                     "to the gitignored .env. Providers and MCP reference a key by NAME only."}

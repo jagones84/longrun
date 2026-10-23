@@ -8,7 +8,6 @@
 # config/mcp_clients.local.json in format {"mcpServers": {...}}.
 env_files:
   - .env
-  - ~/.hermes/.env
 
 clients: {}
 

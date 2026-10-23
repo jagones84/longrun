@@ -1215,6 +1215,14 @@
     background: color-mix(in srgb, var(--warn) 8%, transparent); }
   .cb-fresh { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 32%, transparent);
     background: color-mix(in srgb, var(--ok) 7%, transparent); }
+  .term-tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 6px; }
+  .term-tabs:empty { display: none; }
+  .term-tab { flex: 0 0 auto; padding: 3px 8px; border: 1px solid var(--line-2);
+    border-radius: 7px; background: var(--panel2); color: var(--dim); font-size: 10.5px;
+    cursor: pointer; font-family: ui-monospace, monospace; }
+  .term-tab.on { color: var(--txt); border-color: var(--acc);
+    background: color-mix(in srgb, var(--acc) 12%, transparent); }
+  .term-tab.busy { color: var(--warn); }
   .cb-empty, .cb-error { display: block; margin-top: 8px; padding: 7px 9px;
     border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
     border-radius: 8px; color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
@@ -2137,9 +2145,11 @@
         <button class="insp-hd" data-call="toggleInsp" data-args='["terminal"]'>Terminal<span class="ihd-s" id="sTerm"></span></button>
         <div class="insp-body">
         <div class="card">
-          <div class="remaining u-mb6" title="one persistent shell per session, shared with the agent's shell tool when it runs on the host">
-            One shell per session — <b>shared with the agent</b>: its commands appear here (🤖), and your <code>cd</code>/exports are still in effect when it runs. Ask it to <code>shell{action:"read"}</code> to see what you typed.
+          <div class="remaining u-mb6" title="one persistent shell per caller: the session's own, plus one per agent run">
+            One shell per caller — the <b>session</b> shell is shared with the agent (its commands appear here 🤖); every
+            agent run and subagent gets its own terminal, shown as a tab.
           </div>
+          <div id="termTabs" class="term-tabs" role="tablist" aria-label="terminals"></div>
           <div class="u-df u-aic u-g6 u-mb6">
             <span class="remaining" id="termCwd" style="flex:1;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="the shell's working directory">…</span>
             <button class="ghost" data-call="termClear" title="clear the screen (keeps the shell)">⌫ clear</button>
@@ -10839,6 +10849,7 @@ function _loadInspector(name) {
   else if (key === "feed") { loadRunning(); }
   else if (key === "files") { loadEdits(); loadRules(); }
   else if (key === "codebase") { cbStatus(); loadIndexCfg(); }
+  else if (key === "terminal") { termTabs(); }
 }
 function focusInsp(name, opts) {
   const map = { graph: "plan", plan: "plan", context: "context", approvals: "approvals", files: "files", codebase: "codebase", feed: "feed" };
@@ -12173,6 +12184,39 @@ function toggleChatSearch() {
    sends one line to the same long-lived bash (cd/env survive), output streams
    live by polling, ↑/↓ recalls history. The agent's `shell` tool is separate. */
 let _termCursor = 0, _termTimer = null, _termHist = [], _termHistIdx = 0;
+// "" = this session's shell; otherwise the key of an agent RUN's own terminal.
+// The `shell` tool keys its terminal on the run id, so a subagent's commands are
+// in a DIFFERENT shell than the session's — the tabs are how the operator sees them.
+let _termKey = "", _termTickN = 0;
+function _termSel() { return _termKey || sessionId; }
+async function termTabs() {
+  const box = $("termTabs"); if (!box || !sessionId) return;
+  try {
+    const r = await api("GET", "/api/term/list?session=" + encodeURIComponent(sessionId));
+    const rows = (r && r.terminals) || [];
+    // A run terminal that died (reaped) must not leave the panel pointing at nothing.
+    if (_termKey && !rows.some(t => t.key === _termKey)) {
+      _termKey = ""; _termCursor = 0; termClear();
+    }
+    const cur = _termSel();
+    box.innerHTML = rows.map(t => {
+      const label = t.key === sessionId ? "session"
+        : String(t.key).replace(/^run_/, "run ");
+      const cls = "term-tab" + (t.key === cur ? " on" : "") + (t.busy ? " busy" : "");
+      return '<button class="' + cls + '" role="tab" aria-selected="' + (t.key === cur) +
+        '" data-term="' + _attr(t.key) + '" title="' + _attr((t.cwd || "") + (t.busy ? " · busy" : "")) +
+        '">● ' + esc(label) + "</button>";
+    }).join("");
+    box.querySelectorAll("[data-term]").forEach(el =>
+      el.onclick = () => termSelect(el.getAttribute("data-term")));
+  } catch (e) { /* transient */ }
+}
+function termSelect(key) {
+  _termKey = key === sessionId ? "" : String(key || "");
+  _termCursor = 0; termClear();
+  _termLine("· " + (_termKey ? _termKey : "session shell"), "remaining");
+  termTabs(); _termTick();
+}
 function _termLine(text, cls) {
   const log = $("termLog"); if (!log) return null;
   const d = document.createElement("div");
@@ -12183,7 +12227,7 @@ function _termLine(text, cls) {
 }
 function termClear() { const l = $("termLog"); if (l) l.innerHTML = ""; }
 async function termReset() {
-  await api("POST", "/api/term/reset", { session: sessionId });
+  await api("POST", "/api/term/reset", { session: _termSel() });
   _termCursor = 0; termClear();
   _termLine("· fresh shell", "remaining");
 }
@@ -12194,7 +12238,7 @@ async function termSend() {
   inp.value = "";
   _termHist.push(cmd); _termHistIdx = _termHist.length;
   _termLine("$ " + cmd, "tcmd");
-  const r = await api("POST", "/api/term/exec", { session: sessionId, cmd: cmd });
+  const r = await api("POST", "/api/term/exec", { session: _termSel(), cmd: cmd });
   if (!r || r.error || r.ok === false) { _termLine("⛔ " + ((r && r.error) || "error")); return; }
   if (r.cwd) { const c = $("termCwd"); if (c) c.textContent = r.cwd; _isum("sTerm", _base(r.cwd), ""); }
   _termTick();
@@ -12219,10 +12263,12 @@ async function _termTick() {
   if (sec && !sec.classList.contains("insp-open")) return;   // panel collapsed: skip
   try {
     const qs = new URLSearchParams();
-    qs.set("session", sessionId); qs.set("cursor", String(_termCursor));
+    // The tab (or the session) decides WHICH shell we poll; both are `session` keys.
+    qs.set("session", _termSel()); qs.set("cursor", String(_termCursor));
     if (TOKEN) qs.set("token", TOKEN);
     const d = await api("GET", "/api/term/poll?" + qs.toString());
     if (!d) return;
+    if (_termTickN++ % 6 === 0) termTabs();   // ~4 s: new run terminals appear
     if (d.reset) termClear();
     (d.events || []).forEach(ev => {
       if (ev.kind === "out") _termLine(ev.text, "tout");

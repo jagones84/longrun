@@ -1349,6 +1349,8 @@ def handle(handler, method, path, qs, body):
             return _fs_raw(handler, qs)
         if path == "/api/term/poll":  # JAG-281: real terminal — new output since cursor
             return _r(handler, 200, term_poll(qs))
+        if path == "/api/term/list":  # every live shell, so the panel can TAB them
+            return _r(handler, 200, term_list(qs))
         if path == "/api/edits":  # JAG-127: change summary for the run/session
             return _r(handler, 200, edits_summary(qs))
         if path == "/api/edits/diff":  # JAG-127: side-by-side rows for one file
@@ -2771,6 +2773,28 @@ def term_exec(body):
     res = sh.run(b.get("cmd"))
     res["cwd"] = sh.cwd
     return res
+
+
+def term_list(qs=None):
+    """GET /api/term/list — every live persistent shell, so the panel can TAB them.
+
+    The RH Terminal used to show ONLY the session's shell: the `shell` tool keys
+    its terminal on the RUN id, so every agent run (and every subagent) had a
+    terminal of its own that the operator could not see. `key` is exactly what
+    /api/term/poll|exec|reset accept as `session`.
+    """
+    q = qs or {}
+    sid = q.get("session") or ""
+    try:
+        rows = _term().status()
+    except Exception:  # noqa: BLE001 — a broken terminal must not break the panel
+        rows = []
+    for r in rows:
+        key = str(r.get("key") or "")
+        r["current"] = bool(sid) and key == sid
+        r["role"] = "session" if r["current"] else ("run" if key.startswith("run_") else "other")
+    rows.sort(key=lambda r: (not r["current"], r.get("idle_secs", 0)))
+    return {"terminals": rows, "current": sid}
 
 
 def term_poll(qs):

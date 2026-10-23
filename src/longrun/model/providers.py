@@ -27,7 +27,7 @@ CONFIG = os.environ.get("LONGRUN_PROVIDERS") or os.path.join(REPO, "config", "pr
 LOCAL_CONFIG = os.environ.get("LONGRUN_PROVIDERS_LOCAL") or \
     os.path.join(REPO, "config", "providers.local.yaml")
 
-DEFAULTS = {"version": "1", "env_files": [".env", "~/.hermes/.env"],
+DEFAULTS = {"version": "1", "env_files": [".env"],
             "providers": [], "default": None}
 
 _cache = {"ts": None, "cfg": None}
@@ -79,8 +79,8 @@ atexit.register(_join_bg)
 def load_env(reload=False):
     """Populate os.environ from the configured .env files (never overwrite).
 
-    Keys live in a gitignored .env (or ~/.hermes/.env); the repository only ever
-    references them by name. Missing files are silently skipped.
+    Keys live in the repo's gitignored .env (Settings > Keys writes it); the
+    repository only ever references them by name. Missing files are skipped.
     """
     global _env_loaded
     if _env_loaded and not reload:

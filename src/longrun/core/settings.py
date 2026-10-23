@@ -158,7 +158,7 @@ SECTIONS = [
                  "The clients themselves are managed by Settings ▸ MCP."),
         "fields": [
             _f("env_files", "env files", "strlist",
-               help="One path per line (e.g. .env, ~/.hermes/.env)."),
+               help="One path per line (e.g. .env — the repo's gitignored file)."),
         ],
     },
 ]

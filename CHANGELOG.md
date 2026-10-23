@@ -25,6 +25,24 @@ All notable changes to Longrun are documented here. The format follows
   and the operator explicitly chose session dialogue over isolation. Pinned by
   `v507` F–F9 and `v350` A4.
 
+### Changed
+- **Keys live in ONE file: the repo `.env`.** Settings ▸ Keys already WROTE there, but
+  the harness also READ `~/.hermes/.env`, so a key could look "set" while the panel
+  could not find or clear it. `env_files` (providers + MCP), `keys.read_secret()` and
+  `tools._secret()` now use the repo `.env` only; the Settings help says so. Existing
+  values were migrated into the repo `.env` before the fallback was removed.
+  Locked by `v493` C7–C9.
+- **The RH Terminal is tabbed.** The panel showed only the SESSION shell, while the
+  `shell` tool keys its terminal on the RUN id — so every agent run (and every
+  subagent) had a terminal the operator could not see. `GET /api/term/list` now
+  returns every live shell (session, busy, cwd) and the panel renders one tab per
+  shell, polling/executing on the SELECTED key. Locked by `v530` I1–I4.
+- **No local models in the shipped routing defaults.** `chat`/`agent` pointed at
+  `pattern: qwen`, which matches nothing on a router that has no qwen loaded (→ `400
+  model 'qwen' not found`). Both roles now name explicit cloud models with a cloud
+  fallback; local providers stay available for anyone who pins them, they are just
+  no longer the default.
+
 ### Fixed
 - **Two `shell` calls in one `batch` silently lost one.** The batch ran every tool
   item in a thread pool, but the shell is ONE persistent terminal per caller with a

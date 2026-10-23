@@ -117,6 +117,30 @@ check("H1 action=reset drops the session shell",
       T._shell({"action": "reset"}, "v530r").get("ok") is True
       and term.peek("v530r") is None)
 
+# ------------------------------------------------------- I) the panel's TABS ----
+# The RH panel showed ONLY the session shell, while the `shell` tool keys its
+# terminal on the RUN id: every agent run (and every subagent) had a terminal of
+# its own that the operator could not see. The panel now tabs them.
+term.get("run_v530", TMP).run_capture("echo run-only", timeout=30)
+term.get("v530", TMP).run_capture("echo session-only", timeout=30)
+from longrun.core import server as _server  # noqa: E402,F401 — breaks the import cycle
+from longrun.core import api_v02 as _api    # noqa: E402
+_lst = _api.term_list({"session": "v530"})
+_by_key = {t["key"]: t for t in (_lst.get("terminals") or [])}
+check("I1 the terminal list exposes the session AND an agent run",
+      "v530" in _by_key and "run_v530" in _by_key, sorted(_by_key))
+check("I2 the session shell is current and the run is labelled",
+      _by_key["v530"].get("current") is True
+      and _by_key["run_v530"].get("role") == "run")
+API_SRC = open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"),
+               encoding="utf-8").read()
+UI_SRC = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
+check("I3 the list route exists", 'if path == "/api/term/list"' in API_SRC)
+check("I4 the panel tabs every shell and polls the SELECTED one",
+      'id="termTabs"' in UI_SRC and "async function termTabs()" in UI_SRC
+      and 'qs.set("session", _termSel())' in UI_SRC)
+term.reset("run_v530")
+
 term.reset("v530")
 
 print("---")

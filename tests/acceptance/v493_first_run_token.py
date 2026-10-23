@@ -106,6 +106,20 @@ finally:
     if old_custom_value is not None:
         os.environ[custom_name] = old_custom_value
 
+# JAG-2.9 keys: ONE place. The repo `.env` is what Settings > Keys writes, so it
+# must also be the only file the harness READS — no ~/.hermes fallback that makes
+# a key appear "set" while the UI cannot find (or clear) it.
+check("C7 the Keys panel advertises ONLY the repo .env",
+      keys.keys_status().get("env_files") == [".env"],
+      keys.keys_status().get("env_files"))
+_keys_src = open(os.path.join(REPO, "src", "longrun", "model", "keys.py"),
+                 encoding="utf-8").read()
+check("C8 read_secret has no ~/.hermes fallback", "~/.hermes" not in _keys_src)
+_pv = open(os.path.join(REPO, "config", "providers.yaml"), encoding="utf-8").read()
+_mcp = open(os.path.join(REPO, "config", "mcp_clients.yaml"), encoding="utf-8").read()
+check("C9 the shipped env_files are local only",
+      "~/.hermes" not in _pv and "~/.hermes" not in _mcp)
+
 print("---")
 print("%d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
