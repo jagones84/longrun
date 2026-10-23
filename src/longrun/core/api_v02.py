@@ -1461,7 +1461,7 @@ def handle(handler, method, path, qs, body):
                      files=res.get("files"), chunks=res.get("chunks"),
                      embedded=res.get("embedded"), embed_error=res.get("embed_error"),
                      duration_ms=int((time.monotonic() - started) * 1000))
-            return _r(handler, 200, res)
+            return _r(handler, 200, _codebase_hint(ws, res))
         if path == "/api/codebase/search":
             return _r(handler, 200, codebase_search(body or {}))
         if path == "/api/codebase/clear":
@@ -2837,6 +2837,30 @@ def _session_ws(session_id):
     return _RULES.resolve_workspace(sess), sess
 
 
+def _codebase_hint(ws, res):
+    """Add the default workspace + an ACTIONABLE reason when the walk found nothing.
+
+    An agent session owns a dedicated folder under `<data home>/workspaces/<agent>`
+    that starts EMPTY, so a build there honestly indexes 0 files. Reporting only
+    "no indexable files" left the operator with no way out; the panel now names the
+    folder it scanned, the default workspace, and can link that one EXPLICITLY —
+    the scope is never swapped behind the operator's back.
+    """
+    try:
+        _lazy('rules')
+        default = _RULES.get_workspace()
+    except Exception:  # noqa: BLE001 — a hint must never break the status call
+        default = None
+    if not isinstance(res, dict):
+        return res
+    res["default_workspace"] = default
+    if not int(res.get("files") or 0):
+        res["empty"] = True
+        res["hint"] = ("no indexable file under %s — the folder is empty or fully "
+                       "ignored. Default workspace: %s." % (ws, default or "not set"))
+    return res
+
+
 def codebase_status(qs=None):
     """GET /api/codebase/status — the CODEBASE index for the session's workspace.
 
@@ -2853,7 +2877,7 @@ def codebase_status(qs=None):
                        "watcher": _autoidx.watch_state(ws)}
     except Exception:  # noqa: BLE001 — status must survive a broken watcher
         out["auto"] = {"enabled": False, "watcher": {"watched": False}}
-    return out
+    return _codebase_hint(ws, out)
 
 
 def codebase_files(qs=None):

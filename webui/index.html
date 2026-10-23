@@ -2106,6 +2106,8 @@
           </div>
           <div class="u-df u-g6 u-mt8 u-fww cb-actions">
             <button class="ghost" id="cbBuildBtn" data-call="cbBuild" data-args='[false]' title="re-index this workspace's code and docs">⚡ build</button>
+            <button class="ghost" id="cbDefaultBtn" data-call="cbUseDefaultWorkspace" hidden
+                    title="this session's folder has no indexable file — index the default workspace instead">index default workspace</button>
             <button class="ghost" data-call="cbFiles" title="which files are indexed">files</button>
             <button class="ghost" data-call="cbStatus" title="refresh the counts">status</button>
             <button class="ghost" data-call="cbClear" title="delete this workspace's codebase index">clear</button>
@@ -10860,6 +10862,9 @@ function openPanel(name, opts) { focusInsp(name, opts); }
 /* ---- JAG-400: CODEBASE index — PER WORKSPACE (like project rules) ---- */
 function _cbQS() { return sessionId ? ("?session=" + encodeURIComponent(sessionId)) : ""; }
 let _cbWorkspace = "", _cbBuildBusy = false, _cbProgressTimer = null;
+// The session's own folder can be an EMPTY agent workspace. The panel then offers
+// an explicit "index the default workspace" action instead of swapping the scope.
+let _cbDefault = "";
 function _setCbBuildBusy(busy) {
   _cbBuildBusy = !!busy;
   const btn = $("cbBuildBtn");
@@ -10932,6 +10937,14 @@ async function cbStatus() {
       return s;
     }
     const files = Number(s.files || 0), chunks = Number(s.chunks || 0), embedded = Number(s.embedded || 0);
+    _cbDefault = s.default_workspace || "";
+    const btnDefault = $("cbDefaultBtn");
+    if (btnDefault) {
+      const offer = files === 0 && !!_cbDefault && _cbDefault !== _cbWorkspace;
+      btnDefault.hidden = !offer;
+      if (offer) btnDefault.title = "no indexable file in " + _cbWorkspace +
+        " — link and index " + _cbDefault + " instead";
+    }
     const count = n => n.toLocaleString("en-US");
     // "I see what is real": the automatic pass is silent by design, so the panel
     // must say whether a watcher exists and when it last ran.
@@ -10958,7 +10971,9 @@ async function cbStatus() {
         " · DB " + esc(_fmtSize((s.size_kb || 0) * 1024)) + "</div>" +
         autoHtml +
         (s.embed_error ? '<span class="cb-error">Embedding incomplete · ' + esc(s.embed_error) + "</span>" : "") +
-        (files === 0 ? '<span class="cb-empty">No indexable files found. Check this workspace and its ignore patterns.</span>' : "")
+        (files === 0 ? '<span class="cb-empty">' +
+          esc(s.hint || "No indexable files found. Check this workspace and its ignore patterns.") +
+          "</span>" : "")
       : '<div class="cb-location"><span>Workspace</span><b class="cb-path" title="' +
         _attr(_cbWorkspace) + '">' + esc(_short(_cbWorkspace)) + '</b></div>' +
         autoHtml +
@@ -10995,7 +11010,8 @@ async function cbBuild(force) {
                             workspace: _cbWorkspace, error: r.error || "request failed" });
       if (typeof toast === "function") toast("Codebase build failed", "err");
     } else if (!Number(r.files || 0)) {
-      if (typeof toast === "function") toast("No indexable files found in this workspace", "err");
+      if (typeof toast === "function") toast(
+        "No indexable files in " + _short(r.workspace || _cbWorkspace), "err");
       await cbStatus();
     } else {
       if (typeof toast === "function") toast(
@@ -11032,6 +11048,27 @@ async function cbSearch() {
 async function cbClear() {
   if (typeof confirmDelete === "function" && !(await confirmDelete("delete THIS workspace's codebase index?"))) return;
   try { await api("POST", "/api/codebase/clear", { session: sessionId || undefined }); cbStatus(); } catch (e) {}
+}
+/* An agent session owns an EMPTY folder, so its code index is legitimately empty.
+   Link the DEFAULT workspace to this session and build it — one explicit click,
+   never a silent scope swap (the Workspace rail shows the result). */
+async function cbUseDefaultWorkspace() {
+  if (!_cbDefault) return;
+  const target = _cbDefault;
+  try {
+    const r = await api("POST", "/api/workspace", { session: sessionId || undefined, path: target });
+    if (!r || r.ok === false) {
+      if (typeof toast === "function") toast("Could not link " + _short(target), "err");
+      return;
+    }
+    // "I see what is real": the Workspace rail must show the folder we just linked,
+    // not the empty agent folder it showed a second ago.
+    if (typeof loadRules === "function") await loadRules();
+    await cbStatus();
+    await cbBuild(false);
+  } catch (e) {
+    if (typeof toast === "function") toast("error: " + e, "err");
+  }
 }
 /* JAG-415 + JAG-2.9: automatic indexing — a background pass keeps the workspace
    index warm (memory/autoidx.py), and a quick incremental refresh still runs right

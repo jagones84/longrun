@@ -19,6 +19,15 @@ All notable changes to Longrun are documented here. The format follows
   `v507` F–F9 and `v350` A4.
 
 ### Fixed
+- **“No indexable files found” was a dead end for an agent session.** An agent owns
+  `<data home>/workspaces/<agent>`, which starts EMPTY, so the Codebase rail's build
+  honestly indexed 0 files and the panel only said “no indexable files” with no way
+  out. `/api/codebase/status` and `/api/codebase/build` now carry
+  `default_workspace`, `empty` and a `hint` naming the folder they scanned and the
+  default workspace, the panel renders that reason, and an **explicit**
+  `index default workspace` button links the default folder to the session and
+  rebuilds — the scope is never swapped silently. The Workspace rail refreshes with
+  the new folder. Locked by `v542` D1–D7.
 - **A failed model turn can no longer be recorded as a finished subjob.** When a
   worker's turn ended in the harness error record (`⚠️ error: … provider 500 /
   timeout`), the subjob and the run were marked `done` with the error text as the

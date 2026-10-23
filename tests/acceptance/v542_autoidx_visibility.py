@@ -102,6 +102,32 @@ check("C3 the Codebase panel renders the auto-index state",
       "Auto-index · <b>" in UI and "_cbAgo(last.at)" in UI
       and "no watcher for this workspace" in UI)
 
+# --- D: an EMPTY session folder is actionable, never a dead end --------------
+# An agent session owns `<data home>/workspaces/<agent>`, which starts EMPTY: a
+# build there honestly indexes 0 files and the panel used to just say "no indexable
+# files", with no way out. The status/build payloads now name the folder, the
+# default workspace, and the panel offers ONE explicit action.
+from longrun.core import api_v02 as _api                      # noqa: E402
+from longrun.memory import rules as _rules                    # noqa: E402
+_rules.set_workspace(ws)
+_h = _api._codebase_hint("/nowhere/empty", {"files": 0, "chunks": 0})
+check("D1 an empty workspace is flagged as empty", _h.get("empty") is True, _h)
+check("D2 the hint names the scanned folder and the default workspace",
+      "/nowhere/empty" in (_h.get("hint") or "")
+      and _h.get("default_workspace") == os.path.realpath(ws)
+      and os.path.realpath(ws) in (_h.get("hint") or ""), _h)
+_h2 = _api._codebase_hint("/ws", {"files": 7, "chunks": 9})
+check("D3 a non-empty index carries no failure hint",
+      not _h2.get("hint") and not _h2.get("empty") and _h2.get("default_workspace"), _h2)
+check("D4 the status route exposes the hint", "return _codebase_hint(ws, out)" in API)
+check("D5 the build route exposes the hint", "_codebase_hint(ws, res)" in API)
+check("D6 the panel offers the explicit default-workspace action",
+      'id="cbDefaultBtn"' in UI and "async function cbUseDefaultWorkspace()" in UI
+      and '"/api/workspace"' in UI)
+check("D6b linking the folder refreshes the Workspace rail",
+      "if (typeof loadRules === \"function\") await loadRules();" in UI)
+check("D7 the empty message renders the backend hint", "esc(s.hint ||" in UI)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("v542: %d/%d PASS" % (sum(results), len(results)))
 raise SystemExit(0 if all(results) else 1)
