@@ -19,6 +19,15 @@ RES="$TMP/results"
 export PYTHONPYCACHEPREFIX="$PYC"
 mkdir -p "$PYC" "$RES"
 
+# Live progress log. The aggregate summary only prints when EVERY test is done, so a
+# hung gate used to look like an empty screen. This file is TRUNCATED on every run
+# and appended by each test as it starts/finishes: the last START without its END
+# names the test that is stuck.
+PROGRESS="$ROOT/.agent/battery-progress.log"
+mkdir -p "$(dirname "$PROGRESS")"
+: > "$PROGRESS"
+export PROGRESS
+
 # Heavy tests skipped unless LONGRUN_BATTERY_FULL=1
 SLOW_TESTS="v408_doc_ingest v399_codebase_index v431r5_pdf_kb v400_knowledge_notebooks v409_embed_providers v402_research"
 
@@ -43,7 +52,8 @@ _run_one() {
   name="$(basename "$t" .py)"
   d="$(mktemp -d "${TMPDIR:-/tmp}/sf-t-XXXXXX")"
   timing="${LONGRUN_BATTERY_TIMINGS:-0}"
-  if [ "$timing" = "1" ]; then start_ms="$(date +%s%3N)"; fi
+  start_ms="$(date +%s%3N)"
+  printf 'START %-42s %s\n' "$name" "$(date -u +%FT%TZ)" >> "$PROGRESS"
   mkdir -p "$d/cfg" "$d/sessions" "$d/graphs" "$d/edits" "$d/runs" \
            "$d/roles" "$d/costs" "$d/threads" "$d/data" "$d/matrix_src" "$d/matrix_dot"
   PYTHONPYCACHEPREFIX="$PYC" \
@@ -62,8 +72,9 @@ _run_one() {
   LONGRUN_MATRIX_DOT="$d/matrix_dot" \
   python3 "$t" > "$d/log" 2>&1
   test_status=$?
+  elapsed_ms=$(( $(date +%s%3N) - start_ms ))
+  printf 'END   %-42s rc=%s %sms\n' "$name" "$test_status" "$elapsed_ms" >> "$PROGRESS"
   if [ "$timing" = "1" ]; then
-    elapsed_ms=$(( $(date +%s%3N) - start_ms ))
     printf '%s\t%s\n' "$elapsed_ms" "$name" >> "$RES/timing"
   fi
   if [ "$test_status" -eq 0 ]; then
@@ -84,6 +95,8 @@ if [ -z "${LONGRUN_BATTERY_JOBS:-}" ] && [ "$JOBS" -gt 12 ]; then
   JOBS=12
 fi
 # shellcheck disable=SC2086
+printf 'RUN   jobs=%s tests=%s started=%s\n' \
+  "$JOBS" "$(printf '%s\n' $LIST | wc -l)" "$(date -u +%FT%TZ)" >> "$PROGRESS"
 printf '%s\n' $LIST | xargs -P "$JOBS" -I {} bash -c '_run_one "$@"' _ {}
 if [ "${LONGRUN_BATTERY_TIMINGS:-0}" = "1" ] && [ -f "$RES/timing" ]; then
   echo "=== slowest tests (ms) ==="
@@ -111,6 +124,9 @@ done
 
 rm -rf "$TMP"
 
+printf 'DONE  pass=%s total=%s fail=%s %s\n' \
+  "$pass" "$total" "$fail" "$(date -u +%FT%TZ)" >> "$PROGRESS"
+
 if [ "$fail" -eq 0 ]; then
   if [ "$SKIP" -gt 0 ]; then
     echo "=== battery: $pass/$total GREEN ($SKIP heavy skipped — LONGRUN_BATTERY_FULL=1 to run) ==="
@@ -120,4 +136,5 @@ if [ "$fail" -eq 0 ]; then
 else
   echo "=== battery: $pass/$total (FAILURES — see above) ==="
 fi
+echo "progress log: $PROGRESS"
 exit "$fail"

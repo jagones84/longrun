@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The regression gate now says where it is.** `tests/battery.sh` truncates and then
+  appends `.agent/battery-progress.log` in real time — `RUN`, one `START`/`END <test>
+  rc=<n> <ms>` per test, `DONE` — so a slow or hung run names the test instead of
+  showing an empty screen until the aggregate summary. The final output prints the
+  path. (Diagnosed with it: the same suite that is 247/247 on the DGX reports
+  187/247 on Windows when 12 workers share one box — every one of the sampled red
+  tests passes standalone.)
 - **Sessions can talk to each other.** `sessions` gained `action=send`
   (`session`/`to` + `message`/`text`). A RUNNING peer receives the text inside its
   current turn through the operator's steer inbox; an IDLE peer gets a real
