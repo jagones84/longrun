@@ -379,9 +379,15 @@ check("H6 stats() counts the entries and the topics",
 check("H7 GET/POST /api/blackboard and POST /api/swarm/run are routed",
       'path == "/api/blackboard"' in api and 'path == "/api/swarm/run"' in api
       and "_SWARM.Coordinator()" in api)
-check("H8 Settings grew an Orchestration panel",
-      '["orchestrate", "Orchestration"]' in gui and 'data-cat="orchestrate"' in gui
+check("H8 Settings grew a Swarm & blackboard panel",
+      '["orchestrate", "Swarm & blackboard"]' in gui and 'data-cat="orchestrate"' in gui
       and 'id="bbList"' in gui and 'id="swReport"' in gui)
+check("H8b the tab states it is NOT the subagent engine and cross-links both ways",
+      "What this tab is (and is not)" in gui
+      and 'data-call="gotoSubagents"' in gui and 'data-call="gotoOrchestrate"' in gui
+      and "function gotoSubagents() { settingsCategory(\"subagents\"); }" in gui
+      and "function gotoOrchestrate() { settingsCategory(\"orchestrate\"); }" in gui
+      and "This panel only <b>configures</b> the engine" in gui)
 check("H9 the blackboard panel reads and writes the real route",
       "async function loadBlackboard(" in gui and '"/api/blackboard?limit=30"' in gui
       and '"/api/blackboard", { topic:' in gui and 'author: "human"' in gui)

@@ -28,6 +28,9 @@ os.environ["LONGRUN_PRICES"] = json.dumps({
     "p/flat": {"in": 1.0, "out": 8.0},
     "p/cache": {"in": 1.0, "out": 8.0, "cache_read": 0.1, "cache_write": 1.25},
     "p/anthropic": {"in": 3.0, "out": 15.0, "cache_read": 0.3, "cache_write": 3.75},
+    # DeepSeek publishes peak rates and halves them off-peak (see F2-F6).
+    "deepseek:deepseek-flash": {"in": 0.3, "out": 1.2, "cache_read": 0.006},
+    "openrouter:deepseek/deepseek-v4.1-flash": {"in": 0.3, "out": 1.2, "cache_read": 0.006},
 })
 sys.path.insert(0, os.path.join(REPO, "src"))
 
@@ -103,6 +106,30 @@ f1 = C.cost_from_rates({"in": 1.0, "out": 0.0, "cache_read": 0.1,
                        1000, 0, 5000, 5000)
 check("F1 absurd counters are clamped to the prompt (never a negative price)",
       f1 == round(1000 / 1e6 * 1.25, 6), f1)
+
+# --- F2-F6: DeepSeek peak/off-peak is decided by the CALL's UTC timestamp ----
+import calendar
+peak_ts = calendar.timegm((2026, 10, 26, 2, 0, 0))      # Monday 02:00 UTC
+off_ts = calendar.timegm((2026, 10, 26, 12, 0, 0))      # Monday 12:00 UTC
+weekend_ts = calendar.timegm((2026, 10, 25, 2, 0, 0))   # Sunday 02:00 UTC
+rp = C.rates_for("deepseek:deepseek-flash", peak_ts)
+ro = C.rates_for("deepseek:deepseek-flash", off_ts)
+rw = C.rates_for("deepseek:deepseek-flash", weekend_ts)
+check("F2 a DeepSeek call inside a peak window keeps the table's peak rates",
+      rp and (rp["in"], rp["out"], rp["cache_read"]) == (0.3, 1.2, 0.006), rp)
+check("F3 the same call off-peak is billed at exactly HALF those rates",
+      ro and (ro["in"], ro["out"], ro["cache_read"]) == (0.15, 0.6, 0.003), ro)
+check("F4 weekends are always off-peak for DeepSeek",
+      rw and (rw["in"], rw["out"]) == (0.15, 0.6), rw)
+check("F5 an OpenRouter ref is never halved (its price already mixes peak/off-peak)",
+      (C.rates_for("openrouter:deepseek/deepseek-v4.1-flash", off_ts) or {}).get("in") == 0.3,
+      C.rates_for("openrouter:deepseek/deepseek-v4.1-flash", off_ts))
+check("F6 the peak windows are [01-04) and [06-10) UTC on weekdays only",
+      C.deepseek_is_peak(calendar.timegm((2026, 10, 26, 1, 0, 0))) is True
+      and C.deepseek_is_peak(calendar.timegm((2026, 10, 26, 4, 0, 0))) is False
+      and C.deepseek_is_peak(calendar.timegm((2026, 10, 26, 6, 0, 0))) is True
+      and C.deepseek_is_peak(calendar.timegm((2026, 10, 26, 10, 0, 0))) is False
+      and C.deepseek_is_peak(calendar.timegm((2026, 10, 25, 2, 0, 0))) is False, "")
 
 # --- G: best-of-N samples keep the provider's own charge -------------------
 with open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8") as f:

@@ -123,8 +123,36 @@ def _rates(v):
             "cache_write": _f(v.get("cache_write", v.get("input_cache_write"))),
             "request": _f(v.get("request")),
         }
+        # Optional per-provider off-peak multiplier (never part of the shared
+        # shape, so existing exact-equality consumers keep working).
+        off = _f(v.get("off_peak"))
+        if off is not None:
+            r["off_peak"] = off
         return r if (r["in"] is not None or r["out"] is not None) else None
     return None
+
+
+# DeepSeek is the one provider that publishes a TIME-OF-DAY price: peak hours are
+# 01:00-04:00 and 06:00-10:00 UTC, Monday-Friday; every other hour is billed at
+# exactly HALF the peak rates (official pricing page, read 2026-10-23). Storing
+# peak rates and halving at record time keeps one table and prices each call at
+# the rate that was actually in force. Chinese public holidays are also off-peak;
+# treating them as peak over-reports, never under-reports.
+DEEPSEEK_OFF_PEAK_FACTOR = 0.5
+DEEPSEEK_PEAK_HOURS_UTC = ((1, 4), (6, 10))   # [start, end) in UTC
+
+
+def deepseek_is_peak(ts=None):
+    """True when DeepSeek bills PEAK rates at epoch `ts` (UTC, Mon-Fri)."""
+    t = time.gmtime(float(ts if ts is not None else time.time()))
+    if t.tm_wday >= 5:                      # Saturday / Sunday: always off-peak
+        return False
+    return any(start <= t.tm_hour < end for start, end in DEEPSEEK_PEAK_HOURS_UTC)
+
+
+def _is_deepseek_direct(model):
+    return str(model or "").split(":", 1)[0].strip().lower() == "deepseek"
+
 
 
 def _provider_ids() -> set:
@@ -240,9 +268,26 @@ def price_for(model):
     return _lookup(_prices_table(), model)
 
 
-def rates_for(model):
-    """Full rate set (USD per 1M) for a model, or None when unknown."""
-    return _rates(_lookup_raw(_prices_table(), model))
+def rates_for(model, ts=None):
+    """Full rate set (USD per 1M) for a model, or None when unknown.
+
+    When `ts` is given, a DIRECT DeepSeek call is priced with the rate that was in
+    force at that instant: the table stores PEAK rates, and every off-peak hour
+    (outside 01-04 / 06-10 UTC on weekdays, plus the whole weekend) is billed at
+    half. OpenRouter refs are never adjusted: its price already reflects the
+    upstream peak/off-peak mix.
+    """
+    r = _rates(_lookup_raw(_prices_table(), model))
+    if r is None or ts is None or not _is_deepseek_direct(model):
+        return r
+    if deepseek_is_peak(ts):
+        return r
+    out = dict(r)
+    factor = r["off_peak"] if r.get("off_peak") is not None else DEEPSEEK_OFF_PEAK_FACTOR
+    for key in ("in", "out", "cache_read", "cache_write"):
+        if out.get(key) is not None:
+            out[key] = round(float(out[key]) * factor, 6)
+    return out
 
 
 def _int(v):
@@ -438,16 +483,20 @@ def record(session, model, usage, run=None):
     pt, ct, cached, cache_write = usage_tokens(usage)
     if not pt and not ct:
         return None
+    ts = round(time.time(), 3)
     exact = provider_cost(usage)
     if exact is not None:
         usd, src = round(float(exact), 6), "provider"
     else:
-        usd = cost_from_rates(rates_for(model), pt, ct, cached, cache_write)
+        usd = cost_from_rates(rates_for(model, ts), pt, ct, cached, cache_write)
         src = "estimate" if usd is not None else None
-    rec = {"ts": round(time.time(), 3), "model": str(model or ""),
+    rec = {"ts": ts, "model": str(model or ""),
            "prompt": pt or 0, "completion": ct or 0, "cached": cached or 0,
            "cache_write": cache_write or 0,
            "usd": usd, "src": src, "run": (run or None)}
+    if _is_deepseek_direct(model):
+        # Truthful provenance for the estimate: which half of the day was billed.
+        rec["off_peak"] = not deepseek_is_peak(ts)
     with _lock:
         led = _load(session)
         led.append(rec)

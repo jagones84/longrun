@@ -1731,7 +1731,7 @@
       </section>
       <section data-insp="cost" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["cost"]'
-                title="Provider-reported charges are exact when supplied; otherwise cost is estimated from token usage and configured rates. Cache rates apply when reported. Unpriced calls are excluded; vendor-specific storage, tiers, and extra fees may not be represented.">Cost (estimate)<span class="ihd-s" id="sCost"></span></button>
+                title="HARNESS ONLY: this counts the calls Longrun itself made — not your whole provider API key (other apps on this machine are billed separately). Provider-reported charges are exact when supplied; otherwise cost is estimated from token usage and configured rates. DeepSeek direct calls are priced peak/off-peak by UTC (peak 01-04 and 06-10 Mon-Fri; off-peak is half). Cache reads are billed at the cache rate. Unpriced calls are excluded; vendor storage, tiers and extra fees may not be represented. Hours below are the panel's local time.">Cost · harness only<span class="ihd-s" id="sCost"></span></button>
         <div class="insp-body">
         <div class="card">
           <div class="costhead">
@@ -1746,6 +1746,7 @@
             <button class="ghost" id="costRefresh" title="Refresh the OpenRouter catalog and DeepSeek's official table. Other direct-provider rates are manually verified in config/prices.yaml. New prices apply to future calls only.">↻ refresh prices</button>
             <button class="ghost" data-call="resetCosts" title="POST /api/costs/reset — clear THIS session's ledger (the calls stay spent)">⟲ reset ledger</button>
           </div>
+          <div class="remaining u-mt4">Harness calls only · DeepSeek peak/off-peak by UTC · hours in local time.</div>
         </div>
         <div id="costList" class="costlist"></div>
         </div>
@@ -2312,6 +2313,8 @@
           fresh transcript, its own task list and the same tools, and sees <b>only</b> the goal (plus an optional
           role brief) the parent passes. A delegation must therefore be a complete, self-contained instruction —
           the child cannot see the parent's history or ask it questions.</div>
+          <div class="remaining u-mt6">This panel only <b>configures</b> the engine. To <b>run</b> it and keep the
+          shared state it writes, use <a href="#" data-call="gotoOrchestrate">Settings ▸ Swarm &amp; blackboard</a>.</div>
         </div>
         <h2>Model &amp; failover</h2>
         <div class="card">
@@ -2348,6 +2351,20 @@
            never mirrored; the swarm button is the only control that spends model
            calls, so it says so. -->
       <div class="sw-cat" data-cat="orchestrate" hidden>
+        <!-- The name is the point: this tab is NOT the subagent engine. That engine
+             (model, limits, roles) is configured in Settings ▸ Subagents; this tab
+             RUNS it as a swarm and keeps the shared state the run writes to. -->
+        <h2>What this tab is (and is not)</h2>
+        <div class="card">
+          <div class="remaining"><b>Not</b> the subagent engine: the model, the parallel limit and the roles
+          live in <a href="#" data-call="gotoSubagents">Settings ▸ Subagents</a>. This tab
+          <b>uses</b> that engine in two ways:</div>
+          <div class="remaining u-mt4"><b>1. Blackboard</b> — a shared, versioned notebook. It does nothing by
+          itself: agents (and you) write entries, everybody reads the same ones.</div>
+          <div class="remaining u-mt4"><b>2. Swarm</b> — one button: give it a goal, it splits the goal across N
+          <i>throwaway</i> subagents and writes their results on the blackboard. Costs N+1 model turns.
+          Different from <code>job.dispatch</code>, which drives agents that already exist.</div>
+        </div>
         <h2>Blackboard · the swarm's shared memory <span class="remaining" id="bbStat"></span></h2>
         <div class="card">
           <div class="u-df u-g6 u-aic u-fww">
@@ -10016,7 +10033,7 @@ function skillsAutocomplete() {
    before Harness, and the Knowledge panel remains near the end. */
 const SETTINGS_CATS = [
   ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
-  ["subagents", "Subagents"], ["orchestrate", "Orchestration"], ["tools", "Tools & approvals"], ["sandbox", "Sandbox"],
+  ["subagents", "Subagents"], ["orchestrate", "Swarm & blackboard"], ["tools", "Tools & approvals"], ["sandbox", "Sandbox"],
   ["mcp", "MCP"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
   ["compaction", "Compaction"],
@@ -10233,6 +10250,11 @@ function panelLabel(cat) {
   const hit = SETTINGS_CATS.find(([k]) => k === cat);
   return hit ? hit[1] : String(cat || "");
 }
+/* Cross-links between the two tabs that are easy to confuse: Subagents CONFIGURES
+   the engine, Swarm & blackboard RUNS it. Each panel links to the other so the
+   reader never has to guess where a control lives. */
+function gotoSubagents() { settingsCategory("subagents"); }
+function gotoOrchestrate() { settingsCategory("orchestrate"); }
 function settingsCategory(name) {
   document.querySelectorAll("#swNav button").forEach(b => b.classList.toggle("active", b.dataset.cat === name));
   document.querySelectorAll("#swMain .sw-cat").forEach(c => { c.hidden = c.dataset.cat !== name; });

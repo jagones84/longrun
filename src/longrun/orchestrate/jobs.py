@@ -45,6 +45,36 @@ def _srv():
     return server
 
 
+def _error_turn(text):
+    """True when a turn's reply is the harness's EXPLICIT error record.
+
+    `stores.ensure_reply_persisted` appends `⚠️ error: <reason>` when a turn
+    produced no assistant message (provider 500, timeout, crashed stream). That
+    is a FAILED turn, not a result: before this check a job marked the subjob
+    `done` with the error text as its deliverable, and the job itself `done`
+    with the error as the final answer.
+    """
+    try:
+        from longrun.memory import stores
+        prefix = stores.ERROR_PREFIX
+    except Exception:  # noqa: BLE001
+        prefix = "\u26a0\ufe0f error: "
+    return str(text or "").strip().startswith(prefix)
+
+
+def _error_reason(text):
+    """The reason carried by an error turn (or '' when the text is not one)."""
+    s = str(text or "").strip()
+    if not _error_turn(s):
+        return ""
+    try:
+        from longrun.memory import stores
+        s = s[len(stores.ERROR_PREFIX):]
+    except Exception:  # noqa: BLE001
+        s = s.split("error:", 1)[-1]
+    return s.strip()[:300]
+
+
 def subjob_id(jid, n, parent_sub=None):
     """JAG-334: a subjob id, NESTED when it comes from inside another subjob.
 
@@ -697,6 +727,11 @@ class JobRegistry:
                     "Rules: do NOT spawn subagents; do NOT do the teammates' work yourself."
                     % (job["goal"], team),
                     model=roster.get(coord, {}).get("model"), jid=jid, plan_only=True)
+                if _error_turn(plan):
+                    # A provider/turn failure is not a plan: without this the job
+                    # ran its workers against an error string and could finish `done`.
+                    raise RuntimeError("coordinator planning turn failed: %s"
+                                       % (_error_reason(plan) or "provider error"))
                 self._update(jid, lambda j: j["runs"].__setitem__(
                     coord, {"state": "done", "result": plan}))
 
@@ -770,6 +805,9 @@ class JobRegistry:
                     # NO reply to the team report — that is "accepted without an
                     # answer". Fail loudly so it is visible and re-runnable.
                     raise RuntimeError("coordinator produced no final reply")
+                if _error_turn(final):
+                    raise RuntimeError("coordinator final turn failed: %s"
+                                       % (_error_reason(final) or "provider error"))
                 self._update(jid, lambda j: j["runs"].__setitem__(
                     coord, {"state": "done", "result": final}))
             self._update(jid, lambda j, _f=list(failed): j.update(
@@ -950,12 +988,18 @@ class JobRegistry:
             except Exception as _e:  # noqa: BLE001
                 out, status, reason = "", "FAILED", str(_e)
             else:
-                status, reason = parse_status(out)
-                steps = open_steps(sid)
-                if status is None:
-                    status = "BLOCKED" if steps else "DONE"
-                    if steps:
-                        reason = "%d open step(s): %s" % (len(steps), "; ".join(steps[:5]))
+                if _error_turn(out):
+                    # The turn ended in the harness error record (provider 500,
+                    # timeout): that is a FAILED subjob, never a deliverable.
+                    status = "FAILED"
+                    reason = "turn error: %s" % (_error_reason(out) or "provider error")
+                else:
+                    status, reason = parse_status(out)
+                    steps = open_steps(sid)
+                    if status is None:
+                        status = "BLOCKED" if steps else "DONE"
+                        if steps:
+                            reason = "%d open step(s): %s" % (len(steps), "; ".join(steps[:5]))
             if status == "DONE":
                 break
             if attempt < attempts:

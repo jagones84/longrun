@@ -18,7 +18,30 @@ All notable changes to Longrun are documented here. The format follows
   and the operator explicitly chose session dialogue over isolation. Pinned by
   `v507` F–F9 and `v350` A4.
 
+### Fixed
+- **A failed model turn can no longer be recorded as a finished subjob.** When a
+  worker's turn ended in the harness error record (`⚠️ error: … provider 500 /
+  timeout`), the subjob and the run were marked `done` with the error text as the
+  deliverable, and a job could finish `done` on an error. `jobs._error_turn()` now
+  detects that record: the worker outcome is retried like any other non-DONE
+  attempt, then marked `failed` with the provider reason, and the coordinator's
+  planning/final turns fail loudly instead of synthesising from an error string.
+  Locked by `v337` G1–G5.
+
 ### Changed
+- **Cost panel states its scope and prices DeepSeek by time of day.** The header is
+  now `Cost · harness only` (it counts the calls Longrun made, not the whole provider
+  API key), with a note that hours are local and DeepSeek is peak/off-peak by UTC.
+  `costs.rates_for(model, ts)` halves the table's PEAK rates for a DIRECT DeepSeek
+  call outside 01-04 / 06-10 UTC on weekdays (and all weekend), matching the official
+  page; each ledger row records `off_peak`. OpenRouter refs are never adjusted.
+  Locked by `v531` F2–F6. Stale `deepseek:deepseek-reasoner` session models (retired,
+  no longer priced) were migrated to `deepseek:deepseek-flash`.
+- **Settings ▸ Orchestration is now “Swarm & blackboard”.** The tab opens with a
+  plain explanation that it is NOT the subagent engine (that lives in Subagents) and
+  what its two halves do: the shared versioned blackboard and the swarm runner that
+  spends N+1 model turns on throwaway subagents. Both panels cross-link each other
+  (`gotoSubagents` / `gotoOrchestrate`). Locked by `v536` H8/H8b.
 - **Exclusive tools are named `namespace.tool` (two segments, no deep paths).**
   The 48 VEO tools were renamed from `longrunAgent.teamorg.agents.prompt.set`
   style to one object namespace + one explicative verb: `agent.prompt_set`,

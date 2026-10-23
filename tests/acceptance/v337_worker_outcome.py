@@ -135,6 +135,38 @@ check("F3 the synthesis flags unfinished subjobs", "UNFINISHED SUBJOBS" in jsrc)
 check("F4 the job records failed_subjobs / partial",
       "failed_subjobs" in jsrc and '"partial"' in jsrc)
 
+# ---- G: a provider ERROR turn is a FAILED subjob, never a deliverable ------
+from longrun.memory import stores  # noqa: E402
+
+check("G1 the harness error record is recognised as an error turn",
+      jobs._error_turn(stores.ERROR_PREFIX + "The model provider returned a server error.")
+      and not jobs._error_turn("built it. STATUS: DONE")
+      and jobs._error_reason(stores.ERROR_PREFIX + "boom") == "boom")
+
+jid3 = jobs.JOBS.create("build the app 3", coordinator="A1", agents=["A1", "A2"])["job"]["id"]
+jobs.JOBS._update(jid3, lambda j: j.update({"subjobs": {
+    jid3 + ".1": {"id": jid3 + ".1", "agent": "A2", "status": "running"}}}))
+err_n = {"n": 0}
+
+
+def _provider_error(sid, message, model=None, jid=None, sender=None, subjob=None):
+    err_n["n"] += 1
+    return stores.ERROR_PREFIX + "The model provider returned a server error."
+
+
+jobs.JOBS._run_agent = _provider_error
+jobs.JOBS._one(jid3, "A2", "sessW", "do it", None, sub_id=jid3 + ".1", sender="A1 (Master)")
+_sub3 = (jobs.JOBS.get(jid3).get("subjobs") or {}).get(jid3 + ".1") or {}
+_run3 = (jobs.JOBS.get(jid3).get("runs") or {}).get("A2") or {}
+check("G2 a provider-error turn is retried like any other non-DONE outcome",
+      err_n["n"] == 2, str(err_n["n"]))
+check("G3 the subjob is marked failed with the provider reason (never done)",
+      _sub3.get("status") == "failed" and "server error" in (_sub3.get("error") or ""), str(_sub3))
+check("G4 the run is failed with the same reason",
+      _run3.get("state") == "failed" and "server error" in (_run3.get("error") or ""), str(_run3))
+check("G5 the coordinator plan/final turns fail loudly on an error record",
+      "coordinator planning turn failed" in jsrc and "coordinator final turn failed" in jsrc)
+
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))
