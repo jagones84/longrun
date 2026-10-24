@@ -438,12 +438,22 @@ def _summarise(led):
     tot = 0.0
     priced = unknown = provider_calls = estimated_calls = 0
     tin = tout = tcached = tcached_w = 0
+    failed = missing_usage = 0
+    latencies = []
     by_model = {}
     for c in led:
         tin += c.get("prompt") or 0
         tout += c.get("completion") or 0
         tcached += c.get("cached") or 0
         tcached_w += c.get("cache_write") or 0
+        _failed = c.get("status") == "failed"
+        if _failed:
+            failed += 1
+        if c.get("usage_basis") == "missing":
+            missing_usage += 1
+        if not _failed and isinstance(c.get("latency_ms"), (int, float)) \
+                and c["latency_ms"] >= 0:
+            latencies.append(int(c["latency_ms"]))
         if c.get("usd") is None:
             unknown += 1
         else:
@@ -454,21 +464,28 @@ def _summarise(led):
         elif c.get("src") == "estimate":
             estimated_calls += 1
         m = c.get("model") or "?"
-        b = by_model.setdefault(m, {"calls": 0, "usd": 0.0, "unknown": 0})
+        b = by_model.setdefault(m, {"calls": 0, "usd": 0.0, "unknown": 0, "failed": 0})
         b["calls"] += 1
+        if _failed:
+            b["failed"] += 1
         if c.get("usd") is None:
             b["unknown"] += 1
         else:
             b["usd"] = round(b["usd"] + float(c["usd"]), 6)
-    return {"calls": len(led), "tokens_in": tin, "tokens_out": tout,
+    latencies.sort()
+    return {"calls": len(led), "attempts": len(led),
+            "tokens_in": tin, "tokens_out": tout,
             "cached": tcached, "cache_write": tcached_w, "total_usd": round(tot, 6),
             "priced_calls": priced, "unknown_calls": unknown,
             "provider_calls": provider_calls, "estimated_calls": estimated_calls,
+            "failed": failed, "missing_usage": missing_usage,
+            "latency_ms_p50": (latencies[len(latencies) // 2] if latencies else None),
             "by_model": by_model}
 
 
-def record(session, model, usage, run=None):
-    """Price ONE LLM call from its real `usage` and append it to the ledger.
+def record(session, model, usage, run=None, status="completed", error=None,
+           latency_ms=None):
+    """Price ONE LLM attempt from its real `usage` and append it to the ledger.
 
     The provider's OWN charge wins when it reports one (``src: "provider"``,
     exact); otherwise the real token counts are priced against the rate table
@@ -477,24 +494,49 @@ def record(session, model, usage, run=None):
     ``run`` is an optional turn/run id: every LLM call made inside the SAME
     user turn shares it, so the UI can group calls "per run" and collapse them.
 
-    Returns the call record (with the running session total) or None when the
-    usage carried no token counts.
+    Attempt accounting (JAG-560, shape borrowed from Maka's
+    ``usage_model_call_attempts``): a call that FAILED, or one that succeeded
+    without the provider reporting any counters, is still a row. Hiding it made
+    retries and outages invisible in the Cost panel and let a broken provider
+    look free. ``usage_basis`` is ``reported`` or ``missing`` — never a proxy
+    number; ``latency_ms`` is the wall clock of the attempt.
+
+    Returns the call record (with the running session total), or None when the
+    caller gave no usage at all (not even an empty provider block) and the call
+    did not fail.
     """
     pt, ct, cached, cache_write = usage_tokens(usage)
-    if not pt and not ct:
+    failed = str(status or "completed").strip().lower() != "completed"
+    has_tokens = bool(pt or ct or cached or cache_write)
+    if not has_tokens and not failed and not (isinstance(usage, dict) and usage):
         return None
     ts = round(time.time(), 3)
-    exact = provider_cost(usage)
-    if exact is not None:
-        usd, src = round(float(exact), 6), "provider"
+    if failed:
+        usd, src = None, None
     else:
-        usd = cost_from_rates(rates_for(model, ts), pt, ct, cached, cache_write)
-        src = "estimate" if usd is not None else None
+        exact = provider_cost(usage)
+        if exact is not None:
+            usd, src = round(float(exact), 6), "provider"
+        elif has_tokens:
+            usd = cost_from_rates(rates_for(model, ts), pt, ct, cached, cache_write)
+            src = "estimate" if usd is not None else None
+        else:
+            # No counters: pricing 0 tokens would report a fake "$0.00".
+            usd, src = None, None
     rec = {"ts": ts, "model": str(model or ""),
            "prompt": pt or 0, "completion": ct or 0, "cached": cached or 0,
            "cache_write": cache_write or 0,
-           "usd": usd, "src": src, "run": (run or None)}
-    if _is_deepseek_direct(model):
+           "usd": usd, "src": src, "run": (run or None),
+           "status": "failed" if failed else "completed",
+           "usage_basis": "reported" if has_tokens else "missing"}
+    if latency_ms is not None:
+        try:
+            rec["latency_ms"] = max(0, int(latency_ms))
+        except (TypeError, ValueError):
+            pass
+    if failed and error:
+        rec["error"] = str(error)[:200]
+    if _is_deepseek_direct(model) and not failed:
         # Truthful provenance for the estimate: which half of the day was billed.
         rec["off_peak"] = not deepseek_is_peak(ts)
     with _lock:
@@ -504,7 +546,8 @@ def record(session, model, usage, run=None):
         s = _summarise(led)
     rec.update({key: s[key] for key in (
         "total_usd", "calls", "tokens_in", "tokens_out", "priced_calls", "unknown_calls",
-        "provider_calls", "estimated_calls")})
+        "provider_calls", "estimated_calls", "attempts", "failed", "missing_usage",
+        "latency_ms_p50")})
     rec["tokens_cached"] = s["cached"]
     rec["tokens_cache_write"] = s["cache_write"]
     return rec

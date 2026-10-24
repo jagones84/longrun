@@ -2379,7 +2379,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _total_prompt = 0
     _total_completion = 0
 
-    def _record_usage():
+    def _record_usage(latency_ms=None, status="completed", error=None):
         nonlocal _total_prompt, _total_completion
         try:
             from longrun.model import costs as _costs
@@ -2410,7 +2410,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # JAG-403f: tag every call of this turn with the turn's run id, so the
             # UI can group the ledger "per run" (one collapsible row per turn).
             _call = (_costs.record(sess["id"], model, chat_usage,
-                                   run=getattr(trace, "id", None)) if _costs else None)
+                                   run=getattr(trace, "id", None),
+                                   status=status, error=error,
+                                   latency_ms=latency_ms) if _costs else None)
             if _call:
                 on_event("cost.usage", session=sess["id"], call=_call)
         except Exception:  # noqa: BLE001 — accounting must never break a turn
@@ -2747,9 +2749,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             else:
                 _c.append((ch, t))
 
-        answer, think, model = server.stream_with_fallback(msgs, model, "chat", _capture,
-                                                           usage=chat_usage, cancel=_abort_now)
-        _record_usage()
+        _t_model = time.time()
+        try:
+            answer, think, model = server.stream_with_fallback(
+                msgs, model, "chat", _capture,
+                usage=chat_usage, cancel=_abort_now)
+        except Exception as _e:  # noqa: BLE001 — record the attempt, then surface it
+            _record_usage(latency_ms=int((time.time() - _t_model) * 1000),
+                          status="failed",
+                          error="%s: %s" % (type(_e).__name__, str(_e)[:160]))
+            raise
+        _record_usage(latency_ms=int((time.time() - _t_model) * 1000))
         _emit_context()  # JAG-98: live meter now uses the model's real count
         if _is_aborted(sess["id"]):
             # JAG-129D: Stop interrupted the generation. No tool may run
@@ -3347,10 +3357,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 else:
                     _c.append((ch, t))
 
-            final_answer, think, model = server.stream_with_fallback(msgs, model, "chat",
-                                                                     _cap_final, usage=chat_usage,
-                                                                     cancel=_abort_now)
-            _record_usage()
+            _t_model = time.time()
+            try:
+                final_answer, think, model = server.stream_with_fallback(
+                    msgs, model, "chat", _cap_final, usage=chat_usage,
+                    cancel=_abort_now)
+            except Exception as _e:  # noqa: BLE001 — record the attempt, then surface it
+                _record_usage(latency_ms=int((time.time() - _t_model) * 1000),
+                              status="failed",
+                              error="%s: %s" % (type(_e).__name__, str(_e)[:160]))
+                raise
+            _record_usage(latency_ms=int((time.time() - _t_model) * 1000))
             if ((final_answer or "").strip() and not _looks_like_json_action(final_answer)
                     and not _looks_like_promise(final_answer)):
                 for ch, t in forced:  # only a REAL reply reaches the user live

@@ -6022,17 +6022,30 @@ function _isum(id, text, cls) {
   el.className = "ihd-s" + (cls ? " " + cls : "");
 }
 function _base(p) { p = String(p || "").replace(/[\/\\]+$/, ""); const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")); return i >= 0 ? p.slice(i + 1) : p; }
-/* JAG-403f: one row per API call inside an expanded run. */
+/* JAG-403f: one row per API call inside an expanded run.
+   JAG-560: an attempt can be failed (no money moved) or succeed without the
+   provider reporting counters — both are shown instead of being hidden. */
 function _costCallsHtml(calls) {
-  return calls.map(r =>
-    '<div class="costrow"><span class="cm" title="' + _attr(r.model || "") + '">' + esc(_shortModel(r.model)) + "</span>" +
-    '<span class="ct">' + esc(_hhmmss(r.ts)) + "</span>" +
-    '<span class="ct">in ' + _fmtTok(r.prompt) + " \u2192 out " + _fmtTok(r.completion) + "</span>" +
-    ((r.cached || r.cache_write) ? '<span class="ct">' + _fmtTok(r.cached) + " cached \u00b7 "
-      + _fmtTok(r.cache_write) + " cache write</span>" : "") +
-    '<span class="cu" title="' + (r.src === "provider" ? "exact \u2014 charged by the provider"
-      : (r.src === "estimate" ? "estimated from the real token counts \u00d7 rates" : "no price known for this model")) + '">'
-      + (r.src === "estimate" ? "\u2248" : "") + _usd(r.usd) + "</span></div>").join("");
+  return calls.map(r => {
+    const bad = r.status === "failed"
+      ? '<span class="ct" title="' + _attr(r.error || "the call failed") + '">failed</span>'
+      : (r.usage_basis === "missing"
+        ? '<span class="ct" title="the provider reported no token counters for this call">no usage</span>'
+        : "");
+    const lat = (r.latency_ms != null)
+      ? '<span class="ct">' + (r.latency_ms >= 1000
+        ? (r.latency_ms / 1000).toFixed(1) + "s" : r.latency_ms + "ms") + "</span>"
+      : "";
+    return '<div class="costrow"><span class="cm" title="' + _attr(r.model || "") + '">' + esc(_shortModel(r.model)) + "</span>" +
+      '<span class="ct">' + esc(_hhmmss(r.ts)) + "</span>" +
+      '<span class="ct">in ' + _fmtTok(r.prompt) + " \u2192 out " + _fmtTok(r.completion) + "</span>" +
+      ((r.cached || r.cache_write) ? '<span class="ct">' + _fmtTok(r.cached) + " cached \u00b7 "
+        + _fmtTok(r.cache_write) + " cache write</span>" : "") +
+      bad + lat +
+      '<span class="cu" title="' + (r.src === "provider" ? "exact \u2014 charged by the provider"
+        : (r.src === "estimate" ? "estimated from the real token counts \u00d7 rates" : "no price known for this model")) + '">'
+        + (r.src === "estimate" ? "\u2248" : "") + _usd(r.usd) + "</span></div>";
+  }).join("");
 }
 /* JAG-403f: one COLLAPSED row per run — its total, call count and model(s). */
 function _costRunHtml(g) {
@@ -6044,12 +6057,14 @@ function _costRunHtml(g) {
     : (models.length === 1 ? models[0] : (models.length + " models"));
   const money = g.usd == null ? (g.unpriced ? "\u2014" : "$0") : _usd(g.usd);
   const unp = g.unpriced ? ' <span class="rn">\u00b7 ' + g.unpriced + " unpriced</span>" : "";
+  const failed = g.calls.filter(r => r.status === "failed").length;
+  const fail = failed ? ' <span class="rn">\u00b7 ' + failed + " failed</span>" : "";
   return '<div class="runrow">' +
     '<div class="runhd" data-k="' + _attr(g.key) + '" title="' + (open ? "collapse" : "expand") + ' this run">' +
       '<span class="caret">' + (open ? "\u25be" : "\u25b8") + "</span>" +
       '<span class="rt">' + esc(_hhmmss(g.ts)) + "</span>" +
       '<span class="rm">' + esc(mtxt) + "</span>" +
-      '<span class="rn">' + n + " call" + (n === 1 ? "" : "s") + unp + "</span>" +
+      '<span class="rn">' + n + " call" + (n === 1 ? "" : "s") + unp + fail + "</span>" +
       '<span class="cu">' + money + "</span>" +
     "</div>" +
     (open ? '<div class="runbody">' + _costCallsHtml(g.calls) + "</div>" : "") +
@@ -6076,6 +6091,13 @@ function renderCosts() {
     - (c.provider_calls || 0) - (c.estimated_calls || 0));
   if (_otherPriced) _sourceCounts.push(_otherPriced + " legacy priced");
   if (c.unknown_calls) _sourceCounts.push(c.unknown_calls + " unpriced");
+  // JAG-560: attempts that failed, or succeeded with no counters, are facts too.
+  if (c.failed) _sourceCounts.push(c.failed + " failed");
+  if (c.missing_usage) _sourceCounts.push(c.missing_usage + " no usage");
+  if (c.latency_ms_p50 != null) {
+    _sourceCounts.push("p50 " + (c.latency_ms_p50 >= 1000
+      ? (c.latency_ms_p50 / 1000).toFixed(1) + "s" : c.latency_ms_p50 + "ms"));
+  }
   if (sub) sub.textContent = c.calls
     ? (c.calls + " call" + (c.calls === 1 ? "" : "s")
        + (_sourceCounts.length ? " \u00b7 " + _sourceCounts.join(" \u00b7 ") : ""))

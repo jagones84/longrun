@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The Cost panel now accounts ATTEMPTS, not just successes.** Every model call is a
+  ledger row, including the ones that failed and the ones where the provider reported no
+  counters. Rows carry `status`, `usage_basis` (`reported`/`missing`), `latency_ms` and,
+  for failures, the error text — so a retry or an outage can no longer look like "$0.00"
+  or vanish from the panel. The header adds `N failed · M no usage · p50 Xms`, and each
+  row/run shows a `failed` or `no usage` badge. Shape borrowed from Maka's
+  `usage_model_call_attempts` (see `.agent/docs/research/2026-10-24_maka-usage-ledger.md`);
+  no Maka code was copied. Locked by `v558`.
 - **The regression gate now says where it is.** `tests/battery.sh` truncates and then
   appends `.agent/logs/battery-progress.log` in real time — `RUN`, one `START`/`END <test>
   rc=<n> <ms>` per test, `DONE` — so a slow or hung run names the test instead of
@@ -53,6 +61,11 @@ All notable changes to Longrun are documented here. The format follows
 - **The DGX GLM context was over-declared in the catalogue.** `config/providers.yaml`
   advertised `glm-5.3-flash-iq2` with `context_length: 262144` while the router runs it
   at 131072, corrupting the context budget. Now 131072.
+- **A stale assertion kept the gate red.** `v494` C1 still required `pattern: qwen` in
+  `routing.yaml`, which `45b4636` had intentionally replaced with explicit cloud
+  `model:` refs. The check now asserts the current contract (no local alias pattern,
+  explicit `model: openrouter:` refs, no default advertised in the README). Battery
+  back to 247/247.
 - **Two `shell` calls in one `batch` silently lost one.** The batch ran every tool
   item in a thread pool, but the shell is ONE persistent terminal per caller with a
   single `busy` slot: the second `shell.exec` returned "busy — wait for the current
