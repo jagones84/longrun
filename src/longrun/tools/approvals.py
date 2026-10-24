@@ -87,7 +87,10 @@ def create(tool, args, run_id=None, decision="pending", reason="",
 
     M4a: every record is a consumable mark — `uses_left` (default 1),
     `expires_at` (epoch seconds, default None) and the call `digest`.
-    Extra fields are inert for old readers.
+    `turn_scope` (P2 canonical permission, Maka `rememberForTurn` direction)
+    binds the grant to the run that requested it: multi-use inside that run
+    IS the remember-for-this-turn semantic (via `uses_left`); another run
+    cannot spend it. Extra fields are inert for old readers.
     """
     with _lock:
         store = _load()
@@ -95,6 +98,7 @@ def create(tool, args, run_id=None, decision="pending", reason="",
             "id": uuid.uuid4().hex[:10],
             "ts": round(time.time(), 3),
             "run_id": run_id,
+            "turn_scope": run_id,
             "tool": tool,
             "args": args,
             "summary": _summarize(tool, args),
@@ -113,13 +117,15 @@ def create(tool, args, run_id=None, decision="pending", reason="",
         return rec
 
 
-def consume(aid, tool, args):
+def consume(aid, tool, args, run_id=None):
     """Spend one use of a granted approval (M4a, Petri spent-condition).
 
     Returns (ok, message). Fail-closed: unknown id, non-approved status,
-    past `expires_at`, digest mismatch (another call) and exhausted
-    `uses_left` (replayed approval) all deny. Legacy records without a
-    digest skip verification but still single-use. The decrement happens
+    past `expires_at`, digest mismatch (another call), exhausted
+    `uses_left` (replayed approval), and — P2 run binding — a grant whose
+    `turn_scope` names another run than the caller all deny. Legacy records
+    without a digest skip verification but still single-use; callers that
+    pass no run keep working (unbound legacy path). The decrement happens
     under `_lock`, so a double-consume race cannot double-spend.
     """
     with _lock:
@@ -128,6 +134,10 @@ def consume(aid, tool, args):
             return False, "unknown approval id"
         if rec.get("status") != "approved":
             return False, "not approved (status=%s)" % rec.get("status")
+        scope = rec.get("turn_scope")
+        if (run_id is not None and scope is not None
+                and str(scope) != str(run_id)):
+            return False, "approval belongs to another run"
         exp = rec.get("expires_at")
         try:
             expired = exp is not None and float(time.time()) > float(exp)

@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **P2 canonical permission: grants bound to the requesting run.** Maka
+  `rememberForTurn` direction on top of M4a consumable grants: `create()`
+  stamps `turn_scope` from `run_id`, `consume()` denies cross-run spending
+  ("approval belongs to another run") while multi-use inside the run keeps
+  working via `uses_left`; unscoped legacy records and run-less callers are
+  untouched (no migration); both production consume sites pass their `run_id`.
+  (Locked by `v593` 11/11.)
 - **OctoMind done-gate: explicit finishes with open work face the closure check.**
   `{"action":"finish","summary":...}` used to break out of the turn loop before
   keepgoing/JAG-402, closing the turn with open todos and no verification. Now
