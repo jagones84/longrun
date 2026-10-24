@@ -248,6 +248,11 @@ STAGE2_DEFAULTS = {
     # own categories stay untouched and auditable.
     "category": "created",  # skills/<category>/<name> during promotion
     "verify_timeout": 60,   # timeout of the check in the sandbox
+    # F5 (Maka thresholded release): the promotion bar. A proposal is released
+    # only after this many CONSECUTIVE green verifies (patience — no release
+    # on a single lucky green). 1 preserves the historical single-green
+    # behavior; raise it to harden a flaky check.py.
+    "min_green_streak": 1,
 }
 
 # JAG-426: a hard ceiling on machine-created skills. An unbounded auto-library
@@ -414,6 +419,13 @@ def verify(proposal_dir, runner=None, c=None):
               "duration_ms": int((time.time() - t0) * 1000),
               "output": str(out)[-1200:]}
     prop["status"] = "verified" if green else "rejected"
+    # F5 (Maka patience): the consecutive-green streak. A red verify resets it;
+    # promote() releases only when the streak reaches the bar.
+    try:
+        _prev = int(prop.get("green_streak") or 0)
+    except (TypeError, ValueError):
+        _prev = 0
+    prop["green_streak"] = (_prev + 1) if green else 0
     prop["verify"] = report
     _write_json(os.path.join(proposal_dir, "proposal.json"), prop)
     return report
@@ -432,6 +444,29 @@ def promote(proposal_dir, skills_dir=None, c=None):
     if prop.get("status") != "verified":
         return {"ok": False, "error": "proposal not verified (status=%s)"
                 % prop.get("status", "?")}
+    # F5 (Maka thresholded release): the bar. A single lucky green does not
+    # release — the streak must reach min_green_streak. A legacy `verified`
+    # proposal without a streak key counts as 1: the verify that set the
+    # status WAS a green, it just was not counted yet. Invalid bar configs
+    # fail closed (rate_limit precedent).
+    try:
+        _bar = int((c.get("min_green_streak") if c else None) or 1)
+    except (TypeError, ValueError):
+        return {"ok": False,
+                "error": "invalid min_green_streak config %r (expected a positive int)"
+                % ((c.get("min_green_streak") if c else None),)}
+    _bar = max(1, _bar)
+    _streak = prop.get("green_streak")
+    if _streak is None:
+        _streak = 1
+    try:
+        _streak = int(_streak)
+    except (TypeError, ValueError):
+        _streak = 0
+    if _streak < _bar:
+        return {"ok": False, "streak": _streak, "bar": _bar,
+                "error": "patience: proposal needs %d consecutive green verifies "
+                         "(streak=%d) — run verify again" % (_bar, _streak)}
     # RDD point 2: sealed held-out gate (fail-closed). The local verifier
     # (check.py) is NOT enough: promotion requires the external judge suite.
     from longrun.plan import heldout
@@ -476,7 +511,8 @@ def promote(proposal_dir, skills_dir=None, c=None):
 
 def pipeline(pattern, out_dir, support=0, runner=None, promote_if_green=True,
              skills_dir=None, c=None):
-    """Full stage 2 cycle: draft -> synth -> verify -> (promote if green)."""
+    """Full stage 2 cycle: draft -> synth -> verify -> (promote if green AND
+    the green streak reaches the bar)."""
     c = c or cfg()
     d = draft(pattern, support, out_dir)
     if not d:

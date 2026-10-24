@@ -2456,7 +2456,8 @@ def _update_policy(body):
     if isinstance(body.get("selfevolve"), dict):
         s = cfg.setdefault("selfevolve", {})
         src = body["selfevolve"]
-        for k in ("min_len", "min_count", "max_len", "verify_timeout"):
+        for k in ("min_len", "min_count", "max_len", "verify_timeout",
+                  "min_green_streak"):
             if src.get(k) is not None:
                 s[k] = max(1, int(src[k]))
         if "category" in src:

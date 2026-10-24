@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **F5 Maka thresholded release: eval promotion bar + patience.**
+  `selfevolve.verify()` persists a consecutive-green `green_streak` in
+  proposal.json (red resets to 0); `promote()` releases only when the
+  streak reaches `min_green_streak` (default 1 = today's behavior; legacy
+  `verified` proposals without a streak key count as 1; invalid bars fail
+  closed), checked before the held-out gate; the bar is operator-settable
+  via `update_policy(selfevolve.min_green_streak)`. (Locked by `v598` 13/13;
+  v205/v280/v251 unchanged.)
 - **F4 Cline plan-before-act: session plan mode gates mutating tools.**
   `stores.set_plan_mode()` / `propose_plan()` / `approve_plan()` /
   `reject_plan()` persist the propose→approve→act state machine (empty
