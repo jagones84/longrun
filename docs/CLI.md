@@ -29,7 +29,7 @@ python3 forge.py --help
 2. If the server requires a token (`--token ...`), export `LONGRUN_TOKEN`.
 3. `forge.py` uses only the Python standard library (no `pip install`).
 
-Exit codes: `0` success; `1` when chat/plan/history return `{"error": ...}`;
+Exit codes: `0` success; `1` when chat/plan/history/roles show return `{"error": ...}`;
 `2` when a `'<json>'` argument is malformed.
 
 ---
@@ -102,7 +102,7 @@ python3 forge.py sessions reset my-session      # clears the persistent task lis
 
 | Command | Endpoint |
 |---|---|
-| `context show [--session ID] [--model ALIAS]` | `GET /api/context` |
+| `context show [--session ID]` | `GET /api/context` |
 | `context compact [--session ID]` | `POST /api/context/compact` |
 | `context preview "msg" [--session ID]` | `POST /api/context/preview` |
 
@@ -173,7 +173,7 @@ python3 forge.py approvals approve ap_123
 |---|---|
 | `runs ls` | `GET /api/agent/runs` |
 | `runs show RUN_ID` | `GET /api/agent/runs/<id>` |
-| `runs summary [--limit N]` | `GET /api/runs` |
+| `runs summary` | `GET /api/runs` |
 | `runs trace RUN_ID` | `GET /api/runs/<id>/trace` |
 | `runs node RUN_ID '<json>'` | `POST /api/runs/<id>/graph/nodes` |
 | `events [--since N] [--limit N]` | `GET /api/feed/recent` |
