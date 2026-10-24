@@ -405,6 +405,11 @@ CHAT_TOOL_PROMPT = (
     "items sequentially. The job.* exclusive tools need the Teamorg grant — if "
     "they answer permission_denied (exit 126), use batch+dispatch instead (no "
     "grant needed) or ask the operator for the grant; never shell around the gate. "
+    "When the work is COMPLETE, close the turn yourself with ONLY "
+    '{"action":"finish","summary":"<the final result>"} — a bare finish with no '
+    "summary is ignored. If you stop early with work still open, the harness "
+    "asks you once or twice to verdict your own last response (finish it or "
+    "keep working) before the turn may close. "
     # JAG-513: no tool list here — the discovery contract + name index lives in
     # api_v02.tool_context(), which is appended right after this block.
 )
@@ -2219,6 +2224,54 @@ def _term_action(act):
         return False
 
 
+# Closure check (premature-stop guard): the SAME session agent verdicts its own
+# last response through a fixed harness prompt. An explicit `finish` (with a
+# real summary) is the verdict "complete" — it disarms the check, so the check
+# can never regress into a loop: it fires at most _SELFCHECK_MAX times per turn
+# and never after a finish.
+_SELFCHECK_MAX = 2
+_FINISH_SUMMARY_KEYS = ("summary", "text", "content", "answer", "message", "result")
+
+
+def _is_explicit_finish(act):
+    """True only for `{"action":"finish","summary":"<non-empty>"}`.
+
+    A bare `{"action":"finish"}` stays a JAG-278 made-up envelope (swallowed as
+    prose as before) — the loop-breaking verdict requires a real summary.
+    """
+    try:
+        if not isinstance(act, dict):
+            return False
+        if str(act.get("action") or "").strip().lower() != "finish":
+            return False
+        return any(isinstance(act.get(k), str) and act[k].strip()
+                   for k in _FINISH_SUMMARY_KEYS)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _closure_check_prompt():
+    """The fixed harness verdict prompt: complete (finish) or keep working."""
+    return ("Closure check (harness — do not skip): is your last response the "
+            "COMPLETE and final answer with the work fully done? If YES, emit "
+            "ONLY {\"action\":\"finish\",\"summary\":\"<the final result>\"} "
+            "and the turn closes. If NO, keep working on the open step instead "
+            "of closing.")
+
+
+def _turn_unfinished(sess, goal_mode):
+    """True when the turn would close with work still open (never raises)."""
+    try:
+        from longrun.plan import taskgraph as _tg
+        g = _tg.load(sess["id"]) or {}
+        if any(n.get("status") in _tg.OPEN_STATUSES
+               for n in _tg.plan_nodes(g)):
+            return True
+        return bool(goal_mode) and not _tg.goal_complete(g)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _normalize_action(act):
     """JAG-264: accept the obvious near-misses weak models keep emitting.
 
@@ -2844,6 +2897,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # chain-of-thought that led to it — otherwise the COTs between tool calls
     # vanish on reload (they were only ever streamed, never stored).
     _think_buf = {"t": ""}
+    _finished_cleanly = False
+    _selfcheck_left = _SELFCHECK_MAX
     while goal_mode or iters < CHAT_TOOL_MAX_ITERS:
         # JAG-517: goal mode bypasses the iteration cap, so enforce its hard
         # wall-clock limit even when the model only emits harness todo actions.
@@ -3370,6 +3425,22 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             msgs.append({"role": "assistant", "content": answer})
             _inject(note, "observation")
             continue
+        if _is_explicit_finish(act):
+            # The agent's own verdict: this turn is COMPLETE. Ends the turn and
+            # disarms the closure check — the check only fires on turns that
+            # end WITHOUT a finish, so no regress is possible. In goal mode an
+            # unfinished goal still recovers (a finish cannot prove evidence).
+            if goal_mode and not taskgraph.goal_complete(taskgraph.load(sess["id"])):
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
+                        "continue")
+                continue
+            _finished_cleanly = True
+            final_answer = next(
+                (act[k].strip() for k in _FINISH_SUMMARY_KEYS
+                 if isinstance(act.get(k), str) and act[k].strip()), "")
+            on_delta("answer", final_answer)
+            break
         if _term_action(act):
             # JAG-278: a made-up "I am done" envelope — take its text as the answer.
             _txt = ""
@@ -3382,6 +3453,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
                             "continue")
+                    continue
+                if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
+                    # Premature stop: work is still open — let the SAME agent
+                    # verdict its own last response before accepting it.
+                    _selfcheck_left -= 1
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_closure_check_prompt(), "closure-check")
                     continue
                 final_answer = _txt
                 on_delta("answer", _txt)
@@ -3399,6 +3477,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
                             "continue")
                     continue
+                if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
+                    _selfcheck_left -= 1
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_closure_check_prompt(), "closure-check")
+                    continue
                 final_answer = answer
                 _final_is_artifact = True
                 on_delta("answer", answer)
@@ -3408,6 +3491,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             msgs.append({"role": "assistant", "content": answer})
             _invalid_streak += 1
             if _invalid_streak >= 4:
+                if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
+                    _selfcheck_left -= 1
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_closure_check_prompt(), "closure-check")
+                    continue
                 _kg_stop_reason = "no_valid_action"
                 on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
                 break
