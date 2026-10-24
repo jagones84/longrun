@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **OctoMind done-gate: explicit finishes with open work face the closure check.**
+  `{"action":"finish","summary":...}` used to break out of the turn loop before
+  keepgoing/JAG-402, closing the turn with open todos and no verification. Now
+  `agent._finish_gated()` sends non-goal finishes with unfinished work through
+  the same bounded verdict (`_selfcheck_left`, `_closure_check_prompt`); clean
+  finishes still disarm the check, goal mode keeps its recovery path. v584 pins
+  updated for the 4th check (locked by `v592` 11/11).
 - **P2 skill trust: content digests bound to (name, path).** OpenClaw's
   skillBinTrust adapted to prompt-only skills (Longrun never executes skill
   binaries, but a swapped SKILL.md silently changes what the model reads):

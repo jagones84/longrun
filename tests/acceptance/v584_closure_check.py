@@ -53,13 +53,17 @@ check("F3 finish branch sets the clean flag and breaks",
 # ---- F4: bounded self-check at every silent end -----------------------------------
 check("F4a check budget is a small constant",
       _ag._SELFCHECK_MAX == 2, _ag._SELFCHECK_MAX)
-check("F4b three silent ends consult the check",
+check("F4b three silent ends consult the raw check",
       _SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)") == 3,
       _SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)"))
-check("F4c every check decrements and re-enters bounded",
-      _SRC.count("_selfcheck_left -= 1") == 3)
-check("F4d finish branch never triggers the check (disarm, no regress)",
-      "_closure_check_prompt" not in _seg)
+check("F4b2 the explicit-finish gate consults _finish_gated once",
+      _SRC.count("_selfcheck_left > 0 and _finish_gated(sess, goal_mode)") == 1,
+      _SRC.count("_selfcheck_left > 0 and _finish_gated(sess, goal_mode)"))
+check("F4c every check decrements and re-enters bounded (v592 added the 4th)",
+      _SRC.count("_selfcheck_left -= 1") == 4)
+check("F4d a finish WITH open work faces the check (v592 done-gate); a clean "
+      "finish still disarms it",
+      "_closure_check_prompt" in _seg and "_finish_gated(" in _seg)
 
 # ---- F5: prompt teaches the contract by default -------------------------------------
 _AP = _ag.CHAT_PROMPT if hasattr(_ag, "CHAT_PROMPT") else _SRC

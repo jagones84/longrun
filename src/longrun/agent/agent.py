@@ -2272,6 +2272,20 @@ def _turn_unfinished(sess, goal_mode):
         return False
 
 
+def _finish_gated(sess, goal_mode):
+    """OctoMind done-gate: an explicit finish with open work is a claim.
+
+    True only when the finish must face the bounded closure check instead of
+    closing the turn outright: non-goal mode with unfinished work. Goal mode
+    keeps its own recovery path above; a clean finish (nothing open) still
+    disarms the check exactly as before.
+    """
+    try:
+        return (not goal_mode) and bool(_turn_unfinished(sess, goal_mode))
+    except Exception:  # noqa: BLE001 — the gate never breaks a turn
+        return False
+
+
 def _normalize_action(act):
     """JAG-264: accept the obvious near-misses weak models keep emitting.
 
@@ -3437,6 +3451,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
                         "continue")
+                continue
+            if _selfcheck_left > 0 and _finish_gated(sess, goal_mode):
+                # Done-gate: an explicit finish with open work is a claim,
+                # not proof — same bounded verdict as the other silent ends.
+                # Clean finishes still skip this and disarm the check below.
+                _selfcheck_left -= 1
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_closure_check_prompt(), "closure-check")
                 continue
             _finished_cleanly = True
             final_answer = next(
