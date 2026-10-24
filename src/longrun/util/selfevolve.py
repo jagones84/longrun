@@ -56,6 +56,14 @@ def mine(sequences, c=None):
     for k in range(mn, mx + 1):
         for idx, s in enumerate(seqs):
             for ng in set(_ngrams(s, k)):
+                # Junk filter: a single tool repeated (shell,shell,shell)
+                # is a loop, not a skill candidate. Skills need at least
+                # two DISTINCT tools (read+edit, search+fetch...), and no
+                # consecutive duplicate (shell,shell,read is a retry, not a step).
+                if len(set(ng)) < 2:
+                    continue
+                if any(a == b for a, b in zip(ng, ng[1:])):
+                    continue
                 e = found.setdefault(ng, set())
                 e.add(idx)
     cands = [{"pattern": list(ng), "length": len(ng), "support": len(runs),
@@ -115,14 +123,68 @@ def draft(pattern, support, out_dir, note=""):
 
 
 def scan(sequences, out_dir, c=None, note=""):
-    """Mine the sequences and write a draft for each pattern. Returns the paths."""
+    """Mine the sequences and write a draft per pattern. Returns the paths."""
     c = c or cfg()
     paths = []
     for cand in mine(sequences, c):
+        # Self-maintenance: skip drafts that already exist — a re-mine
+        # must not re-emit (and re-flood the chat with) the same patterns.
+        name = slug(cand["pattern"])
+        if os.path.isfile(os.path.join(out_dir, name, "proposal.json")):
+            continue
         p = draft(cand["pattern"], cand["support"], out_dir, note=note)
         if p:
             paths.append(p)
+        # Flood cap: one mine run deposits at most 10 NEW drafts.
+        if len(paths) >= 10:
+            break
     return paths
+
+
+def prune_junk(out_dir):
+    """Self-maintenance sweep: delete single-tool-repeat junk drafts.
+
+    Removes proposal dirs whose pattern (or slug) is one tool repeated
+    (shell-shell-shell, git.run-git.run...). Returns {"removed": [names]}.
+    Never raises.
+    """
+    import shutil
+    removed = []
+    try:
+        names = os.listdir(out_dir)
+    except OSError:
+        return {"removed": removed}
+    for name in names:
+        d = os.path.join(out_dir, name)
+        if not os.path.isdir(d):
+            continue
+        junk = False
+        prop = _read_json(os.path.join(d, "proposal.json"))
+        pat = (prop or {}).get("pattern") if isinstance(prop, dict) else None
+        if isinstance(pat, list) and len(pat) >= 2:
+            strs = list(map(str, pat))
+            if len(set(strs)) < 2:
+                junk = True
+            elif any(a == b for a, b in zip(strs, strs[1:])):
+                junk = True
+        elif pat is None:
+            # Fallback on the dirname: shell-shell or shell.exec-shell.exec.
+            parts = str(name).split("-")
+            if len(parts) >= 2 and len(set(parts)) == 1:
+                junk = True
+            elif len(parts) >= 2:
+                # Dotted tool names were slugified with dots kept:
+                # re-split "shell.exec-shell.exec" -> ["shell.exec","shell.exec"].
+                segs = str(name).split("-")
+                if len(set(segs)) == 1:
+                    junk = True
+        if junk:
+            try:
+                shutil.rmtree(d)
+                removed.append(name)
+            except OSError:
+                pass
+    return {"removed": removed}
 
 
 # ------------------------------------------------------------- history -------

@@ -1279,16 +1279,29 @@ def _improve(args, run_id=None):
                 _pub("improve.evolve", pattern=cand["pattern"], green=green)
             return {"ok": True, "evolved": len(reports), "reports": reports}
         try:
+            # Self-maintenance: sweep single-tool-repeat junk before mining,
+            # so an old junk backlog cannot keep flooding the chat.
+            try:
+                pruned = (selfevolve.prune_junk(out) or {}).get("removed") or []
+            except Exception:  # noqa: BLE001 — sweep must never break mining
+                pruned = []
             paths = selfevolve.mine_history(out, note=str(args.get("reason", "")))
         except Exception as e:  # noqa: BLE001
             return {"error": "mine failed: %s" % e}
         recs = []
-        for p in paths:
+        # scan() already skips existing drafts and caps at 10 NEW, so each
+        # published card is actionable. Junk drafts never reach the chat,
+        # and mined drafts live under proposals/skills (Improvement panel),
+        # not the tool-approval inbox — see approvals.list_unified.
+        for p in paths[:10]:
             rec = {"scope": "skill", "path": p, "status": "proposed",
                    "reason": "repeated tool pattern detected (selfevolve)"}
             recs.append(rec)
             _pub("improve.proposal", **rec)
-        return {"ok": True, "mined": len(recs), "proposals": recs}
+        out_rec = {"ok": True, "mined": len(recs), "proposals": recs}
+        if pruned:
+            out_rec["pruned_junk"] = len(pruned)
+        return out_rec
     if scope not in ("skill", "project", "global"):
         return {"ok": False,
                 "error": "invalid scope %r; use exactly skill, project, or global"

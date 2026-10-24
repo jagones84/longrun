@@ -6807,7 +6807,8 @@ function renderGraph() {
   if (_older.length) {
     const _byPlan = {};
     _older.forEach(n => { const p = (n.plan == null ? 0 : n.plan); (_byPlan[p] ||= []).push(n); });
-    _olderHtml = Object.keys(_byPlan).sort((a, b) => a - b).map(p => {
+    const _keys = Object.keys(_byPlan).sort((a, b) => a - b);
+    const _inner = _keys.map(p => {
       const _oc = countNodes(_byPlan[p]);
       // JAG-514: an old plan can be DELETED for real (the nodes are the plan, and
       // the tasks panel + the Control constellation read the same graph), so the
@@ -6824,6 +6825,10 @@ function renderGraph() {
         'Control constellation; the chat itself is kept" aria-label="delete older plan ' +
         p + '">✕</button></div>';
     }).join("");
+    // Single collapsed general OLD PLAN menu nesting every older plan.
+    const _tot = _older.length;
+    _olderHtml = '<details class="older-plans-all"><summary class="remaining u-ptr">OLD PLAN \u00b7 ' +
+      _keys.length + ' plan(s) \u00b7 ' + _tot + ' node(s)</summary>' + _inner + '</details>';
   }
   const _historyHtml = _historyNote
     ? '<div class="plan-history-note" role="status">' + esc(_historyNote) + "</div>"
