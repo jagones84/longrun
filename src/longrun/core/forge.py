@@ -8,18 +8,30 @@ Usage:
   python3 forge.py tasks ls | tasks add "title" | tasks done ID | tasks set ID STATUS
   python3 forge.py tools ls | tools call <tool> '<json-args>' | tools running | tools cancel JOB
   python3 forge.py approvals ls | approvals show ID | approvals approve ID | approvals deny ID | approvals rm ID | approvals clear
-  python3 forge.py runs ls | runs show RUN_ID | control pause|resume|abort RUN_ID
+  python3 forge.py runs ls | runs show RUN_ID | runs summary | runs trace RUN_ID
+                          | runs node RUN_ID '<json>' | control pause|resume|abort RUN_ID
   python3 forge.py sessions ls | sessions new "title" | sessions rm ID | sessions history ID
-                          | sessions graph ID | sessions reset ID
+                          | sessions graph ID | sessions reset ID | sessions clear ID
+                          | sessions model "SID MODEL"
   python3 forge.py context show [--session ID] | context compact [--session ID]
-                          | context preview "message" [--session ID]
+                          | context preview "message" [--session ID] | context items [--session ID]
   python3 forge.py checkpoints ls | checkpoints create "label" [--session ID]
                          | checkpoints show CP_ID | checkpoints rollback CP_ID
                          | checkpoints rm CP_ID | checkpoints prune
   python3 forge.py routing show | routing update '{"chat":"qwen"}'
   python3 forge.py eval tasks | eval run [--task ID] [--model ALIAS] [--max-steps N] [--no-save]
   python3 forge.py voice status | voice stt "text" | voice tts "text"
-  python3 forge.py status | models | providers | self | selfcheck | sandbox | mcp | hooks
+  python3 forge.py status | models [ls|ensure ALIAS] | providers [ls|add|rm|default|rm-model]
+                          | self | selfcheck | sandbox | mcp [tools|ls|add|remove|reload|local-file] | hooks
+  python3 forge.py agents ls | agents new NAME [--role R] [--model M] [--reports-to AX]
+                          | agents set AX [...] | agents rm AX
+  python3 forge.py jobs ls | jobs new "goal" [--to AX] [--blocked-by JN,JN] [--mode m]
+                          | jobs run JN | jobs wake | jobs get JN
+  python3 forge.py routines ls | routines new "goal" --agent AX [--every N]
+                          | routines enable|disable|rm RID
+  python3 forge.py roles show|set|clear|reset --session SID_OR_AX
+  python3 forge.py index [status|build|search] | knowledge [status|notebooks|create|add|search|discover|import|research]
+                          | research [ls|set|active] | embedding [models|active|set|add|remove|costs|cost-test]
   python3 forge.py feed | events [--since N] [--limit N]
   python3 forge.py memory store <kind> <content> | search <query> [--kind K] [--semantic]
   python3 forge.py subagent spawn <goal> [--max-steps N] | collect <id> | status [id]
@@ -793,9 +805,9 @@ def cmd_voice(args):
 def cmd_events(args):
     qs = "since=%d&limit=%d" % (args.since, args.limit)
     if getattr(args, "session", None):
-        qs += "&session=" + args.session
+        qs += "&session=" + _q(args.session)
     if getattr(args, "kind", None):
-        qs += "&kind=" + args.kind
+        qs += "&kind=" + _q(args.kind)
     out = req("GET", "/api/events?" + qs)
     for e in reversed(out.get("events", [])):
         print("%5s %-18s %s" % (e.get("id"), e.get("kind"), json.dumps(
