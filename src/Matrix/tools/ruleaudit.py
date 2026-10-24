@@ -65,9 +65,10 @@ TOOL_SCHEMAS = {
     "ruleaudit.scan": dict(TOOL_SCHEMA_SCAN),
 }
 
-# `verify_target` (src/longrun/core/matrix.py:1323) still requires the legacy
-# singular TOOL_SCHEMA, while the real loader reads TOOL_SCHEMAS. Declaring both
-# keeps the promotion gate honest instead of failing for a naming convention.
+# `verify_target` accepts TOOL_SCHEMAS or the legacy singular TOOL_SCHEMA,
+# while the real loader reads TOOL_SCHEMAS. Declaring both (the scaffold does
+# the same) keeps the promotion gate honest instead of failing for a naming
+# convention.
 TOOL_SCHEMA = dict(TOOL_SCHEMA_LIST)
 
 _H1 = re.compile(r"^\s*#\s+(.+?)\s*$")

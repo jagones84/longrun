@@ -1746,11 +1746,16 @@ def scaffold(kind, name, description="", repo_root=None):
             '        "required": [],\n'
             '        "approval": "auto",\n'
             "    },\n"
-            "}\n\n\n"
+            "}\n\n"
+            "# House style: declare the singular too — the promotion gate reads\n"
+            "# TOOL_SCHEMA, the runtime loader reads TOOL_SCHEMAS (single-subtool\n"
+            "# module, so the copy is unambiguous).\n"
+            'TOOL_SCHEMA = dict(TOOL_SCHEMAS["%s"])\n'
+            "\n\n"
             "def execute(args, run_id=None, subtool=None):\n"
             "    args = args or {}\n"
             '    return {"ok": True, "stdout": "%s executed", "subtool": subtool or %r}\n'
-            % (ns, full_tool, desc, full_tool, sub)
+            % (ns, full_tool, desc, full_tool, full_tool, sub)
         )
     elif k == "hook":
         if nm not in HOOK_SUBPACKAGES:

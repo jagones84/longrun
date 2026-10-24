@@ -62,6 +62,13 @@ check("scaffold writes the namespace file",
       made.get("ok") is True and os.path.isfile(made.get("path") or ""),
       made.get("error") or made.get("path"))
 if made.get("ok"):
+    ns_mod = {}
+    with open(made.get("path") or "", encoding="utf-8") as _f:
+        exec(compile(_f.read(), made.get("path") or "", "exec"), ns_mod)
+    check("scaffold declares BOTH TOOL_SCHEMAS and TOOL_SCHEMA (house style)",
+          isinstance(ns_mod.get("TOOL_SCHEMAS"), dict)
+          and isinstance(ns_mod.get("TOOL_SCHEMA"), dict),
+          sorted(k for k in ns_mod if "SCHEMA" in k))
     matrix._record_verified("tool", "testing.hello", "test_matrix.py", TMP)
     v = matrix.verify_target("tool", "testing.hello", repo_root=TMP)
     check("F1b scaffolded (plural TOOL_SCHEMAS) tool verifies",
