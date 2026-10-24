@@ -625,6 +625,75 @@ def set_session_trust(sid, trust):
     return True
 
 
+def set_plan_mode(sid, on):
+    """Lock/unlock a session into Cline-style plan mode.
+
+    While `plan_mode` is on (and no plan was approved), `registry.classify`
+    denies mutating tools — the agent may only explore until the operator
+    approves the proposed plan. Returns True on success.
+    """
+    s = load_session(sid)
+    if not s:
+        raise ValueError("unknown session %r" % (sid,))
+    s["plan_mode"] = bool(on)
+    save_session(s)
+    return True
+
+
+def propose_plan(sid, steps):
+    """Record the agent's proposed plan for a session (status `proposed`).
+
+    Empty step lists raise (a plan with no steps approves nothing).
+    Returns True on success.
+    """
+    s = load_session(sid)
+    if not s:
+        raise ValueError("unknown session %r" % (sid,))
+    clean = [str(x).strip() for x in (steps or []) if str(x).strip()]
+    if not clean:
+        raise ValueError("propose_plan: steps must be a non-empty list of strings")
+    s["plan"] = {"steps": clean, "status": "proposed"}
+    save_session(s)
+    return True
+
+
+def approve_plan(sid):
+    """Approve the pending plan: status `approved`, lock released (Act).
+
+    Requires a `proposed` plan — approving twice, or with nothing proposed,
+    raises so an approval always refers to a concrete reviewed plan.
+    Returns True on success.
+    """
+    s = load_session(sid)
+    if not s:
+        raise ValueError("unknown session %r" % (sid,))
+    plan = s.get("plan") or {}
+    if plan.get("status") != "proposed":
+        raise ValueError("approve_plan: no proposed plan for session %r" % (sid,))
+    plan["status"] = "approved"
+    s["plan"] = plan
+    s["plan_mode"] = False
+    save_session(s)
+    return True
+
+
+def reject_plan(sid):
+    """Reject the pending plan: status `rejected`, the lock stays on.
+
+    Requires a `proposed` plan. Returns True on success.
+    """
+    s = load_session(sid)
+    if not s:
+        raise ValueError("unknown session %r" % (sid,))
+    plan = s.get("plan") or {}
+    if plan.get("status") != "proposed":
+        raise ValueError("reject_plan: no proposed plan for session %r" % (sid,))
+    plan["status"] = "rejected"
+    s["plan"] = plan
+    save_session(s)
+    return True
+
+
 def get_or_create_session(sid, title=None, workspace=None, trust=None):
     if sid and not _valid_sid(sid):
         sid = None  # JAG-230: refuse a traversal-shaped id, allocate a safe one

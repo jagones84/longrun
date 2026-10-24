@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **F4 Cline plan-before-act: session plan mode gates mutating tools.**
+  `stores.set_plan_mode()` / `propose_plan()` / `approve_plan()` /
+  `reject_plan()` persist the propose→approve→act state machine (empty
+  plans and double approvals raise); `registry.PLAN_GATED_TOOLS`
+  (fs.write/fs.edit/shell/git/python, both names) + pure
+  `session_plan_locked()`; `classify()` denies gated tools for locked
+  sessions while read-only tools pass, and even `approvals.mode=full`
+  never bypasses the explicit lock. (Locked by `v597` 16/16.)
 - **F3 Aider post-edit loop: zero-config Python syntax gate.**
   `plan.verify.syntax_gate()` `compile()`s every `.py` target of
   fs.write/fs.edit and, on SyntaxError/ValueError, rolls the change back

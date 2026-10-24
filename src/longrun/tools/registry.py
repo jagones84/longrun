@@ -1445,6 +1445,29 @@ def argument_filter_hit(filters, args):
     return None
 
 
+# F4 (Cline plan-before-act direction): tools blocked while a session is
+# locked in plan mode with an unapproved plan. Both the short alias and the
+# canonical dotted name are listed (ALIASES maps shell->shell.exec, etc.).
+PLAN_GATED_TOOLS = ("fs.write", "fs.edit", "shell", "shell.exec",
+                    "git", "git.run", "python", "python.run")
+
+
+def session_plan_locked(sid):
+    """True when `sid` is locked in plan mode with no approved plan.
+
+    Unknown/missing sessions are never locked (session-less one-shot calls
+    are unaffected — same rule as the exclusive-tools check). Never raises.
+    """
+    try:
+        from longrun.memory import stores as _st
+        s = _st.load_session(sid) if sid else None
+    except Exception:  # noqa: BLE001 — the gate must never break classify
+        return False
+    if not s or not s.get("plan_mode"):
+        return False
+    return (s.get("plan") or {}).get("status") != "approved"
+
+
 def catalog():
     """Public catalogue for GET /api/tools and MCP tools/list.
 
@@ -1702,6 +1725,16 @@ def classify(tool, args, workspace=None, hist=None):
                     "session %r is not authorized to use %r (requires longrunAgent "
                     "system session or allow_longrun_agent grant)" % (sess_ref, tool)
                 )
+    # F4 (Cline plan-before-act direction): a session locked in plan mode may
+    # only EXPLORE — mutating tools are denied until the operator approves the
+    # proposed plan (`stores.approve_plan`). An explicit lock: even
+    # approvals.mode=full never bypasses it (matrix-promote precedent).
+    _sess = (args or {}).get("_session") or (args or {}).get("run_id")
+    if tool in PLAN_GATED_TOOLS and session_plan_locked(_sess):
+        return "denied", (
+            "plan mode: session %r has an unapproved plan — propose the plan "
+            "and wait for operator approval; read-only tools still work"
+            % (_sess,))
     # PT3: `matrix.promote_to_nucleus` / `matrix{action:"promote_to_nucleus"}` is gated EXCLUSIVELY
     # by the dedicated `approvals.allow_matrix_promote` checkbox — even `approvals.mode=full` never unlocks it.
     if tool == "matrix.promote_to_nucleus" or (
