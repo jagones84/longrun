@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Upgrade Lotto 1 (M11 + M5 + M12) is implemented and green.** From the
+  frontier-harness comparison (`.agent/reports/2026-10-24_frontier-harness-kb-vs-longrun.md`):
+  `improve.evolve` now passes an approval gate (`registry.subtool_gate`, locked by `v555`
+  10/10); the v2 agent loop caps a run when one tool *type* saturates a 50-call window
+  (`warn` 30 → nudge, `hard` 50 → `no_progress` + `agent.loop_capped`, shell override
+  100/200, `loop_detection` in `config/tools.yaml`, locked by `v556` 12/12); the system
+  prompt carries a static `security-policy` section (order 22: prompt injection,
+  authority, scope, finish — exactly one "prompt injection" in the assembled prompt,
+  locked by `v557` 13/13). FAST battery 252/252.
 - **The Cost panel now accounts ATTEMPTS, not just successes.** Every model call is a
   ledger row, including the ones that failed and the ones where the provider reported no
   counters. Rows carry `status`, `usage_basis` (`reported`/`missing`), `latency_ms` and,

@@ -105,6 +105,19 @@ selfevolve:
   category: created         # skills/<category>/<name> at promotion time
   verify_timeout: 60        # timeout del check in sandbox
 
+# ---- loop detection by tool TYPE frequency (M5, upgrade plan) ---------------
+# The v2 identical-action trap misses a model calling one tool type dozens of
+# times with different args. Warn at `warn`, cap the run at `hard` (reusing the
+# no_progress termination + a loop_capped event). `per_tool` overrides one
+# type: the shell is the legitimate high-frequency case. enabled: false = off.
+loop_detection:
+  enabled: true
+  window: 50
+  warn: 30
+  hard: 50
+  per_tool:
+    shell: {warn: 100, hard: 200}
+
 # ---- tool registry -----------------------------------------------------------
 tools:
 

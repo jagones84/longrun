@@ -538,6 +538,112 @@ def agent_model_for(goal, explicit=None, session_obj=None):
     return _routed_agent_model(goal)
 
 
+class _ToolFreq:
+    """Sliding-window frequency guard over tool TYPE calls (M5, upgrade plan).
+
+    The v2 identical-action trap misses a model calling one tool type 50 times
+    with different args. This counts, per observed call, how many of the last
+    `window` TOTAL calls share its type: 49 `fs.read` + 49 `fs.grep`
+    interleaved never trip a 50-cap because each type peaks at ~25 in-window.
+    `per_tool` overrides warn/hard for one type (shell is the legitimate
+    high-frequency case). No I/O, no global state — one instance per run.
+    """
+
+    DEFAULTS = {"enabled": True, "window": 50, "warn": 30, "hard": 50,
+                "per_tool": {"shell": {"warn": 100, "hard": 200}}}
+
+    def __init__(self, window=50, warn=30, hard=50, per_tool=None, enabled=True):
+        self.enabled = bool(enabled)
+        self.window = _to_pos_int(window, 50)
+        self.warn = _to_pos_int(warn, 30)
+        self.hard = _to_pos_int(hard, 50)
+        self.per_tool = per_tool if isinstance(per_tool, dict) else {}
+        self._calls = []
+
+    @classmethod
+    def from_config(cls):
+        """Effective detector from config/tools.yaml `loop_detection` (or defaults).
+
+        A missing block, a `None` value or a wrong type never blanks a field:
+        `section_config` already drops Nones, the casts below drop the rest.
+        """
+        cfg = registry.section_config("loop_detection", dict(cls.DEFAULTS))
+        obj = cls(window=cfg.get("window"), warn=cfg.get("warn"),
+                  hard=cfg.get("hard"), per_tool=cfg.get("per_tool"),
+                  enabled=cfg.get("enabled", True))
+        return obj
+
+    def _limits(self, name):
+        ov = self.per_tool.get(name)
+        if not isinstance(ov, dict):
+            # The shell family registers dotted names (`shell.exec`); an
+            # override on the bare namespace still applies to them.
+            ov = self.per_tool.get(str(name or "").split(".")[0])
+        if not isinstance(ov, dict):
+            return self.warn, self.hard
+        return (_to_pos_int(ov.get("warn"), self.warn),
+                _to_pos_int(ov.get("hard"), self.hard))
+
+    def observe(self, name):
+        """Record one call of type `name` -> {tool, count, decision}."""
+        name = str(name or "")
+        warn_at, hard_at = self._limits(name)
+        self._calls.append(name)
+        del self._calls[:-self.window]
+        count = sum(1 for c in self._calls if c == name)
+        if count >= hard_at:
+            decision = "hard_stop"
+        elif count >= warn_at:
+            decision = "warn"
+        else:
+            decision = "ok"
+        return {"tool": name, "count": count, "decision": decision}
+
+
+def _to_pos_int(value, default):
+    """Positive int or `default` — a bad config value never breaks the loop."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return n if n > 0 else default
+
+
+def _action_tool_names(act, action):
+    """Tool-type names carried by one loop action (M5).
+
+    One item per batch member (subagents count as `subagent`), otherwise the
+    canonical tool name — so the frequency guard sees WHAT KIND of work the
+    model repeats, not the args it varies.
+    """
+    if not isinstance(act, dict):
+        return [str(action or "note")]
+    if action == "batch":
+        from longrun.agent.agent import _batch_items
+        names = []
+        for it in _batch_items(act):
+            t = str(it.get("tool") or it.get("action") or "").strip()
+            if not t:
+                continue
+            if t == "subagent" or t.startswith("subagent."):
+                names.append("subagent")
+                continue
+            try:
+                names.append(registry.canonical_name(t, it.get("args") or {}))
+            except Exception:  # noqa: BLE001 — count it, never break on it
+                names.append(t)
+        return names or ["batch"]
+    if action == "tool":
+        t = str(act.get("tool") or "").strip() or "tool"
+        if t == "subagent" or t.startswith("subagent."):
+            return ["subagent"]
+        try:
+            return [registry.canonical_name(t, act.get("args") or {})]
+        except Exception:  # noqa: BLE001
+            return [t]
+    return [str(action or "note")]
+
+
 def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_id=None,
                  workspace=None, fallbacks=None):
     """Sense-think-act loop with real tools behind the approval gate + HITL."""
@@ -587,6 +693,9 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
         except Exception as e:  # noqa: BLE001 — graph must never break the run
             _publish("graph.error", run=st.id, error=str(e))
     last_sig, repeated = None, 0
+    # M5: per-run frequency guard (one instance, dies with the run).
+    freq = _ToolFreq.from_config()
+    freq_warned = set()
     # JAG-61: persistent turn history. The observation produced at step N MUST be
     # visible to the model at step N+1, otherwise the model re-derives everything
     # from scratch each iteration, never learns its own tool output, and loops
@@ -725,6 +834,33 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
                                  "summary": summary})
                 return _result(st, goal, model)
+
+            # M5: frequency guard. The identical-action trap above misses a model
+            # calling one TOOL TYPE dozens of times with different args (DeerFlow:
+            # tool_freq_warn / tool_freq_hard_limit). Observe every call; a
+            # saturated type caps the run, a first warning nudges the next turn.
+            if freq.enabled:
+                for _n in _action_tool_names(act, action):
+                    _d = freq.observe(_n)
+                    if _d["decision"] == "warn" and _n not in freq_warned:
+                        freq_warned.add(_n)
+                        hist.append({"role": "user", "content":
+                                   "Harness note: you have called `%s` %d times in "
+                                   "the last %d actions. Change strategy (a different "
+                                   "tool, batch the work, or finish with what you have) "
+                                   "instead of repeating the same kind of call."
+                                   % (_n, _d["count"], freq.window)})
+                    if _d["decision"] == "hard_stop":
+                        summary = "loop capped: %s called %d times (window %d)" % (
+                            _n, _d["count"], freq.window)
+                        st.summary, st.status, st.termination = summary, "done", "no_progress"
+                        on_event("agent.finish", run=st.id, summary=summary,
+                                 termination=st.termination, loop_capped=True)
+                        _publish("agent.loop_capped", run=st.id, tool=_n,
+                                 count=_d["count"])
+                        st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
+                                       "summary": summary, "loop_capped": True})
+                        return _result(st, goal, model)
 
             items = []
             if action == "batch":

@@ -43,6 +43,12 @@ DEFAULT_CONFIG = {
     "difficulty": {},
     "selfevolve": {},
     "reasoning": {},
+    # M5: sliding-window frequency guard for the v2 agent loop (warn/hard per
+    # tool type over the last `window` calls; `per_tool` overrides one type).
+    "loop_detection": {
+        "enabled": True, "window": 50, "warn": 30, "hard": 50,
+        "per_tool": {"shell": {"warn": 100, "hard": 200}},
+    },
     "tools": {},
 }
 
@@ -1013,6 +1019,29 @@ def canonical_name(name, args=None):
     return name
 
 
+# M11 (upgrade plan): approval override for a DESTRUCTIVE subtool, consulted
+# by classify(). `improve` is `approval: auto`, but `action=evolve` mines,
+# verifies AND archives a skill — that last step changes the live skill set
+# and must ask, even though the end-of-turn skills-category path also checks.
+_SUBTOOL_GATES = {
+    "improve.evolve": "self-evolution writes a skill (mine + verify + archive)",
+}
+
+
+def subtool_gate(tool, args):
+    """Approval override for a destructive SUBTOOL, or None.
+
+    Never raises: an unknown tool or odd args simply have no override, so a
+    gate failure can never break a turn.
+    """
+    try:
+        name = canonical_name(tool, args or {})
+    except Exception:  # noqa: BLE001 — no override is the safe answer
+        return None
+    reason = _SUBTOOL_GATES.get(name)
+    return ("required", reason) if reason else None
+
+
 
 # ---------------------------------------------------------------- loading ----
 
@@ -1039,7 +1068,7 @@ def _merge_into(cfg, data):
     if not isinstance(data, dict):
         return
     for key in ("sandbox", "approvals", "runtime", "verifier", "bestofn",
-                "difficulty", "selfevolve", "reasoning"):
+                "difficulty", "selfevolve", "reasoning", "loop_detection"):
         if isinstance(data.get(key), dict):
             cfg[key].update(data[key])
     for tname, tentry in (data.get("tools") or {}).items():
@@ -1581,6 +1610,13 @@ def classify(tool, args, workspace=None):
     ap = load_config().get("approvals") or {}
     if str(ap.get("mode", "normal")).lower() in ("full", "auto", "yolo"):
         return "auto", "approvals.mode=full — never ask"
+    # M11: a destructive SUBTOOL overrides the per-tool policy. `improve` is
+    # `approval: auto`, but `improve.evolve` archives a live skill — ask.
+    # Checked AFTER the global mode (full/auto/yolo still bypasses) and BEFORE
+    # the per-tool 'auto' fast path below.
+    gate = subtool_gate(tool, args)
+    if gate:
+        return gate
     # JAG-388: ONE rule for EVERY tool — anything that reaches OUTSIDE the session
     # workspace needs approval, governed by approvals.mode ALONE. `mode=full` (the
     # explicit opt-out) already returned above, so here mode != full. Neither the

@@ -33,6 +33,7 @@ SECTIONS = [
     {"id": "identity",      "order": 10, "kind": "static"},
     {"id": "prompt-map",    "order": 15, "kind": "static"},
     {"id": "rules-policy",  "order": 20, "kind": "static"},
+    {"id": "security-policy", "order": 22, "kind": "static"},
     {"id": "skills-policy", "order": 25, "kind": "static"},
     {"id": "memory-policy", "order": 30, "kind": "static"},
     {"id": "capability",    "order": 40, "kind": "static"},
@@ -51,6 +52,7 @@ SECTIONS = [
 _STATIC_ATTRS = {
     "identity": "SYSTEM_PROMPT",
     "rules-policy": "RULES_POLICY",
+    "security-policy": "SECURITY_POLICY",
     "skills-policy": "SKILLS_POLICY",
     "memory-policy": "MEMORY_POLICY",
     "task-policy": "TASK_POLICY",

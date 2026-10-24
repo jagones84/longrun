@@ -178,6 +178,7 @@ DEDICATED = {
         "bestofn": "Settings ▸ Harness",
         "difficulty": "Settings ▸ Harness",
         "selfevolve": "Settings ▸ Harness",
+        "loop_detection": "Settings ▸ Harness",
         "reasoning": "Settings ▸ Models",
         "tools": "Settings ▸ Tools & approvals",
         "version": "internal",
