@@ -1067,16 +1067,18 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
 
             st.trace.append(entry)
             on_event("agent.observation", run=st.id, i=i + 1, observation=obs)
-            if script is None:
-                # JAG-61: feed the action + its observation back so the next
-                # iteration continues from evidence instead of restating the goal.
-                hist.append({"role": "assistant",
-                             "content": json.dumps(act, ensure_ascii=False, default=str)[:4000]})
-                hist.append({"role": "user", "content":
-                             "Observation (step %d/%d):\n%s"
-                             % (i + 1, max_steps, (obs or "")[:4000])})
-                if len(hist) > 30:
-                    del hist[:-30]
+            # JAG-61: feed the action + its observation back so the next
+            # iteration continues from evidence instead of restating the goal.
+            # M9: this runs for scripted actions too — the approval gate reads
+            # the SAME hist the model would see, so a scripted adversarial
+            # model cannot slip past the taint rule through an empty history.
+            hist.append({"role": "assistant",
+                         "content": json.dumps(act, ensure_ascii=False, default=str)[:4000]})
+            hist.append({"role": "user", "content":
+                         "Observation (step %d/%d):\n%s"
+                         % (i + 1, max_steps, (obs or "")[:4000])})
+            if len(hist) > 30:
+                del hist[:-30]
         else:
             summary = "stopped at max_steps=%d; see trace" % max_steps
             st.summary, st.status, st.termination = summary, "done", "max_steps"
