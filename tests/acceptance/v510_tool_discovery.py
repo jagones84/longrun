@@ -174,7 +174,7 @@ _gate_seen = {}
 _original_classify = registry.classify
 _original_approval_create = api_v02.approvals.create
 _original_execute = T.execute
-registry.classify = lambda tool, args, workspace=None: (
+registry.classify = lambda tool, args, workspace=None, hist=None: (
     _gate_seen.update(classified=dict(args)) or "auto", "test")
 api_v02.approvals.create = lambda *args, **kwargs: {
     "id": "v510-gate", "status": "auto_approved", "summary": "test"}

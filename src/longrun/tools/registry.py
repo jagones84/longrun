@@ -1557,7 +1557,44 @@ def touches_outside(tool, args, workspace):
     return None
 
 
-def classify(tool, args, workspace=None):
+_TAINT_MARKERS = ("[harness] Observation", "Observation (step ",
+                  "Relevant memories")
+_TAINT_REASON = ("untrusted content in proposing context - "
+                 "standing auto-approval suspended")
+
+
+def _standing_suspended(hist):
+    """True when a standing auto-approval must not fire (M2a)."""
+    return bool(hist) and context_has_untrusted(hist)
+
+
+def context_has_untrusted(messages):
+    """Pure M2a probe (ClawMMU App. B): a standing permission applies only
+    when no untrusted content entered the proposing context.
+
+    Scans the passed context for the ingress markers that occur in Longrun
+    histories: v2-loop observations ("Observation (step N/M):"), legacy
+    harness observations ("[harness] Observation"), and retrieved memory
+    blocks ("Relevant memories"). Memory injected at call time via a system
+    role (context_engine.build) is NOT in the persisted transcript, so it is
+    covered only when present in the passed messages. `None` (one-shot API
+    calls with no proposing context) is clean by definition.
+    """
+    if not messages:
+        return False
+    for msg in messages:
+        content = msg.get("content", "") if isinstance(msg, dict) else msg
+        try:
+            text = content if isinstance(content, str) else str(content)
+        except Exception:  # noqa: BLE001 - probing must never break the gate
+            continue
+        for marker in _TAINT_MARKERS:
+            if marker in text:
+                return True
+    return False
+
+
+def classify(tool, args, workspace=None, hist=None):
     """Approval decision for a concrete action.
 
     JAG-388: when a session `workspace` is given, ANY action — a file op, a git
@@ -1565,6 +1602,9 @@ def classify(tool, args, workspace=None):
     regardless of the per-tool policy. Only `approvals.mode=full` relaxes it.
     Returns (decision, reason) with decision in:
       disabled | denied | auto | required
+    `hist` (M2a) is the proposing context: when it holds untrusted
+    content, standing auto-approvals are suspended (the call needs
+    approval). `None` (one-shot API calls) means no context: clean.
     """
     spec = tool_spec(tool)
     if spec is None:
@@ -1628,9 +1668,13 @@ def classify(tool, args, workspace=None):
         if _out:
             return "required", _out
     if spec["approval"] == "auto":
+        if _standing_suspended(hist):
+            return "required", _TAINT_REASON
         return "auto", "tool policy is 'auto'"
     hit = _match(spec["auto_approve"], subject)
     if hit:
+        if _standing_suspended(hist):
+            return "required", _TAINT_REASON
         return "auto", "matches auto-approve pattern %r" % hit
     return "required", "mutating action requires approval"
 

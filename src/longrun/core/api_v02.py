@@ -171,12 +171,13 @@ def checkpoint(st):
 
 # -------------------------------------------------------------- tool gate ---
 
-def tool_action(st, tool, args, on_event, workspace=None):
+def tool_action(st, tool, args, on_event, workspace=None, hist=None):
     """Gate then execute one tool action inside a run.
 
     Returns (observation_text, meta) where meta carries the evidence:
     approval id/status/decided_by, sandbox backend, exit code, stdout/stderr.
     `workspace` (JAG-127) makes a file op outside the session folder require approval.
+    `hist` (M2a) is the proposing context for the taint rule; None keeps the old behaviour.
     """
     run_id = st.id if st else None
     args = normalize_tool_args(tool, args or {})
@@ -191,7 +192,7 @@ def tool_action(st, tool, args, on_event, workspace=None):
         _publish("tool.blocked", run=run_id, tool=tool, reason="unknown tool")
         return obs, {"tool": tool, "blocked": "unknown"}
 
-    decision, reason = registry.classify(tool, args, workspace)
+    decision, reason = registry.classify(tool, args, workspace, hist)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         on_event("tool.blocked", run=run_id, tool=tool, reason=reason)
@@ -247,7 +248,7 @@ def tool_action(st, tool, args, on_event, workspace=None):
     return toolmod.observation(res), meta
 
 
-def batch_action(st, items, on_event, srv, workspace=None):
+def batch_action(st, items, on_event, srv, workspace=None, hist=None):
     """Run the calls of a `batch` action inside the v2 loop (JAG-533).
 
     `AGENT_PROMPT_V2`/`tool_context` have always advertised `batch`, and the CHAT
@@ -276,7 +277,7 @@ def batch_action(st, items, on_event, srv, workspace=None):
         for k in ("command", "path", "content", "url"):
             if k in it and k not in args:
                 args[k] = it[k]
-        obs, meta = tool_action(st, tool, args, on_event, workspace=workspace)
+        obs, meta = tool_action(st, tool, args, on_event, workspace=workspace, hist=hist)
         return {"tool": tool, "ok": (meta or {}).get("ok") is not False,
                 "observation": obs}
 
@@ -330,7 +331,7 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     # JAG-163: run the tool INSIDE the session workspace (see tool_action above).
     if workspace and "workspace" not in args:
         args["workspace"] = workspace
-    decision, reason = registry.classify(tool, args, workspace)
+    decision, reason = registry.classify(tool, args, workspace, None)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         return {"status": "blocked", "reason": reason}
@@ -980,14 +981,14 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 checkpoint(st)
                 entry = {"i": i + 1, "thought": thought, "action": "tool",
                          "tool": tool, "args": args}
-                obs, meta = tool_action(st, tool, args, on_event, workspace=workspace)
+                obs, meta = tool_action(st, tool, args, on_event, workspace=workspace, hist=hist)
                 entry["observation"] = obs
                 entry["tool_result"] = meta
             elif action == "batch":
                 if items:
                     checkpoint(st)
                     obs, _results = batch_action(st, items, on_event, srv,
-                                                 workspace=workspace)
+                                                 workspace=workspace, hist=hist)
                     entry = {"i": i + 1, "thought": thought, "action": "batch",
                              "calls": items, "observation": obs, "results": _results}
                 else:

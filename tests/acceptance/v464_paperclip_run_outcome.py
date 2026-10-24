@@ -93,7 +93,7 @@ _orig_tool_action = API.tool_action
 _calls = []
 
 
-def _fake_tool_action(st, tool, args, on_event, workspace=None):
+def _fake_tool_action(st, tool, args, on_event, workspace=None, hist=None):
     _calls.append((tool, (args or {}).get("path")))
     return ("obs:%s" % (args or {}).get("path"), {"tool": tool, "ok": True})
 
