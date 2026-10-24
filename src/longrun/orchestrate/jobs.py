@@ -20,6 +20,7 @@ import os
 import re
 import threading
 import time
+import uuid
 
 from longrun.util.dag import blockers_state as _dag_blockers_state
 from longrun.util.dag import waves  # noqa: F401 — shared DAG helper (was local, JAG-533)
@@ -43,6 +44,73 @@ def _save(d):
 def _srv():
     from longrun.core import server
     return server
+
+
+def handoff_state(receipt, target_len, subjob):
+    """CCCC delivery facts, adapted: stored / delivered / replied (pure).
+
+    `stored` = the handoff inject was persisted in the target session.
+    `delivered` = the target session advanced past the receipt (`target_len`,
+    its message count, exceeds the receipt's `after` boundary), so the handoff
+    entered the context of a later turn. `replied` = the subjob finished with
+    a result (done) or a reason (failed). Malformed input is `stored`, never
+    a crash.
+    """
+    try:
+        r = receipt or {}
+        sj = subjob or {}
+        if sj.get("status") in ("done", "failed") and (sj.get("result") or sj.get("error")):
+            return "replied"
+        after = r.get("after")
+        if (isinstance(after, int) and isinstance(target_len, int)
+                and target_len > after):
+            return "delivered"
+        return "stored"
+    except Exception:  # noqa: BLE001 — classification never breaks the run
+        return "stored"
+
+
+def record_handoff(jid, sub_id, to_sid, text, kind):
+    """Persist a handoff inject AND a delivery receipt (best-effort).
+
+    The receipt {id, ts, to, kind, after} is appended to the subjob's
+    `handoffs` list in the shared job store; `after` is the target session's
+    message count at delivery, the boundary `handoff_state` measures against.
+    Returns the receipt, or None when anything fails (the run continues).
+    """
+    try:
+        srv = _srv()
+        sess = srv.get_or_create_session(to_sid)
+        before = len((sess or {}).get("messages", []))
+        srv.persist_inject(sess, "handoff", text)
+        rec = {"id": uuid.uuid4().hex[:10], "ts": round(time.time(), 3),
+               "to": to_sid, "kind": str(kind or "handoff"), "after": before}
+        def _fn(j):
+            s = (j.get("subjobs") or {}).get(sub_id)
+            if s is not None:
+                s.setdefault("handoffs", []).append(rec)
+        JOBS._update(jid, _fn)
+        return rec
+    except Exception:  # noqa: BLE001 — receipts never break the run
+        return None
+
+
+def handoff_status(jid, sub_id):
+    """Live [(receipt, state)] for a subjob's handoffs (best-effort)."""
+    try:
+        job = JOBS.get(jid) or {}
+        sub = ((job.get("subjobs") or {}).get(sub_id)) or {}
+        out = []
+        for r in sub.get("handoffs") or []:
+            try:
+                sess = _srv().get_or_create_session(r.get("to"))
+                tlen = len((sess or {}).get("messages", []))
+            except Exception:  # noqa: BLE001
+                tlen = r.get("after") or 0
+            out.append((r, handoff_state(r, tlen, sub)))
+        return out
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _error_turn(text):
@@ -933,26 +1001,21 @@ class JobRegistry:
         Paperclip rule: never sit silently on blocked work. The WORKER's chat gets the
         "returning it" note; the COORDINATOR's chat gets the "it came back to you" note.
         Without these the ball silently passed to the master with no trace.
+        Both notes go through `record_handoff` (same words as before) so each
+        carries a delivery receipt (stored/delivered/replied).
         """
-        srv = _srv()
-        try:
-            wsess = srv.get_or_create_session(sid)
-            srv.persist_inject(wsess, "handoff",
-                               "\u21a9 returning subjob %s to the coordinator%s\n%s"
-                               % (sub_id or "-", " (retrying)" if retry else "",
-                                  reason or "-"))
-        except Exception:  # noqa: BLE001
-            pass
+        record_handoff(jid, sub_id, sid,
+                       "\u21a9 returning subjob %s to the coordinator%s\n%s"
+                       % (sub_id or "-", " (retrying)" if retry else "",
+                          reason or "-"),
+                       "escalation")
         csid = self._coord_session(jid)
         if not csid:
             return
-        try:
-            head = ("\u21a9 %s (%s) could not finish subjob %s%s" %
-                    (aid, status, sub_id or "-", " \u2014 retrying" if retry else " \u2014 BACK TO YOU"))
-            csess = srv.get_or_create_session(csid)
-            srv.persist_inject(csess, "handoff", "%s\n%s" % (head, reason or "-"))
-        except Exception:  # noqa: BLE001
-            pass
+        head = ("\u21a9 %s (%s) could not finish subjob %s%s" %
+                (aid, status, sub_id or "-", " \u2014 retrying" if retry else " \u2014 BACK TO YOU"))
+        record_handoff(jid, sub_id, csid, "%s\n%s" % (head, reason or "-"),
+                       "escalation")
 
     def _one(self, jid, aid, sid, msg, model, sub_id=None, sender=None):
         """Run ONE worker's subjob with bounded RETRY + explicit ESCALATION (JAG-337).

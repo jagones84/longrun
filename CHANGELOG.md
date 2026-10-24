@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **P3 CCCC delivery facts: handoff receipts (stored/delivered/replied).**
+  `jobs.record_handoff()` persists the handoff inject AND a receipt
+  `{id, ts, to, kind, after}` on the subjob; pure `handoff_state()` maps it to
+  `stored` / `delivered` (target advanced past the receipt, so the handoff
+  entered its context) / `replied` (subjob finished with result or reason);
+  `handoff_status()` resolves live states; `_log_escalation` routes both chats
+  through receipts with unchanged texts. (Locked by `v594` 17/17.)
 - **P2 canonical permission: grants bound to the requesting run.** Maka
   `rememberForTurn` direction on top of M4a consumable grants: `create()`
   stamps `turn_scope` from `run_id`, `consume()` denies cross-run spending
