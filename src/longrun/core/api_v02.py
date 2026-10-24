@@ -171,6 +171,25 @@ def checkpoint(st):
 
 # -------------------------------------------------------------- tool gate ---
 
+def _trace_escalation(tool, args, st):
+    """M3a R1+R2: (rule, reason) to upgrade auto to required.
+
+    The upgrade flows through the existing `required` path, so no new
+    approval flow exists. Missing/disabled policy fails open (None).
+    Never raises: a policy probe must not break the gate.
+    """
+    try:
+        from longrun.agent import trace_policy as _tp
+        from longrun.agent import subagent as _sub
+        cfg = _tp.load()
+        if not cfg:
+            return None, None
+        return _tp.escalate(args, getattr(st, "trace", None) or [],
+                          cfg, _sub.exists)
+    except Exception:  # noqa: BLE001
+        return None, None
+
+
 def tool_action(st, tool, args, on_event, workspace=None, hist=None):
     """Gate then execute one tool action inside a run.
 
@@ -193,6 +212,14 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
         return obs, {"tool": tool, "blocked": "unknown"}
 
     decision, reason = registry.classify(tool, args, workspace, hist)
+    if decision == "auto":
+        _tp_rule, _tp_reason = _trace_escalation(tool, args, st)
+        if _tp_reason:
+            decision, reason = "required", _tp_reason
+            on_event("agent.trace_policy", run=run_id, rule=_tp_rule,
+                     reason=_tp_reason)
+            _publish("agent.trace_policy", run=run_id, rule=_tp_rule,
+                     reason=_tp_reason)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         on_event("tool.blocked", run=run_id, tool=tool, reason=reason)
@@ -962,6 +989,23 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                                        "summary": summary, "loop_capped": True})
                         return _result(st, goal, model)
 
+            # M3a R3 intent fence (C1): note-only, never blocks. The
+            # per-trace locus of blame does not exist (Thm. 3), so a
+            # fence miss only nudges the next turn (same mechanics as
+            # the M5 nudge above). Self-quenching: the note names the
+            # subject, so a repeat proposal for it stays silent.
+            try:
+                from longrun.agent import trace_policy as _tpl
+                _tp_cfg = _tpl.load()
+                _tp_note = (_tpl.intent_note_for_action(act, action, goal, hist)
+                            if _tp_cfg and _tp_cfg.get("enabled", True)
+                            and _tp_cfg.get("intent_fence") else None)
+                if _tp_note:
+                    hist.append({"role": "user", "content": _tp_note})
+                    on_event("agent.trace_policy", run=st.id, i=i + 1,
+                             rule="intent-fence", note=_tp_note)
+            except Exception:  # noqa: BLE001 — fence probe never breaks a run
+                pass
             items = []
             if action == "batch":
                 from longrun.agent.agent import _batch_items

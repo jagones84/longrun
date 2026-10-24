@@ -43,6 +43,7 @@ from longrun.util import paths
 CONFIG_DIR = os.path.join(paths.REPO_ROOT, "config")
 HOOKS_OVERLAY = os.path.join(paths.DATA_DIR, "hooks.overlay.yaml")
 DECISIONS_OVERLAY = os.path.join(paths.DATA_DIR, "decisions.overlay.yaml")
+TRACE_OVERLAY = os.path.join(paths.DATA_DIR, "trace_policy.overlay.yaml")
 
 
 def _f(path, label, type_="text", **kw):
@@ -130,6 +131,23 @@ SECTIONS = [
             _f("speculative.enabled", "speculative prefetch", "bool"),
             _f("speculative.k", "how many tools to predict", "int", min=1, max=16),
             _f("speculative.readonly_only", "read-only tools only", "bool"),
+        ],
+    },
+    {
+        "file": "trace_policy.yaml", "id": "trace_policy", "panel": "harness",
+        "title": "Trace policy \u00b7 single-trace safety",
+        "help": ("Per-trace guardrails (Local-Allow-Global-Deny): delegation "
+                 "revalidation (C5), cumulative consent (C4) and the note-only "
+                 "intent fence (C1). Escalation only \u2014 these rules never deny, "
+                 "and purpose (C2) cannot be enforced per-trace by design."),
+        "fields": [
+            _f("enabled", "enabled", "bool"),
+            _f("delegation_revalidation", "delegation revalidation (C5)", "bool",
+               help="A cited subagent id that names nothing escalates auto to required."),
+            _f("consent_budget", "cumulative consent budget (C4)", "int", min=0, max=10000,
+               help="Executed mutating calls before every auto needs approval. 0 = off."),
+            _f("intent_fence", "intent fence notes (C1)", "bool",
+               help="Note-only: a subject never named in the run goal earns a harness note, never a block."),
         ],
     },
     {
@@ -360,6 +378,9 @@ def _effective(name):
     if name == "decisions.yaml":
         from longrun.model import decision
         return decision.load_config()
+    if name == "trace_policy.yaml":
+        from longrun.agent import trace_policy
+        return trace_policy.load() or {}
     if name == "hooks.yaml":
         from longrun.tools import hooks
         return {"hooks": hooks.load(reload=True)}
@@ -425,6 +446,10 @@ def _save(name, clean):
         _write_overlay(DECISIONS_OVERLAY, clean)
         from longrun.model import decision
         decision.load_config()          # the overlay mtime is part of its cache key
+    elif name == "trace_policy.yaml":
+        _write_overlay(TRACE_OVERLAY, clean)
+        from longrun.agent import trace_policy
+        trace_policy.load()             # the overlay stat is part of its cache key
     elif name == "mcp_clients.yaml":
         from longrun.interop import mcp_client
         doc = mcp_client._load_local_doc()

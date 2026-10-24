@@ -148,6 +148,24 @@ def load_record(subagent_id):
         return None
 
 
+def exists(subagent_id):
+    """True when the id names a live or durable subagent (M3a R1).
+
+    The single existence check: in-memory `_running` first, durable
+    record fallback (post-restart) second. Never raises.
+    """
+    sid = _safe(subagent_id)
+    if not sid:
+        return False
+    try:
+        with _lock:
+            if sid in _running:
+                return True
+    except Exception:  # noqa: BLE001
+        pass
+    return load_record(sid) is not None
+
+
 def purge_parent(parent_run_id):
     """Delete every durable subagent record whose parent is `parent_run_id`.
 

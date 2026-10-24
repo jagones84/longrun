@@ -1,0 +1,7 @@
+# M3a single-trace safety rules (Local-Allow-Global-Deny: C1/C4/C5).
+# Purpose (C2) is relational and CANNOT be enforced per-trace (Thm. 3): out of scope.
+# Missing file / bad values fail open (rules off). consent_budget 0 disables R2.
+enabled: true
+delegation_revalidation: true
+consent_budget: 12
+intent_fence: true
