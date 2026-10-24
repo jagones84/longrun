@@ -13,6 +13,7 @@ import json
 import os
 import re
 import threading
+import time
 
 from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR as APP_DATA_DIR
 CONFIG_YAML = os.path.join(REPO, "config", "tools.yaml")
@@ -1370,9 +1371,78 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
         "deny": list(entry.get("deny") or []),
         "allow_hosts": list(entry.get("allow_hosts") or []),
         "roots": list(entry.get("roots") or ["."]),
+        "rate_limit": entry.get("rate_limit"),
+        "argument_filters": list(entry.get("argument_filters") or []),
         "workspace": entry.get("workspace"),
         "schema": schema,
     }
+
+
+_RATE_BUCKETS = {}
+
+
+def rate_consume(tool, max_calls, window_secs, now=None):
+    """Paperclip-grade rate probe (P1/N3): "ok" or a "limited: ..." reason.
+
+    Counts calls per tool in a sliding window anchored at the first call.
+    `now` is injectable for deterministic tests (defaults to time.monotonic).
+    Invalid config fails CLOSED (denies) like a malformed deny regex.
+    """
+    try:
+        limit = int(max_calls)
+        window = float(window_secs)
+    except (TypeError, ValueError):
+        return "limited: invalid rate_limit config for %r" % (tool,)
+    if limit < 1 or window <= 0:
+        return "limited: invalid rate_limit config for %r" % (tool,)
+    ts = now if now is not None else time.monotonic()
+    key = str(tool)
+    with _lock:
+        bucket = _RATE_BUCKETS.get(key)
+        if bucket is None or ts - bucket[0] >= window:
+            bucket = [float(ts), 0]
+            _RATE_BUCKETS[key] = bucket
+        bucket[1] += 1
+        if bucket[1] > limit:
+            return "limited: %r exceeded %d calls per %gs" % (tool, limit, window)
+    return "ok"
+
+
+def rate_reset(tool):
+    """Drop the rate counter for `tool` (tests + operator reset)."""
+    with _lock:
+        _RATE_BUCKETS.pop(str(tool), None)
+
+
+def argument_filter_hit(filters, args):
+    """Paperclip `argumentFiltersMatch` (P1/N3): decision or None.
+
+    Each filter is {match: {k: v, ...}, decision: required|denied}. ALL match
+    pairs must equal the call args (string-compared) for the decision to fire.
+    Unknown decisions and malformed filters are ignored, never executed.
+    """
+    args = args or {}
+    for f in filters or []:
+        if not isinstance(f, dict):
+            continue
+        match = f.get("match") or {}
+        decision = str(f.get("decision") or "").lower()
+        if decision not in ("required", "denied"):
+            continue
+        if not isinstance(match, dict) or not match:
+            continue
+        hit = True
+        for k, v in match.items():
+            try:
+                if str(args.get(k)) != str(v):
+                    hit = False
+                    break
+            except Exception:  # noqa: BLE001 — probing never breaks the gate
+                hit = False
+                break
+        if hit:
+            return decision
+    return None
 
 
 def catalog():
@@ -1657,6 +1727,22 @@ def classify(tool, args, workspace=None, hist=None):
     gate = subtool_gate(tool, args)
     if gate:
         return gate
+    # P1 (Paperclip N3): rate_limit + argument_filters from the tool policy
+    # (config/tools.yaml). Checked AFTER the global mode (full bypasses, like
+    # the M11 gate) and BEFORE the per-tool 'auto' fast path. An invalid
+    # rate config fails CLOSED; unknown filter decisions are ignored.
+    rl = spec.get("rate_limit")
+    if rl is not None:
+        _rl = (rate_consume(tool, rl.get("max_calls"), rl.get("window_secs"))
+               if isinstance(rl, dict)
+               else "limited: invalid rate_limit config for %r" % (tool,))
+        if _rl != "ok":
+            return "denied", "rate_limit:%s %s" % (tool, _rl)
+    _af = argument_filter_hit(spec.get("argument_filters"), args)
+    if _af == "denied":
+        return "denied", "argument_filter:%s matched denied args" % (tool,)
+    if _af == "required":
+        return "required", "argument_filter:%s matched approval-gated args" % (tool,)
     # JAG-388: ONE rule for EVERY tool — anything that reaches OUTSIDE the session
     # workspace needs approval, governed by approvals.mode ALONE. `mode=full` (the
     # explicit opt-out) already returned above, so here mode != full. Neither the

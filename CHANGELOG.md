@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Paperclip-grade policy: `rate_limit` + `argument_filters` in `registry.classify()`.**
+  From round-3 harness comparison (Paperclip N3): a tool policy may carry
+  `rate_limit: {max_calls, window_secs}` (over-budget calls denied fail-closed,
+  window expiry resets, invalid config denies) and `argument_filters:
+  [{match, decision}]` (full arg match forces `required`/`denied`). Checked after
+  `approvals.mode` (full bypasses, like the M11 gate) and before the per-tool
+  `auto` fast path; plumbed through `tool_spec` so `config/tools.yaml` entries
+  work with no migration (locked by `v589` 20/20).
 - **Upgrade Lotto 2 (M1 + M6) is implemented and green.** `model/structured.py`
   validates model replies against an inline JSON Schema subset (stdlib only:
   `$ref` rejected up front, first JSON span extracted from prose/fences,
