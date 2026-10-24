@@ -26,6 +26,7 @@ import uuid
 
 from longrun.core import api_v02  # for the RunState / agent_run_v2 machinery
 from longrun.model import structured as _structured  # M1: output contract
+from longrun.agent import acceptance as _acceptance  # M8b1: acceptance predicates
 from longrun.tools import approvals
 from longrun.tools import registry
 from longrun.tools import sandbox
@@ -214,7 +215,7 @@ def depth_allowed(depth, max_depth=None):
 
 
 def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, depth=0,
-          role=None, output_schema=None):
+          role=None, output_schema=None, acceptance_criteria=None):
     """Spawn a subagent run and return its id.
 
     The subagent runs asynchronously in a background thread. Call
@@ -229,6 +230,10 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
     no thread/run is created. A valid schema appends the OUTPUT CONTRACT to the
     child goal; `collect` validates the result and runs exactly one repair turn.
 
+    M8b1: `acceptance_criteria` (a list of predicate strings, see
+    `agent/acceptance.py`) is normalized here and evaluated in `collect`
+    against the child's trace. The verdict is attached, never fatal.
+
     Returns a dict with subagent_id (caller should store it).
     """
     # M1: reject a malformed contract before the run exists.
@@ -239,6 +244,8 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
             return {"subagent_id": None, "run_id": None, "goal": goal,
                     "error": "output_schema invalid: %s" % schema_error}
         goal = "%s\n\n%s" % (goal, _structured.contract_block(schema))
+    # M8b1: normalize the acceptance predicates (cap + truncate, pure).
+    criteria = _acceptance.normalize(acceptance_criteria)
     # JAG-451: prepend the role brief so the subagent's instruction is self-contained.
     _brief = role_brief(role) if role else ""
     if _brief:
@@ -293,6 +300,7 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
         "role": role,
         "parent_run_id": parent_run_id,
         "output_schema": schema,
+        "acceptance_criteria": criteria,
         "schema_retries": 0,
         "created": time.time(),
         "result": None,
@@ -313,6 +321,7 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
         "id": sid, "run_id": st.id, "goal": goal, "max_steps": max_steps,
         "model": model, "role": role, "parent": parent_run_id,
         "output_schema": schema,
+        "acceptance_criteria": criteria,
         "status": "running", "created": round(entry["created"], 3),
     })
 
@@ -407,13 +416,19 @@ def collect(subagent_id, timeout=None):
                 _, _ferrs = _structured.validate_text(
                     str(rec.get("summary") or ""), _fschema)
                 _fvalid = not _ferrs
+            # M8b1: from-disk has no trace, so execution-anchored predicates
+            # evaluate as violated — file predicates still work. Same shape.
+            _facc = _acceptance.check_predicates(
+                rec.get("acceptance_criteria") or [], [])
             return {"ok": rec.get("status") == "done", "status": rec.get("status"),
                     "result": dict(rec), "trace": [],
                     "summary": str(rec.get("summary") or ""),
                     "steps": rec.get("steps") or 0,
                     "subagent_id": subagent_id, "from_disk": True,
                     "schema_valid": _fvalid, "schema_errors": _ferrs,
-                    "schema_retries": 0}
+                    "schema_retries": 0,
+                    "acceptance": _facc,
+                    "acceptance_ok": _acceptance.all_hold(_facc)}
         return {"ok": False, "error": "subagent %r not found" % subagent_id,
                 "schema_valid": None, "schema_errors": [], "schema_retries": 0}
     if not entry["done"].wait(timeout=timeout):
@@ -448,6 +463,12 @@ def collect(subagent_id, timeout=None):
                     str(summary or ""), schema)
                 schema_valid = not schema_errors
     parent_run_id = entry.get("parent_run_id")
+    # M8b1: acceptance verdict — evaluated in code against the child's trace,
+    # attached like M1's schema verdict. Never fatal: a violated claim marks
+    # the result UNVERIFIED, it never fails the run.
+    criteria = entry.get("acceptance_criteria") or []
+    acceptance = _acceptance.check_predicates(criteria, result.get("trace") or [])
+    acceptance_ok = _acceptance.all_hold(acceptance)
     if parent_run_id and summary:
         try:
             graph = taskgraph.load(parent_run_id)
@@ -472,6 +493,8 @@ def collect(subagent_id, timeout=None):
         "schema_valid": schema_valid,
         "schema_errors": schema_errors,
         "schema_retries": schema_retries,
+        "acceptance": acceptance,
+        "acceptance_ok": acceptance_ok,
     }
 
 

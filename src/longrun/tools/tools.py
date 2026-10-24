@@ -2372,6 +2372,15 @@ def observation(res, max_chars=1600):
             bits.append("stderr: " + _truncate(str(res["stderr"]).strip(), max_chars))
         if res.get("content") is not None and not res.get("stdout"):
             bits.append("content: " + _truncate(str(res["content"]).strip(), max_chars))
+        # M10c: a timeout (exit 124) has an UNKNOWN outcome — the call may have
+        # completed before the timeout fired (Paperclip `runner-api-tools.md`:
+        # never auto-replay a mutation whose outcome is unknown). Tell the
+        # model to inspect first instead of re-issuing blindly.
+        if res.get("exit_code") == 124:
+            bits.append("OUTCOME UNKNOWN — the call may have completed before "
+                        "the timeout. Do NOT re-issue blindly: inspect first "
+                        "(read back the target state) and only then decide. "
+                        "A duplicate write is worse than a slow one.")
         extras = {k: v for k, v in res.items()
                   if k not in _OBS_NOISE
                   and k not in ("error", "args", "observation", "content", "stdout", "stderr")}
