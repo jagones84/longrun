@@ -297,8 +297,10 @@ def model_supports_vision(alias):
          declaration, always honoured;
       2. the LIVE roster of the model's provider: llama.cpp reports the server's
          real launch args, so a `--mmproj` entry proves a projector is loaded and
-         image inputs are usable. `architecture.input_modalities` is still read as
-         a secondary hint (some builds expose it, these builds do not).
+         image inputs are usable. `architecture.input_modalities` is read as a
+         secondary hint: the current router exposes `architecture` at the TOP
+         LEVEL of the roster entry (older shapes nest it under `meta`), so both
+         are checked.
     Conservative: any doubt returns False, so a text-only model never receives
     image blocks it cannot use.
     """
@@ -347,7 +349,9 @@ def model_supports_vision(alias):
                     isinstance(a, str) and (a == "--mmproj" or a.startswith("--mmproj="))
                     for a in args):
                 return True          # a projector is loaded on the live server
-            arch = (m.get("meta") or {}).get("architecture") or {}
+            # Secondary hint: llama.cpp exposes `architecture` at the TOP LEVEL of
+            # the roster entry (not under `meta`), so read both shapes.
+            arch = m.get("architecture") or (m.get("meta") or {}).get("architecture") or {}
             return "image" in (arch.get("input_modalities") or [])
     except Exception:  # noqa: BLE001 — fall back to text-only
         pass

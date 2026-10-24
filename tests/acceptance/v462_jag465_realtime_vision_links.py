@@ -94,6 +94,33 @@ finally:
     providers.resolve = _orig_resolve
     rllm.urllib.request.urlopen = _orig_open
 
+# Secondary hint: `architecture.input_modalities` WITHOUT a projector. The live
+# router exposes `architecture` at the TOP LEVEL of the roster entry; older
+# shapes nest it under `meta`. Both must grant vision, and a text-only
+# architecture must not.
+try:
+    providers.resolve = lambda a: ({"local": True, "models": []}, "m")
+    _payload = {"data": [{"id": "m", "status": {"value": "loaded", "args": ["-m", "x.gguf"]},
+                           "architecture": {"input_modalities": ["text", "image"]}}]}
+    rllm.urllib.request.urlopen = lambda *a, **k: _Resp(_payload)
+    check("A4b top-level architecture.input_modalities grants vision without --mmproj",
+          rllm.model_supports_vision("m") is True)
+
+    _payload = {"data": [{"id": "m", "status": {"value": "loaded", "args": ["-m", "x.gguf"]},
+                           "meta": {"architecture": {"input_modalities": ["text", "image"]}}}]}
+    rllm.urllib.request.urlopen = lambda *a, **k: _Resp(_payload)
+    check("A4c meta-nested architecture.input_modalities grants vision too",
+          rllm.model_supports_vision("m") is True)
+
+    _payload = {"data": [{"id": "m", "status": {"value": "loaded", "args": ["-m", "x.gguf"]},
+                           "architecture": {"input_modalities": ["text"]}}]}
+    rllm.urllib.request.urlopen = lambda *a, **k: _Resp(_payload)
+    check("A4d a text-only architecture stays text-only (no false positive)",
+          rllm.model_supports_vision("m") is False)
+finally:
+    providers.resolve = _orig_resolve
+    rllm.urllib.request.urlopen = _orig_open
+
 for _mid in ("qwen-3.8-27b-abliterated-q3", "qwen3.6-35b-a3b-uncensored-iq4xs",
              "nex-n2.5-mini-uncensored-iq4xs", "muse-glimmer-30b-abliterated-q3",
              "gemma-4-26b-a4b"):

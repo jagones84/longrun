@@ -97,7 +97,12 @@ check("C1 README shows a selectable OpenRouter model without claiming a default"
       "openrouter:openrouter/auto" in PROVIDERS
       and "openrouter:openai/gpt-4o-mini" in guide
       and "openrouter:openrouter/auto" not in README
-      and "pattern: qwen" in ROUTING
+      # The shipped routing names EXPLICIT cloud refs and no local alias pattern
+      # (JAG-455: a `pattern: qwen` default put every role on the local GPU, which
+      # then 400s when the router has no qwen loaded). The README must not
+      # advertise a default either.
+      and "pattern:" not in ROUTING
+      and "model: openrouter:" in ROUTING
       and "pattern: qwen" not in README)
 check("C2 README omits machine-specific role and compaction defaults",
       "openrouter:meta/muse-spark-1.3-contributor" in ROUTING
