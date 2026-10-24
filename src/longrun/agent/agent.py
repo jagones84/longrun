@@ -2294,7 +2294,10 @@ def _normalize_action(act):
                 _args = json.loads(_args)
             except Exception:  # noqa: BLE001
                 _args = {}
-        return {"action": "tool", "tool": act["name"], "args": _args or {}}
+        _out = {"action": "tool", "tool": act["name"], "args": _args or {}}
+        if isinstance(act.get("thought"), str) and act["thought"].strip():
+            _out["thought"] = act["thought"]
+        return _out
     if a == "tool":
         name = act.get("tool") or act.get("tool_name") or act.get("name")
         if name in _HARNESS_ACTION_NAMES:
