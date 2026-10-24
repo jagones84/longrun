@@ -328,26 +328,26 @@ if D is not None:
                   for issue in isolated)
           and "NEVER-ECHO-THIS" not in repr(isolated), isolated)
 
-    now = 1_800_000_000.0
-    repeated = {"code": "provider.auth_rejected", "severity": "error",
-                "title": "Provider rejected credentials", "message": "Check its key.",
-                "source": "openai", "session": "s1", "model": "openai:gpt",
-                "occurred_at": now - 1}
-    events = [{"ts": now - 1, "data": dict(repeated)},
-              {"ts": now - 2, "data": dict(repeated)}]
-    events.extend({"ts": now - i, "data": {
-        "code": "provider.unreachable", "severity": "error",
-        "title": "Provider unreachable", "message": "Check the endpoint.",
-        "source": "local", "session": "s%d" % i, "model": "local:m",
-        "occurred_at": now - i,
-    }} for i in range(3, 15))
-    events.append({"ts": now - 90000, "data": dict(repeated)})
-    recent = D.recent_failures(events, now)
-    check("7h recent errors expire, deduplicate, and cap at ten",
-          len(recent) == 10
-          and sum(issue.get("code") == "provider.auth_rejected" for issue in recent) == 1
-          and all(now - issue.get("occurred_at", now) <= 86400 for issue in recent),
-          len(recent))
+    import time as _time
+    from longrun.core import events as _events
+    _now = _time.time()
+    for _code in ("provider.request_failed", "provider.unreachable"):
+        _events.publish("settings.diagnostic", code=_code, severity="error",
+                        title="Model request failed",
+                        message="The model request failed.", source="openrouter",
+                        session="v414s", model="stale-phantom:model-x",
+                        occurred_at=_now - 60)
+    _events.publish("settings.diagnostic", code="provider.auth_rejected",
+                    severity="error", title="Provider rejected credentials",
+                    message="Check its key.", source="openrouter",
+                    session="v414s", model="stale-phantom:model-x",
+                    occurred_at=_now - 90000)
+    _history_free = D.collect()
+    _leaked = [issue for issue in _history_free.get("issues", [])
+               if "stale-phantom" in repr(issue)]
+    check("7h run checks stay green on past failures: history never resurfaces",
+          _leaked == [] and _history_free.get("ok") is True,
+          _history_free.get("summary"))
     counts = D.summarize([
         {"severity": "error"}, {"severity": "warning"}, {"severity": "info"}])
     check("7i diagnostics summary counts only errors and warnings as actionable",

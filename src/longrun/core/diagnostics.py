@@ -628,41 +628,6 @@ def _structured_setting_issues(config_issues: list[dict]) -> list[dict]:
     return issues
 
 
-def recent_failures(events: list[dict], now: float,
-                    session_id: str | None = None) -> list[dict]:
-    """Rebuild safe recent model issues from bounded diagnostic events only."""
-    cutoff = float(now) - 86400.0
-    requested_session = _safe_session(session_id)
-    found = {}
-    for row in events or []:
-        if not isinstance(row, dict):
-            continue
-        data = row.get("data") if isinstance(row.get("data"), dict) else row
-        code = data.get("code")
-        template = _RUNTIME_MESSAGES.get(code)
-        if not template:
-            continue
-        try:
-            occurred = float(data.get("occurred_at") or row.get("ts") or 0)
-        except (TypeError, ValueError):
-            continue
-        if occurred < cutoff or occurred > float(now) + 60.0:
-            continue
-        session = _safe_session(data.get("session"))
-        if requested_session and session != requested_session:
-            continue
-        model = _safe_ref(data.get("model"))
-        severity, title, message, action = template
-        issue = _issue(code, severity, title, message,
-                       data.get("source") or "Model provider",
-                       action=action, scope="session" if session else "global",
-                       session=session, model=model, occurred_at=occurred)
-        key = (code, session, model)
-        if key not in found or occurred > found[key]["occurred_at"]:
-            found[key] = issue
-    return sorted(found.values(), key=lambda item: item["occurred_at"], reverse=True)[:10]
-
-
 def summarize(issues: list[dict]) -> dict:
     """Count findings without treating optional information as actionable."""
     counts = {severity: 0 for severity in ("error", "warning", "info")}
@@ -737,18 +702,6 @@ def report_model_failure(error: BaseException, session: str | None,
     return issue
 
 
-def _runtime_issues(session_id: str | None) -> list[dict]:
-    """Read only newly emitted, already-sanitized provider failure events."""
-    try:
-        from longrun.core import events
-        if not os.path.isfile(events.DB_PATH):
-            return []
-        rows = events.query_events(kind="settings.diagnostic", limit=500)
-        return recent_failures(rows, time.time(), session_id=session_id)
-    except Exception:  # noqa: BLE001 — history is optional for current checks
-        return []
-
-
 def _dedupe(issues: list[dict]) -> list[dict]:
     """Keep one finding for each scope, code, source, model, and session."""
     out, seen = [], set()
@@ -765,7 +718,11 @@ def _dedupe(issues: list[dict]) -> list[dict]:
 
 def collect(session_id: str | None = None, model: str | None = None,
             host: str = "127.0.0.1") -> dict:
-    """Collect local-only diagnostics; never sends a model or provider request."""
+    """Collect local-only diagnostics; never sends a model or provider request.
+
+    Past model failures are never replayed here: a fixed setup reads
+    green, and only current configuration problems are listed.
+    """
     safe_session = _safe_session(session_id)
 
     def _authentication() -> list[dict]:
@@ -794,7 +751,6 @@ def collect(session_id: str | None = None, model: str | None = None,
         ("authentication", _authentication),
         ("configuration", _configuration),
         ("model providers", _models),
-        ("recent model failures", lambda: _runtime_issues(safe_session)),
     ]
     issues = _dedupe(run_checks(checks))
     return {
