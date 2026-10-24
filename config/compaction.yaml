@@ -82,6 +82,8 @@ compaction:
         - open questions / pending actions / TODOs
         - file paths, function names, command names, error messages referenced
         - the user's stated preferences for the rest of this session
+        - explicit commitments, promises and constraints the user stated
+          (what was agreed to do / not do — never drop these)
 
       DROP (never summarize, never restate):
         - greetings, pleasantries, "I will…", "let me…", meta-commentary

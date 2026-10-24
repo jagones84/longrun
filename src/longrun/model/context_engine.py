@@ -27,6 +27,48 @@ DEFAULT_BUDGET = int(os.environ.get("LONGRUN_CONTEXT_BUDGET", "262144"))
 DEFAULT_KEEP_RECENT = int(os.environ.get("LONGRUN_CONTEXT_KEEP_RECENT", "8"))
 RETRIEVAL_TOP_K = int(os.environ.get("LONGRUN_CONTEXT_RETRIEVAL_K", "3"))
 
+# M7: stable summary-block labels. The LLM path stamps SUMMARY_PREFIX; the local
+# extractive fallback keeps its legacy EXTRACTIVE_PREFIX (older transcripts and
+# `httpapi.compact_session` already emit that form). Both are recognised when
+# splitting a previous summary off the next compaction window, so summaries are
+# carried forward instead of re-summarized (no summary-of-summary drift).
+SUMMARY_PREFIX = "Earlier conversation (summary):\n"
+EXTRACTIVE_PREFIX = "Earlier conversation (compacted):\n"
+_SUMMARY_PREFIXES = (SUMMARY_PREFIX, EXTRACTIVE_PREFIX)
+# M7: cap on the COMBINED (carried + fresh) summary body, mirroring
+# `config/compaction.yaml` output_max_chars. Pruned from the front (most-recent
+# bullets win — same policy as the summarizer instruction).
+COMBINED_SUMMARY_MAX_CHARS = 6000
+
+
+def _summary_body(content):
+    """Return the body after a known summary prefix, or None."""
+    if not isinstance(content, str):
+        return None
+    for prefix in _SUMMARY_PREFIXES:
+        if content.startswith(prefix):
+            return content[len(prefix):]
+    return None
+
+
+def _is_summary_block(msg):
+    return (isinstance(msg, dict) and msg.get("role") == "system"
+            and _summary_body(msg.get("content") or "") is not None)
+
+
+def _is_effective_turn(msg):
+    """A turn worth sending to the summarizer (skips scaffolding/noise)."""
+    if not isinstance(msg, dict):
+        return False
+    role = msg.get("role", "?")
+    if role == "system":
+        return False
+    content = msg.get("content") or ""
+    if not isinstance(content, str):
+        content = str(content)
+    content = content.strip()
+    return bool(content) and not content.startswith("[harness]")
+
 
 def count_tokens(text):
     """Same ~4 chars/token proxy the harness uses for accounting.
@@ -94,34 +136,71 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
     while len(recent) > 1 and _msgs_tokens(recent) > budget_tokens:
         old.append(recent.pop(0))
     if old:
-        summary = None
-        if summarizer is not None:
-            try:
-                summary = summarizer(old)
-            except Exception:  # noqa: BLE001 — fall back to the local merge
-                summary = None
-        if summary:
-            stats["summary"] = "llm"
+        # M7: split the window — a previous summary block is carried forward
+        # untouched, ONLY the fresh turns go to the summarizer. No fresh turns
+        # means no model call: the previous block is returned byte-identical
+        # (content cooldown, fully deterministic).
+        prev_bodies = [_summary_body(m.get("content") or "")
+                       for m in old if _is_summary_block(m)]
+        prev_bodies = [b for b in prev_bodies if b is not None]
+        fresh = [m for m in old if not _is_summary_block(m)]
+        if prev_bodies and not any(_is_effective_turn(m) for m in fresh):
+            summary = old[next(i for i, m in enumerate(old)
+                               if _is_summary_block(m))].get("content")
+            stats["summary"] = "carried"
+            stats["summary_carried"] = True
         else:
-            summary_lines = []
-            for m in old:
-                role = m.get("role", "?")
-                # JAG-238: content may be a non-str (see count_tokens).
-                content = m.get("content") or ""
-                if not isinstance(content, str):
-                    content = str(content)
-                content = content.strip().replace("\n", " ")
-                # JAG-461: never fold harness scaffolding into the user-facing summary
-                # block — a raw "[harness] Observation for tool …" dump is noise, not
-                # memory (that was the "junk repeated in context" the operator saw when
-                # the LLM summarizer was unavailable). A previous system summary is
-                # skipped too, so summaries never nest.
-                if role == "system" or content.startswith("[harness]"):
-                    continue
-                if content:
-                    summary_lines.append("%s: %s" % (role, content[:160]))
-            summary = "Earlier conversation (compacted):\n" + "\n".join(summary_lines[-40:])
-            stats["summary"] = "extractive"
+            stats["summary_carried"] = False
+            new_body = None
+            new_from_llm = False
+            if summarizer is not None and any(_is_effective_turn(m) for m in fresh):
+                try:
+                    raw = summarizer(fresh)
+                except Exception:  # noqa: BLE001 — fall back to the local merge
+                    raw = None
+                if raw:
+                    raw = str(raw)
+                    stripped = _summary_body(raw)
+                    new_body = stripped if stripped is not None else raw
+                    new_from_llm = True
+            if new_body is None:
+                # Extractive fallback on the FRESH turns only (legacy path: no
+                # previous summary to carry, keep the legacy prefix verbatim).
+                summary_lines = []
+                for m in fresh:
+                    role = m.get("role", "?")
+                    # JAG-238: content may be a non-str (see count_tokens).
+                    content = m.get("content") or ""
+                    if not isinstance(content, str):
+                        content = str(content)
+                    content = content.strip().replace("\n", " ")
+                    # JAG-461: never fold harness scaffolding into the user-facing summary
+                    # block — a raw "[harness] Observation for tool …" dump is noise, not
+                    # memory (that was the "junk repeated in context" the operator saw when
+                    # the LLM summarizer was unavailable). A previous system summary is
+                    # skipped too, so summaries never nest.
+                    if role == "system" or content.startswith("[harness]"):
+                        continue
+                    if content:
+                        summary_lines.append("%s: %s" % (role, content[:160]))
+                extractive_body = "\n".join(summary_lines[-40:])
+                if prev_bodies:
+                    new_body = extractive_body
+                    new_from_llm = False
+                else:
+                    summary = EXTRACTIVE_PREFIX + extractive_body
+                    stats["summary"] = "extractive"
+                    new_body = None  # legacy path already stored; skip combine
+            if new_body is not None:
+                if prev_bodies:
+                    combined = "\n".join([b for b in prev_bodies if b] +
+                                         ([new_body] if new_body else []))
+                    if len(combined) > COMBINED_SUMMARY_MAX_CHARS:
+                        combined = combined[-COMBINED_SUMMARY_MAX_CHARS:]
+                    summary = SUMMARY_PREFIX + combined
+                else:
+                    summary = SUMMARY_PREFIX + new_body
+                stats["summary"] = "llm" if new_from_llm else "extractive"
         stats["compacted"] = len(old)
         msgs = [{"role": "system", "content": summary}]
     else:
