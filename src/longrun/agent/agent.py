@@ -401,7 +401,10 @@ CHAT_TOOL_PROMPT = (
     "in that teammate's own session (their role and model) and get their reply back. "
     "Prefer dispatching independent work to teammates over doing everything yourself. "
     "Several independent dispatches MAY go in one batch call (items with action "
-    "dispatch in `calls`); they run sequentially, one teammate turn at a time. "
+    "dispatch in `calls`); different teammates run concurrently, same-teammate "
+    "items sequentially. The job.* exclusive tools need the Teamorg grant — if "
+    "they answer permission_denied (exit 126), use batch+dispatch instead (no "
+    "grant needed) or ask the operator for the grant; never shell around the gate. "
     # JAG-513: no tool list here — the discovery contract + name index lives in
     # api_v02.tool_context(), which is appended right after this block.
 )
@@ -1444,16 +1447,53 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
                  args={"agent": member.get("id"), "goal": goal, "session": sid2},
                  inline=True)
         try:
+            import threading
             from longrun.core import server as _srv
             sess2 = _srv.get_or_create_session(sid2)
             model2 = member.get("model") or None
             before = len((_srv.load_session(sid2) or {}).get("messages", []))
-            for _ in _srv.chat_stream_gen(
-                    sess2, "[delegated by %s (%s)] %s"
-                    % (me.get("id"), me.get("name") or "", goal),
-                    model2, None, autonomous=True, sender=me.get("id"),
-                    sender_session=sess["id"]):
-                pass
+            _derr: dict = {}
+            _ddone = threading.Event()
+
+            def _drain():
+                try:
+                    for _ in _srv.chat_stream_gen(
+                            sess2, "[delegated by %s (%s)] %s"
+                            % (me.get("id"), me.get("name") or "", goal),
+                            model2, None, autonomous=True, sender=me.get("id"),
+                            sender_session=sess["id"]):
+                        pass
+                except Exception as e:  # noqa: BLE001
+                    _derr["error"] = e
+                finally:
+                    _ddone.set()
+
+            _t = threading.Thread(target=_drain, daemon=True)
+            _t.start()
+            _t.join(_dispatch_wait())
+            if not _ddone.is_set():
+                # P2: the teammate turn is still running — never hang this
+                # turn behind it. The worker keeps running in its own session
+                # and its reply lands there; point the model at it instead of
+                # re-dispatching (which would hit the busy fail-fast anyway).
+                _still = ("Teammate %s is still working (over %ds) — its turn "
+                          "keeps running in session %s and its reply will land "
+                          "there. Inspect it with sessions.read (session %s) "
+                          "and continue; do NOT re-dispatch the same goal."
+                          % (member.get("id"), _dispatch_wait(), sid2, sid2))
+                on_event("tool.result", session=sess["id"], tool="dispatch",
+                         ok=True, exit_code=0, backend="harness",
+                         args={"agent": member.get("id"), "goal": goal,
+                               "session": sid2}, output=_still,
+                         summary="dispatch %s: still running" % member.get("id"))
+                persist_tool_card(sess, "dispatch", True,
+                                  args={"agent": member.get("id"), "goal": goal,
+                                        "session": sid2},
+                                  result=_still, exit_code=0, backend="harness",
+                                  node=node, after=after)
+                return _still
+            if "error" in _derr:
+                return _fail("teammate turn failed: %s" % str(_derr["error"])[:200])
             s2 = _srv.load_session(sid2) or {}
             turn = (s2.get("messages") or [])[before:]
             from longrun.memory import stores as _stores
@@ -1550,6 +1590,39 @@ def _is_dispatch_item(it):
     return bool(has_to and has_goal and action != "subagent")
 
 
+def _dispatch_key(it):
+    """Group key for parallel batch dispatch: one group per teammate.
+
+    P1: dispatches to DIFFERENT teammates run concurrently (each is a real
+    turn in its own session); items for the SAME teammate stay sequential —
+    two turns in one session must not interleave. Items with no resolvable
+    address get no key (each runs in its own group; the dispatch itself will
+    fail fast with "agent required" instead of blocking others).
+    """
+    if not isinstance(it, dict):
+        return None
+    args = it.get("args") if isinstance(it.get("args"), dict) else {}
+    for k in ("agent", "to"):
+        v = it.get(k) or args.get(k)
+        if str(v or "").strip():
+            return str(v).strip().lower()
+    return None
+
+
+def _dispatch_wait():
+    """Seconds a dispatch waits for the teammate turn (then stops waiting).
+
+    P2: a teammate turn can outlast any orchestrator patience (its own N x
+    LLM calls + tools + approvals). Never hang the caller turn behind it:
+    after this bound the dispatch returns "still running" and the worker
+    keeps running to completion in its own session.
+    """
+    try:
+        return max(30, int(os.environ.get("LONGRUN_DISPATCH_WAIT") or 300))
+    except (TypeError, ValueError):
+        return 300
+
+
 def _split_batch_items(items):
     """Split batch items into (tool_items, subagent_items, dispatch_items).
 
@@ -1618,9 +1691,10 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
     """Run the calls of a `batch` action (JAG-533).
 
     TOOL items share a thread pool sized by `runtime.max_parallel_tools`.
-    DISPATCH items run SEQUENTIALLY in order — each is a real turn in a
-    teammate's session, and two turns in the same session must not
-    interleave; they are never spawns and never touch the subagent budget.
+    DISPATCH items are grouped per teammate: different teammates run
+    CONCURRENTLY, same-teammate items run sequentially in order (two turns in
+    one session must not interleave); they are never spawns and never touch
+    the subagent budget.
     SUBAGENT items become ONE Session Job (SJ, JAG-533/SJ): a persisted,
     dependency-ordered graph run by the ready-queue scheduler in
     ``longrun.agent.session_jobs`` — a subjob starts only when its `deps` are
@@ -1719,18 +1793,37 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
                                           s.get("status"),
                                           s.get("result") or s.get("error") or "")})
     if dispatch_items:
-        # F2: teammate turns, run SEQUENTIALLY in the model's order — two
-        # turns in the SAME teammate session must not interleave. Never a
-        # spawn, never on the subagent budget.
-        for it in dispatch_items:
+        # P1: teammate turns to DIFFERENT teammates run CONCURRENTLY (each is
+        # a real turn in its own session); items for the SAME teammate stay
+        # SEQUENTIAL in model order — two turns in one session must not
+        # interleave. Never a spawn, never on the subagent budget. A busy
+        # same-session collision still fails fast inside the dispatch itself.
+        from concurrent.futures import ThreadPoolExecutor
+        _groups: dict = {}
+        for _i, _it in enumerate(dispatch_items):
+            _groups.setdefault(_dispatch_key(_it) or object(), []).append((_i, _it))
+
+        def _one_dispatch(pair):
+            _i, _it = pair
             try:
-                _dobs = str(_apply_chat_dispatch(sess, it, on_event,
+                _dobs = str(_apply_chat_dispatch(sess, _it, on_event,
                                                  node=node, after=after) or "")
                 _dok = not _dobs.startswith("dispatch error")
             except Exception as e:  # noqa: BLE001 — one item must not sink the batch
                 _dobs, _dok = "dispatch raised: %s" % str(e)[:200], False
-            results.append({"tool": "dispatch", "ok": _dok,
-                            "obs": _dobs[:4000]})
+            return (_i, {"tool": "dispatch", "ok": _dok,
+                         "obs": _dobs[:4000]})
+
+        def _run_group(group):
+            return [_one_dispatch(p) for p in group]
+
+        _dout = []
+        with ThreadPoolExecutor(
+                max_workers=max(1, min(len(_groups), _parallel_tool_cap()))) as _pool:
+            for _gres in _pool.map(_run_group, _groups.values()):
+                _dout.extend(_gres)
+        for _, _r in sorted(_dout, key=lambda x: x[0]):
+            results.append(_r)
     lines = ["Batch of %d call(s) ran (tools: %d, subagents: %d, dispatches: %d)."
              % (len(tool_items) + len(sub_items) + len(dispatch_items),
                 len(tool_items), len(sub_items), len(dispatch_items))]

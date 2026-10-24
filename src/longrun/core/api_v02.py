@@ -525,10 +525,12 @@ def tool_context():
         '{"action":"subagent","goal":"..."}, or '
         '{"action":"dispatch","agent":"<A-id>","goal":"..."}. At most `runtime.max_parallel_tools` '
         "tools run at once (config/tools.yaml); subagents are capped by "
-        "`max_parallel` (config/subagents.yaml). Dispatch items run "
-        "SEQUENTIALLY in order — each is a real turn in a teammate's session, "
-        "never a spawn, never on the subagent budget. Give a subagent that must "
-        "call tools max_steps>=3 (2 steps leave no turn for the answer). Never "
+        "`max_parallel` (config/subagents.yaml). Dispatch items run grouped "
+        "per teammate (different concurrently, same sequentially); never a "
+        "spawn, never on the subagent budget. Give a tool-using subagent "
+        "max_steps>=3 (2 steps leave no turn for the answer). job.* need the "
+        "Teamorg grant (permission_denied without it) — then use "
+        "batch+dispatch or ask the operator. Never "
         "batch an approval-gated mutation with a read that depends on it.",
         "A SUBAGENT item may declare ORDER over other subagent items of the same "
         "batch, and the whole batch becomes one Session Job (SJ) you can inspect "
