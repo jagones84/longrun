@@ -1,17 +1,60 @@
-<p align="center"><img src="assets/icon.svg" alt="Longrun" width="112" height="112"></p>
+<div align="center">
 
 <img src="assets/banner.svg" alt="Longrun — the agent harness built to DRIVE the LLM" width="100%">
 
 # Longrun
+
+### The agent harness built to DRIVE the LLM.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
 [![tests](https://img.shields.io/badge/battery-285%2F285%20tests-blue.svg)](#tests)
 
-Self-hosted AI agent harness with a browser UI, tool-enabled sessions, task graphs,
-team orchestration, HTTP/SSE API, and CLI. Requires Python 3.10+ and PyYAML for the
-core runtime. Supports Windows 10/11 x64 and Linux x86_64/ARM64.
+**Longrun is the self-hosted AI agent harness that drives the LLM — teams of
+agents, real tools, and verification, on your own machine.** One Python process
+serves a browser UI, an HTTP/SSE API, and a CLI. The runtime is stdlib-only
+plus PyYAML: no framework to learn, no lock-in to any provider.
+
+</div>
+
+| | |
+|---|---|
+| **Teams of agents** | Dispatch work to teammates' own sessions — in parallel — or run coordinated jobs with dependency waves; subagents take ordered subtasks with their outputs wired in as input. |
+| **Real tools, gated** | Shell, filesystem, git, web, browser, skills, memory, knowledge — every world-changing call passes an approval gate (auto / approve / deny), with sandboxed execution for the shell. |
+| **Self-evolution** | The Matrix zone lets the harness extend itself live (tools, hooks, skills, rules); proven artifacts graduate into the protected Nucleus through verification gates. |
+| **Memory that lasts** | Session memory, a per-workspace codebase index, a shared Knowledge Base, and one compaction policy for manual and automatic summarization. |
+| **Honest costs** | Per-session model costs as exact provider charges, token-rate estimates, or explicitly unpriced calls — cached input included, attempts included. |
+| **Deterministic quality** | Every behavior above is pinned by an isolated acceptance test (see the badge); the battery runs them all in seconds. |
+
+---
+
+## Table of Contents
+
+- [Why Longrun](#why-longrun)
+- [Quick start: Windows](#quick-start-windows)
+- [What Longrun does](#what-longrun-does)
+- [Self-evolution: Nucleus vs. Matrix](#self-evolution-nucleus-vs-matrix)
+- [Quick start: Linux (x86_64 and ARM64)](#quick-start-linux-x86_64-and-arm64)
+- [Model setup](#model-setup)
+- [API & integration](#api--integration)
+- [Data and search](#data-and-search)
+- [Tests](#tests)
+- [Documentation](#documentation)
+- [License](#license)
+
+## Why Longrun
+
+- **Self-hosted AI agent harness, local-first.** Everything the harness owns lives outside the checkout in one
+  data home — a `git pull` can never eat your sessions, costs, or rules.
+- **Provider-neutral.** OpenRouter, DeepSeek, OpenAI, Anthropic, Gemini, Ollama,
+  llama.cpp, LM Studio, vLLM — switch with the model picker, no code changes.
+- **Reproducible by construction.** The same battery that guards development
+  (`tests/battery.sh`) pins every user-visible behavior; a fix lands with its test.
+- **Grows without forking.** Agents add Matrix tools live; maintainers promote
+  the proven ones into the Nucleus through gates, not rewrites.
+- **Honest about money.** Costs are exact charges where providers report them
+  and labeled estimates everywhere else — never a silent "$0.00".
 
 ---
 
@@ -351,12 +394,27 @@ integrations. API calls require a bearer token when `LONGRUN_TOKEN` is set.
 See [CLI reference](docs/CLI.md) for commands and endpoints, and
 [Architecture](docs/ARCHITECTURE.md) for component details.
 
+Orchestration has three native shapes — pick the cheapest that fits:
+
+```jsonc
+// one teammate, one turn in its own session
+{"action": "dispatch", "agent": "A48", "goal": "read the first line of README.md"}
+// many teammates at once (different teammates run concurrently)
+{"action": "batch", "calls": [
+  {"action": "dispatch", "agent": "A48", "goal": "read README.md"},
+  {"action": "dispatch", "agent": "A49", "goal": "read docs/CLI.md"} ]}
+// a durable job with dependency waves, observable via /api/jobs
+{"tool": "job.dispatch", "args": {"job": "J22"}}
+```
+
 ---
 
 ## Data and search
 
-By default, Longrun stores application data under `<repository>/data/`. Git ignores
-this directory. `LONGRUN_DATA_DIR` can move the data root.
+Application data lives in the **data home** (`~/.longrun`, `%LOCALAPPDATA%\Longrun`
+on Windows) — never inside the checkout; see
+[Where your data lives](#where-your-data-lives-not-in-the-repository). `LONGRUN_DATA_DIR`
+can move the data root for tests and custom setups.
 
 | Store | Scope | Default location |
 |---|---|---|
@@ -387,7 +445,6 @@ LONGRUN_BATTERY_FULL=1 bash tests/battery.sh
 LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
-The full command ran successfully during the original README update: **218/218 passed**.
 The acceptance suite now contains **285/285 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 

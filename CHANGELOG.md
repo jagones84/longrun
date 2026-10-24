@@ -55,6 +55,15 @@ All notable changes to Longrun are documented here. The format follows
   `v507` F–F9 and `v350` A4.
 
 ### Changed
+- **README is now the pitch, and the banner wears the runner.** The header drops
+  the standalone icon (the banner carries the runner mark), opens with a
+  one-liner plus a six-row capability table, and adds a Table of Contents, a
+  "Why Longrun" section, and a dispatch/batch/job orchestration example. The
+  "Data and search" section no longer claims data lives under
+  `<repository>/data/` — it points at the data home. Install sections are
+  untouched. The hero is now centered with its tagline (CCCC pattern), the
+  leftover bolt is gone everywhere: `assets/logo.svg` carries the runner mark
+  like `assets/icon.svg`, and the browser tab title no longer uses the bolt.
 - **Keys live in ONE file: the repo `.env`.** Settings ▸ Keys already WROTE there, but
   the harness also READ `~/.hermes/.env`, so a key could look "set" while the panel
   could not find or clear it. `env_files` (providers + MCP), `keys.read_secret()` and
