@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **M10 slice: killed turns are classified, resume records persisted.**
+  From the DeepSeek resume/fork/replay direction: `stores.classify_interruption()`
+  tells `interrupted_before_effect` (zero current-turn tool cards + PRE-turn
+  checkpoint present — replay is safe) from `unknown_effect` (any executed card
+  or no checkpoint). `reconcile_orphan_turns()` persists
+  `sess["interrupted"] = {effect, executed, checkpoint}` and words the notice by
+  effect (resume-from-checkpoint vs send-a-new-message); the meta carries
+  `interrupt_effect`. Auto-resume execution itself stays future work — the
+  record it needs now exists (locked by `v590` 12/12).
 - **Paperclip-grade policy: `rate_limit` + `argument_filters` in `registry.classify()`.**
   From round-3 harness comparison (Paperclip N3): a tool policy may carry
   `rate_limit: {max_calls, window_secs}` (over-budget calls denied fail-closed,

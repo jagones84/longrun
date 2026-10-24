@@ -821,6 +821,33 @@ def ensure_reply_persisted(sess, since, error=None, model=None):
                           meta={"model": model, "error": True, "error_detail": detail})
 
 
+def classify_interruption(sess, checkpoint=None):
+    """M10 slice (DeepSeek resume/fork/replay): was the killed turn replay-safe?
+
+    A hard restart kills the in-flight turn; its transcript was never flushed,
+    but its tool cards WERE persisted per call (`persist_tool_card`, each with
+    `after` = the persisted message count at card time). Cards with
+    `after >= len(messages)` belong to the killed turn — earlier turns' cards
+    sit below the frozen boundary. Zero such cards means the model died before
+    executing anything, so replaying from the PRE-turn checkpoint is safe;
+    any executed card means effects are unknown and only the user can continue.
+    Returns None when the transcript does not end on a user turn (no orphan).
+    """
+    msgs = (sess or {}).get("messages") or []
+    if not msgs or msgs[-1].get("role") != "user":
+        return None
+    n = len(msgs)
+    executed = sum(1 for c in ((sess or {}).get("tool_cards") or [])
+                   if isinstance(c, dict)
+                   and (c.get("after") if isinstance(c.get("after"), int)
+                        else 0) >= n)
+    if executed == 0 and checkpoint:
+        return {"effect": "interrupted_before_effect", "executed": 0,
+                "checkpoint": checkpoint}
+    return {"effect": "unknown_effect", "executed": executed,
+            "checkpoint": checkpoint}
+
+
 def reconcile_orphan_turns(session=None):
     """JAG-262: close turns left half-done by a hard restart.
 
@@ -859,13 +886,39 @@ def reconcile_orphan_turns(session=None):
         msgs = (sess or {}).get("messages", [])
         if not msgs or msgs[-1].get("role") != "user":
             continue
+        # M10 slice: look up the PRE-turn checkpoint (JAG-426 anchors it to the
+        # trailing user message) and classify the kill. Local import: checkpoints
+        # must never pull stores at module load.
+        try:
+            from longrun.memory import checkpoints as _cps
+            _cp = _cps.get_by_idempotency_key(
+                "turn:%s:%s" % (sid, len(msgs) - 1))
+            _cpid = (_cp or {}).get("id")
+        except Exception:  # noqa: BLE001
+            _cpid = None
+        _cls = classify_interruption(sess, _cpid) or {
+            "effect": "unknown_effect", "executed": 0, "checkpoint": _cpid}
+        try:
+            sess["interrupted"] = {
+                "effect": _cls["effect"], "executed": _cls["executed"],
+                "checkpoint": _cls["checkpoint"], "at": round(time.time(), 3)}
+            save_session(sess)
+        except Exception:  # noqa: BLE001 — the record is best-effort
+            pass
+        if _cls["effect"] == "interrupted_before_effect":
+            _notice = ("previous turn was interrupted by a service restart "
+                       "before it executed anything — send a new message to "
+                       "resume from the pre-turn checkpoint.")
+        else:
+            _notice = ("previous turn was interrupted by a service restart "
+                       "— send a new message to continue.")
         try:
             append_message(
                 sess, "assistant",
-                ERROR_PREFIX + "previous turn was interrupted by a service restart "
-                "— send a new message to continue.",
+                ERROR_PREFIX + _notice,
                 meta={"error": True, "error_detail": "interrupted-by-restart",
-                      "interrupted": True})
+                      "interrupted": True,
+                      "interrupt_effect": _cls["effect"]})
             # also release progress left 'doing' by the killed turn, so the panel
             # does not show a phantom active step.
             try:
