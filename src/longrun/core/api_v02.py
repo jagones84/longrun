@@ -416,7 +416,8 @@ AGENT_PROMPT_V2 = (
     '  {"action":"todo.write","todos":[{"label":"...","deps":[]}]}\n'
     '  {"action":"tool","tool":"<name>","args":{...}}   run a registered tool\n'
     '  {"action":"batch","calls":[{...},{...}]}   run INDEPENDENT calls in '
-    "parallel (each item is a full action: a tool call or a subagent)\n"
+    "parallel (each item is a full action: a tool call, a subagent, or a "
+    "dispatch to a teammate)\n"
     '  {"action":"plan_step","title":"...","detail":"..."}\n'
     '  {"action":"complete_plan_step","id":"..."}\n'
     '  {"action":"add_task","title":"..."}\n'
@@ -520,11 +521,15 @@ def tool_context():
         "harness runs them CONCURRENTLY:",
         '  {"action":"batch","calls":[{"tool":"fs.read","args":{"path":"a.py"}},'
         '{"tool":"fs.read","args":{"path":"b.py"}}]}',
-        "Each item of `calls` is a FULL action — a tool call, or "
-        '{"action":"subagent","goal":"..."}. At most `runtime.max_parallel_tools` '
+        "Each item of `calls` is a FULL action — a tool call, "
+        '{"action":"subagent","goal":"..."}, or '
+        '{"action":"dispatch","agent":"<A-id>","goal":"..."}. At most `runtime.max_parallel_tools` '
         "tools run at once (config/tools.yaml); subagents are capped by "
-        "`max_parallel` (config/subagents.yaml). Never batch an approval-gated "
-        "mutation with a read that depends on it.",
+        "`max_parallel` (config/subagents.yaml). Dispatch items run "
+        "SEQUENTIALLY in order — each is a real turn in a teammate's session, "
+        "never a spawn, never on the subagent budget. Give a subagent that must "
+        "call tools max_steps>=3 (2 steps leave no turn for the answer). Never "
+        "batch an approval-gated mutation with a read that depends on it.",
         "A SUBAGENT item may declare ORDER over other subagent items of the same "
         "batch, and the whole batch becomes one Session Job (SJ) you can inspect "
         "with `self.sj`:",

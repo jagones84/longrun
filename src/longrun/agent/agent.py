@@ -394,11 +394,14 @@ CHAT_TOOL_PROMPT = (
     "Write a COMPLETE, self-contained instruction: the child cannot see your history, "
     "your files or ask you questions. Use it for a distinct subtask that can run on "
     "its own (e.g. reading and summarising a big file); do not delegate the whole "
-    "task. One delegate per subtask. "
+    "task. One delegate per subtask. Give max_steps>=3 when the child must call "
+    "tools (2 steps leave no turn for the answer). "
     'If your role prompt lists a TEAM (the org chart), DISTRIBUTE work to it: emit ONLY '
     '{"action":"dispatch","agent":"<A-id>","goal":"<the subtask>"} to run a real turn '
     "in that teammate's own session (their role and model) and get their reply back. "
     "Prefer dispatching independent work to teammates over doing everything yourself. "
+    "Several independent dispatches MAY go in one batch call (items with action "
+    "dispatch in `calls`); they run sequentially, one teammate turn at a time. "
     # JAG-513: no tool list here — the discovery contract + name index lives in
     # api_v02.tool_context(), which is appended right after this block.
 )
@@ -1522,6 +1525,31 @@ def _batch_items(act):
     return [c for c in (raw or []) if isinstance(c, dict)]
 
 
+def _is_dispatch_item(it):
+    """True when a batch item addresses a teammate, however it is spelled.
+
+    BATCH-BUG: only an exact `{"action":"dispatch"}` reached the teammate —
+    a tool envelope (`action=tool, tool=dispatch`), a capitalised action, or
+    a bare `{agent, goal}` shape fell into the tool lane ("not a valid tool
+    call") or the subagent lane (any `goal` key), and the delegation died
+    silently. The address (agent/to) plus the payload (goal) is the reliable
+    signal; a `subagent` action is never a dispatch.
+    """
+    if not isinstance(it, dict):
+        return False
+    action = str(it.get("action") or "").strip().lower()
+    tool = str(it.get("tool") or it.get("name") or "").strip().lower()
+    if action == "dispatch" or tool == "dispatch":
+        return action != "subagent"
+    args = it.get("args")
+    args = args if isinstance(args, dict) else {}
+    has_to = bool(str(it.get("agent") or it.get("to") or args.get("agent")
+                        or args.get("to") or "").strip())
+    has_goal = bool(str(it.get("goal") or args.get("goal") or it.get("detail")
+                          or "").strip())
+    return bool(has_to and has_goal and action != "subagent")
+
+
 def _split_batch_items(items):
     """Split batch items into (tool_items, subagent_items, dispatch_items).
 
@@ -1535,10 +1563,9 @@ def _split_batch_items(items):
     for it in items or []:
         if not isinstance(it, dict):
             continue
-        action = str(it.get("action") or "")
-        if action == "dispatch":
+        if _is_dispatch_item(it):
             dispatches.append(it)
-        elif action == "subagent" or it.get("goal"):
+        elif str(it.get("action") or "") == "subagent" or it.get("goal"):
             subs.append(it)
         else:
             tools.append(it)
@@ -2079,7 +2106,7 @@ _TODO_ACTION_ALIASES = {
 }
 
 _HARNESS_ACTION_NAMES = ("todo.write", "todo.update", "todo.replan", "subagent",
-                         "batch",
+                         "dispatch", "batch",
                          "plan_step", "complete_plan_step", "add_task",
                          "complete_task", "note", "finish") + tuple(_TODO_ACTION_ALIASES)
 
@@ -2128,6 +2155,7 @@ def _normalize_action(act):
             inner = dict(act.get("args") or {})
             inner["action"] = _TODO_ACTION_ALIASES.get(name, name)
             for k in ("thought", "note", "todos", "steps", "goal", "detail",
+                      "agent", "to",
                       "model", "max_steps", "calls", "tool_calls"):
                 if k in act and k not in inner:
                     inner[k] = act[k]
@@ -2142,10 +2170,23 @@ def _normalize_action(act):
             return dict(act, action="todo.update")
         if "note" in act:
             return dict(act, action="todo.replan")
+        # BATCH-BUG: a dispatch spelled without its action (bare address +
+        # payload) must still reach the teammate, never the tool lane.
+        _dargs = act.get("args") if isinstance(act.get("args"), dict) else {}
+        if ((act.get("agent") or act.get("to") or _dargs.get("agent")
+                or _dargs.get("to"))
+                and (act.get("goal") or _dargs.get("goal"))):
+            out = dict(_dargs) if _dargs else dict(act)
+            out["action"] = "dispatch"
+            for k in ("agent", "to", "goal", "detail", "thought"):
+                if k in act and k not in out:
+                    out[k] = act[k]
+            return out
     # JAG-278: an UNKNOWN action name but a recognizable PAYLOAD — coerce by SHAPE.
     # A weak model writes the right body under a wrong/labelled action ("update",
     # "set_todos", ...); the payload is the reliable signal, not the action name.
-    if a not in ("tool", "todo.write", "todo.update", "todo.replan", "subagent"):
+    if a not in ("tool", "todo.write", "todo.update", "todo.replan", "subagent",
+                   "dispatch"):
         if isinstance(act.get("todos"), list):
             return dict(act, action="todo.write")
         if isinstance(act.get("steps"), list):
@@ -2999,13 +3040,63 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if isinstance(act, dict) and act.get("action") == "batch" and _batch:
             # JAG-533: several INDEPENDENT calls in one turn, run concurrently.
             if len(_batch) < 2:
-                # A one-item batch is just a normal call: route it through the
-                # single-call path below (keeps the JAG-183 repeat guard).
-                act = dict(_batch[0], thought=act.get("thought"))
-            elif plan_only:
-                msgs.append({"role": "assistant", "content": answer})
-                _inject("SYSTEM (harness) — PLAN-ONLY turn: batching calls is not "
-                        "allowed while planning. Record the plan and stop.", "nudge")
+                # A one-item batch is just a normal call — but it must reach
+                # the SAME branch a bare action would (BATCH-BUG: a batch
+                # wrapping a single dispatch fell through to the tool path and
+                # the delegation died silently).
+                act = _normalize_action(
+                    dict(_batch[0], thought=act.get("thought")))
+                _single = (str(act.get("action") or "").strip().lower()
+                           if isinstance(act, dict) else "")
+                if _single == "dispatch" and not (plan_only or autonomous):
+                    work_steps += 1
+                    _total_work_steps += 1
+                    used_tools.append("dispatch")
+                    _th = str(act.get("thought") or "").strip()
+                    if _th:
+                        _think_buf["t"] += _th + "\n"
+                        on_delta("think", _th + "\n")
+                    obs = _apply_chat_dispatch(sess, act, on_event,
+                                               node=_cur_node(),
+                                               after=_after())
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(obs + "\n\nContinue: call the next tool, or report the result.",
+                            "observation")
+                    continue
+                if _single == "subagent" and not plan_only:
+                    work_steps += 1
+                    _total_work_steps += 1
+                    used_tools.append("subagent")
+                    _th = str(act.get("thought") or "").strip()
+                    if _th:
+                        _think_buf["t"] += _th + "\n"
+                        on_delta("think", _th + "\n")
+                    obs = _apply_chat_subagent(sess, act, on_event,
+                                               node=_cur_node(),
+                                               after=_after())
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(obs + "\n\nContinue: call the next tool, or report the result.",
+                            "observation")
+                    continue
+                if _single in ("dispatch", "subagent") and (plan_only or
+                        (_single == "dispatch" and autonomous)):
+                    # Same refusal a bare action gets — never the tool path.
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject("SYSTEM (harness) — %s: %s here. %s" % (
+                        "PLAN-ONLY turn" if plan_only else "a DELEGATED turn",
+                        "dispatching to teammates is not allowed"
+                        if _single == "dispatch"
+                        else "spawning subagents is not allowed",
+                        "Record the plan and stop." if plan_only
+                        else "Do this work yourself and report the result."),
+                        "nudge")
+                    work_steps += 1
+                    _total_work_steps += 1
+                    continue
+                elif plan_only:
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject("SYSTEM (harness) — PLAN-ONLY turn: batching calls is not "
+                            "allowed while planning. Record the plan and stop.", "nudge")
                 work_steps += 1
                 _total_work_steps += 1
                 continue
