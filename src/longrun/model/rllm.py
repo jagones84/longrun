@@ -536,7 +536,12 @@ def _open_with_retry(req, timeout):
     """
     delay = ROUTER_BACKOFF
     try:
-        return urllib.request.urlopen(req, timeout)
+        # NOTE: `timeout` MUST be passed by keyword. `urlopen(url, data=None,
+        # timeout=...)` binds a second positional argument to `data`, so
+        # `urlopen(req, timeout)` overwrites the request body with an int and
+        # http.client raises "message_body should be a bytes-like object ...
+        # got <class 'int'>".
+        return urllib.request.urlopen(req, timeout=timeout)
     except Exception as first:  # noqa: BLE001 — classified below
         budget = classify_retry(first)
         if budget["disposition"] != "transient":
@@ -555,7 +560,7 @@ def _open_with_retry(req, timeout):
             time.sleep(delay)
             delay = min(delay * 2, ROUTER_BACKOFF_MAX)
             try:
-                return urllib.request.urlopen(req, timeout)
+                return urllib.request.urlopen(req, timeout=timeout)
             except Exception as e:  # noqa: BLE001
                 last = e
                 if classify_retry(e)["disposition"] != "transient":

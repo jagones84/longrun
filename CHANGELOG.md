@@ -73,6 +73,17 @@ All notable changes to Longrun are documented here. The format follows
   no longer the default.
 
 ### Fixed
+- **Every run that called a remote provider died with `message_body should be a bytes-like
+  object or an iterable, got <class 'int'>`.** `_open_with_retry` called
+  `urllib.request.urlopen(req, timeout)`, but `urlopen(url, data=None, timeout=...)` binds
+  its SECOND POSITIONAL argument to `data` — so the integer timeout overwrote the JSON
+  completion body and `http.client` raised `TypeError` before a single byte left the box.
+  The timeout is now passed by keyword (`urlopen(req, timeout=timeout)`) at both call
+  sites. Found while driving the real Paperclip adapter (the external adapter was fine:
+  it built a valid bytes body, the fault was downstream in Longrun's model client).
+  Locked by `v575` (5/5) — the test drives a real `http.server` over a real socket and
+  asserts the server received the exact body, plus that `urlopen` gets no positional
+  argument.
 - **Attached images reached the agent as a knowledge-base riddle.** `deepseek:deepseek-flash`
   IS vision-capable (verified live: a 64x64 solid-red PNG came back as "red") but the
   catalogue had no `vision` flag, so the harness told the model it could not see; the
