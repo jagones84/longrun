@@ -7,7 +7,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-283%2F283%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-284%2F284%20tests-blue.svg)](#tests)
 
 Self-hosted AI agent harness with a browser UI, tool-enabled sessions, task graphs,
 team orchestration, HTTP/SSE API, and CLI. Requires Python 3.10+ and PyYAML for the
@@ -388,7 +388,7 @@ LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
 The full command ran successfully during the original README update: **218/218 passed**.
-The acceptance suite now contains **283/283 test files**.
+The acceptance suite now contains **284/284 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

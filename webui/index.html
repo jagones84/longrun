@@ -3284,6 +3284,16 @@ function _tsSpan(ts) {
   const txt = p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
   return '<span class="mts" title="' + esc(d.toString()) + '">' + txt + "</span>";
 }
+/* Assistant bubbles are stamped with the answering org-agent ("A51 · LONGRUN")
+   when the current session is designated, else plain "LONGRUN". The date+time
+   already rides on _tsSpan. */
+function _aiLabel() {
+  try {
+    const a = (_agents || {})[sessionId];
+    const id = a && (a.id || a.name);
+    return id ? (id + " · LONGRUN") : "LONGRUN";
+  } catch (e) { return "LONGRUN"; }
+}
 function who(role, text, ts, sender, subjob, chapter, senderSession) {
   const d = document.createElement("div");
   d.className = "msg " + (role === "user" ? "user" : "ai") + (sender ? " deleg" : "");
@@ -3293,7 +3303,7 @@ function who(role, text, ts, sender, subjob, chapter, senderSession) {
   // ("A8 (Master) · J6.1") instead of "YOU" — a worker must never look like the
   // operator asked it directly.
   const _label = sender ? (sender + (subjob ? " · " + subjob : ""))
-                        : (role === "user" ? "YOU" : "LONGRUN");
+                        : (role === "user" ? "YOU" : _aiLabel());
   d.innerHTML = `<div class="who">${esc(_label)}` +
     _tsSpan(ts) + `<button class="copy" title="copy message">⧉</button></div><div class="bubble"></div>`;
   const b = d.querySelector(".bubble");
@@ -3418,7 +3428,7 @@ function ensureThink() {
     // JAG-513: a live chain-of-thought is COLLAPSED like a persisted one. It used
     // to open itself, so a reasoning model buried the actual answer under a wall
     // of text that kept growing. Only the user opens it (click on the summary).
-    d.innerHTML = `<div class="who">LONGRUN</div><details class="think"><summary>🧠 chain-of-thought (live)…</summary><div class="t"></div></details>`;
+    d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think"><summary>🧠 chain-of-thought (live)…</summary><div class="t"></div></details>`;
     // JAG-219b: keep the chain-of-thought ABOVE its answer regardless of which
     // channel streams first. A reasoning-first model put it above the answer, but
     // when the answer arrived first the CoT was appended BELOW — the position
@@ -3678,7 +3688,7 @@ function harnessInject(d) {
 function renderThink(text) {
   if (!text) return;
   const d = document.createElement("div"); d.className = "msg ai";
-  d.innerHTML = `<div class="who">LONGRUN</div><details class="think"><summary>🧠 chain-of-thought</summary><div class="t"></div></details>`;
+  d.innerHTML = `<div class="who">${esc(_aiLabel())}</div><details class="think"><summary>🧠 chain-of-thought</summary><div class="t"></div></details>`;
   d.querySelector(".t").textContent = text;
   _logAppend(d); scroll();
 }
@@ -5599,7 +5609,7 @@ async function loadHistory() {
       if (cot) {
         // JAG-240: the CoT belongs ABOVE its answer, exactly like the live stream.
         const t = document.createElement("div"); t.className = "msg ai";
-        t.innerHTML = `<div class="who">LONGRUN` + _tsSpan(m.ts) + `</div><details class="think"><summary>🧠 chain-of-thought</summary><div class="t"></div></details>`;
+        t.innerHTML = `<div class="who">${esc(_aiLabel())}` + _tsSpan(m.ts) + `</div><details class="think"><summary>🧠 chain-of-thought</summary><div class="t"></div></details>`;
         t.querySelector(".t").textContent = cot;
         if (d.parentNode) d.parentNode.insertBefore(t, d);
       }
