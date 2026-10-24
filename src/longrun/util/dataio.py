@@ -12,6 +12,10 @@ Stdlib-only, imports nothing from the rest of the package: no import cycle.
 """
 
 import json
+import logging
+import os
+
+_log = logging.getLogger(__name__)
 
 
 def as_int(x, default=0):
@@ -40,6 +44,11 @@ def load_yaml(text, default=None):
     try:
         return json.loads(text)
     except Exception:  # noqa: BLE001
+        # Audit F5: malformed input used to answer `default` with zero trace —
+        # a typo in tools.yaml/routing.yaml then booted the WRONG config.
+        # Never fatal, but always loud.
+        _log.warning("dataio: malformed document, returning default: %r",
+                     (text or "")[:120])
         return default
 
 
@@ -63,8 +72,15 @@ def read_yaml(path, default=None, only_dict=True):
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
     except OSError:
+        if os.path.isfile(path or ""):
+            # Exists but unreadable (permissions, transient FS error) — loud.
+            _log.warning("dataio: cannot read %s, returning default", path)
         return default
     doc = load_yaml(text, default)
+    if doc is default:
+        # load_yaml already warned; name the file so the operator finds it.
+        _log.warning("dataio: malformed %s, returning default", path)
+        return default
     if only_dict and not isinstance(doc, dict):
         return default
     return doc

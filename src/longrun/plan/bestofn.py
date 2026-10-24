@@ -68,10 +68,23 @@ def choose(candidates, scorer=None, c=None):
             scorer = prm.rank_text
         except Exception:  # noqa: BLE001
             scorer = lambda _t: 0.0  # noqa: E731
-    items = [(x, _score(scorer, x)) for x in (candidates or [])]
+    items = []
+    for x in (candidates or []):
+        # Audit F4: a scorer failure used to become 0.0 and could still WIN
+        # against a floor of 0. Failed candidates are excluded from the
+        # ranking instead; only an all-failed field falls back to the legacy
+        # first-pick so the loop never breaks on a broken scorer.
+        s = _score(scorer, x)
+        if s is not None:
+            items.append((x, s))
     if not items:
-        return None, []
-    best, best_score = max(items, key=lambda kv: kv[1])
+        if not candidates:
+            return None, []
+        legacy = [(x, 0.0) for x in candidates]
+        best, best_score = legacy[0][0], 0.0
+        items = legacy
+    else:
+        best, best_score = max(items, key=lambda kv: kv[1])
     try:
         floor = float(c.get("min_score") or 0.0)
     except (TypeError, ValueError):
@@ -82,8 +95,9 @@ def choose(candidates, scorer=None, c=None):
 
 
 def _score(scorer, text):
+    """A scorer's float, or None when the scorer itself fails."""
     try:
         return float(scorer(text))
     except Exception:  # noqa: BLE001
-        return 0.0
+        return None
 

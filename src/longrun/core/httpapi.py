@@ -132,6 +132,22 @@ def first_run_setup_available():
     return not bool(AUTH_TOKEN)
 
 
+def lan_bind_allowed(host, token, insecure_lan=False):
+    """Whether serving on `host` without further checks is acceptable.
+
+    Audit F1: `check_auth` returns True when no token is configured, so a
+    `--host 0.0.0.0` server without `--token`/`$LONGRUN_TOKEN` is OPEN to the
+    LAN. Loopback binds stay allowed (first-run setup is local-only and
+    v493-pinned); any other bind needs a token or the explicit,
+    operator-owned `--insecure-lan` opt-out.
+    """
+    if (token or "").strip():
+        return True
+    if insecure_lan:
+        return True
+    return str(host or "").strip().lower() in ("127.0.0.1", "::1", "localhost")
+
+
 def configure_first_run_token(token, remote_addr="127.0.0.1"):
     """Persist and activate the first token from a local browser only.
 
@@ -2676,6 +2692,9 @@ def main():
     ap.add_argument("--port", type=int, default=8790)
     ap.add_argument("--token", default=os.environ.get("LONGRUN_TOKEN") or None,
                     help="require Authorization: Bearer <token> (default: $LONGRUN_TOKEN)")
+    ap.add_argument("--insecure-lan", action="store_true",
+                    help="allow a non-loopback --host without a token "
+                         "(operator accepts the open-LAN risk; default: refuse)")
     # JAG-416: an HTTPS listener makes the origin a SECURE CONTEXT so voice input
     # works; on by default (set LONGRUN_TLS=0 to disable).
     ap.add_argument("--tls", action="store_true", help="also serve HTTPS (secure context → voice)")
@@ -2685,6 +2704,18 @@ def main():
     args = ap.parse_args()
     AUTH_TOKEN = args.token
     _sf_server.AUTH_TOKEN = args.token  # JAG-379: keep the re-exported copy in sync
+    # Audit F1: a non-loopback bind without a token serves the API + tools
+    # OPEN to the LAN (`check_auth` passes when no token is configured).
+    # Refuse before binding; the operator either sets a token or passes
+    # --insecure-lan to own the risk explicitly.
+    if not lan_bind_allowed(args.host, AUTH_TOKEN,
+                             args.insecure_lan
+                             or os.environ.get("LONGRUN_INSECURE_LAN") == "1"):
+        print("Longrun: REFUSING to bind %s without a token — the API and tools "
+              "would be open to the LAN. Set --token / $LONGRUN_TOKEN, bind "
+              "localhost, or pass --insecure-lan to accept the risk."
+              % args.host, flush=True)
+        raise SystemExit(2)
     _ensure_dirs()
     try:
         from longrun.model import providers

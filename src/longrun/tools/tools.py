@@ -1775,7 +1775,25 @@ def _index(args, run_id):
         return {"ok": False, "exit_code": 1, "error": "no workspace set for this session"}
     # JAG-415: refresh the index first (incremental; waits for any build already
     # running) so the agent searches fresh code and never a half-built index.
-    ci.ensure_fresh(ws)
+    # Audit F3: a failed rebuild used to degrade SILENTLY to the old index.
+    # Surface the freshness so the model knows what it searched.
+    try:
+        _fresh_status = ci.ensure_fresh(ws)
+    except Exception:  # noqa: BLE001 — same contract as ensure_fresh itself
+        _fresh_status = None
+    try:
+        _st = ci.status(ws)
+    except Exception:  # noqa: BLE001
+        _st = {}
+    try:
+        _auto = bool(ci._cfg.auto_index())
+    except Exception:  # noqa: BLE001
+        _auto = True
+    index_stale, stale_reason = False, None
+    if not _auto:
+        index_stale, stale_reason = True, "auto-index disabled"
+    elif _fresh_status is None:
+        index_stale, stale_reason = True, "rebuild failed — searching previous index"
     res = ci.search(ws, query, k=k, kind=args.get("kind"))
     lines = ["%s:%s  %s" % (r["path"], r["start"],
                             (r.get("snippet") or "").replace("\n", " ")[:200])
@@ -1783,7 +1801,11 @@ def _index(args, run_id):
     return {"ok": True, "exit_code": 0, "workspace": ws,
             "stdout": "\n".join(lines) or "(no matches)",
             "results": res.get("results", []), "mode": res.get("mode"),
-            "count": len(res.get("results", []))}
+            "count": len(res.get("results", [])),
+            "index_built_at": (_st or {}).get("built_at"),
+            "index_embed_error": (_st or {}).get("embed_error"),
+            "index_stale": index_stale,
+            "index_stale_reason": stale_reason}
 
 
 def _knowledge(args, run_id):
