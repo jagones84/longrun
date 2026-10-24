@@ -274,10 +274,19 @@ check("H1 fs.read returns the EXTRACTED text of a PDF",
       and got.get("engine") == "fake", got)
 
 # ---- I) the WebUI attaches images too --------------------------------------
+# JAG-565 supersedes the original "auto-ingest images" contract: an image is
+# delivered as PIXELS to a vision model on the turn, never routed through the
+# knowledge base (that produced one noisy chunk and made the agent hallucinate
+# an OCR story). Documents keep the auto-ingest path.
 UI = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
-RX = ("pdf|docx?|odt|rtf|pptx|xlsx|epub|png|jpe?g|gif|bmp|webp|tiff?")
-check("I1 the composer auto-ingests images as well as documents", RX in UI)
-check("I2 the attach hint knows images are documents", RX in UI)
+DOC_RX = ("pdf|docx?|odt|rtf|pptx|xlsx|epub")
+check("I1 the composer brands an image as a visual attachment, not a KB source",
+      "visual: !!r.visual" in UI and "IMAGE attachment" in UI)
+check("I2 the binary-document hint no longer routes images to the knowledge base",
+      DOC_RX in UI and ("|" + DOC_RX.split("|")[0] + "|png") not in UI
+      and "auto-ingests images" not in UI)
+check("I2b image formats are still recognised by the composer",
+      "(png|jpe?g|gif|bmp|webp|tiff?)" in UI)
 IDXCFG = open(os.path.join(REPO, "config", "index.yaml"), encoding="utf-8").read()
 check("I3 index.yaml documents the knowledge knobs",
       all(k in IDXCFG for k in ("knowledge_ignore", "url_max_kb",

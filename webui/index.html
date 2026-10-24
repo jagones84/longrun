@@ -3876,19 +3876,29 @@ function addAttachment(a) {
 function _attachBlock() {
   if (!_attachments.length) return "";
   const lines = _attachments.map(a => "- " + a.value);
-  // JAG-451: tell the model an attached binary doc is ALREADY in the session KB,
-  // so it searches it instead of shelling out to pdftotext/OCR on the raw path.
-  const idx = _attachments.filter(a => a.ingested);
+  // JAG-565: an image is delivered as PIXELS to a vision model on this turn; it
+  // is no longer auto-indexed into the knowledge base. Sending the model to
+  // `knowledge.search` for an image was what made an agent invent an OCR story
+  // and then fail on read_source.
+  const img = _attachments.filter(a => a.visual || /\.(png|jpe?g|gif|bmp|webp|tiff?)\b/i.test(a.label || a.value));
+  const docs = _attachments.filter(a => !img.includes(a));
   let hint = "";
+  if (img.length) {
+    hint += "\n\n" + img.map(a => a.label).join(", ") + (img.length > 1 ? " are IMAGE attachments." : " is an IMAGE attachment.")
+      + " The harness delivers the pixels to this turn when the session model can see them;"
+      + " if it tells you that you cannot see them, say so plainly and never invent a description."
+      + " Do NOT search the knowledge base for these images and do NOT run OCR on the raw path.";
+  }
+  const idx = docs.filter(a => a.ingested);
   if (idx.length) {
-    hint = "\n\nThese attached document(s) are ALREADY indexed into THIS session's knowledge "
+    hint += "\n\nThese attached document(s) are ALREADY indexed into THIS session's knowledge "
       + "base: " + idx.map(a => a.label).join(", ")
       + ". Read them with the `knowledge` tool (action=search) — do NOT shell out to "
       + "pdftotext/OCR/tr on the raw file first. Example: "
       + '{"tool":"knowledge","args":{"action":"search","query":"<topic>"}}.';
   } else {
-    const bin = _attachments.filter(a => /\.(pdf|docx?|odt|rtf|pptx|xlsx|epub|png|jpe?g|gif|bmp|webp|tiff?)\b/i.test(a.label || a.value));
-    if (bin.length) hint = "\n\n" + bin.map(a => a.label).join(", ")
+    const bin = docs.filter(a => /\.(pdf|docx?|odt|rtf|pptx|xlsx|epub)\b/i.test(a.label || a.value));
+    if (bin.length) hint += "\n\n" + bin.map(a => a.label).join(", ")
       + " is a binary document. If it is large, prefer the `knowledge` tool (action=search) "
       + "over raw shell text extraction.";
   }
@@ -3961,8 +3971,19 @@ async function attachFiles(fileList) {
       const r = await _uploadFile(f, attachSession);
       if (r && r.ok) {
         const att = { kind: "path", label: r.name, value: "file: " + r.path,
-                      indexRequired: !!r.indexable };
+                      visual: !!r.visual, indexRequired: !!r.indexable };
         okN++;
+        if (r.visual) {
+          // JAG-565: images travel as pixels on the turn, never through the KB.
+          // Say so BEFORE sending if the pinned model cannot see them.
+          const _vision = _modelVision(currentModel());
+          const _alt = _visionModelHint();
+          toast("🖼 " + r.name + " attached" +
+                (_vision === false
+                  ? " — this model cannot see images" + (_alt ? "; switch to " + _alt : "")
+                  : " — the agent receives the pixels"),
+                _vision === false ? "warn" : "ok");
+        }
         if (r.indexable) {
           try {
             const ir = await api("POST", "/api/knowledge/auto-route",
@@ -7057,6 +7078,18 @@ function _modelKnown(ref) {
   if (!value) return false;
   return _modelsCache.some(m => m.ref === value || (!value.includes(":") && m.id === value));
 }
+/* JAG-565: true/false from the declared catalogue, null when unknown (a live
+   local model that was never declared). Only an explicit false warns. */
+function _modelVision(ref) {
+  const value = String(ref || "");
+  if (!value) return null;
+  const hit = _modelsCache.find(m => m.ref === value || (!value.includes(":") && m.id === value));
+  return (hit && typeof hit.vision === "boolean") ? hit.vision : null;
+}
+function _visionModelHint() {
+  const hit = _modelsCache.find(m => m.vision === true && m.available !== false);
+  return hit ? _modelShort(hit.ref) : "";
+}
 let _defaultModelRef = "";
 function _fallbackModel() {
   // A model the local router already has LOADED is the only fallback that is
@@ -7107,7 +7140,7 @@ async function loadModels() {
     (d.providers || []).forEach(p => (p.models || []).forEach(m => flat.push({
       ref: m.ref || (p.id + ":" + m.id), id: m.id, provider: p.id,
       pname: p.name || p.id, local: !!p.local, available: p.available !== false,
-      ctx: m.context_length || 0, loaded: !!m.loaded,
+      ctx: m.context_length || 0, loaded: !!m.loaded, vision: m.vision,
     })));
     _modelsCache = flat;
     _defaultModelRef = d.default && _modelKnown(d.default) ? d.default : "";

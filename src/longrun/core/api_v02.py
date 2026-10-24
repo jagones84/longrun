@@ -2723,11 +2723,18 @@ def attach_save(data, name=None, session=None) -> dict:
 
     The filename is sanitized and a timestamp suffix deduplicates instead of
     overwriting. Success includes whether the file is knowledge-indexable.
+
+    JAG-565: an IMAGE is not knowledge by default. Pixels go straight to a
+    vision-capable model on the turn, while OCR captioning a screenshot into the
+    KB produced one noisy chunk and pushed the agent into a knowledge search it
+    could not answer. Images therefore report ``indexable: False`` +
+    ``visual: True``; only a document is auto-routed to the session notebook.
     """
     import os as _os
     import re as _re
     import time as _time
     from longrun.memory import chunk as _chunk
+    from longrun.memory import docio as _docio
     cap = int(_os.environ.get("LONGRUN_ATTACH_MAX", str(32 * 1024 * 1024)))
     if not data:
         return {"ok": False, "error": "empty upload"}
@@ -2747,9 +2754,10 @@ def attach_save(data, name=None, session=None) -> dict:
             f.write(data)
     except OSError as e:
         return {"ok": False, "error": str(e)}
-    indexable = bool(_chunk.lang_for(base)[0])
+    visual = _os.path.splitext(base)[1].lower() in _docio.IMAGE_EXT
+    indexable = bool(_chunk.lang_for(base)[0]) and not visual
     return {"ok": True, "path": path, "name": _os.path.basename(path),
-            "size": len(data), "indexable": indexable}
+            "size": len(data), "indexable": indexable, "visual": visual}
 
 
 # ---------------------------------------------------------------------------

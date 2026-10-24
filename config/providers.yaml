@@ -6,7 +6,7 @@
 # the keys are read from a gitignored .env (see `env_files` below and .gitignore).
 #
 # Model references (`model` on the API) use `<provider_id>:<model_id>`, e.g.
-#   dgx:glm-5.3-flash-iq2
+#   dgx:nex-n25-mini-uncensored-q8
 #   win:qwen-3.8-27b-abliterated-q4
 #   openrouter:z-ai/glm-5.3-flash
 #   deepseek:deepseek-flash
@@ -36,10 +36,8 @@ providers:
     models:
       - {id: qwen-3.8-27b-uncensored-q8, context_length: 262144, vision: true}
       - {id: qwen-3.8-27b-uncensored-q4, context_length: 262144, vision: true}
-      - {id: glm-5.3-flash-iq2, context_length: 262144, vision: true}
       - {id: deepseek-v4-flash-uncensored-q2-0731, context_length: 262144}
       - {id: nex-n25-mini-uncensored-q8, context_length: 262144, vision: true}
-      - {id: qwen-3.8-flash-next-iq3, context_length: 131072, vision: true}
       - {id: qwen-3.8-flash-next-uncensored-iq3, context_length: 131072, vision: true}
 
   # ---- local: llama.cpp on the Windows PC (Tailscale) -----------------------
@@ -103,7 +101,11 @@ providers:
     base_url: https://api.deepseek.com/v1
     api_key_env: DEEPSEEK_API_KEY
     models:
-      - {id: deepseek-flash, context_length: 1048576}
+      # JAG-565: verified live 2026-10-24 — a 64x64 solid-colour PNG sent as an
+      # OpenAI image_url block came back as "red", so the API DOES read pixels.
+      # Without this flag the harness told the model it could not see and the
+      # agent went hunting through the knowledge base.
+      - {id: deepseek-flash, context_length: 1048576, vision: true}
       - {id: deepseek-v4-pro, context_length: 1048576}
 
   # ---- cloud DEFAULTS shipped with the repo (override in providers.local.yaml)

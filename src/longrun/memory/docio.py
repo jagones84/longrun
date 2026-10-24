@@ -30,7 +30,7 @@ BINARY_DOC_EXT = {".pdf", ".docx", ".doc", ".odt", ".rtf", ".pptx", ".xlsx", ".e
 OFFICE_EXT = {".docx", ".doc", ".odt", ".rtf", ".pptx", ".xlsx", ".epub"}
 # JAG-430/490: images are extracted by OCR (docling or pdftoppm+tesseract) and,
 # when `image_caption_model` is configured, described by a vision model.
-IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".tif", ".tiff", ".bmp", ".webp"}
 BINARY_DOC_EXT |= IMAGE_EXT
 
 _TIMEOUT = int(os.environ.get("LONGRUN_DOC_TIMEOUT") or 300)

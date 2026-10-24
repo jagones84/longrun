@@ -1906,8 +1906,10 @@ def _inject_vision_blocks(msgs, model):
         note = ("\n\n[harness] %d image attachment(s) detected, but the harness cannot "
                 "deliver image pixels to this session's model (`%s` is not marked "
                 "vision-capable). You CANNOT see these images — say so plainly and never "
-                "invent a description. To let the agent read them, switch this session to "
-                "a vision-capable model." % (len(paths), eff_model or "?"))
+                "invent a description. Do NOT search the knowledge base for their text and "
+                "do NOT run OCR/shell tools on them: the harness does not index images and "
+                "any OCR guess would be a fabrication. To let the agent read them, switch "
+                "this session to a vision-capable model." % (len(paths), eff_model or "?"))
         out = list(msgs)
         out[-1] = dict(last, content=text + note)
         return out

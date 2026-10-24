@@ -744,6 +744,9 @@ def catalog(loaded_aliases=None):
                 "ref": ref_of(p, m.get("id")),
                 "context_length": cl,
                 "loaded": m.get("id") in loaded if p.get("local") else None,
+                # JAG-565: the WebUI needs the declared capability to warn BEFORE
+                # an image is sent to a text-only model.
+                "vision": bool(m.get("vision")),
             })
         if p.get("local"):
             for mid, live_ctx in sorted(local_contexts(p.get("id")).items()):
@@ -754,6 +757,8 @@ def catalog(loaded_aliases=None):
                     "ref": ref_of(p, mid),
                     "context_length": _to_int(live_ctx),
                     "loaded": mid in loaded,
+                    # Unknown until declared; the UI only warns on an explicit False.
+                    "vision": None,
                 })
         out.append({
             "id": p.get("id"), "name": p.get("name") or p.get("id"),

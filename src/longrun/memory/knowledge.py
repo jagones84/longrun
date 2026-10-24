@@ -776,6 +776,18 @@ def read_source(ref: str, notebook: str | None = None,
             (notebook, ref, ref),
         ).fetchone()
         if not source:
+            # JAG-565: `search` shows the model a TITLE/filename, so `read_source`
+            # must accept it. Before this, the agent's honest follow-up failed with
+            # "source not found" and the turn went in circles.
+            base = os.path.basename(ref)
+            for row in db.execute(
+                    "SELECT id, notebook, kind, ref, title, chunks FROM sources "
+                    "WHERE notebook=? ORDER BY added DESC", (notebook,)):
+                if (ref in (row["title"], os.path.basename(str(row["ref"] or "")))
+                        or base == os.path.basename(str(row["ref"] or ""))):
+                    source = row
+                    break
+        if not source:
             return {"ok": False, "error": "source not found in the selected Knowledge scope"}
         stats = db.execute(
             "SELECT count(*) AS chunks, coalesce(sum(length(text)), 0) AS text_chars, "

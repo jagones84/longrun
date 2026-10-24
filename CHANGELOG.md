@@ -52,6 +52,17 @@ All notable changes to Longrun are documented here. The format follows
   no longer the default.
 
 ### Fixed
+- **Attached images reached the agent as a knowledge-base riddle.** `deepseek:deepseek-flash`
+  IS vision-capable (verified live: a 64x64 solid-red PNG came back as "red") but the
+  catalogue had no `vision` flag, so the harness told the model it could not see; the
+  composer then also auto-ingested every image into the session notebook with a "read it
+  with `knowledge.search`" hint, and `knowledge.read_source` rejected the filename the
+  search shows. Result: an invented OCR story and two failed tool calls. Now: an image
+  reports `indexable: false` + `visual: true` and travels as `image_url` pixels; the
+  attachment preamble forbids the KB/OCR detour; a text-only model gets an explicit
+  cannot-see note and the composer warns BEFORE sending; `read_source` resolves a source
+  by title or basename as well as by path/id. Locked by `v559` (21/21) and the updated
+  contract in `v490` I1–I2b.
 - **A projector-equipped model could still be declared blind.** `model_supports_vision()`
   read the fallback `meta.architecture.input_modalities`, but the live llama.cpp router
   exposes `architecture` at the TOP LEVEL of the `/v1/models` entry, so the fallback
@@ -60,7 +71,9 @@ All notable changes to Longrun are documented here. The format follows
   A4b–A4d (vision section 36/36 PASS).
 - **The DGX GLM context was over-declared in the catalogue.** `config/providers.yaml`
   advertised `glm-5.3-flash-iq2` with `context_length: 262144` while the router runs it
-  at 131072, corrupting the context budget. Now 131072.
+  at 131072, corrupting the context budget. Now 131072. *(The model was retired and its
+  weights deleted the same day; the entry is gone from the DGX catalogue. The same
+  applies to the censored `qwen-3.8-flash-next-iq3`.)*
 - **A stale assertion kept the gate red.** `v494` C1 still required `pattern: qwen` in
   `routing.yaml`, which `45b4636` had intentionally replaced with explicit cloud
   `model:` refs. The check now asserts the current contract (no local alias pattern,
