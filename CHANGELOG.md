@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **F3 Aider post-edit loop: zero-config Python syntax gate.**
+  `plan.verify.syntax_gate()` `compile()`s every `.py` target of
+  fs.write/fs.edit and, on SyntaxError/ValueError, rolls the change back
+  to the pre-image and returns the error for fix-and-retry (Aider style);
+  `_verify_edit()` runs the gate first, before the operator-configured
+  verifier. Green, out-of-scope, and unreadable files pass through
+  untouched; the gate never breaks a write. (Locked by `v596` 10/10.)
 - **P3 Codex trust profiles: named session sandbox bindings.**
   `sandbox.TRUST_PROFILES = ("locked", "standard", "open")` + pure
   `trust_profile()` (unknown names raise, JAG-2.7 style); `run(...,

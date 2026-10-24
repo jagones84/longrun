@@ -436,6 +436,14 @@ def _verify_edit(tool, path, snap, res, args, run_id):
         from longrun.plan import verify as _v
     except Exception:  # noqa: BLE001
         return res
+    # F3 (Aider direction): the zero-config syntax gate runs FIRST — a file
+    # that does not even parse never reaches the operator's verify command.
+    try:
+        gated, _grep = _v.syntax_gate(tool, path, snap, res)
+        if _grep.get("ran") and not _grep.get("green", True):
+            return gated
+    except Exception:  # noqa: BLE001 — the gate must never break a write
+        pass
     try:
         if not _v.should_verify(tool, path):
             return res

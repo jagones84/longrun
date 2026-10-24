@@ -73,6 +73,53 @@ def restore(path, snap):
         return False
 
 
+SYNTAX_GATE_SUFFIXES = (".py",)
+
+
+def syntax_gate(tool, path, snap, res):
+    """Zero-config post-edit syntax gate (Aider post-edit-loop direction).
+
+    Unlike `verify()` above — which needs an operator-configured command —
+    this ALWAYS runs for `.py` targets of fs.write/fs.edit: the new content
+    is `compile()`d, and on SyntaxError/ValueError the change is rolled back
+    to the pre-image (via `restore()`) and the result becomes a failure
+    carrying the error, so the model can fix it next turn (fix-and-retry,
+    not silent acceptance). Anything else (green, out of scope, unreadable
+    file) passes `res` through untouched. Never raises.
+    """
+    try:
+        if tool not in TARGET_TOOLS:
+            return res, {"ran": False}
+        if not str(path or "").endswith(SYNTAX_GATE_SUFFIXES):
+            return res, {"ran": False}
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except OSError:
+            return res, {"ran": False}
+        try:
+            compile(content, str(path), "exec")
+        except (SyntaxError, ValueError) as e:
+            rolled = restore(path, snap)
+            failed = dict(res)
+            failed["ok"] = False
+            failed["exit_code"] = 1
+            failed["syntax_failed"] = True
+            try:
+                detail = "line %s: %s" % (e.lineno, e.msg)
+            except AttributeError:
+                detail = str(e)
+            failed["error"] = ("syntax gate: %s does not parse (%s); the change "
+                               "has been rolled back%s — fix the syntax and retry."
+                               % (path, detail,
+                                  "" if rolled else " (ROLLBACK FAILED)"))
+            return failed, {"ran": True, "green": False,
+                            "rolled_back": rolled, "error": detail}
+        return res, {"ran": True, "green": True}
+    except Exception:  # noqa: BLE001 — the gate must never break a write
+        return res, {"ran": False}
+
+
 def run_check(workspace=None, c=None, run_id=None):
     """Runs the verification command in the sandbox. Returns (green, output)."""
     c = c or cfg()
