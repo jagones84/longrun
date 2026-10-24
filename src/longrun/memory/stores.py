@@ -609,7 +609,23 @@ def _chat_workspace(sess):
         return None
 
 
-def get_or_create_session(sid, title=None, workspace=None):
+def set_session_trust(sid, trust):
+    """Persist a session trust profile (`locked`/`standard`/`open`).
+
+    Validated through `sandbox.trust_profile` (unknown names raise, JAG-2.7);
+    the rejection leaves the old trust untouched. Returns True on success.
+    """
+    from longrun.tools import sandbox as _sb
+    _sb.trust_profile(trust)  # raises ValueError on unknown names
+    s = load_session(sid)
+    if not s:
+        raise ValueError("unknown session %r" % (sid,))
+    s["trust"] = str(trust).strip().lower()
+    save_session(s)
+    return True
+
+
+def get_or_create_session(sid, title=None, workspace=None, trust=None):
     if sid and not _valid_sid(sid):
         sid = None  # JAG-230: refuse a traversal-shaped id, allocate a safe one
     if sid:
@@ -632,6 +648,10 @@ def get_or_create_session(sid, title=None, workspace=None):
     sid = sid or uuid.uuid4().hex[:12]
     s = {"id": sid, "title": title or "session " + sid[:6],
          "created": round(time.time(), 3), "messages": []}
+    if trust is not None:
+        from longrun.tools import sandbox as _sb
+        _sb.trust_profile(trust)  # raises ValueError on unknown names
+        s["trust"] = str(trust).strip().lower()
     ensure_session_workspace(s, workspace)
     ensure_job(s)                                # JAG-169: allocate JX on creation
     save_session(s)

@@ -52,6 +52,30 @@ MAX_OUTPUT_BYTES = int(os.environ.get("LONGRUN_SANDBOX_MAX_OUTPUT",
 # treated as `auto` — that is how an "isolated" run silently became a host run.
 BACKENDS = ("auto", "docker", "bwrap", "nsjail", "none")
 
+# P3 trust profiles (Codex `sandbox_mode` direction): named bundles binding a
+# session to an isolation level. `locked` = isolated execution or refusal
+# (never the host); `standard` = today's global-config path; `open` = explicit
+# host execution. Sessions carry the name; `run(trust=...)` enforces it.
+TRUST_PROFILES = ("locked", "standard", "open")
+
+
+def trust_profile(name):
+    """Resolve a trust profile name (pure). Unknown names raise (JAG-2.7).
+
+    Returns {"backend": ...}: "locked" means isolated-required (resolved at
+    run time against the probe, never "none"); "none" means explicit host;
+    None means defer to the global `sandbox.backend` config.
+    """
+    n = str(name or "").strip().lower()
+    if n == "locked":
+        return {"name": "locked", "backend": "locked", "isolated_required": True}
+    if n == "standard":
+        return {"name": "standard", "backend": None, "isolated_required": False}
+    if n == "open":
+        return {"name": "open", "backend": "none", "isolated_required": False}
+    raise ValueError("sandbox: unknown trust profile %r (expected one of: %s); "
+                     "refusing to guess." % (name, ", ".join(TRUST_PROFILES)))
+
 
 def _read_capped(fh, cap=MAX_OUTPUT_BYTES):
     """Read at most `cap` bytes from a temp file (from offset 0) and decode it,
@@ -348,12 +372,19 @@ def _bwrap_argv(ws, command):
     return argv
 
 
-def run(command, run_id=None, timeout=None, workspace=None, backend=None, job_id=None):
+def run(command, run_id=None, timeout=None, workspace=None, backend=None, job_id=None,
+        trust=None):
     """Execute `command` in the configured sandbox. Returns a result dict with
     exit_code / stdout / stderr / duration_ms / backend / sandboxed / workspace.
 
     JAG-68: the job is tracked under `job_id` (defaults to `run_id`) so a client
     can STOP it while it is still running via `sandbox.cancel(job_id)`.
+
+    `trust` (P3, Codex direction) is a session trust profile: `locked` forces
+    an isolated backend from the probe and REFUSES (exit 126, never the host)
+    when only host execution is available; `open` is explicit host execution;
+    `standard`/None keeps the path below. An explicit `backend=` still wins
+    when it names an isolated backend under `locked`.
     """
     cfg = registry.load_config()
     sb = cfg["sandbox"]
@@ -366,10 +397,36 @@ def run(command, run_id=None, timeout=None, workspace=None, backend=None, job_id
                 "workspace": workspace,
                 "error": "sandbox: unknown backend %r (expected one of: %s); "
                          "refusing to run on the host." % (backend, ", ".join(BACKENDS))}
+    _locked = False
+    _open = False
+    if trust is not None:
+        _tp = trust_profile(trust)  # raises on unknown names — fail closed
+        _locked = bool(_tp.get("isolated_required"))
+        _open = _tp.get("backend") == "none"
     p = probe()
-    chosen = backend or p["backend"]
+    if _open:
+        chosen = "none"
+        _explicit_open = True
+    else:
+        chosen = backend or p["backend"]
+        _explicit_open = False
     if chosen == "auto":
         chosen = p["backend"]
+    if _locked and (chosen in ("none", "auto")
+                    or backend not in ("docker", "bwrap", "nsjail")):
+        if backend in ("docker", "bwrap", "nsjail"):
+            chosen = backend
+        else:
+            avail = [n for n in ("docker", "bwrap", "nsjail")
+                     if (p.get("available") or {}).get(n, {}).get("ok")]
+            if not avail:
+                return {"ok": False, "exit_code": 126, "sandboxed": False,
+                        "backend": "refused(locked)", "command": command,
+                        "workspace": workspace,
+                        "error": "sandbox: trust=locked requires an isolated "
+                                 "backend but only host execution is available; "
+                                 "refusing to run."}
+            chosen = avail[0]
     timeout = int(timeout or sb["timeout_secs"])
     ws = workspace or workspace_for(run_id)
     job_id = job_id or run_id
@@ -399,9 +456,11 @@ def run(command, run_id=None, timeout=None, workspace=None, backend=None, job_id
                            job_id=job_id)
         res["backend"] = "none(host)"
         res["sandboxed"] = False
-        res["warning"] = ("host execution: sandbox.backend is 'none' — runs on the host"
-                          if p.get("requested") == "none"
-                          else "no sandbox backend available — ran on the host")
+        res["warning"] = ("explicit trust=open — runs on the host"
+                          if _explicit_open
+                          else ("host execution: sandbox.backend is 'none' — runs on the host"
+                                if p.get("requested") == "none"
+                                else "no sandbox backend available — ran on the host"))
     res["command"] = command
     res["workspace"] = ws
     return res

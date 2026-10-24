@@ -57,6 +57,24 @@ def _host_allowed(url, allow_hosts):
 
 # ------------------------------------------------------------------ shell ----
 
+def _session_trust(sid):
+    """Resolve the session trust profile (`locked`/`standard`/`open`).
+
+    P3 (Codex `sandbox_mode` direction): sessions carry a trust name
+    (`stores.set_session_trust`); the shell/python tools honor it. Unknown
+    or unreadable values fall back to `standard` (today's global-config
+    path) — only `locked` ever restricts, never a corrupt value.
+    """
+    try:
+        from longrun.memory import stores as _st
+        s = _st.load_session(sid) if sid else None
+        t = str((s or {}).get("trust") or "standard").strip().lower()
+        sandbox.trust_profile(t)  # raises on unknown names — fall back
+        return t
+    except Exception:  # noqa: BLE001 — trust must never break execution
+        return "standard"
+
+
 def _shell_terminal(sid, cwd):
     """The shared per-session terminal, but only when this host would run the
     command anyway (sandbox backend `none`). Returns None otherwise.
@@ -125,7 +143,10 @@ def _shell(args, run_id):
                 "backend": "host", "sandboxed": False}
     # JAG-2.9: run in the session's persistent terminal when the command would hit
     # the host anyway — the panel and the agent then share ONE shell.
-    sh = _shell_terminal(sid, cwd or os.getcwd())
+    # P3 trust: a `locked` session must never touch the host terminal, even
+    # when the global backend is `none` — it goes through the isolated sandbox.
+    _trust = _session_trust(sid)
+    sh = None if _trust == "locked" else _shell_terminal(sid, cwd or os.getcwd())
     if sh is not None:
         r = sh.run_capture(command, timeout=args.get("timeout_secs"),
                            origin="agent", cwd=cwd)
@@ -144,7 +165,7 @@ def _shell(args, run_id):
     # edit to this command and destroyed legitimate work).
     res = sandbox.run(command, run_id=run_id,
                       timeout=args.get("timeout_secs"),
-                      workspace=cwd)
+                      workspace=cwd, trust=_trust)
     res["ok"] = res.get("exit_code") == 0
     return res
 
@@ -181,8 +202,10 @@ def _python(args, run_id):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(code)
+            # P3 trust: the snippet honors the session trust like _shell does.
             return sandbox.run("python3 " + name, run_id=run_id,
-                               timeout=args.get("timeout_secs"), workspace=ws)
+                               timeout=args.get("timeout_secs"), workspace=ws,
+                               trust=_session_trust(str(run_id or "")))
         finally:
             try:
                 os.remove(path)

@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **P3 Codex trust profiles: named session sandbox bindings.**
+  `sandbox.TRUST_PROFILES = ("locked", "standard", "open")` + pure
+  `trust_profile()` (unknown names raise, JAG-2.7 style); `run(...,
+  trust=)` forces an isolated backend under `locked` (exit-126 refusal,
+  never the host, when host-only) and explicit host execution under
+  `open`; sessions persist `trust` (`get_or_create_session(trust=)`,
+  `set_session_trust()`); `_shell` resolves the session trust, skips the
+  host-terminal shortcut when locked, and passes trust through (as does
+  `_python`). (Locked by `v595` 18/18.)
 - **P3 CCCC delivery facts: handoff receipts (stored/delivered/replied).**
   `jobs.record_handoff()` persists the handoff inject AND a receipt
   `{id, ts, to, kind, after}` on the subjob; pure `handoff_state()` maps it to
