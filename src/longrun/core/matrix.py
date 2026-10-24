@@ -162,7 +162,12 @@ def _resolve_target_path(kind, name, repo_root=None):
     if k == "tool":
         if nm.endswith(".py"):
             nm = nm[:-3]
-        return "tool", nm, os.path.join(msrc, "tools", nm + ".py")
+        # A dotted subtool (testing.hello) lives in the namespace module
+        # (tools/testing.py) — the scaffold contract. Resolve the PATH by
+        # namespace; `nm` stays as-given so verified-record keys match the
+        # name the caller used in `matrix.test target=` / `verify_target`.
+        ns = nm.split(".")[0] if "." in nm else nm
+        return "tool", nm, os.path.join(msrc, "tools", ns + ".py")
     if k == "hook":
         return "hook", nm, os.path.join(msrc, nm, "hooks.py")
     if k == "module":
@@ -1333,8 +1338,14 @@ def verify_target(kind, name, repo_root=None):
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             if k == "tool":
-                if not isinstance(getattr(mod, "TOOL_SCHEMA", None), dict) or not callable(getattr(mod, "execute", None)):
-                    return {"ok": False, "error": "PROMOTE_UNVERIFIED: tool %r must define dict TOOL_SCHEMA and callable execute" % nm}
+                # Accept the scaffold contract (TOOL_SCHEMAS plural) and the
+                # legacy single form — same wording as the discovery gate.
+                _schemas = getattr(mod, "TOOL_SCHEMAS", None)
+                _single = getattr(mod, "TOOL_SCHEMA", None)
+                _has_schema = (isinstance(_schemas, dict) and bool(_schemas)) \
+                    or isinstance(_single, dict)
+                if not _has_schema or not callable(getattr(mod, "execute", None)):
+                    return {"ok": False, "error": "PROMOTE_UNVERIFIED: tool %r must define dict TOOL_SCHEMAS (or TOOL_SCHEMA) and callable execute" % nm}
             elif k == "hook":
                 fns = [fn for fn, v in vars(mod).items() if not fn.startswith("_") and callable(v)]
                 if not fns:
