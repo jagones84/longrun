@@ -1535,6 +1535,7 @@ def handle(handler, method, path, qs, body):
                     "fallbacks": _ROUTING.model_chain("subagent")[1:],
                     "max_depth": int((_kg.cfg() or {}).get("subagent_max_depth", 2)),
                     "max_parallel": int(_cfg.get("max_parallel") or 0),
+                    "max_per_run": int(_cfg.get("max_per_run", 6) or 0),
                     "roles": _cfg.get("roles") or {},
                     "running": _sub._running_count(),
                     "context": "isolated",

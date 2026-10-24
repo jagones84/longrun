@@ -486,24 +486,81 @@ def selfcheck_payload(host="127.0.0.1", port=8790, llm_probe=True):
     }
 
 
-def _open_with_retry(req, timeout):
-    """urlopen with exponential backoff on 503 (router: model not loaded).
+def classify_retry(err):
+    """Typed retry budget for a model-endpoint failure (M10, Paperclip parity).
 
-    The llama.cpp router returns 503 while a cold model is still warming up;
-    we retry a few times instead of surfacing a hard failure to the client.
+    Returns {"disposition", "retries", "backoff"} where disposition is one of
+    "transient" (retry with backoff), "quota" (do NOT tight-retry; the caller
+    should surface it and back off for `backoff` seconds), "fatal" (config /
+    auth / contract \u2014 never retry) or "unknown" (fail fast, as before).
+
+    Paperclip (`recovery/service.ts:716-750`): transient_infra -> 3 attempts,
+    default -> 1, non_retryable -> 0, quota -> no tight retry + 1h signal.
+    """
+    text = str(err or "").lower()
+    code = getattr(err, "code", None)
+    try:
+        code = int(code) if code is not None else None
+    except (TypeError, ValueError):
+        code = None
+    if code is None:
+        import re
+        m = re.search(r"\b(4\d{2}|5\d{2})\b", text)
+        code = int(m.group(1)) if m else None
+    if code == 429 or "rate limit" in text or "rate_limit" in text \
+            or "quota" in text or "too many requests" in text:
+        return {"disposition": "quota", "retries": 0, "backoff": 3600.0}
+    if code in (400, 401, 403, 404, 405, 409, 422) or "auth" in text \
+            or "unauthorized" in text or "forbidden" in text \
+            or "not found" in text or "invalid" in text:
+        return {"disposition": "fatal", "retries": 0, "backoff": 0.0}
+    if code in (408, 425) or (code is not None and 500 <= code <= 599) \
+            or "timeout" in text or "timed out" in text \
+            or "connection reset" in text or "connection refused" in text \
+            or "connection" in text:
+        return {"disposition": "transient", "retries": 3,
+                "backoff": ROUTER_BACKOFF}
+    if isinstance(err, (TimeoutError, ConnectionError, urllib.error.URLError)):
+        return {"disposition": "transient", "retries": 3,
+                "backoff": ROUTER_BACKOFF}
+    return {"disposition": "unknown", "retries": 0, "backoff": 0.0}
+
+
+def _open_with_retry(req, timeout):
+    """urlopen with a typed retry budget (M10: `classify_retry`).
+
+    Transient endpoint failures (5xx, timeout, reset) retry up to 3 times
+    with exponential backoff; quota (429) publishes `model.quota` and raises
+    immediately instead of burning tight retries; fatal/unknown errors fail
+    fast, exactly as before.
     """
     delay = ROUTER_BACKOFF
-    for attempt in range(ROUTER_RETRIES + 1):
-        try:
-            return urllib.request.urlopen(req, timeout=timeout)
-        except urllib.error.HTTPError as e:
-            if e.code == 503 and attempt < ROUTER_RETRIES:
-                publish("model.retry", attempt=attempt + 1, delay=delay,
-                        status=503, reason="model not loaded")
-                time.sleep(delay)
-                delay = min(delay * 2, ROUTER_BACKOFF_MAX)
-                continue
+    try:
+        return urllib.request.urlopen(req, timeout)
+    except Exception as first:  # noqa: BLE001 — classified below
+        budget = classify_retry(first)
+        if budget["disposition"] != "transient":
+            if budget["disposition"] == "quota":
+                try:
+                    publish("model.quota", error=str(first)[:200],
+                            retry_not_before_s=budget["backoff"])
+                except Exception:  # noqa: BLE001 — diagnostics never break I/O
+                    pass
             raise
+        last = first
+        for attempt in range(1, budget["retries"] + 1):
+            publish("model.retry", attempt=attempt, delay=delay,
+                    status=getattr(last, "code", None),
+                    reason=str(last)[:200], disposition="transient")
+            time.sleep(delay)
+            delay = min(delay * 2, ROUTER_BACKOFF_MAX)
+            try:
+                return urllib.request.urlopen(req, timeout)
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if classify_retry(e)["disposition"] != "transient":
+                    raise
+        raise last
 
 
 def _set_read_idle(resp, seconds):

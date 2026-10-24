@@ -41,6 +41,11 @@ CFG_PATH = os.environ.get("LONGRUN_SUBAGENTS_CFG") or os.path.join(
 DEFAULT_CFG = {
     "version": "1",
     "max_parallel": 4,
+    # M8: per-run spawn budget (DeerFlow `max_total_per_run`, default 6).
+    # A parent doing spawn->collect->spawn in a loop could otherwise create
+    # unbounded serial subagents (each a paid model run) while staying under
+    # the parallel cap and the depth bound. 0 = no cap.
+    "max_per_run": 6,
     "roles": {
         "researcher": ("Investigate a question against primary sources. Return a "
                        "compact, cited summary (max ~400 words). Do NOT modify files."),
@@ -98,6 +103,10 @@ def _running_count():
 _lock = threading.RLock()
 _running = {}     # subagent_id -> {state, parent_run_id, goal, result}
 _DEPTH = {}       # run_id -> depth of nesting (matrioska); 0 = top level
+# M8: successful spawns per parent run (the per-run budget). In-memory like
+# `_running`; cleared by `purge_parent`. A `None` parent is never counted.
+_SPAWN_COUNT = {}  # parent_run_id -> int
+_SPAWN_COUNT_MAX_PARENTS = 4096
 
 # JAG-533/SJ: a finished subagent used to live ONLY in the in-memory `_running`
 # dict, so a harness restart lost every result — the parent's `collect()` then
@@ -168,6 +177,9 @@ def purge_parent(parent_run_id):
                     pass
     except Exception:  # noqa: BLE001 — cleanup must not break the delete
         pass
+    # M8: the per-run spawn budget dies with the parent run.
+    with _lock:
+        _SPAWN_COUNT.pop(parent_run_id, None)
     return removed
 
 
@@ -254,6 +266,18 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
     if _cap and _running_count() >= _cap:
         return {"subagent_id": None, "run_id": None, "goal": goal,
                 "error": "max parallel subagents reached (%d)" % _cap}
+    # M8: enforce the per-run spawn budget (0 = no cap). A None parent is
+    # never counted. The count increments only on a spawn that passes every
+    # gate below, so refusals never consume the budget.
+    try:
+        _run_cap = int(load_cfg().get("max_per_run", 6) or 0)
+    except (TypeError, ValueError):
+        _run_cap = 0
+    if _run_cap and parent_run_id:
+        with _lock:
+            if _SPAWN_COUNT.get(parent_run_id, 0) >= _run_cap:
+                return {"subagent_id": None, "run_id": None, "goal": goal,
+                        "error": "max subagents per run reached (%d)" % _run_cap}
     sid = "sub_%s" % uuid.uuid4().hex[:10]
     st = api_v02.new_run("%s (subagent %s)" % (goal[:80], sid), model, max_steps)
     st.parent_run_id = parent_run_id
@@ -277,6 +301,12 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
 
     with _lock:
         _running[sid] = entry
+        # M8: count the successful spawn against the parent's budget.
+        if parent_run_id and _run_cap:
+            _SPAWN_COUNT[parent_run_id] = _SPAWN_COUNT.get(parent_run_id, 0) + 1
+            if len(_SPAWN_COUNT) > _SPAWN_COUNT_MAX_PARENTS:
+                _SPAWN_COUNT.clear()
+                _SPAWN_COUNT[parent_run_id] = 1
     # JAG-533/SJ: the durable twin of `_running[sid]`, so the result survives the
     # process. Rewritten on completion with the terminal status + summary.
     _persist({

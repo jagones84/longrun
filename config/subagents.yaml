@@ -1,5 +1,7 @@
 version: '1'
 max_parallel: 4
+# M8: per-run spawn budget (DeerFlow max_total_per_run parity, default 6).
+max_per_run: 6
 roles:
   researcher: 'Investigate a question against primary sources. Return a compact, cited
     summary (max ~400 words). Do NOT modify files.
