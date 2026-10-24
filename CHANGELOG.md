@@ -55,6 +55,8 @@ All notable changes to Longrun are documented here. The format follows
   `v507` F–F9 and `v350` A4.
 
 ### Changed
+- **CLI route parity is pinned (JAG-CLId/e).** `v588` proves every `forge.py` endpoint exists on the server (99 paths across the four route files, including the `_is`/tuple dispatch forms) and every call uses a served HTTP method (128 method+path pairs: `do_GET/do_POST` regions, `method ==` blocks, per-branch gates). 6/6.
+### Changed
 - **CLI parity: usage, encoding, docs (JAG-CLI).** The `forge.py` Usage block now lists every subcommand (`agents`, `jobs`, `routines`, `roles`, `index`, `knowledge`, `research`, `embedding`, plus the newer `sessions`/`runs`/ `context`/`models`/`mcp` actions); `forge events --session/--kind` URL-encodes its values instead of splicing them raw; `docs/CLI.md` no longer advertises `runs summary --limit` or `context show --model`, flags the parser never had. Locked by `v587` 16/16.
 - **README is now the pitch, and the banner wears the runner.** The header drops
   the standalone icon (the banner carries the runner mark), opens with a
