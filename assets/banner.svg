@@ -32,9 +32,16 @@
     <circle cx="1130" cy="240" r="6"/>
   </g>
 
-  <!-- bolt -->
-  <path d="M96 60 L150 60 L118 140 L172 140 L92 262 L116 168 L70 168 Z"
-        fill="url(#spark)" stroke="none"/>
+  <!-- runner mark (same as assets/icon.svg) -->
+  <g transform="translate(15,55) scale(235)" fill="none" stroke="url(#spark)"
+     stroke-width="0.075" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0.545 0.26 L0.44 0.55"/>
+    <path d="M0.545 0.27 L0.70 0.35 L0.78 0.26"/>
+    <path d="M0.545 0.27 L0.40 0.39 L0.26 0.31"/>
+    <path d="M0.44 0.55 L0.63 0.56 L0.71 0.73"/>
+    <path d="M0.44 0.55 L0.26 0.68 L0.10 0.58"/>
+  </g>
+  <circle cx="152.5" cy="89" r="20" fill="url(#spark)"/>
 
   <text x="210" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif"
         font-size="82" font-weight="800" fill="#eaf1ff" letter-spacing="1">Longrun</text>
