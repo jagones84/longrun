@@ -9,6 +9,7 @@ dict, no thread/run. `None` parent never counts. `purge_parent` clears counts.
 import os
 import sys
 import tempfile
+import threading
 import time
 
 # tests/acceptance is two levels below the repo root (staged-tests: three).
@@ -52,7 +53,17 @@ def _fake_new_run(goal, model=None, max_steps=6, script=None):
 _orig_new_run = A2.new_run
 _orig_run = A2.agent_run_v2
 A2.new_run = _fake_new_run
-A2.agent_run_v2 = lambda *a, **k: {"status": "done", "trace": [], "summary": "ok"}
+# Children block until released: the refusal below is about CONCURRENT
+# spawns, not thread-scheduling luck.
+_gate = threading.Event()
+
+
+def _fake_run(*a, **k):
+    _gate.wait(10)
+    return {"status": "done", "trace": [], "summary": "ok"}
+
+
+A2.agent_run_v2 = _fake_run
 try:
     SA.load_cfg(reload=True)
     cfg = SA.load_cfg()
@@ -66,12 +77,12 @@ try:
     s1 = SA.spawn("one", parent_run_id="p1", max_steps=1, depth=0)
     s2 = SA.spawn("two", parent_run_id="p1", max_steps=1, depth=0)
     s3 = SA.spawn("three", parent_run_id="p1", max_steps=1, depth=0)
-    time.sleep(0.3)
     check("1a two spawns under the per-run cap start",
           bool(s1.get("subagent_id")) and bool(s2.get("subagent_id")), (s1, s2))
     check("1b the third spawn for the same parent is refused",
           s3.get("subagent_id") is None and "per run" in (s3.get("error") or ""),
           s3.get("error"))
+    _gate.set()
     s4 = SA.spawn("other parent", parent_run_id="p2", max_steps=1, depth=0)
     check("1c a different parent is unaffected",
           bool(s4.get("subagent_id")), s4)
@@ -101,8 +112,10 @@ try:
     if a.get("subagent_id"):
         SA.collect(a.get("subagent_id"), timeout=5)
     b = SA.spawn("b", parent_run_id="p9", max_steps=1, depth=0)
-    check("3a budget holds after collect (counts spawns, not running)",
-          b.get("subagent_id") is None, b)
+    check("3a a finished child frees the slot (live budget, not cumulative)",
+          bool(b.get("subagent_id")), b)
+    if b.get("subagent_id"):
+        SA.collect(b.get("subagent_id"), timeout=5)
     SA.purge_parent("p9")
     c = SA.spawn("c", parent_run_id="p9", max_steps=1, depth=0)
     check("4a purge_parent clears the count", bool(c.get("subagent_id")), c)

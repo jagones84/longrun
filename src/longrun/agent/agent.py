@@ -1510,6 +1510,29 @@ def _batch_items(act):
     return [c for c in (raw or []) if isinstance(c, dict)]
 
 
+def _split_batch_items(items):
+    """Split batch items into (tool_items, subagent_items, dispatch_items).
+
+    F2: a `dispatch` hands work to a teammate's OWN session (a real turn
+    there) — it must NEVER become a Session Job / subagent spawn, which has
+    different semantics AND would consume the subagent budget. A `goal`
+    marks subagent work only for non-dispatch items; everything else is a
+    tool call.
+    """
+    tools, subs, dispatches = [], [], []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        action = str(it.get("action") or "")
+        if action == "dispatch":
+            dispatches.append(it)
+        elif action == "subagent" or it.get("goal"):
+            subs.append(it)
+        else:
+            tools.append(it)
+    return tools, subs, dispatches
+
+
 # Tools that run INSIDE the one persistent terminal of their caller (term.py).
 # They can never overlap: the terminal has a single `busy` slot, so the second
 # call returns "busy — wait for the current command" and its work is LOST.
@@ -1553,9 +1576,12 @@ def _map_tools(items, cap, fn):
 
 
 def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
-    """Run the calls of a `batch` action concurrently (JAG-533).
+    """Run the calls of a `batch` action (JAG-533).
 
     TOOL items share a thread pool sized by `runtime.max_parallel_tools`.
+    DISPATCH items run SEQUENTIALLY in order — each is a real turn in a
+    teammate's session, and two turns in the same session must not
+    interleave; they are never spawns and never touch the subagent budget.
     SUBAGENT items become ONE Session Job (SJ, JAG-533/SJ): a persisted,
     dependency-ordered graph run by the ready-queue scheduler in
     ``longrun.agent.session_jobs`` — a subjob starts only when its `deps` are
@@ -1598,10 +1624,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
             pass
         return {"tool": tool, "ok": ok, "obs": obs}
 
-    tool_items = [it for it in _batch_items(act)
-                  if str(it.get("action") or "") != "subagent" and not it.get("goal")]
-    sub_items = [it for it in _batch_items(act)
-                 if str(it.get("action") or "") == "subagent" or it.get("goal")]
+    tool_items, sub_items, dispatch_items = _split_batch_items(_batch_items(act))
     results = []
     if tool_items:
         results.extend(_map_tools(tool_items, _parallel_tool_cap(), _one_tool))
@@ -1656,8 +1679,22 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
                                        % (s.get("id"), s.get("label"),
                                           s.get("status"),
                                           s.get("result") or s.get("error") or "")})
-    lines = ["Batch of %d call(s) ran concurrently (tools: %d, subagents: %d)."
-             % (len(tool_items) + len(sub_items), len(tool_items), len(sub_items))]
+    if dispatch_items:
+        # F2: teammate turns, run SEQUENTIALLY in the model's order — two
+        # turns in the SAME teammate session must not interleave. Never a
+        # spawn, never on the subagent budget.
+        for it in dispatch_items:
+            try:
+                _dobs = str(_apply_chat_dispatch(sess, it, on_event,
+                                                 node=node, after=after) or "")
+                _dok = not _dobs.startswith("dispatch error")
+            except Exception as e:  # noqa: BLE001 — one item must not sink the batch
+                _dobs, _dok = "dispatch raised: %s" % str(e)[:200], False
+            results.append({"tool": "dispatch", "ok": _dok,
+                            "obs": _dobs[:4000]})
+    lines = ["Batch of %d call(s) ran (tools: %d, subagents: %d, dispatches: %d)."
+             % (len(tool_items) + len(sub_items) + len(dispatch_items),
+                len(tool_items), len(sub_items), len(dispatch_items))]
     for r in results:
         lines.append("\n### %s %s\n%s"
                      % (r.get("tool"), "OK" if r.get("ok") else "FAILED",

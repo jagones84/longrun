@@ -293,7 +293,10 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
                 "error": "max parallel subagents reached (%d)" % _cap}
     # M8: enforce the per-run spawn budget (0 = no cap). A None parent is
     # never counted. The count increments only on a spawn that passes every
-    # gate below, so refusals never consume the budget.
+    # gate below, so refusals never consume the budget. F1: the count is LIVE
+    # (freed when the child ends in _run below), so the budget bounds
+    # CONCURRENT children per parent session — not total spawns ever. A
+    # looping parent is still caught by the no-progress + frequency guards.
     try:
         _run_cap = int(load_cfg().get("max_per_run", 6) or 0)
     except (TypeError, ValueError):
@@ -365,6 +368,18 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
                                "summary": "subagent crashed: %s" % e, "trace": []}
             status_txt, steps_n = "error", 0
         finally:
+            # F1: the per-run budget counts LIVE subagents, not total spawns —
+            # free the slot when the child ends even if nobody collects it.
+            # Decrement BEFORE signalling done, so a woken collector (or a new
+            # spawn right after) always sees the freed budget. Floor at zero:
+            # purge_parent may have cleared the dict meanwhile.
+            if parent_run_id and _run_cap:
+                with _lock:
+                    _left = _SPAWN_COUNT.get(parent_run_id, 1) - 1
+                    if _left <= 0:
+                        _SPAWN_COUNT.pop(parent_run_id, None)
+                    else:
+                        _SPAWN_COUNT[parent_run_id] = _left
             entry["done"].set()
         _persist({
             "id": sid, "run_id": st.id, "goal": goal, "max_steps": max_steps,
