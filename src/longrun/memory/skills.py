@@ -11,6 +11,7 @@ API:
   skills_context()         -> compact block for the agent system prompt
 """
 
+import hashlib
 import io
 import os
 import re
@@ -20,12 +21,83 @@ import tempfile
 import zipfile
 
 from longrun.util import paths
-from longrun.util.paths import REPO_ROOT as REPO
+from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR as APP_DATA_DIR
 SKILLS_DIR = os.path.join(REPO, "skills")
 
 LOCAL_CATEGORY = "local"
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def _digests_path():
+    """Baseline file for skill content digests (env-overridable for tests)."""
+    return os.environ.get("LONGRUN_SKILLS_DIGESTS") or \
+        os.path.join(APP_DATA_DIR, "skills.digests.json")
+
+
+def skill_digest(path):
+    """P2 skill trust: sha256 of a SKILL.md's bytes, None when unreadable.
+
+    Accepts a SKILL.md file or a skill directory (resolves SKILL.md inside).
+    The digest binds (name, resolved path, content): any edit — overwrite
+    install, matrix promote, upstream pull — changes it. Pure read-only.
+    """
+    try:
+        p = str(path or "")
+        if os.path.isdir(p):
+            p = os.path.join(p, "SKILL.md")
+        with open(p, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except (OSError, ValueError):
+        return None
+
+
+def load_digests():
+    """{skill name: digest} trust baseline, {} when never recorded."""
+    import json
+    try:
+        with open(_digests_path(), "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return {str(k): str(v) for k, v in d.items()} if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_digests(mapping):
+    """Persist the digest baseline (best-effort, never raises)."""
+    import json
+    try:
+        os.makedirs(os.path.dirname(_digests_path()), exist_ok=True)
+        with open(_digests_path(), "w", encoding="utf-8") as f:
+            json.dump({str(k): str(v) for k, v in (mapping or {}).items()},
+                      f, indent=1, sort_keys=True)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def verify_skill_digests(baseline, live=None):
+    """Compare a {name: digest} baseline against the live tree (pure).
+
+    `live` is {name: digest}; when omitted it is scanned from `list_skills()`.
+    Returns {ok, changed, new, gone} as sorted name lists: `changed` caught a
+    content swap under a kept name, `new` was never baselined, `gone` left.
+    """
+    if live is None:
+        live = {}
+        try:
+            for s in list_skills():
+                if s.get("digest"):
+                    live[s["name"]] = s["digest"]
+        except Exception:  # noqa: BLE001 — verification never breaks the caller
+            pass
+    base = baseline or {}
+    live = live or {}
+    ok = sorted(n for n, d in live.items() if base.get(n) == d)
+    changed = sorted(n for n, d in live.items() if n in base and base.get(n) != d)
+    new = sorted(n for n in live if n not in base)
+    gone = sorted(n for n in base if n not in live)
+    return {"ok": ok, "changed": changed, "new": new, "gone": gone}
 
 
 def _local_dir():
@@ -173,8 +245,9 @@ def list_skills(reload=False):
                 sp = os.path.join(sd, "SKILL.md")
                 if os.path.isfile(sp):
                     try:
-                        with open(sp, "r", encoding="utf-8", errors="replace") as f:
-                            text = f.read(8192)
+                        with open(sp, "rb") as f:
+                            raw = f.read()
+                        text = raw.decode("utf-8", errors="replace")[:8192]
                     except OSError:
                         continue
                     title, desc = _parse_skill_md(text, name)
@@ -182,6 +255,7 @@ def list_skills(reload=False):
                     skills.append({"name": name, "category": cat,
                                    "path": os.path.relpath(sp, REPO),
                                    "abspath": sp,
+                                   "digest": hashlib.sha256(raw).hexdigest(),
                                    "title": title, "description": desc,
                                    # JAG-451: `auto` marks MACHINE-generated skills
                                    # (the skills/created box); `local` = user-uploaded.
@@ -194,8 +268,9 @@ def list_skills(reload=False):
             sp = os.path.join(sd, "SKILL.md")
             if os.path.isfile(sp):
                 try:
-                    with open(sp, "r", encoding="utf-8", errors="replace") as f:
-                        text = f.read(8192)
+                    with open(sp, "rb") as f:
+                        raw = f.read()
+                    text = raw.decode("utf-8", errors="replace")[:8192]
                 except OSError:
                     continue
                 title, desc = _parse_skill_md(text, name)
@@ -207,6 +282,7 @@ def list_skills(reload=False):
                 skills.append({"name": name, "category": "matrix",
                                "path": rel_p,
                                "abspath": sp,
+                               "digest": hashlib.sha256(raw).hexdigest(),
                                "title": title, "description": desc,
                                "auto": True, "matrix": True, "local": False})
     _cache.update(sig=sig, skills=skills, bodies=bodies)
@@ -281,6 +357,14 @@ def install_zip(data, name=None, overwrite=False):
             os.replace(stage, target)
             stage = None
             list_skills(reload=True)
+            try:  # trust-on-first-install: stamp the new content digest
+                _bl = load_digests()
+                _dg = skill_digest(os.path.join(target, "SKILL.md"))
+                if _dg:
+                    _bl[safe] = _dg
+                    save_digests(_bl)
+            except Exception:  # noqa: BLE001 — stamping never breaks install
+                pass
             return {"ok": True, "name": safe, "category": LOCAL_CATEGORY,
                     "path": os.path.relpath(target, REPO)}
         finally:
@@ -443,6 +527,15 @@ def audit_skills():
             continue
         if n > 20000:
             oversized.append({"name": s["name"], "bytes": n})
+    # P2 skill trust: content swaps under a kept name (overwrite install,
+    # matrix promote, upstream pull). Report-only like everything else here.
+    changed = []
+    try:
+        bl = load_digests()
+        if bl:
+            changed = verify_skill_digests(bl)["changed"]
+    except Exception:  # noqa: BLE001 — audit stays read-only and total
+        changed = []
     return {"count": len(sk), "duplicate_descriptions": dup_desc,
             "near_duplicate_names": near[:20], "missing_description": no_desc,
-            "oversized": oversized[:20]}
+            "oversized": oversized[:20], "changed": changed}

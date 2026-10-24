@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **P2 skill trust: content digests bound to (name, path).** OpenClaw's
+  skillBinTrust adapted to prompt-only skills (Longrun never executes skill
+  binaries, but a swapped SKILL.md silently changes what the model reads):
+  `skills.skill_digest()` (sha256 of the bytes), `digest` on every
+  `list_skills()` entry, pure `verify_skill_digests()` (ok/changed/new/gone),
+  trust-on-first-install stamping in `install_zip()`, and `changed` reporting
+  in `audit_skills()` (locked by `v591` 17/17).
 - **M10 slice: killed turns are classified, resume records persisted.**
   From the DeepSeek resume/fork/replay direction: `stores.classify_interruption()`
   tells `interrupted_before_effect` (zero current-turn tool cards + PRE-turn
