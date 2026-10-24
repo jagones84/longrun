@@ -88,11 +88,17 @@ class RunState:
         self.pause_notified = False
         self.resume_ev = threading.Event()
         self.resume_ev.set()
+        # M6: cumulative prompt+completion tokens spent by THIS run's own model
+        # calls (subagents tracked via parent_run_id + _run_tree_spent).
+        self.tokens_spent = 0
+        # M6: set by subagent.spawn; None for a top-level run.
+        self.parent_run_id = None
 
     def public(self):
         return {"id": self.id, "goal": self.goal, "model": self.model,
                 "max_steps": self.max_steps, "status": self.status,
                 "termination": self.termination,
+                "tokens_spent": self.tokens_spent,
                 "created": self.created, "summary": self.summary,
                 "steps": len(self.trace), "trace": self.trace,
                 "scripted": self.script is not None}
@@ -644,9 +650,80 @@ def _action_tool_names(act, action):
     return [str(action or "note")]
 
 
+def _account_call(st, usage):
+    """Add one model call's tokens to the run (M6). Returns tokens added.
+
+    Counts inclusive prompt+completion (cached input still occupies context).
+    Missing/empty/counterless usage adds 0 — never a chars/4 fiction; the Cost
+    panel prices that case as unknown (`usd None`) via costs.record.
+    """
+    try:
+        from longrun.model import costs
+        pt, ct, _read, _write = costs.usage_tokens(usage)
+    except Exception:  # noqa: BLE001 — accounting must never break a run
+        return 0
+    spent = (pt or 0) + (ct or 0)
+    if spent > 0:
+        try:
+            st.tokens_spent += spent
+        except Exception:  # noqa: BLE001
+            pass
+        return spent
+    return 0
+
+
+def _run_tree_spent(st):
+    """Own + descendant spend for a run (M6: subagents bill the parent)."""
+    try:
+        total = int(getattr(st, "tokens_spent", 0) or 0)
+    except (TypeError, ValueError):
+        total = 0
+    seen = {getattr(st, "id", None)}
+    stack = [st]
+    try:
+        with RUNS_LOCK:
+            children = [(r, getattr(r, "parent_run_id", None)) for r in RUNS.values()]
+    except Exception:  # noqa: BLE001
+        return total
+    by_parent = {}
+    for r, p in children:
+        by_parent.setdefault(p, []).append(r)
+    while stack:
+        cur = stack.pop()
+        for c in by_parent.get(getattr(cur, "id", None), []):
+            cid = getattr(c, "id", None)
+            if cid in seen:
+                continue
+            seen.add(cid)
+            try:
+                total += int(getattr(c, "tokens_spent", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+            stack.append(c)
+    return total
+
+
+def _budget_exceeded(st, token_budget):
+    """(exceeded, tree_total) for the run's cumulative token budget (M6)."""
+    if token_budget is None:
+        try:
+            return False, _run_tree_spent(st)
+        except Exception:  # noqa: BLE001
+            return False, 0
+    try:
+        total = _run_tree_spent(st)
+        return total >= int(token_budget), total
+    except Exception:  # noqa: BLE001
+        return False, 0
+
+
 def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_id=None,
-                 workspace=None, fallbacks=None):
-    """Sense-think-act loop with real tools behind the approval gate + HITL."""
+                 workspace=None, fallbacks=None, token_budget=None):
+    """Sense-think-act loop with real tools behind the approval gate + HITL.
+
+    M6: `token_budget` caps cumulative prompt+completion tokens for the run
+    tree (own calls + subagent descendants); `None` disables the check.
+    """
     srv = _srv()
     if on_event is None:
         on_event = lambda kind, **d: srv.publish(kind, **d)
@@ -754,9 +831,14 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 for _attempt in range(2):
                     for cand in candidates:
                         try:
+                            # M6: a fresh usage dict per attempt; every successful
+                            # hop (including failover hops) is accounted below.
+                            _call_usage = {}
                             answer, think = srv._router_stream(
                                 msgs, cand, lambda ch, t: on_event("agent.think",
-                                                                   channel=ch, text=t))
+                                                                   channel=ch, text=t),
+                                usage=_call_usage)
+                            _account_call(st, _call_usage)
                             if cand != model:
                                 on_event("model.fallback", run=st.id, from_model=model,
                                          to_model=cand)
@@ -788,6 +870,23 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 thought = str(act.get("thought", ""))[:400]
                 action = act.get("action")
                 on_event("agent.thought", run=st.id, i=i + 1, thought=thought, action=action)
+
+            # M6: cumulative token budget. Checked after every model call (the
+            # action above is already parsed); the tree spend includes subagent
+            # descendants. `token_budget=None` disables the check entirely.
+            if token_budget is not None:
+                _over, _total = _budget_exceeded(st, token_budget)
+                if _over:
+                    summary = ("token budget exhausted: %d tokens spent "
+                               "(budget %d)" % (_total, token_budget))
+                    st.summary, st.status, st.termination = summary, "done", "budget"
+                    on_event("agent.finish", run=st.id, summary=summary,
+                             termination=st.termination, budget_capped=True)
+                    _publish("agent.budget_capped", run=st.id, spent=_total,
+                             budget=token_budget)
+                    st.trace.append({"i": i + 1, "thought": thought, "action": "finish",
+                                     "summary": summary, "budget_capped": True})
+                    return _result(st, goal, model)
 
             if action == "finish":
                 summary = str(act.get("summary", ""))[:600] or "done"

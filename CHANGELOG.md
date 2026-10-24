@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Upgrade Lotto 2 (M1 + M6) is implemented and green.** `model/structured.py`
+  validates model replies against an inline JSON Schema subset (stdlib only:
+  `$ref` rejected up front, first JSON span extracted from prose/fences,
+  `$.path` errors capped at 10, verbatim-errors single retry without re-pasting
+  the schema); `subagent.spawn(..., output_schema=...)` rejects malformed schemas
+  before spawning, appends the OUTPUT CONTRACT to the child goal, and `collect`
+  validates with exactly one sibling repair turn — a run never fails for schema
+  (locked by `v560` 21/21). The v2 loop now passes a usage dict to every model
+  call, accumulates `RunState.tokens_spent`, counts subagent descendants via
+  `parent_run_id`, and stops with `termination="budget"` when `token_budget` is
+  reached; missing usage adds 0, never a chars/4 fiction (locked by `v561`
+  15/15). FAST battery 254/254.
 - **Upgrade Lotto 1 (M11 + M5 + M12) is implemented and green.** From the
   frontier-harness comparison (`.agent/reports/2026-10-24_frontier-harness-kb-vs-longrun.md`):
   `improve.evolve` now passes an approval gate (`registry.subtool_gate`, locked by `v555`

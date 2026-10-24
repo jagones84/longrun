@@ -25,6 +25,7 @@ import time
 import uuid
 
 from longrun.core import api_v02  # for the RunState / agent_run_v2 machinery
+from longrun.model import structured as _structured  # M1: output contract
 from longrun.tools import approvals
 from longrun.tools import registry
 from longrun.tools import sandbox
@@ -201,7 +202,7 @@ def depth_allowed(depth, max_depth=None):
 
 
 def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, depth=0,
-          role=None):
+          role=None, output_schema=None):
     """Spawn a subagent run and return its id.
 
     The subagent runs asynchronously in a background thread. Call
@@ -211,8 +212,21 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
     subagent's standing instruction. The subagent has its OWN isolated context —
     it sees ONLY this goal (+ the role brief), never the parent's transcript.
 
+    M1: `output_schema` (a JSON Schema dict or JSON string) is coerced BEFORE
+    anything is spawned — a malformed schema is rejected with an error dict and
+    no thread/run is created. A valid schema appends the OUTPUT CONTRACT to the
+    child goal; `collect` validates the result and runs exactly one repair turn.
+
     Returns a dict with subagent_id (caller should store it).
     """
+    # M1: reject a malformed contract before the run exists.
+    schema, schema_error = None, None
+    if output_schema is not None:
+        schema, schema_error = _structured.coerce_schema(output_schema)
+        if schema_error:
+            return {"subagent_id": None, "run_id": None, "goal": goal,
+                    "error": "output_schema invalid: %s" % schema_error}
+        goal = "%s\n\n%s" % (goal, _structured.contract_block(schema))
     # JAG-451: prepend the role brief so the subagent's instruction is self-contained.
     _brief = role_brief(role) if role else ""
     if _brief:
@@ -254,6 +268,8 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
         "model": model,
         "role": role,
         "parent_run_id": parent_run_id,
+        "output_schema": schema,
+        "schema_retries": 0,
         "created": time.time(),
         "result": None,
         "done": threading.Event(),
@@ -266,6 +282,7 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
     _persist({
         "id": sid, "run_id": st.id, "goal": goal, "max_steps": max_steps,
         "model": model, "role": role, "parent": parent_run_id,
+        "output_schema": schema,
         "status": "running", "created": round(entry["created"], 3),
     })
 
@@ -311,6 +328,33 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
     return {"subagent_id": sid, "run_id": st.id, "goal": goal}
 
 
+def _repair_once(entry, errors, timeout):
+    """One sibling repair run for a schema-violating result (M1).
+
+    The repair is a NEW sibling run (same parent, same depth — not a child) whose
+    goal is the retry message plus the original task; it carries NO schema, so it
+    can never repair-recurse. Returns the repair's collect dict, or None when the
+    repair itself could not complete (the original invalid result then stands —
+    a run never fails for schema).
+    """
+    try:
+        rep_goal = (_structured.retry_message(errors)
+                    + "\n\nOriginal task (the OUTPUT CONTRACT above still applies):\n"
+                    + str(entry.get("goal") or ""))
+        st = entry.get("state")
+        rep = spawn(rep_goal, parent_run_id=entry.get("parent_run_id"),
+                    max_steps=entry.get("max_steps") or 4,
+                    model=entry.get("model"),
+                    depth=_DEPTH.get(st.id, 0) if st is not None else 0,
+                    role=entry.get("role"))
+        if not rep.get("subagent_id"):
+            return None
+        got = collect(rep.get("subagent_id"), timeout=timeout)
+        return got if got and got.get("ok") else None
+    except Exception:  # noqa: BLE001 — repair is best-effort
+        return None
+
+
 def collect(subagent_id, timeout=None):
     """Wait for a subagent to finish and return the result.
 
@@ -327,14 +371,24 @@ def collect(subagent_id, timeout=None):
         # so a Session Job's dependency can still read its input after a restart.
         rec = load_record(subagent_id)
         if rec and rec.get("status") not in (None, "running"):
+            _fschema = rec.get("output_schema")
+            _fvalid, _ferrs = None, []
+            if _fschema is not None:
+                _, _ferrs = _structured.validate_text(
+                    str(rec.get("summary") or ""), _fschema)
+                _fvalid = not _ferrs
             return {"ok": rec.get("status") == "done", "status": rec.get("status"),
                     "result": dict(rec), "trace": [],
                     "summary": str(rec.get("summary") or ""),
                     "steps": rec.get("steps") or 0,
-                    "subagent_id": subagent_id, "from_disk": True}
-        return {"ok": False, "error": "subagent %r not found" % subagent_id}
+                    "subagent_id": subagent_id, "from_disk": True,
+                    "schema_valid": _fvalid, "schema_errors": _ferrs,
+                    "schema_retries": 0}
+        return {"ok": False, "error": "subagent %r not found" % subagent_id,
+                "schema_valid": None, "schema_errors": [], "schema_retries": 0}
     if not entry["done"].wait(timeout=timeout):
-        return {"ok": False, "error": "subagent timeout", "subagent_id": subagent_id}
+        return {"ok": False, "error": "subagent timeout", "subagent_id": subagent_id,
+                "schema_valid": None, "schema_errors": [], "schema_retries": 0}
     # JAG-431r4b: pop the finished entry — _running/_DEPTH kept every completed
     # subagent forever (status() listed dead runs; both dicts grew unboundedly).
     with _lock:
@@ -345,6 +399,24 @@ def collect(subagent_id, timeout=None):
                 _DEPTH.pop(st.id, None)
     result = entry["result"] or {}
     summary = result.get("summary", "")
+    # M1: validate a schema-bound result; exactly one sibling repair turn.
+    # No schema -> untouched shape plus null markers. A run never fails
+    # for schema: the raw text stands with schema_valid False.
+    schema = entry.get("output_schema")
+    schema_valid, schema_errors, schema_retries = None, [], 0
+    if schema is not None:
+        _, schema_errors = _structured.validate_text(str(summary or ""), schema)
+        schema_valid = not schema_errors
+        if not schema_valid and not entry.get("schema_retries"):
+            entry["schema_retries"] = 1
+            schema_retries = 1
+            rep = _repair_once(entry, schema_errors, timeout)
+            if rep is not None:
+                result = rep.get("result") or result
+                summary = rep.get("summary", summary)
+                _, schema_errors = _structured.validate_text(
+                    str(summary or ""), schema)
+                schema_valid = not schema_errors
     parent_run_id = entry.get("parent_run_id")
     if parent_run_id and summary:
         try:
@@ -367,6 +439,9 @@ def collect(subagent_id, timeout=None):
         "summary": summary,
         "steps": len(result.get("trace", [])),
         "subagent_id": subagent_id,
+        "schema_valid": schema_valid,
+        "schema_errors": schema_errors,
+        "schema_retries": schema_retries,
     }
 
 

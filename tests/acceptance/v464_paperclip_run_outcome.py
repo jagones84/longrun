@@ -134,7 +134,7 @@ _NATIVE = (ONE + " calls>\n" + ONE + ' invoke name="fs.read">\n'
 _stream_calls = {"n": 0}
 
 
-def _fake_stream(_msgs, _cand, _on=None):
+def _fake_stream(_msgs, _cand, _on=None, usage=None):
     _stream_calls["n"] += 1
     if _stream_calls["n"] == 1:
         return _NATIVE, ""

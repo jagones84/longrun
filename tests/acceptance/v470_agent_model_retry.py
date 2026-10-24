@@ -54,7 +54,7 @@ def _run_with(sequence):
     calls = {"n": 0}
     seen = []
 
-    def fake_stream(_msgs, _cand, _on_delta=None):
+    def fake_stream(_msgs, _cand, _on_delta=None, usage=None):
         i = calls["n"]
         calls["n"] += 1
         item = sequence[min(i, len(sequence) - 1)]
