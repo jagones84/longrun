@@ -8,7 +8,7 @@ All notable changes to Longrun are documented here. The format follows
 
 ### Added
 - **The regression gate now says where it is.** `tests/battery.sh` truncates and then
-  appends `.agent/battery-progress.log` in real time — `RUN`, one `START`/`END <test>
+  appends `.agent/logs/battery-progress.log` in real time — `RUN`, one `START`/`END <test>
   rc=<n> <ms>` per test, `DONE` — so a slow or hung run names the test instead of
   showing an empty screen until the aggregate summary. The final output prints the
   path. (Diagnosed with it: the same suite that is 247/247 on the DGX reports
@@ -44,6 +44,15 @@ All notable changes to Longrun are documented here. The format follows
   no longer the default.
 
 ### Fixed
+- **A projector-equipped model could still be declared blind.** `model_supports_vision()`
+  read the fallback `meta.architecture.input_modalities`, but the live llama.cpp router
+  exposes `architecture` at the TOP LEVEL of the `/v1/models` entry, so the fallback
+  never fired and the harness told the model "you cannot see these images". The
+  top-level shape is now read first (the `meta` shape still works). Locked by `v462`
+  A4b–A4d (vision section 36/36 PASS).
+- **The DGX GLM context was over-declared in the catalogue.** `config/providers.yaml`
+  advertised `glm-5.3-flash-iq2` with `context_length: 262144` while the router runs it
+  at 131072, corrupting the context budget. Now 131072.
 - **Two `shell` calls in one `batch` silently lost one.** The batch ran every tool
   item in a thread pool, but the shell is ONE persistent terminal per caller with a
   single `busy` slot: the second `shell.exec` returned "busy — wait for the current

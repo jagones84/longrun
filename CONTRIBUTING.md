@@ -79,7 +79,7 @@ pytest tests/properties/   # Hypothesis property tests
 | `webui/` | the main single-file WebUI |
 | `tests/acceptance/` | the deterministic gate (auto-discovered) |
 | `docs/` | architecture, CLI, testing playbook, and the historical record |
-| `.agent/` | maintainer's local working notes + debugging manual (untracked) |
+| `.agent/` | maintainer's local working notes: `handoff/`, `runbooks/`, `docs/`, `plans/`, `reports/` (untracked) |
 
 ## License
 

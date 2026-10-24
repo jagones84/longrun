@@ -23,7 +23,7 @@ mkdir -p "$PYC" "$RES"
 # hung gate used to look like an empty screen. This file is TRUNCATED on every run
 # and appended by each test as it starts/finishes: the last START without its END
 # names the test that is stuck.
-PROGRESS="$ROOT/.agent/battery-progress.log"
+PROGRESS="$ROOT/.agent/logs/battery-progress.log"
 mkdir -p "$(dirname "$PROGRESS")"
 : > "$PROGRESS"
 export PROGRESS

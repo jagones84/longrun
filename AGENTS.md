@@ -6,9 +6,10 @@ that built this.
 
 ## Read order (do not skip)
 
-> `.agent/` is the maintainer's **local** working memory (HANDOFF + per-domain
-> manuals) and is **gitignored** — it exists only in a development checkout, never
-> in a clone. Everything listed below is tracked and present in every clone.
+> `.agent/` is the maintainer's **local** working memory (`handoff/` + `runbooks/`
+> per-domain manuals, `docs/`, `plans/`, `reports/`) and is **gitignored** — it
+> exists only in a development checkout, never in a clone. Everything listed below
+> is tracked and present in every clone.
 
 1. **`docs/ARCHITECTURE.md`** and **`docs/CLI.md`** — how the system is wired.
 2. **`docs/TESTING-PLAYBOOK.md`** — the mindset for testing the harness live.
@@ -50,4 +51,4 @@ bash tests/battery.sh     # FAST deterministic gate; trust its reported count
   (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
 - **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
   or the repo-root `trash/` data directory.
-- **Maintainers: update the local (gitignored) `.agent/HANDOFF.md` + the matching `README-*.md` in the same session.**
+- **Maintainers: update the local (gitignored) `.agent/handoff/HANDOFF.md` + the matching `runbooks/*.md` in the same session.**

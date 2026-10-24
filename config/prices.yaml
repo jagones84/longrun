@@ -6,7 +6,7 @@
 # all weekend) — see costs.DEEPSEEK_OFF_PEAK_FACTOR. So this table is the peak
 # reference, and each recorded call carries the rate actually in force.
 # Direct-provider rates use exact "provider:model" keys. Other official sources and
-# estimate limitations are recorded in .agent/README-cost-provider-pricing.md.
+# estimate limitations are recorded in .agent/runbooks/cost-provider-pricing.md.
 
 deepseek-flash:
   in: 0.3

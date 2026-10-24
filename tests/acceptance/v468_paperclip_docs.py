@@ -12,7 +12,7 @@ pins the operator-facing contract to the code that actually exists:
     `LONGRUN_TOKEN` contract, the environment check, the deterministic test
     commands, the five-event allowlist, the unsupported capabilities, and the
     difference between adapter run events and Paperclip Runner PRP events;
-  * the local maintainer runbook `.agent/README-paperclip-adapter.md` exists
+  * the local maintainer runbook `.agent/runbooks/paperclip-adapter.md` exists
     (checked only where that local-only directory is present);
   * `CHANGELOG.md` records the integration under `Unreleased` → `Added`.
 
@@ -94,7 +94,7 @@ check("test_package_readme_states_the_unsupported_capabilities",
 _AGENT = os.path.join(REPO, ".agent")
 if os.path.isdir(_AGENT):
     try:
-        RUNBOOK = _read(".agent", "README-paperclip-adapter.md")
+        RUNBOOK = _read(".agent/runbooks", "paperclip-adapter.md")
     except OSError:
         RUNBOOK = ""
     check("test_maintainer_runbook_exists_and_documents_setup",

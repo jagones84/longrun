@@ -5,7 +5,7 @@ A session may be *designated* as an ORG AGENT: it then carries a name, a role an
 untouched. This registry is the single source of truth the GUI reads to badge org
 agents and to guard their deletion.
 
-Object model (see .agent/design-agents-jobs.md):
+Object model (see .agent/docs/architecture/design-agents-jobs.md):
   * Agent  = a session, id ``AX``  (todos are ``AX.nY``)
   * Job    = a higher-level goal ``JN`` that orchestrates several agents (jobs.py)
 
