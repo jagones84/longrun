@@ -378,10 +378,28 @@ def _session_notebook(db, sid, create=True):
         return None
     if not create:
         return None
+    # Fix3: the id is DETERMINISTIC, so two writers creating the same session
+    # notebook (parallel attachments, two server processes on one data home)
+    # used to race SELECT-then-INSERT and the loser crashed with a raw
+    # "UNIQUE constraint failed". INSERT OR IGNORE makes creation idempotent;
+    # the re-select below returns the winner's row either way.
     name = "Session " + str(sid).replace("-", "").upper()[:8]
-    db.execute("INSERT INTO notebooks(id, name, created, hidden, owner, is_session) "
-               "VALUES(?,?,?,1,?,1)", (nid, name, time.time(), str(sid)))
-    return nid
+    try:
+        db.execute("INSERT OR IGNORE INTO notebooks(id, name, created, hidden, owner, is_session) "
+                   "VALUES(?,?,?,1,?,1)", (nid, name, time.time(), str(sid)))
+    except sqlite3.IntegrityError:
+        pass
+    row = db.execute(
+        "SELECT owner, hidden, is_session FROM notebooks WHERE id=?", (nid,)
+    ).fetchone()
+    if row and (row["is_session"] or row["hidden"]) and row["owner"] == str(sid):
+        if row["is_session"]:
+            return nid
+        db.execute("UPDATE notebooks SET is_session=1 WHERE id=? AND owner=?",
+                   (nid, str(sid)))
+        db.commit()
+        return nid
+    return None
 
 
 def _existing_source(db: sqlite3.Connection, notebook: str, ref: str) -> dict | None:
@@ -588,6 +606,14 @@ def add_source(notebook, ref, session_id=None):
                 result["recommend_visual"] = bool(extract_diag.get("recommend_visual"))
                 result["text_quality"] = extract_diag.get("quality")
             return result
+        except sqlite3.IntegrityError as e:
+            # Fix3: same storage-race contract as add_text — clean retryable
+            # error, never a raw "constraint failed" traceback.
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return {"ok": False, "error": "storage conflict, retry once: %s" % e}
         finally:
             db.close()
 
@@ -638,6 +664,15 @@ def add_text(notebook, title, text, session_id=None):
             return {"ok": True, "source_id": sid, "notebook": notebook, "kind": "text",
                     "ref": title, "chunks": n, "embedded": embedded, "embed_error": embed_err,
                     "title": title}
+        except sqlite3.IntegrityError as e:
+            # Fix3: a storage race (parallel attachments, two processes on one
+            # data home) must surface as a clean retryable error, never as a
+            # raw "constraint failed" traceback the model cannot act on.
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return {"ok": False, "error": "storage conflict, retry once: %s" % e}
         finally:
             db.close()
 
@@ -716,6 +751,13 @@ def add_source_text(notebook, ref, text, title=None, session_id=None):
                     # so a visual embedder is never strictly needed. Kept in the
                     # response shape for symmetry with add_source().
                     "recommend_visual": False}
+        except sqlite3.IntegrityError as e:
+            # Fix3: same storage-race contract as add_text/add_source.
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return {"ok": False, "error": "storage conflict, retry once: %s" % e}
         finally:
             db.close()
 

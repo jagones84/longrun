@@ -213,9 +213,12 @@ tools:
       - "127.0.0.1"
       - "localhost"
 
-  # lightweight page fetcher/HTML->text (NOT a headless browser); off by default
+  # lightweight page fetcher/HTML->text (NOT a headless browser). Enabled with
+  # approval required; an empty allow_hosts means public internet only, enforced
+  # by the SSRF guard (private/loopback/link-local blocked, same model as `web`).
+  # A non-empty allow_hosts restricts to that strict list instead.
   browser:
-    enabled: false
+    enabled: true
     approval: required
     auto_approve: []
     allow_hosts: []

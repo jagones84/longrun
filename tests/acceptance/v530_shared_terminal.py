@@ -75,8 +75,12 @@ t0 = time.time()
 r = sh.run_capture(SLEEP5, timeout=1)
 check("D1 a command past its timeout is reported, not hung",
       r.get("timed_out") is True and r.get("exit_code") == 124, r.get("exit_code"))
-check("D2 the shell is reset so the next call is not wedged",
-      (time.time() - t0) < 4 and term.peek("v530") is None, "elapsed=%.1f" % (time.time() - t0))
+check("D2 the shell survives a timeout (child interrupted, no reset)",
+      (time.time() - t0) < 6 and r.get("interrupted") is True
+      and term.peek("v530") is not None, "elapsed=%.1f" % (time.time() - t0))
+r = sh.run_capture("echo alive-530", timeout=30)
+check("D2b the next call runs in the same shell",
+      r.get("exit_code") == 0 and "alive-530" in (r.get("stdout") or ""), r)
 
 # --------------------------------- E) routing: host -> the shared terminal ----
 _orig_probe = T.sandbox.probe

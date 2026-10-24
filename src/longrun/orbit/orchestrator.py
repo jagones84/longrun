@@ -35,6 +35,30 @@ class Orchestrator:
 
     def _start(self, sid, goal, model, mode):
         srv = _server()
+        # Fix2: never silently queue behind (or pile threads onto) a running
+        # turn. The old code blocked on the session turn lock with no signal —
+        # a dispatch to a busy teammate either hung the caller or lost the
+        # work. Fail fast with a named state the caller can retry on.
+        try:
+            from longrun.core import events as _events
+            _busy = _events.turn_active(sid)
+        except Exception:  # noqa: BLE001 — probe failure means "not busy"
+            _busy = False
+        if _busy:
+            rec = {
+                "job": "%s:%d" % (sid, int(time.time() * 1000)),
+                "session": sid,
+                "started": round(time.time(), 3),
+                "ended": round(time.time(), 3),
+                "state": "busy",
+                "error": ("session %s is busy (a turn is running) — retry later "
+                          "or steer the running turn via sessions.send" % sid),
+            }
+            with self._lock:
+                self._jobs[rec["job"]] = rec
+                self._trim()
+            return {"job": rec["job"], "session": sid, "state": "busy",
+                    "error": rec["error"]}
         sess = srv.get_or_create_session(sid)
         rec = {
             "job": "%s:%d" % (sid, int(time.time() * 1000)),

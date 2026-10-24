@@ -8384,7 +8384,11 @@ function connectFeed() {
     // JAG-465: only re-measure THIS session. Re-rendering the Context panel because
     // some OTHER agent's turn ended rebuilt the inspector under the operator's cursor
     // (the "it jumps back to the top" report) for no reason.
-    if (!d.session || d.session === sessionId) loadCtx();
+    // Q2: when THIS tab's session finished, rebuild the chat automatically — the
+    // same reloadChat() the ↻ button runs — so the transcript is chronological
+    // without a manual refresh. Other sessions only re-measure context.
+    if (d.session && d.session === sessionId) reloadChat();
+    else if (!d.session) loadCtx();
     // JAG-500: pull the persisted reply ONLY for a turn this tab did not render
     // (see _rebuildOnFeedDone — a deferred, race-proof check).
     _rebuildOnFeedDone(d.session);
@@ -8437,6 +8441,10 @@ function connectFeed() {
   // JAG-2.8: agent metadata changes (reports_to, role, model, etc.) hot-reload the rail
   es.addEventListener("agent.updated", e => { loadSessions(); });
   es.addEventListener("agent.released", e => { const d = JSON.parse(e.data); push("🔓 agent released"); loadSessions(); });
+  // Q1: a scaffolded/promoted/removed Matrix tool changes the tool catalogue —
+  // re-render Settings > Tools live instead of waiting for a manual reopen.
+  // configPanel shows the tools panel iff renderTools ran on it (marker flag).
+  es.addEventListener("tools.changed", () => { const p = $("configPanel"); if (p && p._approvalMode !== undefined) api("GET", "/api/tools").then(d => renderTools(p, d)).catch(() => {}); });
   // JAG-465: a suspended/backgrounded tab receives no feed events at all. Re-read the
   // durable state when it becomes visible again, so returning to the tab shows the
   // real state without a manual reload.

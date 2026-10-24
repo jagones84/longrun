@@ -573,8 +573,21 @@ def _browser(args, run_id):
     spec = registry.tool_spec("browser")
     if not spec["enabled"]:
         return {"ok": False, "error": "browser tool is disabled (set enabled: true in config/tools.yaml)"}
-    data, err = _http_fetch(str(args.get("url", "")), spec["allow_hosts"],
-                            int(args.get("max_bytes", 32768)))
+    url = str(args.get("url", ""))
+    allow = list(spec["allow_hosts"] or [])
+    if allow:
+        # A non-empty list keeps the strict allow-list behaviour.
+        data, err = _http_fetch(url, allow, int(args.get("max_bytes", 32768)))
+    else:
+        # Fix6: an empty allow-list used to reject EVERY host, so the tool was
+        # dead even when enabled. Empty now means public internet only, fetched
+        # through the SSRF-guarded reader (private/loopback/link-local stay
+        # blocked, same model as the `web` tool).
+        pub, perr = _web_fetch(url, int(args.get("max_bytes", 32768)))
+        if perr:
+            return {"ok": False, "error": perr,
+                    "backend": "host(browser)", "sandboxed": False}
+        data, err = {"status": 200, "body": pub["text"], "host": pub["host"]}, None
     if err:
         return {"ok": False, "error": err, "backend": "host(browser)", "sandboxed": False}
     html = data["body"]
@@ -1003,8 +1016,10 @@ def _memory(args, run_id):
     if action in ("core", "core_read", "read_core"):
         txt = mem.core_read().strip()
         return {"ok": True, "count": 1 if txt else 0,
-                "stdout": txt or "(core memory is empty)", "backend": "host",
-                "sandboxed": False}
+                "stdout": txt or ("(core memory is empty — no durable facts stored yet. "
+                                   "Write them with memory{action:set_core, content:...}; "
+                                   "they are injected into every turn)"),
+                "backend": "host", "sandboxed": False}
     if action == "clear_core":
         # JAG-529: be honest about the blast radius. The CORE block is injected
         # into every prompt, so earlier snapshots are already part of the session
@@ -1076,6 +1091,15 @@ def _memory(args, run_id):
                     "error": ("no memory matched %r (case-insensitive literal "
                               "substring) — nothing was deleted. Use action=recall "
                               "or action=health to see what is stored." % query),
+                    "backend": "host", "sandboxed": False}
+        # Fix4: query-mode forget is a bulk delete with no undo. Refuse a broad
+        # match instead of wiping too much: scope it with kind= or delete one
+        # record with target=<mid>.
+        if not args.get("kind") and len(ids) > 5:
+            return {"ok": False, "exit_code": 1, "count": 0,
+                    "error": ("query %r matched %d memories across the store — "
+                              "refusing a bulk delete. Pass kind= to scope it, or "
+                              "delete one record with target=<mid>." % (query, len(ids))),
                     "backend": "host", "sandboxed": False}
         removed = sum(mem.forget(i).get("removed", 0) for i in ids)
         return {"ok": True, "count": removed,
@@ -1454,6 +1478,19 @@ def _sessions(args, run_id):
                     return {"ok": False, "exit_code": 1, "state": "error",
                             "message_id": message_id, "session": rec["session"],
                             "job": rec.get("job"), "ended": rec["ended"],
+                            "error": rec["error"],
+                            "backend": "host", "sandboxed": False}
+                # Fix2: the peer was busy at dispatch - fail fast instead of
+                # blocking until the caller's own wait timeout expires.
+                if job_info.get("state") == "busy":
+                    rec["state"] = "error"
+                    rec["ended"] = job_info.get("ended")
+                    rec["error"] = job_info.get("error") or "peer is busy"
+                    with _SESSION_SENDS_LOCK:
+                        _SESSION_SENDS[message_id] = rec
+                    return {"ok": False, "exit_code": 1, "state": "error",
+                            "message_id": message_id, "session": rec["session"],
+                            "job": rec.get("job"), "ended": rec.get("ended"),
                             "error": rec["error"],
                             "backend": "host", "sandboxed": False}
             sess = server.load_session(rec["session"]) or {}
@@ -2401,6 +2438,8 @@ def observation(res, max_chars=1600):
                res.get("backend"), res.get("sandboxed")))
     if not res.get("ok") and res.get("error"):
         bits = [head, "ERROR: " + _truncate(str(res["error"]).strip(), max_chars)]
+        if res.get("warning"):
+            bits.append("warning: " + _truncate(str(res["warning"]).strip(), max_chars))
         if res.get("stdout"):
             bits.append("stdout: " + _truncate(str(res["stdout"]).strip(), max_chars))
         if res.get("stderr"):
@@ -2418,13 +2457,19 @@ def observation(res, max_chars=1600):
                         "A duplicate write is worse than a slow one.")
         extras = {k: v for k, v in res.items()
                   if k not in _OBS_NOISE
-                  and k not in ("error", "args", "observation", "content", "stdout", "stderr")}
+                  and k not in ("error", "args", "observation", "content", "stdout", "stderr", "warning")}
         if extras:
             bits.append("result: " + _truncate(
                 json.dumps(extras, ensure_ascii=False, default=str), max_chars))
         return "\n".join(bits)
     bits = [head]
     has_body = False
+    # Fix6: a sandbox/host-execution warning must never be silent. The old code
+    # only surfaced it inside the JSON fallback (no-body results), so every
+    # normal shell result hid "ran on the host" from the model.
+    if res.get("warning"):
+        bits.append("warning: " + _truncate(str(res["warning"]).strip(), max_chars))
+        has_body = True
     if res.get("stdout"):
         bits.append("stdout: " + _truncate(str(res["stdout"]).strip(), max_chars))
         has_body = True
@@ -2441,7 +2486,7 @@ def observation(res, max_chars=1600):
         has_body = True
     if not has_body:
         extras = {k: v for k, v in res.items()
-                  if k not in _OBS_NOISE and k not in ("path", "content", "stdout", "stderr")}
+                  if k not in _OBS_NOISE and k not in ("path", "content", "stdout", "stderr", "warning")}
         if extras:
             bits.append("result: " + _truncate(
                 json.dumps(extras, ensure_ascii=False, default=str), max_chars))

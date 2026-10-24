@@ -35,6 +35,7 @@ import collections
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -105,6 +106,11 @@ class Shell:
             self.argv,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             cwd=self.cwd, bufsize=0,
+            # Fix1: the shell leads its OWN process group, so an interrupt
+            # aimed at a hung child (os.killpg PGID, SIGINT) reaches the child
+            # and never the harness server. Without this the shell shares the
+            # server's group and any group signal would hit the server too.
+            **({"start_new_session": True} if os.name != "nt" else {}),
         )
         self._t = threading.Thread(target=self._reader, daemon=True)
         self._t.start()
@@ -215,6 +221,13 @@ class Shell:
         cmd = str(cmd or "")
         if "\x00" in cmd:
             return {"ok": False, "exit_code": 1, "stdout": "", "error": "invalid command"}
+        # Fix1: the agent schema types timeout_secs as integer but a model may
+        # still send "60" — a str previously crashed Event.wait with TypeError.
+        try:
+            timeout = int(timeout if timeout is not None else 120)
+        except (TypeError, ValueError):
+            timeout = 120
+        timeout = max(1, min(timeout, 3600))
         cmd = self.with_cwd(cmd, cwd)
         err = self._claim()
         if err:
@@ -228,7 +241,7 @@ class Shell:
             self.busy = False
             return {"ok": False, "exit_code": 1, "stdout": "", "error": str(e)}
         self.last = time.time()
-        finished = self._done.wait(timeout if timeout else 120)
+        finished = self._done.wait(timeout)
         with self._lock:
             evs = [e for e in self.events if e["seq"] > start]
         code = None
@@ -242,7 +255,37 @@ class Shell:
         if len(text) > CAPTURE_MAX:
             text = text[:CAPTURE_MAX] + "\n[output truncated]\n"
         if not finished:
-            # The command is still running: reset the shell so the NEXT call is not
+            # Fix1: a hung child (ssh auth prompt, dead host, unbalanced quote)
+            # used to nuke the WHOLE shared shell via reset() — the human's
+            # cd/exports died with it and the next turn started cold. First try
+            # to interrupt just the child (SIGINT to the shell's direct
+            # children only — never killpg, which kills the shell too since it
+            # leads its own group). Then SIGKILL. Reset is the last resort.
+            for _attempt, _sig in (("int", _interrupt_child),
+                                   ("kill", _kill_children)):
+                if _attempt == "kill" and code is not None:
+                    break
+                _hit = _interrupt_child(self) if _attempt == "int" else _kill_children(self)
+                if not _hit and _attempt == "int":
+                    break
+                self._done.wait(3 if _attempt == "int" else 1)
+                with self._lock:
+                    evs = [e for e in self.events if e["seq"] > start]
+                code = None
+                fresh = []
+                for e in evs:
+                    if e["kind"] == "out":
+                        fresh.append(e.get("text") or "")
+                    elif e["kind"] == "done":
+                        code = e.get("code")
+                text = "".join(fresh)
+                if len(text) > CAPTURE_MAX:
+                    text = text[:CAPTURE_MAX] + "\n[output truncated]\n"
+                if code is not None:
+                    return {"ok": False, "exit_code": 124, "stdout": text,
+                            "timed_out": True, "interrupted": True,
+                            "error": "timeout — hung child interrupted, shell preserved"}
+            # The shell is still stuck: reset the shell so the NEXT call is not
             # wedged behind a busy prompt. The panel shows the reset.
             reset(self.key)
             return {"ok": False, "exit_code": 124, "stdout": text, "timed_out": True,
@@ -334,6 +377,66 @@ def reset(key):
         sh.kill()
         return True
     return False
+
+
+def _child_pids(ppid):
+    """Direct child pids of `ppid` via /proc (Linux only). Empty elsewhere."""
+    try:
+        want = int(ppid)
+    except (TypeError, ValueError):
+        return []
+    kids = []
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return []
+    for nm in names:
+        if not nm.isdigit():
+            continue
+        try:
+            with open("/proc/%s/stat" % nm, "r", encoding="utf-8") as f:
+                parts = f.read().rsplit(")", 1)[-1].split()
+            if len(parts) >= 2 and int(parts[1]) == want and int(nm) != want:
+                kids.append(int(nm))
+        except (OSError, ValueError, IndexError):
+            continue
+    return kids
+
+
+def _signal_children(sh, sig):
+    """Signal direct children of the shell (not the shell). True if any hit."""
+    try:
+        if os.name == "nt":
+            return False
+        if sh is None or sh.proc.poll() is not None:
+            return False
+        kids = _child_pids(sh.proc.pid)
+        hit = False
+        for pid in kids:
+            try:
+                os.kill(pid, sig)
+                hit = True
+            except OSError:
+                continue
+        return hit
+    except Exception:  # noqa: BLE001 — fall back to reset()
+        return False
+
+
+def _interrupt_child(sh):
+    """SIGINT the shell's CHILDREN so a hung foreground child dies.
+
+    The old killpg(PGID) hit the shell too (it leads its own group since
+    Fix1) and the shell died with the child — verified live: after killpg
+    the shell polled as exited. Signalling only direct children leaves the
+    shell alive to print the marker. Never raises.
+    """
+    return _signal_children(sh, signal.SIGINT)
+
+
+def _kill_children(sh):
+    """SIGKILL the shell's children (last resort before reset)."""
+    return _signal_children(sh, signal.SIGKILL)
 
 
 def status():

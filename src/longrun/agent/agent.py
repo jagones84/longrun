@@ -1425,6 +1425,18 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
         sid2 = member.get("session")
         if not sid2:
             return _fail("teammate %s has no session" % member.get("id"))
+        # Fix2: never silently queue behind (or pile onto) a running teammate
+        # turn. The old code blocked this whole turn on the teammate's turn
+        # lock with no signal — a stuck teammate killed the caller's step
+        # budget and the delegation was lost. Fail fast; the model retries.
+        try:
+            from longrun.core import events as _events
+            if _events.turn_active(sid2):
+                return _fail("teammate %s is busy (turn running) — retry later, "
+                             "or steer the running turn via sessions.send"
+                             % member.get("id"))
+        except Exception:
+            pass
         on_event("tool.call", session=sess["id"], tool="dispatch",
                  args={"agent": member.get("id"), "goal": goal, "session": sid2},
                  inline=True)

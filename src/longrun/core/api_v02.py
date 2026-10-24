@@ -2115,8 +2115,7 @@ def handle(handler, method, path, qs, body):
                                          "error": "only kind=tool is exposed on this route"})
             from longrun.core import matrix as _matrix_mod
             res = _matrix_mod.remove(kind, mx_name)
-            if res.get("ok"):
-                _publish("tools.changed", action="matrix.remove", name=mx_name)
+            # tools.changed is published inside matrix.remove (all callers).
             return _r(handler, 200 if res.get("ok") else 400, res)
 
         # --- v0.3 POST routes: checkpoints / context / routing ---

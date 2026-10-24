@@ -109,6 +109,20 @@ def _ledger(kind, **fields):
         pass
 
 
+def _publish_tools_changed(action, name):
+    """Fan out `tools.changed` so the WebUI tools panel refreshes itself.
+
+    Q1: a scaffolded Matrix tool never appeared in Settings > Tools until a
+    manual reload — only `matrix.remove` published (via the API layer). Best
+    effort: a missing server must never break a matrix operation.
+    """
+    try:
+        from longrun.core import server as _srv
+        _srv.publish("tools.changed", action=action, name=name)
+    except Exception:  # noqa: BLE001 — the event must never break the operation
+        pass
+
+
 def _format_matrix_error(exc, target_file=None):
     """Extract exact 1-based line number (`line`) and offending source line (`code_line`) from an exception."""
     lineno = getattr(exc, "lineno", None)
@@ -891,9 +905,22 @@ def _builtin_tool_names():
 
 
 def hotload(repo_root=None):
-    """Scan and reload all `src/Matrix/tools/*.py` modules with fail-open isolation."""
+    """Scan and reload all `src/Matrix/tools/*.py` modules with fail-open isolation.
+
+    Fix5: the whole scan-then-write is atomic under _LOCK. It used to write
+    only the final cache assignment under lock while the scan ran unlocked, so
+    a remove's hotload could be overwritten by a concurrent discover scan that
+    started earlier — resurrecting the deleted tool (non-deterministic
+    two-phase remove). discover_tools() calls hotload while holding _LOCK;
+    the RLock makes that re-entrant and safe.
+    """
     matrix_guard.ensure_layout(repo_root)
-    root, msrc, _mdot = _roots(repo_root)
+    _root, msrc, _mdot = _roots(repo_root)
+    with _LOCK:
+        return _hotload_locked(msrc)
+
+
+def _hotload_locked(msrc):
     src_parent = os.path.dirname(msrc)
     if src_parent not in sys.path:
         sys.path.insert(0, src_parent)
@@ -953,6 +980,8 @@ def hotload(repo_root=None):
         active_hooks, hook_errors = _hotload_hooks(msrc)
         if msrc in _HOOK_CACHE:
             _HOOK_CACHE[msrc]["runtime_errors"] = []
+        # _hotload_locked always runs under _LOCK (see hotload); the nested
+        # block keeps the diff local and documents the atomicity boundary.
     return {
         "ok": len(errors) == 0 and len(hook_errors) == 0,
         "loaded_tools": _NamespacedToolList(sorted(loaded.keys())),
@@ -1488,6 +1517,7 @@ def promote_to_nucleus(kind, name, repo_root=None):
             pass
     hl = hotload(repo_root)
     _ledger("matrix.promote_to_nucleus", artifact_kind=k, name=nm, promoted_to=dst_path, pre_commit=pre_sha)
+    _publish_tools_changed("matrix.promote", nm)
     return {
         "ok": True,
         "kind": k,
@@ -1635,8 +1665,12 @@ def remove(kind, name, repo_root=None):
             write_json(vp, vstore)
 
     hl = hotload(repo_root)
-    live_map = ((_TOOL_CACHE.get(msrc) or {}).get("tools") or {}) if k == "tool" else \
-               ((_HOOK_CACHE.get(msrc) or {}).get("modules") or {}) if k == "hook" else {}
+    # Fix5: read the post-hotload cache under the same lock the scan+write
+    # holds, so the still_live verdict cannot observe a half-updated cache.
+    with _LOCK:
+        live_map = ((_TOOL_CACHE.get(msrc) or {}).get("tools") or {}) if k == "tool" else \
+                   ((_HOOK_CACHE.get(msrc) or {}).get("modules") or {}) if k == "hook" else {}
+    _publish_tools_changed("matrix.remove", nm)
     if k == "tool":
         still_live = [x for x in removed_names if x in live_map]
     elif k == "hook":
@@ -1813,6 +1847,7 @@ def scaffold(kind, name, description="", repo_root=None):
             "fs.edit %s: implement the exact seam signature from matrix{action:'seams'}." % fpath,
             "matrix{action:'hotload'} to activate the hook live.",
         ]
+    _publish_tools_changed("matrix.scaffold", nm)
     return {"ok": True, "kind": k, "name": nm, "path": fpath, "hotload": hl,
             "next_steps": next_steps,
             "stdout": "scaffolded %s at %s" % (k, fpath)}

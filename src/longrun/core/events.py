@@ -215,6 +215,30 @@ def _turn_lock(sid):
         return lk
 
 
+def turn_active(sid):
+    """True when `sid` has a turn in flight right now (Fix2: busy dispatch).
+
+    Checks the _ACTIVE_CHAT registration first (covers the window before the
+    worker acquires the turn lock), then probes the per-session turn lock
+    without blocking. Never raises; unknown sessions are idle.
+    """
+    try:
+        sid = str(sid or "")
+        if not sid:
+            return False
+        with _ACTIVE_CHAT_LOCK:
+            if sid in _ACTIVE_CHAT:
+                return True
+        lk = _turn_lock(sid)
+        got = lk.acquire(blocking=False)
+        if got:
+            lk.release()
+            return False
+        return True
+    except Exception:  # noqa: BLE001 — a liveness probe must never break a turn
+        return False
+
+
 # JAG-462: event kinds that a helper publishes durably AND whose caller re-emits
 # through `on_event` (which also publishes) — so every graph/tool/approval row
 # landed in `events.db` (and on `/api/feed`) TWICE. Collapse an IMMEDIATELY
