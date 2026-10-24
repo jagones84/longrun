@@ -247,6 +247,17 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
             return ("action not executed: approval %s %s (by %s)"
                     % (rec["id"], rec["status"], rec.get("decided_by")),
                     {"tool": tool, "approval_id": rec["id"], "approval_status": rec["status"]})
+        _ok, _consume_msg = approvals.consume(rec["id"], tool, args)
+        if not _ok:
+            return ("action not executed: approval %s cannot be consumed: %s"
+                    % (rec["id"], _consume_msg),
+                    {"tool": tool, "approval_id": rec["id"],
+                     "approval_status": rec["status"], "consumed": False})
+        rec = approvals.get(rec["id"]) or rec
+        _publish("approval.consumed", run=run_id, id=rec["id"], tool=tool,
+                 uses_left=rec.get("uses_left"))
+        on_event("approval.consumed", run=run_id, id=rec["id"], tool=tool,
+                 uses_left=rec.get("uses_left"))
         _publish("approval.resolved", id=rec["id"], run=run_id, tool=tool,
                  status="approved", by=rec.get("decided_by"))
         on_event("approval.resolved", run=run_id, id=rec["id"], status="approved",
@@ -374,6 +385,13 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
                 _publish("approval.resolved", id=rec["id"], run=run_id, tool=tool,
                          status=rec["status"], by=rec.get("decided_by"))
                 return {"status": rec["status"], "approval": rec, "reason": reason}
+            _ok, _consume_msg = approvals.consume(rec["id"], tool, args)
+            if not _ok:
+                return {"status": "denied", "approval": rec,
+                        "reason": "approval cannot be consumed: %s" % _consume_msg}
+            rec = approvals.get(rec["id"]) or rec
+            _publish("approval.consumed", run=run_id, id=rec["id"], tool=tool,
+                     uses_left=rec.get("uses_left"))
             _publish("approval.resolved", id=rec["id"], run=run_id, tool=tool,
                      status="approved", by=rec.get("decided_by"))
         else:

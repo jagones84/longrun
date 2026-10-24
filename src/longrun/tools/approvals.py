@@ -11,6 +11,7 @@ Every sensitive tool action creates a record here. Outcomes:
 The queue is durable (data/approvals.json) so decisions survive a restart.
 """
 
+import hashlib
 import json
 import os
 import threading
@@ -65,8 +66,29 @@ def _summarize(tool, args):
     return json.dumps(args, ensure_ascii=False)[:200]
 
 
-def create(tool, args, run_id=None, decision="pending", reason=""):
-    """Record an approval request. decision: pending | auto_approved | denied."""
+def _digest(tool, args):
+    """Canonical sha256 of the approved call (M4a).
+
+    `sort_keys=True` so a reordered `args` dict is the SAME call; `default=str`
+    so exotic values never crash the gate. The digest binds tool+args: a
+    different call never matches, fail-closed.
+    """
+    try:
+        canonical = json.dumps({"tool": tool, "args": args or {}},
+                               sort_keys=True, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        canonical = "%s|%s" % (tool, args)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def create(tool, args, run_id=None, decision="pending", reason="",
+           uses_left=1, expires_at=None):
+    """Record an approval request. decision: pending | auto_approved | denied.
+
+    M4a: every record is a consumable mark — `uses_left` (default 1),
+    `expires_at` (epoch seconds, default None) and the call `digest`.
+    Extra fields are inert for old readers.
+    """
     with _lock:
         store = _load()
         rec = {
@@ -80,12 +102,54 @@ def create(tool, args, run_id=None, decision="pending", reason=""):
             "reason": reason,
             "decided_by": "policy" if decision != "pending" else None,
             "decided_ts": round(time.time(), 3) if decision != "pending" else None,
+            "uses_left": uses_left,
+            "expires_at": expires_at,
+            "digest": _digest(tool, args),
         }
         store["approvals"].append(rec)
         store["approvals"] = store["approvals"][-500:]
         _persist()
         _events.setdefault(rec["id"], threading.Event())
         return rec
+
+
+def consume(aid, tool, args):
+    """Spend one use of a granted approval (M4a, Petri spent-condition).
+
+    Returns (ok, message). Fail-closed: unknown id, non-approved status,
+    past `expires_at`, digest mismatch (another call) and exhausted
+    `uses_left` (replayed approval) all deny. Legacy records without a
+    digest skip verification but still single-use. The decrement happens
+    under `_lock`, so a double-consume race cannot double-spend.
+    """
+    with _lock:
+        rec = get(aid)
+        if rec is None:
+            return False, "unknown approval id"
+        if rec.get("status") != "approved":
+            return False, "not approved (status=%s)" % rec.get("status")
+        exp = rec.get("expires_at")
+        try:
+            expired = exp is not None and float(time.time()) > float(exp)
+        except (TypeError, ValueError):
+            expired = False
+        if expired:
+            rec["status"] = "expired"
+            rec["decided_by"] = "timeout"
+            rec["decided_ts"] = round(time.time(), 3)
+            _persist()
+            return False, "expired"
+        if rec.get("digest") is not None and rec.get("digest") != _digest(tool, args):
+            return False, "call does not match the approved call"
+        try:
+            left = int(rec.get("uses_left", 1))
+        except (TypeError, ValueError):
+            left = 1
+        if left <= 0:
+            return False, "already spent"
+        rec["uses_left"] = left - 1
+        _persist()
+        return True, "consumed (%d left)" % (left - 1)
 
 
 def get(aid):
