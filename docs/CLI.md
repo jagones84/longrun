@@ -25,7 +25,7 @@ python3 forge.py --help
 
 ## 1. Prerequisites
 
-1. The server must be running (`bash trash/restart-server.sh`, or `./run.sh`).
+1. The server must be running (`./run.sh`, or `.\run.ps1` on Windows).
 2. If the server requires a token (`--token ...`), export `LONGRUN_TOKEN`.
 3. `forge.py` uses only the Python standard library (no `pip install`).
 

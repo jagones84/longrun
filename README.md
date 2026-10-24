@@ -37,6 +37,7 @@ plus PyYAML: no framework to learn, no lock-in to any provider.
 - [Self-evolution: Nucleus vs. Matrix](#self-evolution-nucleus-vs-matrix)
 - [Quick start: Linux (x86_64 and ARM64)](#quick-start-linux-x86_64-and-arm64)
 - [Model setup](#model-setup)
+- [CLI](#cli)
 - [API & integration](#api--integration)
 - [Data and search](#data-and-search)
 - [Tests](#tests)
@@ -384,6 +385,30 @@ available.
 
 Shell tools run on the host unless a sandbox backend is installed and enabled in
 **Settings → Tools & approvals**.
+
+---
+
+## CLI
+
+`forge.py` commands the harness from the terminal — the same REST API the
+WebUI uses, stdlib only, no install. Full reference: [CLI reference](docs/CLI.md).
+
+```bash
+cd /home/jagones/Repositories/longrun
+export LONGRUN_TOKEN=<your-token>   # set it in the WebUI first-run panel
+python3 forge.py status             # server, router, versions
+python3 forge.py sessions ls        # your sessions
+python3 forge.py chat "ping" --stream
+python3 forge.py tools ls           # tools, approvals, sandbox backend
+python3 forge.py agents ls          # team org chart
+python3 forge.py jobs ls            # coordinated jobs
+python3 forge.py --help             # every command (30+ subcommands)
+```
+
+Data commands print JSON (or aligned tables for `ls`); streaming commands
+(`chat --stream`, `agent`, `feed`, `blackboard watch`) print live until
+`Ctrl-C`. Exit `0` on success, `1` on `{"error": ...}`, `2` on malformed JSON
+args.
 
 ---
 
