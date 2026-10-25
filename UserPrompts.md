@@ -84,6 +84,15 @@ height caps lifted, charts refit on switch); the board stays agents,
 routines+jobs, org+constellation, feed, with column AND row resize grips
 persisted locally. Feed never shows void: SSE backlog + JSON recent
 first, explicit empty state otherwise (v617/v619).
+2.8 IDs never run away: delete-forever retracts the counter to the highest
+live number via ONE helper (`fswrite.retract_seq`, called in every delete
+path) — wipe everything and numbering restarts at 1; deleting the top
+reuses the number; deleting from the middle leaves it dead so no new
+object inherits a deleted id's transcript history. Sessions are uuid-hex
+(no counter) and todos already gap-fill per plan, so only A/J/R/T needed
+it (v620). Control has PWA parity with the main app: token-carrying
+manifest, same worker (never /api), notch safe-areas — one installable
+app (v621).
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 

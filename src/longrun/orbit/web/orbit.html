@@ -2,10 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06070c">
 <link rel="icon" href="data:,">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <title>Control · Longrun beta</title>
 <script>try{var _u=new URLSearchParams(location.search).get("theme");var _t=_u||localStorage.getItem("sf_theme")||"indigo";document.documentElement.dataset.theme=_t;}catch(e){}</script>
+<script>/* v621: PWA parity with the main app (one installable app, scope /). The
+   manifest carries the token so an installed icon opens authenticated; the
+   worker makes the rich install flow work and never touches /api. */
+try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchParams(location.search).get("token")||""}catch(e){};var l=document.createElement("link");l.rel="manifest";l.href="/manifest.webmanifest"+(t?"?token="+encodeURIComponent(t):"");document.head.appendChild(l);if("serviceWorker" in navigator){navigator.serviceWorker.register("/sw.js").catch(function(){})}})()}catch(e){}</script>
 <style>
   :root{
     --bg:#070810; --panel:#0e1320; --panel2:#121829; --line:#1f2940;
@@ -15,7 +21,9 @@
   *{box-sizing:border-box}
   html,body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;margin:0;height:100%}
   body{background:radial-gradient(1200px 600px at 70% -10%,#101a30 0%,var(--bg) 60%);
-    color:var(--txt);font:13px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+    color:var(--txt);font:13px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+    /* v621: standalone PWA on a notched phone — keep content out from under the notch. */
+    padding:env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0)}
   a{color:var(--acc);text-decoration:none} a:hover{text-decoration:underline}
   button,input,select,textarea{font:inherit;color:var(--txt)}
   header{display:flex;align-items:center;gap:12px;padding:11px 18px;
@@ -60,7 +68,11 @@
   @media (max-width:1100px){
     .wrap.deck{flex-direction:column}
     #deckRail{flex-direction:row;align-items:center;overflow-x:auto;overflow-y:hidden;
-      position:static;max-width:none;max-height:none;padding:6px}
+      position:static;max-width:100%;max-height:none;padding:6px;
+      /* v621: as a column child the rail must fill the width and scroll its
+         nowrap buttons INSIDE — with the desktop `flex:0 0 auto` it kept its
+         content width (475px on a 390px phone) and pushed the whole page. */
+      flex:1 1 auto;min-width:0;align-self:stretch}
     #deckRail .rlbl{display:none}
     #deckRail button{width:auto;flex:0 0 auto}
   }

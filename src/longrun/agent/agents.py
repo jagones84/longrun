@@ -16,7 +16,7 @@ import threading
 import time
 
 from longrun.util import paths
-from longrun.util.fswrite import read_registry, write_json
+from longrun.util.fswrite import read_registry, retract_seq, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -347,6 +347,7 @@ class AgentRegistry:
                 for other in d["agents"].values():
                     if other.get("reports_to") == a["id"]:
                         other["reports_to"] = None
+                retract_seq(d, "agents")
                 _save(d)
         released = a["id"] if a else None
         if released:

@@ -14,7 +14,7 @@ import os
 import threading
 import time
 
-from longrun.util.fswrite import read_registry, write_json
+from longrun.util.fswrite import read_registry, retract_seq, write_json
 from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO
 
@@ -146,6 +146,7 @@ class RoutineRegistry:
             for rid in victims:
                 d["routines"].pop(rid, None)
             if victims:
+                retract_seq(d, "routines")
                 _save(d)
             return victims
 
@@ -154,6 +155,7 @@ class RoutineRegistry:
             d = _load()
             rec = d["routines"].pop(str(rid), None)
             if rec:
+                retract_seq(d, "routines")
                 _save(d)
         return {"ok": True, "deleted": rec["id"] if rec else None}
 

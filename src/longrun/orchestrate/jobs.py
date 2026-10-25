@@ -25,7 +25,7 @@ import uuid
 from longrun.util.dag import blockers_state as _dag_blockers_state
 from longrun.util.dag import waves  # noqa: F401 — shared DAG helper (was local, JAG-533)
 from longrun.util import paths
-from longrun.util.fswrite import read_registry, write_json
+from longrun.util.fswrite import read_registry, retract_seq, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -372,6 +372,7 @@ class JobRegistry:
                 return {"ok": False, "error": "job is running"}
             d["jobs"].pop(jid, None)
             dependents = self._scrub_blocker(d, jid)
+            retract_seq(d, "jobs")
             _save(d)
         return {"ok": True, "deleted": jid, "unblocked": dependents}
 

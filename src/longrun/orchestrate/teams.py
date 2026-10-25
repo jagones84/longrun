@@ -18,7 +18,7 @@ import threading
 import time
 
 from longrun.util import paths
-from longrun.util.fswrite import read_registry, write_json
+from longrun.util.fswrite import read_registry, retract_seq, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -263,6 +263,7 @@ class TeamRegistry:
             if not t:
                 return {"ok": False, "error": "team not found"}
             d["teams"].pop(t["id"], None)
+            retract_seq(d, "teams")
             _save(d)
             return {"ok": True, "deleted": t["id"]}
 

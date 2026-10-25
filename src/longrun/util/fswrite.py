@@ -41,6 +41,25 @@ def read_registry(path, **defaults):
     return d
 
 
+def retract_seq(d, key):
+    """Pull a registry counter back to the highest LIVE record number.
+
+    Deletes pop the record but never touched ``seq``, so A/J/R/T numbers grew
+    forever (delete 50 agents, the next is still A51 — then A10000). Retracting
+    to ``max(live n)`` means: deleting everything restarts at 1; deleting the
+    top pulls the counter back; deleting from the middle changes nothing.
+    Existing ids are never touched, so no live id is ever reused — only the
+    counter stops running away. Call it inside the store lock after any pop.
+    """
+    try:
+        live = [int((r or {}).get("n") or 0)
+                for r in (d.get(key) or {}).values()]
+    except (TypeError, ValueError):
+        return d
+    d["seq"] = max(live + [0])
+    return d
+
+
 def write_json(path, obj, *, indent=2, ensure_ascii=False, sort_keys=False):
     """Atomically write ``obj`` as JSON to ``path``.
 
