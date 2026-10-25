@@ -149,6 +149,18 @@ def build(ws: str, force: bool = False,
             file_count = db.execute("SELECT count(*) AS n FROM files").fetchone()["n"]
             chunk_count = db.execute("SELECT count(*) AS n FROM chunks").fetchone()["n"]
             em = _cfg.embed_model()
+            # v624: a model switch used to ORPHAN every vector — build only
+            # embeds `vec IS NULL`, so old-model vectors stayed and every
+            # query compared a new-model question vector against wrong-model
+            # chunk vectors (cos() dim-guards to 0: silent lexical fallback
+            # after paying for the new embeddings). On a model change, drop
+            # the vectors so this pass re-embeds them under the new model.
+            try:
+                prev = _get_meta(db, "embed_model")
+                if em and prev and em != prev:
+                    db.execute("UPDATE chunks SET vec=NULL WHERE vec IS NOT NULL")
+            except Exception:  # noqa: BLE001 — invalidation must never break a build
+                pass
             embed_err = None
             embedded_now = 0
             if em:

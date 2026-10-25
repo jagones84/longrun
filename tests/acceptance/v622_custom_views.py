@@ -58,9 +58,9 @@ check("B2 per-column arrows + remove injected once per panel header",
       and 'data-vmove="1"' in ORBIT and "data-vrm" in ORBIT)
 check("B3 edge arrows disabled, not dead",
       'b.disabled = !(v &&' in ORBIT)
-check("B4 max 3 enforced on add AND on stored-state load",
-      "a view holds at most 3 panels side by side" in ORBIT
-      and ".slice(0, 3)" in ORBIT)
+check("B4 max 6 enforced on add AND on stored-state load",
+      "a view holds at most 6 panels side by side" in ORBIT
+      and ".slice(0, 6)" in ORBIT)
 check("B5 at least one view kept, empty view refills",
       "keep at least one view" in ORBIT
       and 'if (!v.panels.length) v.panels = ["agents"]' in ORBIT)

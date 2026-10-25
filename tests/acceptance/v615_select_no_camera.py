@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""v615 — cross-panel selection moves NO camera (select, don't travel).
+"""v615 — cross-panel selection moves NO camera except on explicit take-me-there.
 
-Operator: clicking an AGENTS row must select the organigram node without
-moving the organigram camera, and clicking an organigram node must select
-the AGENTS row without moving the agents panel — in both directions.
+Operator (v615, refined v624): polls, bridges and node clicks must select
+WITHOUT moving any camera; an EXPLICIT navigation — the Sessions rail "focus
+agent" menu OR the deck's own A-id click — scrolls both sides into view.
 
 Contract:
   A  focusAgent(sid, scroll) defaults to NO scroll; _applyFocus highlights
@@ -11,8 +11,8 @@ Contract:
      re-render must not yank the table on every cycle);
   B  selectNode(sid, scroll) defaults to NO scroll; scroll only on
      scroll===true (explicit "take me there");
-  C  the ONLY scroll=true path is focusAgentSession (Sessions rail menu);
-     A-id clicks, node single/right clicks and onPick stay camera-still;
+  C  TWO explicit paths travel: focusAgentSession (Sessions rail menu) and
+     the deck A-id click; node single/right clicks and onPick stay still;
   D  the bridge forwards the flag (onHighlight passes scroll through).
 
 Deterministic: static source contract, no server, no model, no network.
@@ -56,12 +56,12 @@ check("B2 the node scrolls ONLY on an explicit take-me-there",
 check("B3 the remembered .sel repaint stays scroll-free",
       'x.classList.toggle("sel", x.dataset.sid === this.selSid)' in ORBIT)
 
-# ---------------- C: one explicit path ----------------------
-check("C1 ONLY the Sessions-rail menu travels (both sides scroll=true)",
+# ---------------- C: two explicit paths ----------------------
+check("C1 the Sessions-rail menu travels (both sides scroll=true)",
       "this.agents.focusAgent(sid, true)" in ORBIT
       and "this.org.selectNode(sid, true)" in ORBIT)
-check("C2 A-id click selects without travelling",
-      "if (tr) this.focusAgent(tr.dataset.sid);" in ORBIT)
+check("C2 A-id click selects AND travels (explicit take-me-there)",
+      "if (tr) this.focusAgent(tr.dataset.sid, true)" in ORBIT)
 check("C3 node single/right click select without travelling",
       "this.selectNode(n.dataset.sid);" in ORBIT
       and "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT)

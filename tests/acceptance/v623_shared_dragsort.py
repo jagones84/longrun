@@ -79,8 +79,9 @@ check("C5 Control persists to the SAME sidebar-order store, session ids",
       "patch(path, body)" in ORBIT and '_persistGroupOrder' in ORBIT
       and 'kind: "session"' in ORBIT)
 check("C6 Control adds no second drag state machine",
-      "HOLD_MS" not in ORBIT and "drop-before" not in ORBIT
-      and "setPointerCapture" in ORBIT)  # splitters/org pan keep theirs; rows use DragSort
+      "HOLD_MS" not in ORBIT and "function moveDrag" not in ORBIT
+      and "function finishDrag" not in ORBIT
+      and "setPointerCapture" in ORBIT)  # splitters/org/view-cols keep theirs; rows use DragSort
 
 print("---")
 ok = sum(results)

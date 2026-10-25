@@ -1656,6 +1656,10 @@
   <!-- JAG-533: the command palette is a DIRECT button — the top-right "☰" app
        menu that used to hold it was a wrapper around a single item. -->
   <button class="ghost" id="palette-open" title="command palette (Cmd/Ctrl+K)" aria-label="command palette">⌘K</button>
+  <!-- v624: long-lived tab / installed PWA vs a redeployed server: the
+       /api/build fingerprint moves — show an in-place reload chip instead of
+       looking stale (same watcher as the Control deck). -->
+  <button class="ghost" id="buildChip" title="the server app changed — reload to run the new build" hidden>⇪ update</button>
 </header>
 <div id="controlView" aria-hidden="true"><iframe id="controlFrame" title="Control deck"></iframe></div>
 <button class="edge-handle" id="handle-left" type="button"
@@ -8275,7 +8279,16 @@ const _FEED_REFRESH = {
   "sj.done": () => loadPlan(),
   "session.updated": () => { loadSessions(); loadAgents(); loadSettingsForms(); },
   "session.cleared": () => { loadSessions(); if (sessionId) loadHistory(); },
-  "teams.updated": () => loadAgents(),
+  // v624: every rename/re-designate/release must repaint BOTH lists at once —
+  // a team renamed in Control left the Sessions rail stale (teams.updated only
+  // reloaded agents), and an agent renamed in Control never reached Sessions
+  // at all (agent.updated / session.renamed were not wired).
+  "agent.updated": () => { loadSessions(); loadAgents(); },
+  "agent.released": () => { loadSessions(); loadAgents(); },
+  "session.renamed": () => { loadSessions(); loadAgents(); },
+  "session.created": () => { loadSessions(); loadAgents(); },
+  "session.deleted": () => { loadSessions(); loadAgents(); },
+  "teams.updated": () => { loadSessions(); loadAgents(); },
   "sidebar.order.updated": ev => {
     if (Number(ev && ev.revision || 0) > _sidebarOrder.revision) loadSessions();
   },
@@ -8389,6 +8402,26 @@ async function loadRunning() {
 }
 
 function connectFeed() {
+  // v624: the /api/build fingerprint covers index.html AND orbit.html, but no
+  // client polled it — a pinned tab or phone PWA silently ran yesterday's UI.
+  // Poll it here too (the deck watches it itself); a chip beats an auto
+  // reload, which could eat an in-progress edit.
+  try {
+    const _bc = $("buildChip");
+    if (_bc) _bc.onclick = () => location.reload();
+    let _seen = null;
+    const _check = async () => {
+      try {
+        const d = await api("GET", "/api/build");
+        const b = d && d.build;
+        if (!b) return;
+        if (_seen === null) _seen = b;
+        else if (_seen !== b && _bc) _bc.hidden = false;
+      } catch (_) {}
+    };
+    _check();
+    setInterval(_check, 60000);
+  } catch (_) {}
   const _qs = (authQS() ? "?" + authQS() + "&" : "?") + "since=" + feedSince;
   const es = new EventSource("/api/feed" + _qs);
   es.addEventListener("error", () => { es.close(); setTimeout(connectFeed, 5000); });

@@ -6,8 +6,9 @@
  * streams) is never intercepted or cached, so the app can never show stale
  * data or a frozen stream.
  */
-const CACHE = "longrun-shell-v1";
-const SHELL = ["/", "/assets/icon-192.png", "/assets/icon-512.png",
+const CACHE = "longrun-shell-v2";
+const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
+               "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -37,9 +38,10 @@ self.addEventListener("fetch", (e) => {
   e.respondWith((async () => {
     try {
       const res = await fetch(req);
-      if (res && res.ok && (url.pathname === "/" || url.pathname === "/index.html")) {
+      if (res && res.ok && (url.pathname === "/" || url.pathname === "/index.html"
+                            || url.pathname === "/orbit")) {
         const c = await caches.open(CACHE);
-        c.put("/", res.clone());
+        c.put(url.pathname, res.clone());
       }
       return res;
     } catch (_) {

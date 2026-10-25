@@ -104,7 +104,7 @@ check("B4 every kind the UI listens for is really published by the backend",
       not _unpublished, _unpublished)
 check("B5 the model + rail panels are repainted by the event, not by the click",
       '"session.updated": () => { loadSessions(); loadAgents(); loadSettingsForms(); }'
-      in HTML and '"teams.updated": () => loadAgents(),' in HTML, "")
+      in HTML and '"teams.updated": () => { loadSessions(); loadAgents(); },' in HTML, "")
 check("B6 a cleared session reloads the transcript of the OPEN session",
       '"session.cleared": () => { loadSessions(); if (sessionId) loadHistory(); }'
       in HTML, "")
