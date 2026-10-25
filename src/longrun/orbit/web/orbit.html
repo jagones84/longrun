@@ -414,6 +414,55 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      short inner scrollbar under a tall void. */
   main.view-one .panel.ag .scroll,
   main.view-one #feed{flex:1 1 auto}
+  /* v622: custom VIEWS — up to 3 panels side by side as flex columns.
+     Rows and the agents col become transparent (display:contents) so the
+     panels themselves are the flex items. Narrow screens stack vertical. */
+  main.view-cols .deckBody{flex-direction:row;gap:8px;align-items:stretch;flex-wrap:wrap}
+  /* the view bar is a full-width row ABOVE the columns, not a column itself. */
+  main.view-cols #viewBar{flex:1 1 100%;margin-bottom:0}
+  main.view-cols section.panel[data-panel]{flex:1 1 0;min-width:0;display:flex;flex-direction:column}
+  /* the stacked board pins the jobs panel to `flex:1 1 auto` (fills the right
+     column) — in a view every column shares equally, so outrank it here. */
+  main.view-cols .grid2.ab .col > section.panel:last-child{flex:1 1 0;min-width:0}
+  /* `.panel` sets its own `display`, which beats the UA `[hidden]` rule —
+     same trap the single view already handles one rule above. */
+  main.view-cols .panel[hidden]{display:none !important}
+  /* column-flex children default to min-width:auto (content width) which lets
+     one wide panel (jobs table) starve the others — force them to shrink. */
+  main.view-cols section.panel[data-panel] > *{min-width:0}
+  main.view-cols .deckBody > .grid2{display:contents}
+  main.view-cols .deckBody .col{display:contents}
+  main.view-cols section.panel[data-panel]{flex:1 1 0;min-width:0;display:flex;flex-direction:column}
+  main.view-cols .rz-cols,main.view-cols .rz-row{display:none}
+  main.view-cols section.panel[data-panel]{min-height:calc(100vh - 150px)}
+  main.view-cols .panel.ag .scroll{max-height:none}
+  main.view-cols #routines{max-height:none !important}
+  main.view-cols #feed{max-height:none}
+  main.view-cols .orgwrap{min-height:calc(100vh - 230px);flex:1 1 auto}
+  main.view-cols .panel.cpanel .cbody{height:calc(100vh - 270px);min-height:420px;flex:1 1 auto}
+  @media (max-width:1100px){
+    main.view-cols .deckBody{flex-direction:column}
+    main.view-cols section.panel[data-panel]{flex:none;width:100%}
+  }
+  /* v622: per-column move/remove controls live in each panel header, visible
+     only in a custom view. The view bar (name/rename/+panel/delete) sits
+     above the deck. */
+  .vcols{display:none;gap:2px;margin-left:6px}
+  main.view-cols .vcols{display:inline-flex}
+  .vcols button{background:transparent;border:1px solid transparent;border-radius:6px;
+    color:var(--dim);font-size:11px;line-height:1;padding:2px 6px;cursor:pointer}
+  .vcols button:hover{color:var(--txt);border-color:var(--acc)}
+  .vcols button:disabled{opacity:.3;cursor:default}
+  #viewBar{display:none;align-items:center;gap:8px;padding:7px 10px;margin-bottom:8px;
+    border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+  main.view-cols #viewBar{display:flex}
+  #viewBar[hidden]{display:none}
+  #viewBar .vname{font-weight:700;font-size:12px}
+  #viewBar .sp{flex:1}
+  #viewList{display:flex;flex-direction:column;gap:2px}
+  #viewList:empty{display:none}
+  #viewList button{text-align:left}
+  @media (max-width:1100px){ #viewBar{flex-wrap:wrap} }
 </style>
 </head>
 <body>
@@ -428,21 +477,31 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
 </header>
 
 <main class="wrap deck">
-  <!-- v617: LEFT RAIL owns WHICH panel is on screen (the old top select is
-       gone). One pane at a time in the center-RH area, or the stacked board.
-       Same `applyView` truth underneath — this is a graphical refactor only:
-       every panel, button, endpoint and bridge below is untouched. -->
+  <!-- v622: the rail owns single panes AND custom views (up to 3 panels side
+       by side). The stacked "All panels" board is gone — a seeded "Desk" view
+       replaces it. Same panels, buttons, endpoints underneath. -->
   <nav id="deckRail" aria-label="Control panels">
     <span class="rlbl">panels</span>
-    <button data-view="all" aria-current="page">▦ All panels</button>
     <button data-view="agents">Agents</button>
     <button data-view="routines">Routines</button>
     <button data-view="jobs">Jobs</button>
     <button data-view="org">Org chart</button>
     <button data-view="const">Constellation</button>
     <button data-view="feed">Feed</button>
+    <span class="rlbl">views</span>
+    <div id="viewList"></div>
+    <button data-view-add title="create a view: up to 3 panels side by side">＋ new view</button>
   </nav>
   <div class="deckBody">
+  <!-- v622: the view bar (current view name, rename, add panel, delete view). -->
+  <div id="viewBar" hidden>
+    <span class="vname" id="viewName">—</span>
+    <button class="btn ghost mini" id="viewRename" title="rename this view">rename</button>
+    <select class="inp mini" id="viewAddPanel" title="add a panel to this view (max 3 side by side)" style="width:auto;max-width:170px"></select>
+    <button class="btn mini" id="viewAddGo">＋ add</button>
+    <span class="sp"></span>
+    <button class="btn ghost mini" id="viewDelete" title="delete this view">delete view</button>
+  </div>
   <div class="grid2 ab">
     <!-- Agents: available agents, creatable with +, each with a model + reports-to -->
     <section class="panel ag" data-panel="agents">
@@ -589,6 +648,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   </div>
 </main>
 
+<script src="/assets/dragsort.js"></script>
 <script>
 "use strict";
 /* ---------------------------------------------------------------- Api ---- */
@@ -601,6 +661,7 @@ class Api {
   headers(extra){ const h = Object.assign({}, extra||{}); if (this.token) h.Authorization = "Bearer " + this.token; return h; }
   get(path){ return fetch(path, {headers:this.headers()}).then(r => r.json()); }
   post(path, body){ return fetch(path, {method:"POST", headers:this.headers({"Content-Type":"application/json"}), body: JSON.stringify(body||{})}).then(r => r.json()); }
+  patch(path, body){ return fetch(path, {method:"PATCH", headers:this.headers({"Content-Type":"application/json"}), body: JSON.stringify(body||{})}).then(r => r.json()); }
   del(path){ return fetch(path, {method:"DELETE", headers:this.headers()}).then(r => r.json()); }
   es(path){ const sep = path.includes("?") ? "&" : "?"; return new EventSource(path + (this.token ? sep + "token=" + encodeURIComponent(this.token) : "")); }
 }
@@ -696,6 +757,14 @@ class AgentsView {
     // JAG-2.8: leadership first is the DEFAULT order — an orchestrator must sit at the
     // top of its team, not wherever its A-id lands. "id" keeps the old flat order.
     this.sort = "org"; this.closed = new Set(); this._groupIds = [];
+    // v623: row order shares the Sessions sidebar store (GET/PATCH
+    // /api/sidebar/order, kind "session") through the shared DragSort engine
+    // (webui/assets/dragsort.js) — the same reorder code as webui/index.html,
+    // keyed by session id so both pages agree. No second order truth.
+    this._order = {revision: 0, sessions: {}};
+    this._orderBase = {};
+    this._orderSaving = false;
+    this._orderLoaded = false;
     // JAG-2.3: the team currently scoping the board ("ALL", a team id, "__none__").
     // groupsOf needs it to keep the SELECTED team visible even when it is empty.
     this.scope = "ALL";
@@ -720,8 +789,18 @@ class AgentsView {
     $("agCount").textContent = nSes ? (nAg + " agents · " + nSes + " sessions")
                                     : (nAg + " agents");
     // JAG-2.1: ONE list — the editable table grouped by team (collapsible header rows).
+    // v623: each group's rows follow the SHARED sidebar order (same store the
+    // Sessions page writes), falling back to the current sort for newcomers —
+    // the identical rule webui/index.html applies via DragSort.orderByIds.
     const groups = this.groupsOf(this._sorted(this.agents));
     this._groupIds = groups.map(g => g.id);
+    this._ensureOrder();
+    if (window.DragSort) groups.forEach(g => {
+      g.ms = DragSort.orderByIds(g.ms || [], (this._order.sessions || {})[g.id],
+        a => a.session, null, null);
+    });
+    this._orderBase = {};
+    groups.forEach(g => { this._orderBase[g.id] = (g.ms || []).map(a => a.session); });
     // JAG-424e: team groups start COLLAPSED — the board opens as tidy header rows. A
     // group seen for the first time is also collapsed; an expand sticks until toggled back.
     groups.forEach(g => { if (!this._seen.has(g.id)) { this._seen.add(g.id); this.closed.add(g.id); } });
@@ -739,7 +818,9 @@ class AgentsView {
       && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT");
     const roleTA = body.querySelector("textarea[data-p='role']");
     const roleDirty = !!(roleTA && this.openText != null && roleTA.value !== this.openText);
-    if (editing || roleDirty) return;
+    // v623: a poll rebuild mid-drag would wipe the dragged row out from under
+    // the pointer (the engine marks it .dragging) — defer like an edit.
+    if (editing || roleDirty || body.querySelector(".dragging")) return;
     body.innerHTML = groups.length
       ? groups.map(g => this.groupHtml(g)).join("")
       : '<tr><td colspan="8" class="empty">no agents — create one with ＋ above.</td></tr>';
@@ -845,15 +926,18 @@ class AgentsView {
   }
   bind(){
     const body = $("agBody");
+    this._bindRowDrag(body);
     // JAG-484 (agents table): the row's own session button — same shared opener
     // the jobs list uses. Stop the row click so it selects nothing else.
     body.querySelectorAll("[data-go]").forEach(b => { b.onclick = (ev) => {
+      if (window.DragSort && DragSort.consumeClick(ev)) return;
       ev.stopPropagation();
       if (this.onOpenAgent) this.onOpenAgent(b.dataset.go); }; });
     // JAG-2.9: the A-id is the row's handle — click it to select this agent in BOTH
     // the table (persistent .rowsel) and the org chart node (.sel, survives polling).
     // v615: select ONLY — neither camera moves (scroll defaults to false).
     body.querySelectorAll("tr[data-sid] td.aid [data-org]").forEach(el => { el.onclick = (ev) => {
+      if (window.DragSort && DragSort.consumeClick(ev)) return;
       ev.stopPropagation();
       const tr = el.closest("tr");
       if (tr) this.focusAgent(tr.dataset.sid);
@@ -965,6 +1049,78 @@ class AgentsView {
       if (!r || !r.ok){ alert((r && r.error) || "release refused"); return; }
       if (this.onChanged) this.onChanged();
     }; });
+  }
+  /* v623: row drag-and-drop runs on the SHARED DragSort engine
+     (webui/assets/dragsort.js) — the identical engine, hold time, drop marks
+     and click suppression the Sessions sidebar uses. Only the adapters are
+     this table's own: rows are tr[data-sid], groups are data-grp, an empty
+     group accepts the append drop, order persists to the SAME sidebar-order
+     store (kind "session", ids are session ids) so both pages agree. */
+  _ensureOrder(){
+    if (this._orderLoaded || this._orderSaving) return;
+    this._orderLoaded = true;
+    this.api.get("/api/sidebar/order").then(d => {
+      if (d && typeof d.revision === "number"){
+        this._order = {revision: d.revision, sessions: d.sessions || {}};
+        if (this.onChanged) this.onChanged();
+      }
+    }).catch(() => {});
+  }
+  async _persistGroupOrder(group, ids){
+    if (this._orderSaving) return false;
+    // the server only stores team groups (T<n>) and the __none__/__pinned__
+    // buckets — a stray/unknown group id reorders locally only, never 400s.
+    if (!/^(?:T[1-9][0-9]*|__(?:none|pinned)__)$/.test(group)) return false;
+    this._orderSaving = true;
+    try {
+      const d = await this.api.patch("/api/sidebar/order",
+        {kind: "session", group, ids, revision: this._order.revision});
+      if (!d) return false;
+      if (d.order){
+        this._order = {revision: d.order.revision, sessions: d.order.sessions || {}};
+        if (this.onChanged) this.onChanged();
+        return false;
+      }
+      if (d.error){
+        const fresh = await this.api.get("/api/sidebar/order").catch(() => null);
+        if (fresh && typeof fresh.revision === "number")
+          this._order = {revision: fresh.revision, sessions: fresh.sessions || {}};
+        if (this.onChanged) this.onChanged();
+        return false;
+      }
+      this._order = {revision: d.revision, sessions: d.sessions || {}};
+      if (this.onChanged) this.onChanged();
+      return true;
+    } catch (e) {
+      const fresh = await this.api.get("/api/sidebar/order").catch(() => null);
+      if (fresh && typeof fresh.revision === "number")
+        this._order = {revision: fresh.revision, sessions: fresh.sessions || {}};
+      if (this.onChanged) this.onChanged();
+      return false;
+    } finally {
+      this._orderSaving = false;
+    }
+  }
+  _bindRowDrag(body){
+    if (!window.DragSort || !body) return;
+    const table = body.closest("table") || body;
+    body.querySelectorAll("tr[data-sid]").forEach(tr => {
+      const handle = tr.querySelector("td.aid") || tr;
+      const grp = tr.getAttribute("data-grp") || "__none__";
+      DragSort.bind(handle, {
+        container: table, source: tr, id: tr.getAttribute("data-sid"), group: grp,
+        itemSel: "tr[data-sid]", idKey: "sid",
+        grpKey: "grp",
+        emptySel: "tr.grp-empty", emptyGrpKey: "grp",
+        scrollEl: $("agTableWrap"),
+        isSaving: () => this._orderSaving,
+        onCommit: ({id: cid, targetId, after}) => {
+          const base = this._orderBase[grp] || [];
+          const next = DragSort.moveItem(base, cid, targetId, after);
+          if (next.some((x, i) => x !== base[i])) this._persistGroupOrder(grp, next);
+        }
+      });
+    });
   }
   /* JAG-2.1: team label used by the "team" sort option. */
   _teamLabel(a){
@@ -2184,17 +2340,42 @@ class OrbitApp {
     $("tmNewBtn").onclick = () => addBar("tmAddBar", "tmNewBtn", "tmNewName");
     $("agAddCancel").onclick = () => addBar("agAddBar", "agNewBtn");
     $("tmAddCancel").onclick = () => addBar("tmAddBar", "tmNewBtn");
-    // v617: the LEFT RAIL owns which panel is on screen (the JAG-537 top
-    // select is gone). Same `applyView` truth, same localStorage key — the
-    // rail buttons just call it; applyView repaints aria-current itself so
-    // there is exactly ONE place that decides what is shown.
+    // v622: the rail owns single panes AND named custom views (up to 3
+    // panels side by side). Same `applyView` truth, persisted views —
+    // the rail buttons + view list just call it; applyView repaints
+    // aria-current itself so there is exactly ONE place that decides
+    // what is shown.
+    this.PANELS = ["agents", "routines", "jobs", "org", "const", "feed"];
+    this.PANEL_LABEL = {agents: "Agents", routines: "Routines", jobs: "Jobs",
+      org: "Org chart", const: "Constellation", feed: "Feed"};
+    this.views = this.loadViews();
     {
-      let saved = "all";
-      try { saved = localStorage.getItem("orbit_view_v1") || "all"; } catch (e){ saved = "all"; }
       document.querySelectorAll("#deckRail button[data-view]").forEach(b => {
         b.onclick = () => this.applyView(b.dataset.view);
       });
-      this.applyView(saved);
+      const addBtn = document.querySelector("#deckRail button[data-view-add]");
+      if (addBtn) addBtn.onclick = () => this.viewCreate();
+      if ($("viewRename")) $("viewRename").onclick = () => this.viewRename();
+      if ($("viewAddGo")) $("viewAddGo").onclick = () => this.viewAddPanel($("viewAddPanel") && $("viewAddPanel").value);
+      if ($("viewDelete")) $("viewDelete").onclick = () => this.viewDelete();
+      // per-column ◀ ▶ ✕, one span per panel header — visible only in a view.
+      document.querySelectorAll("section.panel[data-panel] > h2").forEach(h => {
+        const key = h.parentElement.getAttribute("data-panel");
+        const s = document.createElement("span");
+        s.className = "vcols";
+        s.innerHTML = '<button data-vmove="-1" title="move column left">◀</button>' +
+          '<button data-vmove="1" title="move column right">▶</button>' +
+          '<button data-vrm title="remove column from this view">✕</button>';
+        h.appendChild(s);
+        s.querySelector('[data-vmove="-1"]').onclick = (e) => { e.stopPropagation(); this.viewMove(key, -1); };
+        s.querySelector('[data-vmove="1"]').onclick = (e) => { e.stopPropagation(); this.viewMove(key, 1); };
+        s.querySelector('[data-vrm]').onclick = (e) => { e.stopPropagation(); this.viewRemove(key); };
+      });
+      let saved = null;
+      try { saved = localStorage.getItem("orbit_view_v1"); } catch (e){ saved = null; }
+      // the stacked "All panels" board is gone — an old saved "all" (or
+      // anything unknown) lands on the first custom view.
+      this.applyView(saved || ("view:" + this.views[0].id));
     }
     if ($("lraAutoBtn")) $("lraAutoBtn").onclick = () => addBar("lraAutoBar", "lraAutoBtn", "lraAutoInp");
     if ($("lraAutoCancel")) $("lraAutoCancel").onclick = () => addBar("lraAutoBar", "lraAutoBtn");
@@ -2247,29 +2428,138 @@ class OrbitApp {
     alert("model policy\n" + msg.join("\n"));
     this.refresh();
   }
-  /* JAG-537: show ONE deck panel at a time (or the default stacked board). Hidden
-     panels keep rendering, so switching back is instant and nothing is lost. */
+  /* v622: ref is a single panel key (alone, full height) or "view:<id>"
+     (up to 3 panels side by side). The stacked "All" board is gone. */
+  loadViews(){
+    let vs = null;
+    try { vs = JSON.parse(localStorage.getItem("orbit_views_v1") || "null"); } catch (e){ vs = null; }
+    if (!Array.isArray(vs) || !vs.length) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org"]}];
+    vs = vs.map(v => ({
+      id: String((v && v.id) || ("v-" + Math.floor(Math.random() * 1e9))),
+      name: String((v && v.name) || "View").slice(0, 40),
+      panels: ((v && v.panels) || []).filter(p => this.PANELS.includes(p)).slice(0, 3)
+    })).filter(v => v.panels.length);
+    if (!vs.length) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org"]}];
+    return vs;
+  }
+  saveViews(){
+    try { localStorage.setItem("orbit_views_v1", JSON.stringify(this.views)); } catch (e){ /* private mode */ }
+  }
+  findView(id){ return this.views.find(v => v.id === id); }
+  activeView(){
+    if (!this.view || this.view.indexOf("view:") !== 0) return null;
+    return this.findView(this.view.slice(5)) || null;
+  }
+  isPanelVisible(key){
+    const p = document.querySelector('section.panel[data-panel="' + key + '"]');
+    return !!(p && !p.hidden);
+  }
+  renderViewList(){
+    const box = $("viewList"); if (!box) return;
+    box.innerHTML = "";
+    this.views.forEach(v => {
+      const b = document.createElement("button");
+      b.dataset.cview = v.id;
+      b.textContent = "▦ " + v.name;
+      b.title = v.panels.map(p => this.PANEL_LABEL[p]).join(" · ") || "empty view";
+      if (this.view === "view:" + v.id) b.setAttribute("aria-current", "page");
+      b.onclick = () => this.applyView("view:" + v.id);
+      box.appendChild(b);
+    });
+  }
+  paintViewBar(){
+    const v = this.activeView();
+    if ($("viewName")) $("viewName").textContent = v ? v.name : "—";
+    const sel = $("viewAddPanel");
+    if (sel && v){
+      const rest = this.PANELS.filter(p => !v.panels.includes(p));
+      sel.innerHTML = rest.map(p => '<option value="' + p + '">＋ ' + esc(this.PANEL_LABEL[p]) + '</option>').join("") ||
+        '<option value="">view is full (3/3)</option>';
+      sel.value = rest[0] || "";
+    }
+    // arrows at the edges do nothing — disable them so the affordance is honest.
+    document.querySelectorAll(".vcols").forEach(s => {
+      const key = s.parentElement && s.parentElement.parentElement.getAttribute("data-panel");
+      const i = v ? v.panels.indexOf(key) : -1;
+      s.querySelectorAll("button[data-vmove]").forEach(b => {
+        b.disabled = !(v && ((b.getAttribute("data-vmove") === "-1" && i > 0) ||
+          (b.getAttribute("data-vmove") === "1" && i >= 0 && i < v.panels.length - 1)));
+      });
+    });
+  }
+  viewCreate(){
+    const name = ((typeof prompt === "function" && prompt("Name the new view (up to 3 panels side by side):", "View " + (this.views.length + 1))) || "").trim().slice(0, 40);
+    if (!name) return;
+    const id = "v-" + Date.now().toString(36);
+    this.views.push({id, name, panels: ["agents"]});
+    this.saveViews(); this.renderViewList();
+    this.applyView("view:" + id);
+  }
+  viewRename(){
+    const v = this.activeView(); if (!v || typeof prompt !== "function") return;
+    const name = (prompt("Rename view:", v.name) || "").trim().slice(0, 40);
+    if (!name) return;
+    v.name = name; this.saveViews(); this.renderViewList(); this.paintViewBar();
+  }
+  viewDelete(){
+    const v = this.activeView(); if (!v) return;
+    if (this.views.length <= 1){ alert("keep at least one view"); return; }
+    if (typeof confirm === "function" && !confirm("Delete view '" + v.name + "'?")) return;
+    this.views = this.views.filter(x => x.id !== v.id);
+    this.saveViews(); this.renderViewList();
+    this.applyView("view:" + this.views[0].id);
+  }
+  viewAddPanel(key){
+    const v = this.activeView(); if (!v || !key) return;
+    if (v.panels.includes(key)) return;
+    if (v.panels.length >= 3){ alert("a view holds at most 3 panels side by side"); return; }
+    v.panels.push(key); this.saveViews(); this.applyView(this.view);
+  }
+  viewRemove(key){
+    const v = this.activeView(); if (!v) return;
+    v.panels = v.panels.filter(p => p !== key);
+    if (!v.panels.length) v.panels = ["agents"];
+    this.saveViews(); this.applyView(this.view);
+  }
+  viewMove(key, dir){
+    const v = this.activeView(); if (!v) return;
+    const i = v.panels.indexOf(key), j = i + dir;
+    if (i < 0 || j < 0 || j >= v.panels.length) return;
+    const t = v.panels[i]; v.panels[i] = v.panels[j]; v.panels[j] = t;
+    this.saveViews(); this.applyView(this.view);
+  }
   applyView(name){
-    const view = (!name || name === "all") ? "all" : String(name);
+    let view = String(name || ""), v = null;
+    if (view.indexOf("view:") === 0) v = this.findView(view.slice(5));
+    if (v){ view = "view:" + v.id; }
+    else if (!this.PANELS.includes(view)){ view = "view:" + this.views[0].id; v = this.views[0]; }
     this.view = view;
-    const one = view !== "all";
+    const cols = !!v;
     const main = document.querySelector("main");
-    if (main) main.classList.toggle("view-one", one);
+    if (main){ main.classList.toggle("view-one", !cols); main.classList.toggle("view-cols", cols); }
+    const show = cols ? v.panels : [view];
     document.querySelectorAll("section.panel[data-panel]").forEach(p => {
-      p.hidden = one && p.getAttribute("data-panel") !== view;
+      const key = p.getAttribute("data-panel");
+      p.hidden = !show.includes(key);
+      // a view orders its columns explicitly — DOM order is fixed
+      // (agents, routines, jobs, org, const, feed), so pin the visual order.
+      p.style.order = cols ? String(show.indexOf(key)) : "";
     });
     document.querySelectorAll("main .grid2").forEach(row => {
       const kids = [...row.querySelectorAll("section.panel[data-panel]")];
       row.hidden = kids.length > 0 && kids.every(k => k.hidden);
     });
-    // v617: the rail highlight lives HERE, next to the hiding — one decider.
+    // the rail highlight lives HERE, next to the hiding — one decider.
     document.querySelectorAll("#deckRail button[data-view]").forEach(b => {
       if (b.dataset.view === view) b.setAttribute("aria-current", "page");
       else b.removeAttribute("aria-current");
     });
+    if ($("viewBar")) $("viewBar").hidden = !cols;
+    this.renderViewList();
+    if (cols) this.paintViewBar();
     try { localStorage.setItem("orbit_view_v1", view); } catch (e){ /* private mode */ }
-    // v619: a lone panel takes viewport heights (org/constellation canvases size
-    // from their box) — tell every resize listener to re-fit after the unhide.
+    // a lone panel or fresh columns take viewport heights (org/constellation
+    // canvases size from their box) — tell resize listeners to re-fit.
     try { window.dispatchEvent(new Event("resize")); } catch (e){}
   }
   async createTeam(){
@@ -2493,9 +2783,9 @@ window.addEventListener("message", (e) => {
      in the Jobs panel (single shared bridge, no second truth). */
   if (d && d.type === "longrun-focus-job" && window.__orbitApp && window.__orbitApp.jobs) {
     try {
-      /* single-panel view hiding Jobs: switch to it so the job is visible;
-         stacked board ("all") already shows Jobs — never steal the layout. */
-      if (window.__orbitApp.view && window.__orbitApp.view !== "all") {
+      /* single-panel view or custom view hiding Jobs: switch to it so the job
+         is visible; a view already showing Jobs never steals the layout. */
+      if (window.__orbitApp && !window.__orbitApp.isPanelVisible("jobs")) {
         window.__orbitApp.applyView("jobs");
       }
       window.__orbitApp.jobs.focusJob(d.id);

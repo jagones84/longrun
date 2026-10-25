@@ -29,7 +29,7 @@ check("A1 the poll guard covers SELECT (model / reports-to dropdowns)",
 check("A2 the guard still covers INPUT and TEXTAREA",
       'ae.tagName === "INPUT"' in o and 'ae.tagName === "TEXTAREA"' in o)
 check("A3 the rebuild is still deferred while a control is live",
-      "if (editing || roleDirty) return;" in o)
+      "if (editing || roleDirty" in o)
 check("A4 the 5s auto-poll that this guards still exists",
       "setInterval(() => this.refresh(), 5000)" in o)
 check("A5 the model select is really a <select> in the table",

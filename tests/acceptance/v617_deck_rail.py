@@ -2,8 +2,9 @@
 """v617 — Control deck is left-bar driven (graphical refactor only).
 
 The top panel-select is gone; a LH rail names every pane and shows it
-ALONE in the center-RH area. Same applyView truth underneath: every
-panel, button, endpoint and bridge is untouched.
+ALONE in the center-RH area (v622 adds named custom views beside the
+singles and drops the stacked board). Same applyView truth underneath:
+every panel, button, endpoint and bridge is untouched.
 
   A  rail markup: ONE nav with all six panes + stacked board, keyboard
      native buttons, labelled;
@@ -37,14 +38,15 @@ def check(name, ok, detail=""):
     print(("PASS " if ok else "FAIL ") + name + ((" :: " + str(detail)) if detail else ""))
 
 
-VIEWS = ["all", "agents", "routines", "jobs", "org", "const", "feed"]
+VIEWS = ["agents", "routines", "jobs", "org", "const", "feed"]
 
 # ---------------- A: rail ----------------------
 check("A1 ONE labelled nav owns the panes (no second switcher)",
       '<nav id="deckRail" aria-label="Control panels">' in ORBIT
       and 'id="deckView"' not in ORBIT and 'id="deckViewBar"' not in ORBIT)
-check("A2 every pane has a rail button (all + six)",
-      all('data-view="%s"' % v in ORBIT for v in VIEWS),
+check("A2 every pane has a rail button, and the stacked board is gone",
+      all('data-view="%s"' % v in ORBIT for v in VIEWS)
+      and 'data-view="all"' not in ORBIT,
       "%d buttons" % ORBIT.count("data-view="))
 check("A3 rail buttons are keyboard-native with a visible current state",
       '<button data-view=' in ORBIT and 'aria-current="page"' in ORBIT
@@ -53,9 +55,9 @@ check("A3 rail buttons are keyboard-native with a visible current state",
 # ---------------- B: wiring ----------------------
 check("B1 buttons call the ONE applyView truth",
       'b.onclick = () => this.applyView(b.dataset.view)' in ORBIT)
-check("B2 saved view restores through the rail",
+check("B2 saved view restores through the rail (unknown lands on first view)",
       'localStorage.getItem("orbit_view_v1")' in ORBIT
-      and "this.applyView(saved)" in ORBIT)
+      and "this.applyView(saved" in ORBIT)
 check("B3 aria-current repaints inside applyView (one decider)",
       'b.setAttribute("aria-current", "page")' in ORBIT
       and "b.removeAttribute(\"aria-current\")" in ORBIT)
@@ -63,7 +65,8 @@ check("B4 narrow screens stack the rail on top (same buttons)",
       "@media (max-width:1100px)" in ORBIT
       and ".wrap.deck{flex-direction:column}" in ORBIT)
 check("B5 hiding still flows through data-panel (logic untouched)",
-      'p.hidden = one && p.getAttribute("data-panel") !== view' in ORBIT)
+      'const key = p.getAttribute("data-panel")' in ORBIT
+      and "p.hidden = !show.includes(key)" in ORBIT)
 
 # ---------------- C: no function loss ----------------------
 for _p in ["agents", "routines", "jobs", "org", "const", "feed"]:

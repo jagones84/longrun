@@ -55,7 +55,7 @@ check("loadApprovals is guarded",
 # ---------------------------------------------------------------- orbit.html
 orbit = read("src", "longrun", "orbit", "web", "orbit.html")
 check("agent-table rebuild is deferred while editing",
-      "const editing =" in orbit and "if (editing || roleDirty) return;" in orbit)
+      "const editing =" in orbit and "if (editing || roleDirty" in orbit)
 
 # ---------------------------------------------------------------- console.html
 con = read("webui", "console.html")

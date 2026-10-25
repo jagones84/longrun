@@ -2711,6 +2711,7 @@
   <img id="imgEl" alt="preview">
   <div class="cap" id="imgCap"></div>
 </div>
+<script src="/assets/dragsort.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 /* JAG-229: numeric settings inputs must never silently become 0/NaN when the
@@ -4656,7 +4657,6 @@ let _sidebarOrder = { revision: 0, teams: [], sessions: {} };
 let _teamOrderBase = [];
 let _sessionOrderBase = {};
 let _sidebarOrderSaving = false;
-let _sidebarDrag = null;
 async function loadSidebarOrder() {
   try {
     const d = await api("GET", "/api/sidebar/order");
@@ -4669,28 +4669,10 @@ async function loadSidebarOrder() {
   return _sidebarOrder;
 }
 function _sidebarOrdered(items, ids, getId, fallback, systemFirst) {
-  const rank = new Map((ids || []).map((id, i) => [id, i]));
-  const original = new Map(items.map((item, i) => [getId(item), i]));
-  return items.slice().sort((a, b) => {
-    if (systemFirst) {
-      const sys = (_isSystemSess(a) ? 0 : 1) - (_isSystemSess(b) ? 0 : 1);
-      if (sys) return sys;
-    }
-    const ai = getId(a), bi = getId(b);
-    const ar = rank.has(ai) ? rank.get(ai) : Number.POSITIVE_INFINITY;
-    const br = rank.has(bi) ? rank.get(bi) : Number.POSITIVE_INFINITY;
-    if (ar !== br) return ar - br;
-    return (fallback ? fallback(a, b) : 0) || (original.get(ai) - original.get(bi));
-  });
-}
-function _moveSidebarItem(ids, id, targetId, after) {
-  const next = (ids || []).filter(x => x !== id);
-  if (targetId === id) return (ids || []).slice();
-  if (targetId && next.includes(targetId)) {
-    const at = next.indexOf(targetId) + (after ? 1 : 0);
-    next.splice(at, 0, id);
-  } else next.push(id);
-  return next;
+  // the rank-then-fallback rule lives in the shared drag engine (identical in
+  // Control); the system-session pin is this page's own rule on top of it.
+  return DragSort.orderByIds(items, ids, getId, fallback,
+    systemFirst ? _isSystemSess : null);
 }
 function _announceSidebarOrder(text) {
   let live = $("sidebarOrderLive");
@@ -4735,169 +4717,38 @@ async function _persistSidebarOrder(kind, group, ids) {
     _sidebarOrderSaving = false;
   }
 }
-function _clearSidebarDropMarks() {
-  document.querySelectorAll(".drop-before, .drop-after").forEach(el => {
-    el.classList.remove("drop-before", "drop-after");
-  });
-}
-function _sidebarSetDropTarget(state, under, clientY) {
-  _clearSidebarDropMarks();
-  const selector = state.kind === "team"
-    ? ".sgroup[data-team-order-id]"
-    : ".sess[data-session-order-id]";
-  const target = under && under.closest(selector);
-  state.valid = false;
-  state.targetId = null;
-  state.dropTarget = null;
-  state.after = false;
-  if (target && state.container.contains(target)
-      && (state.kind === "team" || target.dataset.groupKey === state.group)) {
-    state.valid = true;
-    state.dropTarget = target;
-    state.targetId = state.kind === "team"
-      ? target.dataset.teamOrderId : target.dataset.sessionOrderId;
-    // A team's drop position is measured on its HEADER: the group rect includes
-    // every session row, so an expanded group's midpoint sits far below the
-    // name and a downward drag never counted as "after" (team drag looked dead).
-    const measure = state.kind === "team"
-      ? (target.querySelector(".sgroup-h") || target) : target;
-    const r = measure.getBoundingClientRect();
-    state.after = clientY >= r.top + r.height / 2;
-    target.classList.add(state.after ? "drop-after" : "drop-before");
-  } else if (under && state.container.contains(under)) {
-    const region = state.kind === "session"
-      ? under.closest(".sgroup-b") : under.closest(".sgroup");
-    const sameRegion = state.kind === "session"
-      ? ((region && region.dataset.groupKey === state.group)
-         || (!region && state.container.dataset.flatOrderGroup === state.group))
-      : !region;
-    if (sameRegion) state.valid = true;
-  }
-  return state.valid;
-}
-const TOUCH_DRAG_HOLD_MS = 420;
-let _sidebarSuppressedClick = null;
-function _sidebarDragItem(kind, node) {
-  if (!node || !node.closest) return null;
-  return node.closest(kind === "team" ? ".sgroup[data-team-order-id]" : ".sess");
-}
-function _consumeSidebarDragClick(e, source) {
-  const pending = _sidebarSuppressedClick;
-  if (!pending) return false;
-  if (Date.now() > pending.until) {
-    _sidebarSuppressedClick = null;
-    return false;
-  }
-  const item = _sidebarDragItem(pending.kind, source);
-  if (!item || !pending.items.includes(item)) return false;
-  _sidebarSuppressedClick = null;
-  e.preventDefault();
-  e.stopPropagation();
-  return true;
-}
-function _sidebarMoveDrag(state, x, y) {
-  if (!state.active && Math.hypot(x - state.startX, y - state.startY) < 6) return;
-  state.active = true;
-  state.suppressClick = true;
-  state.source.classList.add("dragging");
-  const rail = $("sessions"), rr = rail && rail.getBoundingClientRect();
-  if (rr && y < rr.top + 28) rail.scrollTop -= 12;
-  else if (rr && y > rr.bottom - 28) rail.scrollTop += 12;
-  _sidebarSetDropTarget(state, document.elementFromPoint(x, y), y);
-}
-function _clearSidebarDragState(state) {
-  if (state.holdTimer) clearTimeout(state.holdTimer);
-  if (state.cleanup) state.cleanup();
-  _clearSidebarDropMarks();
-  if (state.source) state.source.classList.remove("dragging");
-  if (_sidebarDrag === state) _sidebarDrag = null;
-}
-function _finishSidebarDrag(state) {
-  if (_sidebarDrag !== state) return;
-  _clearSidebarDragState(state);
-  if (state.suppressClick) {
-    const items = [state.source, _sidebarDragItem(state.kind, state.dropTarget)]
-      .filter((item, i, all) => item && all.indexOf(item) === i);
-    _sidebarSuppressedClick = { kind: state.kind, items, until: Date.now() + 700 };
-  }
-  if (!state.active || !state.valid) return;
-  const base = state.kind === "team"
-    ? _teamOrderBase : (_sessionOrderBase[state.group] || []);
-  const next = _moveSidebarItem(base, state.id, state.targetId, state.after);
-  if (next.some((x, i) => x !== base[i])) {
-    _persistSidebarOrder(state.kind, state.group, next);
-  }
-}
-function _cancelSidebarDrag(state) {
-  if (_sidebarDrag !== state) return;
-  _clearSidebarDragState(state);
-}
+/* Sidebar drag-and-drop runs on the shared DragSort engine
+ * (webui/assets/dragsort.js — the same engine drives the Control agents
+ * table). The drop-shape adapters below are this page's own: team headers
+ * measure on .sgroup-h, sessions group by data-group-key. */
 function _bindSidebarDrag(label, kind, id, group, container) {
   const source = kind === "team"
     ? label.closest(".sgroup[data-team-order-id]")
     : label.closest(".sess[data-session-order-id]");
-  const begin = (pointerId, pointerType, x, y) => {
-    if (_sidebarOrderSaving || _sidebarDrag || !source) return null;
-    const state = { kind, id, group, container, source, label, pointerId, pointerType,
-      startX: x, startY: y, active: false, armed: pointerType !== "touch",
-      suppressClick: false, valid: false, targetId: null, dropTarget: null, after: false };
-    _sidebarDrag = state;
-    state.holdTimer = setTimeout(() => {
-      if (_sidebarDrag !== state) return;
-      state.suppressClick = true;
-      if (pointerType === "touch") state.armed = true;
-    }, TOUCH_DRAG_HOLD_MS);
-    return state;
-  };
-  label.onpointerdown = e => {
-    if (e.pointerType === "touch" || e.button !== 0) return;
-    const state = begin(e.pointerId, e.pointerType, e.clientX, e.clientY);
-    if (!state) return;
-    try { label.setPointerCapture(e.pointerId); } catch (_) {}
-    const move = ev => {
-      if (_sidebarDrag !== state || !state.armed) return;
-      _sidebarMoveDrag(state, ev.clientX, ev.clientY);
-    };
-    const finish = () => _finishSidebarDrag(state);
-    const cancel = () => _cancelSidebarDrag(state);
-    label.addEventListener("pointermove", move);
-    label.addEventListener("pointerup", finish);
-    label.addEventListener("pointercancel", cancel);
-    state.cleanup = () => {
-      label.removeEventListener("pointermove", move);
-      label.removeEventListener("pointerup", finish);
-      label.removeEventListener("pointercancel", cancel);
-    };
-  };
-  label.addEventListener("touchstart", e => {
-    if (e.changedTouches.length !== 1) return;
-    const touch = e.changedTouches[0];
-    const state = begin(touch.identifier, "touch", touch.clientX, touch.clientY);
-    if (!state) return;
-    const touchById = list => Array.from(list || []).find(t => t.identifier === state.pointerId);
-    const move = ev => {
-      const current = touchById(ev.touches) || touchById(ev.changedTouches);
-      if (!current || _sidebarDrag !== state) return;
-      if (!state.armed) {
-        if (Math.hypot(current.clientX - state.startX, current.clientY - state.startY) >= 8) {
-          _cancelSidebarDrag(state);
-        }
-        return;
+  if (!source) return;
+  DragSort.bind(label, {
+    container, source, id, group,
+    itemSel: kind === "team"
+      ? ".sgroup[data-team-order-id]" : ".sess[data-session-order-id]",
+    idKey: kind === "team" ? "teamOrderId" : "sessionOrderId",
+    // team sections carry no group; sessions group by data-group-key,
+    // with flat (ungrouped) lists under the container's flat group.
+    grpKey: kind === "team" ? undefined : "groupKey",
+    regionSel: kind === "team" ? ".sgroup" : ".sgroup-b",
+    regionKey: kind === "team" ? undefined : "groupKey",
+    flatKey: kind === "team" ? undefined : "flatOrderGroup",
+    measureSel: kind === "team" ? ".sgroup-h" : undefined,
+    scrollEl: $("sessions"),
+    isSaving: () => _sidebarOrderSaving,
+    onCommit: ({ id: cid, targetId, after }) => {
+      const base = kind === "team"
+        ? _teamOrderBase : (_sessionOrderBase[group] || []);
+      const next = DragSort.moveItem(base, cid, targetId, after);
+      if (next.some((x, i) => x !== base[i])) {
+        _persistSidebarOrder(kind, group, next);
       }
-      ev.preventDefault();
-      _sidebarMoveDrag(state, current.clientX, current.clientY);
-    };
-    const finish = () => _finishSidebarDrag(state);
-    const cancel = () => _cancelSidebarDrag(state);
-    document.addEventListener("touchmove", move, { passive: false });
-    document.addEventListener("touchend", finish, true);
-    document.addEventListener("touchcancel", cancel, true);
-    state.cleanup = () => {
-      document.removeEventListener("touchmove", move);
-      document.removeEventListener("touchend", finish, true);
-      document.removeEventListener("touchcancel", cancel, true);
-    };
-  }, { passive: true });
+    }
+  });
 }
 /* JAG-290/v606: the badge and the todo prefix must show the AGENT id (e.g. A3), not the
    session's internal sequence number. For a designated org agent we use its real
@@ -5091,7 +4942,7 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
       d.dataset.groupKey, orderContainer || d.parentElement);
   }
   d.onclick = e => {
-    if (_consumeSidebarDragClick(e, d)) return;
+    if (DragSort.consumeClick(e)) return;
     if (e.target.classList.contains("menu-btn")) { openSessMenu(d, s, ag); return; }
     if (e.target.closest && e.target.closest(".sess-menu")) return;
     selectSession(s);
@@ -5287,7 +5138,7 @@ async function loadSessions() {
         + `<span class="gname">${esc(g.name)}${g.id ? ` <span class="gid">${esc(g.id)}</span>` : ""}</span>`
         + `<span class="gcount">${g.sessions.length}</span>`;
       head.onclick = e => {
-        if (_consumeSidebarDragClick(e, sec)) return;
+        if (DragSort.consumeClick(e)) return;
         _toggleGroup(g.key);
       };
       sec.appendChild(head);

@@ -41,8 +41,8 @@ ORBIT = open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"),
 check("T5 deck handles longrun-focus-job (expand + scroll + ring)",
       "longrun-focus-job" in ORBIT and "focusJob(jid)" in ORBIT
       and ".job.focusring" in ORBIT, "deck")
-check("T6 deck never steals a stacked-board layout for the handover",
-      '!== "all"' in ORBIT, "layout guard")
+check("T6 deck never steals a showing-Jobs layout for the handover",
+      'isPanelVisible("jobs")' in ORBIT, "layout guard")
 
 check("T7 research model card lives in Settings Models (not KB-only)",
       'id="researchModelSettings"' in HTML, "models card")

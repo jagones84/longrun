@@ -62,8 +62,8 @@ check("T8 deck focusJob expands the parent for dotted ids",
       'const parent = dot < 0 ? full : full.slice(0, dot)' in ORBIT, "parent")
 check("T9 deck rings the exact subjob row, job row as fallback",
       '.runrow[data-sub="' in ORBIT and '.runrow.focusring' in ORBIT, "ring")
-check("T10 deck never steals a stacked board for the handover",
-      '!== "all"' in ORBIT, "layout guard")
+check("T10 deck never steals a showing-Jobs layout for the handover",
+      'isPanelVisible("jobs")' in ORBIT, "layout guard")
 
 print("\n%d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

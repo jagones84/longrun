@@ -102,6 +102,10 @@ check("A9 GET and PATCH route through the authenticated HTTP dispatcher",
 
 with open(os.path.join(ROOT, "webui", "index.html"), encoding="utf-8") as f:
     ui_source = f.read()
+with open(os.path.join(ROOT, "webui", "assets", "dragsort.js"), encoding="utf-8") as f:
+    # v623: the pointer+touch state machine lives here, once, for the Sessions
+    # sidebar AND the Control agents table — index.html only holds adapters.
+    drag_source = f.read()
 check("A10 the UI loads canonical server order and refreshes on feed events",
       '"/api/sidebar/order"' in ui_source
       and '"sidebar.order.updated"' in ui_source
@@ -112,9 +116,8 @@ check("A11 team and session names are the only drag targets",
       and "function _bindSidebarDrag(label" in ui_source
       and "sorder-controls" not in ui_source)
 check("A12 an ordinary tap keeps its existing select or collapse action",
-      "function _consumeSidebarDragClick(e, source)" in ui_source
-      and "_consumeSidebarDragClick(e, d)" in ui_source
-      and "_consumeSidebarDragClick(e, sec)" in ui_source
+      "DragSort.consumeClick" in ui_source
+      and "if (DragSort.consumeClick(e)) return;" in ui_source
       and "selectSession(s);" in ui_source and "_toggleGroup(g.key);" in ui_source)
 check("A13 drag handlers use Pointer Events without decorative controls",
       "pointerdown" in ui_source and "pointermove" in ui_source
@@ -124,26 +127,28 @@ check("A13 drag handlers use Pointer Events without decorative controls",
       and "aria-label=\"Drag session" not in ui_source
       and "_nudgeSidebarOrder" not in ui_source)
 check("A14 touch drag requires a hold and suppresses the click action",
-      "TOUCH_DRAG_HOLD_MS" in ui_source
-      and "pointerType === \"touch\"" in ui_source
-      and "state.holdTimer" in ui_source
-      and "state.suppressClick" in ui_source
-      and 'addEventListener("touchstart"' in ui_source
-      and 'addEventListener("touchmove", move, { passive: false })' in ui_source
-      and "ev.preventDefault();" in ui_source)
+      "HOLD_MS" in drag_source
+      and "pointerType === \"touch\"" in drag_source
+      and "holdTimer" in drag_source
+      and "suppressClick" in drag_source
+      and 'addEventListener("touchstart"' in drag_source
+      and "DragSort.bind" in ui_source
+      and "ev.preventDefault();" in drag_source)
 check("A15 session ordering is scoped by group and drag cannot change membership",
       "groupKey" in ui_source and "teams.updated" in ui_source
       and "/api/teams/" not in ui_source[ui_source.find("function _persistSidebarOrder"):
                                        ui_source.find("function _persistSidebarOrder") + 1200])
 check("A16 pointer drag uses the shared validated commit path",
-      "function _sidebarMoveDrag(state, x, y)" in ui_source
-      and "_sidebarSetDropTarget(state, document.elementFromPoint(x, y), y)" in ui_source
-      and "function _finishSidebarDrag(state)" in ui_source
-      and "_finishSidebarDrag(state)" in ui_source)
+      "function moveDrag(o, state" in drag_source
+      and "document.elementFromPoint(x, y)" in drag_source
+      and "function finishDrag(o, state)" in drag_source
+      and "DragSort.moveItem" in ui_source
+      and "onCommit" in ui_source
+      and "function _persistSidebarOrder" in ui_source)
 check("A17 a team's drop midpoint is measured on its HEADER, not the whole group",
-      'state.kind === "team"\n      ? (target.querySelector(".sgroup-h") || target) : target'
-      in ui_source
-      and 'const r = measure.getBoundingClientRect();' in ui_source)
+      'measureSel' in ui_source and '".sgroup-h"' in ui_source
+      and "measureSel" in drag_source
+      and "getBoundingClientRect" in drag_source)
 check("A18 a team header is bound AFTER it is attached (closest finds its group)",
       ui_source.index("sec.appendChild(head);")
       < ui_source.index('_bindSidebarDrag(head.querySelector(".gname")'))

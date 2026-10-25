@@ -314,14 +314,16 @@ with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"),
 check("I1 the deck has a left rail with one button per panel (v617: select gone)",
       '<nav id="deckRail"' in DECK and 'id="deckView"' not in DECK
       and all(('data-view="%s"' % v) in DECK
-              for v in ("all", "agents", "routines", "jobs", "org", "const", "feed")))
+              for v in ("agents", "routines", "jobs", "org", "const", "feed"))
+      and 'data-view="all"' not in DECK)
 check("I2 every deck panel is addressable by its view key",
       all(('data-panel="%s"' % v) in DECK
           for v in ("agents", "routines", "jobs", "org", "const", "feed")))
 check("I3 applyView hides every other panel, collapses the empty rows, remembers the choice",
       "applyView(name){" in DECK
-      and 'main.classList.toggle("view-one", one)' in DECK
-      and 'p.hidden = one && p.getAttribute("data-panel") !== view' in DECK
+      and 'main.classList.toggle("view-one"' in DECK
+      and 'main.classList.toggle("view-cols"' in DECK
+      and "p.hidden = !show.includes(key)" in DECK
       and "row.hidden = kids.length > 0 && kids.every(k => k.hidden)" in DECK
       and 'localStorage.setItem("orbit_view_v1", view)' in DECK)
 check("I4 the single-panel layout takes the full width and drops the column handle",
@@ -331,8 +333,8 @@ check("I4 the single-panel layout takes the full width and drops the column hand
       and "main .grid2[hidden]{display:none !important}" in DECK)
 check("I5 the rail is wired on boot and restored from the last choice (v617)",
       'b.onclick = () => this.applyView(b.dataset.view)' in DECK
-      and 'localStorage.getItem("orbit_view_v1") || "all"' in DECK
-      and "this.applyView(saved);" in DECK)
+      and 'localStorage.getItem("orbit_view_v1")' in DECK
+      and "this.applyView(saved" in DECK)
 
 # cleanup the probe agents so the shared stores stay clean
 for ref in (worker_id, boss_id):
