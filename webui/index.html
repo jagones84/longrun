@@ -669,6 +669,13 @@
   .plan-drop { background: none; border: 1px solid transparent; color: var(--dim);
     cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 6px; }
   .plan-drop:hover { color: var(--err); border-color: var(--err); }
+  /* v601: the run-goal dropdown in the panel header — the summary previews the
+     first chars inline, the full (possibly very long) goal opens below it. */
+  details.goalfull { display: inline; }
+  details.goalfull > summary { display: inline; cursor: pointer; color: var(--dim); }
+  details.goalfull > summary:hover { color: var(--txt); }
+  details.goalfull .goalfull-body { white-space: pre-wrap; margin: 6px 0; padding: 6px 8px;
+    border: 1px solid var(--line); border-radius: 8px; max-height: 30vh; overflow: auto; }
   /* JAG-431g: a "free" chat thread group (turns not tied to a task) — collapsible
      with the same ⊞/⊟ controls as the task groups. */
   .fgroup { margin: 6px 0; position: relative; }
@@ -6857,9 +6864,15 @@ function renderGraph() {
   // remains scoped to the current plan.
   const _older = (graph.nodes || []).filter(n => (n.plan == null ? 1 : n.plan) !== _shownP);
   const c = countNodes(_nodes);
-  $("graphHead").textContent = _jid + "run " + (graph.run_id || "").slice(0, 8) + " · " +
-    _nodes.length + " nodes · " + (c.done || 0) + " done" +
-    (graph.goal ? " · " + graph.goal.slice(0, 40) : "");
+  // v601: the run goal used to be hard-cut at 40 chars with no ellipsis and no
+  // way to read the rest. The header keeps a short preview (80 chars + …) and
+  // the FULL goal lives in the usual expandable dropdown, escaped.
+  const _goalFull = graph.goal || "";
+  const _goalPrev = _goalFull.length > 80 ? _goalFull.slice(0, 80) + "…" : _goalFull;
+  $("graphHead").innerHTML = esc(_jid + "run " + (graph.run_id || "").slice(0, 8) + " · " +
+    _nodes.length + " nodes · " + (c.done || 0) + " done") +
+    (_goalFull ? ' · <details class="goalfull"><summary title="click to expand the full run goal">' +
+      esc(_goalPrev) + '</summary><div class="goalfull-body">' + esc(_goalFull) + "</div></details>" : "");
   $("taskCount").textContent = (c.done || 0) + "/" + _nodes.length;
   _isum("sPlan", planSummary(c, graph.run_id), (c.todo || c.doing || c.blocked) ? "" : "ok");
   let _olderHtml = "";
@@ -7573,7 +7586,7 @@ function taskTree(nodes) {
     // field (id via _attr, label/evidence via esc). It was interpolated raw, so a dep
     // id containing markup rendered executable HTML inside the Plan list (stored XSS).
     const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${esc(n.deps.join(", "))}</span>` : "";
-    const ev = (n.evidence || []).length ? ` <span class="ev">📎 ${n.evidence.length}</span>` : "";
+    const ev = (n.evidence || []).length ? ` <span class="ev" title="${n.evidence.length} evidence item(s) — click the row to view them and jump the chat to this step">📎 ${n.evidence.length}</span>` : "";
     // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
     // so a long wrapped label can reclaim the width (see `.task.stacked`).
     const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt" style="color:var(--acc2);margin:0 5px;font-size:10px" title="job ${esc(_nodeJob(n))}">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt" style="color:var(--info);margin:0 5px;font-size:10px" title="subjob ${esc(_nodeSub(n))} (embodies this todo)">${esc(_nodeSub(n))}</span>` : ""}`;

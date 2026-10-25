@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Plan header goal dropdown + self-explaining evidence badge.**
+  The Plan panel header hard-cut the run goal at 40 chars with no ellipsis
+  and no way to read the rest (`Team results: A50: ## Report **Il re-di…`).
+  It now keeps an 80-char preview ending in … and the FULL goal in the usual
+  expandable dropdown (`details.goalfull`, escaped, scrollable); the `📎 N`
+  evidence count carries a tooltip (click the row to view evidence and jump
+  the chat to the step). Counts, OLD PLAN history and ⏮ rewind untouched.
+  (Locked by `v601` 5/5.)
 - **Agents table session button + 3 pastel eye-saver themes.**
   The Agents panel rows now carry the same explicit "go to chat session"
   button the Jobs list has (JAG-484 precedent), wired to the deck's shared
