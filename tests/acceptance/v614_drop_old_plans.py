@@ -90,9 +90,10 @@ check("B3 team bulk walks REAL member sessions (never deletes agents)",
       "_team_bulk" in ORCH and "agents_of_team" in ORCH or "member" in ORCH)
 
 # ---------------- C: one-gesture UI -----------------------------------------
-check("C1 panel renders one x-all button",
-      'plan-drop-all' in HTML and "all</button>" in HTML)
-check("C2 x-all lives OUTSIDE the <details> (clickable while collapsed)",
+check("C1 bulk delete is a ghost x in the menu row (never a bare button below)",
+      'class="plan-drop plan-drop-all"' in HTML
+      and "'<div class=\"older-wrap\"><details class=\"older-plans-all\">" in HTML)
+check("C2 x-all lives in the SAME older-wrap row, OUTSIDE the <details>",
       "</details>' +" in HTML and "plan-drop-all" in HTML)
 check("C3 click calls bulk delete with confirm + reload",
       "async function dropAllOldPlans()" in HTML and "confirmDelete(" in HTML

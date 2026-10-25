@@ -664,7 +664,7 @@
      side by side at any rail width — an absolutely positioned ✕ overlapped the
      summary text once the rail got narrow. */
   .older-wrap { display: flex; align-items: flex-start; gap: 3px; }
-  .older-wrap > .older-plans { flex: 1 1 auto; min-width: 0; }
+  .older-wrap > .older-plans, .older-wrap > .older-plans-all { flex: 1 1 auto; min-width: 0; }
   .older-wrap > .plan-drop { flex: 0 0 auto; }
   .plan-drop { background: none; border: 1px solid transparent; color: var(--dim);
     cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 6px; }
@@ -6943,12 +6943,14 @@ function renderGraph() {
       if (_missing.length) _gap = " (missing: " + _missing.join(", ") + " — deleted)";
     }
     // v614: one gesture deletes ALL old plans (keep current). The ✕ lives
-    // OUTSIDE the <details> next to it (same a11y rule as the per-plan ✕).
-    _olderHtml = '<details class="older-plans-all"><summary class="remaining u-ptr">OLD PLAN \u00b7 ' +
+    // OUTSIDE the <details> next to it (same a11y rule as the per-plan ✕):
+    // same older-wrap flex row, same ghost plan-drop style — a bare button
+    // below the menu is NOT acceptable (it reads as a primary action).
+    _olderHtml = '<div class="older-wrap"><details class="older-plans-all"><summary class="remaining u-ptr">OLD PLAN \u00b7 ' +
       _keys.length + ' plan(s) \u00b7 ' + _tot + ' node(s)' + _gap + '</summary>' + _inner + '</details>' +
-      '<button class="plan-drop-all" title="delete ALL ' + _keys.length +
+      '<button class="plan-drop plan-drop-all" title="delete ALL ' + _keys.length +
       ' old plan(s) (' + _tot + ' step(s)) — the current plan, the Control ' +
-      'constellation current nodes and the chat are kept" aria-label="delete all old plans">\u2715 all</button>';
+      'constellation current nodes and the chat are kept" aria-label="delete all old plans">\u2715</button></div>';
   }
   const _historyHtml = _historyNote
     ? '<div class="plan-history-note" role="status">' + esc(_historyNote) + "</div>"
