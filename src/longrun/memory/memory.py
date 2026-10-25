@@ -47,7 +47,11 @@ MEMORY_FIELDS = {
     "memory.store": "user_memories.md",
     # JAG-204: append-only tombstones that invalidate a stored memory (BAVAR:
     # verification must also cover persistent, reusable artifacts).
+    # P2 (N8): `memory.restore` shares the SAME file — invalidation lifecycle
+    # (invalidate/supersede/restore) lives in one append-only ledger, with
+    # LAST-ENTRY-WINS per target in `invalid_targets()`.
     "memory.invalidate": "memory_invalidations.md",
+    "memory.restore": "memory_invalidations.md",
 }
 
 
@@ -124,7 +128,20 @@ def _render_md(rec):
     # reflect | mining | harness); rendered so recall and the WebUI can tell
     # auto-generated knowledge from what the user actually said.
     for key in ("mid", "ts", "kind", "session", "run_id", "source", "origin",
-                "expires_ts", "target", "tags", "model", "tool", "score"):
+                "expires_ts", "target", "tags", "model", "tool", "score",
+                "superseded_by"):
+        val = rec.get(key)
+        if val is not None:
+            lines.append("%s: %s" % (key, val))
+    # JAG-449 (v627): any meta key not in the whitelist above must still
+    # reach disk — e.g. memory_supersede() stores `superseded_by` as meta
+    # and health.active() relies on reading it back. Render unknown keys
+    # deterministically (sorted) instead of silently dropping them.
+    for key in sorted(k for k in rec
+                      if k not in ("content", "mid", "ts", "kind", "session",
+                                   "run_id", "source", "origin", "expires_ts",
+                                   "target", "tags", "model", "tool", "score",
+                                   "superseded_by")):
         val = rec.get(key)
         if val is not None:
             lines.append("%s: %s" % (key, val))
@@ -496,16 +513,25 @@ def rank(records, now=None, halflife=None):
 
 
 def invalid_targets():
-    """Set of memory ids (mid) invalidated by an append-only tombstone (JAG-204)."""
+    """Set of memory ids (mid) currently invalidated by a tombstone (JAG-204).
+
+    P2 (N8) lifecycle: the tombstone file also carries `memory.restore`
+    entries and applies LAST-ENTRY-WINS per target — a restore (the newest
+    entry for a target) re-admits the record without deleting the history.
+    Records are parsed in file order, which is also chronological order
+    (append-only), so the last entry per target decides validity.
+    """
     p = _path("memory.invalidate")
     if not os.path.isfile(p):
         return set()
-    out = set()
+    state = {}   # target -> "invalidated" | "restored" (last entry wins)
     for r in _parse_md_file(p):
         t = str(r.get("target") or "").strip()
-        if t:
-            out.add(t)
-    return out
+        if not t:
+            continue
+        state[t] = ("invalidated" if r.get("kind") == "memory.invalidate"
+                    else "restored")
+    return {t for t, k in state.items() if k == "invalidated"}
 
 
 def is_expired(rec, now=None):
@@ -530,10 +556,37 @@ def is_valid(rec, now=None, invalid=None):
 def invalidate(target, reason=""):
     """Append a tombstone invalidating a stored memory (mid, or free text).
 
-    Append-only: the original record is never mutated; recall just stops surfacing
-    it. Returns the tombstone record.
+    Append-only: the original record is never mutated; recall just stops
+    surfacing it. Returns the tombstone record.
     """
     return store("memory.invalidate", reason or "invalidated",
+                 target=str(target or "").strip())
+
+
+def supersede(target, by=None, reason=""):
+    """P2 (N8): invalidate a record WITH a pointer to the replacing record.
+
+    Same append-only tombstone as `invalidate`, plus the `superseded_by`
+    front-matter field so "record A was replaced by record B" is
+    representable — a wrong memory can now be linked to its correction
+    instead of only hidden or deleted. The superseded record is excluded
+    from `governed_query` exactly like an invalidated one.
+    """
+    meta = {"target": str(target or "").strip()}
+    if by:
+        meta["superseded_by"] = str(by)
+    return store("memory.invalidate", reason or "superseded", **meta)
+
+
+def restore(target, reason=""):
+    """P2 (N8): re-admit a previously invalidated/superseded memory.
+
+    Append-only: writes a `memory.restore` tombstone for the SAME target.
+    `invalid_targets()` applies LAST-ENTRY-WINS per target, so the restore
+    (the newest entry) re-admits the record while keeping the full
+    invalidate/restore history in the file. A later invalidate wins again.
+    """
+    return store("memory.restore", reason or "restored",
                  target=str(target or "").strip())
 
 
@@ -588,7 +641,7 @@ def purge_invalidated():
     removed = 0
     with _lock:
         for kind in list(MEMORY_FIELDS.keys()) + ["other"]:
-            if kind == "memory.invalidate":
+            if kind in ("memory.invalidate", "memory.restore"):
                 continue
             p = _path(kind)
             if not os.path.isfile(p):
@@ -640,8 +693,15 @@ def health():
     invalidated = sum(1 for r in recs if str(r.get("mid") or "") in bad)
     stores = [r for r in recs if r.get("kind") == "memory.store"]
     no_source = sum(1 for r in stores if not r.get("source"))
+    # P2 (N8): tombstones that carry a superseded_by pointer — the records
+    # that were LINKED to a replacement rather than just hidden.
+    superseded = 0
+    _ip = _path("memory.invalidate")
+    if os.path.isfile(_ip):
+        superseded = sum(1 for r in _parse_md_file(_ip) if r.get("superseded_by"))
     return {"total": len(recs), "stores": len(stores), "expired": expired,
-            "invalidated": invalidated, "no_source": no_source,
+            "invalidated": invalidated, "superseded": superseded,
+            "no_source": no_source,
             "invalid_targets": sorted(bad)[:20]}
 
 

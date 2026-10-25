@@ -2030,6 +2030,23 @@ def handle(handler, method, path, qs, body):
                 _MEMORY.invalidate(_tgt,
                                    reason=str(body.get("reason") or ""))
                 return _r(handler, 200, {"ok": True, "target": _tgt})
+            if action == "supersede":
+                # P2 (N8): invalidate WITH a pointer to the replacing record.
+                _tgt = (body.get("target") or body.get("id") or "").strip()
+                if not _tgt:
+                    return _r(handler, 400, {"ok": False,
+                                             "error": "target (or id) required"})
+                _MEMORY.supersede(_tgt, by=str(body.get("superseded_by") or ""),
+                                  reason=str(body.get("reason") or ""))
+                return _r(handler, 200, {"ok": True, "target": _tgt})
+            if action == "restore":
+                # P2 (N8): re-admit a tombstoned record (last-entry-wins).
+                _tgt = (body.get("target") or body.get("id") or "").strip()
+                if not _tgt:
+                    return _r(handler, 400, {"ok": False,
+                                             "error": "target (or id) required"})
+                _MEMORY.restore(_tgt, reason=str(body.get("reason") or ""))
+                return _r(handler, 200, {"ok": True, "target": _tgt})
             kind = body.get("kind", "memory.store")
             content = body.get("content", "")
             meta = {k: v for k, v in body.items()

@@ -1199,6 +1199,34 @@ def _memory(args, run_id):
         mem.invalidate(target, reason=reason)
         return {"ok": True, "count": 1, "stdout": "invalidated %s" % target,
                 "backend": "host", "sandboxed": False}
+    if action in ("supersede",):
+        # P2 (N8): invalidate AND link the replacement record. The tombstone
+        # carries `superseded_by`, so the correction chain survives on disk.
+        target = str(args.get("target") or args.get("id") or "").strip()
+        by = str(args.get("superseded_by") or "").strip()
+        reason = str(args.get("reason") or "").strip()
+        if not target:
+            return {"ok": False,
+                    "error": "target required for action=supersede "
+                             "(query matching is forbidden: the replacement link "
+                             "must point at ONE record)",
+                    "backend": "host", "sandboxed": False}
+        mem.supersede(target, by=by or None, reason=reason)
+        return {"ok": True, "count": 1,
+                "stdout": "superseded %s%s" % (target, (" -> " + by) if by else ""),
+                "backend": "host", "sandboxed": False}
+    if action in ("restore",):
+        # P2 (N8): re-admit a tombstoned memory (last-entry-wins ledger).
+        target = str(args.get("target") or args.get("id") or "").strip()
+        reason = str(args.get("reason") or "").strip()
+        if not target:
+            return {"ok": False,
+                    "error": "target required for action=restore "
+                             "(query matching is forbidden: restore must be exact)",
+                    "backend": "host", "sandboxed": False}
+        mem.restore(target, reason=reason)
+        return {"ok": True, "count": 1, "stdout": "restored %s" % target,
+                "backend": "host", "sandboxed": False}
     if action in ("health", "audit"):
         h = mem.health()
         return {"ok": True, "count": h["total"], "report": h,

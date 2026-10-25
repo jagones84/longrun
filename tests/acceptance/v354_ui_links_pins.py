@@ -164,7 +164,12 @@ else:
 check("A9 browse roots parse Windows drives and paths containing spaces",
       _windows_roots == [r"C:\Users\Operator\Longrun Work", r"D:\Shared Files"],
       str(_windows_roots))
-os.environ["LONGRUN_BROWSE_ROOTS"] = os.path.abspath(os.sep)
+# A10: the filesystem ROOT (the drive root on Windows, "/" on POSIX) permits
+# reads beneath it. os.sep alone resolves to the CWD's drive on Windows, and
+# the temp dir may live on a DIFFERENT drive — use the drive that actually
+# contains the guarded file so the check is cross-platform.
+os.environ["LONGRUN_BROWSE_ROOTS"] = \
+    os.path.splitdrive(os.path.abspath(_outside_root))[0] + os.sep
 _root_file = API_MOD.fs_read({"path": _outside_file})
 check("A10 filesystem root permits reads of files beneath it",
       _root_file.get("text") == "original", str(_root_file))

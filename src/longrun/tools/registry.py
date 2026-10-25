@@ -402,6 +402,10 @@ _LEGACY_SCHEMAS = {
                         "source=provenance); action=recall searches; action=recent "
                         "lists newest; action=invalidate tombstones a wrong/outdated "
                         "memory (target=id|query) so recall stops surfacing it; "
+                        "action=supersede invalidates AND links the replacement "
+                        "(superseded_by=replacement id) so the correction chain is "
+                        "visible; action=restore re-admits a tombstoned memory "
+                        "(target=id — the full history is kept); "
                         "action=forget TRULY deletes it (target=id, or query as a "
                         "case-insensitive LITERAL substring; nothing else is "
                         "touched); "
@@ -413,7 +417,8 @@ _LEGACY_SCHEMAS = {
         "properties": {
             "action": {"type": "string",
                        "enum": ["store", "recall", "recent", "core", "set_core",
-                                "clear_core", "invalidate", "forget", "purge", "health"],
+                                "clear_core", "invalidate", "supersede", "restore",
+                                "forget", "purge", "health"],
                        "default": "recall",
                        "description": "what to do (default: recall = search)"},
             "content": {"type": "string", "description": "text to save (action=store)"},
@@ -424,6 +429,8 @@ _LEGACY_SCHEMAS = {
             "source": {"type": "string", "description": "provenance tag (store)"},
             "ttl_secs": {"type": "number", "description": "optional lifetime in seconds (store)"},
             "target": {"type": "string", "description": "memory id to retire or delete"},
+            "superseded_by": {"type": "string",
+                              "description": "id of the REPLACING record (action=supersede)"},
             "reason": {"type": "string", "description": "why it's retired (action=invalidate)"},
             "include_invalid": {"type": "boolean", "description": "also return expired/invalidated (action=recall)"},
             "semantic": {"type": "boolean", "default": False,
@@ -665,6 +672,8 @@ _SUBTOOL_FIELDS = {
         "recent": ["kind", "limit"], "list": ["kind", "limit"],
         "core": [], "set_core": ["content"], "clear_core": [],
         "invalidate": ["target", "query", "kind", "reason"],
+        "supersede": ["target", "superseded_by", "reason"],
+        "restore": ["target", "reason"],
         "forget": ["target", "query", "kind"], "purge": [], "health": [],
     },
     "improve": {
