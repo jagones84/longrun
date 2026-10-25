@@ -226,6 +226,28 @@ python3 forge.py memory search "porta staging" --semantic
 python3 forge.py blackboard post idea "usare SQLite per i checkpoint" --tags db,arch
 ```
 
+### Knowledge, research, index, embeddings
+
+| Command | Endpoint | Notes |
+|---|---|---|
+| `knowledge status` | `GET /api/knowledge/status` | counts |
+| `knowledge notebooks` | `GET /api/knowledge/notebooks` | id + name + sources |
+| `knowledge create "name"` | `POST /api/knowledge/notebooks` | make a notebook |
+| `knowledge add <url-or-ref> [--notebook NB]` | `POST /api/knowledge/sources` | fetch + index into NB |
+| `knowledge search "q" [--notebook NB] [--limit N]` | `GET /api/knowledge/search` | lexical (+ vectors when configured) |
+| `knowledge discover "q" [--limit N]` | `POST /api/knowledge/discover` | web candidates, pick before import |
+| `knowledge import <url…> [--notebook NB]` | `POST /api/knowledge/import` | import chosen URLs |
+| `knowledge research "q" [--notebook NB] [--depth shallow\|medium\|deep] [--limit N] [--max-rounds M]` | `POST /api/knowledge/research` | auto agent: search + fetch + summarise + import |
+| `research ls` / `research active` / `research set <id>` | `GET`/`POST /api/research/model` | pick the research LLM |
+| `index status` / `index build [--force]` / `index search "q"` | `GET /api/codebase/status`, `POST /api/codebase/build`, `GET /api/codebase/search` | the workspace code index |
+| `embedding models` / `active` / `set <id>` | `GET /api/embedding/*`, `POST /api/embedding/active` | embedding model + cost log |
+
+```bash
+python3 forge.py knowledge notebooks
+python3 forge.py knowledge research "llama.cpp server options" --depth shallow --limit 3
+python3 forge.py research ls
+```
+
 ### Subagents, meta, swarm
 
 | Command | Endpoint |
@@ -350,6 +372,13 @@ Every HTTP route the server exposes has a CLI entry point:
 | GET | `/api/checkpoints` | `checkpoints ls` |
 | GET | `/api/checkpoints/<id>` | `checkpoints show` |
 | GET | `/api/routing` | `routing show` |
+| GET | `/api/knowledge/status` | `knowledge status` |
+| GET | `/api/knowledge/notebooks` | `knowledge notebooks` |
+| GET | `/api/knowledge/sources` | (source list for a notebook) |
+| GET | `/api/knowledge/search` | `knowledge search` |
+| GET | `/api/research/model` | `research ls` / `research active` |
+| GET | `/api/codebase/status` | `index status` |
+| GET | `/api/codebase/search` | `index search` |
 | POST | `/api/chat` `/api/chat/stream` | `chat` / `chat --stream` |
 | POST | `/api/agent/run` | `agent` |
 | POST | `/api/agent/run/stream` | `paperclip-bot` (Paperclip child) |
@@ -382,6 +411,14 @@ Every HTTP route the server exposes has a CLI entry point:
 | POST | `/api/checkpoints` | `checkpoints create` |
 | POST | `/api/checkpoints/<id>/rollback` | `checkpoints rollback` |
 | POST | `/api/routing` | `routing update` |
+| POST | `/api/knowledge/notebooks` | `knowledge create` |
+| POST | `/api/knowledge/sources` | `knowledge add` |
+| POST | `/api/knowledge/discover` | `knowledge discover` |
+| POST | `/api/knowledge/import` | `knowledge import` |
+| POST | `/api/knowledge/research` | `knowledge research` |
+| POST | `/api/research/model` | `research set` |
+| POST | `/api/codebase/build` | `index build` |
+| POST | `/api/embedding/active` | `embedding set` |
 | POST | `/mcp` | `mcp` |
 | PATCH | `/api/tasks` | `tasks done` / `tasks set` |
 | DELETE | `/api/sessions/<id>` | `sessions rm` |

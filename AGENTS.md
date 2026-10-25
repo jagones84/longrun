@@ -7,7 +7,8 @@ that built this.
 ## Read order (do not skip)
 
 > `.agent/` is the maintainer's **local** working memory (all documents under
-> `docs/` — `handoff/`, `runbooks/`, `plans/`, `reports/` — plus tooling) and is **gitignored** — it
+> `docs/` — `handoff/`, `runbooks/`, `plans/`, `research/` — plus tooling;
+> update rules in `docs/MAINTENANCE.md`) and is **gitignored** — it
 > exists only in a development checkout, never in a clone. Everything listed below
 > is tracked and present in every clone.
 
@@ -21,7 +22,7 @@ that built this.
 
 - A stdlib-only Python **agent harness** (`src/longrun/`), HTTP on `:8790`,
   SPA at `webui/index.html`, optional Orbit deck at `src/longrun/orbit/`.
-- **Five object levels**: `Team (TN) → Job (JN) → Subjob (JN.j) → Agent (AX) → Todo
+- **Five object levels**: `Team (TN) → Job (JN) → Subjob (JN.k) → Agent (AX) → Todo
   (AX.nY)`. A **team** owns its roster; an **agent IS a session**
   (`agent["session"] == sid`). A **job** runs a coordinator + its team in dependency
   waves — the coordinator's PLAN turn is plan-only and read-only, the workers execute.
@@ -51,4 +52,4 @@ bash tests/battery.sh     # FAST deterministic gate; trust its reported count
   (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
 - **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
   or the repo-root `trash/` data directory.
-- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching `docs/runbooks/*.md` in the same session.**
+- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching `docs/runbooks/*.md` in the same session. Section update rules: `.agent/docs/MAINTENANCE.md`.

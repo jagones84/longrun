@@ -7,6 +7,25 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Research live-verified end to end (WebUI + REST, 2026-10-25).**
+  Phase A (default model): shallow run from the Knowledge panel — 5 relevant
+  sources imported, chunks indexed and searchable, zero console errors. Phase C
+  (live model): cited summary with inline `[title](url)` + Sources section.
+  Finding: the summary degrades SILENTLY to the `Research summary about: …`
+  stub when the model is dead — default `perplexity:sonar-pro` has no
+  `PERPLEXITY_API_KEY` on this machine AND catalogue
+  `openai/gpt-4o-mini-search-preview` is retired (OpenRouter 404). Keep
+  catalogue ids live and the default key present or the v603 contract is void.
+  Test notebooks removed afterwards; default model restored.
+- **Docs coherence: `docs/CLI.md` covers knowledge/research/index/embeddings.**
+  New section + full §3 endpoint rows (`knowledge/*`, `research/model`,
+  `codebase/*`, `embedding/active`). Machine-checked: all 77 ARCHITECTURE
+  modules exist on disk and are named in the map; all 39 `forge` subcommands
+  exist in code (`.agent/trash/docs_coherence.py`).
+- **Docs self-organization.** New `.agent/docs/MAINTENANCE.md` (WHEN+HOW per
+  section, same-session rule); `AGENTS.md` points at it and drops the stale
+  `reports/` reference; `UserPrompts.md` rewritten without leading-dash lists
+  (Trae preview hid them) + §3.5 live-verification note.
 - **Docs freshness pass (no code).**
   `docs/ARCHITECTURE.md` is a living map again (verified 2026-10-25, SJ level
   added, stale Subjob-only model fixed, generated diagrams marked WIP);
