@@ -181,7 +181,7 @@ check("C4 the check count is surfaced when available", "counts.checked" in diag)
 check("D1 the Files panel no longer renders its own tree or search",
       'id="fileTree"' not in idx and 'id="fileSearch"' not in idx)
 check("D2 the Workspace panel offers the editor hand-off, next to browse",
-      "🗔 open editor" in idx and 'data-call="SparkEditorToggle"' in idx)
+      'aria-label="open the editor"' in idx and 'data-call="SparkEditorToggle"' in idx)
 check("D3 ONE hand-off per surface, through ONE function (JAG-511/JAG-514)",
       idx.count('data-call="SparkEditorToggle"') == 2   # composer + inspector
       and idx.count("window.SparkEditor.toggle()") == 1  # only inside the function

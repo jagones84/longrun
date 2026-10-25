@@ -1612,8 +1612,13 @@
   .rbadge { margin-left: auto; font-size: 10px; color: var(--dim); max-width: 48%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rbadge.ok { color: var(--ok); }
-  .rpath { font-size: 10.5px; color: var(--dim); word-break: break-all; margin: 4px 0 5px; }
-  .rrow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  /* v636: the path row carries its own `save` link on the right (was a second row). */
+  .rpath { display: flex; align-items: baseline; gap: 8px; font-size: 10.5px; color: var(--dim); margin: 3px 0 4px; }
+  .rpath > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rpath .lnk { flex: none; }
+  .rpath .lnk.dirty { color: var(--warn); font-weight: 600; }
+  .rrow { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .rrow:empty { display: none; }
   .rwho { font-size: 11px; color: var(--dim); margin-bottom: 6px; line-height: 1.4; }
   #inspector button.ghost.dirty { color: var(--acc); border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
   .rwho.agent { color: var(--txt); }
@@ -1957,13 +1962,14 @@
              and an empty-state sentence (DeerFlow's To-dos header is the reference:
              the count lives in the header, the body is the list). -->
         <div class="card">
+          <!-- v636: ONE field for both verbs — ▶ runs the text as the session goal,
+               + adds it as a graph node, ↻ replans. Two stacked inputs with their own
+               buttons were eating a third of the panel. -->
           <div class="u-df u-g6 u-aic">
-            <input id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal…">
-            <button class="ghost" data-call="planGoal" title="same as /goal: runs until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop">▶</button>
-          </div>
-          <div class="u-df u-g6 u-aic u-mt6">
-            <input id="taskInp" class="inp u-f1 u-p610 u-fs12" placeholder="graph node…">
-            <button class="ghost" data-call="addTask" title="POST /graph/nodes {action:add}">+</button>
+            <input id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal or node…"
+                   data-key="Enter" data-key-fn="planGoal">
+            <button class="ghost" data-call="planGoal" title="run this text as the session goal (same as /goal)">▶</button>
+            <button class="ghost" data-call="addTask" title="add this text as a graph node">+</button>
             <button class="ghost" data-call="replanGraph" title="incremental re-plan">↻</button>
           </div>
           <div id="graphHead" class="remaining"></div>
@@ -2245,15 +2251,19 @@
              the folder, so the body starts with the path field, not a second title. -->
         <div class="card" id="wsCard">
           <div class="u-df u-g6 u-aic">
-            <input id="wsPath" class="inp u-f1 u-p610 u-fs12" placeholder="folder path — use 📁 browse… (any folder the harness host can read)">
+            <input id="wsPath" class="inp u-f1 u-p610 u-fs12" placeholder="folder path…">
             <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
           </div>
           <div class="u-df u-g8 u-aic u-mt6 u-fww">
             <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> default for new sessions</label>
-            <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]' title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁 browse…</button>
+            <!-- v636: icon-only (the label was longer than the row); the accessible
+                 name lives in aria-label, the tooltip keeps the explanation. -->
+            <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]'
+                    aria-label="browse folders" title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁</button>
             <!-- JAG-514: the old extra card below only repeated this path; its one
                  action (open the editor) now lives here, next to browse. -->
-            <button class="ghost" data-call="SparkEditorToggle" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔 open editor</button>
+            <button class="ghost" data-call="SparkEditorToggle"
+                    aria-label="open the editor" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔</button>
           </div>
           <!-- JAG-2.8: say what "save" will actually do BEFORE it is pressed — the
                session/default ambiguity made a correct save look like a no-op. -->
@@ -2292,11 +2302,11 @@
             <input type="checkbox" id="cbAutoIndex"> automatic indexing (background)</label>
           <div id="cbFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
         </div>
-        <h2>Search codebase</h2>
+        <!-- v636: the input says what it does; the caps title above it was dead space. -->
         <div class="card">
           <div class="u-df u-g6">
-            <input id="cbQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search this workspace…" data-key="Enter" data-key-fn="cbSearch">
-            <button class="ghost" data-call="cbSearch">search</button>
+            <input id="cbQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search the codebase…" data-key="Enter" data-key-fn="cbSearch">
+            <button class="ghost" data-call="cbSearch" title="search this workspace's code and docs">search</button>
           </div>
           <div id="cbResults" class="u-mt6"></div>
         </div>
@@ -5842,15 +5852,18 @@ function _rulesRefRow(kind, label, src) {
 }
 function _rulesRow(kind, label, path, text, filesNote, ok, open) {
   const id = "rule_" + kind;
+  // v636: the full-width `save` button under the editor was a second row of chrome.
+  // It is now a link on the path row (right side), highlighted while the buffer is
+  // dirty — same id, same handler, no extra height.
   return '<details class="rulesrc"' + (open ? " open" : "") + '>'
     + '<summary><b>' + esc(label) + '</b><span class="rbadge' + (ok ? " ok" : "") + '">'
     + esc(filesNote) + '</span></summary>'
-    + '<div class="rpath" title="' + esc(path) + '">' + esc(path) + '</div>'
+    + '<div class="rpath"><span title="' + esc(path) + '">' + esc(path) + '</span>'
+    + '<button type="button" class="lnk" id="' + id + '_save" onclick="saveRuleSource(\'' + kind
+    + '\')" title="write this file to disk now">save</button></div>'
     + '<textarea class="inp" id="' + id + '" oninput="markRuleDirty(\'' + kind + '\')" style="width:100%;min-height:120px;font-size:12px;'
     + 'font-family:ui-monospace,monospace">' + esc(text) + '</textarea>'
-    + '<div class="rrow"><button class="ghost" id="' + id + '_save" onclick="saveRuleSource(\'' + kind
-    + '\')" title="write this file to disk now">save</button>'
-    + '<span class="remaining" id="' + id + '_res"></span></div></details>';
+    + '<div class="rrow"><span class="remaining" id="' + id + '_res"></span></div></details>';
 }
 function markRuleDirty(kind) { const b = $("rule_" + kind + "_save"); if (b) b.classList.add("dirty"); }
 async function saveRuleSource(kind) {
@@ -7205,13 +7218,13 @@ async function graphNodeAction(id, a) {
   if (r && r.id) applyGraphEvent({ run: rid, node: r });
 }
 async function addTask() {
-  const v = $("taskInp").value.trim(); if (!v) return;
+  const v = $("planInp").value.trim(); if (!v) return;
   // JAG-215: a chat session's graph is keyed by the SESSION id; when no run graph
   // exists yet, create it on the session. (The old fallback wrote to the dead
   // legacy /api/tasks board, so the "+" looked broken on a fresh session.)
   const rid = listRunId() || sessionId;
   if (!rid) { who("ai", "no session selected"); return; }
-  $("taskInp").value = "";
+  $("planInp").value = "";
   const r = await api("POST", "/api/runs/" + encodeURIComponent(rid) + "/graph/nodes", { action: "add", label: v });
   if (r && r.error) { who("ai", "⚠ graph: " + r.error); return; }
   if (!curRunId) setRun(rid);
@@ -13374,7 +13387,6 @@ $("inp").addEventListener("keydown", e => {
   }
   if (e.key === "Escape" && menu) menu.hidden = true;
 });
-$("taskInp").addEventListener("keydown", e => { if (e.key === "Enter") addTask(); });
 /* JAG-415: the composer textarea auto-grows with its content up to 160px, then
    scrolls. Reset to auto first so it can also SHRINK when text is deleted. */
 function _growInp() {

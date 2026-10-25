@@ -76,10 +76,10 @@ check("B4 the full model name stays reachable (row tooltip)",
 check("C1 the caps title is gone", "TASK LIST (persistent)" not in UI)
 check("C2 the goal field and its action share one row",
       UI.index('id="planInp"') < UI.index('data-call="planGoal"')
-      and UI.index('data-call="planGoal"') < UI.index('id="taskInp"'))
-check("C3 the node field has + and replan beside it",
-      'id="taskInp"' in UI and 'data-call="addTask"' in UI and 'data-call="replanGraph"' in UI
-      and ">↻</button>" in UI)
+      and UI.index('data-call="planGoal"') < UI.index('data-call="replanGraph"'))
+check("C3 the node verb and replan sit beside the same field (v636 merged them)",
+      'data-call="addTask"' in UI and 'data-call="replanGraph"' in UI
+      and ">↻</button>" in UI and 'id="taskInp"' not in UI)
 check("C4 maintenance actions are inline links, not a button wall",
       'class="lnk" data-call="showConstellation"' in UI
       and 'class="lnk" data-call="resetRunGraph"' in UI

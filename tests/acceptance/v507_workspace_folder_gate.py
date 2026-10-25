@@ -191,8 +191,8 @@ check("the Workspace card states WHERE a save will land before it is pressed",
       "session vs default is explicit")
 
 check("the UI carries no hardcoded absolute folder example",
-      "/home/jagones" not in UI and "folder path — use 📁 browse…" in UI,
-      "placeholders are host-agnostic")
+      "/home/jagones" not in UI and 'placeholder="folder path…"' in UI,
+      "placeholders are host-agnostic (v636: the 📁 link became an icon button)")
 
 with open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"), encoding="utf-8") as fh:
     API = fh.read()
