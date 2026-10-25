@@ -2263,6 +2263,13 @@ def handle(handler, method, path, qs, body):
         return False
 
     if method == "DELETE":
+        # v652: `costlog.clear()` existed with no route (a dead object: only the
+        # acceptance test called it), so the embedding cost ledger could never be
+        # reset even though the panel shows it.
+        if path == "/api/embedding/costs":
+            from longrun.memory import costlog as _cl
+            return _r(handler, 200, {"ok": True, "cleared": _cl.clear()})
+
         # JAG-108: delete a user-managed external MCP client by name.
         if path == "/api/mcp/clients":
             _lazy('mcp_client')

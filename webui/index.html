@@ -373,10 +373,13 @@
   .sess-menu button.danger { color: var(--err); }
   .sess { position: relative; }
   .sess .del:hover { opacity: 1; background: rgba(248,113,113,.12); }
-  /* JAG-414: collapsible TEAM groups in the session rail. A session that belongs
-     to several teams (or is pinned) is DRAWN once per group — a purely graphical
-     duplication: one session id, one set of functions; only the row appears more
-     than once. The coloured bar + symbol carry the team identity. */
+  /* JAG-414: collapsible TEAM groups in the session rail.
+     v652: ONE session, ONE row. A session used to be drawn once per group it
+     qualified for — Pinned AND its team, Pinned AND "No team", or once per team
+     when it belonged to several — so the rail showed the same object two or
+     three times (operator: "devono essere synced ... per questa tipologia di
+     schifezze"). The row now lands in the FIRST group that claims it, in
+     priority order: Pinned → No team → teams. */
   .sgroup { margin: 3px 0 5px; }
   .sgroup-h { display: flex; align-items: center; gap: 6px; padding: 4px 8px;
     border-radius: 8px; cursor: pointer; user-select: none; font-size: 10.5px;
@@ -2534,6 +2537,9 @@
             <div class="u-df u-g6 u-mt8">
               <button class="ghost" data-call="emCosts">refresh</button>
               <button class="ghost" data-call="emExportCsv">export CSV</button>
+              <!-- v652: the log was readable and exportable but never resettable. -->
+              <button class="ghost" data-call="emCostsClear"
+                      title="delete every embedding cost row (rows older than 30 days are pruned automatically anyway)">clear log</button>
             </div>
           </details>
           <button class="ghost u-mt8" data-call="openSettings" data-args='["knowledge"]' title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
@@ -5035,10 +5041,10 @@ async function openSessMenu(row, s, ag) {
   };
   setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
 }
-/* JAG-414: the session rail groups rows by TEAM (collapsible). A session that
-   belongs to several teams — or is pinned — is DRAWN once per group: a purely
-   GRAPHICAL duplication (same id, same click handlers, same everything). The
-   underlying session is single; nothing is duplicated in the substrate. */
+/* JAG-414: the session rail groups rows by TEAM (collapsible). v652: a session
+   belongs to ONE row — the first group that claims it (Pinned → No team → team),
+   because the same object listed twice reads as duplicate data. A session in
+   several teams is still the same single object; only its group cell names one. */
 /* JAG-424e: the rail's group state is an EXPLICIT "open" list — any group NOT in it is
    collapsed. So the first run (and any brand-new team) opens COLLAPSED, and only the
    active session's own group is auto-opened. */
@@ -5294,20 +5300,27 @@ async function loadSessions() {
     _sessionOrderBase.__pinned__ = _sidebarOrdered(
       _all.filter(s => isPinned(s.id)).sort(_sysFirst),
       _sidebarOrder.sessions.__pinned__, s => s.id, _ord, true).map(s => s.id);
+    // v652: one session id may be claimed by several groups (pinned + team, or
+    // two teams). `_drawn` makes the first claim the only one, so the rail never
+    // lists the same object twice.
+    const _drawn = new Set();
     const pinGroup = _sidebarOrdered(visible.filter(s => isPinned(s.id)).sort(_sysFirst),
       _sidebarOrder.sessions.__pinned__, s => s.id, _ord, true);
+    pinGroup.forEach(s => _drawn.add(s.id));
     if (pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
     // JAG-415: "No team" sits right BELOW Pinned, before the teams.
-    const adhocAll = _sidebarOrdered(_all.filter(s => teamsOf(s).length === 0).sort(_ord),
+    const adhocAll = _sidebarOrdered(_all.filter(s => teamsOf(s).length === 0 && !_drawn.has(s.id)).sort(_ord),
       _sidebarOrder.sessions.__none__, s => s.id, _ord);
     _sessionOrderBase.__none__ = adhocAll.map(s => s.id);
     const adhoc = onlyVisible(adhocAll);
+    adhoc.forEach(s => _drawn.add(s.id));
     if (adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
     teams.forEach(t => {
-      const allMembers = _sidebarOrdered(_all.filter(s => teamsOf(s).includes(t.id)).sort(_ord),
+      const allMembers = _sidebarOrdered(_all.filter(s => teamsOf(s).includes(t.id) && !_drawn.has(s.id)).sort(_ord),
         _sidebarOrder.sessions[t.id], s => s.id, _ord);
       _sessionOrderBase[t.id] = allMembers.map(s => s.id);
       const ss = onlyVisible(allMembers);
+      ss.forEach(s => _drawn.add(s.id));
       if (ss.length) groups.push({ key: t.id, symbol: t.symbol || "•", name: t.name || t.id, id: t.id, col: t.color || "var(--acc)", sessions: ss });
     });
     _lastGroupKeys = groups.map(g => g.key);
@@ -8313,7 +8326,8 @@ let doneSessions = _loadUnread();  // JAG-218/479: finished while you were on an
 function setRunning(sid, on) {
   if (!sid) return;
   if (on) { runningSessions[sid] = true; clearDone(sid); } else delete runningSessions[sid];
-  // JAG-414: a session may be drawn in several team groups — update EVERY copy.
+  // JAG-414: update every row of this session (v652 draws it once, but the
+  // selector stays so a future grouping change cannot leave a stale copy).
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
     row => row.classList.toggle("running", !!on));
   // JAG-465: the Plan panel marks the step of a LIVE turn (animated); re-render so
@@ -11760,6 +11774,16 @@ async function emCosts() {
          ).join("") + "</table>")
       : '';
   } catch (e) { /* ignore */ }
+}
+/* v652: the embedding cost log is real state; it needs a real exit. The CSV
+   export is the only copy of the history, so the confirm says so. */
+async function emCostsClear() {
+  if (!await confirmDelete("wipe the whole embedding cost log? export the CSV first if you need the history")) return;
+  try {
+    const r = await api("DELETE", "/api/embedding/costs");
+    toast("embedding costs: cleared " + ((r && r.cleared) || 0) + " batches");
+  } catch (e) { toast("clear failed: " + e); }
+  emCosts();
 }
 function emExportCsv() {
   // The API serves text/csv with Content-Disposition; we trigger a download.

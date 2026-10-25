@@ -2957,8 +2957,13 @@ class OrbitApp {
     const ids = new Set(designated.filter(inTeam).map(a => a.id));
     const fJobs = jobs ? {jobs: (jobs.jobs || []).filter(j => (j.agents || []).some(x => ids.has(x)))} : null;
     const fRoutines = routines ? {routines: allRoutines.filter(r => !team || team === "ALL" || ids.has(r.agent))} : null;
+    // v652: the SAME model printed as `deepseek/...` here and as
+    // `openrouter:deepseek/...` in Settings ▸ Models — two shapes for one object
+    // (operator: "il formato cambia da pannello a pannello"). The option text is
+    // the canonical ref now, so both panels name a model the same way.
     const list = models ? ((models.providers) || []).reduce((acc, p) =>
-      acc.concat((p.models || []).map(m => ({ref: m.ref || (p.id + ":" + m.id), label: m.id}))), []) : [];
+      acc.concat((p.models || []).map(m => { const ref = m.ref || (p.id + ":" + m.id);
+        return {ref: ref, label: ref}; })), []) : [];
     const running = new Set(sessRows.filter(s => s.running).map(s => s.id));
     // JAG-2.4: state the roster in full. The panel mirrors the Sessions page, so the
     // hint reports the ONE real gap left: chats with no agent id yet (they are rows).

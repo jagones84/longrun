@@ -3,7 +3,8 @@
 Every embed batch writes ONE row, tagged with the scope that caused it
 (``codebase/<workspace>`` for the per-workspace index, ``notebook/<id>``
 for the global knowledge base). Aggregations are computed on read — the
-log is small (one row per batch, not per chunk) and never pruned.
+log is small (one row per batch, not per chunk) and rows older than
+``RETENTION_DAYS`` are dropped on the next write.
 """
 import csv
 import io
@@ -48,11 +49,19 @@ def _conn():
 
 
 def clear():
-    """Wipe the log (used by tests)."""
+    """Wipe the whole log and return how many rows were removed.
+
+    v652: the panel offered refresh and CSV export but no reset, so `clear()`
+    existed as a function nobody could reach (only the acceptance test called
+    it) — a dead object. The count is returned so the caller can say what it
+    actually removed.
+    """
     with LOCK:
         c = _conn()
+        n = c.execute("SELECT COUNT(*) AS n FROM batches").fetchone()["n"]
         c.execute("DELETE FROM batches")
         c.close()
+        return int(n or 0)
 
 
 def record(model, provider=None, tokens=0, est_cost_usd=None,
