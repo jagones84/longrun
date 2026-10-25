@@ -2311,6 +2311,12 @@
         </div>
         <!-- JAG-505: the subagent model + failover live in Settings ▸ Subagents —
              this card was a duplicate of it. -->
+        <h2>Research model · web → notebook</h2>
+        <div class="card">
+          <div class="remaining u-m006">Model that writes the cited summary for Research (Knowledge → <b>Research · web → notebook</b>). Same setting as the Knowledge-panel picker — one writer (<code>POST /api/research/model</code> → <code>research_model</code> in the index overlay), two views, no duplication.</div>
+          <select id="researchModelSettings" data-change="researchSetActive" class="inp u-w100 u-p610 u-fs12"></select>
+          <div class="remaining u-mt6">active: <b id="researchActive"></b></div>
+        </div>
         <h2>Embedding · knowledge index</h2>
         <div class="card">
           <div class="remaining u-m006">Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (<b>bm25</b>). The catalogue lives in your PERSONAL config (<code>config/embedding.yaml</code>) — the shipped entries are editable, and you can add your own below.</div>
@@ -6948,6 +6954,16 @@ function renderGraph() {
     // JAG-431d: per-todo rewind — undo THIS step and everything done after it.
     const rwb = el.querySelector(".task-rw");
     if (rwb && n) rwb.onclick = (e) => { e.stopPropagation(); rewindToTodo(n.id); };
+    // v609: the J-chip is a bridge into the team job, not inert text — click it
+    // for the job text + a button that opens the Job panel in Control. The row
+    // click still shows the todo; the chip click shows the job (stopPropagation
+    // so the two never fight). Single shared bridge: taskDetail renders the
+    // job (same GET /api/jobs/<id> the deck uses), _showJobInControl opens the
+    // deck and hands it the job id via postMessage (same pattern as
+    // _showInConstellation/_showAgentInOrganigram).
+    el.querySelectorAll(".jt-job").forEach(j => {
+      j.onclick = (e) => { e.stopPropagation(); if (j.dataset.job) _showJobDetail(j.dataset.job, n); };
+    });
     if (n && n.id === graphFresh) el.classList.add("fresh");
     // JAG-465: pulse ONLY the step of a REAL live turn on THIS session. A persisted
     // 'doing' left behind by a finished turn must never look active (the operator's
@@ -7091,6 +7107,49 @@ function showNodeDetail(n) {
     `<button class="ghost" data-a="cancel">✕ cancel</button></div>`;
   $("taskDetail").querySelectorAll("button").forEach(b =>
     b.onclick = () => graphNodeAction(n.id, b.dataset.a));
+}
+/* v609: job bridge — click a J-chip in the RH Plan panel and see the TEAM job
+   (same GET /api/jobs/<id> the Control deck renders), not just the todo. */
+async function _showJobDetail(jid, n) {
+  n = n || {};
+  const box = $("taskDetail");
+  const escJ = String(jid).replace(/^J/i, "");
+  let j = null;
+  try { j = await api("GET", "/api/jobs/" + encodeURIComponent(escJ)); } catch (e) { j = { error: String(e) }; }
+  if (!j || j.error || j.ok === false) {
+    box.innerHTML = `<div style="color:var(--err)">job J${esc(escJ)} — ` +
+      esc((j && (j.error || j.message)) || "not found (deleted? registry holds the live jobs)") +
+      `</div><div class="remaining">from todo ${esc(_todoid(n))} · ${esc(n.id || "")}</div>`;
+    return;
+  }
+  const team = (j.agents || []).join(", ");
+  box.innerHTML =
+    `<div style="color:var(--txt)"><b>job J${esc(escJ)}</b> · ${esc(j.status || "")}` +
+    (j.coordinator ? ` · coordinator ${esc(j.coordinator)}` : "") + `</div>` +
+    `<div style="margin:4px 0">${esc(j.goal || "(no goal text)")}</div>` +
+    (team ? `<div class="remaining">team: ${esc(team)}</div>` : "") +
+    `<div class="remaining">seen from todo ${esc(_todoid(n))} · ${esc(n.id || "")}</div>` +
+    `<div class="graphrow"><button class="ghost" id="jobGoControl">⇢ open in Control Jobs</button>` +
+    `<button class="ghost" id="jobBackTodo">← back to todo</button></div>`;
+  $("jobGoControl").onclick = () => _showJobInControl(escJ);
+  $("jobBackTodo").onclick = () => showNodeDetail(n);
+}
+/* v609: open the Control deck on the Jobs panel and hand it the job id — the
+   deck expands + rings that job (postMessage, same pattern as
+   _showInConstellation). Retried so the first-open iframe boot is covered. */
+function _showJobInControl(jid) {
+  showControl();
+  const f = document.getElementById("controlFrame");
+  let n2 = 0;
+  const iv = setInterval(() => {
+    try {
+      if (f && f.contentWindow && f.contentDocument
+          && f.contentDocument.readyState === "complete") {
+        f.contentWindow.postMessage({ type: "longrun-focus-job", id: String(jid).replace(/^J/i, "") }, "*");
+      }
+    } catch (e) {}
+    if (++n2 >= 10) clearInterval(iv);
+  }, 350);
 }
 async function graphNodeAction(id, a) {
   let body = { id };
@@ -7618,7 +7677,7 @@ function taskTree(nodes) {
     const ev = (n.evidence || []).length ? ` <span class="ev" title="${n.evidence.length} evidence item(s) — click the row to view them and jump the chat to this step">📎 ${n.evidence.length}</span>` : "";
     // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
     // so a long wrapped label can reclaim the width (see `.task.stacked`).
-    const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt" style="color:var(--acc2);margin:0 5px;font-size:10px" title="job ${esc(_nodeJob(n))}">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt" style="color:var(--info);margin:0 5px;font-size:10px" title="subjob ${esc(_nodeSub(n))} (embodies this todo)">${esc(_nodeSub(n))}</span>` : ""}`;
+    const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt jt-job" data-job="${_attr(String(n.jid).replace(/^J/i, ""))}" style="color:var(--acc2);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="job ${esc(_nodeJob(n))} — click for job text + open in Control Jobs">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt jt-job" data-job="${_attr(String(n.subjob).split(".")[0].replace(/^J/i, ""))}" style="color:var(--info);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="subjob ${esc(_nodeSub(n))} (embodies this todo) — click for parent job text + open in Control Jobs">${esc(_nodeSub(n))}</span>` : ""}`;
     const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
       `<span class="tmeta">${meta}</span><span class="tmain">${body}</span></div>`;
@@ -10486,6 +10545,7 @@ function settingsCategory(name) {
     if (typeof loadRouting === "function") loadRouting();
     if (typeof loadProviders === "function") loadProviders();
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
+    if (typeof researchModelLs === "function") researchModelLs();   // v609: Models card
     gateEnroll($("provCard"));   // JAG-496: an untouched provider form cannot be saved
   }
   else if (name === "diagnostics") { loadDiagnostics(); }
@@ -11699,28 +11759,40 @@ async function kbClear() {
   try { await api("POST", "/api/knowledge/clear", {}); kbLoadNotebooks(); kbLoadSources(); kbStatus(); } catch (e) {}
 }
 async function researchModelLs() {
-  const sel = $("researchModel"); if (!sel) return;
+  // v609: ONE writer (POST /api/research/model), TWO views — the Knowledge
+  // panel picker and the Settings ▸ Models card stay in sync, neither is a
+  // second truth.
+  const sels = [$("researchModel"), $("researchModelSettings")].filter(Boolean);
+  if (!sels.length) return;
   try {
     const r = await api("GET", "/api/research/model");
     const active = r.active || "";
     const models = r.models || [];
     const groups = {};
     models.forEach(m => { const g = m.group || m.provider || "other"; (groups[g] = groups[g] || []).push(m); });
-    sel.innerHTML = Object.keys(groups).map(g =>
+    const html = Object.keys(groups).map(g =>
       '<optgroup label="' + _attr(g) + '">' + groups[g].map(m =>
         '<option value="' + _attr(m.id) + '"' + (m.id === active ? " selected" : "") + '>' +
         esc(m.label || m.id) + '</option>').join("") + '</optgroup>').join("");
-    if (active && !models.some(m => m.id === active)) {
-      sel.insertAdjacentHTML("afterbegin", '<option value="' + _attr(active) + '" selected>' +
-        esc(active) + ' (current)</option>');
-    }
-  } catch (e) { sel.innerHTML = '<option value="">(load failed)</option>'; }
+    sels.forEach(sel => {
+      sel.innerHTML = html;
+      if (active && !models.some(m => m.id === active)) {
+        sel.insertAdjacentHTML("afterbegin", '<option value="' + _attr(active) + '" selected>' +
+          esc(active) + ' (current)</option>');
+      } else { sel.value = active; }
+    });
+    if ($("researchActive")) $("researchActive").textContent = active || "—";
+  } catch (e) { sels.forEach(sel => { sel.innerHTML = '<option value="">(load failed)</option>'; }); }
 }
 async function researchSetActive() {
-  const sel = $("researchModel"); if (!sel || !sel.value) return;
+  // v609: `this` is the picker that fired (delegated data-change dispatcher
+  // applies the element). Either picker writes the same endpoint — one writer.
+  const fired = (this && this.tagName === "SELECT") ? this : null;
+  const sel = fired || $("researchModelSettings") || $("researchModel");
+  if (!sel || !sel.value) return;
   try {
     const r = await api("POST", "/api/research/model", { model: sel.value });
-    if (r && r.ok) toast("research model: " + r.active);
+    if (r && r.ok) { toast("research model: " + r.active); researchModelLs(); }
   } catch (e) { toast("failed: " + String(e)); }
 }
 async function kbStartResearch() {

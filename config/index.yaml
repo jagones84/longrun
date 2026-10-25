@@ -35,3 +35,9 @@ image_caption_model: ""
 image_min_chars: 80       # OCR text shorter than this triggers the caption
 embed_model: "cohere:embed-multilingual-v3.0"   # provider ref; set "" for lexical-only (bm25)
 embed_batch: 32
+# Research summary model (v609): operator-settable in Settings ▸ Models AND the
+# Knowledge panel picker (same endpoint POST /api/research/model, one writer).
+# "local:default" works out of the box on this machine (llama.cpp router :8080,
+# no key needed); a web-grounded catalogue id (e.g. perplexity:sonar-pro) needs
+# its key in Settings ▸ Keys. Empty = catalogue default.
+research_model: "local:default"

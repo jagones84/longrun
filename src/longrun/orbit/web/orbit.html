@@ -318,6 +318,9 @@
   @keyframes cnodePulse { 0%{stroke-opacity:1;stroke-width:2} 50%{stroke-opacity:.3;stroke-width:6} 100%{stroke-opacity:1;stroke-width:2} }
   .cnode.focusring circle{ stroke:#ffd166 !important; stroke-opacity:1 !important; animation:cnodePulse 1s ease-in-out 3 }
   .cnode.focusring text{ fill:#ffe9b0 !important; font-weight:700 }
+  /* v609: a job handed over from the Sessions Plan panel rings the same way. */
+  @keyframes jobPulse { 0%{outline-color:#ffd166} 50%{outline-color:transparent} 100%{outline-color:#ffd166} }
+  .job.focusring{ outline:2px solid #ffd166 !important; outline-offset:-2px; animation:jobPulse 1s ease-in-out 3 }
   .clink{stroke:var(--link)}
   table.at tr.brief td{background:var(--brief)}
   .cjob{fill:var(--cjob-f)} .csub{fill:var(--csub-f)} .cagent{fill:var(--cagent-f)}
@@ -1930,6 +1933,26 @@ class JobsView {
         if (this.onOpenAgent) this.onOpenAgent(this._coord(el.dataset.id)); };
     });
   }
+  /* v609: the Sessions Plan panel hands us a job id (postMessage
+     longrun-focus-job) — expand that job, scroll it into view and ring it,
+     so the two panels never disagree about which job is which. */
+  focusJob(jid){
+    const id = String(jid == null ? "" : jid).replace(/^J/i, "");
+    if (!id) return;
+    if (!this.jobs.some(j => String(j.id).replace(/^J/i, "") === id)) return;
+    this.open = this.jobs.find(j => String(j.id).replace(/^J/i, "") === id).id;
+    this.render(this.jobs);
+    const panel = document.querySelector('section.panel[data-panel="jobs"]');
+    if (panel && panel.hidden === false) {
+      try { panel.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+    }
+    const el = document.querySelector('.job[data-id="' + this.open + '"]');
+    if (!el) return;
+    try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_) {}
+    el.classList.add("focusring");
+    clearTimeout(window.__jobFocusT);
+    window.__jobFocusT = setTimeout(() => el.classList.remove("focusring"), 3200);
+  }
   async dispatch(jid){
     const r = await this.api.post("/api/jobs/" + encodeURIComponent(jid) + "/dispatch", {});
     // JAG-322: a refused run (no agents left, blocked, already running) must be
@@ -2336,6 +2359,18 @@ function focusConstellationNode(id, tries){
 window.addEventListener("message", (e) => {
   const d = e.data || {};
   if (d && d.type === "longrun-focus-node") focusConstellationNode(d.id);
+  /* v609: the Sessions Plan panel hands us a job id — expand + ring that job
+     in the Jobs panel (single shared bridge, no second truth). */
+  if (d && d.type === "longrun-focus-job" && window.__orbitApp && window.__orbitApp.jobs) {
+    try {
+      /* single-panel view hiding Jobs: switch to it so the job is visible;
+         stacked board ("all") already shows Jobs — never steal the layout. */
+      if (window.__orbitApp.view && window.__orbitApp.view !== "all") {
+        window.__orbitApp.applyView("jobs");
+      }
+      window.__orbitApp.jobs.focusJob(d.id);
+    } catch (_) {}
+  }
   // JAG-2.9: the Sessions rail's "Show in organigram" hands us a session id —
   // select that agent in the AGENTS table AND in the org chart, and keep it.
   if (d && d.type === "longrun-focus-agent" && window.__orbitApp) {

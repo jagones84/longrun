@@ -43,6 +43,11 @@ through the deck's shared `onOpenAgent` callback; rows carry the id, never
 a second opener, no duplicated open logic (JAG-335/484, v600).
 2.2 Row clicks must not leak through action buttons (`stopPropagation`);
 destructive row actions confirm in place.
+2.3 A J-chip in the RH Plan panel opens the TEAM job, not the todo: job
+text from the same `GET /api/jobs/<id>` the Control deck renders, plus an
+"open in Control Jobs" button that hands the deck the id via
+`longrun-focus-job` (deck expands + scrolls + rings it, stacked board never
+stolen). Row click still shows the todo (v609).
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 
@@ -52,10 +57,12 @@ configured research model, and lands results as notebook sources.
 3.2 Every research claim carries inline `[title](url)` citations plus
 a link-only Sources section — in the researcher role brief AND in the
 summary prompt. "Cited summary" is a contract, not a wish (v603).
-3.3 The research model is operator-settable (Settings → Knowledge →
-research model; default `perplexity:sonar-pro`, local router available)
-and stored in `config/index.yaml` (`research_model`); launch paths are
-Knowledge panel (manual discover / auto agent), `POST
+3.3 The research model is operator-settable in Settings ▸ Models AND the
+Knowledge panel picker (same `POST /api/research/model` writer, one truth,
+documented in `config/index.yaml`); out-of-the-box default is
+`local:default` (DGX router, no key needed), stored in the index overlay
+(v609; was KB-picker-only defaulting to key-gated `perplexity:sonar-pro`).
+Launch paths are Knowledge panel (manual discover / auto agent), `POST
 /api/knowledge/research`, and `forge knowledge research`.
 3.4 Search providers are an explicit ordered fall-through chain
 (tavily → brave → duckduckgo, one function per provider), overridable via

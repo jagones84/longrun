@@ -217,8 +217,8 @@ DEDICATED = {
         "auto_index": "right rail ▸ Codebase",
         "custom_models": "Settings ▸ Models",
         "disabled_models": "Settings ▸ Models",
-        "research_model": "Settings ▸ Knowledge ▸ Research",
-        "research_active": "Settings ▸ Knowledge ▸ Research",
+        "research_model": "Settings ▸ Models + Knowledge ▸ Research",
+        "research_active": "Settings ▸ Models + Knowledge ▸ Research",
     },
 }
 
