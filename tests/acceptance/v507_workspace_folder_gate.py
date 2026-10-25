@@ -183,12 +183,13 @@ check("a folder outside the roots falls back to the first root and says why",
       and "roots: \" + roots.join" in load_dirs,
       "no empty dead-end list")
 
-check("the Workspace card states WHERE a save will land before it is pressed",
-      'id="wsTarget"' in UI
-      and "function _wsTargetHint()" in UI
-      and "_wsTargetHint();" in load_rules
-      and '$("wsDefault").addEventListener("change", _wsTargetHint)' in UI,
-      "session vs default is explicit")
+# v638: the always-visible "save links this folder to THIS session" line was a second
+# row of prose saying what the checkbox next to it already says. The SCOPE is now the
+# checkbox label; the card carries no status sentence.
+check("the save scope is stated by the checkbox, not by a status line",
+      '<input type="checkbox" id="wsDefault"> default for new sessions' in UI
+      and 'id="wsTarget"' not in UI and "function _wsTargetHint()" not in UI,
+      "session vs default is explicit without a paragraph")
 
 check("the UI carries no hardcoded absolute folder example",
       "/home/jagones" not in UI and 'placeholder="folder path…"' in UI,

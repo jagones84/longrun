@@ -379,7 +379,7 @@
     font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
     color: var(--dim); }
   .sgroup-h:hover { background: var(--hover); color: var(--txt); }
-  .sgroup-h .chev { font-size: 9px; width: 9px; text-align: center; opacity: .75; }
+  .sgroup-h .chev { font-size: 11px; width: 11px; text-align: center; opacity: .75; }
   .sgroup-h .gsym { font-size: 13px; line-height: 1; color: var(--tcol, var(--dim)); }
   .sgroup-h .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sgroup-h .gid { color: var(--dim); font-weight: 500; text-transform: none; letter-spacing: 0; }
@@ -435,8 +435,8 @@
      so the hidden attribute needs its own display:none to actually hide the row. */
   .ctxrow[hidden], .acts[hidden] { display: none; }
   .lnk { padding: 0; background: none; border: 0; color: var(--acc); font: inherit;
-    font-size: 11px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
-  .lnk:hover { color: var(--txt); }
+    font-size: 11px; cursor: pointer; text-decoration: none; }
+  .lnk:hover { color: var(--txt); text-decoration: underline; text-underline-offset: 2px; }
   .lnk.busy { opacity: .6; cursor: progress; }
   details.dryrun > summary, details.brk > summary { cursor: pointer; font-size: 11px; color: var(--dim); }
   details.dryrun > summary:hover, details.brk > summary:hover { color: var(--txt); }
@@ -1134,6 +1134,15 @@
   /* v634: every section uses the same 6/8 rhythm (was 8/10 + 6 margin) — the rails
      were paying ~30px of cumulative padding for nothing. */
   #inspector .card { padding: 6px 8px; margin-bottom: 4px; }
+  /* v638: ONE disclosure marker size in the rail. Before: 9px chevrons on the session
+     groups, native <details> triangles in Context/Rules (sized by the summary font)
+     and a text arrow in Rules — three sizes for the same affordance. */
+  #inspector details > summary { list-style: none; }
+  #inspector details > summary::-webkit-details-marker { display: none; }
+  #inspector details > summary::marker { content: ""; }
+  #inspector details > summary::before { content: "\25B8"; display: inline-block; width: 11px;
+    margin-right: 1px; color: var(--dim); font-size: 10px; line-height: 1; vertical-align: 1px; }
+  #inspector details[open] > summary::before { content: "\25BE"; }
   /* JAG-275: the rail's action buttons looked oversized (they inherited the 14px
      body font with 8/14px padding). Compact them so the inspector reads denser. */
   #inspector button.ghost { font-size: 11px; padding: 4px 9px; border-radius: 8px; line-height: 1.5; }
@@ -1266,26 +1275,21 @@
     min-height: 36px; padding: 6px 9px; border: 1px solid var(--line-2);
     border-radius: 8px; background: var(--panel2); cursor: pointer; }
   .sbx-check input { accent-color: var(--accent); }
-  .cb-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .cb-metric { min-width: 0; padding: 7px 8px; border: 1px solid var(--line-2);
-    border-radius: 8px; background: var(--panel2); }
-  .cb-metric span { display: block; color: var(--dim); font-size: 9px; font-weight: 700;
-    letter-spacing: .08em; text-transform: uppercase; }
-  .cb-metric b { display: block; margin-top: 2px; color: var(--txt);
-    font-size: 14px; font-variant-numeric: tabular-nums; }
-  .cb-location, .cb-embedding, .cb-auto { margin-top: 8px; color: var(--dim); font-size: 11px; }
-  .cb-location { display: flex; gap: 6px; min-width: 0; }
-  .cb-location .cb-path { color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cb-embedding b { color: var(--txt); overflow-wrap: anywhere; }
+  /* v638: three boxed stat cards for three numbers, plus a labelled location row and
+     a boxed freshness banner — all of it said what the section header already said.
+     Now: one line of counts, one line of provenance, one line of auto-index state. */
+  .cb-line { color: var(--dim); font-size: 11px; margin-top: 3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cb-line:first-child { margin-top: 0; }
+  .cb-line b { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cb-auto { margin-top: 3px; color: var(--dim); font-size: 11px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cb-auto b { color: var(--txt); }
   .cb-auto .cb-off { color: var(--warn); }
   .cb-auto .cb-err { color: var(--err); }
-  .cb-stale, .cb-fresh { display: block; margin-top: 8px; padding: 6px 9px;
-    border-radius: 8px; font-size: 11px; border: 1px solid var(--line-2); }
-  .cb-stale { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent);
-    background: color-mix(in srgb, var(--warn) 8%, transparent); }
-  .cb-fresh { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 32%, transparent);
-    background: color-mix(in srgb, var(--ok) 7%, transparent); }
+  .cb-stale, .cb-fresh { display: block; margin-top: 3px; font-size: 11px; }
+  .cb-stale { color: var(--warn); }
+  .cb-fresh { color: var(--ok); }
   .term-tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 6px; }
   .term-tabs:empty { display: none; }
   .term-tab { flex: 0 0 auto; padding: 3px 8px; border: 1px solid var(--line-2);
@@ -1606,9 +1610,8 @@
   .rulesrc { border-bottom: 1px solid var(--line-2); padding: 5px 0; }
   .rulesrc > summary { cursor: pointer; font-size: 12px; display: flex; align-items: center;
     gap: 8px; list-style: none; }
-  .rulesrc > summary::-webkit-details-marker { display: none; }
-  .rulesrc > summary::before { content: "\25B8 "; color: var(--dim); }
-  .rulesrc[open] > summary::before { content: "\25BE "; }
+  /* v638: the marker itself is declared ONCE for every inspector disclosure
+     (`#inspector details > summary[::before]`, see the inspector block). */
   .rbadge { margin-left: auto; font-size: 10px; color: var(--dim); max-width: 48%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rbadge.ok { color: var(--ok); }
@@ -2265,9 +2268,6 @@
             <button class="ghost" data-call="SparkEditorToggle"
                     aria-label="open the editor" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔</button>
           </div>
-          <!-- JAG-2.8: say what "save" will actually do BEFORE it is pressed — the
-               session/default ambiguity made a correct save look like a no-op. -->
-          <div class="remaining u-mt6" id="wsTarget" role="status" aria-live="polite"></div>
         </div>
         <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
         <div class="card">
@@ -2283,9 +2283,10 @@
       <section data-insp="codebase" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["codebase"]'>Codebase<span class="ihd-s" id="sCodebase"></span></button>
         <div class="insp-body">
-        <h2>Codebase index · <span id="cbStat" class="remaining"></span></h2>
+        <!-- v638: the section header already carries `48 files · 119 chunks`; the caps
+             title and the three stat boxes below it said the same thing three times. -->
         <div class="card cb-card">
-          <div class="remaining" id="cbMeta" role="status" aria-live="polite">Search this workspace's code and docs. Build once, then query.</div>
+          <div class="remaining" id="cbMeta" role="status" aria-live="polite">…</div>
           <div class="cb-progress" id="cbProgress" role="status" aria-live="polite" hidden>
             <span class="cb-spinner" aria-hidden="true"></span><span id="cbProgressText"></span>
           </div>
@@ -10229,7 +10230,6 @@ async function loadRules() {
     $("wsPath").value = d.workspace || "";
     gateEnroll($("wsCard"));   // JAG-496: this is the baseline the workspace Save compares against
     _isum("sWorkspace", _base(d.workspace), "");
-    _wsTargetHint();           // JAG-2.8: say WHERE a save will land
     $("rulesGlobalPath").textContent = "file: " + (g.path || "—") + (g.exists ? "" : " (does not exist)");
     $("rulesProjectPath").textContent = "file: " + (p.path || "—") + (p.exists ? "" : " (does not exist)");
     $("rulesGlobalText").value = g.text || "";
@@ -10270,18 +10270,6 @@ async function setWorkspace() {
   }
   if (!r.error) { _afterWorkspaceChange(); }
 }
-/* JAG-2.8: state the SCOPE of a save BEFORE it is pressed. Checking "set as default"
-   routes the save to the GLOBAL default and leaves THIS session's folder untouched —
-   a correct save that looked like nothing happened. Now the card says which one it is. */
-function _wsTargetHint() {
-  const el = $("wsTarget"); if (!el) return;
-  const asDefault = !!($("wsDefault") && $("wsDefault").checked);
-  el.textContent = (asDefault || !sessionId)
-    ? "save writes this folder as the DEFAULT for new sessions" + (sessionId ? "" : " (no session is open)")
-    : "save links this folder to THIS session";
-  el.style.color = asDefault ? "var(--warn, inherit)" : "";
-}
-if ($("wsDefault")) $("wsDefault").addEventListener("change", _wsTargetHint);
 /* JAG-501: a workspace change re-roots EVERY browser at once — the Files panel
    (right rail), the pending-changes list, the editor tree and the Codebase badge.
    The manual ↻ buttons stay, but only for a forced re-read: the normal path is
@@ -11340,26 +11328,22 @@ async function cbStatus() {
       }
     }
     if (meta) meta.innerHTML = (s.exists
-      ? '<div class="cb-metrics">' +
-        '<div class="cb-metric"><span>Files</span><b>' + count(files) + "</b></div>" +
-        '<div class="cb-metric"><span>Chunks</span><b>' + count(chunks) + "</b></div>" +
-        '<div class="cb-metric"><span>Vectors</span><b>' + count(embedded) + " / " + count(chunks) + "</b></div></div>" +
-        '<div class="cb-location"><span>Workspace</span><b class="cb-path" title="' + _attr(_cbWorkspace) + '">' +
-        esc(_short(_cbWorkspace)) + "</b></div>" +
-        '<div class="cb-embedding">Embedding · <b>' + esc(s.embed_model || "lexical only") + "</b>" +
-        (s.dim ? " · " + count(Number(s.dim)) + " dimensions" : "") +
-        " · DB " + esc(_fmtSize((s.size_kb || 0) * 1024)) +
+      ? '<div class="cb-line"><b>' + count(files) + "</b> files · <b>" + count(chunks) +
+        "</b> chunks · <b>" + count(embedded) + "/" + count(chunks) + "</b> vectors</div>" +
+        '<div class="cb-line"><b class="cb-path" title="' + _attr(_cbWorkspace) + '">' +
+        esc(_short(_cbWorkspace)) + "</b> · " + esc(s.embed_model || "lexical only") +
+        (s.dim ? " · " + count(Number(s.dim)) + "d" : "") +
+        " · " + esc(_fmtSize((s.size_kb || 0) * 1024)) +
         (s.built_at ? " · built " + _cbAgo(s.built_at) : "") + "</div>" +
         autoHtml + freshHtml +
         (s.embed_error ? '<span class="cb-error">Embedding incomplete · ' + esc(s.embed_error) + "</span>" : "") +
         (files === 0 ? '<span class="cb-empty">' +
           esc(s.hint || "No indexable files found. Check this workspace and its ignore patterns.") +
           "</span>" : "")
-      : '<div class="cb-location"><span>Workspace</span><b class="cb-path" title="' +
-        _attr(_cbWorkspace) + '">' + esc(_short(_cbWorkspace)) + '</b></div>' +
+      : '<div class="cb-line"><b class="cb-path" title="' +
+        _attr(_cbWorkspace) + '">' + esc(_short(_cbWorkspace)) + "</b></div>" +
         autoHtml +
         '<span class="cb-empty">No index yet. Build to scan this workspace.</span>');
-    const st = $("cbStat"); if (st) st.textContent = s.exists ? (count(chunks) + " chunks") : "not built";
     _isum("sCodebase", s.exists ? (count(files) + " files · " + count(chunks) + " chunks") : "empty", s.exists && files ? "" : "warn");
     return s;
   } catch (e) { const meta = $("cbMeta"); if (meta) meta.textContent = "error: " + e; }
