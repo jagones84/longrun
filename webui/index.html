@@ -6841,10 +6841,9 @@ function planNodes(g) {
 }
 function renderGraph() {
   const box = $("tasks"); box.innerHTML = ""; $("taskDetail").innerHTML = "";
-  const _jid = curJob ? ("J" + curJob + " · ") : "";
   if (!graph) {
     box.innerHTML = '<div class="remaining">no run graph yet — send a request</div>';
-    $("graphHead").textContent = _jid + "run graph: —"; $("taskCount").textContent = "";
+    $("graphHead").textContent = "run graph: —"; $("taskCount").textContent = "";
     _isum("sPlan", "");
     return;
   }
@@ -6883,10 +6882,10 @@ function renderGraph() {
   if (_goalFull.length > 80 && _sp > 40) _cut = _cut.slice(0, _sp);
   const _goalPrev = _goalFull.length > 80 ? _cut + "…" : _goalFull;
   const _staleGoal = (graph.plan || 1) > (graph.plan_base || 1);
-  // v604: the J-number is the session's OWN number (JAG-169), not a team job —
-  // say so on the label itself so J155 is never read as a job or an agent.
-  $("graphHead").innerHTML = (_jid ? '<span title="session number \u2014 the session\u2019s own id (team jobs live in the Control tab)">'+ esc(_jid) + "</span>" : "") +
-    esc("run " + (graph.run_id || "").slice(0, 8) + " · " +
+  // v607: the header carries NO session/job number. The run id identifies the
+  // run; the session lives in the sidebar (roster A id or J sequence). A bare
+  // "J155"/"J182" prefix read as a team job that does not exist — so it is gone.
+  $("graphHead").innerHTML = esc("run " + (graph.run_id || "").slice(0, 8) + " · " +
     _nodes.length + " nodes · " + (c.done || 0) + " done") +
     (_goalFull ? ' · <details class="goalfull"><summary title="click to expand the full run goal">' +
       esc(_goalPrev) +
@@ -6917,9 +6916,20 @@ function renderGraph() {
         p + '">✕</button></div>';
     }).join("");
     // Single collapsed general OLD PLAN menu nesting every older plan.
+    // v608: the count is DISTINCT stored plans, not the max plan id — a deleted
+    // plan (✕, JAG-514) leaves a gap (e.g. plans 1-6,8-14 = 13 plans, 7 deleted).
+    // Show the gap so "13 vs 14" never reads as a miscount.
     const _tot = _older.length;
+    let _gap = "";
+    if (_keys.length) {
+      const _nums = _keys.map(Number);
+      const _lo = Math.min.apply(null, _nums), _hi = Math.max.apply(null, _nums);
+      const _missing = [];
+      for (let _p = _lo; _p <= _hi; _p++) if (!(_byPlan[_p])) _missing.push(_p);
+      if (_missing.length) _gap = " (missing: " + _missing.join(", ") + " — deleted)";
+    }
     _olderHtml = '<details class="older-plans-all"><summary class="remaining u-ptr">OLD PLAN \u00b7 ' +
-      _keys.length + ' plan(s) \u00b7 ' + _tot + ' node(s)</summary>' + _inner + '</details>';
+      _keys.length + ' plan(s) \u00b7 ' + _tot + ' node(s)' + _gap + '</summary>' + _inner + '</details>';
   }
   const _historyHtml = _historyNote
     ? '<div class="plan-history-note" role="status">' + esc(_historyNote) + "</div>"
@@ -11725,6 +11735,7 @@ async function kbStartResearch() {
     const r = await api("POST", "/api/knowledge/research",
       { q: q, notebook: kbState.notebook || "default", depth: depth, n: n, max_rounds: 4 });
     append("✓ rounds=" + (r.rounds || 0) + ", sources_added=" + (r.sources_added || 0));
+    if (r.warning) append("⚠ " + r.warning);
     (r.sources || []).forEach((s, i) => append("  " + (i + 1) + ". " + (s.kind || "?") + " · " + (s.url || s.ref || s.title || "")));
     if (r.plan) append("▸ plan: " + JSON.stringify(r.plan));
     toast("research done — " + (r.sources_added || 0) + " sources imported");

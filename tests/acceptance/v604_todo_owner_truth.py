@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v604 (RED) — todo labels name a REAL owner (single source of truth).
+"""v604 (evolved v607) — todo labels name a REAL owner (single source of truth).
 
 "A155.n40" was a phantom: the node is "n40", its session's agent is A49,
 its session number is J155 — no A155 exists anywhere (41 agents, jobs
@@ -7,8 +7,9 @@ J12-J22). Labels must resolve against the roster, never fabricate:
 
 - designated session -> the agent id (A49.n40);
 - plain session    -> its own session number in the J namespace (J180.n87);
-- the header J-number carries a tooltip saying it is the session's own
-  number, not a team job (those live in the Control tab).
+- the Plan header carries NO session/job number at all since v607 (a bare
+  "J155" prefix read as a nonexistent team job; the run id identifies the
+  run, the session lives in the sidebar per v606).
 
 Static, deterministic, no model/browser.
 Run: python tests/acceptance/v604_todo_owner_truth.py
@@ -35,8 +36,9 @@ check("T1 the label owner resolves against the roster (designated agent)",
       "_agents[sessionId]" in _todo)
 check("T2 no fabricated agent id anywhere (phantom A155 class is gone)",
       '"A" + curJob' not in HTML and '"J" + curJob' in _todo)
-check("T3 the header session number says what it is (not a team job)",
-      "session number" in _head)
+check("T3 the Plan header carries no session/job number (v607)",
+      "const _jid" not in HTML and "session number" not in _head,
+      "run id only; sidebar owns session identity")
 check("T4 no regression (counts, dropdown, history, rewind, roster map)",
       "nodes \u00b7 " in _head and "goalfull" in _head
       and "OLD PLAN" in HTML and "rewind to just before this todo" in HTML

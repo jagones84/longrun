@@ -200,8 +200,10 @@ def run(query, notebook="default", depth="shallow", n=5, max_rounds=4,
                        "error": res.get("error", "")})
         out["rounds"] = i
 
-    # final summary via the research LLM (best-effort; failure is non-fatal)
-    summary = ""
+    # final summary via the research LLM (v607: LOUD fallback chain, never a
+    # silent stub — a dead summary model used to degrade to the bare
+    # "Research summary about: …" with no trace of why the citations were gone).
+    summary, warning = "", ""
     if summary_chunks:
         prompt = ("Summarise the following research notes in 6 short bullet points. "
                   "Every bullet carries inline [title](url) citations for its claims "
@@ -213,10 +215,37 @@ def run(query, notebook="default", depth="shallow", n=5, max_rounds=4,
                 summary = r["summary"]
         except Exception:  # noqa: BLE001
             summary = ""
+        if not summary and str(model) != "local:default":
+            # The configured model is dead (no key, retired id, router down):
+            # the local router is always there on a DGX checkout, so use it
+            # before giving up — a cited summary beats a stub.
+            try:
+                r = llm_fn(prompt, "local:default") if llm_fn else None
+                if r and r.get("summary"):
+                    summary = r["summary"]
+                    warning = ("research model %r failed; summary by local router"
+                               % model)
+            except Exception:  # noqa: BLE001
+                pass
         if not summary:
             summary = "Research summary about: " + (query or "").strip()
+            warning = (warning or
+                       ("research model %r failed and no local router answered; "
+                        "stored the uncited stub" % model))
     else:
         summary = "Research summary about: " + (query or "").strip()
+        # v608: zero fetched sources is the "nothing embedded" case the
+        # operator reported — say WHY (search dead? fetch empty?) instead of
+        # silently storing a stub. NotebookLM-style contract: URLs land as
+        # notebook sources automatically, no manual import step.
+        errs = [e.get("error") for e in out["log"]
+                if e.get("type") == "import" and e.get("error")]
+        hint = ("search returned nothing or every fetch failed" if not errs
+                else "fetch failed: " + "; ".join(sorted(set(errs)))[:300])
+        warning = "research imported 0 sources — " + hint
+    if warning:
+        out["warning"] = warning
+        _emit({"type": "warning", "text": warning})
     tres = _kb.add_text(notebook, "Research: " + (query or "").strip(), summary)
     if tres.get("ok"):
         out["sources"].append({"url": "", "title": tres.get("title", ""),

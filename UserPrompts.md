@@ -24,9 +24,11 @@ Stores and their namespaces (single source of truth, no overlaps):
 1.1 Todo labels name the owner, resolved live: designated session goes to
 its agent id (`A49.n40`); plain session goes to its own session number
 (`J180.n87`); never a fabricated id, never a bare `A?` (v604).
-1.2 The Plan header J-number is the session's OWN number, tooltiped as
-such; it is not a team job (those live in Control). A run-start goal on a
-moved-on plan carries the label `· run-start goal` (v601/v602).
+1.2 The Plan header carries no session/job number: a bare `J155` prefix
+read as a team job that does not exist (registry holds J12–J22). The run
+id identifies the run; the session lives in the sidebar — roster `A49`
+or honest `J189` (v606/v607). Kept: run-start goal label on moved-on
+plans, 80-char word-boundary preview (v601/v602).
 1.3 Per-row job context renders ONLY from node fields (`jid`/`subjob`);
 goal prose never counts as structure (v602).
 1.4 Node identity for resolution is the raw `id` (`n40`); display
