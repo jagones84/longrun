@@ -1274,6 +1274,18 @@
     border-radius: 8px;
   }
   #settingsWin .sub-fl { font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+  /* v650: a Settings field is as wide as its CONTENT, not as wide as the panel.
+     Every control in this window was built to fill its column (`u-w100`, or a
+     flex row that stretches the select), so a 600px column gave a 577px select
+     for a 24-character model id and a 577px box for a count (operator: "tutti i
+     menu sono poco compatti, super larghi"). The column stays the layout unit;
+     only the CONTROL stops stretching — 340px holds the longest value we ship,
+     110px is enough for a number. A textarea keeps the full width because its
+     content IS long text. */
+  #swMain select,
+  #swMain input:not([type=checkbox]):not([type=radio]):not([type=range]),
+  #swMain .u-w100:not(textarea) { max-width: 340px; min-width: min(160px, 100%); }
+  #swMain input[type=number] { max-width: 110px; min-width: 72px; }
   .sbx-state { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px;
     margin-bottom: 12px; background: var(--panel2); }
   .sbx-state-head { display: flex; align-items: center; gap: 9px; }
@@ -10804,7 +10816,11 @@ function buildSettingsWin() {
   const w = settingsWin();
   if (pos) {
     w.style.left = pos.x + "px"; w.style.top = pos.y + "px";
-    if (pos.w) w.style.width = Math.min(pos.w, innerWidth) + "px";
+    // v650: a settings window is a PANEL, not a workspace. A size saved by an
+    // older, roomier layout is restored up to the design width (760) and no
+    // further, so a stretched window never turns every field into a 600px bar
+    // (operator: "tutti i menu sono poco compatti, super larghi").
+    if (pos.w) w.style.width = Math.min(pos.w, innerWidth, 760) + "px";
     if (pos.h) w.style.height = Math.min(pos.h, innerHeight) + "px";
   } else { w.style.left = Math.max(20, (innerWidth - 760) / 2) + "px"; w.style.top = "70px"; }
   _clampBox(w);   // JAG-3xx: a desktop-saved position must not land off-screen on a phone
