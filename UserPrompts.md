@@ -33,6 +33,11 @@ plans, 80-char word-boundary preview (v601/v602).
 goal prose never counts as structure (v602).
 1.4 Node identity for resolution is the raw `id` (`n40`); display
 prefixes MUST NOT leak into stored ids (JAG-194).
+1.5 Session Jobs (`SJ<n>` / `SJ<n>.<k>`) live in `data/session_jobs/<sid>.json`
+and die with their session; team jobs (`J<n>`) live in the registry. A
+`batch` with subagent items becomes ONE SJ; a bare `subagent` spawn leaves
+no SJ record (pinned, v611). `describe` falls back to the latest open job
+on unknown id, never a traceback.
 Rationale: `A155.n40` was a phantom — node `n40`, agent A49, session J155;
 no A155 exists anywhere.
 
@@ -50,6 +55,11 @@ text from the same `GET /api/jobs/<id>` the Control deck renders, plus an
 stolen). Job and subjob are different entities (J17 rings the job row, J17.4
 its subjob row); ids are full store ids end to end, bare digits normalised
 at lookup (v609/v610). Row click still shows the todo.
+2.4 Batch lanes never mix: tool calls run inline, `subagent`/goal items
+become the ONE Session Job, dispatches (any spelling, never a `subagent`
+action) run as real turns in the peer session. A dispatch never becomes an
+SJ subjob (v612). Inter-session chat validates first: missing args → 64,
+unknown session → clean error, no self-send (v613).
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 
