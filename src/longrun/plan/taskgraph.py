@@ -84,8 +84,34 @@ def _path(key):
 
 
 def load(key):
-    """Load the graph for `key` (a session id = a task, or a run id) or None."""
-    return read_json(_path(key), None)
+    """Load the graph for `key` (a session id = a task, or a run id) or None.
+
+    One-way 1-based migration: graphs written when plans started at 0 get
+    every stored plan number + 1 (untagged nodes count as plan 0) and a
+    `plan_base: 1` marker, persisted on the spot. Already-migrated graphs
+    load untouched. Node ids are unchanged, so the transcript keeps
+    resolving old cards.
+    """
+    g = read_json(_path(key), None)
+    if not isinstance(g, dict) or g.get("plan_base") == 1:
+        return g
+    try:
+        g["plan"] = int(g.get("plan", 0) or 0) + 1
+    except (TypeError, ValueError):
+        g["plan"] = 1
+    for n in g.get("nodes") or []:
+        if not isinstance(n, dict):
+            continue
+        try:
+            n["plan"] = int(n.get("plan", 0) or 0) + 1
+        except (TypeError, ValueError):
+            n["plan"] = 1
+    g["plan_base"] = 1
+    try:
+        save(g)
+    except Exception:  # noqa: BLE001 — a read-only checkout still reads fine
+        pass
+    return g
 
 
 def save(graph):
@@ -105,7 +131,7 @@ def ensure(key, session_id=None, goal=None):
         g = load(key)
         if g is None:
             g = {"key": key, "run_id": key, "session_id": session_id, "goal": goal,
-                 "nodes": [], "plan": 0,
+                 "nodes": [], "plan": 1, "plan_base": 1,
                  "created": round(time.time(), 3),
                  "updated": round(time.time(), 3), "generated": False}
             save(g)
@@ -118,7 +144,7 @@ def ensure(key, session_id=None, goal=None):
                 g["run_id"] = key
                 changed = True
             if "plan" not in g:
-                g["plan"] = 0
+                g["plan"] = 1
                 changed = True
             if session_id and g.get("session_id") != session_id:
                 g["session_id"] = session_id
@@ -181,7 +207,7 @@ def drop_plan(key, plan):
         g = load(key)
         if not g:
             return {"ok": False, "error": "no task graph for %r" % key}
-        cur = int(g.get("plan", 0) or 0)
+        cur = int(g.get("plan", 1) or 1)
         try:
             p = int(plan)
         except (TypeError, ValueError):
@@ -191,7 +217,7 @@ def drop_plan(key, plan):
                                           "plan (or reset the list) before deleting it" % p}
         nodes = list(g.get("nodes") or [])
         gone = {n.get("id") for n in nodes
-                if int(n.get("plan", 0) or 0) == p and n.get("id")}
+                if int(n.get("plan", 1) or 1) == p and n.get("id")}
         kept = [n for n in nodes if n.get("id") not in gone]
         removed = len(nodes) - len(kept)
         if not removed:
@@ -210,11 +236,11 @@ def drop_plan(key, plan):
 
 
 def plan_nodes(graph):
-    """Nodes of the CURRENT plan (all nodes when none is tagged / plan 0)."""
+    """Nodes of the CURRENT plan (all nodes when none is tagged / plan 1)."""
     if not graph:
         return []
-    cur = graph.get("plan", 0)
-    return [n for n in graph.get("nodes", []) if n.get("plan", 0) == cur]
+    cur = graph.get("plan", 1)
+    return [n for n in graph.get("nodes", []) if n.get("plan", 1) == cur]
 
 
 def render_todos(graph, limit=12, compact=False):
@@ -380,7 +406,7 @@ def add_node(graph, label, deps=None, status="todo", evidence=None, node_id=None
         node = {"id": node_id or _next_id(graph), "label": label, "status": status,
                 "deps": deps, "parent": str(parent) if parent else None, "evidence": ev,
                 "requires_proof": bool(requires_proof),
-                "plan": graph.get("plan", 0),
+                "plan": graph.get("plan", 1),
                 # JAG-299: the job (JN) this node was created for, if any — lets the UI
                 # attribute a todo to its job instead of one undifferentiated list.
                 "jid": graph.get("jid"),

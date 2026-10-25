@@ -52,10 +52,10 @@ def check(name, ok, detail=""):
 G = TG.ensure("v512s", session_id="v512s", goal="demo")
 OLD = TG.add_node(G, "old plan step")
 OLD2 = TG.add_node(G, "old plan step 2")
-TG.begin_plan(G)                                   # -> plan 1 (current)
+TG.begin_plan(G)                                   # -> plan 2 (current)
 NEW = TG.add_node(G, "current step", deps=[OLD["id"]])   # a dep that will dangle
 
-res = TG.drop_plan("v512s", 0)
+res = TG.drop_plan("v512s", 1)
 g2 = TG.load("v512s")
 ids = [n["id"] for n in g2["nodes"]]
 check("A1 drop_plan removes every node of that plan from the graph",
@@ -66,9 +66,9 @@ check("A2 the removal is PERSISTED (a reload does not bring the plan back)",
 check("A3 a dep pointing at a dropped step is pruned (nothing waits forever)",
       g2["nodes"][0]["deps"] == [], g2["nodes"][0]["deps"])
 check("A4 it reports what it did (counts for the toast)",
-      res.get("plan") == 0 and res.get("node_count") == 1, res)
+      res.get("plan") == 1 and res.get("node_count") == 1, res)
 
-cur = TG.drop_plan("v512s", 1)
+cur = TG.drop_plan("v512s", 2)
 check("A5 the CURRENT plan is refused (the model may be working on it)",
       cur.get("ok") is False and "CURRENT" in (cur.get("error") or ""), cur.get("error"))
 missing = TG.drop_plan("v512s", 9)

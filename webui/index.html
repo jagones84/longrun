@@ -6773,9 +6773,9 @@ function applyGraphEvent(d) {
 }
 function planNodes(g) {
   // JAG-194: nodes of the CURRENT plan (graph.plan); untagged nodes belong to
-  // plan 0. Keeping every plan's nodes lets the transcript resolve old card ids.
-  const cur = (g && g.plan != null) ? g.plan : 0;
-  return ((g && g.nodes) || []).filter(n => (n.plan == null ? 0 : n.plan) === cur);
+  // plan 1. Keeping every plan's nodes lets the transcript resolve old card ids.
+  const cur = (g && g.plan != null) ? g.plan : 1;
+  return ((g && g.nodes) || []).filter(n => (n.plan == null ? 1 : n.plan) === cur);
 }
 function renderGraph() {
   const box = $("tasks"); box.innerHTML = ""; $("taskDetail").innerHTML = "";
@@ -6796,8 +6796,8 @@ function renderGraph() {
   let _shownP = _curP;
   let _historyNote = "";
   if (!_nodes.length && (graph.nodes || []).length) {
-    const _maxp = Math.max.apply(null, graph.nodes.map(n => (n.plan == null ? 0 : n.plan)));
-    _nodes = graph.nodes.filter(n => (n.plan == null ? 0 : n.plan) === _maxp);
+    const _maxp = Math.max.apply(null, graph.nodes.map(n => (n.plan == null ? 1 : n.plan)));
+    _nodes = graph.nodes.filter(n => (n.plan == null ? 1 : n.plan) === _maxp);
     _shownP = _maxp;
     _historyNote = "Current plan " + _curP + " is empty; showing historical plan " + _shownP + ".";
   }
@@ -6807,7 +6807,7 @@ function renderGraph() {
   // collapsible section (collapsed by default) so nothing is hidden. When a fallback
   // plan is shown, the note above identifies it as history. The MODEL's todo rendering
   // remains scoped to the current plan.
-  const _older = (graph.nodes || []).filter(n => (n.plan == null ? 0 : n.plan) !== _shownP);
+  const _older = (graph.nodes || []).filter(n => (n.plan == null ? 1 : n.plan) !== _shownP);
   const c = countNodes(_nodes);
   $("graphHead").textContent = _jid + "run " + (graph.run_id || "").slice(0, 8) + " · " +
     _nodes.length + " nodes · " + (c.done || 0) + " done" +
@@ -6817,7 +6817,7 @@ function renderGraph() {
   let _olderHtml = "";
   if (_older.length) {
     const _byPlan = {};
-    _older.forEach(n => { const p = (n.plan == null ? 0 : n.plan); (_byPlan[p] ||= []).push(n); });
+    _older.forEach(n => { const p = (n.plan == null ? 1 : n.plan); (_byPlan[p] ||= []).push(n); });
     const _keys = Object.keys(_byPlan).sort((a, b) => a - b);
     const _inner = _keys.map(p => {
       const _oc = countNodes(_byPlan[p]);
@@ -6878,7 +6878,7 @@ function renderGraph() {
    the conversation happened, and its cards simply stop resolving to a live step. */
 async function dropPlan(p) {
   if (!sessionId || !graph) return;
-  const n = (graph.nodes || []).filter(x => (x.plan == null ? 0 : x.plan) === p).length;
+  const n = (graph.nodes || []).filter(x => (x.plan == null ? 1 : x.plan) === p).length;
   if (!(await confirmDelete("delete older plan " + p + " and its " + n +
       " step(s)? They disappear from this panel and from the Control constellation. "
       + "The chat itself is not touched."))) return;

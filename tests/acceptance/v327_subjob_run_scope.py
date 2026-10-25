@@ -47,7 +47,7 @@ def read(*parts):
 
 
 # ---- A: the pure helper ---------------------------------------------------
-nodes = [{"id": "n1", "plan": 0}, {"id": "n2", "plan": 2}, {"id": "n3", "plan": 2}]
+nodes = [{"id": "n1", "plan": 1}, {"id": "n2", "plan": 3}, {"id": "n3", "plan": 3}]
 check("A1 latest_plan_nodes keeps only the highest plan",
       [n["id"] for n in jobs.latest_plan_nodes(nodes)] == ["n2", "n3"])
 check("A2 an empty list is safe", jobs.latest_plan_nodes([]) == [])
@@ -70,14 +70,14 @@ g = tg.ensure(SID, session_id=SID, goal="run 1")
 g["jid"] = JID
 g["subjob"] = SUB
 tg.save(g)
-first = tg.add_node(tg.load(SID), "todo from RUN 1")       # plan 0
+first = tg.add_node(tg.load(SID), "todo from RUN 1")       # plan 1
 
 tg.begin_plan(tg.load(SID))                                # JAG-327: a re-run's plan
 g = tg.load(SID)
 g["jid"] = JID
 g["subjob"] = SUB
 tg.save(g)
-second = tg.add_node(tg.load(SID), "todo from RUN 2")      # plan 1
+second = tg.add_node(tg.load(SID), "todo from RUN 2")      # plan 2
 
 todos = jobs.JOBS.subjob_todos(JID).get(SUB)
 check("B1 a re-run's subjob embraces ONLY its own run's todos",
@@ -101,8 +101,8 @@ try:
         [{"id": "A1", "session": "s1"}],
         [{"id": "J1", "subjobs": {"J1.1": {"id": "J1.1", "agent": "A1", "deps": [],
                                            "status": "done"}}}],
-        {"s1": {"nodes": [{"id": "n1", "subjob": "J1.1", "plan": 0},
-                          {"id": "n2", "subjob": "J1.1", "plan": 1}]}})
+        {"s1": {"nodes": [{"id": "n1", "subjob": "J1.1", "plan": 1},
+                          {"id": "n2", "subjob": "J1.1", "plan": 2}]}})
     check("C1 the constellation takes only the latest plan's todos",
           payload[0]["todos"] == ["n2"], str(payload))
 except Exception as e:  # noqa: BLE001

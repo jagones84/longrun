@@ -7,6 +7,12 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **1-based task plans with one-way migration.**
+  New graphs open plan 1 (no more "older plan 0"); `load()` migrates legacy
+  graphs once (every stored plan + 1, untagged nodes count as plan 0, `plan_base`
+  marker, persisted; idempotent); all defaults (`plan_nodes`, `add_node`,
+  `drop_plan`, `latest_plan_nodes`, WebUI `planNodes`) moved 0 -> 1. (Locked by
+  `v599` 16/16; v183/v195/v296/v327/v512 expectations evolved.)
 - **F5 Maka thresholded release: eval promotion bar + patience.**
   `selfevolve.verify()` persists a consecutive-green `green_streak` in
   proposal.json (red resets to 0); `promote()` releases only when the

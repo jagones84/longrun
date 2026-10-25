@@ -222,8 +222,8 @@ def latest_plan_nodes(nodes):
     nodes = nodes or []
     if not nodes:
         return []
-    top = max(n.get("plan", 0) for n in nodes)
-    return [n for n in nodes if n.get("plan", 0) == top]
+    top = max(n.get("plan", 1) for n in nodes)
+    return [n for n in nodes if n.get("plan", 1) == top]
 
 
 _AFTER_RE = re.compile(r"\(\s*after\s+([^)]*)\)", re.I)

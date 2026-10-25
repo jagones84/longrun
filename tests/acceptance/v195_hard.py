@@ -141,8 +141,8 @@ check("D1 malformed inputs fail gracefully (no raise, ok=False)", d_ok, "; ".joi
 
 # ---- E: new plans number nodes monotonically, never reuse ids --------------
 g = taskgraph.ensure("v195-plan")
-ids = [taskgraph.add_node(g, "p0 step", status="todo")["id"]]
-plans = [0]
+ids = [taskgraph.add_node(g, "p1 step", status="todo")["id"]]
+plans = [1]
 for r in range(1, 4):
     taskgraph.begin_plan(g)
     g = taskgraph.load("v195-plan")
@@ -153,7 +153,7 @@ check("E1 node ids never reused across plans", len(set(ids)) == 4, "ids=%s" % id
 check("E2 ids are strictly increasing",
       [int(x[1:]) for x in ids] == sorted(int(x[1:]) for x in ids), "ids=%s" % ids)
 check("E3 every plan keeps its own nodes tagged",
-      plans == [0, 1, 2, 3], "plans=%s" % plans)
+      plans == [1, 2, 3, 4], "plans=%s" % plans)
 
 
 # ---- F: 20 concurrent add_node on one graph lose nothing -------------------

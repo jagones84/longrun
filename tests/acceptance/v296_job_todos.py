@@ -44,21 +44,21 @@ check("a node built with no scoped job has no jid", n0.get("jid") is None)
 jobs_mod.JOBS._scope_graph(SID, "J2", "goal of J2")
 g = tg.load(SID)
 check("scoping sets the graph's job id", g.get("jid") == "J2")
-check("scoping bumps the plan", g.get("plan") == 1)
+check("scoping bumps the plan", g.get("plan") == 2)
 n1 = tg.add_node(g, "step for J2")
 check("a node inherits the job id", n1.get("jid") == "J2")
 
 # the same job (e.g. the coordinator's second turn) must NOT open another plan
 jobs_mod.JOBS._scope_graph(SID, "J2", "goal of J2")
-check("the same job does not bump the plan again", tg.load(SID).get("plan") == 1)
+check("the same job does not bump the plan again", tg.load(SID).get("plan") == 2)
 
 # a DIFFERENT job starts a fresh plan and moves the tag
 jobs_mod.JOBS._scope_graph(SID, "J3", "goal of J3")
 g = tg.load(SID)
-check("a new job starts a fresh plan", g.get("plan") == 2 and g.get("jid") == "J3")
+check("a new job starts a fresh plan", g.get("plan") == 3 and g.get("jid") == "J3")
 g = tg.load(SID)
 check("the previous job's nodes are NOT on the current plan",
-      all((n.get("plan", 0) != 2) for n in g["nodes"] if n.get("jid") == "J2"))
+      all((n.get("plan", 1) != 3) for n in g["nodes"] if n.get("jid") == "J2"))
 n2 = tg.add_node(g, "step for J3")
 check("a node created under the new job carries the new jid", n2.get("jid") == "J3")
 check("render_todos only lists the current plan",

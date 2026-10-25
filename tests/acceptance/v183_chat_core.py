@@ -301,8 +301,8 @@ _gk = "v183h"
 _g = _tg.ensure(_gk)
 _a = _tg.add_node(_g, "old step one", status="done", evidence="did it")
 _b = _tg.add_node(_g, "old step two", status="done", evidence="did it")
-check("H1 old plan nodes tagged plan 0",
-      _a.get("plan") == 0 and _b.get("plan") == 0,
+check("H1 old plan nodes tagged plan 1",
+      _a.get("plan") == 1 and _b.get("plan") == 1,
       "a=%s b=%s" % (_a.get("plan"), _b.get("plan")))
 check("H2 all_done on the finished plan", _tg.all_done(_g) is True)
 _plan = _tg.begin_plan(_g)
@@ -313,7 +313,7 @@ check("H3 new plan KEEPS the old nodes (no hard reset)",
 check("H4 the new node gets a FRESH id (old ids not reused)",
       _c["id"] == "n3", "id=%s" % _c["id"])
 check("H5 the new node is tagged with the new plan",
-      _c.get("plan") == _plan and _plan == 1,
+      _c.get("plan") == _plan and _plan == 2,
       "plan=%s node_plan=%s" % (_plan, _c.get("plan")))
 _rt = _tg.render_todos(_g)
 check("H6 render_todos shows ONLY the current plan",
