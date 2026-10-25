@@ -2742,6 +2742,14 @@ function _todoid(node) {
    coordinator's list tell J2's steps apart from J3's instead of one blend. */
 function _nodeJob(n) { return (n && n.jid) ? ("J" + String(n.jid).replace(/^J/i, "")) : ""; }
 function _nodeSub(n) { return (n && n.subjob) ? String(n.subjob) : ""; }
+/* v610: full store id for a job or subjob chip (J17 / J17.4) — the registry is
+   keyed with the J, so a stripped id looks up nothing. */
+function _fullJ(id) {
+  const s = String(id == null ? "" : id).trim();
+  if (/^\d+(\.\d+)*$/.test(s)) return "J" + s;
+  const m = s.match(/^[jJ](\d+(\.\d+)*)$/);
+  return m ? "J" + m[1] : s;
+}
 /* JAG-166: in-chat task tree state. activeScope = the container of the node
    currently 'doing'; every thought/tool/injection is appended there (indented). */
 let _chatNodes = {}, _chatSections = {}, _activeScope = null, _activeNodeId = null, _sysInjectEl = null;
@@ -7108,44 +7116,63 @@ function showNodeDetail(n) {
   $("taskDetail").querySelectorAll("button").forEach(b =>
     b.onclick = () => graphNodeAction(n.id, b.dataset.a));
 }
-/* v609: job bridge — click a J-chip in the RH Plan panel and see the TEAM job
-   (same GET /api/jobs/<id> the Control deck renders), not just the todo. */
+/* v609/v610: job bridge — click a J-chip in the RH Plan panel and see the
+   TEAM job (same GET /api/jobs/<id> the Control deck renders), not just the
+   todo. Job and subjob are different entities: a subjob chip (J17.4) shows
+   the parent job focused on that subjob's own row. */
 async function _showJobDetail(jid, n) {
   n = n || {};
   const box = $("taskDetail");
-  const escJ = String(jid).replace(/^J/i, "");
+  const full = _fullJ(jid);
+  const dot = full.indexOf(".");
+  const parent = dot < 0 ? full : full.slice(0, dot);
+  const sub = dot < 0 ? null : full;
   let j = null;
-  try { j = await api("GET", "/api/jobs/" + encodeURIComponent(escJ)); } catch (e) { j = { error: String(e) }; }
+  try { j = await api("GET", "/api/jobs/" + encodeURIComponent(parent)); } catch (e) { j = { error: String(e) }; }
   if (!j || j.error || j.ok === false) {
-    box.innerHTML = `<div style="color:var(--err)">job J${esc(escJ)} — ` +
+    box.innerHTML = `<div style="color:var(--err)">job ${esc(parent)} — ` +
       esc((j && (j.error || j.message)) || "not found (deleted? registry holds the live jobs)") +
       `</div><div class="remaining">from todo ${esc(_todoid(n))} · ${esc(n.id || "")}</div>`;
     return;
   }
   const team = (j.agents || []).join(", ");
+  let subHtml = "";
+  if (sub) {
+    const s = (((j.subjobs || {})[sub]) ||
+               ((j.subjobs || {})["J" + sub.replace(/^[jJ]/, "")])) || null;
+    subHtml = s
+      ? `<div style="margin:4px 0 4px 8px;padding-left:8px;border-left:2px solid var(--info)"><b>subjob ${esc(sub)}</b> · ${esc(s.status || "")} · agent ${esc(s.agent || "?")}` +
+        (s.assignment ? `<div style="margin-top:2px">tasked: ${esc(String(s.assignment).slice(0, 300))}</div>` : "") +
+        (s.result ? `<div class="remaining" style="margin-top:2px">result: ${esc(String(s.result).slice(0, 400))}</div>` : "") +
+        (s.error ? `<div style="color:var(--err);margin-top:2px">${esc(String(s.error).slice(0, 400))}</div>` : "") +
+        `</div>`
+      : `<div class="remaining">subjob ${esc(sub)} not on this job (finished? re-run moved on?) — parent below.</div>`;
+  }
   box.innerHTML =
-    `<div style="color:var(--txt)"><b>job J${esc(escJ)}</b> · ${esc(j.status || "")}` +
+    `<div style="color:var(--txt)"><b>job ${esc(parent)}</b> · ${esc(j.status || "")}` +
     (j.coordinator ? ` · coordinator ${esc(j.coordinator)}` : "") + `</div>` +
     `<div style="margin:4px 0">${esc(j.goal || "(no goal text)")}</div>` +
+    subHtml +
     (team ? `<div class="remaining">team: ${esc(team)}</div>` : "") +
     `<div class="remaining">seen from todo ${esc(_todoid(n))} · ${esc(n.id || "")}</div>` +
-    `<div class="graphrow"><button class="ghost" id="jobGoControl">⇢ open in Control Jobs</button>` +
+    `<div class="graphrow"><button class="ghost" id="jobGoControl">⇢ open ${esc(sub || parent)} in Control Jobs</button>` +
     `<button class="ghost" id="jobBackTodo">← back to todo</button></div>`;
-  $("jobGoControl").onclick = () => _showJobInControl(escJ);
+  $("jobGoControl").onclick = () => _showJobInControl(sub || parent);
   $("jobBackTodo").onclick = () => showNodeDetail(n);
 }
-/* v609: open the Control deck on the Jobs panel and hand it the job id — the
-   deck expands + rings that job (postMessage, same pattern as
-   _showInConstellation). Retried so the first-open iframe boot is covered. */
+/* v609: open the Control deck on the Jobs panel and hand it the job (or
+   subjob) id — the deck expands + rings that row (postMessage, same pattern
+   as _showInConstellation). Retried so the first-open iframe boot is covered. */
 function _showJobInControl(jid) {
   showControl();
   const f = document.getElementById("controlFrame");
+  const full = _fullJ(jid);
   let n2 = 0;
   const iv = setInterval(() => {
     try {
       if (f && f.contentWindow && f.contentDocument
           && f.contentDocument.readyState === "complete") {
-        f.contentWindow.postMessage({ type: "longrun-focus-job", id: String(jid).replace(/^J/i, "") }, "*");
+        f.contentWindow.postMessage({ type: "longrun-focus-job", id: full }, "*");
       }
     } catch (e) {}
     if (++n2 >= 10) clearInterval(iv);
@@ -7677,7 +7704,12 @@ function taskTree(nodes) {
     const ev = (n.evidence || []).length ? ` <span class="ev" title="${n.evidence.length} evidence item(s) — click the row to view them and jump the chat to this step">📎 ${n.evidence.length}</span>` : "";
     // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
     // so a long wrapped label can reclaim the width (see `.task.stacked`).
-    const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt jt-job" data-job="${_attr(String(n.jid).replace(/^J/i, ""))}" style="color:var(--acc2);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="job ${esc(_nodeJob(n))} — click for job text + open in Control Jobs">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt jt-job" data-job="${_attr(String(n.subjob).split(".")[0].replace(/^J/i, ""))}" style="color:var(--info);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="subjob ${esc(_nodeSub(n))} (embodies this todo) — click for parent job text + open in Control Jobs">${esc(_nodeSub(n))}</span>` : ""}`;
+    // v610: chips carry the FULL store id (J17 / J17.4) — v609 stripped the
+    // J and the registry (keyed "JN") answered "job not found" while the
+    // deck showed the same job fine. Job and subjob are different entities:
+    // the job chip opens the job, the subjob chip opens the parent focused
+    // on that subjob's own row (_showJobDetail splits them).
+    const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.jid))}" style="color:var(--acc2);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="job ${esc(_nodeJob(n))} — click for job text + open in Control Jobs">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.subjob))}" style="color:var(--info);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="subjob ${esc(_nodeSub(n))} (embodies this todo) — click for its row + open in Control Jobs">${esc(_nodeSub(n))}</span>` : ""}`;
     const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
       `<span class="tmeta">${meta}</span><span class="tmain">${body}</span></div>`;

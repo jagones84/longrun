@@ -47,7 +47,9 @@ destructive row actions confirm in place.
 text from the same `GET /api/jobs/<id>` the Control deck renders, plus an
 "open in Control Jobs" button that hands the deck the id via
 `longrun-focus-job` (deck expands + scrolls + rings it, stacked board never
-stolen). Row click still shows the todo (v609).
+stolen). Job and subjob are different entities (J17 rings the job row, J17.4
+its subjob row); ids are full store ids end to end, bare digits normalised
+at lookup (v609/v610). Row click still shows the todo.
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 

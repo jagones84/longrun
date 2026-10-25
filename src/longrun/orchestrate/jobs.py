@@ -41,6 +41,23 @@ def _save(d):
     write_json(JOBS_FILE, d)
 
 
+def _norm_jid(jid):
+    """Normalise a job id for store lookup (v610).
+
+    Records are keyed ``JN`` (``J17``) and subjobs ``JN.j`` (``J17.4``), but
+    callers historically pass bare numbers (``17``) or lowercase (``j17``) —
+    a lookup miss then reads as "job not found" while the deck (which passes
+    the full id) shows it fine. Never raises; unknown shapes pass through.
+    """
+    s = str(jid or "").strip()
+    if re.fullmatch(r"\d+(\.\d+)*", s):
+        return "J" + s
+    m = re.match(r"(?i)^j(\d+(\.\d+)*)$", s)
+    if m:
+        return "J" + m.group(1)
+    return s
+
+
 def _srv():
     from longrun.core import server
     return server
@@ -333,7 +350,7 @@ class JobRegistry:
 
     def get(self, jid):
         with _LOCK:
-            return _load()["jobs"].get(str(jid))
+            return _load()["jobs"].get(_norm_jid(jid))
 
     def delete(self, jid):
         """Remove a job from the store. Refused while it is running.
@@ -343,8 +360,9 @@ class JobRegistry:
         (dispatch says "blocked by <gone>", wake() neither releases nor fails it).
         """
         jid = str(jid or "")
-        if not jid:
+        if not jid.strip():
             return {"ok": False, "error": "job id required"}
+        jid = _norm_jid(jid)
         with _LOCK:
             d = _load()
             job = d["jobs"].get(jid)
