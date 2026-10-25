@@ -2054,9 +2054,14 @@ class Constellation {
     // their job, linked to their agent and to each other by subjob deps.
     const spos = {}; const byJob = {};
     subs.forEach(s => { (byJob[s.parent] = byJob[s.parent] || []).push(s); });
+    // v629: a nested subjob (J8.1.1) sits ONE LANE LOWER than its parent, so the
+    // constellation shows the ORG DEPTH instead of a flat pill row.
+    let _maxDep = 0;
     Object.keys(byJob).forEach(jid => { const list = byJob[jid];
       const base = jpos[jid] ? jpos[jid].x : contentW / 2;
-      list.forEach((s, i) => { spos[s.id] = {x: base + (i - (list.length - 1) / 2) * 86, y: 68}; }); });
+      list.forEach((s, i) => { const dep = Math.max(0, Number(s.depth) || 0);
+        _maxDep = Math.max(_maxDep, dep);
+        spos[s.id] = {x: base + (i - (list.length - 1) / 2) * 86, y: 68 + dep * 34}; }); });
     let body = this._defs();
     jobs.forEach(j => (j.blocked_by || []).forEach(b => { if (!jpos[b] || !jpos[j.id]) return;
       const p = jpos[b], q = jpos[j.id], g = this._seg(p, q, 50, 50);
@@ -2068,8 +2073,13 @@ class Constellation {
       const g = this._seg(spos[d], spos[s.id], 38, 38);
       body += '<line class="clink dep" marker-end="url(#mDep)" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>';
     }));
-    subs.forEach(s => { if (!jpos[s.parent] || !spos[s.id]) return;
-      const g = this._seg(jpos[s.parent], spos[s.id], 48, 30);
+    subs.forEach(s => { if (!spos[s.id]) return;
+      // v629: a nested subjob hangs off its PARENT SUBJOB (J8.1.1 under J8.1);
+      // only a top-level subjob hangs off the job itself.
+      const from = (s.parent_sub && spos[s.parent_sub]) ? spos[s.parent_sub]
+                                                        : (jpos[s.parent] || null);
+      if (!from) return;
+      const g = this._seg(from, spos[s.id], 48, 30);
       body += '<line class="clink job" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>';
     });
     subs.forEach(s => { const a = agents.find(z => z.id === s.agent); if (!a || !box[a.session] || !spos[s.id]) return;
@@ -2108,7 +2118,7 @@ class Constellation {
         '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#bfe9ff">' + esc(s.id) + '\u2192' + esc(s.agent) + '</text></g>'; });
     $("constWho").textContent = agents.length + " agents \u00b7 " + jobs.length + " jobs \u00b7 " + subs.length + " subjobs";
     $("constDetail").textContent = "one cluster per AGENT \u00b7 amber = JOB \u00b7 blue = SUBJOB JN.j \u2192 agent (dashed = deps/assigns)";
-    return {w: contentW, h: contentH, body: body};
+    return {w: contentW, h: Math.max(contentH, TOP + 120 + _maxDep * 34), body: body};
   }
   _wire(svg){
     svg.querySelectorAll(".cnode").forEach(gEl => {
@@ -2238,9 +2248,14 @@ class JobsView {
       // NOT a click target (that would duplicate the ORG chart's open). The old flat
       // per-agent `runs` list is GONE: only the JN.j indexes make sense (they ARE the
       // structure), not one row per agent.
-      // JAG-326: natural order — a string sort would put J8.10 before J8.2.
-      const _jn = s => { const m = String(s).match(/(\d+)$/); return m ? Number(m[1]) : 0; };
-      const subHtml = Object.keys(subs).sort((a, b) => _jn(a) - _jn(b)).map(sid => {
+      // JAG-326 / v629: HIERARCHICAL natural order — sort by the numeric PATH
+      // (J8.1, J8.1.1, J8.1.2, J8.2), not by the trailing number, so a child
+      // stays immediately after its parent at ANY depth.
+      const _path = s => String(s).split(".").slice(1).map(n => parseInt(n, 10) || 0);
+      const _cmp = (a, b) => { const A = _path(a), B = _path(b);
+        for (let i = 0; i < Math.max(A.length, B.length); i++) {
+          const d = (A[i] || 0) - (B[i] || 0); if (d) return d; } return 0; };
+      const subHtml = Object.keys(subs).sort(_cmp).map(sid => {
         const s = subs[sid];
         const depth = Math.max(0, String(sid).split(".").length - 2);   // J8.1 -> 0, J8.1.2 -> 1
         const dur = (s.started && s.ended) ? (' · ' + Math.round(s.ended - s.started) + 's') : '';

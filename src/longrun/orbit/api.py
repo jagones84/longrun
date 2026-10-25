@@ -68,7 +68,7 @@ def _subjobs_of(agents_list, jobs_list, graphs):
     Object model the constellation draws: Job (JN) -> Subjob (JN.j, one per agent,
     with deps among subjobs) -> the subset of that agent's todos tagged `subjob`.
     """
-    from longrun.orchestrate.jobs import latest_plan_nodes
+    from longrun.orchestrate.jobs import latest_plan_nodes, subjob_depth
     out = []
     by_id = {a.get("id"): a for a in agents_list}
     for j in jobs_list:
@@ -80,6 +80,11 @@ def _subjobs_of(agents_list, jobs_list, graphs):
             mine = latest_plan_nodes([n for n in nodes if n.get("subjob") == s.get("id")])
             out.append({
                 "id": s.get("id"), "parent": j.get("id"), "agent": s.get("agent"),
+                # v629: the NESTING link + org level travel to the deck, so a
+                # subjob of a subjob (J8.1.1) can be drawn/indented as a CHILD
+                # instead of being flat in the parent job's lane.
+                "parent_sub": s.get("parent_sub"),
+                "depth": subjob_depth(s.get("id")),
                 "deps": s.get("deps") or [], "status": s.get("status"),
                 "assignment": s.get("assignment"),
                 "todos": [n.get("id") for n in mine],

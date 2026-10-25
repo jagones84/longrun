@@ -142,7 +142,8 @@ agsrc = open(os.path.join(REPO, "src", "longrun", "agent/agents.py"), encoding="
 check("G1 chat_stream_gen carries sender/subjob",
       "sender=None, subjob=None" in serv and '"sender": sender, "subjob": subjob' in serv)
 check("G2 jobs records subjobs + attribution",
-      '"subjobs": subs' in jobsrc and "sender=sender, subjob=subjob" in jobsrc)
+      'j.setdefault("subjobs", {}).update(_subs)' in jobsrc  # v629: MERGE, not replace
+      and "sender=sender, subjob=subjob" in jobsrc)
 check("G3 the rename endpoint syncs the agent name",
       "REGISTRY.set_name(sid, title)" in serv)
 check("G4 designate mirrors the name onto the title", "def sync_title(" in agsrc)

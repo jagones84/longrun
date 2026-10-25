@@ -203,15 +203,31 @@
 
   /* ---------------- sidebar ---------------- */
   aside {
-    border-right: 1px solid var(--line); padding: 14px; overflow-y: auto; overflow-x: hidden;
-    background: rgba(8,10,20,.45); display: flex; flex-direction: column; gap: 4px;
+    border-right: 1px solid var(--line); padding: 12px; overflow: hidden;
+    background: rgba(8,10,20,.45); display: flex; flex-direction: column; gap: 10px;
+    min-height: 0;
   }
+  /* v629: the rail is organised as named BLOCKS with ONE rhythm (10px between
+     blocks, 8px inside): title row → workspace (new + search + activity +
+     filter) → list. Before, every control carried its own margin, so the panel
+     read as a loose pile of widgets. */
+  aside .rail { display: flex; flex-direction: column; gap: 10px; min-height: 0;
+    flex: 1 1 auto; }
+  aside .rail-head { display: flex; align-items: center; min-height: 20px; flex: 0 0 auto; }
+  aside .rail-workspace { display: flex; flex-direction: column; gap: 8px;
+    padding: 10px; border: 1px solid var(--line); border-radius: 10px;
+    background: color-mix(in srgb, var(--panel) 45%, transparent); flex: 0 0 auto; }
+  /* v629: ONLY the list scrolls. The header + workspace stay put, so revealing a
+     session (🎯 / Jobs → session) can never scroll the ▲/▼ tools and the filters
+     out of view. */
+  aside .rail-list { margin: 0; padding: 8px; flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; overflow-x: hidden; }
+  aside .rail-filter { margin: 0; }
   .session-create { width: 100%; min-width: 0; }
   #sessInp { flex: 1 1 0; min-width: 0; }
   .session-create > button { flex: 0 0 auto; white-space: nowrap; }
-  aside h2 { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin: 12px 0 8px; text-transform: uppercase;
-    display: flex; align-items: center; gap: 8px; }
-  aside h2:first-child { margin-top: 0; }
+  aside h2 { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin: 0;
+    text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
   .step, .task { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; margin-bottom: 4px; font-size: 12.5px; }
   .step:hover, .task:hover { background: var(--hover); cursor: pointer; }
@@ -363,10 +379,12 @@
   .sgroup.drop-before > .sgroup-h { box-shadow: inset 0 2px var(--acc); }
   .sgroup.drop-after > .sgroup-h { box-shadow: inset 0 -2px var(--acc); }
   .sess.dragging, .sgroup.dragging { opacity: .45; }
-  /* JAG-2.1: collapse / expand ALL groups in the session rail header. */
-  .srail-tools { margin-left: auto; display: inline-flex; gap: 4px; }
-  .srail-tools button { background: transparent; border: 1px solid var(--line); color: var(--dim);
-    border-radius: 6px; padding: 0 7px; font-size: 10px; line-height: 18px; cursor: pointer; }
+  /* JAG-2.1 / v629: collapse / expand ALL groups — the two arrows sit IMMEDIATELY
+     beside the "Sessions" label (the old `margin-left:auto` pushed them to the
+     far edge of the rail, which read as a detached toolbar). */
+  .srail-tools { display: inline-flex; gap: 3px; }
+  .srail-tools button { background: transparent; border: 1px solid transparent; color: var(--dim);
+    border-radius: 6px; padding: 0 5px; font-size: 10px; line-height: 16px; cursor: pointer; }
   .srail-tools button:hover { color: var(--txt); border-color: var(--acc); }
   /* JAG-218: toast shown when a background session finishes while you're away. */
   .done-toast { position: fixed; right: 16px; bottom: 16px; z-index: 9999;
@@ -643,9 +661,20 @@
   .tctree .tc-kids { margin: 6px 0 6px 16px; padding-left: 10px; border-left: 2px solid rgba(108,140,255,.25); }
   /* JAG-169: the todo id AX.nY, monospaced and visible in chat + panel. */
   .tctree .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); margin-right: 6px; }
-  /* JAG-278: the 'superseded' reason inline, so a closed step is never unexplained. */
-  .tctree .tcreason { font-size: 10px; color: var(--dim); font-style: italic; margin-left: 6px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* JAG-278 -> v629: a todo's JUSTIFICATION is a full-width line UNDER the row
+     (never a squeezed suffix beside it) and is shown for EVERY group — done,
+     doing, open, superseded — so a closed step is never unexplained. Muted +
+     italic with a left accent bar: visibly secondary, never confused with the
+     label. It is a sibling of <summary>, so it stays readable while the group
+     is collapsed. */
+  .tctree > .tcwhy { margin: 2px 0 2px 10px; padding: 1px 8px 1px 10px;
+    border-left: 2px solid color-mix(in srgb, var(--acc2) 45%, transparent);
+    color: var(--dim); font-size: 11px; font-style: italic; line-height: 1.45;
+    white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tctree[data-st="done"] > .tcwhy {
+    border-left-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+  .tctree[data-st="superseded"] > .tcwhy,
+  .tctree[data-st="cancelled"] > .tcwhy { border-left-color: var(--line); opacity: .72; }
   /* JAG-431d: per-todo rewind (⏮) — undo this step and everything after it.
      In the chat it sits on the group's summary line as a SIBLING of <summary>
      (an interactive control nested inside <summary> is an a11y anti-pattern). */
@@ -1668,30 +1697,34 @@
         title="collapse / expand the inspector" aria-label="toggle inspector panel">▶</button>
 <main id="app">
   <aside id="aside" data-col="sessions">
-    <section>
-      <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups">▼</button></span></h2>
-      <button type="button" id="runsBar" class="runs-bar" aria-controls="runsPanel"
-              aria-expanded="false"
-              title="agents in flight · sessions that finished while you were elsewhere">
-        <span class="rb-dot" aria-hidden="true"></span>
-        <span class="rb-run"><b id="runsBarRun">0</b> running</span>
-        <span class="rb-done">🔔 <b id="runsBarDone">0</b> finished</span>
-        <span class="rb-caret" aria-hidden="true">▾</span>
-      </button>
-      <div id="runsPanel" class="runs-panel" hidden role="dialog" tabindex="-1"
-           aria-label="agents in flight and unread sessions">
-        <div class="rp-head"><b>Agents &amp; unread</b>
-          <button type="button" class="rp-x" id="runsPanelClose" aria-label="close panel">×</button>
+    <section class="rail">
+      <header class="rail-head">
+        <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups" aria-label="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups" aria-label="expand all groups">▼</button></span></h2>
+      </header>
+      <div class="rail-workspace">
+        <div id="sessionCreate" class="session-create u-df u-g6">
+          <input id="sessInp" class="inp u-p610 u-fs12" placeholder="new session title…" aria-label="new session title">
+          <button type="button" class="ghost" data-call="newSession" aria-label="create new session">+ new</button>
         </div>
-        <div class="rp-body" id="runsPanelBody"></div>
+        <input id="session-search" class="inp u-w100 u-p610 u-fs12" placeholder="search sessions…" aria-label="search sessions">
+        <button type="button" id="runsBar" class="runs-bar" aria-controls="runsPanel"
+                aria-expanded="false"
+                title="agents in flight · sessions that finished while you were elsewhere">
+          <span class="rb-dot" aria-hidden="true"></span>
+          <span class="rb-run"><b id="runsBarRun">0</b> running</span>
+          <span class="rb-done">🔔 <b id="runsBarDone">0</b> finished</span>
+          <span class="rb-caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="runsPanel" class="runs-panel" hidden role="dialog" tabindex="-1"
+             aria-label="agents in flight and unread sessions">
+          <div class="rp-head"><b>Agents &amp; unread</b>
+            <button type="button" class="rp-x" id="runsPanelClose" aria-label="close panel">×</button>
+          </div>
+          <div class="rp-body" id="runsPanelBody"></div>
+        </div>
+        <label class="remaining rail-filter"><input type="checkbox" id="hide-empty"> hide empty</label>
       </div>
-      <div id="sessionCreate" class="session-create u-df u-g6 u-mb6">
-        <input id="sessInp" class="inp u-p610 u-fs12" placeholder="new session title…">
-        <button type="button" class="ghost" data-call="newSession" aria-label="create new session">+ new</button>
-      </div>
-      <input id="session-search" class="inp u-w100 u-mb6 u-p610 u-fs12" placeholder="search sessions…">
-      <label class="remaining u-df u-aic u-g6 u-mb6"><input type="checkbox" id="hide-empty"> hide empty</label>
-      <div class="card">
+      <div class="card rail-list">
         <div id="sessions"></div>
       </div>
     </section>
@@ -3659,23 +3692,42 @@ function _nodeDepth(id, d) {
   if (n && n.parent && n.parent !== id) return _nodeDepth(n.parent, d + 1);
   return d;
 }
+/* v629: a todo's justification, for EVERY status (not only superseded/cancelled).
+   Same rule as threads._why(): the node's latest evidence text, else its close
+   reason. Live events may carry a slim node, so fall back to the loaded graph. */
+function _whyOf(node) {
+  if (!node) return "";
+  let n = node;
+  const hasEv = (n.evidence || []).some(e => e && String(e.text || "").trim());
+  if (!hasEv && graph) {
+    const g = (graph.nodes || []).find(x => x.id === node.id);
+    if (g) n = g;
+  }
+  const ev = (n.evidence || []).filter(e => e && String(e.text || "").trim());
+  if (ev.length) return String(ev[ev.length - 1].text || "").trim();
+  return String(n.reason || "").trim();
+}
 function _paintNode(node, det) {
   det = det || _chatNodes[node.id]; if (!det) return;
+  det.dataset.st = node.status || "todo";
   const st = det.querySelector(".st");
   if (st) { st.textContent = node.status || "todo"; st.className = "st " + (node.status || "todo"); }
   const idEl = det.querySelector(".tcid");
   if (idEl) { idEl.textContent = _todoid(node); idEl.title = "node id " + node.id; }
   const lb = det.querySelector(".tclabel"); if (lb) lb.textContent = node.label || "";
-  // JAG-278: show the close reason (superseded/cancelled) inline — a step must
-  // never look closed "for no reason".
-  let rs = det.querySelector(".tcreason");
-  const reason = (node.status === "superseded" || node.status === "cancelled")
-    ? String(node.reason || "").trim() : "";
-  if (reason) {
-    if (!rs) { rs = document.createElement("span"); rs.className = "tcreason";
-      (det.querySelector("summary") || det).appendChild(rs); }
-    rs.textContent = "(" + reason + ")"; rs.title = reason;
-  } else if (rs) { rs.remove(); }
+  // v629: the justification is a full-width line UNDER the row for EVERY group,
+  // done included — the old inline `.tcreason` showed it only for
+  // superseded/cancelled and squeezed it beside the label.
+  const why = _whyOf(node);
+  let wy = det.querySelector(":scope > .tcwhy");
+  if (why) {
+    if (!wy) {
+      wy = document.createElement("div"); wy.className = "tcwhy";
+      det.insertBefore(wy, det.querySelector(":scope > .tc-kids"));
+    }
+    if (wy.textContent !== why) wy.textContent = why;
+    wy.title = why;
+  } else if (wy) { wy.remove(); }
 }
 function _mkSection(node) {
   const det = document.createElement("details");
@@ -12696,7 +12748,14 @@ window.addEventListener("message", (e) => {
   const sid = d.session || null;
   try { showSessions(); } catch (_) {}
   const switched = !!(sid && sid !== sessionId);
-  if (switched) { try { selectSession({ id: sid }); } catch (_) {} }
+  if (switched) {
+    try { selectSession({ id: sid }); } catch (_) {}
+    // v629: the Jobs → session button (and a job double-click) must ALSO center
+    // the LH sessions rail on that session — the SAME procedure as the 🎯
+    // button (revealActiveSession → loadSessions → _centerActiveRow). No
+    // second implementation: this IS the chat-sidebar procedure.
+    setTimeout(() => { try { revealActiveSession(); } catch (err) {} }, 500);
+  }
   setTimeout(() => { try { _focusPlanNode(d.node); } catch (err) {} }, switched ? 500 : 60);
 });
 window.addEventListener("DOMContentLoaded", () => { if (location.hash === "#control") showControl(); });

@@ -43,7 +43,8 @@ check("B4 nested deps reference the nested ids (not the flat ones)",
 
 with open(os.path.join(REPO, "src", "longrun", "orchestrate/jobs.py"), encoding="utf-8") as f:
     src = f.read()
-check("C1 plan_subjobs accepts parent_sub", "def plan_subjobs(jid, agents, coord, plan, deps, parent_sub=None)" in src)
+check("C1 plan_subjobs accepts parent_sub (v629: and an org `tree`)",
+      "def plan_subjobs(jid, agents, coord, plan, deps, parent_sub=None, tree=None)" in src)
 check("C2 the id builder nests", "def subjob_id(jid, n, parent_sub=None)" in src)
 
 print("---")

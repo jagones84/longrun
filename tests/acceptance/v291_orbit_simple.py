@@ -57,8 +57,13 @@ class FakeHandler:
 fh = FakeHandler()
 ok = orchestration.handle(fh, "POST", "/api/jobs", {}, {"goal": "build it", "assignee": "A1"})
 job = fh.sent["obj"]["job"]
-check("POST /api/jobs with assignee derives team + coordinator",
-      ok and job["agents"] == ["A1", "A2", "A3"] and job["coordinator"] == "A1")
+# v629: the derived team is the assignee's ORG SUBTREE, not only its direct
+# reports — `subjob_depth` (config/jobs.yaml, default 3) decides how deep. The
+# fixture has A4 (Dee) reporting to A2 (Bob), so the job now covers her too and
+# her subjob nests as JN.2.1.
+check("POST /api/jobs with assignee derives the org subtree + coordinator",
+      ok and job["agents"] == ["A1", "A2", "A3", "A4"] and job["coordinator"] == "A1",
+      str(job["agents"]))
 check("the derived job is coordinator mode", job["mode"] == "coordinator")
 
 fh = FakeHandler()

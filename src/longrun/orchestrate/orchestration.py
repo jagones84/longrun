@@ -308,8 +308,12 @@ def handle(handler, method, path, qs, body):
                                              data.get("coordinator"))
             if assignee and not agents:
                 # JAG-293: a job is "goal + who you give it to"; the team is the
-                # assignee plus its direct reports in the org chart.
-                agents = reg.team_of(assignee)
+                # assignee plus its reports in the org chart.
+                # v629: the DEPTH of that subtree is a policy knob
+                # (config/jobs.yaml `subjob_depth`, default 3), so a job on a lead
+                # covers the whole org branch and its subjobs nest J8.1 → J8.1.1.
+                agents = reg.team_of(assignee,
+                                     depth=jobs_mod.config()["subjob_depth"])
                 coordinator = coordinator or assignee
             return _json(handler, 200, jobs_mod.JOBS.create(
                 data.get("goal"), coordinator=coordinator,

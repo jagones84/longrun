@@ -56,8 +56,9 @@ src = read("src", "longrun", "orchestrate/jobs.py")
 check("C1 the coordinator's delegation record sorts naturally",
       'key=lambda x: subjob_num(x.get("id"))' in src)
 orbit = read("src", "longrun", "orbit", "web", "orbit.html")
-check("C2 the Orbit JobsView sorts subjobs numerically",
-      "_jn(a) - _jn(b)" in orbit and "String(s).match(/(\\d+)$/)" in orbit)
+check("C2 the Orbit JobsView sorts subjobs by numeric PATH (v629: any depth)",
+      "const _path = s => String(s).split(\".\").slice(1)" in orbit
+      and "Object.keys(subs).sort(_cmp)" in orbit)
 
 print("---")
 ok = sum(1 for r in results if r)

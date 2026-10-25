@@ -32,6 +32,40 @@ _LOCK = threading.RLock()
 JOBS_FILE = os.environ.get("LONGRUN_JOBS_FILE") or os.path.join(
     paths.DATA_DIR, "jobs.json")
 
+# v629: team-job policy (config/jobs.yaml). Missing file / bad value = shipped
+# defaults, so an old checkout keeps working untouched.
+JOBS_YAML = os.path.join(REPO, "config", "jobs.yaml")
+# Settings > Harness writes there (gitignored overlay), so the shipped file and
+# the operator's overrides stay separate — same pattern as decisions/trace_policy.
+JOBS_OVERLAY = os.path.join(paths.DATA_DIR, "jobs.overlay.yaml")
+_JOBS_DEFAULTS = {
+    # How many ORG levels a team job may cover (1 = the assignee + direct
+    # reports, i.e. the pre-v629 behaviour; deeper = the whole subtree, so a
+    # subjob can nest as J8.1.1 under the lead that owns it).
+    "subjob_depth": 3,
+    # Hard ceiling on minted subjobs for one job (a runaway org must not
+    # explode a single dispatch).
+    "max_subjobs": 64,
+}
+
+
+def config():
+    """The team-job policy: shipped `config/jobs.yaml` + the operator overlay."""
+    out = dict(_JOBS_DEFAULTS)
+    for path in (JOBS_YAML, JOBS_OVERLAY):
+        try:
+            import yaml
+            with open(path, "r", encoding="utf-8") as f:
+                blk = (yaml.safe_load(f) or {}).get("jobs") or {}
+            for k in out:
+                if blk.get(k) is not None:
+                    out[k] = int(blk[k])
+        except Exception:  # noqa: BLE001 — a broken file must never block a job
+            continue
+    out["subjob_depth"] = max(1, min(int(out["subjob_depth"]), 6))
+    out["max_subjobs"] = max(1, min(int(out["max_subjobs"]), 512))
+    return out
+
 
 def _load():
     return read_registry(JOBS_FILE, jobs={}, seq=0)
@@ -172,8 +206,8 @@ def subjob_id(jid, n, parent_sub=None):
     return "%s.%d" % (root, n)
 
 
-def plan_subjobs(jid, agents, coord, plan, deps, parent_sub=None):
-    """JAG-322/324: split a job into numbered SUBJOBS, one per delegable agent.
+def plan_subjobs(jid, agents, coord, plan, deps, parent_sub=None, tree=None):
+    """JAG-322/324/v629: split a job into numbered SUBJOBS, one per agent.
 
     Paperclip-style, and a first-class level of the object model:
 
@@ -188,26 +222,62 @@ def plan_subjobs(jid, agents, coord, plan, deps, parent_sub=None):
 
     JAG-334: `parent_sub` nests the ids one level (`J8.2.1`) when the work is handed
     out FROM inside another subjob, so the numbering follows the org depth.
+
+    v629: `tree` = {agent_id: parent_agent_id} (the org subtree of the assignee).
+    A direct report of an agent that already owns a subjob NESTS under it
+    (J8.1.1, J8.1.2), so the ids mirror the ORGANIGRAM at any depth — the
+    numbering is per-parent (never a global counter, which produced J8.1.5).
     """
     agents = list(agents)
     deps = deps or {}
-    # Pass 1: assign a subjob id to each delegable agent, in wave order.
-    order, aid_to_sub = [], {}
-    n = 0
-    for wave in waves(agents, deps):
+    tree = tree or {}
+    limit = config()["max_subjobs"]
+    # Pass 1: assign a subjob id to each delegable agent. Parents must be minted
+    # BEFORE their children (a child nests under its parent's id), so a member
+    # whose parent has no id yet is deferred to the next round.
+    order, aid_to_sub, counters = [], {}, {}
+    pending = []
+    for wave_i, wave in enumerate(waves(agents, deps)):
         for aid in wave:
-            if aid == coord:
+            if aid != coord:
+                pending.append((aid, wave_i))
+    while pending and len(order) < limit:
+        rest, progressed = [], False
+        for aid, wave_i in pending:
+            parent_aid = tree.get(aid)
+            # Only defer when the parent is ANOTHER TEAM MEMBER that still needs
+            # its own subjob id. The coordinator never gets one (it owns the
+            # job), so its direct reports hang off the JOB id (J8.1, J8.2).
+            if (parent_aid and parent_aid in agents and parent_aid != coord
+                    and parent_aid not in aid_to_sub):
+                rest.append((aid, wave_i))
                 continue
-            n += 1
-            sub_id = subjob_id(jid, n, parent_sub)
+            host = aid_to_sub.get(parent_aid) if parent_aid else parent_sub
+            root = host or jid
+            counters[root] = counters.get(root, 0) + 1
+            sub_id = subjob_id(jid, counters[root], host)
             aid_to_sub[aid] = sub_id
             order.append((aid, sub_id))
+            progressed = True
+            if len(order) >= limit:
+                break
+        if not progressed:
+            # A cycle in the org link (malformed registry): mint the rest flat.
+            for aid, wave_i in rest:
+                counters[jid] = counters.get(jid, 0) + 1
+                sub_id = subjob_id(jid, counters[jid], parent_sub)
+                aid_to_sub[aid] = sub_id
+                order.append((aid, sub_id))
+            break
+        pending = rest
     # Pass 2: a subjob depends on the subjobs of the agents it waits on.
     out = {}
     for aid, sub_id in order:
         sdeps = [aid_to_sub[a] for a in (deps.get(aid) or []) if a in aid_to_sub]
         out[sub_id] = {
-            "id": sub_id, "parent": jid, "parent_sub": parent_sub, "agent": aid,
+            "id": sub_id, "parent": jid,
+            "parent_sub": aid_to_sub.get(tree.get(aid)) or parent_sub,
+            "agent": aid,
             "deps": sdeps,
             "assignment": JobRegistry._assignment_for(plan, aid) if plan else "",
             "status": "pending", "started": None, "ended": None,
@@ -227,6 +297,37 @@ def subjob_num(sub_id):
         return int(str(sub_id).rsplit(".", 1)[-1])
     except (TypeError, ValueError):
         return 0
+
+
+def subjob_path(sub_id):
+    """v629: the numeric PATH of a subjob id — J8.1.2 -> (1, 2), J8 -> ().
+
+    This is the one ordering key for any depth: sorting by the tuple keeps a
+    child IMMEDIATELY after its parent (J8.1, J8.1.1, J8.1.2, J8.2) instead of
+    interleaving it with its uncles the way `subjob_num` (trailing number only)
+    did once nesting exists.
+    """
+    parts = str(sub_id or "").split(".")[1:]
+    out = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except (TypeError, ValueError):
+            return tuple(out) or (0,)
+    return tuple(out) or (0,)
+
+
+def subjob_depth(sub_id):
+    """v629: the org LEVEL of a subjob id (J8 -> 0, J8.1 -> 1, J8.1.2 -> 2)."""
+    return max(0, str(sub_id or "").count("."))
+
+
+def subjob_children(subs, sub_id):
+    """v629: the DIRECT children of a subjob id, in NATURAL path order."""
+    pref = str(sub_id or "") + "."
+    kids = [k for k in (subs or {}) if str(k).startswith(pref)
+            and "." not in str(k)[len(pref):]]
+    return sorted(kids, key=subjob_path)
 
 
 def latest_plan_nodes(nodes):
@@ -552,14 +653,22 @@ class JobRegistry:
         return out
 
     def detail(self, jid):
-        """A job enriched with its subjobs' todo membership (JAG-324)."""
+        """A job enriched with its subjobs' todo membership (JAG-324).
+
+        v629: every subjob also carries `depth` (its org level) and `children`
+        (the subjobs nested directly under it), so the tree is readable at any
+        depth without re-deriving it from the id string on the client.
+        """
         job = self.get(jid)
         if not job:
             return None
         j = dict(job)
         todos = self.subjob_todos(jid)
-        j["subjobs"] = {sid: dict(s, todos=todos.get(sid, []))
-                        for sid, s in (job.get("subjobs") or {}).items()}
+        subs = job.get("subjobs") or {}
+        j["subjobs"] = {sid: dict(s, todos=todos.get(sid, []),
+                                  depth=subjob_depth(sid),
+                                  children=subjob_children(subs, sid))
+                        for sid, s in subs.items()}
         return j
 
     def reconcile(self):
@@ -821,9 +930,29 @@ class JobRegistry:
             _coord_mode = job.get("mode") == "coordinator"
             coord_label = (("%s (%s)" % (coord, roster.get(coord, {}).get("name") or coord))
                            if (_coord_mode and coord) else None)
+            # v629: the ORG tree of this job's team drives the subjob numbering.
+            # Only links whose BOTH ends are on this job's team are used, so an
+            # explicit `agents` list never invents a parent outside the job.
+            _team = set(sessions.keys())
+            try:
+                from longrun.agent import agents as _agents_mod
+                _root = coord or ((job.get("agents") or [None])[0])
+                _sub = _agents_mod.REGISTRY.team_tree(
+                    _root, depth=config()["subjob_depth"]) if _root else {}
+            except Exception:  # noqa: BLE001 — a broken registry must not block
+                _sub = {}
+            _tree = {k: v for k, v in (_sub or {}).items()
+                     if v and k in _team and v in _team}
             subs = plan_subjobs(jid, list(sessions.keys()),
-                                (coord if _coord_mode else None), plan, deps)
-            self._update(jid, lambda j: j.update({"subjobs": subs, "declared_deps": declared}))
+                                (coord if _coord_mode else None), plan, deps,
+                                tree=_tree)
+            # v629: MERGE, never replace — a deeper org level mints children
+            # under ids that already exist (J8.1.1), and a re-dispatch must not
+            # drop the subjobs a previous pass recorded.
+            def _merge_subs(j, _subs=subs, _decl=declared):
+                j.setdefault("subjobs", {}).update(_subs)
+                j["declared_deps"] = _decl
+            self._update(jid, _merge_subs)
             self._announce_delegation(sessions.get(coord) if _coord_mode else None, jid, roster, subs)
             # JAG-333: give the MASTER a visible plan (one todo per delegated subjob).
             self._seed_coordinator_plan(

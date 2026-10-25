@@ -44,6 +44,7 @@ CONFIG_DIR = os.path.join(paths.REPO_ROOT, "config")
 HOOKS_OVERLAY = os.path.join(paths.DATA_DIR, "hooks.overlay.yaml")
 DECISIONS_OVERLAY = os.path.join(paths.DATA_DIR, "decisions.overlay.yaml")
 TRACE_OVERLAY = os.path.join(paths.DATA_DIR, "trace_policy.overlay.yaml")
+JOBS_OVERLAY = os.path.join(paths.DATA_DIR, "jobs.overlay.yaml")
 
 
 def _f(path, label, type_="text", **kw):
@@ -136,6 +137,23 @@ SECTIONS = [
             _f("speculative.enabled", "speculative prefetch", "bool"),
             _f("speculative.k", "how many tools to predict", "int", min=1, max=16),
             _f("speculative.readonly_only", "read-only tools only", "bool"),
+        ],
+    },
+    {
+        "file": "jobs.yaml", "id": "jobs", "panel": "harness",
+        "title": "Team jobs \u00b7 org depth",
+        "help": ("A job is goal + who you give it to. The assignee's ORG SUBTREE "
+                 "becomes the team and every member becomes a numbered subjob "
+                 "(J8.1, J8.2 \u2026); a member who reports to another member nests "
+                 "under that lead (J8.1.1), so the ids mirror the organigram. "
+                 "`org depth` caps how many levels one job covers (1 = assignee + "
+                 "direct reports); `max subjobs` is the hard ceiling per job."),
+        "fields": [
+            _f("subjob_depth", "org depth (levels)", "int", min=1, max=6,
+               help="1 = the assignee plus its direct reports. 2-6 = the whole "
+                    "branch, with nested subjob ids."),
+            _f("max_subjobs", "max subjobs per job", "int", min=1, max=512,
+               help="Hard ceiling: members past this are left out of the run."),
         ],
     },
     {
@@ -377,6 +395,11 @@ def _effective(name):
         # `load()` already returns the UNWRAPPED policy (trigger/target/
         # keep_recent/summarizer) — the schema paths are relative to it.
         return compaction_config.load()
+    if name == "jobs.yaml":
+        # v629: same contract as compaction — the form edits the UNWRAPPED job
+        # policy, and jobs.config() already merges the shipped file + overlay.
+        from longrun.orchestrate import jobs as jobs_mod
+        return jobs_mod.config()
     if name == "routing.yaml":
         from longrun.model import routing
         return routing.load_config()
@@ -455,6 +478,10 @@ def _save(name, clean):
         _write_overlay(TRACE_OVERLAY, clean)
         from longrun.agent import trace_policy
         trace_policy.load()             # the overlay stat is part of its cache key
+    elif name == "jobs.yaml":
+        # v629: team-job policy lives in a gitignored overlay; jobs.config()
+        # merges the shipped file with it on every read (hot, no restart).
+        _write_overlay(JOBS_OVERLAY, {"jobs": clean})
     elif name == "mcp_clients.yaml":
         from longrun.interop import mcp_client
         doc = mcp_client._load_local_doc()

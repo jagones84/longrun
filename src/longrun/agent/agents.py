@@ -134,15 +134,57 @@ class AgentRegistry:
             cur = rec.get("reports_to") if rec else None
         return chain
 
-    def team_of(self, ref):
-        """The agent plus its DIRECT reports — the team a job assigned to it runs
-        with. Stable, de-duplicated A-ids; [] when the agent is unknown."""
-        a = self.resolve(ref)
-        if not a:
+    def _subtree(self, ref, depth=1):
+        """v629: [(agent, parent_id)] breadth-first under `ref`, capped at `depth`.
+
+        `depth` counts ORG LEVELS: 1 = the agent plus its direct reports, 2 adds
+        their reports, and so on. Cycle-safe (a malformed reports_to loop stops),
+        de-duplicated, and stable (registry order). One traversal shared by
+        `team_of` (flat ids) and `team_tree` (parent links) — no second walker.
+        """
+        with _LOCK:
+            d = _load()
+        root = self._find(d, ref)
+        if not root:
             return []
-        aid = a["id"]
-        return [aid] + [x["id"] for x in self.list()["agents"]
-                        if x.get("reports_to") == aid]
+        by_parent = {}
+        for a in d["agents"].values():
+            par = a.get("reports_to")
+            if par:
+                by_parent.setdefault(par, []).append(a)
+        out, seen, level = [], {root["id"]}, [(root, None)]
+        expand = max(0, int(depth))     # how many ORG levels BELOW the root
+        while level:
+            nxt = []
+            for a, parent in level:
+                out.append((a, parent))
+                if expand > 0:
+                    for c in by_parent.get(a["id"], []):
+                        if c["id"] in seen:
+                            continue
+                        seen.add(c["id"])
+                        nxt.append((c, a["id"]))
+            level = nxt
+            expand -= 1
+        return out
+
+    def team_of(self, ref, depth=1):
+        """The agent plus its reports — the team a job assigned to it runs with.
+
+        `depth=1` (default) = the agent plus its DIRECT reports (stable,
+        de-duplicated A-ids; [] when the agent is unknown). A deeper value
+        includes the whole subtree, which is what makes a team job cover an
+        org chart taller than two levels.
+        """
+        return [a["id"] for a, _ in self._subtree(ref, depth)]
+
+    def team_tree(self, ref, depth=1):
+        """v629: {agent_id: parent_agent_id} for the subtree under `ref`.
+
+        The root maps to None. This is the ONE org link the job engine reads to
+        nest subjob ids (J8.1 → J8.1.1), so the numbering mirrors the organigram.
+        """
+        return {a["id"]: parent for a, parent in self._subtree(ref, depth)}
 
     def name_taken(self, name, exclude_sid=None):
         """True when `name` is already used by another agent OR a session title.

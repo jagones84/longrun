@@ -74,9 +74,11 @@ check("E1 the coordinator is ASKED to declare dependencies",
       "DEPENDENCIES (enforced)" in src and "(after AX)" in src)
 check("E2 the runner orders subjobs by the EFFECTIVE deps",
       "plan_subjobs(jid, list(sessions.keys())," in src
-      and "(coord if _coord_mode else None), plan, deps)" in src
+      and "(coord if _coord_mode else None), plan, deps," in src
+      and "tree=_tree)" in src          # v629: the org tree drives nesting
       and "for wave in waves(list(sessions.keys()), deps):" in src)
-check("E3 the declared deps are stored on the job", '"declared_deps": declared' in src)
+check("E3 the declared deps are stored on the job",
+      "j[\"declared_deps\"] = _decl" in src)   # v629: inside the merge updater
 check("E4 the master's chat shows the declared order", "[after %s]" in src)
 
 print("---")

@@ -1,0 +1,22 @@
+# Team-job policy — read by `src/longrun/orchestrate/jobs.py::config()`.
+#
+# A job is "goal + who you give it to": the assignee's ORG SUBTREE becomes the
+# team, and every member becomes a numbered subjob (J8.1, J8.2, ...). A member
+# who reports to ANOTHER member nests under that lead (J8.1.1), so the subjob
+# ids mirror the organigram at any depth — the tree in the Jobs panel shows the
+# same shape.
+#
+# Editable in Settings > Harness (writes a gitignored overlay); a value here is
+# the shipped default. Both files are read on every dispatch — no restart.
+
+jobs:
+  # How many ORG levels ONE job may cover:
+  #   1 = the assignee plus its direct reports (the pre-v629 behaviour)
+  #   2-6 = the whole branch, with nested subjob ids
+  # Default 3 (generous): an org chart with sub-teams is fully used without
+  # flattening it. Lower it when you want small, wide jobs instead.
+  subjob_depth: 3
+
+  # Hard ceiling on subjobs minted for ONE job. A deep org cannot explode a
+  # single dispatch: members past this limit are left out of that run.
+  max_subjobs: 64

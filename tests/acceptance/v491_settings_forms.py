@@ -81,10 +81,11 @@ for name in sorted(os.listdir(os.path.join(REPO, "config"))):
     except Exception:  # noqa: BLE001
         doc = {}
     leaves = _leaves(doc)
-    # compaction.yaml is stored under `compaction:`; the form edits the unwrapped
-    # policy, so normalise the leaf paths.
-    if name == "compaction.yaml":
-        leaves = [ln[len("compaction."):] if ln.startswith("compaction.") else ln
+    # A file whose policy sits under ONE wrapper key (`compaction:`, `jobs:`) is
+    # edited by its form UNWRAPPED, so normalise the leaf paths.
+    _wrap = {"compaction.yaml": "compaction.", "jobs.yaml": "jobs."}.get(name)
+    if _wrap:
+        leaves = [ln[len(_wrap):] if ln.startswith(_wrap) else ln
                   for ln in leaves]
     known = _schema_paths(name)
     prefixes = list((settings.DEDICATED.get(name) or {}).keys())

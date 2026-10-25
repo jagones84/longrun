@@ -209,6 +209,15 @@
     };
     handle.addEventListener("pointerdown", function (e) {
       if (e.pointerType === "touch" || (e.button !== undefined && e.button !== 0)) return;
+      // v629: an interactive descendant owns its own click. The Control agents
+      // row's A-id SELECT button sits INSIDE `td.aid`, which is also the drag
+      // handle: setPointerCapture retargeted the compatibility click to the
+      // cell, so the button never fired and clicking the first column could not
+      // select the agent (nor highlight it in the organigram). Same guard keeps
+      // any future button/link inside a draggable row clickable.
+      var t = e.target;
+      if (t && t.closest &&
+          t.closest("button,a,input,select,textarea,label,[contenteditable='true']")) return;
       var state = begin(e.pointerId, e.pointerType, e.clientX, e.clientY);
       if (!state) return;
       try { handle.setPointerCapture(e.pointerId); } catch (_) {}
@@ -229,6 +238,11 @@
     });
     handle.addEventListener("touchstart", function (e) {
       if (e.changedTouches.length !== 1) return;
+      // v629: same interactive-descendant guard as pointerdown (a tap on a
+      // button inside a draggable row must click, not arm a drag).
+      var tt = e.target;
+      if (tt && tt.closest &&
+          tt.closest("button,a,input,select,textarea,label,[contenteditable='true']")) return;
       var touch = e.changedTouches[0];
       var state = begin(touch.identifier, "touch", touch.clientX, touch.clientY);
       if (!state) return;
