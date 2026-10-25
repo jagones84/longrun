@@ -2584,52 +2584,38 @@
            never mirrored; the swarm button is the only control that spends model
            calls, so it says so. -->
       <div class="sw-cat" data-cat="orchestrate" hidden>
-        <!-- The name is the point: this tab is NOT the subagent engine. That engine
-             (model, limits, roles) is configured in Settings ▸ Subagents; this tab
-             RUNS it as a swarm and keeps the shared state the run writes to. -->
-        <h2>What this tab is (and is not)</h2>
-        <div class="card">
-          <div class="remaining"><b>Not</b> the subagent engine: the model, the parallel limit and the roles
-          live in <a href="#" data-call="gotoSubagents">Settings ▸ Subagents</a>. This tab
-          <b>uses</b> that engine in two ways:</div>
-          <div class="remaining u-mt4"><b>1. Blackboard</b> — a shared, versioned notebook. It does nothing by
-          itself: agents (and you) write entries, everybody reads the same ones.</div>
-          <div class="remaining u-mt4"><b>2. Swarm</b> — one button: give it a goal, it splits the goal across N
-          <i>throwaway</i> subagents and writes their results on the blackboard. Costs N+1 model turns.
-          Different from <code>job.dispatch</code>, which drives agents that already exist.</div>
-        </div>
-        <h2>Blackboard · the swarm's shared memory <span class="remaining" id="bbStat"></span></h2>
+        <!-- v641/v642: three prose cards explained what the tab is; the operator
+             still could not tell what a blackboard entry IS or whether entries can
+             be deleted. Now: the explanation is a tooltip, the board has a real
+             `clear all` (DELETE /api/blackboard), and the panel is two blocks. -->
+        <h2 title="Not the subagent engine — the model, the parallel limit and the roles live in Settings ▸ Subagents. This tab RUNS that engine: a swarm splits one goal across N throwaway subagents, and the blackboard is the shared notebook the run writes to (also readable from the longrun_blackboard tool and `forge blackboard`).">Swarm &amp; blackboard</h2>
         <div class="card">
           <div class="u-df u-g6 u-aic u-fww">
-            <span class="remaining u-f1">Every entry is durable and versioned; the coordinator and its workers
-            read and write here. One source of truth: <code>GET / POST /api/blackboard</code>.</span>
-            <button class="ghost" data-call="loadBlackboard" title="re-read the entries">↻</button>
+            <span class="remaining u-f1" id="bbStat">—</span>
+            <!-- cross-link kept: the swarm RUNS the Subagents engine, it does not
+                 configure it (JAG-536; the prose card that used to hold this link
+                 is a tooltip now). -->
+            <button class="lnk" data-call="gotoSubagents" title="the engine behind the swarm: model, parallel limit, roles">subagents</button>
+            <button class="lnk" data-call="loadBlackboard" title="re-read the entries">refresh</button>
+            <button class="lnk" data-call="bbClearAll" title="delete every entry (versions restart at #1); one topic can be cleared from the API with ?topic=">clear all</button>
           </div>
-          <div class="remaining u-mt4">Stored in <code>data/blackboard/blackboard.json</code> (inside the Longrun data
-          home). Agents reach the same entries through the MCP tool <code>longrun_blackboard</code> and the CLI
-          <code>forge blackboard</code>; this panel is only another door to that state.</div>
           <div class="u-df u-g6 u-mt6 u-fww">
-            <input id="bbTopic" class="inp u-p610 u-fs12" style="width:130px" placeholder="topic" value="general">
+            <input id="bbTopic" class="inp u-p610 u-fs12" style="width:110px" placeholder="topic" value="general">
             <input id="bbContent" class="inp u-f1 u-p610 u-fs12" placeholder="post an entry to the blackboard…">
-            <input id="bbTags" class="inp u-p610 u-fs12" style="width:130px" placeholder="tags,comma">
-            <button class="ghost" data-call="bbPost" title="POST /api/blackboard as author=human">＋ post</button>
+            <input id="bbTags" class="inp u-p610 u-fs12" style="width:110px" placeholder="tags,comma">
+            <button class="ghost" data-call="bbPost" title="POST /api/blackboard as author=human">post</button>
           </div>
           <div class="remaining u-mt4" id="bbMsg" role="status" aria-live="polite"></div>
           <div id="bbList" class="u-mt6"></div>
         </div>
-        <h2>Swarm · decompose a goal into parallel workers <span class="remaining" id="swStat"></span></h2>
+        <h2 title="One coordinator call plus one call per worker — it spends N+1 real model turns. Results land on the blackboard above; progress is visible in the Feed.">Swarm · decompose a goal</h2>
         <div class="card">
-          <div class="remaining"><b>This spends real model calls:</b> the coordinator decomposes the goal, spawns N
-          subagents (each with a fresh context) and synthesises their summaries. The goal, the partial results and the
-          synthesis land on the blackboard above.</div>
-          <div class="remaining u-mt4">It runs <code>agent/swarm.py::run</code> through the same subagent engine as a
-          <code>batch</code> turn: one coordinator call plus one call per worker, so the cost is N+1 model turns.
-          Nothing is stored outside the blackboard; the activity is visible in the Feed.</div>
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
             <input id="swGoal" class="inp u-f1 u-p610 u-fs12" placeholder="the goal to decompose…">
             <label class="remaining u-df u-g6 u-aic">workers<input id="swWorkers" type="number" min="1" max="8" value="3" class="inp u-p610 u-fs12" style="width:56px"></label>
             <label class="remaining u-df u-g6 u-aic">max steps<input id="swSteps" type="number" min="1" max="12" value="4" class="inp u-p610 u-fs12" style="width:56px"></label>
-            <button class="ghost" id="swRun" data-call="runSwarm" title="POST /api/swarm/run — spawns real subagents">▶ run swarm</button>
+            <button class="ghost" id="swRun" data-call="runSwarm" title="POST /api/swarm/run — spawns real subagents">▶ run</button>
+            <span class="remaining">costs N+1 model calls</span>
           </div>
           <div class="remaining u-mt6" id="swMsg" role="status" aria-live="polite"></div>
           <div id="swReport"></div>
@@ -11027,7 +11013,7 @@ async function bbPost() {
   const content = ((inp || {}).value || "").trim();
   if (!content) { if (msg) msg.textContent = "nothing to post"; return; }
   const tags = ((($("bbTags") || {}).value || "").split(",").map(s => s.trim()).filter(Boolean));
-  if (msg) msg.textContent = "posting…";
+  if (msg) msg.textContent = "";
   let r = {};
   try {
     r = await api("POST", "/api/blackboard", { topic: (($("bbTopic") || {}).value || "general").trim(),
@@ -11035,7 +11021,19 @@ async function bbPost() {
   } catch (e) { r = { error: String(e) }; }
   if (r && r.error) { if (msg) msg.textContent = "⛔ " + r.error; return; }
   if (inp) inp.value = "";
-  if (msg) msg.textContent = "posted #" + (r.version != null ? r.version : "?") + " to " + (r.topic || "general");
+  // v642: a toast, not a line that stays on the panel forever.
+  if (typeof toast === "function") toast("posted #" + (r.version != null ? r.version : "?") + " to " + (r.topic || "general"), "ok");
+  loadBlackboard();
+}
+/* v642: the blackboard is durable by design and had NO door to be emptied — every
+   swarm run stayed forever. DELETE /api/blackboard clears it (versions restart). */
+async function bbClearAll() {
+  const msg = $("bbMsg");
+  if (!await confirmDelete("delete every blackboard entry? versions restart at #1")) return;
+  let r = {};
+  try { r = await api("DELETE", "/api/blackboard"); } catch (e) { r = { error: String(e) }; }
+  if (r && r.error) { if (msg) msg.textContent = "⛔ " + r.error; return; }
+  if (typeof toast === "function") toast("blackboard cleared (" + ((r && r.removed) || 0) + ")", "ok");
   loadBlackboard();
 }
 async function runSwarm() {
@@ -12861,6 +12859,25 @@ function _setTabs(which) {
   if (s) { const on = which === "sessions"; s.classList.toggle("active", on); on ? s.setAttribute("aria-current", "page") : s.removeAttribute("aria-current"); }
   if (c) { const on = which === "control"; c.classList.toggle("active", on); on ? c.setAttribute("aria-current", "page") : c.removeAttribute("aria-current"); }
 }
+/* v642: while the Control deck is up, #app is `inert` — and inert is INHERITED, so
+   a floating editor window (a fixed box that draws above the deck) was visible but
+   could not be dragged or closed (operator: "l'editor è staccato alla sua finestra
+   non la riesco più a spostare o chiudere"). A DETACHED window is not part of the
+   app: it leaves #app while Control is on and comes back exactly where it was. */
+function _dockControlSettle() {
+  const dk = document.getElementById("editorDock");
+  if (!dk) return;
+  const on = document.body.classList.contains("control-on");
+  const floating = dk.classList.contains("ed-float") || dk.classList.contains("ed-full");
+  if (dk._home && (!on || !floating)) {           // back into the row (docked, or control off)
+    dk._home.insertBefore(dk, dk._homeNext || null);
+    dk._home = null; dk._homeNext = null;
+  } else if (on && floating && dk.parentNode && dk.parentNode.id === "app") {
+    dk._home = dk.parentNode; dk._homeNext = dk.nextSibling;
+    document.body.appendChild(dk);
+  }
+}
+window._dockControlSettle = _dockControlSettle;
 function showControl() {
   const cv = document.getElementById("controlView"); if (!cv) return;
   cv.style.top = _tabTop() + "px";
@@ -12871,12 +12888,14 @@ function showControl() {
   // JAG-424g: while Control is up, the Sessions page must not receive mouse OR keyboard —
   // `inert` removes it from hit-testing, focus and the a11y tree in one shot.
   const app = document.getElementById("app"); if (app) app.setAttribute("inert", "");
+  _dockControlSettle();   // v642: a floating editor window stays usable over the deck
   try { history.replaceState(null, "", location.pathname + location.search + "#control"); } catch (_) {}
 }
 function showSessions() {
   const cv = document.getElementById("controlView"); if (cv) { cv.classList.remove("on"); cv.setAttribute("aria-hidden", "true"); }
   const app = document.getElementById("app"); if (app) app.removeAttribute("inert");
   document.body.classList.remove("control-on");
+  _dockControlSettle();   // v642: put the editor back in the row, where it was
   _setTabs("sessions");
   try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}
 }

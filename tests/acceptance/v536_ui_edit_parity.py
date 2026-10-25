@@ -390,7 +390,9 @@ check("H8 Settings grew a Swarm & blackboard panel",
       '["orchestrate", "Swarm & blackboard"]' in gui and 'data-cat="orchestrate"' in gui
       and 'id="bbList"' in gui and 'id="swReport"' in gui)
 check("H8b the tab states it is NOT the subagent engine and cross-links both ways",
-      "What this tab is (and is not)" in gui
+      # v642: the statement is the panel title tooltip now (the prose card that held
+      # it was removed for space); the two-way links are unchanged.
+      "Not the subagent engine — the model, the parallel limit" in gui
       and 'data-call="gotoSubagents"' in gui and 'data-call="gotoOrchestrate"' in gui
       and "function gotoSubagents() { settingsCategory(\"subagents\"); }" in gui
       and "function gotoOrchestrate() { settingsCategory(\"orchestrate\"); }" in gui
@@ -404,7 +406,8 @@ check("H10 the swarm button posts goal/workers/steps and renders the report",
 check("H11 opening the category populates the blackboard at once",
       'else if (name === "orchestrate") { loadBlackboard(); }' in gui)
 check("H12 the swarm control warns that it spends real model calls",
-      "spends real model calls" in gui)
+      # v642: one line next to the run button instead of a two-paragraph card.
+      "costs N+1 model calls" in gui)
 
 # --- I: manifest checkpoints + context preview + cost reset ------------------
 # Three more write routes with no door: the MANIFEST checkpoints (create /

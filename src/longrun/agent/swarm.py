@@ -129,6 +129,29 @@ def post(topic, content, tags=None, parent=None, author=None, run_id=None):
         return entry
 
 
+def clear(topic=None):
+    """Delete every entry — or every entry of ONE topic — from the blackboard.
+
+    Operator: "si possono cancellare le cose che si fanno? rimangono per sempre
+    lì?" Entries were durable with NO door to empty them. Version numbers restart
+    from #1 after a clear (the id counter follows the surviving entries, like
+    every other Longrun object).
+
+    Returns {ok, removed}.
+    """
+    global _entries
+    with _lock:
+        entries = _load()
+        if topic:
+            keep = [e for e in entries if e.get("topic") != topic]
+        else:
+            keep = []
+        removed = len(entries) - len(keep)
+        _entries = list(keep)
+        _save()
+    return {"ok": True, "removed": removed}
+
+
 def get(entry_id=None, topic=None, tags=None, limit=50):
     """Read entries, filtered by id, topic, and/or tags.
 

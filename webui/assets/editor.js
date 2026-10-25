@@ -542,6 +542,9 @@ function _setMode(m) {
   state.floatReady = false;
   _syncWinButtons();
   applyResponsive();
+  // v642: with the Control deck up, a detach/attach changes where this window may
+  // live (the app is `inert` there) — let the app re-place it.
+  if (typeof window._dockControlSettle === "function") window._dockControlSettle();
   _notifyLayout();
   // the dock/float/full switch changes the editor's box — let CodeMirror re-measure.
   if (state.host && state.host.view) state.host.view.requestMeasure();

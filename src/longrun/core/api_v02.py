@@ -2287,6 +2287,15 @@ def handle(handler, method, path, qs, body):
             res = provider_remove_model(qs.get("provider"), qs.get("model"))
             return _r(handler, 200 if res.get("ok") else 400, res)
 
+        # JAG-536 follow-up: the blackboard is durable by design, but it had no
+        # door to be emptied — the panel kept every run forever. ?topic= clears
+        # one topic; no query clears the whole board.
+        if path == "/api/blackboard":
+            _lazy('swarm')
+            res = _SWARM.clear(qs.get("topic"))
+            _publish("blackboard.clear", ok=bool(res.get("ok")), removed=res.get("removed"))
+            return _r(handler, 200 if res.get("ok") else 400, res)
+
         # JAG-317: a TRUE delete for a stored memory (?target=<mid>), not a tombstone.
         if path == "/api/memory":
             _lazy('memory')
