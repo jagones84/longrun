@@ -19,6 +19,8 @@ server. Routes:
   DELETE /api/roles?session=    remove the session's ROLE.md
   POST   /api/teams/<tid>/reset    team bulk: reset every member session (chat+tasks)
   POST   /api/teams/<tid>/compact  team bulk: compact every member session
+  POST   /api/teams/<tid>/drop-old-plans  team bulk: delete every plan below
+         the current one in every member session (transcripts untouched)
 """
 from longrun.agent import agents as agents_mod
 from longrun.orchestrate import teams as teams_mod
@@ -100,6 +102,9 @@ def _team_bulk(tid, action, reg):
     `compact` -> ``httpapi.compact_session`` (the MANUAL policy, identical to the
                  single-session "compact now" action): summarise the old half of
                  the transcript so the context actually shrinks.
+    `drop-old-plans` -> ``taskgraph.drop_old_plans`` per session: delete every
+                 plan below the current one, keep current work, transcripts
+                 untouched. "Everything" stays `reset`.
 
     The sessions are ACTUAL backend sessions; one session failing never aborts
     the batch, it is reported per session in ``results``.
@@ -114,12 +119,16 @@ def _team_bulk(tid, action, reg):
             sids.append(sid)
     from longrun.core import httpapi as httpapi_mod
     from longrun.memory import stores as stores_mod
+    from longrun.plan import taskgraph as taskgraph_mod
     results = []
     for sid in sids:
         try:
             if action == "compact":
                 results.append({"session": sid,
                                 "result": httpapi_mod.compact_session(sid, origin="manual")})
+            elif action == "drop-old-plans":
+                results.append({"session": sid,
+                                "result": taskgraph_mod.drop_old_plans(sid)})
             else:
                 stores_mod.clear_session(sid)
                 results.append({"session": sid, "ok": True})
@@ -167,10 +176,11 @@ def _teams(handler, method, path, qs, body, reg):
                 tid, lead_model=data.get("lead_model"),
                 member_model=data.get("member_model"),
                 local_slots_n=data.get("local_slots")))
-        if len(parts) >= 2 and parts[1] in ("reset", "compact"):
-            # JAG-482: TEAM-WIDE bulk action over the team's member sessions.
+        if len(parts) >= 2 and parts[1] in ("reset", "compact", "drop-old-plans"):
+            # JAG-482/v614: TEAM-WIDE bulk action over the team's member sessions.
             # "reset" wipes each session (chat + tasks), "compact" shrinks each
-            # transcript — NEVER deletes a session or its agent.
+            # transcript, "drop-old-plans" deletes every plan below the current
+            # one in each session — NEVER deletes a session or its agent.
             res = _team_bulk(tid, parts[1], reg)
             return _json(handler, 404 if res.get("error") else 200, res)
         return _json(handler, 200, R.update(

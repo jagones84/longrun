@@ -235,6 +235,47 @@ def drop_plan(key, plan):
     return {"ok": True, "plan": p, "removed": removed, "node_count": node_count}
 
 
+def drop_old_plans(key):
+    """Delete ALL older plans — keep only the current one (v614).
+
+    The operator asked: "delete all old plans?" One ✕ per plan does not
+    scale for long sessions, so this drops every plan below the current one
+    in a SINGLE save + event: same guarantees as ``drop_plan`` (nodes ARE
+    the plan — panel, model prompt and constellation all read this graph;
+    surviving deps pruned; transcript untouched), minus the per-plan loop.
+    Dropping "everything" is ``reset`` (archives the whole file) — this
+    keeps the current work and only clears history.
+    """
+    with GRAPH_LOCK:
+        g = load(key)
+        if not g:
+            return {"ok": False, "error": "no task graph for %r" % key}
+        cur = int(g.get("plan", 1) or 1)
+        nodes = list(g.get("nodes") or [])
+        dropped = sorted({int(n.get("plan", 1) or 1) for n in nodes
+                          if int(n.get("plan", 1) or 1) != cur})
+        if not dropped:
+            return {"ok": True, "current": cur, "plans": [],
+                    "removed": 0, "node_count": len(nodes)}
+        gone = {n.get("id") for n in nodes
+                if int(n.get("plan", 1) or 1) != cur and n.get("id")}
+        kept = [n for n in nodes if n.get("id") not in gone]
+        removed = len(nodes) - len(kept)
+        for n in kept:
+            deps = n.get("deps")
+            if deps and any(d in gone for d in deps):
+                n["deps"] = [d for d in deps if d not in gone]
+        g["nodes"] = kept
+        g["updated"] = round(time.time(), 3)
+        save(g)
+        node_count = len(kept)
+    _publish("graph.plans_dropped", run=key, session=g.get("session_id") or key,
+             plans=dropped, removed=removed, node_count=node_count,
+             current=cur)
+    return {"ok": True, "current": cur, "plans": dropped,
+            "removed": removed, "node_count": node_count}
+
+
 def plan_nodes(graph):
     """Nodes of the CURRENT plan (all nodes when none is tagged / plan 1)."""
     if not graph:

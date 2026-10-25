@@ -2444,6 +2444,13 @@ class Handler(BaseHTTPRequestHandler):
             sess_id = path[len("/api/sessions/"):-len("/graph/plan/drop")].strip("/")
             res = taskgraph.drop_plan(sess_id, (body or {}).get("plan"))
             return self._send(200 if res.get("ok") else 400, res)
+        if path.startswith("/api/sessions/") and path.endswith("/graph/plan/drop-old"):
+            # v614: delete ALL older plans at once, keep the current one (the
+            # nodes ARE the plan — panel, model prompt and constellation all
+            # read this graph). "Everything" is reset (archives the file).
+            sess_id = path[len("/api/sessions/"):-len("/graph/plan/drop-old")].strip("/")
+            res = taskgraph.drop_old_plans(sess_id)
+            return self._send(200 if res.get("ok") else 400, res)
         if path.startswith("/api/sessions/") and path.endswith("/graph/reset"):
             # JAG-63: only the user clears the persistent task list (new task).
             sess_id = path[len("/api/sessions/"):-len("/graph/reset")].strip("/")

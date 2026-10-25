@@ -1100,8 +1100,9 @@ class AgentsView {
       '<div data-a="edit">\u270E Edit team\u2026</div>' +
       '<div data-a="reset">\u21BA Reset all sessions\u2026</div>' +
       '<div data-a="compact">\u2261 Compact all sessions\u2026</div>' +
+      '<div data-a="dropold">\u2715 Drop OLD plans\u2026</div>' +
       '<div class="sep"></div>' +
-      '<div data-a="del">\u2716 Delete team\u2026</div>', {w: 224, h: 190});
+      '<div data-a="del">\u2716 Delete team\u2026</div>', {w: 224, h: 214});
     m.querySelector('[data-a="edit"]').onclick = () => this.openTeamEdit(ev, tid);
     m.querySelector('[data-a="del"]').onclick = async () => { closePopover();
       const members = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
@@ -1121,6 +1122,11 @@ class AgentsView {
       if (confirm("Compact all " + n + " session(s) of " + (t.name || tid) +
         "?\n\nThe older half of each transcript is summarised so the context shrinks."))
         this.teamBulk(tid, "compact"); };
+    m.querySelector('[data-a="dropold"]').onclick = () => { closePopover();
+      if (confirm("Drop ALL old plans in every session of " + (t.name || tid) +
+        " (" + n + " session(s))?\n\nOnly plans below each session's current one are deleted — " +
+        "current work, chats and agents stay."))
+        this.teamBulk(tid, "drop-old-plans"); };
   }
   /* JAG-536: a team was create-and-forget — every property was frozen at birth.
      The server has always supported POST /api/teams/<tid> (name/symbol/colour/
@@ -1194,6 +1200,11 @@ class AgentsView {
         return "  " + x.session + " — " + (q.input_tokens != null
           ? q.input_tokens + " \u2192 " + (q.tokens_after != null ? q.tokens_after : "?") + " tokens"
           : "compacted");
+      }
+      if (action === "drop-old-plans"){
+        const q = x.result || {};
+        return "  " + x.session + " — dropped " + (q.plans || []).join(", ") +
+          " (" + (q.removed || 0) + " step(s), current " + (q.current != null ? q.current : "?") + ")";
       }
       return "  " + x.session + " — reset";
     });

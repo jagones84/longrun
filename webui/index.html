@@ -6942,8 +6942,13 @@ function renderGraph() {
       for (let _p = _lo; _p <= _hi; _p++) if (!(_byPlan[_p])) _missing.push(_p);
       if (_missing.length) _gap = " (missing: " + _missing.join(", ") + " — deleted)";
     }
+    // v614: one gesture deletes ALL old plans (keep current). The ✕ lives
+    // OUTSIDE the <details> next to it (same a11y rule as the per-plan ✕).
     _olderHtml = '<details class="older-plans-all"><summary class="remaining u-ptr">OLD PLAN \u00b7 ' +
-      _keys.length + ' plan(s) \u00b7 ' + _tot + ' node(s)' + _gap + '</summary>' + _inner + '</details>';
+      _keys.length + ' plan(s) \u00b7 ' + _tot + ' node(s)' + _gap + '</summary>' + _inner + '</details>' +
+      '<button class="plan-drop-all" title="delete ALL ' + _keys.length +
+      ' old plan(s) (' + _tot + ' step(s)) — the current plan, the Control ' +
+      'constellation current nodes and the chat are kept" aria-label="delete all old plans">\u2715 all</button>';
   }
   const _historyHtml = _historyNote
     ? '<div class="plan-history-note" role="status">' + esc(_historyNote) + "</div>"
@@ -6984,6 +6989,10 @@ function renderGraph() {
   box.querySelectorAll(".plan-drop").forEach(b => {
     b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); dropPlan(Number(b.dataset.plan)); };
   });
+  // v614: bulk delete — every plan below the current one, one confirm.
+  box.querySelectorAll(".plan-drop-all").forEach(b => {
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); dropAllOldPlans(); };
+  });
   $("remaining").innerHTML = "";
 }
 /* JAG-514: remove ONE older plan from the session graph. The graph IS the plan:
@@ -7003,6 +7012,29 @@ async function dropPlan(p) {
   } catch (e) { r = { error: String(e) }; }
   if (!r || !r.ok) { toast("delete failed — " + ((r && r.error) || "?"), "err"); return; }
   toast("plan " + p + " deleted (" + r.removed + " step(s))", "ok");
+  await loadGraph();
+}
+/* v614: remove ALL older plans at once (keep the current one). Same truth as
+   dropPlan — the graph IS the plan, so the steps disappear from the panel,
+   the model prompt and the Control constellation together. "Everything"
+   (current plan included) is the session reset, not this button. */
+async function dropAllOldPlans() {
+  if (!sessionId || !graph) return;
+  const cur = (graph.plan != null) ? graph.plan : 1;
+  const old = (graph.nodes || []).filter(n => (n.plan == null ? 1 : n.plan) !== cur);
+  if (!old.length) { toast("no old plans — only the current one", "ok"); return; }
+  const plans = [...new Set(old.map(n => (n.plan == null ? 1 : n.plan)))].sort((a, b) => a - b);
+  if (!(await confirmDelete("delete ALL " + plans.length + " old plan(s) (" +
+      plans.join(", ") + ") and their " + old.length +
+      " step(s)? The current plan, the chat and the Control constellation's " +
+      "current nodes are kept."))) return;
+  let r = null;
+  try {
+    r = await api("POST", "/api/sessions/" + encodeURIComponent(sessionId)
+                       + "/graph/plan/drop-old", {});
+  } catch (e) { r = { error: String(e) }; }
+  if (!r || !r.ok) { toast("delete failed — " + ((r && r.error) || "?"), "err"); return; }
+  toast("deleted plans " + (r.plans || []).join(", ") + " (" + r.removed + " step(s))", "ok");
   await loadGraph();
 }
 /* JAG-424: right-click menu on a todo — "Show in constellation" circles that task in

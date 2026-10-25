@@ -60,6 +60,12 @@ become the ONE Session Job, dispatches (any spelling, never a `subagent`
 action) run as real turns in the peer session. A dispatch never becomes an
 SJ subjob (v612). Inter-session chat validates first: missing args → 64,
 unknown session → clean error, no self-send (v613).
+2.5 Old plans delete in bulk, per session AND per team: graph nodes ARE
+the plan (panel, model prompt and constellation read the one session
+graph — nothing is display-only), so deleting clears all three at once.
+One `✕ all` per session plus `Drop OLD plans…` in the deck team kebab;
+the current plan, chats and agents are never touched — wiping everything
+is the session reset (v614).
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 
