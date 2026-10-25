@@ -52,4 +52,4 @@ bash tests/battery.sh     # FAST deterministic gate; trust its reported count
   (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
 - **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
   or the repo-root `trash/` data directory.
-- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching `docs/runbooks/*.md` in the same session. Section update rules: `.agent/docs/MAINTENANCE.md`.
+- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching `docs/runbooks/*.md` in the same session. Section update rules: `.agent/docs/MAINTENANCE.md`; the single spec index is `.agent/docs/SPEC-INDEX.md`.
