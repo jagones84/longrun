@@ -253,8 +253,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* JAG-2.1: ONE agents list — the editable table grouped by team with collapsible
      group header rows (the separate "table / by team" views are gone). */
   tr.grp-head td{padding:0;border-bottom:1px solid var(--line);background:var(--brief)}
-  tr.grp-head .grp-h{display:flex;align-items:center;gap:7px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--txt);user-select:none}
+  tr.grp-head .grp-h{display:flex;align-items:center;gap:7px;padding:7px 10px;font-size:12px;font-weight:600;cursor:grab;color:var(--txt);user-select:none}
   tr.grp-head .grp-h:hover{background:rgba(108,140,255,.05)}
+  tr.grp-head .grp-h:active{cursor:grabbing}
+  tr.grp-head.dragging{opacity:.45}
+  tr.grp-head.drop-before td{box-shadow:inset 0 2px var(--acc)}
+  tr.grp-head.drop-after td{box-shadow:inset 0 -2px var(--acc)}
   tr.grp-head .caret{display:inline-block;width:12px;transition:transform .12s;color:var(--dim)}
   tr.grp-head .gc{margin-left:auto;font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:0 7px}
   /* JAG-482: per-TEAM kebab (right of the team name) — bulk actions on the team's sessions. */
@@ -459,8 +463,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      hidden above (their grid rows are display:contents now), so views get their
      own splitter between every two visible panels. Same pointer-drag contract,
      widths persist per view, reset layout clears them. */
-  .rz-vcol{align-self:stretch;width:7px;flex:0 0 auto;cursor:ew-resize;border-radius:3px;
-    background:var(--line);touch-action:none}
+  .rz-vcol{align-self:stretch;width:5px;flex:0 0 auto;cursor:ew-resize;border-radius:3px;
+    background:transparent;touch-action:none}
   .rz-vcol:hover,.rz-vcol:active{background:var(--acc)}
   @media (max-width:1100px){ .rz-vcol{display:none} }
   main.view-cols section.panel[data-panel]{min-height:calc(100vh - 150px)}
@@ -799,8 +803,11 @@ class AgentsView {
     // /api/sidebar/order, kind "session") through the shared DragSort engine
     // (webui/assets/dragsort.js) — the same reorder code as webui/index.html,
     // keyed by session id so both pages agree. No second order truth.
-    this._order = {revision: 0, sessions: {}};
+    // v625: team order too (kind "team") — the group headers drag exactly
+    // like the Sessions sidebar team labels.
+    this._order = {revision: 0, sessions: {}, teams: []};
     this._orderBase = {};
+    this._teamBase = [];
     this._orderSaving = false;
     this._orderLoaded = false;
     // JAG-2.3: the team currently scoping the board ("ALL", a team id, "__none__").
@@ -837,8 +844,18 @@ class AgentsView {
       g.ms = DragSort.orderByIds(g.ms || [], (this._order.sessions || {})[g.id],
         a => a.session, null, null);
     });
+    // v625: the groups THEMSELVES follow the shared team order (same store
+    // the Sessions sidebar team labels write) — "__none__" and stray buckets
+    // are not teams, so they keep their relative place after ranked teams.
+    if (window.DragSort) {
+      const ordered = DragSort.orderByIds(groups, this._order.teams || [],
+        g => g.id, null, null);
+      groups.length = 0;
+      ordered.forEach(g => groups.push(g));
+    }
     this._orderBase = {};
     groups.forEach(g => { this._orderBase[g.id] = (g.ms || []).map(a => a.session); });
+    this._teamBase = groups.map(g => g.id);
     // JAG-424e: team groups start COLLAPSED — the board opens as tidy header rows. A
     // group seen for the first time is also collapsed; an expand sticks until toggled back.
     groups.forEach(g => { if (!this._seen.has(g.id)) { this._seen.add(g.id); this.closed.add(g.id); } });
@@ -985,7 +1002,9 @@ class AgentsView {
     }; });
     // JAG-2.1: collapsible group header rows inside the SAME table.
     body.querySelectorAll("tr.grp-head .grp-h").forEach(h => {
-      const toggleGroup = () => {
+      const toggleGroup = (ev) => {
+        // v625: a header drag ends here too — swallow its tail click.
+        if (ev && window.DragSort && DragSort.consumeClick(ev)) return;
         const id = h.closest("tr.grp-head").getAttribute("data-grp");
         if (this.closed.has(id)) this.closed.delete(id); else this.closed.add(id);
         this._applyGroupState(id);
@@ -1097,12 +1116,15 @@ class AgentsView {
      this table's own: rows are tr[data-sid], groups are data-grp, an empty
      group accepts the append drop, order persists to the SAME sidebar-order
      store (kind "session", ids are session ids) so both pages agree. */
+  _setOrder(d){
+    this._order = {revision: d.revision, sessions: d.sessions || {}, teams: d.teams || []};
+  }
   _ensureOrder(){
     if (this._orderLoaded || this._orderSaving) return;
     this._orderLoaded = true;
     this.api.get("/api/sidebar/order").then(d => {
       if (d && typeof d.revision === "number"){
-        this._order = {revision: d.revision, sessions: d.sessions || {}};
+        this._setOrder(d);
         if (this.onChanged) this.onChanged();
       }
     }).catch(() => {});
@@ -1118,24 +1140,56 @@ class AgentsView {
         {kind: "session", group, ids, revision: this._order.revision});
       if (!d) return false;
       if (d.order){
-        this._order = {revision: d.order.revision, sessions: d.order.sessions || {}};
+        this._setOrder(d.order);
         if (this.onChanged) this.onChanged();
         return false;
       }
       if (d.error){
         const fresh = await this.api.get("/api/sidebar/order").catch(() => null);
         if (fresh && typeof fresh.revision === "number")
-          this._order = {revision: fresh.revision, sessions: fresh.sessions || {}};
+          this._setOrder(fresh);
         if (this.onChanged) this.onChanged();
         return false;
       }
-      this._order = {revision: d.revision, sessions: d.sessions || {}};
+      this._setOrder(d);
       if (this.onChanged) this.onChanged();
       return true;
     } catch (e) {
       const fresh = await this.api.get("/api/sidebar/order").catch(() => null);
       if (fresh && typeof fresh.revision === "number")
-        this._order = {revision: fresh.revision, sessions: fresh.sessions || {}};
+        this._setOrder(fresh);
+      if (this.onChanged) this.onChanged();
+      return false;
+    } finally {
+      this._orderSaving = false;
+    }
+  }
+  async _persistTeamOrder(ids){
+    // v625: team moves persist to the SAME kind=team store the Sessions
+    // sidebar labels write — one truth, both pages agree.
+    if (this._orderSaving) return false;
+    this._orderSaving = true;
+    try {
+      const d = await this.api.patch("/api/sidebar/order",
+        {kind: "team", ids, revision: this._order.revision});
+      if (!d) return false;
+      if (d.order){
+        this._setOrder(d.order);
+        if (this.onChanged) this.onChanged();
+        return false;
+      }
+      if (d.error){
+        const fresh = await this.api.get("/api/sidebar/order").catch(() => null);
+        if (fresh && typeof fresh.revision === "number") this._setOrder(fresh);
+        if (this.onChanged) this.onChanged();
+        return false;
+      }
+      this._setOrder(d);
+      if (this.onChanged) this.onChanged();
+      return true;
+    } catch (e) {
+      const fresh = await this.api.get("/api/sidebar/order").catch(() => null);
+      if (fresh && typeof fresh.revision === "number") this._setOrder(fresh);
       if (this.onChanged) this.onChanged();
       return false;
     } finally {
@@ -1145,6 +1199,24 @@ class AgentsView {
   _bindRowDrag(body){
     if (!window.DragSort || !body) return;
     const table = body.closest("table") || body;
+    // v625: TEAM headers drag whole groups (Sessions sidebar parity — its
+    // .gname label drags the team). Only real teams persist (kind=team);
+    // "__none__"/stray buckets reorder locally only, never pollute the store.
+    body.querySelectorAll("tr.grp-head").forEach(tr => {
+      const handle = tr.querySelector(".grp-h") || tr;
+      DragSort.bind(handle, {
+        container: table, source: tr, id: tr.getAttribute("data-grp"),
+        itemSel: "tr.grp-head", idKey: "grp",
+        scrollEl: $("agTableWrap"),
+        isSaving: () => this._orderSaving,
+        onCommit: ({id: cid, targetId, after}) => {
+          const teamsOnly = (arr) => (arr || []).filter(id => !!this.teamById(id));
+          const base = teamsOnly(this._teamBase);
+          const next = DragSort.moveItem(base, cid, targetId, after);
+          if (next.some((x, i) => x !== base[i])) this._persistTeamOrder(next);
+        }
+      });
+    });
     body.querySelectorAll("tr[data-sid]").forEach(tr => {
       const handle = tr.querySelector("td.aid") || tr;
       const grp = tr.getAttribute("data-grp") || "__none__";
@@ -1252,8 +1324,12 @@ class AgentsView {
     const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="8">' +
       // JAG-2.8: the header is a real control — groups start COLLAPSED, so without
       // tabindex/Enter a keyboard-only operator could not open a single group.
+      // v625: the header is ALSO the team drag handle (Sessions sidebar parity —
+      // its .t label drags the team). Grip shows it; the engine moves the whole
+      // group, the SAME kind=team store both pages share.
       '<div class="grp-h" tabindex="0" role="button" aria-expanded="' + (closed ? "false" : "true") +
       '" aria-label="' + esc(g.name) + ' team group">' +
+      '<span class="rowgrip" title="drag to reorder this team">⋮⋮</span>' +
       '<span class="caret">' + (closed ? '▸' : '▾') + '</span>' +
       (g.symbol ? '<span>' + esc(g.symbol) + '</span>' : '') +
       '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span>' +
@@ -2612,10 +2688,19 @@ class OrbitApp {
     document.querySelectorAll(".rz-vcol").forEach(s => s.remove());
     const main = document.querySelector("main");
     if (!main || !main.classList.contains("view-cols")) return;
+    const deck = main.querySelector(".deckBody");
+    if (!deck) return;
     const vis = [...document.querySelectorAll("section.panel[data-panel]")].filter(p => !p.hidden);
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}"); } catch (_) {}
+    // v625 fix: the panels' parents (.grid2/.col) are display:contents, so a
+    // splitter inserted as a DOM sibling never sat between the VISUAL neighbors
+    // (visual order is CSS `order`, not DOM). Splitters are now flex items of
+    // .deckBody itself: panel i takes order 2i, its splitter takes 2i+1 —
+    // exactly one splitter between each adjacent column pair, and each drag
+    // moves precisely its two panels.
     vis.forEach((p, i) => {
+      p.style.order = String(i * 2);
       p.style.flex = ""; p.style.flexBasis = "";
       const w = saved["vcol:" + this.view + ":" + i];
       if (w) { p.style.flex = "0 0 auto"; p.style.flexBasis = w + "px"; }
@@ -2624,7 +2709,8 @@ class OrbitApp {
       const A = vis[i], B = vis[i + 1], key = "vcol:" + this.view + ":" + i;
       const sp = document.createElement("div");
       sp.className = "rz-vcol"; sp.title = "drag to resize these columns";
-      A.after(sp);
+      sp.style.order = String(i * 2 + 1);
+      deck.appendChild(sp);
       sp.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         try { sp.setPointerCapture(e.pointerId); } catch (_) {}
