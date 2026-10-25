@@ -438,8 +438,9 @@
     font-size: 11px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
   .lnk:hover { color: var(--txt); }
   .lnk.busy { opacity: .6; cursor: progress; }
-  details.dryrun > summary { cursor: pointer; font-size: 11px; color: var(--dim); }
-  details.dryrun > summary:hover { color: var(--txt); }
+  details.dryrun > summary, details.brk > summary { cursor: pointer; font-size: 11px; color: var(--dim); }
+  details.dryrun > summary:hover, details.brk > summary:hover { color: var(--txt); }
+  details.brk > summary { margin-top: 4px; }
   .ctxpct { font-size: 18px; font-weight: 700; letter-spacing: -.5px; color: var(--txt); font-variant-numeric: tabular-nums; }
   .ctxstate { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
   .ctxstate.near { color: var(--warn); }
@@ -492,9 +493,11 @@
   .ctxitem .cn { color: var(--acc2); }
 
   /* JAG-355: live cost panel — session total + one row per API call */
+  /* v634: the total is a ROW value, not a hero number; the per-run rows are ONE
+     line each (the model name ellipsises, the full name stays in the row tooltip). */
   .costhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-  .costtot { font-size: 20px; font-weight: 700; color: var(--txt); letter-spacing: -.02em; }
-  .costlist { margin-top: 7px; max-height: 240px; overflow-y: auto; }
+  .costtot { font-size: 16px; font-weight: 700; color: var(--txt); letter-spacing: -.02em; cursor: help; }
+  .costlist { margin-top: 4px; max-height: 180px; overflow-y: auto; }
   .costrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
     font-size: 11px; color: var(--dim);
     padding: 3px 2px; border-bottom: 1px solid var(--line); }
@@ -504,15 +507,15 @@
   /* JAG-403f: calls are grouped PER RUN (one user turn). Each run is a collapsed
      row with its own total; click the header to expand the individual calls. */
   .runrow { border-bottom: 1px solid var(--line); }
-  .runhd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
+  .runhd { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; min-width: 0;
     font-size: 11px; color: var(--dim);
-    padding: 5px 2px; cursor: pointer; }
+    padding: 3px 2px; cursor: pointer; }
   .runhd:hover { color: var(--txt); }
   .runhd .caret { width: 9px; color: var(--muted); flex: none; }
-  .runhd .rt { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
-  .runhd .rm { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-  .runhd .rn { color: var(--muted); font-size: 10px; }
-  .runhd .cu { font-weight: 700; color: var(--txt); min-width: 52px; text-align: right; }
+  .runhd .rt { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); flex: none; }
+  .runhd .rm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .runhd .rn { color: var(--muted); font-size: 10px; white-space: nowrap; flex: none; }
+  .runhd .cu { font-weight: 700; color: var(--txt); min-width: 46px; text-align: right; flex: none; }
   .runbody { padding-left: 14px; border-left: 1px solid var(--line); margin-left: 3px; }
   .runbody .costrow:last-child { border-bottom: 0; }
 
@@ -1123,12 +1126,14 @@
   #inspector .insp-hd:hover { color: var(--accent); }
   #inspector .insp-hd::before { content: "▸ "; color: var(--dim); }
   #inspector section.insp-open .insp-hd::before { content: "▾ "; color: var(--dim); }
-  #inspector .insp-body { padding: 0 8px 10px; }
+  #inspector .insp-body { padding: 0 6px 8px; }
   #inspector .insp-body[hidden] { display: none; }
   #inspector .insp-body > h2:first-child { margin-top: 0; }
   /* JAG-272: compact the inspector — the "Files & changes" section ate vertical space */
-  #inspector .insp-body h2 { margin: 7px 0 4px; font-size: 10px; }
-  #inspector .card { padding: 8px 10px; margin-bottom: 6px; }
+  #inspector .insp-body h2 { margin: 6px 0 3px; font-size: 10px; }
+  /* v634: every section uses the same 6/8 rhythm (was 8/10 + 6 margin) — the rails
+     were paying ~30px of cumulative padding for nothing. */
+  #inspector .card { padding: 6px 8px; margin-bottom: 4px; }
   /* JAG-275: the rail's action buttons looked oversized (they inherited the 14px
      body font with 8/14px padding). Compact them so the inspector reads denser. */
   #inspector button.ghost { font-size: 11px; padding: 4px 9px; border-radius: 8px; line-height: 1.5; }
@@ -1926,7 +1931,13 @@
                     title="open the shared automatic and manual compaction policy">settings</button>
           </div>
         </div>
-        <div id="ctxCats"></div>
+        <!-- v634: the ring + the 10 category bars are REFERENCE, not the answer —
+             collapsed by default (DeerFlow keeps the same split: the pill shows the
+             number, the detail opens on demand). -->
+        <details class="brk">
+          <summary>breakdown</summary>
+          <div id="ctxCats"></div>
+        </details>
         <!-- JAG-536 W5: POST /api/context/preview — the assembler's own dry run
              (compaction outcome, token totals, memories). v632: collapsed row. -->
         <details class="dryrun u-mt6">
@@ -1942,25 +1953,30 @@
       <section data-insp="plan" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["plan"]'>Plan<span class="ihd-s" id="sPlan"></span></button>
         <div class="insp-body">
-        <h2>TASK LIST (persistent) <span id="taskCount" class="remaining"></span></h2>
+        <!-- v634: the Plan body is data + two input rows, not a title, a button wall
+             and an empty-state sentence (DeerFlow's To-dos header is the reference:
+             the count lives in the header, the body is the list). -->
         <div class="card">
-          <div class="u-df u-g6 u-mt8">
-            <button class="ghost" data-call="planGoal" title="same as /goal: runs until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop">▶ goal</button>
-            <button class="ghost" data-call="showConstellation" title="open the selected task in the Control deck's constellation diagram">◇ constellation</button>
-            <button class="ghost" data-call="clearSession" title="clear chat + tasks">clear</button>
-            <button class="ghost" data-call="resetPlan" title="clear this session's task list (start a new task)">reset</button>
+          <div class="u-df u-g6 u-aic">
+            <input id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal…">
+            <button class="ghost" data-call="planGoal" title="same as /goal: runs until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop">▶</button>
           </div>
-          <input id="planInp" class="inp u-w100 u-mt6 u-p610 u-fs12" placeholder="goal… (type a goal, then ▶ goal)">
-          <div id="graphHead" class="remaining">run graph: — (send a request to generate it)</div>
-          <div id="tasks"></div>
-          <div class="u-df u-g6 u-mt8">
-            <input id="taskInp" class="inp u-f1 u-p610 u-fs12" placeholder="add a graph node…">
+          <div class="u-df u-g6 u-aic u-mt6">
+            <input id="taskInp" class="inp u-f1 u-p610 u-fs12" placeholder="graph node…">
             <button class="ghost" data-call="addTask" title="POST /graph/nodes {action:add}">+</button>
-            <button class="ghost" data-call="replanGraph" title="incremental re-plan">↻ replan</button>
-            <button class="ghost" data-call="resetRunGraph" title="clear the current run graph">reset</button>
+            <button class="ghost" data-call="replanGraph" title="incremental re-plan">↻</button>
           </div>
-          <div id="taskDetail" class="remaining u-mt8"></div>
-          <div id="remaining" class="remaining u-mt8"></div>
+          <div id="graphHead" class="remaining"></div>
+          <div id="tasks"></div>
+          <div class="acts">
+            <span id="taskCount" class="remaining"></span>
+            <button class="lnk" data-call="showConstellation" title="open the selected task in the Control deck's constellation diagram">constellation</button>
+            <button class="lnk" data-call="resetRunGraph" title="clear the current run graph">reset graph</button>
+            <button class="lnk" data-call="clearSession" title="clear chat + tasks">clear chat</button>
+            <button class="lnk" data-call="resetPlan" title="clear this session's task list (start a new task)">reset list</button>
+          </div>
+          <div id="taskDetail" class="remaining"></div>
+          <div id="remaining" class="remaining"></div>
         </div>
         </div>
       </section>
@@ -6125,7 +6141,7 @@ function _costRunHtml(g) {
   const failed = g.calls.filter(r => r.status === "failed").length;
   const fail = failed ? ' <span class="rn">\u00b7 ' + failed + " failed</span>" : "";
   return '<div class="runrow">' +
-    '<div class="runhd" data-k="' + _attr(g.key) + '" title="' + (open ? "collapse" : "expand") + ' this run">' +
+    '<div class="runhd" data-k="' + _attr(g.key) + '" title="' + (open ? "collapse" : "expand") + ' this run \u00b7 ' + _attr(mtxt) + '">' +
       '<span class="caret">' + (open ? "\u25be" : "\u25b8") + "</span>" +
       '<span class="rt">' + esc(_hhmmss(g.ts)) + "</span>" +
       '<span class="rm">' + esc(mtxt) + "</span>" +
@@ -6162,14 +6178,17 @@ function renderCosts() {
   // JAG-560: attempts that failed, or succeeded with no counters, are facts too.
   if (c.failed) _sourceCounts.push(c.failed + " failed");
   if (c.missing_usage) _sourceCounts.push(c.missing_usage + " no usage");
-  if (c.latency_ms_p50 != null) {
-    _sourceCounts.push("p50 " + (c.latency_ms_p50 >= 1000
-      ? (c.latency_ms_p50 / 1000).toFixed(1) + "s" : c.latency_ms_p50 + "ms"));
-  }
+  const _p50 = c.latency_ms_p50 != null
+    ? (c.latency_ms_p50 >= 1000 ? (c.latency_ms_p50 / 1000).toFixed(1) + "s"
+                                : c.latency_ms_p50 + "ms")
+    : "";
+  if (_p50) _sourceCounts.push("p50 " + _p50);
+  // v634: the ROW shows the number, the PROOF opens on demand — the exact/estimated/
+  // unpriced/failed breakdown is the tooltip, not a wrapped second paragraph.
   if (sub) sub.textContent = c.calls
-    ? (c.calls + " call" + (c.calls === 1 ? "" : "s")
-       + (_sourceCounts.length ? " \u00b7 " + _sourceCounts.join(" \u00b7 ") : ""))
+    ? (c.calls + " call" + (c.calls === 1 ? "" : "s") + (_p50 ? " \u00b7 p50 " + _p50 : ""))
     : "no calls yet";
+  if (total) total.title = c.calls ? ("billing: " + _sourceCounts.join(" \u00b7 ")) : "";
   if ($("costCalls")) $("costCalls").textContent = (c.calls || 0) + " calls";
   if ($("costIn")) $("costIn").textContent = _fmtTok(c.tokens_in) + " in";
   if ($("costOut")) $("costOut").textContent = _fmtTok(c.tokens_out) + " out";

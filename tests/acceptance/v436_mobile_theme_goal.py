@@ -41,18 +41,18 @@ check("1c the mobile #tabbar no longer hardcodes a dark background",
 check("1d the mobile #tabbar uses the theme token --menubg",
       "background: var(--menubg); backdrop-filter: blur(12px);" in HTML, "")
 
-# --- 2: the Plan goal box is full-width on its own row -----------------------
-check("2a the goal input is full-width on its own row (u-w100, u-mt6)",
-      'id="planInp" class="inp u-w100 u-mt6 u-p610 u-fs12"' in HTML, "")
-check("2b the goal input no longer shares the buttons row (no u-f1)",
-      'id="planInp" class="inp u-f1 u-p610 u-fs12"' not in HTML, "")
+# --- 2: the Plan goal box owns its row and its action ------------------------
+# v634: the four-button wall became two input rows with their action beside them;
+# the goal field keeps the full remaining width of its row.
+check("2a the goal input owns its row and keeps the remaining width",
+      'id="planInp" class="inp u-f1 u-p610 u-fs12"' in HTML, "")
+check("2b the goal action sits on the SAME row as its input",
+      HTML.index('id="planInp"') < HTML.index('data-call="planGoal"'), "")
 check("2c the goal/clear/reset buttons are still present",
       'data-call="planGoal"' in HTML and 'data-call="clearSession"' in HTML
       and 'data-call="resetPlan"' in HTML, "")
-# the input must come AFTER the buttons row (i.e. below it)
-_pb = HTML.index('data-call="planGoal"')
-_pi = HTML.index('id="planInp"')
-check("2d the goal input sits BELOW the buttons", _pi > _pb, "")
+check("2d the Plan body starts with the goal row (no button wall above it)",
+      HTML.index('id="planInp"') < HTML.index('data-call="showConstellation"'), "")
 
 print("---")
 ok = sum(results)

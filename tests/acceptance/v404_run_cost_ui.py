@@ -69,12 +69,16 @@ check("A7 calls without a run id fold into ONE bucket (no row flood)",
       'r.run || "~norun"' in HTML and 'g.key === "~norun"' in HTML)
 check("A8 the expanded run lists the individual calls (.runbody)",
       'class="runbody"' in HTML and "_costCallsHtml(" in HTML and ".runbody .costrow" in HTML)
-check("A9 collapsed run summaries wrap instead of clipping at narrow rail width",
-      ".runhd { display: flex; flex-wrap: wrap;" in HTML)
+# v634: the operator asked for ONE line per run — the money and the counts are
+# `flex: none` so clipping the model name never hides a value; the full model text
+# now lives in the row tooltip (`title="expand this run · <models>"`).
+check("A9 a collapsed run row is ONE line (no wrap at narrow rail width)",
+      ".runhd { display: flex; flex-wrap: nowrap;" in HTML)
 check("A10 expanded cost-call rows wrap instead of clipping at narrow rail width",
       ".costrow { display: flex; flex-wrap: wrap;" in HTML)
-check("A11 collapsed model labels wrap instead of being ellipsized",
-      ".runhd .rm { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere;" in HTML)
+check("A11 the model label ellipsises and the full text stays in the tooltip",
+      ".runhd .rm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" in HTML
+      and "this run \\u00b7 ' + _attr(mtxt)" in HTML)
 check("A12 expanded model labels wrap instead of being clipped",
       ".costrow .cm { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere;" in HTML)
 
