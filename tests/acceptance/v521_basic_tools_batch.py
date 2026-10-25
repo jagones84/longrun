@@ -216,7 +216,11 @@ check("resolved chat edit cards mark the decision and disable both actions",
       and "rejected" in _edit_chip_settler)
 
 _decision = ui[ui.index("async function decideImproveProposal"):
-              ui.index("/* JAG-128B:", ui.index("async function decideImproveProposal"))]
+              # v648 re-pin: the old `/* JAG-128B:` banner was replaced by the
+              # v648 comment above the proposal-card helpers. Slice up to the
+              # first thing that follows decideImproveProposal, which is now the
+              # store cache used to settle the cards.
+              ui.index("let _impCache =", ui.index("async function decideImproveProposal"))]
 check("proposal decisions report HTTP errors instead of false acceptance",
       'if (!r || !r.ok) throw new Error' in _decision)
 _chat_proposal = ui[ui.index("function improveCard(d)"):

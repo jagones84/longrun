@@ -146,7 +146,11 @@ check("F1 no 'Skill apply is not implemented' sentence is left",
 check("F2 the chat card refuses to show dead buttons for an id-less event",
       'if (typeof pid !== "string" || !pid)' in UI)
 check("F3 the card shows the description, not only a scope name",
-      'body.textContent = d.content || (d.path ? "draft: " + d.path : "")' in UI)
+      # v648 re-pin: the body is no longer one inline `d.content || path` ternary —
+      # it resolves `what` (the description) and `draft` separately and appends the
+      # draft path on its own line. Same guarantee: the card states the object.
+      'const what = String(d.content || "").trim()' in UI
+      and "body.textContent = what" in UI)
 
 print("---")
 ok = sum(results)

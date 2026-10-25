@@ -4763,7 +4763,12 @@ function _bindRenderStream(es, live, adopt) {
     scroll(); });
   es.addEventListener("tool.call", e => { if (live()) toolCard(JSON.parse(e.data).tool); });
   es.addEventListener("tool.result", e => { if (live()) updateToolCard(JSON.parse(e.data)); });
-  es.addEventListener("approval.request", e => { if (live()) { approvalCard(JSON.parse(e.data)); loadApprovals(); } });
+  /* v648: approval.request and improve.proposal are NOT bound here. connectFeed
+     already subscribes to both on the always-on feed stream, so handling them in
+     the per-turn stream too rendered EVERY approval and EVERY proposal twice (the
+     operator saw five identical "improvement proposal" cards). One event, one
+     binding; the feed listener is the wider one (it also carries events with no
+     session at all). */
   es.addEventListener("plan.incomplete", e => { if (live()) planIncomplete(JSON.parse(e.data)); });
   es.addEventListener("plan.continuing", e => { if (live()) planContinuing(JSON.parse(e.data)); });
   es.addEventListener("plan.stopped", e => { if (live()) planStopped(JSON.parse(e.data)); });
@@ -4772,7 +4777,6 @@ function _bindRenderStream(es, live, adopt) {
     if (d && d.ran) who("ai", (d.green ? "\u2705 verifier green" : "\u26d4 verifier RED \u2014 change reverted") + " \u00b7 " + (d.path || "").split("/").pop() + (d.duration_ms ? " \u00b7 " + d.duration_ms + "ms" : "")); });
   es.addEventListener("run.metrics", e => { if (live()) runFooter(JSON.parse(e.data).metrics); });
   es.addEventListener("bestofn.chosen", e => { if (!live()) return; const d = JSON.parse(e.data); who("ai", "\ud83c\udfb2 best-of-N: picked the best of " + d.n + " samples"); });
-  es.addEventListener("improve.proposal", e => { if (live()) { improveCard(JSON.parse(e.data)); loadApprovals(); } });
 }
 
 async function api(method, path, body) {
@@ -7651,8 +7655,18 @@ async function loadApprovals() {
   pend.forEach(a => {
     const d = document.createElement("div"); d.className = "card";
     const kind = a.kind === "improvement" ? "improvement" : "tool";
+    // v648: the row must say WHAT is being decided. A proposal with an empty
+    // `summary` rendered as a blank card with two buttons — the operator asked
+    // "la lista di approve senza scrivere COSA devo approvare?".
+    const what = String(a.summary || "").trim() ||
+      (a.draft ? "install the drafted skill: " + a.draft : "no description recorded");
+    const extra = [
+      a.reason ? "reason: " + a.reason : "",
+      a.draft && a.summary ? "draft: " + a.draft : ""
+    ].filter(Boolean).join(" · ");
     d.innerHTML = `<div style="font-size:11px;color:var(--dim)">${esc(kind)} · ${esc(a.tool)} · ${esc(a.id)}</div>
-      <div style="margin:4px 0;white-space:pre-wrap;word-break:break-all">${esc(a.summary)}</div>`;
+      <div style="margin:4px 0;white-space:pre-wrap;word-break:break-all">${esc(what)}</div>` +
+      (extra ? `<div style="font-size:11px;color:var(--dim);white-space:pre-wrap;word-break:break-all">${esc(extra)}</div>` : "");
     const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px";
     row.innerHTML = `<button class="ghost" style="color:var(--ok)">approve</button>
                      <button class="ghost" style="color:var(--err)">deny</button>`;
@@ -7675,6 +7689,7 @@ async function decide(id, decision) {
   if (r && r.error) throw new Error(r.error);
   loadApprovals();
   if (typeof loadImprovement === "function") loadImprovement();
+  _settleProposalCards(true);   // v648: the chat card follows the store, not its own buttons
 }
 /* The single decision inbox lives in the Inspector. Proposals shown in Settings
    link here instead of carrying a second set of buttons. */
@@ -7702,6 +7717,10 @@ function approvalCard(d) {
   const aid = d.id_id || d.id;
   const card = document.createElement("div");
   card.className = "msg ai";
+  if (typeof aid === "string" && aid) {
+    if (document.querySelector('#log .msg[data-aid="' + aid + '"]')) return;  // v648: one card per approval
+    card.dataset.aid = aid;
+  }
   const whoEl = document.createElement("div"); whoEl.className = "who"; whoEl.textContent = "LONGRUN · approval";
   const bub = document.createElement("div"); bub.className = "bubble";
   const title = document.createElement("div"); title.textContent = "🔐 approval needed — " + (d.tool || "tool");
@@ -7710,10 +7729,19 @@ function approvalCard(d) {
   const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:6px";
   const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ approve";
   const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ deny";
-  ok.onclick = () => decide(aid, "approve").then(() => { ok.textContent = "✅ approved"; no.remove(); });
-  no.onclick = () => decide(aid, "deny").then(() => { no.textContent = "⛔ denied"; ok.remove(); });
+  const feedback = document.createElement("div"); feedback.className = "remaining";
+  feedback.setAttribute("role", "status");
+  // v648: a failed decision used to be an unhandled rejection — the button looked
+  // dead and said nothing ("non posso approvare"). Say the reason instead.
+  const fail = e => { feedback.textContent = String(e && e.message ? e.message : e); };
+  ok.onclick = () => decide(aid, "approve")
+    .then(() => { ok.textContent = "✅ approved"; no.remove(); })
+    .catch(fail);
+  no.onclick = () => decide(aid, "deny")
+    .then(() => { no.textContent = "⛔ denied"; ok.remove(); })
+    .catch(fail);
   row.appendChild(ok); row.appendChild(no);
-  bub.appendChild(title); bub.appendChild(sum); bub.appendChild(row);
+  bub.appendChild(title); bub.appendChild(sum); bub.appendChild(row); bub.appendChild(feedback);
   card.appendChild(whoEl); card.appendChild(bub);
   _logAppend(card); scroll(); return card;
 }
@@ -7818,22 +7846,58 @@ async function decideImproveProposal(id, decision) {
   return r;
 }
 
-/* JAG-128B: la proposta di self-improvement arriva come evento SSE e resta
- * azionabile dalla chat (accetta/rifiuta -> POST /api/improve).
- * v645: the card has to say WHAT is being decided. An event without an id (the
- * mined drafts used to publish a bare path) gets no buttons and a link to the
- * one inbox instead of two dead buttons and a "not implemented" sentence. */
+/* v648: a proposal card must answer two questions by itself — WHAT is being
+   decided, and is it still decidable. It used to print only
+   "improvement proposal · skill", invent two live-looking buttons for a proposal
+   that had already been denied, and swallow the failure: the operator answered
+   "la lista di approve senza scrivere COSA devo approvare? e inoltre non posso
+   approvare". The store (GET /api/improve) is the truth, so the card asks it. */
+let _impCache = { t: 0, by: {} };
+async function _impStatus(pid, force) {
+  if (force || Date.now() - _impCache.t > 3000) {
+    const by = {};
+    try {
+      const r = await api("GET", "/api/improve");
+      (r.proposals || []).forEach(p => { if (p && p.id) by[p.id] = p; });
+    } catch (e) { /* transient: keep the previous snapshot, retry next call */ }
+    _impCache = { t: Date.now(), by };
+  }
+  return _impCache.by[pid] || null;
+}
+/* v648: a decision taken somewhere else (the RH inbox, another tab) must settle
+   the chat card too — the card is a VIEW of the store, never a second copy of its
+   state. Without this the transcript kept live-looking buttons on a proposal that
+   had already been denied. */
+async function _settleProposalCards(force) {
+  for (const c of [...document.querySelectorAll("#log .msg[data-pid]")]) {
+    const pid = c.dataset.pid;
+    if (!pid || c.dataset.settled === "1") continue;
+    const p = await _impStatus(pid, force);
+    const fb = c.querySelector(".remaining");
+    if (p && p.status === "pending") continue;
+    c.querySelectorAll("button").forEach(b => b.remove());
+    if (fb) fb.textContent = p ? ("already " + p.status) : "no longer in the store — nothing to decide";
+    c.dataset.settled = "1";
+  }
+}
 function improveCard(d) {
+  const pid = d.id_id || d.id;
   const card = document.createElement("div");
   card.className = "msg ai";
+  if (typeof pid === "string" && pid) {
+    if (document.querySelector('#log .msg[data-pid="' + pid + '"]')) return;  // one card per proposal
+    card.dataset.pid = pid;
+  }
   const bub = document.createElement("div"); bub.className = "bubble planwarn";
-  const pid = d.id_id || d.id;
   const head = document.createElement("div");
   head.textContent = "💡 improvement proposal · " + (d.scope || "?") +
     (d.origin ? " · " + d.origin : "");
   const body = document.createElement("div");
-  body.style.cssText = "white-space:pre-wrap;font-size:12px;color:var(--dim);margin:4px 0";
-  body.textContent = d.content || (d.path ? "draft: " + d.path : "");
+  body.style.cssText = "white-space:pre-wrap;word-break:break-word;font-size:12px;color:var(--dim);margin:4px 0";
+  const what = String(d.content || "").trim();
+  const draft = String(d.target_path || d.path || "").trim();
+  body.textContent = what + (draft ? (what ? "\n" : "") + "draft: " + draft : "");
+  if (!what && !draft) body.textContent = "this event carries no description — nothing to review";
   const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:4px";
   const feedback = document.createElement("div"); feedback.className = "remaining";
   feedback.setAttribute("role", "status");
@@ -7847,23 +7911,34 @@ function improveCard(d) {
   } else {
     const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ accept";
     const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ reject";
+    const settle = (p) => {
+      // the store decides what is still open — not the buttons we drew
+      if (!p) { ok.remove(); no.remove(); feedback.textContent = "no longer in the store — nothing to decide"; return; }
+      if (p.status !== "pending") { ok.remove(); no.remove(); feedback.textContent = "already " + p.status; }
+    };
     const choose = async decision => {
       ok.disabled = true; no.disabled = true;
       try {
         const r = await decideImproveProposal(pid, decision);
+        _impCache.t = 0;
         if (decision === "approve") {
           ok.textContent = "✅ accepted";
-          if (r && r.installed_to) feedback.textContent = "installed at " + r.installed_to;
+          feedback.textContent = r && r.installed_to ? "installed at " + r.installed_to : "approved";
           no.remove();
-        } else { no.textContent = "⛔ rejected"; ok.remove(); }
+        } else { no.textContent = "⛔ rejected"; feedback.textContent = "rejected"; ok.remove(); }
+        card.dataset.settled = "1";
+        loadApprovals();
+        _settleProposalCards(true);
       } catch (e) {
-        feedback.textContent = String(e);
+        feedback.textContent = String(e && e.message ? e.message : e);
         ok.disabled = false; no.disabled = false;
       }
     };
     ok.onclick = () => choose("approve");
     no.onclick = () => choose("deny");
     row.appendChild(ok); row.appendChild(no);
+    if (what || draft) _impStatus(pid).then(settle);
+    else { ok.disabled = true; no.disabled = true; }
   }
   bub.appendChild(row); bub.appendChild(feedback);
   card.appendChild(bub); _logAppend(card); scroll();
@@ -8771,7 +8846,7 @@ function connectFeed() {
   // JAG-128B finalfix: the `improve` tool's publish carries NO `session`, so the
   // fan-out reaches ONLY /api/feed subscribers. The card must be wired HERE, or it
   // stays unreachable (the chat listener never sees it).
-  es.addEventListener("improve.proposal", e => { const d = JSON.parse(e.data); if (!d.session || d.session === sessionId) improveCard(d); loadImprovement(); });
+  es.addEventListener("improve.proposal", e => { const d = JSON.parse(e.data); loadApprovals(); if (!d.session || d.session === sessionId) improveCard(d); loadImprovement(); });
   // JAG-449: the nudge no longer prints a chat bubble — the operator could not ACT
   // on it there ("I can't do anything with that"). It is a global artifact view,
   // so it now refreshes the Settings ▸ Improvement panel and shows a short toast

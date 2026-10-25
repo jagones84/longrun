@@ -44,7 +44,12 @@ check("the removed run-agent lines (the old XSS site) are GONE",
 check("showNodeDetail escapes the evidence text", "${esc(ev)}" in src)
 check("finished-toast escapes the session title", 'esc(name || "session")' in src)
 check("approvals panel escapes tool name + summary",
-      "${esc(a.tool)}" in src and "${esc(a.summary)}" in src)
+      # v648 re-pin: the inbox row no longer interpolates `a.summary` directly —
+      # it first resolves a description (`what`), falling back to the draft or a
+      # "no description recorded" sentence, and escapes THAT. The guarantee is
+      # unchanged: untrusted proposal text never reaches innerHTML raw.
+      "${esc(a.tool)}" in src and "${esc(what)}" in src
+      and 'const what = String(a.summary || "").trim()' in src)
 check("renderProviders escapes provider name/base_url/model id",
       '${p.base_url || ""}' not in src and "${esc(p.name || p.id" in src)
 
