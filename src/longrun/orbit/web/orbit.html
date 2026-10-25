@@ -292,6 +292,24 @@
     --link:rgba(140,190,160,.45); --brief:rgba(111,174,139,.06);
     --cjob-f:#12241a; --csub-f:#10222a; --cagent-f:#12241c;
     --ok:#5bd08a; --warn:#d7b25c; --err:#e0836f; color-scheme:dark; }
+  html[data-theme="celestial"]{ --bg:#d7e1ee; --panel:#e2eaf6; --panel2:#d8e2f0; --line:#9db1cc;
+    --txt:#2c3a52; --dim:#4d5f7d; --acc:#2f5b94; --acc2:#4d7fb5; --ice:#2c3a52;
+    --ga:#d8e2f1; --hdr:rgba(216,226,240,.95); --cbody:#d4deeb; --linktext:#2c3a52;
+    --link:rgba(47,91,148,.5); --brief:rgba(47,91,148,.08);
+    --cjob-f:#d9e4f2; --csub-f:#d3e2ea; --cagent-f:#d8e4e4;
+    --ok:#1f6b45; --warn:#6b4d08; --err:#8f2f1e; color-scheme:light; }
+  html[data-theme="sakura"]{ --bg:#e9d5d8; --panel:#f0e2e5; --panel2:#e8d8dc; --line:#c4a3ab;
+    --txt:#453136; --dim:#6e4f57; --acc:#a14d6e; --acc2:#8f5f6e; --ice:#453136;
+    --ga:#ecdbde; --hdr:rgba(232,222,225,.95); --cbody:#e7d6da; --linktext:#453136;
+    --link:rgba(161,77,110,.5); --brief:rgba(161,77,110,.08);
+    --cjob-f:#eedbde; --csub-f:#e8d8de; --cagent-f:#e6dcd8;
+    --ok:#2f6b45; --warn:#6b4d08; --err:#8f2f1e; color-scheme:light; }
+  html[data-theme="haze"]{ --bg:#1c2230; --panel:#202737; --panel2:#1a202d; --line:#323c52;
+    --txt:#cfd8e6; --dim:#8f99b0; --acc:#a5b4fc; --acc2:#9fd4cb; --ice:#cfd8e6;
+    --ga:#252e42; --hdr:rgba(28,34,48,.84); --cbody:#181e2a; --linktext:#cfd8e6;
+    --link:rgba(165,180,252,.45); --brief:rgba(165,180,252,.06);
+    --cjob-f:#232b3d; --csub-f:#1c2a33; --cagent-f:#1e2a30;
+    --ok:#6fd3a0; --warn:#d9b45c; --err:#e0837f; color-scheme:dark; }
   body{background:radial-gradient(1200px 600px at 70% -10%,var(--ga) 0%,var(--bg) 60%)}
   header{background:var(--hdr)}
   .cbody{background:var(--cbody)}
@@ -610,7 +628,8 @@ function closePopover(){ const m = _POP; if (!m) return;
 
 /* ----------------------------------------------------- Agents (table) ---- */
 class AgentsView {
-  constructor(api, onChanged){ this.api = api; this.onChanged = onChanged; this.agents = [];
+  constructor(api, onChanged, onOpenAgent){ this.api = api; this.onChanged = onChanged;
+    this.onOpenAgent = onOpenAgent; this.agents = [];
     this.models = []; this.teams = []; this.open = null; this.running = new Set();
     // JAG-536: the official icon+colour palette, straight from GET /api/teams — the
     // create bar and the edit form render their picker from it, so the UI can never
@@ -742,6 +761,14 @@ class AgentsView {
       '<textarea class="inp" name="agent-prompt" aria-label="agent prompt (ROLE.md)" data-p="role" placeholder="Role: API designer&#10;- answer only with the endpoint list and JSON schema">' + roleText + '</textarea>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button class="btn primary" data-save="' + esc(a.session) + '">save prompt</button>' +
       '<button class="btn ghost" data-close="1">close</button></div></td></tr>' : "";
+    // JAG-484 (agents table): the same explicit "go to chat session" button the
+    // jobs list has — one click opens the agent's chat. Plain sessions have no
+    // A-id (nothing to resolve), so only designated rows get the button. The
+    // navigation itself is the deck's SHARED onOpenAgent callback (JAG-335/484:
+    // no duplicated open logic — the button only carries the id).
+    const goBtn = a.id
+      ? '<button class="btn ghost mini" data-go="' + esc(a.id) + '" title="open ' + esc(a.id) + '\u2019s session in the Sessions tab">\u2197 session</button>'
+      : '';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid">' + idCell + run + '</td>' +
       '<td><input class="inp mini" name="agent-name" aria-label="agent name" data-f="name" value="' + esc(a.name||"") + '"></td>' +
@@ -754,11 +781,17 @@ class AgentsView {
                : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
                                  : "role + behaviour notes (ROLE.md)")) + '">✎ prompt' +
         (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button></td>' +
-      '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)">\u21BA reset</button>' +
+      '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)">↺ reset</button>' +
+      goBtn +
       '<button class="btn ghost mini no" data-del="1" title="release agent">×</button></td></tr>' + brief;
   }
   bind(){
     const body = $("agBody");
+    // JAG-484 (agents table): the row's own session button — same shared opener
+    // the jobs list uses. Stop the row click so it selects nothing else.
+    body.querySelectorAll("[data-go]").forEach(b => { b.onclick = (ev) => {
+      ev.stopPropagation();
+      if (this.onOpenAgent) this.onOpenAgent(b.dataset.go); }; });
     // JAG-2.9: the A-id is the row's handle — click it to select this agent in BOTH
     // the table (persistent .rowsel) and the org chart node (.sel, survives polling).
     body.querySelectorAll("tr[data-sid] td.aid [data-org]").forEach(el => { el.onclick = (ev) => {
@@ -1981,7 +2014,7 @@ class FeedView {
 class OrbitApp {
   constructor(){
     this.api = new Api();
-    this.agents = new AgentsView(this.api, () => this.refresh());
+    this.agents = new AgentsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.lastAgents = [];
     this.team = "ALL";        // JAG-339: the selected team scopes the whole board
     this.teams = [];

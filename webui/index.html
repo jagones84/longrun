@@ -1294,7 +1294,7 @@
   .bubble.md-content img { max-width: 100%; border-radius: 8px; }
   .bubble .artprev { margin-top: 6px; }
   .bubble .artprev iframe { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-  /* ==== theme system: indigo (default) · dark · midnight · sand · sepia ==== */
+  /* ==== theme system: indigo (default) · dark · midnight · sand · sepia · forest · celestial · sakura · haze ==== */
   :root {
     --grad-a: #141a3a; --grad-b: #241638; --hdr: rgba(8,10,20,.6);
     --bg2: #121722; --aside: #10131f; --composer: rgba(8,10,20,.6);
@@ -1374,6 +1374,54 @@
     --hl: rgba(111,174,139,.22); --menubg: #101d16;
     --menuline: rgba(111,174,139,.3); --chipbg: rgba(111,174,139,.14);
     --chipbd: rgba(140,190,160,.2); --scroll: rgba(111,174,139,.45);
+    color-scheme: dark;
+  }
+  html[data-theme="celestial"] {
+    /* Pastel sky-blue daylight eye-saver: powder-blue surfaces, near-black
+       slate-blue text + deepened steel-blue accents clear WCAG AA (4.5:1). */
+    --bg: #d7e1ee; --panel: rgba(226,234,246,.96); --panel2: rgba(216,226,240,.97);
+    --line: rgba(70,95,135,.30); --txt: #2c3a52; --dim: #4d5f7d;
+    --acc: #2f5b94; --acc2: #4d7fb5; --ok: #1f6b45; --warn: #6b4d08; --err: #8f2f1e;
+    --accent: #2f5b94; --you: #37688f; --info: #2f7f8f;
+    --bg-2: #ccd8e8; --bg-3: #c2d0e2; --line-2: #b3c2d6; --ink: #31405a; --muted: #4d5f7d;
+    --bg2: #ccd8e8; --grad-a: #d8e2f1; --grad-b: #ccd6e6; --hdr: rgba(216,226,240,.95);
+    --aside: #d3ddee; --composer: rgba(226,234,246,.85);
+    --hover: rgba(47,91,148,.12); --sel: rgba(47,91,148,.18);
+    --hl: rgba(47,91,148,.2); --menubg: #d6e0ef;
+    --menuline: rgba(47,91,148,.32); --chipbg: rgba(47,91,148,.12);
+    --chipbd: rgba(47,91,148,.26); --scroll: rgba(47,91,148,.45);
+    color-scheme: light;
+  }
+  html[data-theme="sakura"] {
+    /* Pastel cherry-blossom daylight eye-saver: muted blossom surfaces, deep
+       warm text + the darkened blossom accent (#a14d6e) clear WCAG AA. */
+    --bg: #e9d5d8; --panel: rgba(240,226,229,.96); --panel2: rgba(232,216,220,.97);
+    --line: rgba(125,90,99,.30); --txt: #453136; --dim: #6e4f57;
+    --acc: #a14d6e; --acc2: #8f5f6e; --ok: #2f6b45; --warn: #6b4d08; --err: #8f2f1e;
+    --accent: #a14d6e; --you: #5a6e9c; --info: #4d7f7a;
+    --bg-2: #e2cbcf; --bg-3: #d8bfc4; --line-2: #cdb2b8; --ink: #4a353b; --muted: #6e4f57;
+    --bg2: #e2cbcf; --grad-a: #ecdbde; --grad-b: #e4ccd1; --hdr: rgba(232,222,225,.95);
+    --aside: #e5d2d6; --composer: rgba(240,226,229,.85);
+    --hover: rgba(161,77,110,.12); --sel: rgba(161,77,110,.18);
+    --hl: rgba(161,77,110,.2); --menubg: #e8d6da;
+    --menuline: rgba(161,77,110,.32); --chipbg: rgba(161,77,110,.12);
+    --chipbd: rgba(161,77,110,.26); --scroll: rgba(161,77,110,.45);
+    color-scheme: light;
+  }
+  html[data-theme="haze"] {
+    /* Muted lavender-grey night eye-saver: desaturated dark surfaces, soft
+       off-white text (never pure white) + pastel lavender accents, low glare. */
+    --bg: #1c2230; --panel: rgba(32,39,55,.85); --panel2: rgba(26,32,45,.9);
+    --line: rgba(165,180,252,.14); --txt: #cfd8e6; --dim: #8f99b0;
+    --acc: #a5b4fc; --acc2: #9fd4cb; --ok: #6fd3a0; --warn: #d9b45c; --err: #e0837f;
+    --accent: #a5b4fc; --you: #a9c2e8; --info: #7fc4d8;
+    --bg-2: #222a3c; --bg-3: #283145; --line-2: #323c52; --ink: #c2ccdd; --muted: #8f99b0;
+    --bg2: #222a3c; --grad-a: #252e42; --grad-b: #1d2434; --hdr: rgba(28,34,48,.82);
+    --aside: #202839; --composer: rgba(28,34,48,.7);
+    --hover: rgba(165,180,252,.14); --sel: rgba(165,180,252,.2);
+    --hl: rgba(165,180,252,.22); --menubg: #1e2536;
+    --menuline: rgba(165,180,252,.3); --chipbg: rgba(165,180,252,.14);
+    --chipbd: rgba(165,180,252,.2); --scroll: rgba(165,180,252,.45);
     color-scheme: dark;
   }
   /* theme polish: re-point the tinted hotspots at the tokens (later rules win) */
@@ -10154,6 +10202,12 @@ const THEMES = [
     sw: "linear-gradient(120deg,#ddc9a3,#cbb588 58%,#9c5f24)", t: "#382f21", a: "#9c5f24" },
   { id: "sepia", name: "Sepia", desc: "Dark warm amber — night reading",
     sw: "linear-gradient(120deg,#2a2015,#17120c 58%,#c99a5b)", t: "#e6d8bf", a: "#c99a5b" },
+  { id: "celestial", name: "Celestial", desc: "Pastel sky blue — soft daylight eye-saver",
+    sw: "linear-gradient(120deg,#d8e2f1,#d7e1ee 58%,#2f5b94)", t: "#2c3a52", a: "#2f5b94" },
+  { id: "sakura", name: "Sakura", desc: "Pastel cherry blossom — warm soft daylight",
+    sw: "linear-gradient(120deg,#ecdbde,#e9d5d8 58%,#a14d6e)", t: "#453136", a: "#a14d6e" },
+  { id: "haze", name: "Haze", desc: "Muted lavender-grey — night eye-saver",
+    sw: "linear-gradient(120deg,#252e42,#1c2230 58%,#a5b4fc)", t: "#cfd8e6", a: "#a5b4fc" },
 ];
 function renderThemeGrid() {
   const g = $("themeGrid"); if (!g) return;

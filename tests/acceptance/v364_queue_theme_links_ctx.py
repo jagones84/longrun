@@ -57,7 +57,7 @@ check("A7 a bare string in the queue is still tolerated",
 
 # --- B: a theme sets TEXT colours --------------------------------------------
 check("B1 every theme carries its text + accent colour for the preview",
-      HTML.count(', t: "#') == 6 and HTML.count(', a: "#') == 6, "")
+      HTML.count(', t: "#') == 9 and HTML.count(', a: "#') == 9, "")
 check("B2 the swatch previews the text colour (Aa) + the accent",
       'class="tv"' in HTML and 'class="ta"' in HTML, "")
 check("B3 the preview has its own style",

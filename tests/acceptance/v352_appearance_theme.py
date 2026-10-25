@@ -30,21 +30,23 @@ def check(name, ok, detail=""):
 
 
 # --- A: themes ---------------------------------------------------------------
-check("A1 six themes defined (English names)",
+check("A1 nine themes defined (English names)",
       all(s in HTML for s in ('id: "indigo"', 'id: "dark"', 'id: "midnight"',
-                              'id: "forest"', 'id: "sand"', 'id: "sepia"')), "")
+                              'id: "forest"', 'id: "sand"', 'id: "sepia"',
+                              'id: "celestial"', 'id: "sakura"', 'id: "haze"')), "")
 check("A2 no Italian theme name remains",
       "Sabbia" not in HTML and "sabbia" not in HTML, "")
 check("A3 a real token block per theme",
       all(s in HTML for s in ('html[data-theme="dark"]', 'html[data-theme="midnight"]',
                               'html[data-theme="forest"]', 'html[data-theme="sand"]',
-                              'html[data-theme="sepia"]')), "")
+                              'html[data-theme="sepia"]', 'html[data-theme="celestial"]',
+                              'html[data-theme="sakura"]', 'html[data-theme="haze"]')), "")
 check("A4 Sand is creamier (lower luminance than the old near-white)",
       "--bg: #c8bda2" in HTML and "#e7d9bd" not in HTML, "")
 check("A5 Sand and Sepia are no longer identical",
       "--bg: #c8bda2" in HTML and "--bg: #17120c" in HTML, "")
-check("A6 Sand is the ONLY light theme (Sepia is now dark)",
-      HTML.count("color-scheme: light") == 1, str(HTML.count("color-scheme: light")))
+check("A6 three light themes (Sand + Celestial + Sakura)",
+      HTML.count("color-scheme: light") == 3, str(HTML.count("color-scheme: light")))
 
 # --- B: Appearance settings + persistence -----------------------------------
 check("B1 an Appearance settings category exists",
@@ -117,7 +119,9 @@ check("H3 the API fallback page says Control",
 # --- I: Bridge is themed too ------------------------------------------------
 check("I1 Bridge carries the per-theme token override blocks",
       all(s in ORBIT for s in ('html[data-theme="sand"]', 'html[data-theme="midnight"]',
-                               'html[data-theme="forest"]', 'html[data-theme="sepia"]')), "")
+                               'html[data-theme="forest"]', 'html[data-theme="sepia"]',
+                               'html[data-theme="celestial"]', 'html[data-theme="sakura"]',
+                               'html[data-theme="haze"]')), "")
 check("I2 Bridge re-points its hardcoded dark bits at tokens",
       ".cbody{background:var(--cbody)}" in ORBIT and ".cnode text{fill:var(--linktext)}" in ORBIT, "")
 
@@ -163,7 +167,7 @@ check("K7 the toggle thresholds match the CSS overlays (900 / 1100)",
 # (the user reported the right rail as "transparent"). Every theme must use a SOLID
 # colour for the token — no alpha channel — so the panels read as real surfaces.
 check("L1 the panel token is a solid colour (no alpha) in every theme",
-      "--aside: rgba(" not in HTML and HTML.count("--aside: #") == 6,
+      "--aside: rgba(" not in HTML and HTML.count("--aside: #") == 9,
       str(HTML.count("--aside: #")))
 check("L2 both panels paint from that token",
       "aside { background: var(--aside); }" in HTML, "")

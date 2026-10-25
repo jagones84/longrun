@@ -7,6 +7,15 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Agents table session button + 3 pastel eye-saver themes.**
+  The Agents panel rows now carry the same explicit "go to chat session"
+  button the Jobs list has (JAG-484 precedent), wired to the deck's shared
+  `onOpenAgent` opener — no duplicated open logic, row clicks stop at the
+  button. Plus three complete eye-saver themes with full token sets in both
+  the WebUI and the Bridge: Celestial (pastel sky-blue daylight), Sakura
+  (pastel cherry-blossom daylight, WCAG-AA darkened blossom accent), Haze
+  (muted lavender-grey night). (Locked by `v600` 6/6; `v352` evolved 42/42,
+  `v364` evolved 9-preview.)
 - **1-based task plans with one-way migration.**
   New graphs open plan 1 (no more "older plan 0"); `load()` migrates legacy
   graphs once (every stored plan + 1, untagged nodes count as plan 0, `plan_base`
