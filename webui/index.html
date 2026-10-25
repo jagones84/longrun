@@ -430,7 +430,10 @@
   /* v632: the context panel is a STAT readout, not a landing page. The two
      full-width buttons (compact / settings) became inline text actions under the
      numbers, and the dry-run is a collapsed row: same functions, no dead space. */
-  .ctxacts { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+  .acts, .ctxacts { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+  /* v633: `.ctxrow { display:flex }` (author rule) beats the UA `[hidden]` rule,
+     so the hidden attribute needs its own display:none to actually hide the row. */
+  .ctxrow[hidden], .acts[hidden] { display: none; }
   .lnk { padding: 0; background: none; border: 0; color: var(--acc); font: inherit;
     font-size: 11px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
   .lnk:hover { color: var(--txt); }
@@ -1778,8 +1781,10 @@
       <button type="button" class="ch-copy" id="chatSearchToggle"
               title="search words in this chat" aria-label="search this chat"
               aria-expanded="false">🔍</button>
+      <!-- v633: icon-only (W3C WAI names-and-descriptions: an icon button carries
+           its name in aria-label, the tooltip is the visible copy of the same name). -->
       <button type="button" class="ch-copy" id="chatHeadCopy"
-              title="copy the session name" aria-label="copy the session name">⧉ copy name</button>
+              title="copy the session name" aria-label="copy name">⧉</button>
     </div>
     <div id="chatSearchBar" hidden role="search" aria-label="Search the current chat">
       <input type="search" id="chatSearchInput" maxlength="512"
@@ -1870,9 +1875,12 @@
       <section data-insp="approvals" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["approvals"]'>Approvals<span id="apprCount" class="ihd-s"></span></button>
         <div class="insp-body">
-        <div class="card">
-          <div id="approvals" class="remaining">no pending approvals</div>
-          <div class="u-mt6"><button class="ghost" data-call="approvalsClear" title="delete decided approvals (pending are kept)">clear decided</button></div>
+        <!-- v633: the header already says `none` when the queue is empty, so the
+             body does not repeat the empty-queue sentence inside its own card. -->
+        <div id="approvals"></div>
+        <div class="acts">
+          <button type="button" class="lnk" data-call="approvalsClear"
+                  title="delete decided approvals (pending are kept)">clear decided</button>
         </div>
         </div>
       </section>
@@ -1885,15 +1893,18 @@
             <span id="costTotal" class="costtot">–</span>
             <span id="costSub" class="remaining"></span>
           </div>
-          <div class="ctxrow">
+          <!-- v633: the counter row only exists once the ledger has calls — a row of
+               zeroes under a $0 total is noise, not information. -->
+          <div class="ctxrow" id="costMetrics" hidden>
             <span id="costCalls">–</span><span id="costIn">–</span>
             <span id="costOut">–</span><span id="costCached" title="cached prompt input tokens">–</span>
           </div>
-          <div class="u-df u-g6 u-aic u-mt6">
-            <button class="ghost" id="costRefresh" title="Refresh the OpenRouter catalog and DeepSeek's official table. Other direct-provider rates are manually verified in config/prices.yaml. New prices apply to future calls only.">↻ refresh prices</button>
-            <button class="ghost" data-call="resetCosts" title="POST /api/costs/reset — clear THIS session's ledger (the calls stay spent)">⟲ reset ledger</button>
+          <div class="acts">
+            <button type="button" class="lnk" id="costRefresh"
+                    title="Refresh the OpenRouter catalog and DeepSeek's official table. Other direct-provider rates are manually verified in config/prices.yaml. New prices apply to future calls only.">refresh prices</button>
+            <button type="button" class="lnk" data-call="resetCosts"
+                    title="POST /api/costs/reset — clear THIS session's ledger (the calls stay spent)">reset ledger</button>
           </div>
-          <div class="remaining u-mt4">Harness calls only · DeepSeek peak/off-peak by UTC · hours in local time.</div>
         </div>
         <div id="costList" class="costlist"></div>
         </div>
@@ -2214,14 +2225,15 @@
       <section data-insp="files" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["files"]'>Workspace<span class="ihd-s" id="sWorkspace"></span></button>
         <div class="insp-body">
-        <h2>Workspace · folder (this session)</h2>
+        <!-- v633: the section header already reads "Workspace" and its summary carries
+             the folder, so the body starts with the path field, not a second title. -->
         <div class="card" id="wsCard">
           <div class="u-df u-g6 u-aic">
             <input id="wsPath" class="inp u-f1 u-p610 u-fs12" placeholder="folder path — use 📁 browse… (any folder the harness host can read)">
             <button class="ghost config-save" id="wsSave" data-call="setWorkspace" disabled title="no changes to save">save</button>
           </div>
           <div class="u-df u-g8 u-aic u-mt6 u-fww">
-            <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> set as default for new sessions</label>
+            <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> default for new sessions</label>
             <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]' title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁 browse…</button>
             <!-- JAG-514: the old extra card below only repeated this path; its one
                  action (open the editor) now lives here, next to browse. -->
@@ -6126,8 +6138,11 @@ function _costRunHtml(g) {
 function renderCosts() {
   const box = $("costList"); if (!box) return;
   const c = _cost;
-  const total = $("costTotal"), sub = $("costSub");
-  if (!c) { if (total) total.textContent = "$0"; if (sub) sub.textContent = ""; _isum("sCost", ""); box.innerHTML = '<div class="remaining">no calls yet</div>'; return; }
+  const total = $("costTotal"), sub = $("costSub"), metrics = $("costMetrics");
+  // v633: an empty ledger reads on ONE line — "$0 no calls yet" — instead of a
+  // card with a row of zeroes plus a second "no calls yet" line under it.
+  if (metrics) metrics.hidden = !(c && Number(c.calls || 0) > 0);
+  if (!c) { if (total) total.textContent = "$0"; if (sub) sub.textContent = "no calls yet"; _isum("sCost", ""); box.innerHTML = ""; return; }
   const hasPricedCalls = Number(c.priced_calls || 0) > 0;
   const totalText = c.calls ? (hasPricedCalls ? _usd(c.total_usd)
     : (c.unknown_calls ? "\u2014" : "$0")) : "$0";
@@ -6154,7 +6169,7 @@ function renderCosts() {
   if (sub) sub.textContent = c.calls
     ? (c.calls + " call" + (c.calls === 1 ? "" : "s")
        + (_sourceCounts.length ? " \u00b7 " + _sourceCounts.join(" \u00b7 ") : ""))
-    : "";
+    : "no calls yet";
   if ($("costCalls")) $("costCalls").textContent = (c.calls || 0) + " calls";
   if ($("costIn")) $("costIn").textContent = _fmtTok(c.tokens_in) + " in";
   if ($("costOut")) $("costOut").textContent = _fmtTok(c.tokens_out) + " out";
@@ -6173,7 +6188,7 @@ function renderCosts() {
     g.calls.push(r);
     if (r.usd == null) g.unpriced++; else g.usd = (g.usd || 0) + r.usd;
   });
-  box.innerHTML = groups.map(_costRunHtml).join("") || '<div class="remaining">no calls yet</div>';
+  box.innerHTML = groups.map(_costRunHtml).join("");
   box.querySelectorAll(".runhd").forEach(h => { h.onclick = () => { _costOpen[h.dataset.k] = !_costOpen[h.dataset.k]; renderCosts(); }; });
 }
 async function loadCosts() {
@@ -7558,7 +7573,7 @@ async function loadApprovals() {
   const box = $("approvals"); box.innerHTML = "";
   const pend = out.approvals || [];
   _isum("apprCount", pend.length ? (pend.length + " pending") : "none", pend.length ? "warn" : "");
-  if (!pend.length) { box.textContent = "no pending approvals"; return; }
+  if (!pend.length) { box.innerHTML = ""; return; }   // v633: the header summary says `none`
   pend.forEach(a => {
     const d = document.createElement("div"); d.className = "card";
     const kind = a.kind === "improvement" ? "improvement" : "tool";

@@ -178,7 +178,9 @@ check("B9 official direct-provider rates are stored under exact provider/model r
        C.rates_for("google:gemini-3.8-flash")))
 check("B10 the Cost panel labels estimates and displays cached input usage",
       'data-args=\'["cost"]\'' in HTML and ">Cost · harness only" in HTML
-      and "DeepSeek peak/off-peak by UTC" in HTML
+      # v633: the peak/off-peak rule moved from a three-clause line in the panel body
+      # to the section-header tooltip (the panel itself is data, not an essay).
+      and "peak/off-peak by UTC" in HTML
       and 'id="costCached"' in HTML
       and 'c.provider_calls' in HTML and 'c.estimated_calls' in HTML
       and 'c.cached' in HTML
