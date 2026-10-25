@@ -66,6 +66,13 @@ graph — nothing is display-only), so deleting clears all three at once.
 One `✕ all` per session plus `Drop OLD plans…` in the deck team kebab;
 the current plan, chats and agents are never touched — wiping everything
 is the session reset (v614).
+2.6 Permits are two systems, and FULL is only one of them: approval mode
+FULL never bypasses the dual-permission gate — exclusive tools
+(job/team/agent/session/webui/kb) need the per-session Teamorg grant
+(session menu), decided AND worded by the ONE function both paths call.
+Operator secret VALUES never reach the model: one scrub at the tool
+execute choke point redacts them from every observation, so a stolen
+token can't curl around the gate (v616).
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 

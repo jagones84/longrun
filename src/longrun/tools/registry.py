@@ -1716,15 +1716,17 @@ def classify(tool, args, workspace=None, hist=None):
     # session privilege check when `run_id` / `session` is provided in `args`.
     # The marker is the schema's own `_origin`, not a name prefix: exclusive tools
     # are now named `namespace.tool` (`agent.prompt_set`), with no shared prefix.
+    # v616: ONE source of truth — the verdict AND the reason come from
+    # `longrun_agent.check_dual_permission`, the same function the execute path
+    # uses. A second inline copy of this message lived here and already drifted
+    # once (different wording for the same denial).
     if (spec.get("schema") or {}).get("_origin") == "exclusive":
         sess_ref = (args or {}).get("_session") or (args or {}).get("run_id")
         if sess_ref is not None:
             from longrun.agent import longrun_agent as _lra
-            if not _lra.session_has_access(sess_ref):
-                return "denied", (
-                    "session %r is not authorized to use %r (requires longrunAgent "
-                    "system session or allow_longrun_agent grant)" % (sess_ref, tool)
-                )
+            _ok, _why = _lra.check_dual_permission(tool, sess_ref)
+            if not _ok:
+                return "denied", _why
     # F4 (Cline plan-before-act direction): a session locked in plan mode may
     # only EXPLORE — mutating tools are denied until the operator approves the
     # proposed plan (`stores.approve_plan`). An explicit lock: even

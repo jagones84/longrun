@@ -8885,7 +8885,7 @@ function renderTools(el, d) {
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
        <div style="font-weight:600;margin-bottom:6px">🔓 Global approval policy</div>
-       <div class="remaining" style="margin-bottom:8px"><b>FULL</b> = never ask — anything goes, anywhere. Otherwise ANY action that reaches <b>outside the session workspace</b> (file reads/writes, shell commands, git) needs approval. This rule is enforced in code, not by the model.</div>
+       <div class="remaining" style="margin-bottom:8px"><b>FULL</b> = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: <b>exclusive</b> tools (job · team · agent · session · webui · kb — need the per-session Teamorg grant in the session menu), <b>matrix.promote_to_nucleus</b> (needs its own checkbox below), <b>nucleus writes</b> (needs the red DANGEROUS toggle). Otherwise ANY action that reaches <b>outside the session workspace</b> (file reads/writes, shell commands, git) needs approval.</div>
        <div style="display:flex;gap:6px;align-items:center">
          <span style="font-size:11px;color:var(--dim);min-width:126px">Approval mode</span>
          ${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}
@@ -9024,9 +9024,15 @@ function renderTools(el, d) {
     // never removable, so the button is rendered from the registry's own origin.
     const isMatrix = String(t.origin || "") === "matrix";
     const apColor = ap === "auto" ? "var(--ok)" : (ap === "denied" ? "var(--err)" : "var(--warn)");
-    const eff = (globalAuto && ap !== "auto")
+    // v616: the "FULL ⇒ auto" badge lied on exclusive rows — FULL never
+    // bypasses the dual-permission gate, so an exclusive tool on FULL still
+    // answers 126 without the per-session Teamorg grant. Say so outright.
+    const isExcl = String(t.origin || "") === "exclusive";
+    const eff = (globalAuto && ap !== "auto" && !isExcl)
       ? '<span class="remaining" style="color:var(--err)" title="global approval mode is FULL: this tool is auto-approved no matter what is stored here">FULL ⇒ auto</span>'
-      : "";
+      : (isExcl
+        ? '<span class="remaining" style="color:var(--warn)" title="even on FULL this tool answers permission-denied (exit 126) without the per-session Teamorg grant — toggle it in the session menu">grant still required</span>'
+        : "");
     return `<div class="card" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">` +
       `<span style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
       `<span style="font-weight:600">${nm}</span>${originBadge(t)}` + eff +

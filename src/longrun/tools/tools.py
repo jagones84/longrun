@@ -2426,6 +2426,97 @@ def _dispatch_execute(tool, args, run_id=None):
     return res
 
 
+_SCRUB_NAME_FRAGS = ("TOKEN", "SECRET", "PASSWORD", "PRIVATE_KEY", "API_KEY")
+
+
+def _secret_values():
+    """Operator secrets that must never be shown to a model (v616).
+
+    Values (never names) of secret-like env vars plus the same names parsed
+    from the repo .env (the file Settings > Keys writes — agents can read it
+    through shell/fs). Rebuilt per call: env and .env can change at runtime.
+    """
+    vals = set()
+
+    def _take(name, val):
+        _un = str(name or "").upper()
+        if (isinstance(val, str) and len(val) >= 8
+                and any(_frag in _un for _frag in _SCRUB_NAME_FRAGS)):
+            vals.add(val)
+
+    try:
+        for _k, _v in os.environ.items():
+            _take(_k, _v)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        _env = os.path.join(_paths.REPO_ROOT, ".env")
+        with open(_env, encoding="utf-8", errors="replace") as _f:
+            for _line in _f.read().splitlines():
+                _line = _line.strip()
+                if not _line or _line.startswith("#") or "=" not in _line:
+                    continue
+                _k, _, _v = _line.partition("=")
+                _v = _v.strip().strip("\"'")
+                _take(_k.strip(), _v)
+    except OSError:  # noqa: BLE001 — no .env, nothing to add
+        pass
+    return sorted(vals, key=len, reverse=True)
+
+
+def _scrub_result_secrets(res):
+    """Redact operator secret VALUES from a model-bound tool result (v616).
+
+    Single choke point: `execute()` is the only road a tool observation takes
+    to the model, so one scrub here covers shell, fs, git, python and every
+    future tool. Names are kept (`LONGRUN_TOKEN=[redacted]`), values are not.
+    Skips short values (avoid nuking ordinary words) and never touches keys.
+    """
+    try:
+        vals = _secret_values()
+    except Exception:  # noqa: BLE001 — scrub must never break a tool call
+        return res
+    if not vals or not isinstance(res, dict):
+        return res
+
+    def _scrub_str(text):
+        for _v in vals:
+            if _v in text:
+                text = text.replace(_v, "[redacted-secret]")
+        return text
+
+    def _walk(node, _seen):
+        if isinstance(node, str):
+            return _scrub_str(node)
+        if id(node) in _seen:
+            return node
+        if isinstance(node, dict):
+            _seen.add(id(node))
+            for _k in list(node.keys()):
+                if isinstance(_k, str):
+                    node[_k] = _walk(node[_k], _seen)
+            return node
+        if isinstance(node, (list, tuple)):
+            # v616b: preserve the CONTAINER TYPE — registry/matrix return
+            # list SUBCLASSES with magic membership (e.g. _NamespacedToolList
+            # answers "echo_plus" for ["echo_plus.run"]). A plain-list rebuild
+            # silently killed that contract and broke v500-C.
+            _seen.add(id(node))
+            _out = [_walk(_x, _seen) for _x in node]
+            if isinstance(node, tuple):
+                return tuple(_out)
+            try:
+                return type(node)(_out)
+            except Exception:  # noqa: BLE001
+                return _out
+        return node
+
+    try:
+        return _walk(res, set())
+    except Exception:  # noqa: BLE001
+        return res
+
+
 def execute(tool, args, run_id=None):
     """Run a tool through the lifecycle hooks (JAG-69), then dispatch.
 
@@ -2469,6 +2560,12 @@ def execute(tool, args, run_id=None):
     except Exception as e:  # noqa: BLE001 — a tool must never crash the harness
         res = {"ok": False, "tool": tool, "args": args or {}, "exit_code": 1,
                "error": "tool crashed: %s" % e}
+    # v616: operator secrets must NEVER reach the model. An agent with shell
+    # can `grep` the repo .env, lift LONGRUN_TOKEN and curl the HTTP API around
+    # the tool gate (observed: J22 dispatched via shell+curl after job.get was
+    # rightly denied). Scrub here — the ONE choke point every model-bound tool
+    # result passes — so the credential is unstealable through ANY tool.
+    res = _scrub_result_secrets(res)
     try:
         from longrun.tools import hooks
         obs = (res.get("observation") or res.get("error") or res.get("content")
