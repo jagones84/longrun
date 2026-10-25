@@ -392,11 +392,14 @@ check("H8 Settings grew a Swarm & blackboard panel",
 check("H8b the tab states it is NOT the subagent engine and cross-links both ways",
       # v642: the statement is the panel title tooltip now (the prose card that held
       # it was removed for space); the two-way links are unchanged.
+      # v646: the same rule applied to the Subagents panel — its prose card became
+      # the title tooltip and the link to the swarm is a chip in the heading
+      # (operator: "troppo scritte … servono già appare col mouse over").
       "Not the subagent engine — the model, the parallel limit" in gui
       and 'data-call="gotoSubagents"' in gui and 'data-call="gotoOrchestrate"' in gui
       and "function gotoSubagents() { settingsCategory(\"subagents\"); }" in gui
       and "function gotoOrchestrate() { settingsCategory(\"orchestrate\"); }" in gui
-      and "This panel only <b>configures</b> the engine" in gui)
+      and "This panel only CONFIGURES the engine" in gui)
 check("H9 the blackboard panel reads and writes the real route",
       "async function loadBlackboard(" in gui and '"/api/blackboard?limit=30"' in gui
       and '"/api/blackboard", { topic:' in gui and 'author: "human"' in gui)

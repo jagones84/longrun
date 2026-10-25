@@ -141,7 +141,9 @@ check("B4c routing.yaml explains its raw-backup role and structured ownership",
       and "Settings → Subagents owns" in idx
       and "This editor is the raw advanced fallback, not a second config." in idx)
 check("B4d Subagents no longer claims a duplicate Models picker",
-      "No duplicate model/fallback controls live in Models." in idx
+      # v646 re-pin: the statement lives in the "Model & failover" tooltip now
+      # (the operator asked for hover instead of paragraphs).
+      "Models does not duplicate these controls" in idx
       and "the same value as the Models picker" not in idx)
 
 models = _cat_block("models")

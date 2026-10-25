@@ -56,8 +56,10 @@ toolsyaml = read("config", "tools.yaml")
 check("A1 one fallback dropdown replaces the chips and add button",
       'id="subFallbackPick"' in idx and 'id="subFallbacksList"' not in idx
       and 'data-call="subAddFallback"' not in idx and 'id="subFallbacks"' not in idx)
-check("A2 choosing a fallback saves it automatically, with None as the empty value",
-      "fallbackPick.onchange" in idx and "None — no fallback" in idx
+check("A2 choosing a fallback saves it automatically, with none as the empty value",
+      # v646 re-pin: the empty option label is just `none` (the prose that explained
+      # it moved to the section tooltip — operator: "servono già appare col mouse over").
+      "fallbackPick.onchange" in idx and '<option value="">none</option>' in idx
       and "function subAddFallback" not in idx and "function subRenderFallbacks" not in idx)
 check("A3 saving writes the selected zero-or-one fallback list",
       "fallbacks: (_subFallbacks || [])" in idx and "_subFallbacks = ref ? [ref] : []" in idx)

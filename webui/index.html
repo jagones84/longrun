@@ -2548,34 +2548,29 @@
         <div class="card" id="modelsList"><div class="remaining">loading…</div></div>
       </div>
       <div class="sw-cat" data-cat="subagents" hidden>
-        <h2>Subagents · delegated workers</h2>
-        <div class="card">
-          <div class="remaining" id="subCtxNote">A subagent does <b>NOT</b> share the parent's context: it gets a
-          fresh transcript, its own task list and the same tools, and sees <b>only</b> the goal (plus an optional
-          role brief) the parent passes. A delegation must therefore be a complete, self-contained instruction —
-          the child cannot see the parent's history or ask it questions.</div>
-          <div class="remaining u-mt6">This panel only <b>configures</b> the engine. To <b>run</b> it and keep the
-          shared state it writes, use <a href="#" data-call="gotoOrchestrate">Settings ▸ Swarm &amp; blackboard</a>.</div>
-        </div>
-        <h2>Model &amp; failover</h2>
+        <!-- v646: the panel opened with a prose card, then a "one source of truth"
+             paragraph and a "depth writes config/…" footnote — three explanations
+             of things a hover answers. They are tooltips on their own headings
+             now (operator: "troppo scritte … servono già appare col mouse over"). -->
+        <h2 title="A subagent does NOT share the parent's context: fresh transcript, its own task list, same tools — it sees only the goal (plus an optional role brief). A delegation must therefore be a complete, self-contained instruction. This panel only CONFIGURES the engine: Settings ▸ Swarm & blackboard runs it.">Subagents · delegated workers
+          <button class="lnk" data-call="gotoOrchestrate" title="run this engine: split a goal across N throwaway subagents (Settings ▸ Swarm & blackboard)">→ swarm</button></h2>
+        <h2 title="Optional model tried when the primary fails (empty = no subagent-specific fallback). One source of truth: this writes config/routing.yaml ▸ roles.subagent.model and roles.subagent.fallbacks; Models does not duplicate these controls.">Model &amp; failover</h2>
         <div class="card">
           <div class="sub-fl">primary model</div>
           <select id="subModel" class="inp u-w100 u-p610 u-fs12"></select>
-          <div class="sub-fl u-mt8">fallback model <span title="Optional model tried when the primary fails. Empty disables the subagent-specific fallback.">— optional; default is none</span></div>
+          <div class="sub-fl u-mt8">fallback model</div>
           <select id="subFallbackPick" class="inp u-w100 u-p610 u-fs12 u-mt6"></select>
-          <div class="remaining u-mt4" id="subFallbackNote">None = no subagent fallback.</div>
-          <div class="remaining u-mt4">One source of truth: this panel writes <code>config/routing.yaml</code> ▸ roles.subagent.model and roles.subagent.fallbacks. No duplicate model/fallback controls live in Models.</div>
+          <div class="remaining u-mt4" id="subFallbackNote"></div>
         </div>
-        <h2>Limits</h2>
+        <h2 title="depth → config/tools.yaml ▸ runtime.subagent_max_depth · parallel agents → config/subagents.yaml ▸ max_parallel · parallel tools → config/tools.yaml ▸ runtime.max_parallel_tools.">Limits</h2>
         <div class="card">
           <div class="sub-limits">
             <label title="Maximum nesting depth of subagents (0 = none).">Max depth<input class="inp" id="subDepth" type="number" min="0" value="2"></label>
             <label title="Maximum subagents running at once across the harness (0 = no cap). A batch action may spawn several subagents; they run in waves of this size.">Max parallel agents<input class="inp" id="subParallel" type="number" min="0" value="4"></label>
             <label title="Subagents currently running.">Running<input class="inp" id="subRunning" type="number" readonly></label>
           </div>
-          <div class="remaining u-mt4">depth writes <code>config/tools.yaml</code> ▸ runtime.subagent_max_depth · parallel agents write <code>config/subagents.yaml</code> ▸ max_parallel · parallel tools write <code>config/tools.yaml</code> ▸ runtime.max_parallel_tools.</div>
         </div>
-        <h2>Role briefs <span class="remaining">— the standing instruction a delegation can attach</span></h2>
+        <h2 title="A standing instruction a delegation can attach by name — the child starts with it before the goal.">Role briefs</h2>
         <!-- JAG-511: the "add role" bar sat BELOW a list that can grow long, so after
              adding a few briefs you had to scroll to the bottom of the panel to add
              the next one. It now lives directly under the heading. -->
@@ -11132,12 +11127,13 @@ async function loadSubagents() {
       fallbackOptions += '<option value="' + _attr(currentFallback) + '" selected>' +
         esc(currentFallback) + " · not in model roster</option>";
     }
-    fallbackPick.innerHTML = '<option value="">None — no fallback</option>' + fallbackOptions;
+    fallbackPick.innerHTML = '<option value="">none</option>' + fallbackOptions;
     fallbackPick.value = currentFallback;
     const extraCount = Math.max(0, _subFallbacks.length - (currentFallback ? 1 : 0));
+    // v646: the field says what is configured, not what a menu means.
     if (fallbackNote) fallbackNote.textContent = extraCount
-      ? (extraCount + " additional existing fallback(s) stay in order until you change this menu.")
-      : "None = no fallback. Choosing a model saves it immediately.";
+      ? ("+" + extraCount + " more fallback(s) kept in order")
+      : "";
     fallbackPick.onchange = () => {
       let ref = String(fallbackPick.value || "").trim();
       const invalid = !!ref && ref === sel.value;
@@ -11147,9 +11143,8 @@ async function loadSubagents() {
       }
       _subFallbacks = ref ? [ref] : [];
       if (fallbackNote) fallbackNote.textContent = invalid
-        ? "Primary and fallback must be different. No fallback selected."
-        : (ref ? "Fallback saved automatically."
-          : "No subagent-specific fallback. The primary failure stops this delegation.");
+        ? "primary and fallback must differ"
+        : (ref ? "saved ✓ (auto)" : "");
       subSaveSoon();
     };
   }
@@ -11166,9 +11161,11 @@ async function loadSubagents() {
   if ($("subDepth")) { $("subDepth").value = d.max_depth ?? 2; $("subDepth").oninput = subSaveSoon; }
   if ($("subParallel")) { $("subParallel").value = d.max_parallel ?? 0; $("subParallel").oninput = subSaveSoon; }
   if ($("subRunning")) $("subRunning").value = d.running ?? 0;
-  const ctx = $("subCtxNote");
-  if (ctx) ctx.innerHTML = "Context: <b>isolated</b> — a subagent does NOT share the parent's context; it sees " +
-    "only the goal (plus an optional role brief). <span class=\"remaining\">config: <code>" + esc(d.config_path || "") + "</code></span>";
+  // v646: the context explanation lives in the panel's title tooltip; the
+  // config path is the one fact the tooltip does not carry.
+  const hd = document.querySelector('.sw-cat[data-cat="subagents"] h2');
+  if (hd && d.config_path) hd.title = hd.title.replace(/\s*config:.*$/, "") +
+    " config: " + d.config_path;
   _subRoles = d.roles || {};
   subRenderRoles();
 }
