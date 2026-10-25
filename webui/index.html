@@ -6834,7 +6834,7 @@ function planNodes(g) {
 }
 function renderGraph() {
   const box = $("tasks"); box.innerHTML = ""; $("taskDetail").innerHTML = "";
-  const _jid = curJob ? ("A" + curJob + " · ") : "";
+  const _jid = curJob ? ("J" + curJob + " · ") : "";
   if (!graph) {
     box.innerHTML = '<div class="remaining">no run graph yet — send a request</div>';
     $("graphHead").textContent = _jid + "run graph: —"; $("taskCount").textContent = "";
@@ -6867,12 +6867,21 @@ function renderGraph() {
   // v601: the run goal used to be hard-cut at 40 chars with no ellipsis and no
   // way to read the rest. The header keeps a short preview (80 chars + …) and
   // the FULL goal lives in the usual expandable dropdown, escaped.
+  // v602: the preview cuts at a word boundary, not mid-word; and when the
+  // plans moved on past the run start (plan > plan_base), the goal is labelled
+  // as the run-start goal — the counts are live while the goal text is a fossil.
   const _goalFull = graph.goal || "";
-  const _goalPrev = _goalFull.length > 80 ? _goalFull.slice(0, 80) + "…" : _goalFull;
+  let _cut = _goalFull.slice(0, 80);
+  const _sp = _cut.lastIndexOf(" ");
+  if (_goalFull.length > 80 && _sp > 40) _cut = _cut.slice(0, _sp);
+  const _goalPrev = _goalFull.length > 80 ? _cut + "…" : _goalFull;
+  const _staleGoal = (graph.plan || 1) > (graph.plan_base || 1);
   $("graphHead").innerHTML = esc(_jid + "run " + (graph.run_id || "").slice(0, 8) + " · " +
     _nodes.length + " nodes · " + (c.done || 0) + " done") +
     (_goalFull ? ' · <details class="goalfull"><summary title="click to expand the full run goal">' +
-      esc(_goalPrev) + '</summary><div class="goalfull-body">' + esc(_goalFull) + "</div></details>" : "");
+      esc(_goalPrev) +
+      (_staleGoal ? ' <span class="stale-goal" title="this run started with this goal; the plans above moved on since">· run-start goal</span>' : "") +
+      '</summary><div class="goalfull-body">' + esc(_goalFull) + "</div></details>" : "");
   $("taskCount").textContent = (c.done || 0) + "/" + _nodes.length;
   _isum("sPlan", planSummary(c, graph.run_id), (c.todo || c.doing || c.blocked) ? "" : "ok");
   let _olderHtml = "";

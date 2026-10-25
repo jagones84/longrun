@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Plan header tells the truth (job namespace + run-start goal + word cut).**
+  The header prefix used the agent namespace (`A180` for job J180, colliding
+  with agent ids like A54/A51) — now `J180`. When plans moved on past the run
+  start, the goal carries a `· run-start goal` label (live counts, fossil
+  text — now declared). The 80-char preview cuts at a word boundary.
+  (Locked by `v602` 4/4.)
+- **Research citation contract (DeerFlow gap 4, prompt level).**
+  The researcher role and the research summary prompt now REQUIRE inline
+  `[title](url)` citations on every claim plus a link-only Sources section —
+  "cited summary" is a contract now, not a wish. No architecture touched:
+  two strings, same read paths (`subagents.yaml` roles, `research.run`).
+  (Locked by `v603` 4/4; `v402` 28/28 unchanged.)
 - **Plan header goal dropdown + self-explaining evidence badge.**
   The Plan panel header hard-cut the run goal at 40 chars with no ellipsis
   and no way to read the rest (`Team results: A50: ## Report **Il re-di…`).

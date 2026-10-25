@@ -4,7 +4,8 @@ max_parallel: 4
 max_per_run: 6
 roles:
   researcher: 'Investigate a question against primary sources. Return a compact, cited
-    summary (max ~400 words). Do NOT modify files.
+    summary (max ~400 words) with inline [title](url) citations on every claim
+    plus a link-only Sources section. Do NOT modify files.
 
     '
   coder: 'Implement a small, self-contained code change. Report the exact files touched

@@ -203,7 +203,9 @@ def run(query, notebook="default", depth="shallow", n=5, max_rounds=4,
     # final summary via the research LLM (best-effort; failure is non-fatal)
     summary = ""
     if summary_chunks:
-        prompt = "Summarise the following research notes in 6 short bullet points:\n\n"
+        prompt = ("Summarise the following research notes in 6 short bullet points. "
+                  "Every bullet carries inline [title](url) citations for its claims "
+                  "and the summary ends with a link-only Sources section:\n\n")
         prompt += "\n\n---\n\n".join(summary_chunks)[:6000]
         try:
             r = llm_fn(prompt, model) if llm_fn else None
