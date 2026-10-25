@@ -311,9 +311,9 @@ check("H4 the old catch-all still writes CONFIG targets only",
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"),
           encoding="utf-8") as _f:
     DECK = _f.read()
-check("I1 the deck has a panel selector with one option per panel",
-      'id="deckView"' in DECK
-      and all(('<option value="%s"' % v) in DECK
+check("I1 the deck has a left rail with one button per panel (v617: select gone)",
+      '<nav id="deckRail"' in DECK and 'id="deckView"' not in DECK
+      and all(('data-view="%s"' % v) in DECK
               for v in ("all", "agents", "routines", "jobs", "org", "const", "feed")))
 check("I2 every deck panel is addressable by its view key",
       all(('data-panel="%s"' % v) in DECK
@@ -329,8 +329,8 @@ check("I4 the single-panel layout takes the full width and drops the column hand
       and "main.view-one .rz-cols{display:none}" in DECK
       and "main.view-one .panel[hidden]{display:none !important}" in DECK
       and "main .grid2[hidden]{display:none !important}" in DECK)
-check("I5 the selector is wired on boot and restored from the last choice",
-      '$("deckView").onchange = () => this.applyView($("deckView").value);' in DECK
+check("I5 the rail is wired on boot and restored from the last choice (v617)",
+      'b.onclick = () => this.applyView(b.dataset.view)' in DECK
       and 'localStorage.getItem("orbit_view_v1") || "all"' in DECK
       and "this.applyView(saved);" in DECK)
 

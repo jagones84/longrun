@@ -932,7 +932,12 @@ def check_dual_permission(tool, run_id=None):
         return False, (
             "session %r is not authorized to use %r — dual-permission gate requires "
             "either the permanent 'longrunAgent' system session or explicit session "
-            "grant (`allow_longrun_agent: true`)" % (run_id or "anonymous", tool)
+            "grant (`allow_longrun_agent: true`). approvals.mode=full does NOT "
+            "bypass this gate. Operator: grant via POST /api/longrun-agent/access "
+            "{\"session\": \"<sid>\", \"allow_longrun_agent\": true} or the session "
+            "menu Teamorg grant; agent: use `dispatch` (teammate turn, no grant) "
+            "instead of `job.*`, never shell/curl around the gate"
+            % (run_id or "anonymous", tool)
         )
     return True, "authorized (dual-permission: tool enabled + session privileged)"
 

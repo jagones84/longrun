@@ -72,7 +72,11 @@ FULL never bypasses the dual-permission gate — exclusive tools
 (session menu), decided AND worded by the ONE function both paths call.
 Operator secret VALUES never reach the model: one scrub at the tool
 execute choke point redacts them from every observation, so a stolen
-token can't curl around the gate (v616).
+token can't curl around the gate (v616). The gate itself is closed too:
+shell hard-deny blocks the bypass ingredients (LONGRUN_TOKEN, grep of
+.env, curl to the local jobs/agents/teams API), and the denial names
+FULL as non-bypass with the exact grant call plus the no-grant
+alternative (`dispatch`, not `job.*`) (v618).
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 

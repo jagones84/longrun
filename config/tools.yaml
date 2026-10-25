@@ -153,6 +153,10 @@ tools:
       - ":\\s*\\(\\s*\\)\\s*\\{"
       - "\\b(shutdown|reboot|poweroff)\\b"
       - ">\\s*/dev/(sd|nvme|mmcblk)"
+      - "LONGRUN_TOKEN"
+      - "grep[^\\n]*\\.env"
+      - "curl[^\\n]*127\\.0\\.0\\.1[^\\n]*/api/(jobs|agents|teams|longrun-agent)"
+      - "curl[^\\n]*localhost[^\\n]*/api/(jobs|agents|teams|longrun-agent)"
 
   # read a file (host-side, constrained to allowed roots)
   fs.read:
