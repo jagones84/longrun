@@ -2725,7 +2725,12 @@ let curThink = null, curAns = null, feedSince = 0;
 let curJob = null;
 function _todoid(node) {
   const y = String((node && node.id) || "").replace(/\D+/g, "");
-  return (curJob ? "A" + curJob : "A?") + (y ? ".n" + y : "");
+  // v604: the label owner resolves against the roster (single source of truth).
+  // "A155.n40" was a phantom: node n40's session agent is A49, its session
+  // number is J155 — no A155 exists. Designated -> agent id (A49.n40);
+  // plain session -> its own session number (J180.n87); never a bare "A?".
+  const own = (_agents && sessionId && _agents[sessionId] && _agents[sessionId].id) || null;
+  return (own ? own : (curJob ? "J" + curJob : "J?")) + (y ? ".n" + y : "");
 }
 /* JAG-299: the JOB (JN) a step was created for, when a job scoped it. Lets the
    coordinator's list tell J2's steps apart from J3's instead of one blend. */
@@ -6876,7 +6881,10 @@ function renderGraph() {
   if (_goalFull.length > 80 && _sp > 40) _cut = _cut.slice(0, _sp);
   const _goalPrev = _goalFull.length > 80 ? _cut + "…" : _goalFull;
   const _staleGoal = (graph.plan || 1) > (graph.plan_base || 1);
-  $("graphHead").innerHTML = esc(_jid + "run " + (graph.run_id || "").slice(0, 8) + " · " +
+  // v604: the J-number is the session's OWN number (JAG-169), not a team job —
+  // say so on the label itself so J155 is never read as a job or an agent.
+  $("graphHead").innerHTML = (_jid ? '<span title="session number \u2014 the session\u2019s own id (team jobs live in the Control tab)">'+ esc(_jid) + "</span>" : "") +
+    esc("run " + (graph.run_id || "").slice(0, 8) + " · " +
     _nodes.length + " nodes · " + (c.done || 0) + " done") +
     (_goalFull ? ' · <details class="goalfull"><summary title="click to expand the full run goal">' +
       esc(_goalPrev) +

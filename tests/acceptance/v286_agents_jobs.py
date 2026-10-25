@@ -116,7 +116,8 @@ check("DELETE an agent with reports is refused (409)", ok and fh.sent["code"] ==
 with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
     html = f.read()
 check("the GUI uses the AX prefix for agents",
-      "_agentNum" in html and "A${_anum}" in html and '(curJob ? "A" + curJob : "A?")' in html)
+      "_agentNum" in html and "A${_anum}" in html and '_agents[sessionId]' in html
+      and '"J" + curJob' in html and '"A" + curJob' not in html)
 check("the GUI badges org agents and guards their delete",
       "org agent " in html and 'api("DELETE", "/api/agents/" + s.id)' in html
       and "is an ORG AGENT" in html)

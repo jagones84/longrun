@@ -7,6 +7,13 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Todo labels name a real owner (single source of truth).**
+  `A155.n40` was a phantom: node `n40`, agent A49, session number J155 —
+  no A155 exists. `_todoid` now resolves against the roster
+  (`_agents[sessionId].id` → `A49.n40`); plain sessions fall back to their
+  own session number (`J180.n87`); the header J-number carries a tooltip
+  (session's own id — team jobs live in Control). One resolver, both
+  panels. (Locked by `v604` 4/4; `v286` evolved 26/26.)
 - **Plan header tells the truth (job namespace + run-start goal + word cut).**
   The header prefix used the agent namespace (`A180` for job J180, colliding
   with agent ids like A54/A51) — now `J180`. When plans moved on past the run

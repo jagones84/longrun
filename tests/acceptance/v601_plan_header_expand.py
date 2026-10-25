@@ -32,7 +32,7 @@ check("T2 the full goal is rendered escaped in an expandable dropdown",
       "goalfull" in _head and "esc(_goalFull)" in _head
       and "<details" in _head)
 check("T3 the preview ends with an ellipsis when the goal is long",
-      "\u2026" in HTML.split('<details class="goalfull">')[0][-500:])
+      "\u2026" in HTML.split('<details class="goalfull">')[0][-900:])
 check("T4 the evidence badge explains itself (click the row to view)",
       'class="ev"' in HTML and "click the row" in HTML.split('class="ev"')[1][:400])
 check("T5 counts + history + rewind survive (no regression)",
