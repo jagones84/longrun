@@ -1240,11 +1240,21 @@
     background: var(--hc, #6c8cff); box-shadow: 0 0 10px var(--hc, #6c8cff); }
   .hcard-hd b { font-size: 13px; color: var(--txt); letter-spacing: .01em; }
   .hcard-hd .hc-sub { font-size: 12px; color: var(--dim); }
+  /* v643: the card's save button sits at the END of its header row, so every
+     Harness card has the same shape (title · subtitle · save). */
+  .hcard-hd .config-save { margin-left: auto; }
   /* v641: ONE type scale for every Settings card, so a title / a value / a row
      label read the same in every panel (operator: "il format cambia da setting a
      setting"). A form's actions also live on ONE row, not stacked. */
   #swMain .set-t { font-weight: 600; font-size: 12.5px; color: var(--txt); }
   #swMain .set-t .remaining { font-weight: 400; }
+  /* v643: a CONSTRUCTED card keeps the same shape as the hand-written Harness
+     cards — title (with the file it writes) on the left, actions at the end of
+     the SAME row. Before this the save sat on a second row and every panel
+     looked different (operator: "il format cambia da setting a setting"). */
+  #swMain .set-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  #swMain .set-hd .set-t { min-width: 0; }
+  #swMain .set-hd .set-acts { margin: 0 0 0 auto; }
   #swMain .set-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
   #swMain .self-row { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
   #swMain .self-row > .remaining { flex: 0 0 58px; font-size: 11px; }
@@ -2021,8 +2031,11 @@
       <div class="sw-cat" data-cat="harness" hidden>
         <h2>Harness · agent behaviour</h2>
         <div class="card hcard" style="--hc:#22d3ee">
-          <div class="hcard-hd"><span class="dot"></span><b>Runtime</b><span class="hc-sub">continuation rounds</span></div>
-          <div class="remaining u-m006">How many times the agent may continue on its own before stopping: it keeps long jobs alive without getting stuck forever.</div>
+          <!-- v643: one card format everywhere — title + subtitle + save on ONE row,
+               the explanation in the title tooltip (it repeated what every field's
+               own tooltip says). -->
+          <div class="hcard-hd" title="How many times the agent may continue on its own before stopping: it keeps long jobs alive without getting stuck forever."><span class="dot"></span><b>Runtime</b><span class="hc-sub">continuation rounds</span>
+            <button class="ghost config-save" data-call="saveRuntime" disabled title="no changes to save">save runtime</button></div>
           <div class="hrow">
             <label title="Maximum number of automatic continuations after the first reply (0 = disabled).">max continuations <input id="rtKgMax" type="number" min="0" value="8"></label>
             <label title="After how many consecutive rounds without progress the agent stops (0 = never).">rounds without progress <input id="rtNoProg" type="number" min="0" value="2"></label>
@@ -2031,32 +2044,29 @@
             <label title="How many INDEPENDENT tool calls of one batch action run at the same time (0 = 1). The agent emits a batch action to parallelize work; the parallel-subagent cap is in Subagents. Same key as config/tools.yaml ▸ runtime.max_parallel_tools.">parallel tools <input id="rtParallel" type="number" min="0" value="4"></label>
             <label title="If enabled the harness keeps going on its own until the todos are closed, then asks you. If disabled, as soon as steps remain open it hands over to the human (HUMAN IN THE LOOP).">autocontinue <input id="rtAuto" type="checkbox" checked></label>
           </div>
-          <button class="ghost config-save" data-call="saveRuntime" disabled title="no changes to save">save runtime</button>
         </div>
         <div class="card hcard" style="--hc:#34d399">
-          <div class="hcard-hd"><span class="dot"></span><b>Verifier</b><span class="hc-sub">apply only if green</span></div>
-          <div class="remaining u-m006">After the changes it runs a verification command (e.g. the tests) and applies them only if it passes: if it fails, it reverts.</div>
+          <div class="hcard-hd" title="After the changes it runs a verification command (e.g. the tests) and applies them only if it passes: if it fails, it reverts."><span class="dot"></span><b>Verifier</b><span class="hc-sub">apply only if green</span>
+            <button class="ghost config-save" data-call="saveVerifier" disabled title="no changes to save">save verifier</button></div>
           <div class="hrow">
             <label title="Enable the check before applying the agent's changes.">enabled <input id="vfOn" type="checkbox"></label>
             <label title="Command run to verify (e.g. python3 -m pytest -q).">verify command <input id="vfCmd" type="text" placeholder="python3 -m pytest -q"></label>
             <label title="Maximum seconds to wait for the verify command.">timeout (s) <input id="vfTimeout" type="number" min="0" value="120"></label>
             <label title="Limit the verification to these paths, comma-separated (empty = the whole workspace).">checked paths <input id="vfPaths" type="text" placeholder="optional"></label>
           </div>
-          <button class="ghost config-save" data-call="saveVerifier" disabled title="no changes to save">save verifier</button>
         </div>
         <div class="card hcard" style="--hc:#fbbf24">
-          <div class="hcard-hd"><span class="dot"></span><b>Best-of-N</b><span class="hc-sub">more answers, the best one</span></div>
-          <div class="remaining u-m006">Generates N independent answers and keeps the best one: more reliable, but slower and more expensive.</div>
+          <div class="hcard-hd" title="Generates N independent answers and keeps the best one: more reliable, but slower and more expensive."><span class="dot"></span><b>Best-of-N</b><span class="hc-sub">more answers, the best one</span>
+            <button class="ghost config-save" data-call="saveBestofn" disabled title="no changes to save">save best-of-N</button></div>
           <div class="hrow">
             <label title="Enable sampling of multiple answers.">enabled <input id="bnOn" type="checkbox"></label>
             <label title="How many answers to generate (1 = no best-of-N).">number of answers N <input id="bnN" type="number" min="1" max="16" value="1"></label>
             <label title="Minimum score (0..1) an answer must have to be accepted.">minimum score <input id="bnMin" type="number" step="0.05" value="0"></label>
           </div>
-          <button class="ghost config-save" data-call="saveBestofn" disabled title="no changes to save">save best-of-N</button>
         </div>
         <div class="card hcard" style="--hc:#a78bfa">
-          <div class="hcard-hd"><span class="dot"></span><b>Difficulty</b><span class="hc-sub">adaptive effort</span></div>
-          <div class="remaining u-m006">Adapts how many attempts to make based on how hard the task is: few if it is easy, more if it is complex.</div>
+          <div class="hcard-hd" title="Adapts how many attempts to make based on how hard the task is: few if it is easy, more if it is complex."><span class="dot"></span><b>Difficulty</b><span class="hc-sub">adaptive effort</span>
+            <button class="ghost config-save" data-call="saveDifficulty" disabled title="no changes to save">save difficulty</button></div>
           <div class="hrow">
             <label title="Enable automatic difficulty estimation.">enabled <input id="dfOn" type="checkbox"></label>
             <label title="Number of attempts for easy tasks.">attempts · easy <input id="dfEasy" type="number" min="1" max="16" value="1"></label>
@@ -2065,18 +2075,16 @@
             <label title="Difficulty threshold (0..1) above which the task is considered medium.">threshold → medium <input id="dfMedAt" type="number" step="0.05" value="0.35"></label>
             <label title="Difficulty threshold (0..1) above which the task is considered hard.">threshold → hard <input id="dfHardAt" type="number" step="0.05" value="0.65"></label>
           </div>
-          <button class="ghost config-save" data-call="saveDifficulty" disabled title="no changes to save">save difficulty</button>
         </div>
         <div class="card hcard" style="--hc:#fb923c">
-          <div class="hcard-hd"><span class="dot"></span><b>Self-evolving</b><span class="hc-sub">new skills</span></div>
-          <div class="remaining u-m006">Recognizes recurring patterns in your tasks and proposes saving them as reusable skills.</div>
+          <div class="hcard-hd" title="Recognizes recurring patterns in your tasks and proposes saving them as reusable skills."><span class="dot"></span><b>Self-evolving</b><span class="hc-sub">new skills</span>
+            <button class="ghost config-save" data-call="saveSelfevolve" disabled title="no changes to save">save selfevolve</button></div>
           <div class="hrow">
             <label title="Minimum length (in lines) for a pattern to become a skill.">minimum length <input id="seMinLen" type="number" min="1" value="2"></label>
             <label title="How many times a pattern must recur before becoming a skill.">minimum occurrences <input id="seMinCount" type="number" min="2" value="3"></label>
             <label title="Maximum length (in lines) of a synthesized skill.">maximum length <input id="seMaxLen" type="number" min="2" value="6"></label>
             <label title="Category in which to save generated skills (auto = decided by the agent).">category <input id="seCat" type="text" value="auto"></label>
           </div>
-          <button class="ghost config-save" data-call="saveSelfevolve" disabled title="no changes to save">save selfevolve</button>
         </div>
       </div>
       <!-- DO NOT REMOVE! ITS BACKUP — Settings ▸ Config (its structured forms and
@@ -6579,17 +6587,16 @@ function _setSectionEl(sec) {
   card.className = "card"; card.style.marginBottom = "10px";
   card.dataset.file = sec.file; card.dataset.sid = sec.id;
   const files = (sec.files && sec.files.length) ? sec.files : ["config/" + sec.file];
-  // v641: the long `help` paragraph moved into the title's tooltip, the file path
-  // stays visible (it answers "which file wins"), and save + Automate sit on ONE
-  // row instead of stacking two full-width buttons.
-  card.innerHTML = '<div class="set-t"' + (sec.help ? ' title="' + _attr(sec.help) + '"' : "") + '>' +
+  // v643: the actions sit in the header row (right-aligned), not on a second row.
+  card.innerHTML = '<div class="set-hd">' +
+    '<div class="set-t"' + (sec.help ? ' title="' + _attr(sec.help) + '"' : "") + '>' +
     esc(sec.title) +
     ' <span class="remaining" data-config-files>· ' + _settingsFileLinks(files) + '</span></div>' +
-    '<div class="hrow" data-fields></div>' +
     '<div class="set-acts">' +
       '<button class="ghost config-save" data-save disabled>save ' + esc(sec.id) + "</button>" +
       '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
-    "</div>";
+    "</div></div>" +
+    '<div class="hrow" data-fields></div>';
   const box = card.querySelector("[data-fields]");
   (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));
   card._savedValues = JSON.stringify(_setSectionValues(card, sec));
