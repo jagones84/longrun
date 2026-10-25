@@ -847,6 +847,56 @@ def _invoke_matrix_tool_fn(fn, args, run_id, subtool=None):
     return fn(call_args, run_id)
 
 
+_SCHEMA_PLACEHOLDERS = ("REPLACE THIS DESCRIPTION", "TODO:", "TBD")
+
+
+def _schema_problem(full_name, sch):
+    """Why a generated tool contract must NOT become callable ("" = it is fine).
+
+    v649: Matrix tools are written by a model, so a malformed contract used to
+    reach the registry silently — the loader defaulted `type`/`properties`/
+    `required` and the defect only surfaced at CALL time, in front of the
+    operator (an empty `required` made every argument optional, a placeholder
+    description told the next agent nothing). The generative path now refuses
+    what `toolcontract.audit` reports, at exposure:
+      * a missing or placeholder description;
+      * `type` other than "object";
+      * `properties` that is not a dict of string keys;
+      * `required` that is not a list of strings, or names never declared;
+      * an `anyOf` branch requiring names that do not exist.
+    """
+    desc = str(sch.get("description") or "").strip()
+    if not desc:
+        return "description is required: say what %s does, its inputs and its output" % full_name
+    for ph in _SCHEMA_PLACEHOLDERS:
+        if desc.upper().startswith(ph):
+            return ("the description is still the scaffold placeholder — write what "
+                    "%s does before it can be called" % full_name)
+    if sch.get("type", "object") != "object":
+        return "type must be \"object\", got %r" % (sch.get("type"),)
+    props = sch.get("properties", {})
+    if not isinstance(props, dict):
+        return "properties must be an object, got %s" % type(props).__name__
+    if any(not isinstance(k, str) for k in props):
+        return "every property name must be a string"
+    required = sch.get("required", [])
+    if not isinstance(required, list) or any(not isinstance(r, str) for r in required):
+        return "required must be a list of strings, got %r" % (required,)
+    missing = [r for r in required if r not in props]
+    if missing:
+        return "required names not declared in properties: %s" % ", ".join(missing)
+    any_of = sch.get("anyOf", [])
+    if not isinstance(any_of, list):
+        return "anyOf must be a list of branches, got %s" % type(any_of).__name__
+    for br in any_of:
+        if not isinstance(br, dict):
+            return "every anyOf branch must be an object"
+        bad = [r for r in (br.get("required") or []) if r not in props]
+        if bad:
+            return "anyOf requires undeclared names: %s" % ", ".join(map(str, bad))
+    return ""
+
+
 def _extract_module_subtools(tname, mod, p, origin):
     """Extract one or more `<namespace>.<subtool>` entries from a Matrix/promoted tool module."""
     exec_fn = getattr(mod, "execute", None)
@@ -892,6 +942,7 @@ def _extract_module_subtools(tname, mod, p, origin):
             },
             "approval": str(sch.get("approval") or "auto"),
             "execute": exec_fn,
+            "schema_error": _schema_problem(full_name, sch),
         }
     return out
 
@@ -960,6 +1011,13 @@ def _hotload_locked(msrc):
                     })
                     continue
                 for full_name, entry in extracted.items():
+                    if entry.get("schema_error"):
+                        errors.append({
+                            "file": bn,
+                            "tool": full_name,
+                            "error": "invalid tool contract: %s" % entry["schema_error"],
+                        })
+                        continue
                     if full_name in builtins:
                         errors.append({
                             "file": bn,
@@ -1307,6 +1365,8 @@ def discover_promoted_tools(repo_root=None):
             extracted = _extract_module_subtools(tname, mod, p, origin="nucleus")
             if extracted:
                 for full_name, entry in extracted.items():
+                    if entry.get("schema_error"):   # v649: same gate as Matrix tools
+                        continue
                     out[full_name] = entry
         except Exception:  # noqa: BLE001
             continue
@@ -1375,6 +1435,18 @@ def verify_target(kind, name, repo_root=None):
                     or isinstance(_single, dict)
                 if not _has_schema or not callable(getattr(mod, "execute", None)):
                     return {"ok": False, "error": "PROMOTE_UNVERIFIED: tool %r must define dict TOOL_SCHEMAS (or TOOL_SCHEMA) and callable execute" % nm}
+                # v649: promotion runs the SAME contract gate as exposure, so a
+                # malformed schema can never be blessed into Nucleus. The test
+                # proof only says "it ran", not "it is callable correctly".
+                _pairs = (_schemas if isinstance(_schemas, dict) and _schemas else
+                          {nm: _single} if isinstance(_single, dict) else {})
+                for _k, _sch in _pairs.items():
+                    if not isinstance(_sch, dict):
+                        continue
+                    _prob = _schema_problem(str(_k), _sch)
+                    if _prob:
+                        return {"ok": False,
+                                "error": "PROMOTE_UNVERIFIED: invalid tool contract for %r: %s" % (_k, _prob)}
             elif k == "hook":
                 fns = [fn for fn, v in vars(mod).items() if not fn.startswith("_") and callable(v)]
                 if not fns:
@@ -1835,12 +1907,14 @@ def scaffold(kind, name, description="", repo_root=None):
     if k == "tool":
         _ns = str(nm).split(".")[0]
         next_steps = [
-            "fs.edit %s: replace the placeholder description with what the tool does, "
-            "every input, and its output; define real properties and required fields." % fpath,
+            "fs.edit %s: state what the tool does, every input and its output, and "
+            "declare real properties/required — a placeholder description or a "
+            "`required` naming an undeclared property is REFUSED at load." % fpath,
             "matrix{action:'hotload'} — also automatic when the file mtime changes.",
             "matrix{action:'test', target:'tool:%s', code:'...'} with an assertion that can fail." % _ns,
             "matrix{action:'verify_target', kind:'tool', name:'%s'} before any promotion." % _ns,
-            "After hotload the tool is directly callable by name; no restart, no manual registry edit.",
+            "The tool becomes callable by name only after that first edit: a stub is "
+            "not exposed (no restart, no manual registry edit).",
         ]
     elif k == "hook":
         next_steps = [
