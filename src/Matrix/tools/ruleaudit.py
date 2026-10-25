@@ -30,7 +30,7 @@ TOOL_SCHEMA_LIST = {
     ),
     "type": "object",
     "properties": {
-        "dir": {"type": "string", "description": "Rules directory (default: <repo>/.Matrix/rules)."},
+        "dir": {"type": "string", "description": "Rules directory (default: the live Matrix dir, ~/.longrun/matrix/rules; the legacy <repo>/.Matrix/rules is only a fallback)."},
     },
     "required": [],
     "approval": "auto",
@@ -52,7 +52,7 @@ TOOL_SCHEMA_SCAN = {
             "items": {"type": "string"},
             "description": "Restrict the audit to these rule filenames (default: every rule).",
         },
-        "dir": {"type": "string", "description": "Rules directory (default: <repo>/.Matrix/rules)."},
+        "dir": {"type": "string", "description": "Rules directory (default: the live Matrix dir, ~/.longrun/matrix/rules; the legacy <repo>/.Matrix/rules is only a fallback)."},
         "context": {"type": "integer", "default": 60, "description": "Characters of evidence around a hit."},
     },
     "required": [],
@@ -84,8 +84,25 @@ def _repo_root():
 
 
 def _rules_dir(args):
-    d = args.get("dir") or os.path.join(_repo_root(), ".Matrix", "rules")
-    return os.path.abspath(os.path.expanduser(str(d)))
+    """Where the live Matrix rules are. EXPLICIT dir wins.
+
+    v647: the default used to be `<repo>/.Matrix/rules`, a legacy path that does
+    not exist in a normal install — the tool then reported "0 rules" while the
+    real directory was `~/.longrun/matrix/rules` (MATRIX_DOT_DIR). The runtime
+    dir is the default now, and the legacy one is the fallback, not the truth.
+    """
+    explicit = args.get("dir")
+    if explicit:
+        return os.path.abspath(os.path.expanduser(str(explicit)))
+    runtime = ""
+    try:
+        from longrun.util import paths  # noqa: WPS433
+        runtime = os.path.join(str(paths.MATRIX_DOT_DIR), "rules")
+    except Exception:  # noqa: BLE001 — a missing import must not break the tool
+        runtime = ""
+    if runtime and os.path.isdir(runtime):
+        return os.path.abspath(runtime)
+    return os.path.abspath(os.path.join(_repo_root(), ".Matrix", "rules"))
 
 
 def _norm(s):
@@ -129,12 +146,22 @@ def _load_rules(directory):
 def _sub_list(args):
     directory = _rules_dir(args)
     rules = _load_rules(directory)
+    # v647: an empty list must say WHY it is empty — a missing directory is not
+    # the same answer as "this install has no Matrix rules".
+    exists = os.path.isdir(directory)
+    note = "read-only: markers are what ruleaudit.scan looks for"
+    if not exists:
+        note = ("rules directory does not exist: %s — pass dir=<path> or install "
+                "the Matrix rules first" % directory)
+    elif not rules:
+        note = "the rules directory exists and holds no *.md file: %s" % directory
     return {
         "ok": True,
         "dir": directory,
+        "exists": exists,
         "count": len(rules),
         "rules": rules,
-        "note": "read-only: markers are what ruleaudit.scan looks for",
+        "note": note,
     }
 
 

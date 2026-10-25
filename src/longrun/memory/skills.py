@@ -13,6 +13,7 @@ API:
 
 import hashlib
 import io
+import math
 import os
 import re
 import shutil
@@ -460,25 +461,46 @@ def search_skills(query, limit=10):
     if not words:
         return []
     bodies = _cache.get("bodies") or {}
-    scored = []
+    # v647: IDF weighting. A word that appears in 40 skills ("test") used to
+    # outvote a word that appears in 3 ("battery"), so "how to run the test
+    # battery gate" returned browser-testing and log-forensics while the local
+    # testing skill never surfaced. A term is now worth log(N/df): the rarer it
+    # is in THIS library, the more it says about the skill that has it.
+    docs, df = [], dict.fromkeys(words, 0)
     for s in list_skills():
         strong = (str(s.get("name") or "") + " " + str(s.get("title") or "")).lower()
         weak = str(s.get("description") or "").lower()
         body = bodies.get(s.get("abspath") or "", "")
-        name_hits = {w for w in words if w in strong}
-        description_hits = {w for w in words if w in weak}
-        body_hits = {w for w in words if w in body}
-        matched = name_hits | description_hits | body_hits
-        if len(words) == 1:
-            if not (name_hits or description_hits):
-                continue
-        elif len(matched) < min(2, len(words)) and not name_hits:
+        present = {w for w in words if w in strong or w in weak or w in body}
+        if not present:
             continue
-        score = (sum(3 for w in words if w in strong)
-                 + sum(2 for w in words if w in weak)
-                 + sum(1 for w in words if w in body))
+        for w in present:
+            df[w] += 1
+        docs.append((s, strong, weak, body, present))
+    if not docs:
+        return []
+    idf = {w: math.log((len(docs) + 1.0) / (1.0 + df[w])) + 1.0 for w in words}
+    scored = []
+    for s, strong, weak, body, present in docs:
+        name_hits = present & {w for w in words if w in strong}
+        # A multi-word query needs two distinct terms, or a name/title hit; a
+        # single word must appear in the name, the title or the description.
+        if len(words) == 1:
+            if not (name_hits or any(w in weak for w in present)):
+                continue
+        elif len(present) < min(2, len(words)) and not name_hits:
+            continue
+        score = 0.0
+        for w in present:
+            weight = idf[w]
+            if w in strong:
+                score += 3 * weight
+            if w in weak:
+                score += 2 * weight
+            if w in body:
+                score += 1 * weight
         if score:
-            scored.append((score, s))
+            scored.append((round(score, 3), s))
     scored.sort(key=lambda x: (-x[0], x[1]["name"]))
     out = []
     for score, s in scored[:max(1, int(limit))]:

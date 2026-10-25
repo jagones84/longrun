@@ -277,9 +277,31 @@ def tools_report(tool=None, query=None) -> dict:
         }, "hint": ("`args` is ALWAYS a JSON OBJECT: {\"action\":\"tool\","
                     "\"tool\":\"%s\",\"args\":{...}}" % want)}
     if query:
-        q = str(query).strip().lower()
-        index = {n: e for n, e in index.items()
-                 if q in n.lower() or q in (e.get("description") or "").lower()}
+        # v647: this used to require the WHOLE query string as a literal
+        # substring of a name or a description, so `query:"job dispatch"` answered
+        # "0 tools" while `job.get` existed (its description says "Read ONE job in
+        # full"). Every query word now scores against name + description and the
+        # best matches come back first; the exact phrase still wins outright.
+        import re
+        words = list(dict.fromkeys(
+            [w for w in re.split(r"\W+", str(query).lower()) if len(w) > 2]))
+        phrase = str(query).strip().lower()
+        hits, exact = {}, {}
+        for n, e in index.items():
+            hay = (n + " " + (e.get("description") or "")).lower()
+            score = sum(1 for w in words if w in hay)
+            if not score:
+                continue
+            if phrase and phrase in hay:
+                exact[n] = score
+            hits[n] = score
+        # v647: a FULL-phrase hit is the answer, not one candidate among many.
+        # `query:"diff.text"` scores both words on dozens of tools ("text"),
+        # so ranking alone flooded the result; when one name/description holds
+        # the whole phrase, those are the only hits returned.
+        if exact:
+            hits = exact
+        index = {n: index[n] for n in sorted(hits, key=lambda n: (-hits[n], n))}
         native = [n for n in native if n in index]
         external = [n for n in external if n in index]
         enabled = [n for n in enabled if n in index]
@@ -290,6 +312,9 @@ def tools_report(tool=None, query=None) -> dict:
         out["query"] = query
     out["hint"] = ("read a schema with self {action:'tools', tool:'<name>'} "
                    "BEFORE calling a tool you have not used in this session")
+    if query and not native and not external:
+        out["hint"] = ("no tool matches those words — try fewer/other words, or "
+                       "call self {action:'tools'} without a query for the index")
     return out
 
 

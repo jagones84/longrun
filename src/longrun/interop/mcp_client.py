@@ -859,8 +859,22 @@ def test_client(spec):
     """Connect a candidate client WITHOUT persisting it; report the tools.
 
     Lets the UI validate a stdio command / HTTP url before saving it.
+
+    v647: a caller may pass just `{"name": "<client>"}` — the MCP tool does — and
+    then the spec has to be RESOLVED from the merged config (tracked file +
+    gitignored local). It used to look for `command`/`url` on that bare name and
+    answered "command (stdio) or url (http) required" for clients that exist,
+    which made `mcp.test` useless for every configured server.
     """
     cfg = dict(spec or {})
+    nm = str(cfg.get("name") or "").strip()
+    if nm and not cfg.get("command") and not cfg.get("url"):
+        known = (load_doc().get("clients") or {})
+        if nm not in known:
+            return {"ok": False, "error": "unknown MCP client %r" % nm,
+                    "clients": sorted(known)}
+        cfg = dict(known[nm] or {})
+        cfg["name"] = nm
     session = MCPSession("__test__", cfg)
     try:
         if cfg.get("command"):

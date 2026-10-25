@@ -450,10 +450,45 @@ def write(kind, content, **meta):
 
 
 def search(query_text, kind=None, limit=10, semantic=False):
-    """Search memory: keyword or semantic."""
+    """Search memory: keyword ranking, or semantic."""
     if semantic:
         return semantic_query(query_text, kind, limit)
-    return [(1.0, r) for r in query(query_text, kind, limit)]
+    return search_keyword(query_text, kind, limit)
+
+
+def _tokens(text):
+    """Query words worth scoring: lowercased, >2 chars, order kept, de-duped."""
+    return list(dict.fromkeys(
+        [w for w in re.split(r"\W+", str(text or "").lower()) if len(w) > 2]))
+
+
+def search_keyword(query_text, kind=None, limit=10):
+    """Rank records by how many query words they contain — recall is never blind.
+
+    v647: the keyword path reused `query()`, which is an AND-of-words filter: a
+    multi-word recall ("trust profiles syntax gate plan mode") matched NOTHING
+    unless ONE record held every word, so a working store answered
+    "(no memories)" and the agent concluded it had no past lessons. Here every
+    record scores on the distinct query words it contains (plus a bonus for the
+    exact phrase) and the best N come back; zero matched words is still a miss.
+
+    Destructive callers (forget/invalidate) keep the strict literal filter on
+    purpose — a delete must never act on a partial match.
+    """
+    words = _tokens(query_text)
+    phrase = str(query_text or "").strip().lower()
+    scored = []
+    for rec in query("", kind, 100000):
+        low = str(rec.get("content") or "").lower()
+        hits = sum(1 for w in words if w in low)
+        if not hits:
+            continue
+        score = hits / max(1, len(words))
+        if phrase and phrase in low:
+            score = min(1.0, score + 0.25)
+        scored.append((round(score, 3), rec))
+    scored.sort(key=lambda sr: (sr[0], sr[1].get("ts", 0)), reverse=True)
+    return scored[:limit]
 
 
 # JAG-95: governed recall — score + time-decay + dedupe. The score is harness-
