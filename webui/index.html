@@ -2262,10 +2262,10 @@
         <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
         <div class="card">
           <div id="editsList"><div class="remaining">open a session, then ↻</div></div>
-          <div class="u-df u-g6 u-mt6 u-aic u-fww">
-            <button class="ghost" data-call="loadEdits" title="reload the pending changes">↻ refresh</button>
-            <button class="ghost" data-call="approveEdits" data-args='[null]' title="keep every changed file as written, clear the list">✓ approve all</button>
-            <button class="ghost" data-call="rejectEdits" data-args='[null]' title="restore every changed file to its pre-image">↩ reject all</button>
+          <div class="acts">
+            <button class="lnk" data-call="loadEdits" title="reload the pending changes">refresh</button>
+            <button class="lnk" data-call="approveEdits" data-args='[null]' title="keep every changed file as written, clear the list">approve all</button>
+            <button class="lnk" data-call="rejectEdits" data-args='[null]' title="restore every changed file to its pre-image">reject all</button>
           </div>
         </div>
         </div>
@@ -2283,9 +2283,9 @@
             <button class="ghost" id="cbBuildBtn" data-call="cbBuild" data-args='[false]' title="re-index this workspace's code and docs">⚡ build</button>
             <button class="ghost" id="cbDefaultBtn" data-call="cbUseDefaultWorkspace" hidden
                     title="this session's folder has no indexable file — index the default workspace instead">index default workspace</button>
-            <button class="ghost" data-call="cbFiles" title="which files are indexed">files</button>
-            <button class="ghost" data-call="cbStatus" title="refresh the counts">status</button>
-            <button class="ghost" data-call="cbClear" title="delete this workspace's codebase index">clear</button>
+            <button class="lnk" data-call="cbFiles" title="which files are indexed">files</button>
+            <button class="lnk" data-call="cbStatus" title="refresh the counts">status</button>
+            <button class="lnk" data-call="cbClear" title="delete this workspace's codebase index">clear</button>
           </div>
           <label class="remaining u-df u-g6 u-aic u-mt8"
                  title="Automatic background indexing (like an IDE): the workspace index is built and kept UP TO DATE off the request path, so an agent's search is instant. Off = index only when you press build. The pre-search refresh still runs on top of this.">
@@ -2303,18 +2303,15 @@
         </div>
       </section>
       <section data-insp="terminal" class="insp-open">
-        <button class="insp-hd" data-call="toggleInsp" data-args='["terminal"]'>Terminal<span class="ihd-s" id="sTerm"></span></button>
+        <button class="insp-hd" data-call="toggleInsp" data-args='["terminal"]'
+                title="one persistent shell per caller: the session's own (shared with the agent) plus one per agent run and subagent, shown as tabs">Terminal<span class="ihd-s" id="sTerm"></span></button>
         <div class="insp-body">
         <div class="card">
-          <div class="remaining u-mb6" title="one persistent shell per caller: the session's own, plus one per agent run">
-            One shell per caller — the <b>session</b> shell is shared with the agent (its commands appear here 🤖); every
-            agent run and subagent gets its own terminal, shown as a tab.
-          </div>
           <div id="termTabs" class="term-tabs" role="tablist" aria-label="terminals"></div>
           <div class="u-df u-aic u-g6 u-mb6">
             <span class="remaining" id="termCwd" style="flex:1;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="the shell's working directory">…</span>
-            <button class="ghost" data-call="termClear" title="clear the screen (keeps the shell)">⌫ clear</button>
-            <button class="ghost" data-call="termReset" title="kill the shell and start a fresh one">⟲ reset</button>
+            <button class="lnk" data-call="termClear" title="clear the screen (keeps the shell)">clear</button>
+            <button class="lnk" data-call="termReset" title="kill the shell and start a fresh one">reset</button>
           </div>
           <div id="termLog" style="max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11.5px;font-family:ui-monospace,monospace;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--txt)"></div>
           <div class="u-df u-g6 u-mt6 u-aic">
