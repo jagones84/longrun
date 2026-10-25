@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""v495 — the session-create button remains visible as the sidebar narrows."""
+"""v495 — the create-session entry stays visible as the sidebar narrows.
+
+v631 superseded the inline "title input + new" row: the rail top is now ONE
+compact toolbar, the ＋ opens the new-session DIALOG (which already owns the
+name field `#nsTitle` and the workspace picker), and the search field appears
+only when the magnifier is pressed. What must NOT regress is the reason this
+test exists: the create entry is never squeezed out of the panel.
+"""
 import os
 import re
 import sys
@@ -16,26 +23,21 @@ def check(name, passed):
     print(("PASS " if passed else "FAIL ") + name)
 
 
-row = re.search(
-    r'<div id="sessionCreate" class="session-create[^"]*">(.*?)</div>',
-    UI,
-    flags=re.DOTALL,
-)
-input_rule = re.search(r"#sessInp\s*\{([^}]*)\}", UI)
-button_rule = re.search(r"\.session-create\s*>\s*button\s*\{([^}]*)\}", UI)
-row_rule = re.search(r"\.session-create\s*\{([^}]*)\}", UI)
+btn = re.search(r'<button[^>]*id="railNew"[^>]*>', UI)
+btn_rule = re.search(r"\.rail-btn\s*\{([^}]*)\}", UI)
 
-check("A1 title input and new-session button share the sidebar row",
-      bool(row) and 'id="sessInp"' in row.group(1)
-      and 'data-call="newSession"' in row.group(1))
-check("A2 title input can shrink below its intrinsic width",
-      bool(input_rule) and re.search(r"min-width\s*:\s*0", input_rule.group(1)))
-check("A3 new-session button keeps its width and label",
-      bool(button_rule)
-      and re.search(r"flex\s*:\s*0\s+0\s+auto", button_rule.group(1))
-      and re.search(r"white-space\s*:\s*nowrap", button_rule.group(1)))
-check("A4 row itself has no intrinsic minimum width",
-      bool(row_rule) and re.search(r"min-width\s*:\s*0", row_rule.group(1)))
+check("A1 the create entry is a compact icon button in the rail toolbar",
+      bool(btn) and 'data-call="newSession"' in btn.group(0))
+check("A2 it is a FIXED-size hit area (never squeezed by a narrowing rail)",
+      bool(btn_rule)
+      and re.search(r"flex\s*:\s*0\s+0\s+auto", btn_rule.group(1))
+      and re.search(r"width\s*:\s*26px", btn_rule.group(1))
+      and re.search(r"height\s*:\s*26px", btn_rule.group(1)))
+check("A3 the session NAME lives in the dialog (#nsTitle), not in a rail input",
+      'id="nsTitle"' in UI and 'id="sessInp"' not in UI
+      and "newSession()" in UI)
+check("A4 the old inline title row is gone (no dead CSS/ids)",
+      "#sessInp" not in UI and 'id="sessionCreate"' not in UI)
 
 print("---")
 print("%d/%d PASS" % (sum(checks), len(checks)))

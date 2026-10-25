@@ -53,21 +53,22 @@ DRAG = src("webui", "assets", "dragsort.js")
 RULES = src(".trae", "rules", "project_rules.md")
 
 # ---- A. LH rail ---------------------------------------------------------------
-check("A1 the rail is a named block (rail-head / rail-workspace / rail-list)",
+check("A1 the rail is a named block (rail-head / rail-tools / rail-list)",
       '<section class="rail">' in UI and 'class="rail-head"' in UI
-      and 'class="rail-workspace"' in UI and 'class="card rail-list"' in UI)
+      and 'class="rail-tools" role="toolbar"' in UI and 'class="card rail-list"' in UI)
 check("A2 the ▲/▼ tools are INSIDE the Sessions h2 (one header row)",
       '<h2>Sessions<span class="srail-tools">' in UI)
 check("A3 .srail-tools no longer pushes itself to the far edge",
       "margin-left: auto" not in UI.split(".srail-tools {")[1].split("}")[0]
       if ".srail-tools {" in UI else False,
       UI.split(".srail-tools {")[1].split("}")[0].strip() if ".srail-tools {" in UI else "")
-check("A4 the workspace block groups new + search + activity + filter",
-      UI.index('id="sessionCreate"') < UI.index('id="session-search"')
+check("A4 the top block is ONE toolbar row (＋ · search · activity · filter)",
+      'class="rail-tools" role="toolbar"' in UI
+      and UI.index('id="railNew"') < UI.index('id="railSearch"')
       < UI.index('id="runsBar"') < UI.index('id="hide-empty"'))
-check("A5 v495 keeps the create row contract (input + newSession button)",
-      'id="sessionCreate" class="session-create' in UI
-      and 'data-call="newSession"' in UI)
+check("A5 the session name is asked in the DIALOG, not in a permanent input",
+      'id="railNew" data-call="newSession"' in UI
+      and 'id="sessInp"' not in UI and 'id="nsTitle"' in UI)
 check("A6 ONLY the list scrolls — the header tools never scroll away",
       "overflow: hidden" in UI.split("aside {")[1].split("}")[0]
       and "overflow-y: auto" in UI.split("aside .rail-list {")[1].split("}")[0])

@@ -214,18 +214,27 @@
   aside .rail { display: flex; flex-direction: column; gap: 10px; min-height: 0;
     flex: 1 1 auto; }
   aside .rail-head { display: flex; align-items: center; min-height: 20px; flex: 0 0 auto; }
-  aside .rail-workspace { display: flex; flex-direction: column; gap: 8px;
-    padding: 10px; border: 1px solid var(--line); border-radius: 10px;
-    background: color-mix(in srgb, var(--panel) 45%, transparent); flex: 0 0 auto; }
-  /* v629: ONLY the list scrolls. The header + workspace stay put, so revealing a
+  /* v631: ONE tight toolbar row in editor/sidebar rhythm — ＋ · 🔍 · activity ·
+     hide-empty. The lost session NAME is asked in the new-session DIALOG, and the
+     search field only appears when the magnifier is pressed: two permanent input
+     rows used to eat ~120px at the top of the rail. */
+  aside .rail-tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  aside .rail-tools .rail-btn { width: 26px; height: 26px; padding: 0; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; line-height: 1; background: transparent; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+  aside .rail-tools .rail-btn:hover { color: var(--txt); border-color: var(--acc); }
+  aside .rail-tools .rail-btn[aria-expanded="true"] { color: var(--txt); border-color: var(--acc); }
+  aside .rail-tools .runs-bar { width: auto; margin: 0; padding: 3px 8px; flex: 1 1 auto; }
+  aside .rail-tools .runs-bar .rb-caret { margin-left: 0; }
+  aside .rail-filter { display: inline-flex; align-items: center; gap: 5px; margin: 0;
+    font-size: 10.5px; color: var(--dim); cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
+  aside .rail-search { flex: 0 0 auto; }
+  /* v629: ONLY the list scrolls. The header + tools stay put, so revealing a
      session (🎯 / Jobs → session) can never scroll the ▲/▼ tools and the filters
      out of view. */
   aside .rail-list { margin: 0; padding: 8px; flex: 1 1 auto; min-height: 0;
     overflow-y: auto; overflow-x: hidden; }
-  aside .rail-filter { margin: 0; }
-  .session-create { width: 100%; min-width: 0; }
-  #sessInp { flex: 1 1 0; min-width: 0; }
-  .session-create > button { flex: 0 0 auto; white-space: nowrap; }
   aside h2 { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin: 0;
     text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
@@ -1711,28 +1720,30 @@
       <header class="rail-head">
         <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups" aria-label="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups" aria-label="expand all groups">▼</button></span></h2>
       </header>
-      <div class="rail-workspace">
-        <div id="sessionCreate" class="session-create u-df u-g6">
-          <input id="sessInp" class="inp u-p610 u-fs12" placeholder="new session title…" aria-label="new session title">
-          <button type="button" class="ghost" data-call="newSession" aria-label="create new session">+ new</button>
-        </div>
-        <input id="session-search" class="inp u-w100 u-p610 u-fs12" placeholder="search sessions…" aria-label="search sessions">
+      <div class="rail-tools" role="toolbar" aria-label="session tools">
+        <button type="button" class="rail-btn" id="railNew" data-call="newSession"
+                title="new session" aria-label="new session">＋</button>
+        <button type="button" class="rail-btn" id="railSearch" aria-expanded="false"
+                aria-controls="railSearchRow" title="search sessions" aria-label="search sessions">🔍</button>
         <button type="button" id="runsBar" class="runs-bar" aria-controls="runsPanel"
                 aria-expanded="false"
                 title="agents in flight · sessions that finished while you were elsewhere">
           <span class="rb-dot" aria-hidden="true"></span>
-          <span class="rb-run"><b id="runsBarRun">0</b> running</span>
-          <span class="rb-done">🔔 <b id="runsBarDone">0</b> finished</span>
+          <span class="rb-run"><b id="runsBarRun">0</b> run</span>
+          <span class="rb-done" title="finished while you were elsewhere">🔔 <b id="runsBarDone">0</b></span>
           <span class="rb-caret" aria-hidden="true">▾</span>
         </button>
-        <div id="runsPanel" class="runs-panel" hidden role="dialog" tabindex="-1"
-             aria-label="agents in flight and unread sessions">
-          <div class="rp-head"><b>Agents &amp; unread</b>
-            <button type="button" class="rp-x" id="runsPanelClose" aria-label="close panel">×</button>
-          </div>
-          <div class="rp-body" id="runsPanelBody"></div>
+        <label class="rail-filter" title="hide sessions with no messages"><input type="checkbox" id="hide-empty"><span>hide empty</span></label>
+      </div>
+      <div id="railSearchRow" class="rail-search" hidden>
+        <input id="session-search" class="inp" placeholder="search sessions…" aria-label="search sessions">
+      </div>
+      <div id="runsPanel" class="runs-panel" hidden role="dialog" tabindex="-1"
+           aria-label="agents in flight and unread sessions">
+        <div class="rp-head"><b>Agents &amp; unread</b>
+          <button type="button" class="rp-x" id="runsPanelClose" aria-label="close panel">×</button>
         </div>
-        <label class="remaining rail-filter"><input type="checkbox" id="hide-empty"> hide empty</label>
+        <div class="rp-body" id="runsPanelBody"></div>
       </div>
       <div class="card rail-list">
         <div id="sessions"></div>
@@ -1926,7 +1937,6 @@
         <button class="insp-hd" data-call="toggleInsp" data-args='["rules"]'>Rules<span class="ihd-s" id="sRoles"></span></button>
         <div class="insp-body">
         <div class="card">
-          <div class="remaining u-mb6">Full prompt stack for this session. <b>ROLE.md</b> is editable here (same as the AGENTS panel PROMPT). Global and project <b>Global_rules.md / Project_rules.md</b> are read-only references — edit them in Settings → Rules.</div>
           <div id="rulesWho" class="rwho"></div>
           <div id="rulesList"></div>
         </div>
@@ -2028,14 +2038,14 @@
           <div class="remaining"><b>Why routing.yaml is listed:</b> it is the persisted source of truth for role models, patterns, and fallback chains. Settings → Models edits other role routes and patterns; Settings → Subagents owns <code>roles.subagent.model</code> and <code>roles.subagent.fallbacks</code>. This editor is the raw advanced fallback, not a second config. Code defaults have empty role mappings and no fallback chain; the shipped <code>config/routing.yaml</code> supplies role routes.</div>
         </div>
         <div class="card">
-          <div class="remaining">Use the structured forms above (and the dedicated panels in Hooks / Harness / Tools / Models / Subagents / MCP / Knowledge) for every normal change: they validate the values and write the right overlay. This raw editor is the complete fallback for anything not yet modelled. A save is rejected when the text is not valid YAML; the previous version is kept in <code>data/config-backups/</code>.</div>
+          <div class="remaining">Fallback for anything the forms do not model. An invalid save is rejected; the previous version stays in <code>data/config-backups/</code>.</div>
         </div>
       </div>
       <div class="sw-cat" data-cat="diagnostics" hidden>
         <h2>Settings diagnostics</h2>
         <div class="card">
           <div class="remaining" id="diagSummary" role="status" aria-live="polite">loading…</div>
-          <div class="remaining u-mt6">Checks run locally. They do not call an LLM or test remote credentials; only current configuration problems are listed.</div>
+          <div class="remaining">Local checks only — no LLM, no remote credentials.</div>
           <button class="ghost u-mt8" data-call="loadDiagnostics" title="rerun settings checks">↻ run checks</button>
         </div>
         <div id="diagIssues" class="u-mt8"></div>
@@ -2060,7 +2070,7 @@
         </details>
         <h2>Backlog review · obsolete / implemented / needs an update <span id="impRevCount" class="remaining"></span></h2>
         <div class="card">
-          <div class="remaining u-m006">An LLM audits every proposal and distilled lesson against the CURRENT code (the codebase index supplies the evidence) and returns <b>keep · implemented · obsolete · update · conflict</b>. Nothing is applied: an <b>update</b> carries the rewritten text; you (or the agent) decide. The same pass is available to any agent as the <code>improve</code> tool with <code>scope=review</code>.</div>
+          <div class="remaining u-m006">An LLM audits each proposal against the current code: <b>keep · implemented · obsolete · update · conflict</b>. Nothing is applied — you decide.</div>
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
             <label class="remaining u-df u-g6 u-aic">max artifacts
               <input id="impReviewLimit" type="number" min="1" max="60" value="24" class="inp" style="width:70px;padding:6px 8px;font-size:12px"></label>
@@ -2616,7 +2626,7 @@
       </div>
       <div class="sw-cat" data-cat="compaction" hidden>
         <h2>Compaction · shared policy</h2>
-        <div class="remaining u-mb8">Automatic and manual compaction use the same global policy. The summarizer reads the full old transcript in bounded parts; this is not session-specific. Click a config filename to open it in the editor.</div>
+        <div class="remaining u-mb8">Global policy — not session-specific. Click a config filename to open it.</div>
         <div class="setFormsHost"></div>
       </div>
       <div class="sw-cat" data-cat="appearance" hidden>
@@ -5232,7 +5242,7 @@ async function loadSessions() {
 }
 /* JAG-117: creating a session asks which local folder to open it in. */
 async function newSession() {
-  $("nsTitle").value = $("sessInp").value.trim() || ("session " + new Date().toLocaleTimeString());
+  $("nsTitle").value = "session " + new Date().toLocaleTimeString();
   $("nsResult").textContent = "";
   /* JAG-126: default the new session to the folder you are working in (else the
    * global default / last used). Never a hardcoded repo path. */
@@ -5393,7 +5403,6 @@ async function createNewSession() {
   if (TOKEN) p.set("token", TOKEN);
   const s = await api("GET", "/api/sessions/new?" + p.toString());
   if (s.error) { $("nsResult").textContent = "error: " + s.error; return; }
-  $("sessInp").value = "";
   sessionId = s.id; localStorage.setItem("sf_session", sessionId);
   _syncAttachmentBusyUI();
   _sessModel[s.id] = "";
@@ -13064,6 +13073,11 @@ function revealActiveSession() {
   }
   _forceExpandActive = true;                              // (b) expand its group(s) + re-render
   const sec = $("session-search"); if (sec && sec.value) sec.value = "";   // don't hide it behind a filter
+  // v631: a cleared filter must not leave an empty search row open over the list.
+  if (sec && sec.value === "") {
+    const row = $("railSearchRow"); if (row) row.hidden = true;
+    const btn = $("railSearch"); if (btn) btn.setAttribute("aria-expanded", "false");
+  }
   Promise.resolve(loadSessions()).then(() =>
     requestAnimationFrame(() => setTimeout(_centerActiveRow, 60)));
 }
@@ -13342,7 +13356,25 @@ $("inp").addEventListener("paste", e => {
   });
   attachFiles(named);
 });
-$("sessInp").addEventListener("keydown", e => { if (e.key === "Enter") newSession(); });
+/* v631: the rail toolbar — the magnifier opens the search row ON DEMAND (Esc
+   closes it and clears the filter), and the session name is asked in the
+   new-session DIALOG (＋ → newSession), so no permanent input row sits in the
+   rail. Both controls keep their old ids and behaviour. */
+(function bindRailTools() {
+  const btn = $("railSearch"), row = $("railSearchRow"), inp = $("session-search");
+  if (!btn || !row || !inp) return;
+  const setOpen = (open) => {
+    row.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) inp.focus();
+  };
+  btn.addEventListener("click", () => setOpen(row.hidden));
+  inp.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (inp.value) { inp.value = ""; loadSessions(); }
+    setOpen(false);
+  });
+})();
 $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
