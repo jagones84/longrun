@@ -2320,6 +2320,21 @@ def handle(handler, method, path, qs, body):
             keep_pending = str(qs.get("keep_pending", "1")).lower() not in ("0", "false", "no")
             return _r(handler, 200, approvals.clear(qs.get("status"),
                                                     keep_pending=keep_pending))
+        # v651: finished background runs stayed in RUNS (and in the "running now"
+        # count) until the 200-item cap evicted them. Dropping the finished ones is
+        # an explicit action, never a silent cap.
+        if path == "/api/agent/runs":
+            with RUNS_LOCK:
+                _victims = [rid for rid, st in RUNS.items()
+                            if str(getattr(st, "status", "")) in ("done", "aborted", "error")]
+                for rid in _victims:
+                    RUNS.pop(rid, None)
+            return _r(handler, 200, {"ok": True, "removed": len(_victims),
+                                     "kept": len(RUNS)})
+        # v651: decided proposals were listed forever with no way to remove them.
+        if path == "/api/improvement":
+            from longrun.util import improve as _improve
+            return _r(handler, 200, _improve.clear_decided())
         return False
     return False
 

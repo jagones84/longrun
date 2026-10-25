@@ -392,6 +392,40 @@ def list_proposals(status=None):
     return out
 
 
+def clear_decided():
+    """Delete DECIDED proposals from the store; pending ones are kept.
+
+    v651: the panel listed decided proposals forever and nothing could remove them
+    (operator: "pending proposal che è? non si annulla mai, rimarrà per sempre
+    così?"). The audit ledger already records every proposal and every decision,
+    so the JSON file is redundant history — removed on request, never silently.
+    """
+    removed, kept = 0, 0
+    try:
+        names = sorted(os.listdir(PROPOSAL_DIR))
+    except OSError:
+        return {"ok": True, "removed": 0, "kept": 0}
+    for fn in names:
+        if not fn.endswith(".json"):
+            continue
+        rec = get_proposal(fn[:-5])
+        if not rec:
+            continue
+        if rec.get("status") == "pending":
+            kept += 1
+            continue
+        try:
+            os.remove(os.path.join(PROPOSAL_DIR, fn))
+            removed += 1
+        except OSError:
+            pass
+    try:
+        ledger_add("proposals_cleared", removed=removed, kept=kept)
+    except Exception:  # noqa: BLE001 — the audit must never break the cleanup
+        pass
+    return {"ok": True, "removed": removed, "kept": kept}
+
+
 def dedupe_proposals(rows):
     """One proposal per (scope, content); a pending duplicate wins over decided.
 

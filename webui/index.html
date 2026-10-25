@@ -282,7 +282,11 @@
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
   .task.fresh { animation: pop .5s ease; border: 1px dashed rgba(181,108,255,.4); }
   @keyframes pop { from { transform: scale(.96); opacity: .3; } }
-  .remaining { color: var(--dim); font-size: 11px; }
+  .remaining { color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }
+  /* v651: a path / model ref printed in a card must WRAP inside it, never bleed
+     over the neighbouring panel (operator: "che è sto schifo?" on a file list
+     that ran past the card edge). */
+  .diag-issue { overflow-wrap: anywhere; }
 
   /* sessions */
   /* JAG-389: the session NAME goes on its OWN full-width line BELOW the badges,
@@ -538,9 +542,17 @@
   .imp-row summary { cursor: pointer; list-style: none; }
   .imp-row summary::-webkit-details-marker { display: none; }
   a.impfile { display: inline-block; color: var(--hc, #7c8cff); text-decoration: none;
-    border-bottom: 1px dashed currentColor; font-size: 11px; margin: 1px 2px; }
+    border-bottom: 1px dashed currentColor; font-size: 11px; margin: 1px 2px;
+    max-width: 100%; overflow-wrap: anywhere; }   /* v651: a long path wraps inside its card */
   a.impfile:hover { text-decoration: underline; }
+  /* v651: one row of file chips that wraps. Before this the list was a run of
+     inline links with no wrapping, so a data-home path bled OUTSIDE the card and
+     over the Inspector (operator: "che è sto schifo? file duplicati?"). */
+  #impFiles { display: flex; flex-wrap: wrap; gap: 2px 10px; }
   .imp-s { font-size: 12px; }
+  /* v651: a label with its own action on the right (decided history, finished
+     runs) — the exit is visible while the list below it stays collapsed. */
+  .hdrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .imp-h { font-size: 12px; }
   .imp-body { white-space: pre-wrap; font-size: 12px; color: var(--dim); margin: 3px 0; }
   .imp-diff { font-size: 11px; line-height: 1.35; max-height: 160px; overflow: auto;
@@ -2012,7 +2024,6 @@
           <div class="acts">
             <span id="taskCount" class="remaining"></span>
             <button class="lnk" data-call="showConstellation" title="open the selected task in the Control deck's constellation diagram">constellation</button>
-            <button class="lnk" data-call="resetRunGraph" title="clear the current run graph">reset graph</button>
             <button class="lnk" data-call="clearSession" title="clear chat + tasks">clear chat</button>
             <button class="lnk" data-call="resetPlan" title="clear this session's task list (start a new task)">reset list</button>
           </div>
@@ -2181,6 +2192,10 @@
           <summary class="set-t u-ptr">Pending proposals <span id="impPropCount" class="remaining"></span></summary>
           <div id="impProps"></div>
         </details>
+        <!-- v651: decided history is its OWN card, not a child of the pending card.
+             Nested, it was only reachable by expanding "Pending proposals" — the
+             history and its clear exit were both invisible while collapsed. -->
+        <div id="impDecided"></div>
         <details class="card">
           <summary class="set-t u-ptr" title="An LLM audits each proposal against the current code: keep · implemented · obsolete · update · conflict. Nothing is applied — you decide.">Backlog review <span id="impRevCount" class="remaining"></span></summary>
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
@@ -2709,8 +2724,8 @@
           <div class="u-df u-g6 u-mt6 u-fww">
             <button class="ghost" data-call="kbAddSource">+ add + index</button>
             <button class="ghost" data-call="kbReembed" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
-            <button class="ghost" data-call="kbFiles" title="which sources are in this notebook">sources</button>
-            <button class="ghost" data-call="kbLoadSources" title="reload sources">↻</button>
+            <button class="ghost" data-call="kbFiles" title="list the indexed FILES in this notebook (one row per file — a folder or PDF source can be many files)">files</button>
+            <button class="ghost" data-call="kbLoadSources" title="reload the sources of this notebook">↻ sources</button>
           </div>
           <div id="kbSources" class="u-mt6"></div>
         </div>
@@ -7312,14 +7327,9 @@ async function resetPlan() {
   who("ai", "↺ plan reset");
   loadPlan(); loadGraph();
 }
-async function resetRunGraph() {
-  const rid = listRunId();
-  if (!rid) { who("ai", "no run graph to reset"); return; }
-  if (!(await confirmDelete("clear the current run graph?"))) return;
-  await api("POST", "/api/runs/" + encodeURIComponent(rid) + "/graph/reset", {});
-  who("ai", "↺ run graph reset");
-  loadGraph();
-}
+/* v651: `reset graph` and `reset list` both ended in taskgraph.reset() on the SAME
+   key — a chat run id IS its session id — so the panel offered two destructive
+   buttons for one store. One control: resetPlan(). */
 /* JAG-91/JAG-127: LLM selector — ALL providers' models, grouped, keyboard-navigable,
    persisted in localStorage (ref = "<provider>:<model>"). */
 let _modelsCache = [];   // flat [{ref,id,provider,pname,local,available,ctx,loaded}]
@@ -8044,6 +8054,18 @@ async function runImprovementReview() {
     if (btn) { btn.disabled = false; btn.textContent = "🧠 review with LLM"; }
   }
 }
+/* v651: delete the DECIDED proposals. Pending ones survive, and the ledger keeps
+   the audit trail, so this is history cleanup, not data loss. */
+async function clearDecidedProposals() {
+  if (!await confirmDelete("delete the decided proposals? pending ones are kept, and the ledger keeps the audit trail")) return;
+  try {
+    const r = await api("DELETE", "/api/improvement");
+    if (r && r.error) throw new Error(r.error);
+    toast("proposals: removed " + ((r && r.removed) || 0) + " decided");
+  } catch (e) { toast("clear failed: " + e); }
+  loadImprovement();
+  loadApprovals();
+}
 async function loadImprovement() {
   const props = $("impProps"), ledgerBox = $("impLedger"), mem = $("impMemory"), recs = $("impRecords");
   if (!props) return;
@@ -8118,15 +8140,30 @@ async function loadImprovement() {
     }
   }
   // ---- files the loop reads & writes (clickable, on top) ----
+  // v651: the same file used to arrive in TWO forms — `data/memory/agent_notes.md`
+  // from the fixed list and `/home/<user>/.longrun/data/memory/agent_notes.md`
+  // from a ledger write — so the panel listed one file twice (operator: "che è sto
+  // schifo? file duplicati?"). One object, one row: every path is normalised
+  // against the data home BEFORE it becomes a key.
+  const _fkey = p => {
+    const s = String(p || "").trim();
+    const root = String(_impRoot || "").replace(/\/+$/, "");
+    return (root && s.startsWith(root + "/")) ? s.slice(root.length + 1) : s.replace(/^\.\//, "");
+  };
   const _fmap = new Map();
+  const _fadd = (p, kind) => {
+    const k = _fkey(p);
+    if (!k) return;
+    if (!_fmap.has(k) || (!_fmap.get(k) && kind)) _fmap.set(k, kind || "");
+  };
   ((d.files || []).length
     ? d.files
     : [{ path: "data/improvement/ledger.jsonl" }, { path: "data/memory/agent_notes.md" },
        { path: "data/memory/user_memories.md" }, { path: "data/proposals" }]
-  ).forEach(f => { const p = f.path || f; if (p) _fmap.set(p, f.kind || ""); });
-  (d.records || []).forEach(r => { if (r.path) _fmap.set(r.path, _fmap.get(r.path) || "memory"); });
-  (d.proposals || []).forEach(p => { const pp = (p.preview || {}).path || p.target_path; if (pp) _fmap.set(pp, _fmap.get(pp) || "proposal"); });
-  (d.ledger || []).forEach(e => (e.wrote || []).forEach(w => { if (w.path) _fmap.set(w.path, _fmap.get(w.path) || (w.kind || "written")); }));
+  ).forEach(f => _fadd(f.path || f, f.kind || ""));
+  (d.records || []).forEach(r => _fadd(r.path, "memory"));
+  (d.proposals || []).forEach(p => _fadd((p.preview || {}).path || p.target_path, "proposal"));
+  (d.ledger || []).forEach(e => (e.wrote || []).forEach(w => _fadd(w.path, w.kind || "written")));
   const fbox = $("impFiles");
   if (fbox) {
     const arr = [..._fmap.keys()].sort();
@@ -8171,9 +8208,26 @@ async function loadImprovement() {
   });
   // ---- decided history (so an all-decided panel is not empty) ----
   const decided = (d.proposals || []).filter(p => p.status !== "pending");
-  if (decided.length) {
+  const decBox = $("impDecided");
+  if (decBox) decBox.innerHTML = "";
+  if (decided.length && decBox) {
+    // v651: a decided proposal used to stay in this list forever with no way to
+    // remove it ("non si annulla mai, rimarrà per sempre così?"). Deleting the
+    // files is real: the audit ledger already holds every proposal and decision.
+    // The card is TOP-LEVEL (not nested in the pending card) and its exit sits in
+    // the header row, not inside the collapsed body: an exit the operator has to
+    // expand to find is the same dead end.
+    const hd = document.createElement("div");
+    hd.className = "hdrow";
+    hd.innerHTML = '<span class="imp-s">decided (' + decided.length + ') — proposal history</span>';
+    const clr = document.createElement("button");
+    clr.className = "ghost"; clr.textContent = "clear decided";
+    clr.title = "delete the decided proposals (pending ones are kept; the ledger keeps the audit trail)";
+    clr.onclick = () => clearDecidedProposals();
+    hd.appendChild(clr); decBox.appendChild(hd);
     const det = document.createElement("details"); det.className = "imp-card";
-    det.innerHTML = '<summary class="imp-s">decided (' + decided.length + ') — proposal history</summary>';
+    det.innerHTML = '<summary class="remaining" style="cursor:pointer">show the ' +
+      decided.length + ' decided</summary>';
     const box = document.createElement("div"); box.className = "imp-ledger";
     decided.forEach(p => {
       const row = document.createElement("div"); row.className = "imp-row";
@@ -8183,7 +8237,7 @@ async function loadImprovement() {
         esc(String(p.content || "").slice(0, 160));
       box.appendChild(row);
     });
-    det.appendChild(box); props.appendChild(det);
+    det.appendChild(box); decBox.appendChild(det);
   }
   // ---- distilled lessons (auto-written memory) — grouped by DAY, files clickable ----
   if (recs) {
@@ -8627,7 +8681,14 @@ async function loadRunning() {
   let tools = [], runs = [];
   try { tools = ((await api("GET", "/api/tools/running")) || {}).running || []; } catch (e) {}
   try { runs = ((await api("GET", "/api/agent/runs")) || {}).runs || []; } catch (e) {}
-  if (cnt) cnt.textContent = (tools.length + runs.length) + " active";
+  // v651: "N active" counted EVERY run in the store, finished ones included, so
+  // the rail claimed activity from old `done`/`aborted` turns and could never be
+  // cleared (operator: "non si annulla mai"). Active is active; the finished ones
+  // live in a collapsed group with their own delete.
+  const _isDone = r => ["done", "aborted", "error"].includes(String(r.status));
+  const activeRuns = runs.filter(r => !_isDone(r));
+  const doneRuns = runs.filter(_isDone);
+  if (cnt) cnt.textContent = (tools.length + activeRuns.length) + " active";
   box.innerHTML = "";
   if (!tools.length && !runs.length) { box.textContent = "nothing running"; return; }
   const mkRow = (label, title, actions) => {
@@ -8653,31 +8714,49 @@ async function loadRunning() {
          await api("POST", "/api/tools/cancel", { job: t.job });
          toast("cancel requested: " + t.job); loadRunning();
        } }])));
-  runs.forEach(r => {
+  activeRuns.forEach(r => {
     const id = r.id || r.run_id;
-    const terminal = ["done", "aborted", "error"].includes(String(r.status));
-    const acts = [];
-    if (!terminal) {
-      acts.push({
-        t: r.status === "paused" ? "resume" : "pause",
-        title: "POST /api/agent/control",
-        fn: async () => {
-          await api("POST", "/api/agent/control",
-                    { runId: id, action: r.status === "paused" ? "resume" : "pause" });
-          loadRunning();
-        } });
-      acts.push({
-        t: "abort", title: "stop this background run (POST /api/agent/control)",
-        fn: async () => {
-          if (!(await confirmDelete("abort the background run " + id + "?"))) return;
-          await api("POST", "/api/agent/control", { runId: id, action: "abort" });
-          loadRunning();
-        } });
-    }
+    const acts = [{
+      t: r.status === "paused" ? "resume" : "pause",
+      title: "POST /api/agent/control",
+      fn: async () => {
+        await api("POST", "/api/agent/control",
+                  { runId: id, action: r.status === "paused" ? "resume" : "pause" });
+        loadRunning();
+      } }, {
+      t: "abort", title: "stop this background run (POST /api/agent/control)",
+      fn: async () => {
+        if (!(await confirmDelete("abort the background run " + id + "?"))) return;
+        await api("POST", "/api/agent/control", { runId: id, action: "abort" });
+        loadRunning();
+      } }];
     box.appendChild(mkRow(
       "⚙ " + id + " · " + (r.status || "?") + " · " + String(r.goal || "").slice(0, 60),
       r.goal, acts));
   });
+  if (doneRuns.length) {
+    // v651: the exit sits ABOVE the collapsed list (same rule as `clear decided`),
+    // so a finished run is droppable without expanding anything first.
+    const hd = document.createElement("div");
+    hd.className = "hdrow"; hd.style.marginTop = "8px";
+    hd.innerHTML = '<span class="remaining">finished (' + doneRuns.length + ')</span>';
+    const clr = document.createElement("button");
+    clr.className = "ghost"; clr.textContent = "clear finished";
+    clr.title = "drop the finished runs from the list (DELETE /api/agent/runs) — active ones are never touched";
+    clr.onclick = async () => {
+      if (!(await confirmDelete("clear the " + doneRuns.length + " finished run(s)?"))) return;
+      await api("DELETE", "/api/agent/runs");
+      loadRunning();
+    };
+    hd.appendChild(clr); box.appendChild(hd);
+    const det = document.createElement("details");
+    det.innerHTML = '<summary class="remaining" style="cursor:pointer">show the finished runs</summary>';
+    doneRuns.forEach(r => det.appendChild(mkRow(
+      "· " + (r.id || "") + " · " + (r.status || "?") + " · " +
+      String(r.goal || "").slice(0, 60), r.goal, [])));
+    box.appendChild(det);
+  }
+  if (!tools.length && !activeRuns.length && !doneRuns.length) box.textContent = "nothing running";
 }
 
 function connectFeed() {

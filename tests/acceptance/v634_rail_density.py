@@ -81,9 +81,13 @@ check("C3 the node verb and replan sit beside the same field (v636 merged them)"
       'data-call="addTask"' in UI and 'data-call="replanGraph"' in UI
       and ">↻</button>" in UI and 'id="taskInp"' not in UI)
 check("C4 maintenance actions are inline links, not a button wall",
+      # v651 re-pin: `reset graph` and `reset list` were two buttons for ONE store
+      # (a chat run id IS its session id), so the duplicate is gone on purpose.
+      # The requirement — maintenance as inline links — is unchanged.
       'class="lnk" data-call="showConstellation"' in UI
-      and 'class="lnk" data-call="resetRunGraph"' in UI
-      and 'class="lnk" data-call="resetPlan"' in UI)
+      and 'class="lnk" data-call="resetPlan"' in UI
+      and 'class="lnk" data-call="clearSession"' in UI
+      and "resetRunGraph" not in UI)
 check("C5 the empty-state sentence about the run graph is gone",
       "run graph: — (send a request to generate it)" not in UI)
 check("C6 the live count element survives",

@@ -1947,6 +1947,19 @@ class Handler(BaseHTTPRequestHandler):
             all_ledger = improve_mod.ledger_tail(500)
             meaningful = [e for e in all_ledger
                           if (e.get("kind") != "turn") or (e.get("wrote") or [])]
+            # v651: ONE object, ONE form. Ledger rows written before the DATA HOME
+            # move store absolute paths, so the same file reached the WebUI as
+            # `/home/<u>/.longrun/data/x` AND `data/x` and the panel listed it twice.
+            # The API now emits data-home-relative paths only; the WebUI resolves
+            # them against `root` when it opens the editor.
+            _home_root = str(_paths.HOME_DIR).rstrip("/")
+            for _e in meaningful:
+                for _w in (_e.get("wrote") or []):
+                    if not isinstance(_w, dict):
+                        continue
+                    _p = str(_w.get("path") or "")
+                    if _home_root and _p.startswith(_home_root + "/"):
+                        _w["path"] = _p[len(_home_root) + 1:]
             try:
                 from longrun.core import matrix as _mtx_imp
                 _mtx_info = _mtx_imp.status()
