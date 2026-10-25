@@ -88,10 +88,10 @@ check("B3 the summary counts self-generated vs matrix vs uploaded vs registered"
 
 # ---- C) org chart -> Agents panel focus ------------------------------------
 check("C1 AgentsView has a focusAgent() that expands the team group",
-      "focusAgent(sid)" in orbit and "this.closed.delete(id)" in orbit)
-check("C2 it highlights + scrolls to the row",
+      "focusAgent(sid, scroll)" in orbit and "this.closed.delete(id)" in orbit)
+check("C2 it highlights always, scrolls ONLY when asked (one-shot, poll-safe)",
       "_applyFocus()" in orbit and "classList.add(\"rowsel\")" in orbit
-      and "scrollIntoView" in orbit)
+      and "scrollIntoView" in orbit and "_scrollNext" in orbit)
 check("C3 the rowsel style exists",
       "tr.rowsel" in orbit)
 check("C4 a single org-chart click also focuses the agent in the Agents panel",

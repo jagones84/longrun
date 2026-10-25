@@ -31,10 +31,10 @@ check("0 the Browser tab + its code are removed",
       and "function _renderBrowserUrls" not in HTML and '["browser", "Browser"]' not in HTML)
 
 # ------------------------------------------------------------------ 1) org chart click
-check("1a org-chart single click also highlights + scrolls the agent in the AGENTS table",
-      "this.agents.focusAgent(a.session)" in ORBIT and "focusAgent(sid)" in ORBIT
+check("1a org-chart single click also highlights the agent in the AGENTS table (v615: select, no camera — scroll only when asked)",
+      "this.agents.focusAgent(a.session)" in ORBIT and "focusAgent(sid, scroll)" in ORBIT
       and "_applyFocus()" in ORBIT and 'classList.add("rowsel")' in ORBIT
-      and "scrollIntoView" in ORBIT)
+      and "scrollIntoView" in ORBIT and "_scrollNext" in ORBIT)
 check("1b it still opens the constellation (onPick)",
       "if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);" in ORBIT)
 

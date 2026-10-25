@@ -703,18 +703,22 @@ class AgentsView {
     fillSelect($("rtAgent"), withId, "agent…");
     this._applyFocus();
   }
-  /* JAG-451: highlight + scroll to the agent picked elsewhere (e.g. the org chart)
-     so the operator lands on the right row, ready to edit it. */
-  focusAgent(sid){
+  /* JAG-451: highlight the agent picked elsewhere (e.g. the org chart).
+     v615: selection NEVER moves a camera by default — scroll=true is ONLY for
+     explicit navigation (the Sessions rail "focus agent" menu). Every poll
+     re-render calls _applyFocus, so the scroll is one-shot (_scrollNext). */
+  focusAgent(sid, scroll){
     if (!sid) return;
+    const sc = (scroll === true);
     const a = this.agents.find(x => x.session === sid);
     if (a){
       const ids = (a.teams && a.teams.length) ? a.teams : ["__none__"];
       ids.forEach(id => this.closed.delete(id));   // reveal its (collapsed) team group
     }
     this.focusSid = sid;
+    this._scrollNext = sc;
     this.render();
-    if (this.onHighlight) this.onHighlight(sid);   // JAG-2.9: same node stays selected
+    if (this.onHighlight) this.onHighlight(sid, sc);   // JAG-2.9: same node stays selected
   }
   _applyFocus(){
     const sid = this.focusSid; if (!sid) return;
@@ -723,6 +727,8 @@ class AgentsView {
     body.querySelectorAll("tr[data-sid]").forEach(r => { if (r.getAttribute("data-sid") === sid) tr = r; });
     if (!tr) return;
     tr.classList.add("rowsel");
+    if (!this._scrollNext) return;   // v615: highlight always, scroll only when asked
+    this._scrollNext = false;
     try { tr.scrollIntoView({block: "center", behavior: "smooth"}); }
     catch (e) { try { tr.scrollIntoView(); } catch (e2) {} }
   }
@@ -798,6 +804,7 @@ class AgentsView {
       if (this.onOpenAgent) this.onOpenAgent(b.dataset.go); }; });
     // JAG-2.9: the A-id is the row's handle — click it to select this agent in BOTH
     // the table (persistent .rowsel) and the org chart node (.sel, survives polling).
+    // v615: select ONLY — neither camera moves (scroll defaults to false).
     body.querySelectorAll("tr[data-sid] td.aid [data-org]").forEach(el => { el.onclick = (ev) => {
       ev.stopPropagation();
       const tr = el.closest("tr");
@@ -1239,8 +1246,11 @@ class OrgChartView {
     this.auto = true;   // true while in "fit" mode; a manual zoom/pan turns it off
     this._sig = null; this.drag = null; this._bindControls(); }
   /* JAG-2.9: select one node by session id and remember it, so a poll re-render
-     repaints the same node as .sel instead of silently dropping the highlight. */
-  selectNode(sid){
+     repaints the same node as .sel instead of silently dropping the highlight.
+     v615: NEVER scroll by default (a click in the AGENTS table must not move
+     the organigram camera, and vice versa) — scroll=true is ONLY for explicit
+     navigation (the Sessions rail "focus agent" menu). */
+  selectNode(sid, scroll){
     this.selSid = sid || null;
     if (!this.box) return;
     let hit = null;
@@ -1249,9 +1259,10 @@ class OrgChartView {
       x.classList.toggle("sel", on);
       if (on) hit = x;
     });
-    // JAG-2.9: bring the node into view when the selection arrives from OUTSIDE
-    // (session menu / A-id click) — an off-screen highlight is not a selection.
-    if (hit) { try { hit.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); }
+    // JAG-2.9: bring the node into view ONLY when the selection arrives as an
+    // explicit "take me there" (scroll=true) — an off-screen highlight from a
+    // mere cross-panel selection must not yank the camera.
+    if (scroll === true && hit) { try { hit.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); }
                catch (_) { try { hit.scrollIntoView(); } catch (_) {} } }
   }
   /* JAG-342-zoom: fit / zoom / pan on a transform-scaled inner canvas. */
@@ -1441,6 +1452,7 @@ class OrgChartView {
       this.selectNode(n.dataset.sid);
       // JAG-403h: single click ONLY previews the constellation — no jumping the
       // AGENTS table around (that scroll was pointless and disorienting).
+      // v615: and no moving the organigram camera either — select, don't travel.
       if (this.onPick) this.onPick(this.bySid[n.dataset.sid]);
     };
     n.ondblclick = () => { if (this.onGoTo) this.onGoTo(this.bySid[n.dataset.sid]); };
@@ -2067,7 +2079,7 @@ class OrbitApp {
     this.org = new OrgChartView((a) => { this.tac.open(a, "agent"); if (this.agents && a) this.agents.focusAgent(a.session); }, (a) => this.tac.gotoAgent(a));
     // JAG-2.9: picking a row's A-id selects the matching node in the organigram, and
     // the selection is REMEMBERED (org.selSid) so the 5s poll cannot drop it.
-    this.agents.onHighlight = (sid) => { try { this.org.selectNode(sid); } catch (_) {} };
+    this.agents.onHighlight = (sid, scroll) => { try { this.org.selectNode(sid, scroll); } catch (_) {} };
     if (window.ResizeObserver) new ResizeObserver(() => { try { if (this.org.auto) this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.routines = new RoutinesView(this.api, () => this.refresh());
@@ -2193,11 +2205,12 @@ class OrbitApp {
   }
   /* JAG-2.9: select ONE session everywhere it is visible — the AGENTS row (persistent
      .rowsel, its team group revealed and scrolled into view) and the org chart node
-     (.sel, remembered across the 5s poll). Used by the Sessions rail menu. */
+     (.sel, remembered across the 5s poll). Used by the Sessions rail menu: this is
+     the ONE explicit "take me there", so it keeps scroll=true on both sides (v615). */
   focusAgentSession(sid){
     if (!sid || !this.agents) return;
-    this.agents.focusAgent(sid);
-    if (this.org) this.org.selectNode(sid);
+    this.agents.focusAgent(sid, true);
+    if (this.org) this.org.selectNode(sid, true);
   }
   async refresh(){
     const [tree, jobs, routines, models, sess, tms] = await Promise.all([
