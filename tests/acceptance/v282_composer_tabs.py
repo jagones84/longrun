@@ -49,7 +49,10 @@ check("the model picker is the flexible element and truncates",
       and "#composerBar .mname" in ui)
 check("the model label targets .mname (robust, keeps the caret)",
       'b.querySelector(".mname")' in ui and 'class="mname"' in ui)
-check("the composer placeholder is compact", "⏎ send" in ui)
+# v637: the shortcut left the placeholder (it made the field look like a paragraph);
+# it lives in the send button tooltip, which is the discoverable copy.
+check("the composer documents the send shortcut (button tooltip)",
+      'title="send (Ctrl+Enter)"' in ui)
 # JAG-427: on a narrow width the RIGHT group stays ONE row and the model label shrinks
 # (min-width:34px) instead of wrapping; the popover still re-anchors full-width.
 check("the phone right group stays ONE row and lets the model shrink",

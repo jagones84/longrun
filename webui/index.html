@@ -773,7 +773,7 @@
   .cursor { display: inline-block; width: 8px; height: 14px; background: var(--acc); margin-left: 2px;
     vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  #composer { display: flex; flex-direction: column; gap: 10px; padding: 12px 22px 14px; border-top: 1px solid var(--line); background: rgba(8,10,20,.6); position: relative; flex: 0 0 auto; }
+  #composer { display: flex; flex-direction: column; gap: 8px; padding: 8px 18px 10px; border-top: 1px solid var(--line); background: rgba(8,10,20,.6); position: relative; flex: 0 0 auto; }
   /* JAG-282 / JAG-427: a compact toolbar in two groups (left = attach/queue, right
      = model + actions). It is ALWAYS one row: the model button is the only flexible
      control and shrinks to a tiny glyph, so the bar NEVER grows a second "floor"
@@ -1818,14 +1818,14 @@
       <div id="attachRow" hidden></div>
       <div id="cmdChips" hidden style="flex-wrap:wrap;gap:6px;padding:0 2px 6px 2px"></div>
       <input type="file" id="attachInput" multiple hidden>
-      <textarea id="inp" rows="1" placeholder="Message the agent…   (Ctrl+⏎ send)" autofocus></textarea>
+      <textarea id="inp" rows="1" placeholder="Message…" autofocus></textarea>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
         <div class="cb-left">
           <button class="ghost" id="plusBtn" title="attach a file · commands · skills">＋</button>
           <select id="qmode" title="while a turn is running: queue (wait) or steer (inject now)">
-            <option value="queue">＋ queue</option>
-            <option value="steer">⇢ steer</option>
+            <option value="queue">queue</option>
+            <option value="steer">steer</option>
           </select>
           <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence">🎙</button>
         </div>
@@ -7285,7 +7285,13 @@ let _sessList = [];      // JAG-479: the last /api/sessions payload (real server
 
 /* JAG-157: a session remembers its own LLM; fall back to the global default. */
 function currentModel() { return (sessionId && _sessModel[sessionId]) || localStorage.getItem("sf_model") || ""; }
-function _modelShort(ref) { const i = String(ref || "").indexOf(":"); return i >= 0 ? ref.slice(i + 1) : (ref || ""); }
+/* v637: model refs come as `provider:id` AND `provider/model` — the button shows the
+   LAST segment only (the provider is in the menu and the tooltip). */
+function _modelShort(ref) {
+  const s = String(ref || "");
+  const i = Math.max(s.lastIndexOf(":"), s.lastIndexOf("/"));
+  return i >= 0 ? s.slice(i + 1) : s;
+}
 /* A ref is usable only when the LIVE catalogue still exposes it. The list is
    generic: local providers merge what their server reports, so an installed
    model that was never written into providers.yaml is still selectable. */
@@ -7347,7 +7353,10 @@ async function _ensureAvailableModel() {
 function modelLabel() {
   const b = $("model-btn"); if (!b) return;
   const n = b.querySelector(".mname") || b;
-  n.textContent = _modelShort(currentModel()) || "model";
+  const ref = currentModel();
+  n.textContent = _modelShort(ref) || "model";
+  // the button shows the last segment; the FULL ref stays in the tooltip
+  b.title = ref ? ("choose the LLM for this chat \u2014 now: " + ref) : "choose the LLM for this chat";
 }
 async function loadModels() {
   try {
