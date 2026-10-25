@@ -660,7 +660,7 @@ def _write_prices_yaml(table, source, checked_at):
         "# Read: %s" % checked_at,
         "# Unit: USD per 1M tokens. PEAK (upper-bound) rates: an off-peak call may be",
         "# over-reported, never under-reported. Hand edits survive until the next refresh.",
-        "# Direct rates use exact provider:model keys; see .agent/runbooks/cost-provider-pricing.md.",
+        "# Direct rates use exact provider:model keys; see .agent/docs/runbooks/cost-provider-pricing.md.",
         "",
     ]
     for k in sorted(table):

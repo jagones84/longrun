@@ -131,6 +131,27 @@ def depth_budget(depth):
     return {"rounds": 1, "n_per_round": 5, "max_sources": 5}
 
 
+SEARCH_CHAIN = ["tavily", "brave", "duckduckgo"]
+
+
+def search_providers():
+    """Ordered web-search provider chain (config-overridable).
+
+    Reads ``search_providers`` from the index config overlay; unknown or empty
+    values fall back to SEARCH_CHAIN. Only known names survive, order kept.
+    """
+    try:
+        cfg = _base.load_config() or {}
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    raw = cfg.get("search_providers")
+    if not isinstance(raw, list) or not raw:
+        return list(SEARCH_CHAIN)
+    known = [str(x).strip().lower() for x in raw]
+    out = [x for x in known if x in SEARCH_CHAIN]
+    return out or list(SEARCH_CHAIN)
+
+
 def resolve(model_id):
     """Return (catalogue-entry, model_name) for a web-grounded entry (with a
     ``base_url``), else (None, model_id) so the caller uses provider resolution.

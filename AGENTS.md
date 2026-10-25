@@ -6,8 +6,8 @@ that built this.
 
 ## Read order (do not skip)
 
-> `.agent/` is the maintainer's **local** working memory (`handoff/` + `runbooks/`
-> per-domain manuals, `docs/`, `plans/`, `reports/`) and is **gitignored** — it
+> `.agent/` is the maintainer's **local** working memory (all documents under
+> `docs/` — `handoff/`, `runbooks/`, `plans/`, `reports/` — plus tooling) and is **gitignored** — it
 > exists only in a development checkout, never in a clone. Everything listed below
 > is tracked and present in every clone.
 
@@ -51,4 +51,4 @@ bash tests/battery.sh     # FAST deterministic gate; trust its reported count
   (`git reset --hard`, `git checkout --`, `git clean`) over a dirty worktree.
 - **Temporary agent scripts go to `.agent/trash/`**; do not put them in `scripts/`
   or the repo-root `trash/` data directory.
-- **Maintainers: update the local (gitignored) `.agent/handoff/HANDOFF.md` + the matching `runbooks/*.md` in the same session.**
+- **Maintainers: update the local (gitignored) `.agent/docs/handoff/HANDOFF.md` + the matching `docs/runbooks/*.md` in the same session.**

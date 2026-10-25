@@ -688,43 +688,42 @@ def _public_host(url):
     return True, host
 
 
-def _web_search(query, n):
-    """Tavily/Brave when a key is present, else the keyless DuckDuckGo HTML page."""
-    n = max(1, min(int(n or 5), 10))
-    if not query.strip():
-        return None, "empty query"
+def _search_tavily(query, n):
+    """Tavily provider: keyed API search, None when no key or no hits."""
     tav = _secret("TAVILY_API_KEY")
-    if tav:
-        try:
-            payload = json.dumps({"api_key": tav, "query": query,
-                                  "max_results": n}).encode("utf-8")
-            req = urllib.request.Request("https://api.tavily.com/search", data=payload,
-                                         headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=25) as r:
-                data = json.loads(r.read().decode("utf-8", "replace"))
-            res = [{"title": it.get("title", ""), "url": it.get("url", ""),
-                    "snippet": _strip_html(it.get("content", ""))[:300]}
-                   for it in (data.get("results") or [])]
-            if res:
-                return res, "tavily"
-        except Exception:  # noqa: BLE001
-            pass
+    if not tav:
+        return None
+    payload = json.dumps({"api_key": tav, "query": query,
+                          "max_results": n}).encode("utf-8")
+    req = urllib.request.Request("https://api.tavily.com/search", data=payload,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=25) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    res = [{"title": it.get("title", ""), "url": it.get("url", ""),
+            "snippet": _strip_html(it.get("content", ""))[:300]}
+           for it in (data.get("results") or [])]
+    return res or None
+
+
+def _search_brave(query, n):
+    """Brave provider: keyed API search, None when no key or no hits."""
     brave = _secret("BRAVE_API_KEY")
-    if brave:
-        try:
-            u = ("https://api.search.brave.com/res/v1/web/search?q="
-                 + urllib.parse.quote(query) + "&count=%d" % n)
-            req = urllib.request.Request(u, headers={"Accept": "application/json",
-                                                     "X-Subscription-Token": brave})
-            with urllib.request.urlopen(req, timeout=25) as r:
-                data = json.loads(r.read().decode("utf-8", "replace"))
-            res = [{"title": it.get("title", ""), "url": it.get("url", ""),
-                    "snippet": _strip_html(it.get("description", ""))[:300]}
-                   for it in ((data.get("web") or {}).get("results") or [])]
-            if res:
-                return res, "brave"
-        except Exception:  # noqa: BLE001
-            pass
+    if not brave:
+        return None
+    u = ("https://api.search.brave.com/res/v1/web/search?q="
+         + urllib.parse.quote(query) + "&count=%d" % n)
+    req = urllib.request.Request(u, headers={"Accept": "application/json",
+                                             "X-Subscription-Token": brave})
+    with urllib.request.urlopen(req, timeout=25) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    res = [{"title": it.get("title", ""), "url": it.get("url", ""),
+            "snippet": _strip_html(it.get("description", ""))[:300]}
+           for it in ((data.get("web") or {}).get("results") or [])]
+    return res or None
+
+
+def _search_duckduckgo(query, n):
+    """DuckDuckGo provider: keyless HTML scrape, the last-resort fallback."""
     u = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
     req = urllib.request.Request(u, headers={"User-Agent": _WEB_UA,
                                              "Accept-Language": "it,en;q=0.8"})
@@ -740,7 +739,47 @@ def _web_search(query, n):
                 href = urllib.parse.unquote(found.group(1))
         res.append({"title": _strip_html(title), "url": href,
                     "snippet": _strip_html(snips[i])[:300] if i < len(snips) else ""})
-    return res, "duckduckgo"
+    return res or None
+
+
+def _web_search(query, n, providers=None):
+    """One tool, explicit ordered fall-through chain (v605).
+
+    Tavily/Brave when a key is present, else the keyless DuckDuckGo HTML page.
+    `providers` overrides the configured order (researchcfg.search_providers);
+    unknown names are ignored, a dead provider never kills the search.
+    """
+    n = max(1, min(int(n or 5), 10))
+    if not query.strip():
+        return None, "empty query"
+    if providers is None:
+        try:
+            from longrun.research import researchcfg as _rc
+            providers = _rc.search_providers()
+        except Exception:  # noqa: BLE001
+            providers = ["tavily", "brave", "duckduckgo"]
+    fns = {"tavily": (_search_tavily, "tavily"),
+           "brave": (_search_brave, "brave"),
+           "duckduckgo": (_search_duckduckgo, "duckduckgo")}
+    order = [str(p).strip().lower() for p in (providers or [])]
+    order = [p for p in order if p in fns]
+    if not order:
+        order = ["tavily", "brave", "duckduckgo"]
+    last_engine = "no results"
+    for name in order:
+        fn, engine = fns[name]
+        try:
+            res = fn(query, n)
+        except Exception:  # noqa: BLE001 — a dead provider falls through
+            continue
+        if res:
+            return res, engine
+        last_engine = engine
+    if order == ["duckduckgo"] or "duckduckgo" in order:
+        # DuckDuckGo already ran inside the loop; nothing more to try.
+        return [], last_engine if last_engine != "no results" else "duckduckgo"
+    # Config excluded duckduckgo and keyed providers yielded nothing.
+    return [], last_engine
 
 
 def _web_fetch(url, max_bytes):

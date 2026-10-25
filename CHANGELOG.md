@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Explicit search provider chain (DeerFlow-grade packaging, tool level).**
+  `_web_search` was one hardcoded tavily → brave → duckduckgo body; now one
+  function per provider (`_search_tavily/_search_brave/_search_duckduckgo`)
+  with an ordered fall-through dispatcher. The order is config-overridable
+  (`search_providers` in `config/index.yaml` via `researchcfg`) or per-call
+  (`providers=`); unknown names are ignored, a dead provider never kills the
+  search. Same single `web` tool surface, no new tool, no architecture touched.
+  (Locked by `v605` 6/6; `v402` 28/28 unchanged.)
 - **Todo labels name a real owner (single source of truth).**
   `A155.n40` was a phantom: node `n40`, agent A49, session number J155 —
   no A155 exists. `_todoid` now resolves against the roster

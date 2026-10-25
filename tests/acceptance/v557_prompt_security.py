@@ -12,7 +12,7 @@ Contract locked here:
   * "prompt injection" appears exactly ONCE in the rendered prompt (no overlap
     with task-policy).
 
-Staged in `.agent/plans/tests/` until the implementation lands. Deterministic.
+Staged in `.agent/docs/plans/staged-tests/` until the implementation lands. Deterministic.
 
 Run: python3 v557_prompt_security.py
 """

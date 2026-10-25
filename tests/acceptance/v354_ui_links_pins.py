@@ -189,7 +189,7 @@ check("B6 the always-on state section still names the open step",
 # The tree used to drop every dot-entry, so .Matrix / .agent / .env were absent
 # from the editor: the operator could not see or open them at all.
 _tree_root = os.path.join(TMP, "tree")
-for _rel in (".Matrix/docs/MANUAL.md", ".agent/handoff/HANDOFF.md", ".env", "src.py",
+for _rel in (".Matrix/docs/MANUAL.md", ".agent/docs/handoff/HANDOFF.md", ".env", "src.py",
              "node_modules/pkg/index.js", ".git/config"):
     _fp = os.path.join(_tree_root, *_rel.split("/"))
     os.makedirs(os.path.dirname(_fp), exist_ok=True)
