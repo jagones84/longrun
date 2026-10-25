@@ -99,8 +99,12 @@ check("C2 a session-scoped workspace starts its own watcher",
 with open(os.path.join(ROOT, "webui", "index.html"), encoding="utf-8") as f:
     UI = f.read()
 check("C3 the Codebase panel renders the auto-index state",
-      "Auto-index · <b>" in UI and "_cbAgo(last.at)" in UI
-      and "no watcher for this workspace" in UI)
+      # v640: the label is no longer title-case, and the freshness verdict joined
+      # the same line (two lines said the same thing) — the facts pinned here are
+      # unchanged: the state, when the watcher last ran, and the no-watcher case.
+      "auto-index <b>" in UI and "_cbAgo(last.at)" in UI
+      and "no watcher for this workspace" in UI
+      and "cb-line cb-wrap" in UI)
 
 # --- D: an EMPTY session folder is actionable, never a dead end --------------
 # An agent session owns `<data home>/workspaces/<agent>`, which starts EMPTY: a

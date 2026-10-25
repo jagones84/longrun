@@ -101,7 +101,9 @@ check("C2 no dead references to the removed card remain in the code",
 check("C3 save sits on the same row as the path (vertical space saved)",
       'id="wsSave"' in HTML[HTML.index('id="wsPath"'):HTML.index('id="wsPath"') + 420])
 check("C4 the editor hand-off moved next to browse",
-      'data-call="SparkEditorToggle"' in HTML[HTML.index('id="wsCard"'):HTML.index('<h2>Pending changes')])
+      # v640: the caps "Pending changes" title is gone, so the card boundary is
+      # the end of the Workspace section instead of a heading that no longer exists.
+      'data-call="SparkEditorToggle"' in HTML[HTML.index('id="wsCard"'):HTML.index('data-insp="codebase"')])
 check("C5 the hand-off still goes through ONE function (no inline handler)",
       HTML.count("window.SparkEditor.toggle()") == 1
       and HTML.count('data-call="SparkEditorToggle"') == 2)

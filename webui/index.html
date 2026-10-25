@@ -1285,12 +1285,10 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cb-line:first-child { margin-top: 0; }
   .cb-line b { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
-  .cb-auto { margin-top: 3px; color: var(--dim); font-size: 11px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cb-auto b { color: var(--txt); }
-  .cb-auto .cb-off { color: var(--warn); }
-  .cb-auto .cb-err { color: var(--err); }
-  .cb-stale, .cb-fresh { display: block; margin-top: 3px; font-size: 11px; }
+  /* the live state line may wrap (it carries the whole verdict), values may not */
+  .cb-line.cb-wrap { white-space: normal; }
+  .cb-off { color: var(--warn); }
+  .cb-err { color: var(--err); }
   .cb-stale { color: var(--warn); }
   .cb-fresh { color: var(--ok); }
   .term-tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 6px; }
@@ -2272,10 +2270,12 @@
                     aria-label="open the editor" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔</button>
           </div>
         </div>
-        <h2>Pending changes · <span id="editsStat" class="remaining">…</span></h2>
+        <!-- v640: no caps title. The state is the first item of the action row, so the
+             card reads `NO CHANGES · refresh approve all reject all` on one line. -->
         <div class="card">
           <div id="editsList"><div class="remaining">open a session, then ↻</div></div>
           <div class="acts">
+            <span id="editsStat" class="remaining"></span>
             <button class="lnk" data-call="loadEdits" title="reload the pending changes">refresh</button>
             <button class="lnk" data-call="approveEdits" data-args='[null]' title="keep every changed file as written, clear the list">approve all</button>
             <button class="lnk" data-call="rejectEdits" data-args='[null]' title="restore every changed file to its pre-image">reject all</button>
@@ -2286,6 +2286,15 @@
       <section data-insp="codebase" class="insp-open">
         <button class="insp-hd" data-call="toggleInsp" data-args='["codebase"]'>Codebase<span class="ihd-s" id="sCodebase"></span></button>
         <div class="insp-body">
+        <!-- v640: the search field is the FIRST thing in the section (operator: "il
+             search deve stare sopra"); the status card below is the reference. -->
+        <div class="card">
+          <div class="u-df u-g6">
+            <input id="cbQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search the codebase…" data-key="Enter" data-key-fn="cbSearch">
+            <button class="ghost" data-call="cbSearch" title="search this workspace's code and docs">search</button>
+          </div>
+          <div id="cbResults" class="u-mt6"></div>
+        </div>
         <!-- v638: the section header already carries `48 files · 119 chunks`; the caps
              title and the three stat boxes below it said the same thing three times. -->
         <div class="card cb-card">
@@ -2305,14 +2314,6 @@
                  title="Automatic background indexing (like an IDE): the workspace index is built and kept UP TO DATE off the request path, so an agent's search is instant. Off = index only when you press build. The pre-search refresh still runs on top of this.">
             <input type="checkbox" id="cbAutoIndex"> automatic indexing (background)</label>
           <div id="cbFilesBox" style="margin-top:6px;max-height:220px;overflow:auto"></div>
-        </div>
-        <!-- v636: the input says what it does; the caps title above it was dead space. -->
-        <div class="card">
-          <div class="u-df u-g6">
-            <input id="cbQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search the codebase…" data-key="Enter" data-key-fn="cbSearch">
-            <button class="ghost" data-call="cbSearch" title="search this workspace's code and docs">search</button>
-          </div>
-          <div id="cbResults" class="u-mt6"></div>
         </div>
         </div>
       </section>
@@ -11311,26 +11312,26 @@ async function cbStatus() {
     else if (last.skipped) autoHow = " · " + esc(last.skipped);
     else autoHow = " · last pass " + _cbAgo(last.at) + " · " + count(Number(last.files || 0)) +
       " files · every " + Number(watcher.interval_s || 10) + "s";
-    const autoHtml = '<div class="cb-auto">Auto-index · <b>' + (autoOn ? "on" : "off") + "</b>" + autoHow + "</div>";
-    // The only thing the numbers cannot say: is a file NEWER than the index?
-    // Present only when the watcher could not answer (backend `_watcher_is_current`),
-    // because a warm watcher has just walked the tree itself.
+    // v640: "auto-index …" and the freshness verdict are ONE line — two separate
+    // lines said almost the same thing ("no watcher" then "no re-index needed").
     const fr = s.freshness || null;
     let freshHtml = "";
     if (fr) {
       if (fr.stale) {
         const n = Number(fr.newer_files || 0);
-        freshHtml = '<span class="cb-stale">⚠ ' +
+        freshHtml = ' \u00b7 <span class="cb-stale">\u26a0 ' +
           esc(fr.reason || (count(n) + (n === 1 ? " file is" : " files are") + " newer than the index")) +
-          " · press ⚡ build to re-index</span>";
+          " \u00b7 press \u26a1 build to re-index</span>";
       } else {
         // A warm watcher is proof enough (it just walked the tree), so no scan happened.
         const how = fr.source === "watcher"
           ? "auto-index just walked it"
           : "checked " + count(Number(fr.checked || 0)) + " files" + (fr.partial ? " (partial)" : "");
-        freshHtml = '<span class="cb-fresh">✓ no re-index needed · ' + esc(how) + "</span>";
+        freshHtml = ' \u00b7 <span class="cb-fresh">\u2713 no re-index needed \u00b7 ' + esc(how) + "</span>";
       }
     }
+    const autoHtml = '<div class="cb-line cb-wrap">auto-index <b>' + (autoOn ? "on" : "off") + "</b>" +
+      autoHow + freshHtml + "</div>";
     if (meta) meta.innerHTML = (s.exists
       ? '<div class="cb-line"><b>' + count(files) + "</b> files · <b>" + count(chunks) +
         "</b> chunks · <b>" + count(embedded) + "/" + count(chunks) + "</b> vectors</div>" +
