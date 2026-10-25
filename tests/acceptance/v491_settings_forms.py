@@ -238,7 +238,9 @@ check("E5 the Context rail has no duplicate auto-compact controls",
       and "loadCompactionPolicy" not in UI and "saveCompactionPolicy" not in UI
       and 'data-call="openSettings" data-args=\'["compaction"]\'' in UI)
 check("E6 Info credits the maintainer's GitHub identity",
-      "Giovanni J. Agones (@jagones84)" in UI
+      # v641: the handle IS the credit (operator: "togli mio nome, metti solo
+      # @jagones84 come iperlink a github").
+      ">@jagones84</a>" in UI and "Giovanni J. Agones" not in UI
       and "https://github.com/jagones84" in UI)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))

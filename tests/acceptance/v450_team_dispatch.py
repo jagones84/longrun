@@ -132,7 +132,9 @@ check("D2 /api/improvement drops no-op ledger rows",
 check("D3 it exposes the methodology config",
       '"importance_threshold"' in htt and '"auto_kinds"' in htt)
 check("D4 the panel renders the methodology + thresholds",
-      "impHow" in idx and "How the auto-improvement works" in idx
+      # v641: the disclosure is titled "How the loop works" now that the panel is a
+      # list of disclosures instead of caps headings.
+      "impHow" in idx and "How the loop works" in idx
       and "importance_threshold" in idx)
 check("D5 the panel shows per-section counts",
       "impRecCount" in idx and "impLedCount" in idx)

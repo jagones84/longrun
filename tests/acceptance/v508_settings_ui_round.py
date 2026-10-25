@@ -122,9 +122,13 @@ check("H1 the hooks panel carries a live block wired to GET /api/hooks",
 check("H2 the loader is called when the category opens",
       'else if (name === "hooks") { loadHooksLive(); }' in IDX, "")
 check("H3 it says which file wins (overlay vs shipped)",
-      "hooks.overlay" in IDX and "the <b>WebUI overlay</b> replaces the shipped list" in IDX, "")
+      # v641: the winning file is a short word on the header line (`overlay wins` /
+      # `shipped`) and the full path moved into its tooltip.
+      "overlay wins" in IDX and "· shipped" in IDX, "")
 check("H4 it names the block contract in the panel text",
-      "exiting <b>2</b> blocks the call" in IDX, "")
+      # v641: the contract is now the Hooks title tooltip instead of a 4-line
+      # paragraph — same rule, no wall of prose above the list.
+      "a PreToolUse hook exiting 2 BLOCKS the call" in IDX, "")
 check("H5 the runtime sub-agent depth is flagged as the same key as Subagents",
       "Same key as Subagents ▸ Limits" in IDX, "")
 

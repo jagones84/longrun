@@ -1240,6 +1240,15 @@
     background: var(--hc, #6c8cff); box-shadow: 0 0 10px var(--hc, #6c8cff); }
   .hcard-hd b { font-size: 13px; color: var(--txt); letter-spacing: .01em; }
   .hcard-hd .hc-sub { font-size: 12px; color: var(--dim); }
+  /* v641: ONE type scale for every Settings card, so a title / a value / a row
+     label read the same in every panel (operator: "il format cambia da setting a
+     setting"). A form's actions also live on ONE row, not stacked. */
+  #swMain .set-t { font-weight: 600; font-size: 12.5px; color: var(--txt); }
+  #swMain .set-t .remaining { font-weight: 400; }
+  #swMain .set-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  #swMain .self-row { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
+  #swMain .self-row > .remaining { flex: 0 0 58px; font-size: 11px; }
+  #swMain .self-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hrow { display: flex; flex-wrap: wrap; align-items: center; }
   #settingsWin .sw-main, #inspector .insp-body {
     font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
@@ -2000,8 +2009,9 @@
         </div>
       </section>
       <div class="sw-cat" data-cat="hooks" hidden>
-        <h2>Hooks · tool lifecycle</h2>
-        <div class="remaining u-mb8">Deterministic commands run before or after tool calls. A <b>PreToolUse</b> hook exiting <b>2</b> blocks the call; any other non-zero exit is advisory unless <b>block on failure</b> is set. Configure lifecycle hooks below.</div>
+        <!-- v641: the four-line paragraph repeated what the loaded-hooks card already
+             says; the rule survives in the title tooltip. -->
+        <h2 title="Deterministic commands run before/after tool calls: a PreToolUse hook exiting 2 BLOCKS the call, any other non-zero exit is advisory unless 'block on failure' is set.">Hooks</h2>
         <!-- JAG-512: the panel was ONLY a form — it never said what is loaded right
              now, nor which file wins. Read from GET /api/hooks so the answer is the
              same state the harness uses (overlay beats the shipped file). -->
@@ -2116,18 +2126,43 @@
         <div class="card" id="sandboxPanel"><div class="remaining">loading…</div></div>
       </div>
       <div class="sw-cat" data-cat="improvement" hidden>
-        <h2>Self-improvement · global <span id="impCount" class="remaining"></span></h2>
+        <!-- v641: the panel was seven stacked caps headings with a paragraph under
+             each — the operator: "improvement fa ridere, non si capisce nulla".
+             One summary line, then one disclosure per subject. Every id survived. -->
+        <h2>Self-improvement <span id="impCount" class="remaining"></span></h2>
         <div class="card">
           <div class="remaining" id="impMemory">—</div>
-          <div class="u-mt6"><button class="ghost" id="impRefresh" data-call="loadImprovement" title="reload proposals, distilled lessons, changelog and provenance">↻ refresh</button></div>
+          <div class="acts">
+            <button class="lnk" id="impRefresh" data-call="loadImprovement" title="reload proposals, distilled lessons, changelog and provenance">refresh</button>
+          </div>
         </div>
         <details class="card" id="impHowBox">
-          <summary class="remaining u-ptr">How the auto-improvement works (methodology)</summary>
+          <summary class="set-t u-ptr">How the loop works</summary>
           <div class="u-mt6" id="impHow"></div>
         </details>
-        <h2>Backlog review · obsolete / implemented / needs an update <span id="impRevCount" class="remaining"></span></h2>
-        <div class="card">
-          <div class="remaining u-m006">An LLM audits each proposal against the current code: <b>keep · implemented · obsolete · update · conflict</b>. Nothing is applied — you decide.</div>
+        <!-- Memory lives HERE (it is what the loop writes): search, add, forget one,
+             purge the invalidated ones for good. -->
+        <details class="card">
+          <summary class="set-t u-ptr">Memory <span id="memStats" class="remaining"></span></summary>
+          <div class="u-df u-g6 u-mt6">
+            <input id="memQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search memory…" data-key="Enter" data-key-fn="loadMemories">
+            <button class="ghost" data-call="loadMemories" title="search">🔎</button>
+          </div>
+          <div id="memList" class="remaining" style="margin-top:8px;max-height:220px;overflow:auto"></div>
+          <div class="u-df u-g6 u-mt8">
+            <select id="memKind" class="inp" style="flex:0 0 140px;padding:6px 8px;font-size:12px"></select>
+            <input id="memContent" class="inp u-f1 u-p610 u-fs12" placeholder="new memory…" data-key="Enter" data-key-fn="memoryAdd">
+            <button class="ghost" data-call="memoryAdd" title="add">＋</button>
+            <button class="ghost" data-call="memoryPurge" title="purge invalidated/expired memories">🧹</button>
+          </div>
+          <div id="memResult" class="remaining u-mt6"></div>
+        </details>
+        <details class="card">
+          <summary class="set-t u-ptr">Pending proposals <span id="impPropCount" class="remaining"></span></summary>
+          <div id="impProps"></div>
+        </details>
+        <details class="card">
+          <summary class="set-t u-ptr" title="An LLM audits each proposal against the current code: keep · implemented · obsolete · update · conflict. Nothing is applied — you decide.">Backlog review <span id="impRevCount" class="remaining"></span></summary>
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
             <label class="remaining u-df u-g6 u-aic">max artifacts
               <input id="impReviewLimit" type="number" min="1" max="60" value="24" class="inp" style="width:70px;padding:6px 8px;font-size:12px"></label>
@@ -2136,20 +2171,25 @@
           </div>
           <div class="remaining u-mt6" id="impReviewMsg" role="status" aria-live="polite"></div>
           <div id="impReview"></div>
-        </div>
-        <h2>Files · what the loop reads &amp; writes <span class="remaining">— click to open</span></h2>
-        <div class="card" id="impFiles"><div class="remaining">loading…</div></div>
-        <h2>Pending proposals <span id="impPropCount" class="remaining"></span></h2>
-        <div id="impProps"></div>
-        <h2>Distilled lessons · auto-written memory <span id="impRecCount" class="remaining"></span></h2>
-        <div id="impRecords"></div>
-        <h2>Changelog · what actually changed <span id="impLedCount" class="remaining"></span></h2>
-        <div id="impLedger"></div>
+        </details>
+        <details class="card">
+          <summary class="set-t u-ptr">Distilled lessons <span id="impRecCount" class="remaining"></span></summary>
+          <div id="impRecords"></div>
+        </details>
+        <details class="card">
+          <summary class="set-t u-ptr">Changelog <span id="impLedCount" class="remaining"></span></summary>
+          <div id="impLedger"></div>
+        </details>
+        <details class="card">
+          <summary class="set-t u-ptr">Files it reads &amp; writes</summary>
+          <div id="impFiles"></div>
+        </details>
       </div>
       <div class="sw-cat" data-cat="info" hidden>
-        <h2>ⓘ Info · harness</h2>
+        <h2>Info</h2>
         <div class="card" id="selfPanel"><div class="remaining">loading…</div></div>
-        <h2>Data home <span class="remaining">— where YOUR data lives (outside this checkout)</span></h2>
+        <!-- v641: the two-line parenthetical is the tooltip; the heading is a label. -->
+        <h2 title="The folder that holds data/ and matrix/, outside this checkout — it can live anywhere you want">Data home</h2>
         <div class="card" id="homeCard">
           <div class="remaining" id="homeSummary">loading…</div>
           <div class="remaining" id="homeWarn" hidden
@@ -2213,9 +2253,17 @@
         <div class="card">
           <div class="u-df u-aic u-g8 u-fww">
             <div class="remaining u-f1" id="mcpSummary">loading…</div>
-            <button class="ghost" data-call="openMcpFile" title="open config/mcp_clients.local.json in the editor and edit it by hand">✎ Edit mcp.json</button>
-            <button class="ghost" data-call="openMcpJson" title="paste a server's mcpServers snippet and press confirm">⧉ MCP JSON</button>
+            <button class="ghost" data-call="openMcpFile" title="open the gitignored config/mcp_clients.local.json in the editor and edit it by hand">✎ edit file</button>
+            <button class="ghost" data-call="openMcpJson" title="paste a server's mcpServers snippet and press confirm">⧉ paste JSON</button>
             <button class="ghost" data-call="reloadMcp" title="reload all MCP servers from the file">↻ reload</button>
+          </div>
+          <!-- v641: the operator asked how many MCP files there are and what each one
+               is for ("che vuol dire mcp env files … quanti cazzo di file ci sono").
+               Read order, stated once here instead of a path on every card. -->
+          <div class="remaining u-mt6">
+            read order → <code>config/mcp_clients.yaml</code> (tracked: examples + env files)
+            then <code>config/mcp_clients.local.json</code> (gitignored: the servers this panel
+            writes). A legacy <code>mcp_clients.local.yaml</code> is still read if it exists.
           </div>
           <div id="mcpList" class="u-mt8"></div>
           <div id="mcpResult" class="remaining u-mt6"></div>
@@ -2371,21 +2419,9 @@
         </div>
         <h2>Uploaded files</h2>
         <div class="card"><div id="rulesFiles" class="remaining"></div></div>
-        <h2>Memories · <span id="memStats" class="remaining">…</span></h2>
-        <div class="card">
-          <div class="u-df u-g6">
-            <input id="memQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search memory…" data-key="Enter" data-key-fn="loadMemories">
-            <button class="ghost" data-call="loadMemories" title="search">🔎</button>
-          </div>
-          <div id="memList" class="remaining" style="margin-top:8px;max-height:220px;overflow:auto"></div>
-          <div class="u-df u-g6 u-mt8">
-            <select id="memKind" class="inp" style="flex:0 0 140px;padding:6px 8px;font-size:12px"></select>
-            <input id="memContent" class="inp u-f1 u-p610 u-fs12" placeholder="new memory…" data-key="Enter" data-key-fn="memoryAdd">
-            <button class="ghost" data-call="memoryAdd" title="add">＋</button>
-            <button class="ghost" data-call="memoryPurge" title="purge invalidated/expired memories">🧹</button>
-          </div>
-          <div id="memResult" class="remaining u-mt6"></div>
-        </div>
+        <!-- v641: the memory manager moved to Settings ▸ Improvements, next to the
+             distilled lessons it edits — it lived here under "Rules", which is why
+             the panel looked like the improvement results. -->
       </div>
     </div>
   </aside>
@@ -6479,30 +6515,26 @@ function _settingsSectionHost(panel) {
   if (!host) {
     host = document.createElement("div");
     host.className = "setFormsHost";
-    const h = document.createElement("h2");
-    h.innerHTML = 'Structured settings <span class="remaining">— the config knobs for this area</span>';
-    // JAG-511: say WHAT these knobs are, so they do not read as duplicates of the
-    // controls above them.
+    // v641: the panel heading that said "the config knobs for this area" repeated
+    // what the panel title already says (operator: "frasi ridondanti").
+    // Only the ONE note that is not obvious — where a value is a default vs an
+    // override — survives, and it is a single line above the cards.
     const NOTE = {
-      models: "These are the DEFAULTS for every session (config/routing.yaml ▸ roles). " +
+      models: "Defaults for every session (config/routing.yaml ▸ roles). " +
         "The composer's model dropdown overrides the chat role for ONE session; " +
-        "the subagent model/fallback lives in Settings ▸ Subagents.",
-      subagents: "Model + fallback for subagents are set above; everything else here is " +
-        "the rest of config/subagents.yaml.",
+        "the subagent model lives in Settings ▸ Subagents.",
+      subagents: "Model + fallback for subagents are set above; the cards below are the " +
+        "rest of config/subagents.yaml.",
       compaction: "Automatic and manual compaction share this one global policy and overlay.",
     };
+    cat.appendChild(host);
     if (NOTE[panel]) {
       const n = document.createElement("div");
       n.className = "remaining";
-      n.style.cssText = "margin:0 0 6px";
+      n.style.cssText = "margin:14px 0 6px";
       n.textContent = NOTE[panel];
-      cat.appendChild(h);
-      cat.appendChild(n);
-      cat.appendChild(host);
-      return host;
+      cat.insertBefore(n, host);
     }
-    cat.appendChild(h);
-    cat.appendChild(host);
   }
   return host;
 }
@@ -6561,12 +6593,17 @@ function _setSectionEl(sec) {
   card.className = "card"; card.style.marginBottom = "10px";
   card.dataset.file = sec.file; card.dataset.sid = sec.id;
   const files = (sec.files && sec.files.length) ? sec.files : ["config/" + sec.file];
-  card.innerHTML = '<div style="font-weight:600;margin-bottom:2px">' + esc(sec.title) +
+  // v641: the long `help` paragraph moved into the title's tooltip, the file path
+  // stays visible (it answers "which file wins"), and save + Automate sit on ONE
+  // row instead of stacking two full-width buttons.
+  card.innerHTML = '<div class="set-t"' + (sec.help ? ' title="' + _attr(sec.help) + '"' : "") + '>' +
+    esc(sec.title) +
     ' <span class="remaining" data-config-files>· ' + _settingsFileLinks(files) + '</span></div>' +
-    (sec.help ? '<div class="remaining" style="margin-bottom:8px">' + esc(sec.help) + '</div>' : "") +
     '<div class="hrow" data-fields></div>' +
-    '<button class="ghost config-save" data-save disabled style="margin-top:8px">save ' + esc(sec.id) + '</button>' +
-    '<div data-msg class="remaining u-mt4" role="status" aria-live="polite"></div>';
+    '<div class="set-acts">' +
+      '<button class="ghost config-save" data-save disabled>save ' + esc(sec.id) + "</button>" +
+      '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
+    "</div>";
   const box = card.querySelector("[data-fields]");
   (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));
   card._savedValues = JSON.stringify(_setSectionValues(card, sec));
@@ -6588,9 +6625,14 @@ function _setSectionEl(sec) {
   });
   _syncSectionDirty(card, sec);
   card.querySelector("[data-save]").onclick = () => saveSettingsSection(card, sec);
-  card.appendChild(makeAutomateWidget(sec.id || "settings", () => ({
+  // v641: the Automate toggle belongs on the SAME row as save (it used to be a
+  // second full-width button under it).
+  const auto = makeAutomateWidget(sec.id || "settings", () => ({
     file: sec.file, section_id: sec.id, values: _setSectionValues(card, sec)
-  })));
+  }));
+  const acts = card.querySelector(".set-acts");
+  if (acts && auto) { auto.style.marginTop = "0"; acts.appendChild(auto); }
+  else if (auto) card.appendChild(auto);
   return card;
 }
 function _setFieldEl(f, val) {
@@ -8015,10 +8057,9 @@ async function loadImprovement() {
   }
   if (mem) {
     const m = d.memory || {};
-    const kinds = Object.entries(m.by_kind || {}).map(([k, v]) => k + ":" + v).join(" · ");
-    mem.innerHTML = "memory — auto <b>" + (m.auto || 0) + "</b> · user <b>" + (m.user || 0) +
-      "</b> · total <b>" + (m.total || 0) + "</b>" +
-      (kinds ? ('<div class="remaining">' + esc(kinds) + "</div>") : "");
+    // v641: one line. The per-kind ledger repeated what the Memory panel counts.
+    mem.innerHTML = "memory · auto <b>" + (m.auto || 0) + "</b> · user <b>" + (m.user || 0) +
+      "</b> · total <b>" + (m.total || 0) + "</b>";
   }
   // ---- proposals (collapsible, with diff + file path) ----
   props.innerHTML = pend.length ? "" : '<div class="remaining">no pending proposals</div>';
@@ -8921,9 +8962,8 @@ function renderTools(el, d) {
     return `<button class="ghost" data-pol="${k}" data-val="${v}" aria-pressed="${on}" style="${c}">${extra || v}</button>`; };
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
-       <div style="font-weight:600;margin-bottom:6px">🔓 Global approval policy</div>
-       <div class="remaining" style="margin-bottom:8px"><b>FULL</b> = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: <b>exclusive</b> tools (job · team · agent · session · webui · kb — need the per-session Teamorg grant in the session menu), <b>matrix.promote_to_nucleus</b> (needs its own checkbox below), <b>nucleus writes</b> (needs the red DANGEROUS toggle). Otherwise ANY action that reaches <b>outside the session workspace</b> (file reads/writes, shell commands, git) needs approval.</div>
-       <div style="display:flex;gap:6px;align-items:center">
+       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: exclusive tools (job · team · agent · session · webui · kb — need the per-session Teamorg grant in the session menu), matrix.promote_to_nucleus (needs its own checkbox below), nucleus writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
+       <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
          <span style="font-size:11px;color:var(--dim);min-width:126px">Approval mode</span>
          ${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}
        </div>
@@ -8940,15 +8980,15 @@ function renderTools(el, d) {
        <div class="u-mt8" style="padding-top:6px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Live toggle: uncheck to disable all src/Matrix and .Matrix tools, hooks, rules, skills, and shadow WebUI, leaving only the immutable Nucleus active">
            <input id="apMatrixEnabled" type="checkbox"${pol.matrix_enabled !== false ? " checked" : ""}>
-           <span><b>Enable live Matrix zone (<code>src/Matrix</code> &amp; <code>.Matrix</code>)</b> <span class="remaining">(uncheck to disable all Matrix effects live and run pure Nucleus only)</span></span>
+           <span><b>Enable live Matrix zone</b> <code>src/Matrix</code> <code>.Matrix</code></span>
          </label>
          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer" title="Exclusive authorization to promote tested Matrix code permanently into Legacy Nucleus (even FULL mode does not unlock this)">
            <input id="apMatrixPromote" type="checkbox"${pol.allow_matrix_promote ? " checked" : ""}>
-           <span><b>Allow Matrix → Nucleus permanent promotion</b> <span class="remaining">(<code>promote_to_nucleus</code> — never unlocked by FULL mode; requires tested Matrix code + auto-commit)</span></span>
+           <span><b>Allow Matrix → Nucleus permanent promotion</b> <code>promote_to_nucleus</code></span>
          </label>
          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;color:var(--err)" title="DANGEROUS — unlocks writes into the immutable Nucleus for every tool: the shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, so the agent can rewrite the harness mid-run. Off by default; never unlocked by FULL approval mode.">
            <input id="apNucleusUnlock" type="checkbox"${pol.allow_nucleus_write ? " checked" : ""}>
-           <span><b>DANGEROUS — unlock Nucleus writes</b> <span class="remaining">(lets the agent modify <code>src/longrun</code>, <code>webui</code>, <code>config</code>, <code>deploy</code>, <code>tests</code>, <code>docs</code>, <code>.longrun</code>, <code>Global_rules.md</code> / <code>Project_rules.md</code>, <code>AGENTS.md</code>; off by default)</span></span>
+           <span><b>DANGEROUS — unlock Nucleus writes</b></span>
          </label>
        </div>
      </div>`;
@@ -8964,8 +9004,7 @@ function renderTools(el, d) {
     : (v === "denied" ? "DENIED — never emit" : "ASK — approval dialog");
   const kindsCard =
     `<div class="card" style="margin-bottom:10px">
-       <div style="font-weight:600;margin-bottom:6px">🔐 Approval by category · what the harness may emit on its own</div>
-       <div class="remaining" style="margin-bottom:8px">Click a policy to cycle <b>AUTO</b> → <b>ASK</b> → <b>DENIED</b>. AUTO applies + records it; ASK raises an approval you decide; DENIED never emits.</div>
+       <div class="set-t" title="Click a policy to cycle AUTO → ASK → DENIED. AUTO applies + records it; ASK raises an approval you decide; DENIED never emits.">🔐 Approval by category</div>
        ${KINDS.map(([k, label, desc]) => {
          const v = kinds[k] || "required";
          const col = v === "auto" ? "var(--ok)" : (v === "denied" ? "var(--err)" : "var(--warn)");
@@ -9142,8 +9181,10 @@ function renderTools(el, d) {
         flats.map(toolRow).join("")
       : "");
     return '<details class="tg-origin" data-origin="' + key + '"' + (o ? " open" : "") + ">" +
-      '<summary class="remaining tg-origin-sum"><b>' + esc(title) + "</b> (" + count + ")" +
-        ' — ' + esc(note) + "</summary>" + inner + "</details>";
+      // v641: the explanation rides in the tooltip; the summary stays one short line
+      // (`Built-in (87)`), so the panel is a list, not a wall of prose.
+      '<summary class="remaining tg-origin-sum" title="' + esc(note) + '"><b>' + esc(title) +
+        "</b> (" + count + ")</summary>" + inner + "</details>";
   }).join("");
   const _onN = tools.filter(t => t.enabled !== false).length;
   el.innerHTML = policyCard + kindsCard + (tools.length
@@ -9315,11 +9356,14 @@ function renderSelf(el, d) {
   pick("name", "name"); pick("version", "version"); pick("repo_path", "repo"); pick("data_dir", "data");
   pick("router", "router"); pick("port", "port");
   if (d.service && d.service.restart_cmd) rows.push(["restart", d.service.restart_cmd]);
+  // v641: label and value share ONE line (every row used to cost two), and the
+  // author is the handle only — the operator asked for `@jagones84` as a link,
+  // not a full name he does not use anywhere else.
   el.innerHTML = rows.map(([l, v]) =>
-    `<div class="remaining" style="margin-bottom:6px"><b>${esc(l)}</b><br><code style="word-break:break-all">${esc(v)}</code></div>`).join("") +
-    '<div class="remaining" style="margin-top:10px"><b>Author</b><br>' +
-    '<a href="https://github.com/jagones84" target="_blank" rel="noopener noreferrer">' +
-    'Giovanni J. Agones (@jagones84)</a></div>';
+    '<div class="self-row"><span class="remaining">' + esc(l) + '</span>' +
+    '<code title="' + _attr(String(v)) + '">' + esc(v) + "</code></div>").join("") +
+    '<div class="remaining u-mt6"><a href="https://github.com/jagones84" target="_blank" ' +
+    'rel="noopener noreferrer">@jagones84</a></div>';
 }
 
 function renderProviders(el, d) {
@@ -9859,12 +9903,14 @@ async function loadHooksLive() {
     const evLine = ["PreToolUse", "PostToolUse", "Stop"]
       .map(e => "<b>" + e + "</b> " + (byEv[e] || 0)).join(" · ");
     box.innerHTML =
+      // v641: the source line joined the header — `config/hooks.yaml (shipped)` or
+      // `hooks.overlay.yaml (overlay)` right of the counts, full path in the tooltip.
       '<div class="u-df u-aic u-g8 u-fww"><b>' + hs.length + ' hook(s) loaded</b>' +
       '<span class="remaining u-f1">' + evLine + "</span>" +
+      (src ? '<span class="remaining" title="' + _attr(src) + '">' +
+        esc(String(src).split("/").slice(-1)[0]) + (overlayWin ? " · overlay wins" : " · shipped") +
+        "</span>" : "") +
       '<button class="ghost" data-call="loadHooksLive" title="re-read the effective hook list">↻</button></div>' +
-      '<div class="remaining u-mt4">source: <code>' + esc(String(src).split("/").slice(-2).join("/")) +
-      "</code>" + (overlayWin ? " — the <b>WebUI overlay</b> replaces the shipped list" : " — the shipped file") +
-      "</div>" +
       (hs.length ? '<div class="u-mt6" style="font-size:11px;font-family:ui-monospace,monospace">' +
         hs.map(h => '<div class="remaining">' + esc(h.event) + " · " + esc(h.matcher || "(any)") +
           " · exit " + (h.block_on_fail ? "≠0 blocks" : "2 blocks") + " · " +
@@ -10247,10 +10293,11 @@ async function loadRules() {
         c.appendChild(makeAutomateWidget("rules", () => ({ scope })));
       }
     });
-    const files = [];
-    (g.files || []).forEach(f => files.push("G " + f));
-    (p.files || []).forEach(f => files.push("P " + f));
-    $("rulesFiles").textContent = files.length ? files.join("  ·  ") : "no rule files";
+    // v641: "G " glued to a path rendered as the fake drive `G:/home/…` in the
+    // panel. The scope is a LABEL, the path stays a path.
+    const _rf = (scope, f) => '<div class="remaining"><b>' + scope + '</b> <code>' + esc(f) + "</code></div>";
+    const rows = (g.files || []).map(f => _rf("G", f)).concat((p.files || []).map(f => _rf("P", f)));
+    $("rulesFiles").innerHTML = rows.length ? rows.join("") : "no rule files";
   } catch (e) { if (typeof toast === "function") toast("rules load error: " + e, "err"); }
 }
 async function saveRules(scope) {
@@ -10375,12 +10422,14 @@ function skillsAutocomplete() {
 /* JAG-505: keep the operator's Settings order; Hooks is a dedicated panel directly
    before Harness, and the Knowledge panel remains near the end. */
 const SETTINGS_CATS = [
-  ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
+  // v641: Diagnostics sits FIRST (operator: "diagnostics mettilo on top") — it is
+  // the panel that tells you whether anything below can work at all.
+  ["diagnostics", "Diagnostics"], ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
   ["subagents", "Subagents"], ["orchestrate", "Swarm & blackboard"], ["tools", "Tools & approvals"], ["sandbox", "Sandbox"],
   ["mcp", "MCP"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
   ["compaction", "Compaction"],
-  ["improvement", "Improvements"], ["diagnostics", "Diagnostics"],
+  ["improvement", "Improvements"],
   ["hooks", "Hooks"],
   ["harness", "Harness"], ["config", "Config files"], ["info", "\u24D8 Info"],
 ];
@@ -10611,7 +10660,7 @@ function settingsCategory(name) {
   mountCategoryAutomate(name);   // JAG-535: one ⚡ Automate control per editable panel
   if (name === "mcp") { loadMcpClients(); if (typeof renderMcpCatalog === "function") renderMcpCatalog(); }
   else if (name === "skills") { loadSkills(); }
-  else if (name === "rules") { loadRules(); loadMemories(); }
+  else if (name === "rules") { loadRules(); }
   else if (name === "harness") {
     loadRuntime(); loadVerifier(); loadBestofn(); loadDifficulty(); loadSelfevolve(); loadReasoning();
   }
@@ -10627,7 +10676,9 @@ function settingsCategory(name) {
     });
   }
   else if (name === "improvement") {
+    // v641: the memory manager moved into this panel (it is what the loop writes).
     if (typeof loadImprovement === "function") loadImprovement();
+    if (typeof loadMemories === "function") loadMemories();
   }
   else if (name === "subagents") {
     if (typeof loadSubagents === "function") loadSubagents();
@@ -12635,12 +12686,18 @@ async function loadMemories() {
   try {
     if (q) st.textContent = "searching…";
     const d = await api("GET", "/api/memory" + (q ? ("?query=" + encodeURIComponent(q) + "&limit=20") : ""));
+    // v641: the idle state used to print the whole kind ledger
+    // (`TOOL.RESULT: 0 · PLAN.UPDATE: 0 · …`) on the panel title. The mode is a
+    // tooltip on the search field; the counts live in the summary card above.
+    const _q = $("memQuery");
+    if (_q) _q.title = d.vector_index ? "semantic index active — keyword first, vector fallback"
+      : "keyword only (semantic index inactive)";
     if (q) {
       let rs = d.results || [];
       let mode = "keyword";
       let note = "";
       if (!rs.length) {
-        st.textContent = "0 keyword matches · trying the semantic index…";
+        st.textContent = "· 0 keyword · trying semantic…";
         try {
           const s = await api("GET", "/api/memory?query=" + encodeURIComponent(q) +
             "&limit=20&semantic=1");
@@ -12648,7 +12705,7 @@ async function loadMemories() {
           mode = "semantic";
         } catch (e) { note = " · semantic unavailable (" + String(e) + ")"; }
       }
-      st.textContent = rs.length + " match · " + mode + note;
+      st.textContent = "· " + rs.length + " match · " + mode + note;
       box.innerHTML = rs.length ? "" :
         '<div class="remaining">no match in either mode — keyword is a literal substring/AND-of-words, ' +
         "semantic falls back to the local vector index when that is active</div>";
@@ -12661,10 +12718,9 @@ async function loadMemories() {
         box.appendChild(row);
       });
     } else {
-      const kinds = d.kinds || {};
-      st.textContent = (Object.keys(kinds).map(k => k + ": " + kinds[k]).join(" · ")) || ("total: " + (d.total || 0));
-      box.innerHTML = '<div class="remaining">' + (d.vector_index ? "semantic index active" : "semantic index inactive") + "</div>";
-      memKindsInit(Object.keys(kinds));
+      st.textContent = "";
+      box.innerHTML = "";
+      memKindsInit(Object.keys(d.kinds || {}));
     }
   } catch (e) { box.textContent = "error: " + e; }
 }
@@ -12681,7 +12737,10 @@ async function memoryAdd() {
   try {
     const r = await api("POST", "/api/memory", { kind: $("memKind").value, content: content });
     if (r && r.error) { msg.textContent = "error: " + r.error; return; }
-    $("memContent").value = ""; msg.textContent = "memory saved ✓";
+    $("memContent").value = ""; msg.textContent = "";
+    // v641: a status line that stayed forever ("purged 1") read as state, not as
+    // the answer to one click — these are toasts now.
+    if (typeof toast === "function") toast("memory saved", "ok");
     $("memQuery").value = ""; loadMemories();
   } catch (e) { msg.textContent = "error: " + e; }
 }
@@ -12693,7 +12752,9 @@ async function memoryForget(mid) {
   if (!await confirmDelete("permanently delete this memory?")) return;
   try {
     const r = await api("DELETE", "/api/memory?target=" + encodeURIComponent(mid));
-    if (msg) msg.textContent = (r && r.ok) ? ("memory deleted (" + (r.removed || 0) + ")") : ("error: " + (r && r.error));
+    if (r && r.ok) {
+      if (typeof toast === "function") toast("memory deleted (" + (r.removed || 0) + ")", "ok");
+    } else if (msg) msg.textContent = "error: " + (r && r.error);
     loadMemories();
   } catch (e) { if (msg) msg.textContent = "error: " + e; }
 }
@@ -12702,7 +12763,8 @@ async function memoryPurge() {
   if (!await confirmDelete("purge all invalidated/expired memories?")) return;
   try {
     const r = await api("POST", "/api/memory", { action: "purge" });
-    if (msg) msg.textContent = "purged " + ((r && r.removed) || 0);
+    if (typeof toast === "function") toast("purged " + ((r && r.removed) || 0), "ok");
+    if (msg) msg.textContent = "";
     loadMemories();
   } catch (e) { if (msg) msg.textContent = "error: " + e; }
 }

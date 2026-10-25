@@ -194,9 +194,9 @@ SECTIONS = [
     },
     {
         "file": "mcp_clients.yaml", "id": "mcp_env", "panel": "mcp",
-        "title": "MCP · env files",
-        "help": ("Files loaded (KEY=VALUE) before ${VAR} expansion in MCP headers. "
-                 "The clients themselves are managed by Settings ▸ MCP."),
+        "title": "Env files · ${VAR} lookup",
+        "help": ("Files loaded (KEY=VALUE) before ${VAR} expansion in MCP headers, e.g. "
+                 "the repo's gitignored .env. The servers themselves are the list above."),
         "fields": [
             _f("env_files", "env files", "strlist",
                help="One path per line (e.g. .env — the repo's gitignored file)."),
