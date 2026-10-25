@@ -190,12 +190,22 @@ def stats():
 
 
 def _improvement_view(proposal):
-    """Shape one improvement proposal as an approval-queue entry."""
+    """Shape one improvement proposal as an approval-queue entry.
+
+    v645: a skill proposal is approvable too — approving verifies the draft in the
+    sandbox and installs it under skills/<category>/ (see improve.decide). The
+    queue said "skill apply is not implemented", which was a dead button, and the
+    operator could not decide anything ("non posso approvare").
+    """
     pid = str((proposal or {}).get("id") or "")
     scope = str((proposal or {}).get("scope") or "")
     status = str((proposal or {}).get("status") or "pending")
-    blocked = ("skill apply is not implemented (JAG-128B deferred)"
-               if scope == "skill" else "")
+    draft = str((proposal or {}).get("target_path") or "")
+    blocked = ""
+    if scope == "skill" and status == "pending" and draft and not os.path.isdir(draft):
+        blocked = "the drafted skill folder is gone — deny to clear this proposal"
+    elif scope == "skill" and status == "pending" and not draft:
+        blocked = "this proposal has no draft to install — deny to clear it"
     return {
         "id": "imp:" + pid,
         "ts": proposal.get("ts"),
@@ -211,7 +221,8 @@ def _improvement_view(proposal):
         "source": "improvement",
         "scope": scope,
         "origin": proposal.get("origin"),
-        "can_approve": bool(scope and scope != "skill" and status == "pending"),
+        "draft": draft,
+        "can_approve": bool(scope and status == "pending" and not blocked),
         "blocked_reason": blocked,
     }
 

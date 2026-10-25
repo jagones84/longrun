@@ -7824,42 +7824,53 @@ async function decideImproveProposal(id, decision) {
 }
 
 /* JAG-128B: la proposta di self-improvement arriva come evento SSE e resta
- * azionabile dalla chat (accetta/rifiuta -> POST /api/improve). */
+ * azionabile dalla chat (accetta/rifiuta -> POST /api/improve).
+ * v645: the card has to say WHAT is being decided. An event without an id (the
+ * mined drafts used to publish a bare path) gets no buttons and a link to the
+ * one inbox instead of two dead buttons and a "not implemented" sentence. */
 function improveCard(d) {
   const card = document.createElement("div");
   card.className = "msg ai";
   const bub = document.createElement("div"); bub.className = "bubble planwarn";
+  const pid = d.id_id || d.id;
   const head = document.createElement("div");
-  head.textContent = "💡 improvement proposal (" + (d.scope || "") + ")";
+  head.textContent = "💡 improvement proposal · " + (d.scope || "?") +
+    (d.origin ? " · " + d.origin : "");
   const body = document.createElement("div");
   body.style.cssText = "white-space:pre-wrap;font-size:12px;color:var(--dim);margin:4px 0";
-  body.textContent = d.content || "";
+  body.textContent = d.content || (d.path ? "draft: " + d.path : "");
   const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:4px";
-  const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ accept";
-  const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ reject";
   const feedback = document.createElement("div"); feedback.className = "remaining";
   feedback.setAttribute("role", "status");
-  if (d.scope === "skill") {
-    ok.disabled = true;
-    ok.title = "Skill application is not implemented";
-    feedback.textContent = "Skill apply is not implemented; reject to clear this proposal.";
+  bub.appendChild(head); bub.appendChild(body);
+  if (typeof pid !== "string" || !pid) {
+    const go = document.createElement("button"); go.className = "ghost";
+    go.textContent = "→ decide in Inspector ▸ Approvals";
+    go.onclick = () => showApprovalsInbox();
+    row.appendChild(go);
+    feedback.textContent = "this notification is not a stored proposal — nothing to approve here";
+  } else {
+    const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ accept";
+    const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ reject";
+    const choose = async decision => {
+      ok.disabled = true; no.disabled = true;
+      try {
+        const r = await decideImproveProposal(pid, decision);
+        if (decision === "approve") {
+          ok.textContent = "✅ accepted";
+          if (r && r.installed_to) feedback.textContent = "installed at " + r.installed_to;
+          no.remove();
+        } else { no.textContent = "⛔ rejected"; ok.remove(); }
+      } catch (e) {
+        feedback.textContent = String(e);
+        ok.disabled = false; no.disabled = false;
+      }
+    };
+    ok.onclick = () => choose("approve");
+    no.onclick = () => choose("deny");
+    row.appendChild(ok); row.appendChild(no);
   }
-  const choose = async decision => {
-    ok.disabled = true; no.disabled = true;
-    try {
-      await decideImproveProposal(d.id_id || d.id, decision);
-      if (decision === "approve") { ok.textContent = "✅ accepted"; no.remove(); }
-      else { no.textContent = "⛔ rejected"; ok.remove(); }
-    } catch (e) {
-      feedback.textContent = String(e);
-      ok.disabled = d.scope === "skill";
-      no.disabled = false;
-    }
-  };
-  ok.onclick = () => choose("approve");
-  no.onclick = () => choose("deny");
-  row.appendChild(ok); row.appendChild(no);
-  bub.appendChild(head); bub.appendChild(body); bub.appendChild(row); bub.appendChild(feedback);
+  bub.appendChild(row); bub.appendChild(feedback);
   card.appendChild(bub); _logAppend(card); scroll();
 }
 
@@ -8071,8 +8082,12 @@ async function loadImprovement() {
     go.onclick = (e) => { e.preventDefault(); e.stopPropagation(); showApprovalsInbox(); };
     row.appendChild(go); det.appendChild(row);
     if (p.scope === "skill") {
+      // v645: approving a skill now verifies and installs it, so there is no
+      // "not implemented" excuse to print (that note made a dead end look normal).
       const note = document.createElement("div"); note.className = "remaining";
-      note.textContent = "Skill apply is not implemented; deny it in the approval inbox to clear it.";
+      note.textContent = p.target_path
+        ? "approve verifies the draft in the sandbox and installs it under skills/"
+        : "no draft folder to install — deny it in the approval inbox to clear it";
       det.appendChild(note);
     }
     props.appendChild(det);

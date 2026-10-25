@@ -89,8 +89,11 @@ check("improve.propose explains singular scope names",
 skill_proposal = improve_mod.propose("skill", "v521 disposable proposal")
 skill_decision = improve_mod.decide(skill_proposal["id"], "approve")
 check("skill proposals cannot be falsely accepted by the backend",
+      # v645 re-pin: a skill IS approvable now, but only a draft that exists and
+      # passes its sandbox check — this proposal carries no draft folder, so it
+      # is still refused, with the real reason instead of "not implemented".
       skill_decision.get("ok") is False
-      and "not implemented" in (skill_decision.get("error") or "")
+      and "nothing to install" in (skill_decision.get("error") or "")
       and improve_mod.get_proposal(skill_proposal["id"]).get("status") == "pending",
       skill_decision)
 
@@ -219,8 +222,12 @@ check("proposal decisions report HTTP errors instead of false acceptance",
 _chat_proposal = ui[ui.index("function improveCard(d)"):
                     ui.index("/* JAG-447: the Improvement panel",
                              ui.index("function improveCard(d)"))]
-check("skill proposal chat cards disable unsupported accept",
-      'd.scope === "skill"' in _chat_proposal and "ok.disabled = true" in _chat_proposal)
+check("skill proposal chat cards never show a dead accept",
+      # v645 re-pin: a skill proposal IS approvable now, so the old blanket
+      # `d.scope === "skill"` disable is gone. The dead button that remains
+      # impossible is the one on an event with no proposal id.
+      'if (typeof pid !== "string" || !pid)' in _chat_proposal
+      and 'd.scope === "skill"' not in _chat_proposal)
 _proposal_panel = ui[ui.index("// ---- proposals (collapsible"):
                      ui.index("// ---- decided history")]
 check("proposal panel has no duplicate decision controls",

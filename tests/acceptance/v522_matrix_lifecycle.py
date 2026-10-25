@@ -174,8 +174,10 @@ check("the inbox labels provenance instead of mixing queues",
       and by_id["imp:" + project["id"]]["kind"] == "improvement"
       and by_id["imp:" + project["id"]]["scope"] == "project")
 check("unsupported skill proposals cannot be approved from the inbox",
+      # v645 re-pin: skill approval is implemented; a proposal with NO draft
+      # folder is the unsupported case now, and it says so.
       by_id["imp:" + skill["id"]]["can_approve"] is False
-      and "not implemented" in by_id["imp:" + skill["id"]]["blocked_reason"])
+      and "no draft" in by_id["imp:" + skill["id"]]["blocked_reason"])
 check("inbox stats count both pending queues",
       approvals.stats_unified().get("pending_total") == len(pending),
       approvals.stats_unified())
@@ -185,8 +187,9 @@ check("one endpoint decides a tool approval",
       and approvals.get_any(tool_rec["id"]).get("status") == "approved")
 skill_decision = approvals.decide_any("imp:" + skill["id"], "approve")
 check("one endpoint refuses an unsupported skill approval",
+      # v645 re-pin: the reason is now the missing draft, not a missing feature.
       skill_decision.get("ok") is False
-      and "not implemented" in (skill_decision.get("error") or ""),
+      and "nothing to install" in (skill_decision.get("error") or ""),
       skill_decision.get("error"))
 project_decision = approvals.decide_any("imp:" + project["id"], "approve")
 check("one endpoint approves a project proposal and applies its rule",

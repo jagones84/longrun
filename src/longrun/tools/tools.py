@@ -1411,16 +1411,18 @@ def _improve(args, run_id=None):
         except Exception as e:  # noqa: BLE001
             return {"error": "mine failed: %s" % e}
         recs = []
-        # scan() already skips existing drafts and caps at 10 NEW, so each
-        # published card is actionable. Junk drafts never reach the chat,
-        # and mined drafts live under proposals/skills (Improvement panel),
-        # not the tool-approval inbox — see approvals.list_unified.
+        # v645: a bare tool sequence has NO purpose, so it is not a proposal.
+        # This branch used to publish one `improve.proposal` card per draft with
+        # no `content` and no `id` (only a path), so the chat filled with
+        # "improvement proposal (skill)" cards that said nothing, could not be
+        # approved (the card's id was the SSE sequence number) and never reached
+        # the approval inbox. Mined drafts stay on disk as material; a proposal
+        # only exists once someone can state what it does (scope=skill + content).
         for p in paths[:10]:
-            rec = {"scope": "skill", "path": p, "status": "proposed",
-                   "reason": "repeated tool pattern detected (selfevolve)"}
-            recs.append(rec)
-            _pub("improve.proposal", **rec)
-        out_rec = {"ok": True, "mined": len(recs), "proposals": recs}
+            recs.append({"path": p, "status": "draft"})
+        out_rec = {"ok": True, "mined": len(recs), "drafts": recs,
+                   "note": "drafts only — a mined tool sequence is not a proposal; "
+                           "pass scope=skill with a description of what it does to propose it"}
         if pruned:
             out_rec["pruned_junk"] = len(pruned)
         return out_rec

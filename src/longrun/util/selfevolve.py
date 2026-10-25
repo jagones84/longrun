@@ -431,11 +431,17 @@ def verify(proposal_dir, runner=None, c=None):
     return report
 
 
-def promote(proposal_dir, skills_dir=None, c=None):
+def promote(proposal_dir, skills_dir=None, c=None, human=False):
     """Archive a VERIFIED proposal into skills/<category>/<name>/ (write-gate).
 
     Rejects if the status is not `verified`. Does not overwrite. Returns
     {"ok",...} or {"ok": False, "error": ...}.
+
+    `human=True` is the OPERATOR path (an approved proposal in the WebUI): the
+    sandbox check still has to be green, but the sealed held-out suite is not
+    required — a person looking at the draft IS the independent judge, which is
+    what the RDD gate protects against (the machine certifying itself). The
+    release is stamped on the proposal so the provenance stays visible.
     """
     import shutil
     c = c or cfg()
@@ -470,13 +476,24 @@ def promote(proposal_dir, skills_dir=None, c=None):
     # RDD point 2: sealed held-out gate (fail-closed). The local verifier
     # (check.py) is NOT enough: promotion requires the external judge suite.
     from longrun.plan import heldout
-    if heldout.require_enabled():
+    if heldout.require_enabled() and not human:
         g = heldout.gate(proposal_dir, c=c)
         if not g.get("green"):
+            why = str(g.get("reason") or "")
+            # v645: "no_manifest" is not a defect of the draft — it means the
+            # sealed judge suite was never installed, so NOTHING can be promoted
+            # (the automatic path fails the same way). Say that instead of
+            # leaving the operator with a dead accept button.
+            hint = (" — the sealed judge suite is not installed (data/heldout/manifest.json); "
+                    "pin it before promoting a skill") if why == "no_manifest" else ""
             return {"ok": False, "gate": g,
-                    "error": "held-out gate not green (%s)" % g.get("reason")}
+                    "error": "held-out gate not green (%s)%s" % (why, hint)}
     name = prop.get("name") or os.path.basename(proposal_dir)
-    root = skills_dir or os.path.join(REPO, "skills")
+    # The skills root is a PATH, not a constant: a test (or a different install)
+    # points it elsewhere with LONGRUN_SKILLS_DIR instead of writing into the
+    # checkout. Default stays the repo's skills/ library.
+    root = (skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
+            or os.path.join(REPO, "skills"))
     category = str(c.get("category") or "created")
     target = os.path.join(root, category, name)
     # JAG-426 safety boundary 1: the built-in library is IMMUTABLE — an auto skill
@@ -502,11 +519,14 @@ def promote(proposal_dir, skills_dir=None, c=None):
     except OSError as e:
         return {"ok": False, "error": "copy failed: %s" % e}
     prop["status"] = "archived"
-    prop["archived_to"] = os.path.relpath(target, REPO)
+    if human:
+        prop["released_by"] = "operator"
+    _under_repo = os.path.abspath(target).startswith(os.path.abspath(REPO) + os.sep)
+    prop["archived_to"] = (os.path.relpath(target, REPO) if _under_repo else target)
     _write_json(prop_path, prop)
     _write_json(os.path.join(target, "proposal.json"), prop)
     return {"ok": True, "name": name, "path": target,
-            "rel": os.path.relpath(target, REPO)}
+            "rel": prop["archived_to"]}
 
 
 def pipeline(pattern, out_dir, support=0, runner=None, promote_if_green=True,
