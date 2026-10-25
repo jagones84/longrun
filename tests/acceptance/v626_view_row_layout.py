@@ -63,7 +63,10 @@ check("D2 window resize re-flows only when the column count changes (live panel 
       and "this._vlastNCols = ncols" in ORBIT
       and "count VISIBLE panels live" in ORBIT)
 check("E1 reset layout clears ratio + row-height keys",
-      'k.indexOf("vrat:") === 0 || k.indexOf("vrowh:") === 0' in ORBIT)
+      'k.indexOf("vcol:") === 0 || k.indexOf("vrat:") === 0 || k.indexOf("vrowh:") === 0' in ORBIT)
+check("F1 rows chunk in the VIEW's panel order (◀ ▶ arrows actually move panels)",
+      "vcur.panels.indexOf(a.dataset.panel) - vcur.panels.indexOf(b.dataset.panel)" in ORBIT
+      and "vcur = this.view.indexOf(\"view:\") === 0 ? this.findView(this.view.slice(5)) : null" in ORBIT)
 
 print("---")
 ok = sum(results)

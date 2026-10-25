@@ -2721,6 +2721,11 @@ class OrbitApp {
     if (window.matchMedia("(max-width:1100px)").matches) return; // mobile stack
     const vis = [...document.querySelectorAll("section.panel[data-panel]")].filter(p => !p.hidden);
     if (!vis.length) return;
+    // v626.3: chunk rows in the VIEW's panel order (the ◀ ▶ arrows rewrite
+    // v.panels) — DOM order is fixed by the markup, so without this sort a
+    // moved panel snapped back to its markup position and the arrows died.
+    const vcur = this.view.indexOf("view:") === 0 ? this.findView(this.view.slice(5)) : null;
+    if (vcur) vis.sort((a, b) => vcur.panels.indexOf(a.dataset.panel) - vcur.panels.indexOf(b.dataset.panel));
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}"); } catch (_) {}
     const minCol = 280;
