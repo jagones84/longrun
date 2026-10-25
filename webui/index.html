@@ -2510,18 +2510,6 @@
           <summary class="remaining u-ptr">Session notebooks <span id="kbSessionCount" class="remaining"></span></summary>
           <div id="kbSessions" class="u-mt6"><div class="remaining">expand to see session-scoped notebooks…</div></div>
         </details>
-        <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
-        <div class="card">
-          <div class="remaining u-m006"><b>Manual sources for the selected notebook.</b> Chat attachments are indexed automatically in their own session notebook; you do not need to add them again here. URLs are fetched; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs). Text is searchable lexically; vectors are added only when an embedding model is configured.</div>
-          <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
-          <div class="u-df u-g6 u-mt6 u-fww">
-            <button class="ghost" data-call="kbAddSource">+ add + index</button>
-            <button class="ghost" data-call="kbReembed" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
-            <button class="ghost" data-call="kbFiles" title="which sources are in this notebook">sources</button>
-            <button class="ghost" data-call="kbLoadSources" title="reload sources">↻</button>
-          </div>
-          <div id="kbSources" class="u-mt6"></div>
-        </div>
         <h2>Research · web → notebook</h2>
         <div class="card">
           <div class="remaining u-m006">One topic bar, two modes. <b>Manual</b>: search the web and pick the URLs to import. <b>Auto (agent)</b>: search, fetch, summarise with the research LLM and import automatically.</div>
@@ -2558,6 +2546,18 @@
             <div id="researchLog" style="margin-top:6px;font-family:ui-monospace,monospace;font-size:11px"></div>
           </div>
           <div id="kbCandidates" class="u-mt6"></div>
+        </div>
+        <h2>Sources · <span id="kbNbName" class="remaining">Default</span></h2>
+        <div class="card">
+          <div class="remaining u-m006"><b>Manual sources for the selected notebook.</b> Chat attachments are indexed automatically in their own session notebook; you do not need to add them again here. URLs are fetched; <b>PDF / DOCX / PPTX / XLSX / ODT</b> are extracted to text (OCR for scanned PDFs). Text is searchable lexically; vectors are added only when an embedding model is configured.</div>
+          <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
+          <div class="u-df u-g6 u-mt6 u-fww">
+            <button class="ghost" data-call="kbAddSource">+ add + index</button>
+            <button class="ghost" data-call="kbReembed" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
+            <button class="ghost" data-call="kbFiles" title="which sources are in this notebook">sources</button>
+            <button class="ghost" data-call="kbLoadSources" title="reload sources">↻</button>
+          </div>
+          <div id="kbSources" class="u-mt6"></div>
         </div>
         </div><!-- /data-insp=knowledge -->
       </div>
@@ -4885,9 +4885,9 @@ function _bindSidebarDrag(label, kind, id, group, container) {
     };
   }, { passive: true });
 }
-/* JAG-290: the badge and the todo prefix must show the AGENT id (e.g. A3), not the
+/* JAG-290/v606: the badge and the todo prefix must show the AGENT id (e.g. A3), not the
    session's internal sequence number. For a designated org agent we use its real
-   id; other sessions fall back to their sequence number so every row still has one. */
+   id; other sessions render their J sequence (never a fabricated A id — UP-1). */
 function _agentNum(s) {
   const a = _agents[s && s.id];
   const n = a ? (a.n || String(a.id || "").replace(/\D+/g, "")) : (s && s.job);
@@ -5059,7 +5059,9 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   const age = s.age ? (" · " + s.age) : "";
   const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
   const _anum = _agentNum(s);
-  const jid = _anum ? `<span class="jid" title="${ag ? "agent id " + esc(ag.id) : "session sequence"}">A${_anum}</span>` : "";
+  const jid = _anum ? (ag
+    ? `<span class="jid" title="agent id ${esc(ag.id)}">A${_anum}</span>`
+    : `<span class="jid" title="session sequence — no designated agent (team jobs live in Control)">J${_anum}</span>`) : "";
   const agtag = ag ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + esc(ag.reports.join(", ")) : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
   // JAG-339: the team symbol(s) this agent belongs to (may be several).
   const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];

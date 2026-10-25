@@ -7,6 +7,21 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Sidebar stops fabricating agent ids (phantom-A class closed, v606).**
+  Agentless sessions rendered `A<sequence>` (e.g. `A189` for `cmptest1`) —
+  an agent that does not exist. The rail badge now renders the roster id
+  (`A49`) only for designated agents, else the honest `J` sequence
+  (`J189`, tooltiped "no designated agent"). Resolver untouched; render-only
+  fix. Evidence: 43-session census (max #202), `_agentNum` fallback path,
+  no other `A"+num` fabrication left in the WebUI.
+  (Locked by `v606` 4/4; `v286` 26/26 + `v604` 4/4 unchanged.)
+- **Research · web → notebook moved above Sources in the KB panel.**
+  (Operator request; `v402` 28/28 unchanged, order-agnostic.)
+- **`.agent` consolidation: MATRIX/ archived, single spec index.**
+  `archive/MATRIX/` (landed long ago), `SPEC-INDEX.md` (the one spec system:
+  5 normative docs + procedures + history + debug loop), `MAINTENANCE.md` +
+  project-rules pointers. `design-agents-jobs.md` stays (referenced by
+  `agents.py`); the frontier plan stays (research continuity).
 - **Research live-verified end to end (WebUI + REST, 2026-10-25).**
   Phase A (default model): shallow run from the Knowledge panel — 5 relevant
   sources imported, chunks indexed and searchable, zero console errors. Phase C
