@@ -7,6 +7,17 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Docs freshness pass (no code).**
+  `docs/ARCHITECTURE.md` is a living map again (verified 2026-10-25, SJ level
+  added, stale Subjob-only model fixed, generated diagrams marked WIP);
+  `docs/RESEARCH-frontier-harnesses-2026.md` marked superseded (current:
+  `.agent/docs/research/` + `harness-strengths.md`); `docs/TESTING-PLAYBOOK.md`
+  gate commands fixed; `docs/CLI.md` freshness note. Frontier reports merged
+  into `.agent/docs/research/` (single stream, no `reports/` split); papers
+  `.txt` declared KB-chunk provenance with the correct PDF → `.md` pipeline
+  (`markitdown` MCP / `pdf-monster` skill / DGX `fitz`); `harness-strengths.md`
+  statuses updated (v595–v598 landed) with a same-commit freshness contract.
+  New project rule: docs never go stale silently.
 - **Explicit search provider chain (DeerFlow-grade packaging, tool level).**
   `_web_search` was one hardcoded tavily → brave → duckduckgo body; now one
   function per provider (`_search_tavily/_search_brave/_search_duckduckgo`)

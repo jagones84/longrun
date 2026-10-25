@@ -1,5 +1,8 @@
 # Longrun CLI — `forge.py`
 
+> Verified 2026-10-25: structure current (thin stdlib client over `/api/*`,
+> same surface as WebUI). If a command 404s, §3 is stale — fix it same-commit.
+
 Command the harness from the terminal. `forge.py` is a thin, **stdlib-only** client
 over the *same* REST API the WebUI and the mobile app use: it duplicates **no**
 harness logic, it just calls `/api/*` and prints the result. If a command exists in

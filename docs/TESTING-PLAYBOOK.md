@@ -46,7 +46,9 @@ Written down so a future session does not have to rediscover it.
 Static layer — the ONLY canonical regression set:
 
 ```bash
-bash tests/battery.sh          # v140_subagent_todos + v177_session_delete_cascade + v183_chat_core
+bash tests/battery.sh                          # FAST gate: ~12s, heavy tests skipped, PARALLEL
+LONGRUN_BATTERY_FULL=1 bash tests/battery.sh   # FULL suite (~1min)
+LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh   # force sequential (debug a flaky test)
 ```
 
 - `v183_chat_core` is the chat-loop contract test (LLM + tool gate mocked):

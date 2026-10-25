@@ -1,6 +1,8 @@
 # Longrun Architecture
 
-*v1.0.0 — 2026-10-07. The code is the source of truth; this is the map.*
+*Living map — verified against `src/longrun` 2026-10-25. The code is the source
+of truth; this is the map. Update it in the same commit as any structural change
+(freshness rule, 2026-10-25).*
 
 Longrun is a **stdlib-only Python agent harness**. It drives one LLM with disciplined
 context and a real tool loop, then composes that harness into **meta-agents organised in
@@ -36,8 +38,9 @@ The whole product is one hierarchy, from a business goal to a checklist item:
 ```
 Team  TN      a symbol + a roster (owns its members)
  └ Job     JN      a goal given to a coordinator
-    └ Subjob JN.j   one assignment, bound to ONE agent, with dependencies
+    └ Subjob JN.k   one assignment, bound to ONE agent, with dependencies
        └ Agent  AX   IS a session — its own harness, tools, skills, memory, chat
+          └ SJ SJ<n>[.k]  in-session subagents, dependency-ordered (die with the session)
           └ Todo AX.nY  a step, closable only with evidence
 ```
 
@@ -122,6 +125,13 @@ or `bwrap` / `nsjail`) so the agent never touches the host. Hard-denied patterns
   listens over **HTTPS** on `--port + 1` (self-signed cert auto-generated in
   `<data home>/data/tls/`, `LONGRUN_TLS=0` to disable) so the page is a *secure context*
   and browser voice input works.
+
+## Diagrams (WIP — do not trust, do not regenerate yet)
+
+The generated architecture diagrams (`docs/diagrams/`, archify `.architecture.json`
++ rendered HTML) are **gitignored local artifacts** and currently STALE. Per
+operator decision 2026-10-25: no regeneration pass now. The ASCII map and the
+tables above are the current reference until the WIP is lifted.
 
 ## Entry points
 
