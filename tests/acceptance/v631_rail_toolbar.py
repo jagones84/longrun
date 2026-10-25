@@ -74,9 +74,11 @@ check("A5 Esc closes the search row and clears the filter",
 check("A6 the running/finished chip is still there (with its counts)",
       'id="runsBarRun"' in UI and 'id="runsBarDone"' in UI
       and 'id="runsPanel"' in UI and "position: fixed" in block(".runs-panel"))
-check("A7 hide-empty is a compact inline toggle, not its own row",
-      '<input type="checkbox" id="hide-empty"><span>hide empty</span>' in UI
-      and "white-space: nowrap" in block("aside .rail-filter"))
+check("A7 hide-empty is an ICON toggle (funnel) whose state is visible",
+      'id="hideEmptyBtn" aria-pressed="false"' in UI
+      and '<input type="checkbox" id="hide-empty" hidden>' in UI
+      and 'aria-pressed="true"] svg path { fill: currentColor; }' in UI
+      and 'cb.checked = !cb.checked;' in UI)
 check("A8 the revealed list re-closes the search row when it clears the filter",
       'const row = $("railSearchRow"); if (row) row.hidden = true;' in UI)
 

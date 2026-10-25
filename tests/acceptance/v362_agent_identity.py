@@ -81,7 +81,7 @@ check("B1 the Rules panel states the agent identity",
       'id="rulesWho"' in HTML and ".rwho {" in HTML
       and 'api("GET", "/api/agents")' in HTML, "")
 check("B2 it falls back to 'ad-hoc session' when not designated",
-      "ad-hoc session (not designated as an agent)" in HTML, "")
+      "ad-hoc session (no agent)" in HTML, "")
 check("B3 the server exposes a build fingerprint",
       'if path == "/api/build":' in SRV and '"build": _b' in SRV, "")
 check("B4 the SPA notices a build change WITHOUT restarting the open tab (JAG-500)",

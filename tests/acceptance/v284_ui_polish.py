@@ -57,9 +57,8 @@ check("floating menus are opaque (sessions / attach / overflow / slash)",
       and 'background: var(--menubg); border: 1px solid var(--line); border-radius: 12px;' in ui
       and 'padding: 4px; z-index: 40; background: var(--menubg); }' in ui
       and '#slashMenu { background: var(--menubg); }' in ui)
-check("the compact action is a full-width accent button above the donut",
-      'id="compactBtn"' in ui and '#inspector #compactBtn' in ui
-      and 'width: 100%; margin: 2px 0 8px; padding: 8px 12px;' in ui)
+check("the compact action is an inline text action under the stats",
+      'id="compactBtn" class="lnk"' in ui and ".ctxacts {" in ui)
 check("the composer keeps the model picker visible and shrinkable (never collapses it)",
       '.cb-right .model-wrap > button { max-width: 160px; min-width: 34px;' in ui
       and 'gap: 6px; flex-wrap: wrap; min-width: 0; }' in ui)

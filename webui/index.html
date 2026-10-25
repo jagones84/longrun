@@ -225,10 +225,13 @@
     border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
   aside .rail-tools .rail-btn:hover { color: var(--txt); border-color: var(--acc); }
   aside .rail-tools .rail-btn[aria-expanded="true"] { color: var(--txt); border-color: var(--acc); }
+  /* v632: the hide-empty FILTER reads as a toggle — filled funnel + accent while
+     on, so its state is visible without a label eating the toolbar. */
+  aside .rail-tools .rail-toggle[aria-pressed="true"] { color: var(--acc); border-color: var(--acc);
+    background: color-mix(in srgb, var(--acc) 14%, transparent); }
+  aside .rail-tools .rail-toggle[aria-pressed="true"] svg path { fill: currentColor; }
   aside .rail-tools .runs-bar { width: auto; margin: 0; padding: 3px 8px; flex: 1 1 auto; }
   aside .rail-tools .runs-bar .rb-caret { margin-left: 0; }
-  aside .rail-filter { display: inline-flex; align-items: center; gap: 5px; margin: 0;
-    font-size: 10.5px; color: var(--dim); cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
   aside .rail-search { flex: 0 0 auto; }
   /* v629: ONLY the list scrolls. The header + tools stay put, so revealing a
      session (🎯 / Jobs → session) can never scroll the ▲/▼ tools and the filters
@@ -424,11 +427,16 @@
   /* JAG-278: one horizontal row — % + bar + state + compact — to save vertical space. */
   .ctxhead { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .ctxhead .meter { flex: 1; margin: 0; }
-  /* JAG-396: a prominent compact action, sitting right above the context donut. */
-  #inspector #compactBtn { display: block; width: 100%; margin: 2px 0 8px; padding: 8px 12px;
-    font-size: 12px; font-weight: 700; color: var(--acc); background: transparent;
-    border: 1px solid var(--acc); border-radius: 9px; cursor: pointer; }
-  #inspector #compactBtn:hover { background: var(--sel); color: var(--txt); }
+  /* v632: the context panel is a STAT readout, not a landing page. The two
+     full-width buttons (compact / settings) became inline text actions under the
+     numbers, and the dry-run is a collapsed row: same functions, no dead space. */
+  .ctxacts { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+  .lnk { padding: 0; background: none; border: 0; color: var(--acc); font: inherit;
+    font-size: 11px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+  .lnk:hover { color: var(--txt); }
+  .lnk.busy { opacity: .6; cursor: progress; }
+  details.dryrun > summary { cursor: pointer; font-size: 11px; color: var(--dim); }
+  details.dryrun > summary:hover { color: var(--txt); }
   .ctxpct { font-size: 18px; font-weight: 700; letter-spacing: -.5px; color: var(--txt); font-variant-numeric: tabular-nums; }
   .ctxstate { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
   .ctxstate.near { color: var(--warn); }
@@ -1733,7 +1741,18 @@
           <span class="rb-done" title="finished while you were elsewhere">🔔 <b id="runsBarDone">0</b></span>
           <span class="rb-caret" aria-hidden="true">▾</span>
         </button>
-        <label class="rail-filter" title="hide sessions with no messages"><input type="checkbox" id="hide-empty"><span>hide empty</span></label>
+        <!-- v632: a FILTER toggle, not a labelled checkbox: the funnel is filled
+             and accent-coloured while the filter is on (M3 icon-button rule:
+             filled = selected), with aria-pressed for screen readers. The native
+             checkbox stays as the single source of truth for the filter. -->
+        <button type="button" class="rail-btn rail-toggle" id="hideEmptyBtn" aria-pressed="false"
+                title="hide empty sessions" aria-label="hide empty sessions">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">
+            <path d="M2.5 3.2h11L9.2 8.3v4.4l-2.4-1.2V8.3L2.5 3.2z" fill="none"
+                  stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <input type="checkbox" id="hide-empty" hidden>
       </div>
       <div id="railSearchRow" class="rail-search" hidden>
         <input id="session-search" class="inp" placeholder="search sessions…" aria-label="search sessions">
@@ -1889,23 +1908,24 @@
             <span id="ctxState" class="ctxstate">–</span>
           </div>
           <div class="ctxrow"><span id="ctxMsgs">–</span><span id="ctxTok">–</span><span id="ctxBudget">–</span></div>
+          <div class="ctxacts">
+            <button type="button" id="compactBtn" class="lnk"
+                    title="summarize this session's transcript now to free up context">compact</button>
+            <button type="button" class="lnk" data-call="openSettings" data-args='["compaction"]'
+                    title="open the shared automatic and manual compaction policy">settings</button>
+          </div>
         </div>
-        <button id="compactBtn" title="summarize this session's transcript now to free up context">🗜 Compact context</button>
-        <button class="ghost u-mt6" data-call="openSettings" data-args='["compaction"]'
-                title="open the shared automatic and manual compaction policy">⚙ Compaction settings</button>
         <div id="ctxCats"></div>
-        <!-- JAG-536 W5: POST /api/context/preview had no door — the assembler's own
-             dry run (compaction outcome, token totals, memories) was CLI-only. -->
-        <div class="card u-mt6">
-          <div class="remaining"><b>Dry-run the next turn</b> — exactly what the assembler would send,
-          without a model call: the compaction outcome, the token totals and the memories retrieval
-          would inject.</div>
+        <!-- JAG-536 W5: POST /api/context/preview — the assembler's own dry run
+             (compaction outcome, token totals, memories). v632: collapsed row. -->
+        <details class="dryrun u-mt6">
+          <summary>dry-run next turn</summary>
           <div class="u-df u-g6 u-aic u-mt6">
-            <input id="ctxPvMsg" class="inp u-f1 u-p610 u-fs12" placeholder="the message you are about to send…">
-            <button class="ghost" data-call="ctxPreview" title="POST /api/context/preview">▶ preview</button>
+            <input id="ctxPvMsg" class="inp u-f1 u-p610 u-fs12" placeholder="message you are about to send…">
+            <button type="button" class="ghost" data-call="ctxPreview" title="POST /api/context/preview">▶</button>
           </div>
           <div id="ctxPvOut" class="u-mt6" style="font-size:11px"></div>
-        </div>
+        </details>
         </div>
       </section>
       <section data-insp="plan" class="insp-open">
@@ -5760,15 +5780,14 @@ async function loadRulesPanel() {
   if (wbox) {
     wbox.textContent = who
       ? ((who.id || "") + (who.name ? " \u00b7 " + who.name : "")
-         + (who.role ? " \u00b7 " + who.role : "")
-         + "  \u2014 agent identity (roster); the role text below is this agent's ROLE.md")
-      : "ad-hoc session (not designated as an agent) \u2014 the role text below is this session's ROLE.md";
+         + (who.role ? " \u00b7 " + who.role : ""))
+      : "ad-hoc session (no agent)";
     wbox.className = "rwho" + (who ? " agent" : "");
   }
   _isum("sRoles", who ? ((who.id || "") + (who.name ? " " + who.name : "")).trim() : "ad-hoc", who ? "ok" : "");
   const rows = [];
   if (sessionId) rows.push(_rulesRow("role", "session role", (role && role.path) || "(no session)",
-                                     (role && role.text) || "", "ROLE.md", !!(role && role.text), true));
+                                     (role && role.text) || "", "ROLE.md", !!(role && role.text), false));
   else rows.push('<div class="remaining">open a session to see its ROLE.md</div>');
   // JAG-2.8: show global and project Global_rules.md / Project_rules.md as read-only reference —
   // they apply to this session but are edited in Settings > Rules.
@@ -6651,10 +6670,11 @@ async function saveSettingsSection(card, sec) {
 }
 async function compactNow() {
   if (!sessionId) { alert("no active session"); return; }
-  const btn = $("compactBtn"); if (btn) btn.textContent = "🗜 compacting…";
+  const btn = $("compactBtn");
+  if (btn) { btn.textContent = "compacting…"; btn.classList.add("busy"); }
   let r = {};
   try { r = await api("POST", "/api/context/compact", { session: sessionId }); }
-  finally { if (btn) btn.textContent = "🗜 Compact context"; }
+  finally { if (btn) { btn.textContent = "compact"; btn.classList.remove("busy"); } }
   // JAG-461: Stop aborts a running compaction server-side -> the transcript is
   // UNCHANGED. Say so instead of pretending a compaction happened.
   if (r && r.aborted) { toast("compaction aborted — context unchanged", "warn"); return; }
@@ -13373,6 +13393,17 @@ $("inp").addEventListener("paste", e => {
     if (e.key !== "Escape") return;
     if (inp.value) { inp.value = ""; loadSessions(); }
     setOpen(false);
+  });
+})();
+/* v632: hide-empty is an ICON toggle (funnel). The native checkbox stays the
+   single source of truth, so every existing filter path keeps working. */
+(function bindHideEmpty() {
+  const cb = $("hide-empty"), btn = $("hideEmptyBtn");
+  if (!cb || !btn) return;
+  btn.addEventListener("click", () => {
+    cb.checked = !cb.checked;
+    btn.setAttribute("aria-pressed", cb.checked ? "true" : "false");
+    loadSessions();
   });
 })();
 $("compactBtn").onclick = compactNow;
