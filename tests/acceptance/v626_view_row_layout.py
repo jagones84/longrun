@@ -41,10 +41,15 @@ check("A2 a wrapped row fills the row width (rows are full-width lines)",
       "main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;gap:0}" in ORBIT
       and "main.view-cols .vrow{display:flex;flex-direction:row;gap:8px;width:100%;" in ORBIT)
 check("B1 column widths persist as per-row RATIOS, not px",
+      # v644 re-pin: the share is taken over the columns' own total (the row also
+      # holds gaps + splitters), so the saved ratios always sum to 1.
       '"vrat:" + this.view + ":" + r + ":" + c' in ORBIT
-      and "p.getBoundingClientRect().width / rowW" in ORBIT)
-check("B2 ratios are stored as flex-basis percentages (reversible, window-scaling)",
-      'p.style.flex = "0 0 " + (this._vcolRatio(saved, r, c, rowPanels.length) * 100).toFixed(4) + "%"' in ORBIT)
+      and "widths[c] / total" in ORBIT)
+check("B2 ratios are stored as GROW factors (reversible, window-scaling)",
+      # v644 re-pin: a percentage BASIS overflowed the deck (gaps + splitters are
+      # not part of the share) and pushed the last panel past the right border —
+      # operator: "la fine dell'ultimo RH panel non si allinea al bordo esterno".
+      'p.style.flex = ratios[c] + " 1 0"' in ORBIT)
 check("B3 panels restore home via slot markers BEFORE rows are dropped (re-entrant safe)",
       'p._vmark.parentElement.insertBefore(p, p._vmark)' in ORBIT
       and 'p._vmark = document.createComment("vslot:" + (p.dataset.panel || ""))' in ORBIT

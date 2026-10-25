@@ -483,7 +483,9 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;gap:0}
   main.view-cols .vrow{display:flex;flex-direction:row;gap:8px;width:100%;
     flex:0 0 auto;min-height:0;height:calc(100vh - 150px)}
-  main.view-cols .vrow > section.panel[data-panel]{min-width:0;min-height:0}
+  /* v644: a view column never collapses below a readable width — the rows are
+     sized so n × 280px already fits, so 180px can never overflow the row. */
+  main.view-cols .vrow > section.panel[data-panel]{min-width:180px;min-height:0}
   main.view-cols .vrow > section.panel[data-panel] > .scroll{max-height:none;min-height:0;flex:1 1 auto}
   .rz-vrow{width:100%;height:6px;flex:0 0 auto;cursor:ns-resize;border-radius:3px;
     background:transparent;touch-action:none}
@@ -2754,13 +2756,29 @@ class OrbitApp {
       row.className = "vrow";
       const h = saved["vrowh:" + this.view + ":" + r];
       if (h) row.style.height = h + "px";
+      // v644: a ratio set written by the OLD drag math does not add up to 1
+      // (measured: 16.6 + 15.7 + 18.3 + 83.3 = 133.8%), so it is corrupt, not a
+      // shape anybody chose — fall back to equal shares instead of reproducing
+      // it. A valid set is kept as it is.
+      let ratios = rowPanels.map((p, c) => this._vcolRatio(saved, r, c, rowPanels.length));
+      const rsum = ratios.reduce((a, b) => a + b, 0);
+      if (rsum < 0.9 || rsum > 1.1) ratios = rowPanels.map(() => 1 / rowPanels.length);
       rowPanels.forEach((p, c) => {
         if (!p._vmark){
           p._vmark = document.createComment("vslot:" + (p.dataset.panel || ""));
           p.parentElement.insertBefore(p._vmark, p);
         }
         row.appendChild(p);
-        p.style.flex = "0 0 " + (this._vcolRatio(saved, r, c, rowPanels.length) * 100).toFixed(4) + "%";
+        // v644: GROW factors, not basis percentages. A percentage basis is a
+        // share of the row that does NOT know about the gaps and the 5px
+        // splitters, so any saved set (even 4 × 25%) overflowed the deck and a
+        // stale drag could hand ONE panel 83% — the last panel then ran past
+        // the right border instead of ending on it (operator: "la fine
+        // dell'ultimo RH panel non si allinea al bordo esterno"). Grow factors
+        // are normalised by the flexbox itself: whatever is saved, the row
+        // always ends exactly on the deck border and every panel keeps its
+        // share.
+        p.style.flex = ratios[c] + " 1 0";
       });
       deck.appendChild(row);
       rowPanels.forEach((p, c) => {
@@ -2779,8 +2797,16 @@ class OrbitApp {
             const dx = ev.clientX - x0;
             const a = Math.min(rowW - 180, Math.max(180, a0 + dx));
             const b = Math.max(180, b0 - (a - a0));
-            A.style.flex = "0 0 " + ((a / rowW) * 100).toFixed(4) + "%";
-            B.style.flex = "0 0 " + ((b / rowW) * 100).toFixed(4) + "%";
+            // v644: the two dragged panels get their new width as grow factors
+            // in PIXELS of this row; the untouched panels freeze at their
+            // current width so the row keeps ending on the deck border (a
+            // percentage basis grew the sum past 100% and pushed the last
+            // panel off the right edge).
+            rowPanels.forEach(p => {
+              if (p !== A && p !== B) p.style.flex = p.getBoundingClientRect().width + " 1 0";
+            });
+            A.style.flex = a + " 1 0";
+            B.style.flex = b + " 1 0";
           };
           const up = () => {
             sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up);
@@ -2841,10 +2867,14 @@ class OrbitApp {
   }
   _saveRowRatios(r, rowPanels, row){
     try {
-      const rowW = row.getBoundingClientRect().width;
+      // v644: ratios are shares of the columns' own total (not of the row,
+      // which also contains the gaps + splitters), so they always sum to 1 and
+      // the saved shape matches what is on screen.
+      const widths = rowPanels.map(p => p.getBoundingClientRect().width);
+      const total = widths.reduce((a, b) => a + b, 0) || 1;
       const s = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}");
       rowPanels.forEach((p, c) => {
-        s["vrat:" + this.view + ":" + r + ":" + c] = Math.max(0.02, p.getBoundingClientRect().width / rowW);
+        s["vrat:" + this.view + ":" + r + ":" + c] = Math.max(0.02, widths[c] / total);
       });
       localStorage.setItem("orbit_layout_v2", JSON.stringify(s));
     } catch (_) {}
