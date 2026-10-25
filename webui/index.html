@@ -1203,7 +1203,10 @@
     #settingsWin .sw-nav button { width: auto; margin: 0; white-space: nowrap; }
     #settingsWin .sw-main { padding: 12px; }
   }
-  #settingsWin .sw-main { flex: 1; min-width: 0; overflow-y: auto; padding: 14px; }
+  #settingsWin .sw-main { flex: 1; min-width: 0; overflow-y: auto; padding: 10px 12px; }
+  /* v639: Settings uses the rail's button size and padding rhythm — the window is a
+     panel, not a landing page (was 14px body font with 8/14px padding). */
+  #settingsWin button.ghost { font-size: 11px; padding: 4px 9px; border-radius: 8px; }
   #settingsWin .sw-main .sw-cat h2 { font-size: 11px; letter-spacing: .16em; color: var(--dim);
     margin: 16px 0 8px; text-transform: uppercase; }
   #settingsWin .sw-main .sw-cat h2:first-child { margin-top: 0; }
@@ -2681,8 +2684,9 @@
         </div><!-- /data-insp=knowledge -->
       </div>
       <div class="sw-cat" data-cat="compaction" hidden>
-        <h2>Compaction · shared policy</h2>
-        <div class="remaining u-mb8">Global policy — not session-specific. Click a config filename to open it.</div>
+        <!-- v639: the "Global policy — not session-specific" sentence left the body;
+             the panel title + the shared file chips already say it. -->
+        <h2 title="global policy — not session-specific; click a config filename to open it">Compaction · shared policy</h2>
         <div class="setFormsHost"></div>
       </div>
       <div class="sw-cat" data-cat="appearance" hidden>
@@ -2727,10 +2731,10 @@
   <h2 style="margin:0 0 10px">New session</h2>
   <label class="remaining" for="nsTitle">title</label>
   <input id="nsTitle" class="inp u-w100 u-p610 u-fs12 u-mt4">
-  <label class="remaining u-db u-mt10" for="nsWs">folder (local workspace)</label>
+  <label class="remaining u-db u-mt10" for="nsWs">folder</label>
   <div class="u-df u-g6 u-mt4">
-    <input id="nsWs" class="inp u-f1 u-p610 u-fs12" placeholder="folder (empty = the current default) — 📁 browse…">
-    <button class="ghost" data-call="openDirPicker" title="browse folders">📁 browse…</button>
+    <input id="nsWs" class="inp u-f1 u-p610 u-fs12" placeholder="empty = default folder">
+    <button class="ghost" data-call="openDirPicker" aria-label="browse folders" title="browse folders">📁</button>
   </div>
   <div class="u-df u-g8 u-mt12 u-jcfe">
     <button class="ghost" data-call="closeNewSess">cancel</button>
