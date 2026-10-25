@@ -477,6 +477,18 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     main.view-cols .deckBody{flex-direction:column}
     main.view-cols section.panel[data-panel]{flex:none;width:100%}
   }
+  /* v626: explicit rows × columns layout (see _layoutViewCols). Each row is a
+     full-width flex line, so a panel that wraps fills its row; column widths
+     are % of the row (reversible), row heights resize per ROW via .rz-vrow. */
+  main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;gap:0}
+  main.view-cols .vrow{display:flex;flex-direction:row;gap:8px;width:100%;
+    flex:0 0 auto;min-height:0;height:calc(100vh - 150px)}
+  main.view-cols .vrow > section.panel[data-panel]{min-width:0;min-height:0}
+  main.view-cols .vrow > section.panel[data-panel] > .scroll{max-height:none;min-height:0;flex:1 1 auto}
+  .rz-vrow{width:100%;height:6px;flex:0 0 auto;cursor:ns-resize;border-radius:3px;
+    background:transparent;touch-action:none}
+  .rz-vrow:hover,.rz-vrow:active{background:var(--acc)}
+  @media (max-width:1100px){ .rz-vrow{display:none} .vrow{height:auto} }
   /* v622: per-column move/remove controls live in each panel header, visible
      only in a custom view. The view bar (name/rename/+panel/delete) sits
      above the deck. */
@@ -2680,60 +2692,142 @@ class OrbitApp {
     // canvases size from their box) — tell resize listeners to re-fit.
     try { window.dispatchEvent(new Event("resize")); } catch (e){}
   }
-  /* v624: column resize INSIDE a custom view — one splitter between every two
-     visible panels (the stacked-board splitters cannot work here: their grid
-     rows are display:contents). Same pointer-drag contract as initPanels,
-     widths persist per view + column index, reset layout clears them. */
+  /* v626: view layout is an explicit rows × columns grid (the pattern used by
+     docked dashboards / editor split views). Panels are chunked into rows of
+     N columns, N = how many ≥280px columns the deck currently fits, so when a
+     panel wraps to the next row it fills that row's width. Column widths are
+     stored as per-row RATIOS (not px) → drags are reversible and scale with
+     the window; the structure can always flow back to the first row. Row
+     heights resize per ROW via a horizontal splitter between rows. Mobile
+     (≤1100px) keeps the plain vertical stack. */
   _layoutViewCols(){
-    document.querySelectorAll(".rz-vcol").forEach(s => s.remove());
     const main = document.querySelector("main");
-    if (!main || !main.classList.contains("view-cols")) return;
-    const deck = main.querySelector(".deckBody");
-    if (!deck) return;
+    const deck = main ? main.querySelector(".deckBody") : null;
+    // idempotent rebuild: restore every panel home FIRST (a marker comment
+    // pins its original slot — panels must never be destroyed with the row),
+    // THEN drop the row containers. v626.1: the previous version removed the
+    // rows first, so any re-entrant applyView (boot, poll, resize) destroyed
+    // the desk panels entirely.
+    document.querySelectorAll("section.panel[data-panel]").forEach(p => {
+      if (p._vmark){
+        try { p._vmark.parentElement.insertBefore(p, p._vmark); } catch (_){}
+        p._vmark.remove(); delete p._vmark;
+      }
+      p.style.order = ""; p.style.flex = ""; p.style.flexBasis = "";
+    });
+    document.querySelectorAll(".vrow,.rz-vcol,.rz-vrow").forEach(el => el.remove());
+    if (deck) deck.classList.remove("vrows");
+    if (!main || !main.classList.contains("view-cols") || !deck) return;
+    if (window.matchMedia("(max-width:1100px)").matches) return; // mobile stack
     const vis = [...document.querySelectorAll("section.panel[data-panel]")].filter(p => !p.hidden);
+    if (!vis.length) return;
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}"); } catch (_) {}
-    // v625 fix: the panels' parents (.grid2/.col) are display:contents, so a
-    // splitter inserted as a DOM sibling never sat between the VISUAL neighbors
-    // (visual order is CSS `order`, not DOM). Splitters are now flex items of
-    // .deckBody itself: panel i takes order 2i, its splitter takes 2i+1 —
-    // exactly one splitter between each adjacent column pair, and each drag
-    // moves precisely its two panels.
-    vis.forEach((p, i) => {
-      p.style.order = String(i * 2);
-      p.style.flex = ""; p.style.flexBasis = "";
-      const w = saved["vcol:" + this.view + ":" + i];
-      if (w) { p.style.flex = "0 0 auto"; p.style.flexBasis = w + "px"; }
+    const minCol = 280;
+    const ncols = Math.max(1, Math.min(vis.length, Math.floor(Math.max(minCol, deck.clientWidth - 12) / minCol) || 1));
+    this._vlastNCols = ncols;
+    deck.classList.add("vrows");
+    const rows = [];
+    for (let i = 0; i < vis.length; i += ncols) rows.push(vis.slice(i, i + ncols));
+    rows.forEach((rowPanels, r) => {
+      const row = document.createElement("div");
+      row.className = "vrow";
+      const h = saved["vrowh:" + this.view + ":" + r];
+      if (h) row.style.height = h + "px";
+      rowPanels.forEach((p, c) => {
+        if (!p._vmark){
+          p._vmark = document.createComment("vslot:" + (p.dataset.panel || ""));
+          p.parentElement.insertBefore(p._vmark, p);
+        }
+        row.appendChild(p);
+        p.style.flex = "0 0 " + (this._vcolRatio(saved, r, c, rowPanels.length) * 100).toFixed(4) + "%";
+      });
+      deck.appendChild(row);
+      rowPanels.forEach((p, c) => {
+        if (c + 1 >= rowPanels.length) return;
+        const A = rowPanels[c], B = rowPanels[c + 1];
+        const sp = document.createElement("div");
+        sp.className = "rz-vcol"; sp.title = "drag to resize these columns";
+        row.insertBefore(sp, B);
+        sp.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          try { sp.setPointerCapture(e.pointerId); } catch (_) {}
+          const rowW = row.getBoundingClientRect().width;
+          const a0 = A.getBoundingClientRect().width, b0 = B.getBoundingClientRect().width;
+          const x0 = e.clientX;
+          const move = (ev) => {
+            const dx = ev.clientX - x0;
+            const a = Math.min(rowW - 180, Math.max(180, a0 + dx));
+            const b = Math.max(180, b0 - (a - a0));
+            A.style.flex = "0 0 " + ((a / rowW) * 100).toFixed(4) + "%";
+            B.style.flex = "0 0 " + ((b / rowW) * 100).toFixed(4) + "%";
+          };
+          const up = () => {
+            sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up);
+            this._saveRowRatios(r, rowPanels, row);
+          };
+          sp.addEventListener("pointermove", move); sp.addEventListener("pointerup", up);
+        });
+      });
     });
-    for (let i = 0; i + 1 < vis.length; i++){
-      const A = vis[i], B = vis[i + 1], key = "vcol:" + this.view + ":" + i;
+    // v626: horizontal splitter BETWEEN rows — resizes the whole ROW above,
+    // not any single panel (a wrapped panel makes its own row).
+    for (let r = 0; r + 1 < rows.length; r++){
+      const rowA = rows[r][0].parentElement, rowB = rows[r + 1][0].parentElement;
       const sp = document.createElement("div");
-      sp.className = "rz-vcol"; sp.title = "drag to resize these columns";
-      sp.style.order = String(i * 2 + 1);
-      deck.appendChild(sp);
+      sp.className = "rz-vrow"; sp.title = "drag to resize this row";
+      deck.insertBefore(sp, rowB);
       sp.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         try { sp.setPointerCapture(e.pointerId); } catch (_) {}
-        const a0 = A.getBoundingClientRect().width, b0 = B.getBoundingClientRect().width;
-        const x0 = e.clientX;
+        const h0 = rowA.getBoundingClientRect().height, y0 = e.clientY;
         const move = (ev) => {
-          const a = Math.max(180, a0 + (ev.clientX - x0)), b = Math.max(180, b0 - (ev.clientX - x0));
-          A.style.flex = "0 0 auto"; A.style.flexBasis = a + "px";
-          B.style.flex = "0 0 auto"; B.style.flexBasis = b + "px";
+          const h = Math.max(220, Math.min(3000, h0 + (ev.clientY - y0)));
+          rowA.style.height = h + "px";
         };
         const up = () => {
           sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up);
           try {
             const s = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}");
-            s[key] = Math.round(A.getBoundingClientRect().width);
-            s["vcol:" + this.view + ":" + (i + 1)] = Math.round(B.getBoundingClientRect().width);
+            s["vrowh:" + this.view + ":" + r] = Math.round(rowA.getBoundingClientRect().height);
             localStorage.setItem("orbit_layout_v2", JSON.stringify(s));
           } catch (_) {}
-          try { window.dispatchEvent(new Event("resize")); } catch (_) {}
         };
         sp.addEventListener("pointermove", move); sp.addEventListener("pointerup", up);
       });
     }
+    // window resize: re-flow when the number of columns that fit changes
+    if (!this._vresizeBound){
+      this._vresizeBound = true;
+      let t = null;
+      window.addEventListener("resize", () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          const m = document.querySelector("main");
+          const d = m && m.classList && m.classList.contains("view-cols") ? m.querySelector(".deckBody") : null;
+          if (!d) return;
+          // v626.2: count VISIBLE panels live — the closure's `vis` goes stale
+          // after switching views, which would mis-size the re-flow.
+          const n = [...document.querySelectorAll("section.panel[data-panel]")].filter(p => !p.hidden).length;
+          const c = Math.max(1, Math.min(n, Math.floor(Math.max(minCol, d.clientWidth - 12) / minCol) || 1));
+          if (c !== this._vlastNCols) this._layoutViewCols();
+        }, 150);
+      });
+    }
+  }
+  _vcolRatio(saved, r, c, n){
+    const v = saved["vrat:" + this.view + ":" + r + ":" + c];
+    return (typeof v === "number" && v > 0 && v < 1) ? v : 1 / n;
+  }
+  _saveRowRatios(r, rowPanels, row){
+    try {
+      const rowW = row.getBoundingClientRect().width;
+      const s = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}");
+      rowPanels.forEach((p, c) => {
+        s["vrat:" + this.view + ":" + r + ":" + c] = Math.max(0.02, p.getBoundingClientRect().width / rowW);
+      });
+      localStorage.setItem("orbit_layout_v2", JSON.stringify(s));
+    } catch (_) {}
   }
   async createTeam(){
     // JAG-2.0: create a team from the deck, persisted via the teams backend.
@@ -2939,9 +3033,12 @@ function initPanels(){
     saved = {}; persist();
     document.querySelectorAll(".grid2").forEach(g => { g.style.removeProperty("--cA"); g.style.removeProperty("--cB"); g.style.height = ""; });
     // v624: view-column widths live on the panels + vcol:* keys — clear them too.
+    // v626: ratio + row-height keys share the same storage.
     try {
       const s = JSON.parse(localStorage.getItem(LS) || "{}");
-      Object.keys(s).forEach(k => { if (k.indexOf("vcol:") === 0) delete s[k]; });
+      Object.keys(s).forEach(k => {
+        if (k.indexOf("vcol:") === 0 || k.indexOf("vrat:") === 0 || k.indexOf("vrowh:") === 0) delete s[k];
+      });
       localStorage.setItem(LS, JSON.stringify(s));
     } catch (_) {}
     document.querySelectorAll("section.panel[data-panel]").forEach(p => { p.style.flex = ""; p.style.flexBasis = ""; });

@@ -47,10 +47,9 @@ check("C1 groups render in the shared stored team order",
 check("D1 header tail click swallowed after a drag",
       "h.onclick = toggleGroup" in ORBIT
       and "DragSort.consumeClick(ev)) return" in ORBIT)
-check("E1 view splitters are deck-level flex items ordered between panels",
-      "sp.style.order = String(i * 2 + 1)" in ORBIT
-      and "deck.appendChild(sp)" in ORBIT
-      and "p.style.order = String(i * 2)" in ORBIT)
+check("E1 view splitters live inside their row, between the two panels",
+      'row.insertBefore(sp, B)' in ORBIT
+      and 'sp.className = "rz-vcol"' in ORBIT)
 
 print("---")
 ok = sum(results)

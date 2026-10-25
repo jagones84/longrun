@@ -51,7 +51,8 @@ check("B1 views hold up to 6 panels",
       and "at most 3 panels" not in ORBIT and ".slice(0, 3)" not in ORBIT)
 check("B2 view columns resizable with persistence and reset",
       ".rz-vcol" in ORBIT and "_layoutViewCols" in ORBIT
-      and '"vcol:" + this.view + ":"' in ORBIT
+      # v626: widths persist as per-row RATIOS (vrat:) — px keys are gone
+      and '"vrat:" + this.view + ":" + r + ":" + c' in ORBIT
       and "this._layoutViewCols();" in ORBIT
       and "min-width:280px" in ORBIT)
 
