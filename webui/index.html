@@ -229,7 +229,7 @@
   aside h2 { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin: 0;
     text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
-  .step, .task { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; margin-bottom: 4px; font-size: 12.5px; }
+  .step, .task { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 8px; margin-bottom: 4px; font-size: 12.5px; }
   .step:hover, .task:hover { background: var(--hover); cursor: pointer; }
   .step.done { color: var(--dim); text-decoration: line-through; }
   .task .st { font-size: 9px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); flex-shrink: 0; }
@@ -254,13 +254,17 @@
   .task .dep { font-size: 9px; color: var(--dim); }
   .task .ev { font-size: 9px; color: var(--ok); }
   .task .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); flex-shrink: 0; }
-  /* JAG-431k: meta vs body halves of a todo row, so a long label can reclaim width. */
-  .task .tmeta { display: flex; gap: 8px; align-items: baseline; flex: 0 0 auto; }
+  /* JAG-431k -> v630: meta vs body halves of a todo row. The STATUS badge is the
+     anchor and every ID (agent.todo, job, subjob) stacks UNDER it, so the label
+     owns the full width instead of losing ~110px to an inline preamble. */
+  .task .tmeta { display: flex; flex-direction: column; align-items: flex-start;
+    gap: 2px; flex: 0 0 auto; }
+  .task .tids { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
   .task .tmain { display: flex; gap: 6px; align-items: baseline; flex: 1 1 auto; min-width: 0; }
   /* JAG-455: after two wrapped lines, put the label BELOW the status/id row and give
      it the full width. Keep status and identifiers together to save horizontal space. */
   .task.stacked { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; align-items: start; }
-  .task.stacked .tmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .task.stacked .tmeta { flex-direction: column; align-items: flex-start; gap: 2px; }
   .task.stacked .tmain { display: flex; flex-wrap: wrap; width: 100%; min-width: 0; }
   .task.stacked .tlabel { flex: 0 0 100%; }
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
@@ -648,8 +652,14 @@
   .toolcard.err { border-color: rgba(255,119,119,.5); }
   /* JAG-166: in-chat task tree + visible harness→LLM injections */
   .tctree { margin: 4px 0; position: relative; }
-  .tctree > summary { cursor: pointer; font-size: 12px; font-weight: 600; list-style: none; display: flex;
-    align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
+  .tctree > summary { cursor: pointer; font-size: 12px; font-weight: 600; list-style: none;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start;
+    column-gap: 8px; padding: 4px 26px 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
+  /* v630: the STATUS badge is the row's anchor and every ID (agent + todo)
+     stacks UNDER it, so the label owns the whole remaining width instead of
+     sharing it with an inline "done A8.n28" preamble (the mobile report). */
+  .tctree .tcmeta { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .tctree .tclabel { min-width: 0; overflow-wrap: anywhere; }
   .tctree > summary::-webkit-details-marker { display: none; }
   .tctree[open] > summary { border-color: var(--accent); }
   .tctree .st { font-size: 10px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); }
@@ -660,7 +670,7 @@
   .tctree .st.superseded { color: var(--dim); text-decoration: line-through; opacity: .7; }
   .tctree .tc-kids { margin: 6px 0 6px 16px; padding-left: 10px; border-left: 2px solid rgba(108,140,255,.25); }
   /* JAG-169: the todo id AX.nY, monospaced and visible in chat + panel. */
-  .tctree .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); margin-right: 6px; }
+  .tctree .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); margin-right: 0; }
   /* JAG-278 -> v629: a todo's JUSTIFICATION is a full-width line UNDER the row
      (never a squeezed suffix beside it) and is shown for EVERY group — done,
      doing, open, superseded — so a closed step is never unexplained. Muted +
@@ -3733,7 +3743,7 @@ function _mkSection(node) {
   const det = document.createElement("details");
   det.className = "tctree"; det.dataset.id = node.id;
   det.style.marginLeft = (_nodeDepth(node.id) * 14) + "px";
-  det.innerHTML = '<summary><span class="st"></span><span class="tcid"></span><span class="tclabel"></span></summary><button class="tc-rw" data-rw="' + _attr(node.id) + '" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button><div class="tc-kids"></div>';
+  det.innerHTML = '<summary><span class="tcmeta"><span class="st"></span><span class="tcid"></span></span><span class="tclabel"></span></summary><button class="tc-rw" data-rw="' + _attr(node.id) + '" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button><div class="tc-kids"></div>';
   $("log").appendChild(det);
   (_chatSections[node.id] = _chatSections[node.id] || []).push(det);
   _chatNodes[node.id] = det;
@@ -7650,7 +7660,10 @@ function taskTree(nodes) {
     // deck showed the same job fine. Job and subjob are different entities:
     // the job chip opens the job, the subjob chip opens the parent focused
     // on that subjob's own row (_showJobDetail splits them).
-    const meta = `<span class="st ${n.status}">${n.status}</span><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.jid))}" style="color:var(--acc2);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="job ${esc(_nodeJob(n))} — click for job text + open in Control Jobs">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.subjob))}" style="color:var(--info);margin:0 5px;font-size:10px;cursor:pointer;text-decoration:underline dotted" title="subjob ${esc(_nodeSub(n))} (embodies this todo) — click for its row + open in Control Jobs">${esc(_nodeSub(n))}</span>` : ""}`;
+    // v630: the badge is the anchor; the ids (todo + job + subjob) sit in ONE
+    // wrapping line UNDER it, so the label keeps the full width.
+    const ids = `<span class="tids"><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.jid))}" style="color:var(--acc2);font-size:10px;cursor:pointer;text-decoration:underline dotted" title="job ${esc(_nodeJob(n))} — click for job text + open in Control Jobs">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.subjob))}" style="color:var(--info);font-size:10px;cursor:pointer;text-decoration:underline dotted" title="subjob ${esc(_nodeSub(n))} (embodies this todo) — click for its row + open in Control Jobs">${esc(_nodeSub(n))}</span>` : ""}</span>`;
+    const meta = `<span class="st ${n.status}">${n.status}</span>${ids}`;
     const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
       `<span class="tmeta">${meta}</span><span class="tmain">${body}</span></div>`;

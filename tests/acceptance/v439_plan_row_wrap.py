@@ -40,8 +40,8 @@ check("2b .tmain can shrink (min-width: 0) so a wrapped label is measured right"
       ".task .tmain { display: flex; gap: 6px; align-items: baseline; flex: 1 1 auto; min-width: 0; }" in idx)
 check("2c stacked rows put the label on its own full-width line",
       ".task.stacked .tmain {" in idx and ".task.stacked .tlabel { flex: 0 0 100%; }" in idx)
-check("2d stacked rows keep status and id together",
-      ".task.stacked .tmeta { display: flex; align-items: center;" in idx)
+check("2d stacked rows keep status and id together (one meta COLUMN)",
+      ".task.stacked .tmeta { flex-direction: column; align-items: flex-start;" in idx)
 
 # ---- 3. the JS measurement pass ---------------------------------------------
 check("3a _markWrappedTasks is defined", "function _markWrappedTasks(box)" in idx)
