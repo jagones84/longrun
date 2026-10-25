@@ -387,6 +387,21 @@
   main.view-one .col{display:block}
   main.view-one .panel[hidden]{display:none !important}
   main .grid2[hidden]{display:none !important}
+  /* v619: ONE panel alone fills the page — the stacked-board height caps
+     (48vh agents, 24vh feed, 48vh constellation, 240px org) would leave a
+     tall void under a lone diagram. Lift them all in single view. */
+  main.view-one .deckBody{gap:6px}
+  main.view-one .grid2{height:auto !important}
+  main.view-one section.panel[data-panel]{min-height:calc(100vh - 150px)}
+  main.view-one .panel.ag .scroll{max-height:none}
+  main.view-one #routines{max-height:none !important}
+  main.view-one #feed{max-height:none}
+  main.view-one .orgwrap{min-height:calc(100vh - 230px)}
+  main.view-one .panel.cpanel .cbody{height:calc(100vh - 270px);min-height:420px}
+  /* v619: lone-panel scroll areas grow with the page instead of nesting a
+     short inner scrollbar under a tall void. */
+  main.view-one .panel.ag .scroll,
+  main.view-one #feed{flex:1 1 auto}
 </style>
 </head>
 <body>
@@ -2073,18 +2088,52 @@ class RoutinesView {
 }
 
 /* ---------------------------------------------------------------- Feed --- */
+/* v619: the panel used to stay VOID until a live event arrived after connect
+   (the SSE `backlog` replay + the /api/feed/recent backlog were both ignored).
+   Now it paints the recent backlog first, then prepends live events. */
 class FeedView {
   constructor(api, onSync){ this.api = api; this.onSync = onSync; this.es = null; }
+  line(kind, d){
+    d = d || {};
+    const f = $("feed"); if (!f) return;
+    const empty = f.querySelector(".empty");
+    if (empty) empty.remove();
+    f.insertAdjacentHTML("afterbegin", '<div><b>' + esc(kind) + '</b> ' + esc(d.session ? String(d.session).slice(0,8) : "") + ' ' + esc(d.text || d.label || d.title || d.tool || "") + '</div>');
+    while (f.childElementCount > 100) f.removeChild(f.lastChild);
+  }
+  paintBacklog(evts){
+    const f = $("feed"); if (!f) return;
+    (evts || []).slice().reverse().forEach(e => this.line(e.kind || e.type || "event", e));
+    if (!f.childElementCount) f.innerHTML = '<div class="empty">no events yet — harness activity appears here live</div>';
+  }
   connect(){
     try { this.es = this.api.es("/api/feed"); } catch(e){ return; }
+    this.es.addEventListener("backlog", (e) => {
+      let arr = []; try { arr = JSON.parse(e.data); } catch(_){}
+      this.paintBacklog(arr);
+    });
     ["chat.run","chat.user","tool.call","tool.result","graph.node.added","graph.node.updated","graph.plan_dropped","plan.update","chat.done","error"].forEach(k => this.es.addEventListener(k, (e) => {
       let d = {}; try { d = JSON.parse(e.data); } catch(_){}
-      const f = $("feed"); f.insertAdjacentHTML("afterbegin", '<div><b>' + esc(k) + '</b> ' + esc(d.session ? String(d.session).slice(0,8) : "") + ' ' + esc(d.text || d.label || d.title || d.tool || "") + '</div>');
-      while (f.childElementCount > 100) f.removeChild(f.lastChild); }));
+      this.line(k, d); }));
     ["agent.updated","agent.released","teams.updated","roles.update","session.updated","session.renamed","session.created","session.deleted","longrun_agent.done"].forEach(k =>
       this.es.addEventListener(k, () => { if (this.onSync) this.onSync(); }));
     this.es.onopen = () => $("led").classList.add("on");
-    this.es.onerror = () => $("led").classList.remove("on");
+    this.es.onerror = () => {
+      $("led").classList.remove("on");
+      // the backlog replay only arrives on a working stream — when the SSE
+      // channel itself fails, fall back to the JSON backlog so the panel is
+      // never void for a transport reason.
+      this.api.get("/api/feed/recent?limit=40").then(r => this.paintBacklog((r && r.events) || [])).catch(() => {
+        const f = $("feed");
+        if (f && !f.childElementCount) f.innerHTML = '<div class="empty">feed unreachable — retrying…</div>';
+      });
+    };
+    // belt + braces: even with the stream open, paint the JSON backlog first
+    // so the panel has content before the first live event lands.
+    this.api.get("/api/feed/recent?limit=40").then(r => {
+      const f = $("feed");
+      if (f && !f.childElementCount) this.paintBacklog((r && r.events) || []);
+    }).catch(() => {});
   }
 }
 
@@ -2207,6 +2256,9 @@ class OrbitApp {
       else b.removeAttribute("aria-current");
     });
     try { localStorage.setItem("orbit_view_v1", view); } catch (e){ /* private mode */ }
+    // v619: a lone panel takes viewport heights (org/constellation canvases size
+    // from their box) — tell every resize listener to re-fit after the unhide.
+    try { window.dispatchEvent(new Event("resize")); } catch (e){}
   }
   async createTeam(){
     // JAG-2.0: create a team from the deck, persisted via the teams backend.
@@ -2364,8 +2416,11 @@ function initPanels(){
     });
   });
 
-  /* ONE horizontal bar per row: resizing moves the whole row (Agents + Job, …). */
-  const rows = [...document.querySelectorAll("main.wrap > .grid2")];
+  /* ONE horizontal bar per row: resizing moves the whole row (Agents + Job, …).
+     v619: rows live inside .deckBody since the v617 rail (main > nav + .deckBody),
+     so the old `main.wrap > .grid2` selector matched NOTHING and no grip was
+     built — the stacked board silently lost its row resizing. */
+  const rows = [...document.querySelectorAll("main .deckBody > .grid2, main.wrap > .grid2")];
   rows.forEach((row, i) => {
     const key = "row:" + i;
     if (saved[key]) row.style.height = saved[key] + "px";

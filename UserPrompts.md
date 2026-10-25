@@ -77,6 +77,13 @@ shell hard-deny blocks the bypass ingredients (LONGRUN_TOKEN, grep of
 .env, curl to the local jobs/agents/teams API), and the denial names
 FULL as non-bypass with the exact grant call plus the no-grant
 alternative (`dispatch`, not `job.*`) (v618).
+2.7 Control deck is a left rail over the same stacked board: LH names
+every pane, click shows it ALONE center-RH (same applyView truth, zero
+logic/button/endpoint change). A lone panel fills the page (stacked
+height caps lifted, charts refit on switch); the board stays agents,
+routines+jobs, org+constellation, feed, with column AND row resize grips
+persisted locally. Feed never shows void: SSE backlog + JSON recent
+first, explicit empty state otherwise (v617/v619).
 
 ## 3. Knowledge & research — web → notebook contract (2026-10-25)
 
