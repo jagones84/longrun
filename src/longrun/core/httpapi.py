@@ -995,7 +995,29 @@ def prepare_session_for_turn(sess, model=None):
                 target_pct=rllm.AUTOCOMPACT_TARGET_PCT,
                 before=stats.get("input_tokens"), after=stats.get("output_tokens"),
                 compacted=stats.get("compacted"), dropped=stats.get("dropped"))
-        return load_session(sess["id"]) or sess
+        sess = load_session(sess["id"]) or sess
+        # P1 (N9): the compaction may FAIL to reach the target (a keep_recent
+        # window full of huge turns cannot shrink further). Say so in the
+        # transcript as a durable reason — a resumed run can cite it — instead
+        # of silently answering from a clipped context. Pure observability.
+        _post = context_usage(sess["id"], model=model)
+        if getattr(rllm, "COMPACT_OVERFLOW_NOTE") and _post.get("available") \
+                and _post.get("over_threshold"):
+            try:
+                from longrun.memory.stores import persist_inject
+                persist_inject(sess, "observation",
+                               "[harness] context_overflow_after_compaction: "
+                               "the auto-compaction ran but the prompt is still "
+                               "%s%% of the model budget (trigger %s%%). The "
+                               "oldest turns may be missing from THIS context; "
+                               "the full transcript is on disk and the task "
+                               "list is unaffected."
+                               % (_post.get("pct"), int(round(rllm.AUTOCOMPACT_PCT))))
+                publish("context.overflow_after_compact", session=sess["id"],
+                        pct=_post.get("pct"), threshold=rllm.AUTOCOMPACT_PCT)
+            except Exception:  # noqa: BLE001 — the note must never break a turn
+                pass
+        return sess
     except Exception:  # noqa: BLE001 — compaction must never break a turn
         return sess
 

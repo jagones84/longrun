@@ -2884,6 +2884,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     break
                 del msgs[_idx]
                 _dropped += 1
+            # P1 (N9): the trim is capped by the _keep window — if even after
+            # dropping everything trimmable the context is still over the
+            # trigger, leave a DURABLE reason in the transcript (a plain
+            # observation note) so a later stop cannot hide the overflow.
+            if _used() > _limit and getattr(_rllm, "COMPACT_OVERFLOW_NOTE"):
+                _inject("[harness] context_overflow_after_compaction: this turn "
+                        "exceeded the model window even after trimming %d older "
+                        "step(s); the recent working set (last %d entries) could "
+                        "not be dropped, so the model is answering from a clipped "
+                        "context. The full transcript is on disk and the task "
+                        "list is unaffected." % (_dropped, _keep), "observation")
             return _dropped
         except Exception:  # noqa: BLE001 — trimming must never break a turn
             return 0

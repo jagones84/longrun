@@ -103,6 +103,11 @@ SECTIONS = [
             _f("summarizer.max_parts", "max parts per compaction", "int",
                min=1, max=64,
                help="Upper bound on the summarizer calls one compaction may make."),
+            _f("overflow_note", "overflow note", "bool",
+               help="P1/N9: when compaction/trimming cannot fit the prompt in the "
+                    "model window, leave a durable `context_overflow_after_"
+                    "compaction` note in the transcript. Observability only — "
+                    "never blocks a turn."),
             _f("summarizer.instruction", "instruction", "textarea",
                rows=10, help="Reply language follows the transcript."),
         ],

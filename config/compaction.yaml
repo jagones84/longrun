@@ -40,6 +40,14 @@ compaction:
   # has meaningful old content to fold into the leading summary block.
   keep_recent: 4
 
+  # P1 (N9): when compaction (turn-start auto or mid-turn trim) cannot bring
+  # the prompt inside the model window, leave a durable
+  # `context_overflow_after_compaction` note in the transcript. The note is a
+  # durable REASON: a resumed run can cite it and the operator sees why the
+  # model still answered from a clipped context. Pure observability — never
+  # blocks or aborts a turn.
+  overflow_note: true
+
   summarizer:
     # JAG-431r2: the summarizer must SEE enough of the old transcript to produce
     # a faithful 10x-compressed summary. The previous single `max_chars` capped

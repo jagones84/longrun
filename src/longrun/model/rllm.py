@@ -173,6 +173,12 @@ def __getattr__(name):
     if name == "SUMMARIZER_MAX_PARTS":
         # JAG-533: cap on the map-reduce part-calls one compaction may make.
         return int(_policy().get("summarizer", {}).get("max_parts", 24))
+    if name == "COMPACT_OVERFLOW_NOTE":
+        # P1 (N9): when compaction/trimming cannot bring the prompt inside the
+        # model window, the harness leaves a durable `context_overflow_after_
+        # compaction` note in the transcript. Default generous (True): pure
+        # observability, the note never blocks a turn.
+        return bool(_policy().get("overflow_note", True))
     raise AttributeError("module %r has no attribute %r" % (__name__, name))
 
 
