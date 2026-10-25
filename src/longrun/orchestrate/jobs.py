@@ -67,6 +67,28 @@ def config():
     return out
 
 
+def org_agents(ref, depth=None):
+    """The TEAM of a job given to `ref`: its ORG SUBTREE (who reports to whom).
+
+    v629.1: ONE derivation for every caller — the Jobs panel / `POST /api/jobs`
+    and the Teamorg automation tool (`jobs.create`) must produce the SAME team,
+    otherwise a tool-created job silently collapses to a flat list while a
+    panel-created one nests to the configured org depth. `depth` defaults to
+    `config()["subjob_depth"]`.
+    """
+    if not ref:
+        return []
+    depth = config()["subjob_depth"] if depth is None else depth
+    try:
+        from longrun.agent import agents as _agents_mod
+        # An UNKNOWN ref returns [] on purpose: the caller must still refuse a job
+        # for an agent that does not exist (v291). Only a broken registry falls
+        # back to the ref itself.
+        return _agents_mod.REGISTRY.team_of(ref, depth=depth)
+    except Exception:  # noqa: BLE001 — an agent-less job must still be creatable
+        return [ref]
+
+
 def _load():
     return read_registry(JOBS_FILE, jobs={}, seq=0)
 

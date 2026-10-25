@@ -143,8 +143,8 @@ AGENTS_SRC = src("src", "longrun", "agent", "agents.py")
 check("E8 one traversal serves both team_of and team_tree (no second walker)",
       "def _subtree(" in AGENTS_SRC and "def team_of(self, ref, depth=1)" in AGENTS_SRC
       and "def team_tree(self, ref, depth=1)" in AGENTS_SRC)
-check("E9 a job created from an assignee uses the configured org depth",
-      'depth=jobs_mod.config()["subjob_depth"]' in
+check("E9 a job created from an assignee uses the ONE shared org derivation",
+      "jobs_mod.org_agents(assignee)" in
       src("src", "longrun", "orchestrate", "orchestration.py"))
 check("E10 the deck payload carries parent_sub + depth",
       '"parent_sub": s.get("parent_sub"),' in src("src", "longrun", "orbit", "api.py")
@@ -160,6 +160,44 @@ check("E13 jobs.yaml is a Settings > Harness form with a real writer (no dead kn
       and '_f("subjob_depth", "org depth (levels)", "int"' in SETTINGS_SRC
       and '_f("max_subjobs", "max subjobs per job", "int"' in SETTINGS_SRC
       and 'elif name == "jobs.yaml":' in SETTINGS_SRC)
+
+# v629.1: the PANEL job and the TOOL job ("Teamorg automation" → jobs.create) must
+# build the SAME team from the SAME org chart, or a tool job stays flat forever.
+JOBS_SRC = src("src", "longrun", "orchestrate", "jobs.py")
+TOOL_SRC = src("src", "longrun", "agent", "longrun_agent.py")
+check("E14 the org team has ONE derivation and the tool uses it too",
+      JOBS_SRC.count("def org_agents(") == 1
+      and "jobs_mod.org_agents(coordinator)" in TOOL_SRC)
+from longrun.agent import agents as _AG  # noqa: E402
+
+
+class _OrgStub:
+    def team_of(self, ref, depth=1):
+        return {"A1": ["A1", "A2", "A3"], "A2": ["A2", "A3"]}.get(ref, [])
+
+
+_orig_reg = _AG.REGISTRY
+_AG.REGISTRY = _OrgStub()
+try:
+    got = J.org_agents("A1")
+    unknown = J.org_agents("ZZZ")
+finally:
+    _AG.REGISTRY = _orig_reg
+check("E15 org_agents returns the subtree (panel == tool team)", got == ["A1", "A2", "A3"], got)
+check("E15b an UNKNOWN assignee still yields no team (the job is refused)",
+      unknown == [], unknown)
+check("E16 the ids nest to ANY depth (3 levels: J8.1.1.1)",
+      sorted(J.plan_subjobs("J8", ["A1", "A2", "A3", "A4"], "A1", None, {},
+                            tree={"A2": "A1", "A3": "A2", "A4": "A3"}),
+             key=J.subjob_path)
+      == ["J8.1", "J8.1.1", "J8.1.1.1"],
+      sorted(J.plan_subjobs("J8", ["A1", "A2", "A3", "A4"], "A1", None, {},
+                            tree={"A2": "A1", "A3": "A2", "A4": "A3"}),
+             key=J.subjob_path))
+check("E17 the Plan panel chip accepts/prints a full dotted id at any depth",
+      r'if (/^\d+(\.\d+)*$/.test(s)) return "J" + s;' in UI
+      and r'const m = s.match(/^[jJ](\d+(\.\d+)*)$/);' in UI
+      and "${esc(_nodeSub(n))}</span>" in UI)
 
 # ---- F. jobs -> session centers the rail --------------------------------------
 check("F1 the bridge handler reaches the SAME reveal procedure (no duplicate)",

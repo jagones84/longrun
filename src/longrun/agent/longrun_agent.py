@@ -1513,8 +1513,21 @@ def _job_create(args):
     if coordinator:
         sid, ag = _resolve_agent_session(coordinator)
         coordinator = (ag or {}).get("id") or sid or str(coordinator)
+    if coordinator:
+        # v629.1: the TEAM is org-driven for the tool too. The panel derives it
+        # from the assignee; a tool-created job used to keep only the hand-listed
+        # agents, so its subjobs never nested past one level. Same helper, no
+        # second derivation — the coordinator's org subtree joins the list.
+        try:
+            for _aid in jobs_mod.org_agents(coordinator):
+                if _aid and _aid not in workers:
+                    workers.append(_aid)
+        except Exception:  # noqa: BLE001 — an explicit list must still work
+            pass
     if not workers:
-        return {"ok": False, "error": "at least one worker agent required in 'agents'"}
+        return {"ok": False,
+                "error": "at least one worker agent required in 'agents' "
+                         "(or a coordinator with reports in the org chart)"}
     res = jobs_mod.JOBS.create(
         goal, coordinator=coordinator, agents=workers, deps=args.get("deps"),
         mode=str(args.get("mode") or "coordinator"), blocked_by=args.get("blocked_by"))
