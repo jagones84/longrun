@@ -65,6 +65,19 @@ check("G1 the generated settings forms inherit the cap (they live in #swMain)",
 check("G2 the obsolete duplicate select rule is gone",
       "#swMain .card select.u-w100 { max-width: 340px; text-overflow: ellipsis; }" not in ui)
 
+# ---- H. no prose paragraph left inside a Settings card -----------------------
+PARAS = [
+    "Stateless system automation agent",
+    "Model that writes the cited summary for Research",
+    "Semantic vectors for the codebase",
+    "One topic bar, two modes",
+    "Manual sources for the selected notebook",
+]
+for i, text in enumerate(PARAS, 1):
+    check("H%d the explanation of %r is a tooltip, not a paragraph" % (i, text[:28]),
+          'class="remaining u-m006"' not in ui and ('title="' + text) in ui,
+          text[:28])
+
 print("---")
 passed = sum(results)
 print("\nv650: %d/%d PASS" % (passed, len(results)))
