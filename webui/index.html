@@ -13477,12 +13477,37 @@ function _dockControlSettle() {
   }
 }
 window._dockControlSettle = _dockControlSettle;
+function _ctlShellUrl(v){
+  return "/orbit?embed=1&theme=" + encodeURIComponent(localStorage.getItem("sf_theme") || "indigo")
+    + (v ? "&v=" + encodeURIComponent(v) : "");
+}
+/* I-8: the deck is an iframe and its src was set ONCE, so a changed
+   `orbit.html` stayed invisible until the whole app was reloaded (the operator
+   asked twice about a control that WAS there). The shell reports its own version
+   (`GET /api/orbit/shell`, mtime.size of the served file — real backend state):
+   re-navigate only when it really moved, so the deck is never stale and never
+   reloads for nothing. */
+let _ctlShellSeen = "";
+async function _ctlShellWatch(f){
+  if (!f) return;
+  try {
+    const r = await api("GET", "/api/orbit/shell");
+    const v = r && r.ok ? String(r.version || "") : "";
+    if (!v) return;
+    if (!_ctlShellSeen) { _ctlShellSeen = v; return; }   // the load we just made is this version
+    if (_ctlShellSeen !== v) {
+      _ctlShellSeen = v;
+      try { f.setAttribute("src", _ctlShellUrl(v)); } catch (_) {}
+    }
+  } catch (_) {}
+}
 function showControl() {
   const cv = document.getElementById("controlView"); if (!cv) return;
   cv.style.top = _tabTop() + "px";
   const f = document.getElementById("controlFrame");
-  if (f && !f.getAttribute("src")) f.setAttribute("src", "/orbit?embed=1&theme=" + encodeURIComponent(localStorage.getItem("sf_theme") || "indigo"));
+  if (f && !f.getAttribute("src")) f.setAttribute("src", _ctlShellUrl());
   else { try { if (f && f.contentDocument) f.contentDocument.documentElement.dataset.theme = (localStorage.getItem("sf_theme") || "indigo"); } catch (_) {} }
+  _ctlShellWatch(f);   // I-8: a changed shell must not stay invisible in the deck
   cv.classList.add("on"); cv.setAttribute("aria-hidden", "false"); document.body.classList.add("control-on"); _setTabs("control");
   // JAG-424g: while Control is up, the Sessions page must not receive mouse OR keyboard —
   // `inert` removes it from hit-testing, focus and the a11y tree in one shot.

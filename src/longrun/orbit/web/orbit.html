@@ -127,11 +127,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .toolbar>.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
   .toolbar>.lbl{font-size:11px;color:var(--dim);flex:none}
   .toolbar>.sp{flex:1}
-  /* I-8: the Teamorg run button and its "only empty ROLE.md" checkbox STACK — the
-     checkbox rides directly UNDER the button, not beside it. */
+  /* I-8: the "only empty ROLE.md" checkbox STACKS under the ⚡ automate (Teamorg)
+     button in the toolbar, so the mode reads BEFORE the bar is opened. */
   .toolbar>.stack{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;flex:none}
   .toolbar>.stack>.btn{height:30px;min-height:30px;padding:0 12px;border-radius:8px;font-size:12px}
-  .toolbar>.stack>.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
   .toolbar>.stack>label.chk{display:inline-flex;align-items:center;gap:5px;font-size:10px;
     color:var(--dim);cursor:pointer;white-space:nowrap;padding-left:2px}
   .toolbar>.stack>label.chk input{margin:0;width:12px;height:12px}
@@ -610,19 +609,19 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <span class="sp"></span>
         <button class="btn primary" id="agNewBtn" aria-expanded="false">＋ new agent</button>
         <button class="btn" id="tmNewBtn" aria-expanded="false">＋ new team</button>
-        <button class="btn" id="lraAutoBtn" aria-expanded="false" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">⚡ automate (Teamorg)</button>
+        <span class="stack">
+          <button class="btn" id="lraAutoBtn" aria-expanded="false" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">⚡ automate (Teamorg)</button>
+          <label class="chk" for="lraAutoEmpty" title="checked: only the agents whose ROLE.md is EMPTY are written. Unchecked: longrunAgent MAY rewrite the prompt of every agent in scope.">
+            <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
+          </label>
+        </span>
         <button class="btn ghost" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
         <span class="lbl">longrunAgent · Teamorg</span>
         <input class="inp" id="lraAutoInp" placeholder="e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
-        <span class="stack">
-          <button class="btn primary" id="lraAutoRun">run Teamorg</button>
-          <label class="chk" for="lraAutoEmpty" title="checked: only the agents whose ROLE.md is EMPTY are written. Unchecked: longrunAgent MAY rewrite the prompt of every agent in scope.">
-            <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
-          </label>
-        </span>
+        <button class="btn primary" id="lraAutoRun">run Teamorg</button>
         <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
         <span class="small muted" id="lraAutoScope" title="the Team filter above decides the scope: ALL teams or No team included"></span>
         <span class="small muted" id="lraAutoStatus"></span>

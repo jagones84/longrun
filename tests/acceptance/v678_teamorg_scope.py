@@ -53,33 +53,37 @@ from longrun.agent import longrun_agent as lra  # noqa: E402
 from longrun.orchestrate import roles as roles_mod  # noqa: E402
 
 # ---- A: the control itself -------------------------------------------------
-bar_start = ORBIT.find('id="lraAutoBar"')
-stack_i = ORBIT.find('<span class="stack">', bar_start)
-run_i = ORBIT.find('id="lraAutoRun"', stack_i)
-chk_i = ORBIT.find('id="lraAutoEmpty"', stack_i)
-stack_end = ORBIT.find("</span>", chk_i)
-check("A1 the checkbox lives in a stack block with the run button",
-      -1 < bar_start < stack_i < run_i < chk_i, "bar=%d stack=%d run=%d chk=%d" % (bar_start, stack_i, run_i, chk_i))
-check("A2 the checkbox comes AFTER the button in the markup (so it renders under it)",
-      run_i < chk_i, "run=%d chk=%d" % (run_i, chk_i))
-check("A3 the checkbox is checked by default (empty-only is the safe default)",
-      'id="lraAutoEmpty" checked' in ORBIT and 'id="lraAutoEmpty"' in ORBIT)
-check("A4 the stack is a COLUMN (under, never beside)",
+# The checkbox lives in the AGENTS toolbar, stacked under the ⚡ button, so the
+# mode reads before the run bar is opened (and there is exactly ONE of it).
+result_btn = ORBIT.find('id="agPolicy"')
+toolbar_btn = ORBIT.find('id="lraAutoBtn"')
+chk_i = ORBIT.find('id="lraAutoEmpty"')
+bar_i = ORBIT.find('id="lraAutoBar"')
+stack_i = ORBIT.rfind('<span class="stack">', 0, toolbar_btn)
+check("A1 the checkbox is in the toolbar stack that holds the ⚡ button",
+      -1 < stack_i < toolbar_btn < chk_i < result_btn, "stack=%d btn=%d chk=%d" % (stack_i, toolbar_btn, chk_i))
+check("A2 it comes AFTER the button in the markup (so it renders under it)",
+      toolbar_btn < chk_i, "btn=%d chk=%d" % (toolbar_btn, chk_i))
+check("A3 exactly ONE such checkbox exists (no second control, no duplicate truth)",
+      ORBIT.count('id="lraAutoEmpty"') == 1, str(ORBIT.count('id="lraAutoEmpty"')))
+check("A4 the run bar no longer carries a checkbox of its own",
+      'id="lraAutoEmpty"' not in ORBIT[bar_i:ORBIT.find("</div>", bar_i)])
+check("A5 it is checked by default (empty-only is the safe default)",
+      'id="lraAutoEmpty" checked' in ORBIT)
+check("A6 the stack is a COLUMN (under, never beside)",
       ".toolbar>.stack{display:inline-flex;flex-direction:column" in ORBIT)
-check("A5 the run button keeps its primary skin inside the stack",
-      ".toolbar>.stack>.btn.primary{background:var(--acc)" in ORBIT)
-check("A6 the box is labelled with what it does, both ways",
+check("A7 the box is labelled with what it does, both ways",
       "only empty ROLE.md" in ORBIT
       and "unchecked" in ORBIT.lower() and "MAY rewrite the prompt" in ORBIT)
 scope_src = ORBIT[ORBIT.find("labelTeamorgScope"):ORBIT.find("async runTeamorgAutomate")]
-check("A7 the scope is stated (team name + how many agents, how many have no ROLE.md)",
+check("A8 the scope is stated (team name + how many agents, how many have no ROLE.md)",
       "scope: " in scope_src and "without ROLE.md" in scope_src
       and "this.team === \"ALL\"" in scope_src and "this.teamById(this.team)" in scope_src)
 post_src = ORBIT[ORBIT.find("async runTeamorgAutomate"):ORBIT.find("renderTeams")]
-check("A8 the run sends the scope AND the empty-only flag",
+check("A9 the run sends the scope AND the empty-only flag",
       "team_scope: this.team" in post_src and "only_empty: onlyEmpty" in post_src
       and "scope_agents:" in post_src)
-check("A9 the flag is read FROM the checkbox (unchecked = may rewrite every prompt)",
+check("A10 the flag is read from the toolbar checkbox (unchecked = may rewrite every prompt)",
       'const onlyEmpty = !($("lraAutoEmpty")' in post_src and ".checked === false" in post_src)
 
 # ---- B: the section prompt carries the rules -------------------------------
@@ -125,6 +129,28 @@ empty = lra.automate("teamorg", "   ")
 check("D2 an empty instruction is refused", empty.get("ok") is False
       and "instruction required" in str(empty.get("error")), str(empty)[:80])
 check("D3 teamorg stays in the allowlist", "teamorg" in lra.AUTOMATE_ALLOWED_SECTIONS)
+
+# ---- E: the deck cannot go stale silently ---------------------------------
+from longrun.orbit import api as oapi  # noqa: E402
+
+INDEX = read("webui", "index.html")
+ver = oapi.shell_version()
+check("E1 the backend reports a REAL version of the shell it would serve",
+      isinstance(ver, str) and ver.count(".") == 1
+      and ver == "%d.%d" % (int(os.stat(os.path.join(REPO, "src", "longrun", "orbit",
+                                                     "web", "orbit.html")).st_mtime),
+                            os.path.getsize(os.path.join(REPO, "src", "longrun", "orbit",
+                                                         "web", "orbit.html"))),
+      ver)
+check("E2 the served shell is not cacheable (a stale byte-level copy is impossible)",
+      "no-store" in read("src", "longrun", "core", "httpapi.py"))
+check("E3 the deck's url carries the theme AND the version when known",
+      "function _ctlShellUrl(v)" in INDEX and '"&v=" + encodeURIComponent(v)' in INDEX)
+check("E4 opening a stale deck re-navigates exactly once, to the CURRENT shell",
+      "async function _ctlShellWatch(f)" in INDEX and "_ctlShellSeen !== v" in INDEX
+      and 'api("GET", "/api/orbit/shell")' in INDEX)
+check("E5 the watcher is wired into the Control entry point",
+      "_ctlShellWatch(f);" in INDEX[INDEX.find("function showControl()"):])
 
 print("---")
 ok = sum(1 for r in results if r)

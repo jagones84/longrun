@@ -45,6 +45,22 @@ def _retry_run(ref):
 _QUEUE = DecisionQueue(_ATTN, _retry_run)
 
 _PAGE_PATHS = ("/orbit", "/orbit/", "/orbit.html")
+_SHELL = os.path.join(WEB, "orbit.html")
+
+
+def shell_version():
+    """The version of the deck shell the server would serve RIGHT NOW.
+
+    `mtime.size` of `web/orbit.html`. The main app embeds this deck in an iframe
+    whose src is set once, so a shell change used to stay invisible until the
+    whole app was reloaded; the parent compares this value and re-navigates only
+    when the shell really moved. Empty string when the file is unreadable.
+    """
+    try:
+        st = os.stat(_SHELL)
+        return "%d.%d" % (int(st.st_mtime), int(st.st_size))
+    except OSError:
+        return ""
 
 
 def _json(handler, code, obj):
@@ -172,6 +188,9 @@ def serve_page(handler, path):
         html = ("<!doctype html><meta charset=utf-8><title>Control</title>"
                 "<h1>Control beta</h1><p>The UI file <code>web/orbit.html</code> "
                 "is missing from the beta package.</p>")
+    # `_send` already answers `Cache-Control: no-store`, so the staleness this
+    # version exists for is NOT the cache: the iframe's src is set once and the
+    # loaded document stays loaded.
     handler._send(200, html, ctype="text/html; charset=utf-8")
     return True
 
@@ -181,6 +200,8 @@ def handle(handler, method, path, qs, body):
     if not path.startswith("/api/orbit"):
         return False
     if method == "GET":
+        if path == "/api/orbit/shell":
+            return _json(handler, 200, {"ok": True, "version": shell_version()})
         if path == "/api/orbit/models":
             return _json(handler, 200, _BAY.snapshot(force=qs.get("force") == "1"))
         if path == "/api/orbit/sessions":
