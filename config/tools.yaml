@@ -70,6 +70,7 @@ verifier:
   command: ""               # comando di verifica (vuoto = nessuna verifica)
   timeout_secs: 120         # timeout del check
   paths: []                 # se non vuoto, verifica solo i path che contengono uno di questi
+  closeout: false           # F1: verify ONCE at closeout when the step changed the environment
 
 # ---- best-of-N + rank (JAG-132) ---------------------------------------------
 # Test-time compute: per uno step non banale campiona N candidati e sceglie il

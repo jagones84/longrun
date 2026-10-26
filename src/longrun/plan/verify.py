@@ -25,6 +25,9 @@ DEFAULTS = {
     "command": "",
     "timeout_secs": 120,
     "paths": [],
+    # F1: verify ONCE at closeout (not per edit) when the step changed the
+    # environment. Off = today's behaviour; it needs `command` to be useful.
+    "closeout": False,
 }
 
 TARGET_TOOLS = ("fs.write", "fs.edit")
@@ -135,6 +138,36 @@ def run_check(workspace=None, c=None, run_id=None):
     green = res.get("exit_code") == 0
     out = (res.get("stdout") or "") + (res.get("stderr") or "")
     return green, out
+
+
+def closeout_gate(node, workspace=None, run_id=None, c=None, check=None):
+    """F1: verify a step ONCE, when it is closed, if it changed the environment.
+
+    A node may be closed on a text claim only when it performed no mutating
+    action (`taskgraph.note_mutation` marks it). When it did, and
+    `verifier.closeout` is on, the configured command runs here: green adds an
+    OBSERVED evidence entry, red keeps the step open. Returns
+    `(ok, report, observed)`.
+
+    Fail-closed: closeout on with no `command` refuses the close instead of
+    pretending it observed anything.
+    """
+    c = c or cfg()
+    node = node or {}
+    observed_already = bool([e for e in (node.get("evidence") or [])
+                             if e.get("observed")])
+    if not c.get("closeout") or not node.get("mutated") or observed_already:
+        return True, {"ran": False}, False
+    if not str(c.get("command") or "").strip():
+        return False, {"ran": False, "green": False,
+                       "error": "closeout verification is on but verifier.command "
+                                "is empty"}, False
+    t0 = time.time()
+    green, out = (check or run_check)(workspace=workspace, c=c, run_id=run_id)
+    report = {"ran": True, "green": bool(green), "command": c.get("command"),
+              "duration_ms": int((time.time() - t0) * 1000),
+              "output": str(out or "")[-1200:]}
+    return bool(green), report, bool(green)
 
 
 def verify(tool, path, snap, res, workspace=None, run_id=None, c=None):

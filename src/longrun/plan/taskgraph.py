@@ -416,6 +416,54 @@ def _has_observed(node):
     return bool([e for e in (node.get("evidence") or []) if e.get("observed")])
 
 
+# F1 (closeout verification): a node is `mutated` when a tool that CHANGES the
+# environment ran while it was the current step. `needs_closeout_proof` is the
+# question the closeout gate asks; the mutation list is evidence (which tools),
+# so a human can see why a text-only close was refused.
+_MUTATION_CAP = 8
+
+# The tools whose SUCCESS changes the workspace. One list for both ingress paths
+# (chat loop and the v2 agent loop) so they can never disagree.
+MUTATING_TOOLS = ("fs.write", "fs.edit", "shell", "shell.exec")
+
+
+def note_mutation_current(graph, tool):
+    """Mark the step being worked on (first `doing`, else first `todo`)."""
+    for st in ("doing", "todo"):
+        for node in plan_nodes(graph):
+            if node.get("status") == st:
+                return note_mutation(graph, tool, node.get("id"))
+    return None
+
+
+def note_mutation(graph, tool, node_id=None):
+    """Record that a MUTATING tool ran under `node_id` (silent, durable).
+
+    Returns the node, or None when the id does not resolve (no plan yet, or the
+    work happened outside any step). Never raises: marking must not break a call.
+    """
+    try:
+        node = find(graph, node_id) if node_id else None
+        if node is None:
+            return None
+        with GRAPH_LOCK:
+            tools = [str(t) for t in (node.get("mutations") or [])]
+            if tool and str(tool) not in tools:
+                tools.append(str(tool))
+            node["mutations"] = tools[:_MUTATION_CAP]
+            node["mutated"] = True
+            node["updated"] = round(time.time(), 3)
+            save(graph)
+        return node
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def needs_closeout_proof(node):
+    """True when this node changed the environment and has no observed proof."""
+    return bool((node or {}).get("mutated")) and not _has_observed(node or {})
+
+
 # ------------------------------------------------------------ node mutation --
 
 def add_node(graph, label, deps=None, status="todo", evidence=None, node_id=None,

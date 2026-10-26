@@ -25,6 +25,7 @@ from longrun.core import api_v02
 from longrun.util import osutil
 from longrun.model import routing
 from longrun.plan import taskgraph
+from longrun.plan import verify as plan_verify
 from longrun.core import server
 from longrun.core.events import publish
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR, WEBUI_DIR
@@ -1278,8 +1279,27 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
                         except Exception:  # noqa: BLE001
                             pass
                         continue
+                    _ok, _rep, _obs = plan_verify.closeout_gate(
+                        _nd, workspace=_chat_workspace(sess), run_id=sess["id"])
+                    if not _ok:
+                        errors.append(
+                            "step %s: refusing 'done' — closeout verification %s. %s"
+                            % (_nd["id"],
+                               "did not pass" if _rep.get("ran") else "cannot run",
+                               str(_rep.get("error") or _rep.get("output") or "")[-500:]))
+                        continue
+                    _ev = ev
+                    if _obs:
+                        # The command ran and passed: that IS the environment proof.
+                        _obs_entry = {
+                            "ts": round(time.time(), 3), "observed": True,
+                            "text": "closeout verification green: %s"
+                                    % (plan_verify.cfg().get("command") or "")}
+                        _ev = (list(ev) + [_obs_entry] if isinstance(ev, list)
+                               else ([{"ts": round(time.time(), 3), "text": str(ev)},
+                                      _obs_entry] if ev else [_obs_entry]))
                     _nd = taskgraph.complete_node(
-                        graph, node_id=_nd["id"], evidence=ev, source="model:update_todos")
+                        graph, node_id=_nd["id"], evidence=_ev, source="model:update_todos")
                 elif status in taskgraph.STATUSES:
                     _nd = taskgraph.update_node(
                         graph, _nd["id"], status=status, evidence=ev,
@@ -1762,6 +1782,26 @@ def _map_tools(items, cap, fn):
     return out
 
 
+# F1 (closeout verification): the tools whose SUCCESS changes the workspace are
+# `taskgraph.MUTATING_TOOLS`; a step that ran one may not be closed on a text
+# claim when `verifier.closeout` is on — `plan.verify.closeout_gate` asks for it.
+_MUTATING_TOOLS = taskgraph.MUTATING_TOOLS
+
+
+def _note_chat_mutation(sess, tool):
+    """Mark the current step as `mutated` after a mutating tool succeeded.
+
+    Never raises: bookkeeping for the closeout gate must not break a turn. No
+    plan (no current node) means there is nothing to close, so nothing to mark.
+    """
+    if tool not in _MUTATING_TOOLS:
+        return
+    try:
+        taskgraph.note_mutation_current(taskgraph.load(sess["id"]) or {}, tool)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=None):
     """Run the calls of a `batch` action (JAG-533).
 
@@ -1801,6 +1841,8 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         status = res.get("status")
         sub = res.get("result") or {}
         ok = status == "executed" and sub.get("ok") is not False
+        if ok:
+            _note_chat_mutation(sess, tool)   # F1: the step is no longer text-only
         obs = res.get("observation") or res.get("error") or str(status)
         obs = str(obs)[:4000]
         on_event("tool.result", session=sess["id"], tool=tool, ok=ok, args=args,
@@ -3458,6 +3500,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # ok:false) persisted with ok=True and the WebUI drew a green ✅ on
                 # a failed call (and `prev_error` never fired). bind ok to failure.
                 ok = _exec_ok and not _tool_failed
+                # F1: a step that changed the environment can no longer be closed
+                # on a text claim when closeout verification is on.
+                if ok:
+                    _note_chat_mutation(sess, tool)
                 # JAG-96: persist the card so cold-start UIs rebuild the transcript.
                 persist_tool_card(sess, tool, ok, args=args,
                                   result=sub.get("stdout") or obs or "",
