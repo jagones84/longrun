@@ -318,7 +318,9 @@ _LEGACY_SCHEMAS = {
                         "injections, in order. action=send -> asynchronously message "
                         "another session (session|to + message|text); it steers a "
                         "running peer or starts a turn for an idle peer, then returns "
-                        "a message_id. Continue other work. action=wait with that id "
+                        "a message_id. Pass idempotency_key to make a retried send "
+                        "return that same message_id (idempotent=true) instead of "
+                        "delivering the text twice. Continue other work. action=wait with that id "
                         "waits for the peer turn to finish and returns its reply; "
                         "action=read can inspect the live transcript meanwhile."),
         "type": "object",
@@ -332,6 +334,13 @@ _LEGACY_SCHEMAS = {
                         "description": "text delivered to the peer (action=send)"},
             "text": {"type": "string",
                      "description": "alias for message (action=send)"},
+            "idempotency_key": {
+                "type": "string",
+                "description": ("action=send only: retry-safe key. Sending again to the "
+                                "SAME session with the same key returns the original "
+                                "message_id with idempotent=true instead of delivering the "
+                                "text twice."),
+            },
             "message_id": {"type": "string",
                            "description": "message_id returned by action=send (action=wait)"},
             "timeout_secs": {"type": "integer", "minimum": 0, "maximum": 900,
@@ -659,7 +668,7 @@ _SUBTOOL_FIELDS = {
     },
     "sessions": {
         "list": ["query", "limit"], "read": ["session", "limit", "tail"],
-        "send": ["session", "to", "message", "text"],
+        "send": ["session", "to", "message", "text", "idempotency_key"],
         "wait": ["message_id", "timeout_secs"],
     },
     "chapters": {
@@ -812,7 +821,9 @@ _SUBTOOL_GUIDANCE = {
         "peer receives a steer; an idle peer gets a server-side chat turn. This returns "
         "a `message_id` immediately so you can continue your work. Use `sessions.read` "
         "to inspect the peer's live transcript and `sessions.wait` with that id to get "
-        "the final assistant reply after its turn ends."
+        "the final assistant reply after its turn ends. Pass `idempotency_key` to make "
+        "a retry safe: the same key to the same peer returns the original `message_id` "
+        "with `idempotent=true` and delivers nothing twice."
     ),
     "sessions.wait": (
         "Wait for a message sent by `sessions.send` to finish. Pass its exact "

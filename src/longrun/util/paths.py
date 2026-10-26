@@ -206,6 +206,10 @@ EMBEDDING_DIR = os.environ.get("LONGRUN_EMBEDDING_DIR") or os.path.join(DATA_DIR
 # JAG-431j: the per-session THREAD ledger (durable chat outline, compaction-proof).
 # Overridable so tests never write it into the live data/.
 THREADS_DIR = os.environ.get("LONGRUN_THREADS_DIR") or os.path.join(DATA_DIR, "threads")
+# I-3: agent-to-agent SEND bookkeeping — the per-sender idempotency map that lets
+# a retried `sessions.send` return the original message_id instead of delivering
+# the text twice. Overridable so tests never write it into the live data/.
+MESSAGES_DIR = os.environ.get("LONGRUN_MESSAGES_DIR") or os.path.join(DATA_DIR, "messages")
 # JAG-533: the self-evolution RUNTIME checkout (a git clone + rules + skills +
 # checkpoints, rewritten at runtime) — mutable state, so it lives under HOME, not
 # in the repository.

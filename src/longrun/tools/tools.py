@@ -31,6 +31,67 @@ _SESSION_SENDS = {}
 _SESSION_SENDS_LOCK = threading.Lock()
 _SESSION_SENDS_KEEP = 256
 
+# I-3: `sessions.send` idempotency. A retried send (same sender, same target,
+# same `idempotency_key`) returns the ORIGINAL message_id with `idempotent: true`
+# instead of delivering the text a second time. The map is per sender, on disk
+# so a restart does not resurrect the double delivery, bounded by _IDEM_KEEP and
+# _IDEM_TTL. `checkpoints.create(idempotency_key=...)` is the same contract.
+_IDEM_KEEP = 200
+_IDEM_TTL = 24 * 3600.0
+
+
+def _idem_path(sender):
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in str(sender or ""))[:80]
+    return os.path.join(_paths.MESSAGES_DIR, "idem", (safe or "unknown") + ".json")
+
+
+def _idem_read(sender):
+    try:
+        with open(_idem_path(sender), "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _idem_lookup(sender, key, target):
+    """The original message_id for (sender, key, target), or "" when none is live."""
+    rec = _idem_read(sender).get(str(key or ""))
+    if not isinstance(rec, dict):
+        return ""
+    try:
+        age = time.time() - float(rec.get("ts") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if age > _IDEM_TTL or str(rec.get("session") or "") != str(target or ""):
+        return ""
+    return str(rec.get("message_id") or "")
+
+
+def _idem_store(sender, key, target, message_id):
+    """Remember `key -> message_id` for this sender (TTL-pruned, bounded, atomic)."""
+    now = time.time()
+    live = {}
+    for k, v in _idem_read(sender).items():
+        try:
+            if now - float(v.get("ts") or 0) <= _IDEM_TTL:
+                live[k] = v
+        except (AttributeError, TypeError, ValueError):
+            continue
+    live[str(key)] = {"message_id": message_id, "session": target, "ts": now}
+    if len(live) > _IDEM_KEEP:
+        for k in sorted(live, key=lambda x: float(live[x].get("ts") or 0))[:len(live) - _IDEM_KEEP]:
+            live.pop(k, None)
+    path = _idem_path(sender)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(live, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
 
 def _truncate(s, n):
     if not isinstance(s, str):
@@ -1667,6 +1728,25 @@ def _sessions(args, run_id):
             return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
                     "error": "refusing to send a message to the calling session",
                     "backend": "host", "sandboxed": False}
+        # I-3: a retried send must not deliver twice. The lookup happens BEFORE
+        # the steer/dispatch branch, so a duplicate costs neither a queue slot nor
+        # a peer turn — it returns the id of the message that already went out.
+        idem_key = str(args.get("idempotency_key") or "").strip()
+        sender = run_id or "unknown"
+        if idem_key:
+            seen = _idem_lookup(sender, idem_key, target)
+            if seen:
+                with _SESSION_SENDS_LOCK:
+                    prior = dict(_SESSION_SENDS.get(seen) or {})
+                return {"ok": True, "exit_code": 0, "session": target,
+                        "mode": prior.get("mode") or "turn",
+                        "job": prior.get("job"), "message_id": seen,
+                        "idempotent": True,
+                        "stdout": ("duplicate send: idempotency_key %r already went to %s "
+                                   "as %s; nothing was delivered again. Continue your "
+                                   "work; call sessions.wait with message_id=%s to read "
+                                   "the reply." % (idem_key, target, seen, seen)),
+                        "stderr": "", "backend": "host", "sandboxed": False}
         message_id = "%s:%d:%s" % (target, time.time_ns(), os.urandom(4).hex())
         rec = {"message_id": message_id, "session": target,
                "from_session": run_id or "unknown", "before_messages":
@@ -1706,6 +1786,10 @@ def _sessions(args, run_id):
                         break
                     if _SESSION_SENDS[old_id].get("state") == "done":
                         _SESSION_SENDS.pop(old_id, None)
+        if idem_key:
+            # Recorded only AFTER a real delivery, so a failed dispatch leaves the
+            # key free for the caller's retry.
+            _idem_store(sender, idem_key, target, message_id)
         if rec["mode"] == "steer":
             return {"ok": True, "exit_code": 0, "session": target, "mode": "steer",
                     "message_id": message_id,
