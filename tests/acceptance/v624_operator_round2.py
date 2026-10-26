@@ -55,6 +55,11 @@ check("B2 view columns resizable with persistence and reset",
       and '"vrat:" + this.view + ":" + r + ":" + c' in ORBIT
       and "this._layoutViewCols();" in ORBIT
       and "min-width:280px" in ORBIT)
+check("B3 Agents gets a readable share in the active custom view",
+      'rowPanels.findIndex(p => p.dataset.panel === "agents")' in ORBIT
+      and "rowPanels.length > 2 ? 0.4 : 0.58" in ORBIT
+      and "ratios[ai] < target" in ORBIT
+      and 'saved["vrat:" + this.view + ":" + r + ":" + c] = ratios[c]' in ORBIT)
 
 # ---------------- C: grabbable rows, org scroll ----------------------
 check("C1 agent rows show a grip with grab affordance",
@@ -67,8 +72,9 @@ check("C3 AX click scrolls the org node into view",
 
 # ---------------- D: roomier table, live sync ----------------------
 check("D1 compact table cells attached, actions are icon-only",
-      "col.c-name{width:150px}" in ORBIT and "col.c-role{width:98px}" in ORBIT
-      and "table.at td{padding:2px 3px" in ORBIT
+      "col.c-name{width:23%}" in ORBIT and "col.c-role{width:15%}" in ORBIT
+      and "col.c-file{width:8%}" in ORBIT and "col.c-act{width:11%}" in ORBIT
+      and "table.at{width:100%;table-layout:fixed" in ORBIT
       and '\u270e' in ORBIT and '\u21ba' in ORBIT
       and "\u270e prompt" not in ORBIT and "\u21ba reset" not in ORBIT)
 check("D2 Sessions repaints on every rename/release event",

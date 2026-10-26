@@ -84,7 +84,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* JAG-2.3: two resizable two-column rows (Agents|Job/Routines, Org|Constellation),
      anchored edge-to-edge. Middle splitter drags the widths; --cA/--cB persist.
      Stacks into one column on narrow screens. */
-  .grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax(0,1.3fr)) 5px var(--cB,minmax(0,1fr));gap:4px;align-items:stretch}
+  .grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax(0,1.38fr)) 5px var(--cB,minmax(0,1fr));gap:4px;align-items:stretch}
   .grid2.ab .panel,.grid2.oc .panel{display:flex;flex-direction:column;min-height:0}
   .grid2.ab .panel>.scroll,.grid2.oc .panel>.scroll{flex:1 1 auto;max-height:none;min-height:0}
   .grid2.ab .col,.grid2.ab .col>.panel{min-height:0}
@@ -142,23 +142,20 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .muted{color:var(--dim)} .small{font-size:11px}
   .empty{padding:14px;color:var(--dim);font-size:12px}
   /* agents table */
-  /* JAG-403f: the table is CONTENT-SIZED and packed to the LEFT (width:auto +
-     table-layout:fixed + explicit <col> widths). A full-width table spread the
-     columns across the whole panel and left a dead gap on the right. */
+  /* The table fills its panel; percentage columns share the available width. */
   /* JAG-2.8 (restyle): sticky header, zebra rows, aligned control heights and pill
      buttons — the board is read top-to-bottom, so the header must stay put and the
      eye must not have to re-find the columns on every scroll. */
-  table.at{width:auto;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
-  /* v624: wider content cols — names/roles/models truncated at 200/134px while
-     the panel had room. The table stays content-sized (JAG-403f), just roomier. */
-  table.at col.c-id{width:46px} table.at col.c-name{width:150px} table.at col.c-role{width:98px}
-  table.at col.c-model{width:104px} table.at col.c-rep{width:104px} table.at col.c-teams{width:70px}
-  table.at col.c-file{width:56px}
-  table.at col.c-act{width:80px}
+  table.at{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
+  /* Reserve more width for editable values than for icon actions. */
+  table.at col.c-id{width:6%} table.at col.c-name{width:23%} table.at col.c-role{width:15%}
+  table.at col.c-model{width:14%} table.at col.c-rep{width:14%} table.at col.c-teams{width:9%}
+  table.at col.c-file{width:8%}
+  table.at col.c-act{width:11%}
   /* JAG-424: keep the row actions (reset · delete) on ONE line — they wrapped and the
      × stacked under reset, wasting a whole row of height per agent. */
   table.at td.c-act{white-space:nowrap}
-  table.at td.c-act .btn{padding:2px 6px}
+  table.at td.c-act .btn{width:22px;height:22px;padding:0;justify-content:center}
   table.at thead th{position:sticky;top:0;z-index:3;background:var(--panel);
     box-shadow:0 1px 0 var(--line)}
   table.at th{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
@@ -313,7 +310,13 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     white-space:pre-wrap;max-height:120px;overflow:auto}
   .cpop .go{display:inline-block;margin-top:7px;color:var(--acc);cursor:pointer}
   /* jobs + routines + feed */
-  .job{display:flex;gap:8px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer}
+  .job-item{border-bottom:1px solid var(--line);min-width:0}
+  .job{display:flex;gap:6px;align-items:center;padding:6px 8px;font-size:12px;cursor:pointer;min-width:0}
+  .job-meta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 8px 5px 48px;font-size:10px;min-width:0}
+  .job-meta .rl{max-width:100%}
+  .job-goal{flex:1;min-width:60px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+    -webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+  .job .icon-action{flex:0 0 22px;width:22px;height:22px;padding:0;justify-content:center}
   .job .st{font-size:9px;text-transform:uppercase;border-radius:999px;padding:1px 7px;border:1px solid var(--line)}
   .job .st.created{color:var(--dim)} .job .st.running{color:var(--warn);border-color:rgba(224,164,88,.5)}
   .job .st.done{color:var(--ok);border-color:rgba(87,211,140,.5)} .job .st.error{color:var(--err);border-color:rgba(224,106,106,.5)}
@@ -2317,17 +2320,23 @@ class JobsView {
           '<span class="st">' + esc(s.id) + ' \u2192 ' + esc(s.agent) + '</span>' +
           '<span>' + esc(s.status || "pending") + dur + '</span>' +
           '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(short(s.result || s.error || s.assignment || "", 70)) + '</span>' +
-          '<button class="btn mini ghost" data-go="' + esc(s.agent) + '" title="open ' + esc(s.agent) + '\u2019s session in the Sessions tab">\u2197 session</button></div>';
+          '<button class="btn mini ghost icon-action" data-go="' + esc(s.agent) + '" title="Open ' + esc(s.agent) + '\u2019s session" aria-label="Open ' + esc(s.agent) + '\u2019s session">↗</button></div>';
       }).join("");
       const runHtml = (this.open === j.id) ? subHtml : "";
       const canRun = (j.status !== "running" && j.status !== "blocked");
       const team = (j.agents || []).join(",");
-      return '<div class="job" data-id="' + esc(j.id) + '"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
+      const relHtml = (j.coordinator || team
+        ? '<span class="rl" title="coordinator ' + esc(j.coordinator || "") + ' · team ' + esc(team) + '">' +
+          esc(j.coordinator || "unassigned") + ' ⇢ ' + esc(team || "no agents") + '</span>' : "") +
+        (j.blocked_by && j.blocked_by.length
+          ? '<span class="rl" title="job dependencies">blocked by ' + esc(j.blocked_by.join(", ")) + '</span>' : "");
+      const relationHtml = relHtml ? '<div class="job-meta">' + relHtml + '</div>' : "";
+      return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
         '<span class="aid">' + esc(j.id) + '</span>' +
-        '<span class="muted" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(j.goal) + '">' + esc(j.goal) + '</span>' +
-        '<span class="rl" title="coordinator ' + esc(j.coordinator||"") + ' · team ' + esc(team) + '">' + esc(j.coordinator||"") + ' ⇢ ' + esc(team) + '</span>' +
-        (canRun ? '<button class="btn" data-run="' + esc(j.id) + '" style="padding:3px 9px;font-size:11px">▶ run</button>' : '') +
-        '<button class="btn ghost no" data-jdel="' + esc(j.id) + '" style="padding:3px 8px;font-size:11px" title="delete this job">✕</button>' + '</div>' + runHtml; }).join("") ||
+        '<span class="muted job-goal" title="' + esc(j.goal) + '">' + esc(j.goal) + '</span>' +
+        (canRun ? '<button class="btn ghost mini icon-action" data-run="' + esc(j.id) + '" title="Run job ' + esc(j.id) + '" aria-label="Run job ' + esc(j.id) + '">▶</button>' : '') +
+        '<button class="btn ghost no mini icon-action" data-jdel="' + esc(j.id) + '" title="Delete job ' + esc(j.id) + '" aria-label="Delete job ' + esc(j.id) + '">×</button></div>' +
+        relationHtml + runHtml + '</div>'; }).join("") ||
       '<div class="empty">no jobs yet — write a goal and pick who to give it to.</div>';
     $("jobs").querySelectorAll("[data-run]").forEach(b => { b.onclick = (e) => { e.stopPropagation(); this.dispatch(b.dataset.run); }; });
     $("jobs").querySelectorAll("[data-jdel]").forEach(b => { b.onclick = async (e) => { e.stopPropagation();
@@ -2815,6 +2824,14 @@ class OrbitApp {
       let ratios = rowPanels.map((p, c) => this._vcolRatio(saved, r, c, rowPanels.length));
       const rsum = ratios.reduce((a, b) => a + b, 0);
       if (rsum < 0.9 || rsum > 1.1) ratios = rowPanels.map(() => 1 / rowPanels.length);
+      const ai = rowPanels.findIndex(p => p.dataset.panel === "agents");
+      const target = rowPanels.length > 2 ? 0.4 : 0.58;
+      if (ai >= 0 && rowPanels.length > 1 && ratios[ai] < target) {
+        const others = ratios.reduce((sum, value, c) => sum + (c === ai ? 0 : value), 0) || 1;
+        ratios = ratios.map((value, c) => c === ai ? target : value * (1 - target) / others);
+        rowPanels.forEach((_, c) => { saved["vrat:" + this.view + ":" + r + ":" + c] = ratios[c]; });
+        try { localStorage.setItem("orbit_layout_v2", JSON.stringify(saved)); } catch (_) {}
+      }
       rowPanels.forEach((p, c) => {
         if (!p._vmark){
           p._vmark = document.createComment("vslot:" + (p.dataset.panel || ""));

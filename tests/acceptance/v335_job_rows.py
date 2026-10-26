@@ -37,9 +37,22 @@ check("A5 the redundant flat `runs` list is GONE",
       "Object.keys(runs)" not in o and "const runs = j.runs" not in o)
 check("A6 the collapsed body is just the subjob rows",
       'const runHtml = (this.open === j.id) ? subHtml : "";' in o)
+check("A7 coordinator and dependency relations render on a separate row",
+      'class="job-item"' in o and 'class="job-meta"' in o
+      and "j.blocked_by" in o)
+check("A8 run and delete actions are compact, labeled icons",
+      'data-run="' in o and 'title="Run job ' in o and 'aria-label="Run job ' in o
+      and 'data-jdel="' in o and 'title="Delete job ' in o
+      and 'aria-label="Delete job ' in o
+      and ">▶ run</button>" not in o)
+check("A9 subjob session action is an icon with an explanation",
+      'data-go="' in o and 'aria-label="open ' in o
+      and '">↗</button>' in o)
+check("A10 the job goal can wrap to three readable lines",
+      'class="muted job-goal"' in o and ".job-goal{" in o
+      and "-webkit-line-clamp:3" in o and "white-space:normal" in o)
 
 print("---")
 ok = sum(1 for r in results if r)
 print("%d/%d PASS" % (ok, len(results)))
 sys.exit(0 if ok == len(results) else 1)
-

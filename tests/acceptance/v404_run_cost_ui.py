@@ -5,8 +5,8 @@ Stdlib-only, deterministic, no browser, no model. Covers the three points:
   A) the RH Cost tab groups API calls PER RUN (one user turn); each run is a
      collapsed row with its own total, expandable to the individual calls.
      The ledger now carries an optional `run` id, tagged by `chat_once`.
-  B) the Bridge AGENTS table is packed to the LEFT (content-sized + explicit
-     column widths), with its new-agent inputs no longer full-width.
+  B) the Bridge AGENTS table fills its panel with explicit proportional column
+     widths, with its new-agent inputs no longer full-width.
   C) the Bridge ORG CHART keeps single-click = preview (which now ALSO highlights +
      scrolls to the agent in the AGENTS table, JAG-451), double-click = open the
      agent's session, and the right-click quick-action menu reuses the
@@ -83,9 +83,9 @@ check("A12 expanded model labels wrap instead of being clipped",
       ".costrow .cm { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere;" in HTML)
 
 # ------------------------------------------------------------------ B) AGENTS table
-check("B1 the agents table is content-sized + packed left (not full width)",
-      "table.at{width:auto;table-layout:fixed" in ORBIT)
-check("B2 the table declares explicit, left-packed column widths",
+check("B1 the agents table fills its panel without a dead right gap",
+      "table.at{width:100%;table-layout:fixed" in ORBIT)
+check("B2 the table declares explicit proportional column widths",
       '<col class="c-id">' in ORBIT and '<col class="c-model">' in ORBIT
       # JAG-2.8 restyled the board; the CONTRACT is that every column width is
       # declared explicitly (a magic number in the test only froze the old skin).
