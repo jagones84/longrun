@@ -385,6 +385,12 @@ def _routing_sections():
             fields.append(_f("roles.%s.fallbacks" % name, "%s · fallbacks" % name,
                              "strlist"))
     fields.append(_f("default_fallbacks", "global fallbacks", "strlist"))
+    # I-2: a closed quota window must be visible (and switchable) where the models
+    # are, not only in the file.
+    fields.append(_f("quota_cooldown", "quota cooldown", "bool",
+                     help="Remember a provider 429 per model for its retry window and "
+                          "put that model LAST in the fallback chain until it expires. "
+                          "Off = every new turn retries the exhausted model first."))
     sec = dict(_FILE_SECTIONS["routing.yaml"])
     sec["fields"] = fields
     return [sec]

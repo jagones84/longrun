@@ -67,7 +67,7 @@ rllm._set_read_idle = lambda *a, **k: None
 
 
 def _serve(lines):
-    rllm._open_with_retry = lambda req, timeout: _CM(_Resp(lines=lines))
+    rllm._open_with_retry = lambda req, timeout, **_kw: _CM(_Resp(lines=lines))
 
 
 def _sse(*chunks):
@@ -109,7 +109,7 @@ try:
     # ---- C: non-streaming fallback also reads `reasoning` --------------------
     calls = {"n": 0}
 
-    def _open(req, timeout):
+    def _open(req, timeout, **_kw):
         calls["n"] += 1
         if calls["n"] == 1:
             raise OSError("stream failed before any token")

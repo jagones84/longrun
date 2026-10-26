@@ -874,6 +874,13 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
         f = str(f or "").strip()
         if f and f not in candidates:
             candidates.append(f)
+    # I-2: a model with a CLOSED quota window goes last (kept, never dropped —
+    # a one-model setup must still have a candidate rather than a dead end).
+    try:
+        from longrun.model import routing as _routing
+        candidates = _routing.order_candidates(candidates) or candidates
+    except Exception:  # noqa: BLE001 — ordering must never break a run
+        pass
     # v0.3 checkpoint at run start (idempotent per run) so plan/tasks/transcript
     # survive a restart and can be rolled back after a bad run.
     try:

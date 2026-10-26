@@ -23,6 +23,7 @@ unreachable — callers then keep their current default behaviour.
 import os
 import re
 import threading
+import time
 
 from longrun.tools import registry
 from longrun.util.dataio import dump_yaml as _yaml_dump, load_yaml
@@ -234,7 +235,84 @@ def model_chain(role):
         if ref and ref not in seen and not is_dynamic_ref(ref):
             out.append(ref)
             seen.add(ref)
-    return out
+    return order_candidates(out)
+
+
+# ---------------------------------------------------------- I-2 quota cooldown --
+# A provider that answers 429 has a CLOSED window for a while. The turn already
+# fails over (`api_v02` / `stream_with_fallback` walk the chain), but without a
+# memory of the 429 the NEXT turn puts the same model first again and pays one
+# doomed call + its latency. Process-local on purpose: a restart forgets it,
+# which is correct for a transient quota, and nothing is written to disk.
+_EXHAUSTED = {}                 # model ref -> monotonic deadline
+_EXHAUSTED_LOCK = threading.Lock()
+QUOTA_DEFAULT_COOLDOWN = 3600.0  # seconds, when the transport reports no hint
+
+
+def quota_cooldown_on():
+    """Whether I-2 applies (config `quota_cooldown`, default on)."""
+    try:
+        return bool(load_config().get("quota_cooldown", True))
+    except Exception:  # noqa: BLE001 — a config probe must never break routing
+        return True
+
+
+def note_exhausted(model, secs=None):
+    """Remember that `model` hit a quota wall for `secs` (default 1h).
+
+    Returns the deadline (monotonic seconds) or None when nothing was recorded.
+    A non-positive `secs` CLEARS the note (the operator/`retry_not_before_s=0`
+    saying "try it now").
+    """
+    ref = str(model or "").strip()
+    if not ref or not quota_cooldown_on():
+        return None
+    try:
+        wait = float(secs if secs is not None else QUOTA_DEFAULT_COOLDOWN)
+    except (TypeError, ValueError):
+        wait = QUOTA_DEFAULT_COOLDOWN
+    wait = max(0.0, min(wait, 24 * 3600.0))
+    if wait <= 0:
+        with _EXHAUSTED_LOCK:
+            _EXHAUSTED.pop(ref, None)
+        return None
+    deadline = time.monotonic() + wait
+    with _EXHAUSTED_LOCK:
+        _EXHAUSTED[ref] = deadline
+    return deadline
+
+
+def is_exhausted(model):
+    """True while `model` is inside a recorded quota window (expires in place)."""
+    ref = str(model or "").strip()
+    if not ref:
+        return False
+    with _EXHAUSTED_LOCK:
+        deadline = _EXHAUSTED.get(ref)
+        if deadline is None:
+            return False
+        if deadline <= time.monotonic():
+            _EXHAUSTED.pop(ref, None)
+            return False
+        return True
+
+
+def order_candidates(chain):
+    """Exhausted models LAST, order otherwise unchanged, never emptied (I-2).
+
+    A single-model chain still returns that model: a closed quota must cost a
+    retry, never a dead end.
+    """
+    items = []
+    for m in (chain or []):
+        ref = str(m or "").strip()
+        if ref and ref not in items:
+            items.append(ref)
+    if len(items) < 2 or not quota_cooldown_on():
+        return items
+    fresh = [m for m in items if not is_exhausted(m)]
+    tired = [m for m in items if is_exhausted(m)]
+    return fresh + tired
 
 
 def fallback_chain(role):

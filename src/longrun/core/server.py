@@ -179,6 +179,9 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
     # `glm-5.3-flash-iq2`, and the router autoloaded 100+GB of weights). A model
     # the user chose must never silently become a different one.
     chain = [primary] + [a for a in routing.model_chain(role) if a and a != primary]
+    # I-2: a model inside a recorded quota window goes LAST (never dropped, so a
+    # one-model setup still has a candidate).
+    chain = routing.order_candidates(chain)
     # JAG-403: a non-thinking model may reject `reasoning_effort`. When thinking
     # effort is ON, retry the SAME model once with the field OMITTED before
     # failing over — a model without reasoning must never crash the turn.

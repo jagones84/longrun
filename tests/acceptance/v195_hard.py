@@ -238,7 +238,7 @@ class _SilentResp:
 
 
 _sock_stream, _sock_peer = _socket.socketpair()  # peer never writes -> silent
-_rllm._open_with_retry = lambda req, timeout: _SilentResp(_sock_stream)
+_rllm._open_with_retry = lambda req, timeout, **_kw: _SilentResp(_sock_stream)
 _rllm._reachable = lambda *a, **k: True
 _rllm.ROUTER_IDLE_TIMEOUT = 30.0
 _cancel = {"flag": False}
@@ -265,7 +265,7 @@ check("H1 cancel breaks a SILENT router stream fast (<5s; idle budget 30s)",
 _calls = {"n": 0}
 
 
-def _open_dies(req, timeout):
+def _open_dies(req, timeout, **_kw):
     _calls["n"] += 1
     raise RuntimeError("router down")
 

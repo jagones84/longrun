@@ -532,13 +532,16 @@ def classify_retry(err):
     return {"disposition": "unknown", "retries": 0, "backoff": 0.0}
 
 
-def _open_with_retry(req, timeout):
+def _open_with_retry(req, timeout, model=None):
     """urlopen with a typed retry budget (M10: `classify_retry`).
 
     Transient endpoint failures (5xx, timeout, reset) retry up to 3 times
     with exponential backoff; quota (429) publishes `model.quota` and raises
     immediately instead of burning tight retries; fatal/unknown errors fail
     fast, exactly as before.
+
+    I-2: a quota answer is also RECORDED for `model`, so the next turn stops
+    putting a model with a closed window at the head of its chain.
     """
     delay = ROUTER_BACKOFF
     try:
@@ -556,6 +559,11 @@ def _open_with_retry(req, timeout):
                     publish("model.quota", error=str(first)[:200],
                             retry_not_before_s=budget["backoff"])
                 except Exception:  # noqa: BLE001 — diagnostics never break I/O
+                    pass
+                try:
+                    from longrun.model import routing as _routing
+                    _routing.note_exhausted(model, budget.get("backoff"))
+                except Exception:  # noqa: BLE001 — a cooldown note must not mask the error
                     pass
             raise
         last = first
@@ -786,7 +794,7 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
     answer, think = [], []
     rg = _RepetitionGuard() if (guard if guard is not None else REPEAT_GUARD) else None
     try:
-        with _open_with_retry(req, timeout) as resp:
+        with _open_with_retry(req, timeout, model=model) as resp:
             if ROUTER_IDLE_TIMEOUT > 0:
                 # v0.6.1 (JAG-48): mid-stream silence must not hang the run.
                 _set_read_idle(resp, ROUTER_IDLE_TIMEOUT)
@@ -878,7 +886,9 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
                                            MAX_TOKENS or None,
                                            no_reasoning=no_reasoning)).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers=headers)
-        with _open_with_retry(req, timeout) as resp:
+        with _open_with_retry(req, timeout, model=model) as resp:
+            # The non-streaming fallback: a 429 here is the SAME closed window, so
+            # it must be recorded too (I-2 — `_open_with_retry` owns the note).
             data = json.loads(resp.read().decode("utf-8") or "{}")
         if usage is not None and isinstance(data.get("usage"), dict):
             usage.update(data["usage"])

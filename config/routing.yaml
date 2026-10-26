@@ -23,3 +23,7 @@ roles:
     - openrouter:meta/muse-spark-1.3-contributor
     - deepseek:deepseek-flash
 default_fallbacks: []
+# I-2: remember a 429 (quota) per model for `retry_not_before_s` and put that
+# model LAST in the candidate chain until the window expires. Process-local, no
+# state on disk; a single-model chain still returns its model (no dead end).
+quota_cooldown: true
