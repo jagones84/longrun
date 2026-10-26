@@ -68,6 +68,76 @@ def _md_table(results):
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------- baseline verdict --
+# R0 (2026-10-26): a comparison is only a measurement if it can say "better or
+# worse than last time". Before this, `compare.json` had to be read by hand and
+# two runs on different models could be compared by mistake.
+
+BASELINE_MARGIN = 0.05
+
+
+def verdict(current, baseline, min_delta=BASELINE_MARGIN):
+    """Per-arm pass@1 against a stored baseline. Pure, never raises.
+
+    States: `no_baseline` (first run), `unmatched` (different model or task
+    count — comparing across models is the mistake this guards against),
+    `regressed` (any common arm dropped by more than the margin), `improved`
+    (none regressed and one gained more than the margin), `ok`.
+
+    Arms that appear or disappear are reported in `new_arms` / `dropped_arms`
+    and never counted as a regression.
+    """
+    cur = (current or {}).get("arms") or {}
+    margin = abs(float(min_delta or 0))
+    if not baseline:
+        return {"state": "no_baseline", "deltas": {}, "new_arms": sorted(cur),
+                "dropped_arms": [], "margin": margin}
+    if (baseline.get("model") != (current or {}).get("model")
+            or baseline.get("n_tasks") != (current or {}).get("n_tasks")):
+        return {"state": "unmatched", "deltas": {}, "new_arms": [],
+                "dropped_arms": [], "margin": margin,
+                "why": "model or task count differs — never compare across models"}
+    base = baseline.get("arms") or {}
+    deltas = {}
+    for name, rec in cur.items():
+        if name not in base:
+            continue
+        try:
+            deltas[name] = round(float(rec.get("pass@1"))
+                                 - float((base.get(name) or {}).get("pass@1")), 4)
+        except (TypeError, ValueError):
+            continue
+    new_arms = [n for n in cur if n not in base]
+    dropped = [n for n in base if n not in cur]
+    worst = min(deltas.values()) if deltas else 0.0
+    best = max(deltas.values()) if deltas else 0.0
+    state = ("regressed" if worst < -margin
+             else ("improved" if best > margin else "ok"))
+    return {"state": state, "deltas": deltas, "new_arms": sorted(new_arms),
+            "dropped_arms": sorted(dropped), "margin": margin}
+
+
+def load_baseline(path):
+    """The stored baseline, or None when it is missing or unreadable."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def save_baseline(path, summary):
+    """Write `summary` as the baseline. Returns the path, never raises upward."""
+    d = os.path.dirname(os.path.abspath(path))
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+    return path
+
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="benchmarks.compare")
     ap.add_argument("--tasks", required=True)
@@ -96,6 +166,11 @@ def main(argv=None):
     ap.add_argument("--jobs", type=int, default=1,
                     help="run this many TASKS in parallel inside one arm "
                          "(each in its own Longrun session)")
+    ap.add_argument("--baseline", default=None,
+                    help="compare this run against a stored baseline JSON "
+                         "(written on first use); a regression exits 3")
+    ap.add_argument("--min-delta", type=float, default=BASELINE_MARGIN,
+                    help="pass@1 swing treated as real (default %.2f)" % BASELINE_MARGIN)
     args = ap.parse_args(argv)
     model_map = dict(kv.split("=", 1) for kv in args.model_map.split(",") if "=" in kv)
 
@@ -147,6 +222,32 @@ def main(argv=None):
     with open(os.path.join(args.out, "compare.md"), "w", encoding="utf-8") as f:
         f.write(md)
     print("wrote %s" % os.path.join(args.out, "compare.json"))
+
+    if args.baseline:
+        base = load_baseline(args.baseline)
+        if base is None:
+            save_baseline(args.baseline, summary)
+            v = verdict(summary, None, args.min_delta)
+            print("[baseline] first run — written %s (nothing to compare yet)"
+                  % args.baseline)
+        else:
+            v = verdict(summary, base, args.min_delta)
+            print("[baseline] %s · deltas=%s · margin=%.2f"
+                  % (v["state"], v["deltas"], v["margin"]))
+            if v.get("why"):
+                print("[baseline] not comparable: %s" % v["why"])
+        summary["verdict"] = v
+        with open(os.path.join(args.out, "compare.json"), "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+        with open(os.path.join(args.out, "compare.md"), "a", encoding="utf-8") as f:
+            f.write("\n**Baseline verdict:** `%s`" % v["state"])
+            if v.get("deltas"):
+                f.write(" · " + ", ".join("%s %+.3f" % (k, d)
+                                          for k, d in sorted(v["deltas"].items())))
+            f.write("\n")
+        print(v["state"])
+        if v["state"] == "regressed":
+            return 3
     return 0
 
 
