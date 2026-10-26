@@ -295,11 +295,13 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
     res = toolmod.execute(tool, args, run_id=run_id)
     # F1: a successful mutating call makes the run's current step non-text-only,
     # so `verifier.closeout` can ask for environment proof when it is closed.
+    # I-7: the file it touched is recorded too, for the job overlap report.
     if res.get("ok") is not False:
         try:
             from longrun.plan import taskgraph as _tg
             if tool in _tg.MUTATING_TOOLS:
-                _tg.note_mutation_current(_tg.load(run_id) or {}, tool)
+                _tg.note_mutation_current(_tg.load(run_id) or {}, tool,
+                                          paths=_tg.touched_paths(tool, args))
         except Exception:  # noqa: BLE001 — bookkeeping must not break a call
             pass
     # JAG-347: the operator-facing event must carry the payload too — fs.read puts

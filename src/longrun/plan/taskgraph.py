@@ -460,18 +460,47 @@ _MUTATION_CAP = 8
 # (chat loop and the v2 agent loop) so they can never disagree.
 MUTATING_TOOLS = ("fs.write", "fs.edit", "shell", "shell.exec")
 
+# I-7: which of those name the FILE they touched. Only the file tools do — a
+# `shell` command is unattributable (its target is inside a string the harness
+# must not interpret), so it contributes no path rather than a guessed one.
+PATH_TOOLS = ("fs.write", "fs.edit")
+_PATH_ARG = "path"
+_PATH_CAP = 12
+_PATH_MAX_CHARS = 200
 
-def note_mutation_current(graph, tool):
+
+def touched_paths(tool, args):
+    """The workspace paths a mutating call touched ([] when unattributable).
+
+    Deliberately dumb: the arg IS the truth. A tool whose args carry a `path`
+    and a call that mutates is a write; anything else returns [] so a caller can
+    never record a path the harness made up.
+
+    Why this exists: two teammates of one job run concurrently, so two sessions
+    can write one file — the second write may rest on a stale read and one
+    agent's work is lost while both report success (statefootprint, I-7).
+    """
+    if str(tool or "") not in PATH_TOOLS:
+        return []
+    a = args if isinstance(args, dict) else {}
+    p = str(a.get(_PATH_ARG) or "").strip()
+    return [p[:_PATH_MAX_CHARS]] if p else []
+
+
+def note_mutation_current(graph, tool, paths=None):
     """Mark the step being worked on (first `doing`, else first `todo`)."""
     for st in ("doing", "todo"):
         for node in plan_nodes(graph):
             if node.get("status") == st:
-                return note_mutation(graph, tool, node.get("id"))
+                return note_mutation(graph, tool, node.get("id"), paths=paths)
     return None
 
 
-def note_mutation(graph, tool, node_id=None):
+def note_mutation(graph, tool, node_id=None, paths=None):
     """Record that a MUTATING tool ran under `node_id` (silent, durable).
+
+    I-7 adds the paths it touched, beside the tool names: the closeout gate needs
+    to know *that* the step mutated, the job overlap report needs to know *what*.
 
     Returns the node, or None when the id does not resolve (no plan yet, or the
     work happened outside any step). Never raises: marking must not break a call.
@@ -485,6 +514,13 @@ def note_mutation(graph, tool, node_id=None):
             if tool and str(tool) not in tools:
                 tools.append(str(tool))
             node["mutations"] = tools[:_MUTATION_CAP]
+            touched = [str(p) for p in (node.get("paths") or [])]
+            for p in (paths or []):
+                p = str(p or "").strip()
+                if p and p not in touched:
+                    touched.append(p[:_PATH_MAX_CHARS])
+            if touched:
+                node["paths"] = touched[:_PATH_CAP]
             node["mutated"] = True
             node["updated"] = round(time.time(), 3)
             save(graph)

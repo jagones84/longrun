@@ -674,12 +674,51 @@ class JobRegistry:
             pass
         return out
 
+    def write_overlaps(self, jid, job=None):
+        """I-7: paths written by MORE THAN ONE agent of this job.
+
+        Two teammates of one job run concurrently (different addresses are
+        dispatched in parallel, `agent._dispatch_key`), so two sessions can write
+        one file — the second write may rest on a stale read and one agent's work
+        is lost while both report success. The task graph is the source of truth
+        (each node carries the `paths` its tool calls touched); this is a
+        read-only pivot like `subjob_todos`, and it never raises.
+
+        A path written twice by the SAME agent is not a conflict: that overwrite
+        is sequential and the agent owns both writes.
+        """
+        job = job if isinstance(job, dict) else (self.get(jid) or {})
+        subs = job.get("subjobs") or {}
+        owners = {}
+        try:
+            from longrun.agent import agents as agents_mod
+            from longrun.plan import taskgraph as tg
+            roster = {a["id"]: a for a in agents_mod.REGISTRY.list()["agents"]}
+            for sid, s in subs.items():
+                asid = (roster.get(s.get("agent")) or {}).get("session")
+                if not asid:
+                    continue
+                g = tg.load(asid) or {}
+                mine = latest_plan_nodes([n for n in (g.get("nodes") or [])
+                                          if n.get("subjob") == sid])
+                who = str(s.get("agent") or sid)
+                for n in mine:
+                    for p in (n.get("paths") or []):
+                        seen = owners.setdefault(str(p), [])
+                        if who not in seen:
+                            seen.append(who)
+        except Exception:  # noqa: BLE001 — a read-only view must never raise
+            pass
+        return [{"path": p, "agents": sorted(a)}
+                for p, a in sorted(owners.items()) if len(a) > 1]
+
     def detail(self, jid):
         """A job enriched with its subjobs' todo membership (JAG-324).
 
         v629: every subjob also carries `depth` (its org level) and `children`
         (the subjobs nested directly under it), so the tree is readable at any
         depth without re-deriving it from the id string on the client.
+        I-7: `conflicts` lists the paths more than one member agent wrote.
         """
         job = self.get(jid)
         if not job:
@@ -691,6 +730,7 @@ class JobRegistry:
                                   depth=subjob_depth(sid),
                                   children=subjob_children(subs, sid))
                         for sid, s in subs.items()}
+        j["conflicts"] = self.write_overlaps(jid, job)
         return j
 
     def reconcile(self):

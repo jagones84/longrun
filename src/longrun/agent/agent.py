@@ -1799,8 +1799,11 @@ def _map_tools(items, cap, fn):
 _MUTATING_TOOLS = taskgraph.MUTATING_TOOLS
 
 
-def _note_chat_mutation(sess, tool):
+def _note_chat_mutation(sess, tool, args=None):
     """Mark the current step as `mutated` after a mutating tool succeeded.
+
+    I-7: the file the call touched is recorded beside the tool name, so a job
+    whose members ran concurrently can be told which path two of them wrote.
 
     Never raises: bookkeeping for the closeout gate must not break a turn. No
     plan (no current node) means there is nothing to close, so nothing to mark.
@@ -1808,7 +1811,8 @@ def _note_chat_mutation(sess, tool):
     if tool not in _MUTATING_TOOLS:
         return
     try:
-        taskgraph.note_mutation_current(taskgraph.load(sess["id"]) or {}, tool)
+        taskgraph.note_mutation_current(taskgraph.load(sess["id"]) or {}, tool,
+                                        paths=taskgraph.touched_paths(tool, args))
     except Exception:  # noqa: BLE001
         pass
 
@@ -1853,7 +1857,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         sub = res.get("result") or {}
         ok = status == "executed" and sub.get("ok") is not False
         if ok:
-            _note_chat_mutation(sess, tool)   # F1: the step is no longer text-only
+            _note_chat_mutation(sess, tool, args)   # F1: the step is no longer text-only
         obs = res.get("observation") or res.get("error") or str(status)
         obs = str(obs)[:4000]
         on_event("tool.result", session=sess["id"], tool=tool, ok=ok, args=args,
@@ -3514,7 +3518,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # F1: a step that changed the environment can no longer be closed
                 # on a text claim when closeout verification is on.
                 if ok:
-                    _note_chat_mutation(sess, tool)
+                    _note_chat_mutation(sess, tool, args)
                 # JAG-96: persist the card so cold-start UIs rebuild the transcript.
                 persist_tool_card(sess, tool, ok, args=args,
                                   result=sub.get("stdout") or obs or "",

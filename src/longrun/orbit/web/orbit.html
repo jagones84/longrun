@@ -2329,7 +2329,12 @@ class JobsView {
         ? '<span class="rl" title="coordinator ' + esc(j.coordinator || "") + ' · team ' + esc(team) + '">' +
           esc(j.coordinator || "unassigned") + ' ⇢ ' + esc(team || "no agents") + '</span>' : "") +
         (j.blocked_by && j.blocked_by.length
-          ? '<span class="rl" title="job dependencies">blocked by ' + esc(j.blocked_by.join(", ")) + '</span>' : "");
+          ? '<span class="rl" title="job dependencies">blocked by ' + esc(j.blocked_by.join(", ")) + '</span>' : "") +
+        /* I-7: one path written by two of this job's agents — one overwrite may
+           have lost work while both reported success. */
+        (j.conflicts && j.conflicts.length
+          ? '<span class="rl bad" title="written by more than one agent of this job — one write may have overwritten the other">⚠ ' +
+            esc(j.conflicts.map(c => c.path + " (" + (c.agents || []).join(", ") + ")").join("; ")) + '</span>' : "");
       const relationHtml = relHtml ? '<div class="job-meta">' + relHtml + '</div>' : "";
       return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
         '<span class="aid">' + esc(j.id) + '</span>' +

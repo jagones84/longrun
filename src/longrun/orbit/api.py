@@ -144,7 +144,9 @@ def _constellation(team=None):
                     "model": a.get("model"), "teams": a.get("teams") or []} for a in ags],
         "jobs": [{"id": j.get("id"), "status": j.get("status"),
                   "coordinator": j.get("coordinator"), "agents": j.get("agents") or [],
-                  "blocked_by": j.get("blocked_by") or [], "goal": j.get("goal")}
+                  "blocked_by": j.get("blocked_by") or [], "goal": j.get("goal"),
+                  # I-7: the paths two of this job's agents both wrote.
+                  "conflicts": _jobs.JOBS.write_overlaps(j.get("id"), j)}
                  for j in jbs],
         "subjobs": _subjobs_of(ags, jbs, graphs),
         "graphs": graphs,

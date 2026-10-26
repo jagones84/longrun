@@ -470,7 +470,7 @@ LONGRUN_BATTERY_FULL=1 bash tests/battery.sh
 LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
-The acceptance suite now contains **374/374 test files**.
+The acceptance suite now contains **375/375 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---
