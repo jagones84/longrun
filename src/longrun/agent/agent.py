@@ -85,6 +85,12 @@ def system_prompt():
 # JAG-114/125: standing rules — global (user) + project (workspace), AGENTS.md-style.
 # The actual file paths are rendered by rules.rules_prompt_block (below), so the
 # model always knows WHERE its instructions live and can read/edit them.
+# I-5: a stale rule file outranks the code inside a coding agent because the file
+# arrives as an INSTRUCTION and the code as tool output
+# (papers/stalefiles_2610.30571.txt:25-37 and :66-76 — one sentence that gives
+# existing code precedence moved code-following from 4.2% to 91.4% and stopped the
+# rewrites that broke the project's own tests; the makers' advice at :656 is to
+# state it in the system prompt). Same file, no logic.
 RULES_POLICY = (
     "## Rules (global + project)\n"
     "Your standing rules are FILES on disk (paths given below): a GLOBAL file for "
@@ -92,7 +98,10 @@ RULES_POLICY = (
     "loading its scope's AGENTS.md (additive, not a fallback). GLOBAL rules come "
     "from your user config; PROJECT rules override global ones on conflict. "
     "Follow them; if a rule conflicts with the "
-    "user's explicit request in this turn, say so before proceeding."
+    "user's explicit request in this turn, say so before proceeding. When a rule "
+    "contradicts the code or the live state it describes, the CODE wins: follow "
+    "the code, say which rule is stale, and do not rewrite working code to match "
+    "the rule."
 )
 
 
