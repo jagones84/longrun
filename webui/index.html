@@ -7410,7 +7410,10 @@ function _focusPlanNode(nid) {
 function showNodeDetail(n) {
   n = n || {};
   if (n.id) _lastPlanNode = n.id;   // JAG-431r10: the "◇ constellation" button target
-  const ev = (n.evidence || []).filter(Boolean).map(e => "• " + (e.text || "")).join("\n") || "(no evidence yet)";
+  const ev = (n.evidence || []).filter(Boolean).map(e => "• " + (e.text || "") +
+    (((e.sources) || []).length ? "  [" + e.sources.map(s => (s.path || "") + (s.start ? ":" + s.start : "")).join(", ") + "]" : "") +
+    (e.claim && !e.superseded ? "  (claim — no source)" : "") +
+    (e.superseded ? "  (superseded)" : "")).join("\n") || "(no evidence yet)";
   $("taskDetail").innerHTML =
     `<div style="color:var(--txt)">${esc(_todoid(n))}${n.jid ? " · " + esc(_nodeJob(n)) : ""} · ${esc(n.id)} · ${esc(n.status)}` +
     ((n.deps || []).length ? " · deps " + esc(n.deps.join(", ")) : "") + `</div>` +
@@ -8038,6 +8041,12 @@ function taskTree(nodes) {
     // id containing markup rendered executable HTML inside the Plan list (stored XSS).
     const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${esc(n.deps.join(", "))}</span>` : "";
     const ev = (n.evidence || []).length ? ` <span class="ev" title="${n.evidence.length} evidence item(s) — click the row to view them and jump the chat to this step">📎 ${n.evidence.length}</span>` : "";
+    // F3: how many of those entries name a real source (path:line), and whether
+    // any close is a bare claim — the panel must show the difference, not blur it.
+    const _refs = (n.evidence || []).reduce((a, e) => a + ((e && e.sources) || []).length, 0);
+    const _claims = (n.evidence || []).filter(e => e && e.claim && !e.superseded).length;
+    const src = _refs ? ` <span class="ev" title="${_refs} source reference(s) — path:line">🔗 ${_refs}</span>` : "";
+    const claim = _claims ? ` <span class="ev" title="${_claims} close(s) recorded as a CLAIM (no source)">⚠ ${_claims}</span>` : "";
     // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
     // so a long wrapped label can reclaim the width (see `.task.stacked`).
     // v610: chips carry the FULL store id (J17 / J17.4) — v609 stripped the
@@ -8049,7 +8058,7 @@ function taskTree(nodes) {
     // wrapping line UNDER it, so the label keeps the full width.
     const ids = `<span class="tids"><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.jid))}" style="color:var(--acc2);font-size:10px;cursor:pointer;text-decoration:underline dotted" title="job ${esc(_nodeJob(n))} — click for job text + open in Control Jobs">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.subjob))}" style="color:var(--info);font-size:10px;cursor:pointer;text-decoration:underline dotted" title="subjob ${esc(_nodeSub(n))} (embodies this todo) — click for its row + open in Control Jobs">${esc(_nodeSub(n))}</span>` : ""}</span>`;
     const meta = `<span class="st ${n.status}">${n.status}</span>${ids}`;
-    const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
+    const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}${src}${claim}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
       `<span class="tmeta">${meta}</span><span class="tmain">${body}</span></div>`;
   };

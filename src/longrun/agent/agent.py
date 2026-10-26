@@ -449,8 +449,9 @@ CHAT_TOOL_PROMPT = (
     "Before starting a step emit ONLY "
     '{"action":"todo.update","steps":[{"id":"<node id, e.g. n3>","status":"doing"}]}; when '
     "a step is finished emit ONLY "
-    '{"action":"todo.update","steps":[{"id":"<node id>","status":"done","evidence":"<what proves it>"}]} '
-    "(done REQUIRES evidence). The 0-based `index` still works as a fallback, but the id "
+    '{"action":"todo.update","steps":[{"id":"<node id>","status":"done","evidence":"<what proves it>","sources":["<path>:<line>"]}]} '
+    "(done REQUIRES evidence; `sources` is optional and names where the proof is — a "
+    "close without sources is recorded as a CLAIM, not as proof). The 0-based `index` still works as a fallback, but the id "
     "is preferred: it never shifts when the list changes. If new work appears or a step "
     "became irrelevant, "
     "briefly re-plan with "
@@ -1299,7 +1300,8 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
                                else ([{"ts": round(time.time(), 3), "text": str(ev)},
                                       _obs_entry] if ev else [_obs_entry]))
                     _nd = taskgraph.complete_node(
-                        graph, node_id=_nd["id"], evidence=_ev, source="model:update_todos")
+                        graph, node_id=_nd["id"], evidence=_ev, source="model:update_todos",
+                        sources=(step.get("sources") or step.get("source_refs")))
                 elif status in taskgraph.STATUSES:
                     _nd = taskgraph.update_node(
                         graph, _nd["id"], status=status, evidence=ev,

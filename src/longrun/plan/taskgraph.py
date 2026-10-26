@@ -401,14 +401,48 @@ def _next_id(graph):
     return "n%d" % i
 
 
-def _evidence_entry(text, **extra):
+def _norm_sources(sources):
+    """`[{path, start|end|chunk}]` from strings ('src/x.py:42') or dicts.
+
+    F3 (evidence lifecycle): an evidence entry may name the sources that justify
+    it. Anything unreadable is dropped — a malformed ref is worse than none.
+    """
+    out = []
+    for raw in (sources or []):
+        if isinstance(raw, str) and raw.strip():
+            path, _, line = raw.strip().rpartition(":")
+            if path and line.isdigit():
+                out.append({"path": path, "start": int(line), "end": int(line)})
+            else:
+                out.append({"path": raw.strip()})
+        elif isinstance(raw, dict) and str(raw.get("path") or "").strip():
+            rec = {"path": str(raw["path"]).strip()}
+            for key in ("start", "end", "chunk"):
+                if raw.get(key) is not None:
+                    rec[key] = raw[key]
+            out.append(rec)
+    return out
+
+
+def _evidence_entry(text, sources=None, claim=False, **extra):
     entry = {"ts": round(time.time(), 3), "text": str(text)[:4000]}
+    refs = _norm_sources(sources)
+    if refs:
+        entry["sources"] = refs
+    if claim:
+        entry["claim"] = True
     entry.update({k: v for k, v in extra.items() if v is not None})
     return entry
 
 
+def current_evidence(node):
+    """The entries that still count: with text and not superseded (F3)."""
+    return [e for e in (node or {}).get("evidence") or []
+            if (e.get("text") or "").strip() and not e.get("superseded")]
+
+
 def _has_evidence(node):
-    return bool([e for e in (node.get("evidence") or []) if (e.get("text") or "").strip()])
+    return bool(current_evidence(node))
 
 
 def _has_observed(node):
@@ -484,6 +518,12 @@ def add_node(graph, label, deps=None, status="todo", evidence=None, node_id=None
     ev = []
     if evidence:
         ev = list(evidence) if isinstance(evidence, list) else [_evidence_entry(evidence)]
+    if status == "done":
+        # F3: the same claim marker on the "created already done" path.
+        ev = [dict(e) if isinstance(e, dict) else e for e in ev]
+        for e in ev:
+            if isinstance(e, dict) and not e.get("sources") and not e.get("observed"):
+                e["claim"] = True
     if status == "done" and not ev:
         raise ValueError("evidence required for a node in status 'done'")
     if status == "done" and requires_proof and not _has_observed({"evidence": ev}):
@@ -542,7 +582,7 @@ def _is_vague_reason(reason):
     return any(p in r for p in _VAGUE_REASON)
 
 
-def update_node(graph, node_id, evidence=None, source=None, **fields):
+def update_node(graph, node_id, evidence=None, source=None, sources=None, **fields):
     """Patch a node; emits `graph.node.updated`. Evidence is mandatory for `done`."""
     node = find(graph, node_id)
     if node is None:
@@ -563,8 +603,22 @@ def update_node(graph, node_id, evidence=None, source=None, **fields):
     if source:
         changes["source"] = source
     if evidence:
-        entries = evidence if isinstance(evidence, list) else [_evidence_entry(evidence)]
-        changes["evidence"] = list(node.get("evidence") or []) + entries
+        entries = (evidence if isinstance(evidence, list)
+                   else [_evidence_entry(evidence, sources=sources)])
+        previous = list(node.get("evidence") or [])
+        if changes.get("status") == "done":
+            # F3: a `done` claim with no source is kept but MARKED as a claim, and
+            # a sourced entry retires the earlier claims (evidence drift: the old
+            # sentence must not keep counting as proof).
+            entries = [dict(e) if isinstance(e, dict) else e for e in entries]
+            for e in entries:
+                if isinstance(e, dict) and not e.get("sources") and not e.get("observed"):
+                    e["claim"] = True
+            if any(isinstance(e, dict) and e.get("sources") for e in entries):
+                for old in previous:
+                    if old.get("claim"):
+                        old["superseded"] = True
+        changes["evidence"] = previous + entries
     # A node can only be marked done with evidence on the node (old or new).
     if changes.get("status") == "done":
         probe = {**node, **changes}
@@ -652,11 +706,13 @@ def clear_delegation(graph, node_id):
 
 
 def complete_node(graph, node_id=None, label=None, evidence=None, source=None,
-                  observed=False):
+                  observed=False, sources=None):
     """Mark a node done (creating it from the label when it is unknown).
 
     JAG-206 (RDD P1): `observed=True` attaches an environment-proof evidence
     entry, which is what a `requires_proof` node needs to close.
+    F3: `sources` names where the evidence comes from (`path`, `path:line`, or a
+    dict with start/end) so the close is traceable, not just asserted.
     """
     node = find(graph, node_id, label)
     if node is None and label:
@@ -666,7 +722,7 @@ def complete_node(graph, node_id=None, label=None, evidence=None, source=None,
     if isinstance(evidence, list):
         entries = evidence
     else:
-        entries = [_evidence_entry(evidence or "completed by agent",
+        entries = [_evidence_entry(evidence or "completed by agent", sources=sources,
                                    **({"observed": True} if observed else {}))]
     return update_node(graph, node["id"], status="done", evidence=entries, source=source)
 
