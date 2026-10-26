@@ -6,6 +6,25 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **Enter sends the message in the composer (operator request, 2026-10-26).** It
+  used to insert a newline and demand `Ctrl+Enter`. `Shift+Enter` (and
+  `Ctrl/Cmd+Enter`) now insert a newline; the key still does NOT send while an IME
+  composition is in progress or while the `/` menu is open (there it picks the
+  highlighted command, with or without `Ctrl`). The two tooltips that promised the
+  old shortcut say the new one.
+
+### Fixed
+- **MCP servers reported `npx` as "not installed on this host" while it was
+  installed.** `~/.local/bin` is where a per-user Node install puts `npx`/`node`,
+  and the systemd USER service inherits a PATH without it, so `shutil.which("npx")`
+  failed inside the service: the panel disabled every `command: npx` client, and a
+  spawn would have died with `ENOENT`. `osutil.launcher_path()` is now the ONE
+  place that builds the launcher PATH (per-user bin dirs prepended; POSIX-only,
+  Windows keeps its PATHEXT resolution), and the availability probe, the `mcp.test`
+  check and the spawn all use it — the panel can no longer disagree with the launch.
+  Probed live: `/home/jagones/.local/bin/npx` → npm, node v22.11.0.
+
 ### Added
 - **Sidebar stops fabricating agent ids (phantom-A class closed, v606).**
   Agentless sessions rendered `A<sequence>` (e.g. `A189` for `cmptest1`) —

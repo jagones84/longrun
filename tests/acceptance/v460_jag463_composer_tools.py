@@ -114,8 +114,9 @@ check("D1 the send button carries a hasqueue state",
       and "#sendBtn.hasqueue::after" in _html)
 check("D2 the queue bar refreshes the button state",
       "refreshSendBtn();   // JAG-463: keep the queue dot" in _html)
-check("D3 Ctrl+Enter (send) does not also fire the slash picker",
-      'e.key === "Enter" && !e.ctrlKey && !e.metaKey' in _html)
+check("D3 the open slash menu owns Enter, so it never also sends the message",
+      'e.key === "Enter" && !e.shiftKey' in _html
+      and "if (menu && !menu.hidden && _slashItems.length) return;" in _html)
 
 # ---- E) raw names in data-attributes ----------------------------------------
 check("E1 tool rows put the RAW name in data-tool/data-ap",

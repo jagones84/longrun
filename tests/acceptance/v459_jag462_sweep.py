@@ -160,8 +160,12 @@ check("H1 a helper publish + the caller re-emit writes ONE row", _n == 2, "rows=
 _html = _read("webui/index.html")
 check("I1 the Plan list ESCAPES model-authored dep ids",
       "⤷ ${esc(n.deps.join" in _html)
-check("I2 the slash picker ignores Ctrl/Cmd+Enter (send) ",
-      'e.key === "Enter" && !e.ctrlKey && !e.metaKey' in _html)
+# v680: the open `/` menu now OWNS Enter (with or without Ctrl): it picks the
+# highlighted command, and the send handler returns early in that exact state so
+# the keystroke can never both pick and send. Shift+Enter still inserts a newline.
+check("I2 the slash picker owns Enter while it is open (Shift+Enter excepted)",
+      'e.key === "Enter" && !e.shiftKey' in _html
+      and "if (menu && !menu.hidden && _slashItems.length) return;" in _html)
 check("I3 deleting a session drops its browser-side caches",
       "delete _sessModel[s.id]" in _html and "delete _sessJob[s.id]" in _html
       and "clearDone(s.id);" in _html)

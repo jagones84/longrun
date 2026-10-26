@@ -50,7 +50,8 @@ check("A1 the placeholder is one word",
       'placeholder="Message…"' in UI
       and "Message the agent…   (Ctrl+⏎ send)" not in UI)
 check("A2 the shortcut is still documented on the send button",
-      'title="send (Ctrl+Enter)"' in UI)
+      # v680: Enter sends; Shift+Enter (or Ctrl/Cmd+Enter) inserts a newline.
+      'title="send (Enter — Shift+Enter for a newline)"' in UI)
 
 # ---- B. queue mode picker -----------------------------------------------------
 check("B1 the options carry no glyph prefix",

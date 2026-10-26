@@ -51,8 +51,9 @@ check("the model label targets .mname (robust, keeps the caret)",
       'b.querySelector(".mname")' in ui and 'class="mname"' in ui)
 # v637: the shortcut left the placeholder (it made the field look like a paragraph);
 # it lives in the send button tooltip, which is the discoverable copy.
+# v680: Enter itself sends now, so the tooltip documents Enter (+ Shift for a newline).
 check("the composer documents the send shortcut (button tooltip)",
-      'title="send (Ctrl+Enter)"' in ui)
+      'title="send (Enter — Shift+Enter for a newline)"' in ui)
 # JAG-427: on a narrow width the RIGHT group stays ONE row and the model label shrinks
 # (min-width:34px) instead of wrapping; the popover still re-anchors full-width.
 check("the phone right group stays ONE row and lets the model shrink",

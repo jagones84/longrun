@@ -1983,7 +1983,7 @@
               <button class="ghost mi" data-call="newSession" title="start a new session">＋ new session</button>
             </div>
           </div>
-          <button id="sendBtn" data-call="sendOrStop" title="send (Ctrl+Enter)" aria-label="send">↑</button>
+          <button id="sendBtn" data-call="sendOrStop" title="send (Enter — Shift+Enter for a newline)" aria-label="send">↑</button>
         </div>
       </div>
     </div>
@@ -8563,16 +8563,16 @@ function refreshSendBtn() {
   const busy = composerBusy();
   b.disabled = _attachmentPending(sessionId) && !busy;
   // JAG-463: while a turn runs the big button IS the Stop panic button, so a green dot
-  // shows when the composer queue is non-empty (something waits to be sent). Ctrl+⏎
+  // shows when the composer queue is non-empty (something waits to be sent). Enter
   // still queues/steers; the per-item chips offer ⇢ (steer now) and × (remove).
   const qn = sessionId ? _q(sessionId).length : 0;
   b.classList.toggle("stop", busy);
   b.classList.toggle("hasqueue", qn > 0);
   b.textContent = busy ? "■" : "↑";
   b.title = busy
-    ? ("stop agent / chat · " + (qn ? qn + " queued — Ctrl+⏎ adds another"
-                                     : "Ctrl+⏎ queues or steers the next message"))
-    : "send (Ctrl+Enter)";
+    ? ("stop agent / chat · " + (qn ? qn + " queued — Enter adds another"
+                                     : "Enter queues or steers the next message"))
+    : "send (Enter — Shift+Enter for a newline)";
   b.setAttribute("aria-label", busy ? "stop" : "send");
 }
 function sendOrStop() { if (composerBusy()) stopRun(); else send(); }
@@ -14046,9 +14046,17 @@ addEventListener("keydown", e => {
   if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "x" || e.key === "X")) { e.preventDefault(); micToggle(); }
   if (e.key === "Escape") { closePalette(); closeNewSess(); closeDirPicker(); closeImage(); }
 });
-/* JAG-121c: Enter = newline, Ctrl/Cmd+Enter = send (chat textarea) */
+/* Operator, 2026-10-26: ENTER sends the message (it used to insert a newline and
+   demand Ctrl+Enter). Three cases must NOT send:
+     - an IME composition in progress (a CJK/emoji candidate list owns the key),
+     - the slash menu open (Enter picks the highlighted command),
+     - Shift held (Shift+Enter = newline); Ctrl/Cmd+Enter still sends too. */
 $("inp").addEventListener("keydown", e => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+  if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+  const menu = $("slashMenu");
+  if (menu && !menu.hidden && _slashItems.length) return;
+  if (e.shiftKey) return;
+  e.preventDefault(); send();
 });
 /* Composer command chips: /tokens render as pills BEFORE send (raw text stays
    untouched — send() parses it exactly as before). Leading /goal = run mode,
@@ -14098,10 +14106,10 @@ $("inp").addEventListener("keydown", e => {
   if (menu && !menu.hidden && _slashItems.length) {
     if (e.key === "ArrowDown") { e.preventDefault(); _slashHi = Math.min(_slashHi + 1, _slashItems.length - 1); _paintSlashHi(); return; }
     if (e.key === "ArrowUp") { e.preventDefault(); _slashHi = Math.max(_slashHi - 1, 0); _paintSlashHi(); return; }
-    // JAG-462: Ctrl/Cmd+Enter is the SEND shortcut handled by the other #inp keydown
-    // listener; without this guard the picker ALSO fired for the same keystroke, so
-    // sending a message with the slash menu open re-opened the panel / re-wrote /goal.
-    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }
+    // While the menu is open it OWNS Enter (with or without Ctrl/Cmd): it picks the
+    // highlighted command. The send listener returns early in exactly this state, so
+    // the keystroke can never both pick and send. Shift+Enter still inserts a newline.
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }
   }
   if (e.key === "Escape" && menu) menu.hidden = true;
 });

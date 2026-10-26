@@ -259,7 +259,8 @@ mc._load_config = lambda *a, **k: {
                     "env": {"PATH": "/custom/mcp-bin"}, "enabled": True}}
 mc.MCPSession = _OneToolSession
 mc.shutil.which = lambda command, path=None: (
-    "/custom/mcp-bin/mcp-launcher" if path == "/custom/mcp-bin" else None)
+    "/custom/mcp-bin/mcp-launcher"
+    if path and "/custom/mcp-bin" in str(path).split(os.pathsep) else None)
 _path_mgr = mc.MCPClientManager()
 try:
     _path_mgr.start_all()
@@ -374,7 +375,11 @@ class _SpawnedProcess:
 
 
 def _fake_which(command, path=None):
-    return "/custom/mcp-bin/mcp-launcher" if path == "/custom/mcp-bin" else None
+    # v680: the launcher PATH is now built by `osutil.launcher_path`, which PREPENDS
+    # the per-user bin dirs (`~/.local/bin`) to the client's own PATH — so the stub
+    # must recognise its directory INSIDE the path, not demand the exact string.
+    return ("/custom/mcp-bin/mcp-launcher"
+            if path and "/custom/mcp-bin" in str(path).split(os.pathsep) else None)
 
 
 def _fake_popen(argv, **kwargs):

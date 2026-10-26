@@ -4,6 +4,16 @@
 # (PyYAML) or OPTIONAL — it unlocks extra capabilities. Install what you need:
 #
 #     pip install -r requirements.txt
+#
+# SYSTEM prerequisites are NOT here, and cannot be: pip installs Python packages
+# only. The optional external runtimes are:
+#   * Node.js (>= 20) — provides `npx`, needed by the stdio MCP servers whose
+#     `command` is `npx` (README §MCP servers). A per-user install lands in
+#     `~/.local/bin`, which Longrun adds to the launcher PATH itself
+#     (`osutil.launcher_path`), so it works even under a systemd user service.
+#   * `uv`/`uvx` (Python MCP servers), `docker` (containerised servers).
+#   * `pdftotext` (+ `pdftoppm`/`tesseract`), `libreoffice` — document extraction
+#     fallbacks when docling/markitdown are absent.
 
 PyYAML>=6.0
 

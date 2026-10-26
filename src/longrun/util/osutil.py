@@ -10,6 +10,8 @@ actually platform-dependent; they live here so the rest of the code stays clean:
                      on Windows)
   * kill_tree      — SIGTERM->SIGKILL the group (POSIX) / taskkill /T /F (Windows)
   * resolve_script — npx/pip -> npx.cmd/pip.exe on Windows (PATHEXT resolution)
+  * launcher_path  — the PATH a spawned launcher sees, with the per-user bin dirs
+                     (`~/.local/bin`) added: a systemd user service does not carry them
 
 Every function accepts ``on_windows=None`` (default = the real platform) so the
 Windows branch is unit-testable from Linux.
@@ -104,4 +106,42 @@ def resolve_script(name, on_windows=None):
         if found:
             return found
     return name
+
+
+# Per-user tool directories, in preference order. `~/.local/bin` is where the
+# official Node.js installer (and `pip install --user`, `cargo`, `uv`) put their
+# launchers on a POSIX host.
+_USER_BIN_DIRS = ("~/.local/bin", "~/.npm-global/bin", "~/.volta/bin", "~/bin")
+
+
+def launcher_path(env=None, on_windows=None):
+    """The PATH a spawned launcher (`npx`, `uvx`, …) must SEE, not the one we were given.
+
+    A systemd USER service inherits a minimal PATH
+    (`/usr/local/sbin:…:/snap/bin`) that does NOT contain `~/.local/bin`, while a
+    per-user Node install lives exactly there. Probed live 2026-10-26 on the DGX:
+    `/home/jagones/.local/bin/npx` -> npm existed and ran (node v22.11.0), yet
+    `shutil.which("npx")` failed inside the service, so every `command: npx` MCP
+    client was reported as "not installed on this host" and would have died with
+    ENOENT on spawn.
+
+    ONE owner: the availability probe and the spawn both call this, so the panel
+    can never report a runtime the launch cannot use.
+
+    POSIX only — Windows resolves through `resolve_script` (PATHEXT + the
+    inherited PATH already carries the install dir). `on_windows` follows the
+    module convention so that branch is testable from Linux.
+    """
+    base = ((env if env is not None else os.environ).get("PATH") or "")
+    if _win(on_windows):
+        return base
+    parts = [p for p in base.split(os.pathsep) if p]
+    prepend = []
+    for d in _USER_BIN_DIRS:
+        full = os.path.expanduser(d)
+        if os.path.isdir(full) and full not in parts and full not in prepend:
+            prepend.append(full)
+    if not prepend:
+        return base
+    return os.pathsep.join(prepend + parts)
 

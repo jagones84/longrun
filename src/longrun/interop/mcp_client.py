@@ -133,6 +133,10 @@ class MCPSession:
     def _connect_stdio(self, command, args, env):
         full_env = dict(os.environ)
         full_env.update(env or {})
+        # A systemd user service does not carry `~/.local/bin`, where a per-user
+        # Node install lives: without this the `which` below fails, `or command`
+        # keeps the bare name and Popen dies with ENOENT on an installed npx.
+        full_env["PATH"] = osutil.launcher_path(full_env)
         resolved_command = shutil.which(command, path=full_env.get("PATH")) or command
         self.proc = subprocess.Popen(
             [osutil.resolve_script(resolved_command)] + args, stdin=subprocess.PIPE,
@@ -560,8 +564,15 @@ def _load_config():
 
 
 def runtimes():
-    """Return availability of common MCP launchers on the Longrun host."""
-    return {c: bool(shutil.which(c)) for c in ("npx", "node", "uvx", "python3", "docker")}
+    """Return availability of common MCP launchers on the Longrun host.
+
+    Probed with the SAME PATH the launcher will be spawned with
+    (`osutil.launcher_path`), so the panel cannot report "not installed" for a
+    command the spawn would find — and cannot promise one it would miss.
+    """
+    path = osutil.launcher_path()
+    return {c: bool(shutil.which(c, path=path))
+            for c in ("npx", "node", "uvx", "python3", "docker")}
 
 
 def _command_available(command: str, env: dict | None = None) -> bool:
@@ -569,7 +580,7 @@ def _command_available(command: str, env: dict | None = None) -> bool:
     launch_env = dict(os.environ)
     if isinstance(env, dict):
         launch_env.update(env)
-    return bool(shutil.which(command, path=launch_env.get("PATH")))
+    return bool(shutil.which(command, path=osutil.launcher_path(launch_env)))
 
 
 class MCPClientManager:

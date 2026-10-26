@@ -301,6 +301,11 @@ Neither is required for chat.
 
 1. Install [Node.js](https://nodejs.org/) on the machine running Longrun if the
    server uses `npx` (stdio). Streamable HTTP servers do not need `npx`.
+   A per-user install (`~/.local/bin/npx`) is found even when the service's own
+   PATH does not carry that directory — Longrun adds the per-user bin dirs to the
+   PATH it launches a server with (`osutil.launcher_path`), and the **runtime**
+   row in this panel probes with that same PATH, so what the panel marks as
+   available is what the launch will really use.
 2. Open **Settings → MCP**. Use **Catalog · add in one click** for a preset, or
    **MCP JSON** to paste one server's `mcpServers` snippet and confirm it.
    **Edit mcp.json** opens the local server definitions for direct editing.
@@ -470,7 +475,7 @@ LONGRUN_BATTERY_FULL=1 bash tests/battery.sh
 LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
-The acceptance suite now contains **377/377 test files**.
+The acceptance suite now contains **378/378 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---
