@@ -1236,8 +1236,12 @@
      UNIT in a right-aligned column, then the actions. The count used to be a bare
      number and the ✕ floated away from it, so nothing lined up between rows
      (operator: "vedi che schifo di disordine? applica fix qui e ovunque"). */
-  #swMain .kb-row { display: flex; gap: 8px; align-items: center; padding: 6px 8px;
-    margin-bottom: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
+  #swMain .kb-row { display: flex; gap: 8px; align-items: center; padding: 3px 8px;
+    margin-bottom: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
+  /* v660: a one-line object deserves a one-line row. 6px of padding around a 24px
+     button made every row 39px tall — the list read as a form, not a list
+     (operator: "no compattezza"). The controls inside a row are compact now. */
+  #swMain .kb-row .ghost { padding: 1px 6px; line-height: 1.35; }
   #swMain .kb-row:hover { border-color: var(--acc); }
   /* JAG-526: the notebook that belongs to the chat on screen is ALWAYS marked
      (a `*` plus an accent edge), so opening Knowledge never requires guessing. */
@@ -1260,10 +1264,33 @@
   #swMain .kb-x { flex: 0 0 auto; background: none; border: 0; color: var(--dim); cursor: pointer;
     font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
   #swMain .kb-x:hover { color: var(--err); background: rgba(248,113,113,.10); }
+  /* v660 (operator: "spazi non rispettati, sovrapposizioni, spreco di spazio
+     generalizzato, no compattezza" on Knowledge ▸ Notebooks): every row carried a
+     FULL-WIDTH rename <input> plus a ✓ button, so a one-line object occupied a
+     45px row that was mostly empty field. The name is TEXT with the same one-line
+     ellipsis grammar as every other row; click it to rename in place. */
+  #swMain .kb-rename { cursor: text; border-bottom: 1px dashed transparent; }
+  #swMain .kb-rename:hover { border-bottom-color: currentColor; }
+  #swMain .kb-name { flex: 1 1 auto; min-width: 60px; padding: 2px 6px; font-size: 12px; }
+  /* v660: the three meta LINES must not spill. `white-space: nowrap` (written for
+     the one-line count chip) was inherited into the block, so
+     "embedding openrouter:google/…" ran ~160px past its own box and straight over
+     the buttons beside it — the overlap the operator pointed at. */
+  #swMain #indexMeta { min-width: 0; white-space: normal; }
+  #swMain #indexMeta > div { overflow-wrap: anywhere; }
   /* v653: a label that CARRIES a control is one unbreakable unit. Inside a flex
      row the label shrank, so "max sources" broke onto two lines while its input
      stayed on the first one — a live wrap the operator saw as disorder. */
   #swMain label:has(input, select) { flex: 0 0 auto; }
+  /* v660: a control INSIDE a label is one word beside its name. The v650 floor
+     `min-width: min(160px, 100%)` resolved its percentage against the LABEL's own
+     content box, so the select demanded the whole row and the label's own text
+     ("depth", "max sources") was pushed ~23px outside its box — the misalignment
+     the operator kept pointing at. A labelled control gets a real floor instead. */
+  #swMain label select,
+  #swMain label input:not([type=checkbox]):not([type=radio]):not([type=range]) {
+    min-width: 64px;
+  }
   /* v653: one scrollbar per page — the list used to scroll inside the panel's
      own scroll (320px window), which is what made the bottom look chopped. */
   #swMain #kbRefs { width: 100%; min-height: 84px; box-sizing: border-box; font-size: 12px;
@@ -12090,17 +12117,18 @@ async function kbLoadNotebooks() {
     if ($("kbNbActive")) $("kbNbActive").textContent = act ? ("\u00b7 " + act.name + " (" + (act.sources || 0) + ")") : "";
     box.innerHTML = rows.map(n => {
       const sel = n.id === kbState.notebook;
-      return '<div class="kb-row">' +
+      // v660: one-line row — chip + NAME (text) + count + delete. The always-on
+      // rename <input> and its ✓ are gone; the name itself opens the editor.
+      return '<div class="kb-row' + (sel ? " kb-current" : "") + '">' +
         '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
         '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this notebook">' + (sel ? "●" : "○") + '</button>' +
-        '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px">' +
+        '<span class="kb-main kb-rename" data-unn="' + _attr(n.id) + '" title="click to rename this notebook">' + esc(n.name) + '</span>' +
         '<span class="kb-meta" title="sources in this notebook">' + _plural(n.sources || 0, "source") + '</span>' +
-        '<button class="ghost" style="padding:2px 6px" data-save="' + _attr(n.id) + '" title="rename">✓</button>' +
         (n.id === "default" ? "" : '<button class="ghost" style="padding:2px 6px" data-del="' + _attr(n.id) + '" title="delete notebook">🗑</button>') +
         '</div>';
     }).join("") || '<div class="remaining">no notebooks</div>';
     box.querySelectorAll("[data-use]").forEach(el => el.onclick = () => kbSelect(el.getAttribute("data-use"), el.getAttribute("data-name")));
-    box.querySelectorAll("[data-save]").forEach(el => el.onclick = () => kbRenameNotebook(el.getAttribute("data-save")));
+    box.querySelectorAll("[data-unn]").forEach(el => el.onclick = () => kbRenameInline(el));
     box.querySelectorAll("[data-del]").forEach(el => el.onclick = () => kbDeleteNotebook(el.getAttribute("data-del")));
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
 }
@@ -12120,10 +12148,11 @@ async function kbLoadSessions() {
       const sel = n.id === kbState.notebook;
       const owner = (n.owner || "");
       const cur = !!owner && owner === sessionId;
-      return '<div class="kb-row' + (cur ? " kb-current" : "") + '" data-owner="' + _attr(owner) + '" style="opacity:.92">' +
+      return '<div class="kb-row' + (cur ? " kb-current" : "") + '" data-owner="' + _attr(owner) + '">' +
         '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
         '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this session notebook">' + (sel ? "●" : "○") + '</button>' +
-        '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px" readonly title="' + _attr(owner) + '">' +
+        // v660: a read-only field is a field: the name is text here too.
+        '<span class="kb-main" title="' + _attr(owner) + '">' + esc(n.name) + '</span>' +
         (cur ? '<span class="kb-cur" title="the chat you are in right now">* current</span>' : '') +
         '<span style="color:var(--acc);border:1px solid var(--acc);border-radius:6px;padding:0 5px;font-size:10px" title="session-scoped notebook — ' + _attr(owner) + '">session</span>' +
         '<span class="kb-meta" title="sources in this notebook">' + _plural(n.sources || 0, "source") + '</span>' +
@@ -12176,12 +12205,34 @@ async function kbCreateNotebook() {
     kbLoadNotebooks(); kbLoadSources(); kbStatus();
   } catch (e) {}
 }
-async function kbRenameNotebook(id) {
-  const inp = document.querySelector('[data-unn="' + id + '"]');
-  if (!inp) return;
-  try { await api("POST", "/api/knowledge/notebooks", { action: "rename", id: id, name: inp.value.trim() });
+async function kbRenameNotebook(id, name) {
+  try { await api("POST", "/api/knowledge/notebooks", { action: "rename", id: id, name: String(name || "").trim() });
     kbLoadNotebooks();
   } catch (e) {}
+}
+/* v660: open the rename editor IN PLACE on the name itself. Enter saves, Escape
+   cancels, blur saves. The row keeps its one-line height while not being edited. */
+function kbRenameInline(el){
+  const id = el.getAttribute("data-unn");
+  const before = el.textContent;
+  const inp = document.createElement("input");
+  inp.className = "inp kb-name";
+  inp.setAttribute("data-unn", id);
+  inp.value = before;
+  el.replaceWith(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = (save) => {
+    if (done) return; done = true;
+    const val = inp.value.trim();
+    if (!save || !val || val === before) { kbLoadNotebooks(); return; }
+    kbRenameNotebook(id, val);
+  };
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter"){ e.preventDefault(); finish(true); }
+    else if (e.key === "Escape"){ e.preventDefault(); finish(false); }
+  });
+  inp.addEventListener("blur", () => finish(true));
 }
 async function kbDeleteNotebook(id) {
   const isSess = String(id).startsWith("sess-");
