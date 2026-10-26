@@ -65,25 +65,36 @@ SECTIONS = [
             _f("enabled", "indexing enabled", "bool"),
             _f("automatic", "rebuild automatically", "bool",
                help="Rebuild the workspace index without asking."),
-            _f("max_file_kb", "code · max file size (KB)", "int", min=1, max=1048576),
-            _f("doc_max_kb", "documents · extracted text cap (KB)", "int",
-               min=1, max=1048576),
+            _f("max_file_kb", "code · file cap (KB)", "int", min=1, max=1048576,
+               help="The largest file the CODE index reads."),
+            _f("doc_max_kb", "documents · text cap (KB)", "int",
+               min=1, max=1048576,
+               help="The largest PDF / DOCX / PPTX / ODT, measured as its "
+                    "extracted text."),
             _f("chunk_lines", "chunk size (lines)", "int", min=5, max=2000),
             _f("overlap_lines", "chunk overlap (lines)", "int", min=0, max=500),
             _f("ignore", "code · ignore globs", "strlist",
                help="One glob per line. Applies to the CODE index only."),
-            _f("knowledge_max_file_kb", "knowledge · max file size (KB)", "int",
+            # v656: one label per line — the long ones ("documents · extracted
+            # text cap (KB)") wrapped onto a second line inside their column and
+            # the row tops no longer lined up; the size caps now pair two per row
+            # and every label fits its column.
+            _f("knowledge_max_file_kb", "knowledge · file cap (KB)", "int",
                min=1, max=1048576),
+            _f("url_max_kb", "download cap (KB)", "int", min=1, max=1048576,
+               help="A URL fetched for the knowledge base is truncated at this "
+                    "size."),
             _f("knowledge_ignore", "knowledge · ignore globs", "strlist",
                help="One glob per line. Empty = index every supported file."),
-            _f("url_max_kb", "online source · download cap (KB)", "int",
-               min=1, max=1048576),
-            _f("image_caption_model", "image caption model", "text",
+            _f("image_caption_model", "image caption model", "text", wide=True,
                placeholder="openrouter:google/gemini-2.5-flash",
                help="Empty = OCR only. A vision model ref captions images with "
                     "too little text to be searchable."),
-            _f("image_min_chars", "image · minimum OCR chars", "int", min=0, max=5000),
-            _f("embed_batch", "embedding batch size", "int", min=1, max=512),
+            _f("image_min_chars", "image · min OCR chars", "int", min=0, max=5000,
+               help="Images with fewer OCR chars than this go to the caption "
+                    "model instead."),
+            _f("embed_batch", "embedding batch size", "int", min=1, max=512,
+               help="Chunks sent to the embedding model per request."),
         ],
     },
     {

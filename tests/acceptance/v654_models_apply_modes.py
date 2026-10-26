@@ -123,8 +123,12 @@ check("D4 saving a provider tests it automatically",
       "await _provTestText(r.id)" in SAVE_PROV
       and '"saved: " + r.id + " · testing…"' in SAVE_PROV)
 check("D5 OK carries the model count, FAIL carries the reason",
-      'return "OK · " + (t.models || 0) + " models";' in UI
-      and 'return "FAIL · " + ((t && t.error) || "no answer");' in UI)
+      # v657 (operator: "no code duplication, single source of truth"): the verdict
+      # text is produced ONCE by `_probeVerdict`; this provider probe only supplies
+      # its payload (the count on success, the reason on failure).
+      '_probeVerdict(true, (t.models || 0) + " models")' in UI
+      and 'function _probeVerdict(ok, okText, errText)' in UI
+      and '_probeVerdict(false, "", (t && t.error) || "no answer")' in UI)
 check("D6 each saved provider can be re-tested from its row",
       'test.textContent = "test"' in PROV_ROWS and "await _provTestText(p.id)" in PROV_ROWS)
 

@@ -102,7 +102,8 @@ check("C2 the button is mounted beside compaction, longrunAgent and research",
       and 'btn.dataset.llmTest = id' in INIT)
 check("C3 the verdict line reads OK with the latency or the reason",
       "async function _modelTestText(ref)" in BTN
-      and 'OK · " + ' in BTN and 'FAIL · " + ' in BTN)
+      and "function _probeVerdict(ok, okText, errText)" in BTN
+      and BTN.count("_probeVerdict(") >= 3)   # v657: one verdict helper for model, provider, embedding probes
 check("C4 the research picker has its own result line",
       'id="researchModelSettingsOut"' in UI)
 check("C5 settingsCategory mounts the buttons once per render",

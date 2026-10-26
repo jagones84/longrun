@@ -1401,10 +1401,12 @@ def _improve(args, run_id=None):
                 _pub("improve.evolve", pattern=cand["pattern"], green=green)
             return {"ok": True, "evolved": len(reports), "reports": reports}
         try:
-            # Self-maintenance: sweep single-tool-repeat junk before mining,
-            # so an old junk backlog cannot keep flooding the chat.
+            # Self-maintenance: sweep junk drafts before mining — single-tool
+            # repeats and, since v656, any draft below the configured min_len
+            # (the legacy 2-tool backlog is a generic pair, not a skill).
             try:
-                pruned = (selfevolve.prune_junk(out) or {}).get("removed") or []
+                pruned = (selfevolve.prune_junk(out, selfevolve.cfg())
+                          or {}).get("removed") or []
             except Exception:  # noqa: BLE001 — sweep must never break mining
                 pruned = []
             paths = selfevolve.mine_history(out, note=str(args.get("reason", "")))

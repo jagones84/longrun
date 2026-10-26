@@ -20,7 +20,10 @@ from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 DEFAULTS = {
-    "min_len": 2,      # minimum length of the sequence (number of tools)
+    # v656: min_len 2 -> 3. A two-tool "sequence" (`fs.read` then `shell`) is a
+    # generic pair, not a skill — it fires on nearly every run and its draft told
+    # the operator nothing. The miner now only packs sequences of >= 3 steps.
+    "min_len": 3,      # minimum length of the sequence (number of tools)
     "min_count": 3,    # how many different runs must contain the sequence
     "max_len": 6,      # do not look for sequences longer than this
 }
@@ -48,7 +51,7 @@ def mine(sequences, c=None):
         same support win over their sub-patterns.
     """
     c = c or cfg()
-    mn = max(1, int(c.get("min_len") or 2))
+    mn = max(1, int(c.get("min_len") or 3))
     mc = max(2, int(c.get("min_count") or 3))
     mx = max(mn, int(c.get("max_len") or 6))
     seqs = [[str(x) for x in (s or [])] for s in (sequences or [])]
@@ -108,13 +111,29 @@ def draft(pattern, support, out_dir, note=""):
                     "next": "verify in sandbox, then archive to skills/created/"}
         write_json(os.path.join(d, "proposal.json"), proposal)
         steps = "\n".join("%d. `%s`" % (i + 1, t) for i, t in enumerate(pattern))
+        # v656: the draft must be readable by the operator who finds it in the
+        # file tree — what was observed, why it matters, and the exact commands
+        # that turn it into a real skill — instead of a two-line stub.
         md = ("# Proposed skill: %s\n\n"
-              "Detected automatically across **%d run(s)** (JAG-133). Tool sequence:\n\n"
-              "%s\n\n"
-              "## Status\n\nDRAFT — not yet verified nor archived. Next: generate "
-              "the script, run it in the sandbox on real cases and, if green, promote it to "
-              "`skills/<category>/<name>/SKILL.md`.\n"
-              % (name, support, steps))
+              "The harness observed this tool sequence **%d times** across "
+              "distinct runs (JAG-133). A repeated sequence is a skill "
+              "CANDIDATE.\n\n"
+              "## Sequence\n\n%s\n\n"
+              "## What it is\n\n"
+              "A deterministic pattern of tool calls: `%s`. A draft is "
+              "material, not a proposal — it only becomes one when a human or "
+              "the agent states WHAT it accomplishes (proposal `content`) and "
+              "it passes the sandbox check.\n\n"
+              "## How to verify\n\n"
+              "1. `improve` (`scope: skill`, `content: <what it does>`) — "
+              "write the purpose once someone can state it.\n"
+              "2. Verify the draft: `improve` (`action: verify`, "
+              "`path: <this folder>`) runs `check.py` in the sandbox.\n"
+              "3. Archive: `improve` (`action: promote`, `path: <this "
+              "folder>`) moves it to `skills/created/%s/`.\n\n"
+              "## Status\n\n"
+              "DRAFT — not verified, not archived."
+              % (name, support, steps, " → ".join(pattern), name))
         with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(md)
         return d
@@ -141,11 +160,14 @@ def scan(sequences, out_dir, c=None, note=""):
     return paths
 
 
-def prune_junk(out_dir):
-    """Self-maintenance sweep: delete single-tool-repeat junk drafts.
+def prune_junk(out_dir, c=None):
+    """Self-maintenance sweep: delete junk drafts.
 
-    Removes proposal dirs whose pattern (or slug) is one tool repeated
-    (shell-shell-shell, git.run-git.run...). Returns {"removed": [names]}.
+    Removes proposal dirs whose pattern is one tool repeated
+    (shell-shell-shell, git.run-git.run...), has a consecutive duplicate
+    (a retry, not a step) — or is SHORTER than the configured `min_len`
+    (v656: the legacy 2-tool backlog, `fs.read-shell` and friends, which is
+    a generic pair and told the operator nothing). Returns {"removed": [names]}.
     Never raises.
     """
     import shutil
@@ -154,6 +176,7 @@ def prune_junk(out_dir):
         names = os.listdir(out_dir)
     except OSError:
         return {"removed": removed}
+    min_len = max(1, int((c or cfg()).get("min_len") or 3))
     for name in names:
         d = os.path.join(out_dir, name)
         if not os.path.isdir(d):
@@ -167,17 +190,15 @@ def prune_junk(out_dir):
                 junk = True
             elif any(a == b for a, b in zip(strs, strs[1:])):
                 junk = True
+            elif len(strs) < min_len:          # v656: below the quality bar
+                junk = True
         elif pat is None:
             # Fallback on the dirname: shell-shell or shell.exec-shell.exec.
             parts = str(name).split("-")
             if len(parts) >= 2 and len(set(parts)) == 1:
                 junk = True
-            elif len(parts) >= 2:
-                # Dotted tool names were slugified with dots kept:
-                # re-split "shell.exec-shell.exec" -> ["shell.exec","shell.exec"].
-                segs = str(name).split("-")
-                if len(set(segs)) == 1:
-                    junk = True
+            elif len(parts) >= 2 and len(parts) < min_len:
+                junk = True
         if junk:
             try:
                 shutil.rmtree(d)

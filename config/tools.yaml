@@ -97,7 +97,9 @@ difficulty:
 # come skill. Stadio 1 = bozza; stadio 2 = synth + verify in sandbox + archive
 # (solo se verde). min_len/min_count/max_len = soglie del miner.
 selfevolve:
-  min_len: 2                # lunghezza minima della sequenza (n. tool)
+  # v656: min_len 2 -> 3 — una coppia di tool (fs.read + shell) è generica, non
+  # una skill: i suoi draft dicevano all'operatore esattamente niente.
+  min_len: 3                # lunghezza minima della sequenza (n. tool)
   min_count: 3              # su quante run diverse deve ripetersi
   max_len: 6                # lunghezza massima cercata
   # JAG-426: auto-generated skills are confined to skills/created/ (the built-in

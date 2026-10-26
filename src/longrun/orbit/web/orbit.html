@@ -379,6 +379,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .job.focusring{ outline:2px solid #ffd166 !important; outline-offset:-2px; animation:jobPulse 1s ease-in-out 3 }
   .runrow.focusring{ outline:2px solid #ffd166 !important; outline-offset:-2px; animation:jobPulse 1s ease-in-out 3 }
   .clink{stroke:var(--link)}
+  /* v657: the relations TRAVEL with the focused node — its dep edges pulse amber too. */
+  @keyframes clinkPulse { 0%{stroke-opacity:1} 50%{stroke-opacity:.2} 100%{stroke-opacity:1} }
+  .clink.focusring{ stroke:#ffd166 !important; stroke-width:2.4 !important;
+    stroke-dasharray:5 4 !important; animation:clinkPulse 1s ease-in-out 3 }
   table.at tr.brief td{background:var(--brief)}
   .cjob{fill:var(--cjob-f)} .csub{fill:var(--csub-f)} .cagent{fill:var(--cagent-f)}
   .btn:hover{color:var(--txt)}
@@ -3107,6 +3111,20 @@ function focusConstellationNode(id, tries){
   if (id == null) return;
   const key = String(id);
   const cssEsc = (window.CSS && CSS.escape) ? CSS.escape(key) : key;
+  // v657: the deck's SELECTED view may not show the Constellation panel at all —
+  // then the postMessage was a no-op. Follow the jobs bridge (single shared
+  // procedure): if the panel is hidden, add it to the selected view (when the
+  // view has room), else switch to the single-panel const view.
+  if (window.__orbitApp && !window.__orbitApp.isPanelVisible("const")) {
+    try {
+      const v = window.__orbitApp.activeView();
+      if (v && v.panels.length < 6 && !v.panels.includes("const")) {
+        window.__orbitApp.viewAddPanel("const");       // v657: "if not loaded, add it"
+      } else {
+        window.__orbitApp.applyView("const");
+      }
+    } catch (_) {}
+  }
   let g = document.querySelector('.cnode[data-id="' + cssEsc + '"]');
   if (!g){
     // the drawn label is "<agentId>.n<num>" — match by the id or its numeric tail.
@@ -3124,6 +3142,22 @@ function focusConstellationNode(id, tries){
   }
   if (!g) return;
   document.querySelectorAll(".cnode.focusring").forEach(el => el.classList.remove("focusring"));
+  // v657: the relations TRAVEL with the node — its dep edges are drawn as sibling
+  // <line class="clink"> at the same positions; ring every line that touches the
+  // node's centre so the pattern+fallbacks are visible, not just the circle.
+  document.querySelectorAll(".clink.focusring").forEach(el => el.classList.remove("focusring"));
+  const cx = g.querySelector("circle"), r = cx ? cx.getAttribute("r") : 0;
+  const nodeX = cx ? +cx.getAttribute("cx") : null, nodeY = cx ? +cx.getAttribute("cy") : null;
+  document.querySelectorAll("#constSvg line.clink").forEach(ln => {
+    if (nodeX == null) return;
+    const x1 = +ln.getAttribute("x1"), y1 = +ln.getAttribute("y1");
+    const x2 = +ln.getAttribute("x2"), y2 = +ln.getAttribute("y2");
+    const near = (x, y) => Math.hypot(x - nodeX, y - nodeY) <= (Number(r) + 4);
+    if (near(x1, y1) || near(x2, y2)) ln.classList.add("focusring");
+  });
+  clearTimeout(window.__relT);
+  window.__relT = setTimeout(() =>
+    document.querySelectorAll("#constSvg .clink.focusring").forEach(el => el.classList.remove("focusring")), 3200);
   void g.getBoundingClientRect();   // restart the animation even if already focused
   g.classList.add("focusring");
   try { g.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); } catch (_) {}

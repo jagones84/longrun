@@ -46,13 +46,16 @@ SESS = _fn("kbLoadSessions")
 
 # ---- A. one row grammar, and every number carries its unit --------------------
 check("A1 a source row is chip + object + count-with-unit + remove",
+      # v657 (operator: "no code duplication, single source of truth"): the
+      # count-with-unit fragment is built ONCE by `_chunkSpan`; both lists call it,
+      # so the literal lives in that builder and not in the row function.
       'class="kb-kind"' in SRC and 'class="kb-main' in SRC
-      and 'class="kb-meta" title="indexed chunks"' in SRC
+      and "_chunkSpan(s.chunks)" in SRC
       and 'class="kb-x"' in SRC)
 check("A2 the files list speaks the same grammar",
       'class="kb-kind">file' in FILES
       and 'class="kb-main kbopen"' in FILES
-      and '_plural(f.chunks || 0, "chunk")' in FILES)
+      and "_chunkSpan(f.chunks)" in FILES)
 check("A3 the list caption states both numbers with units",
       '_plural(rows.length, "source")' in LOAD and '_plural(chunks, "chunk")' in LOAD
       and '_plural(rows.length, "file")' in FILES)
@@ -77,7 +80,10 @@ check("C1 the knowledge meta block is numbers, not a sentence",
       and "Global knowledge base — notebooks of sources" not in HTML
       and 'title="Global knowledge base: notebooks of sources' in HTML)
 check("C2 the auto mode explains itself on hover",
-      "<span>auto (agent)</span>" in HTML
+      # v656 (operator: the Research panel wasted a line): the mode switch rides
+      # the topic row and its label shrank to the object it names — the full
+      # explanation stays in the title, which is what this check is really about.
+      "<span>auto</span>" in HTML
       and "search + fetch + summarise + import (uses the research LLM)" not in HTML
       and "search + fetch + summarise + import, using the research LLM" in HTML)
 check("C3 the bold-text label is a label, the explanation a tooltip",

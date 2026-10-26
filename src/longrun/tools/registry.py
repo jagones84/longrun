@@ -825,20 +825,38 @@ _SUBTOOL_GUIDANCE = {
         "unless the operator explicitly selects global approvals.mode=full."
     ),
     "improve.propose": (
-        "Create one proposal. `scope` must be exactly `skill`, `project`, or "
-        "`global`; include the proposal `content`."
+        "Create ONE proposal. `scope` must be exactly `skill`, `project` or "
+        "`global`; `content` must state WHAT the proposal accomplishes — the "
+        "purpose, the steps and the observable outcome. A bare tool sequence "
+        "is not a proposal: name what it does first."
     ),
-    "improve.mine": "Mine repeated tool patterns and write draft skill proposals.",
-    "improve.evolve": "Mine patterns, verify each draft, and archive only passing skills.",
+    # v656: the miner writes drafts; the AGENT is the one who decides whether a
+    # repeated sequence deserves a purpose. Say so where the model reads it.
+    "improve.mine": (
+        "Mine repeated tool patterns and write DRAFT skill proposals under "
+        "data/proposals/skills/ (>= 3 distinct steps). A draft is material, "
+        "not a proposal: read its SKILL.md, and only when you can state what "
+        "the sequence accomplishes, call improve.propose (scope=skill) with "
+        "that content."
+    ),
+    "improve.evolve": (
+        "Full self-evolution cycle: mine patterns, synth + verify each draft in "
+        "the sandbox, and archive only the ones that pass. Approval-gated: ask "
+        "before running it."
+    ),
     "improve.verify": (
-        "Verify one proposal directory returned by improve.mine; provide its `path`. "
-        "The harness supplies the mine scope."
+        "Run the sandbox check of ONE draft returned by improve.mine — provide "
+        "its exact `path`. Green = promotable, red = the reason."
     ),
     "improve.promote": (
-        "Promote one verified proposal directory; provide its `path`. "
-        "The harness supplies the mine scope."
+        "Archive ONE verified draft (provide its `path`) into skills/created/. "
+        "Refused unless the verify went green."
     ),
-    "improve.review": "Review the proposal and distilled-memory backlog; returns a report without deciding proposals.",
+    "improve.review": (
+        "LLM-audit the whole backlog (proposals + distilled lessons) against the "
+        "current code: keep / implemented / obsolete / update / conflict. "
+        "Nothing is decided by the review."
+    ),
     "matrix.status": (
         "Report the live Matrix inventory: discovered tools and hooks, load errors, "
         "checkpoints, verified targets, skills, and the active WebUI shadow. "

@@ -221,11 +221,75 @@ def context_summary(session_id=None, graph_key=None):
         todos = taskgraph.render_todos(g, compact=True)
         if todos:
             lines.append(todos)
+    # v657: EVERY user prompt re-carries the standing REFERENCE text — the project
+    # rules and the session's ROLE.md. The system prompt already carries them
+    # (sections `rules` and `agent-role`), but the operator wants the copies to
+    # ride the LAST user turn too: compaction or a provider-side context rewrite
+    # can drop system sections, and the task list lives here anyway, so the
+    # rules travel with the part of the prompt that is rebuilt EVERY turn.
+    ref = _reference_block(session_id=key, graph_key=graph_key)
+    if ref:
+        lines.append(ref)
     return "\n".join(lines) if lines else "(no task list yet)"
 
 
+def _reference_block(session_id=None, graph_key=None, max_chars=4000):
+    """Reference text appended to every user turn: project rules + ROLE.md.
+
+    v657 — both are ALREADY loaded in the system prompt (the `rules` and
+    `agent-role` sections); this is the per-turn re-injection the operator
+    asked for, so the standing instructions survive compaction and any
+    provider-side trimming. The key is the SESSION id (roles are keyed per
+    session); the rules come from the rules registry (global + project).
+    Both are capped: this block is reference, not a second full copy.
+    """
+    parts = []
+    try:
+        from longrun.memory import rules as rules_mod
+        # v657: the reference must mirror the system prompt's rules section —
+        # same workspace resolution (session folder first, else the global
+        # default). Only the session id is known here, so load the session the
+        # same way the httpapi system prompt does; any failure falls back to
+        # the global workspace, never breaks the turn.
+        ws = None
+        if session_id:
+            try:
+                _sess = server.load_session(session_id) or {}
+                ws = rules_mod.resolve_workspace(_sess)
+            except Exception:  # noqa: BLE001
+                ws = None
+        c = rules_mod.collect(ws)
+        proj = (c["project"]["text"] or "").strip()
+        glob = (c["global"]["text"] or "").strip()
+        if proj or glob:
+            head = ("Reference — standing rules (already loaded in the system "
+                    "prompt; re-injected every turn so they survive compaction):")
+            body = ""
+            if proj:
+                body += "\n### Project rules\n" + proj
+            if glob:
+                body += "\n### Global rules\n" + glob
+            if len(body) > max_chars:
+                body = body[:max_chars] + "\n… [rules reference truncated — full text in the system prompt]"
+            parts.append(head + body)
+    except Exception:  # noqa: BLE001 — context must never break a turn
+        pass
+    try:
+        from longrun.orchestrate import roles as roles_mod
+        _sess = session_id or graph_key
+        role = (roles_mod.read(_sess) or "").strip() if _sess else ""
+        if role:
+            if len(role) > 1200:
+                role = role[:1200] + "\n… [role truncated — full text in the system prompt]"
+            parts.append("Reference — this agent's ROLE.md (already loaded in "
+                         "the system prompt):\n" + role)
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n\n".join(parts)
+
+
 def state_block(session_id=None, graph_key=None):
-    """The live task list, to inject INTO the current USER turn (JAG-276).
+    """The live task list + the standing rules/role REFERENCE, in the user turn.
 
     JAG-276 (cache): this block used to be the LAST section of the SYSTEM prompt.
     Any task-list change therefore invalidated the KV prefix FROM THERE ON — i.e.
@@ -233,6 +297,9 @@ def state_block(session_id=None, graph_key=None):
     user message (which changes every turn anyway) keeps the system prompt + the
     committed transcript byte-stable, so llama.cpp reuses the prefix cache. This is
     the Claude-Code pattern. Mirrored by `assemble_turn` and `context_usage`.
+
+    v657: the block also re-injects the project rules + the session's ROLE.md as
+    REFERENCE every turn (operator request) — see `_reference_block`.
     """
     return ("Harness state (your persistent task list):\n"
             + context_summary(session_id=session_id, graph_key=graph_key))

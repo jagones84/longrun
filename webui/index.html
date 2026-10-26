@@ -1247,7 +1247,11 @@
   #swMain .kb-kind { flex: 0 0 auto; min-width: 36px; text-align: center; font-size: 9.5px;
     letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
     border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
-  #swMain .kb-main { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  /* v656: one TITLE per row — the full ref is already the link's tooltip, so a
+     long source title wrapped to 2-3 lines (rows 37-101px tall) and no two rows
+     lined up. Now every row is one line with an ellipsis. */
+  #swMain .kb-main { flex: 1 1 auto; min-width: 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
   a.kb-main { color: var(--acc); text-decoration: none; border-bottom: 1px dashed transparent; }
   a.kb-main:hover { border-bottom-color: currentColor; }
   #swMain .kb-meta { flex: 0 0 auto; min-width: 76px; text-align: right; white-space: nowrap;
@@ -2748,12 +2752,14 @@
           <div class="u-df u-g6">
             <input id="kbDiscoverQ" class="inp u-f1 u-p610 u-fs12" placeholder="research topic…" data-key="Enter" data-key-fn="kbResearchGo">
             <button class="ghost" id="kbResearchBtn" data-call="kbResearchGo">🔎 discover</button>
+            <!-- v656: the mode switch rides the topic row — a checkbox alone on its
+                 own line wasted a full line of vertical space. -->
+            <label class="remaining u-df u-g6 u-aic u-ptr"
+                   title="search + fetch + summarise + import, using the research LLM — one round per depth level">
+              <input type="checkbox" id="kbAutoMode" data-change="kbResearchMode">
+              <span>auto</span>
+            </label>
           </div>
-          <label class="remaining u-df u-g6 u-aic u-mt8 u-ptr"
-                 title="search + fetch + summarise + import, using the research LLM — one round per depth level">
-            <input type="checkbox" id="kbAutoMode" data-change="kbResearchMode">
-            <span>auto (agent)</span>
-          </label>
           <!-- JAG-403h: depth + max sources are ALWAYS visible — they apply to BOTH
                the manual discover count and the auto research rounds, so hiding them
                behind the auto checkbox made them look gone. -->
@@ -2780,7 +2786,7 @@
           </div>
           <div id="kbCandidates" class="u-mt6"></div>
         </div>
-        <h2 title="Manual sources for the selected notebook. Chat attachments are indexed automatically in their own session notebook, so they never need adding here. URLs are fetched; PDF / DOCX / PPTX / XLSX / ODT are extracted to text (OCR for scanned PDFs). Text is searchable lexically; vectors are added only when an embedding model is configured.">Sources · <span id="kbNbName" class="remaining">Default</span></h2>
+        <h2 title="Manual sources for the selected notebook — the chip beside the buttons names it, and you pick it in Notebooks above. Chat attachments are indexed automatically in their own session notebook, so they never need adding here. URLs are fetched; PDF / DOCX / PPTX / XLSX / ODT are extracted to text (OCR for scanned PDFs). Text is searchable lexically; vectors are added only when an embedding model is configured.">Sources</h2>
         <div class="card">
           <textarea id="kbRefs" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
           <div class="u-df u-g6 u-mt6 u-fww">
@@ -2788,6 +2794,8 @@
             <button class="ghost" data-call="kbReembed" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
             <button class="ghost" data-call="kbFiles" title="list the indexed FILES in this notebook (one row per file — a folder or PDF source can be many files)">files</button>
             <button class="ghost" data-call="kbRefresh" title="reload the list you are looking at">↻</button>
+            <span class="kb-meta" id="kbNbName" style="min-width:0;margin-left:auto"
+                  title="sources below belong to this notebook — pick it in Notebooks above"></span>
           </div>
           <div id="kbSources" class="u-mt6"></div>
         </div>
@@ -6824,6 +6832,9 @@ function _setRoutingFields(box, sec) {
 function _setFieldEl(f, val) {
   const wrap = document.createElement("div");
   wrap.style.cssText = "flex:1 1 240px;min-width:200px";
+  // v656: a field can declare itself full-width (`wide`) so it does not leave a
+  // half-empty row next to a textarea-sized neighbour.
+  if (f.wide) wrap.style.flex = "1 1 100%";
   const tip = f.help ? ' title="' + esc(f.help) + '"' : "";
   const dp = ' data-path="' + esc(f.path) + '"';
   if (f.type === "rows") {
@@ -9349,7 +9360,7 @@ function renderTools(el, d) {
        <div class="set-t" title="Click a policy to cycle AUTO → ASK → DENIED. AUTO applies + records it; ASK raises an approval you decide; DENIED never emits.">🔐 Approval by category</div>
        ${KINDS.map(([k, label, desc]) => {
          const v = kinds[k] || "required";
-         const col = v === "auto" ? "var(--ok)" : (v === "denied" ? "var(--err)" : "var(--warn)");
+         const col = approvalColor(v);
          return `<div style="display:flex;align-items:center;gap:10px;margin:6px 0">
            <span style="flex:1"><b>${esc(label)}</b><div class="remaining">${esc(desc)}</div></span>
            <button class="ghost" style="font-size:10px;color:${col}" data-kind="${k}" title="${esc(kindLabel(v))} — click to cycle">${esc(v)} ⟳</button>
@@ -9441,7 +9452,7 @@ function renderTools(el, d) {
     // JAG-536: ONLY a Matrix tool can be uninstalled from here. The built-in set is
     // never removable, so the button is rendered from the registry's own origin.
     const isMatrix = String(t.origin || "") === "matrix";
-    const apColor = ap === "auto" ? "var(--ok)" : (ap === "denied" ? "var(--err)" : "var(--warn)");
+    const apColor = approvalColor(ap);
     // v616: the "FULL ⇒ auto" badge lied on exclusive rows — FULL never
     // bypasses the dual-permission gate, so an exclusive tool on FULL still
     // answers 126 without the per-session Teamorg grant. Say so outright.
@@ -9484,8 +9495,7 @@ function renderTools(el, d) {
     const gOn = list.filter(t => t.enabled !== false).length;
     const aps = Array.from(new Set(list.map(t => t.approval || "auto")));
     const gAp = aps.length === 1 ? aps[0] : "mixed";
-    const gCol = gAp === "auto" ? "var(--ok)" : (gAp === "denied" ? "var(--err)"
-      : (gAp === "mixed" ? "var(--dim)" : "var(--warn)"));
+    const gCol = gAp === "mixed" ? "var(--dim)" : approvalColor(gAp);
     const gid = _attr(g);
     // JAG-534: a Matrix namespace is where the agent's own tools land at runtime;
     // its groups start OPEN so a freshly generated tool is visible instead of
@@ -9548,7 +9558,7 @@ function renderTools(el, d) {
       // label may carry a `FULL ⇒ auto` note, so textContent is no longer the
       // policy). data-cur holds the raw per-tool value.
       const cur = b.dataset.cur;
-      const next = cur === "auto" ? "required" : (cur === "required" ? "denied" : "auto");
+      const next = nextApprovalKind(cur);
       api("POST", "/api/tools", { tool: b.dataset.ap, approval: next })
         .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
     });
@@ -9580,7 +9590,7 @@ function renderTools(el, d) {
   el.querySelectorAll("button[data-gap]").forEach(b =>
     b.onclick = () => {
       const cur = b.dataset.gcur;
-      const next = cur === "auto" ? "required" : (cur === "required" ? "denied" : "auto");
+      const next = nextApprovalKind(cur);
       const names = (groups.get(b.dataset.gap) || []).map(t => t.name || t.id);
       api("POST", "/api/tools", { tools: names, approval: next })
         .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
@@ -9601,7 +9611,7 @@ function renderTools(el, d) {
   el.querySelectorAll("button[data-kind]").forEach(b =>
     b.onclick = () => {
       const cur = b.textContent.replace("⟳", "").trim();
-      const next = cur === "auto" ? "required" : (cur === "required" ? "denied" : "auto");
+      const next = nextApprovalKind(cur);
       api("POST", "/api/tools", { approvals: { kinds: { [b.dataset.kind]: next } } })
         .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2));
     });
@@ -10419,8 +10429,8 @@ async function saveProvider() {
    the per-provider button, so both read the same. */
 async function _provTestText(id) {
   const t = await api("POST", "/api/providers/test", { id });
-  if (t && t.ok) return "OK · " + (t.models || 0) + " models";
-  return "FAIL · " + ((t && t.error) || "no answer");
+  return t && t.ok ? _probeVerdict(true, (t.models || 0) + " models")
+    : _probeVerdict(false, "", (t && t.error) || "no answer");
 }
 /* v655: ONE test button for every LLM picker in Settings ▸ Models, next to the
    embedding test — one builder, one handler, three mounts (no duplicated wiring).
@@ -10442,10 +10452,15 @@ function _llmTestBtn(getRef, out) {
   };
   return b;
 }
+/* v657: one verdict shape for every probe — `OK · <detail>` or `FAIL · <reason>`;
+   the embedding test and the model test buttons spoke the same dialect by hand. */
+function _probeVerdict(ok, okText, errText) {
+  return ok ? ("OK · " + okText) : ("FAIL · " + (errText || "no answer"));
+}
 async function _modelTestText(ref) {
   const t = await api("POST", "/api/models/test", { ref });
-  if (t && t.ok) return "OK · " + (((t.latency_ms || 0) / 1000).toFixed(1)) + "s";
-  return "FAIL · " + ((t && t.error) || "no answer");
+  return t && t.ok ? _probeVerdict(true, ((t.latency_ms || 0) / 1000).toFixed(1) + "s")
+    : _probeVerdict(false, "", (t && t.error) || "no answer");
 }
 function initLlmTestBtns() {
   ["compactionModel", "longrunAgentModel", "researchModelSettings"].forEach(id => {
@@ -11990,8 +12005,8 @@ async function emTest() {
   out.textContent = "probing " + m + "…";
   try {
     const r = await api("GET", "/api/index/embed-test?model=" + encodeURIComponent(m));
-    out.textContent = r.ok ? ("OK · " + r.dim + "d · " + r.model) :
-      ("FAIL · " + (r.error || "no endpoint"));
+    out.textContent = r.ok ? _probeVerdict(true, r.dim + "d · " + r.model)
+      : _probeVerdict(false, "", r.error || "no endpoint");
   } catch (e) { out.textContent = "error: " + e; }
 }
 async function emCosts() {
@@ -12100,7 +12115,7 @@ async function kbLoadSessions() {
     const r = await api("GET", "/api/knowledge/notebooks");
     const s = r.sessions || [];
     const cntEl = $("kbSessionCount");
-    if (cntEl) cntEl.textContent = s.length ? ("· " + s.length + (s.length === 1 ? " session" : " sessions")) : "";
+    if (cntEl) cntEl.textContent = s.length ? ("· " + _plural(s.length, "session")) : "";
     box.innerHTML = s.map(n => {
       const sel = n.id === kbState.notebook;
       const owner = (n.owner || "");
@@ -12186,6 +12201,19 @@ function _plural(n, word) {
   const v = Number(n) || 0;
   return v.toLocaleString() + " " + word + (v === 1 ? "" : "s");
 }
+/* v657: ONE cycle + ONE colour for approval kinds — the same ternary lived in
+   three places; when a policy value is added it must change here only. */
+function nextApprovalKind(v) {
+  return v === "auto" ? "required" : (v === "required" ? "denied" : "auto");
+}
+function approvalColor(v) {
+  return v === "auto" ? "var(--ok)" : (v === "denied" ? "var(--err)" : "var(--warn)");
+}
+/* v657: one chunk-count span — the sources and the files list both built the
+   same `<span class="kb-meta">N chunks</span>` fragment by hand. */
+function _chunkSpan(n) {
+  return '<span class="kb-meta" title="indexed chunks">' + _plural(n || 0, "chunk") + "</span>";
+}
 /* A source row: URLs become real hyperlinks (open in a new tab); file paths open
    in the editor (images in the image window, PDFs in the browser viewer).
    v653: one grammar — `.kb-kind` chip, `.kb-main` object, `.kb-meta` count with
@@ -12194,7 +12222,7 @@ function _kbSourceRow(s) {
   const kind = esc(s.kind || "src");
   const ref = s.ref || "";
   const title = s.title || ref;
-  const chunks = '<span class="kb-meta" title="indexed chunks">' + _plural(s.chunks || 0, "chunk") + "</span>";
+  const chunks = _chunkSpan(s.chunks);
   let label;
   if (/^https?:\/\//i.test(ref)) {
     label = '<a class="kb-main" href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
@@ -12295,9 +12323,7 @@ async function kbFiles() {
          rows.map(f => '<div class="kb-row">' +
            '<span class="kb-kind">file</span>' +
            '<a class="kb-main kbopen" href="#" data-ref="' + _attr(f.path) + '" title="' + _attr(f.path) + '">' +
-           esc(f.path) + '</a>' +
-           '<span class="kb-meta" title="indexed chunks">' + _plural(f.chunks || 0, "chunk") + '</span>' +
-           '</div>').join("") + '</div>')
+           esc(f.path) + '</a>' + _chunkSpan(f.chunks) + '</div>').join("") + '</div>')
       : '<div class="remaining">no files in this notebook</div>';
     box.querySelectorAll(".kbopen").forEach(el =>
       el.onclick = (e) => { e.preventDefault(); _kbOpenRef(el.getAttribute("data-ref")); });
