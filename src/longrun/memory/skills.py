@@ -460,6 +460,12 @@ def search_skills(query, limit=10):
     words = set(re.findall(r"[a-z]{3,}", str(query or "").lower())) - _SKILL_STOP
     if not words:
         return []
+    # v659: `list_skills()` is what BUILDS `_cache["bodies"]`, and it rebuilds both
+    # the list and the bodies when the tree signature changed. Reading the cache
+    # first ranked the query against the PREVIOUS body map (or an empty one on a
+    # cold cache), so a content-only query missed a skill that had just been added
+    # and the same search answered differently depending on the cache state.
+    skills = list_skills()
     bodies = _cache.get("bodies") or {}
     # v647: IDF weighting. A word that appears in 40 skills ("test") used to
     # outvote a word that appears in 3 ("battery"), so "how to run the test
@@ -467,7 +473,7 @@ def search_skills(query, limit=10):
     # testing skill never surfaced. A term is now worth log(N/df): the rarer it
     # is in THIS library, the more it says about the skill that has it.
     docs, df = [], dict.fromkeys(words, 0)
-    for s in list_skills():
+    for s in skills:
         strong = (str(s.get("name") or "") + " " + str(s.get("title") or "")).lower()
         weak = str(s.get("description") or "").lower()
         body = bodies.get(s.get("abspath") or "", "")

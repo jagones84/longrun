@@ -169,6 +169,27 @@ def _file_sha256(path):
         return ""
 
 
+def _skill_dir(name, mdot):
+    """The skill FOLDER for a name — `create` and `remove` share this ONE rule (v659).
+
+    `create` sanitised the name (`my skill` -> `my-skill`) while `remove` used it
+    verbatim, so a skill with a space in its name could be created and NEVER
+    removed. One helper, both callers.
+    """
+    s = re.sub(r"[^a-zA-Z0-9_-]", "-", str(name or "").strip()).strip("-")
+    return os.path.join(mdot, "skills", s) if s else ""
+
+
+def _rule_file(name, mdot):
+    """The rule FILE for a name — `.md` appended once, directories stripped (v659)."""
+    base = os.path.basename(str(name or "").strip().replace("\\", "/"))
+    if not base:
+        return ""
+    if not base.endswith(".md"):
+        base += ".md"
+    return os.path.join(mdot, "rules", base)
+
+
 def _resolve_target_path(kind, name, repo_root=None):
     _root, msrc, mdot = _roots(repo_root)
     k = str(kind or "tool").strip().lower()
@@ -193,13 +214,16 @@ def _resolve_target_path(kind, name, repo_root=None):
             return "module", nm, ""
         return "module", "/".join(parts), os.path.join(msrc, *parts) + ".py"
     if k == "skill":
-        return "skill", nm, os.path.join(mdot, "skills", nm, "SKILL.md")
+        sd = _skill_dir(nm, mdot)
+        return "skill", nm, os.path.join(sd, "SKILL.md") if sd else ""
     if k == "rule":
-        if not nm.endswith(".md"):
-            nm += ".md"
-        return "rule", os.path.basename(nm), os.path.join(mdot, "rules", os.path.basename(nm))
+        rf = _rule_file(nm, mdot)
+        return "rule", os.path.basename(rf), rf
     if k == "webui":
-        bn = os.path.basename(nm) or "index.html"
+        # v659: the server serves exactly ONE plugin file (webui_bundle reads
+        # `src/Matrix/webui/plugins.js`); scaffolding `<whatever the caller typed>`
+        # produced a file nobody ever loads, so the panel stayed "inactive".
+        bn = os.path.basename(nm) or "plugins.js"
         return "webui", bn, os.path.join(msrc, "webui", bn)
     return k, nm, ""
 
@@ -1699,16 +1723,20 @@ def remove(kind, name, repo_root=None):
         removed_names = sorted(set(subtools + ["%s.%s" % (namespace, s) if "." not in s else s
                                                for s in subtools] + [namespace]))
 
-    existed = os.path.isdir(fpath) if k == "skill" else os.path.isfile(fpath)
+    # v659: a skill's resolved path IS its SKILL.md, so `isdir` on it was always
+    # False and `matrix.remove kind=skill` answered ok while deleting NOTHING
+    # (operator: "skill.remove → 'not found'" / a silent no-op). The unit of a
+    # skill is its FOLDER.
+    existed = os.path.isdir(os.path.dirname(fpath)) if k == "skill" else os.path.isfile(fpath)
     removed_path = None
     compiled = []
     if existed:
         try:
             if k == "skill":
-                shutil.rmtree(fpath)
+                shutil.rmtree(os.path.dirname(fpath))
             else:
                 os.remove(fpath)
-            removed_path = fpath
+            removed_path = os.path.dirname(fpath) if k == "skill" else fpath
             if k != "skill":
                 compiled = _purge_compiled(fpath)
         except OSError as e:
@@ -1886,17 +1914,32 @@ def scaffold(kind, name, description="", repo_root=None):
             return {"ok": False, "error": "module name must be '<subpkg>/<mod>' where <subpkg> is one of %s" % (list(HOOK_SUBPACKAGES),)}
         body = '"""Matrix shared module `%s` (%s)."""\n\n\ndef helper(val):\n    return val\n' % (nm2, desc)
     elif k == "skill":
-        s_name = re.sub(r"[^a-zA-Z0-9_-]", "-", nm).strip("-")
-        fpath = os.path.join(mdot, "skills", s_name, "SKILL.md")
+        # v659: the FOLDER comes from the shared helper, so scaffold and remove
+        # always agree on where a skill lives.
+        sdir = _skill_dir(nm, mdot)
+        if not sdir:
+            return {"ok": False, "error": "skill name must contain at least one letter or digit"}
+        fpath = os.path.join(sdir, "SKILL.md")
+        s_name = os.path.basename(sdir)
         body = "# %s\n\n%s\n\n## Steps\n1. Inspect context.\n2. Execute and verify.\n" % (s_name, desc)
     elif k == "rule":
-        r_name = nm if nm.endswith(".md") else (nm + ".md")
-        fpath = os.path.join(mdot, "rules", os.path.basename(r_name))
-        body = "# %s\n\n%s\n" % (os.path.basename(r_name)[:-3], desc)
+        fpath = _rule_file(nm, mdot) or os.path.join(mdot, "rules", "rule.md")
+        body = "# %s\n\n%s\n" % (os.path.basename(fpath)[:-3], desc)
     elif k == "webui":
-        bn = os.path.basename(nm) or "plugins.js"
-        fpath = os.path.join(msrc, "webui", bn)
-        body = "/* Matrix WebUI plugin: %s */\nconsole.debug('[Matrix plugin loaded]', %r);\n" % (bn, desc)
+        # v659: there is exactly ONE webui plugin file and the server loads that
+        # one (`webui_bundle` reads `src/Matrix/webui/plugins.js`). Scaffolding the
+        # name the caller typed wrote a file nothing ever loads — the operator saw
+        # "scaffold dichiara il path" and then a plugin that was never active. An
+        # existing plugin is NEVER clobbered: it is hand-written code.
+        fpath = os.path.join(msrc, "webui", "plugins.js")
+        if os.path.basename(nm) not in ("", "plugins.js"):
+            return {"ok": False, "error": ("the webui seam is ONE file, plugins.js — %r would be "
+                                           "written and never loaded" % nm)}
+        if os.path.exists(fpath):
+            return {"ok": False, "error": ("%s already exists — edit it with fs.edit "
+                                           "(the server loads only that file)" % fpath)}
+        body = "/* Matrix WebUI plugin: %s */\nconsole.debug('[Matrix plugin loaded]', %r);\n" % (
+            os.path.basename(fpath), desc)
     else:
         return {"ok": False, "error": "kind must be tool, hook, module, skill, rule, or webui"}
     os.makedirs(os.path.dirname(fpath), exist_ok=True)

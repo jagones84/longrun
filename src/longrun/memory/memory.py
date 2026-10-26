@@ -696,6 +696,23 @@ def purge_invalidated():
     return {"ok": True, "removed": removed}
 
 
+def _augment(kind, results, limit):
+    """The `augment_recall` Matrix seam, fail-open, called from ONE place (v659).
+
+    Every governed recall goes through here, so an extension cannot be live on
+    the prompt's memory section and dead on the `memory.recall` tool.
+    """
+    try:
+        from longrun.core import matrix as _mtx
+        aug = _mtx.call_hook("memory", "augment_recall", kind, results, limit,
+                             default=results)
+        if isinstance(aug, list):
+            return aug
+    except Exception:  # noqa: BLE001
+        pass
+    return results
+
+
 def governed_query(kind=None, limit=6, halflife=None, threshold=0.85,
                    include_invalid=False):
     """Retrieve deduped, score+decay-ranked records (governed recall).
@@ -709,14 +726,31 @@ def governed_query(kind=None, limit=6, halflife=None, threshold=0.85,
         now = time.time()
         recs = [r for r in recs if is_valid(r, now=now, invalid=bad)]
     base = dedupe(rank(recs, halflife=halflife), threshold)[:limit]
-    try:
-        from longrun.core import matrix as _mtx
-        aug = _mtx.call_hook("memory", "augment_recall", kind, base, limit, default=base)
-        if isinstance(aug, list):
-            return aug
-    except Exception:  # noqa: BLE001
-        pass
-    return base
+    return _augment(kind, base, limit)
+
+
+def recall_governed(text, kind=None, limit=6, semantic=False, include_invalid=False):
+    """A TEXT recall with the SAME governance as `governed_query` (v659).
+
+    Returns `[(score, record), ...]`. The `memory.recall` tool used `search()`
+    directly, so the `augment_recall` hook was never reached on the one path an
+    agent actually uses (the prompt's memory section did reach it). One entry
+    point now owns "recall for a query": search -> validity -> hook.
+
+    A record the hook ADDED has no search score; it comes back as `None` so the
+    caller states that instead of inventing a number.
+    """
+    hits = search(text, kind, limit, semantic)
+    if not include_invalid:
+        bad = invalid_targets()
+        now = time.time()
+        hits = [(s, r) for s, r in hits if is_valid(r, now=now, invalid=bad)]
+    recs = [r for _s, r in hits]
+    aug = _augment(kind, recs, limit)
+    if aug == recs:
+        return hits
+    scores = {str(r.get("mid")): s for s, r in hits}
+    return [(scores.get(str(r.get("mid"))), r) for r in aug]
 
 
 def health():

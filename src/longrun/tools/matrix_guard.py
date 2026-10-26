@@ -114,8 +114,9 @@ _DEFAULT_MANUAL = (
     "10. `src/Matrix/orbit/hooks.py`: `augment_orbit(payload)`.\n"
     "11. `src/Matrix/integrations/hooks.py`: `transform_bridge_payload(payload)`.\n"
     "12. `src/Matrix/util/hooks.py`: `on_ledger_add(entry)` + shared `Matrix.util.*` modules.\n"
-    "13. `src/Matrix/webui/index.html` (shadow SPA) & `src/Matrix/webui/plugins.js` "
-    "(auto-loaded at `/api/matrix/plugins.js`).\n"
+    "13. `src/Matrix/webui/plugins.js` — the ONE browser seam, auto-loaded at "
+    "`/api/matrix/plugins.js` (no shadow SPA: nothing else under `webui/` is served, "
+    "so a plugin written under another name is never loaded).\n"
 )
 
 

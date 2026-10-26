@@ -1253,7 +1253,12 @@ def _memory(args, run_id):
                 sem_flag = sem_flag.strip().lower() in ("1", "true", "yes", "on")
             else:
                 sem_flag = bool(sem_flag) if sem_flag is not None else False
-            hits = mem.search(query, args.get("kind"), limit, sem_flag)
+            # v659: recall goes through the GOVERNED entry point, so the
+            # `augment_recall` Matrix hook fires here exactly as it does for the
+            # prompt's memory section. The tool called `mem.search` directly, so
+            # the seam was registered and silently dead on the one path agents use.
+            hits = mem.recall_governed(query, args.get("kind"), limit, sem_flag,
+                                       include_invalid=include_invalid)
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": "memory lookup failed: %s" % e,
                 "backend": "host", "sandboxed": False}
@@ -1261,7 +1266,10 @@ def _memory(args, run_id):
         bad = mem.invalid_targets()
         now = time.time()
         hits = [(s, r) for s, r in hits if mem.is_valid(r, now=now, invalid=bad)]
-    lines = ["- (%s, %.2f) %s" % (r.get("kind"), s, (r.get("content") or "")[:200])
+    # v659: a record the hook ADDED carries no search score — say so ("—")
+    # instead of printing a number the search never produced.
+    lines = ["- (%s, %s) %s" % (r.get("kind"), ("%.2f" % s) if s is not None else "—",
+                                (r.get("content") or "")[:200])
              for s, r in hits]
     return {"ok": True, "count": len(hits), "stdout": "\n".join(lines) or "(no memories)",
             "backend": "host", "sandboxed": False}

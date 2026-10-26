@@ -46,6 +46,37 @@ def _run_agent(session_id, goal, model=None):
     return jobs_mod.JOBS._run_agent(session_id, goal, model=model)
 
 
+# v659: ONE reading of the two spellings of the switch. A caller that sent
+# `disabled: true` got an ENABLED routine — the key was simply unknown, so the
+# default (True) applied (operator: "routine disabled:true ignorato (enabled:true)").
+def _enabled_arg(enabled=None, disabled=None, default=True):
+    if enabled is None and disabled is None:
+        return bool(default)
+    if enabled is None:
+        return not bool(disabled)
+    return bool(enabled)
+
+
+def _canonical_agent(agent):
+    """(ok, canonical A-id) — or (False, error). Store the AGENT id, never a session.
+
+    v659: `create` stored whatever the caller typed, so a routine bound by SESSION
+    id was invisible to every view that compares agent ids (operator: "list -> 0
+    while get saw R1"). The whole board compares one id-space: the agent id.
+    """
+    aid = str(agent or "").strip()
+    if not aid:
+        return False, "agent required"
+    try:
+        from longrun.agent import agents as agents_mod
+        a = agents_mod.REGISTRY.resolve(aid)
+    except Exception:  # noqa: BLE001 — a missing roster must not block a write
+        return True, aid
+    if not a:
+        return False, "unknown agent (designate it first)"
+    return True, str(a.get("id") or aid)
+
+
 class RoutineRegistry:
     """Create, list, enable/disable and fire routines."""
 
@@ -59,11 +90,11 @@ class RoutineRegistry:
         with _LOCK:
             return _load()["routines"].get(str(rid))
 
-    def create(self, agent, goal, every_seconds, enabled=True, model=None):
-        agent = str(agent or "").strip()
+    def create(self, agent, goal, every_seconds, enabled=None, model=None, disabled=None):
+        ok, aid = _canonical_agent(agent)
+        if not ok:
+            return {"ok": False, "error": aid}
         goal = (goal or "").strip()
-        if not agent:
-            return {"ok": False, "error": "agent required"}
         if not goal:
             return {"ok": False, "error": "goal required"}
         try:
@@ -72,18 +103,15 @@ class RoutineRegistry:
             every = 0
         if every < MIN_EVERY:
             return {"ok": False, "error": "every_seconds must be >= %d" % MIN_EVERY}
-        try:
-            from longrun.agent import agents as agents_mod
-            if not agents_mod.REGISTRY.resolve(agent):
-                return {"ok": False, "error": "unknown agent (designate it first)"}
-        except Exception:  # noqa: BLE001
-            pass
+        # v659: `enabled=None` (not True) so "not provided" stays distinguishable —
+        # with a `True` default the `disabled:true` spelling was overruled by it.
+        on = _enabled_arg(enabled, disabled, default=True)
         with _LOCK:
             d = _load()
             d["seq"] += 1
             now = time.time()
-            rec = {"id": "R%d" % d["seq"], "n": d["seq"], "agent": agent, "goal": goal,
-                   "model": model, "every_seconds": every, "enabled": bool(enabled),
+            rec = {"id": "R%d" % d["seq"], "n": d["seq"], "agent": aid, "goal": goal,
+                   "model": model, "every_seconds": every, "enabled": on,
                    "created": round(now, 3), "last_run": None,
                    "next_run": round(now + every, 3), "runs": 0}
             d["routines"][rec["id"]] = rec
@@ -91,27 +119,28 @@ class RoutineRegistry:
         return {"ok": True, "routine": rec}
 
     def update(self, rid, agent=None, goal=None, every_seconds=None, enabled=None,
-               model=None):
+               model=None, disabled=None):
         """JAG-536: edit a routine in place. Only the fields passed are touched, so
         the deck can re-target the agent, rewrite the goal, change the cadence or
         flip the switch without delete-then-recreate (which lost ``runs``/``last_run``
         and reset the id)."""
         rid = str(rid or "")
+        # v659: an unknown key (or an empty patch) used to answer ok=True and change
+        # NOTHING — a silent no-op (operator: "routines.update no-op silenzioso").
+        # Say what is acceptable instead.
+        if all(v is None for v in (agent, goal, every_seconds, enabled, disabled, model)):
+            return {"ok": False,
+                    "error": ("nothing to update — pass at least one of: agent, goal, "
+                              "every_seconds, enabled (or disabled), model")}
         with _LOCK:
             d = _load()
             rec = d["routines"].get(rid)
             if not rec:
                 return {"ok": False, "error": "routine not found"}
             if agent is not None:
-                aid = str(agent).strip()
-                if not aid:
-                    return {"ok": False, "error": "agent required"}
-                try:
-                    from longrun.agent import agents as agents_mod
-                    if not agents_mod.REGISTRY.resolve(aid):
-                        return {"ok": False, "error": "unknown agent (designate it first)"}
-                except Exception:  # noqa: BLE001
-                    pass
+                ok, aid = _canonical_agent(agent)
+                if not ok:
+                    return {"ok": False, "error": aid}
                 rec["agent"] = aid
             if goal is not None:
                 g = str(goal).strip()
@@ -128,8 +157,8 @@ class RoutineRegistry:
                 rec["every_seconds"] = every
                 if rec.get("enabled"):
                     rec["next_run"] = round(time.time() + every, 3)
-            if enabled is not None:
-                rec["enabled"] = bool(enabled)
+            if enabled is not None or disabled is not None:
+                rec["enabled"] = _enabled_arg(enabled, disabled)
                 if rec["enabled"]:
                     rec["next_run"] = round(time.time() + int(rec.get("every_seconds") or MIN_EVERY), 3)
             if model is not None:

@@ -219,11 +219,14 @@ def handle(handler, method, path, qs, body):
                 return _json(handler, 200, rr.update(
                     rid, agent=data.get("agent"), goal=data.get("goal"),
                     every_seconds=data.get("every_seconds"), enabled=data.get("enabled"),
-                    model=data.get("model")))
+                    model=data.get("model"), disabled=data.get("disabled")))
             data = _body(body)
+            # v659: pass `enabled` through as-given (no `True` default here) — a
+            # `True` default in the route overruled the `disabled:true` spelling.
             return _json(handler, 200, rr.create(
                 data.get("agent"), data.get("goal"), data.get("every_seconds"),
-                enabled=data.get("enabled", True), model=data.get("model")))
+                enabled=data.get("enabled"), model=data.get("model"),
+                disabled=data.get("disabled")))
         if method == "DELETE":
             return _json(handler, 200, rr.delete(path[len("/api/routines/"):].split("/")[0]))
         return _json(handler, 404, {"error": "unknown routines route"})

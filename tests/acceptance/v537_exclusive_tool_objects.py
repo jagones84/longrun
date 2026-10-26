@@ -234,8 +234,13 @@ rt_new = call("routine.create",
               {"agent": boss_sid, "goal": "check the queue", "every_seconds": 120})
 rid = (rt_new.get("routine") or {}).get("id")
 check("E1 routines.create schedules the goal for the resolved agent session",
+      # v659: the routine used to store whatever the caller typed, so a routine
+      # bound by SESSION id vanished from every view that compares agent ids
+      # (operator: "routine list -> 0 while get saw R1"). One id-space now: passing
+      # the session resolves to the AGENT id — the firing path still resolves that
+      # id back to the session (see _canonical_agent + _fire).
       rt_new.get("ok") is True and rid
-      and (rt_new["routine"].get("agent") == boss_sid)
+      and (rt_new["routine"].get("agent") == boss_id)
       and (rt_new["routine"].get("every_seconds") == 120), rt_new.get("routine"))
 rt_upd = call("routine.update",
               {"routine": rid, "goal": "check the queue harder", "every_seconds": 300,
