@@ -2558,6 +2558,7 @@
         <h2 title="Model that writes the cited summary for Research (Knowledge → Research · web → notebook). Same setting as the Knowledge-panel picker — one writer (POST /api/research/model → research_model in the index overlay), two views, no duplication.">Research model · web → notebook <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
           <select id="researchModelSettings" data-change="researchSetActive" class="inp u-w100 u-p610 u-fs12"></select>
+          <div class="remaining u-mt6" id="researchModelSettingsOut"></div>
         </div>
         <h2 title="Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (bm25). The catalogue lives in your PERSONAL config (config/embedding.yaml) — the shipped entries are editable, and you can add your own below.">Embedding · knowledge index <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
@@ -6724,7 +6725,15 @@ function _setSectionEl(sec) {
    fallbacks`, `agent · model` … in one wrapping soup, each fallback list a
    3-row textarea (operator: "routing è disordinatissima e non si capisce
    niente"). `subagent` keeps only `pattern`: its model + fallbacks are owned by
-   Settings ▸ Subagents, so the row points there instead of duplicating them. */
+   Settings ▸ Subagents, so the row points there instead of duplicating them.
+   v655: the model of `summarizer` / `longrun_agent` is ALSO owned elsewhere —
+   by the live pickers at the top of this panel (one writer each) — so that cell
+   is a read-only pointer, and the table stays the ONE place for pattern +
+   fallbacks. */
+const RT_PICKER_OWNED = {
+  summarizer: "set with the Compaction model picker above — live, one writer",
+  longrun_agent: "set with the longrunAgent picker above — live, one writer",
+};
 function _setRoutingFields(box, sec) {
   const vals = sec.values || {};
   const roles = [], seen = {};
@@ -6757,6 +6766,23 @@ function _setRoutingFields(box, sec) {
         na.title = key === "pattern" ? "this role has no pattern"
           : "this value is owned by Settings ▸ Subagents — one value, one place";
         grid.appendChild(na);
+        return;
+      }
+      if (key === "model" && RT_PICKER_OWNED[r.name]) {
+        const inp = document.createElement("input");
+        inp.className = "inp u-p610 u-fs12";
+        inp.id = "rt-" + f.path.replace(/\./g, "-");
+        inp.dataset.path = f.path;
+        inp.dataset.type = f.type;
+        inp.setAttribute("aria-label", r.name + " " + key);
+        inp.disabled = true;
+        inp.value = String(vals[f.path] == null ? "" : vals[f.path]);
+        // disabled but still carrying data-path: the save round-trips the value
+        // UNCHANGED (a missing element would wipe it to empty), while the only
+        // writer stays the live picker above.
+        inp.title = "read-only: " + RT_PICKER_OWNED[r.name] +
+          " — edit it there; this row keeps pattern + fallbacks";
+        grid.appendChild(inp);
         return;
       }
       const inp = document.createElement("input");
@@ -10396,6 +10422,42 @@ async function _provTestText(id) {
   if (t && t.ok) return "OK · " + (t.models || 0) + " models";
   return "FAIL · " + ((t && t.error) || "no answer");
 }
+/* v655: ONE test button for every LLM picker in Settings ▸ Models, next to the
+   embedding test — one builder, one handler, three mounts (no duplicated wiring).
+   The probe is a REAL chat completion (max_tokens=1) on the selected ref, so the
+   verdict is "OK · 1.2s" or "FAIL · <reason>", the same shape as the provider
+   probe. */
+function _llmTestBtn(getRef, out) {
+  const b = document.createElement("button");
+  b.className = "ghost";
+  b.textContent = "test";
+  b.title = "one real 1-token chat completion on this model — OK with the latency, or the reason it failed";
+  b.onclick = async () => {
+    const ref = getRef();
+    if (!ref) { out.textContent = "no model selected"; return; }
+    b.disabled = true;
+    out.textContent = _modelShort(ref) + " · testing…";
+    out.textContent = _modelShort(ref) + " · " + (await _modelTestText(ref));
+    b.disabled = false;
+  };
+  return b;
+}
+async function _modelTestText(ref) {
+  const t = await api("POST", "/api/models/test", { ref });
+  if (t && t.ok) return "OK · " + (((t.latency_ms || 0) / 1000).toFixed(1)) + "s";
+  return "FAIL · " + ((t && t.error) || "no answer");
+}
+function initLlmTestBtns() {
+  ["compactionModel", "longrunAgentModel", "researchModelSettings"].forEach(id => {
+    const sel = $(id);
+    if (!sel || sel.parentNode.querySelector("[data-llm-test=" + id + "]")) return;
+    const out = $(id + "Out") || $(id.replace("Model", "Result"));
+    if (!out) return;
+    const btn = _llmTestBtn(() => sel.value, out);
+    btn.dataset.llmTest = id;
+    sel.parentNode.insertBefore(btn, sel.nextSibling);
+  });
+}
 function _saveProviderDraft() {
   try {
     sessionStorage.setItem("sf_provider_draft", JSON.stringify({
@@ -11047,17 +11109,19 @@ function settingsCategory(name) {
       $("selfPanel").innerHTML = '<div class="remaining">Longrun is unavailable. Check the server connection and try again.</div>';
     });
   }
+  initLlmTestBtns();
   _markApplyModes();
 }
 /* v654: a card that only writes on save SAYS so, next to its heading, and a
    picker that writes at once carries `live` (the Models cards do). The chips are
    derived from the controls actually present — a card with a save button is
-   `save`, there is no second list that could drift (operator: "elenca invece
-   quelli che necessitano cliccare SAVE"). */
+   `save`, a card whose controls carry data-change (no save button anywhere) is
+   `live`, so the same derivation covers EVERY panel, not only Models. */
 function _markApplyModes() {
   document.querySelectorAll("#swMain .card").forEach(card => {
-    if (!card.querySelector("button.config-save")) return;
     if (card.querySelector(".set-chip")) return;      // the header already says it
+    const save = !!card.querySelector("button.config-save");
+    if (!save && !card.querySelector("[data-change]")) return;
     let node = card;
     while (node && node.previousElementSibling) {
       node = node.previousElementSibling;
@@ -11065,9 +11129,11 @@ function _markApplyModes() {
       if (node.tagName !== "H2") continue;
       if (!node.querySelector(".set-chip")) {
         const chip = document.createElement("span");
-        chip.className = "set-chip save";
-        chip.textContent = "save";
-        chip.title = "does not apply until you press the save button in this card";
+        chip.className = "set-chip " + (save ? "save" : "live");
+        chip.textContent = save ? "save" : "live";
+        chip.title = save
+          ? "does not apply until you press the save button in this card"
+          : "applies the moment you change it — there is no save button";
         node.appendChild(chip);
       }
       return;

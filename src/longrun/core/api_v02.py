@@ -2183,6 +2183,11 @@ def handle(handler, method, path, qs, body):
             # 200 with {ok:false, error: reason}, so the browser console stays
             # clean while the UI prints the reason.
             return _r(handler, 200, provider_test(body))
+        if path == "/api/models/test":
+            # v655: one REAL chat completion on a model ref — the `test` button
+            # beside each LLM picker in Settings ▸ Models. Same verdict shape as
+            # the provider probe: 200 with {ok, latency_ms?} or {ok:false, error}.
+            return _r(handler, 200, model_test(body))
         if path == "/api/keys":
             # JAG-161: set/clear an env var and persist it to the gitignored .env.
             res = _srv().set_key(body.get("name"), body.get("value"))
@@ -2705,6 +2710,18 @@ def provider_test(body):
     """
     _lazy('providers')
     return _PROVIDERS.probe(body or {})
+
+
+def model_test(body):
+    """POST /api/models/test — one REAL chat completion on a model ref.
+
+    Body: `{"ref": "openrouter:vendor/model"}`. Proves the MODEL answers
+    (max_tokens=1, prompt "ping") and reports the latency, or the reason it
+    failed — the same human-readable mapper the provider probe uses. Never
+    raises: a failed test comes back as `{ok: false, error: reason}`.
+    """
+    _lazy('providers')
+    return _PROVIDERS.probe_model((body or {}).get("ref"))
 
 
 def _browse_roots():

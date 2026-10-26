@@ -556,6 +556,50 @@ def probe(spec, timeout=10):
             "models": count}
 
 
+def probe_model(ref, timeout=25):
+    """One REAL chat completion on `<provider>:<model>` — the LLM test button.
+
+    Unlike `probe` (which only checks the provider is reachable), this proves
+    the MODEL answers: max_tokens=1, prompt "ping", latency measured. Never
+    raises — a failed test is a result, not an exception. Returns
+    {ok, ref, model, latency_ms?, error?} with `error` from the same mapper as
+    the provider probe, so a button reads the same either way.
+    """
+    import urllib.error
+    import urllib.request
+    ref = str(ref or "").strip()
+    if not ref:
+        return {"ok": False, "ref": ref, "error": "no model selected"}
+    if ref == "@chat":
+        return {"ok": False, "ref": ref,
+                "error": "@chat follows the active session model — pick a fixed ref to test it"}
+    hit = endpoint(ref)
+    if hit is None:
+        return {"ok": False, "ref": ref,
+                "error": "unknown model: %s is not in any provider catalogue" % ref}
+    url, hdrs, mid = hit
+    payload = json.dumps({"model": mid, "max_tokens": 1,
+                          "messages": [{"role": "user", "content": "ping"}]}).encode("utf-8")
+    t0 = time.monotonic()
+    try:
+        req = urllib.request.Request(url, data=payload, headers=hdrs, method="POST")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            resp.read(2000)
+            status = int(getattr(resp, "status", 200) or 200)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read(400).decode("utf-8", "replace").strip()
+        except Exception:  # noqa: BLE001
+            body = ""
+        return {"ok": False, "ref": ref, "model": mid, "url": url,
+                "status": e.code, "error": _probe_reason(e.code, body)}
+    except Exception as e:  # noqa: BLE001 — a probe reports, never raises
+        return {"ok": False, "ref": ref, "model": mid, "url": url,
+                "error": _probe_reason(None, str(e))}
+    return {"ok": True, "ref": ref, "model": mid, "url": url, "status": status,
+            "latency_ms": int((time.monotonic() - t0) * 1000)}
+
+
 # ------------------------------------------------- remote model metadata ------
 
 _OPENROUTER_CTX = {"ts": None, "map": None, "lock": threading.Lock()}
