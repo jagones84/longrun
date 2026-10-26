@@ -217,6 +217,31 @@ WORKSPACES_DIR = os.environ.get("LONGRUN_WORKSPACES_ROOT") or \
 # Lives beside the codebase index, under DATA_DIR, so a home move carries it.
 PROJECTS_DIR = os.environ.get("LONGRUN_PROJECTS_DIR") or os.path.join(DATA_DIR, "projects")
 
+# v661: the ceiling used when the operator does not set `LONGRUN_ATTACH_MAX`.
+ATTACH_MAX_DEFAULT = 32 * 1024 * 1024
+
+
+def attach_max_bytes():
+    """The ONE upload/attach ceiling (v661).
+
+    `LONGRUN_ATTACH_MAX` was read in three places and one of them (the inline
+    preview guard) used a bare `32 * 1024 * 1024`, so raising the variable let a
+    bigger attachment in and then refused to PREVIEW it — the same limit with two
+    answers. One reader, one default.
+
+    Read at CALL time (never cached at import) so an existing process picks up
+    the value it was started with and a test can change it per case. A missing,
+    blank, non-numeric or non-positive value means "use the default".
+    """
+    raw = (os.environ.get("LONGRUN_ATTACH_MAX") or "").strip()
+    if not raw:
+        return ATTACH_MAX_DEFAULT
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return ATTACH_MAX_DEFAULT
+    return val if val > 0 else ATTACH_MAX_DEFAULT
+
 
 def workspace_state_dir(ws):
     """Per-workspace harness state, OUTSIDE the workspace itself.

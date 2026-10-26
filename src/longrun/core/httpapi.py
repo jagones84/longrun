@@ -2186,7 +2186,10 @@ class Handler(BaseHTTPRequestHandler):
             n = self._content_length()
             if not n:
                 return self._send(400, {"error": "empty body"})
-            cap = int(os.environ.get("LONGRUN_ATTACH_MAX", str(32 * 1024 * 1024)))
+            # v661: the ONE ceiling (`paths.attach_max_bytes`), so the body reader
+            # and `api_v02.attach_save` can never disagree on the limit.
+            from longrun.util import paths as _paths
+            cap = _paths.attach_max_bytes()
             data = _read_bounded_body(self.rfile, n, cap)
             if data is None:
                 code = 413 if n > cap else 400

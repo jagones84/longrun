@@ -3046,11 +3046,15 @@ def _fs_raw(handler, qs=None):
     """
     import os as _os
     import mimetypes
+    # v661: the preview ceiling is the SAME one the upload uses (`LONGRUN_ATTACH_MAX`).
+    # A bare 32 MiB here was a second answer to one question: raising the variable
+    # admitted a bigger attachment and then refused to preview it.
+    from longrun.util import paths as _paths
     q = qs or {}
     p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _fs_allowed_roots(q))
     if not p or not _os.path.isfile(p):
         return _r(handler, 404, {"error": "not found"})
-    if _os.path.getsize(p) > 32 * 1024 * 1024:
+    if _os.path.getsize(p) > _paths.attach_max_bytes():
         return _r(handler, 413, {"error": "file too large to preview"})
     ctype = (mimetypes.guess_type(p)[0] or "application/octet-stream").lower()
     # JAG-232: an ALLOW-LIST of inert types only. `image/svg+xml` (and any other
@@ -3128,7 +3132,10 @@ def attach_save(data, name=None, session=None) -> dict:
     import time as _time
     from longrun.memory import chunk as _chunk
     from longrun.memory import docio as _docio
-    cap = int(_os.environ.get("LONGRUN_ATTACH_MAX", str(32 * 1024 * 1024)))
+    # v661: one reader for the ceiling (`paths.attach_max_bytes`), shared with the
+    # raw-preview guard and the HTTP body reader in `httpapi`.
+    from longrun.util import paths as _paths
+    cap = _paths.attach_max_bytes()
     if not data:
         return {"ok": False, "error": "empty upload"}
     if len(data) > cap:
