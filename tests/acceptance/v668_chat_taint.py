@@ -77,7 +77,7 @@ import inspect                          # noqa: E402
 _src = inspect.getsource(api_v02.gated_call)
 check("B1 gated_call accepts hist and forwards it to classify",
       "hist" in inspect.signature(api_v02.gated_call).parameters
-      and "classify(tool, args, workspace, hist)" in _src)
+      and "classify(tool, args, workspace, hist" in _src)
 
 with open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
           encoding="utf-8") as f:

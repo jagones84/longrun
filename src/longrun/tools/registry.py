@@ -1720,7 +1720,25 @@ def context_has_untrusted(messages):
     return False
 
 
-def classify(tool, args, workspace=None, hist=None):
+def in_scope(tool, allow):
+    """True when `tool` is admitted by an allow-list (I-1).
+
+    One entry may be an exact name ("fs.read") or a NAMESPACE ("fs"), which
+    admits every `fs.*` tool. `"*"` admits everything; `None` means unrestricted.
+    """
+    if allow is None:
+        return True
+    name = str(tool or "")
+    for entry in allow or ():
+        e = str(entry or "").strip()
+        if not e:
+            continue
+        if e == "*" or name == e or name.startswith(e + "."):
+            return True
+    return False
+
+
+def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None):
     """Approval decision for a concrete action.
 
     JAG-388: when a session `workspace` is given, ANY action — a file op, a git
@@ -1731,10 +1749,16 @@ def classify(tool, args, workspace=None, hist=None):
     `hist` (M2a) is the proposing context: when it holds untrusted
     content, standing auto-approvals are suspended (the call needs
     approval). `None` (one-shot API calls) means no context: clean.
+    `allow` (I-1) is a delegated role's tool scope: a tool outside it is
+    `denied` BEFORE every other rule, including `approvals.mode=full`, because
+    the scope is the delegation contract, not a convenience gate.
     """
     spec = tool_spec(tool)
     if spec is None:
         return "denied", "unknown tool %r" % tool
+    if not in_scope(tool, allow):
+        return "denied", ("role_scope:%s — this role may not call %r (allowed: %s)"
+                          % (scope_name or "?", tool, ", ".join(allow or ()) or "none"))
     if not spec["enabled"]:
         return "disabled", "tool %r is not in the allowlist (config/tools.yaml)" % tool
     subject = _subject(tool, args)

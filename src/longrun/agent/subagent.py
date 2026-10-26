@@ -90,10 +90,56 @@ def save_cfg(cfg):
     return CFG_PATH
 
 
+def _role_spec(role):
+    """The raw entry for a role: a bare brief (legacy) or `{brief, tools}` (I-1)."""
+    roles = load_cfg().get("roles") or {}
+    return roles.get(role or "")
+
+
 def role_brief(role):
     """The standing instruction for a named subagent role ("" when unknown)."""
-    roles = load_cfg().get("roles") or {}
-    return str(roles.get(role or "", "") or "").strip()
+    spec = _role_spec(role)
+    if isinstance(spec, dict):
+        return str(spec.get("brief") or spec.get("text") or "").strip()
+    return str(spec or "").strip()
+
+
+def role_tools(role):
+    """The tools a role may call, or None when the role is unrestricted (I-1).
+
+    `roles.<name>.tools` lists exact tool names ("fs.read") or whole namespaces
+    ("fs", which admits every `fs.*` tool). An ABSENT key means no restriction —
+    today's behaviour — so adding the key is the only thing that changes it.
+    """
+    spec = _role_spec(role)
+    if not isinstance(spec, dict) or "tools" not in spec:
+        return None
+    raw = spec.get("tools")
+    if isinstance(raw, str):
+        raw = [raw]
+    out = [str(x).strip() for x in (raw or []) if str(x).strip()]
+    return out or None
+
+
+def merge_roles(current, incoming):
+    """Assign the roles map WITHOUT destroying a role's tool scope (I-1).
+
+    The writers (POST /api/subagents, the longrunAgent settings tool) used to
+    coerce every value with `str()`, which flattened `{brief, tools}` into
+    "{'brief': …}" and silently dropped the scope. One implementation, used by
+    both writers, so a panel edit can never delete what it does not render.
+    """
+    out = {}
+    for name, value in (incoming or {}).items():
+        name = str(name)
+        old = (current or {}).get(name)
+        if isinstance(value, dict):
+            out[name] = {str(k): v for k, v in value.items()}
+        elif isinstance(old, dict):
+            out[name] = dict(old, brief=str(value or ""))
+        else:
+            out[name] = str(value or "")
+    return out
 
 
 def _running_count():
@@ -309,6 +355,10 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
     sid = "sub_%s" % uuid.uuid4().hex[:10]
     st = api_v02.new_run("%s (subagent %s)" % (goal[:80], sid), model, max_steps)
     st.parent_run_id = parent_run_id
+    # I-1: the role's tool scope rides on the RUN, so every call path (single,
+    # batch, retry, subjob) reads the same value instead of re-reading config.
+    st.role = role
+    st.tool_allow = role_tools(role)
     _DEPTH[st.id] = int(depth)
     taskgraph.ensure(st.id, session_id=st.id, goal=goal)
 

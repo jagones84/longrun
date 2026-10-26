@@ -67,6 +67,26 @@ def normalize_tool_args(tool: str, args: dict) -> dict:
     return toolmod.normalize_args(tool, args)
 
 
+def _session_scope(sid):
+    """(allow, role) for a session's ORG role, or (None, None) when unrestricted.
+
+    I-1: a delegated turn (a team job's assignment, a cross-session dispatch)
+    runs as the assignee agent's role, so the role's tool scope applies to it
+    exactly as it does to a subagent spawned with the same role. One resolver,
+    used by the chat/API gate — the v2 loop reads `RunState.tool_allow`.
+    """
+    try:
+        from longrun.agent import agents as _agents
+        from longrun.agent import subagent as _sub
+        rec = _agents.REGISTRY.get(sid) or {}
+        role = str(rec.get("role") or "").strip()
+        if not role:
+            return None, None
+        return _sub.role_tools(role), role
+    except Exception:  # noqa: BLE001 — a scope lookup must never break a call
+        return None, None
+
+
 class RunState:
     def __init__(self, rid, goal, model, max_steps, script=None):
         self.id = rid
@@ -93,6 +113,10 @@ class RunState:
         self.tokens_spent = 0
         # M6: set by subagent.spawn; None for a top-level run.
         self.parent_run_id = None
+        # I-1: the role this run was spawned for and the tools it may call.
+        # `None` (both) = unrestricted, which is exactly the pre-I-1 behaviour.
+        self.role = None
+        self.tool_allow = None
 
     def public(self):
         return {"id": self.id, "goal": self.goal, "model": self.model,
@@ -211,7 +235,9 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
         _publish("tool.blocked", run=run_id, tool=tool, reason="unknown tool")
         return obs, {"tool": tool, "blocked": "unknown"}
 
-    decision, reason = registry.classify(tool, args, workspace, hist)
+    decision, reason = registry.classify(tool, args, workspace, hist,
+                                         allow=getattr(st, "tool_allow", None),
+                                         scope_name=getattr(st, "role", None))
     if decision == "auto":
         _tp_rule, _tp_reason = _trace_escalation(tool, args, st)
         if _tp_reason:
@@ -355,7 +381,7 @@ def batch_action(st, items, on_event, srv, workspace=None, hist=None):
 
 
 def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, workspace=None,
-               obs_max=1600, hist=None):
+               obs_max=1600, hist=None, allow=None, scope_name=None):
     """One-shot gated tool call used by POST /api/tools/call and the chat loop.
 
     `timeout` (JAG-80) caps how long a `required` tool waits for a human decision.
@@ -383,7 +409,13 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     # JAG-163: run the tool INSIDE the session workspace (see tool_action above).
     if workspace and "workspace" not in args:
         args["workspace"] = workspace
-    decision, reason = registry.classify(tool, args, workspace, hist)
+    # I-1: an explicit scope wins; otherwise the SESSION's org role decides, so a
+    # delegated turn (job assignment / cross-session dispatch) cannot use a tool
+    # its role was never granted. Unregistered sessions resolve to (None, None).
+    if allow is None:
+        allow, scope_name = _session_scope(run_id)
+    decision, reason = registry.classify(tool, args, workspace, hist,
+                                         allow=allow, scope_name=scope_name)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         return {"status": "blocked", "reason": reason}
@@ -2259,7 +2291,9 @@ def handle(handler, method, path, qs, body):
                     except (TypeError, ValueError):
                         return _r(handler, 400, {"error": "max_parallel must be an integer"})
                 if isinstance(body.get("roles"), dict):
-                    cfg["roles"] = {str(k): str(v) for k, v in body["roles"].items()}
+                    # I-1: merge, never flatten — a role may carry `tools`.
+                    cfg["roles"] = _sub.merge_roles(cfg.get("roles") or {},
+                                                    body["roles"])
                 if "model" in body or "fallbacks" in body:
                     upd = {}
                     if "model" in body:

@@ -2018,7 +2018,9 @@ def _webui_configure(args):
             except (TypeError, ValueError):
                 return {"ok": False, "error": "max_parallel must be an integer"}
         if isinstance(values.get("roles"), dict):
-            cfg["roles"] = {str(k): str(v) for k, v in values["roles"].items()}
+            # I-1: merge, never flatten — a role may carry `tools`, which this
+            # panel does not edit and must not delete.
+            cfg["roles"] = sub_mod.merge_roles(cfg.get("roles") or {}, values["roles"])
         upd = {}
         if "model" in values:
             upd["model"] = str(values.get("model") or "")

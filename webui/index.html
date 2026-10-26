@@ -11666,6 +11666,7 @@ async function loadSubagents() {
 }
 let _subRoles = {};
 let _subFallbacks = [];
+function subRoleBrief(v) { return typeof v === "string" ? v : ((v && (v.brief || v.text)) || ""); }
 function subRenderRoles() {
   const box = $("subRolesBox"); if (!box) return;
   const names = Object.keys(_subRoles);
@@ -11679,9 +11680,23 @@ function subRenderRoles() {
     hd.appendChild(nm); hd.appendChild(del);
     const ta = document.createElement("textarea");
     ta.style.cssText = "width:100%;min-height:56px;font-size:12px;margin-top:4px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)";
-    ta.value = _subRoles[name] || "";
-    ta.oninput = () => { _subRoles[name] = ta.value; subSaveSoon(); };
-    row.appendChild(hd); row.appendChild(ta); box.appendChild(row);
+    ta.value = subRoleBrief(_subRoles[name]);
+    ta.oninput = () => {
+      // I-1: a role may be {brief, tools} — editing the brief must not delete
+      // the scope this panel does not edit.
+      const cur = _subRoles[name];
+      _subRoles[name] = (cur && typeof cur === "object")
+        ? Object.assign({}, cur, { brief: ta.value }) : ta.value;
+      subSaveSoon();
+    };
+    row.appendChild(hd); row.appendChild(ta);
+    const scope = (_subRoles[name] && typeof _subRoles[name] === "object")
+      ? (_subRoles[name].tools || []) : [];
+    const sc = document.createElement("div"); sc.className = "remaining";
+    sc.textContent = scope.length
+      ? "tools restricted to: " + scope.join(", ")
+      : "no tool restriction (role may call any enabled tool)";
+    row.appendChild(sc); box.appendChild(row);
   });
 }
 function subAddRole() {
