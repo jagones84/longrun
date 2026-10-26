@@ -69,11 +69,15 @@ check("A7 add_model re-enables a hidden shipped model",
 check("B1 the sources list renders URLs as real hyperlinks",
       'target="_blank" rel="noopener noreferrer"' in HTML and "_kbSourceRow" in HTML)
 check("B2 a file/text source opens via kbopen + _kbOpenRef",
-      'class="kbopen"' in HTML and "function _kbOpenRef(" in HTML)
+      # v653 re-pin: the row keeps `kbopen` as one of its classes (now next to the
+      # shared `.kb-main` layout class), so the wiring assertion is the attribute.
+      'kbopen" data-ref="' in HTML and "function _kbOpenRef(" in HTML)
 check("B3 images open in the image window and PDFs in the viewer",
       "_isImage(ref)" in HTML and "\\.pdf$/i.test(ref)" in HTML)
-check("B4 the list is a bounded, scrollable window (cap + max-height)",
-      "const LIMIT = 200" in HTML and "max-height:320px;overflow:auto" in HTML)
+check("B4 the list is bounded by a row cap, not a nested scroll window",
+      # v653 re-pin: the 320px inner window became the panel's single scroll
+      # (operator: "vedi che schifo di disordine?"). The DOM is still bounded.
+      "const LIMIT = 200" in HTML and ".kb-list { max-height" not in HTML)
 
 # ------------------------------------------------------------------ C) no fallbacks
 from longrun.model import routing  # noqa: E402
@@ -177,9 +181,11 @@ check("F3 discover + research merged into ONE topic bar + auto checkbox",
       and "function kbResearchGo(" in HTML and 'id="researchQ"' not in HTML)
 check("F3b the auto options are revealed only in auto mode",
       'id="kbAutoOpts" hidden' in HTML and "function kbResearchMode(" in HTML)
-# F4: "Search knowledge" sits right below "Knowledge · global".
-check("F4 Search knowledge is above Notebooks in the markup order",
-      0 <= HTML.index("<h2>Search knowledge</h2>") < HTML.index('<details class="card" id="kbNbBox">'))
+# F4: the Search card sits right below "Knowledge · global".
+check("F4 Search is above Notebooks in the markup order",
+      # v653 re-pin: the heading is "Search" now (the tooltip says what it searches;
+      # "Search knowledge" inside the Knowledge panel repeated the panel name).
+      0 <= HTML.index('>Search</h2>') < HTML.index('<details class="card" id="kbNbBox">'))
 # F5: a skill opens in the EDITOR (not a separate modal).
 check("F5 skills open in the file editor",
       "function openSkillInEditor(" in HTML and "openInEditor(d.abspath" in HTML
@@ -192,8 +198,10 @@ check("F6 knowledge search results are wired to _kbOpenRef",
       'class="ctxitem kbopen"' in HTML and 'box.querySelectorAll(".kbopen")' in HTML)
 # F7: the files list is clickable + bounded like the sources list.
 check("F7 the notebook files list is clickable + bounded",
-      'class="kbopen" data-ref="\' + _attr(f.path)' in HTML
-      and "max-height:320px;overflow:auto" in HTML)
+      # v653 re-pin: same row grammar as a source row (kb-main kbopen) and the DOM
+      # is bounded by the row cap, not by a second scroll window.
+      'class="kb-main kbopen" href="#" data-ref="\' + _attr(f.path)' in HTML
+      and "const LIMIT = 200" in HTML)
 
 print("---")
 ok = sum(results)

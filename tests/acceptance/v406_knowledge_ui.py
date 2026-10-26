@@ -46,8 +46,13 @@ check("3 a `text` source is shown as plain text (no false file link)",
       and _seg.index('s.kind === "text"') < _seg.index("else if (ref) {"))
 
 # ------------------------------------------------------------------ 4) notebooks bounded
-check("4 the notebooks list is a bounded scroll window",
-      'id="kbNotebooks" style="max-height:200px;overflow:auto' in HTML)
+check("4 the notebooks list adds NO second scrollbar inside the panel",
+      # v653 re-pin: the 200px inner window is gone on purpose — the settings
+      # panel already scrolls, and two scrollbars for one page was part of the
+      # disorder the operator flagged ("applica fix qui e ovunque").
+      'id="kbNotebooks" class="u-mt8"' in HTML
+      and 'id="kbNotebooks" style="max-height' not in HTML
+      and "#swMain .kb-list { max-height" not in HTML)
 
 # ------------------------------------------------------------------ 5) research options
 check("5a depth + max-sources are ALWAYS visible (before the auto-only block)",
@@ -63,11 +68,12 @@ check("5d the deep/shallow depth select is present",
 # ------------------------------------------------------------------ 6) status/clear right
 check("6a the Knowledge counts + buttons share one wrapping flex row",
       # JAG-425: the repeated inline style became utility classes (u-df u-g6 u-f0a).
-      'id="indexMeta" style="flex:1;min-width:180px"' in HTML
+      # v653 re-pin: the counts are labelled values (.kb-meta), not a sentence.
+      'id="indexMeta"' in HTML and 'class="kb-meta" id="indexMeta"' in HTML
       and ('style="display:flex;gap:6px;flex:0 0 auto"' in HTML
            or 'class="u-df u-g6 u-f0a"' in HTML))
 check("6b status/clear no longer sit in their own row below",
-      'title="refresh the counts">status</button>' in HTML
+      'title="refresh the counts">↻ status</button>' in HTML
       and 'onclick="kbStatus()"' not in HTML)
 
 print("---")

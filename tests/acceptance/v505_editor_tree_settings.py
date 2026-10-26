@@ -137,9 +137,10 @@ check("B4b Sandbox has its own Settings panel immediately below Tools & approval
       and "sandboxEl.innerHTML = sbCard" in idx
       and 'gateEnroll(sandboxEl.querySelector("#sbxCard"))' in idx)
 check("B4c routing.yaml explains its raw-backup role and structured ownership",
-      "Why routing.yaml is listed" in idx
-      and "Settings → Subagents owns" in idx
-      and "This editor is the raw advanced fallback, not a second config." in idx)
+      # v653 re-pin: the explanation is the section tooltip (no paragraph card).
+      "routing.yaml is listed because" in idx
+      and "Settings ▸ Subagents owns" in idx
+      and "this editor is the raw advanced fallback, not a second config" in idx)
 check("B4d Subagents no longer claims a duplicate Models picker",
       # v646 re-pin: the statement lives in the "Model & failover" tooltip now
       # (the operator asked for hover instead of paragraphs).

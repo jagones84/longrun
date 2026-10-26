@@ -282,7 +282,12 @@
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
   .task.fresh { animation: pop .5s ease; border: 1px dashed rgba(181,108,255,.4); }
   @keyframes pop { from { transform: scale(.96); opacity: .3; } }
-  .remaining { color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }
+  /* v651: a path / model ref printed in a card must WRAP inside it.
+     v653: `break-word`, not `anywhere`. `anywhere` collapses the element's
+     min-content width to ONE character, so inside a flex row a plain label
+     ("depth", "max sources") wrapped letter by letter — a live regression this
+     fix removes while keeping the wrap. */
+  .remaining { color: var(--dim); font-size: 11px; overflow-wrap: break-word; }
   /* v651: a path / model ref printed in a card must WRAP inside it, never bleed
      over the neighbouring panel (operator: "che è sto schifo?" on a file list
      that ran past the card edge). */
@@ -546,7 +551,7 @@
   .imp-row summary::-webkit-details-marker { display: none; }
   a.impfile { display: inline-block; color: var(--hc, #7c8cff); text-decoration: none;
     border-bottom: 1px dashed currentColor; font-size: 11px; margin: 1px 2px;
-    max-width: 100%; overflow-wrap: anywhere; }   /* v651: a long path wraps inside its card */
+    max-width: 100%; overflow-wrap: break-word; }   /* v651/v653: a long path wraps inside its card, without collapsing the chip to one character */
   a.impfile:hover { text-decoration: underline; }
   /* v651: one row of file chips that wraps. Before this the list was a run of
      inline links with no wrapping, so a data-home path bled OUTSIDE the card and
@@ -1226,8 +1231,11 @@
     margin: 16px 0 8px; text-transform: uppercase; }
   #settingsWin .sw-main .sw-cat h2:first-child { margin-top: 0; }
   #settingsWin .sw-cat[hidden] { display: none; }
-  /* JAG-422: uniform, prettier rows for the Knowledge lists (notebooks, sources,
-     files) — one visual language instead of scattered inline styles. */
+  /* JAG-422: uniform rows for the Knowledge lists (notebooks, sources, files).
+     v653: ONE grammar for every list — a type chip, the object, its count WITH A
+     UNIT in a right-aligned column, then the actions. The count used to be a bare
+     number and the ✕ floated away from it, so nothing lined up between rows
+     (operator: "vedi che schifo di disordine? applica fix qui e ovunque"). */
   #swMain .kb-row { display: flex; gap: 8px; align-items: center; padding: 6px 8px;
     margin-bottom: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
   #swMain .kb-row:hover { border-color: var(--acc); }
@@ -1236,9 +1244,27 @@
   #swMain .kb-row.kb-current { border-color: var(--acc); box-shadow: inset 3px 0 0 var(--acc); }
   #swMain .kb-cur { flex: 0 0 auto; color: var(--acc); font-weight: 700; font-size: 11px;
     letter-spacing: .04em; white-space: nowrap; }
-  #swMain .kb-row .cn { flex: 0 0 auto; min-width: 22px; text-align: center;
-    color: var(--acc2); font-size: 10px; }
-  #swMain .kb-list { max-height: 320px; overflow: auto; padding-right: 4px; }
+  #swMain .kb-kind { flex: 0 0 auto; min-width: 36px; text-align: center; font-size: 9.5px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
+  #swMain .kb-main { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  a.kb-main { color: var(--acc); text-decoration: none; border-bottom: 1px dashed transparent; }
+  a.kb-main:hover { border-bottom-color: currentColor; }
+  #swMain .kb-meta { flex: 0 0 auto; min-width: 76px; text-align: right; white-space: nowrap;
+    color: var(--dim); font-size: 10px; }
+  #swMain .kb-meta b { color: var(--acc2); font-weight: 600; }
+  #swMain .kb-x { flex: 0 0 auto; background: none; border: 0; color: var(--dim); cursor: pointer;
+    font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+  #swMain .kb-x:hover { color: var(--err); background: rgba(248,113,113,.10); }
+  /* v653: a label that CARRIES a control is one unbreakable unit. Inside a flex
+     row the label shrank, so "max sources" broke onto two lines while its input
+     stayed on the first one — a live wrap the operator saw as disorder. */
+  #swMain label:has(input, select) { flex: 0 0 auto; }
+  /* v653: one scrollbar per page — the list used to scroll inside the panel's
+     own scroll (320px window), which is what made the bottom look chopped. */
+  #swMain #kbRefs { width: 100%; min-height: 84px; box-sizing: border-box; font-size: 12px;
+    font-family: ui-monospace, monospace; padding: 6px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg2); color: var(--txt); }
   #swMain .kb-empty { padding: 10px; color: var(--dim); font-size: 12px; }
   /* JAG-159: Harness + Tool-policy cards, restyled with the archify design tokens
      (slate panel, accent dot header, compact inline labels). */
@@ -1300,7 +1326,12 @@
   #swMain select,
   #swMain input:not([type=checkbox]):not([type=radio]):not([type=range]),
   #swMain .u-w100:not(textarea) { max-width: 340px; min-width: min(160px, 100%); }
-  #swMain input[type=number] { max-width: 110px; min-width: 72px; }
+  /* v653: a NUMBER field was still forced to the 160px control minimum, because
+     the `:not(...)` chain above carries three attribute selectors and outranks a
+     plain `input[type=number]`. That is why "max sources" wrapped: the 160px box
+     squeezed its own label. Same specificity, later rule, so a count is narrow. */
+  #swMain input[type=number]:not([type=checkbox]):not([type=radio]):not([type=range]) {
+    max-width: 110px; min-width: 72px; }
   .sbx-state { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px;
     margin-bottom: 12px; background: var(--panel2); }
   .sbx-state-head { display: flex; align-items: center; gap: 9px; }
@@ -2120,10 +2151,10 @@
            forms are routed to those panels at render time, so this panel should
            not be needed for a normal change. -->
       <div class="sw-cat" data-cat="config" hidden>
-        <h2>Settings · config files <span class="remaining">— backup surface: the real controls live in their own panels</span></h2>
+        <h2 title="Backup surface: the real controls live in their own panels. Fallback for anything the forms do not model — an invalid save is rejected and the previous version stays in data/config-backups/. routing.yaml is listed because it is the persisted source of truth for role models, patterns and fallback chains (Settings ▸ Models edits role routes, Settings ▸ Subagents owns roles.subagent.model and .fallbacks; this editor is the raw advanced fallback, not a second config).">Settings · config files</h2>
         <div id="setForms"><div class="remaining">loading…</div></div>
         <div class="card" id="setDedicated"></div>
-        <h2>Advanced · raw YAML <span class="remaining">— the complete fallback: every key is editable here</span></h2>
+        <h2 title="the complete fallback: every key is editable here">Advanced · raw YAML</h2>
         <div class="card">
           <div class="hrow">
             <label title="A top-level YAML file under config/">file <select id="cfgFileName" onchange="loadConfigFile()"></select></label>
@@ -2135,18 +2166,11 @@
           <textarea id="cfgFileText" spellcheck="false" autocomplete="off" autocapitalize="off" style="width:100%;min-height:360px;margin-top:8px;font-size:12px;font-family:ui-monospace,monospace;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt);resize:vertical"></textarea>
           <div class="remaining" id="cfgFileMsg"></div>
         </div>
-        <div class="card">
-          <div class="remaining"><b>Why routing.yaml is listed:</b> it is the persisted source of truth for role models, patterns, and fallback chains. Settings → Models edits other role routes and patterns; Settings → Subagents owns <code>roles.subagent.model</code> and <code>roles.subagent.fallbacks</code>. This editor is the raw advanced fallback, not a second config. Code defaults have empty role mappings and no fallback chain; the shipped <code>config/routing.yaml</code> supplies role routes.</div>
-        </div>
-        <div class="card">
-          <div class="remaining">Fallback for anything the forms do not model. An invalid save is rejected; the previous version stays in <code>data/config-backups/</code>.</div>
-        </div>
       </div>
       <div class="sw-cat" data-cat="diagnostics" hidden>
-        <h2>Settings diagnostics</h2>
+        <h2 title="Local checks only — no LLM, no remote credentials.">Settings diagnostics</h2>
         <div class="card">
           <div class="remaining" id="diagSummary" role="status" aria-live="polite">loading…</div>
-          <div class="remaining">Local checks only — no LLM, no remote credentials.</div>
           <button class="ghost u-mt8" data-call="loadDiagnostics" title="rerun settings checks">↻ run checks</button>
         </div>
         <div id="diagIssues" class="u-mt8"></div>
@@ -2656,19 +2680,21 @@
       </div>
       <div class="sw-cat" data-cat="knowledge" hidden>
         <div data-insp="knowledge">
-        <h2>Knowledge · global <span id="indexStat" class="remaining"></span></h2>
+        <h2 title="Global knowledge base: notebooks of sources (URLs, files, pasted text). Separate from the per-workspace codebase panel in the right rail.">Knowledge · global <span id="indexStat" class="remaining"></span></h2>
         <div class="card">
           <div class="u-df u-g10 u-aifs u-fww">
-            <div class="remaining" id="indexMeta" style="flex:1;min-width:180px">Global knowledge base — notebooks of sources (URLs, files, pasted text). Separate from the per-workspace <b>Codebase</b> index (right rail ▸ Codebase).</div>
+            <!-- v653: real numbers only, one per line with its unit. The sentence
+                 that used to live here is the section tooltip now. -->
+            <div class="kb-meta" id="indexMeta" style="flex:1;min-width:180px;text-align:left;font-size:11px">—</div>
             <!-- JAG-403h: status/clear sit to the RIGHT of the counts (they wrapped under
                  and ate vertical space); they drop below only when the panel is narrow. -->
             <div class="u-df u-g6 u-f0a">
-              <button class="ghost" data-call="kbStatus" title="refresh the counts">status</button>
+              <button class="ghost" data-call="kbStatus" title="refresh the counts">↻ status</button>
               <button class="ghost" data-call="kbClear" title="delete the whole knowledge base">clear</button>
             </div>
           </div>
         </div>
-        <h2>Search knowledge</h2>
+        <h2 title="Lexical + vector search across every notebook of the global knowledge base.">Search</h2>
         <div class="card">
           <div class="u-df u-g6">
             <input id="kbQuery" class="inp u-f1 u-p610 u-fs12" placeholder="search the knowledge base…" data-key="Enter" data-key-fn="kbSearch">
@@ -2678,7 +2704,7 @@
         </div>
         <details class="card" id="kbNbBox">
           <summary class="remaining u-ptr">Notebooks <span id="kbNbActive" style="color:var(--txt)"></span></summary>
-          <div id="kbNotebooks" style="max-height:200px;overflow:auto;margin-top:8px"><div class="remaining">loading…</div></div>
+          <div id="kbNotebooks" class="u-mt8"><div class="remaining">loading…</div></div>
           <div class="u-df u-g6 u-mt8">
             <input id="kbNewName" class="inp u-f1 u-p610 u-fs12" placeholder="new notebook name…">
             <button class="ghost" data-call="kbCreateNotebook">+ create</button>
@@ -2694,9 +2720,10 @@
             <input id="kbDiscoverQ" class="inp u-f1 u-p610 u-fs12" placeholder="research topic…" data-key="Enter" data-key-fn="kbResearchGo">
             <button class="ghost" id="kbResearchBtn" data-call="kbResearchGo">🔎 discover</button>
           </div>
-          <label class="remaining u-df u-g6 u-aic u-mt8 u-ptr">
+          <label class="remaining u-df u-g6 u-aic u-mt8 u-ptr"
+                 title="search + fetch + summarise + import, using the research LLM — one round per depth level">
             <input type="checkbox" id="kbAutoMode" data-change="kbResearchMode">
-            <span><b>auto (agent)</b> — search + fetch + summarise + import (uses the research LLM)</span>
+            <span>auto (agent)</span>
           </label>
           <!-- JAG-403h: depth + max sources are ALWAYS visible — they apply to BOTH
                the manual discover count and the auto research rounds, so hiding them
@@ -2726,12 +2753,12 @@
         </div>
         <h2 title="Manual sources for the selected notebook. Chat attachments are indexed automatically in their own session notebook, so they never need adding here. URLs are fetched; PDF / DOCX / PPTX / XLSX / ODT are extracted to text (OCR for scanned PDFs). Text is searchable lexically; vectors are added only when an embedding model is configured.">Sources · <span id="kbNbName" class="remaining">Default</span></h2>
         <div class="card">
-          <textarea id="kbRefs" style="width:100%;min-height:84px;font-size:12px;font-family:ui-monospace,monospace;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
+          <textarea id="kbRefs" placeholder="https://docs.example.com/guide&#10;/home/me/notes/architecture.md&#10;/home/me/papers/rag-survey.pdf"></textarea>
           <div class="u-df u-g6 u-mt6 u-fww">
-            <button class="ghost" data-call="kbAddSource">+ add + index</button>
+            <button class="ghost" data-call="kbAddSource" title="fetch every ref in the box and index it">+ add</button>
             <button class="ghost" data-call="kbReembed" title="embed every chunk that has no vector yet (fixes an index built with no embedding model)">⟳ re-embed</button>
             <button class="ghost" data-call="kbFiles" title="list the indexed FILES in this notebook (one row per file — a folder or PDF source can be many files)">files</button>
-            <button class="ghost" data-call="kbLoadSources" title="reload the sources of this notebook">↻ sources</button>
+            <button class="ghost" data-call="kbRefresh" title="reload the list you are looking at">↻</button>
           </div>
           <div id="kbSources" class="u-mt6"></div>
         </div>
@@ -2748,11 +2775,11 @@
         <div class="card">
           <div class="themegrid" id="themeGrid"></div>
         </div>
-        <h2>Text</h2>
+        <h2 title="Heavier weights on messages, labels and headings — easier to scan.">Text</h2>
         <div class="card">
           <label class="hrow u-g8 u-ptr">
             <input type="checkbox" id="boldText" data-change="applyBold" data-arg-node="checked">
-            <span>Bolder text — heavier weights on messages, labels and headings, easier to scan.</span>
+            <span>Bolder text</span>
           </label>
         </div>
       </div>
@@ -11610,10 +11637,13 @@ async function cbFiles() {
     const r = await api("GET", "/api/codebase/files" + _cbQS());
     const rows = r.files || [];
     box.innerHTML = rows.length
-      ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files indexed</div>" +
+      ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files · " +
+         rows.reduce((n, f) => n + (f.chunks || 0), 0) + " chunks</div>" +
          rows.map(f => '<div style="display:flex;gap:6px;font-size:11px;align-items:center">' +
-           '<span data-open="' + _attr(f.path) + '" style="flex:1;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="open ' + _attr(f.path) + '">' +
-           esc(_short(f.path)) + '</span><span class="cn">' + (f.chunks || 0) + "</span></div>").join(""))
+           '<span data-open="' + _attr(f.path) + '" style="flex:1;min-width:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="open ' + _attr(f.path) + '">' +
+           // v653: a digit needs a unit — "12" alone says nothing.
+           esc(_short(f.path)) + '</span><span style="flex:0 0 auto;color:var(--dim);font-size:10px;white-space:nowrap" title="indexed chunks">' +
+           (f.chunks || 0) + " chunks</span></div>").join(""))
       : '<div class="remaining">nothing indexed yet — press build</div>';
     box.querySelectorAll("[data-open]").forEach(el => el.onclick = () => openInEditor(el.getAttribute("data-open")));
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
@@ -11804,13 +11834,16 @@ async function kbStatus() {
     const meta = $("indexMeta");
     const ex = s.extractors || {};
     const exTxt = Object.keys(ex).filter(k => ex[k]).join(", ") || "none";
+    // v653: LABELLED numbers, one group per line. A run-on sentence with numbers
+    // in the middle is what the operator calls disorder.
     if (meta) meta.innerHTML = (s.exists
-      ? ("<b>" + (s.notebooks || 0) + "</b> notebooks · <b>" + (s.sources || 0) + "</b> sources · <b>" +
-         (s.chunks || 0) + "</b> chunks · " + _fmtSize((s.size_kb || 0) * 1024) +
-         "<br>embedding: <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" +
+      ? ("<div><b>" + (s.notebooks || 0) + "</b> notebooks · <b>" + (s.sources || 0) +
+         "</b> sources · <b>" + (s.chunks || 0) + "</b> chunks · " +
+         _fmtSize((s.size_kb || 0) * 1024) + "</div>" +
+         "<div>embedding <b>" + esc(s.embed_model || "none (bm25 only)") + "</b>" +
          (s.embed_model ? (" · " + (s.embedded || 0) + "/" + (s.chunks || 0) + " embedded" + (s.dim ? (" · dim " + s.dim) : "")) : "") +
-         "<br>doc extractors: <b>" + esc(exTxt) + "</b>" +
-         (ex.markitdown ? "" : " — install <code>markitdown</code> for the best PDF/DOCX fidelity"))
+         "</div><div>extractors <b>" + esc(exTxt) + "</b>" +
+         (ex.markitdown ? "" : " · install <code>markitdown</code> for the best PDF/DOCX fidelity") + "</div>")
       : "empty — create a notebook and add sources.");
     const st = $("indexStat"); if (st) st.textContent = s.exists ? ((s.sources || 0) + " sources") : "empty";
     return s;
@@ -11830,7 +11863,7 @@ async function kbLoadNotebooks() {
         '<button class="ghost" style="padding:2px 7px' + (sel ? ";color:var(--acc);border-color:var(--acc)" : "") +
         '" data-use="' + _attr(n.id) + '" data-name="' + _attr(n.name) + '" title="use this notebook">' + (sel ? "●" : "○") + '</button>' +
         '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px">' +
-        '<span class="cn">' + (n.sources || 0) + '</span>' +
+        '<span class="kb-meta" title="sources in this notebook">' + _plural(n.sources || 0, "source") + '</span>' +
         '<button class="ghost" style="padding:2px 6px" data-save="' + _attr(n.id) + '" title="rename">✓</button>' +
         (n.id === "default" ? "" : '<button class="ghost" style="padding:2px 6px" data-del="' + _attr(n.id) + '" title="delete notebook">🗑</button>') +
         '</div>';
@@ -11862,7 +11895,7 @@ async function kbLoadSessions() {
         '<input class="inp" data-unn="' + _attr(n.id) + '" value="' + _attr(n.name) + '" style="flex:1;padding:4px 8px;font-size:12px" readonly title="' + _attr(owner) + '">' +
         (cur ? '<span class="kb-cur" title="the chat you are in right now">* current</span>' : '') +
         '<span style="color:var(--acc);border:1px solid var(--acc);border-radius:6px;padding:0 5px;font-size:10px" title="session-scoped notebook — ' + _attr(owner) + '">session</span>' +
-        '<span class="cn">' + (n.sources || 0) + '</span>' +
+        '<span class="kb-meta" title="sources in this notebook">' + _plural(n.sources || 0, "source") + '</span>' +
         '<button class="ghost" style="padding:2px 6px" data-del="' + _attr(n.id) + '" title="delete this session notebook (purges sources + chunks too)">🗑</button>' +
         '</div>';
     }).join("") || '<div class="remaining">no session notebooks (attach a PDF from chat with this session to create one)</div>';
@@ -11930,35 +11963,44 @@ async function kbDeleteNotebook(id) {
     kbLoadNotebooks(); kbLoadSessions(); kbLoadSources(); kbStatus();
   } catch (e) {}
 }
+/* v653: one count helper — a number always carries its unit AND its number, with
+   thousands grouped. "1 chunks" is the kind of small lie that makes a panel look
+   unmaintained. */
+function _plural(n, word) {
+  const v = Number(n) || 0;
+  return v.toLocaleString() + " " + word + (v === 1 ? "" : "s");
+}
 /* A source row: URLs become real hyperlinks (open in a new tab); file paths open
-   in the editor (images in the image window, PDFs in the browser viewer). */
+   in the editor (images in the image window, PDFs in the browser viewer).
+   v653: one grammar — `.kb-kind` chip, `.kb-main` object, `.kb-meta` count with
+   its unit, `.kb-x` remove. No inline layout styles, so every row lines up. */
 function _kbSourceRow(s) {
-  const kind = esc(s.kind || "");
+  const kind = esc(s.kind || "src");
   const ref = s.ref || "";
   const title = s.title || ref;
-  const chunks = '<span class="cn">' + (s.chunks || 0) + "</span>";
+  const chunks = '<span class="kb-meta" title="indexed chunks">' + _plural(s.chunks || 0, "chunk") + "</span>";
   let label;
   if (/^https?:\/\//i.test(ref)) {
-    label = '<a href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
-      'style="color:var(--acc);flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
+    label = '<a class="kb-main" href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
+      'title="' + _attr(ref) + '">' + esc(title) + "</a>";
   } else if (s.kind === "url" && ref) {
-    label = '<a href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
-      'style="color:var(--acc);flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
+    label = '<a class="kb-main" href="' + _attr(ref) + '" target="_blank" rel="noopener noreferrer" ' +
+      'title="' + _attr(ref) + '">' + esc(title) + "</a>";
   } else if (s.kind === "text") {
     // JAG-403h: a pasted-text / research-summary source has NO file — its `ref`
     // IS the title. Rendering it as a link produced a FALSE reference (the editor
     // tried to open a file named after the title and failed). Show it as text.
-    label = '<span style="flex:1;word-break:break-all" title="indexed text (no file) — find it with Search knowledge">' +
+    label = '<span class="kb-main" title="indexed text (no file) — find it with Search">' +
       esc(title) + "</span>";
   } else if (ref) {
-    label = '<a href="#" class="kbopen" data-ref="' + _attr(ref) + '" ' +
-      'style="flex:1;word-break:break-all" title="' + _attr(ref) + '">' + esc(title) + "</a>";
+    label = '<a class="kb-main kbopen" href="#" data-ref="' + _attr(ref) + '" ' +
+      'title="' + _attr(ref) + '">' + esc(title) + "</a>";
   } else {
-    label = '<span class="remaining" style="flex:1;word-break:break-all">' + esc(title) + "</span>";
+    label = '<span class="kb-main remaining">' + esc(title) + "</span>";
   }
   return '<div class="kb-row">' +
-    '<span class="cn">' + kind + "</span>" + label + chunks +
-    '<button class="ghost" style="padding:2px 6px" data-sid="' + _attr(s.id) + '">✕</button></div>';
+    '<span class="kb-kind">' + kind + "</span>" + label + chunks +
+    '<button class="kb-x" data-sid="' + _attr(s.id) + '" title="remove this source">✕</button></div>';
 }
 function _kbOpenRef(ref) {
   if (!ref) return;
@@ -11975,19 +12017,22 @@ function _kbWireSources(box) {
 }
 async function kbLoadSources() {
   const box = $("kbSources"); if (!box) return;
+  kbState.view = "sources";
   box.innerHTML = '<div class="remaining">loading…</div>';
   try {
     const r = await api("GET", "/api/knowledge/sources?notebook=" + encodeURIComponent(kbState.notebook));
     const rows = r.sources || [];
     if (!rows.length) { box.innerHTML = '<div class="remaining">no sources in this notebook</div>'; return; }
-    // A bounded, scrollable window — a 100-URL import must not blow up the panel.
+    // A bounded window — a 100-URL import must not blow up the DOM. The CAP is
+    // content-based (200 rows); the height is left to the panel's single scroll.
     const LIMIT = 200;
     const shown = rows.slice(0, LIMIT);
+    const chunks = rows.reduce((n, s) => n + (s.chunks || 0), 0);
     const head = rows.length > LIMIT
-      ? ('<div class="remaining" style="margin-bottom:4px">showing <b>' + shown.length +
-         "</b> of <b>" + rows.length + "</b> sources</div>")
-      : ('<div class="remaining" style="margin-bottom:4px"><b>' + rows.length +
-         "</b> source" + (rows.length > 1 ? "s" : "") + "</div>");
+      ? ('<div class="kb-meta" style="text-align:left;margin-bottom:4px">showing <b>' + shown.length +
+         '</b> of <b>' + rows.length + '</b> sources</div>')
+      : ('<div class="kb-meta" style="text-align:left;margin-bottom:4px"><b>' + _plural(rows.length, "source") +
+         "</b> · " + _plural(chunks, "chunk") + "</div>");
     box.innerHTML = head + '<div class="kb-list">' +
       shown.map(_kbSourceRow).join("") + "</div>";
     _kbWireSources(box);
@@ -12021,20 +12066,32 @@ async function kbReembed() {
 }
 async function kbFiles() {
   const box = $("kbSources"); if (!box) return;
+  kbState.view = "files";
   box.innerHTML = '<div class="remaining">loading…</div>';
   try {
     const r = await api("GET", "/api/knowledge/files?notebook=" + encodeURIComponent(kbState.notebook));
     const rows = r.files || [];
+    const chunks = rows.reduce((n, f) => n + (f.chunks || 0), 0);
     box.innerHTML = rows.length
-      ? ('<div class="remaining" style="margin-bottom:4px">' + rows.length + " files in this notebook</div>" +
+      ? ('<div class="kb-meta" style="text-align:left;margin-bottom:4px"><b>' + _plural(rows.length, "file") +
+         "</b> · " + _plural(chunks, "chunk") + "</div>" +
          '<div class="kb-list">' +
          rows.map(f => '<div class="kb-row">' +
-           '<a href="#" class="kbopen" data-ref="' + _attr(f.path) + '" style="flex:1;word-break:break-all">' + esc(f.path) + '</a>' +
-           '<span class="cn">' + (f.chunks || 0) + "</span></div>").join("") + '</div>')
+           '<span class="kb-kind">file</span>' +
+           '<a class="kb-main kbopen" href="#" data-ref="' + _attr(f.path) + '" title="' + _attr(f.path) + '">' +
+           esc(f.path) + '</a>' +
+           '<span class="kb-meta" title="indexed chunks">' + _plural(f.chunks || 0, "chunk") + '</span>' +
+           '</div>').join("") + '</div>')
       : '<div class="remaining">no files in this notebook</div>';
     box.querySelectorAll(".kbopen").forEach(el =>
       el.onclick = (e) => { e.preventDefault(); _kbOpenRef(el.getAttribute("data-ref")); });
   } catch (e) { box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>"; }
+}
+/* v653: the refresh control reloads WHAT IS ON SCREEN — the sources list or the
+   files list. It used to always jump back to sources, so "↻ sources" silently
+   changed the view it claimed to refresh. */
+function kbRefresh() {
+  if (kbState.view === "files") kbFiles(); else kbLoadSources();
 }
 /* Merged "Research · web → notebook": ONE topic bar; the "auto (agent)" checkbox
    switches between manual discover and the automated research agent. */

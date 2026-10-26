@@ -43,7 +43,10 @@ RULE = "#swMain select,\n  #swMain input:not([type=checkbox]):not([type=radio]):
 check("A1 selects and text inputs cap at a content width",
       RULE in ui and "max-width: 340px" in ui)
 check("B1 numbers cap at 110px with a usable minimum",
-      "#swMain input[type=number] { max-width: 110px; min-width: 72px; }" in ui)
+      # v653: the rule must repeat the `:not(...)` chain, otherwise the 160px
+      # control minimum above outranks it and a count box keeps stretching
+      # (live: "max sources" wrapped because its 160px input squeezed the label).
+      "#swMain input[type=number]:not([type=checkbox]):not([type=radio]):not([type=range]) {\n    max-width: 110px; min-width: 72px; }" in ui)
 check("C1 a textarea is excluded from the cap (its content IS long text)",
       "#swMain .u-w100:not(textarea)" in ui)
 check("D1 checkbox / radio / range keep their intrinsic size",

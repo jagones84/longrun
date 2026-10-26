@@ -73,11 +73,15 @@ check("A3 the API emits data-home-relative paths only",
 
 # ---- B. nothing bleeds out of its card ---------------------------------------
 check("B1 a path link wraps inside its card",
-      "a.impfile {" in UI and "overflow-wrap: anywhere" in UI.split("a.impfile {")[1].split("}")[0])
+      # v653 re-pin: `break-word` instead of `anywhere` — `anywhere` also shrinks
+      # the min-content width to one character, which stacked "depth" vertically
+      # inside a flex label. The wrap is unchanged.
+      "a.impfile {" in UI and "overflow-wrap: break-word" in UI.split("a.impfile {")[1].split("}")[0])
 check("B2 the file list is a wrapping row, not a run of inline links",
       "#impFiles { display: flex; flex-wrap: wrap;" in UI)
 check("B3 dim text wraps everywhere (paths, model refs, file names)",
-      ".remaining { color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }" in UI)
+      # v653 re-pin: same reason as B1 — wrap yes, one-character min-content no.
+      ".remaining { color: var(--dim); font-size: 11px; overflow-wrap: break-word; }" in UI)
 check("B4 the Control deck job pill is capped with an ellipsis",
       "max-width:240px;overflow:hidden;text-overflow:ellipsis" in ORBIT)
 

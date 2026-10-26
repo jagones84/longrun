@@ -231,7 +231,9 @@ check("E2 view() exposes the panel for every section",
 check("E3 the WebUI routes each form to its declared panel",
       "_settingsSectionHost" in UI and "sec.panel" in UI)
 check("E4 Settings ▸ Config keeps the raw-YAML fallback, stated plainly",
-      "— the complete fallback: every key is editable here" in UI
+      # v653 re-pin: the statement is the section tooltip now (the operator asked
+      # for hover instead of a paragraph inside a card).
+      'title="the complete fallback: every key is editable here"' in UI
       and "DO NOT REMOVE! ITS BACKUP (the complete fallback)" not in UI)
 check("E5 the Context rail has no duplicate auto-compact controls",
       "cmpTrigger" not in UI and "cmpPolicyCard" not in UI
