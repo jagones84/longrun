@@ -1926,22 +1926,17 @@ class Handler(BaseHTTPRequestHandler):
                 from longrun.memory import memory as memory_mod
                 auto_kinds = sorted(getattr(memory_mod, "AUTO_KINDS", []) or [])
                 mem = memory_mod.provenance()
-                for r in memory_mod.query(None, None, limit=120):
-                    origin = str(r.get("source") or r.get("origin") or "").strip()
-                    if origin == "user":
-                        continue
-                    records.append({
-                        "mid": r.get("mid"),
-                        "ts": r.get("ts"),
-                        "kind": r.get("kind"),
-                        "origin": origin or "unattributed",
-                        "session": str(r.get("session") or ""),
-                        "content": str(r.get("content") or ""),
-                        "path": "data/memory/" + memory_mod.MEMORY_FIELDS.get(
-                            r.get("kind"), "other.md"),
-                    })
             except Exception:  # noqa: BLE001 — the panel must still load
                 pass
+            # v662: WHICH memory records count as improvement artifacts is ONE policy
+            # (`improve._memory_artifacts`, shared with the LLM backlog review); the
+            # panel only renames `text` to `content` for its own view. It used to
+            # copy the same three rules, so the review could audit a backlog the
+            # panel did not show.
+            for _r in improve_mod._memory_artifacts(120):
+                records.append({"mid": _r["mid"], "ts": _r["ts"], "kind": _r["kind"],
+                                "origin": _r["origin"], "session": _r["session"],
+                                "content": _r["text"], "path": _r["path"]})
             # The ledger is flooded by "turn ... wrote=[]" no-op rows; the panel
             # shows only entries that CHANGED something (or a decision).
             all_ledger = improve_mod.ledger_tail(500)

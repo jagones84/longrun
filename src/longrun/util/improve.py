@@ -155,6 +155,39 @@ REVIEW_SYSTEM = (
 )
 
 
+def _memory_artifacts(limit=200):
+    """The memory records that ARE self-improvement artifacts (ONE policy).
+
+    v662: the LLM backlog review and the Improvement panel used to walk
+    `memory.query` on their own, with the same three rules copied into both — skip
+    user-written memory (the agent writes memory FREELY, so its own notes are not
+    harness improvements), skip empty text, and label a record with no origin
+    `unattributed`. Two copies of that rule can drift, and then the review audits a
+    backlog the panel does not show (or the reverse). Each caller adds the fields it
+    needs; WHICH records are in scope is decided only here.
+    """
+    rows = []
+    try:
+        from longrun.memory import memory as memory_mod
+        for r in memory_mod.query(None, None, limit=max(1, int(limit or 200))):
+            origin = str(r.get("source") or r.get("origin") or "").strip()
+            if origin == "user":
+                continue
+            text = str(r.get("content") or "").strip()
+            if not text:
+                continue
+            kind = r.get("kind") or ""
+            rows.append({
+                "mid": r.get("mid") or "", "ts": r.get("ts"), "kind": kind,
+                "origin": origin or "unattributed",
+                "session": str(r.get("session") or ""), "text": text,
+                "path": "data/memory/" + memory_mod.MEMORY_FIELDS.get(kind, "other.md"),
+            })
+    except Exception:  # noqa: BLE001 — a memory hiccup must not kill the panel
+        pass
+    return rows
+
+
 def _artifact_items(limit=40):
     """Every self-improvement artifact, deduped: proposals then distilled memory.
 
@@ -175,25 +208,15 @@ def _artifact_items(limit=40):
                       "origin": p.get("origin") or "agent", "text": text,
                       "reason": str(p.get("reason") or "")[:400],
                       "target": p.get("target_path") or ""})
-    try:
-        from longrun.memory import memory as memory_mod
-        for r in memory_mod.query(None, None, limit=200):
-            origin = str(r.get("source") or r.get("origin") or "").strip()
-            if origin == "user":
-                continue
-            text = str(r.get("content") or "").strip()
-            if not text:
-                continue
-            key = ("memory", text)
-            if key in seen:
-                continue
-            seen.add(key)
-            items.append({"id": r.get("mid") or "", "kind": "memory",
-                          "scope": r.get("kind") or "", "status": "stored",
-                          "origin": origin or "unattributed", "text": text,
-                          "reason": "", "target": "data/memory"})
-    except Exception:  # noqa: BLE001 — the review must survive a memory hiccup
-        pass
+    for r in _memory_artifacts(200):
+        key = ("memory", r["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({"id": r["mid"], "kind": "memory",
+                      "scope": r["kind"], "status": "stored",
+                      "origin": r["origin"], "text": r["text"],
+                      "reason": "", "target": "data/memory"})
     return items[:max(1, int(limit or 40))]
 
 
@@ -479,6 +502,30 @@ def diff_preview(rec):
             "added": sum(1 for l in diff if l.startswith("+") and not l.startswith("+++"))}
 
 
+def evolve_once(note=""):
+    """Stage 2 over every repeated pattern -> one report per pattern.
+
+    v662: this body was written TWICE — here (inside `mine_once(evolve=True)`) and
+    again in the `improve` tool's `action=evolve` branch, so "what does evolve do?"
+    had two answers that could drift (the tool also published one SSE event per
+    pattern, which is why the loop looked different). Both now run this one flow and
+    differ only in what they do with the reports. `note` is accepted for signature
+    parity with `mine_once` (the history miner signs its own drafts).
+    """
+    from longrun.util import selfevolve
+    out = os.path.join(PROPOSAL_DIR, "skills")
+    reports = []
+    for cand in selfevolve.mine(selfevolve.history(), selfevolve.cfg()):
+        rep = selfevolve.pipeline(cand["pattern"], out, cand["support"])
+        arc = rep.get("archived")
+        rel = arc.get("rel") or arc.get("path") if isinstance(arc, dict) else (
+            arc if isinstance(arc, str) else "")
+        reports.append({"pattern": cand["pattern"],
+                        "green": bool((rep.get("verify") or {}).get("green")),
+                        "rel": rel or ""})
+    return reports
+
+
 def mine_once(note="", evolve=False):
     """Mine the recorded tool sequences and return the drafted proposal paths.
 
@@ -493,15 +540,7 @@ def mine_once(note="", evolve=False):
         out = os.path.join(PROPOSAL_DIR, "skills")
         if not evolve:
             return selfevolve.mine_history(out, note=note) or []
-        installed = []
-        c = selfevolve.cfg()
-        for cand in selfevolve.mine(selfevolve.history(), c):
-            rep = selfevolve.pipeline(cand["pattern"], out, cand["support"])
-            arc = rep.get("archived")
-            rel = arc.get("rel") or arc.get("path") if isinstance(arc, dict) else (arc if isinstance(arc, str) else "")
-            if rel:
-                installed.append(rel)
-        return installed
+        return [r["rel"] for r in evolve_once(note) if r["rel"]]
     except Exception:  # noqa: BLE001 — mining must never break a turn
         return []
 

@@ -18,6 +18,9 @@ import sys
 import time
 
 from longrun.util.paths import REPO_ROOT as REPO
+# v662: the router address has ONE reader (`rllm.ROUTER_BASE`, which honours
+# `LONGRUN_ROUTER`) — the health report used to re-type the env var and the default.
+from longrun.model.rllm import ROUTER_BASE
 
 
 def _safe(fn, default=None):
@@ -125,7 +128,7 @@ def health(host="127.0.0.1", port=8790) -> dict:
         "gpu": _gpu(),
         "service": _service(),
         "ports": {str(port): _port_open(host, port), str(port + 1): _port_open(host, port + 1)},
-        "router": os.environ.get("LONGRUN_ROUTER", "http://127.0.0.1:8080"),
+        "router": ROUTER_BASE,
         "sandbox": _safe(lambda: __import__("longrun.tools.sandbox", fromlist=["probe"]).probe()),
     }
 

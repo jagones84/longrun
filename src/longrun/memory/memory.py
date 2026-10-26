@@ -379,9 +379,16 @@ def _embed_batch(texts, vocab=None):
         try:
             import urllib.request
             import json as j
+            # v662: the router address has ONE reader — `rllm.ROUTER_BASE`, which
+            # honours `LONGRUN_ROUTER`. The literal here ignored a custom router and
+            # sent every memory embedding to 127.0.0.1:8080 regardless.
+            from longrun.model import rllm as _rllm
+            _base = (getattr(_rllm, "ROUTER_BASE", "") or "").rstrip("/")
+            if not _base:
+                raise RuntimeError("no router base configured")
             body = j.dumps({"model": "default", "input": texts}).encode()
             req = urllib.request.Request(
-                "http://127.0.0.1:8080/v1/embeddings", data=body,
+                _base + "/v1/embeddings", data=body,
                 headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = j.loads(resp.read().decode())

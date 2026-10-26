@@ -917,6 +917,9 @@ def _self(args, run_id):
     diagnostics (the exact Settings report, filterable by code/source).
     """
     import subprocess as sp
+    # v662: the router address has ONE reader (`rllm.ROUTER_BASE`, which honours
+    # `LONGRUN_ROUTER`) — this report used to re-type the env var and the default.
+    from longrun.model.rllm import ROUTER_BASE
     action = str((args or {}).get("action", "info") or "info").strip().lower()
     # JAG-513: `tool`/`query` only make sense for discovery, so passing one is an
     # unambiguous request for it — the model should not have to repeat `action`.
@@ -938,7 +941,7 @@ def _self(args, run_id):
         "sessions_dir": _paths.SESSIONS_DIR,
         "webui": os.path.join(REPO, "webui"),
         "entrypoint": os.path.join(REPO, "server.py"), "port": 8790,
-        "router": os.environ.get("LONGRUN_ROUTER", "http://127.0.0.1:8080"),
+        "router": ROUTER_BASE,
         "config": {"tools": os.path.join(REPO, "config", "tools.yaml"),
                    "tools_overlay": os.path.join(_paths.DATA_DIR, "tools.overlay.yaml"),
                    "routing": os.path.join(REPO, "config", "routing.yaml"),
@@ -1362,7 +1365,9 @@ def _improve(args, run_id=None):
                 "stdout": "\n".join(rows) or "(nothing to review)"}
     if scope == "mine":
         from longrun.util import selfevolve
-        out = os.path.join(_paths.DATA_DIR, "proposals", "skills")
+        # v662: the proposal store has ONE home (`improve.PROPOSAL_DIR`); this line
+        # spelled the same directory a second time, from a different root.
+        out = os.path.join(improve.PROPOSAL_DIR, "skills")
         path = str(args.get("path", "") or "").strip()
 
         def _pub(ev, **kw):
@@ -1399,14 +1404,12 @@ def _improve(args, run_id=None):
                 _pub("improve.archived", name=res.get("name"), rel=res.get("rel"))
             return res
         if action == "evolve":
-            c = selfevolve.cfg()
-            reports = []
-            for cand in selfevolve.mine(selfevolve.history(), c):
-                rep = selfevolve.pipeline(cand["pattern"], out, cand["support"])
-                green = bool((rep.get("verify") or {}).get("green"))
-                reports.append({"pattern": cand["pattern"], "green": green,
-                                "archived": rep.get("archived")})
-                _pub("improve.evolve", pattern=cand["pattern"], green=green)
+            # v662: stage 2 is `improve.evolve_once` — the SAME flow the end-of-turn
+            # pass runs. This branch used to re-implement mine -> pipeline -> collect
+            # archived, so "what does evolve do?" had two answers.
+            reports = improve.evolve_once(note=str(args.get("reason", "")))
+            for r in reports:
+                _pub("improve.evolve", pattern=r["pattern"], green=r["green"])
             return {"ok": True, "evolved": len(reports), "reports": reports}
         try:
             # Self-maintenance: sweep junk drafts before mining — single-tool
@@ -1417,7 +1420,7 @@ def _improve(args, run_id=None):
                           or {}).get("removed") or []
             except Exception:  # noqa: BLE001 — sweep must never break mining
                 pruned = []
-            paths = selfevolve.mine_history(out, note=str(args.get("reason", "")))
+            paths = improve.mine_once(note=str(args.get("reason", "")))
         except Exception as e:  # noqa: BLE001
             return {"error": "mine failed: %s" % e}
         recs = []

@@ -133,7 +133,11 @@ check("D4 the summary is the description, not a path",
 # ---- E. mining does not mint proposals from bare tool sequences --------------
 src_tools = open(os.path.join(REPO, "src", "longrun", "tools", "tools.py"),
                  encoding="utf-8").read()
-mine_block = src_tools[src_tools.index("paths = selfevolve.mine_history"):]
+# v662 re-pin: the tool no longer re-implements the miner — it calls
+# `improve.mine_once` (the same flow the end-of-turn pass runs), per the operator's
+# single-source-of-truth request. Same guarantee checked below: the mining branch
+# mints DRAFTS, never proposals.
+mine_block = src_tools[src_tools.index("paths = improve.mine_once("):]
 mine_block = mine_block[:mine_block.index("if scope not in")]
 check("E1 mining publishes no improve.proposal event", '_pub("improve.proposal"' not in mine_block)
 check("E2 mining reports drafts, not proposals", '"drafts": recs' in mine_block)
