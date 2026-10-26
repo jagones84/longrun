@@ -18,6 +18,7 @@ evidence (message counts, estimated tokens in/out, retrieved memory hits).
 """
 
 import os
+import re
 
 # JAG-261: fallback budget when NOTHING is known about the model (no alias, no
 # live window). The fleet runs 256k-window models, so assuming 256k avoids the
@@ -88,6 +89,59 @@ def count_tokens(text):
 
 def _msgs_tokens(msgs):
     return sum(count_tokens(m.get("content", "")) for m in msgs)
+
+
+# F6: the LLM summary keeps the narrative; the recurring DETAILS a long task needs
+# to continue (paths, commands, pinned versions) are extracted MECHANICALLY from
+# the turns being compacted. Measured on 35 SWE-bench repairs and 14 summarizer
+# backbones: LLM summaries retain <=16.0% of recurring details, a mechanical
+# anchor index 79.1% (papers/compactbench_2610.31710.txt:33-43, table 4 note
+# :1337-1339 keeps "at most 40 sorted values per kind"). Bounded so it can never
+# crowd the summary itself.
+ANCHOR_PREFIX = "ANCHORS (mechanical, from the compacted turns):"
+ANCHOR_MAX_ITEMS = 40
+ANCHOR_ITEM_CHARS = 80
+ANCHOR_MAX_CHARS = 3000
+_ANCHOR_PATH = re.compile(r"(?<![\w./-])((?:\.{0,2}/)?(?:[\w.-]+/)+[\w.-]+)(?![\w./-])")
+_ANCHOR_CMD = re.compile(r"(?m)^\s*[\$>]\s+(\S[^\n]{0,79})$")
+_ANCHOR_PIN = re.compile(r"\b([A-Za-z0-9_.-]+==[0-9][A-Za-z0-9_.*+!-]*)")
+
+
+def anchors_block(messages, exclude=""):
+    """Deterministic detail block for the turns being compacted ("" when none).
+
+    Only what a regex can prove: relative PATHS, `$`/`>` COMMANDS and pinned
+    VERSIONS (`pkg==1.2.3`). Items already present in `exclude` (the summary body
+    being carried forward) are dropped, so a second compaction cannot pile up the
+    same anchors. Order is first appearance, which keeps the block stable for the
+    same input (a test pins that).
+    """
+    kinds = (("paths", _ANCHOR_PATH), ("commands", _ANCHOR_CMD), ("pins", _ANCHOR_PIN))
+    seen, out = {}, []
+    for m in messages or []:
+        if not isinstance(m, dict) or _is_summary_block(m):
+            continue
+        text = m.get("content") or ""
+        if not isinstance(text, str):
+            text = str(text)
+        if not text.strip():
+            continue
+        for kind, rx in kinds:
+            for hit in rx.findall(text):
+                item = " ".join(str(hit).split())[:ANCHOR_ITEM_CHARS]
+                if not item or item in exclude:
+                    continue
+                bucket = seen.setdefault(kind, [])
+                if len(bucket) >= ANCHOR_MAX_ITEMS or item in bucket:
+                    continue
+                bucket.append(item)
+    for kind, _rx in kinds:
+        if seen.get(kind):
+            out.append("  %s: %s" % (kind, ", ".join(seen[kind])))
+    if not out:
+        return ""
+    block = ANCHOR_PREFIX + "\n" + "\n".join(out)
+    return block[:ANCHOR_MAX_CHARS]
 
 
 def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer=None,
@@ -201,6 +255,15 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
                 else:
                     summary = SUMMARY_PREFIX + new_body
                 stats["summary"] = "llm" if new_from_llm else "extractive"
+        # F6: append the mechanical anchors AFTER the body is final (and after the
+        # COMBINED cap pruned it), so the details a long task needs to continue
+        # survive every path — LLM, extractive, carried. `exclude=summary` stops a
+        # second compaction from repeating what the carried body already lists.
+        if isinstance(summary, str):
+            _anchors = anchors_block(fresh, exclude=summary)
+            if _anchors:
+                summary = summary.rstrip() + "\n\n" + _anchors
+                stats["anchors"] = len(_anchors)
         stats["compacted"] = len(old)
         msgs = [{"role": "system", "content": summary}]
     else:
