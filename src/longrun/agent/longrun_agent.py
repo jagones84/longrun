@@ -32,6 +32,7 @@ import os
 import re
 import time
 
+from longrun.agent import automation_log
 from longrun.util import paths
 from longrun.util.fswrite import safe_id
 
@@ -2494,6 +2495,8 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
 
     publish("longrun_agent.start", section=section, model=resolved_model,
             session=LONGRUN_AGENT_SESSION_ID)
+    st = None
+    run_res = {}
     try:
         st = api_v02.new_run(full_goal, resolved_model, max(1, min(int(max_steps or 6), 12)))
         st.id = "%s_%s" % (LONGRUN_AGENT_SESSION_ID, st.id)
@@ -2506,17 +2509,36 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
             run_id=st.id,
         )
     finally:
+        # The ledger is written BEFORE the reset: the stateless wipe is exactly
+        # what erases this run from the session, the graph and the chat, so this
+        # file is the only surface that can say what the run wrote.
+        try:
+            automation_log.record(
+                section=section,
+                run_id=(st.id if st else ""),
+                model=resolved_model,
+                ok=(run_res.get("status") == "done"),
+                summary=run_res.get("summary") or "",
+                trace=run_res.get("trace") or [],
+            )
+        except Exception:  # noqa: BLE001 — a broken ledger must not fail the run
+            pass
         reset_stateless_session()
         publish("longrun_agent.done", section=section, model=resolved_model,
                 session=LONGRUN_AGENT_SESSION_ID)
 
+    writes = automation_log.writes_from_trace(run_res.get("trace") or [])
     return {
         "ok": run_res.get("status") == "done",
         "section": section,
         "session": LONGRUN_AGENT_SESSION_ID,
         "stateless": True,
         "model": resolved_model,
-        "result": run_res.get("result") or "",
-        "steps": run_res.get("steps") or [],
-        "run_id": run_res.get("id"),
+        # `result` is the run's summary text. It was read from a key this response
+        # never had ("result"/"steps" instead of "_result"'s "summary"/"trace"),
+        # so the WebUI reported every automation as a bare "done" (2026-10-26).
+        "result": run_res.get("summary") or "",
+        "summary": run_res.get("summary") or "",
+        "writes": writes,
+        "run_id": run_res.get("run_id") or (st.id if st else ""),
     }

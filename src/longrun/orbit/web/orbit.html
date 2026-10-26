@@ -134,6 +134,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .toolbar>.stack>label.chk{display:inline-flex;align-items:center;gap:5px;font-size:10px;
     color:var(--dim);cursor:pointer;white-space:nowrap;padding-left:2px}
   .toolbar>.stack>label.chk input{margin:0;width:12px;height:12px}
+  /* the "AI" provenance badge: this prompt was written by longrunAgent, not typed
+     by the operator. Reads the one automation ledger (see agent/automation_log.py). */
+  .aibadge{display:inline-block;margin-left:3px;padding:0 4px;border-radius:5px;font-size:9px;
+    letter-spacing:.04em;background:var(--acc);color:#fff;vertical-align:middle;cursor:help}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .panel > h2{margin:0;padding:6px 10px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
@@ -615,6 +619,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
             <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
           </label>
         </span>
+        <button class="btn ghost" id="lraRepBtn" aria-expanded="false" title="What longrunAgent wrote, and to whom. The run is STATELESS: it erases its own session, plan graph and chat, so this ledger is the only record of its effect.">report</button>
         <button class="btn ghost" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
@@ -625,6 +630,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
         <span class="small muted" id="lraAutoScope" title="the Team filter above decides the scope: ALL teams or No team included"></span>
         <span class="small muted" id="lraAutoStatus"></span>
+        <div id="lraRep" style="flex-basis:100%;display:none"></div>
       </div>
       <div class="toolbar addbar" id="agAddBar" hidden>
         <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
@@ -837,6 +843,10 @@ class AgentsView {
     this.roster = [];
     // JAG-2.4: every SESSION (designated agents + plain sessions) — the assign pool.
     this.pool = [];
+    // I-9: `{agentId: {at, run_id, section, tool}}` — the newest longrunAgent write per
+    // agent, from the ONE automation ledger (`GET /api/longrun-agent/writes`). Empty =
+    // no prompt on this board was written by an automation, and no badge renders.
+    this.written = {};
     // JAG-2.8: leadership first is the DEFAULT order — an orchestrator must sit at the
     // top of its team, not wherever its A-id lands. "id" keeps the old flat order.
     this.sort = "org"; this.closed = new Set(); this._groupIds = [];
@@ -1004,6 +1014,16 @@ class AgentsView {
     const goBtn = a.id
       ? '<button class="btn ghost mini" data-go="' + esc(a.id) + '" title="open ' + esc(a.id) + '\u2019s session in the Sessions tab" aria-label="open ' + esc(a.id) + '\u2019s session">↗</button>'
       : '';
+    // I-9: provenance for a prompt an AUTOMATION wrote. Without it a ROLE.md
+    // longrunAgent produced is indistinguishable from one the operator typed.
+    const w = (a.id && this.written) ? this.written[a.id] : null;
+    let when = "";
+    if (w){ try { when = new Date((w.at || 0) * 1000).toLocaleString(); } catch (_) { when = ""; } }
+    const aiBadge = w
+      ? '<span class="aibadge" title="ROLE.md written by longrunAgent (section: ' +
+        esc(w.section || "?") + ", " + esc(when) + ")" + (w.chars ? ", " + w.chars + " chars" : "") +
+        ' — run ' + esc(String(w.run_id || "").slice(0, 40)) + '">AI</span>'
+      : '';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</td>' +
       '<td><input class="inp mini" name="agent-name" aria-label="agent name" data-f="name" value="' + esc(a.name||"") + '"></td>' +
@@ -1015,7 +1035,7 @@ class AgentsView {
         (voidP ? "EMPTY prompt — this agent runs on the bare system prompt; click to write its ROLE.md"
                : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
                                  : "role + behaviour notes (ROLE.md)")) + '">✎' +
-        (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button></td>' +
+        (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button>' + aiBadge + '</td>' +
       '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)" aria-label="clear session">↺</button>' +
       goBtn +
       '<button class="btn ghost mini no" data-del="1" title="release agent" aria-label="release agent">×</button></td></tr>' + brief;
@@ -2610,6 +2630,15 @@ class OrbitApp {
     };
     if ($("lraAutoCancel")) $("lraAutoCancel").onclick = () => addBar("lraAutoBar", "lraAutoBtn");
     if ($("lraAutoRun")) $("lraAutoRun").onclick = () => this.runTeamorgAutomate();
+    // I-9: the ledger toggle sits in the toolbar (next to ⚡ automate) because the
+    // addbar is hidden until a run is started — the record must be reachable without
+    // one. It never CLOSES the bar (that is ⚡ automate's toggle): it only reveals
+    // the bar if needed and flips its OWN block, so the two controls cannot fight.
+    if ($("lraRepBtn")) $("lraRepBtn").onclick = () => {
+      const b = $("lraAutoBar");
+      if (b && b.hidden) b.hidden = false;
+      this.loadReport(!this.repOpen);
+    };
   }
   /* I-8: the automate scope is the Team filter, so SAY it (and how many agents it
      holds) instead of letting the operator guess what "Teamorg" will touch.
@@ -2644,8 +2673,11 @@ class OrbitApp {
         }
       });
       if (r && r.ok){
-        if (st) st.textContent = "✓ " + (r.result || "done").slice(0, 120);
+        if (st) st.textContent = "✓ " + (r.result || "done").slice(0, 200);
         if (inp) inp.value = "";
+        // The run is stateless: it erases its own session and graph, so show the
+        // ledger of what it actually wrote in THIS panel, right after the run.
+        this.loadReport(true);
         this.refresh();
       } else {
         if (st) st.textContent = "✗ " + ((r && r.error) || "failed");
@@ -2653,6 +2685,42 @@ class OrbitApp {
     } finally {
       if (btn) btn.disabled = false;
     }
+  }
+  /* I-9: the record of what longrunAgent wrote — the ONLY surface that survives a
+     stateless run (it wipes messages, tool cards, injects and the task graph before
+     AND after: `longrun_agent.reset_stateless_session`). Reads the single ledger the
+     backend appends to (`GET /api/longrun-agent/reports`), so the panel can never
+     show a run the backend did not record. */
+  async loadReport(open){
+    const box = $("lraRep"), btn = $("lraRepBtn");
+    if (!box) return;
+    if (open !== undefined) this.repOpen = !!open;
+    if (btn) btn.setAttribute("aria-expanded", this.repOpen ? "true" : "false");
+    if (!this.repOpen){ box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "";
+    const r = await this.api.get("/api/longrun-agent/reports?limit=8").catch(() => null);
+    const runs = (r && r.runs) || [];
+    const when = (t) => { try { return new Date((t || 0) * 1000).toLocaleTimeString(); }
+                          catch (_) { return ""; } };
+    box.innerHTML = runs.length
+      ? '<div class="small muted" style="padding:4px 0 2px">what longrunAgent wrote, newest first' +
+        ' (its own session is wiped by design, so this is the record)</div>' +
+        runs.map(run => {
+          const writes = (run.detail || []).map(w =>
+            '<div class="small" style="padding-left:12px">' +
+            (w.ok === false ? "✗ " : (w.ok === null ? "? " : "✓ ")) +
+            esc(w.tool || "") + (w.target ? " → " + esc(w.target) : "") +
+            (w.chars ? " (" + w.chars + " chars)" : "") + "</div>").join("");
+          return '<div style="border-top:1px solid var(--line);padding:3px 0">' +
+            '<div class="small">' + (run.ok ? "✓" : "✗") + " <b>" + esc(run.section || "") +
+            "</b> · " + esc(when(run.at)) + " · " + esc(run.model || "") + " · " +
+            (Number(run.writes) || 0) + " write(s)" + "</div>" +
+            writes +
+            (run.summary ? '<div class="small muted" style="padding-left:12px">' +
+              esc(String(run.summary).slice(0, 240)) + "</div>" : "") +
+            "</div>";
+        }).join("")
+      : '<div class="small muted" style="padding:4px 0">no automation recorded yet</div>';
   }
   renderTeams(){
     const sel = $("teamSel");
@@ -3026,14 +3094,18 @@ class OrbitApp {
     if (this.org) this.org.selectNode(sid, true);
   }
   async refresh(){
-    const [tree, jobs, routines, models, sess, tms] = await Promise.all([
+    const [tree, jobs, routines, models, sess, tms, wrote] = await Promise.all([
       this.api.get("/api/agents/tree").catch(() => null),
       this.api.get("/api/jobs").catch(() => null),
       this.api.get("/api/routines").catch(() => null),
       this.api.get("/api/orbit/models").catch(() => null),
       this.api.get("/api/orbit/sessions").catch(() => null),
-      this.api.get("/api/teams").catch(() => null)
+      this.api.get("/api/teams").catch(() => null),
+      // I-9: WHO wrote each agent's prompt (the automation ledger). A missing route
+      // renders no badge — never a guessed one.
+      this.api.get("/api/longrun-agent/writes").catch(() => null)
     ]);
+    this.agents.written = (wrote && wrote.targets) || {};
     if (tms) this.teams = tms.teams || [];
     // JAG-536: the palette lives on the VIEW (it owns the picker), and it is the
     // palette the backend publishes — never a copy hardcoded in the browser.

@@ -11428,7 +11428,10 @@ function makeAutomateWidget(section, getContext) {
         section, instruction, context: ctx, session: sessionId || ""
       });
       if (r && r.ok) {
-        st.textContent = "✓ " + (r.result || "done").slice(0, 140);
+        // Same report shape as the Orbit deck: the summary text plus HOW MANY writes
+        // the run left, so a stateless automation is never reported as a bare "done".
+        const nw = (r.writes || []).length;
+        st.textContent = "✓ " + (r.result || "done").slice(0, 200) + (nw ? " · " + nw + " write(s)" : "");
         inp.value = "";
         // Mirror of the `longrun_agent.done` handler: the widget refreshes its
         // OWN panel even when the SSE feed is down. `loadRules()` was missing, so

@@ -1534,6 +1534,16 @@ def handle(handler, method, path, qs, body):
                 "preferred_cheap_models": list(_lra.PREFERRED_CHEAP_MODELS),
                 "session_access": _lra.session_has_access(sid) if sid else False,
             })
+        # JAG-535 follow-up: the stateless wipe erases an automation run from the
+        # session, the graph and the chat, so these two routes read the ONE
+        # persistent ledger of what longrunAgent actually wrote.
+        if path == "/api/longrun-agent/reports":
+            from longrun.agent import automation_log as _al
+            return _r(handler, 200, {"ok": True,
+                                     "runs": _al.read_runs(_int(qs.get("limit"), 20))})
+        if path == "/api/longrun-agent/writes":
+            from longrun.agent import automation_log as _al
+            return _r(handler, 200, {"ok": True, "targets": _al.last_write_by_target()})
         if path == "/api/settings":
             from longrun.core import settings as _settings
             try:
