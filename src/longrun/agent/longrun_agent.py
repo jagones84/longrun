@@ -1783,7 +1783,20 @@ def _webui_inspect(args):
     out = {"ok": True, "section": section}
     if section in ("agents", "all"):
         from longrun.agent import agents as agents_mod
-        out["agents"] = agents_mod.REGISTRY.tree()
+        tree = agents_mod.REGISTRY.tree()
+        # I-8: "write only the EMPTY ROLE.md" must be DECIDABLE, not guessed — the
+        # automation snapshot carries each agent's prompt size (the same number the
+        # Sessions list shows), so the scope rule can be checked instead of assumed.
+        try:
+            from longrun.orchestrate import roles as roles_mod
+            for a in (tree.get("agents") or []):
+                try:
+                    a["prompt_chars"] = len(roles_mod.read(a.get("session")) or "")
+                except Exception:  # noqa: BLE001 — one unreadable prompt, not all
+                    a["prompt_chars"] = None
+        except Exception:  # noqa: BLE001
+            pass
+        out["agents"] = tree
     if section in ("teams", "all"):
         from longrun.orchestrate import teams as teams_mod
         out["teams"] = teams_mod.REGISTRY.list()
@@ -2287,7 +2300,23 @@ SECTION_PROMPTS = {
         "`openrouter:deepseek/deepseek-v4.1-flash`, `deepseek:deepseek-flash`, "
         "`openrouter:z-ai/glm-5.3-flash`, "
         "`openrouter:meta/muse-spark-1.3-contributor`), never heavy local models, and "
-        "draft clear, concise `ROLE.md` prompts."
+        "draft clear, concise `ROLE.md` prompts.\n"
+        "THREE RULES GOVERN WHAT YOU MAY TOUCH (the UI sends them in the context "
+        "block; obey them literally):\n"
+        "1. SCOPE. `context.team_scope` and `context.scope_agents` are your whole "
+        "world: `ALL` = every designated agent, `__none__` = the agents that belong "
+        "to NO team, otherwise only the members of that team. NEVER write to an "
+        "agent outside the scope — not its prompt, not its reporting line, nothing.\n"
+        "2. PROMPTS. When `context.only_empty` is true, write a `ROLE.md` "
+        "(`agent.prompt_set`) ONLY for agents whose snapshot shows an empty prompt "
+        "(`prompt_chars == 0`): an existing prompt is the operator's text and you "
+        "must never overwrite it. When it is false you MAY rewrite the prompts of "
+        "the agents in scope. Either way, one prompt per agent, no placeholders.\n"
+        "3. RELATIONS, NOT MODELS. You MAY set an agent's `reports_to` ("
+        "`agent.update`) to fix the org chart of the agents in scope, but never "
+        "create a cycle and never point at an agent outside the scope. You must "
+        "NEVER change an agent's model — routing is the operator's decision.\n"
+        "Report at the end which agents you wrote, and nothing else."
     ),
     "models": (
         "You are `longrunAgent` automating the Settings ▸ Models & Routing section. "

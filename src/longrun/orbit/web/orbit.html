@@ -127,6 +127,14 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .toolbar>.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
   .toolbar>.lbl{font-size:11px;color:var(--dim);flex:none}
   .toolbar>.sp{flex:1}
+  /* I-8: the Teamorg run button and its "only empty ROLE.md" checkbox STACK — the
+     checkbox rides directly UNDER the button, not beside it. */
+  .toolbar>.stack{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px;flex:none}
+  .toolbar>.stack>.btn{height:30px;min-height:30px;padding:0 12px;border-radius:8px;font-size:12px}
+  .toolbar>.stack>.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+  .toolbar>.stack>label.chk{display:inline-flex;align-items:center;gap:5px;font-size:10px;
+    color:var(--dim);cursor:pointer;white-space:nowrap;padding-left:2px}
+  .toolbar>.stack>label.chk input{margin:0;width:12px;height:12px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .panel > h2{margin:0;padding:6px 10px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
@@ -608,9 +616,15 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
         <span class="lbl">longrunAgent · Teamorg</span>
-        <input class="inp" id="lraAutoInp" placeholder="e.g. Create team 'Backend Core' with lead 'API Architect' and member 'DB Specialist'…" style="flex:1;min-width:260px">
-        <button class="btn primary" id="lraAutoRun">run Teamorg</button>
+        <input class="inp" id="lraAutoInp" placeholder="e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
+        <span class="stack">
+          <button class="btn primary" id="lraAutoRun">run Teamorg</button>
+          <label class="chk" for="lraAutoEmpty" title="checked: only the agents whose ROLE.md is EMPTY are written. Unchecked: longrunAgent MAY rewrite the prompt of every agent in scope.">
+            <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
+          </label>
+        </span>
         <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
+        <span class="small muted" id="lraAutoScope" title="the Team filter above decides the scope: ALL teams or No team included"></span>
         <span class="small muted" id="lraAutoStatus"></span>
       </div>
       <div class="toolbar addbar" id="agAddBar" hidden>
@@ -2589,19 +2603,41 @@ class OrbitApp {
       // anything unknown) lands on the first custom view.
       this.applyView(saved || ("view:" + this.views[0].id));
     }
-    if ($("lraAutoBtn")) $("lraAutoBtn").onclick = () => addBar("lraAutoBar", "lraAutoBtn", "lraAutoInp");
+    if ($("lraAutoBtn")) $("lraAutoBtn").onclick = () => {
+      this.labelTeamorgScope();
+      addBar("lraAutoBar", "lraAutoBtn", "lraAutoInp");
+    };
     if ($("lraAutoCancel")) $("lraAutoCancel").onclick = () => addBar("lraAutoBar", "lraAutoBtn");
     if ($("lraAutoRun")) $("lraAutoRun").onclick = () => this.runTeamorgAutomate();
+  }
+  /* I-8: the automate scope is the Team filter, so SAY it (and how many agents it
+     holds) instead of letting the operator guess what "Teamorg" will touch. */
+  labelTeamorgScope(){
+    const el = $("lraAutoScope");
+    if (!el) return;
+    const n = (this.agents || []).filter(a => a.id).length;
+    const name = this.team === "ALL"
+      ? "ALL teams"
+      : (this.team === "__none__" ? "No team" : ((this.teamById(this.team) || {}).name || this.team));
+    const empty = (this.agents || []).filter(a => a.id && a.prompt_chars === 0).length;
+    el.textContent = "scope: " + name + " · " + n + " agent" + (n === 1 ? "" : "s")
+      + " (" + empty + " without ROLE.md)";
   }
   async runTeamorgAutomate(){
     const inp = $("lraAutoInp"), btn = $("lraAutoRun"), st = $("lraAutoStatus");
     const instruction = (inp && inp.value || "").trim();
     if (!instruction){ if (st) st.textContent = "enter an instruction"; return; }
+    const onlyEmpty = !($("lraAutoEmpty") && $("lraAutoEmpty").checked === false);
     if (btn) btn.disabled = true;
     if (st) st.textContent = "longrunAgent running…";
     try {
       const r = await this.api.post("/api/longrun-agent/automate", {
-        section: "teamorg", instruction, context: { team_scope: this.team }
+        section: "teamorg", instruction,
+        context: {
+          team_scope: this.team,
+          scope_agents: (this.agents || []).filter(a => a.id).map(a => a.id),
+          only_empty: onlyEmpty,
+        }
       });
       if (r && r.ok){
         if (st) st.textContent = "✓ " + (r.result || "done").slice(0, 120);
