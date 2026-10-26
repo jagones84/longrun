@@ -8858,7 +8858,7 @@ const _FEED_REFRESH = {
     if (Number(ev && ev.revision || 0) > _sidebarOrder.revision) loadSessions();
   },
   "roles.update": () => { loadRulesPanel(); loadSessions(); },
-  "longrun_agent.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); },
+  "longrun_agent.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); loadRules(); },
   "home.move": () => loadHome()
 };
 function _feedReplay(ev) {
@@ -11430,8 +11430,12 @@ function makeAutomateWidget(section, getContext) {
       if (r && r.ok) {
         st.textContent = "✓ " + (r.result || "done").slice(0, 140);
         inp.value = "";
+        // Mirror of the `longrun_agent.done` handler: the widget refreshes its
+        // OWN panel even when the SSE feed is down. `loadRules()` was missing, so
+        // an AI rewrite of the rules left the editor showing the old text.
         loadSettingsForms();
         loadRulesPanel();
+        loadRules();
         loadSessions();
       } else {
         st.textContent = "✗ " + ((r && r.error) || "automation failed");
@@ -11476,7 +11480,15 @@ const AUTOMATE_CATS = {
   rules: { section: "rules", ctx: () => ({ scope: "global" }) },
   config: { section: "config", ctx: () => ({ panel: "Config files" }) },
 };
+/* The Rules panel mounts its OWN Automate control per card — one for
+   Global_rules.md, one for Project_rules.md, each with its real scope. A
+   category-level control would be a THIRD button on the same panel, and two of
+   the three sent the same `scope: global`: the panel owns it, the category does
+   not. Declared here so the ownership is readable instead of resting on the
+   order `settingsCategory()` happens to mount things in. */
+const AUTOMATE_CAT_SKIP = new Set(["rules"]);
 function mountCategoryAutomate(name) {
+  if (AUTOMATE_CAT_SKIP.has(name)) return;
   const spec = AUTOMATE_CATS[name];
   if (!spec) return;
   if (!_automateAllowed(spec.section)) return;

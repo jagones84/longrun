@@ -54,6 +54,17 @@ check("A6 Orbit keeps the Teamorg bar, which is an allowed surface",
       'id="lraAutoBtn"' in ORBIT and "teamorg" in LRA.SECTION_PROMPTS)
 check("A7 the server allowlist mirrors the UI",
       LRA.AUTOMATE_ALLOWED_SECTIONS == ("rules", "teamorg", "agents", "teams", "orbit"))
+# The Rules panel mounts ONE widget per card (global + project, each with its real
+# scope). The category-level mount ran FIRST and added a third button whose ctx
+# said scope=global — two of the three sent the same scope.
+check("A8 the Rules panel owns its widgets; the category does not add a third",
+      'const AUTOMATE_CAT_SKIP = new Set(["rules"]);' in UI
+      and "if (AUTOMATE_CAT_SKIP.has(name)) return;" in UI
+      and '[["rulesGlobalCard", "global"], ["rulesProjectCard", "project"]]' in UI
+      and 'c.appendChild(makeAutomateWidget("rules", () => ({ scope })))' in UI)
+check("A9 an automate run refreshes the surface it edited (both paths)",
+      "loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); loadRules();" in UI
+      and "loadSettingsForms();\n        loadRulesPanel();\n        loadRules();" in UI)
 
 blocked = LRA.automate("tools", "disable the sandbox")
 check("B1 a config section is refused with a disabled marker",
