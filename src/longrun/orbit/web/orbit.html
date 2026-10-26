@@ -46,10 +46,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .btn.ghost{background:transparent}
   .btn.no{border-color:rgba(224,106,106,.5);color:var(--err)}
   .inp{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 10px;width:100%}
-  .inp.mini{padding:3px 6px;border-radius:6px;font-size:11px}
+  .inp.mini{padding:2px 4px;border-radius:6px;font-size:11px}
   /* JAG-342: one panel per row, top-to-bottom (mobile-style) — the two-column grid
      clipped wide panels (ORG CHART) and forced a page-level horizontal scrollbar. */
-  .wrap{display:flex;flex-direction:column;gap:0;padding:6px}
+  .wrap{display:flex;flex-direction:column;gap:0;padding:4px}
   /* v617: LEFT RAIL layout — the rail names every pane, the click shows that
      pane ALONE in the center-RH area. Narrow screens: the rail becomes a
      horizontal strip on top (same buttons, same applyView truth). */
@@ -84,7 +84,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* JAG-2.3: two resizable two-column rows (Agents|Job/Routines, Org|Constellation),
      anchored edge-to-edge. Middle splitter drags the widths; --cA/--cB persist.
      Stacks into one column on narrow screens. */
-  .grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax(0,1fr)) 7px var(--cB,minmax(0,1fr));gap:6px;align-items:stretch}
+  .grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax(0,1.3fr)) 5px var(--cB,minmax(0,1fr));gap:4px;align-items:stretch}
   .grid2.ab .panel,.grid2.oc .panel{display:flex;flex-direction:column;min-height:0}
   .grid2.ab .panel>.scroll,.grid2.oc .panel>.scroll{flex:1 1 auto;max-height:none;min-height:0}
   .grid2.ab .col,.grid2.ab .col>.panel{min-height:0}
@@ -110,7 +110,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .grid2{position:relative}
   .rz-row{position:absolute;left:0;right:0;bottom:-3px;height:7px;cursor:ns-resize;z-index:16;touch-action:none}
   .rz-row:hover,.rz-row:active{background:linear-gradient(transparent,rgba(124,140,255,.55))}
-  .col{display:flex;flex-direction:column;gap:10px;min-width:0}
+  .col{display:flex;flex-direction:column;gap:6px;min-width:0}
   .row{display:flex;align-items:center;gap:8px}
   /* JAG-424: one uniform toolbar row (compact controls, aligned height) so the agent
      panel does not look like mismatched oversized pills. */
@@ -151,10 +151,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at{width:auto;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
   /* v624: wider content cols — names/roles/models truncated at 200/134px while
      the panel had room. The table stays content-sized (JAG-403f), just roomier. */
-  table.at col.c-id{width:66px} table.at col.c-name{width:250px} table.at col.c-role{width:150px}
-  table.at col.c-model{width:170px} table.at col.c-rep{width:170px} table.at col.c-teams{width:120px}
-  table.at col.c-file{width:106px}
-  table.at col.c-act{width:120px}
+  table.at col.c-id{width:46px} table.at col.c-name{width:150px} table.at col.c-role{width:98px}
+  table.at col.c-model{width:104px} table.at col.c-rep{width:104px} table.at col.c-teams{width:70px}
+  table.at col.c-file{width:56px}
+  table.at col.c-act{width:80px}
   /* JAG-424: keep the row actions (reset · delete) on ONE line — they wrapped and the
      × stacked under reset, wasting a whole row of height per agent. */
   table.at td.c-act{white-space:nowrap}
@@ -162,8 +162,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at thead th{position:sticky;top:0;z-index:3;background:var(--panel);
     box-shadow:0 1px 0 var(--line)}
   table.at th{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
-    text-align:left;padding:6px 9px;font-weight:600;white-space:nowrap}
-  table.at td{padding:3px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+    text-align:left;padding:4px 5px;font-weight:600;white-space:nowrap}
+  table.at td{padding:2px 3px;border-bottom:1px solid var(--line);vertical-align:middle}
   table.at tbody tr:nth-child(even) td{background:rgba(255,255,255,.014)}
   table.at tbody tr:hover td{background:rgba(108,140,255,.075)}
   /* JAG-451: an agent picked from the org chart is highlighted here so the user
@@ -171,13 +171,14 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at tr.rowsel td{background:rgba(108,140,255,.16)}
   table.at tr.rowsel td.aid{box-shadow:inset 3px 0 0 var(--acc)}
   table.at tr.rowsel{outline:1px solid var(--acc);outline-offset:-1px}
-  table.at select.inp.mini{max-width:190px}
+  table.at input.inp.mini{min-width:0;width:100%}
+  table.at select.inp.mini{max-width:100%;min-width:0}
   table.at tr.brief td{background:rgba(9,14,26,.6);padding:9px}
   table.at tr.brief textarea{min-height:190px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical}
   /* JAG-2.8: the two row buttons read as compact pills with a fixed box, so the
      "prompt" cell stops jumping when the label gains the empty-prompt marker. */
-  table.at .tmbtn,table.at .pbtn{border-radius:999px;padding:2px 9px;line-height:1.5;
-    min-height:22px;min-width:66px;justify-content:center}
+  table.at .tmbtn,table.at .pbtn{border-radius:999px;padding:2px 6px;line-height:1.5;
+    min-height:22px;min-width:0;justify-content:center}
   table.at .pbtn.missing{border-color:rgba(224,106,106,.55);color:var(--err)}
   table.at .pbtn.missing:hover{border-color:var(--err);background:rgba(224,106,106,.10)}
   .req{color:var(--err);font-weight:700;margin-left:3px;font-size:13px;line-height:1}
@@ -200,7 +201,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at td.aid{cursor:grab;white-space:nowrap}
   table.at td.aid:active{cursor:grabbing}
   .rowgrip{display:inline-block;cursor:grab;color:var(--dim);font-size:10px;letter-spacing:-1px;
-    padding:0 5px 0 0;user-select:none;touch-action:none;vertical-align:middle}
+    padding:0 2px 0 0;user-select:none;touch-action:none;vertical-align:middle}
   .rowgrip:hover{color:var(--txt)}
   table.at tr.dragging{opacity:.45}
   table.at tr.dragging td{cursor:grabbing}
@@ -286,8 +287,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .clegend s{display:inline-block;width:16px;height:0;border-top:2px solid #7c8cff;margin-right:4px;vertical-align:middle;text-decoration:none}
   .clegend s.dash{border-top-style:dashed;border-color:rgba(108,140,255,.7)}
   /* compact AGENTS table so JOB fits on its right */
-  .panel.ag table.at td{padding:2px 7px}
-  .panel.ag table.at button{white-space:nowrap;padding:3px 9px}
+  .panel.ag table.at button{white-space:nowrap;padding:2px 4px}
   .panel.ag table.at tr.brief textarea{min-height:150px}
   .panel.ag .scroll{max-height:48vh}
   .node{min-width:78px;max-width:128px;padding:5px 9px}
@@ -986,7 +986,7 @@ class AgentsView {
     // navigation itself is the deck's SHARED onOpenAgent callback (JAG-335/484:
     // no duplicated open logic — the button only carries the id).
     const goBtn = a.id
-      ? '<button class="btn ghost mini" data-go="' + esc(a.id) + '" title="open ' + esc(a.id) + '\u2019s session in the Sessions tab">\u2197 session</button>'
+      ? '<button class="btn ghost mini" data-go="' + esc(a.id) + '" title="open ' + esc(a.id) + '\u2019s session in the Sessions tab" aria-label="open ' + esc(a.id) + '\u2019s session">↗</button>'
       : '';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</td>' +
@@ -995,14 +995,14 @@ class AgentsView {
       '<td><select class="inp mini" name="agent-model" aria-label="agent model" data-f="model">' + mopts + '</select></td>' +
       '<td><select class="inp mini" name="agent-reports-to" aria-label="agent reports to" data-f="reports_to">' + ropts + '</select></td>' +
       '<td><button class="btn ghost mini tmbtn" data-sid="' + esc(a.session) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
-      '<td><button class="btn ghost mini pbtn' + (voidP ? ' missing' : '') + '" data-brief="1" title="' +
+      '<td><button class="btn ghost mini pbtn' + (voidP ? ' missing' : '') + '" data-brief="1" aria-label="prompt (ROLE.md)" title="' +
         (voidP ? "EMPTY prompt — this agent runs on the bare system prompt; click to write its ROLE.md"
                : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
-                                 : "role + behaviour notes (ROLE.md)")) + '">✎ prompt' +
+                                 : "role + behaviour notes (ROLE.md)")) + '">✎' +
         (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button></td>' +
-      '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)">↺ reset</button>' +
+      '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)" aria-label="clear session">↺</button>' +
       goBtn +
-      '<button class="btn ghost mini no" data-del="1" title="release agent">×</button></td></tr>' + brief;
+      '<button class="btn ghost mini no" data-del="1" title="release agent" aria-label="release agent">×</button></td></tr>' + brief;
   }
   bind(){
     const body = $("agBody");
