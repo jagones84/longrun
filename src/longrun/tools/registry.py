@@ -40,6 +40,7 @@ DEFAULT_CONFIG = {
     "approvals": {"timeout_secs": 300},
     "runtime": {},
     "verifier": {},
+    "budget": {},
     "bestofn": {},
     "difficulty": {},
     "selfevolve": {},
@@ -1096,7 +1097,7 @@ def _merge_into(cfg, data):
     if not isinstance(data, dict):
         return
     for key in ("sandbox", "approvals", "runtime", "verifier", "bestofn",
-                "difficulty", "selfevolve", "reasoning", "loop_detection"):
+                "difficulty", "selfevolve", "reasoning", "loop_detection", "budget"):
         if isinstance(data.get(key), dict):
             cfg[key].update(data[key])
     for tname, tentry in (data.get("tools") or {}).items():

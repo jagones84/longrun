@@ -2171,6 +2171,13 @@
             <label title="Limit the verification to these paths, comma-separated (empty = the whole workspace).">checked paths <input id="vfPaths" type="text" placeholder="optional"></label>
           </div>
         </div>
+        <div class="card hcard" style="--hc:#f472b6">
+          <div class="hcard-hd" title="Hard ceiling on cumulative prompt+completion tokens for ONE run tree (the run plus every subagent it spawns). Reaching it stops the run with termination=budget. 0 = no ceiling."><span class="dot"></span><b>Run budget</b><span class="hc-sub">token ceiling per run</span>
+            <button class="ghost config-save" data-call="saveBudget" disabled title="no changes to save">save budget</button></div>
+          <div class="hrow">
+            <label title="Maximum tokens a single run tree may spend (the run plus its subagents). 0 = off.">max tokens per run <input id="bdMax" type="number" min="0" value="0"></label>
+          </div>
+        </div>
         <div class="card hcard" style="--hc:#fbbf24">
           <div class="hcard-hd" title="Generates N independent answers and keeps the best one: more reliable, but slower and more expensive."><span class="dot"></span><b>Best-of-N</b><span class="hc-sub">more answers, the best one</span>
             <button class="ghost config-save" data-call="saveBestofn" disabled title="no changes to save">save best-of-N</button></div>
@@ -10346,6 +10353,17 @@ async function saveVerifier() {
   who("ai", "✅ verifier updated");
   if ($("vfOn")) gateEnroll($("vfOn").closest(".card"));   // JAG-496: re-base after a save
 }
+async function loadBudget() {
+  const d = await api("GET", "/api/tools");
+  const b = (d && d.budget) || {};
+  if ($("bdMax")) $("bdMax").value = b.max_tokens_per_run ?? 0;
+}
+async function saveBudget() {
+  await api("POST", "/api/tools", { budget: {
+    max_tokens_per_run: numField("bdMax", 0),
+  }});
+  who("ai", "✅ run budget updated");
+}
 async function loadBestofn() {
   const d = await api("GET", "/api/tools");
   const b = (d && d.bestofn) || {};
@@ -11099,7 +11117,7 @@ function settingsCategory(name) {
   else if (name === "skills") { loadSkills(); }
   else if (name === "rules") { loadRules(); }
   else if (name === "harness") {
-    loadRuntime(); loadVerifier(); loadBestofn(); loadDifficulty(); loadSelfevolve(); loadReasoning();
+    loadRuntime(); loadVerifier(); loadBudget(); loadBestofn(); loadDifficulty(); loadSelfevolve(); loadReasoning();
   }
   else if (name === "hooks") { loadHooksLive(); }
   else if (name === "config") {

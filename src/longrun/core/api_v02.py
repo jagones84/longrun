@@ -771,6 +771,29 @@ def _run_tree_spent(st):
     return total
 
 
+def _effective_budget(token_budget=None):
+    """R3: the ceiling for THIS run — explicit argument, else config, else off.
+
+    Every production call site passes nothing, so before this the M6 helpers
+    could never fire in production. `budget.max_tokens_per_run` in
+    `config/tools.yaml` is the entry (0 / negative / unreadable = off, which is
+    exactly today's behaviour). An explicit value always wins, and a positive
+    number is the only thing that turns the ceiling on.
+    """
+    if token_budget is not None:
+        try:
+            value = int(token_budget)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+    try:
+        block = registry.section_config("budget", {"max_tokens_per_run": 0}) or {}
+        value = int(block.get("max_tokens_per_run") or 0)
+    except Exception:  # noqa: BLE001 — a broken config means "no ceiling"
+        return None
+    return value if value > 0 else None
+
+
 def _budget_exceeded(st, token_budget):
     """(exceeded, tree_total) for the run's cumulative token budget (M6)."""
     if token_budget is None:
@@ -799,6 +822,9 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     if st is None:
         st = new_run(goal, model, max_steps, script)
     st.goal, st.max_steps, st.script = goal, max_steps, script
+    # R3: the ceiling is a property of the RUN, so it is resolved here once when
+    # the caller passed none — otherwise the M6 check below never fires in prod.
+    token_budget = _effective_budget(token_budget)
     # JAG-455: an EXPLICIT model is authoritative — the decision hint must never swap
     # it. The old code resolved `model or default_model()` FIRST (so the `if not
     # model` branch below was dead) and then ALWAYS overwrote it with the route
@@ -1427,6 +1453,7 @@ def handle(handler, method, path, qs, body):
                                      "policy": registry.load_config().get("approvals") or {},
                                      "runtime": registry.load_config().get("runtime") or {},
                                      "verifier": registry.load_config().get("verifier") or {},
+                                     "budget": registry.load_config().get("budget") or {},
                                      "bestofn": registry.load_config().get("bestofn") or {},
                                      "difficulty": registry.load_config().get("difficulty") or {},
                                      "selfevolve": registry.load_config().get("selfevolve") or {},
@@ -2495,6 +2522,19 @@ def _update_policy(body):
         registry.load_config(reload=True)
         _publish("tools.update", verifier=dict(v))
         return {"ok": True, "tools": registry.catalog(), "verifier": dict(v)}
+    # R3: the per-RUN token ceiling (0 = off). Same shape as the blocks above.
+    if isinstance(body.get("budget"), dict):
+        b = cfg.setdefault("budget", {})
+        src = body["budget"]
+        try:
+            ceiling = int(src.get("max_tokens_per_run") or 0)
+        except (TypeError, ValueError):
+            ceiling = 0
+        b["max_tokens_per_run"] = max(0, ceiling)
+        registry.save_config(cfg)
+        registry.load_config(reload=True)
+        _publish("tools.update", budget=dict(b))
+        return {"ok": True, "tools": registry.catalog(), "budget": dict(b)}
     # JAG-132: best-of-N + rank (enabled / n / min_score)
     if isinstance(body.get("bestofn"), dict):
         b = cfg.setdefault("bestofn", {})

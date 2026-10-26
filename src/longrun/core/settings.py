@@ -227,6 +227,7 @@ DEDICATED = {
         "approvals": "Settings ▸ Tools & approvals",
         "runtime": "Settings ▸ Harness",
         "verifier": "Settings ▸ Harness",
+        "budget": "Settings ▸ Harness",
         "bestofn": "Settings ▸ Harness",
         "difficulty": "Settings ▸ Harness",
         "selfevolve": "Settings ▸ Harness",

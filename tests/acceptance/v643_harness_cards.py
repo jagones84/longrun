@@ -54,7 +54,7 @@ end = UI.index('<div class="sw-cat"', start + 10)
 PANEL = UI[start:end]
 
 cards = re.findall(r'<div class="card hcard"[^>]*>(.*?)\n        </div>', PANEL, re.S)
-check("A1 five harness cards", len(cards) == 5, len(cards))
+check("A1 six harness cards", len(cards) == 6, len(cards))
 
 # ---- A. one header row per card ---------------------------------------------
 hdrs = re.findall(r'<div class="hcard-hd"[^>]*>(.*?)</div>', PANEL, re.S)
@@ -69,14 +69,16 @@ check("A4 every header carries the title and the subtitle",
 check("B1 no card keeps a visible explanation paragraph",
       "remaining u-m006" not in PANEL)
 titles = re.findall(r'<div class="hcard-hd" title="([^"]{25,})"', PANEL)
-check("B2 all five explanations survive as header tooltips", len(titles) == 5, len(titles))
+check("B2 all six explanations survive as header tooltips", len(titles) == 6, len(titles))
 for phrase in ("continue on its own", "verification command", "independent answers",
-               "how hard the task is", "recurring patterns"):
+               "how hard the task is", "recurring patterns",
+               "cumulative prompt+completion tokens"):
     check("B3 tooltip keeps the words: " + phrase, any(phrase in t for t in titles))
 
 # ---- C. one save per card, same targets -------------------------------------
-check("C1 exactly one save button per card", len(re.findall(r'class="ghost config-save"', PANEL)) == 5)
-for target in ("saveRuntime", "saveVerifier", "saveBestofn", "saveDifficulty", "saveSelfevolve"):
+check("C1 exactly one save button per card", len(re.findall(r'class="ghost config-save"', PANEL)) == 6)
+for target in ("saveRuntime", "saveVerifier", "saveBudget", "saveBestofn",
+               "saveDifficulty", "saveSelfevolve"):
     check("C2 the target survives: " + target, ('data-call="%s"' % target) in PANEL)
 check("C3 the save is not stacked under the fields any more",
       not re.search(r'</div>\s*<button class="ghost config-save"', PANEL))
@@ -100,6 +102,7 @@ check("F3 the header pushes its actions to the right",
 # ---- E. every field still there (no function lost) ----------------------------
 for fid in ("rtKgMax", "rtNoProg", "rtWall", "rtDepth", "rtParallel", "rtAuto",
             "vfOn", "vfCmd", "vfTimeout", "vfPaths",
+            "bdMax",
             "bnOn", "bnN", "bnMin",
             "dfOn", "dfEasy", "dfMed", "dfHard", "dfMedAt", "dfHardAt",
             "seMinLen", "seMinCount", "seMaxLen", "seCat"):

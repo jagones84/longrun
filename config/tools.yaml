@@ -72,6 +72,13 @@ verifier:
   paths: []                 # se non vuoto, verifica solo i path che contengono uno di questi
   closeout: false           # F1: verify ONCE at closeout when the step changed the environment
 
+# ---- run budget (R3) ---------------------------------------------------------
+# Hard ceiling on cumulative prompt+completion tokens for ONE run tree (the run
+# plus every subagent it spawns). 0 = off (today's behaviour). Checked after each
+# model call by the v2 loop; a breach ends the run with termination="budget".
+budget:
+  max_tokens_per_run: 0
+
 # ---- best-of-N + rank (JAG-132) ---------------------------------------------
 # Test-time compute: per uno step non banale campiona N candidati e sceglie il
 # migliore con il ranker deterministico (prm.rank_text), invece del primo.
