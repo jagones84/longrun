@@ -432,6 +432,7 @@ TOOL_SCHEMAS = {
             "goal": {"type": "string", "description": "The goal the agent re-runs on every tick."},
             "every_seconds": {"type": "integer", "description": "Cadence in seconds (minimum 30)."},
             "enabled": {"type": "boolean", "description": "Start enabled (default true)."},
+            "disabled": {"type": "boolean", "description": "Start disabled — the reverse spelling of `enabled`. Pass ONE of the two."},
             "model": {"type": "string", "description": "Optional model override for the tick."},
         },
         "required": ["agent", "goal", "every_seconds"],
@@ -451,6 +452,7 @@ TOOL_SCHEMAS = {
             "goal": {"type": "string", "description": "New goal text."},
             "every_seconds": {"type": "integer", "description": "New cadence in seconds."},
             "enabled": {"type": "boolean", "description": "Enable or disable the routine."},
+            "disabled": {"type": "boolean", "description": "Disable/enable — the reverse spelling of `enabled`. Pass ONE of the two."},
             "model": {"type": "string", "description": "New model override."},
         },
         "required": ["routine"],
@@ -1589,9 +1591,15 @@ def _routine_create(args):
     sid, ag = _resolve_agent_session(args.get("agent"))
     if not sid:
         return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
+    # v663: the switch has TWO spellings (`enabled` / `disabled`) and the layer
+    # below already reads both (`routines._enabled_arg`). This mapping hardcoded
+    # `bool(args.get("enabled", True))`, so `disabled:true` was silently overruled
+    # and the routine came back ENABLED (the operator's retest: "routine.create
+    # disabled:true ignorato"). Forward BOTH and let the ONE reader decide.
     res = routines_mod.REGISTRY.create(
         sid, args.get("goal"), args.get("every_seconds"),
-        enabled=bool(args.get("enabled", True)), model=args.get("model"))
+        enabled=args.get("enabled"), model=args.get("model"),
+        disabled=args.get("disabled"))
     if res.get("ok"):
         rec = res["routine"]
         res["agent"] = (ag or {}).get("id") or sid
@@ -1612,7 +1620,9 @@ def _routine_update(args):
         if not sid:
             return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
         kw["agent"] = sid
-    for key in ("goal", "every_seconds", "enabled", "model"):
+    # v663: `disabled` is part of the same switch — it was dropped here, so a patch
+    # that ONLY disables answered "nothing to update" (the operator's retest).
+    for key in ("goal", "every_seconds", "enabled", "disabled", "model"):
         if args.get(key) is not None:
             kw[key] = args.get(key)
     if not kw:

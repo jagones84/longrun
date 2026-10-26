@@ -457,7 +457,11 @@ def search_skills(query, limit=10):
     single-word query must match its name, title, or description.
     Returns a list of {name, category, title, description, score}, best first.
     """
-    words = set(re.findall(r"[a-z]{3,}", str(query or "").lower())) - _SKILL_STOP
+    # v663: the token class was `[a-z]{3,}`, so any query token containing a DIGIT
+    # was dropped before the scan — `search("v663")` answered [] while
+    # `list_skills()` showed the skill, because a name like `v663-probe-skill` (or
+    # any A-id/version fragment) tokenised to nothing. A name is alphanumeric.
+    words = set(re.findall(r"[a-z0-9]{3,}", str(query or "").lower())) - _SKILL_STOP
     if not words:
         return []
     # v659: `list_skills()` is what BUILDS `_cache["bodies"]`, and it rebuilds both
