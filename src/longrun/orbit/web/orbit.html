@@ -2603,23 +2603,28 @@ class OrbitApp {
       this.applyView(saved || ("view:" + this.views[0].id));
     }
     if ($("lraAutoBtn")) $("lraAutoBtn").onclick = () => {
-      this.labelTeamorgScope();
+      // The scope line is decoration: when it cannot be computed the bar must
+      // still open (it did not, because a label bug ate the click).
+      try { this.labelTeamorgScope(); } catch (_) {}
       addBar("lraAutoBar", "lraAutoBtn", "lraAutoInp");
     };
     if ($("lraAutoCancel")) $("lraAutoCancel").onclick = () => addBar("lraAutoBar", "lraAutoBtn");
     if ($("lraAutoRun")) $("lraAutoRun").onclick = () => this.runTeamorgAutomate();
   }
   /* I-8: the automate scope is the Team filter, so SAY it (and how many agents it
-     holds) instead of letting the operator guess what "Teamorg" will touch. */
+     holds) instead of letting the operator guess what "Teamorg" will touch.
+     `lastAgents` is THIS app's scoped roster (it already carries `prompt_chars`);
+     the AgentsView's own fields are not reachable from here. */
   labelTeamorgScope(){
     const el = $("lraAutoScope");
     if (!el) return;
-    const n = (this.agents || []).filter(a => a.id).length;
+    const list = (this.lastAgents || []).filter(a => a.id);
     const name = this.team === "ALL"
       ? "ALL teams"
-      : (this.team === "__none__" ? "No team" : ((this.teamById(this.team) || {}).name || this.team));
-    const empty = (this.agents || []).filter(a => a.id && a.prompt_chars === 0).length;
-    el.textContent = "scope: " + name + " · " + n + " agent" + (n === 1 ? "" : "s")
+      : (this.team === "__none__" ? "No team"
+         : (((this.teams || []).find(t => t.id === this.team) || {}).name || this.team));
+    const empty = list.filter(a => a.prompt_chars === 0).length;
+    el.textContent = "scope: " + name + " · " + list.length + " agent" + (list.length === 1 ? "" : "s")
       + " (" + empty + " without ROLE.md)";
   }
   async runTeamorgAutomate(){
@@ -2634,7 +2639,7 @@ class OrbitApp {
         section: "teamorg", instruction,
         context: {
           team_scope: this.team,
-          scope_agents: (this.agents || []).filter(a => a.id).map(a => a.id),
+          scope_agents: (this.lastAgents || []).filter(a => a.id).map(a => a.id),
           only_empty: onlyEmpty,
         }
       });

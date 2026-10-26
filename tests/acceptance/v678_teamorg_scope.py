@@ -17,6 +17,7 @@ Deterministic, no model, no network, no server.
 Run: python3 tests/acceptance/v678_teamorg_scope.py
 """
 import os
+import re
 import sys
 import tempfile
 
@@ -78,7 +79,7 @@ check("A7 the box is labelled with what it does, both ways",
 scope_src = ORBIT[ORBIT.find("labelTeamorgScope"):ORBIT.find("async runTeamorgAutomate")]
 check("A8 the scope is stated (team name + how many agents, how many have no ROLE.md)",
       "scope: " in scope_src and "without ROLE.md" in scope_src
-      and "this.team === \"ALL\"" in scope_src and "this.teamById(this.team)" in scope_src)
+      and "this.team === \"ALL\"" in scope_src and "(this.teams || [])" in scope_src)
 post_src = ORBIT[ORBIT.find("async runTeamorgAutomate"):ORBIT.find("renderTeams")]
 check("A9 the run sends the scope AND the empty-only flag",
       "team_scope: this.team" in post_src and "only_empty: onlyEmpty" in post_src
@@ -129,6 +130,57 @@ empty = lra.automate("teamorg", "   ")
 check("D2 an empty instruction is refused", empty.get("ok") is False
       and "instruction required" in str(empty.get("error")), str(empty)[:80])
 check("D3 teamorg stays in the allowlist", "teamorg" in lra.AUTOMATE_ALLOWED_SECTIONS)
+
+# ---- F: the control cannot die on a member it cannot reach -----------------
+# The first version of this control called `this.teamById(...)` and `this.agents
+# .filter(...)` from OrbitApp, where `teamById` belongs to AgentsView and
+# `this.agents` is that VIEW, not a list: the label threw, the click handler died
+# before `addBar`, and the button "did nothing" (operator report).
+APP = "class OrbitApp {"
+app_body = ORBIT[ORBIT.find(APP):]
+app_body = app_body[:app_body.find("\nclass ", 3)] if "\nclass " in app_body[3:] else app_body
+label_src = ORBIT[ORBIT.find("labelTeamorgScope(){"):ORBIT.find("async runTeamorgAutomate")]
+used = set(re.findall(r"this\.([A-Za-z_$][\w$]*)", label_src + post_src))
+assigned = set(re.findall(r"this\.([A-Za-z_$][\w$]*)\s*=", app_body))
+methods = set(re.findall(r"^  (?:async )?([A-Za-z_$][\w$]*)\(", app_body, re.M))
+unreachable = sorted(used - assigned - methods)
+check("F1 every `this.…` the control touches really exists on OrbitApp",
+      not unreachable, "unreachable: %s" % unreachable)
+check("F2 it never calls a method of another view (the exact trap)",
+      "this.teamById" not in (label_src + post_src) and "this.agents.filter" not in post_src)
+check("F3 the scope comes from this app's own scoped roster, prompt sizes included",
+      "this.lastAgents" in label_src and "this.lastAgents" in post_src
+      and "this.lastAgents = fTree.agents" in app_body
+      and "a.prompt_chars = promptChars[a.session]" in ORBIT)
+check("F4 a label failure cannot swallow the click (the bar still opens)",
+      "try { this.labelTeamorgScope(); } catch (_) {}" in ORBIT)
+
+
+def class_body(marker):
+    """The body of a `class X {` block: from the marker to the next top-level class."""
+    i = ORBIT.find(marker)
+    if i < 0:
+        return ""
+    j = ORBIT.find("\nclass ", i + len(marker))
+    return ORBIT[i:j if j > 0 else len(ORBIT)]
+
+
+# The same defect in general form: a call into a SIBLING view must name a member
+# that view actually defines (the first version called AgentsView's own method
+# from OrbitApp, which does not exist there).
+VIEW_CLASS = {"agents": "class AgentsView", "org": "class OrgChartView",
+              "jobs": "class JobsView", "routines": "class RoutinesView",
+              "feed": "class FeedView", "tac": "class Constellation"}
+unknown = []
+for view, marker in VIEW_CLASS.items():
+    body = class_body(marker)
+    members = (set(re.findall(r"this\.([A-Za-z_$][\w$]*)\s*=", body))
+               | set(re.findall(r"^  (?:async )?([A-Za-z_$][\w$]*)\(", body, re.M)))
+    for member in sorted(set(re.findall(r"this\.%s\.([A-Za-z_$][\w$]*)" % view, app_body))):
+        if member not in members:
+            unknown.append("%s.%s" % (view, member))
+check("F5 no call into a sibling view that does not define that member",
+      not unknown, str(unknown))
 
 # ---- E: the deck cannot go stale silently ---------------------------------
 from longrun.orbit import api as oapi  # noqa: E402
