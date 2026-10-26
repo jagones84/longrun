@@ -232,6 +232,13 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .node .nid{font-family:ui-monospace,monospace;color:var(--acc2);font-size:10px}
   .node .nnm{font-size:12px;line-height:1.15;white-space:normal;overflow-wrap:anywhere}
   .node .nrl{font-size:9px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  /* v658: a TEAM scope can cut the chain — the node's manager lives in another
+     team and is not in the chart. The cut is real, so it is STATED: a dashed stub
+     upward plus the manager the node reports to (operator: "blocchi disconnessi
+     in org chart"). */
+  .orgcanvas .node.cut::before{content:"";position:absolute;left:50%;top:-16px;width:0;height:16px;
+    border-left:1.4px dashed var(--line);transform:translateX(-.7px)}
+  .orgcanvas .node .ncut{font-family:ui-monospace,monospace;font-size:9px;line-height:1.2;color:var(--warn)}
   /* JAG-403f: right-click quick actions on an org-chart node. */
   .ctxmenu{position:fixed;z-index:90;background:var(--panel2);border:1px solid var(--line);
     border-radius:9px;padding:4px;min-width:186px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px}
@@ -1319,14 +1326,25 @@ class AgentsView {
   groupsOf(agents){
     const groups = [];
     const scope = this.scope || "ALL";
-    const scoped = id => scope === "ALL" || scope === id;
+    // v658 (operator: "se filtro per team mi appaiono altri team … multi teams in
+    // AGENTS"): the SCOPE owns the grouping. Every team used to be grouped again
+    // over the already-scoped rows, so an agent belonging to two teams was listed
+    // under BOTH headers and the other teams came back into a one-team view.
+    //   visible(id)  = belongs to the current view  -> the only groups rendered
+    //   selected(id) = IS the scope -> the only reason to render an EMPTY group
+    const visible = id => scope === "ALL" || scope === id;
+    const selected = id => scope === id;
     (this.teams || []).forEach(t => {
+      if (!visible(t.id)) return;
       const ms = agents.filter(a => (a.teams || []).includes(t.id));
-      if (ms.length || scoped(t.id)) groups.push({id: t.id, name: t.name, symbol: t.symbol, ms});
+      if (ms.length || selected(t.id)) groups.push({id: t.id, name: t.name, symbol: t.symbol, ms});
     });
-    // agents in a team id the deck does not know about (defensive: never hide them).
+    // agents in a team id the deck does not know about (defensive: never hide them
+    // while they are inside the scope).
     const stray = {};
-    agents.forEach(a => (a.teams || []).forEach(id => { if (!this.teamById(id)) (stray[id] = stray[id] || []).push(a); }));
+    agents.forEach(a => (a.teams || []).forEach(id => {
+      if (!visible(id) || this.teamById(id)) return;
+      (stray[id] = stray[id] || []).push(a); }));
     Object.keys(stray).sort().forEach(id => groups.push({id, name: id, symbol: "", ms: stray[id]}));
     const none = agents.filter(a => !(a.teams || []).length);
     if (none.length || scope === "ALL" || scope === "__none__")
@@ -1767,19 +1785,31 @@ class OrgChartView {
       edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + busY.toFixed(1));
       edges.push("M" + trunkX.toFixed(1) + " " + busY.toFixed(1) + " V" + rows[rows.length - 1].busY.toFixed(1));
     };
+    // v658 (operator: "blocchi disconnessi in org chart"): with a TEAM scope every
+    // agent whose manager sits in ANOTHER team had no manager left in the chart, so
+    // it silently became a root — a block floating on its own. The cut is REAL, so
+    // it is stated: the node keeps a dashed stub upward and names the manager it
+    // reports to, instead of pretending the chain starts there.
+    const cutOf = {};
+    agents.forEach(a => { if (a.reports_to && !agents.some(x => x.id === a.reports_to)) cutOf[a.id] = a.reports_to; });
+    const RTOP = Object.keys(cutOf).length ? PAD + 22 : PAD;
     const roots = (by[""] || []).slice();
-    agents.forEach(a => { if (a.reports_to && !agents.some(x => x.id === a.reports_to)) roots.push(a); });
+    agents.forEach(a => { if (cutOf[a.id]) roots.push(a); });
     let bx = 0, byy = 0, rowH = 0, maxW = 0;
     roots.map(r => ({a: r, m: measure(r, {})})).forEach(r => {
       if (bx && bx + r.m.w > MAXROW){ byy += rowH + GY; bx = 0; rowH = 0; }
-      place(r.a, r.m, PAD + bx, PAD + byy);
+      place(r.a, r.m, PAD + bx, RTOP + byy);
       bx += r.m.w + GX; rowH = Math.max(rowH, r.m.h); maxW = Math.max(maxW, bx);
     });
     const cw = Math.max(1, maxW + PAD), ch = Math.max(1, byy + rowH + PAD);
     let nodes = "", links = "";
     agents.forEach(a => { const p = pos[a.id]; if (!p) return;
-      nodes += '<div class="node" data-sid="' + esc(a.session) + '" style="left:' + p.cx.toFixed(1) + 'px;top:' + p.top.toFixed(1) + 'px" title="click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the Sessions tab \u00b7 right-click = more actions"><span class="nid">' + esc(a.id) + '</span>' +
-        '<span class="nnm">' + esc(a.name||"") + '</span>' + (a.role ? '<span class="nrl">' + esc(a.role) + '</span>' : '') + '</div>'; });
+      const cut = cutOf[a.id];
+      const tip = "click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the Sessions tab \u00b7 right-click = more actions" +
+        (cut ? "\nreports to " + cut + " — outside this scope, so the chain is cut here" : "");
+      nodes += '<div class="node' + (cut ? " cut" : "") + '" data-sid="' + esc(a.session) + '" style="left:' + p.cx.toFixed(1) + 'px;top:' + p.top.toFixed(1) + 'px" title="' + esc(tip) + '"><span class="nid">' + esc(a.id) + '</span>' +
+        '<span class="nnm">' + esc(a.name||"") + '</span>' + (a.role ? '<span class="nrl">' + esc(a.role) + '</span>' : '') +
+        (cut ? '<span class="ncut">\u21e1' + esc(cut) + '</span>' : '') + '</div>'; });
     edges.forEach(d => { links += '<path class="oedge" d="' + d + '"/>'; });
     box.innerHTML = '<div class="orgcanvas" style="width:' + cw + 'px;height:' + ch + 'px">' +
       '<svg class="orgsvg" width="' + cw + '" height="' + ch + '">' + links + '</svg>' + nodes + '</div>';
@@ -2069,8 +2099,12 @@ class Constellation {
         _maxDep = Math.max(_maxDep, dep);
         spos[s.id] = {x: base + (i - (list.length - 1) / 2) * 86, y: 68 + dep * 34}; }); });
     let body = this._defs();
+    // v658: which jobs already carry a relation — the member-edge fallback below
+    // is drawn ONLY for a job that has none, so no edge is ever duplicated.
+    const linked = new Set();
     jobs.forEach(j => (j.blocked_by || []).forEach(b => { if (!jpos[b] || !jpos[j.id]) return;
       const p = jpos[b], q = jpos[j.id], g = this._seg(p, q, 50, 50);
+      linked.add(j.id);
       body += '<line class="clink job" marker-end="url(#mJob)" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>';
       body += '<text x="' + ((p.x + q.x) / 2) + '" y="' + ((p.y + q.y) / 2 - 7) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#9fb0e8">' + esc(b) + '\u2192' + esc(j.id) + '</text>';
     }));
@@ -2085,6 +2119,7 @@ class Constellation {
       const from = (s.parent_sub && spos[s.parent_sub]) ? spos[s.parent_sub]
                                                         : (jpos[s.parent] || null);
       if (!from) return;
+      linked.add(s.parent);
       const g = this._seg(from, spos[s.id], 48, 30);
       body += '<line class="clink job" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>';
     });
@@ -2100,7 +2135,20 @@ class Constellation {
     jobs.forEach(j => { const aid = j.coordinator; if (!aid) return;
       const a = agents.find(z => z.id === aid); if (!a || !box[a.session]) return;
       const b = box[a.session], d = this._curve(jpos[j.id], {x: b.x + b.w / 2, y: b.y}, 48, 0);
+      linked.add(j.id);
       body += '<path class="clink assign" marker-end="url(#mAsg)" d="' + d + '"/>';
+    });
+    // v658 (operator: "uncorrelated JOBS in constellations with no arrow"): a job is
+    // related to the board through its SUBJOBS (JN.j -> AX) or its coordinator. When
+    // neither is visible in the current scope — not decomposed yet, or the subjobs
+    // belong to agents outside it — the pill floated with no arrow at all. Draw the
+    // SAME relation the subjob lane would show: one dashed ASSIGN edge per in-scope
+    // member. No duplication: this runs ONLY for a job that already has no edge.
+    jobs.forEach(j => { if (linked.has(j.id)) return;
+      const mem = (j.agents || []).filter(id => agents.some(a => a.id === id));
+      mem.forEach(id => { const a = agents.find(z => z.id === id); if (!a || !box[a.session]) return;
+        const b = box[a.session], d = this._curve(jpos[j.id], {x: b.x + b.w / 2, y: b.y}, 48, 0);
+        body += '<path class="clink assign" marker-end="url(#mAsg)" d="' + d + '"/>'; });
     });
     agents.forEach(a => { const b = box[a.session];
       body += '<rect class="cagent" x="' + b.x + '" y="' + b.y + '" width="' + b.w + '" height="' + b.h + '" rx="10"/>';

@@ -76,7 +76,14 @@ check("C4 Orbit has a team selector that scopes the board",
 # grouped table (`if (ms.length)`), so a brand-new team rendered nothing and the
 # only membership picker lived on an agent row that did not exist.
 check("D1 a team with zero agents is still rendered when it is the scoped team",
-      "if (ms.length || scoped(t.id))" in orbit and 'this.scope = "ALL"' in orbit)
+      # v658: the two ideas were one predicate before (`scoped` also meant "ALL"), so
+      # under a team scope EVERY team counted as scoped and the other teams' groups
+      # came back (operator: "se filtro per team mi appaiono altri team"). They are
+      # two predicates now: `visible` (in the view) gates the group, `selected`
+      # (IS the scope) is the only reason to render an EMPTY one.
+      "if (ms.length || selected(t.id))" in orbit
+      and "const selected = id => scope === id;" in orbit
+      and 'this.scope = "ALL"' in orbit)
 check("D2 every team header can assign agents (＋ assign -> full-roster picker)",
       "data-tmadd=" in orbit and "openAssignPicker" in orbit
       and "this.roster && this.roster.length" in orbit)

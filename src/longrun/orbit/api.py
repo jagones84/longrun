@@ -73,7 +73,15 @@ def _subjobs_of(agents_list, jobs_list, graphs):
     by_id = {a.get("id"): a for a in agents_list}
     for j in jobs_list:
         for s in (j.get("subjobs") or {}).values():
-            asid = (by_id.get(s.get("agent")) or {}).get("session")
+            # v658: a SCOPED payload must not carry an entity pointing OUTSIDE the
+            # scope. A subjob whose agent belongs to another team was drawn as a pill
+            # whose "JN.j -> AX" target is not in the chart at all — an uncorrelated
+            # node with no arrow (operator, on a team-filtered constellation). The
+            # agent list is already team-scoped, so this single test is the whole
+            # rule; in ALL scope `by_id` holds every agent and nothing is dropped.
+            if s.get("agent") not in by_id:
+                continue
+            asid = by_id.get(s.get("agent")).get("session")
             nodes = (graphs.get(asid) or {}).get("nodes", []) if asid else []
             # JAG-327: only the LATEST plan this subjob appeared in (a re-run reuses the
             # subjob id); the constellation then matches the run-scoped todo store.

@@ -172,7 +172,9 @@ check("the UI drives the deck + orchestration endpoints",
 check("the UI renders a graphical org chart with node boxes + connectors",
       # JAG-424d: connectors are now SVG elbows (.oedge) from the JS wrapped layout,
       # not the old one-row CSS tree's li::before borders.
-      'id="orgtree"' in ui and 'class="node"' in ui and 'class="oedge"' in ui)
+      # v658: a node may also be marked `class="node cut"` (its manager sits outside
+      # the team scope), so the contract is the class PREFIX, not the whole literal.
+      'id="orgtree"' in ui and 'class="node' in ui and 'class="oedge"' in ui)
 
 print("---")
 passed = sum(results)
