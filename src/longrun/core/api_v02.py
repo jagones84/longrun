@@ -346,7 +346,7 @@ def batch_action(st, items, on_event, srv, workspace=None, hist=None):
 
 
 def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, workspace=None,
-               obs_max=1600):
+               obs_max=1600, hist=None):
     """One-shot gated tool call used by POST /api/tools/call and the chat loop.
 
     `timeout` (JAG-80) caps how long a `required` tool waits for a human decision.
@@ -354,6 +354,10 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     approvals.timeout_secs (300s): the request is recorded, the app shows an
     inline Approve/Deny card, and if nobody decides in time the model continues.
     `workspace` (JAG-127) escalates file ops outside the session folder to required.
+    `hist` (I-4) is the context the caller actually sent to the model: passing it
+    makes the M2a taint rule live on THIS path too, so a recalled memory block
+    suspends a standing auto-approval. `None` = one-shot call with no proposing
+    context, which is clean by definition.
     """
     # JAG-535: the ONE place both the chat loop and POST /api/tools/call go
     # through. A legacy `namespace` + {action: sub} call is the same tool as the
@@ -370,7 +374,7 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
     # JAG-163: run the tool INSIDE the session workspace (see tool_action above).
     if workspace and "workspace" not in args:
         args["workspace"] = workspace
-    decision, reason = registry.classify(tool, args, workspace, None)
+    decision, reason = registry.classify(tool, args, workspace, hist)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
         return {"status": "blocked", "reason": reason}

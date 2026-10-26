@@ -1762,7 +1762,7 @@ def _map_tools(items, cap, fn):
     return out
 
 
-def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
+def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=None):
     """Run the calls of a `batch` action (JAG-533).
 
     TOOL items share a thread pool sized by `runtime.max_parallel_tools`.
@@ -1794,7 +1794,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None):
             res = av02.gated_call(tool, args, run_id=sess["id"],
                                   timeout=CHAT_APPROVAL_WAIT,
                                   workspace=_chat_workspace(sess),
-                                  obs_max=CHAT_OBS_FULL)
+                                  obs_max=CHAT_OBS_FULL, hist=hist)
         except Exception as e:  # noqa: BLE001
             return {"tool": tool, "ok": False,
                     "obs": "tool %s raised: %s" % (tool, str(e)[:200])}
@@ -3355,7 +3355,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _think_buf["t"] += _th + "\n"
                     on_delta("think", _th + "\n")
                 obs = _apply_chat_batch(sess, act, on_event, api_v02,
-                                        node=_cur_node(), after=_after())
+                                        node=_cur_node(), after=_after(), hist=msgs)
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                         "observation")
@@ -3410,7 +3410,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 res = api_v02.gated_call(tool, args, run_id=sess["id"],
                                          timeout=CHAT_APPROVAL_WAIT,
                                          workspace=_chat_workspace(sess),
-                                         obs_max=CHAT_OBS_FULL)
+                                         obs_max=CHAT_OBS_FULL, hist=msgs)
                 status = res.get("status")
                 obs = res.get("observation") or res.get("error") or res.get("status") or ""
                 # JAG-431r4b: a GATE outcome (pending/expired/denied) means the tool

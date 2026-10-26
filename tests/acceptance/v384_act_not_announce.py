@@ -79,7 +79,7 @@ def fake_stream(msgs, model, kind, on_delta, timeout=300, usage=None, **kwargs):
 
 
 server.stream_with_fallback = fake_stream
-server.api_v02.gated_call = lambda tool, args, run_id=None: {
+server.api_v02.gated_call = lambda tool, args, run_id=None, **kw: {
     "status": "executed", "observation": "skills ok"}
 sess = server.get_or_create_session("act384")
 reply, _ = server.chat_once(

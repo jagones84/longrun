@@ -1677,8 +1677,13 @@ def touches_outside(tool, args, workspace):
     return None
 
 
+# I-4: the memory buckets the chat prompt actually emits (`model/prompt.py`,
+# `_provider_memory`) are ingress channels — the memory store is written by the
+# MODEL from whatever it read, so a poisoned fact/lesson/core note is derived,
+# untrusted data (ClawMMU: label derived data, gate the action at runtime).
 _TAINT_MARKERS = ("[harness] Observation", "Observation (step ",
-                  "Relevant memories")
+                  "Relevant memories", "## Memory \u2014 user facts",
+                  "## Memory \u2014 self-distilled lessons", "## Core memory")
 _TAINT_REASON = ("untrusted content in proposing context - "
                  "standing auto-approval suspended")
 
