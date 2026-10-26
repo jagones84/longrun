@@ -36,11 +36,13 @@ check("A3 setWorkspace still gives feedback (toast) and reloads",
 _sec = HTML[HTML.index('data-cat="models"'):HTML.index('data-cat="knowledge"')]
 _order = ["Thinking effort", "Compaction model", "Embedding · knowledge index",
           "Add / edit provider", "Providers", "Available models"]
-_pos = [_sec.find(">" + h + "<") for h in _order]
+_pos = [_sec.find(h) for h in _order]
 check("B1 the Models section is ordered: thinking, compaction, embedding, add-provider, providers, models",
       all(p >= 0 for p in _pos) and _pos == sorted(_pos), str(_pos))
 check("B2 Thinking effort is the FIRST block",
-      _sec.find("<h2>Thinking effort</h2>") < _sec.find(">Compaction model<"))
+      # v654: the heading carries the `live` chip that says the picker writes at
+      # once, so the exact `</h2>` form gained a span.
+      _sec.find("Thinking effort") < _sec.find("Compaction model"))
 
 # merged embedding section (one card holds model + catalogue + add + costs)
 check("B3 the embedding card is merged (model select + catalogue + add + costs together)",
@@ -53,7 +55,10 @@ check("B5 add + costs are now collapsible <details> (less clutter)",
 check("B6 the provider block keeps its add-then-list shape",
       _sec.find('id="provId"') < _sec.find('id="provList"') < _sec.find('id="modelsList"'))
 check("B7 the embedding picker + cost ids survive (v401 contract)",
-      "emActive" in HTML and "emCostByModel" in HTML and "emAddModel" in HTML and "emRemoveModel" in HTML)
+      # v654: `emActive` is gone (it repeated the selected option); the probe
+      # line `emTestOut` is the surviving status element.
+      "emTestOut" in HTML and "emCostByModel" in HTML and "emAddModel" in HTML
+      and "emRemoveModel" in HTML)
 
 print("---")
 ok = sum(results)

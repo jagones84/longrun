@@ -169,7 +169,10 @@ check("E4 the embedding UI lives in Settings ▸ Models (no duplicate RH panel)"
       'id="emModel"' in html and 'data-insp="embedding"' not in html
       and 'data-cat="models"' in html)
 check("E4b the WebUI Embedding section shows the model select + cost log",
-      "emActive" in html and "emCostTotal" in html and "emCostByModel" in html)
+      # v654: the "active: <value>" line repeated the selected option; the picker
+      # itself is the truth and emTestOut carries the probe result.
+      'id="emModel"' in html and "emTestOut" in html
+      and "emCostTotal" in html and "emCostByModel" in html)
 check("E4c the WebUI lets the user add/remove a PERSONAL embedding model",
       "emAddModel" in html and "emRemoveModel" in html and "/api/embedding/models" in html)
 

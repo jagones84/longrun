@@ -1297,10 +1297,38 @@
   #swMain .set-hd .set-t { min-width: 0; }
   #swMain .set-hd .set-acts { margin: 0 0 0 auto; }
   #swMain .set-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  /* v654: every control says HOW it applies. "live" writes the config the moment
+     you change it; "save" needs the save button of its card. The panel used to
+     print a separate "active: <value>" line under each picker, which repeated the
+     selected option and never said whether a save was needed (operator). */
+  #swMain .set-chip { font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+    border: 1px solid currentColor; border-radius: 6px; padding: 0 4px; margin-left: 6px;
+    vertical-align: 1px; font-weight: 600; }
+  #swMain .set-chip.live { color: var(--ok); }
+  #swMain .set-chip.save { color: var(--warn); }
+  #settingsWin .sw-head .set-chip { font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+    border: 1px solid currentColor; border-radius: 6px; padding: 0 4px; font-weight: 600; }
+  #settingsWin .sw-head .set-chip.live { color: var(--ok); }
+  #settingsWin .sw-head .set-chip.save { color: var(--warn); }
+  #settingsWin .sw-head .sw-legend { margin-left: 10px; font-size: 10px; color: var(--dim); }
+  @media (max-width: 900px) { #settingsWin .sw-head .sw-legend { display: none; } }
+  /* v654: Routing — ONE row per role. The generated form stacked chat.model,
+     chat.pattern, chat.fallbacks, agent.model … in one wrapping soup, with a
+     3-row textarea per fallback list (operator: "routing è disordinatissima e
+     non si capisce niente"). */
+  #swMain .rt-grid { display: grid; width: 100%;
+    grid-template-columns: 96px minmax(0, 1.7fr) minmax(0, .9fr) minmax(0, 1.7fr);
+    gap: 6px 8px; align-items: center; }
+  #swMain .rt-hd { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--dim); }
+  #swMain .rt-role { font-size: 11.5px; font-weight: 600; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  #swMain .rt-grid input { width: 100%; box-sizing: border-box; min-width: 0; max-width: none; }
+  #swMain .rt-grid .remaining { font-size: 10px; }
   #swMain .self-row { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
   #swMain .self-row > .remaining { flex: 0 0 58px; font-size: 11px; }
   #swMain .self-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hrow { display: flex; flex-wrap: wrap; align-items: center; }
+  .hrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
   #settingsWin .sw-main, #inspector .insp-body {
     font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
     font-size: 13px; line-height: 1.5;
@@ -2491,19 +2519,21 @@
 <div class="backdrop" id="backdrop" data-call="closeAside"></div>
 <div id="settingsWin" hidden>
   <div class="sw-head">
-    <span class="grip">⠿</span><span class="sw-title">⚙ Settings</span><span class="sp"></span>
+    <span class="grip">⠿</span><span class="sw-title">⚙ Settings</span>
+    <span class="remaining sw-legend" title="live: the config is written the moment you change the control. save: the value is only written when you press the save button of that card."><span class="set-chip live">live</span> applies on change · <span class="set-chip save">save</span> needs the save button</span>
+    <span class="sp"></span>
     <button class="ghost" data-call="closeSettings" title="close (Esc)">✕</button>
   </div>
   <div class="sw-body">
     <nav class="sw-nav" id="swNav"></nav>
     <div class="sw-main" id="swMain">
       <div class="sw-cat" data-cat="models" hidden>
-        <h2>Thinking effort</h2>
+        <h2>Thinking effort <span class="set-chip live" title="applies the moment you change it — there is no save button">live</span></h2>
         <div class="card">
-          <div class="hrow">
-            <label title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" data-change="saveReasoning"></label>
-            <label title="Depth of reasoning requested from the model.">effort
-              <select id="reEffort" data-change="saveReasoning">
+          <div class="u-df u-g12 u-aic u-fww">
+            <label class="u-df u-g6 u-aic u-ptr" title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" data-change="saveReasoning"></label>
+            <label class="u-df u-g6 u-aic" title="Depth of reasoning requested from the model.">effort
+              <select id="reEffort" data-change="saveReasoning" class="inp u-p610 u-fs12" style="width:auto">
                 <option value="minimal">minimal</option>
                 <option value="low">low</option>
                 <option value="medium">medium</option>
@@ -2513,31 +2543,29 @@
           </div>
           <div class="remaining u-mt6" id="reResult"></div>
         </div>
-        <h2>Compaction model</h2>
+        <h2>Compaction model <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
           <select id="compactionModel" data-change="saveCompactionModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="compactionResult"></div>
         </div>
-        <h2 title="Stateless system automation agent (longrunAgent) for Teamorg and WebUI section automation. Prefers lightweight, cost-effective cloud models (or follows the active session's model).">longrunAgent · VEO automation model</h2>
+        <h2 title="Stateless system automation agent (longrunAgent) for Teamorg and WebUI section automation. Prefers lightweight, cost-effective cloud models (or follows the active session's model).">longrunAgent · VEO automation model <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
           <select id="longrunAgentModel" data-change="saveLongrunAgentModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="longrunAgentResult"></div>
         </div>
         <!-- JAG-505: the subagent model + failover live in Settings ▸ Subagents —
              this card was a duplicate of it. -->
-        <h2 title="Model that writes the cited summary for Research (Knowledge → Research · web → notebook). Same setting as the Knowledge-panel picker — one writer (POST /api/research/model → research_model in the index overlay), two views, no duplication.">Research model · web → notebook</h2>
+        <h2 title="Model that writes the cited summary for Research (Knowledge → Research · web → notebook). Same setting as the Knowledge-panel picker — one writer (POST /api/research/model → research_model in the index overlay), two views, no duplication.">Research model · web → notebook <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
           <select id="researchModelSettings" data-change="researchSetActive" class="inp u-w100 u-p610 u-fs12"></select>
-          <div class="remaining u-mt6">active: <b id="researchActive"></b></div>
         </div>
-        <h2 title="Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (bm25). The catalogue lives in your PERSONAL config (config/embedding.yaml) — the shipped entries are editable, and you can add your own below.">Embedding · knowledge index</h2>
+        <h2 title="Semantic vectors for the codebase + knowledge retrieval. Empty = keyword-only (bm25). The catalogue lives in your PERSONAL config (config/embedding.yaml) — the shipped entries are editable, and you can add your own below.">Embedding · knowledge index <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
           <div class="u-df u-g6 u-aic u-fww">
             <select id="emModel" data-change="emSetActive" class="inp" style="flex:1;min-width:260px;padding:6px 10px;font-size:12px"></select>
             <button class="ghost" data-call="emTest" title="probe the model (one test embedding)">test</button>
             <button class="ghost" data-call="emRefresh" title="reload the catalogue">refresh</button>
           </div>
-          <div class="remaining u-mt6">active: <b id="emActive"></b></div>
           <div id="emTestOut" class="remaining u-mt4"></div>
           <details class="u-mt8">
             <summary class="remaining u-ptr">catalogue · models available</summary>
@@ -6654,12 +6682,14 @@ function _setSectionEl(sec) {
     esc(sec.title) +
     ' <span class="remaining" data-config-files>· ' + _settingsFileLinks(files) + '</span></div>' +
     '<div class="set-acts">' +
+      '<span class="set-chip save" title="writes ' + _attr(sec.file) + ' only when you press this button">save</span>' +
       '<button class="ghost config-save" data-save disabled>save ' + esc(sec.id) + "</button>" +
       '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
     "</div></div>" +
     '<div class="hrow" data-fields></div>';
   const box = card.querySelector("[data-fields]");
-  (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));
+  if (sec.id === "routing") _setRoutingFields(box, sec);
+  else (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));
   card._savedValues = JSON.stringify(_setSectionValues(card, sec));
   card._saving = false;
   card.addEventListener("click", e => {
@@ -6688,6 +6718,82 @@ function _setSectionEl(sec) {
   if (acts && auto) { auto.style.marginTop = "0"; acts.appendChild(auto); }
   else if (auto) card.appendChild(auto);
   return card;
+}
+/* v654: Routing is a TABLE — role · model · pattern · fallbacks — one row per
+   role. It used to render as `chat · model`, `chat · pattern`, `chat ·
+   fallbacks`, `agent · model` … in one wrapping soup, each fallback list a
+   3-row textarea (operator: "routing è disordinatissima e non si capisce
+   niente"). `subagent` keeps only `pattern`: its model + fallbacks are owned by
+   Settings ▸ Subagents, so the row points there instead of duplicating them. */
+function _setRoutingFields(box, sec) {
+  const vals = sec.values || {};
+  const roles = [], seen = {};
+  (sec.fields || []).forEach(f => {
+    const m = String(f.path).match(/^roles\.([^.]+)\.([^.]+)$/);
+    if (!m) return;
+    if (!seen[m[1]]) { seen[m[1]] = { name: m[1], fields: {} }; roles.push(seen[m[1]]); }
+    seen[m[1]].fields[m[2]] = f;
+  });
+  const grid = document.createElement("div");
+  grid.className = "rt-grid";
+  grid.style.flex = "1 1 100%";
+  grid.innerHTML = '<span class="rt-hd">role</span><span class="rt-hd">model</span>' +
+    '<span class="rt-hd">pattern</span><span class="rt-hd">fallbacks</span>';
+  const CELLS = [["model", "openrouter:vendor/model"], ["pattern", "local roster substring"],
+                 ["fallbacks", "ref, ref, …"]];
+  roles.forEach(r => {
+    const name = document.createElement("span");
+    name.className = "rt-role";
+    name.textContent = r.name;
+    name.title = "roles." + r.name + " in config/routing.yaml";
+    grid.appendChild(name);
+    CELLS.forEach(cell => {
+      const key = cell[0];
+      const f = r.fields[key];
+      if (!f) {
+        const na = document.createElement("span");
+        na.className = "remaining";
+        na.textContent = key === "pattern" ? "—" : "Settings ▸ Subagents";
+        na.title = key === "pattern" ? "this role has no pattern"
+          : "this value is owned by Settings ▸ Subagents — one value, one place";
+        grid.appendChild(na);
+        return;
+      }
+      const inp = document.createElement("input");
+      inp.className = "inp u-p610 u-fs12";
+      inp.id = "rt-" + f.path.replace(/\./g, "-");
+      inp.dataset.path = f.path;
+      inp.dataset.type = f.type;
+      inp.setAttribute("aria-label", r.name + " " + key);
+      if (f.type === "strlist") inp.dataset.sep = ",";
+      inp.placeholder = f.placeholder || cell[1];
+      inp.title = f.help || (r.name + " · " + key);
+      inp.value = f.type === "strlist"
+        ? (Array.isArray(vals[f.path]) ? vals[f.path].join(", ") : "")
+        : String(vals[f.path] == null ? "" : vals[f.path]);
+      grid.appendChild(inp);
+    });
+  });
+  box.appendChild(grid);
+  const g = (sec.fields || []).find(f => f.path === "default_fallbacks");
+  if (g) {
+    const wrap = document.createElement("label");
+    wrap.className = "remaining u-mt8";
+    wrap.style.flex = "1 1 100%";
+    wrap.title = "fallback chain tried when a role has no route left";
+    wrap.textContent = "global fallbacks ";
+    const inp = document.createElement("input");
+    inp.className = "inp u-p610 u-fs12";
+    inp.id = "rt-default-fallbacks";
+    inp.style.marginLeft = "6px";
+    inp.dataset.path = g.path;
+    inp.dataset.type = "strlist";
+    inp.dataset.sep = ",";
+    inp.placeholder = "ref, ref, …";
+    inp.value = Array.isArray(vals[g.path]) ? vals[g.path].join(", ") : "";
+    wrap.appendChild(inp);
+    box.appendChild(wrap);
+  }
 }
 function _setFieldEl(f, val) {
   const wrap = document.createElement("div");
@@ -6787,7 +6893,12 @@ function _setReadField(root, f) {
   if (!el) return f.type === "bool" ? false : (f.type === "strlist" || f.type === "rows" ? [] : "");
   if (f.type === "bool") return !!el.checked;
   if (f.type === "int" || f.type === "float") return el.value === "" ? 0 : Number(el.value);
-  if (f.type === "strlist") return String(el.value || "").split("\n").map(s => s.trim()).filter(Boolean);
+  if (f.type === "strlist") {
+    // v654: a one-line list (the Routing table) separates with a comma; the
+    // textarea keeps one item per line.
+    const sep = (el.dataset && el.dataset.sep) || "\n";
+    return String(el.value || "").split(sep).map(s => s.trim()).filter(Boolean);
+  }
   return el.value;
 }
 async function saveSettingsSection(card, sec) {
@@ -10032,6 +10143,12 @@ async function loadProviders() {
       sub.textContent = (p.name || "") + " · " + (p.kind || "") + " · " + (p.base_url || "") +
         "  (" + (p.models || []).length + " models)";
       name.append(t, sub);
+      const test = document.createElement("button"); test.className = "ghost"; test.textContent = "test";
+      test.title = "probe this provider now (GET /models with its key) and report OK or the reason";
+      test.onclick = async () => {
+        $("provResult").textContent = p.id + " · testing…";
+        $("provResult").textContent = p.id + " · " + (await _provTestText(p.id));
+      };
       const edit = document.createElement("button"); edit.className = "ghost"; edit.textContent = "✎";
       edit.title = "load into form";
       edit.onclick = () => editProvider(p);
@@ -10042,7 +10159,7 @@ async function loadProviders() {
         $("provResult").textContent = r.error ? ("error: " + r.error) : ("removed: " + p.id);
         loadProviders();
       };
-      head.append(caret, dot, name, edit, del);
+      head.append(caret, dot, name, test, edit, del);
       // JAG-398: providers start COLLAPSED — click the row to reveal its models.
       const modelsBox = document.createElement("div");
       modelsBox.hidden = true;
@@ -10266,7 +10383,18 @@ async function saveProvider() {
     await loadProviders();
     await loadModels();
     gateEnroll($("provCard"));   // JAG-496: re-base after a save
+    // v654: a save is not proof the provider works — probe it at once and say
+    // OK (with the model count) or the reason it failed.
+    $("provResult").textContent = "saved: " + r.id + " · testing…";
+    $("provResult").textContent = "saved: " + r.id + " · " + (await _provTestText(r.id));
   }
+}
+/* v654: the ONE line the provider tester prints, used by the save path and by
+   the per-provider button, so both read the same. */
+async function _provTestText(id) {
+  const t = await api("POST", "/api/providers/test", { id });
+  if (t && t.ok) return "OK · " + (t.models || 0) + " models";
+  return "FAIL · " + ((t && t.error) || "no answer");
 }
 function _saveProviderDraft() {
   try {
@@ -10919,6 +11047,32 @@ function settingsCategory(name) {
       $("selfPanel").innerHTML = '<div class="remaining">Longrun is unavailable. Check the server connection and try again.</div>';
     });
   }
+  _markApplyModes();
+}
+/* v654: a card that only writes on save SAYS so, next to its heading, and a
+   picker that writes at once carries `live` (the Models cards do). The chips are
+   derived from the controls actually present — a card with a save button is
+   `save`, there is no second list that could drift (operator: "elenca invece
+   quelli che necessitano cliccare SAVE"). */
+function _markApplyModes() {
+  document.querySelectorAll("#swMain .card").forEach(card => {
+    if (!card.querySelector("button.config-save")) return;
+    if (card.querySelector(".set-chip")) return;      // the header already says it
+    let node = card;
+    while (node && node.previousElementSibling) {
+      node = node.previousElementSibling;
+      if (node.classList && node.classList.contains("card")) return;   // no heading of its own
+      if (node.tagName !== "H2") continue;
+      if (!node.querySelector(".set-chip")) {
+        const chip = document.createElement("span");
+        chip.className = "set-chip save";
+        chip.textContent = "save";
+        chip.title = "does not apply until you press the save button in this card";
+        node.appendChild(chip);
+      }
+      return;
+    }
+  });
 }
 function buildSettingsWin() {
   if (document.querySelector("#swNav button")) return;
@@ -11749,8 +11903,6 @@ async function emRefresh() {
         }).join("");
       sel.value = cur;
     }
-    const a = $("emActive");
-    if (a) a.textContent = cur || "(lexical only)";
     emRenderList();
   } catch (e) { /* ignore */ }
 }
@@ -11760,8 +11912,6 @@ async function emSetActive() {
   const v = sel.value;
   try {
     const r = await api("POST", "/api/embedding/active", { model: v });
-    const a = $("emActive");
-    if (a) a.textContent = (r.embed_model || v) || "(lexical only)";
     if (typeof toast === "function") toast("active embedding: " + (v || "(lexical only)"), "ok");
     emCosts();
   } catch (e) { if (typeof toast === "function") toast("set failed: " + e, "err"); }
@@ -12187,7 +12337,6 @@ async function researchModelLs() {
           esc(active) + ' (current)</option>');
       } else { sel.value = active; }
     });
-    if ($("researchActive")) $("researchActive").textContent = active || "—";
   } catch (e) { sels.forEach(sel => { sel.innerHTML = '<option value="">(load failed)</option>'; }); }
 }
 async function researchSetActive() {

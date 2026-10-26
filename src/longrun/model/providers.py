@@ -478,6 +478,84 @@ def ref_of(provider, model_id):
     return "%s:%s" % (provider.get("id"), model_id)
 
 
+def _probe_reason(code, body):
+    """One sentence a human can act on, from an HTTP status or a socket error."""
+    if code in (401, 403):
+        return "key rejected (HTTP %d) — check api_key_env and the key value" % code
+    if code == 404:
+        return "no /models endpoint (HTTP 404) — base_url should end with /v1"
+    if code == 429:
+        return "rate limited (HTTP 429) — retry later"
+    if code and 500 <= code <= 599:
+        return "provider error (HTTP %d)" % code
+    if code:
+        return "HTTP %d%s" % (code, (": " + body[:120]) if body else "")
+    return "cannot reach the host: %s" % (str(body)[:160] or "no answer")
+
+
+def probe(spec, timeout=10):
+    """One real request to a provider: reachable? key accepted?
+
+    `spec` is a saved provider id or a full provider dict, so the Settings form
+    can test BEFORE saving. Never raises — a failed test is a result, not an
+    exception. Returns {ok, provider, url, models?, status?, error?}, where
+    `error` names the reason (rejected key, wrong base_url, unreachable host).
+    """
+    import urllib.error
+    import urllib.request
+    if isinstance(spec, str):
+        pid = spec.strip()
+        p = get(pid) if pid else None
+        if p is None:
+            return {"ok": False, "provider": pid,
+                    "error": "unknown provider: %s" % (pid or "(empty)")}
+    else:
+        spec = dict(spec or {})
+        pid = str(spec.get("id") or "").strip()
+        err = _validate_provider(spec)
+        if err:
+            return {"ok": False, "provider": pid, "error": err}
+        cur = get(pid) if pid else None
+        p = dict(cur or {})
+        p.update({k: v for k, v in spec.items() if v not in (None, "")})
+        if cur is None and not p.get("base_url"):
+            return {"ok": False, "provider": pid,
+                    "error": "unknown provider: %s" % (pid or "(empty)")}
+    base = str(p.get("base_url") or "").rstrip("/")
+    if not base:
+        return {"ok": False, "provider": pid, "error": "base_url is empty"}
+    env = p.get("api_key_env")
+    if env and not p.get("local") and not api_key(p):
+        return {"ok": False, "provider": pid,
+                "error": "missing key: %s is not set in .env" % env}
+    url = base + "/models"
+    try:
+        req = urllib.request.Request(url, headers=headers(p), method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read(1000000)
+            status = int(getattr(resp, "status", 200) or 200)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read(400).decode("utf-8", "replace").strip()
+        except Exception:  # noqa: BLE001
+            body = ""
+        return {"ok": False, "provider": pid, "url": url, "status": e.code,
+                "error": _probe_reason(e.code, body)}
+    except Exception as e:  # noqa: BLE001 — a probe reports, never raises
+        return {"ok": False, "provider": pid, "url": url,
+                "error": _probe_reason(None, str(e))}
+    try:
+        data = json.loads(raw.decode("utf-8", "replace"))
+        items = data.get("data") if isinstance(data, dict) else data
+        count = len(items) if isinstance(items, list) else 0
+    except Exception:  # noqa: BLE001 — reachable but not JSON: still a pass
+        # A vendor list can be larger than the read window (OpenRouter ships
+        # megabytes). Counting the ids we DID read beats reporting "0 models".
+        count = raw.count(b'"id"')
+    return {"ok": True, "provider": pid, "url": url, "status": status,
+            "models": count}
+
+
 # ------------------------------------------------- remote model metadata ------
 
 _OPENROUTER_CTX = {"ts": None, "map": None, "lock": threading.Lock()}

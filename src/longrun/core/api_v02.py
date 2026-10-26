@@ -2176,6 +2176,13 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/providers/reload":
             return _r(handler, 200, provider_reload())
+        if path == "/api/providers/test":
+            # v654: one real GET /models against the provider — the form runs
+            # this automatically after a save, so a broken provider cannot be
+            # saved silently. A failed probe is a RESULT, not a bad request:
+            # 200 with {ok:false, error: reason}, so the browser console stays
+            # clean while the UI prints the reason.
+            return _r(handler, 200, provider_test(body))
         if path == "/api/keys":
             # JAG-161: set/clear an env var and persist it to the gitignored .env.
             res = _srv().set_key(body.get("name"), body.get("value"))
@@ -2687,6 +2694,17 @@ def provider_reload():
     _lazy('providers')
     _PROVIDERS.reload()
     return {"ok": True}
+
+
+def provider_test(body):
+    """POST /api/providers/test — one reachability/auth probe of a provider.
+
+    Body: `{"id": "openrouter"}` for a saved provider, or a full provider object
+    (`id` + `kind` + `base_url` + `api_key_env`) so a form can test BEFORE it
+    saves. Never raises: a failed test comes back as `{ok: false, error: reason}`.
+    """
+    _lazy('providers')
+    return _PROVIDERS.probe(body or {})
 
 
 def _browse_roots():
