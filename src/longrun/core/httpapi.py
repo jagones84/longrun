@@ -24,6 +24,7 @@ from typing import BinaryIO
 
 from longrun.core import api_v02
 from longrun.util.dataio import as_int
+from longrun.util.provenance import QUOTED_LABEL_NOTE, escape_role_labels
 from longrun.tools import approvals
 from longrun.tools import registry
 from longrun.model import routing
@@ -1068,7 +1069,11 @@ def _summarizer_prompt(body, index, total):
         head += ("\n\nThis is PART %d of %d of one long conversation. Compress ONLY "
                  "this part; the parts are merged into one summary afterwards."
                  % (index + 1, total))
-    return head + "\n\nTRANSCRIPT:\n" + body
+    # I-6: the escape marker is only useful if the reader is told what it means,
+    # and this note must NOT be a config leaf: the instruction above is user-
+    # editable (compaction.local.yaml wins over the shipped file), so a security
+    # invariant placed there can be overwritten by an operator edit.
+    return head + "\n\n" + QUOTED_LABEL_NOTE + "\n\nTRANSCRIPT:\n" + body
 
 
 def _merge_prompt(answers):
@@ -1134,7 +1139,11 @@ def _summarize_with_llm(messages, model=None, session=None, meta=None, cancel=No
             content = str(content)
         content = content.strip()
         if content:
-            lines.append("%s: %s" % (m.get("role", "?"), content))
+            # I-6: content keeps its newlines here, so a line inside a tool result
+            # or a file could impersonate a turn. Escape role-looking line starts
+            # BEFORE the label we add, so the only unescaped label is the real one.
+            lines.append("%s: %s" % (m.get("role", "?"),
+                                     escape_role_labels(content)))
     transcript = "\n".join(lines)
     if not transcript.strip():
         return None

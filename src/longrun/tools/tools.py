@@ -22,6 +22,7 @@ from typing import Any
 
 from longrun.util import osutil
 from longrun.util import paths as _paths
+from longrun.util import provenance
 from longrun.tools import registry
 from longrun.tools import sandbox
 
@@ -1561,7 +1562,8 @@ def _render_transcript(sess, limit=30, tail=False):
     for m in sess.get("messages", []) or []:
         evs.append((m.get("ts") or 0,
                     "%s: %s" % (str(m.get("role", "?")).upper(),
-                                _truncate(str(m.get("content", "")).strip(), 2000))))
+                                _truncate(provenance.escape_role_labels(
+                                    str(m.get("content", "")).strip()), 2000))))
     for c in sess.get("tool_cards", []) or []:
         body = c.get("error") or c.get("result") or ""
         ec = c.get("exit_code")
