@@ -25,7 +25,8 @@ from longrun.util.textkit import strip_think
 
 # Router endpoint + resilience config (v0.5.1). Moved here from server.py and
 # re-exported so `server.ROUTER_BASE` / `server.ROUTER_RETRIES` still resolve.
-ROUTER_BASE = os.environ.get("LONGRUN_ROUTER", "http://127.0.0.1:8080")
+ROUTER_ENV = "LONGRUN_ROUTER"
+ROUTER_BASE = os.environ.get(ROUTER_ENV, "http://127.0.0.1:8080")
 ROUTER_RETRIES = int(os.environ.get("LONGRUN_ROUTER_RETRIES", 5))
 ROUTER_BACKOFF = float(os.environ.get("LONGRUN_ROUTER_BACKOFF", 0.75))
 ROUTER_BACKOFF_MAX = float(os.environ.get("LONGRUN_ROUTER_BACKOFF_MAX", 8.0))

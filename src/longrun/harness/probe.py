@@ -10,9 +10,10 @@ parallelism reduces latency, not compute (`:1905-1911`).
 
 Hard rules, because a probe WRITES:
 
-1. **Whole-run isolation is mandatory and unavailable.** Production refuses
-   before staging or host execution. Offline injected runners test planning and
-   contrast only; a copy and redirected stores do not establish confinement.
+1. **Whole-run isolation is mandatory.** Production goes through
+   `harness.whole` (pinned image, `--network none`, read-only `/input`, bounded
+   tmpfs, one gateway socket) and refuses when that profile is not ready.
+   Injected runners are an offline test seam, not production execution.
 2. **Off by default.** `harness.enabled` is false; `max_candidates` is 2; a
    caller-declared token budget below `MIN_TOKENS` refuses before any copy.
 3. **A candidate it cannot apply is refused, not approximated.** The loop the
@@ -21,8 +22,9 @@ Hard rules, because a probe WRITES:
    prompt MAP, not from `prompt.d` addenda — so a system-prompt candidate is
    refused with that exact reason instead of being silently ignored. The same
    goes for `tool_guidance`, which would need a real `tools.yaml` merge.
-4. **Nothing is adopted here.** Injected execution returns a record and contrast.
-   The current single-rollout cycle cannot establish a durable lesson or approval.
+4. **Nothing is adopted here.** A verified matched experiment may create ONE
+   pending proposal (`cycle._admit`); apply still requires the human approval
+   path, and a single rollout remains insufficient for a durable library entry.
 
 Supported planning kinds: `skill` (skills/harness/<name>/SKILL.md), `guardrail`
 (rules/Project_rules.md, prepared through the existing project rules owner).
@@ -42,7 +44,20 @@ DEFAULTS = {
     "max_steps": 12,
     "copy_max_mb": 512,
     "keep": False,
+    "max_cycle_seconds": 3600,
 }
+
+
+def _defaults():
+    """Core defaults plus the whole-run knobs the executor owns.
+
+    The launch knobs (model, image, gateway budgets, timeouts, repeats) have ONE
+    owner — `whole.DEFAULTS` — so a change there cannot leave a stale copy here.
+    """
+    from longrun.harness import whole
+    return dict(DEFAULTS, **whole.DEFAULTS)
+
+
 SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".gradle", "build",
              "dist", ".mypy_cache", ".pytest_cache", ".ruff_cache", "target"}
 MIN_TOKENS = 1000
@@ -50,15 +65,22 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 KINDS = ("skill", "guardrail")
 
 
-def isolation_status():
-    """Whole-chat isolation readiness, not the shell tool's sandbox setting.
+def whole_cfg(c=None):
+    """The subset of effective config the matched-run executor consumes."""
+    c = c or cfg()
+    from longrun.harness import whole
+    return {key: c.get(key, value) for key, value in whole.DEFAULTS.items()}
 
-    A copied workspace and redirected stores do not confine fs tools, Python or
-    network calls. No supported whole-run launcher exists yet, so production
-    probes must refuse rather than use the legacy host subprocess.
+
+def isolation_status(c=None):
+    """Whole-chat isolation readiness, read from real hosts and images.
+
+    A copied workspace and redirected stores never confine Python, filesystem
+    tools, descendants or networking; this reports whether the matched-run
+    launcher (pinned image + socket-only model channel) can actually start.
     """
-    return {"available": False, "backend": None,
-            "reason": "whole-run isolation unavailable; host probe execution refused"}
+    from longrun.harness import whole
+    return whole.readiness(whole_cfg(c))
 
 
 def cfg(override=None):
@@ -68,7 +90,7 @@ def cfg(override=None):
     form (`v491`) for a value nobody tunes yet, and the block is a spend/risk switch
     rather than a preference. The enable flag never overrides isolation refusal.
     """
-    out = dict(DEFAULTS)
+    out = _defaults()
     env = {
         "enabled": ("LONGRUN_HARNESS_ENABLED", bool),
         "max_candidates": ("LONGRUN_HARNESS_MAX_CANDIDATES", int),
@@ -76,14 +98,30 @@ def cfg(override=None):
         "max_steps": ("LONGRUN_HARNESS_MAX_STEPS", int),
         "copy_max_mb": ("LONGRUN_HARNESS_COPY_MAX_MB", int),
         "keep": ("LONGRUN_HARNESS_KEEP", bool),
+        "max_cycle_seconds": ("LONGRUN_HARNESS_MAX_CYCLE_SECONDS", int),
+        "model": ("LONGRUN_HARNESS_MODEL", str),
+        "image": ("LONGRUN_HARNESS_IMAGE", str),
+        "gateway_upstream": ("LONGRUN_GATEWAY_UPSTREAM", str),
+        "gateway_max_requests": ("LONGRUN_GATEWAY_MAX_REQUESTS", int),
+        "gateway_max_tokens": ("LONGRUN_GATEWAY_MAX_TOKENS", int),
+        "gateway_max_seconds": ("LONGRUN_GATEWAY_MAX_SECONDS", int),
+        "run_timeout": ("LONGRUN_HARNESS_RUN_TIMEOUT", int),
+        "port": ("LONGRUN_HARNESS_PORT", int),
+        "context_length": ("LONGRUN_HARNESS_CONTEXT", int),
+        "snapshot_max_mb": ("LONGRUN_HARNESS_SNAPSHOT_MB", int),
+        "repeats": ("LONGRUN_HARNESS_REPEATS", int),
     }
     for key, (name, kind) in env.items():
         raw = os.environ.get(name)
         if raw is None or not str(raw).strip():
             continue
         try:
-            out[key] = (str(raw).strip().lower() not in ("0", "false", "no", "off")
-                        if kind is bool else int(raw))
+            if kind is bool:
+                out[key] = str(raw).strip().lower() not in ("0", "false", "no", "off")
+            elif kind is int:
+                out[key] = int(raw)
+            else:
+                out[key] = str(raw).strip()
         except ValueError:
             continue
     out.update(override or {})
@@ -368,23 +406,12 @@ def _prepare_plan(base, candidates, c=None, probe_id=None):
 
 def _spawn(plan_obj, timeout):
     """No host fallback, including direct calls to this legacy entry point."""
-    return None, isolation_status()["reason"]
+    reason = isolation_status()["reason"] or "no supported whole-run launcher"
+    return None, "whole-run unavailable: " + reason
 
 
-def run(base, candidates, runner=None, c=None, budget=None):
-    """Probe `candidates` on the same task and contrast with the reference run.
-
-    Args:
-        base: the reference execution record (`harness.record.build`).
-        candidates: [{kind, name, content}] — at most `max_candidates`.
-        runner: `runner(plan_obj, timeout) -> (result|None, error)`; injected in
-            tests. The production default refuses: no whole-run launcher exists.
-        c: config override (tests).
-        budget: {"tokens_left": int} declared by the caller, if any.
-    Returns:
-        {"status": "skipped|refused|ran|failed", ...}
-    """
-    c = c or cfg()
+def _budget_refusal(candidates, c, budget):
+    """Shared preconditions for every probe entry point."""
     if not c.get("enabled"):
         return {"status": "skipped", "reason": "disabled"}
     if not candidates:
@@ -394,11 +421,97 @@ def run(base, candidates, runner=None, c=None, budget=None):
                 "reason": "more than %d candidates" % int(c.get("max_candidates") or 1)}
     if budget is not None and int(budget.get("tokens_left") or 0) < MIN_TOKENS:
         return {"status": "refused", "reason": "token budget below %d" % MIN_TOKENS}
+    return None
+
+
+def trials(base, candidates, runner=None, c=None, budget=None):
+    """One matched reference, then each candidate against it — independently.
+
+    Production executes `whole.run_group` (frozen snapshot + confined container +
+    its own gateway). The injected runner keeps the offline seam: every candidate
+    is a separate plan/contrast against the same reference record.
+    """
+    c = c or cfg()
+    refused = _budget_refusal(candidates, c, budget)
+    if refused:
+        return refused
     if runner is None:
-        isolation = isolation_status()
+        the_status = isolation_status(c)
+        if not the_status["available"]:
+            return {"status": "refused", "reason": the_status["reason"],
+                    "isolation": the_status}
+        from longrun.harness import whole
+        return whole.run_group(base, candidates, c=whole_cfg(c))
+    rows = []
+    for candidate in candidates:
+        got = run(base, [candidate], runner=runner, c=c)
+        rows.append({"candidate": candidate, "status": got.get("status"),
+                     "record": got.get("record"), "contrast": got.get("contrast"),
+                     "reason": got.get("reason"), "probe_id": got.get("probe_id"),
+                     "staged": got.get("staged") or {},
+                     "refusals": got.get("refusals") or []})
+    status = "ran" if any(row["status"] == "ran" for row in rows) else "failed"
+    return {"status": status, "reference": base, "trials": rows}
+
+
+def successor(base, candidates, runner=None, c=None, budget=None):
+    """Execute the selected component set TOGETHER as one composed variant."""
+    c = c or cfg()
+    refused = _budget_refusal(candidates, c, budget)
+    if refused:
+        return refused
+    if runner is None:
+        the_status = isolation_status(c)
+        if not the_status["available"]:
+            return {"status": "refused", "reason": the_status["reason"],
+                    "isolation": the_status}
+        from longrun.harness import whole
+        return whole.run_group(base, candidates, c=whole_cfg(c), combine=True)
+    got = run(base, candidates, runner=runner, c=c)
+    return {"status": got.get("status"), "reference": base,
+            "trials": [{"candidate": {"name": "composed", "kind": "composed"},
+                        "candidates": list(candidates), "status": got.get("status"),
+                        "record": got.get("record"), "contrast": got.get("contrast"),
+                        "reason": got.get("reason"),
+                        "probe_id": got.get("probe_id"),
+                        "staged": got.get("staged") or {},
+                        "refusals": got.get("refusals") or []}]}
+
+
+def run(base, candidates, runner=None, c=None, budget=None):
+    """Probe `candidates` on the same task and contrast with the reference run.
+
+    Args:
+        base: the reference execution record (`harness.record.build`).
+        candidates: [{kind, name, content}] — at most `max_candidates`.
+        runner: `runner(plan_obj, timeout) -> (result|None, error)`; injected in
+            tests. Production uses the confined matched-run executor.
+        c: config override (tests).
+        budget: {"tokens_left": int} declared by the caller, if any.
+    Returns:
+        {"status": "skipped|refused|ran|failed", ...}
+    """
+    c = c or cfg()
+    refused = _budget_refusal(candidates, c, budget)
+    if refused:
+        return refused
+    if runner is None:
+        isolation = isolation_status(c)
         if not isolation["available"]:
-            return {"status": "refused", "reason": isolation["reason"],
+            return {"status": "refused",
+                    "reason": "whole-run unavailable: " + isolation["reason"],
                     "isolation": isolation}
+        group = trials(base, candidates, runner=None, c=c)
+        row = (group.get("trials") or [{}])[0]
+        if group.get("status") != "ran":
+            return {"status": group.get("status") or "failed",
+                    "reason": group.get("reason") or row.get("reason"),
+                    "isolation": group.get("isolation")}
+        return {"status": row.get("status") or "failed", "record": row.get("record"),
+                "contrast": row.get("contrast"), "staged": row.get("staged") or {},
+                "reference": group.get("reference"), "run": row.get("run"),
+                "reason": row.get("reason"), "digest": group.get("digest"),
+                "refusals": row.get("refusals") or []}
     plan_obj = plan(base, candidates, c)
     if not plan_obj["ok"]:
         return {"status": "refused", "reason": plan_obj["reason"],

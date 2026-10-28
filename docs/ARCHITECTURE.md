@@ -94,32 +94,48 @@ to the event bus and persisted, so a reload rebuilds the transcript and task gra
 | `integrations/` | `paperclip_adapter.py`, `paperclip_bot.py` (Paperclip team-chat adapter + bot) |
 | `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
 | `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |
-| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py` (bounded Harness2 evidence workflow) |
+| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py`, `snapshot.py`, `whole.py`, `gateway.py`, `unixshim.py` (bounded Harness2 evidence workflow) |
 
 ## Harness2 evidence workflow
 
-`GET /api/harness/cycle` reports the effective enable flag, whole-run isolation
-readiness, canonical library counts and last cycle. `POST` defaults to a dry run:
-build a **session aggregate** from existing `memory.stores` tool cards and current
+`GET /api/harness/cycle` reports the effective enable flag, whole-run readiness,
+canonical library counts and last cycle. `POST` defaults to a dry run: build a
+**session aggregate** from existing `memory.stores` tool cards and current
 workspace deliverables, then list relevant library entries. It calls no model.
-Current-state hashes and optional run-manifest fields do not establish immutable
-run-bound evidence or matched input/environment snapshots.
 
 Editors generate ephemeral skill/guardrail candidates, reusing complete bounded
-library files with hash provenance. The offline injected-runner path probes each
-candidate independently, executes a selected successor and retains confounded
-reflection rows. A single rollout is not evidence of correctness or transfer:
-reflection returns `NO_ENTRY`, direct Compose adoption is disabled, and legacy
-`origin=harness` approval is refused by the existing `util.improve` owner.
+library files with hash provenance. A cycle now freezes ONE matched input package
+(`harness/snapshot.py`: code, config, skills, rules, workspace, per-file SHA256),
+executes a **reference run**, then each candidate as a hardlinked variant that
+differs only by the declared component. `repeats` (1–3) executes paired
+reference/candidate runs; reflection raises confidence only when every repeat
+agrees and still returns `NO_ENTRY` for durable library writes.
 
-Production execution **fails closed before editor spend or staging**. No supported
-whole-chat isolation launcher exists; a copied workspace, redirected stores and
-the shell sandbox are not confinement of Python, filesystem tools or networking.
-Setting `LONGRUN_HARNESS_ENABLED=1` does not override this refusal. The existing
-rules, skill discovery, approval, atomic-write and path owners remain authoritative.
-Matched historical evidence, whole-run isolation, repeated controls and durable
-lesson admission remain open capabilities. No scientific improvement is measured
-locally.
+Production execution is confined by `harness/whole.py` through the existing
+`sandbox` launcher: pinned image digest (`deploy/harness-runtime.Dockerfile`),
+`--network none`, read-only `/input`, bounded tmpfs writes, dropped
+capabilities, non-root, resource limits, and verified container removal. Model
+access is the ONLY channel: a Unix socket serves `harness/gateway.py`, which
+forwards to one fixed loopback upstream and one allowlisted model under request,
+body, token and time budgets. The container's loopback TCP is bridged by
+`harness/unixshim.py`; the gateway remains the policy owner.
+
+Readiness is reported by real checks (`readiness()` in `whole.py`): POSIX,
+non-root, pinned image present with matching identity, configured model,
+loopback upstream, reachable daemon. `LONGRUN_HARNESS_ENABLED=1` is not enough.
+A verified experiment (two distinct clean runs, each bound to its own package
+digest: the frozen reference package and the hardlinked variant that differs from
+it by the declared delta, executed successor, `improved` verdict) may create ONE
+`origin=harness` proposal; the existing `util.improve` approval path applies it
+only when that evidence is present. Selection is not causality or transfer; the
+report says so.
+
+Limits stay explicit: Docker shares the host kernel (a hostile-code threat model
+needs a VM boundary), launcher-crash recovery and daemon-in-flight creation are
+not proven by a cleanup query, the profile is a deliberately reduced
+runtime (no MCP/host credentials), and no local scientific superiority is
+measured. Rules, skill discovery, approval, atomic-write and path owners remain
+authoritative.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 

@@ -74,6 +74,7 @@ def status():
         "config": {"max_candidates": c.get("max_candidates"),
                    "max_steps": c.get("max_steps"),
                    "max_seconds": c.get("max_seconds"),
+                   "repeats": c.get("repeats"),
                    "copy_max_mb": c.get("copy_max_mb")},
         "library": {"domains": domains, "entries": sum(domains.values())},
         "data_dir": paths.DATA_DIR,
@@ -110,6 +111,7 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
     report = {
         "ts": round(time.time(), 3), "session": session_id, "domain": domain,
         "dry_run": bool(dry_run), "status": "dry-run",
+        "workspace": base.get("workspace") or "",
         "base": {"run_id": base["run_id"], "steps": len(base["steps"]),
                  "failures": len(failures),
                  "error_classes": sorted({str(s.get("error") or "")[:60]
@@ -126,10 +128,13 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         report["status"] = "refused"
         report["reason"] = "harness probe is disabled (LONGRUN_HARNESS_ENABLED=1)"
         return _save(report)
-    if runner is None and not probe_mod.isolation_status()["available"]:
-        report["status"] = "refused"
-        report["reason"] = probe_mod.isolation_status()["reason"]
-        return _save(report)
+    if runner is None:
+        isolation = probe_mod.isolation_status(c)
+        if not isolation["available"]:
+            report["status"] = "refused"
+            report["reason"] = "whole-run unavailable: " + isolation["reason"]
+            report["isolation"] = isolation
+            return _save(report)
 
     candidates, skips, names = [], [], []
     for scope in SCOPES:
@@ -160,48 +165,77 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         return _save(report)
     report["trials"], report["kept"], report["rejected"] = [], [], []
     scratch_ids, supported, targets = [], [], set()
+    started = time.monotonic()
     try:
-        # Each candidate differs from the reference by ONE component. An
+        group = probe_mod.trials(base, candidates, runner=runner, c=c)
+        reference = group.get("reference") or base
+        report["reference"] = {"run_id": reference.get("run_id"),
+                               "steps": len(reference.get("steps") or []),
+                               "model": reference.get("model") or "",
+                               "evidence": reference.get("evidence") or {}}
+        if group.get("digest"):
+            report["reference"]["digest"] = group["digest"]
+        if group.get("status") in ("refused", "failed", "skipped"):
+            report["status"] = group.get("status")
+            report["reason"] = group.get("reason") or "the reference run did not complete"
+            report["isolation"] = group.get("isolation")
+            return _save(report)
+        # Each candidate differs from the SAME reference by ONE component. An
         # aggregate successful run cannot identify which of its edits helped.
-        for candidate in candidates:
-            trial = probe_mod.run(base, [candidate], runner=runner, c=c)
-            if trial.get("probe_id"):
-                scratch_ids.append(trial["probe_id"])
-            report["trials"].append({"candidate": candidate, **trial})
-            report["refusals"] += trial.get("refusals") or []
-            chosen = compose_mod.select(trial.get("contrast"), [candidate])
-            if trial.get("status") == "ran" and chosen["adopt"]:
-                target, _ = probe_mod._target(candidate["kind"], candidate["name"])
+        for row in group.get("trials") or []:
+            candidate = row.get("candidate") or {}
+            if row.get("probe_id"):
+                scratch_ids.append(row["probe_id"])
+            report["trials"].append(row)
+            report["refusals"] += row.get("refusals") or []
+            chosen = compose_mod.select(row.get("contrast"), [candidate])
+            if row.get("status") == "ran" and chosen["adopt"]:
+                target, _ = probe_mod._target(str(candidate.get("kind") or ""),
+                                              candidate.get("name"))
                 if target in targets:
                     report["refusals"].append(
-                        {"name": candidate["name"], "reason": "same file as another selected candidate"})
+                        {"name": candidate.get("name"), "reason": "same file as another selected candidate"})
                     continue
                 targets.add(target)
                 supported.append(candidate)
             else:
                 report["rejected"] += chosen["rejected"] or [
-                    {"name": candidate["name"], "reason": trial.get("reason") or chosen["decision"]}]
+                    {"name": candidate.get("name"),
+                     "reason": row.get("reason") or chosen["decision"]}]
         if supported:
-            # Even selecting a single unchanged candidate gets another execution:
-            # the paper returns an EXECUTED successor, not a selection opinion.
-            successor = probe_mod.run(base, supported, runner=runner, c=c)
-            if successor.get("probe_id"):
-                scratch_ids.append(successor["probe_id"])
-            report["successor"] = successor
-            contrast = successor.get("contrast") or {}
-            applied = [s for s in supported if s["name"] in (successor.get("staged") or {})]
-            chosen = compose_mod.select(contrast, applied)
-            report["decision"] = chosen["decision"]
-            report["probe"] = {"status": successor.get("status"),
-                               "probe_id": successor.get("probe_id"),
-                               "reason": successor.get("reason"), "contrast": contrast.get("verdict")}
-            report["contrast"] = {key: contrast.get(key) for key in
-                                  ("verdict", "comparable", "steps", "errors", "deliverables")}
-            if successor.get("status") == "ran" and chosen["adopt"]:
-                report["kept"] = [s["name"] for s in chosen["kept"]]
+            budget_seconds = float(c.get("max_cycle_seconds")
+                                   or probe_mod.DEFAULTS["max_cycle_seconds"])
+            if time.monotonic() - started > budget_seconds:
+                report["status"] = "budget"
+                report["reason"] = "cycle time budget exhausted before the successor run"
+                report["rejected"] += [{"name": s["name"], "reason": "cycle budget"}
+                                       for s in supported]
             else:
-                report["rejected"] += chosen["rejected"]
+                # Even selecting a single unchanged candidate gets another execution:
+                # the paper returns an EXECUTED successor, not a selection opinion.
+                successor = probe_mod.successor(base, supported, runner=runner, c=c)
+                row = (successor.get("trials") or [{}])[0]
+                if row.get("probe_id"):
+                    scratch_ids.append(row["probe_id"])
+                report["successor"] = row
+                contrast = row.get("contrast") or {}
+                applied_names = list((row.get("staged") or {}).keys())
+                applied = [s for s in supported if s["name"] in applied_names] or supported
+                chosen = compose_mod.select(contrast, applied)
+                report["decision"] = chosen["decision"]
+                report["probe"] = {"status": row.get("status"),
+                                   "probe_id": row.get("probe_id"),
+                                   "reason": row.get("reason"),
+                                   "contrast": contrast.get("verdict")}
+                report["contrast"] = {key: contrast.get(key) for key in
+                                      ("verdict", "comparable", "steps", "errors", "deliverables")}
+                if row.get("status") == "ran" and chosen["adopt"]:
+                    report["kept"] = [s["name"] for s in chosen["kept"]]
+                else:
+                    report["rejected"] += chosen["rejected"]
         report["reflection"] = compose_mod.reflect(report["trials"], report.get("successor"))
+        kept_objs = [s for s in supported if s.get("name") in (report.get("kept") or [])]
+        report["proposal"] = _admit(group, report, kept_objs)
         report["status"] = "no adoption"
         report["reason"] = report["reflection"]["reason"]
     finally:
@@ -217,6 +251,60 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
     except Exception:  # noqa: BLE001 — an audit line must never break a cycle
         pass
     return _save(report)
+
+
+def _admit(group, report, kept):
+    """Create a pending proposal ONLY for a verified matched experiment.
+
+    The reference runs one frozen package; the successor runs the hardlinked
+    variant that differs from it by the declared delta, so the two roles carry
+    DIFFERENT package digests. Verification binds each role to its own digest and
+    requires two distinct, cleanly removed container runs. An injected/offline
+    cycle has no such binding, so it writes nothing.
+    """
+    base = str((group or {}).get("digest") or "")
+    row = report.get("successor") or {}
+    variant = str(row.get("digest") or "")
+    run = row.get("run") or {}
+    record = row.get("record") or {}
+    evidence = record.get("evidence") or {}
+    reference_run = (group or {}).get("reference_run") or {}
+    reference_evidence = ((group or {}).get("reference") or {}).get("evidence") or {}
+    verified = bool(
+        base and variant and variant != base
+        and run.get("cleanup_verified") is True
+        and reference_run.get("cleanup_verified") is True
+        and reference_run.get("digest") == base
+        and run.get("digest") == variant
+        and evidence.get("scope") == reference_evidence.get("scope") == "matched_container_run"
+        and evidence.get("snapshot_digest") == variant
+        and reference_evidence.get("snapshot_digest") == base
+        and run.get("run_id")
+        and run.get("run_id") != reference_run.get("run_id"))
+    if not verified:
+        return {"ok": False, "reason": "no verified matched experiment; nothing admitted"}
+    texts = [str(c.get("content") or "").strip() for c in kept or []
+             if c.get("kind") == "guardrail"]
+    texts = [t for t in texts if t]
+    if not texts:
+        return {"ok": False, "reason": "no approvable component in the verified experiment"}
+    try:
+        from longrun.util import improve
+        rec = improve.propose(
+            "project", "\n\n".join(texts),
+            reason="Harness2 matched run: %s" % (report.get("decision") or "selected"),
+            ws=report.get("workspace") or None, origin="harness",
+            experiment={"verified": True, "snapshot_digest": base,
+                        "variant_digest": variant,
+                        "contrast": (report.get("contrast") or {}).get("verdict") or "",
+                        "repeats": int(row.get("repeats") or 1),
+                        "runs": [{"run_id": reference_run.get("run_id"), "role": "reference",
+                                  "digest": base, "cleanup_verified": True},
+                                 {"run_id": run.get("run_id"), "role": "successor",
+                                  "digest": variant, "cleanup_verified": True}]})
+        return {"ok": True, "id": rec.get("id"), "status": rec.get("status")}
+    except Exception as exc:  # noqa: BLE001 — admission must not break the report
+        return {"ok": False, "reason": "%s: %s" % (type(exc).__name__, exc)}
 
 
 def _save(report):

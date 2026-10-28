@@ -63,27 +63,57 @@ def select(contrast, candidates):
     return {"adopt": bool(cands), "kept": cands, "rejected": [], "decision": decision}
 
 
+def aggregate(contrasts):
+    """One verdict over repeated matched runs; disagreement is `mixed`, never a win."""
+    verdicts = [str((c or {}).get("verdict") or "") for c in (contrasts or [])
+                if isinstance(c, dict)]
+    verdicts = [v for v in verdicts if v]
+    if not verdicts:
+        return "unknown"
+    return verdicts[0] if len(set(verdicts)) == 1 else "mixed"
+
+
 def reflect(trials, successor=None):
     """Record observations without claiming causal or transferable improvement.
 
     Appendix H, Prompt 6 (:2436-2471) prefers confounded attribution when a single
-    rollout is all that supports an edit. This bounded cycle does not run matched
-    repeated controls, so selection alone cannot create a durable lesson.
+    rollout is all that supports an edit. Matched repeats raise confidence only
+    when every repeat agrees; even then a durable entry still needs human
+    approval (`cycle._admit`), never an automatic library write.
     """
     edits = []
+    admissible = True
     for trial in trials or []:
         candidate = trial.get("candidate") or {}
         contrast = trial.get("contrast") or {}
+        repeats = int(trial.get("repeats") or 1)
+        verdicts = [str((c or {}).get("verdict") or "")
+                    for c in (trial.get("contrasts") or []) if isinstance(c, dict)]
+        consistent = (repeats >= 2 and len(verdicts) >= 2
+                      and len(set(verdicts)) == 1 and verdicts[0] == contrast.get("verdict"))
+        if not consistent:
+            admissible = False
         edits.append({"name": candidate.get("name"), "kind": candidate.get("kind"),
                       "run_id": (trial.get("record") or {}).get("run_id"),
                       "observed": contrast.get("verdict") or trial.get("status"),
                       "fixed": (contrast.get("errors") or {}).get("fixed") or [],
                       "introduced": (contrast.get("errors") or {}).get("introduced") or [],
-                      "attribution": "confounded", "confidence": "insufficient",
-                      "reason": "single rollout; matched repeated controls are absent"})
-    return {"status": "NO_ENTRY", "edits": edits,
+                      "repeats": repeats, "verdicts": verdicts,
+                      "attribution": ("repeated_matched_runs" if consistent
+                                      else "confounded"),
+                      "confidence": "supported" if consistent else "insufficient",
+                      "reason": ("%d matched repeats agreed; this is one task family, "
+                                 "not transfer" % repeats if consistent
+                                 else "single rollout; matched repeated controls are absent")})
+    successor_repeats = int((successor or {}).get("repeats") or 1)
+    evidence = {"consistent_repeats": bool(edits) and admissible,
+                "successor_repeats": successor_repeats}
+    return {"status": "NO_ENTRY", "edits": edits, "evidence": evidence,
             "successor_run": ((successor or {}).get("record") or {}).get("run_id"),
-            "reason": "NO_ENTRY: execution differences do not yet establish a reusable lesson"}
+            "reason": ("NO_ENTRY: durable library entries need human approval and "
+                       "cross-task evidence, not one task family"
+                       if evidence["consistent_repeats"]
+                       else "NO_ENTRY: execution differences do not yet establish a reusable lesson")}
 
 
 def adopt(domain, task_kind, lesson, contrast, candidates, staged):

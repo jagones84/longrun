@@ -24,11 +24,14 @@ and ran unchecked on the host (live proof, 2026-10-22).
 
 import json
 import os
+import selectors
 import shutil
+import stat
 import subprocess
 import tempfile
 import threading
 import time
+import uuid
 
 from longrun.util import osutil
 from longrun.tools import registry
@@ -40,6 +43,7 @@ _probe_cache = None
 #   job_id -> {"proc": Popen, "argv": [...], "started": ts, "cancelled": bool}
 _RUNNING = {}
 _RUN_LOCK = threading.Lock()
+_WHOLE_RESERVATIONS = {}
 
 # JAG-413: cap the bytes read back from a sandboxed command so a process that
 # spews gigabytes cannot exhaust the server's memory (output goes to temp files,
@@ -109,7 +113,8 @@ def _kill(entry):
     if argv and os.path.basename(argv[0]) == "docker":
         try:
             name = argv[argv.index("--name") + 1]
-            subprocess.run(["docker", "kill", name], timeout=10,
+            prefix = argv[:3] if argv[1:2] == ["--host"] else argv[:1]
+            subprocess.run(prefix + ["kill", name], timeout=10, env=entry.get("env"),
                            capture_output=True, text=True)
         except Exception:  # noqa: BLE001
             pass
@@ -127,18 +132,86 @@ def cancel(job_id):
     return {"cancelled": True, "job": job_id, "pid": entry["proc"].pid}
 
 
-def _run_tracked(argv, timeout=None, cwd=None, env=None, job_id=None):
+def _wait_bounded(entry, sinks, timeout, limit):
+    """Drain both POSIX pipes without growing either output file past `limit`.
+
+    Popen.wait alone can deadlock on pipes; communicate buffers without a bound.
+    See https://docs.python.org/3.12/library/subprocess.html#subprocess.Popen.wait.
+    Detached descendants holding a pipe produce a failed, bounded drain, not
+    proof of cleanup. The outer container owner must verify their removal.
+    """
+    proc = entry["proc"]
+    deadline = None if timeout is None else time.monotonic() + timeout
+    exited_at = None
+    why = None
+    sizes = {stream: 0 for stream in sinks}
+    with selectors.DefaultSelector() as selector:
+        try:
+            for stream in sinks:
+                selector.register(stream, selectors.EVENT_READ)
+            while selector.get_map() or proc.poll() is None:
+                now = time.monotonic()
+                if entry["cancelled"]:
+                    why = "cancelled"
+                    break
+                if deadline is not None and now >= deadline:
+                    why = "timeout"
+                    break
+                if proc.poll() is not None:
+                    exited_at = exited_at or now
+                    if now - exited_at >= 1:
+                        why = "output_incomplete"
+                        break
+                for key, _mask in selector.select(0.05):
+                    stream = key.fileobj
+                    data = os.read(stream.fileno(), 65536)
+                    if not data:
+                        selector.unregister(stream)
+                        continue
+                    remaining = limit - sizes[stream]
+                    sinks[stream].write(data[:remaining])
+                    sizes[stream] += min(remaining, len(data))
+                    if len(data) > remaining:
+                        why = "output_limit"
+                        break
+                if why:
+                    break
+        except (OSError, ValueError):
+            why = "output_error"
+        finally:
+            if why:
+                _kill(entry)
+            for stream in sinks:
+                stream.close()
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        why = why or "output_incomplete"
+        _kill(entry)
+    return why
+
+
+def _run_tracked(argv, timeout=None, cwd=None, env=None, job_id=None, output_limit=None):
     """Popen + process-group tracking so the job can be cancelled mid-flight.
 
     stdout/stderr are redirected to TEMP FILES, not pipes (JAG-413): a command
     that spews gigabytes cannot exhaust the server's memory or deadlock on a full
     pipe buffer — we read back at most MAX_OUTPUT_BYTES per stream.
+
+    With `output_limit`, POSIX pipes are drained concurrently into files capped
+    at that many bytes each. Overflow terminates the job; unavailable platforms
+    refuse before launch. This opt-in contract is for whole-process experiments.
     """
+    if output_limit is not None and (os.name != "posix"
+            or type(output_limit) is not int or not 0 < output_limit <= MAX_OUTPUT_BYTES):
+        return {"exit_code": 126, "stdout": "", "stderr": "invalid bounded output profile",
+                "duration_ms": 0}
     t0 = time.time()
     out_f = tempfile.TemporaryFile()
     err_f = tempfile.TemporaryFile()
     try:
-        proc = subprocess.Popen(argv, stdout=out_f, stderr=err_f,
+        proc = subprocess.Popen(argv, stdout=out_f if output_limit is None else subprocess.PIPE,
+                                stderr=err_f if output_limit is None else subprocess.PIPE,
                                 cwd=cwd, env=env, **osutil.popen_kwargs())
     except FileNotFoundError as e:
         out_f.close()
@@ -150,27 +223,51 @@ def _run_tracked(argv, timeout=None, cwd=None, env=None, job_id=None):
         err_f.close()
         return {"exit_code": 125, "stdout": "", "stderr": "exec error: %s" % e,
                 "duration_ms": 0}
-    entry = {"proc": proc, "argv": argv, "started": t0, "cancelled": False}
+    entry = {"proc": proc, "argv": argv, "env": env, "started": t0, "cancelled": False}
     if job_id:
         with _RUN_LOCK:
             _RUNNING[job_id] = entry
     why = None
     try:
-        proc.communicate(timeout=timeout)
+        if output_limit is None:
+            proc.communicate(timeout=timeout)
+        else:
+            why = _wait_bounded(entry, {proc.stdout: out_f, proc.stderr: err_f},
+                                timeout, output_limit)
     except subprocess.TimeoutExpired:
         why = "timeout"
         _kill(entry)
         proc.communicate()
+    except (OSError, ValueError):
+        if output_limit is None:
+            raise
+        why = "output_error"
+        _kill(entry)
+        proc.stdout.close()
+        proc.stderr.close()
     finally:
         if job_id:
             with _RUN_LOCK:
                 _RUNNING.pop(job_id, None)
+    capture_failure = why if why in ("output_limit", "output_incomplete", "output_error") else None
     if entry["cancelled"]:
         why = "cancelled"
-    out = _read_capped(out_f)
-    err = _read_capped(err_f)
-    out_f.close()
-    err_f.close()
+    out, err = "", ""
+    try:
+        out = _read_capped(out_f)
+        err = _read_capped(err_f)
+    except (OSError, ValueError):
+        if output_limit is None:
+            raise
+        capture_failure = "output_error"
+    finally:
+        for stream in (out_f, err_f):
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                if output_limit is None:
+                    raise
+                capture_failure = "output_error"
     res = {"exit_code": proc.returncode, "stdout": out or "", "stderr": err or "",
            "duration_ms": int((time.time() - t0) * 1000)}
     if why == "timeout":
@@ -179,6 +276,15 @@ def _run_tracked(argv, timeout=None, cwd=None, env=None, job_id=None):
     elif why == "cancelled":
         res.update({"cancelled": True, "exit_code": 130,
                     "stderr": (res["stderr"] or "") + "\ncancelled by user"})
+    elif why in ("output_limit", "output_incomplete", "output_error"):
+        res.update({why: True, "exit_code": 125,
+                    "stderr": (res["stderr"] or "") + "\n" + why.replace("_", " ")})
+    if capture_failure:
+        res[capture_failure] = True
+        if why not in ("cancelled", "timeout"):
+            res["exit_code"] = 125
+        if capture_failure != why:
+            res["stderr"] += "\n" + capture_failure.replace("_", " ")
     return res
 
 
@@ -349,6 +455,178 @@ def workspace_for(run_id):
 
 # --------------------------------------------------------------- execution ---
 
+def _whole_run_argv(snapshot, image, arguments, name, uid, gid,
+                    gateway_socket=None, extra_env=None):
+    """Trusted, fixed Python profile; only frozen input and one socket are mounted.
+
+    Writable files are bounded tmpfs, not host bind mounts. The image must be
+    pinned and verified by the runtime/snapshot owner before production use.
+    Source: https://docs.docker.com/reference/cli/docker/container/run/.
+    """
+    argv = ["docker", "--host", "unix:///var/run/docker.sock", "run",
+            "--pull", "never", "--rm", "--name", name,
+            "--label", "longrun.whole_run=" + name,
+            "--init", "--runtime", "runc", "--network", "none",
+            "--read-only", "--log-driver", "none", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges",
+            "--user", "%d:%d" % (uid, gid),
+            "--memory", "1024m", "--memory-swap", "1024m",
+            "--pids-limit", "64", "--cpus", "2",
+            "--mount", "type=bind,src=%s,dst=/input,readonly" % snapshot]
+    if gateway_socket:
+        argv += ["--mount", "type=bind,src=%s,dst=/state/gateway.sock,readonly"
+                 % gateway_socket]
+    argv += ["--workdir", "/work", "--entrypoint", "python3"]
+    for target, size in (("/work", 128), ("/state", 128), ("/tmp", 64)):
+        argv += ["--tmpfs", "%s:rw,noexec,nosuid,nodev,size=%dm,uid=%d,gid=%d,mode=0700" %
+                 (target, size, uid, gid)]
+    env = {"HOME": "/state/home", "PYTHONPATH": "/input/src",
+           "PYTHONDONTWRITEBYTECODE": "1",
+           "LONGRUN_DATA_HOME": "/state/home",
+           "LONGRUN_DATA_DIR": "/state/data",
+           "LONGRUN_CONFIG_DIR": "/state/config",
+           "LONGRUN_SESSIONS_DIR": "/state/sessions",
+           "LONGRUN_DB": "/state/events.db"}
+    env.update(extra_env or {})
+    for key in sorted(env):
+        argv += ["--env", key + "=" + env[key]]
+    return argv + [image] + list(arguments)
+
+
+def reserve_whole_run():
+    """Reserve private input storage under the existing sandbox workspace owner."""
+    base = os.path.realpath(registry.workspace_dir())
+    os.makedirs(base, exist_ok=True)
+    root = os.path.join(base, "h2-" + uuid.uuid4().hex)
+    os.mkdir(root, 0o700)
+    snapshot = os.path.join(root, "inputs")
+    os.mkdir(snapshot, 0o700)
+    identity = tuple((os.stat(p).st_dev, os.stat(p).st_ino) for p in (root, snapshot))
+    with _RUN_LOCK:
+        _WHOLE_RESERVATIONS[snapshot] = identity
+    return snapshot
+
+
+def _image_volumes(image):
+    """Anonymous volume paths declared by a cached image, or None if unreadable.
+
+    `--read-only` constrains the root filesystem, not image-declared volumes: an
+    image with `VOLUME /data` would get a writable, disk-backed mount outside the
+    bounded tmpfs set. Refuse before launch instead of trusting the tag.
+    """
+    prefix = ["docker", "--host", "unix:///var/run/docker.sock"]
+    try:
+        result = _run_tracked(
+            prefix + ["image", "inspect", "--format", "{{json .Config.Volumes}}", image],
+            timeout=10, env={"PATH": os.defpath},
+            output_limit=min(4096, MAX_OUTPUT_BYTES))
+    except Exception:  # noqa: BLE001
+        return None
+    if result["exit_code"] != 0:
+        return None
+    text = (result.get("stdout") or "").strip()
+    if text in ("", "null"):
+        return {}
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def run_whole(snapshot, image, arguments, timeout=60, job_id=None,
+              gateway_socket=None, extra_env=None):
+    """Execute a pinned Python image with bounded, disposable writable storage.
+
+    Internal launcher only: the caller must freeze and validate input/runtime
+    fidelity. `gateway_socket` (optional) is the single mounted inference channel;
+    `extra_env` is trusted container configuration, never candidate input.
+    Cleanup verification means absence at the daemon check, not proof against
+    a lost launcher or in-flight daemon creation. Production readiness needs
+    the snapshot/gateway and crash-recovery owners as well.
+    """
+    refused = {"ok": False, "exit_code": 126, "stdout": "",
+               "stderr": "invalid whole-run profile", "duration_ms": 0,
+               "backend": "whole-run(refused)", "cleanup_verified": False}
+    try:
+        if os.name != "posix" or os.getuid() == 0 or os.getgid() == 0:
+            return refused
+        uid, gid = os.getuid(), os.getgid()
+        base = os.path.realpath(registry.workspace_dir())
+        path = os.path.abspath(snapshot)
+        root = os.path.dirname(path)
+        token = os.path.basename(root)
+        if (path != os.path.realpath(path) or os.path.basename(path) != "inputs"
+                or os.path.dirname(root) != base or len(token) != 35
+                or not token.startswith("h2-")
+                or any(c not in "0123456789abcdef" for c in token[3:])):
+            return refused
+        for directory in (root, path):
+            snap_info = os.stat(directory)
+            if (not os.path.isdir(directory) or snap_info.st_uid != uid
+                    or snap_info.st_mode & 0o077):
+                return refused
+        identity = tuple((os.stat(p).st_dev, os.stat(p).st_ino) for p in (root, path))
+        with _RUN_LOCK:
+            if _WHOLE_RESERVATIONS.get(path) != identity:
+                return refused
+        if (not isinstance(image, str) or len(image) != 71
+                or not image.startswith("sha256:")
+                or any(c not in "0123456789abcdef" for c in image[7:])):
+            return refused
+        if (type(timeout) not in (int, float) or not 0 < timeout <= 900
+                or not isinstance(arguments, (list, tuple)) or not 0 < len(arguments) <= 128
+                or any(not isinstance(a, str) or "\0" in a or len(a) > 8192 for a in arguments)
+                or any(c in path for c in ",\n\r")):
+            return refused
+        volumes = _image_volumes(image)
+        if volumes is None or volumes:
+            return refused
+        if gateway_socket:
+            socket_path = os.path.abspath(str(gateway_socket))
+            info = os.stat(socket_path)
+            if (not stat.S_ISSOCK(info.st_mode) or info.st_uid != uid
+                    or info.st_mode & 0o077 or any(c in socket_path for c in ",\n\r")):
+                return refused
+        for key, value in (extra_env or {}).items():
+            if (not isinstance(key, str) or not key.isupper()
+                    or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for c in key)
+                    or not isinstance(value, str) or "\0" in value or "\n" in value
+                    or len(value) > 4096):
+                return refused
+    except (OSError, TypeError, ValueError):
+        return refused
+    name = "h2-" + uuid.uuid4().hex
+    argv = _whole_run_argv(path, image, arguments, name, uid, gid,
+                           gateway_socket=gateway_socket, extra_env=extra_env)
+    env = {"PATH": os.defpath}
+    prefix = argv[:3]
+    clean = False
+    try:
+        result = _run_tracked(argv, timeout=timeout, env=env, job_id=job_id or name,
+                              output_limit=MAX_OUTPUT_BYTES)
+    except Exception:
+        result = {"exit_code": 125, "stdout": "", "stderr": "whole-run launcher failed",
+                  "duration_ms": 0}
+    finally:
+        try:
+            _run_tracked(prefix + ["container", "rm", "--force", name],
+                         timeout=10, env=env, output_limit=min(4096, MAX_OUTPUT_BYTES))
+            check = _run_tracked(
+                prefix + ["container", "ls", "--all", "--filter",
+                          "label=longrun.whole_run=" + name, "--format", "{{.ID}}"],
+                timeout=10, env=env, output_limit=min(4096, MAX_OUTPUT_BYTES))
+            clean = check["exit_code"] == 0 and not check["stdout"].strip()
+        except Exception:
+            clean = False
+    result.update(backend="docker-whole(%s)" % image, container=name,
+                  cleanup_verified=clean, ok=result["exit_code"] == 0 and clean)
+    if not clean:
+        result.update(ok=False, exit_code=125,
+                      stderr=result["stderr"] + "\ncontainer cleanup unverified")
+    return result
+
+
 def _docker_argv(cfg, ws, command, image):
     return ["docker", "run", "--rm", "--name", "sf-" + os.urandom(4).hex(),
             "--network", "host" if cfg["sandbox"].get("network") else "none",
@@ -464,4 +742,3 @@ def run(command, run_id=None, timeout=None, workspace=None, backend=None, job_id
     res["command"] = command
     res["workspace"] = ws
     return res
-

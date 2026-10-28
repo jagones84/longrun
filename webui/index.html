@@ -8323,12 +8323,18 @@ async function loadHarnessCycle() {
   const ready = d.enabled && isolation.available === true;
   st.textContent = ready ? "· ready" : "· unavailable";
   const sum = $("hcSummary");
+  const cfg = d.config || {};
+  // A value the backend did not send is never rendered as "undefined".
+  const opt = (label, value, suffix) =>
+    (value === undefined || value === null || value === "")
+      ? "" : " · " + label + esc(String(value)) + (suffix || "");
   if (sum) sum.innerHTML = "production probe <b>" + (ready ? "ready" : "unavailable") + "</b>" +
     " · " + esc(String(isolation.reason || (ready ? "isolation verified" : "isolation unverified"))) +
     " · dry run available (no model or probe)" +
     " · enable flag " + (d.enabled ? "on" : "off") +
-    " · max candidates " + esc(String((d.config || {}).max_candidates)) +
-    " · workspace copy ≤ " + esc(String((d.config || {}).copy_max_mb)) + " MB";
+    " · max candidates " + esc(String(cfg.max_candidates)) +
+    opt("repeats ", cfg.repeats) +
+    " · workspace copy ≤ " + esc(String(cfg.copy_max_mb)) + " MB";
   const lib = $("hcLib");
   if (lib) {
     const dom = ((d.library || {}).domains) || {};
@@ -8345,6 +8351,10 @@ async function loadHarnessCycle() {
          " · " + esc(String(((r.base || {}).steps) || 0)) + " steps, " +
          esc(String(((r.base || {}).failures) || 0)) + " failed" +
          (r.decision ? " · " + esc(String(r.decision)) : "") +
+         (r.reference && r.reference.digest
+           ? " · snapshot " + esc(String(r.reference.digest).slice(0, 12)) : "") +
+         (r.proposal && r.proposal.ok
+           ? " · pending proposal " + esc(String(r.proposal.id)) : "") +
          (r.reason ? " · " + esc(String(r.reason)) : ""))
       : "no cycle has run yet";
   }
@@ -8356,6 +8366,21 @@ async function runHarnessDryRun() {
   try { await api("POST", "/api/harness/cycle", { session: sid, dry_run: true }); }
   catch (e) { const l = $("hcLast"); if (l) l.textContent = "error: " + e; return; }
   loadHarnessCycle();
+}
+/* H2R: the matched-run evidence a harness proposal was admitted on, as one line.
+   Pure, so the card and its test read the same fields the approval gate reads. */
+function harnessEvidenceText(x) {
+  if (!x) return "";
+  const rs = x.runs || [];
+  return "harness evidence · " + (x.verified === true ? "verified" : "unverified") +
+    " · repeats " + String(x.repeats || 1) +
+    (x.snapshot_digest ? " · package " + String(x.snapshot_digest).slice(0, 12) : "") +
+    (x.variant_digest ? " · variant " + String(x.variant_digest).slice(0, 12) : "") +
+    (x.contrast ? " · " + String(x.contrast) : "") +
+    (rs.length
+      ? " · " + rs.map(r => String(r.role || "?") + " " + String(r.run_id || "?") +
+          (r.cleanup_verified === true ? "" : " (unverified cleanup)")).join(" + ")
+      : "");
 }
 async function loadImprovement() {
   const props = $("impProps"), ledgerBox = $("impLedger"), mem = $("impMemory"), recs = $("impRecords");
@@ -8493,6 +8518,13 @@ async function loadImprovement() {
       note.textContent = p.target_path
         ? "approve verifies the draft in the sandbox and installs it under skills/"
         : "no draft folder to install — deny it in the approval inbox to clear it";
+      det.appendChild(note);
+    }
+    if (p.experiment) {
+      // H2R: a harness proposal is approvable only because of these runs, so the
+      // card shows the same evidence the approval gate reads (never a summary).
+      const note = document.createElement("div"); note.className = "remaining";
+      note.textContent = harnessEvidenceText(p.experiment);
       det.appendChild(note);
     }
     props.appendChild(det);

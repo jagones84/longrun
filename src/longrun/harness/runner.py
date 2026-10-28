@@ -27,9 +27,33 @@ same.
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 import uuid
+
+MAX_EVIDENCE_CHARS = 1536 * 1024
+
+
+def _copy_workspace(source):
+    """Seed the writable work dir from the frozen read-only workspace copy."""
+    source = str(source or "")
+    if not source or not os.path.isdir(source):
+        raise RuntimeError("workspace source is unavailable")
+    shutil.copytree(source, os.getcwd(), dirs_exist_ok=True, symlinks=False)
+
+
+def evidence_line(payload, max_chars=MAX_EVIDENCE_CHARS):
+    """One transport line; an oversized record is refused, never half-parsed."""
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+    if len(encoded) <= max_chars:
+        return encoded, False
+    error = str(payload.get("error") or "evidence exceeded the transport bound")
+    reduced = {"record": None, "goal": payload.get("goal"),
+               "created": payload.get("created"), "error": error,
+               "record_truncated": True, "probe_id": payload.get("probe_id"),
+               "snapshot": payload.get("snapshot")}
+    return json.dumps(reduced, ensure_ascii=True, sort_keys=True), True
 
 
 def prepare_rules(workspace, snapshot, guardrail=None):
@@ -63,7 +87,10 @@ def main(argv=None):
     ap.add_argument("--model", default=None)
     ap.add_argument("--rules")
     ap.add_argument("--guardrail")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--workspace-from")
+    ap.add_argument("--gateway-socket")
+    ap.add_argument("--gateway-port", type=int, default=0)
+    ap.add_argument("--out")
     args = ap.parse_args(argv)
     src = _src_root()
     if src not in sys.path:
@@ -71,7 +98,16 @@ def main(argv=None):
     started = time.time()
     payload = {}
     error = ""
+    shim = None
     try:
+        if args.workspace_from:
+            _copy_workspace(args.workspace_from)
+        if args.gateway_socket:
+            from longrun.harness import unixshim
+            shim = unixshim.Shim(args.gateway_socket)
+            started_relay = shim.start(port=args.gateway_port)
+            if not started_relay.get("ok"):
+                raise RuntimeError("gateway relay unavailable")
         from longrun.core import server  # noqa: F401 — the cycle needs it imported first
         from longrun.agent import agent as agent_mod
         from longrun.harness import record as record_mod
@@ -91,18 +127,24 @@ def main(argv=None):
                                 else reply or "")[:2000], "model": str(model or "")}
     except BaseException as exc:  # noqa: BLE001 — the probe must learn WHY it failed
         error = "%s: %s" % (type(exc).__name__, exc)
+    finally:
+        if shim is not None:
+            shim.stop()
     payload.setdefault("record", None)
-    payload.update({"goal": args.goal, "created": round(started, 3), "error": error})
-    out = args.out
-    try:
-        from longrun.util.fswrite import write_json
-        write_json(out, payload)
-    except OSError as exc:
-        print(json.dumps({"ok": False, "steps": 0, "error": "cannot write result: %s" % exc}))
-        return 1
+    payload.update({"goal": args.goal, "created": round(started, 3), "error": error,
+                    "snapshot": str(os.environ.get("LONGRUN_H2_SNAPSHOT") or ""),
+                    "probe_id": str(os.environ.get("LONGRUN_HARNESS_PROBE") or "")})
+    if args.out:
+        try:
+            from longrun.util.fswrite import write_json
+            write_json(args.out, payload)
+        except OSError:
+            pass
     steps = len((payload.get("record") or {}).get("steps") or [])
-    print(json.dumps({"ok": not error, "steps": steps, "error": error}))
-    return 0 if not error else 1
+    encoded, truncated = evidence_line(payload)
+    print("H2_RESULT " + encoded)
+    print(json.dumps({"ok": not error and not truncated, "steps": steps, "error": error}))
+    return 0 if not error and not truncated else 1
 
 
 if __name__ == "__main__":
