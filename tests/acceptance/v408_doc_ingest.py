@@ -122,7 +122,10 @@ check("3b the collapsed summary shows the active notebook",
 check("4a the sources help mentions PDF/DOCX extraction + embedding",
       "PDF / DOCX / PPTX / XLSX / ODT" in HTML)
 check("4b the knowledge status reports the installed document extractors",
-      "doc extractors: <b>" in HTML and '"extractors": _docio.available()' in open(
+      # The compact status card keeps this label; the API still owns availability.
+      '"</div><div>extractors <b>" + esc(exTxt)' in HTML
+      and "const ex = s.extractors || {};" in HTML
+      and '"extractors": _docio.available()' in open(
           os.path.join(REPO, "src", "longrun", "memory", "knowledge.py"), encoding="utf-8").read())
 
 print("---")
