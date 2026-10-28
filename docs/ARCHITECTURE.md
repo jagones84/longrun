@@ -137,6 +137,29 @@ runtime (no MCP/host credentials), and no local scientific superiority is
 measured. Rules, skill discovery, approval, atomic-write and path owners remain
 authoritative.
 
+### Enabling matched whole runs (opt-in, off by default)
+
+Nothing executes until the host is actually able to confine a run. Build and pin
+the image once, then name it and the model in the service environment:
+
+```bash
+docker build -f deploy/harness-runtime.Dockerfile -t longrun-harness-runtime:2026-10-28 .
+docker image inspect --format '{{.Id}}' longrun-harness-runtime:2026-10-28
+# then, in the service unit:
+LONGRUN_HARNESS_ENABLED=1
+LONGRUN_HARNESS_IMAGE=sha256:<the 64-hex id printed above>
+LONGRUN_HARNESS_MODEL=<exact model id the loopback router serves>
+```
+
+Optional knobs (all owned by `harness/whole.py:DEFAULTS`): `LONGRUN_HARNESS_REPEATS`
+(1–3), `LONGRUN_HARNESS_RUN_TIMEOUT`, `LONGRUN_HARNESS_PORT`,
+`LONGRUN_HARNESS_CONTEXT`, `LONGRUN_HARNESS_SNAPSHOT_MB`,
+`LONGRUN_HARNESS_MAX_CANDIDATES`, `LONGRUN_HARNESS_MAX_CYCLE_SECONDS`,
+`LONGRUN_GATEWAY_UPSTREAM`, `LONGRUN_GATEWAY_MAX_REQUESTS`,
+`LONGRUN_GATEWAY_MAX_TOKENS`, `LONGRUN_GATEWAY_MAX_SECONDS`. `GET
+/api/harness/cycle` reports the real readiness and the reason it is not ready; the
+Improvement panel renders that same answer.
+
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 
 `sessions/` (transcripts) · `graphs/` (per-session task graphs) · `runs/` (traces +
