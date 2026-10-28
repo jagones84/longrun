@@ -794,6 +794,24 @@
     vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   #composer { display: flex; flex-direction: column; gap: 8px; padding: 8px 18px 10px; border-top: 1px solid var(--line); background: rgba(8,10,20,.6); position: relative; flex: 0 0 auto; }
+  /* G-1: the Active-goal bar renders the DURABLE goal (`GET /api/goal`), so a goal
+     survives the turn, the tab and a service restart. One line, like the toolbar:
+     objective (flex) · status/steps (fixed) · pause · edit · delete. */
+  #goalBar { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    border: 1px solid var(--line); border-left: 3px solid var(--acc); border-radius: 10px;
+    background: color-mix(in srgb, var(--acc) 7%, transparent); font-size: 12px; }
+  #goalBar[hidden] { display: none; }
+  #goalBar.paused { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
+  #goalBar.done { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 6%, transparent); }
+  #goalBar .gb-ico { flex: 0 0 auto; color: var(--acc); }
+  #goalBar.paused .gb-ico { color: var(--warn); }
+  #goalBar.done .gb-ico { color: var(--ok); }
+  #goalBar .gb-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--txt); }
+  #goalBar .gb-meta { flex: 0 0 auto; color: var(--dim); white-space: nowrap; }
+  #goalBar > button { flex: 0 0 auto; height: 24px; min-height: 24px; padding: 0 7px;
+    border-radius: 8px; font-size: 12px; line-height: 1; }
+  #goalBar > button:disabled { opacity: .45; cursor: default; }
   /* JAG-282 / JAG-427: a compact toolbar in two groups (left = attach/queue, right
      = model + actions). It is ALWAYS one row: the model button is the only flexible
      control and shrinks to a tiny glyph, so the bar NEVER grows a second "floor"
@@ -1962,6 +1980,14 @@
       <div id="plusMenu" hidden></div>
       <div id="attachRow" hidden></div>
       <div id="cmdChips" hidden style="flex-wrap:wrap;gap:6px;padding:0 2px 6px 2px"></div>
+      <div id="goalBar" hidden>
+        <span class="gb-ico" aria-hidden="true">◎</span>
+        <span class="gb-text" id="goalText"></span>
+        <span class="gb-meta" id="goalMeta"></span>
+        <button class="ghost" id="goalToggle" data-call="goalToggle" title="pause or resume this goal">⏸</button>
+        <button class="ghost" id="goalEdit" data-call="goalEdit" title="edit the objective">✎</button>
+        <button class="ghost" id="goalDel" data-call="goalDelete" title="delete this goal (the chat and plan stay)">✕</button>
+      </div>
       <input type="file" id="attachInput" multiple hidden>
       <textarea id="inp" rows="1" placeholder="Message…" autofocus></textarea>
       <div id="queueBar" hidden></div>
@@ -4800,6 +4826,12 @@ function send(text, display, atts) {
   // the model plans (write_todos) then executes end-to-end without asking.
   let mode = "";
   if (/^\/goal\b/i.test(msg)) { mode = "&mode=goal"; msg = msg.replace(/^\/goal[\s:]*/i, "").trim(); }
+  // G-1: a PAUSED goal is a real state, not a hint — the server refuses the turn,
+  // so say it here instead of opening a stream that dies with no visible reason.
+  if (mode && goalVisible() && goalRec.goal.status === "paused") {
+    toast("this goal is paused — press ▶ to resume it", "warn");
+    return;
+  }
   const _disp = (display !== undefined ? display : msg);
   if (_attBlock) msg = _attBlock + "\n\n" + msg;   // the model reads attachments first
   inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
@@ -4959,6 +4991,7 @@ function selectSession(s) {
   const filesSec = document.querySelector('#inspector section[data-insp="files"]');
   if (filesSec && filesSec.classList.contains("insp-open")) { loadEdits(); }
   refreshSendBtn();   // JAG-424: the button mirrors THIS session's running state
+  loadGoal();         // G-1: the Active-goal bar follows the session, from the backend
 }
 let _agents = {};   // JAG-287: session id -> org-agent record (empty if none)
 let _teamsById = {};   // JAG-339: team id -> team record (symbol/name/colour)
@@ -7065,6 +7098,80 @@ function planGoal() {
   const goal = $("planInp").value.trim(); if (!goal) return;
   $("planInp").value = "";
   send("/goal " + goal);
+}
+/* ---- G-1: the Active-goal bar (durable `/goal`) ---- */
+// The bar is a READ-OUT of the backend goal object (`GET /api/goal`): pause,
+// resume, edit and delete are POSTs, and the step counter comes from the plan.
+// Nothing here is stored client-side, so a reload or another tab shows the same
+// goal — and a paused goal still refuses a `/goal` turn server-side.
+let goalRec = null;
+
+function goalVisible() { return !!(sessionId && goalRec && goalRec.goal); }
+
+function renderGoal() {
+  const bar = $("goalBar");
+  if (!bar) return;
+  const g = goalVisible() ? goalRec.goal : null;
+  if (!g) { bar.hidden = true; return; }
+  const p = goalRec.progress || {};
+  bar.hidden = false;
+  bar.classList.toggle("paused", g.status === "paused");
+  bar.classList.toggle("done", g.status === "completed");
+  const t = $("goalText");
+  t.textContent = String(g.objective || "(no objective)");
+  t.title = t.textContent;
+  const bits = [String(g.status || "")];
+  if (p.steps) bits.push((p.done || 0) + "/" + p.steps + " steps");
+  bits.push((g.turns || 1) + " turn" + ((g.turns || 1) === 1 ? "" : "s"));
+  $("goalMeta").textContent = bits.join(" · ");
+  const tg = $("goalToggle");
+  tg.textContent = g.status === "paused" ? "▶" : "⏸";
+  tg.title = g.status === "paused" ? "resume this goal" : "pause this goal";
+  tg.disabled = g.status === "completed";
+  $("goalEdit").disabled = g.status === "completed";
+  $("goalDel").disabled = false;
+}
+
+async function loadGoal() {
+  if (!sessionId) { goalRec = null; renderGoal(); return null; }
+  let got = null;
+  try { got = await api("GET", "/api/goal?session=" + encodeURIComponent(sessionId)); }
+  catch (e) { got = null; }
+  goalRec = (got && typeof got === "object" && !got.error) ? got : null;
+  renderGoal();
+  return goalRec;
+}
+
+async function goalAct(action, extra) {
+  if (!sessionId) return null;
+  const body = Object.assign({ session: sessionId, action: action }, extra || {});
+  const r = await api("POST", "/api/goal", body);
+  if (r && r.error) toast("goal: " + r.error, "warn");
+  goalRec = (r && !r.error) ? r : goalRec;
+  // A delete answers without a goal object: re-read the real state either way.
+  if (!r || r.error || action === "delete") await loadGoal(); else renderGoal();
+  return r;
+}
+
+function goalToggle() {
+  if (!goalVisible()) return null;
+  return goalAct(goalRec.goal.status === "paused" ? "resume" : "pause");
+}
+
+function goalEdit() {
+  if (!goalVisible()) return null;
+  const cur = String(goalRec.goal.objective || "");
+  const next = prompt("goal objective", cur);
+  if (next === null) return null;
+  const text = String(next).trim();
+  if (!text || text === cur) return null;
+  return goalAct("edit", { objective: text });
+}
+
+function goalDelete() {
+  if (!goalVisible()) return null;
+  if (!confirm("Delete this goal? The chat and the plan stay.")) return null;
+  return goalAct("delete");
 }
 /* ---- run task graph (v0.6: LLM-generated, live, interactive) ---- */
 // JAG-431r4: do NOT restore the run id from localStorage. `loadGraph` is now
@@ -9193,6 +9300,8 @@ function connectFeed() {
   es.addEventListener("chat.done", e => {
     let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
     setRunning(d.session, false);   // JAG-323: any session's turn ended -> clear its busy marker
+    // G-1: a goal turn may have completed (the plan decides) — re-read the bar.
+    if (d.session && d.session === sessionId) loadGoal();
     // JAG-415: a turn that ended while the user was on ANOTHER session gets the
     // "finished" bell + toast (same mechanism as in-tab turns), so a background
     // agent/team turn is never silently missed.
@@ -9222,6 +9331,12 @@ function connectFeed() {
   es.addEventListener("graph.replanned", e => { const d = JSON.parse(e.data);
     if (d.session && sessionId && d.session !== sessionId) return;
     push("↻ re-plan: +" + ((d.added || []).length) + " step(s)"); loadGraph(); });
+  // G-1: the durable goal changed (started / paused / resumed / completed).
+  es.addEventListener("goal.updated", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    if (!d.session || d.session === sessionId) loadGoal(); });
+  // G-1: a `/goal` turn was refused (a paused goal) — say why, and re-read the bar.
+  es.addEventListener("goal.refused", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    toast("goal: " + (d.reason || "refused"), "warn"); loadGoal(); });
   es.addEventListener("model.runaway", e => { const d = JSON.parse(e.data);
     push(`⚠ runaway: model repetition stopped (${d.model || "?"})`); });
   es.addEventListener("agent.control", e => { const d = JSON.parse(e.data);

@@ -203,6 +203,61 @@ def _chat_failure_issue(error, session, model):
     return diagnostics.report_model_failure(error, session, model, publish)
 
 
+GOAL_CMD = re.compile(r"^\s*/goal\b\s*", re.IGNORECASE)
+
+
+def _goal_objective(message):
+    """The objective text of a `/goal` turn (the command prefix is not content)."""
+    text = str(message or "")
+    stripped = GOAL_CMD.sub("", text).strip()
+    return (stripped or text.strip())[:8000]
+
+
+def _goal_begin(sess, goal_mode, message):
+    """Durable-goal gate for a `/goal` turn (G-1).
+
+    Longrun's `/goal` used to exist only for the duration of one HTTP request.
+    Now a PAUSED goal refuses the turn before any spend, and an active one counts
+    the turn; a non-goal turn is untouched. The store must never break a chat
+    turn, so a failure here is a pass-through, not an exception.
+    """
+    if not goal_mode:
+        return True, None
+    try:
+        from longrun.plan import goal as goal_mod
+        ok, reason = goal_mod.can_start(sess.get("id"))
+        if not ok:
+            publish("goal.refused", session=sess.get("id"), reason=reason)
+            return False, {"error": reason, "goal": goal_mod.status(sess.get("id"))}
+        rec = goal_mod.start(sess.get("id"), _goal_objective(message))
+        publish("goal.updated", session=sess.get("id"), goal=rec)
+        return True, {"goal": goal_mod.status(sess.get("id"))}
+    except Exception:  # noqa: BLE001 — the goal object is auxiliary to the turn
+        return True, None
+
+
+def _goal_end(sess, goal_mode):
+    """Close a goal turn: a plan that is COMPLETE with evidence closes the goal.
+
+    Only the plan decides completion (`taskgraph.goal_complete`), so the bar can
+    never report "done" for an opinion. An aborted or unfinished turn leaves the
+    goal active, which is what makes resume meaningful.
+    """
+    if not goal_mode:
+        return None
+    try:
+        from longrun.plan import goal as goal_mod
+        rec = goal_mod.load(sess.get("id"))
+        if not rec or rec.get("status") != "active":
+            return rec
+        if goal_mod.progress(sess.get("id")).get("complete"):
+            rec = goal_mod.complete(sess.get("id"), "plan complete with evidence")
+            publish("goal.updated", session=sess.get("id"), goal=rec)
+        return rec
+    except Exception:  # noqa: BLE001 — never turn a finished chat into an error
+        return None
+
+
 def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     sender=None, subjob=None, plan_only=False, sender_session=None,
                     goal_mode=False, goal_started=None):
@@ -396,6 +451,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                 ensure_ascii=False))
         finally:
             _coalesce.flush()  # JAG-265: emit any coalesced CoT tail before closing
+            _goal_end(sess, goal_mode)   # G-1: complete only on real plan evidence
             done["flag"] = True
             q.put(None)
             # JAG-181: the turn is over — no longer "attachable".
@@ -2072,6 +2128,9 @@ class Handler(BaseHTTPRequestHandler):
             # JAG-201: prepare + append the user turn INSIDE the worker's turn lock
             # (chat_stream_gen), not here — two concurrent turns must not overwrite.
             _goal_mode = qs.get("mode") == "goal"
+            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
+            if not _goal_ok:
+                return self._send(409, _goal_payload)
             return sse_response(self, chat_stream_gen(
                 sess, message, qs.get("model"), None, autonomous=_goal_mode,
                 goal_mode=_goal_mode,
@@ -2228,6 +2287,9 @@ class Handler(BaseHTTPRequestHandler):
             if sess is None:
                 return self._send(404, {"error": "session was deleted"})
             _goal_mode = (body.get("mode") or qs.get("mode")) == "goal"
+            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
+            if not _goal_ok:
+                return self._send(409, _goal_payload)
             _goal_started = time.time() if _goal_mode else None
             _goal_wall_secs = None
             if _goal_mode:
@@ -2309,6 +2371,7 @@ class Handler(BaseHTTPRequestHandler):
                                             "stored_error": True})
                 finally:
                     turn_end(sess["id"], _turn_tok)   # JAG-325: clear the running signal
+                    _goal_end(sess, _goal_mode)       # G-1: complete only on real evidence
                 # JAG-431r4b: the sync path still called finish_run_graph() here, which
                 # force-closes EVERY open node with fabricated "run completed" evidence —
                 # exactly the JAG-63 bug the streaming path forbids (see the comment at
@@ -2378,6 +2441,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session was deleted"})
             # JAG-201: prepare + append inside the worker's turn lock (see GET path).
             _goal_mode = (body.get("mode") or qs.get("mode")) == "goal"
+            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
+            if not _goal_ok:
+                return self._send(409, _goal_payload)
             return sse_response(self, chat_stream_gen(
                 sess, message, body.get("model") or qs.get("model"), None,
                 autonomous=_goal_mode, goal_mode=_goal_mode,

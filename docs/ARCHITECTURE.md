@@ -75,7 +75,14 @@ Tool calls go through the **approval gate** and the **sandbox**; observations ar
 fed back. The **completion loop** (`keepgoing.py`) applies ordinary turn limits to
 chat and headless jobs. Explicit `/goal` continues past ordinary round/iteration
 limits until the current plan is evidence-backed complete, blocked/cancelled, or
-the configured wall-clock safety cap stops it incomplete. Every step is published
+the configured wall-clock safety cap stops it incomplete. The goal itself is a
+**durable object** (`plan/goal.py`, `data/goals/<session>.json`) with one owner per
+fact: the record owns the objective and its lifecycle (`active|paused|completed`),
+the plan owns the steps and their evidence, so completion is read from
+`taskgraph.goal_complete` and never stored as an opinion. A pause refuses the next
+`/goal` turn before any spend (409), and the WebUI's Active-goal bar renders
+`GET /api/goal` — pause, edit and delete are POSTs, so the goal survives the turn,
+the tab and a service restart. Every step is published
 to the event bus and persisted, so a reload rebuilds the transcript and task graph.
 
 ## Components (`src/longrun/`, organised in subpackages)
@@ -85,7 +92,7 @@ to the event bus and persisted, so a reload rebuilds the transcript and task gra
 | `core/` | `server.py`, `api_v02.py`, `httpapi.py`, `sse.py`, `events.py`, `forge.py`, `settings.py`, `diagnostics.py`, `configfiles.py`, `sidebar_order.py`, `matrix.py`, `homemove.py` |
 | `agent/` | `agent.py`, `agents.py`, `subagent.py`, `bridge.py`, `agency.py`, `swarm.py`, `session_jobs.py`, `longrun_agent.py`, `acceptance.py`, `trace_policy.py` |
 | `orchestrate/` | `jobs.py`, `orchestration.py`, `teams.py`, `routines.py`, `roles.py` |
-| `plan/` | `taskgraph.py`, `keepgoing.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py` |
+| `plan/` | `taskgraph.py`, `keepgoing.py`, `goal.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py` |
 | `tools/` | `tools.py`, `registry.py`, `approvals.py`, `sandbox.py`, `hooks.py`, `edits.py`, `term.py`, `diag.py`, `matrix_guard.py` |
 | `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py`, `embed.py`, `compaction_config.py`, `structured.py`, `vision.py`, `decision.py` |
 | `memory/` | `memory.py`, `skills.py`, `rules.py`, `checkpoints.py`, `stores.py`, `knowledge.py`, `codeindex.py`, `vectors.py`, `embedcfg.py`, `indexcfg.py`, `chunk.py`, `costlog.py`, `docio.py`, `autoidx.py`, `rewind.py`, `threads.py`, `sqlkit.py` |

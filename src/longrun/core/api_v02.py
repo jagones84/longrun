@@ -1460,6 +1460,49 @@ def _r(handler, code, obj):
     return True
 
 
+def _goal_action(body):
+    """Lifecycle of the durable goal (G-1): start | pause | resume | edit | delete.
+
+    Returns `(status_code, payload)`; the payload always carries the CURRENT
+    record and live plan progress so the caller renders real state after the
+    action. Pausing is the only state that blocks a `/goal` turn, and a deleted
+    goal leaves no record behind (a stale tab cannot resurrect it).
+    """
+    from longrun.plan import goal
+    sid = str((body or {}).get("session") or "")
+    action = str((body or {}).get("action") or "").strip().lower()
+    if not sid:
+        return 400, {"ok": False, "error": "session required"}
+    if action == "start":
+        rec = goal.start(sid, (body or {}).get("objective"))
+    elif action == "pause":
+        rec = goal.pause(sid, (body or {}).get("note") or "")
+        if rec is None:
+            return 409, {"ok": False, "error": "no active goal to pause",
+                         "goal": goal.load(sid)}
+    elif action == "resume":
+        rec = goal.resume(sid)
+        if rec is None:
+            return 409, {"ok": False, "error": "no paused goal to resume",
+                         "goal": goal.load(sid)}
+    elif action == "edit":
+        rec = goal.edit(sid, (body or {}).get("objective"))
+        if rec is None:
+            return 400, {"ok": False, "error": "a goal with an objective is required",
+                         "goal": goal.load(sid)}
+    elif action == "delete":
+        if not goal.delete(sid):
+            return 404, {"ok": False, "error": "no goal for this session"}
+        return 200, {"ok": True, "deleted": sid, "goal": None,
+                     "progress": goal.progress(sid)}
+    else:
+        return 400, {"ok": False, "error": "unknown action %r" % (action,)}
+    out = goal.status(sid)
+    out["ok"] = True
+    out["goal"] = rec
+    return 200, out
+
+
 def handle(handler, method, path, qs, body):
     """Return True if this module produced the response.
 
@@ -1638,6 +1681,11 @@ def handle(handler, method, path, qs, body):
             # library counts, the last report) — the panel renders this, not a stub.
             from longrun.harness import cycle as _HC
             return _r(handler, 200, _HC.status())
+
+        if path == "/api/goal":
+            # G-1: the durable goal behind `/goal` — what the Active-goal bar renders.
+            from longrun.plan import goal as _goal
+            return _r(handler, 200, _goal.status(qs.get("session") or ""))
 
         if path == "/api/blackboard":
             _lazy('swarm')
@@ -1823,6 +1871,9 @@ def handle(handler, method, path, qs, body):
 
     if method == "POST":
         # v0.2 core POST routes
+        if path == "/api/goal":
+            # G-1: pause / resume / edit / delete / start the durable goal.
+            return _r(handler, *_goal_action(body or {}))
         if path == "/api/fs/write":  # JAG-124: save the editor buffer to disk
             return _r(handler, 200, fs_write(body))
         if path == "/api/edits/undo":  # JAG-127: restore files to their pre-image (REJECT)
