@@ -181,7 +181,7 @@ check("E1 the bar markup exists with its three actions",
       and 'data-call="goalToggle"' in ui and 'data-call="goalEdit"' in ui
       and 'data-call="goalDelete"' in ui)
 check("E2 the bar reads the backend, not a client copy",
-      'api("GET", "/api/goal?session="' in ui and "function loadGoal()" in ui)
+      'api("GET", "/api/goal?session="' in ui and "async function loadGoal(attempt)" in ui)
 check("E3 the bar follows the session and the end of a turn",
       "loadGoal();         // G-1: the Active-goal bar follows the session" in ui
       and ui.split('es.addEventListener("chat.done"')[1].split("});")[0].count("loadGoal()") == 1)
@@ -189,6 +189,21 @@ check("E4 a refused goal turn is explained, not silently dropped",
       'es.addEventListener("goal.refused"' in ui and "this goal is paused" in ui)
 check("E5 the actions POST the lifecycle instead of guessing locally",
       'api("POST", "/api/goal"' in ui and 'action: action' in ui)
+
+# ------------------------------------------- F: the bar cannot silently vanish --
+# Live on 2026-10-28 the bar rendered in ~3 of 4 headless loads: the boot chain
+# was ONE statement, so a throw dropped every later initializer, and an
+# unreadable first read cleared the record. Both made a working feature look
+# absent.
+check("F1 a stale answer for another session is dropped",
+      "if (sid !== sessionId) return goalRec;" in ui
+      and "const sid = sessionId;                 // the session THIS read belongs to" in ui)
+check("F2 an unreadable answer keeps the last good state and retries once",
+      "if (ok) { goalRec = got; renderGoal(); return goalRec; }" in ui
+      and "if (!attempt) setTimeout(() => { if (sid === sessionId) loadGoal(1); }, 1500);" in ui)
+check("F3 the boot initializers are independent steps that include the goal",
+      "const _boot = [" in ui and "loadGoal,   // G-1: also works on a deep-linked session" in ui
+      and 'try { step(); } catch (e) { console.error("boot step failed:", e); }' in ui)
 
 shutil.rmtree(TMP, ignore_errors=True)
 

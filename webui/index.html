@@ -7132,13 +7132,21 @@ function renderGoal() {
   $("goalDel").disabled = false;
 }
 
-async function loadGoal() {
-  if (!sessionId) { goalRec = null; renderGoal(); return null; }
-  let got = null;
-  try { got = await api("GET", "/api/goal?session=" + encodeURIComponent(sessionId)); }
-  catch (e) { got = null; }
-  goalRec = (got && typeof got === "object" && !got.error) ? got : null;
-  renderGoal();
+async function loadGoal(attempt) {
+  const sid = sessionId;                 // the session THIS read belongs to
+  if (!sid) { goalRec = null; renderGoal(); return null; }
+  let got = null, ok = false;
+  try {
+    got = await api("GET", "/api/goal?session=" + encodeURIComponent(sid));
+    ok = !!(got && typeof got === "object" && !got.error);
+  } catch (e) { ok = false; }
+  // A slower answer for a session the operator already left must never overwrite
+  // the active one — boot and the session-switch path both call this.
+  if (sid !== sessionId) return goalRec;
+  if (ok) { goalRec = got; renderGoal(); return goalRec; }
+  // An UNREADABLE answer (transient 401/network during boot) must not erase a real
+  // goal from the bar: keep the last good state and retry once.
+  if (!attempt) setTimeout(() => { if (sid === sessionId) loadGoal(1); }, 1500);
   return goalRec;
 }
 
@@ -14414,7 +14422,19 @@ $("compactBtn").onclick = compactNow;
 
 ensureToken().then(() => {
   setupPWA();   // JAG-390: inject the manifest (with the token) + register the SW
-  loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn();
+  // G-1: the initializers run as INDEPENDENT steps. This used to be one long
+  // statement, so a single throw (seen intermittently on the DGX, ~1 run in 4)
+  // silently dropped every later initializer — including the Active-goal bar,
+  // which then looked like "the feature does not exist".
+  const _boot = [
+    loadGoal,   // G-1: also works on a deep-linked session (?session=)
+    () => {
+      loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn();
+    },
+  ];
+  for (const step of _boot) {
+    try { step(); } catch (e) { console.error("boot step failed:", e); }
+  }
   // auto-open the pending changes of a restored-open Files panel (no manual ↻)
   { const _fs = document.querySelector('#inspector section[data-insp="files"]');
     if (_fs && _fs.classList.contains("insp-open")) loadEdits(); }
