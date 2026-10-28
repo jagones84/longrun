@@ -1633,6 +1633,12 @@ def handle(handler, method, path, qs, body):
                 return _r(handler, 200, _META.propose_best())
             return _r(handler, 200, _META.status())
 
+        if path == "/api/harness/cycle":
+            # H2-7: the recursive-harness cycle reads REAL state (enabled switch,
+            # library counts, the last report) — the panel renders this, not a stub.
+            from longrun.harness import cycle as _HC
+            return _r(handler, 200, _HC.status())
+
         if path == "/api/blackboard":
             _lazy('swarm')
             eid = qs.get("id")
@@ -2178,6 +2184,15 @@ def handle(handler, method, path, qs, body):
                 report = _META.meta_run(candidates, eval_task_id=body.get("eval_task_id"))
                 return _r(handler, 200, report)
             return _r(handler, 200, _META.status())
+
+        if path == "/api/harness/cycle":
+            # H2-7: dry_run is the DEFAULT — a real cycle needs the operator to
+            # flip LONGRUN_HARNESS_ENABLED=1 (the cycle itself refuses otherwise).
+            from longrun.harness import cycle as _HC
+            body = body if isinstance(body, dict) else {}
+            return _r(handler, 200, _HC.run(body.get("session"),
+                                            body.get("domain") or "general",
+                                            dry_run=bool(body.get("dry_run", True))))
 
         if path == "/api/acp":
             _lazy('acp')

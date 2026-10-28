@@ -132,19 +132,32 @@ check("D2 the refusal names the kind", "code" in json.dumps(out_code["rejected"]
 check("D3 no proposal was written for it", len(IMP.list_proposals()) == before + 1)
 
 # ----------------------------------------------------------------- E: gates --
+# v687 changed this gate on purpose: the editor is conditioned on an OBSERVED
+# DEFICIENCY (a failed step, or a contrast that shows one), not on the existence
+# of a contrast. The paper's editor reads the REFERENCE trajectory
+# (harness2_2610.14224.txt:276-284), and the first step of a cycle has no contrast
+# yet — demanding one deadlocked the cycle. An absent contrast with a failing run
+# now RUNS; a clean run with nothing to fix does not.
+CLEAN = dict(RECORD, steps=[dict(RECORD["steps"][0])])
 quiet = dict(CONTRAST, verdict="unchanged")
-check("E1 an unchanged contrast produces no editor run",
-      E.propose("invariant", RECORD, quiet, call=stub([SKILL]))["skipped"] == "no contrast")
+check("E1 an unchanged contrast on a clean run produces no editor run",
+      E.propose("invariant", CLEAN, quiet, call=stub([SKILL]))["skipped"] == "no observed failure")
 incomp = dict(CONTRAST, comparable=False, verdict="incomparable")
 check("E2 an incomparable contrast is refused",
       E.propose("invariant", RECORD, incomp, call=stub([SKILL]))["skipped"] == "incomparable")
-check("E3 an absent contrast is refused",
-      E.propose("invariant", RECORD, {}, call=stub([SKILL]))["skipped"] == "no contrast")
+first = E.propose("invariant", RECORD, None, call=stub([SKILL]), domain="office")
+check("E3 no contrast yet + an observed failure RUNS (first step of a cycle)",
+      len(first["proposals"]) == 1 and len(first["candidates"]) == 1, first.get("skipped"))
+better = E.propose("invariant", RECORD, dict(CONTRAST, verdict="improved"),
+                   call=stub([SKILL]))
+check("E4 an already-improved contrast stops the editor (nothing left to fix)",
+      better["skipped"] == "no deficiency")
 
 # --------------------------------------------------------------- F: size -----
+mid = len(IMP.list_proposals())
 out_huge = E.propose("invariant", RECORD, CONTRAST, call=stub([HUGE]), domain="office")
 check("F1 an oversized candidate is rejected", out_huge["proposals"] == [], out_huge.get("rejected"))
-check("F2 nothing extra was written", len(IMP.list_proposals()) == before + 1)
+check("F2 nothing extra was written", len(IMP.list_proposals()) == mid)
 
 # -------------------------------------------------------- G: determinism -----
 check("G1 the same inputs produce the same prompt",

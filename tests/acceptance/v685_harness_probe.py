@@ -145,7 +145,13 @@ check("E3 the contrast names the fixed error class",
       ran["contrast"]["errors"]["fixed"] == ["exit # connection refused"]
       and ran["contrast"]["verdict"] == "improved", ran["contrast"]["errors"])
 check("E4 the operator's workspace is byte-identical afterwards", tree_digest(WS) == before)
-check("E5 the scratch copy is removed when keep=false",
+check("E5 the workspace copy is removed when keep=false (the small stage stays "
+      "for Compose until cleanup())",
+      not os.path.isdir(os.path.join(P.root(), ran["probe_id"], "workspace"))
+      and os.path.isdir(os.path.join(P.root(), ran["probe_id"], "stage")),
+      os.listdir(os.path.join(P.root(), ran["probe_id"])))
+P.cleanup(ran["probe_id"])
+check("E6 cleanup() removes the whole probe scratch",
       not os.path.isdir(os.path.join(P.root(), ran["probe_id"])))
 
 # --------------------------------------------------------- F: a failed run ---

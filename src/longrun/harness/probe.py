@@ -199,6 +199,7 @@ def plan(base, candidates, c=None, probe_id=None):
     stage_dir = os.path.join(base_dir, "stage")
     scratch = os.path.join(base_dir, "workspace")
     refusals = []
+    staged = {}
     for cand in (candidates or []):
         if not isinstance(cand, dict):
             refusals.append({"name": "?", "reason": "not an object"})
@@ -206,6 +207,8 @@ def plan(base, candidates, c=None, probe_id=None):
         got = stage(str(cand.get("kind") or ""), cand.get("name"), cand.get("content"), stage_dir)
         if not got["ok"]:
             refusals.append({"name": str(cand.get("name") or "?"), "reason": got["reason"]})
+        else:
+            staged[str(cand.get("name") or "?")] = got["path"]
     if not _has_files(stage_dir):
         return {"ok": False, "reason": "nothing stageable", "refusals": refusals,
                 "stage": stage_dir, "workspace": scratch}
@@ -241,7 +244,7 @@ def plan(base, candidates, c=None, probe_id=None):
            "--out", os.path.join(base_dir, "result.json")]
     return {"ok": True, "reason": "", "env": env, "cmd": cmd, "cwd": scratch,
             "stage": stage_dir, "refusals": refusals, "workspace": scratch,
-            "probe_id": pid, "copy": copied}
+            "probe_id": pid, "copy": copied, "staged": staged}
 
 
 def _spawn(plan_obj, timeout):
@@ -301,7 +304,15 @@ def run(base, candidates, runner=None, c=None, budget=None):
     got["goal"] = str(base.get("goal") or "")  # comparison must be same-goal
     diff = contrast_mod.diff(base, got)
     if not c.get("keep"):
-        shutil.rmtree(os.path.join(root(), plan_obj["probe_id"]), ignore_errors=True)
+        # The workspace COPY goes now (it is the big part); the small `stage/` stays
+        # so Compose can copy the adopted component into the library. `cleanup()`
+        # removes the rest when the cycle is done with it.
+        shutil.rmtree(os.path.join(root(), plan_obj["probe_id"], "workspace"), ignore_errors=True)
     return {"status": "ran", "probe_id": plan_obj["probe_id"], "record": got,
             "contrast": diff, "refusals": plan_obj.get("refusals") or [],
-            "copy": plan_obj.get("copy")}
+            "copy": plan_obj.get("copy"), "staged": plan_obj.get("staged") or {}}
+
+
+def cleanup(probe_id):
+    """Remove one probe's scratch directory (workspace copy + stage)."""
+    shutil.rmtree(os.path.join(root(), _safe(probe_id)), ignore_errors=True)

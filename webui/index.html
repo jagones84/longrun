@@ -2260,6 +2260,17 @@
             <button class="lnk" id="impRefresh" data-call="loadImprovement" title="reload proposals, distilled lessons, changelog and provenance">refresh</button>
           </div>
         </div>
+        <details class="card" id="hcBox">
+          <summary class="set-t u-ptr" title="Harness² cycle: record the run, two scoped editors propose, an isolated probe re-runs the same task, and only an improved contrast is adopted into the library.">Recursive harness cycle <span id="hcState" class="remaining"></span></summary>
+          <div class="remaining u-mt6" id="hcSummary">—</div>
+          <div class="remaining u-mt6" id="hcLib"></div>
+          <div class="u-df u-g6 u-aic u-mt8 u-fww">
+            <input id="hcSession" class="inp u-f1 u-p610 u-fs12" placeholder="session id to learn from…">
+            <button class="ghost" data-call="loadHarnessCycle" title="reload the cycle state (real backend)">↻ refresh</button>
+            <button class="ghost" data-call="runHarnessDryRun" title="record + library hits only: no model, no probe">dry run</button>
+          </div>
+          <div class="remaining u-mt6" id="hcLast"></div>
+        </details>
         <details class="card" id="impHowBox">
           <summary class="set-t u-ptr">How the loop works</summary>
           <div class="u-mt6" id="impHow"></div>
@@ -7931,6 +7942,7 @@ async function decide(id, decision) {
   if (r && r.error) throw new Error(r.error);
   loadApprovals();
   if (typeof loadImprovement === "function") loadImprovement();
+  if (typeof loadHarnessCycle === "function") loadHarnessCycle();
   _settleProposalCards(true);   // v648: the chat card follows the store, not its own buttons
 }
 /* The single decision inbox lives in the Inspector. Proposals shown in Settings
@@ -8296,6 +8308,50 @@ async function clearDecidedProposals() {
   } catch (e) { toast("clear failed: " + e); }
   loadImprovement();
   loadApprovals();
+}
+/* H2-7: the recursive harness cycle. Everything here comes from GET
+   /api/harness/cycle — the enabled switch, the per-domain library counts and the
+   last report. A dry run records ONE session and lists the library hits it would
+   read: no model, no probe, no spend. */
+async function loadHarnessCycle() {
+  const st = $("hcState");
+  if (!st) return;
+  let d;
+  try { d = await api("GET", "/api/harness/cycle"); }
+  catch (e) { st.textContent = "error: " + e; return; }
+  st.textContent = d.enabled ? "· enabled" : "· disabled";
+  const sum = $("hcSummary");
+  if (sum) sum.innerHTML = "probe <b>" + (d.enabled ? "on" : "off") + "</b>" +
+    (d.enabled ? "" : " — set LONGRUN_HARNESS_ENABLED=1 to allow one") +
+    " · max candidates " + esc(String((d.config || {}).max_candidates)) +
+    " · workspace copy ≤ " + esc(String((d.config || {}).copy_max_mb)) + " MB";
+  const lib = $("hcLib");
+  if (lib) {
+    const dom = ((d.library || {}).domains) || {};
+    const keys = Object.keys(dom);
+    const n = (d.library || {}).entries || 0;
+    lib.innerHTML = "library: <b>" + esc(String(n)) + "</b> " + (n === 1 ? "entry" : "entries") +
+      (keys.length ? " · " + keys.map(k => esc(k) + " (" + esc(String(dom[k])) + ")").join(" · ") : " · empty");
+  }
+  const last = $("hcLast");
+  if (last) {
+    const r = d.last;
+    last.innerHTML = r
+      ? ("last cycle: <b>" + esc(String(r.status)) + "</b> · session " + esc(String(r.session || "?")) +
+         " · " + esc(String(((r.base || {}).steps) || 0)) + " steps, " +
+         esc(String(((r.base || {}).failures) || 0)) + " failed" +
+         (r.decision ? " · " + esc(String(r.decision)) : "") +
+         (r.reason ? " · " + esc(String(r.reason)) : ""))
+      : "no cycle has run yet";
+  }
+}
+async function runHarnessDryRun() {
+  const box = $("hcSession");
+  const sid = box ? String(box.value || "").trim() : "";
+  if (!sid) { const l = $("hcLast"); if (l) l.textContent = "paste a session id first"; return; }
+  try { await api("POST", "/api/harness/cycle", { session: sid, dry_run: true }); }
+  catch (e) { const l = $("hcLast"); if (l) l.textContent = "error: " + e; return; }
+  loadHarnessCycle();
 }
 async function loadImprovement() {
   const props = $("impProps"), ledgerBox = $("impLedger"), mem = $("impMemory"), recs = $("impRecords");

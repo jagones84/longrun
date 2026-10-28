@@ -102,18 +102,19 @@ def _library_block(rows):
     return "\n".join(out) or "(empty library)"
 
 
-def build_prompt(scope, record, contrast, library_rows=()):
+def build_prompt(scope, record, contrast=None, library_rows=()):
     """The editor prompt for one scope (pure, deterministic, bounded).
 
     Args:
         scope: "invariant" or "domain".
         record: the base execution record (`harness.record`).
-        contrast: the `harness.contrast.diff` output.
+        contrast: the `harness.contrast.diff` output, when a probe already ran.
         library_rows: index rows from `harness.library.relevant`.
     """
     if scope not in SCOPE_TEXT:
         raise ValueError("unknown editor scope: %r" % (scope,))
-    evidence = contrast_mod.evidence_text(contrast or {}, MAX_EVIDENCE)
+    evidence = (contrast_mod.evidence_text(contrast, MAX_EVIDENCE) if contrast
+                else "(no contrast yet — judge from the reference run's failures above)")
     return (
         "# YOUR DIMENSION: %s\n\n%s\n\n"
         "# THE TASK\n%s\n\n"
@@ -167,27 +168,40 @@ def _validate(candidate):
     return True, ""
 
 
-def propose(scope, record, contrast, library_rows=(), model=None, call=None,
-            domain="general"):
+def propose(scope, record, contrast=None, library_rows=(), model=None, call=None,
+            domain="general", exclude=()):
     """Run one editor and register its candidates as proposals.
+
+    The editor is conditioned on an OBSERVED DEFICIENCY — a failed step in the
+    reference run, or a contrast that shows one. That mirrors the paper, whose
+    editor reads the reference trajectory (`:276-284`): the first step of a cycle
+    has no contrast yet, and demanding one would deadlock the cycle.
 
     Args:
         scope: "invariant" or "domain".
         record: the base execution record.
-        contrast: the contrast between the base and candidate runs.
+        contrast: the contrast between the base and candidate runs, when it exists.
         library_rows: index rows the editor may reuse from.
         model: model alias for the one-shot call (ignored when `call` is given).
         call: `call(messages) -> (answer, think, used)`; injected in tests.
         domain: the library/family this cycle belongs to.
+        exclude: candidate names already proposed by the other scope in this cycle
+            (two scopes proposing the same skill is one object, not two).
     Returns:
-        {"scope", "proposals": [ids], "rejected": [{name, reason}], "skipped"?}
+        {"scope", "proposals": [ids], "candidates": [{kind,name,content}],
+         "rejected": [{name, reason}], "skipped"?}
     """
-    if not isinstance(contrast, dict) or not contrast:
-        return {"scope": scope, "proposals": [], "rejected": [], "skipped": "no contrast"}
-    if contrast.get("comparable") is False:
-        return {"scope": scope, "proposals": [], "rejected": [], "skipped": "incomparable"}
-    if contrast.get("verdict") == "unchanged":
-        return {"scope": scope, "proposals": [], "rejected": [], "skipped": "no contrast"}
+    fails = [s for s in (record.get("steps") or []) if isinstance(s, dict) and s.get("ok") is False]
+    if isinstance(contrast, dict) and contrast:
+        if contrast.get("comparable") is False:
+            return {"scope": scope, "proposals": [], "candidates": [], "rejected": [],
+                    "skipped": "incomparable"}
+        if contrast.get("verdict") == "improved":
+            return {"scope": scope, "proposals": [], "candidates": [], "rejected": [],
+                    "skipped": "no deficiency"}
+    if not fails and not (isinstance(contrast, dict) and contrast.get("verdict") == "regressed"):
+        return {"scope": scope, "proposals": [], "candidates": [], "rejected": [],
+                "skipped": "no observed failure"}
     prompt = build_prompt(scope, record or {}, contrast, library_rows)
     messages = [{"role": "user", "content": prompt}]
     used = model
@@ -198,10 +212,13 @@ def propose(scope, record, contrast, library_rows=(), model=None, call=None,
             max_tokens=4000)
     else:
         answer, _think, used = call(messages)
-    ids, rejected = [], []
+    ids, rejected, accepted = [], [], []
     for candidate in _parse(answer)[:MAX_CANDIDATES]:
         ok, reason = _validate(candidate)
         label = _name(candidate.get("name") if isinstance(candidate, dict) else "", "candidate")
+        if ok and label in set(str(x) for x in (exclude or ())):
+            rejected.append({"name": label, "reason": "already proposed by the other scope"})
+            continue
         if not ok:
             rejected.append({"name": label, "reason": reason})
             continue
@@ -214,7 +231,10 @@ def propose(scope, record, contrast, library_rows=(), model=None, call=None,
             origin="harness")
         if rec:
             ids.append(rec["id"])
+            accepted.append({"kind": str(candidate["kind"]).lower(), "name": label,
+                             "content": str(candidate["content"]).strip(), "why": why,
+                             "proposal": rec["id"]})
         else:
             rejected.append({"name": label, "reason": "proposal store refused the write"})
-    return {"scope": scope, "proposals": ids, "rejected": rejected,
-            "model": used, "domain": domain}
+    return {"scope": scope, "proposals": ids, "candidates": accepted,
+            "rejected": rejected, "model": used, "domain": domain}
