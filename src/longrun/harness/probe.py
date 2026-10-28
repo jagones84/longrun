@@ -144,6 +144,26 @@ def guarded_copy(src, dst, max_mb=512):
     return {"ok": True, "files": files, "bytes": total, "skipped": skipped, "reason": ""}
 
 
+def _target(kind, name):
+    """The runtime path a candidate kind occupies -> (target, refusal reason).
+
+    Pure: the target is computed BEFORE anything is written, so a duplicate can be
+    refused without its content ever touching the stage.
+    """
+    slug = _safe(name, "candidate")
+    if kind == "skill":
+        return os.path.join("skills", "harness", slug, "SKILL.md"), ""
+    if kind == "guardrail":
+        return os.path.join("workspace", "Project_rules.md"), ""
+    if kind == "script":
+        return os.path.join("scripts", slug + ".py"), ""
+    if kind in ("prompt", "tool_guidance"):
+        return "", ("%s candidates are not supported by the agent loop: its prompt is "
+                    "assembled from constants + the prompt MAP, not from prompt.d "
+                    "addenda (and tool guidance would need a tools.yaml merge)" % kind)
+    return "", "unknown kind %r" % (kind,)
+
+
 def stage(kind, name, content, stage_dir):
     """Write ONE candidate file into the probe's stage (never into the workspace).
 
@@ -156,20 +176,9 @@ def stage(kind, name, content, stage_dir):
     if len(text.encode("utf-8")) > MAX_FILE_BYTES:
         return {"ok": False, "target": "", "path": "",
                 "reason": "candidate is larger than %d bytes" % MAX_FILE_BYTES}
-    slug = _safe(name, "candidate")
-    if kind == "skill":
-        target = os.path.join("skills", "harness", slug, "SKILL.md")
-    elif kind == "guardrail":
-        target = os.path.join("workspace", "Project_rules.md")
-    elif kind == "script":
-        target = os.path.join("scripts", slug + ".py")
-    elif kind in ("prompt", "tool_guidance"):
-        return {"ok": False, "target": "", "path": "",
-                "reason": "%s candidates are not supported by the agent loop: its prompt is "
-                          "assembled from constants + the prompt MAP, not from prompt.d "
-                          "addenda (and tool guidance would need a tools.yaml merge)" % kind}
-    else:
-        return {"ok": False, "target": "", "path": "", "reason": "unknown kind %r" % (kind,)}
+    target, why = _target(kind, name)
+    if not target:
+        return {"ok": False, "target": "", "path": "", "reason": why}
     path = os.path.join(stage_dir, target)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -229,15 +238,33 @@ def plan(base, candidates, c=None, probe_id=None):
     scratch = os.path.join(base_dir, "workspace")
     refusals = []
     staged = {}
+    by_target = {}
     for cand in (candidates or []):
         if not isinstance(cand, dict):
             refusals.append({"name": "?", "reason": "not an object"})
             continue
-        got = stage(str(cand.get("kind") or ""), cand.get("name"), cand.get("content"), stage_dir)
+        kind = str(cand.get("kind") or "")
+        label = str(cand.get("name") or "?")
+        target, why = _target(kind, cand.get("name"))
+        if not target:
+            refusals.append({"name": label, "reason": why})
+            continue
+        first = by_target.get(target)
+        if first:
+            # Two candidates of the same kind write the SAME file, so the second
+            # would silently overwrite the first while Compose claimed both were
+            # adopted. One file per kind per probe; the refusal names the winner.
+            # The check runs BEFORE the write, so the first text survives intact.
+            refusals.append({"name": label,
+                             "reason": "same file as %r (%s) — one per kind per probe"
+                                       % (first, target)})
+            continue
+        got = stage(kind, cand.get("name"), cand.get("content"), stage_dir)
         if not got["ok"]:
-            refusals.append({"name": str(cand.get("name") or "?"), "reason": got["reason"]})
-        else:
-            staged[str(cand.get("name") or "?")] = got["path"]
+            refusals.append({"name": label, "reason": got["reason"]})
+            continue
+        by_target[target] = label
+        staged[label] = got["path"]
     if not _has_files(stage_dir):
         return {"ok": False, "reason": "nothing stageable", "refusals": refusals,
                 "stage": stage_dir, "workspace": scratch}

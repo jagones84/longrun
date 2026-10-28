@@ -212,8 +212,18 @@ def propose(scope, record, contrast=None, library_rows=(), model=None, call=None
             max_tokens=4000)
     else:
         answer, _think, used = call(messages)
+    rows = _parse(answer)
+    if not rows:
+        # Distinguish "the provider answered nothing" from "the model wrote prose":
+        # both used to surface as a bare "no candidates", which hides a dead model.
+        why = ("the editor returned an empty answer"
+               if not str(answer or "").strip()
+               else 'the editor answered without a "candidates" array')
+        return {"scope": scope, "proposals": [], "candidates": [],
+                "rejected": [{"name": "(editor)", "reason": "%s (model %s)" % (why, used)}],
+                "model": used, "domain": domain}
     ids, rejected, accepted = [], [], []
-    for candidate in _parse(answer)[:MAX_CANDIDATES]:
+    for candidate in rows[:MAX_CANDIDATES]:
         ok, reason = _validate(candidate)
         label = _name(candidate.get("name") if isinstance(candidate, dict) else "", "candidate")
         if ok and label in set(str(x) for x in (exclude or ())):

@@ -161,6 +161,27 @@ _branch = ui.split('else if (name === "improvement") {', 1)[-1].split("else if (
 check("F5 opening Improvement loads the cycle section", "loadHarnessCycle()" in _branch,
       _branch.strip().splitlines()[:4])
 
+# ------------------- G: only what the probe APPLIED can be adopted (live flaw) --
+# Two guardrails write the same file; the probe applies one. The cycle used to
+# report both as kept and store a library entry that held neither text in full.
+TWO = [{"kind": "guardrail", "name": "rules-a", "content": "Always inventory inputs.\n"},
+       {"kind": "guardrail", "name": "rules-b", "content": "Never guess a path.\n"}]
+
+
+def two_call(_msgs, *_a, **_k):
+    return json.dumps({"candidates": TWO}), "", "stub"
+
+
+two = CY.run(SID, domain="two", dry_run=False, c=ON, call=two_call, runner=probe_runner)
+check("G1 only the applied candidate is kept", two.get("kept") == ["rules-a"], two.get("kept"))
+check("G2 the refused twin is named with its reason",
+      any("same file as" in str(r.get("reason")) for r in two.get("refusals") or []),
+      two.get("refusals"))
+check("G3 the adopted lesson names the candidate that actually ran",
+      "rules-a" in str((two.get("adopted") or {}).get("lesson"))
+      and "rules-b" not in str((two.get("adopted") or {}).get("lesson")),
+      (two.get("adopted") or {}).get("lesson"))
+
 shutil.rmtree(TMP, ignore_errors=True)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))

@@ -239,6 +239,21 @@ check("I4 the runner is spawned as a module of the repo under test",
       and "--max-steps" not in _plan_i["cmd"], _plan_i["cmd"])
 P.cleanup("i1")
 
+# ------------------------------- J: one file per kind (live flaw, 2026-10-28) --
+# A live cycle adopted TWO guardrails while the probe had applied only one: both
+# wrote the same Project_rules.md and the second silently overwrote the first.
+_G1 = {"kind": "guardrail", "name": "rules-a", "content": "Always inventory inputs.\n"}
+_G2 = {"kind": "guardrail", "name": "rules-b", "content": "Never guess a path.\n"}
+_plan_j = P.plan(BASE, [_G1, _G2], ON, probe_id="j1")
+check("J1 the second candidate of the same kind is refused, by name",
+      list(_plan_j["staged"].keys()) == ["rules-a"]
+      and any("same file as" in r["reason"] for r in _plan_j["refusals"]),
+      _plan_j["refusals"])
+_guard = open(os.path.join(_plan_j["workspace"], "Project_rules.md"), encoding="utf-8").read()
+check("J2 the copy carries the FIRST candidate's text, not the second's",
+      "Always inventory inputs" in _guard and "Never guess a path" not in _guard, _guard)
+P.cleanup("j1")
+
 shutil.rmtree(TMP, ignore_errors=True)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))

@@ -163,6 +163,28 @@ check("F2 nothing extra was written", len(IMP.list_proposals()) == mid)
 check("G1 the same inputs produce the same prompt",
       E.build_prompt("invariant", RECORD, CONTRAST) == pinv)
 
+# ------------------------------------------- H: a dead editor reports itself ---
+# A live cycle on 2026-10-28 ended in "no candidates" with no reason at all: the
+# provider had answered nothing and nothing named it. Silence is not a verdict.
+def prose_call(_msgs, *_a, **_k):
+    return "I could not find a failure worth fixing.", "", "stub-model"
+
+
+def empty_call(_msgs, *_a, **_k):
+    return "", "", "stub-model"
+
+
+n_props = len(IMP.list_proposals())
+dead = E.propose("invariant", RECORD, CONTRAST, call=prose_call)
+check("H1 prose with no candidates is reported, not silently empty",
+      dead["proposals"] == [] and "candidates" in json.dumps(dead.get("rejected")),
+      dead.get("rejected"))
+blank = E.propose("invariant", RECORD, CONTRAST, call=empty_call)
+check("H2 an empty answer names the model that produced it",
+      "empty answer" in json.dumps(blank.get("rejected"))
+      and "stub-model" in json.dumps(blank.get("rejected")), blank.get("rejected"))
+check("H3 neither wrote a proposal", len(IMP.list_proposals()) == n_props)
+
 shutil.rmtree(TMP, ignore_errors=True)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))

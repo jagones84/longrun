@@ -138,7 +138,9 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
     report["skipped"] = skips
     if not candidates:
         report["status"] = "no candidates"
-        report["reason"] = ", ".join(skips) or "the editors returned nothing"
+        report["reason"] = (", ".join(skips)
+                            or "; ".join(str(r.get("reason")) for r in report["refusals"])
+                            or "the editors returned nothing")
         return _save(report)
 
     probed = probe_mod.run(base, candidates, runner=runner, c=c)
@@ -152,14 +154,19 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         return _save(report)
 
     contrast = probed.get("contrast") or {}
-    chosen = compose_mod.select(contrast, candidates)
+    # Only the candidates the probe actually APPLIED can be adopted: a candidate
+    # the stage refused (e.g. two of the same kind write the same file) never ran,
+    # so claiming it was kept would be a claim without evidence.
+    staged = probed.get("staged") or {}
+    applied = [c for c in candidates if str(c.get("name")) in staged]
+    chosen = compose_mod.select(contrast, applied)
     report["decision"] = chosen["decision"]
     report["kept"] = [k.get("name") for k in chosen["kept"]]
     report["rejected"] = chosen["rejected"]
     report["contrast"] = {k: contrast.get(k) for k in
                           ("verdict", "comparable", "steps", "errors", "deliverables")}
     if chosen["adopt"]:
-        lesson = _lesson(base, contrast, candidates)
+        lesson = _lesson(base, contrast, applied)
         report["adopted"] = compose_mod.adopt(
             domain, base.get("goal") or "", lesson, contrast, chosen["kept"],
             probed.get("staged") or {})
