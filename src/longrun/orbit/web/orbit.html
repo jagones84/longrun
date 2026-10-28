@@ -1925,11 +1925,44 @@ class Constellation {
     $("constBody").addEventListener("click", () => this._pop());
   }
   async load(force, team){ if (team !== undefined) this._team = team;
-    if (this.data && !force) return this.data;
+    if (this.data && !force) { if (this._pinnedSid) await this._pinGraph(this._pinnedSid);
+      return this.data; }
     const q = (this._team && this._team !== "ALL") ? ("?team=" + encodeURIComponent(this._team)) : "";
     try { this.data = await this.api.get("/api/orbit/constellation" + q); }
     catch (e) { this.data = this.data || {agents:[], jobs:[], graphs:{}}; }
+    // v703: the RH panel asked for a CHAT session's constellation; the registry is
+    // the only source of agents/graphs, so keep that session pinned across the 5 s
+    // refresh instead of letting the panel fall back to agents[0].
+    if (this._pinnedSid) await this._pinGraph(this._pinnedSid);
     return this.data; }
+  /* v703: a plain chat session is not a designated org agent, so it has no entry in
+     the registry payload. Fetch ITS graph (same store, existing route) and add a
+     synthetic agent row so AGENT mode can focus it. */
+  async _pinGraph(sid){
+    sid = String(sid || ""); if (!sid) return null;
+    if (!this.data) this.data = {agents:[], jobs:[], graphs:{}};
+    if (!this.data.graphs) this.data.graphs = {};
+    if (!this.data.agents) this.data.agents = [];
+    if (!this.data.graphs[sid]) {
+      try {
+        const g = await this.api.get("/api/sessions/" + encodeURIComponent(sid) + "/graph");
+        this.data.graphs[sid] = {nodes: (g && g.nodes) || [], title: (g && g.goal) || ""};
+      } catch (e) { this.data.graphs[sid] = {nodes: []}; }
+    }
+    let a = this.agentBySid(sid);
+    if (!a) {
+      a = {id: "S." + sid.slice(0, 6), session: sid, adhoc: true,
+           name: this.data.graphs[sid].title || "active session"};
+      this.data.agents = [a].concat(this.data.agents);
+    }
+    return a;
+  }
+  async ensureSession(sid){
+    this._pinnedSid = String(sid || "");
+    if (!this._pinnedSid) return null;
+    await this.load(true);
+    return this.agentBySid(this._pinnedSid);
+  }
   async open(agent, mode){
     // JAG-513: picking a DIFFERENT agent must only SELECT it — the camera (the
     // zoom/pan viewBox) must not jump to a new fit. A mode switch (agent ⇄ all) is
@@ -3288,11 +3321,23 @@ function initPanels(){
 }
 /* JAG-424: the Sessions view asks the deck to CIRCLE a task in the constellation
    (right-click a todo in the RH panel → "Show in constellation"). */
-function focusConstellationNode(id, tries){
+function focusConstellationNode(id, tries, sid){
   tries = tries || 0;
+  if (id == null && !sid) return;
+  // v703: the RH panel sends the ACTIVE CHAT session id with the node. Pin that
+  // session's constellation (it need not be a designated org agent) and focus it —
+  // the id alone is ambiguous because every session numbers its nodes n1..nN.
+  if (sid && window.__orbitApp && window.__orbitApp.tac) {
+    try {
+      window.__orbitApp.tac.ensureSession(sid).then(a => {
+        if (a) window.__orbitApp.tac.open(a, "agent");
+      });
+    } catch (_) {}
+  }
   if (id == null) return;
   const key = String(id);
   const cssEsc = (window.CSS && CSS.escape) ? CSS.escape(key) : key;
+  const sidEsc = sid ? ((window.CSS && CSS.escape) ? CSS.escape(String(sid)) : String(sid)) : "";
   // v657: the deck's SELECTED view may not show the Constellation panel at all —
   // then the postMessage was a no-op. Follow the jobs bridge (single shared
   // procedure): if the panel is hidden, add it to the selected view (when the
@@ -3307,19 +3352,23 @@ function focusConstellationNode(id, tries){
       }
     } catch (_) {}
   }
-  let g = document.querySelector('.cnode[data-id="' + cssEsc + '"]');
+  let g = sidEsc ? document.querySelector('.cnode[data-id="' + cssEsc + '"][data-sid="' + sidEsc + '"]')
+                 : document.querySelector('.cnode[data-id="' + cssEsc + '"]');
   if (!g){
-    // the drawn label is "<agentId>.n<num>" — match by the id or its numeric tail.
+    // the drawn label is "<agentId>.n<num>" — match by the id or its numeric tail
+    // (same session only: a tail match across agents rings the wrong cluster).
     const tail = key.replace(/[^0-9]+/g, "");
     g = [...document.querySelectorAll(".cnode")].find(el => {
+      if (sidEsc && el.getAttribute("data-sid") !== String(sid)) return false;
       const t = (el.textContent || "").trim();
       return t === key || (!!tail && t.endsWith(".n" + tail));
     });
   }
   if (!g && tries < 6){
     // the node may live in another agent's cluster — switch to the ALL view, retry.
-    if (tries === 0){ const b = document.getElementById("constAll"); if (b) b.click(); }
-    setTimeout(() => focusConstellationNode(key, tries + 1), 500);
+    // v703: never do that when the session is known (it would show the team board).
+    if (tries === 0 && !sid){ const b = document.getElementById("constAll"); if (b) b.click(); }
+    setTimeout(() => focusConstellationNode(key, tries + 1, sid), 500);
     return;
   }
   if (!g) return;
@@ -3348,7 +3397,7 @@ function focusConstellationNode(id, tries){
 }
 window.addEventListener("message", (e) => {
   const d = e.data || {};
-  if (d && d.type === "longrun-focus-node") focusConstellationNode(d.id);
+  if (d && d.type === "longrun-focus-node") focusConstellationNode(d.id, 0, d.session);
   /* v609: the Sessions Plan panel hands us a job id — expand + ring that job
      in the Jobs panel (single shared bridge, no second truth). */
   if (d && d.type === "longrun-focus-job" && window.__orbitApp && window.__orbitApp.jobs) {

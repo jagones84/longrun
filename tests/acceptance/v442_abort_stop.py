@@ -87,8 +87,8 @@ check("3b it aborts every registered session id",
       "sids = list(_ACTIVE_CHAT.keys())" in HTTP)
 check("3c the UI Stop aborts every running turn",
       'api("POST", "/api/chat/abort", { all: true })' in IDX)
-check("3d the composer button routes to Stop while busy",
-      "function sendOrStop() { if (composerBusy()) stopRun(); else send(); }" in IDX)
+check("3d the composer button routes to Stop while busy (v702: only with an empty draft)",
+      "function sendOrStop() { if (composerBusy() && !composerDraft()) stopRun(); else send(); }" in IDX)
 check("3e Stop reports the number of turns it hit",
       "running turn(s)" in IDX)
 check("3f the Stop icon resets from server turn state, not a lingering EventSource",

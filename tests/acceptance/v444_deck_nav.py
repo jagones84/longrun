@@ -45,8 +45,8 @@ check("1b showConstellation() exists and opens the deck at the chosen task",
 check("2a _showInConstellation rings the deck's docked constellation panel",
       "function _planRing(" in HTML and 'getElementById("constPanel")' in HTML
       and "_planRing(f, n2)" in HTML, "")
-check("2b the forward focus message is still posted into the deck",
-      'postMessage({ type: "longrun-focus-node", id: id }' in HTML, "")
+check("2b the forward focus message is still posted into the deck (v703: with the active session)",
+      'postMessage({ type: "longrun-focus-node", id: id, session: sid }' in HTML, "")
 
 # --- 3) reverse: the main app answers the deck's navigation request ---------
 check("3a the main WebUI listens for the deck's 'longrun-open-task' request",
@@ -72,7 +72,8 @@ check("5b gotoTask routes through _deckGo (no iframe-trapping navigation)",
       "this._deckGo(agent.session, node && node.id)" in DECK
       and "encodeURIComponent(node.id)" not in DECK, "")
 check("5c the deck still answers the forward focus message",
-      'd.type === "longrun-focus-node"' in DECK and "focusConstellationNode(d.id)" in DECK, "")
+      'd.type === "longrun-focus-node"' in DECK
+      and "focusConstellationNode(d.id, 0, d.session)" in DECK, "")
 
 print("---")
 ok = sum(results)

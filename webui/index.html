@@ -841,6 +841,11 @@
      This removes the separate stop control so the toolbar fits one row. */
   #composerBar #sendBtn.stop { background: var(--err); color: #fff; border-radius: 10px; font-size: 14px; }
   #composerBar #sendBtn.stop:hover { filter: brightness(1.1); }
+  /* v702: while a turn runs the big button SENDs a typed prompt (queue/steer);
+     this chip keeps the panic Stop one click away instead of burying it. */
+  #composerBar #stopChip { flex: 0 0 auto; width: 26px; height: 26px; min-width: 26px; padding: 0;
+    border-radius: 8px; background: var(--err); color: #fff; font-size: 11px; line-height: 1; }
+  #composerBar #stopChip[hidden] { display: none; }
   /* JAG-463: queue indicator — a GREEN dot on the (stop) send button while messages are
      waiting to be sent, so "queued" is distinguishable from "idle red stop". */
   #composerBar #sendBtn { position: relative; }
@@ -1967,6 +1972,7 @@
             <option value="queue">queue</option>
             <option value="steer">steer</option>
           </select>
+          <button class="ghost" id="stopChip" data-call="stopRun" title="stop the running turn" aria-label="stop" hidden>■</button>
           <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence">🎙</button>
         </div>
         <div class="cb-right">
@@ -7357,14 +7363,20 @@ function _showInConstellation(n) {
   showControl();
   const f = document.getElementById("controlFrame");
   const id = n && n.id ? String(n.id) : null;
+  // v703: carry the ACTIVE chat session. The deck's constellation is registry-scoped
+  // and a plain chat session is not an org agent, so without this it fell back to the
+  // team board (agents[0]) — the operator's "it shows the view, not the constellation".
+  const sid = (typeof sessionId === "string" && sessionId) ||
+              (graph && (graph.session_id || graph.session)) || null;
   // the iframe boots on first open — post repeatedly so the message lands once the
-  // deck is live (and ring the panel on the first successful delivery).
+  // deck is live (and ring the panel on the first successful delivery). The message
+  // is sent even with no node so the deck can still switch to the active session.
   let n2 = 0, rang = false;
   const iv = setInterval(() => {
     try {
       if (f.contentWindow && f.contentDocument && f.contentDocument.readyState === "complete") {
         if (!rang) { rang = true; _planRing(f, n2); }
-        if (id) f.contentWindow.postMessage({ type: "longrun-focus-node", id: id }, "*");
+        f.contentWindow.postMessage({ type: "longrun-focus-node", id: id, session: sid }, "*");
       }
     } catch (e) {}
     if (++n2 >= 10) clearInterval(iv);
@@ -8646,28 +8658,41 @@ function setRunning(sid, on) {
   renderRuns();       // JAG-479: the rail's running COUNT follows the real signal
   refreshSendBtn();   // JAG-424: the send button becomes STOP while the ACTIVE turn runs
 }
-/* JAG-424: ONE composer button. Normally ↑ = send; while the ACTIVE session has a
-   running turn it becomes a red ■ = stop. Replaces the separate stop control so the
-   toolbar fits a single row. */
+/* JAG-424 / v702: ONE composer button. Normally ↑ = send. While the ACTIVE session
+   runs a turn it still SENDS when the box holds text (the queue/steer picker decides
+   what happens to it) and becomes the red ■ only when the box is empty; the panic
+   Stop then lives on the small red chip beside the picker, so stopping never costs a
+   keystroke or a cleared draft. */
 function composerBusy() { return !!(sessionId && runningSessions[sessionId]); }
+function composerDraft() {
+  const el = $("inp");
+  return el ? String(el.value || "").trim() : "";
+}
+function sendOrStop() { if (composerBusy() && !composerDraft()) stopRun(); else send(); }
 function refreshSendBtn() {
   const b = $("sendBtn"); if (!b) return;
   const busy = composerBusy();
+  const draft = !!composerDraft();
   b.disabled = _attachmentPending(sessionId) && !busy;
-  // JAG-463: while a turn runs the big button IS the Stop panic button, so a green dot
-  // shows when the composer queue is non-empty (something waits to be sent). Enter
-  // still queues/steers; the per-item chips offer ⇢ (steer now) and × (remove).
+  // JAG-463: while a turn runs a green dot shows when the composer queue is
+  // non-empty (something waits to be sent).
   const qn = sessionId ? _q(sessionId).length : 0;
-  b.classList.toggle("stop", busy);
+  b.classList.toggle("stop", busy && !draft);
   b.classList.toggle("hasqueue", qn > 0);
-  b.textContent = busy ? "■" : "↑";
+  b.textContent = (busy && !draft) ? "■" : "↑";
+  const mode = (localStorage.getItem("sf_qmode") || "queue");
   b.title = busy
-    ? ("stop agent / chat · " + (qn ? qn + " queued — Enter adds another"
-                                     : "Enter queues or steers the next message"))
+    ? (draft
+        ? (mode === "steer"
+            ? "steer this prompt into the running turn (Enter)"
+            : "queue this prompt — sent when the turn ends (Enter)")
+        : ("stop agent / chat · "
+           + (qn ? qn + " queued — Enter adds another" : "type to queue or steer")))
     : "send (Enter — Shift+Enter for a newline)";
-  b.setAttribute("aria-label", busy ? "stop" : "send");
+  b.setAttribute("aria-label", (busy && !draft) ? "stop" : "send");
+  const chip = $("stopChip");
+  if (chip) chip.hidden = !busy;
 }
-function sendOrStop() { if (composerBusy()) stopRun(); else send(); }
 /* JAG-218: a turn that finished while you were NOT looking at that session gets
    a bell marker on its rail row + a toast, so a background job that completes is
    never missed. Cleared as soon as you open that session. */
@@ -14187,7 +14212,7 @@ function _renderCmdChips() {
    box.style.display = chips.length ? "flex" : "none";
    box.hidden = !chips.length;
  }
-$("inp").addEventListener("input", () => { skillsAutocomplete(); _renderCmdChips(); });
+$("inp").addEventListener("input", () => { skillsAutocomplete(); _renderCmdChips(); refreshSendBtn(); });
 /* JAG-116/JAG-458: track the bottom pin and save each session's reading position. */
 $("log").addEventListener("scroll", () => {
   const log = $("log");

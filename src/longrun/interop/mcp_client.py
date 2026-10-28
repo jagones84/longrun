@@ -932,11 +932,41 @@ def _filesystem_directory_error(spec: dict) -> str | None:
     return None
 
 
+def _enable_client_tools(name):
+    """v704: make a freshly installed client's tools REACHABLE by the model.
+
+    External MCP tools are opt-in (JAG-80): they default to `enabled: False`, so an
+    install used to report success while the model never saw a single tool. Enable
+    exactly THIS client's names through the existing policy owner (the gitignored
+    `data/tools.overlay.yaml`, never `config/tools.yaml`) and keep approval
+    `required`, so each call is still gated. Returns the enabled names.
+    """
+    try:
+        import copy
+        from longrun.tools import registry
+        prefix = str(name) + "__"
+        names = sorted(t for t in registry._external_tools() if t.startswith(prefix))
+        if not names:
+            return []
+        cfg = copy.deepcopy(registry.load_config())
+        tools_cfg = cfg.setdefault("tools", {})
+        for full in names:
+            entry = tools_cfg.setdefault(full, {})
+            entry["enabled"] = True
+            entry.setdefault("approval", "required")
+        registry.save_config(cfg)
+        return names
+    except Exception:  # noqa: BLE001 — an install must never fail on policy
+        return []
+
+
 def upsert_client(name, spec):
     """Add or update a client in the LOCAL config and reload (JAG-108).
 
     Only whitelisted keys are accepted; the name must be a safe identifier.
     Persisting to the local file keeps secrets out of the tracked repo.
+    v704: the tools the client exposes are ENABLED in the same call — without that
+    step `mcp.upsert` was a no-op the model could never use.
     """
     name = str(name or "").strip()
     if not _NAME_RE.match(name):
@@ -959,7 +989,8 @@ def upsert_client(name, spec):
     doc["clients"][name] = entry
     path = _save_local_doc(doc)
     st = reload()
-    return {"ok": True, "name": name, "path": path, "client": entry, **st}
+    return {"ok": True, "name": name, "path": path, "client": entry,
+            "enabled_tools": _enable_client_tools(name), **st}
 
 
 def remove_client(name):
