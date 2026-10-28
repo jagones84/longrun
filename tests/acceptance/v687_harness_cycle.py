@@ -147,6 +147,12 @@ check("F2 the panel reads that endpoint", "/api/harness/cycle" in ui
 check("F3 the panel escapes model-derived strings", "esc(String(r.status))" in ui)
 check("F4 no forbidden feature is claimed in the panel",
       "auto-apply" not in ui.lower().split('id="hcbox"')[-1][:2000])
+# F5 (live defect, 2026-10-28): the section rendered EMPTY ("—") on every visit
+# because opening the Improvement category loaded the proposals and the memories
+# but never the cycle. The panel must read real state when it opens.
+_branch = ui.split('else if (name === "improvement") {', 1)[-1].split("else if (name === ", 1)[0]
+check("F5 opening Improvement loads the cycle section", "loadHarnessCycle()" in _branch,
+      _branch.strip().splitlines()[:4])
 
 shutil.rmtree(TMP, ignore_errors=True)
 

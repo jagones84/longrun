@@ -11199,6 +11199,9 @@ function settingsCategory(name) {
     // v641: the memory manager moved into this panel (it is what the loop writes).
     if (typeof loadImprovement === "function") loadImprovement();
     if (typeof loadMemories === "function") loadMemories();
+    // H2-7: the cycle section shows real backend state when the panel opens, not
+    // only after the first ↻ / dry run (it used to read "—" on every visit).
+    if (typeof loadHarnessCycle === "function") loadHarnessCycle();
   }
   else if (name === "subagents") {
     if (typeof loadSubagents === "function") loadSubagents();
