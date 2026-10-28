@@ -131,7 +131,7 @@ check("A5 files_touched is deduped, sorted, workspace-only",
       and rec["files_touched"].count(DELIVERABLE) == 1
       and OUTSIDE not in rec["files_touched"], rec["files_touched"])
 check("A6 deliverable carries sha256 + bytes, and a vanished file is skipped",
-      [d["path"] for d in rec["deliverables"]] == [DELIVERABLE]
+      [d["path"] for d in rec["deliverables"]] == ["report.md"]
       and rec["deliverables"][0]["sha256"] == hashlib.sha256(
           open(DELIVERABLE, "rb").read()).hexdigest()
       and rec["deliverables"][0]["bytes"] == os.path.getsize(DELIVERABLE), rec["deliverables"])

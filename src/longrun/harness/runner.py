@@ -32,6 +32,22 @@ import time
 import uuid
 
 
+def prepare_rules(workspace, snapshot, guardrail=None):
+    """Apply probe-only text through the same rule owner as the real chat loop.
+
+    The launcher must box CONFIG_DIR and PROJECTS_DIR before this module imports
+    rules. Project rules do not live at the workspace root.
+    """
+    from longrun.memory import rules
+    for scope in ("global", "project"):
+        text = str((snapshot or {}).get(scope) or "")
+        if text.strip():
+            rules.append(scope, text, ws=workspace)
+    if guardrail:
+        with open(guardrail, encoding="utf-8") as f:
+            rules.append("project", f.read(), ws=workspace)
+
+
 def _src_root():
     """`<repo>/src` — the package must be importable from the scratch copy."""
     here = os.path.abspath(__file__)
@@ -45,6 +61,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="longrun.harness.runner")
     ap.add_argument("--goal", required=True)
     ap.add_argument("--model", default=None)
+    ap.add_argument("--rules")
+    ap.add_argument("--guardrail")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     src = _src_root()
@@ -58,6 +76,9 @@ def main(argv=None):
         from longrun.agent import agent as agent_mod
         from longrun.harness import record as record_mod
         from longrun.memory import stores as stores_mod
+        if args.rules:
+            with open(args.rules, encoding="utf-8") as f:
+                prepare_rules(os.getcwd(), json.load(f), args.guardrail)
         sid = "probe-" + ((os.environ.get("LONGRUN_HARNESS_PROBE") or "").strip()
                           or uuid.uuid4().hex[:12])
         sess = {"id": sid, "created": round(started, 3), "model": args.model or "",
@@ -66,17 +87,16 @@ def main(argv=None):
         stores_mod.append_message(sess, "user", args.goal)
         reply, model = agent_mod.chat_once(sess, args.goal, args.model)
         payload = {"record": record_mod.build(sid, session=sess),
-                   "reply": str(reply or "")[:2000], "model": str(model or "")}
+                   "reply": str(reply.get("content") if isinstance(reply, dict)
+                                else reply or "")[:2000], "model": str(model or "")}
     except BaseException as exc:  # noqa: BLE001 — the probe must learn WHY it failed
         error = "%s: %s" % (type(exc).__name__, exc)
     payload.setdefault("record", None)
     payload.update({"goal": args.goal, "created": round(started, 3), "error": error})
     out = args.out
     try:
-        tmp = out + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, out)
+        from longrun.util.fswrite import write_json
+        write_json(out, payload)
     except OSError as exc:
         print(json.dumps({"ok": False, "steps": 0, "error": "cannot write result: %s" % exc}))
         return 1

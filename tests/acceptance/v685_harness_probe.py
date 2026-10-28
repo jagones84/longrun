@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v685 — H2-5 probe: same task, candidate harness, isolated and gated.
+"""v685 — H2-5 probe: production fails closed; injected trials are gated.
 
 The probe is the only part of this lot that WRITES, so this test is mostly about
 what it refuses:
@@ -7,10 +7,10 @@ what it refuses:
      oversized tree refused and the partial copy removed)
   B  staging writes only inside the probe stage, and refuses the kinds the agent
      loop cannot honour (prompt.tool_guidance need a merge the loop does not have)
-  C  disabled by default: no copy, no spawn
+  C  disabled by default; production refuses whole-run isolation before staging
   D  too many candidates / a tiny token budget refuse before anything is copied
   E  with an injected runner, a probe yields a record + a contrast and the
-     operator's workspace is byte-identical afterwards
+     operator's workspace is byte-identical afterwards (not confinement proof)
   F  a failed runner is reported, not swallowed
 
 No model, no network, no docker.
@@ -21,10 +21,12 @@ import os
 import shutil
 import sys
 import tempfile
+from unittest.mock import patch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="sf-v685-")
-for _k in ("CONFIG_DIR", "SESSIONS_DIR", "DATA_DIR", "HARNESS_DIR", "RUNS_DIR"):
+for _k in ("CONFIG_DIR", "SESSIONS_DIR", "DATA_HOME", "DATA_DIR", "HARNESS_DIR",
+           "RUNS_DIR", "PROJECTS_DIR", "SKILLS_DIR"):
     os.environ["LONGRUN_" + _k] = os.path.join(TMP, _k)
     os.makedirs(os.path.join(TMP, _k), exist_ok=True)
 os.environ["LONGRUN_HOOKS"] = os.path.join(TMP, "hooks.yaml")
@@ -33,6 +35,8 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.harness import probe as P  # noqa: E402
 from longrun.harness import record as R  # noqa: E402
+from longrun.harness import runner as RUNNER  # noqa: E402
+from longrun.memory import rules, skills  # noqa: E402
 
 results = []
 
@@ -97,6 +101,11 @@ big = os.path.join(TMP, "copy2")
 refused = P.guarded_copy(WS, big, max_mb=0)
 check("A4 an oversized tree is refused and the partial copy removed",
       refused["ok"] is False and not os.path.exists(big), refused.get("reason"))
+for nested in (WS, os.path.join(WS, "nested", "copy")):
+    refused = P.guarded_copy(WS, nested)
+    check("A5 copying into the source or its descendant is refused before creation",
+          refused["ok"] is False and "inside" in refused["reason"]
+          and (nested == WS or not os.path.exists(nested)))
 
 # ------------------------------------------------------------- B: staging ----
 stage_dir = os.path.join(TMP, "stage")
@@ -105,22 +114,28 @@ check("B1 a skill stages under skills/<category>/<name>/SKILL.md",
       ok_skill["ok"] and ok_skill["target"].endswith(os.path.join("reconcile", "SKILL.md")),
       ok_skill)
 ok_guard = P.stage("guardrail", "g", "Inventory ALL inputs first.\n", stage_dir)
-check("B2 a guardrail stages as Project_rules.md",
-      ok_guard["ok"] and ok_guard["target"].endswith("Project_rules.md"))
-for kind in ("prompt", "tool_guidance", "code"):
+check("B2 a guardrail stages under rules/Project_rules.md",
+      ok_guard["ok"] and ok_guard["target"] == os.path.join("rules", "Project_rules.md")
+      and ok_guard["path"] == os.path.join(stage_dir, ok_guard["target"]))
+for kind in ("prompt", "tool_guidance", "code", "script"):
     bad = P.stage(kind, "x", "text", stage_dir)
     check("B3 %s is refused with a reason" % kind, bad["ok"] is False and bad["reason"], bad["reason"])
 check("B4 staging wrote nothing inside the operator's workspace",
       not os.path.exists(os.path.join(WS, "skills")))
 # B5: the child must see the REAL skills PLUS the candidate — a skills root holding
 # only the candidate would make the contrast measure the missing skills instead.
+real_skill = os.path.join(skills.SKILLS_DIR, "fixture", "existing", "SKILL.md")
+os.makedirs(os.path.dirname(real_skill), exist_ok=True)
+with open(real_skill, "w", encoding="utf-8") as f:
+    f.write("Existing fixture skill.\n")
 _plan_b = P.plan(BASE, [CAND], ON, probe_id="b5")
 _root = _plan_b["env"].get("LONGRUN_SKILLS_DIR") or ""
 check("B5 the probe skills root is the real tree + the candidate",
       _root and _root != os.path.join(_plan_b["stage"], "skills")
       and os.path.isfile(os.path.join(_root, os.path.relpath(
-          _plan_b["staged"]["reconcile"], os.path.join(_plan_b["stage"], "skills")))),
-      _root)
+          _plan_b["staged"]["reconcile"], os.path.join(_plan_b["stage"], "skills"))))
+      and open(os.path.join(_root, "fixture", "existing", "SKILL.md"),
+               encoding="utf-8").read() == "Existing fixture skill.\n")
 P.cleanup("b5")
 
 # ---------------------------------------------------------- C: off by default
@@ -155,6 +170,17 @@ off = P.run(BASE, [CAND], runner=fake_runner)
 check("C1 disabled by default: skipped, no spawn", off["status"] == "skipped" and not calls, off)
 check("C2 no probe directory was created", _probe_dirs() == _dirs_before_c,
       _probe_dirs())
+with patch.object(P, "plan", side_effect=AssertionError("production staged")), \
+        patch.object(P, "_spawn", side_effect=AssertionError("production spawned")):
+    production = P.run(BASE, [CAND], c=ON)
+check("C3 enabled production refuses before staging or spawning",
+      production["status"] == "refused" and "whole-run" in production["reason"]
+      and production["isolation"]["available"] is False
+      and _probe_dirs() == _dirs_before_c)
+with patch("subprocess.run", side_effect=AssertionError("host executed")):
+    payload, reason = P._spawn({"cmd": ["/bin/false"], "cwd": WS, "env": {}}, 1)
+check("C4 direct legacy spawn also refuses host execution",
+      payload is None and "whole-run" in reason)
 
 # --------------------------------------------------------------- D: the gates
 _dirs_before_d = _probe_dirs()
@@ -194,6 +220,18 @@ def dead_runner(_plan, _timeout):
 failed = P.run(BASE, [CAND], runner=dead_runner, c=ON)
 check("F1 a failed runner is reported, not swallowed",
       failed["status"] == "failed" and "exploded" in failed["reason"], failed)
+check("F2 a failed runner leaves no scratch tree",
+      not os.path.exists(os.path.join(P.root(), failed["probe_id"])))
+
+
+def throwing_runner(_plan, _timeout):
+    raise RuntimeError("injected crash")
+
+
+failed = P.run(BASE, [CAND], runner=throwing_runner, c=ON)
+check("F3 runner exceptions name the failure and clean scratch",
+      failed["status"] == "failed" and "RuntimeError: injected crash" in failed["reason"]
+      and not os.path.exists(os.path.join(P.root(), failed["probe_id"])))
 
 # ---------------------------------------------------- G: the one env switch ---
 os.environ["LONGRUN_HARNESS_ENABLED"] = "1"
@@ -207,6 +245,10 @@ check("G2 unset means disabled (no accidental spend)",
       P.cfg()["enabled"] is False)
 check("G3 a bad env value is ignored, not fatal",
       P.cfg(override=None)["max_steps"] == P.DEFAULTS["max_steps"])
+os.environ["LONGRUN_HARNESS_MAX_STEPS"] = "not-an-integer"
+check("G4 invalid numeric env keeps the default",
+      P.cfg()["max_steps"] == P.DEFAULTS["max_steps"])
+del os.environ["LONGRUN_HARNESS_MAX_STEPS"]
 
 # ------------------------------------------- H: no record is a FAILURE ------
 def hollow_runner(_plan, _timeout):
@@ -215,7 +257,9 @@ def hollow_runner(_plan, _timeout):
 
 hollow = P.run(BASE, [CAND], runner=hollow_runner, c=ON)
 check("H1 a runner with no record fails loudly (an empty record would read as "
-      "'every base error fixed')", hollow["status"] == "failed", hollow.get("reason"))
+      "'every base error fixed')", hollow["status"] == "failed"
+      and "no record" in hollow["reason"]
+      and not os.path.exists(os.path.join(P.root(), hollow["probe_id"])))
 # H2 pins the defect found on 2026-10-28: `agent.agent_run` has no tool lane
 # (`apply_agent_action` answers "unknown action"), so a probe driven by it records
 # no tool names and no failures. The probe MUST drive the chat loop.
@@ -225,6 +269,10 @@ check("H2 the runner drives the real chat loop, not the tool-less agent_run",
       "chat_once(" in _runner_src and "agent_run(" not in _runner_src)
 
 # ------------------------------------------ I: the child's own env is boxed ---
+rules.save("global", "Global owner rule.\n")
+rules.save("project", "Project owner rule.\n", ws=WS)
+with open(os.path.join(WS, "AGENTS.md"), "w", encoding="utf-8") as f:
+    f.write("Workspace additive rule.\n")
 _plan_i = P.plan(BASE, [CAND], ON, probe_id="i1")
 _env = _plan_i["env"]
 check("I1 the child writes its session into the probe dir",
@@ -241,6 +289,20 @@ check("I4 the runner is spawned as a module of the repo under test",
 # land those in the operator's live inbox, so the child gets its own DATA_DIR.
 check("I5 the child's DATA_DIR is boxed (the probe cannot write live memory/proposals)",
       _env.get("LONGRUN_DATA_DIR", "").startswith(P.root()), _env.get("LONGRUN_DATA_DIR"))
+rules_path = _plan_i["cmd"][_plan_i["cmd"].index("--rules") + 1]
+with open(rules_path, encoding="utf-8") as f:
+    snapshot = json.load(f)
+check("I6 rule snapshot comes from real owners, excluding copied AGENTS.md",
+      snapshot == {"global": "Global owner rule.\n", "project": "Project owner rule.\n"}
+      and open(os.path.join(_plan_i["workspace"], "AGENTS.md"),
+               encoding="utf-8").read() == "Workspace additive rule.\n")
+check("I7 model and goal are pinned without claiming confinement",
+      _plan_i["cmd"][_plan_i["cmd"].index("--model") + 1] == BASE["model"]
+      and _plan_i["cmd"][_plan_i["cmd"].index("--goal") + 1] == BASE["goal"]
+      and P.isolation_status()["available"] is False)
+check("I8 all rule owners are boxed in the planned child environment",
+      all(os.path.commonpath([_env["LONGRUN_" + key], P.root()]) == P.root()
+          for key in ("DATA_HOME", "CONFIG_DIR", "PROJECTS_DIR", "HARNESS_DIR")))
 P.cleanup("i1")
 
 # ------------------------------- J: one file per kind (live flaw, 2026-10-28) --
@@ -253,9 +315,26 @@ check("J1 the second candidate of the same kind is refused, by name",
       list(_plan_j["staged"].keys()) == ["rules-a"]
       and any("same file as" in r["reason"] for r in _plan_j["refusals"]),
       _plan_j["refusals"])
-_guard = open(os.path.join(_plan_j["workspace"], "Project_rules.md"), encoding="utf-8").read()
-check("J2 the copy carries the FIRST candidate's text, not the second's",
+_guard_path = _plan_j["staged"]["rules-a"]
+_guard = open(_guard_path, encoding="utf-8").read()
+check("J2 the stage carries the FIRST candidate's text, not the second's",
       "Always inventory inputs" in _guard and "Never guess a path" not in _guard, _guard)
+check("J3 guardrail is passed to the real owner bridge, not the workspace root",
+      _guard_path == os.path.join(_plan_j["stage"], "rules", "Project_rules.md")
+      and _plan_j["cmd"][_plan_j["cmd"].index("--guardrail") + 1] == _guard_path
+      and not os.path.exists(os.path.join(_plan_j["workspace"], "Project_rules.md")))
+with open(_plan_j["cmd"][_plan_j["cmd"].index("--rules") + 1], encoding="utf-8") as f:
+    snapshot = json.load(f)
+# The helper runs in-process here with temp-only rule owners, never a real child.
+RUNNER.prepare_rules(_plan_j["workspace"], snapshot, _guard_path)
+collected = rules.collect(ws=_plan_j["workspace"])
+check("J4 the runtime rule owner consumes baseline plus the staged guardrail",
+      collected["project"]["path"] == rules.project_rules_path(_plan_j["workspace"])
+      and "Project owner rule." in collected["project"]["text"]
+      and "Always inventory inputs." in collected["project"]["text"]
+      and "Never guess a path." not in collected["project"]["text"]
+      and collected["project"]["text"].count("Workspace additive rule.") == 1
+      and not os.path.exists(os.path.join(_plan_j["workspace"], "Project_rules.md")))
 P.cleanup("j1")
 
 shutil.rmtree(TMP, ignore_errors=True)

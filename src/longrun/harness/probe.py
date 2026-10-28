@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""H2-5 — probe: re-run the SAME task on a candidate harness, in isolation.
+"""H2-5 — fail-closed probe planning and injected offline execution.
 
 This is the step that answers "did the edit fix a concrete failure" without an
 answer key: candidate harnesses are executed on the same task and their
@@ -10,10 +10,9 @@ parallelism reduces latency, not compute (`:1905-1911`).
 
 Hard rules, because a probe WRITES:
 
-1. **Isolation is mandatory.** The operator's workspace is copied into
-   `<data>/harness/probe/<id>/workspace` and the run happens there. The copy
-   skips VCS/dependency trees, never follows a symlink that leaves the root, and
-   refuses a tree above `copy_max_mb`.
+1. **Whole-run isolation is mandatory and unavailable.** Production refuses
+   before staging or host execution. Offline injected runners test planning and
+   contrast only; a copy and redirected stores do not establish confinement.
 2. **Off by default.** `harness.enabled` is false; `max_candidates` is 2; a
    caller-declared token budget below `MIN_TOKENS` refuses before any copy.
 3. **A candidate it cannot apply is refused, not approximated.** The loop the
@@ -22,20 +21,19 @@ Hard rules, because a probe WRITES:
    prompt MAP, not from `prompt.d` addenda — so a system-prompt candidate is
    refused with that exact reason instead of being silently ignored. The same
    goes for `tool_guidance`, which would need a real `tools.yaml` merge.
-4. **Nothing is adopted here.** `run()` returns a record and a contrast; Compose
-   decides, and only a proposal leaves this module.
+4. **Nothing is adopted here.** Injected execution returns a record and contrast.
+   The current single-rollout cycle cannot establish a durable lesson or approval.
 
-Supported candidate kinds: `skill` (skills/<name>/SKILL.md), `guardrail`
-(<workspace>/Project_rules.md), `script` (scripts/<name>.py).
+Supported planning kinds: `skill` (skills/harness/<name>/SKILL.md), `guardrail`
+(rules/Project_rules.md, prepared through the existing project rules owner).
 """
-import json
 import os
 import shutil
-import subprocess
-import time
+import uuid
 
 from longrun.harness import contrast as contrast_mod
 from longrun.harness import record as record_mod
+from longrun.util.fswrite import write_json
 
 DEFAULTS = {
     "enabled": False,
@@ -49,7 +47,18 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".gradle", "build",
              "dist", ".mypy_cache", ".pytest_cache", ".ruff_cache", "target"}
 MIN_TOKENS = 1000
 MAX_FILE_BYTES = 2 * 1024 * 1024
-KINDS = ("skill", "guardrail", "script")
+KINDS = ("skill", "guardrail")
+
+
+def isolation_status():
+    """Whole-chat isolation readiness, not the shell tool's sandbox setting.
+
+    A copied workspace and redirected stores do not confine fs tools, Python or
+    network calls. No supported whole-run launcher exists yet, so production
+    probes must refuse rather than use the legacy host subprocess.
+    """
+    return {"available": False, "backend": None,
+            "reason": "whole-run isolation unavailable; host probe execution refused"}
 
 
 def cfg(override=None):
@@ -57,8 +66,7 @@ def cfg(override=None):
 
     Deliberately NOT a `config/tools.yaml` leaf: a new leaf would demand a Settings
     form (`v491`) for a value nobody tunes yet, and the block is a spend/risk switch
-    rather than a preference. `LONGRUN_HARNESS_ENABLED=1` is the one switch an
-    operator needs.
+    rather than a preference. The enable flag never overrides isolation refusal.
     """
     out = dict(DEFAULTS)
     env = {
@@ -109,6 +117,10 @@ def guarded_copy(src, dst, max_mb=512):
     root_src = os.path.realpath(src)
     if not os.path.isdir(root_src):
         return {"ok": False, "files": 0, "bytes": 0, "skipped": [], "reason": "no workspace"}
+    root_dst = os.path.realpath(dst)
+    if root_dst == root_src or root_dst.startswith(root_src + os.sep):
+        return {"ok": False, "files": 0, "bytes": 0, "skipped": [],
+                "reason": "destination is inside source workspace"}
     try:
         os.makedirs(dst, exist_ok=False)
     except FileExistsError:
@@ -154,9 +166,9 @@ def _target(kind, name):
     if kind == "skill":
         return os.path.join("skills", "harness", slug, "SKILL.md"), ""
     if kind == "guardrail":
-        return os.path.join("workspace", "Project_rules.md"), ""
+        return os.path.join("rules", "Project_rules.md"), ""
     if kind == "script":
-        return os.path.join("scripts", slug + ".py"), ""
+        return "", "script has no supported runtime consumer"
     if kind in ("prompt", "tool_guidance"):
         return "", ("%s candidates are not supported by the agent loop: its prompt is "
                     "assembled from constants + the prompt MAP, not from prompt.d "
@@ -226,13 +238,30 @@ def _skills_root(staged, base_dir):
 
 
 def plan(base, candidates, c=None, probe_id=None):
+    """Reserve unique scratch space and clean every preparation failure."""
+    pid = _safe(probe_id or ("probe-" + uuid.uuid4().hex))
+    directory = os.path.join(root(), pid)
+    try:
+        os.makedirs(directory, exist_ok=False)
+    except OSError as exc:
+        return {"ok": False, "reason": "cannot reserve probe scratch: %s" % exc,
+                "refusals": []}
+    try:
+        return _prepare_plan(base, candidates, c, pid)
+    except Exception as exc:
+        cleanup(pid)
+        return {"ok": False, "reason": "probe preparation failed: %s: %s" %
+                (type(exc).__name__, exc), "refusals": []}
+
+
+def _prepare_plan(base, candidates, c=None, probe_id=None):
     """The exact command + env a probe would use, or the reasons it cannot run.
 
     Returns {"ok", "reason", "env", "cmd", "cwd", "stage", "refusals", "workspace"}.
     No side effect beyond the stage directory inside `<harness>/probe`.
     """
     c = c or cfg()
-    pid = _safe(probe_id or ("probe-%d" % int(time.time() * 1000)))
+    pid = _safe(probe_id or ("probe-" + uuid.uuid4().hex))
     base_dir = os.path.join(root(), pid)
     stage_dir = os.path.join(base_dir, "stage")
     scratch = os.path.join(base_dir, "workspace")
@@ -266,6 +295,7 @@ def plan(base, candidates, c=None, probe_id=None):
         by_target[target] = label
         staged[label] = got["path"]
     if not _has_files(stage_dir):
+        shutil.rmtree(base_dir, ignore_errors=True)
         return {"ok": False, "reason": "nothing stageable", "refusals": refusals,
                 "stage": stage_dir, "workspace": scratch}
     copied = guarded_copy(str(base.get("workspace") or ""), scratch,
@@ -274,16 +304,22 @@ def plan(base, candidates, c=None, probe_id=None):
         shutil.rmtree(base_dir, ignore_errors=True)
         return {"ok": False, "reason": copied["reason"], "refusals": refusals,
                 "stage": stage_dir, "workspace": scratch, "copy": copied}
-    guard = os.path.join(scratch, "Project_rules.md")
-    staged_guard = os.path.join(stage_dir, "workspace", "Project_rules.md")
-    if os.path.isfile(staged_guard):
-        try:
-            with open(staged_guard, "r", encoding="utf-8") as f:
-                body = f.read()
-            with open(guard, "a", encoding="utf-8") as f:
-                f.write("\n\n" + body)
-        except OSError as exc:
-            refusals.append({"name": "guardrail", "reason": "could not apply: %s" % exc})
+    from longrun.memory import rules
+    collected = rules.collect(ws=base["workspace"])
+    # The copied workspace already carries its AGENTS.md. Do not duplicate it
+    # by also turning the collected addendum into a native project rule.
+    snapshot = {}
+    for scope in ("global", "project"):
+        texts = []
+        for path in collected[scope]["files"]:
+            if scope == "project" and path == rules.project_agents_path(base["workspace"]):
+                continue
+            with open(path, encoding="utf-8") as f:
+                texts.append(f.read())
+        snapshot[scope] = "\n\n".join(texts)
+    rules_file = os.path.join(base_dir, "rules.json")
+    write_json(rules_file, snapshot)
+    staged_guard = os.path.join(stage_dir, "rules", "Project_rules.md")
     env = dict(os.environ)
     staged_skills = os.path.join(stage_dir, "skills")
     if _has_files(staged_skills):
@@ -299,6 +335,16 @@ def plan(base, candidates, c=None, probe_id=None):
     env["LONGRUN_SESSIONS_DIR"] = os.path.join(base_dir, "sessions")
     env["LONGRUN_DB"] = os.path.join(base_dir, "events.db")
     env["LONGRUN_DATA_DIR"] = os.path.join(base_dir, "data")
+    env["LONGRUN_DATA_HOME"] = os.path.join(base_dir, "home")
+    env["LONGRUN_CONFIG_DIR"] = os.path.join(base_dir, "config")
+    for key, leaf in (("PROJECTS_DIR", "projects"), ("HARNESS_DIR", "harness"),
+                      ("RUNS_DIR", "runs"), ("THREADS_DIR", "threads"),
+                      ("MESSAGES_DIR", "messages"), ("CODEBASE_DIR", "codebase"),
+                      ("KNOWLEDGE_DIR", "knowledge"), ("EMBEDDING_DIR", "embedding"),
+                      ("MATRIX_DOT", "matrix"), ("WORKSPACES_ROOT", "workspaces"),
+                      ("SKILLS_LOCAL_DIR", "skills-local"),
+                      ("SKILLS_DIGESTS", "skills-digests.json"), ("HOOKS", "hooks.yaml")):
+        env["LONGRUN_" + key] = os.path.join(base_dir, leaf)
     # `agent.CHAT_TOOL_MAX_STEPS` is read at import time from this var — the step
     # ceiling is a budget, so the child gets it before the module is imported.
     env["LONGRUN_CHAT_TOOL_STEPS"] = str(int(c.get("max_steps") or DEFAULTS["max_steps"]))
@@ -311,26 +357,18 @@ def plan(base, candidates, c=None, probe_id=None):
         [src] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
     cmd = [os.environ.get("LONGRUN_PYTHON") or "python3", "-m", "longrun.harness.runner",
            "--goal", str(base.get("goal") or ""),
-           "--out", os.path.join(base_dir, "result.json")]
+           "--model", str(base.get("model") or ""),
+           "--rules", rules_file, "--out", os.path.join(base_dir, "result.json")]
+    if os.path.isfile(staged_guard):
+        cmd += ["--guardrail", staged_guard]
     return {"ok": True, "reason": "", "env": env, "cmd": cmd, "cwd": scratch,
             "stage": stage_dir, "refusals": refusals, "workspace": scratch,
             "probe_id": pid, "copy": copied, "staged": staged}
 
 
 def _spawn(plan_obj, timeout):
-    """Run the probe command; returns (result_dict|None, error)."""
-    try:
-        proc = subprocess.run(plan_obj["cmd"], cwd=plan_obj["cwd"], env=plan_obj["env"],
-                              capture_output=True, text=True, timeout=timeout)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, str(exc)
-    out = plan_obj["cmd"][plan_obj["cmd"].index("--out") + 1]
-    try:
-        with open(out, "r", encoding="utf-8") as f:
-            got = json.load(f)
-    except (OSError, ValueError):
-        return None, (proc.stderr or "no result file")[-400:]
-    return (got if isinstance(got, dict) else None), ""
+    """No host fallback, including direct calls to this legacy entry point."""
+    return None, isolation_status()["reason"]
 
 
 def run(base, candidates, runner=None, c=None, budget=None):
@@ -340,7 +378,7 @@ def run(base, candidates, runner=None, c=None, budget=None):
         base: the reference execution record (`harness.record.build`).
         candidates: [{kind, name, content}] — at most `max_candidates`.
         runner: `runner(plan_obj, timeout) -> (result|None, error)`; injected in
-            tests. Default spawns `longrun.harness.runner` in the scratch copy.
+            tests. The production default refuses: no whole-run launcher exists.
         c: config override (tests).
         budget: {"tokens_left": int} declared by the caller, if any.
     Returns:
@@ -356,21 +394,31 @@ def run(base, candidates, runner=None, c=None, budget=None):
                 "reason": "more than %d candidates" % int(c.get("max_candidates") or 1)}
     if budget is not None and int(budget.get("tokens_left") or 0) < MIN_TOKENS:
         return {"status": "refused", "reason": "token budget below %d" % MIN_TOKENS}
+    if runner is None:
+        isolation = isolation_status()
+        if not isolation["available"]:
+            return {"status": "refused", "reason": isolation["reason"],
+                    "isolation": isolation}
     plan_obj = plan(base, candidates, c)
     if not plan_obj["ok"]:
         return {"status": "refused", "reason": plan_obj["reason"],
                 "refusals": plan_obj.get("refusals") or []}
     call = runner or _spawn
-    result, error = call(plan_obj, int(c.get("max_seconds") or DEFAULTS["max_seconds"]))
+    try:
+        result, error = call(plan_obj, int(c.get("max_seconds") or DEFAULTS["max_seconds"]))
+    except Exception as exc:
+        result, error = None, "%s: %s" % (type(exc).__name__, exc)
     if result is None:
+        cleanup(plan_obj["probe_id"])
         return {"status": "failed", "reason": error, "probe_id": plan_obj["probe_id"]}
-    got = result.get("record")
-    if not isinstance(got, dict):
+    got = result.get("record") if isinstance(result, dict) else None
+    if not isinstance(got, dict) or result.get("error"):
         # A runner that produced no record is a FAILURE, never an empty contrast:
         # an empty candidate record would read as "every base error is gone".
+        cleanup(plan_obj["probe_id"])
         return {"status": "failed", "probe_id": plan_obj["probe_id"],
-                "reason": str(result.get("error") or "runner returned no record")[:400]}
-    got["goal"] = str(base.get("goal") or "")  # comparison must be same-goal
+                "reason": str((result.get("error") if isinstance(result, dict) else "")
+                              or "runner returned no record")[:400]}
     diff = contrast_mod.diff(base, got)
     if not c.get("keep"):
         # The workspace COPY goes now (it is the big part); the small `stage/` stays

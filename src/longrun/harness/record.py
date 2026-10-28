@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""H2-1 — one execution record per run.
+"""H2-1 — evidence assembled from session cards and current workspace files.
 
 A harness edit is only comparable if a third party can see WHAT the base run did:
 the goal, the model, every tool call with its outcome, the files it produced, and
@@ -7,8 +7,11 @@ the harness it ran under. Today Longrun keeps the two halves apart — the run
 manifest holds digests only (`util/tracing.py:85-112`) and the transcript holds
 the `tool_cards` — and nothing ties them together.
 
-This module builds that artifact from already-persisted data. It is read-only:
-no hook in the agent loop, no model call, no write to the workspace.
+This module builds that artifact from already-persisted data. Cards are a session
+aggregate, not bound to an individual run. Deliverables, skills and hooks are read
+at build time, not immutable historical evidence. A requested run manifest adds
+its stored fields only; it does not establish a matched run.
+No hook in the agent loop, no model call, no write to the workspace.
 
 Secrets: tool arguments are **digested**, never copied. The record keeps
 `args_keys` (top-level key names), `args_digest` (sha256 of the canonical JSON)
@@ -24,6 +27,7 @@ import os
 
 from longrun.memory import skills as skills_mod
 from longrun.tools import hooks as hooks_mod
+from longrun.util import fswrite
 from longrun.util import paths
 from longrun.util import tracing
 
@@ -97,6 +101,14 @@ def _abs(path, workspace):
     return os.path.normpath(p)
 
 
+def artifact_identity(path, workspace):
+    """Workspace-relative identity; never rebase an artifact outside the root."""
+    resolved = _abs(path, workspace)
+    if workspace and _inside(resolved, workspace):
+        resolved = os.path.relpath(os.path.realpath(resolved), os.path.realpath(workspace))
+    return resolved.replace(os.sep, "/")
+
+
 def _goal(session):
     """The task text: the first real user turn, not a harness inject."""
     for msg in session.get("messages") or []:
@@ -107,7 +119,7 @@ def _goal(session):
         text = str(msg.get("content") or "").strip()
         if not text or text.startswith(_HARNESS_TAG):
             continue
-        return text[:GOAL_MAX]
+        return text
     return ""
 
 
@@ -143,19 +155,19 @@ def _skills_digest():
 
 
 def _harness(run_id=None):
-    """The harness the run executed under, as digests.
-
-    With a `run_id` the stored manifest is the source of truth (it is what was
-    actually sent). Without one the live checkout is read, which is the same
-    digest by construction — and is recorded as such, never guessed.
-    """
+    """Stored manifest fields plus explicitly live skills/hooks and fallbacks."""
     manifest = tracing.read_manifest(run_id) if run_id else None
     manifest = manifest if isinstance(manifest, dict) else {}
+    sources = {name: "manifest" if name in manifest else "live"
+               for name in ("revision", "config", "overlay")}
+    sources.update({"prompt": "manifest" if "prompt" in manifest else "unknown",
+                    "skills": "live", "hooks": "live"})
     out = {
-        "source": "manifest" if manifest else "live",
-        "revision": manifest.get("revision") or tracing.git_revision(),
-        "config": manifest.get("config") or tracing.config_digests(),
-        "overlay": manifest.get("overlay") or tracing.file_digest(
+        "source": "mixed" if manifest else "live",
+        "sources": sources,
+        "revision": manifest["revision"] if "revision" in manifest else tracing.git_revision(),
+        "config": manifest["config"] if "config" in manifest else tracing.config_digests(),
+        "overlay": manifest["overlay"] if "overlay" in manifest else tracing.file_digest(
             os.path.join(paths.DATA_DIR, "tools.overlay.yaml")),
         "prompt": manifest.get("prompt"),
         "skills": _skills_digest(),
@@ -177,7 +189,7 @@ def _steps(cards):
             "tool": str(card.get("tool") or ""),
             "node": card.get("node"),
             "ts": card.get("ts"),
-            "ok": bool(card.get("ok", True)),
+            "ok": card.get("ok") if isinstance(card.get("ok"), bool) else None,
             "exit_code": card.get("exit_code"),
             "error": str(card.get("error") or "")[:ERROR_MAX],
             "backend": card.get("backend") or "",
@@ -195,7 +207,7 @@ def _written(cards, workspace):
     for card in cards or []:
         if not isinstance(card, dict) or str(card.get("tool") or "") not in WRITE_TOOLS:
             continue
-        if not card.get("ok", True):
+        if card.get("ok") is not True:
             continue
         args = _parse_args(card.get("args"))
         path = _abs(args.get("path") or args.get("file"), workspace)
@@ -204,14 +216,14 @@ def _written(cards, workspace):
     return sorted(seen)
 
 
-def _deliverables(files):
-    """Existing produced files, with size and content digest (bounded)."""
+def _deliverables(files, workspace):
+    """Existing produced files, with workspace-relative identity and live digest."""
     out = []
     for path in files[:MAX_DELIVERABLES]:
         try:
             if not os.path.isfile(path):
                 continue
-            out.append({"path": path, "bytes": os.path.getsize(path),
+            out.append({"path": artifact_identity(path, workspace), "bytes": os.path.getsize(path),
                         "sha256": tracing.file_digest(path)})
         except OSError:
             continue
@@ -231,7 +243,7 @@ def _tokens(key):
 
 # ------------------------------------------------------------------ build ---
 def build(session_id, run_id=None, session=None):
-    """The execution record of one session (or one run) as a plain dict.
+    """A session aggregate with optional manifest fields, never a bound run.
 
     Args:
         session_id: the session whose transcript holds the tool cards.
@@ -260,15 +272,20 @@ def _assemble(run_id, session_id, goal, created, model, workspace, cards, harnes
         "schema": SCHEMA,
         "run_id": run_id,
         "session_id": session_id,
-        "goal": str(goal or "")[:GOAL_MAX],
+        "goal": str(goal or ""),
+        "goal_display": str(goal or "")[:GOAL_MAX],
         "ts": round(float(created or 0.0), 3),
         "model": str(model or ""),
         "workspace": workspace,
+        "evidence": {"scope": "session_aggregate", "run_binding": "unverified",
+                     "steps_source": "session_tool_cards",
+                     "goal_source": "first_user_message", "model_source": "session_current",
+                     "deliverables_source": "live_workspace"},
         "harness": harness,
         "budget": {"steps": len(steps), "seconds": span, "tokens": tokens},
         "steps": steps,
         "files_touched": files,
-        "deliverables": _deliverables(files),
+        "deliverables": _deliverables(files, workspace),
     }
 
 
@@ -278,11 +295,7 @@ def save(rec):
         return None
     path = path_for(rec.get("run_id"))
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(rec, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        fswrite.write_json(path, rec)
         return path
     except Exception:  # noqa: BLE001 — an artifact is never worth a broken run
         return None

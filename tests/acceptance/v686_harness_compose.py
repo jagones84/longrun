@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""v686 — H2-6 compose: adopt only what a contrast supports.
+"""v686 — H2-6 compose: selection is evidence, not durable adoption.
 
 "Composition is selective … Each decision is tied to a concrete observation rather
 than a presumed score gain" (`papers/harness2/harness2_2610.14224.txt:291-297`).
-The failure this prevents is measured: editing the harness WITHOUT probing costs
-10.2 points on WB-code (`:646-649`).
+The direct-editing ablation jointly removes reference executions, probes and
+library (`:646-649`). Its 10.2-point WB-code loss is not a pure no-probe effect.
 
-So the rule here is one line and it is the whole feature: a candidate is kept only
+Selection is a bounded observation: a candidate is kept only
 when the contrast is comparable AND its verdict is `improved`. `mixed` is not
 "mostly improved" — it is refused, with the introduced error class named.
 
-  A  an improved contrast keeps the candidates and allows an adoption
+  A  an improved contrast supports ephemeral candidate selection
   B  regressed / unchanged / mixed / incomparable adopt NOTHING and say why
-  C  the adopted entry lands in the library with its components + EXPERIENCE.md
-  D  an unchanged contrast writes no library entry at all
+  C  compatibility adopt always returns None, with no component/experience writes
+  D  reflection retains confounded observations as NO_ENTRY, never a lesson
   E  the decision text cites the observation (the fixed class), not a score
 
 No model, no network, no server.
@@ -22,10 +22,12 @@ import os
 import shutil
 import sys
 import tempfile
+from unittest.mock import patch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="sf-v686-")
-for _k in ("CONFIG_DIR", "SESSIONS_DIR", "DATA_DIR", "HARNESS_DIR", "RUNS_DIR"):
+for _k in ("CONFIG_DIR", "SESSIONS_DIR", "DATA_HOME", "DATA_DIR", "HARNESS_DIR",
+           "RUNS_DIR", "PROJECTS_DIR", "SKILLS_DIR"):
     os.environ["LONGRUN_" + _k] = os.path.join(TMP, _k)
     os.makedirs(os.path.join(TMP, _k), exist_ok=True)
 os.environ["LONGRUN_HOOKS"] = os.path.join(TMP, "hooks.yaml")
@@ -34,6 +36,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.harness import compose as C  # noqa: E402
 from longrun.harness import library as L  # noqa: E402
+from longrun.util import improve as IMP  # noqa: E402
 
 results = []
 
@@ -82,27 +85,58 @@ got = C.select(incomp, [CAND])
 check("B2 an incomparable contrast adopts nothing even with a 'fix'",
       got["adopt"] is False and "not evidence" in got["decision"].lower(), got["decision"])
 check("B3 every rejection names a reason",
-      all(r.get("reason") for r in got["rejected"]), got["rejected"])
+      len(got["rejected"]) == 1 and got["rejected"][0]["name"] == CAND["name"]
+      and all(r.get("reason") for r in got["rejected"]), got["rejected"])
 
 # ------------------------------------------------------------- C: adoption ---
-row = C.adopt("office", "budget reconciliation", "Inventory inputs before writing.",
-              good, [CAND], {CAND["name"]: STAGED})
-check("C1 the adoption lands in the library", bool(row) and row["id"], row)
-check("C2 the component is stored as a file",
-      "SKILL.md" in os.listdir(os.path.join(L.entry_dir("office", row["id"]), "components")),
-      os.listdir(os.path.join(L.entry_dir("office", row["id"]), "components")))
-exp = L.experience_text("office", row["id"])
-check("C3 EXPERIENCE.md records the verdict and the class it removed",
-      "improved" in exp and "connection refused" in exp, exp[:160])
+before = IMP.list_proposals()
+with patch.object(L, "add", side_effect=AssertionError("durable library write")), \
+        patch.object(IMP, "propose", side_effect=AssertionError("durable proposal write")):
+    for verdict in ("improved", "regressed", "unchanged", "mixed", "incomparable"):
+        row = C.adopt("office", "budget reconciliation", "Unverified transferable claim.",
+                      contrast(verdict, fixed=["exit # connection refused"],
+                               comparable=verdict != "incomparable"),
+                      [CAND], {CAND["name"]: STAGED})
+        check("C1 %s compatibility adoption is always None" % verdict, row is None)
+check("C2 no component was durably copied",
+      not os.path.exists(L.domain_dir("office"))
+      and open(STAGED, encoding="utf-8").read() == CAND["content"])
+check("C3 no EXPERIENCE.md or proposal was written",
+      not any("EXPERIENCE.md" in names for _base, _dirs, names in os.walk(TMP))
+      and IMP.list_proposals() == before)
 
-# ------------------------------------------------------- D: no entry if flat --
-empty_row = C.adopt("office", "another task", "nothing to learn", contrast("unchanged"), [CAND],
-                    {CAND["name"]: STAGED})
-check("D1 an unchanged contrast writes no library entry", empty_row is None)
-check("D2 the library still holds exactly the first entry", len(L.index("office")["entries"]) == 1)
+# -------------------------------------------------------- D: reflection ------
+trials = [{"candidate": CAND, "status": "ran", "record": {"run_id": "trial-1"},
+           "contrast": good},
+          {"candidate": dict(CAND, name="regressed"), "status": "ran",
+           "record": {"run_id": "trial-2"},
+           "contrast": contrast("mixed", fixed=["exit # connection refused"],
+                                introduced=["exit # permission denied"])}]
+successor = {"record": {"run_id": "successor"}, "contrast": good}
+reflected = C.reflect(trials, successor)
+check("D1 even an improved executed successor reflects NO_ENTRY",
+      reflected["status"] == "NO_ENTRY" and reflected["successor_run"] == "successor"
+      and "NO_ENTRY" in reflected["reason"])
+check("D2 reflection retains every observed fixed and introduced class",
+      len(reflected["edits"]) == 2
+      and reflected["edits"][0]["run_id"] == "trial-1"
+      and reflected["edits"][0]["observed"] == "improved"
+      and reflected["edits"][0]["fixed"] == ["exit # connection refused"]
+      and reflected["edits"][1]["introduced"] == ["exit # permission denied"])
+check("D3 every single-rollout attribution is confounded and insufficient",
+      all(e["attribution"] == "confounded" and e["confidence"] == "insufficient"
+          and "controls" in e["reason"] for e in reflected["edits"]))
+check("D4 insufficient and absent trials never create durable lessons",
+      C.reflect([])["status"] == "NO_ENTRY" and C.reflect([])["edits"] == []
+      and L.index("office")["entries"] == [] and IMP.list_proposals() == before)
 
 # ----------------------------------------------------------- E: determinism ---
 check("E1 select is deterministic", C.select(good, [CAND]) == sel)
+check("E2 reflection is deterministic", C.reflect(trials, successor) == reflected)
+check("E3 absent and unknown contrasts cannot select candidates",
+      C.select(None, [CAND])["adopt"] is False
+      and C.select(contrast("unknown"), [CAND])["kept"] == []
+      and C.select(good, [])["adopt"] is False)
 
 shutil.rmtree(TMP, ignore_errors=True)
 

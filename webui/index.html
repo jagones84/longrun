@@ -8319,10 +8319,14 @@ async function loadHarnessCycle() {
   let d;
   try { d = await api("GET", "/api/harness/cycle"); }
   catch (e) { st.textContent = "error: " + e; return; }
-  st.textContent = d.enabled ? "· enabled" : "· disabled";
+  const isolation = d.isolation || {};
+  const ready = d.enabled && isolation.available === true;
+  st.textContent = ready ? "· ready" : "· unavailable";
   const sum = $("hcSummary");
-  if (sum) sum.innerHTML = "probe <b>" + (d.enabled ? "on" : "off") + "</b>" +
-    (d.enabled ? "" : " — set LONGRUN_HARNESS_ENABLED=1 to allow one") +
+  if (sum) sum.innerHTML = "production probe <b>" + (ready ? "ready" : "unavailable") + "</b>" +
+    " · " + esc(String(isolation.reason || (ready ? "isolation verified" : "isolation unverified"))) +
+    " · dry run available (no model or probe)" +
+    " · enable flag " + (d.enabled ? "on" : "off") +
     " · max candidates " + esc(String((d.config || {}).max_candidates)) +
     " · workspace copy ≤ " + esc(String((d.config || {}).copy_max_mb)) + " MB";
   const lib = $("hcLib");

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v684 — H2-4 two scoped editors, propose-only.
+"""v684 — H2-4 two scoped editors, ephemeral candidates only.
 
 Harness² splits its editor in two: an INVARIANT editor that owns how the agent
 works (tool use, procedure, completion) and a DOMAIN editor that owns the subject
@@ -8,14 +8,14 @@ Scoping is measured: removing it costs 2.9 / 3.7 points (Table 3, `:628-643`).
 
 The governance pin matters more than the prompt text: Longrun's self-improvement
 policy already forbids the agent writing harness CODE (`util/improve.py:21-27`),
-so an editor may only emit PROPOSALS (skill / project rule / global rule) and the
-operator decides. This test asserts that boundary, not just the happy path.
+so an editor emits only ephemeral skill / project-rule candidates. It must not
+write the approval inbox before probe and reflection gates establish evidence.
 
   A  each scope produces a different prompt
   B  the prompt carries the contrast + bounded library rows, never observations
-  C  a skill candidate becomes an `improve.propose` call with origin="harness"
+  C  a skill candidate preserves its scope and evidence without inbox writes
   D  a code/plugin candidate is rejected (no proposal written)
-  E  an unchanged / incomparable / absent contrast produces nothing at all
+  E  clean / incomparable / improved evidence stops; first-run failures proceed
   F  an oversized candidate is rejected
   G  the prompt is deterministic
 
@@ -26,10 +26,12 @@ import os
 import shutil
 import sys
 import tempfile
+from unittest.mock import patch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="sf-v684-")
-for _k in ("CONFIG_DIR", "SESSIONS_DIR", "DATA_DIR", "HARNESS_DIR", "RUNS_DIR"):
+for _k in ("CONFIG_DIR", "SESSIONS_DIR", "DATA_HOME", "DATA_DIR", "HARNESS_DIR",
+           "RUNS_DIR", "PROJECTS_DIR", "SKILLS_DIR"):
     os.environ["LONGRUN_" + _k] = os.path.join(TMP, _k)
     os.makedirs(os.path.join(TMP, _k), exist_ok=True)
 os.environ["LONGRUN_HOOKS"] = os.path.join(TMP, "hooks.yaml")
@@ -112,24 +114,32 @@ plib = E.build_prompt("domain", RECORD, CONTRAST, library_rows=lib)
 check("B4 library rows are listed as a bounded index", "reconcile-1" in plib and "SKILL.md" in plib)
 
 # --------------------------------------------------------------- C: propose --
-before = len(IMP.list_proposals())
-out = E.propose("domain", RECORD, CONTRAST, call=stub([SKILL]), domain="office")
+before = IMP.list_proposals()
+with patch.object(IMP, "propose", side_effect=AssertionError("editor wrote inbox")):
+    out = E.propose("domain", RECORD, CONTRAST, call=stub([SKILL]), domain="office")
 after = IMP.list_proposals()
-check("C1 one skill candidate becomes one proposal",
-      len(out["proposals"]) == 1 and len(after) == before + 1, out)
-rec = [p for p in after if p.get("id") in out["proposals"]]
-check("C2 the proposal is a SKILL scope with origin=harness",
-      bool(rec) and rec[0].get("scope") == "skill" and rec[0].get("origin") == "harness",
-      rec[0].get("scope") if rec else None)
-check("C3 the prompt that produced it was recorded as the reason",
-      bool(rec) and "inventoried inputs" in (rec[0].get("reason") or ""))
+check("C1 one skill becomes an ephemeral candidate, not a proposal",
+      out["proposals"] == [] and len(out["candidates"]) == 1 and after == before)
+rec = out["candidates"][0] if out["candidates"] else {}
+check("C2 the candidate preserves kind, scope, name and normalized content",
+      rec == dict(SKILL, content=SKILL["content"].strip(), scope="domain")
+      and "proposal" not in rec)
+check("C3 the concrete failure reason stays with the candidate",
+      rec.get("why") == SKILL["why"] and out["domain"] == "office"
+      and out["model"] == "stub-model")
 
 # --------------------------------------------------------------- D: refusal --
 out_code = E.propose("invariant", RECORD, CONTRAST, call=stub([CODE]), domain="office")
 check("D1 a code candidate is rejected, not proposed",
       out_code["proposals"] == [] and out_code["rejected"], out_code)
 check("D2 the refusal names the kind", "code" in json.dumps(out_code["rejected"]))
-check("D3 no proposal was written for it", len(IMP.list_proposals()) == before + 1)
+check("D3 no proposal was written for it", IMP.list_proposals() == before)
+for kind in ("script", "tool_guidance"):
+    refused = E.propose("invariant", RECORD, CONTRAST,
+                        call=stub([dict(CODE, kind=kind)]))
+    check("D4 unsupported %s has no runtime consumer" % kind,
+          refused["candidates"] == [] and refused["proposals"] == []
+          and "consumer" in refused["rejected"][0]["reason"])
 
 # ----------------------------------------------------------------- E: gates --
 # v687 changed this gate on purpose: the editor is conditioned on an OBSERVED
@@ -147,7 +157,8 @@ check("E2 an incomparable contrast is refused",
       E.propose("invariant", RECORD, incomp, call=stub([SKILL]))["skipped"] == "incomparable")
 first = E.propose("invariant", RECORD, None, call=stub([SKILL]), domain="office")
 check("E3 no contrast yet + an observed failure RUNS (first step of a cycle)",
-      len(first["proposals"]) == 1 and len(first["candidates"]) == 1, first.get("skipped"))
+      first["proposals"] == [] and len(first["candidates"]) == 1
+      and IMP.list_proposals() == before, first.get("skipped"))
 better = E.propose("invariant", RECORD, dict(CONTRAST, verdict="improved"),
                    call=stub([SKILL]))
 check("E4 an already-improved contrast stops the editor (nothing left to fix)",
@@ -156,7 +167,9 @@ check("E4 an already-improved contrast stops the editor (nothing left to fix)",
 # --------------------------------------------------------------- F: size -----
 mid = len(IMP.list_proposals())
 out_huge = E.propose("invariant", RECORD, CONTRAST, call=stub([HUGE]), domain="office")
-check("F1 an oversized candidate is rejected", out_huge["proposals"] == [], out_huge.get("rejected"))
+check("F1 an oversized candidate is rejected",
+      out_huge["proposals"] == [] and out_huge["candidates"] == []
+      and "max" in out_huge["rejected"][0]["reason"])
 check("F2 nothing extra was written", len(IMP.list_proposals()) == mid)
 
 # -------------------------------------------------------- G: determinism -----
@@ -184,6 +197,23 @@ check("H2 an empty answer names the model that produced it",
       "empty answer" in json.dumps(blank.get("rejected"))
       and "stub-model" in json.dumps(blank.get("rejected")), blank.get("rejected"))
 check("H3 neither wrote a proposal", len(IMP.list_proposals()) == n_props)
+for answer, rejected in (('{"candidates":[]}', False),
+                         ('{"candidates":{}}', True),
+                         ('{"candidates":[null]}', True)):
+    malformed = E.propose("domain", RECORD, CONTRAST,
+                          call=lambda *_a, _answer=answer: (_answer, "", "stub-model"))
+    check("H4 empty or malformed candidates never write an inbox entry",
+          malformed["candidates"] == [] and malformed["proposals"] == []
+          and bool(malformed["rejected"]) is rejected
+          and len(IMP.list_proposals()) == n_props)
+duplicate = E.propose("domain", RECORD, CONTRAST, call=stub([SKILL, SKILL]))
+excluded = E.propose("domain", RECORD, CONTRAST, call=stub([SKILL]),
+                     exclude=[SKILL["name"]])
+check("H5 duplicates retain one ephemeral object and name the refusal",
+      len(duplicate["candidates"]) == 1 and len(duplicate["rejected"]) == 1
+      and "already proposed" in duplicate["rejected"][0]["reason"]
+      and excluded["candidates"] == [] and len(excluded["rejected"]) == 1
+      and IMP.list_proposals() == before)
 
 shutil.rmtree(TMP, ignore_errors=True)
 

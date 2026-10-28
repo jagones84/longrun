@@ -3522,7 +3522,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # JAG-96: persist the card so cold-start UIs rebuild the transcript.
                 persist_tool_card(sess, tool, ok, args=args,
                                   result=sub.get("stdout") or obs or "",
-                                  error=sub.get("stderr") or "",
+                                  error=sub.get("stderr") or sub.get("error") or "",
                                   exit_code=sub.get("exit_code"),
                                   backend=sub.get("backend") or "harness",
                                   node=_cur_node(), think=_think_buf["t"].strip(),

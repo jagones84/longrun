@@ -17,7 +17,7 @@ evidence for its use. This test pins that store:
   D  relevant() returns bounded, matching entries only
   E  domains are isolated
   F  a component that does not exist is refused (no dangling reference)
-  G  leave_one_out reports "insufficient" until there is enough data
+  G  leave_one_out reports unmeasured status separately from data availability
 
 No model, no network, no server.
 """
@@ -110,8 +110,9 @@ check("F2 the refused entry left nothing behind", not os.path.isdir(L.entry_dir(
 
 # ------------------------------------------------------- G: leave-one-out ----
 loo = L.leave_one_out("office")
-check("G1 under three entries the report says insufficient",
-      loo["status"] == "insufficient" and loo["entries"] == 1, loo)
+check("G1 under three entries availability is insufficient and measurement is not-run",
+      loo["status"] == "not-run" and loo["availability"] == "insufficient"
+      and loo["entries"] == 1, loo)
 
 # ------------------------------------------------------- H: index fields ----
 row = L.index("office")["entries"][0]

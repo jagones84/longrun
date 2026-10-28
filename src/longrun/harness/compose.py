@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""H2-6 — compose: adopt only what a contrast supports.
+"""H2-6 — select observed candidates; refuse unsupported durable learning.
 
 "Composition is selective: it may merge supported changes, revise conflicting
 edits, adopt one candidate, or preserve the current harness. Each decision is tied
 to a concrete observation rather than a presumed score gain"
 (`research/papers/harness2/harness2_2610.14224.txt:291-297`).
 
-The rule is deliberately one line, because the failure it prevents is measured:
-editing the harness WITHOUT probing costs 10.2 points on WB-code (`:646-649`).
+The paper's direct-editing ablation jointly removes reference executions,
+candidate probes and library access (`:646-649`); it does not isolate probing.
 
     keep a candidate  <=>  the contrast is comparable AND its verdict is `improved`
 
@@ -16,12 +16,9 @@ refused and the new class is named in the decision. `unchanged` writes nothing �
 the paper's reflector adds no experience entry when the evidence is insufficient
 (`:392-396`).
 
-Adoption here means ONE library entry plus the proposals the editors already wrote;
-nothing is applied to a live harness (`util/improve.py:21-27`).
+Selection is not causal attribution or correctness verification. The current
+single-rollout reflector produces NO_ENTRY; legacy direct adoption writes nothing.
 """
-import os
-
-from longrun.harness import library as library_mod
 
 _REFUSE = {
     "regressed": "the candidate made it worse",
@@ -61,13 +58,36 @@ def select(contrast, candidates):
     errs = contrast.get("errors") or {}
     fixed = ", ".join(str(x) for x in (errs.get("fixed") or [])) or "(none named)"
     steps = contrast.get("steps") or {}
-    decision = "adopt %d candidate(s): removed %s; steps %s -> %s" % (
+    decision = "select %d candidate(s): observed absence of %s; steps %s -> %s" % (
         len(cands), fixed, steps.get("base"), steps.get("cand"))
     return {"adopt": bool(cands), "kept": cands, "rejected": [], "decision": decision}
 
 
+def reflect(trials, successor=None):
+    """Record observations without claiming causal or transferable improvement.
+
+    Appendix H, Prompt 6 (:2436-2471) prefers confounded attribution when a single
+    rollout is all that supports an edit. This bounded cycle does not run matched
+    repeated controls, so selection alone cannot create a durable lesson.
+    """
+    edits = []
+    for trial in trials or []:
+        candidate = trial.get("candidate") or {}
+        contrast = trial.get("contrast") or {}
+        edits.append({"name": candidate.get("name"), "kind": candidate.get("kind"),
+                      "run_id": (trial.get("record") or {}).get("run_id"),
+                      "observed": contrast.get("verdict") or trial.get("status"),
+                      "fixed": (contrast.get("errors") or {}).get("fixed") or [],
+                      "introduced": (contrast.get("errors") or {}).get("introduced") or [],
+                      "attribution": "confounded", "confidence": "insufficient",
+                      "reason": "single rollout; matched repeated controls are absent"})
+    return {"status": "NO_ENTRY", "edits": edits,
+            "successor_run": ((successor or {}).get("record") or {}).get("run_id"),
+            "reason": "NO_ENTRY: execution differences do not yet establish a reusable lesson"}
+
+
 def adopt(domain, task_kind, lesson, contrast, candidates, staged):
-    """Record ONE library entry for an adopted candidate set.
+    """Legacy adoption API, disabled without a verified experiment contract.
 
     Args:
         domain: the library bucket (task family).
@@ -77,27 +97,9 @@ def adopt(domain, task_kind, lesson, contrast, candidates, staged):
         candidates: the kept candidates.
         staged: {candidate name: staged file path} (from `harness.probe.stage`).
     Returns:
-        The library row, or None when the contrast does not support an adoption.
+        None. A single behavioral contrast is insufficient for durable learning.
     """
-    chosen = select(contrast, candidates)
-    if not chosen["adopt"]:
-        return None
-    files = {}
-    for cand in chosen["kept"]:
-        name = str(cand.get("name") or "")
-        path = (staged or {}).get(name)
-        if name and path:
-            # The component keeps its REAL file name (`SKILL.md`, `guardrails.md`):
-            # a library that renames it cannot be loaded by any runtime.
-            files[os.path.basename(path)] = path
-    if not files:
-        return None
-    errs = (contrast or {}).get("errors") or {}
-    return library_mod.add(domain, {
-        "task_kind": task_kind,
-        "lesson": lesson,
-        "evidence": {"verdict": (contrast or {}).get("verdict"),
-                     "fixed": errs.get("fixed") or [],
-                     "introduced": errs.get("introduced") or []},
-        "files": files,
-    })
+    # Compatibility entry point: the old call supplies only a single contrast.
+    # That cannot establish transfer, and the current bounded reflector always
+    # returns NO_ENTRY. Retain the API without an evidence-free library write.
+    return None

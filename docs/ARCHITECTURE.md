@@ -1,10 +1,10 @@
 # Longrun Architecture
 
-*Living map — verified against `src/longrun` 2026-10-25. The code is the source
+*Living map — Harness2 ownership updated against `src/longrun` 2026-10-28. The code is the source
 of truth; this is the map. Update it in the same commit as any structural change
 (freshness rule, 2026-10-25).*
 
-Longrun is a **stdlib-only Python agent harness**. It drives one LLM with disciplined
+Longrun is a **Python agent harness using stdlib plus PyYAML**. It drives one LLM with disciplined
 context and a real tool loop, then composes that harness into **meta-agents organised in
 teams**. It serves a single-file WebUI, a mission-control deck (Orbit), a CLI and a
 mobile-ready HTTP API — all from one process on `:8790`.
@@ -94,6 +94,32 @@ to the event bus and persisted, so a reload rebuilds the transcript and task gra
 | `integrations/` | `paperclip_adapter.py`, `paperclip_bot.py` (Paperclip team-chat adapter + bot) |
 | `orbit/` | the **Control** deck at `/orbit`: `api.py`, `orchestrator.py`, `attention.py`, `decisions.py`, `registry.py`, `bay.py`, `web/orbit.html` |
 | `research/` | `research.py`, `executor.py`, `researchcfg.py` (web-grounded research agent) |
+| `harness/` | `record.py`, `contrast.py`, `library.py`, `editors.py`, `probe.py`, `runner.py`, `compose.py`, `cycle.py` (bounded Harness2 evidence workflow) |
+
+## Harness2 evidence workflow
+
+`GET /api/harness/cycle` reports the effective enable flag, whole-run isolation
+readiness, canonical library counts and last cycle. `POST` defaults to a dry run:
+build a **session aggregate** from existing `memory.stores` tool cards and current
+workspace deliverables, then list relevant library entries. It calls no model.
+Current-state hashes and optional run-manifest fields do not establish immutable
+run-bound evidence or matched input/environment snapshots.
+
+Editors generate ephemeral skill/guardrail candidates, reusing complete bounded
+library files with hash provenance. The offline injected-runner path probes each
+candidate independently, executes a selected successor and retains confounded
+reflection rows. A single rollout is not evidence of correctness or transfer:
+reflection returns `NO_ENTRY`, direct Compose adoption is disabled, and legacy
+`origin=harness` approval is refused by the existing `util.improve` owner.
+
+Production execution **fails closed before editor spend or staging**. No supported
+whole-chat isolation launcher exists; a copied workspace, redirected stores and
+the shell sandbox are not confinement of Python, filesystem tools or networking.
+Setting `LONGRUN_HARNESS_ENABLED=1` does not override this refusal. The existing
+rules, skill discovery, approval, atomic-write and path owners remain authoritative.
+Matched historical evidence, whole-run isolation, repeated controls and durable
+lesson admission remain open capabilities. No scientific improvement is measured
+locally.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 
@@ -112,8 +138,8 @@ default) and can be moved from Settings ▸ Info.
 
 Allowlist registry (a tool must be `enabled` in `config/tools.yaml`) → per-action
 classification (`auto | required | denied | disabled`) → approval queue for anything
-world-touching → **real sandbox** (`docker --network none --read-only --cap-drop ALL`,
-or `bwrap` / `nsjail`) so the agent never touches the host. Hard-denied patterns
+world-touching → configured **shell sandbox** (`docker`, `bwrap`, `nsjail`, or
+operator-selected `none`). This is not whole-agent confinement. Hard-denied patterns
 (`rm -rf /`, `mkfs`, `git push`, …) are blocked even with approval.
 
 ## Interfaces

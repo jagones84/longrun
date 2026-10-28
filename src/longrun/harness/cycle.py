@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""H2-7 — one cycle: record -> editors -> probe -> compose -> library.
+"""H2-7 — bounded evidence cycle; production execution is unavailable.
 
 This is the whole recursion as ONE call, and it exists so the mechanism is
 reachable and observable instead of being five modules nobody wires together.
@@ -10,15 +10,15 @@ harness2_2610.14224.txt:225-368`):
 1. **record** the run we want to learn from (`harness.record`);
 2. **propose** with the two scoped editors (`harness.editors`) — conditioned on the
    reference run's failures, because the first step of a cycle has no contrast yet;
-3. **probe** the candidates on the same task in an isolated copy (`harness.probe`);
-4. **compose** — adopt only an `improved` contrast (`harness.compose`), and write
-   one library entry (`harness.library`);
+3. **probe** candidates independently with an injected offline runner;
+4. **compose** supported candidates and execute the successor, retaining
+   confounded reflection rows without writing a durable lesson;
 5. report, and keep the last report in `<data>/harness/cycle/last.json`.
 
 Bounds: `dry_run` is the default and stops after step 1 (record + library hits,
-no model, no probe). A real run requires `LONGRUN_HARNESS_ENABLED=1`, at most
-`max_candidates` (2), one probe per task, and it always ends in proposals — never
-in a live harness change.
+no model, no probe). Production refuses before editor spend: no supported
+whole-run isolation exists. Injected tests allow up to `max_candidates`
+independent trials plus one successor. No live approval or adoption is available.
 """
 import json
 import os
@@ -58,6 +58,7 @@ def last():
 def status():
     """Everything the panel needs, read from real state (no constants)."""
     c = probe_mod.cfg()
+    isolation = probe_mod.isolation_status()
     domains = {}
     try:
         base = os.path.join(record_mod.dir_path(), "library")
@@ -68,6 +69,8 @@ def status():
         domains = {}
     return {
         "enabled": bool(c.get("enabled")),
+        "ready": bool(c.get("enabled") and isolation["available"]),
+        "isolation": isolation,
         "config": {"max_candidates": c.get("max_candidates"),
                    "max_steps": c.get("max_steps"),
                    "max_seconds": c.get("max_seconds"),
@@ -117,18 +120,27 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
         "refusals": [],
     }
     if dry_run:
-        report["reason"] = ("dry run: editors and the probe need "
-                            "LONGRUN_HARNESS_ENABLED=1")
+        report["reason"] = "dry run: no editor calls or probes; production isolation is unavailable"
         return _save(report)
     if not c.get("enabled"):
         report["status"] = "refused"
         report["reason"] = "harness probe is disabled (LONGRUN_HARNESS_ENABLED=1)"
         return _save(report)
+    if runner is None and not probe_mod.isolation_status()["available"]:
+        report["status"] = "refused"
+        report["reason"] = probe_mod.isolation_status()["reason"]
+        return _save(report)
 
     candidates, skips, names = [], [], []
     for scope in SCOPES:
-        got = editors_mod.propose(scope, base, None, hits, model=model, call=call,
-                                  domain=domain, exclude=names)
+        try:
+            got = editors_mod.propose(scope, base, None, hits, model=model, call=call,
+                                      domain=domain, exclude=names)
+        except Exception as exc:
+            # Provider errors can carry credentials; report the phase and class only.
+            report.update(status="failed",
+                          reason="%s editor failed: %s" % (scope, type(exc).__name__))
+            return _save(report)
         candidates += got.get("candidates") or []
         names = [c.get("name") for c in candidates]
         report["proposals"] += got.get("proposals") or []
@@ -143,34 +155,59 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
                             or "the editors returned nothing")
         return _save(report)
 
-    probed = probe_mod.run(base, candidates, runner=runner, c=c)
-    report["probe"] = {"status": probed.get("status"), "probe_id": probed.get("probe_id"),
-                       "reason": probed.get("reason"),
-                       "contrast": (probed.get("contrast") or {}).get("verdict")}
-    report["refusals"] = (report.get("refusals") or []) + (probed.get("refusals") or [])
-    if probed.get("status") != "ran":
-        report["status"] = probed.get("status") or "failed"
-        report["reason"] = probed.get("reason") or ""
+    if len(candidates) > int(c.get("max_candidates") or 1):
+        report.update(status="refused", reason="editor candidates exceed the cycle cap")
         return _save(report)
-
-    contrast = probed.get("contrast") or {}
-    # Only the candidates the probe actually APPLIED can be adopted: a candidate
-    # the stage refused (e.g. two of the same kind write the same file) never ran,
-    # so claiming it was kept would be a claim without evidence.
-    staged = probed.get("staged") or {}
-    applied = [c for c in candidates if str(c.get("name")) in staged]
-    chosen = compose_mod.select(contrast, applied)
-    report["decision"] = chosen["decision"]
-    report["kept"] = [k.get("name") for k in chosen["kept"]]
-    report["rejected"] = chosen["rejected"]
-    report["contrast"] = {k: contrast.get(k) for k in
-                          ("verdict", "comparable", "steps", "errors", "deliverables")}
-    if chosen["adopt"]:
-        lesson = _lesson(base, contrast, applied)
-        report["adopted"] = compose_mod.adopt(
-            domain, base.get("goal") or "", lesson, contrast, chosen["kept"],
-            probed.get("staged") or {})
-    report["status"] = "adopted" if report["adopted"] else "no adoption"
+    report["trials"], report["kept"], report["rejected"] = [], [], []
+    scratch_ids, supported, targets = [], [], set()
+    try:
+        # Each candidate differs from the reference by ONE component. An
+        # aggregate successful run cannot identify which of its edits helped.
+        for candidate in candidates:
+            trial = probe_mod.run(base, [candidate], runner=runner, c=c)
+            if trial.get("probe_id"):
+                scratch_ids.append(trial["probe_id"])
+            report["trials"].append({"candidate": candidate, **trial})
+            report["refusals"] += trial.get("refusals") or []
+            chosen = compose_mod.select(trial.get("contrast"), [candidate])
+            if trial.get("status") == "ran" and chosen["adopt"]:
+                target, _ = probe_mod._target(candidate["kind"], candidate["name"])
+                if target in targets:
+                    report["refusals"].append(
+                        {"name": candidate["name"], "reason": "same file as another selected candidate"})
+                    continue
+                targets.add(target)
+                supported.append(candidate)
+            else:
+                report["rejected"] += chosen["rejected"] or [
+                    {"name": candidate["name"], "reason": trial.get("reason") or chosen["decision"]}]
+        if supported:
+            # Even selecting a single unchanged candidate gets another execution:
+            # the paper returns an EXECUTED successor, not a selection opinion.
+            successor = probe_mod.run(base, supported, runner=runner, c=c)
+            if successor.get("probe_id"):
+                scratch_ids.append(successor["probe_id"])
+            report["successor"] = successor
+            contrast = successor.get("contrast") or {}
+            applied = [s for s in supported if s["name"] in (successor.get("staged") or {})]
+            chosen = compose_mod.select(contrast, applied)
+            report["decision"] = chosen["decision"]
+            report["probe"] = {"status": successor.get("status"),
+                               "probe_id": successor.get("probe_id"),
+                               "reason": successor.get("reason"), "contrast": contrast.get("verdict")}
+            report["contrast"] = {key: contrast.get(key) for key in
+                                  ("verdict", "comparable", "steps", "errors", "deliverables")}
+            if successor.get("status") == "ran" and chosen["adopt"]:
+                report["kept"] = [s["name"] for s in chosen["kept"]]
+            else:
+                report["rejected"] += chosen["rejected"]
+        report["reflection"] = compose_mod.reflect(report["trials"], report.get("successor"))
+        report["status"] = "no adoption"
+        report["reason"] = report["reflection"]["reason"]
+    finally:
+        if not c.get("keep"):
+            for pid in scratch_ids:
+                probe_mod.cleanup(pid)
     try:
         from longrun.util import improve
         improve.ledger_add("harness_cycle", domain=domain, session=session_id,
@@ -179,17 +216,7 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
                            probe=(report["probe"] or {}).get("probe_id") or "")
     except Exception:  # noqa: BLE001 — an audit line must never break a cycle
         pass
-    if probed.get("probe_id") and not c.get("keep"):
-        probe_mod.cleanup(probed["probe_id"])
     return _save(report)
-
-
-def _lesson(base, contrast, candidates):
-    """One or two sentences a later task can reuse (the library lesson)."""
-    fixed = ", ".join((contrast.get("errors") or {}).get("fixed") or []) or "the observed failure"
-    names = ", ".join(str(c.get("name")) for c in candidates)
-    return ("On a task like %r, %s removed %s." %
-            ((base.get("goal") or "")[:80], names, fixed))
 
 
 def _save(report):
