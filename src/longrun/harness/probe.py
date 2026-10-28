@@ -291,8 +291,14 @@ def plan(base, candidates, c=None, probe_id=None):
     env["LONGRUN_HARNESS_PROBE"] = pid
     # The probe runs the REAL chat loop in a child process: it must write its
     # session and events into the probe dir, never into the operator's stores.
+    # DATA_DIR is boxed for the same reason — the chat loop's reflection/improvement
+    # pass writes memory and proposals, and a probe must never land those in the
+    # live inbox. Fidelity limit, stated instead of hidden: the candidate therefore
+    # runs with a FRESH data dir (no accumulated operator memory), so a memory-driven
+    # step can differ; the contrast reports that instead of a probe polluting state.
     env["LONGRUN_SESSIONS_DIR"] = os.path.join(base_dir, "sessions")
     env["LONGRUN_DB"] = os.path.join(base_dir, "events.db")
+    env["LONGRUN_DATA_DIR"] = os.path.join(base_dir, "data")
     # `agent.CHAT_TOOL_MAX_STEPS` is read at import time from this var — the step
     # ceiling is a budget, so the child gets it before the module is imported.
     env["LONGRUN_CHAT_TOOL_STEPS"] = str(int(c.get("max_steps") or DEFAULTS["max_steps"]))

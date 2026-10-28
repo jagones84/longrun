@@ -237,6 +237,10 @@ check("I3 the step ceiling is the configured one (read at child import time)",
 check("I4 the runner is spawned as a module of the repo under test",
       _plan_i["cmd"][1:3] == ["-m", "longrun.harness.runner"]
       and "--max-steps" not in _plan_i["cmd"], _plan_i["cmd"])
+# I5: the chat loop's reflection pass WRITES memory + proposals; a probe must not
+# land those in the operator's live inbox, so the child gets its own DATA_DIR.
+check("I5 the child's DATA_DIR is boxed (the probe cannot write live memory/proposals)",
+      _env.get("LONGRUN_DATA_DIR", "").startswith(P.root()), _env.get("LONGRUN_DATA_DIR"))
 P.cleanup("i1")
 
 # ------------------------------- J: one file per kind (live flaw, 2026-10-28) --
