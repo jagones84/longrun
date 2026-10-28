@@ -17,8 +17,9 @@ Hard rules, because a probe WRITES:
 2. **Off by default.** `harness.enabled` is false; `max_candidates` is 2; a
    caller-declared token budget below `MIN_TOKENS` refuses before any copy.
 3. **A candidate it cannot apply is refused, not approximated.** The loop the
-   probe drives (`agent.agent_run`) assembles its system prompt from constants +
-   the prompt MAP, not from `prompt.d` addenda — so a system-prompt candidate is
+   probe drives is the operator's real chat loop (`agent.chat_once`, via
+   `harness.runner`), which assembles its system prompt from constants + the
+   prompt MAP, not from `prompt.d` addenda — so a system-prompt candidate is
    refused with that exact reason instead of being silently ignored. The same
    goes for `tool_guidance`, which would need a real `tools.yaml` merge.
 4. **Nothing is adopted here.** `run()` returns a record and a contrast; Compose
@@ -187,6 +188,34 @@ def _has_files(path):
     return False
 
 
+def _skills_root(staged, base_dir):
+    """A skills root = the REAL tree + the staged candidate(s).
+
+    A probe must differ from the base harness in the CANDIDATE only. Pointing
+    `LONGRUN_SKILLS_DIR` at the stage alone would hide every real skill and the
+    contrast would then measure that loss instead of the candidate's effect.
+    """
+    from longrun.memory import skills as skills_mod  # local: probe is also used headless
+    real = getattr(skills_mod, "SKILLS_DIR", "")
+    out = os.path.join(base_dir, "skills")
+    if os.path.isdir(real) and not os.path.exists(out):
+        try:
+            shutil.copytree(real, out, symlinks=True)
+        except (OSError, shutil.Error):
+            os.makedirs(out, exist_ok=True)
+    else:
+        os.makedirs(out, exist_ok=True)
+    for base, _dirs, names in os.walk(staged):
+        for name in names:
+            src = os.path.join(base, name)
+            dst = os.path.join(out, os.path.relpath(src, staged))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if os.path.isdir(dst) and not os.path.islink(dst):
+                shutil.rmtree(dst)
+            shutil.copy2(src, dst)
+    return out
+
+
 def plan(base, candidates, c=None, probe_id=None):
     """The exact command + env a probe would use, or the reasons it cannot run.
 
@@ -229,8 +258,17 @@ def plan(base, candidates, c=None, probe_id=None):
         except OSError as exc:
             refusals.append({"name": "guardrail", "reason": "could not apply: %s" % exc})
     env = dict(os.environ)
-    env["LONGRUN_SKILLS_DIR"] = os.path.join(stage_dir, "skills")
+    staged_skills = os.path.join(stage_dir, "skills")
+    if _has_files(staged_skills):
+        env["LONGRUN_SKILLS_DIR"] = _skills_root(staged_skills, base_dir)
     env["LONGRUN_HARNESS_PROBE"] = pid
+    # The probe runs the REAL chat loop in a child process: it must write its
+    # session and events into the probe dir, never into the operator's stores.
+    env["LONGRUN_SESSIONS_DIR"] = os.path.join(base_dir, "sessions")
+    env["LONGRUN_DB"] = os.path.join(base_dir, "events.db")
+    # `agent.CHAT_TOOL_MAX_STEPS` is read at import time from this var — the step
+    # ceiling is a budget, so the child gets it before the module is imported.
+    env["LONGRUN_CHAT_TOOL_STEPS"] = str(int(c.get("max_steps") or DEFAULTS["max_steps"]))
     # The probe runs `-m longrun.harness.runner` in a child process: the package
     # must be importable there even when the service was started from `server.py`
     # (which puts `src` on sys.path only inside its own process).
@@ -240,7 +278,6 @@ def plan(base, candidates, c=None, probe_id=None):
         [src] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
     cmd = [os.environ.get("LONGRUN_PYTHON") or "python3", "-m", "longrun.harness.runner",
            "--goal", str(base.get("goal") or ""),
-           "--max-steps", str(int(c.get("max_steps") or DEFAULTS["max_steps"])),
            "--out", os.path.join(base_dir, "result.json")]
     return {"ok": True, "reason": "", "env": env, "cmd": cmd, "cwd": scratch,
             "stage": stage_dir, "refusals": refusals, "workspace": scratch,
@@ -294,13 +331,12 @@ def run(base, candidates, runner=None, c=None, budget=None):
     result, error = call(plan_obj, int(c.get("max_seconds") or DEFAULTS["max_seconds"]))
     if result is None:
         return {"status": "failed", "reason": error, "probe_id": plan_obj["probe_id"]}
-    got = record_mod.from_actions(
-        str(result.get("goal") or base.get("goal") or ""),
-        result.get("actions") or [],
-        workspace=plan_obj["workspace"],
-        model=result.get("model") or base.get("model"),
-        run_id="probe-" + plan_obj["probe_id"],
-        created=result.get("created"))
+    got = result.get("record")
+    if not isinstance(got, dict):
+        # A runner that produced no record is a FAILURE, never an empty contrast:
+        # an empty candidate record would read as "every base error is gone".
+        return {"status": "failed", "probe_id": plan_obj["probe_id"],
+                "reason": str(result.get("error") or "runner returned no record")[:400]}
     got["goal"] = str(base.get("goal") or "")  # comparison must be same-goal
     diff = contrast_mod.diff(base, got)
     if not c.get("keep"):

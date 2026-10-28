@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 from longrun.harness import cycle as CY  # noqa: E402
 from longrun.harness import library as L  # noqa: E402
 from longrun.harness import probe as P  # noqa: E402
+from longrun.harness import record as R  # noqa: E402
 
 results = []
 
@@ -78,8 +79,14 @@ def editor_call(_msgs, *_a, **_k):
 
 
 def probe_runner(_plan, _timeout):
-    return {"goal": "Reconcile the schedule against the budget.", "created": 300.0, "model": "m",
-            "actions": [{"tool": "fs.read", "args": {"path": "in.csv"}, "observation": "a,b\n1,2"}]}, ""
+    """The candidate run: the same goal, the failing step GONE (a fixed error)."""
+    sess = {"id": "probe-x", "created": 300.0, "model": "m", "workspace": WS,
+            "messages": [{"role": "user", "content": SESS["messages"][0]["content"]}],
+            "tool_cards": [{"tool": "fs.read", "ok": True,
+                            "args": {"path": "in.csv"}, "result": "a,b\n1,2",
+                            "error": "", "exit_code": 0, "ts": 301.0}]}
+    return {"record": R.build("probe-x", session=sess), "goal": SESS["messages"][0]["content"],
+            "created": 300.0, "model": "m", "error": ""}, ""
 
 
 ON = {"enabled": True, "max_candidates": 2, "max_seconds": 5, "max_steps": 3,

@@ -32,6 +32,7 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.harness import probe as P  # noqa: E402
+from longrun.harness import record as R  # noqa: E402
 
 results = []
 
@@ -111,27 +112,58 @@ for kind in ("prompt", "tool_guidance", "code"):
     check("B3 %s is refused with a reason" % kind, bad["ok"] is False and bad["reason"], bad["reason"])
 check("B4 staging wrote nothing inside the operator's workspace",
       not os.path.exists(os.path.join(WS, "skills")))
+# B5: the child must see the REAL skills PLUS the candidate — a skills root holding
+# only the candidate would make the contrast measure the missing skills instead.
+_plan_b = P.plan(BASE, [CAND], ON, probe_id="b5")
+_root = _plan_b["env"].get("LONGRUN_SKILLS_DIR") or ""
+check("B5 the probe skills root is the real tree + the candidate",
+      _root and _root != os.path.join(_plan_b["stage"], "skills")
+      and os.path.isfile(os.path.join(_root, os.path.relpath(
+          _plan_b["staged"]["reconcile"], os.path.join(_plan_b["stage"], "skills")))),
+      _root)
+P.cleanup("b5")
 
 # ---------------------------------------------------------- C: off by default
 calls = []
 
 
+def _probe_dirs():
+    """The probe scratch entries that exist right now (a refusal must add none)."""
+    return set(os.listdir(P.root())) if os.path.isdir(P.root()) else set()
+
+
+def _probe_session():
+    """A session in the REAL shape (tool_cards), so the record is the real one."""
+    return {
+        "id": "probe-1", "created": 1.0, "model": "m", "workspace": WS,
+        "messages": [{"role": "user", "content": BASE["goal"], "ts": 1.0}],
+        "tool_cards": [{"tool": "fs.read", "ok": True, "args": {"path": "a.txt"},
+                        "result": "keep me", "error": "", "exit_code": 0, "ts": 2.0}],
+    }
+
+
 def fake_runner(_plan, _timeout):
     calls.append(1)
-    return {"goal": BASE["goal"], "created": 1.0, "model": "m",
-            "actions": [{"tool": "fs.read", "args": {"path": "a"}, "observation": "ok: yes"}]}, ""
+    rec = R.build("probe-1", session=_probe_session())
+    rec["goal"] = BASE["goal"]
+    return {"record": rec, "goal": BASE["goal"], "created": 1.0, "model": "m",
+            "error": ""}, ""
 
 
+_dirs_before_c = _probe_dirs()
 off = P.run(BASE, [CAND], runner=fake_runner)
 check("C1 disabled by default: skipped, no spawn", off["status"] == "skipped" and not calls, off)
-check("C2 no probe directory was created", not os.path.isdir(P.root()))
+check("C2 no probe directory was created", _probe_dirs() == _dirs_before_c,
+      _probe_dirs())
 
 # --------------------------------------------------------------- D: the gates
+_dirs_before_d = _probe_dirs()
 too_many = P.run(BASE, [CAND, CAND, CAND], runner=fake_runner, c=ON)
 check("D1 more candidates than the cap is refused", too_many["status"] == "refused", too_many)
 broke = P.run(BASE, [CAND], runner=fake_runner, c=ON, budget={"tokens_left": 10})
 check("D2 a token budget under the floor is refused", broke["status"] == "refused", broke)
-check("D3 neither refusal copied or spawned", not calls and not os.path.isdir(P.root()))
+check("D3 neither refusal copied or spawned", not calls and _probe_dirs() == _dirs_before_d,
+      _probe_dirs())
 
 # ------------------------------------------------------------- E: the probe --
 before = tree_digest(WS)
@@ -175,6 +207,37 @@ check("G2 unset means disabled (no accidental spend)",
       P.cfg()["enabled"] is False)
 check("G3 a bad env value is ignored, not fatal",
       P.cfg(override=None)["max_steps"] == P.DEFAULTS["max_steps"])
+
+# ------------------------------------------- H: no record is a FAILURE ------
+def hollow_runner(_plan, _timeout):
+    return {"goal": BASE["goal"], "error": "", "actions": []}, ""
+
+
+hollow = P.run(BASE, [CAND], runner=hollow_runner, c=ON)
+check("H1 a runner with no record fails loudly (an empty record would read as "
+      "'every base error fixed')", hollow["status"] == "failed", hollow.get("reason"))
+# H2 pins the defect found on 2026-10-28: `agent.agent_run` has no tool lane
+# (`apply_agent_action` answers "unknown action"), so a probe driven by it records
+# no tool names and no failures. The probe MUST drive the chat loop.
+_runner_src = open(os.path.join(REPO, "src", "longrun", "harness", "runner.py"),
+                   encoding="utf-8").read()
+check("H2 the runner drives the real chat loop, not the tool-less agent_run",
+      "chat_once(" in _runner_src and "agent_run(" not in _runner_src)
+
+# ------------------------------------------ I: the child's own env is boxed ---
+_plan_i = P.plan(BASE, [CAND], ON, probe_id="i1")
+_env = _plan_i["env"]
+check("I1 the child writes its session into the probe dir",
+      _env.get("LONGRUN_SESSIONS_DIR", "").startswith(P.root()), _env.get("LONGRUN_SESSIONS_DIR"))
+check("I2 the child's events DB is inside the probe dir",
+      _env.get("LONGRUN_DB", "").startswith(P.root()), _env.get("LONGRUN_DB"))
+check("I3 the step ceiling is the configured one (read at child import time)",
+      _env.get("LONGRUN_CHAT_TOOL_STEPS") == str(ON["max_steps"]),
+      _env.get("LONGRUN_CHAT_TOOL_STEPS"))
+check("I4 the runner is spawned as a module of the repo under test",
+      _plan_i["cmd"][1:3] == ["-m", "longrun.harness.runner"]
+      and "--max-steps" not in _plan_i["cmd"], _plan_i["cmd"])
+P.cleanup("i1")
 
 shutil.rmtree(TMP, ignore_errors=True)
 

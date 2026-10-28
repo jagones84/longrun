@@ -272,37 +272,6 @@ def _assemble(run_id, session_id, goal, created, model, workspace, cards, harnes
     }
 
 
-def from_actions(goal, actions, workspace, model=None, run_id=None, created=None):
-    """A record for a loop that reports ACTIONS instead of session tool cards.
-
-    The agent loop (`agent.agent_run`) returns `{action, tool, args, observation}`
-    entries. The probe runs the loop directly, so it has actions and no session;
-    this adapter turns them into the same cards `build` reads, and both paths end
-    in `_assemble` — one record shape, never a second one.
-    """
-    cards = []
-    for act in (actions or []):
-        if not isinstance(act, dict):
-            continue
-        kind = str(act.get("tool") or act.get("action") or "")
-        if kind in ("finish", "write_todos", "update_todos", "replan", ""):
-            continue
-        obs = act.get("observation")
-        cards.append({
-            "tool": kind,
-            "args": act.get("args") or {},
-            "result": str(obs if obs is not None else (act.get("summary") or "")),
-            "ok": not bool(act.get("error")),
-            "error": str(act.get("error") or "")[:ERROR_MAX],
-            "exit_code": act.get("exit_code"),
-            "backend": act.get("backend") or "",
-            "node": act.get("node"),
-            "ts": act.get("ts"),
-        })
-    key = run_id or "probe"
-    return _assemble(key, "", goal, created, model, workspace, cards, _harness(None), None)
-
-
 def save(rec):
     """Write one record atomically; returns its path, or None on failure."""
     if not isinstance(rec, dict):
