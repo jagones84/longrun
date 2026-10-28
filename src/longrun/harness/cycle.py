@@ -17,8 +17,12 @@ harness2_2610.14224.txt:225-368`):
 
 Bounds: `dry_run` is the default and stops after step 1 (record + library hits,
 no model, no probe). Production refuses before editor spend: no supported
-whole-run isolation exists. Injected tests allow up to `max_candidates`
-independent trials plus one successor. No live approval or adoption is available.
+whole-run isolation exists. The number of candidates a round may PROBE is
+`max_candidates`: each editor is told that budget, and if the two scopes together
+still return more, the cycle keeps a scope-balanced deterministic subset and
+names the deferred ones in the report (it no longer aborts the round). Injected
+tests allow up to `max_candidates` independent trials plus one successor. No live
+approval or adoption is available.
 """
 import json
 import os
@@ -136,11 +140,12 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
             report["isolation"] = isolation
             return _save(report)
 
+    cap = max(1, int(c.get("max_candidates") or 1))
     candidates, skips, names = [], [], []
     for scope in SCOPES:
         try:
             got = editors_mod.propose(scope, base, None, hits, model=model, call=call,
-                                      domain=domain, exclude=names)
+                                      domain=domain, exclude=names, limit=cap)
         except Exception as exc:
             # Provider errors can carry credentials; report the phase and class only.
             report.update(status="failed",
@@ -160,9 +165,10 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
                             or "the editors returned nothing")
         return _save(report)
 
-    if len(candidates) > int(c.get("max_candidates") or 1):
-        report.update(status="refused", reason="editor candidates exceed the cycle cap")
-        return _save(report)
+    candidates, deferred = _take(candidates, cap)
+    if deferred:
+        report["deferred"] = deferred
+        report["refusals"] += [{"name": d["name"], "reason": d["reason"]} for d in deferred]
     report["trials"], report["kept"], report["rejected"] = [], [], []
     scratch_ids, supported, targets = [], [], set()
     started = time.monotonic()
@@ -251,6 +257,46 @@ def run(session_id=None, domain="general", dry_run=True, model=None, call=None,
     except Exception:  # noqa: BLE001 — an audit line must never break a cycle
         pass
     return _save(report)
+
+
+def _take(candidates, cap):
+    """Keep at most `cap` candidates, one slot per scope per round.
+
+    The cap is a SPEND bound (one probe per candidate), so exceeding it must not
+    abort the round — the editors are told the budget, and a model that ignores it
+    would otherwise make production cycles impossible. Selection is deterministic
+    and scope-balanced: round-robin over the proposing scopes, so a single verbose
+    editor cannot starve the other dimension the paper measures separately
+    (`research/papers/harness2/harness2_2610.14224.txt:628-643`). Every deferred
+    candidate is returned with its reason so the report never hides the loss.
+
+    Returns:
+        (kept, deferred) — `deferred` is a list of {name, scope, reason}.
+    """
+    if len(candidates) <= cap:
+        return list(candidates), []
+    buckets, order = {}, []
+    for candidate in candidates:
+        scope = str(candidate.get("scope") or "")
+        if scope not in buckets:
+            buckets[scope] = []
+            order.append(scope)
+        buckets[scope].append(candidate)
+    kept, deferred = [], []
+    while True:
+        progressed = False
+        for scope in order:
+            if not buckets[scope]:
+                continue
+            progressed = True
+            candidate = buckets[scope].pop(0)
+            if len(kept) < cap:
+                kept.append(candidate)
+            else:
+                deferred.append({"name": candidate.get("name"), "scope": scope,
+                                 "reason": "candidate cap (max_candidates=%d)" % cap})
+        if not progressed:
+            return kept, deferred
 
 
 def _admit(group, report, kept):

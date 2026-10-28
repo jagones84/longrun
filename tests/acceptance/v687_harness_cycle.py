@@ -254,20 +254,51 @@ check("H4 every independent and successor scratch tree is removed",
       all(not os.path.exists(os.path.join(P.root(), trial["probe_id"]))
           for trial in regressed["trials"] + [regressed["successor"]]))
 
-# ---------------------------------------------------------- I: cap refusal ---
-too_many = DISTINCT + [dict(SKILL, name="extra")]
-cap_calls = []
+# ------------------------------------------------------------- I: the cap ---
+# A live production cycle on 2026-10-28 died with "editor candidates exceed the
+# cycle cap": both editors return up to their own MAX_CANDIDATES while the cycle
+# cap is a SPEND bound (one probe per candidate). Aborting the round made a real
+# cycle impossible, so the cap now SELECTS deterministically (one slot per scope
+# per round) and names every deferred candidate. The editor is also told its
+# budget, and probe._budget_refusal remains the hard backstop for direct callers.
+INV_TWO = [{"kind": "skill", "name": "inv-a", "content": "Inventory inputs first.\n"},
+           {"kind": "skill", "name": "inv-b", "content": "Never retry a failed path.\n"}]
+DOM_TWO = [{"kind": "guardrail", "name": "dom-a", "content": "State the ledger date.\n"},
+           {"kind": "guardrail", "name": "dom-b", "content": "Round to cents only.\n"}]
+cap_calls, cap_prompts = [], []
 
 
-def cap_editor(_msgs):
-    return json.dumps({"candidates": too_many}), "", "stub"
+def cap_editor(msgs):
+    text = str(msgs[0]["content"])
+    cap_prompts.append(text)
+    rows = INV_TWO if text.splitlines()[0].endswith("INV") else DOM_TWO
+    return json.dumps({"candidates": rows}), "", "stub"
 
 
-capped = CY.run(SID, dry_run=False, c=ON, call=cap_editor,
-                runner=lambda *_a: cap_calls.append("spawn"))
-check("I1 candidate cap refuses before any probe or durable write",
-      capped["status"] == "refused" and "cap" in capped["reason"]
-      and cap_calls == [] and capped["proposals"] == [] and IMP.list_proposals() == before)
+def cap_runner(plan, timeout):
+    cap_calls.append(sorted(plan["staged"]))
+    return probe_runner(plan, timeout)
+
+
+capped = CY.run(SID, domain="cap", dry_run=False, c=ON, call=cap_editor, runner=cap_runner)
+check("I1 the cap keeps a deterministic, scope-balanced subset",
+      capped["status"] == "no adoption"
+      and [t["candidate"]["name"] for t in capped["trials"]] == ["inv-a", "dom-a"],
+      [t["candidate"]["name"] for t in capped.get("trials") or []])
+check("I2 every deferred candidate is named with the reason",
+      sorted(d["name"] for d in capped.get("deferred") or []) == ["dom-b", "inv-b"]
+      and all("cap" in d["reason"] for d in capped.get("deferred") or [])
+      and {r["name"] for r in capped["refusals"]} >= {"dom-b", "inv-b"},
+      capped.get("deferred"))
+check("I3 only the capped subset is executed, plus one successor",
+      cap_calls == [["inv-a"], ["dom-a"], ["dom-a", "inv-a"]], cap_calls)
+check("I4 each editor was told its budget",
+      len(cap_prompts) == 2
+      and all("at most %d candidates" % ON["max_candidates"] in p for p in cap_prompts),
+      [p.splitlines()[0] for p in cap_prompts])
+check("I5 the capped round writes nothing durable",
+      capped["proposals"] == [] and IMP.list_proposals() == before
+      and L.index("cap")["entries"] == [])
 
 # -------------------------------------- J: real pre-existing library state ---
 # This explicit fixture is not cycle adoption. Preserve populated status/hit

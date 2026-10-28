@@ -62,7 +62,7 @@ SCOPE_TEXT = {
     ),
 }
 
-SYSTEM = (
+SYSTEM_T = (
     "You adapt an autonomous agent's harness from execution evidence. You are "
     "given the task, the step summary of a reference run, a behavioural contrast "
     "between two runs, and the index of a harness improvement library. There is "
@@ -73,7 +73,7 @@ SYSTEM = (
     '"why":"<the concrete failure this removes>"}]}\n'
     "Rules: at most %d candidates; content is the literal file to propose, in "
     "English; every candidate must remove a failure visible in the contrast; "
-    "never propose code that runs inside the tool loop." % MAX_CANDIDATES
+    "never propose code that runs inside the tool loop."
 )
 
 
@@ -122,7 +122,8 @@ def _library_content(rows, domain):
     return "\n".join(bundles) or "(no complete bundle fits the retrieval budget)"
 
 
-def build_prompt(scope, record, contrast=None, library_rows=(), library_content=""):
+def build_prompt(scope, record, contrast=None, library_rows=(), library_content="",
+                 limit=MAX_CANDIDATES):
     """The editor prompt for one scope (pure, deterministic, bounded).
 
     Args:
@@ -130,9 +131,11 @@ def build_prompt(scope, record, contrast=None, library_rows=(), library_content=
         record: the base execution record (`harness.record`).
         contrast: the `harness.contrast.diff` output, when a probe already ran.
         library_rows: index rows from `harness.library.relevant`.
+        limit: how many candidates THIS call may return (the cycle's budget).
     """
     if scope not in SCOPE_TEXT:
         raise ValueError("unknown editor scope: %r" % (scope,))
+    limit = _limit(limit)
     evidence = (contrast_mod.evidence_text(contrast, MAX_EVIDENCE) if contrast
                 else "(no contrast yet — judge from the reference run's failures above)")
     return (
@@ -150,9 +153,18 @@ def build_prompt(scope, record, contrast=None, library_rows=(), library_content=
             evidence,
             _library_block(library_rows),
             library_content or "(not retrieved)",
-            SYSTEM,
+            SYSTEM_T % limit,
         )
     )
+
+
+def _limit(value):
+    """A usable per-call candidate budget (1..MAX_CANDIDATES)."""
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        return MAX_CANDIDATES
+    return max(1, min(out, MAX_CANDIDATES))
 
 
 def _parse(answer):
@@ -194,7 +206,7 @@ def _validate(candidate):
 
 
 def propose(scope, record, contrast=None, library_rows=(), model=None, call=None,
-            domain="general", exclude=()):
+            domain="general", exclude=(), limit=MAX_CANDIDATES):
     """Run one editor and return ephemeral candidates without inbox writes.
 
     The editor is conditioned on an OBSERVED DEFICIENCY — a failed step in the
@@ -212,10 +224,14 @@ def propose(scope, record, contrast=None, library_rows=(), model=None, call=None
         domain: the library/family this cycle belongs to.
         exclude: candidate names already proposed by the other scope in this cycle
             (two scopes proposing the same skill is one object, not two).
+        limit: the cycle's candidate budget for this call. The prompt states it and
+            the accepted list is bounded by it, so one editor cannot starve the
+            round; the cycle still enforces the cross-scope cap (`cycle._take`).
     Returns:
         {"scope", "proposals": [] (legacy field), "candidates": [{kind,name,content}],
          "rejected": [{name, reason}], "skipped"?}
     """
+    limit = _limit(limit)
     fails = [s for s in (record.get("steps") or []) if isinstance(s, dict) and s.get("ok") is False]
     if isinstance(contrast, dict) and contrast:
         if contrast.get("comparable") is False:
@@ -228,7 +244,8 @@ def propose(scope, record, contrast=None, library_rows=(), model=None, call=None
         return {"scope": scope, "proposals": [], "candidates": [], "rejected": [],
                 "skipped": "no observed failure"}
     content = _library_content(library_rows, domain)
-    prompt = build_prompt(scope, record or {}, contrast, library_rows, content)
+    prompt = build_prompt(scope, record or {}, contrast, library_rows, content,
+                          limit=limit)
     messages = [{"role": "user", "content": prompt}]
     used = model
     if call is None:
@@ -249,7 +266,12 @@ def propose(scope, record, contrast=None, library_rows=(), model=None, call=None
                 "rejected": [{"name": "(editor)", "reason": "%s (model %s)" % (why, used)}],
                 "model": used, "domain": domain}
     ids, rejected, accepted = [], [], []
-    for candidate in rows[:MAX_CANDIDATES]:
+    for index, candidate in enumerate(rows):
+        if len(accepted) >= limit:
+            rejected.append({"name": "(editor)",
+                             "reason": "%d candidates beyond the budget of %d"
+                                       % (len(rows) - index, limit)})
+            break
         ok, reason = _validate(candidate)
         label = _name(candidate.get("name") if isinstance(candidate, dict) else "", "candidate")
         if ok and label in (set(str(x) for x in (exclude or ()))
