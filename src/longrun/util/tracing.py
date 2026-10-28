@@ -98,6 +98,15 @@ def _config_digests(config_dir=None):
     return out
 
 
+def config_digests(config_dir=None):
+    """Public alias of `_config_digests` for the harness record (H2-1).
+
+    Same value, one implementation: the record must not re-walk `config/` with
+    its own rules, or the two digests drift apart.
+    """
+    return _config_digests(config_dir)
+
+
 def build_manifest(kind, model=None, run_id=None, config_dir=None, overlay_path=None,
                    repo_root=None):
     """The conditions of one run, as digests. See `RunTrace.__init__`."""
