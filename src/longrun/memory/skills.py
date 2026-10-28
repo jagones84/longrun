@@ -23,7 +23,7 @@ import zipfile
 
 from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR as APP_DATA_DIR
-SKILLS_DIR = os.path.join(REPO, "skills")
+SKILLS_DIR = os.environ.get("LONGRUN_SKILLS_DIR") or os.path.join(REPO, "skills")
 
 LOCAL_CATEGORY = "local"
 

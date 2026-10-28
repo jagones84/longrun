@@ -243,27 +243,64 @@ def build(session_id, run_id=None, session=None):
     """
     from longrun.memory import stores
     sess = session if isinstance(session, dict) else (stores.load_session(session_id) or {})
-    workspace = str(sess.get("workspace") or "")
-    cards = sess.get("tool_cards") or []
+    key = run_id or session_id
+    return _assemble(key, session_id, _goal(sess), sess.get("created"),
+                     sess.get("model"), sess.get("workspace"),
+                     sess.get("tool_cards") or [], _harness(run_id), _tokens(key))
+
+
+def _assemble(run_id, session_id, goal, created, model, workspace, cards, harness, tokens):
+    """The one record shape both entry points return (one truth, two sources)."""
+    workspace = str(workspace or "")
     steps = _steps(cards)
     files = _written(cards, workspace)
     stamps = [s["ts"] for s in steps if isinstance(s.get("ts"), (int, float))]
     span = round(max(stamps) - min(stamps), 3) if len(stamps) >= 2 else 0.0
-    key = run_id or session_id
     return {
         "schema": SCHEMA,
-        "run_id": key,
+        "run_id": run_id,
         "session_id": session_id,
-        "goal": _goal(sess),
-        "ts": round(float(sess.get("created") or 0.0), 3),
-        "model": str(sess.get("model") or ""),
+        "goal": str(goal or "")[:GOAL_MAX],
+        "ts": round(float(created or 0.0), 3),
+        "model": str(model or ""),
         "workspace": workspace,
-        "harness": _harness(run_id),
-        "budget": {"steps": len(steps), "seconds": span, "tokens": _tokens(key)},
+        "harness": harness,
+        "budget": {"steps": len(steps), "seconds": span, "tokens": tokens},
         "steps": steps,
         "files_touched": files,
         "deliverables": _deliverables(files),
     }
+
+
+def from_actions(goal, actions, workspace, model=None, run_id=None, created=None):
+    """A record for a loop that reports ACTIONS instead of session tool cards.
+
+    The agent loop (`agent.agent_run`) returns `{action, tool, args, observation}`
+    entries. The probe runs the loop directly, so it has actions and no session;
+    this adapter turns them into the same cards `build` reads, and both paths end
+    in `_assemble` — one record shape, never a second one.
+    """
+    cards = []
+    for act in (actions or []):
+        if not isinstance(act, dict):
+            continue
+        kind = str(act.get("tool") or act.get("action") or "")
+        if kind in ("finish", "write_todos", "update_todos", "replan", ""):
+            continue
+        obs = act.get("observation")
+        cards.append({
+            "tool": kind,
+            "args": act.get("args") or {},
+            "result": str(obs if obs is not None else (act.get("summary") or "")),
+            "ok": not bool(act.get("error")),
+            "error": str(act.get("error") or "")[:ERROR_MAX],
+            "exit_code": act.get("exit_code"),
+            "backend": act.get("backend") or "",
+            "node": act.get("node"),
+            "ts": act.get("ts"),
+        })
+    key = run_id or "probe"
+    return _assemble(key, "", goal, created, model, workspace, cards, _harness(None), None)
 
 
 def save(rec):
