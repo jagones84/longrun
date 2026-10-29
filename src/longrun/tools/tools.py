@@ -1481,30 +1481,37 @@ def _improve(args, run_id=None):
         def _inside_proposals(p):
             return path_under(p, proposals_root)
 
+        # EV-14: EVERY refusal carries `ok: False`. These branches answered a bare
+        # `{"error": …}` (truthy dict, no verdict), so a caller that only read `ok`
+        # saw a success. One shape for the whole action set.
         if action == "verify":
             if not path:
-                return {"error": "path required for action=verify"}
+                return {"ok": False, "error": "path required for action=verify"}
             if not _inside_proposals(path):
-                return {"error": "verify path must be under %s" % proposals_root}
+                return {"ok": False,
+                        "error": "verify path must be under %s" % proposals_root}
             # v713: a mined draft has no check.py yet — synth it first, or every
             # verify answered "can't open file …/check.py" (the documented
             # mine -> verify -> promote loop dead-ended on its first step).
             ready = selfevolve.ensure_check(path)
             if not ready.get("ok"):
-                return {"error": ready.get("error") or "draft is not verifiable"}
+                return {"ok": False,
+                        "error": ready.get("error") or "draft is not verifiable"}
             rep = selfevolve.verify(path)
             _pub("improve.verify", path=path, green=bool(rep.get("green")))
             return {"ok": True, "synth": bool(ready.get("synth")), "verify": rep}
         if action == "promote":
             if not path:
-                return {"error": "path required for action=promote"}
+                return {"ok": False, "error": "path required for action=promote"}
             if not _inside_proposals(path):
-                return {"error": "promote path must be under %s" % proposals_root}
+                return {"ok": False,
+                        "error": "promote path must be under %s" % proposals_root}
             # promote refuses an unverified draft with "the sandbox check did not
             # go green", which a fresh draft cannot even run: state the real reason.
             ready = selfevolve.ensure_check(path)
             if not ready.get("ok"):
-                return {"error": ready.get("error") or "draft is not verifiable"}
+                return {"ok": False,
+                        "error": ready.get("error") or "draft is not verifiable"}
             res = selfevolve.promote(path)
             if res.get("ok"):
                 _pub("improve.archived", name=res.get("name"), rel=res.get("rel"))
@@ -1515,9 +1522,10 @@ def _improve(args, run_id=None):
             # implementation (`selfevolve.forge_from_draft`), which also records the
             # outcome on the draft and in the ledger.
             if not path:
-                return {"error": "path required for action=forge"}
+                return {"ok": False, "error": "path required for action=forge"}
             if not _inside_proposals(path):
-                return {"error": "forge path must be under %s" % proposals_root}
+                return {"ok": False,
+                        "error": "forge path must be under %s" % proposals_root}
             res = selfevolve.forge_from_draft(
                 path, name=str(args.get("name") or ""),
                 description=str(args.get("content") or ""))
@@ -1540,7 +1548,7 @@ def _improve(args, run_id=None):
             pruned = improve.sweep_drafts()
             paths = improve.mine_once(note=str(args.get("reason", "")))
         except Exception as e:  # noqa: BLE001
-            return {"error": "mine failed: %s" % e}
+            return {"ok": False, "error": "mine failed: %s" % e}
         recs = []
         # v645: a bare tool sequence has NO purpose, so it is not a proposal.
         # This branch used to publish one `improve.proposal` card per draft with

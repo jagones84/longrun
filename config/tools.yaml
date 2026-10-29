@@ -114,6 +114,12 @@ selfevolve:
   # skills/core library is immutable and can never be written by the miner).
   category: created         # skills/<category>/<name> at promotion time
   verify_timeout: 60        # timeout del check in sandbox
+  # EV-13: evolve's CODE arm. A green pattern is also forged into a Matrix tool
+  # (`learned_<slug>.run`) that replays the sequence; it stays only after its own
+  # generated test and the sha-bound contract gate pass (removed otherwise).
+  # `forge_per_run` bounds one evolve pass so it cannot flood src/Matrix.
+  forge_on_evolve: true
+  forge_per_run: 1
 
 # ---- loop detection by tool TYPE frequency (M5, upgrade plan) ---------------
 # The v2 identical-action trap misses a model calling one tool type dozens of

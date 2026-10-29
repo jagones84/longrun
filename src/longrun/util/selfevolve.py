@@ -317,6 +317,13 @@ STAGE2_DEFAULTS = {
     # on a single lucky green). 1 preserves the historical single-green
     # behavior; raise it to harden a flaky check.py.
     "min_green_streak": 1,
+    # EV-13: evolve's CODE arm. A green pattern already becomes a skill (the
+    # declarative procedure); with this on it is ALSO forged into a Matrix tool
+    # (`learned_<slug>.run`) that replays the sequence, proven by its own
+    # generated test + the sha-bound contract gate and removed when either fails.
+    # Bounded per run so one evolve pass cannot flood src/Matrix.
+    "forge_on_evolve": True,
+    "forge_per_run": 1,
 }
 
 # JAG-426: a hard ceiling on machine-created skills. An unbounded auto-library
@@ -490,9 +497,11 @@ def ensure_check(proposal_dir):
             return {"ok": True, "synth": False}
     prop_path = os.path.join(d, "proposal.json")
     if not os.path.isfile(prop_path):
-        # Not a draft folder: there is nothing of OURS to synthesize, and the
-        # verifier is the one that decides what a non-draft path means.
-        return {"ok": True, "synth": False}
+        # EV-14: a folder that is NOT a draft has nothing of ours to verify. The
+        # verifier used to run a `check.py` that does not exist and report the
+        # raw `python3: can't open file …` as if it were a failed check.
+        return {"ok": False,
+                "error": "not a mined draft: %s has no proposal.json" % d}
     prop = _read_json(prop_path)
     pattern = prop.get("pattern") if isinstance(prop, dict) else None
     if not isinstance(pattern, list) or not pattern:

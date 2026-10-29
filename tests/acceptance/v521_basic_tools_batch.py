@@ -63,13 +63,22 @@ check("improve.verify requires only its proposal path",
 
 old_repo, old_verify = registry.REPO, selfevolve_mod.verify
 proposal_root = os.path.join(TMP, "data", "proposals", "skills")
-os.makedirs(proposal_root, exist_ok=True)
+# v722 repin: `path` must be a DRAFT, not the store root. `ensure_check` now
+# refuses a folder with no proposal.json (it used to run a non-existent check.py
+# and report the raw python error as a failed check). The fixture is a real
+# draft with a HAND-WRITTEN check, which ensure_check never regenerates.
+draft = os.path.join(proposal_root, "probe")
+os.makedirs(draft, exist_ok=True)
+with open(os.path.join(draft, "proposal.json"), "w", encoding="utf-8") as f:
+    f.write('{"name": "probe", "pattern": ["fs.read", "fs.edit"]}')
+with open(os.path.join(draft, "check.py"), "w", encoding="utf-8") as f:
+    f.write("# hand written probe check\nprint('ok')\n")
 registry.REPO = TMP
 selfevolve_mod.verify = lambda path: {"ok": True, "green": True, "path": path}
 try:
-    verified = run("improve.verify", {"path": proposal_root})
+    verified = run("improve.verify", {"path": draft})
     verified_legacy = run(
-        "improve.verify", {"scope": "skill", "path": proposal_root})
+        "improve.verify", {"scope": "skill", "path": draft})
 finally:
     registry.REPO, selfevolve_mod.verify = old_repo, old_verify
 check("improve.verify infers the mine scope and calls the verifier",

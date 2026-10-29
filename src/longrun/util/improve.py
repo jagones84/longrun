@@ -595,18 +595,43 @@ def evolve_once(note=""):
     pattern, which is why the loop looked different). Both now run this one flow and
     differ only in what they do with the reports. `note` is accepted for signature
     parity with `mine_once` (the history miner signs its own drafts).
+
+    EV-13: evolve's CODE arm. The skill pipeline stays as it was (a declarative
+    procedure, verified and archived); a GREEN pattern is also FORGED into a Matrix
+    tool, which is the executable half the miner never had. Bounded by
+    `forge_per_run` and switchable with `forge_on_evolve`, because one evolve pass
+    must never flood `src/Matrix`; a refused/red forge is recorded on the report
+    and never fails the run.
     """
     from longrun.util import selfevolve
+    c = selfevolve.cfg()
     out = DRAFT_DIR
     reports = []
-    for cand in selfevolve.mine(selfevolve.history(), selfevolve.cfg()):
-        rep = selfevolve.pipeline(cand["pattern"], out, cand["support"])
+    for cand in selfevolve.mine(selfevolve.history(), c):
+        rep = selfevolve.pipeline(cand["pattern"], out, cand["support"], c=c)
         arc = rep.get("archived")
         rel = arc.get("rel") or arc.get("path") if isinstance(arc, dict) else (
             arc if isinstance(arc, str) else "")
         reports.append({"pattern": cand["pattern"],
                         "green": bool((rep.get("verify") or {}).get("green")),
-                        "rel": rel or ""})
+                        "rel": rel or "",
+                        "dir": str(rep.get("dir") or "")})
+    if c.get("forge_on_evolve"):
+        try:
+            cap = max(0, int(c.get("forge_per_run") or 0))
+        except (TypeError, ValueError):
+            cap = 1
+        forged = 0
+        for r in reports:
+            if forged >= cap:
+                break
+            if not r.get("green") or not r.get("dir"):
+                continue
+            fr = selfevolve.forge_from_draft(r["dir"])
+            r["matrix"] = {"ok": bool(fr.get("ok")), "tool": fr.get("tool"),
+                           "error": fr.get("error")}
+            if fr.get("ok"):
+                forged += 1
     return reports
 
 
