@@ -1065,6 +1065,37 @@ def _self(args, run_id):
             info["service"]["active"] = "n/a (no systemd on this host)"
     except Exception:
         info["service"]["active"] = "unknown"
+    # v718: a capability answer also needs WHO is asking. The dispatch contract is
+    # `fn(args, run_id)`, so nothing else reaches a handler — but the identity is
+    # already decided at the gate (`api_v02._session_scope`, ONE resolver). Read it,
+    # never re-derive it: a second resolver would be a second truth about a role.
+    sid = str((args or {}).get("session") or run_id or "")
+    ident = {"session_id": sid}
+    try:
+        from longrun.core import api_v02 as _api
+        _allow, _role = _api._session_scope(sid)
+        ident["role"] = _role
+        ident["scope"] = sorted(_allow) if _allow is not None else "unrestricted"
+    except Exception:  # noqa: BLE001 — identity must never break the report
+        ident["role"], ident["scope"] = None, "unknown"
+    try:
+        from longrun.agent import agents as _agents
+        _rec = _agents.REGISTRY.get(sid) or {}
+        ident["agent_id"] = _rec.get("id")
+        ident["agent_name"] = _rec.get("name")
+    except Exception:  # noqa: BLE001
+        ident["agent_id"], ident["agent_name"] = None, None
+    try:
+        ident["trust"] = _session_trust(sid)
+    except Exception:  # noqa: BLE001
+        ident["trust"] = None
+    info["identity"] = ident
+    try:
+        from longrun.tools import diag as _diag
+        _scope = ident.get("scope")
+        info["namespaces"] = _diag.namespaces(_scope if isinstance(_scope, list) else None)
+    except Exception as e:  # noqa: BLE001
+        info["namespaces"] = {"error": str(e)}
     # JAG-426: on-demand dynamic diagnosis. Every branch is additive: the static
     # info above always ships, so the model never loses the paths/recipe it had.
     if action not in ("info", ""):
@@ -1393,7 +1424,7 @@ def _improve(args, run_id=None):
     args = args or {}
     scope = str(args.get("scope", "")).strip()
     action = str(args.get("action", "propose") or "propose").strip()
-    if action in ("mine", "evolve", "verify", "promote"):
+    if action in ("mine", "evolve", "verify", "promote", "forge"):
         scope = "mine"
     content = str(args.get("content", "")).strip()
     # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
@@ -1477,6 +1508,20 @@ def _improve(args, run_id=None):
             res = selfevolve.promote(path)
             if res.get("ok"):
                 _pub("improve.archived", name=res.get("name"), rel=res.get("rel"))
+            return res
+        if action == "forge":
+            # EV-11: the mining lane's executive arm — a replayable draft becomes a
+            # REAL Matrix tool that is tested and verified before it stays. One
+            # implementation (`selfevolve.forge_from_draft`), which also records the
+            # outcome on the draft and in the ledger.
+            if not path:
+                return {"error": "path required for action=forge"}
+            if not _inside_proposals(path):
+                return {"error": "forge path must be under %s" % proposals_root}
+            res = selfevolve.forge_from_draft(
+                path, name=str(args.get("name") or ""),
+                description=str(args.get("content") or ""))
+            _pub("improve.forge", tool=res.get("tool"), ok=bool(res.get("ok")))
             return res
         if action == "evolve":
             # v662: stage 2 is `improve.evolve_once` — the SAME flow the end-of-turn

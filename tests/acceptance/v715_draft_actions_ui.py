@@ -72,6 +72,17 @@ check("A4 a gated promote says an approval was raised, never 'installed'",
 got = act({"status": "executed", "result": {"ok": False, "error": "skill not verified"}}, "promote")
 check("A5 a refused promote shows the refusal",
       got.get("text", "").startswith("refused") and "not verified" in got.get("text", ""), got)
+# v719: forge prints the Matrix tool it produced, never "installed"
+got = act({"status": "executed", "result": {"ok": True, "tool": "learned_x.run"}}, "forge")
+check("A5b a forged tool is named as a Matrix tool",
+      "matrix tool" in got.get("text", "") and "learned_x.run" in got.get("text", "")
+      and "installed" not in got.get("text", ""), got)
+got = act({"status": "pending", "approval": {"id": "abc"}, "result": {}}, "forge")
+check("A5c a gated forge says an approval was raised",
+      "approval raised" in got.get("text", ""), got)
+got = act({"status": "executed", "result": {"ok": False, "error": "not replayable: batch"}}, "forge")
+check("A5d a refused forge shows the reason",
+      got.get("text", "").startswith("refused") and "not replayable" in got.get("text", ""), got)
 got = act(None, "verify", "")
 check("A6 a draft without a folder says so", "no folder" in got.get("text", ""), got)
 
@@ -94,6 +105,8 @@ check("A7 a transport error is reported as an error", "error:" in got.get("text"
 # ------------------------------------- B: the panel wires both actions ------
 check("B1 the drafts row offers verify and promote",
       'mk("verify"' in UI and 'mk("promote"' in UI, "")
+check("B1b the drafts row offers forge (the Matrix arm)",
+      'mk("forge"' in UI, "")
 check("B2 both call the same real endpoint", 'draftAct(x.path, action, slot)' in UI
       and '"/api/tools/call"' in UI.split("async function draftAct(")[1][:800], "")
 check("B3 promote is described as approval-gated",

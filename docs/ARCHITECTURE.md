@@ -206,6 +206,7 @@ owners:
 | verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
 | proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
 | installed skill | approval | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill |
+| forged Matrix tool (`learned_<slug>.run`) | `improve{forge}` on a draft | `selfevolve.forge_matrix` → `matrix.scaffold` → `matrix.run_test` → `matrix.verify_target` | executable, but only after its own generated test and the sha-bound contract gate pass; removed when they do not |
 | Matrix artifact | approval | `core.matrix.apply_learning` | outside Nucleus, hash-bound |
 
 

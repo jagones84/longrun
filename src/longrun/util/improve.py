@@ -412,6 +412,10 @@ def list_drafts(limit=50):
                      "status": str(rec.get("status") or "proposed"),
                      "support": int(rec.get("support") or 0),
                      "steps": int(rec.get("length") or len(rec.get("pattern") or [])),
+                     # EV-11: the sequence IS the material. Without it the panel
+                     # showed a step COUNT, so neither the operator nor a live
+                     # check could tell what the draft replays.
+                     "pattern": [str(x) for x in (rec.get("pattern") or [])],
                      "created": float(rec.get("created") or 0),
                      "green_streak": int(rec.get("green_streak") or 0),
                      "verified": bool(verify.get("green")) if verify else None,

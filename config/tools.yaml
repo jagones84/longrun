@@ -315,17 +315,16 @@ tools:
 
   # Replacing/clearing core memory or permanently deleting stored records requires
   # approval in normal mode (global approvals.mode=full bypasses all such gates).
+  # These rows set `approval` ONLY: `enabled` belongs to the namespace, so
+  # `memory: {enabled: false}` really switches memory off (v718 — the four rows
+  # used to pin `enabled: true`, and the namespace toggle left them running).
   memory.set_core:
-    enabled: true
     approval: required
   memory.clear_core:
-    enabled: true
     approval: required
   memory.forget:
-    enabled: true
     approval: required
   memory.purge:
-    enabled: true
     approval: required
 
   improve:

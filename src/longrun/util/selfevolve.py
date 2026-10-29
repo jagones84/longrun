@@ -684,6 +684,224 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
             "rel": prop["archived_to"]}
 
 
+MATRIX_FORGE_NS = "learned"
+
+
+def _forge_slug(pattern):
+    """Filesystem-safe, stable name for one mined sequence (same pattern, same name)."""
+    import hashlib
+    joined = "|".join(str(t) for t in pattern)
+    digest = hashlib.sha1(joined.encode("utf-8")).hexdigest()[:8]
+    base = re.sub(r"[^a-z0-9]+", "_", joined.lower()).strip("_")[:40].strip("_")
+    return "%s_%s" % (base or "seq", digest)
+
+
+def _forge_body(ns, full, steps, description, support, origin):
+    """The REAL module a forged tool ships (the scaffold stub is a placeholder).
+
+    One owner of the generated code, so the file and the test that proves it can
+    never disagree: the test imports THIS module and pins the refusal paths.
+    Three literal chunks, formatted only where a value must be inserted — a single
+    big format string made the generated `%d` of the runtime report ambiguous.
+    """
+    head = (
+        '"""Matrix tool forged from a mined tool sequence (Longrun self-evolve).\n'
+        "\n"
+        "Sequence: %s\n"
+        "Support: %d run(s). Origin: %s.\n"
+        "\n"
+        "Each step runs through `longrun.tools.tools.execute`, so the harness's own\n"
+        "approval policy still applies to every single step: this module never bypasses\n"
+        "a gate, it only removes the need to retype the sequence.\n"
+        '"""\n'
+        "\n"
+        "STEPS = %r\n"
+        "\n"
+    ) % (" \u2192 ".join(steps), int(support or 0), origin or "mined draft", list(steps))
+    schema = (
+        "TOOL_SCHEMAS = {\n"
+        "    %r: {\n"
+        '        "description": %r,\n'
+        '        "type": "object",\n'
+        '        "properties": {\n'
+        '            "inputs": {\n'
+        '                "type": "array",\n'
+        '                "description": "one argument object per step, in STEP order",\n'
+        "            },\n"
+        "        },\n"
+        '        "required": ["inputs"],\n'
+        '        "approval": "auto",\n'
+        "    },\n"
+        "}\n"
+        "TOOL_SCHEMA = dict(TOOL_SCHEMAS[%r])\n"
+        "\n"
+        "\n"
+    ) % (full, description, full)
+    body = (
+        "def execute(args, run_id=None, subtool=None):\n"
+        '    """Run the mined sequence with the caller\'s arguments, in order."""\n'
+        "    args = args or {}\n"
+        '    inputs = args.get("inputs")\n'
+        "    if not isinstance(inputs, list) or len(inputs) != len(STEPS):\n"
+        '        return {"ok": False, "exit_code": 64,\n'
+        '                "error": "`inputs` must be a list of %d argument objects "\n'
+        '                         "(one per step)" % len(STEPS),\n'
+        '                "steps": list(STEPS)}\n'
+        "    from longrun.tools import tools as _tools\n"
+        "    out = []\n"
+        "    for name, step_args in zip(STEPS, inputs):\n"
+        "        if not isinstance(step_args, dict):\n"
+        '            out.append({"tool": name, "ok": False,\n'
+        '                        "error": "step arguments must be an object"})\n'
+        "            break\n"
+        "        try:\n"
+        "            res = _tools.execute(name, step_args, run_id=run_id) or {}\n"
+        "        except Exception as e:  # noqa: BLE001 — one broken step must not hide the rest\n"
+        '            out.append({"tool": name, "ok": False, "error": str(e)})\n'
+        "            break\n"
+        '        ok = bool(res.get("ok", res.get("exit_code") == 0))\n'
+        '        out.append({"tool": name, "ok": ok})\n'
+        "        if not ok:\n"
+        "            break\n"
+        "    done = sum(1 for s in out if s[\"ok\"])\n"
+        '    return {"ok": len(out) == len(STEPS) and done == len(STEPS),\n'
+        '            "steps": out, "ok_count": done, "step_count": len(STEPS),\n'
+        '            "stdout": "%d/%d step(s) executed" % (done, len(STEPS))}\n'
+    )
+    return head + schema + body
+
+
+def _forge_test(ns, full, steps):
+    """A deterministic, side-effect free test: it only pins the REFUSALS."""
+    head = (
+        '"""Generated proof for the forged tool %s (no side effects: refusals only)."""\n'
+        "from Matrix.tools import %s as M\n"
+        "\n"
+        'assert callable(getattr(M, "execute", None)), "execute is not callable"\n'
+        "assert M.STEPS == %r, M.STEPS\n"
+    ) % (full, ns, list(steps))
+    body = (
+        'r = M.execute({}, run_id="forge-test")\n'
+        'assert r.get("ok") is False and "inputs" in str(r.get("error")), r\n'
+        'r = M.execute({"inputs": []}, run_id="forge-test")\n'
+        'assert r.get("ok") is False, r\n'
+        'r = M.execute({"inputs": [{}] * (len(M.STEPS) + 1)}, run_id="forge-test")\n'
+        'assert r.get("ok") is False, r\n'
+        'print("ok: refusals pinned for", len(M.STEPS), "steps")\n'
+    )
+    return head + body
+
+
+def forge_matrix(pattern, support=0, draft="", name="", description="",
+                 repo_root=None):
+    """Turn a REPLAYABLE mined sequence into a tested Matrix tool (EV-11).
+
+    The mining lane ended at `ledger.jsonl`: a green recurring pattern became a
+    skill or nothing. This is its executive arm — Matrix is the live, revisable
+    code zone, so the artifact is a real tool that replays the sequence and
+    carries its own proof:
+
+        scaffold (compliant skeleton)
+          -> overwrite with the REAL body (a placeholder is refused at load)
+          -> matrix.run_test with a generated, side-effect free test
+          -> matrix.verify_target (the sha-bound contract gate)
+          -> kept only when green; removed otherwise
+
+    It never invents arguments: the caller supplies one argument object per step,
+    and every step still passes the harness's own approval policy. Nucleus is
+    untouched (`promote_to_nucleus` keeps its own checkbox).
+    """
+    import hashlib
+    from longrun.core import matrix as mtx
+    steps = [str(t).strip() for t in (pattern or []) if str(t).strip()]
+    if len(steps) < 2:
+        return {"ok": False, "error": "a forged tool needs at least 2 steps (got %d)"
+                                      " — a single-tool repeat is a loop" % len(steps)}
+    known = set(_known_tools())
+    bad = [t for t in steps if not _dispatchable(t, known)]
+    if bad:
+        return {"ok": False, "error": "not replayable: %s" % ", ".join(bad)}
+    if not mtx.is_enabled():
+        return {"ok": False, "error": "Matrix is disabled — enable it before forging"}
+    ns = str(name or "").strip() or (MATRIX_FORGE_NS + "_" + _forge_slug(steps))
+    ns = re.sub(r"[^a-zA-Z0-9_]", "_", ns).strip("_")
+    sub = "run"
+    full = "%s.%s" % (ns, sub)
+    _root, msrc, _mdot = mtx._roots(repo_root)
+    fpath = os.path.join(msrc, "tools", ns + ".py")
+    if os.path.exists(fpath):
+        return {"ok": False, "error": "refusing to clobber %s (matrix.remove it first)"
+                                      % fpath}
+    desc = str(description or "").strip() or (
+        "Replay the mined tool sequence %s in order: `inputs` carries one argument "
+        "object per step, the run stops at the first failure, and every step keeps "
+        "its own approval policy." % " \u2192 ".join(steps))
+    origin = os.path.basename(str(draft or "")) or "mined draft"
+    sc = mtx.scaffold("tool", full, description=desc, repo_root=repo_root)
+    if not sc.get("ok"):
+        return {"ok": False, "error": "scaffold refused: %s" % sc.get("error"), "scaffold": sc}
+    body = _forge_body(ns, full, steps, desc, support, origin)
+    try:
+        with open(fpath, "w", encoding="utf-8", newline="\n") as f:
+            f.write(body)
+    except OSError as e:
+        return {"ok": False, "error": "write failed: %s" % e, "path": fpath}
+    hl = mtx.hotload(repo_root)
+    test = mtx.run_test("forge_%s.py" % ns, code=_forge_test(ns, full, steps),
+                        target="tool:%s" % ns, timeout_secs=60, repo_root=repo_root)
+    ver = mtx.verify_target("tool", ns, repo_root=repo_root) if test.get("ok") else {}
+    ok = bool(test.get("ok")) and bool(ver.get("ok"))
+    result = {"ok": ok, "tool": full, "kind": "tool", "name": ns, "path": fpath,
+              "steps": steps,
+              "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+              "load": {"ok": hl.get("ok"), "errors": hl.get("errors") or []},
+              "test": {k: test.get(k) for k in ("ok", "exit_code", "stdout",
+                                                "stderr", "path", "duration_ms")},
+              "verify": {k: ver.get(k) for k in ("ok", "error", "sha256")}}
+    if not ok:
+        # Fail closed: a tool that cannot prove itself does not stay loaded.
+        rem = mtx.remove("tool", ns, repo_root=repo_root)
+        result["removed"] = bool(rem.get("ok"))
+        result["error"] = (test.get("stderr") or test.get("error")
+                           or ver.get("error") or "the forged tool did not verify")
+        return result
+    result["stdout"] = "forged %s (%d steps), tested and verified" % (full, len(steps))
+    return result
+
+
+def forge_from_draft(proposal_dir, name="", description=""):
+    """Forge the Matrix tool of ONE mined draft, and record the outcome on it.
+
+    The draft is the input (it already owns a replayable pattern); the ledger and
+    the draft's own `matrix_tool` field are the output, so `improve{forge}` and
+    any future caller share one implementation.
+    """
+    prop_path = os.path.join(proposal_dir, "proposal.json")
+    prop = _read_json(prop_path) or {}
+    if not prop:
+        return {"ok": False, "error": "no proposal.json in %s" % proposal_dir}
+    pattern = _pattern_of(prop)
+    res = forge_matrix(pattern, support=int(prop.get("support") or 0), draft=proposal_dir,
+                       name=name, description=description or str(prop.get("purpose") or ""))
+    prop["matrix_tool"] = ({"tool": res.get("tool"), "name": res.get("name"),
+                            "path": res.get("path"), "ok": bool(res.get("ok")),
+                            "steps": res.get("steps") or pattern,
+                            "error": res.get("error")} if res.get("ok")
+                           else {"ok": False, "error": res.get("error")})
+    try:
+        _write_json(prop_path, prop)
+    except OSError:
+        pass
+    try:
+        from longrun.util import improve as _imp
+        _imp.ledger_add("forge", origin="mining", draft=os.path.basename(proposal_dir),
+                        pattern=pattern, tool=res.get("tool"), ok=bool(res.get("ok")),
+                        error=res.get("error"))
+    except Exception:  # noqa: BLE001 — the ledger must never break a forge
+        pass
+    return res
+
+
 def pipeline(pattern, out_dir, support=0, runner=None, promote_if_green=True,
              skills_dir=None, c=None):
     """Full stage 2 cycle: draft -> synth -> verify -> (promote if green AND

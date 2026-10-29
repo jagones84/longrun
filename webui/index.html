@@ -8554,6 +8554,14 @@ async function draftAct(path, action, slot) {
       : ("❌ " + (why || "not verified").slice(0, 110));
     return;
   }
+  if (action === "forge") {
+    if (slot) slot.textContent = res.ok
+      ? ("matrix tool · " + String(res.tool || "") + " · tested + verified")
+      : (st === "pending"
+        ? "approval raised · decide it in Inspector ▸ Approvals"
+        : ("refused · " + String(res.error || (j && j.reason) || st || "").slice(0, 110)));
+    return;
+  }
   if (slot) {
     slot.textContent = res.ok ? ("installed · " + String(res.installed_to || res.rel || res.path || ""))
       : (st === "pending"
@@ -8761,6 +8769,10 @@ async function loadImprovement() {
         };
         acts.appendChild(mk("verify", "verify", "run the draft's sandbox check now (real tool call)"));
         acts.appendChild(mk("promote", "promote", "install this verified draft under skills/created — approval-gated"));
+        // v719: the mining lane's executive arm — the same tool call the agent
+        // uses, which writes a REAL Matrix tool and keeps it only if its own test
+        // and contract gate pass. Approval-gated like promote.
+        acts.appendChild(mk("forge", "forge", "turn this sequence into a tested Matrix tool (approval-gated)"));
         acts.appendChild(slot);
         row.appendChild(acts);
         box.appendChild(row);

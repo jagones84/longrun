@@ -452,7 +452,8 @@ _LEGACY_SCHEMAS = {
     "improve": {
         "description": ("Self-improvement. propose registers a rule/skill proposal; "
                         "mine/evolve/verify/promote drive the self-evolving skill "
-                        "miner; review audits THE WHOLE backlog (proposals + "
+                        "miner; forge turns a mined sequence into a tested Matrix "
+                        "tool; review audits THE WHOLE backlog (proposals + "
                         "distilled lessons) with an LLM against the current "
                         "codebase and reports keep/implemented/obsolete/update/"
                         "conflict for each artifact."),
@@ -460,7 +461,7 @@ _LEGACY_SCHEMAS = {
         "properties": {
             "action": {"type": "string",
                        "enum": ["propose", "mine", "evolve", "verify", "promote",
-                                "review"],
+                                "forge", "review"],
                        "default": "propose"},
             "scope": {"type": "string",
                       "enum": ["skill", "project", "global", "mine", "review"],
@@ -470,8 +471,11 @@ _LEGACY_SCHEMAS = {
                         "description": "the proposed rule/skill text (action=propose)"},
             "path": {"type": "string",
                      "description": ("draft folder: the proposal folder for "
-                                     "verify/promote, or the mined draft a "
+                                     "verify/promote/forge, or the mined draft a "
                                      "skill proposal would install")},
+            "name": {"type": "string",
+                     "description": ("forge: the Matrix tool namespace to create "
+                                     "(default: learned_<slug of the sequence>)")},
             "reason": {"type": "string",
                        "description": "why this proposal exists (action=propose)"},
             "limit": {"type": "integer",
@@ -691,7 +695,7 @@ _SUBTOOL_FIELDS = {
     "improve": {
         "propose": ["scope", "content", "reason", "path"],
         "mine": ["reason"], "evolve": [],
-        "verify": ["path"], "promote": ["path"],
+        "verify": ["path"], "promote": ["path"], "forge": ["path"],
         "review": ["limit", "model"],
     },
     "web": {
@@ -868,6 +872,12 @@ _SUBTOOL_GUIDANCE = {
     "improve.promote": (
         "Archive ONE verified draft (provide its `path`) into skills/created/. "
         "Refused unless the verify went green."
+    ),
+    "improve.forge": (
+        "Turn ONE mined draft (`path`) into a REAL Matrix tool: the tool replays "
+        "its sequence with the caller's per-step arguments, and it is kept only "
+        "after matrix.test + matrix.verify_target pass (otherwise the file is "
+        "removed). Approval-gated; `name` sets the tool namespace."
     ),
     "improve.review": (
         "LLM-audit the whole backlog (proposals + distilled lessons) against the "
@@ -1074,6 +1084,10 @@ _SUBTOOL_GATES = {
     # a skill into the live set — so it must ask too. Without this row the gate on
     # evolve was a detour, not a boundary: two calls did what one was gated for.
     "improve.promote": "installs a verified draft into the live skill set",
+    # EV-11: forging WRITES executable code into the live Matrix zone, so it asks
+    # like every other writer. The forged tool never bypasses a gate at run time;
+    # this row is about creating it at all.
+    "improve.forge": "writes a new executable Matrix tool forged from a mined sequence",
 }
 
 

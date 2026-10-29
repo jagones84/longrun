@@ -321,6 +321,48 @@ def tools_report(tool=None, query=None) -> dict:
     return out
 
 
+def namespaces(allow=None) -> dict:
+    """Which tool NAMESPACES exist, how many tools each exposes, and who admits them.
+
+    v718: `self.info` promised a capability report but answered with a flat list of
+    dotted names, so "which namespaces do I have?" had no answer — a disabled
+    namespace and an enabled one looked identical in the index. One owner for the
+    grouping: `catalog()` names are `ns.sub` for native tools and `<client>__<tool>`
+    for MCP, which are two different namespaces and are reported as such.
+
+    `allow` is a delegated role's tool scope (`registry.in_scope`); `None` means
+    unrestricted. Per namespace `admitted` counts the tools the scope lets through,
+    so a scope that names ONE tool does not read as "the whole namespace is mine".
+    """
+    try:
+        from longrun.tools import registry
+        cat = registry.catalog()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": "registry unavailable: %s" % e}
+    rows = {}
+    for t in cat:
+        name = str(t.get("name") or "")
+        if not name:
+            continue
+        if "__" in name and "." not in name.split("__", 1)[0]:
+            ns = name.split("__", 1)[0]
+        else:
+            ns = name.split(".", 1)[0]
+        row = rows.setdefault(ns, {"tools": 0, "enabled": 0, "admitted": 0})
+        row["tools"] += 1
+        if t.get("enabled", True):
+            row["enabled"] += 1
+        if registry.in_scope(name, allow):
+            row["admitted"] += 1
+    admitted = sorted(n for n, r in rows.items() if r["admitted"])
+    return {"ok": True,
+            "enabled": sorted(n for n, r in rows.items() if r["enabled"]),
+            "disabled": sorted(n for n, r in rows.items() if not r["enabled"]),
+            "admitted": admitted,
+            "count": len(rows),
+            "namespaces": {n: rows[n] for n in sorted(rows)}}
+
+
 def _example_args(props, required, any_of=None) -> dict:
     """The smallest valid call: the REQUIRED args, else `action`, else the first two."""
     if not isinstance(props, dict) or not props:
