@@ -311,6 +311,38 @@ def shadowed_skills():
     return list(_cache.get("shadowed") or [])
 
 
+def install_skill_file(category, name, content, root=None):
+    """Install ONE verified `SKILL.md` under `skills/<category>/<name>/`.
+
+    The learning loop can propose a skill as CONTENT (a harness editor writes one
+    SKILL.md and the matched run tests exactly those bytes); `install_skill_dir`
+    only moves a folder, so that candidate had no way in. This is the same
+    write-gate with the same rule — never clobber an existing skill — and it is
+    the only writer of a single-file skill. Returns {"ok", "path"} or {"error"}.
+    """
+    cat = str(category or "").strip().lower()
+    nm = str(name or "").strip().lower()
+    text = str(content or "")
+    if not _NAME_RE.match(cat or "") or "/" in cat or "\\" in cat:
+        return {"ok": False, "error": "invalid skill category %r" % category}
+    if not _NAME_RE.match(nm or ""):
+        return {"ok": False, "error": "invalid skill name %r" % name}
+    if not text.strip():
+        return {"ok": False, "error": "empty skill content"}
+    base = os.path.abspath(root or SKILLS_DIR)
+    folder = os.path.join(base, cat, nm)
+    if os.path.exists(folder):
+        return {"ok": False, "error": "target already exists: %s" % folder}
+    try:
+        os.makedirs(folder, exist_ok=False)
+        with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError as e:
+        return {"ok": False, "error": "write failed: %s" % e}
+    list_skills(reload=True)
+    return {"ok": True, "path": folder}
+
+
 def install_skill_dir(src_dir, dest_dir):
     """Install ONE skill folder under `dest_dir`, never clobbering (single writer).
 

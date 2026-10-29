@@ -331,14 +331,18 @@ def _admit(group, report, kept):
         return {"ok": False, "reason": "no verified matched experiment; nothing admitted"}
     rules = [c for c in kept or [] if c.get("kind") == "guardrail"]
     matrix_rows = [c for c in kept or [] if str(c.get("kind") or "").startswith("matrix_")]
-    other = [c for c in kept or [] if c not in rules and c not in matrix_rows]
-    if rules and matrix_rows:
+    skill_rows = [c for c in kept or [] if c.get("kind") == "skill"]
+    other = [c for c in kept or []
+             if c not in rules and c not in matrix_rows and c not in skill_rows]
+    destinations = [n for n, rows in (("rule", rules), ("matrix", matrix_rows),
+                                      ("skill", skill_rows)) if rows]
+    if len(destinations) > 1:
         # One experiment, one claim: the runs differ by ONE package, so the
         # evidence cannot say which half helped. Ask for two rounds instead of
         # attributing both.
         return {"ok": False,
-                "reason": "the bundle mixes a project rule and Matrix artifacts; "
-                          "run one experiment per destination"}
+                "reason": "the bundle mixes %s destinations; run one experiment per "
+                          "destination" % " + ".join(destinations)}
     if other:
         return {"ok": False, "reason": "no approvable component in the verified experiment"}
     try:
@@ -365,6 +369,35 @@ def _admit(group, report, kept):
                 experiment=evidence, artifacts=artifacts)
             return {"ok": True, "id": rec.get("id"), "status": rec.get("status"),
                     "artifacts": [a["name"] for a in artifacts]}
+        if skill_rows:
+            # v714: a skill candidate used to be refused here ("no approvable
+            # component") although the matched run really tested it at
+            # skills/<category>/<name>/SKILL.md. It is now a content bundle: the
+            # bytes approved are the bytes the experiment ran, installed at the
+            # path it was tested.
+            import hashlib
+            from longrun.harness import probe as probe_mod
+            artifacts, texts = [], []
+            for c in skill_rows:
+                content = str(c.get("content") or "")
+                target, why = probe_mod._target("skill", c.get("name"))
+                if not target:
+                    return {"ok": False, "reason": why}
+                target = target.replace(os.sep, "/")
+                artifacts.append({"kind": "skill_file", "name": c.get("name"),
+                                  "content": content, "target": target,
+                                  "sha256": hashlib.sha256(
+                                      content.encode("utf-8")).hexdigest()})
+                texts.append(content.strip())
+            if not any(texts):
+                return {"ok": False, "reason": "the skill candidate has no content"}
+            rec = improve.propose(
+                "skill", "\n\n".join(t for t in texts if t),
+                reason="Harness2 matched run: %s" % (report.get("decision") or "selected"),
+                ws=report.get("workspace") or None, origin="harness",
+                experiment=evidence, artifacts=artifacts)
+            return {"ok": True, "id": rec.get("id"), "status": rec.get("status"),
+                    "artifacts": [a["target"] for a in artifacts]}
         texts = [str(c.get("content") or "").strip() for c in rules]
         texts = [t for t in texts if t]
         if not texts:

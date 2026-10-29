@@ -8532,6 +8532,35 @@ function harnessEvidenceText(x) {
           (r.cleanup_verified === true ? "" : " (unverified cleanup)")).join(" + ")
       : "");
 }
+/* v715: move ONE mined draft. `verify` runs the sandbox check, `promote` asks the
+   server to install it — that call is approval-gated, so the answer can be
+   "pending": say so instead of pretending the skill exists. Nothing here writes
+   the panel's claims by hand: every line is the tool's own answer. */
+async function draftAct(path, action, slot) {
+  const p = String(path || "");
+  if (!p) { if (slot) slot.textContent = "this draft has no folder"; return; }
+  if (slot) slot.textContent = action + "…";
+  let j = null;
+  try {
+    j = await api("POST", "/api/tools/call", {tool: "improve", run_id: "ui-draft",
+      args: {action: action, scope: "mine", path: p}});
+  } catch (e) { if (slot) slot.textContent = "error: " + e; return; }
+  const res = (j && j.result) || {};
+  const st = String((j && j.status) || "");
+  if (action === "verify") {
+    const v = res.verify || {};
+    const why = String(v.output || res.error || (j && j.reason) || "").trim();
+    if (slot) slot.textContent = v.green ? ("✅ green · " + why.slice(0, 70))
+      : ("❌ " + (why || "not verified").slice(0, 110));
+    return;
+  }
+  if (slot) {
+    slot.textContent = res.ok ? ("installed · " + String(res.installed_to || res.rel || res.path || ""))
+      : (st === "pending"
+        ? "approval raised · decide it in Inspector ▸ Approvals"
+        : ("refused · " + String(res.error || (j && j.reason) || st || "").slice(0, 110)));
+  }
+}
 async function loadImprovement() {
   const props = $("impProps"), ledgerBox = $("impLedger"), mem = $("impMemory"), recs = $("impRecords");
   if (!props) return;
@@ -8665,9 +8694,12 @@ async function loadImprovement() {
       // v645: approving a skill now verifies and installs it, so there is no
       // "not implemented" excuse to print (that note made a dead end look normal).
       const note = document.createElement("div"); note.className = "remaining";
-      note.textContent = p.target_path
-        ? "approve verifies the draft in the sandbox and installs it under skills/"
-        : "no draft folder to install — deny it in the approval inbox to clear it";
+      note.textContent = (p.artifacts && p.artifacts.length)
+        ? "approve installs the " + p.artifacts.length + " verified SKILL.md the matched run tested (" +
+          p.artifacts.map(a => String(a.target || a.name || "")).join(", ") + ")"
+        : (p.target_path
+          ? "approve verifies the draft in the sandbox and installs it under skills/"
+          : "no draft folder to install — deny it in the approval inbox to clear it");
       det.appendChild(note);
     }
     if (p.scope === "matrix") {
@@ -8714,6 +8746,23 @@ async function loadImprovement() {
           " · " + esc(String(x.steps || 0)) + " steps · " + esc(proof) +
           (x.green_streak ? " · green ×" + esc(String(x.green_streak)) : "") +
           "</span>";
+        // v715: a draft is material until someone MOVES it. Both actions are the
+        // real tool calls the agent uses; promote is approval-gated on the server,
+        // so this row never claims an install that did not happen.
+        const acts = document.createElement("div");
+        acts.className = "u-df u-g6 u-aic u-mt6";
+        const slot = document.createElement("span"); slot.className = "remaining";
+        const mk = (label, action, title) => {
+          const b = document.createElement("button");
+          b.className = "ghost"; b.textContent = label; b.title = title;
+          b.onclick = (e) => { e.preventDefault(); e.stopPropagation();
+                               draftAct(x.path, action, slot); };
+          return b;
+        };
+        acts.appendChild(mk("verify", "verify", "run the draft's sandbox check now (real tool call)"));
+        acts.appendChild(mk("promote", "promote", "install this verified draft under skills/created — approval-gated"));
+        acts.appendChild(slot);
+        row.appendChild(acts);
         box.appendChild(row);
       });
       det.appendChild(box); draftsBox.appendChild(det);

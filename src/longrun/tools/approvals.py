@@ -201,12 +201,17 @@ def _improvement_view(proposal):
     scope = str((proposal or {}).get("scope") or "")
     status = str((proposal or {}).get("status") or "pending")
     draft = str((proposal or {}).get("target_path") or "")
+    artifacts = (proposal or {}).get("artifacts") or []
     blocked = ""
-    if scope == "skill" and status == "pending" and draft and not os.path.isdir(draft):
+    if scope == "skill" and status == "pending" and artifacts:
+        # v714: a harness-proposed skill travels as CONTENT (the bytes the matched
+        # run tested), so there is no draft folder — and no block.
+        pass
+    elif scope == "skill" and status == "pending" and draft and not os.path.isdir(draft):
         blocked = "the drafted skill folder is gone — deny to clear this proposal"
     elif scope == "skill" and status == "pending" and not draft:
         blocked = "this proposal has no draft to install — deny to clear it"
-    elif scope == "matrix" and status == "pending" and not (proposal or {}).get("artifacts"):
+    elif scope == "matrix" and status == "pending" and not artifacts:
         blocked = "this Matrix proposal carries no artifact bundle — deny to clear it"
     return {
         "id": "imp:" + pid,

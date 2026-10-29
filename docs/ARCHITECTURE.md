@@ -191,6 +191,23 @@ sandbox and `promote` archives only a green draft under `skills/created`. Both t
 proposal bound to a draft with `target_path`) call those three functions — the
 same owner each time, so a mined draft can never be unverifiable-by-construction.
 
+### Self-evolve: who owns which state (one map, two entry points)
+
+"Unify" here means one lifecycle, not one file: the modules have disjoint jobs, so
+merging them would touch the agent loop, the registry, the Matrix guard and the
+frozen snapshot at once for no behavioural gain. The states and their single
+owners:
+
+| state | entry point | owner | what it means |
+|---|---|---|---|
+| tool sequence recorded | agent turn | `selfevolve.record/history` | raw material, not a skill |
+| mined draft (`proposals/skills/<name>`) | end-of-turn pass or `improve{mine}` | `improve.sweep_drafts` + `selfevolve.draft/synth` | material; needs a purpose |
+| harness candidate (`skill` kind) | Harness² cycle editor | `harness/editors.propose` → `probe.stage` | material tested by a matched run |
+| verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
+| proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
+| installed skill | approval | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill |
+| Matrix artifact | approval | `core.matrix.apply_learning` | outside Nucleus, hash-bound |
+
 
 ### Enabling matched whole runs (opt-in, off by default)
 
