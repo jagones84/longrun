@@ -113,6 +113,12 @@ check("B3 promote is described as approval-gated",
       "approval-gated" in UI, "")
 check("B4 the row says a draft is material, not installed",
       "Nothing here is installed" in UI, "")
+# EV-16: the row states the draft's LIVE Matrix tool and does not offer a forge
+# the server would refuse as a clobber.
+check("B5 a forged draft shows its Matrix tool",
+      'x.matrix_tool ? " · <span class=\\"sk-badge sk-matrix\\">matrix tool · "' in UI, "")
+check("B6 forge is not offered when the module is already live",
+      "if (!x.matrix_tool) {" in UI, "")
 
 print("\n---\nv715: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

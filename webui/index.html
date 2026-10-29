@@ -8755,6 +8755,10 @@ async function loadImprovement() {
           esc(x.status || "proposed") + " · support ×" + esc(String(x.support || 0)) +
           " · " + esc(String(x.steps || 0)) + " steps · " + esc(proof) +
           (x.green_streak ? " · green ×" + esc(String(x.green_streak)) : "") +
+          // EV-16: a forged draft IS a live Matrix tool (the server checks the
+          // module, not a recorded flag), so the row states it and offers no forge.
+          (x.matrix_tool ? " · <span class=\"sk-badge sk-matrix\">matrix tool · " +
+            esc(String(x.matrix_tool)) + "</span>" : "") +
           "</span>";
         // v715: a draft is material until someone MOVES it. Both actions are the
         // real tool calls the agent uses; promote is approval-gated on the server,
@@ -8774,7 +8778,11 @@ async function loadImprovement() {
         // v719: the mining lane's executive arm — the same tool call the agent
         // uses, which writes a REAL Matrix tool and keeps it only if its own test
         // and contract gate pass. Approval-gated like promote.
-        acts.appendChild(mk("forge", "forge", "turn this sequence into a tested Matrix tool (approval-gated)"));
+        // EV-16: not offered when the module is already live (the server would
+        // refuse it as a clobber) — a dead button is a lie about the state.
+        if (!x.matrix_tool) {
+          acts.appendChild(mk("forge", "forge", "turn this sequence into a tested Matrix tool (approval-gated)"));
+        }
         acts.appendChild(slot);
         row.appendChild(acts);
         box.appendChild(row);

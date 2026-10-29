@@ -83,6 +83,17 @@ check("C2 the draft records the outcome", mt.get("ok") is True
       and mt.get("matrix_tool") == "learned_test_b.run", mt)
 led = improve.ledger_tail(20)
 check("C3 the ledger keeps a forge entry", any(e.get("kind") == "forge" for e in led), led[:2])
+# EV-16: the panel must SEE that this draft is already a live tool (so it does not
+# offer a forge the server would refuse). The row reads the MODULE, not the flag.
+_row = [d for d in (improve.list_drafts() or {}).get("drafts", [])
+        if d.get("path") == draft_dir]
+check("C4 the draft row names its live Matrix tool",
+      bool(_row) and _row[0].get("matrix_tool") == "learned_test_b", _row)
+MTX.remove("tool", "learned_test_b")
+_gone = [d for d in (improve.list_drafts() or {}).get("drafts", [])
+         if d.get("path") == draft_dir]
+check("C5 a removed module is no longer claimed by the row",
+      bool(_gone) and _gone[0].get("matrix_tool") == "", _gone)
 
 # ------------------------------------- D: refusals ------------------------
 one = SE.forge_matrix(["fs.read"], name="learned_one")

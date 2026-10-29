@@ -408,14 +408,37 @@ def list_drafts(limit=50):
             unreadable += 1
             continue
         verify = rec.get("verify") if isinstance(rec.get("verify"), dict) else {}
+        # EV-16: a draft that was forged IS a live Matrix tool, so the panel must
+        # say so instead of offering a forge that can only be refused as a clobber.
+        # The file is checked, not the recorded field: a removed tool is not live.
+        pattern = [str(x) for x in (rec.get("pattern") or [])]
+        rec_mt = rec.get("matrix_tool") if isinstance(rec.get("matrix_tool"), dict) else {}
+        forged = ""
+        if pattern:
+            try:
+                from longrun.util import selfevolve as _se
+                # The namespace the forge RECORDED wins (a forge may be given an
+                # explicit name); the derived default is the fallback for a draft
+                # forged before that field existed. Either way the MODULE decides.
+                cands = [str(rec_mt.get("namespace") or ""), _se.forge_target(pattern)[1]]
+                for ns in cands:
+                    if not ns:
+                        continue
+                    tpath, _tns = _se.forge_target(pattern, ns)
+                    if os.path.isfile(tpath):
+                        forged = ns
+                        break
+            except Exception:  # noqa: BLE001 — a read-only view must never fail on this
+                forged = ""
         rows.append({"name": str(rec.get("name") or name),
                      "status": str(rec.get("status") or "proposed"),
                      "support": int(rec.get("support") or 0),
-                     "steps": int(rec.get("length") or len(rec.get("pattern") or [])),
+                     "steps": int(rec.get("length") or len(pattern)),
                      # EV-11: the sequence IS the material. Without it the panel
                      # showed a step COUNT, so neither the operator nor a live
                      # check could tell what the draft replays.
-                     "pattern": [str(x) for x in (rec.get("pattern") or [])],
+                     "pattern": pattern,
+                     "matrix_tool": forged,
                      "created": float(rec.get("created") or 0),
                      "green_streak": int(rec.get("green_streak") or 0),
                      "verified": bool(verify.get("green")) if verify else None,
