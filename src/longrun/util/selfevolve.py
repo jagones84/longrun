@@ -781,22 +781,80 @@ def _forge_body(ns, full, steps, description, support, origin):
 
 
 def _forge_test(ns, full, steps):
-    """A deterministic, side-effect free test: it only pins the REFUSALS."""
+    """A deterministic proof of the forged tool's BEHAVIOUR, not just its refusals.
+
+    arXiv 2610.15964 ("Small but Mighty"): a refusal-only check is too sparse to
+    catch a behaviour-changing rewrite — the repository's own tests rejected only
+    25.3% of them. So this proof pins, with the dispatcher stubbed (no side
+    effects, nothing executed for real):
+
+        order of the steps · the arguments passed to each step · a failing step
+        stops the run · the ok-count · the three refusals
+
+    Every assertion is about the bytes that were just written, so a forged tool
+    that drifts from its sequence can never pass its own gate.
+    """
     head = (
-        '"""Generated proof for the forged tool %s (no side effects: refusals only)."""\n'
+        '"""Generated proof for the forged tool %s (behaviour, dispatcher stubbed)."""\n'
+        "import sys\n"
+        "import types\n"
+        "\n"
         "from Matrix.tools import %s as M\n"
         "\n"
         'assert callable(getattr(M, "execute", None)), "execute is not callable"\n'
         "assert M.STEPS == %r, M.STEPS\n"
+        "SEEN = []\n"
+        "\n"
+        "\n"
+        "def _record_ok(name, args, run_id=None):\n"
+        "    SEEN.append((name, dict(args or {})))\n"
+        '    return {"ok": True}\n'
+        "\n"
+        "\n"
+        "def _fail_second(name, args, run_id=None):\n"
+        "    SEEN.append((name, dict(args or {})))\n"
+        '    return {"ok": len(SEEN) < 2}\n'
+        "\n"
+        "\n"
+        "# The dispatcher is stubbed through sys.modules, so the proof needs neither\n"
+        "# the harness installed nor a config: nothing real can run from here.\n"
+        "def _stub(fn):\n"
+        '    pkg = types.ModuleType("longrun")\n'
+        "    pkg.__path__ = []\n"
+        '    sub = types.ModuleType("longrun.tools")\n'
+        "    sub.__path__ = []\n"
+        '    mod = types.ModuleType("longrun.tools.tools")\n'
+        "    mod.execute = fn\n"
+        "    sub.tools = mod\n"
+        '    sys.modules["longrun"] = pkg\n'
+        '    sys.modules["longrun.tools"] = sub\n'
+        '    sys.modules["longrun.tools.tools"] = mod\n'
+        "\n"
     ) % (full, ns, list(steps))
     body = (
+        "# 1) the whole sequence runs, in order, with the caller's arguments\n"
+        "_stub(_record_ok)\n"
+        "ARGS = [{\"i\": i} for i in range(len(M.STEPS))]\n"
+        'r = M.execute({"inputs": ARGS}, run_id="forge-test")\n'
+        'assert r.get("ok") is True, r\n'
+        "assert [s[0] for s in SEEN] == list(M.STEPS), SEEN\n"
+        "assert [s[1] for s in SEEN] == ARGS, SEEN\n"
+        'assert r.get("ok_count") == len(M.STEPS), r\n'
+        "# 2) a failing step stops the run (no silent continuation)\n"
+        "SEEN.clear()\n"
+        "_stub(_fail_second)\n"
+        'r = M.execute({"inputs": ARGS}, run_id="forge-test")\n'
+        'assert r.get("ok") is False, r\n'
+        "assert len(SEEN) == 2, SEEN\n"
+        'assert r.get("ok_count") == 1, r\n'
+        "# 3) the refusals still hold\n"
         'r = M.execute({}, run_id="forge-test")\n'
         'assert r.get("ok") is False and "inputs" in str(r.get("error")), r\n'
         'r = M.execute({"inputs": []}, run_id="forge-test")\n'
         'assert r.get("ok") is False, r\n'
         'r = M.execute({"inputs": [{}] * (len(M.STEPS) + 1)}, run_id="forge-test")\n'
         'assert r.get("ok") is False, r\n'
-        'print("ok: refusals pinned for", len(M.STEPS), "steps")\n'
+        'print("ok: behaviour pinned for", len(M.STEPS), "steps")\n'
     )
     return head + body
 

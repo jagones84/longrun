@@ -108,6 +108,42 @@ def _roots(repo_root=None):
     return matrix_guard._roots(repo_root)
 
 
+def _drop_bytecode(root):
+    """Remove `__pycache__` under a Matrix root before code is loaded or proven.
+
+    EV-19: CPython validates a `.pyc` against (source mtime in SECONDS, source
+    size). A module rewritten inside the same second with the same size keeps
+    executing the OLD bytecode — so a hot load (or a generated proof) could attest
+    bytes it never ran. The Matrix zone is rewritten continuously, so its caches
+    are deleted before every load/verify instead of being trusted.
+    """
+    try:
+        for dirpath, dirnames, _files in os.walk(root):
+            if "__pycache__" in dirnames:
+                shutil.rmtree(os.path.join(dirpath, "__pycache__"),
+                              ignore_errors=True)
+                dirnames.remove("__pycache__")
+    except OSError:
+        pass
+
+
+def _drop_bytecode_file(path):
+    """Delete the cached bytecode of ONE source file (honours `sys.pycache_prefix`).
+
+    The same EV-19 stale-cache trap in the in-process path: a module rewritten in
+    the same second with the same size would otherwise be executed from its `.pyc`.
+    """
+    try:
+        cache = importlib.util.cache_from_source(path)
+    except (NotImplementedError, ValueError):
+        return
+    try:
+        if os.path.isfile(cache):
+            os.remove(cache)
+    except OSError:
+        pass
+
+
 def _ledger(kind, **fields):
     try:
         from longrun.util import improve
@@ -577,6 +613,13 @@ def run_test(script_name="test_matrix.py", code=None, install_deps=None,
     src_parent = os.path.dirname(msrc)
     existing_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = src_parent + (os.pathsep + existing_pp if existing_pp else "")
+    # EV-19: the proof must run the bytes on disk, never a stale .pyc (see
+    # `_drop_bytecode`), and its cache must not be shared with any other run — a
+    # battery-wide `PYTHONPYCACHEPREFIX` would otherwise hand back old bytecode.
+    _drop_bytecode(msrc)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONPYCACHEPREFIX"] = os.path.join(mdot, "trash", "pyc-%d-%d"
+                                              % (os.getpid(), time.time_ns()))
     t0 = time.time()
     try:
         p = subprocess.run(
@@ -1013,6 +1056,7 @@ def _hotload_locked(msrc):
     src_parent = os.path.dirname(msrc)
     if src_parent not in sys.path:
         sys.path.insert(0, src_parent)
+    _drop_bytecode(msrc)
     tdir = os.path.join(msrc, "tools")
     builtins = _builtin_tool_names()
     loaded = _NamespacedToolMap()
@@ -1037,6 +1081,7 @@ def _hotload_locked(msrc):
                 continue
             try:
                 mod_name = "Matrix.tools.%s" % tname
+                _drop_bytecode_file(p)
                 spec = importlib.util.spec_from_file_location(mod_name, p)
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
