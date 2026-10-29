@@ -4863,6 +4863,9 @@ function send(text, display, atts) {
     if (turnSession && !live()) markDone(turnSession);
     if (live()) {
       endStream();
+      // A tool that needed approval during the turn is decided in the Inspector;
+      // refresh its count at the end so a pending request is never invisible.
+      if (typeof loadApprovals === "function") loadApprovals();
       if (reload) { loadPlan(); loadGraph(); loadCtx(); loadRole(); refreshEdits(); linkifyAll(); loadCosts();
         // JAG-506: the Files panel carries no tree anymore; the pending-changes
         // list refreshes through refreshEdits() above.
@@ -4900,7 +4903,11 @@ function send(text, display, atts) {
   // no data and must stay quiet.
   es.addEventListener("error", e => { let d = null; try { d = JSON.parse(e.data); } catch (_) {}
     if (live() && d && d.error) who("ai", "⚠ " + d.error);
-    end(false, false); });
+    if (d && d.error) { end(false, false); return; }
+    // A bare reconnect/close carries no payload: the turn may still be alive on
+    // the server (service restart, proxy) or already gone. Clearing blindly left
+    // the composer in Stop mode forever — the server answers this.
+    setTimeout(() => settleLostStream(turnSession, es), 700); });
 }
 
 /* JAG-431r8: ONE binder for the turn's RENDER events, shared by the live own-turn
@@ -9014,6 +9021,46 @@ async function attachIfRunning(sid) {
     if ((out.active || []).includes(sid)) attachTurn(sid);
   } catch (e) {}
 }
+/* A tab can believe a turn is still running long after the server stopped: a
+   service restart (or a proxy that keeps the socket half-open) closes the SSE
+   WITHOUT firing `error`, so the composer sits in Stop mode forever and the
+   operator reads it as "the LLM is stuck". The server is the owner of that fact,
+   so the tab reconciles against `GET /api/chat/live`:
+     - the server still runs the turn -> re-attach the stream;
+     - it does not                  -> clear the busy state and SAY so.
+   Returns true when it re-attached, false when there was nothing to do. */
+async function reconcileTurn(sid, force) {
+  if (!sid || turnSSE[sid]) return false;      // a live stream is authoritative
+  if (!force && !runningSessions[sid]) return false;
+  let active = null;
+  try {
+    const out = await api("GET", "/api/chat/live");
+    active = out.active || [];
+  } catch (e) { return false; }                // offline: never guess, keep waiting
+  if (active.indexOf(sid) >= 0) { attachTurn(sid); return true; }
+  setRunning(sid, false);
+  if (sid === sessionId) {
+    endStream();
+    who("ai", "⚠ this turn is no longer running on the server — the connection was lost. Send again when ready.");
+  }
+  return false;
+}
+/* A stream that closed WITHOUT a terminal frame: drop the dead handle first (a
+   live handle makes the reconciliation trust a socket nobody is writing to),
+   then let the server say whether the turn survived. */
+function settleLostStream(sid, es) {
+  try { es.close(); } catch (e) {}
+  if (sid && turnSSE[sid] === es) delete turnSSE[sid];
+  reconcileTurn(sid, true).catch(() => {});
+}
+/* The watchdog: only while the tab actually believes something is busy. */
+function reconcileAllTurns() {
+  const ids = Object.keys(runningSessions || {});
+  ids.forEach(id => { reconcileTurn(id).catch(() => {}); });
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) reconcileAllTurns(); });
+window.addEventListener("focus", reconcileAllTurns);
+setInterval(reconcileAllTurns, 8000);
 function stopRun() {
   // JAG-168/271: a chat turn is stopped SERVER-side; the live EventSource stays open so
   // the interruption is rendered, never lost.
