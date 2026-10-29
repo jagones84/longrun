@@ -29,6 +29,12 @@ DEFAULTS = {
 }
 
 
+# Header every generated check carries. `ensure_check` refreshes such a check
+# (it embeds the tool names known at synth time) and never touches a hand-written
+# one.
+AUTOGEN = "generated automatically (JAG-135)"
+
+
 def cfg(override=None):
     """Effective config: DEFAULTS+STAGE2 <- tools.yaml (selfevolve) -> override."""
     from longrun.tools.registry import section_config
@@ -301,10 +307,20 @@ def _read_json(path):
 
 
 def _known_tools():
-    """Names of the tools known/enabled NOW (for the self-contained check)."""
+    """Names the harness ACCEPTS now (for the self-contained check).
+
+    v714: `catalog()` lists only the canonical `<namespace>.<subtool>` names, but a
+    recorded sequence keeps the name the model actually called (`shell`, `matrix`,
+    `memory`, ...). Comparing the two sets made every mined draft unverifiable by
+    construction — the live check answered `unknown tools: shell, matrix, shell`
+    for a sequence that had just run. The registry is the authority for what a call
+    may be: its catalogue PLUS the plain legacy names it still accepts.
+    """
     try:
         from longrun.tools import registry
-        return sorted(t["name"] for t in registry.catalog() if t.get("name"))
+        names = {t["name"] for t in registry.catalog() if t.get("name")}
+        names |= set(registry._LEGACY_SCHEMAS)
+        return sorted(names)
     except Exception:  # noqa: BLE001
         return []
 
@@ -405,6 +421,52 @@ def synth(pattern, out_dir, c=None):
                 "check": os.path.join(d, "check.py"), "steps": len(steps)}
     except OSError:
         return None
+
+
+def ensure_check(proposal_dir):
+    """Give a mined draft the code it needs to be verified (ONE owner).
+
+    A mined draft is only a tool pattern: `verify` needs `check.py`, which the
+    synth stage writes. The approval path used to do this inline, so the tool
+    lane (`improve{action:verify|promote}`) dead-ended on every fresh draft with
+    "can't open file …/check.py". Both callers use this instead.
+
+    A check WE generated is regenerated (it embeds the tool names known at synth
+    time); a hand-written one is left alone.
+
+    Returns {"ok": True, "synth": bool} or {"ok": False, "error": str}.
+    """
+    d = str(proposal_dir or "").rstrip("/")
+    if not d or not os.path.isdir(d):
+        return {"ok": False, "error": "the drafted skill folder is missing (%s)" % d}
+    check = os.path.join(d, "check.py")
+    if os.path.isfile(check):
+        # A check WE generated embeds the tool names known at synth time, so it is
+        # refreshed (the registry changes; a stale list is what made drafts fail).
+        # A hand-written check is never touched.
+        try:
+            with open(check, encoding="utf-8") as f:
+                head = f.read(400)
+        except OSError:
+            head = ""
+        if AUTOGEN not in head:
+            return {"ok": True, "synth": False}
+    prop_path = os.path.join(d, "proposal.json")
+    if not os.path.isfile(prop_path):
+        # Not a draft folder: there is nothing of OURS to synthesize, and the
+        # verifier is the one that decides what a non-draft path means.
+        return {"ok": True, "synth": False}
+    prop = _read_json(prop_path)
+    pattern = prop.get("pattern") if isinstance(prop, dict) else None
+    if not isinstance(pattern, list) or not pattern:
+        return {"ok": False, "error": "draft has no check.py and no tool pattern — cannot verify it"}
+    made = synth([str(x) for x in pattern], os.path.dirname(d))
+    if not made:
+        return {"ok": False, "error": "could not synthesize the runner/check for this draft"}
+    if os.path.realpath(made.get("dir") or "") != os.path.realpath(d):
+        return {"ok": False,
+                "error": "the synthesized folder (%s) is not the draft (%s)" % (made.get("dir"), d)}
+    return {"ok": True, "synth": True}
 
 
 def _run_check(proposal_dir, command, c):

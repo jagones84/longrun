@@ -696,18 +696,11 @@ def decide(pid, decision):
                     "error": "the drafted skill folder is missing (%s) — nothing to install" % draft}
         from longrun.util import selfevolve
         try:
-            if not os.path.isfile(os.path.join(draft, "check.py")):
-                pattern = []
-                try:
-                    with open(os.path.join(draft, "proposal.json"), encoding="utf-8") as f:
-                        pattern = (json.load(f) or {}).get("pattern") or []
-                except (OSError, ValueError):
-                    pattern = []
-                if not pattern:
-                    return {"ok": False,
-                            "error": "draft has no check.py and no tool pattern — cannot verify it"}
-                if not selfevolve.synth(pattern, os.path.dirname(draft)):
-                    return {"ok": False, "error": "could not synthesize the runner/check for this draft"}
+            # v713: the synth-if-missing step has ONE owner (`ensure_check`), so
+            # this path and the tool's verify action cannot drift apart.
+            ready = selfevolve.ensure_check(draft)
+            if not ready.get("ok"):
+                return {"ok": False, "error": ready.get("error") or "draft is not verifiable"}
             rep = selfevolve.verify(draft)
             if not rep.get("green"):
                 return {"ok": False, "verify": rep,

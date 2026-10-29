@@ -1455,14 +1455,25 @@ def _improve(args, run_id=None):
                 return {"error": "path required for action=verify"}
             if not _inside_proposals(path):
                 return {"error": "verify path must be under %s" % proposals_root}
+            # v713: a mined draft has no check.py yet — synth it first, or every
+            # verify answered "can't open file …/check.py" (the documented
+            # mine -> verify -> promote loop dead-ended on its first step).
+            ready = selfevolve.ensure_check(path)
+            if not ready.get("ok"):
+                return {"error": ready.get("error") or "draft is not verifiable"}
             rep = selfevolve.verify(path)
             _pub("improve.verify", path=path, green=bool(rep.get("green")))
-            return {"ok": True, "verify": rep}
+            return {"ok": True, "synth": bool(ready.get("synth")), "verify": rep}
         if action == "promote":
             if not path:
                 return {"error": "path required for action=promote"}
             if not _inside_proposals(path):
                 return {"error": "promote path must be under %s" % proposals_root}
+            # promote refuses an unverified draft with "the sandbox check did not
+            # go green", which a fresh draft cannot even run: state the real reason.
+            ready = selfevolve.ensure_check(path)
+            if not ready.get("ok"):
+                return {"error": ready.get("error") or "draft is not verifiable"}
             res = selfevolve.promote(path)
             if res.get("ok"):
                 _pub("improve.archived", name=res.get("name"), rel=res.get("rel"))

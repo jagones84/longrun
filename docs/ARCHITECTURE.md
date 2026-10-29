@@ -183,6 +183,14 @@ read-only view of that state, surfaced by `GET /api/improvement` as `drafts` /
 `drafts_total` / `drafts_unreadable` and rendered in the Improve panel as material:
 "verify, then promote — nothing here is installed".
 
+A draft moves on by one path: `improve.sweep_drafts()` prunes the junk (single-tool
+loops, below `min_len`), `selfevolve.ensure_check()` synthesizes `skill.json` /
+`runner.py` / `check.py` when the draft has none, `verify` runs that check in the
+sandbox and `promote` archives only a green draft under `skills/created`. Both the
+`improve` tool (`verify`/`promote`) and the approval path (`decide`, for a skill
+proposal bound to a draft with `target_path`) call those three functions — the
+same owner each time, so a mined draft can never be unverifiable-by-construction.
+
 
 ### Enabling matched whole runs (opt-in, off by default)
 
