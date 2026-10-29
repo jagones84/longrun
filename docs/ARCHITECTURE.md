@@ -169,6 +169,15 @@ the model a second code lane:
 - `matrix{action:'load_module'}` imports ONE arbitrary Matrix module on demand.
   It is never executed at boot, and import failures (including `SystemExit`) are
   isolated like any other dynamic artifact.
+- The MINING lane reaches the same gate (EV-17). `selfevolve.forge_bundle` is the
+  one owner of the generated module (validation + bytes + sha); `improve{forge}`
+  and a human-approved `improve{evolve}` write those bytes and prove them with
+  `matrix.run_test` + `matrix.verify_target`, while the background end-of-turn
+  pass has no approval of its own and therefore opens a PENDING `matrix` proposal
+  with the same bundle — `util.improve.decide` applies it through
+  `core.matrix.apply_learning`. The `matrix` approval policy (`approvals.kinds`)
+  decides: `auto` lets the background pass write, `required` (default) proposes,
+  `denied` emits nothing.
 
 Skill identity is canonical: the repository library and the Matrix runtime are
 one namespace, the repository copy wins deterministically, and a shadowed folder
@@ -209,7 +218,8 @@ owners:
 | verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
 | proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
 | installed skill | approval | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill |
-| forged Matrix tool (`learned_<slug>.run`) | `improve{forge}` on a draft, or `improve{evolve}` for a green pattern (`forge_on_evolve`, capped by `forge_per_run`) | `selfevolve.forge_target` (the naming) → `selfevolve.forge_matrix` → `matrix.scaffold` → `matrix.run_test` → `matrix.verify_target` | executable, but only after its own generated test and the sha-bound contract gate pass; removed when they do not. `evolve` asks `forge_target` first, so a pattern forged in an earlier pass is `skipped`, never a clobber refusal |
+| forged Matrix tool (`learned_<slug>.run`) | `improve{forge}` on a draft, `improve{evolve}` (human-approved), or the background pass when `approvals.kinds.matrix=auto` | `selfevolve.forge_target` (the naming) → `selfevolve.forge_bundle` (validation + the exact bytes) → `selfevolve.forge_matrix` → `matrix.scaffold` → `matrix.run_test` → `matrix.verify_target` | executable, but only after its own generated test and the sha-bound contract gate pass; removed when they do not. `evolve` asks `forge_target` first, so a pattern forged in an earlier pass is `skipped`, never a clobber refusal |
+| learned Matrix bundle (proposal) | background `evolve` when the `matrix` policy is not `auto` | `improve.propose(scope="matrix", artifacts=[…sha256])` → `improve.decide` → `matrix.apply_learning` | the same bytes `forge_bundle` would write, held pending until the operator approves; approving writes + hot-loads, denying writes nothing |
 | Matrix artifact | approval | `core.matrix.apply_learning` | outside Nucleus, hash-bound |
 
 
