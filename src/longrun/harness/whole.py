@@ -97,7 +97,8 @@ def _delta_for(candidate):
     if not target:
         return None, why
     path = target.replace(os.sep, "/")
-    if path.startswith("skills/"):
+    if path.startswith("skills/") or path.startswith("src/Matrix/") \
+            or path.startswith("matrix/"):
         return path, ""
     if path == "rules/Project_rules.md":
         return "rules/guardrail.txt", ""
@@ -160,6 +161,11 @@ def _execute(snapshot_path, digest, c, tag, candidates, guardrail=False):
         env = {"LONGRUN_PROVIDERS": "/input/config/providers.yaml",
                _router().ROUTER_ENV: "http://127.0.0.1:%d" % int(c["port"]),
                "LONGRUN_H2_SNAPSHOT": digest,
+               # The frozen package carries BOTH Matrix trees, so the reference
+               # and every variant load the same zone (the candidate differs only
+               # by its declared delta).
+               "LONGRUN_MATRIX_SRC": "/input/src/Matrix",
+               "LONGRUN_MATRIX_DOT": "/input/matrix",
                "LONGRUN_HARNESS_PROBE": run_id}
         result = sandbox.run_whole(snapshot_path, c["image"], args,
                                    timeout=float(c["run_timeout"]),

@@ -8647,6 +8647,15 @@ async function loadImprovement() {
         : "no draft folder to install — deny it in the approval inbox to clear it";
       det.appendChild(note);
     }
+    if (p.scope === "matrix") {
+      // The bridge: a learned Matrix bundle is applied by core.matrix ONLY on
+      // approval, then hot-loaded. Nucleus is a separate, dedicated act.
+      const note = document.createElement("div"); note.className = "remaining";
+      note.textContent = p.artifacts
+        ? "approve writes " + p.artifacts.length + " verified artifact(s) inside Matrix and hot-loads them (nothing enters Nucleus)"
+        : "no artifact bundle — deny it in the approval inbox to clear it";
+      det.appendChild(note);
+    }
     if (p.experiment) {
       // H2R: a harness proposal is approvable only because of these runs, so the
       // card shows the same evidence the approval gate reads (never a summary).

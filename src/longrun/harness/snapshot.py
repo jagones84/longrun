@@ -36,7 +36,7 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".gradle", "build",
 SKIP_SUFFIX = (".pyc", ".pyo")
 CONFIG_FILES = ("tools.yaml", "compaction.yaml", "hooks.yaml", "decisions.yaml",
                 "subagents.yaml", "trace_policy.yaml", "index.yaml", "embedding.yaml")
-DELTA_PREFIXES = ("rules/", "skills/harness/")
+DELTA_PREFIXES = ("rules/", "skills/harness/", "src/Matrix/", "matrix/")
 
 
 def _safe_rel(rel):
@@ -195,6 +195,20 @@ def build(base, c=None, model=None, port=None, context_length=32768):
         if not _copy_tree(getattr(skills_mod, "SKILLS_DIR", ""),
                           os.path.join(path, "skills"), budget):
             raise RuntimeError("skills exceed the snapshot bound")
+        # The Matrix runtime (rules + skills) is part of the effective harness:
+        # the prompt reads those rules and the skill loader lists those skills.
+        # Freezing only the repository copies would let a candidate and its
+        # control differ by state the package never recorded.
+        os.makedirs(os.path.join(path, "matrix"), exist_ok=True)
+        try:
+            from longrun.tools import matrix_guard
+            _root, _msrc, mdot = matrix_guard._roots()
+        except Exception:  # noqa: BLE001 — a missing runtime is an empty overlay
+            mdot = ""
+        for leaf in ("rules", "skills"):
+            if mdot and not _copy_tree(os.path.join(mdot, leaf),
+                                       os.path.join(path, "matrix", leaf), budget):
+                raise RuntimeError("matrix runtime exceeds the snapshot bound")
         rules = _apply_rules_text()
         collected = rules.collect(ws=workspace)
         rules_text = {}

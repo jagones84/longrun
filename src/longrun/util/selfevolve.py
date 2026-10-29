@@ -464,7 +464,6 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False):
     what the RDD gate protects against (the machine certifying itself). The
     release is stamped on the proposal so the provenance stays visible.
     """
-    import shutil
     c = c or cfg()
     prop_path = os.path.join(proposal_dir, "proposal.json")
     prop = _read_json(prop_path) or {}
@@ -534,11 +533,10 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False):
                     "error": "skills/created quota reached (%d) — prune before promoting" % AUTO_SKILL_CAP}
     if os.path.exists(target):
         return {"ok": False, "error": "target already exists: %s" % target}
-    try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copytree(proposal_dir, target)
-    except OSError as e:
-        return {"ok": False, "error": "copy failed: %s" % e}
+    from longrun.memory import skills as skills_mod
+    got = skills_mod.install_skill_dir(proposal_dir, target)
+    if not got.get("ok"):
+        return got
     prop["status"] = "archived"
     if human:
         prop["released_by"] = "operator"

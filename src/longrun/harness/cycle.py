@@ -329,25 +329,51 @@ def _admit(group, report, kept):
         and run.get("run_id") != reference_run.get("run_id"))
     if not verified:
         return {"ok": False, "reason": "no verified matched experiment; nothing admitted"}
-    texts = [str(c.get("content") or "").strip() for c in kept or []
-             if c.get("kind") == "guardrail"]
-    texts = [t for t in texts if t]
-    if not texts:
+    rules = [c for c in kept or [] if c.get("kind") == "guardrail"]
+    matrix_rows = [c for c in kept or [] if str(c.get("kind") or "").startswith("matrix_")]
+    other = [c for c in kept or [] if c not in rules and c not in matrix_rows]
+    if rules and matrix_rows:
+        # One experiment, one claim: the runs differ by ONE package, so the
+        # evidence cannot say which half helped. Ask for two rounds instead of
+        # attributing both.
+        return {"ok": False,
+                "reason": "the bundle mixes a project rule and Matrix artifacts; "
+                          "run one experiment per destination"}
+    if other:
         return {"ok": False, "reason": "no approvable component in the verified experiment"}
     try:
         from longrun.util import improve
+        evidence = {"verified": True, "snapshot_digest": base,
+                    "variant_digest": variant,
+                    "contrast": (report.get("contrast") or {}).get("verdict") or "",
+                    "repeats": int(row.get("repeats") or 1),
+                    "runs": [{"run_id": reference_run.get("run_id"), "role": "reference",
+                              "digest": base, "cleanup_verified": True},
+                             {"run_id": run.get("run_id"), "role": "successor",
+                              "digest": variant, "cleanup_verified": True}]}
+        if matrix_rows:
+            import hashlib
+            artifacts = [{"kind": c.get("kind"), "name": c.get("name"),
+                          "content": c.get("content"),
+                          "sha256": hashlib.sha256(
+                              str(c.get("content") or "").encode("utf-8")).hexdigest()}
+                         for c in matrix_rows]
+            rec = improve.propose(
+                "matrix", "\n\n".join(str(c.get("content") or "") for c in matrix_rows),
+                reason="Harness2 matched run: %s" % (report.get("decision") or "selected"),
+                ws=report.get("workspace") or None, origin="harness",
+                experiment=evidence, artifacts=artifacts)
+            return {"ok": True, "id": rec.get("id"), "status": rec.get("status"),
+                    "artifacts": [a["name"] for a in artifacts]}
+        texts = [str(c.get("content") or "").strip() for c in rules]
+        texts = [t for t in texts if t]
+        if not texts:
+            return {"ok": False, "reason": "no approvable component in the verified experiment"}
         rec = improve.propose(
             "project", "\n\n".join(texts),
             reason="Harness2 matched run: %s" % (report.get("decision") or "selected"),
             ws=report.get("workspace") or None, origin="harness",
-            experiment={"verified": True, "snapshot_digest": base,
-                        "variant_digest": variant,
-                        "contrast": (report.get("contrast") or {}).get("verdict") or "",
-                        "repeats": int(row.get("repeats") or 1),
-                        "runs": [{"run_id": reference_run.get("run_id"), "role": "reference",
-                                  "digest": base, "cleanup_verified": True},
-                                 {"run_id": run.get("run_id"), "role": "successor",
-                                  "digest": variant, "cleanup_verified": True}]})
+            experiment=evidence)
         return {"ok": True, "id": rec.get("id"), "status": rec.get("status")}
     except Exception as exc:  # noqa: BLE001 — admission must not break the report
         return {"ok": False, "reason": "%s: %s" % (type(exc).__name__, exc)}

@@ -286,8 +286,52 @@ def list_skills(reload=False):
                                "digest": hashlib.sha256(raw).hexdigest(),
                                "title": title, "description": desc,
                                "auto": True, "matrix": True, "local": False})
-    _cache.update(sig=sig, skills=skills, bodies=bodies)
-    return skills
+    # ONE identity per name. Two stores are scanned (the repository library and
+    # the Matrix runtime) and the prompt loader must not show the same name
+    # twice with two bodies: the repository copy wins (deterministic order), and
+    # the shadowed source stays visible on the winner so nothing disappears.
+    active, by_name, shadowed = [], {}, []
+    for entry in skills:
+        first = by_name.get(entry["name"])
+        if first is None:
+            by_name[entry["name"]] = entry
+            active.append(entry)
+            continue
+        first.setdefault("shadowed", []).append(entry.get("abspath") or entry.get("path"))
+        shadowed.append({"name": entry["name"], "category": entry.get("category"),
+                         "path": entry.get("abspath") or entry.get("path"),
+                         "shadowed_by": first.get("abspath") or first.get("path")})
+    _cache.update(sig=sig, skills=active, bodies=bodies, shadowed=shadowed)
+    return active
+
+
+def shadowed_skills():
+    """Skill folders hidden behind a same-named winner (visibility, not deletion)."""
+    list_skills()
+    return list(_cache.get("shadowed") or [])
+
+
+def install_skill_dir(src_dir, dest_dir):
+    """Install ONE skill folder under `dest_dir`, never clobbering (single writer).
+
+    Both writers of `skills/created` — automatic promotion (`util.selfevolve`)
+    and Matrix graduation (`core.matrix`) — go through this function, so the
+    two paths cannot disagree about overwriting. Code that ran in Matrix loses
+    its runtime copy only after this returns ok.
+    """
+    src = os.path.realpath(str(src_dir or ""))
+    dest = os.path.abspath(str(dest_dir or ""))
+    if not os.path.isdir(src):
+        return {"ok": False, "error": "source is not a skill folder: %s" % src_dir}
+    if os.path.exists(dest):
+        return {"ok": False, "error": "target already exists: %s" % dest}
+    try:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copytree(src, dest)
+    except OSError as e:
+        return {"ok": False, "error": "copy failed: %s" % e}
+    list_skills(reload=True)
+    return {"ok": True, "path": dest}
 
 
 def install_zip(data, name=None, overwrite=False):

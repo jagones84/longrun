@@ -144,6 +144,39 @@ runtime (no MCP/host credentials), and no local scientific superiority is
 measured. Rules, skill discovery, approval, atomic-write and path owners remain
 authoritative.
 
+### Learning -> Matrix bridge (one reviewed path)
+
+The evidence loop can now also update the mutable Matrix zone, without giving
+the model a second code lane:
+
+- Editors may emit `matrix_tool`, `matrix_hook`, `matrix_module`, `matrix_skill`
+  and `matrix_rule` candidates. They stay ephemeral.
+- The candidate's runtime path comes from the Matrix owner
+  (`core.matrix._resolve_target_path`), which refuses absolute/traversal names;
+  the frozen package carries `src/Matrix` plus the Matrix runtime `rules/` and
+  `skills/`, and the container is bound to them
+  (`LONGRUN_MATRIX_SRC=/input/src/Matrix`, `LONGRUN_MATRIX_DOT=/input/matrix`).
+  The host lane refuses Matrix kinds: it would test a copy nobody loads.
+- A verified experiment admits at most ONE bundle, all-rules or all-Matrix.
+  A mixed bundle is refused because one package delta cannot attribute both.
+- Approval (`util.improve.decide`) re-checks the matched runs, requires an
+  `improved` contrast for Matrix, verifies every artifact SHA256 and delegates
+  the write to `core.matrix.apply_learning`: whole-bundle validation (kinds,
+  containment, hashes, `compile`), a checkpoint for code, atomic writes, then a
+  hot-load whose new errors roll the entire bundle back. Nothing enters Nucleus;
+  graduation still needs `matrix.verify_target` + the dedicated
+  `allow_matrix_promote` checkbox.
+- `matrix{action:'load_module'}` imports ONE arbitrary Matrix module on demand.
+  It is never executed at boot, and import failures (including `SystemExit`) are
+  isolated like any other dynamic artifact.
+
+Skill identity is canonical: the repository library and the Matrix runtime are
+one namespace, the repository copy wins deterministically, and a shadowed folder
+stays visible (`skills.shadowed_skills()`). `skills.install_skill_dir` is the
+single writer for `skills/created`, used by both automatic promotion and Matrix
+graduation, so neither path can clobber an existing skill.
+
+
 ### Enabling matched whole runs (opt-in, off by default)
 
 Nothing executes until the host is actually able to confine a run. Build and pin

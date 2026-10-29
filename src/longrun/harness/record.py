@@ -35,7 +35,6 @@ SCHEMA = 1
 GOAL_MAX = 400
 ERROR_MAX = 200
 MAX_DELIVERABLES = 50
-MAX_SKILL_FILES = 500
 WRITE_TOOLS = ("fs.write", "fs.edit", "fs.append", "fs.replace", "patch")
 _HARNESS_TAG = "[harness]"
 
@@ -138,19 +137,18 @@ def _hooks_digest(reload=True):
 
 
 def _skills_digest():
-    """Digest of the skills tree: every SKILL.md (path + bytes), bounded."""
-    root = getattr(skills_mod, "SKILLS_DIR", "")
+    """Digest of the skills the PROMPT actually sees (canonical view).
+
+    Walking `SKILLS_DIR` alone missed the Matrix runtime skills and counted a
+    shadowed duplicate as a second, different skill. The loader's canonical list
+    is the only view that matches what the model receives.
+    """
     rows = []
     try:
-        for base, _dirs, files in os.walk(root):
-            for name in sorted(files):
-                if name != "SKILL.md" or len(rows) >= MAX_SKILL_FILES:
-                    continue
-                full = os.path.join(base, name)
-                rows.append([os.path.relpath(full, root), tracing.file_digest(full)])
-    except OSError:
+        rows = sorted([[s.get("name"), s.get("digest")]
+                       for s in skills_mod.list_skills() if s.get("digest")])
+    except Exception:  # noqa: BLE001 — a broken store is data, not a crash
         rows = []
-    rows.sort()
     return {"count": len(rows), "sha256": _digest(rows)}
 
 

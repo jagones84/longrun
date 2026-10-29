@@ -35,10 +35,18 @@ MAX_LIBRARY_BYTES = 12 * 1024
 MAX_EVIDENCE = 1200
 MAX_STEP_LINES = 40
 
-# kind -> the proposal scope Longrun already knows (util/improve.AGENT_WRITE)
+# kind -> the proposal scope Longrun already knows (util/improve.AGENT_WRITE).
+# The `matrix_*` kinds are the runtime self-modification zone: they are evaluated
+# like every other candidate and reach the live Matrix tree only through the
+# existing human approval owner (`util.improve.decide` -> `core.matrix`).
 KINDS = {
     "skill": "skill",
     "guardrail": "project",
+    "matrix_tool": "matrix",
+    "matrix_hook": "matrix",
+    "matrix_module": "matrix",
+    "matrix_skill": "matrix",
+    "matrix_rule": "matrix",
 }
 
 SCOPE_TEXT = {
@@ -68,7 +76,8 @@ SYSTEM_T = (
     "between two runs, and the index of a harness improvement library. There is "
     "no score, rubric or answer key anywhere: judge only from the contrast.\n"
     "Return ONE JSON object and nothing else:\n"
-    '{"candidates":[{"kind":"skill|guardrail",'
+    '{"candidates":[{"kind":"skill|guardrail|matrix_tool|matrix_hook|'
+    'matrix_module|matrix_skill|matrix_rule",'
     '"name":"<short-slug>","content":"<the file text>",'
     '"why":"<the concrete failure this removes>"}]}\n'
     "Rules: at most %d candidates; content is the literal file to propose, in "

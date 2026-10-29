@@ -575,7 +575,7 @@ _LEGACY_SCHEMAS = {
                                 "checkpoint_save", "checkpoint_rollback",
                                 "git_commit", "git_log", "git_diff", "git_reset",
                                 "test", "clean_trash", "webui_init", "webui_reset", "restart",
-                                "verify_target", "promote_to_nucleus"],
+                                "verify_target", "promote_to_nucleus", "load_module"],
                        "default": "status"},
             "description": {"type": "string", "description": "for matrix.scaffold: one sentence stating exactly what the artifact does"},
             "slot": {"type": "integer", "description": "checkpoint slot (1, 2, or 3)"},
@@ -715,6 +715,7 @@ _SUBTOOL_FIELDS = {
         "restart": ["session", "reason", "dry_run"],
         "verify_target": ["kind", "name"],
         "promote_to_nucleus": ["kind", "name"],
+        "load_module": ["name"],
     },
 }
 
@@ -741,6 +742,7 @@ _SUBTOOL_REQUIRED = {
     "matrix.remove": ["name"],
     "matrix.verify_target": ["name"],
     "matrix.promote_to_nucleus": ["name"],
+    "matrix.load_module": ["name"],
 }
 
 _SUBTOOL_ANY_OF = {

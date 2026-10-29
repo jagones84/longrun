@@ -35,6 +35,13 @@ HOOK_SUBPACKAGES = (
     "model", "orbit", "orchestrate", "plan", "research", "util"
 )
 _LOCK = threading.RLock()
+# Dynamic code is untrusted: a module that calls sys.exit() or raises SystemExit
+# must be isolated like any other import failure. KeyboardInterrupt still stops
+# the operator's turn, because it is deliberate.
+_ISOLATED = (Exception, SystemExit)
+_LEARNING_KINDS = {"matrix_tool": "tool", "matrix_hook": "hook",
+                   "matrix_module": "module", "matrix_skill": "skill",
+                   "matrix_rule": "rule"}
 _TOOL_CACHE = {}  # {repo_root: {"stamps": {}, "tools": {}, "errors": []}}
 _HOOK_CACHE = {}  # {repo_root: {"stamps": {}, "modules": {}, "errors": [], "runtime_errors": []}}
 _ENABLED_OVERRIDE = None  # None = read from config approvals.matrix_enabled (default True)
@@ -194,6 +201,11 @@ def _resolve_target_path(kind, name, repo_root=None):
     _root, msrc, mdot = _roots(repo_root)
     k = str(kind or "tool").strip().lower()
     nm = str(name or "").strip().replace("\\", "/").strip("/")
+    # Traversal/absolute targets are refused for EVERY kind. Promotion and the
+    # learned-artifact path used the resolved path directly, so a crafted name
+    # could reach outside the Matrix zone.
+    if os.path.isabs(str(name or "")) or ".." in [p for p in nm.split("/") if p]:
+        return k, nm, ""
     if k == "tool":
         if nm.endswith(".py"):
             nm = nm[:-3]
@@ -204,6 +216,8 @@ def _resolve_target_path(kind, name, repo_root=None):
         ns = nm.split(".")[0] if "." in nm else nm
         return "tool", nm, os.path.join(msrc, "tools", ns + ".py")
     if k == "hook":
+        if nm not in HOOK_SUBPACKAGES:
+            return "hook", nm, ""
         return "hook", nm, os.path.join(msrc, nm, "hooks.py")
     if k == "module":
         if nm.endswith(".py"):
@@ -725,7 +739,7 @@ def _hotload_hooks(msrc):
             )
             modules[sub] = mod
             active[sub] = fns
-        except Exception as e:  # noqa: BLE001 — isolate syntax/import error
+        except _ISOLATED as e:  # noqa: BLE001 — isolate syntax/import error
             err_info = _format_matrix_error(e, hp)
             errors.append({
                 "subpackage": sub,
@@ -802,7 +816,7 @@ def call_hook(subpkg, fn_name, *args, default=None, repo_root=None, **kwargs):
     try:
         res = fn(*args, **kwargs)
         return cur_default if res is None else res
-    except Exception as e:  # noqa: BLE001 — fail-open back to Nucleus default
+    except _ISOLATED as e:  # noqa: BLE001 — fail-open back to Nucleus default
         err_info = _format_matrix_error(e, hp)
         with _LOCK:
             hc = _HOOK_CACHE.setdefault(msrc, {"stamps": {}, "modules": {}, "active": {},
@@ -1050,7 +1064,7 @@ def _hotload_locked(msrc):
                         })
                         continue
                     loaded[full_name] = entry
-            except Exception as e:  # noqa: BLE001 — isolate broken tool module
+            except _ISOLATED as e:  # noqa: BLE001 — isolate broken tool module
                 err_info = _format_matrix_error(e, p)
                 errors.append({
                     "file": bn,
@@ -1110,7 +1124,7 @@ def execute_tool(name, args, run_id=None, repo_root=None):
             result = _invoke_matrix_tool_fn(
                 entry["execute"], args or {}, run_id, subtool=entry.get("subtool"))
             return result if isinstance(result, dict) else {"ok": True, "stdout": str(result)}
-        except Exception as e:  # noqa: BLE001
+        except _ISOLATED as e:  # noqa: BLE001
             err_info = _format_matrix_error(e, entry.get("file"))
             return {
                 "ok": False,
@@ -1423,6 +1437,181 @@ def execute_promoted_tool(name, args, run_id=None, repo_root=None):
     return res
 
 
+# ------------------------------------- learned artifacts (evidence -> Matrix) ---
+
+def _learning_target(kind, name, repo_root=None):
+    """(record, reason) for one learned artifact, resolved by the Matrix owner."""
+    k = _LEARNING_KINDS.get(str(kind or "").strip().lower())
+    if not k:
+        return None, "unsupported learned kind %r" % (kind,)
+    rk, nm, path = _resolve_target_path(k, name, repo_root)
+    if not nm or not path:
+        return None, "unsafe or unknown target %r" % (name,)
+    _root, msrc, mdot = _roots(repo_root)
+    allowed = os.path.realpath(mdot if rk in ("skill", "rule") else msrc)
+    real = os.path.realpath(path)
+    if not (real == allowed or real.startswith(allowed + os.sep)):
+        return None, "target escapes the Matrix zone: %s" % path
+    return {"kind": rk, "name": nm, "path": real}, ""
+
+
+def _learning_plan(artifacts, repo_root=None):
+    """Validate a whole bundle BEFORE anything is written. (rows, reason, failed)."""
+    rows, seen = [], set()
+    for art in artifacts or []:
+        if not isinstance(art, dict):
+            return [], "artifact is not an object", None
+        target, why = _learning_target(art.get("kind"), art.get("name"), repo_root)
+        if not target:
+            return [], why, str(art.get("name") or "") or None
+        body = str(art.get("content") or "")
+        if not body.strip():
+            return [], "%s has empty content" % target["name"], target["name"]
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        declared = str(art.get("sha256") or "").strip().lower()
+        if declared and declared != digest:
+            return [], ("%s content does not match its approved hash"
+                        % target["name"]), target["name"]
+        if target["kind"] in ("tool", "hook", "module"):
+            try:
+                compile(body, target["path"], "exec")
+            except SyntaxError as exc:
+                return [], "%s does not compile: %s" % (target["name"], exc), target["name"]
+        if target["path"] in seen:
+            return [], ("two artifacts target the same file: %s"
+                        % target["path"]), target["name"]
+        seen.add(target["path"])
+        rows.append(dict(target, content=body, sha256=digest))
+    if not rows:
+        return [], "the bundle carries no artifact", None
+    return rows, "", None
+
+
+def preview_learning(artifacts, repo_root=None):
+    """What approving this bundle would write, as unified diffs (never raises)."""
+    import difflib
+    rows, why = _learning_plan(artifacts, repo_root)[:2]
+    if not rows:
+        return {"applies": False, "path": "", "diff": "", "note": why}
+    chunks, paths = [], []
+    for row in rows:
+        try:
+            with open(row["path"], encoding="utf-8", errors="replace") as f:
+                current = f.read()
+        except OSError:
+            current = ""
+        paths.append(row["path"])
+        chunks.append("\n".join(difflib.unified_diff(
+            current.splitlines(), row["content"].splitlines(),
+            fromfile=row["path"] + " (current)", tofile=row["path"] + " (after approve)",
+            lineterm="")))
+    return {"applies": True, "path": ", ".join(paths), "diff": "\n".join(chunks),
+            "note": "", "files": paths}
+
+
+def apply_learning(artifacts, repo_root=None):
+    """Write ONE learned bundle into the Matrix zone, then hot-load it.
+
+    The whole bundle is validated first (kinds, containment, hashes, syntax). A
+    load error caused by the bundle restores every touched file, so a partial or
+    broken artifact never becomes live. Nucleus is never written here.
+    """
+    rows, why, failed = _learning_plan(artifacts, repo_root)
+    if not rows:
+        return {"ok": False, "error": why, "installed": [], "failed": failed}
+    code = any(row["kind"] in ("tool", "hook", "module") for row in rows)
+    if code:
+        checkpoint_save(3, label="learning:%s" % rows[0]["name"], repo_root=repo_root)
+    backups, made_dirs = {}, []
+    try:
+        for row in rows:
+            directory = os.path.dirname(row["path"])
+            if not os.path.isdir(directory):
+                os.makedirs(directory, exist_ok=True)
+                made_dirs.append(directory)
+            try:
+                with open(row["path"], "rb") as f:
+                    backups[row["path"]] = f.read()
+            except OSError:
+                backups[row["path"]] = None
+            tmp = row["path"] + ".learning.tmp"
+            with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+                f.write(row["content"])
+            os.replace(tmp, row["path"])
+    except OSError as exc:
+        _restore_learning(backups, made_dirs)
+        return {"ok": False, "error": "learned write failed: %s" % exc, "installed": []}
+    hl = hotload(repo_root)
+    touched = {os.path.basename(row["path"]) for row in rows}
+    broken = [e for e in (hl.get("errors") or []) + (hl.get("hook_errors") or [])
+              if os.path.basename(str(e.get("file") or "")) in touched]
+    if broken:
+        _restore_learning(backups, made_dirs)
+        hotload(repo_root)
+        first = broken[0]
+        offending = os.path.basename(str(first.get("file") or ""))
+        failed = next((row["name"] for row in rows
+                       if os.path.basename(row["path"]) == offending), None)
+        return {"ok": False, "failed": failed,
+                "error": "learned artifact failed to load: %s"
+                         % (first.get("error") or "unknown error"),
+                "installed": [], "hotload": hl}
+    installed = [row["path"] for row in rows]
+    try:
+        from longrun.memory import skills as skills_mod
+        skills_mod.list_skills(reload=True)
+    except Exception:  # noqa: BLE001 — a cache refresh must not undo the write
+        pass
+    _ledger("matrix.apply_learning", artifacts=[row["name"] for row in rows],
+            paths=installed)
+    _publish_tools_changed("matrix.apply_learning", rows[0]["name"])
+    return {"ok": True, "installed": installed, "hotload": hl}
+
+
+def _restore_learning(backups, made_dirs):
+    """Undo one learned bundle: restore previous bytes, remove what we created."""
+    for path, previous in (backups or {}).items():
+        try:
+            if previous is None:
+                if os.path.isfile(path):
+                    os.remove(path)
+            else:
+                with open(path, "wb") as f:
+                    f.write(previous)
+        except OSError:
+            pass
+    for directory in reversed(made_dirs or []):
+        try:
+            os.rmdir(directory)
+        except OSError:
+            pass
+
+
+def load_module(name, repo_root=None):
+    """Import ONE `src/Matrix/<subpkg>/<mod>.py` on demand (never at boot).
+
+    Arbitrary Matrix modules are not discovered automatically: they run when a
+    tool/hook/test imports them. This is the explicit seam for that, and it
+    isolates import failures (including `SystemExit`) in the same way the tool
+    loader does.
+    """
+    k, nm, path = _resolve_target_path("module", name, repo_root)
+    if k != "module" or not nm or not path:
+        return {"ok": False, "error": "module name must be '<subpkg>/<mod>' with a known subpackage"}
+    _root, msrc, _mdot = _roots(repo_root)
+    real = os.path.realpath(path)
+    if not real.startswith(os.path.realpath(msrc) + os.sep) or not os.path.isfile(real):
+        return {"ok": False, "error": "Matrix module not found: %s" % path}
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "Matrix." + nm.replace("/", "."), real)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except _ISOLATED as exc:
+        return {"ok": False, "path": real, "error": _format_matrix_error(exc, real)["error"]}
+    return {"ok": True, "module": mod, "path": real}
+
+
 def verify_target(kind, name, repo_root=None):
     """Deterministically verify that a Matrix artifact is tested, valid, and safe to promote into Nucleus."""
     k, nm, fpath = _resolve_target_path(kind, name, repo_root)
@@ -1475,7 +1664,7 @@ def verify_target(kind, name, repo_root=None):
                 fns = [fn for fn, v in vars(mod).items() if not fn.startswith("_") and callable(v)]
                 if not fns:
                     return {"ok": False, "error": "PROMOTE_UNVERIFIED: hook %r defines no callable hook functions" % nm}
-        except Exception as e:  # noqa: BLE001
+        except _ISOLATED as e:  # noqa: BLE001
             err_info = _format_matrix_error(e, fpath)
             return {
                 "ok": False,
@@ -1573,10 +1762,13 @@ def promote_to_nucleus(kind, name, repo_root=None):
         elif k == "skill":
             src_sdir = os.path.dirname(src_path)
             dst_pdir = os.path.join(root, "skills", "created", nm)
-            os.makedirs(os.path.dirname(dst_pdir), exist_ok=True)
-            if os.path.exists(dst_pdir):
-                shutil.rmtree(dst_pdir, ignore_errors=True)
-            shutil.copytree(src_sdir, dst_pdir)
+            from longrun.memory import skills as skills_mod
+            # One installer for skills/created (util.selfevolve uses the same one):
+            # graduation never clobbers an existing skill, and the runtime copy is
+            # removed only after the install is confirmed.
+            moved = skills_mod.install_skill_dir(src_sdir, dst_pdir)
+            if not moved.get("ok"):
+                return {"ok": False, "error": moved.get("error") or "skill install refused"}
             shutil.rmtree(src_sdir, ignore_errors=True)
             dst_path = os.path.join(dst_pdir, "SKILL.md")
         elif k == "rule":

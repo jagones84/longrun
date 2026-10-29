@@ -2244,6 +2244,11 @@ def _matrix(args, run_id):
         )
     if action == "verify_target":
         return matrix.verify_target(args.get("kind") or "tool", args.get("name") or "")
+    if action == "load_module":
+        # Arbitrary Matrix modules are NOT discovered at boot: load one on demand.
+        loaded = matrix.load_module(args.get("name") or "")
+        return {k: v for k, v in loaded.items() if k != "module"} | {
+            "loaded": bool(loaded.get("ok"))}
     if action == "promote_to_nucleus":
         with matrix_guard.NUCLEUS_EXEC_LOCK:
             return matrix.promote_to_nucleus(

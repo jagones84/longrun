@@ -194,12 +194,33 @@ def guarded_copy(src, dst, max_mb=512):
     return {"ok": True, "files": files, "bytes": total, "skipped": skipped, "reason": ""}
 
 
+MATRIX_KINDS = {"matrix_tool": "tool", "matrix_hook": "hook",
+                "matrix_module": "module", "matrix_skill": "skill",
+                "matrix_rule": "rule"}
+
+
 def _target(kind, name):
     """The runtime path a candidate kind occupies -> (target, refusal reason).
 
     Pure: the target is computed BEFORE anything is written, so a duplicate can be
-    refused without its content ever touching the stage.
+    refused without its content ever touching the stage. The Matrix kinds are
+    resolved by the Matrix owner (`core.matrix._resolve_target_path`) so there is
+    no second path mapping, and they are expressed relative to the frozen
+    package ("src/Matrix/...", "matrix/...") that the matched run consumes.
     """
+    if kind in MATRIX_KINDS:
+        from longrun.core import matrix as matrix_mod
+        _k, nm, path = matrix_mod._resolve_target_path(MATRIX_KINDS[kind], name)
+        if not nm or not path:
+            return "", "unsafe or unknown Matrix target %r" % (name,)
+        _root, msrc, mdot = matrix_mod._roots()
+        if path.startswith(msrc + os.sep):
+            # Canonical package path: the snapshot always mounts the Matrix zone
+            # at src/Matrix, wherever the host keeps its source tree.
+            return ("src/Matrix/" + os.path.relpath(path, msrc).replace(os.sep, "/")), ""
+        if path.startswith(mdot + os.sep):
+            return ("matrix/" + os.path.relpath(path, mdot).replace(os.sep, "/")), ""
+        return "", "Matrix target escapes its zone: %s" % path
     slug = _safe(name, "candidate")
     if kind == "skill":
         return os.path.join("skills", "harness", slug, "SKILL.md"), ""
@@ -217,9 +238,17 @@ def _target(kind, name):
 def stage(kind, name, content, stage_dir):
     """Write ONE candidate file into the probe's stage (never into the workspace).
 
+    Matrix kinds are refused here: the host lane runs against the LIVE
+    `src/Matrix` tree, so staging them would test a copy nobody loads. They are
+    evaluated by the matched whole-run lane, whose frozen package carries the
+    Matrix trees.
+
     Returns {"ok", "target", "path", "reason"}; `target` is where the runtime must
     look for it, `path` is the staged file.
     """
+    if kind in MATRIX_KINDS:
+        return {"ok": False, "target": "", "path": "",
+                "reason": "Matrix candidates need the matched whole-run lane"}
     text = str(content or "")
     if not text.strip():
         return {"ok": False, "target": "", "path": "", "reason": "empty candidate"}

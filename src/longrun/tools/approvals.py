@@ -206,6 +206,8 @@ def _improvement_view(proposal):
         blocked = "the drafted skill folder is gone — deny to clear this proposal"
     elif scope == "skill" and status == "pending" and not draft:
         blocked = "this proposal has no draft to install — deny to clear it"
+    elif scope == "matrix" and status == "pending" and not (proposal or {}).get("artifacts"):
+        blocked = "this Matrix proposal carries no artifact bundle — deny to clear it"
     return {
         "id": "imp:" + pid,
         "ts": proposal.get("ts"),
