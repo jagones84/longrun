@@ -200,8 +200,8 @@ owners:
 
 | state | entry point | owner | what it means |
 |---|---|---|---|
-| tool sequence recorded | agent turn | `selfevolve.record/history` | raw material, not a skill |
-| mined draft (`proposals/skills/<name>`) | end-of-turn pass or `improve{mine}` | `improve.sweep_drafts` + `selfevolve.draft/synth` | material; needs a purpose |
+| tool sequence recorded | agent turn | `selfevolve.record/history` | raw material, not a skill; only a name the registry ACCEPTS is recorded (`_dispatchable`), because the loop's own pseudo-actions (`batch`, `subagent`, `dispatch`) can never be replayed |
+| mined draft (`proposals/skills/<name>`) | end-of-turn pass or `improve{mine}` | `improve.sweep_drafts` + `selfevolve.draft/synth` | material; needs a purpose; `prune_junk` drops drafts whose steps are not dispatchable |
 | harness candidate (`skill` kind) | Harness² cycle editor | `harness/editors.propose` → `probe.stage` | material tested by a matched run |
 | verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
 | proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
