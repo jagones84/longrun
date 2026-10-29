@@ -452,6 +452,22 @@ def list_drafts(limit=50):
     return {"drafts": rows[:cap], "total": total, "unreadable": unreadable}
 
 
+def list_forged():
+    """Forged Matrix tools, with whether each was used AFTER it landed (EV-20).
+
+    arXiv 2610.34938: the open question of harness self-evolution is not "can it
+    write a change" but "did the change help on later tasks"; 4 of 12 implemented
+    changes in that study reduced nothing. This is the same fact for our forged
+    tools, read from the recorded runs — no score, no guess.
+    """
+    try:
+        from longrun.util import selfevolve
+        return selfevolve.forged_usage()
+    except Exception as e:  # noqa: BLE001 — a read-only view must never break the panel
+        return {"ok": False, "error": "forged usage unavailable: %s" % e,
+                "tools": [], "count": 0, "unused": 0}
+
+
 def propose(scope, content, reason="", target_path="", ws=None, origin="agent",
             experiment=None, artifacts=None):
     """Register a PROPOSAL (writes nothing definitive).

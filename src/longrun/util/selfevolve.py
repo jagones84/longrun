@@ -296,6 +296,83 @@ def history(path=None):
     return [e.get("tools", []) for e in data.values() if isinstance(e, dict)]
 
 
+FORGE_MARK = "Matrix tool forged from a mined tool sequence"
+
+
+def history_rows(path=None):
+    """The recorded runs WITH their timestamps (needed for outcome attribution)."""
+    p = path or _history_path()
+    try:
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f) or {}
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    return [{"tools": [str(x) for x in (e.get("tools") or [])],
+             "ts": float(e.get("ts") or 0)}
+            for e in data.values() if isinstance(e, dict)]
+
+
+def _uses(seq, ns):
+    """True when one recorded run CALLED the forged tool `ns`."""
+    return any(t == ns or t == ns + ".run" or t.startswith(ns + ".") for t in seq)
+
+
+def forged_usage(path=None, repo_root=None):
+    """Did each forged tool get USED after it landed? (arXiv 2610.34938)
+
+    "Harness self-evolution needs ways to establish whether a change helps on later
+    tasks and to revise or remove changes that do not": 4 of 12 implemented changes
+    in that study reduced nothing. This is the read-only fact for the same question
+    here — per forged module, when it was created, how many runs used it, when it
+    was last used, and how many runs happened after it existed, so a dead tool is
+    visible instead of accumulating. Removal stays an operator action.
+
+    A module counts as forged when its header carries `FORGE_MARK`, so a tool
+    forged under a custom name is tracked too (the name is not the marker).
+    """
+    from longrun.core import matrix as mtx
+    try:
+        _root, msrc, _mdot = mtx._roots(repo_root)
+    except Exception as e:  # noqa: BLE001 — the report must never raise
+        return {"ok": False, "error": "matrix roots unavailable: %s" % e,
+                "tools": [], "count": 0, "unused": 0}
+    tdir = os.path.join(msrc, "tools")
+    rows = history_rows(path)
+    out = []
+    try:
+        names = sorted(os.listdir(tdir))
+    except OSError:
+        names = []
+    for fn in names:
+        if not fn.endswith(".py") or fn.startswith("_"):
+            continue
+        p = os.path.join(tdir, fn)
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                head = f.read(600)
+        except OSError:
+            continue
+        if FORGE_MARK not in head:
+            continue
+        ns = fn[:-3]
+        try:
+            created = os.stat(p).st_mtime
+        except OSError:
+            created = 0.0
+        used = [r["ts"] for r in rows if _uses(r["tools"], ns)]
+        after = len([r for r in rows if r["ts"] >= created])
+        verdict = ("used" if used else ("unused" if after else "new"))
+        out.append({"namespace": ns, "tool": ns + ".run", "created": created,
+                    "uses": len(used),
+                    "last_used": max(used) if used else 0.0,
+                    "runs_after": after, "verdict": verdict})
+    out.sort(key=lambda r: (r["uses"], r["created"]))
+    return {"ok": True, "tools": out, "count": len(out),
+            "unused": len([r for r in out if r["verdict"] == "unused"])}
+
+
 def mine_history(out_dir, c=None, path=None, note=""):
     """Mine the recorded history and write the drafts. Returns the paths."""
     return scan(history(path), out_dir, c, note=note)

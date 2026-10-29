@@ -2337,6 +2337,16 @@
             say what it accomplishes, verify it in the sandbox, then promote it. <b>Nothing here is installed.</b></div>
           <div id="impDrafts" class="u-mt6"></div>
         </details>
+        <!-- EV-20: a forged Matrix tool that was never used after it landed is
+             work paid for and not earned. Shown as fact (uses / runs after), with
+             the real remove call — no score, no guess. -->
+        <details class="card" id="impForgedBox" hidden>
+          <summary class="set-t u-ptr" title="Matrix tools forged by self-evolve, and whether the harness actually called them AFTER they landed.">Forged tools <span id="impForgedCount" class="remaining"></span></summary>
+          <div class="remaining u-mt6">Each row is a live Matrix tool the loop wrote.
+            <b>used ×N</b> counts recorded runs that called it after it landed;
+            <b>never used</b> means later runs happened and none called it — remove it.</div>
+          <div id="impForged" class="u-mt6"></div>
+        </details>
         <div id="impDecided"></div>
         <details class="card">
           <summary class="set-t u-ptr" title="An LLM audits each proposal against the current code: keep · implemented · obsolete · update · conflict. Nothing is applied — you decide.">Backlog review <span id="impRevCount" class="remaining"></span></summary>
@@ -8794,6 +8804,53 @@ async function loadImprovement() {
         '<div class="remaining u-mb6"><b>' + esc(String(d.drafts_unreadable)) +
         "</b> draft folder(s) could not be read and are not counted above.</div>");
     }
+  }
+  // ---- forged Matrix tools: did the change help AFTER it landed? (EV-20) ----
+  // arXiv 2610.34938: what harness self-evolution lacks is a way to tell whether a
+  // change helped on LATER tasks. This renders the recorded fact, and the remove
+  // button is the existing operator door (/api/matrix/remove, kind=tool).
+  const forgedBox = $("impForged"), forgedCnt = $("impForgedCount"), forgedCard = $("impForgedBox");
+  const forged = d.forged || [];
+  if (forgedCnt) forgedCnt.textContent = forged.length
+    ? "(" + forged.length + (d.forged_unused ? " · " + d.forged_unused + " never used" : "") + ")"
+    : "";
+  if (forgedCard) forgedCard.hidden = !forged.length;
+  if (forgedBox) {
+    forgedBox.innerHTML = "";
+    forged.forEach(f => {
+      const row = document.createElement("div"); row.className = "imp-row";
+      const st = f.verdict === "used" ? ("used ×" + esc(String(f.uses || 0)))
+        : (f.verdict === "unused"
+          ? ("never used · " + esc(String(f.runs_after || 0)) + " run(s) since it landed")
+          : "new · no run recorded yet");
+      row.innerHTML = '<b>' + esc(f.tool || f.namespace || "") +
+        '</b> <span class="remaining">' + st + "</span>";
+      const acts = document.createElement("div");
+      acts.className = "u-df u-g6 u-aic u-mt6";
+      const slot = document.createElement("span"); slot.className = "remaining";
+      const b = document.createElement("button");
+      b.className = "ghost"; b.textContent = "remove";
+      b.title = "uninstall this Matrix tool (real call: matrix.remove)";
+      b.onclick = async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        b.disabled = true;
+        try {
+          const r = await api("POST", "/api/matrix/remove", { kind: "tool", name: f.namespace });
+          if (r && r.ok) {
+            slot.textContent = "removed";
+            row.style.opacity = ".55";
+            setTimeout(loadImprovement, 400);
+          } else {
+            slot.textContent = "refused · " + String((r && r.error) || "unknown").slice(0, 90);
+          }
+        } catch (err) {
+          slot.textContent = "error: " + String(err.message || err).slice(0, 80);
+        } finally { b.disabled = false; }
+      };
+      acts.appendChild(b); acts.appendChild(slot);
+      row.appendChild(acts);
+      forgedBox.appendChild(row);
+    });
   }
   // ---- decided history (so an all-decided panel is not empty) ----
   const decided = (d.proposals || []).filter(p => p.status !== "pending");

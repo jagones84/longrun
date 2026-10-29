@@ -2031,6 +2031,13 @@ class Handler(BaseHTTPRequestHandler):
                 _drafts = improve_mod.list_drafts()
             except Exception:  # noqa: BLE001 — an unreadable folder is data
                 _drafts = {"drafts": [], "total": 0, "unreadable": 0}
+            # EV-20: a forged tool that was never used after it landed is work the
+            # harness paid for and did not earn — the panel must show that, not
+            # only the tools that are live (arXiv 2610.34938).
+            try:
+                _forged = improve_mod.list_forged()
+            except Exception:  # noqa: BLE001
+                _forged = {"tools": [], "count": 0, "unused": 0}
             return self._send(200, {
                 "proposals": dedup,
                 "proposals_total": len(raw),
@@ -2040,6 +2047,9 @@ class Handler(BaseHTTPRequestHandler):
                 "drafts": _drafts.get("drafts") or [],
                 "drafts_total": int(_drafts.get("total") or 0),
                 "drafts_unreadable": int(_drafts.get("unreadable") or 0),
+                "forged": _forged.get("tools") or [],
+                "forged_total": int(_forged.get("count") or 0),
+                "forged_unused": int(_forged.get("unused") or 0),
                 "memory": mem,
                 "matrix": _mtx_info,
                 "origins": list(improve_mod.ORIGINS),
