@@ -83,9 +83,10 @@ from longrun.util import selfevolve as SE  # noqa: E402
 
 _old_verify, _old_promote = SE.verify, SE.promote
 SE.verify = lambda d, runner=None, c=None: {"green": True, "output": "ok"}
-SE.promote = lambda d, skills_dir=None, c=None, human=False: {
+SE.promote = lambda d, skills_dir=None, c=None, human=False, purpose="": {
     "ok": True, "name": "fs.read-fs.edit-shell",
-    "rel": "skills/created/fs.read-fs.edit-shell", "human": human}
+    "rel": "skills/created/fs.read-fs.edit-shell", "human": human,
+    "purpose": purpose}
 try:
     pid = (T._improve({"action": "propose", "scope": "skill", "path": draft,
                        "content": "install me"}, run_id="v712").get("proposal") or {}).get("id")

@@ -60,7 +60,13 @@ def mine(sequences, c=None):
     mn = max(1, int(c.get("min_len") or 3))
     mc = max(2, int(c.get("min_count") or 3))
     mx = max(mn, int(c.get("max_len") or 6))
-    seqs = [[str(x) for x in (s or [])] for s in (sequences or [])]
+    # v716: a pattern is a skill candidate, and a skill can only replay a real
+    # tool. Loop pseudo-actions (`batch`, `subagent`, `dispatch`) are dropped here
+    # so neither old history nor a direct caller can mint an unverifiable draft.
+    known = set(_known_tools())
+    seqs = [[str(x) for x in (s or []) if _dispatchable(x, known)]
+            for s in (sequences or [])]
+    seqs = [s for s in seqs if len(s) >= mn]
     found = {}
     for k in range(mn, mx + 1):
         for idx, s in enumerate(seqs):
@@ -183,6 +189,7 @@ def prune_junk(out_dir, c=None):
     except OSError:
         return {"removed": removed}
     min_len = max(1, int((c or cfg()).get("min_len") or 3))
+    known = set(_known_tools())      # one registry read for the whole sweep
     for name in names:
         d = os.path.join(out_dir, name)
         if not os.path.isdir(d):
@@ -197,6 +204,11 @@ def prune_junk(out_dir, c=None):
             elif any(a == b for a, b in zip(strs, strs[1:])):
                 junk = True
             elif len(strs) < min_len:          # v656: below the quality bar
+                junk = True
+            elif not all(_dispatchable(t, known) for t in strs):
+                # v716: a step the harness cannot execute (`batch`, `subagent`)
+                # makes the draft unverifiable by construction — the live store
+                # held 29 of them. Same policy as the miner's filter.
                 junk = True
         elif pat is None:
             # Fallback on the dirname: shell-shell or shell.exec-shell.exec.
@@ -220,12 +232,31 @@ def _history_path():
     return os.path.join(paths.DATA_DIR, "sequences.json")
 
 
+def _dispatchable(name, known=None):
+    """True when the harness can actually EXECUTE this name as a tool.
+
+    v716: the loop records its own pseudo-actions (`batch`, `subagent`,
+    `dispatch`) next to real tools, so mining produced drafts whose generated
+    check can never pass — the live verify answered `unknown tools: batch` for a
+    sequence that had just run. A skill can only replay a real tool, so the miner
+    and the recorder both ask this one function. `known` is passed when a caller
+    checks many names (one registry read).
+    """
+    n = str(name or "").strip()
+    return bool(n) and n in (known if known is not None else set(_known_tools()))
+
+
 def record(key, tools, path=None):
     """Record the tool sequence of a run (for later mining).
 
     Keeps the latest 500 runs. Never blocking: a write error is ignored.
     """
     seq = [str(t) for t in (tools or []) if str(t).strip()]
+    # v716: only names the harness can replay belong in a sequence — a mined
+    # pattern is a skill candidate, and `batch`/`subagent`/`dispatch` are loop
+    # actions, not tools (a draft built on them can never verify).
+    known = set(_known_tools())
+    seq = [t for t in seq if _dispatchable(t, known)]
     if not seq or not key:
         return False
     p = path or _history_path()
@@ -247,7 +278,13 @@ def record(key, tools, path=None):
 
 
 def history(path=None):
-    """The recorded sequences, as a list of lists of tool names."""
+    """The recorded sequences, as a list of lists of tool names.
+
+    Raw on purpose: the recorded rows are data (a UI or a test may want to see
+    what actually ran). The FILTER that keeps loop pseudo-actions out of a
+    candidate lives where patterns are built (`mine`), so old rows that still
+    carry `batch` cannot produce a draft nobody can verify (v716).
+    """
     p = path or _history_path()
     try:
         with open(p, encoding="utf-8") as f:
@@ -514,7 +551,35 @@ def verify(proposal_dir, runner=None, c=None):
     return report
 
 
-def promote(proposal_dir, skills_dir=None, c=None, human=False):
+def _pattern_of(prop):
+    """The tool sequence a proposal was mined from, [] when it has none."""
+    pat = (prop or {}).get("pattern")
+    return [str(x) for x in pat] if isinstance(pat, list) else []
+
+
+def _archived_skill_md(name, pattern, purpose, rel, origin):
+    """The SKILL.md an INSTALLED skill carries (one owner of the archived text).
+
+    v717: promotion copied the DRAFT verbatim, so the installed skill still said
+    "DRAFT — not verified, not archived" and told the agent to verify/promote the
+    folder it was already living in — while the purpose the operator wrote was
+    dropped. The archived text says what the skill is for, the sequence, and its
+    real state.
+    """
+    text = str(purpose or "").strip()
+    lines = ["# %s" % name, ""]
+    lines += [text or "A repeated tool sequence the harness observed (no stated purpose).", ""]
+    if pattern:
+        lines += ["## Sequence", ""]
+        lines += ["%d. `%s`" % (i + 1, t) for i, t in enumerate(pattern)]
+        lines += [""]
+    lines += ["## Status", "",
+              "ARCHIVED — verified green and installed at `%s` (origin: %s)."
+              % (rel, origin or "auto"), ""]
+    return "\n".join(lines)
+
+
+def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
     """Archive a VERIFIED proposal into skills/<category>/<name>/ (write-gate).
 
     Rejects if the status is not `verified`. Does not overwrite. Returns
@@ -606,6 +671,15 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False):
     prop["archived_to"] = (os.path.relpath(target, REPO) if _under_repo else target)
     _write_json(prop_path, prop)
     _write_json(os.path.join(target, "proposal.json"), prop)
+    # v717: the archived SKILL.md states the purpose and the REAL state (the draft
+    # text said "not archived" inside the installed skill).
+    try:
+        with open(os.path.join(target, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write(_archived_skill_md(name, _pattern_of(prop), purpose,
+                                       prop["archived_to"], prop.get("origin")))
+        skills_mod.list_skills(reload=True)
+    except OSError:
+        pass
     return {"ok": True, "name": name, "path": target,
             "rel": prop["archived_to"]}
 

@@ -75,8 +75,14 @@ check("slug is filesystem-safe", E.slug(["fs.read", "fs/edit!"]) == "fs.read-fs-
 
 hist = os.path.join(TMP, "seq.json")
 check("record refuses an empty sequence", E.record("k", [], path=hist) is False)
-check("record writes a run", E.record("k1", ["a", "b"], path=hist) is True)
-check("history reads it back", E.history(path=hist) == [["a", "b"]])
+# v716: the recorder keeps only names the harness can EXECUTE (a mined pattern is
+# a skill candidate; `batch`/`subagent` are loop actions, not tools), so the
+# fixture uses real tool names instead of the old "a"/"b" placeholders.
+check("record writes a run", E.record("k1", ["fs.read", "fs.edit"], path=hist) is True)
+check("record drops a name that is not a tool",
+      E.record("k2", ["batch", "fs.read"], path=hist) is True
+      and E.history(path=hist).count(["fs.read"]) == 1, str(E.history(path=hist)))
+check("history reads it back", E.history(path=hist) == [["fs.read", "fs.edit"], ["fs.read"]])
 
 # --- 3) self-evolving stage 2: synth -> verify -> promote --------------------
 out = os.path.join(TMP, "props")

@@ -58,9 +58,14 @@ check("2a multi-tool pattern is mined",
 # 3) scan skips existing drafts + caps at 10 NEW.
 out = os.path.join(TMP, "props")
 os.makedirs(out, exist_ok=True)
+# v716: the miner only drafts a pattern the harness can REPLAY, so the flood
+# fixtures must be real tool names (15 distinct three-step shapes, catalogue
+# order, none of them a single-tool loop).
+_known = [n for n in sorted(E._known_tools()) if n != "shell.exec"]
+assert len(_known) >= 30, "the registry must offer at least 30 names"
 seqs = []
 for i in range(15):
-    seqs += [[("tool.a%d" % i), ("tool.b%d" % i), "shell.exec"]] * 3
+    seqs += [[_known[2 * i], _known[2 * i + 1], "shell.exec"]] * 3
 first = E.scan(seqs, out, dict(C))
 check("3a scan caps at 10 NEW drafts", len(first) == 10, str(len(first)))
 second = E.scan(seqs, out, dict(C))

@@ -745,7 +745,8 @@ def decide(pid, decision):
                 return {"ok": False, "verify": rep,
                         "error": "skill not verified: the sandbox check failed — "
                                  + str(rep.get("output") or "")[-300:]}
-            pr = selfevolve.promote(draft, human=True)
+            pr = selfevolve.promote(draft, human=True,
+                                    purpose=str(rec.get("content") or ""))
             if not pr.get("ok"):
                 return {"ok": False, "verify": rep, "error": pr.get("error") or "promotion refused"}
         except Exception as e:  # noqa: BLE001 — a decision must answer, not crash
