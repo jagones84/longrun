@@ -178,6 +178,21 @@ the model a second code lane:
   `core.matrix.apply_learning`. The `matrix` approval policy (`approvals.kinds`)
   decides: `auto` lets the background pass write, `required` (default) proposes,
   `denied` emits nothing.
+- A forged module is proven by BEHAVIOUR, not by its refusals (EV-19).
+  `selfevolve._forge_test` generates the proof that `matrix.run_test` executes:
+  step order, the caller's arguments reaching each step, a failing step stopping
+  the run, the ok-count, plus the three refusals — the dispatcher is stubbed
+  through `sys.modules`, so the proof needs neither the harness nor a config.
+  `core.matrix._drop_bytecode` / `_drop_bytecode_file` run before a hot load and
+  before each spec load, and `run_test` executes with `PYTHONDONTWRITEBYTECODE=1`
+  and a private `PYTHONPYCACHEPREFIX`: CPython keys a `.pyc` on
+  (source mtime in SECONDS, size), so a same-second same-size rewrite would
+  otherwise attest bytes it never ran.
+- `selfevolve.forged_usage()` is the OUTCOME-attribution owner (EV-20): it walks
+  the forged modules (only those whose head carries the forge marker), the run
+  history and each module's mtime, and answers `used ×N` / `never used · N run(s)
+  since it landed` / `new` — the same object `/api/improvement` serves and the
+  WebUI renders.
 
 Skill identity is canonical: the repository library and the Matrix runtime are
 one namespace, the repository copy wins deterministically, and a shadowed folder
