@@ -73,7 +73,7 @@ got = act({"status": "executed", "result": {"ok": False, "error": "skill not ver
 check("A5 a refused promote shows the refusal",
       got.get("text", "").startswith("refused") and "not verified" in got.get("text", ""), got)
 # v719: forge prints the Matrix tool it produced, never "installed"
-got = act({"status": "executed", "result": {"ok": True, "tool": "learned_x.run"}}, "forge")
+got = act({"status": "executed", "result": {"ok": True, "matrix_tool": "learned_x.run"}}, "forge")
 check("A5b a forged tool is named as a Matrix tool",
       "matrix tool" in got.get("text", "") and "learned_x.run" in got.get("text", "")
       and "installed" not in got.get("text", ""), got)

@@ -628,7 +628,8 @@ def evolve_once(note=""):
             if not r.get("green") or not r.get("dir"):
                 continue
             fr = selfevolve.forge_from_draft(r["dir"])
-            r["matrix"] = {"ok": bool(fr.get("ok")), "tool": fr.get("tool"),
+            r["matrix"] = {"ok": bool(fr.get("ok")),
+                           "matrix_tool": fr.get("matrix_tool"),
                            "error": fr.get("error")}
             if fr.get("ok"):
                 forged += 1

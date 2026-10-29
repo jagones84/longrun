@@ -8555,8 +8555,10 @@ async function draftAct(path, action, slot) {
     return;
   }
   if (action === "forge") {
+    // `matrix_tool`, not `tool`: the dispatch envelope owns `tool` (the executed
+    // tool's canonical name) and overwrites it.
     if (slot) slot.textContent = res.ok
-      ? ("matrix tool · " + String(res.tool || "") + " · tested + verified")
+      ? ("matrix tool · " + String(res.matrix_tool || "") + " · tested + verified")
       : (st === "pending"
         ? "approval raised · decide it in Inspector ▸ Approvals"
         : ("refused · " + String(res.error || (j && j.reason) || st || "").slice(0, 110)));

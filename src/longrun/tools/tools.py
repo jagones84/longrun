@@ -1529,7 +1529,8 @@ def _improve(args, run_id=None):
             res = selfevolve.forge_from_draft(
                 path, name=str(args.get("name") or ""),
                 description=str(args.get("content") or ""))
-            _pub("improve.forge", tool=res.get("tool"), ok=bool(res.get("ok")))
+            _pub("improve.forge", matrix_tool=res.get("matrix_tool"),
+                 ok=bool(res.get("ok")))
             return res
         if action == "evolve":
             # v662: stage 2 is `improve.evolve_once` — the SAME flow the end-of-turn

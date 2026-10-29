@@ -125,6 +125,19 @@ refused("F1 propose with a bad scope", {"action": "propose", "scope": "wat",
 refused("F2 propose with no content", {"action": "propose", "scope": "project",
                                        "content": "   "}, "content")
 
+# ------------------------------------- G: the canonical schema --------------
+spec = registry.tool_spec("improve.forge") or {}
+sch = spec.get("schema") or {}
+check("G1 forge requires ONLY its draft path", list(sch.get("required") or []) == ["path"],
+      sch.get("required"))
+check("G2 its real arguments are declared",
+      {"path", "name", "content"} <= set((sch.get("properties") or {})),
+      list(sch.get("properties") or {}))
+check("G3 verify/promote keep their own shape",
+      (registry.tool_spec("improve.verify") or {}).get("schema", {}).get("required") == ["path"]
+      and (registry.tool_spec("improve.promote") or {}).get("schema", {}).get("required") == ["path"],
+      "verify/promote schema changed")
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

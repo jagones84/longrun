@@ -48,7 +48,7 @@ PATTERN = ["fs.read", "fs.edit", "shell.exec"]
 # ------------------------------------- A: forge + prove -------------------
 r = SE.forge_matrix(PATTERN, support=4, draft="draft-abc", name="learned_test_a")
 check("A1 the forge succeeded", r.get("ok") is True, r)
-check("A2 it names the tool it created", r.get("tool") == "learned_test_a.run", r)
+check("A2 it names the tool it created", r.get("matrix_tool") == "learned_test_a.run", r)
 path = r.get("path") or ""
 check("A3 the module exists on disk", bool(path) and os.path.isfile(path), path)
 body = open(path, encoding="utf-8").read() if os.path.isfile(path) else ""
@@ -75,11 +75,12 @@ with open(os.path.join(draft_dir, "proposal.json"), "w", encoding="utf-8") as f:
     json.dump({"name": "fs.read-fs.edit-shell.exec", "pattern": PATTERN,
                "support": 3, "status": "proposed"}, f)
 r2 = SE.forge_from_draft(draft_dir, name="learned_test_b")
-check("C1 the draft forge reports its tool", r2.get("ok") and r2.get("tool") == "learned_test_b.run", r2)
+check("C1 the draft forge reports its tool",
+      r2.get("ok") and r2.get("matrix_tool") == "learned_test_b.run", r2)
 prop = json.load(open(os.path.join(draft_dir, "proposal.json"), encoding="utf-8"))
 mt = prop.get("matrix_tool") or {}
 check("C2 the draft records the outcome", mt.get("ok") is True
-      and mt.get("tool") == "learned_test_b.run", mt)
+      and mt.get("matrix_tool") == "learned_test_b.run", mt)
 led = improve.ledger_tail(20)
 check("C3 the ledger keeps a forge entry", any(e.get("kind") == "forge" for e in led), led[:2])
 

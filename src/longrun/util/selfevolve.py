@@ -860,7 +860,10 @@ def forge_matrix(pattern, support=0, draft="", name="", description="",
                         target="tool:%s" % ns, timeout_secs=60, repo_root=repo_root)
     ver = mtx.verify_target("tool", ns, repo_root=repo_root) if test.get("ok") else {}
     ok = bool(test.get("ok")) and bool(ver.get("ok"))
-    result = {"ok": ok, "tool": full, "kind": "tool", "name": ns, "path": fpath,
+    # EV-14: the field is `matrix_tool`, not `tool` — the dispatch envelope owns
+    # `tool` (it is the executed tool's canonical name) and overwrites it, which
+    # made every caller read "improve.forge" instead of the tool that was created.
+    result = {"ok": ok, "matrix_tool": full, "namespace": ns, "path": fpath,
               "steps": steps,
               "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
               "load": {"ok": hl.get("ok"), "errors": hl.get("errors") or []},
@@ -892,7 +895,8 @@ def forge_from_draft(proposal_dir, name="", description=""):
     pattern = _pattern_of(prop)
     res = forge_matrix(pattern, support=int(prop.get("support") or 0), draft=proposal_dir,
                        name=name, description=description or str(prop.get("purpose") or ""))
-    prop["matrix_tool"] = ({"tool": res.get("tool"), "name": res.get("name"),
+    prop["matrix_tool"] = ({"matrix_tool": res.get("matrix_tool"),
+                            "namespace": res.get("namespace"),
                             "path": res.get("path"), "ok": bool(res.get("ok")),
                             "steps": res.get("steps") or pattern,
                             "error": res.get("error")} if res.get("ok")
@@ -904,8 +908,8 @@ def forge_from_draft(proposal_dir, name="", description=""):
     try:
         from longrun.util import improve as _imp
         _imp.ledger_add("forge", origin="mining", draft=os.path.basename(proposal_dir),
-                        pattern=pattern, tool=res.get("tool"), ok=bool(res.get("ok")),
-                        error=res.get("error"))
+                        pattern=pattern, matrix_tool=res.get("matrix_tool"),
+                        ok=bool(res.get("ok")), error=res.get("error"))
     except Exception:  # noqa: BLE001 — the ledger must never break a forge
         pass
     return res

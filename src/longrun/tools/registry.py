@@ -695,7 +695,11 @@ _SUBTOOL_FIELDS = {
     "improve": {
         "propose": ["scope", "content", "reason", "path"],
         "mine": ["reason"], "evolve": [],
-        "verify": ["path"], "promote": ["path"], "forge": ["path"],
+        "verify": ["path"], "promote": ["path"],
+        # `name` is the Matrix namespace and `content` states the tool's purpose —
+        # both are real arguments of action=forge, so the canonical schema declares
+        # them (a narrowed field list must never hide an argument the tool reads).
+        "forge": ["path", "name", "content"],
         "review": ["limit", "model"],
     },
     "web": {
@@ -739,6 +743,10 @@ _SUBTOOL_REQUIRED = {
     "improve.mine": [], "improve.evolve": [],
     "improve.verify": ["path"],
     "improve.promote": ["path"],
+    # EV-14: forge needs only the draft folder. Without this row the canonical
+    # schema inherited the legacy `scope` requirement, so `{"action":"forge",
+    # "path":…}` answered "missing scope" for an argument forge never reads.
+    "improve.forge": ["path"],
     "improve.review": [],
     "web.search": ["query"], "web.fetch": ["url"],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],

@@ -80,7 +80,7 @@ reports = improve.evolve_once()
 forged = [r for r in reports if (r.get("matrix") or {}).get("ok")]
 check("A1 exactly one pattern was forged", len(forged) == 1, reports)
 check("A2 the report names the Matrix tool",
-      forged and str((forged[0].get("matrix") or {}).get("tool", "")).startswith("learned_"), forged)
+      forged and str((forged[0].get("matrix") or {}).get("matrix_tool", "")).startswith("learned_"), forged)
 check("A3 the forged file exists",
       len([n for n in forged_names() if n.startswith("learned_")]) == 1, forged_names())
 check("A4 every report still states its skill outcome",
