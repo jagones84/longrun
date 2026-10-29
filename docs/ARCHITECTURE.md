@@ -176,6 +176,13 @@ stays visible (`skills.shadowed_skills()`). `skills.install_skill_dir` is the
 single writer for `skills/created`, used by both automatic promotion and Matrix
 graduation, so neither path can clobber an existing skill.
 
+Machine-mined skill DRAFTS are a third, earlier state: `<DATA>/proposals/skills/<name>`
+holds a `proposal.json` but is neither a pending proposal nor an installed skill.
+`improve.list_drafts()` (one owner of the folder, `improve.DRAFT_DIR`) is the
+read-only view of that state, surfaced by `GET /api/improvement` as `drafts` /
+`drafts_total` / `drafts_unreadable` and rendered in the Improve panel as material:
+"verify, then promote — nothing here is installed".
+
 
 ### Enabling matched whole runs (opt-in, off by default)
 

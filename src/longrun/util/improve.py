@@ -16,6 +16,10 @@ from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR
 # JAG-447: derive from the env-overridable DATA_DIR, so tests run against a
 # scratch dir and never pollute the live data/ (same convention as paths.py).
 PROPOSAL_DIR = os.path.join(DATA_DIR, "proposals")
+# Machine-mined skill DRAFTS (selfevolve stage 1/2). Modules patch DRAFT_DIR in
+# tests; one owner for the location so a draft cannot be written in one place and
+# looked for in another.
+DRAFT_DIR = os.path.join(PROPOSAL_DIR, "skills")
 
 # scope -> write mode allowed to the agent
 AGENT_WRITE = {
@@ -360,6 +364,67 @@ def _path(pid):
     return os.path.join(PROPOSAL_DIR, pid + ".json")
 
 
+def sweep_drafts():
+    """Delete junk drafts (the ONLY owner of when the sweep runs, and where).
+
+    v711: the sweep used to live only in the `improve` tool's mine branch, so
+    drafts written by the end-of-turn pass were never pruned — the store held 77
+    legacy 2-tool drafts (`min_len` is 3 since v656) that the panel then showed
+    as new material. `mine_once` sweeps, so both callers get the same store.
+    Never raises.
+    """
+    try:
+        from longrun.util import selfevolve
+        return (selfevolve.prune_junk(DRAFT_DIR, selfevolve.cfg()) or {}).get("removed") or []
+    except Exception:  # noqa: BLE001 — a sweep must never break mining
+        return []
+
+
+def list_drafts(limit=50):
+    """Machine-mined skill drafts awaiting verify/promote (read-only view).
+
+    A draft is material, not a proposal: it becomes one only when someone states
+    what it accomplishes. Without this view self-evolve produced folders the
+    operator could not see anywhere (the panel counts proposals and INSTALLED
+    skills, and a draft is neither). Unreadable folders are counted, never
+    dropped silently.
+    """
+    rows, unreadable = [], 0
+    try:
+        names = sorted(os.listdir(DRAFT_DIR))
+    except OSError:
+        return {"drafts": [], "total": 0, "unreadable": 0}
+    for name in names:
+        folder = os.path.join(DRAFT_DIR, name)
+        if not os.path.isdir(folder):
+            continue
+        try:
+            with open(os.path.join(folder, "proposal.json"), encoding="utf-8") as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            unreadable += 1
+            continue
+        if not isinstance(rec, dict):
+            unreadable += 1
+            continue
+        verify = rec.get("verify") if isinstance(rec.get("verify"), dict) else {}
+        rows.append({"name": str(rec.get("name") or name),
+                     "status": str(rec.get("status") or "proposed"),
+                     "support": int(rec.get("support") or 0),
+                     "steps": int(rec.get("length") or len(rec.get("pattern") or [])),
+                     "created": float(rec.get("created") or 0),
+                     "green_streak": int(rec.get("green_streak") or 0),
+                     "verified": bool(verify.get("green")) if verify else None,
+                     "path": folder})
+    rows.sort(key=lambda r: r.get("created") or 0, reverse=True)
+    total = len(rows)
+    try:
+        cap = max(1, int(limit))
+    except (TypeError, ValueError):
+        cap = 50
+    return {"drafts": rows[:cap], "total": total, "unreadable": unreadable}
+
+
 def propose(scope, content, reason="", target_path="", ws=None, origin="agent",
             experiment=None, artifacts=None):
     """Register a PROPOSAL (writes nothing definitive).
@@ -528,7 +593,7 @@ def evolve_once(note=""):
     parity with `mine_once` (the history miner signs its own drafts).
     """
     from longrun.util import selfevolve
-    out = os.path.join(PROPOSAL_DIR, "skills")
+    out = DRAFT_DIR
     reports = []
     for cand in selfevolve.mine(selfevolve.history(), selfevolve.cfg()):
         rep = selfevolve.pipeline(cand["pattern"], out, cand["support"])
@@ -552,7 +617,9 @@ def mine_once(note="", evolve=False):
     """
     try:
         from longrun.util import selfevolve
-        out = os.path.join(PROPOSAL_DIR, "skills")
+        out = DRAFT_DIR
+        # v711: sweep before mining, for BOTH callers (tool and end-of-turn pass).
+        sweep_drafts()
         if not evolve:
             return selfevolve.mine_history(out, note=note) or []
         return [r["rel"] for r in evolve_once(note) if r["rel"]]

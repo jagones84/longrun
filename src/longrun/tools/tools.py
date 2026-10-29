@@ -1429,7 +1429,9 @@ def _improve(args, run_id=None):
         from longrun.util import selfevolve
         # v662: the proposal store has ONE home (`improve.PROPOSAL_DIR`); this line
         # spelled the same directory a second time, from a different root.
-        out = os.path.join(improve.PROPOSAL_DIR, "skills")
+        # v711: the drafts folder has one owner too (`improve.DRAFT_DIR`), and the
+        # sweep is `improve.sweep_drafts()` — `mine_once` runs it for every caller.
+        out = improve.DRAFT_DIR
         path = str(args.get("path", "") or "").strip()
 
         def _pub(ev, **kw):
@@ -1477,11 +1479,9 @@ def _improve(args, run_id=None):
             # Self-maintenance: sweep junk drafts before mining — single-tool
             # repeats and, since v656, any draft below the configured min_len
             # (the legacy 2-tool backlog is a generic pair, not a skill).
-            try:
-                pruned = (selfevolve.prune_junk(out, selfevolve.cfg())
-                          or {}).get("removed") or []
-            except Exception:  # noqa: BLE001 — sweep must never break mining
-                pruned = []
+            # v711: the sweep belongs to `improve.sweep_drafts()` (one owner);
+            # this branch only reports what it removed.
+            pruned = improve.sweep_drafts()
             paths = improve.mine_once(note=str(args.get("reason", "")))
         except Exception as e:  # noqa: BLE001
             return {"error": "mine failed: %s" % e}
@@ -1513,7 +1513,21 @@ def _improve(args, run_id=None):
     pol = improve.approval_kind("proposals")
     if pol == "denied":
         return {"ok": False, "error": "proposals are DENIED by policy (Settings ▸ Tools & approvals)"}
-    rec = improve.propose(scope, content, reason=str(args.get("reason", "")))
+    # v711: a skill proposal may point at ONE mined draft. Without this binding the
+    # documented flow (mine -> say what it does -> approve) dead-ended: approval
+    # refused every skill proposal with "the drafted skill folder is missing",
+    # because nothing ever set `target_path`. Same containment rule as verify.
+    target = ""
+    if scope == "skill":
+        want = str(args.get("path", "") or "").strip()
+        if want:
+            from longrun.util.fswrite import path_under
+            root = os.path.realpath(improve.DRAFT_DIR)
+            if not path_under(want, root):
+                return {"error": "draft path must be under %s" % root}
+            target = want
+    rec = improve.propose(scope, content, reason=str(args.get("reason", "")),
+                          target_path=target)
     try:
         from longrun.core import server as _srv
         _srv.publish("improve.proposal", **rec)

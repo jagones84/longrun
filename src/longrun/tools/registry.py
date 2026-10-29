@@ -469,7 +469,9 @@ _LEGACY_SCHEMAS = {
             "content": {"type": "string",
                         "description": "the proposed rule/skill text (action=propose)"},
             "path": {"type": "string",
-                     "description": "proposal folder (for verify/promote)"},
+                     "description": ("draft folder: the proposal folder for "
+                                     "verify/promote, or the mined draft a "
+                                     "skill proposal would install")},
             "reason": {"type": "string",
                        "description": "why this proposal exists (action=propose)"},
             "limit": {"type": "integer",
@@ -687,7 +689,7 @@ _SUBTOOL_FIELDS = {
         "forget": ["target", "query", "kind"], "purge": [], "health": [],
     },
     "improve": {
-        "propose": ["scope", "content", "reason"],
+        "propose": ["scope", "content", "reason", "path"],
         "mine": ["reason"], "evolve": [],
         "verify": ["path"], "promote": ["path"],
         "review": ["limit", "model"],
@@ -842,7 +844,8 @@ _SUBTOOL_GUIDANCE = {
         "Create ONE proposal. `scope` must be exactly `skill`, `project` or "
         "`global`; `content` must state WHAT the proposal accomplishes — the "
         "purpose, the steps and the observable outcome. A bare tool sequence "
-        "is not a proposal: name what it does first."
+        "is not a proposal: name what it does first. For a skill, pass `path` "
+        "with the mined draft folder so approval installs THAT draft."
     ),
     # v656: the miner writes drafts; the AGENT is the one who decides whether a
     # repeated sequence deserves a purpose. Say so where the model reads it.
@@ -1067,6 +1070,10 @@ def canonical_name(name, args=None):
 # and must ask, even though the end-of-turn skills-category path also checks.
 _SUBTOOL_GATES = {
     "improve.evolve": "self-evolution writes a skill (mine + verify + archive)",
+    # v711: promote performs the SAME final act as evolve's last step — it archives
+    # a skill into the live set — so it must ask too. Without this row the gate on
+    # evolve was a detour, not a boundary: two calls did what one was gated for.
+    "improve.promote": "installs a verified draft into the live skill set",
 }
 
 

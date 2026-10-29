@@ -88,8 +88,13 @@ check("A4 the two diagnostics report ROUTER_BASE, not their own reading",
       and 'os.environ.get("LONGRUN_ROUTER"' not in DIAG)
 
 # ---- B. one proposal store ---------------------------------------------------
-check("B1 the tool derives the skills dir from the store, not from a second spelling",
-      'os.path.join(improve.PROPOSAL_DIR, "skills")' in TOOLS
+# v711: the pin used to accept the expression `os.path.join(improve.PROPOSAL_DIR,
+# "skills")` because that was the only spelling available. The drafts folder now
+# has its own owner (`improve.DRAFT_DIR`, patched by tests), so the tool must read
+# THAT — keeping the old expression would be the second spelling this test names.
+check("B1 the tool derives the drafts dir from the store, not from a second spelling",
+      "improve.DRAFT_DIR" in TOOLS
+      and 'os.path.join(improve.PROPOSAL_DIR, "skills")' not in TOOLS
       and 'os.path.join(_paths.DATA_DIR, "proposals"' not in TOOLS)
 
 # ---- C. one evolve flow ------------------------------------------------------

@@ -2025,12 +2025,21 @@ class Handler(BaseHTTPRequestHandler):
                 _mtx_info = _mtx_imp.status()
             except Exception:  # noqa: BLE001
                 _mtx_info = {}
+            # Self-evolve produces DRAFTS (mined tool sequences) that are neither a
+            # proposal nor an installed skill: without this they were invisible.
+            try:
+                _drafts = improve_mod.list_drafts()
+            except Exception:  # noqa: BLE001 — an unreadable folder is data
+                _drafts = {"drafts": [], "total": 0, "unreadable": 0}
             return self._send(200, {
                 "proposals": dedup,
                 "proposals_total": len(raw),
                 "ledger": meaningful[:120],
                 "ledger_total": len(meaningful),
                 "records": records,
+                "drafts": _drafts.get("drafts") or [],
+                "drafts_total": int(_drafts.get("total") or 0),
+                "drafts_unreadable": int(_drafts.get("unreadable") or 0),
                 "memory": mem,
                 "matrix": _mtx_info,
                 "origins": list(improve_mod.ORIGINS),

@@ -2331,6 +2331,12 @@
         <!-- v651: decided history is its OWN card, not a child of the pending card.
              Nested, it was only reachable by expanding "Pending proposals" — the
              history and its clear exit were both invisible while collapsed. -->
+        <details class="card" id="impDraftsBox">
+          <summary class="set-t u-ptr" title="Machine-mined tool sequences. A draft is MATERIAL: it becomes a proposal only when someone states what it accomplishes, then verify -> promote installs it under skills/created.">Skill drafts <span id="impDraftCount" class="remaining"></span></summary>
+          <div class="remaining u-mt6">Mined from repeated tool sequences. A draft is not a proposal and not an installed skill —
+            say what it accomplishes, verify it in the sandbox, then promote it. <b>Nothing here is installed.</b></div>
+          <div id="impDrafts" class="u-mt6"></div>
+        </details>
         <div id="impDecided"></div>
         <details class="card">
           <summary class="set-t u-ptr" title="An LLM audits each proposal against the current code: keep · implemented · obsolete · update · conflict. Nothing is applied — you decide.">Backlog review <span id="impRevCount" class="remaining"></span></summary>
@@ -8497,8 +8503,18 @@ async function runHarnessDryRun() {
   const box = $("hcSession");
   const sid = box ? String(box.value || "").trim() : "";
   if (!sid) { const l = $("hcLast"); if (l) l.textContent = "paste a session id first"; return; }
-  try { await api("POST", "/api/harness/cycle", { session: sid, dry_run: true }); }
+  let r = null;
+  try { r = await api("POST", "/api/harness/cycle", { session: sid, dry_run: true }); }
   catch (e) { const l = $("hcLast"); if (l) l.textContent = "error: " + e; return; }
+  // A refusal (unknown session, no tool steps, disabled probe) writes NOTHING.
+  // Re-rendering the previous report here made a failed attempt look like a
+  // fresh success — say what happened and keep the old report labelled as old.
+  if (!r || r.status === "refused" || r.status === "failed") {
+    const l = $("hcLast");
+    if (l) l.textContent = "not recorded · " + ((r && r.status) || "no answer") +
+      ((r && r.reason) ? ": " + r.reason : "");
+    return;
+  }
   loadHarnessCycle();
 }
 /* H2R: the matched-run evidence a harness proposal was admitted on, as one line.
@@ -8672,6 +8688,42 @@ async function loadImprovement() {
     }
     props.appendChild(det);
   });
+  // ---- machine-mined skill drafts (MATERIAL, not proposals) ----
+  // v710: self-evolve mined 20 drafts into `<DATA>/proposals/skills/` while this
+  // panel said "0 pending · 0 self-generated": a draft is neither a proposal nor
+  // an installed skill, so nothing displayed it. Show the real folders, label
+  // them as material, and report the ones that could not be read.
+  const draftsBox = $("impDrafts"), draftCnt = $("impDraftCount");
+  const drafts = d.drafts || [];
+  if (draftCnt) draftCnt.textContent = "(" + (d.drafts_total || drafts.length) + ")";
+  if (draftsBox) {
+    draftsBox.innerHTML = "";
+    if (!drafts.length) {
+      draftsBox.innerHTML = '<div class="remaining">no mined draft — mining needs a high-signal turn (error or correction + real tool use)</div>';
+    } else {
+      const det = document.createElement("details"); det.className = "imp-card";
+      det.innerHTML = '<summary class="remaining" style="cursor:pointer">show the ' +
+        drafts.length + " newest</summary>";
+      const box = document.createElement("div"); box.className = "imp-ledger";
+      drafts.forEach(x => {
+        const row = document.createElement("div"); row.className = "imp-row";
+        const proof = x.verified === true ? "verified"
+          : (x.verified === false ? "verify failed" : "unverified");
+        row.innerHTML = '<b>' + esc(x.name || "") + '</b> <span class="remaining">' +
+          esc(x.status || "proposed") + " · support ×" + esc(String(x.support || 0)) +
+          " · " + esc(String(x.steps || 0)) + " steps · " + esc(proof) +
+          (x.green_streak ? " · green ×" + esc(String(x.green_streak)) : "") +
+          "</span>";
+        box.appendChild(row);
+      });
+      det.appendChild(box); draftsBox.appendChild(det);
+    }
+    if (d.drafts_unreadable) {
+      draftsBox.insertAdjacentHTML("afterbegin",
+        '<div class="remaining u-mb6"><b>' + esc(String(d.drafts_unreadable)) +
+        "</b> draft folder(s) could not be read and are not counted above.</div>");
+    }
+  }
   // ---- decided history (so an all-decided panel is not empty) ----
   const decided = (d.proposals || []).filter(p => p.status !== "pending");
   const decBox = $("impDecided");
