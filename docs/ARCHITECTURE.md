@@ -190,6 +190,9 @@ sandbox and `promote` archives only a green draft under `skills/created`. Both t
 `improve` tool (`verify`/`promote`) and the approval path (`decide`, for a skill
 proposal bound to a draft with `target_path`) call those three functions — the
 same owner each time, so a mined draft can never be unverifiable-by-construction.
+Whether a draft already IS a live Matrix tool is not a stored flag: the row asks
+`selfevolve.forge_target()` and checks the module, so `matrix.remove` stops the
+claim at once and the panel hides the forge action for a live one.
 
 ### Self-evolve: who owns which state (one map, two entry points)
 
@@ -206,7 +209,7 @@ owners:
 | verified | `improve{verify}` / `decide` | `selfevolve.ensure_check` + `verify` | the sandbox check went green |
 | proposal (`scope=skill`, bound to a draft OR to tested bytes) | mined draft or matched experiment | `improve.propose` | ONE decision object |
 | installed skill | approval | `selfevolve.promote` (draft) / `skills.install_skill_file` (harness bytes) | never clobbers an existing skill |
-| forged Matrix tool (`learned_<slug>.run`) | `improve{forge}` on a draft, or `improve{evolve}` for a green pattern (`forge_on_evolve`, capped by `forge_per_run`) | `selfevolve.forge_matrix` → `matrix.scaffold` → `matrix.run_test` → `matrix.verify_target` | executable, but only after its own generated test and the sha-bound contract gate pass; removed when they do not |
+| forged Matrix tool (`learned_<slug>.run`) | `improve{forge}` on a draft, or `improve{evolve}` for a green pattern (`forge_on_evolve`, capped by `forge_per_run`) | `selfevolve.forge_target` (the naming) → `selfevolve.forge_matrix` → `matrix.scaffold` → `matrix.run_test` → `matrix.verify_target` | executable, but only after its own generated test and the sha-bound contract gate pass; removed when they do not. `evolve` asks `forge_target` first, so a pattern forged in an earlier pass is `skipped`, never a clobber refusal |
 | Matrix artifact | approval | `core.matrix.apply_learning` | outside Nucleus, hash-bound |
 
 
