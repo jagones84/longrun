@@ -54,6 +54,19 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# The service authenticates from the gitignored `.env` (JAG-492 through
+# `providers.load_env`). The CLI must read the SAME place — otherwise every
+# terminal command answers `unauthorized` while the server works, which is how
+# this was found. One loader, no second parser.
+try:
+    _SRC = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if _SRC not in sys.path:
+        sys.path.insert(0, _SRC)
+    from longrun.model import providers as _providers
+    _providers.load_env()
+except Exception:  # noqa: BLE001 — a missing catalogue must not break the CLI
+    pass
+
 BASE = os.environ.get("LONGRUN_URL", "http://127.0.0.1:8790").rstrip("/")
 TOKEN = os.environ.get("LONGRUN_TOKEN")
 
