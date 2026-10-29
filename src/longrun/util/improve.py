@@ -609,7 +609,7 @@ def diff_preview(rec):
             "added": sum(1 for l in diff if l.startswith("+") and not l.startswith("+++"))}
 
 
-def evolve_once(note=""):
+def evolve_once(note="", allow_code=None):
     """Stage 2 over every repeated pattern -> one report per pattern.
 
     v662: this body was written TWICE — here (inside `mine_once(evolve=True)`) and
@@ -620,11 +620,21 @@ def evolve_once(note=""):
     parity with `mine_once` (the history miner signs its own drafts).
 
     EV-13: evolve's CODE arm. The skill pipeline stays as it was (a declarative
-    procedure, verified and archived); a GREEN pattern is also FORGED into a Matrix
+    procedure, verified and archived); a GREEN pattern is also turned into a Matrix
     tool, which is the executable half the miner never had. Bounded by
     `forge_per_run` and switchable with `forge_on_evolve`, because one evolve pass
     must never flood `src/Matrix`; a refused/red forge is recorded on the report
     and never fails the run.
+
+    EV-17: who authorises the CODE. `allow_code=True` means a human already
+    approved THIS run (the `improve{evolve}` call is a gated tool), so the tool is
+    forged, tested and verified in place. Otherwise the `matrix` approval policy
+    decides: 'auto' forges the same way, 'required' (the default when unset) opens
+    a PENDING `matrix` proposal carrying the exact bundle (kind/name/content/sha256)
+    — the module lands only when `improve.decide` approves it, which runs
+    `matrix.apply_learning` and hot-loads it — and 'denied' writes nothing. The
+    background end-of-turn pass therefore can never put code in the live zone on
+    its own.
     """
     from longrun.util import selfevolve
     c = selfevolve.cfg()
@@ -636,6 +646,7 @@ def evolve_once(note=""):
         rel = arc.get("rel") or arc.get("path") if isinstance(arc, dict) else (
             arc if isinstance(arc, str) else "")
         reports.append({"pattern": cand["pattern"],
+                        "support": int(cand.get("support") or 0),
                         "green": bool((rep.get("verify") or {}).get("green")),
                         "rel": rel or "",
                         "dir": str(rep.get("dir") or "")})
@@ -644,9 +655,10 @@ def evolve_once(note=""):
             cap = max(0, int(c.get("forge_per_run") or 0))
         except (TypeError, ValueError):
             cap = 1
-        forged = 0
+        mode = "auto" if allow_code else (approval_kind("matrix") or "required")
+        done = 0
         for r in reports:
-            if forged >= cap:
+            if done >= cap:
                 break
             if not r.get("green") or not r.get("dir"):
                 continue
@@ -658,12 +670,37 @@ def evolve_once(note=""):
                 r["matrix"] = {"ok": True, "skipped": "already forged",
                                "matrix_tool": os.path.basename(tpath)[:-3]}
                 continue
-            fr = selfevolve.forge_from_draft(r["dir"])
-            r["matrix"] = {"ok": bool(fr.get("ok")),
-                           "matrix_tool": fr.get("matrix_tool"),
-                           "error": fr.get("error")}
-            if fr.get("ok"):
-                forged += 1
+            if mode == "denied":
+                r["matrix"] = {"ok": False, "denied": "matrix code is DENIED by "
+                              "policy (Settings ▸ Tools & approvals ▸ matrix)"}
+                continue
+            if mode == "auto":
+                fr = selfevolve.forge_from_draft(r["dir"])
+                r["matrix"] = {"ok": bool(fr.get("ok")),
+                               "matrix_tool": fr.get("matrix_tool"),
+                               "error": fr.get("error")}
+                if fr.get("ok"):
+                    done += 1
+                continue
+            # 'required': build the SAME bytes a forge would write and put them in
+            # front of the operator. Nothing touches src/Matrix until the approval.
+            bnd = selfevolve.forge_bundle(r["pattern"], support=r.get("support") or 0,
+                                          draft=r["dir"])
+            if not bnd.get("ok"):
+                r["matrix"] = {"ok": False, "error": bnd.get("error")}
+                continue
+            rec = propose(
+                "matrix",
+                "Mined sequence %s (support ×%d) → Matrix tool %s. Approving writes "
+                "the module and hot-loads it; denying leaves the zone untouched."
+                % (" \u2192 ".join(r["pattern"]), r.get("support") or 0,
+                   bnd["matrix_tool"]),
+                reason="self-evolve: green pattern from the mining lane",
+                origin="mining", artifacts=bnd["artifacts"])
+            r["matrix"] = {"ok": True, "proposed": rec.get("id"),
+                           "matrix_tool": bnd["matrix_tool"],
+                           "sha256": bnd["sha256"]}
+            done += 1
     return reports
 
 

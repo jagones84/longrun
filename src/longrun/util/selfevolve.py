@@ -816,6 +816,41 @@ def forge_target(pattern, name="", repo_root=None):
     return os.path.join(msrc, "tools", ns + ".py"), ns
 
 
+def forge_bundle(pattern, support=0, draft="", name="", description="",
+                 repo_root=None):
+    """The artifact bundle a forge WOULD write, built and validated (no write).
+
+    One owner of the generated module: `forge_matrix` writes exactly these bytes
+    and `evolve` can put them in front of the operator as a pending `matrix`
+    proposal instead of landing code on its own. Same validation on both paths,
+    so a proposal can never carry a bundle a forge would have refused.
+    """
+    import hashlib
+    steps = [str(t).strip() for t in (pattern or []) if str(t).strip()]
+    if len(steps) < 2:
+        return {"ok": False, "error": "a forged tool needs at least 2 steps (got %d)"
+                                      " — a single-tool repeat is a loop" % len(steps)}
+    known = set(_known_tools())
+    bad = [t for t in steps if not _dispatchable(t, known)]
+    if bad:
+        return {"ok": False, "error": "not replayable: %s" % ", ".join(bad)}
+    fpath, ns = forge_target(steps, name, repo_root)
+    full = "%s.run" % ns
+    desc = str(description or "").strip() or (
+        "Replay the mined tool sequence %s in order: `inputs` carries one argument "
+        "object per step, the run stops at the first failure, and every step keeps "
+        "its own approval policy." % " \u2192 ".join(steps))
+    origin = os.path.basename(str(draft or "")) or "mined draft"
+    body = _forge_body(ns, full, steps, desc, support, origin)
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    return {"ok": True, "matrix_tool": full, "namespace": ns, "path": fpath,
+            "steps": steps, "sha256": digest, "description": desc,
+            # `matrix_tool` is the kind the learned-artifact owner accepts
+            # (`_LEARNING_KINDS`); the hash is what the approval binds.
+            "artifacts": [{"kind": "matrix_tool", "name": ns, "content": body,
+                           "sha256": digest}]}
+
+
 def forge_matrix(pattern, support=0, draft="", name="", description="",
                  repo_root=None):
     """Turn a REPLAYABLE mined sequence into a tested Matrix tool (EV-11).
@@ -835,33 +870,21 @@ def forge_matrix(pattern, support=0, draft="", name="", description="",
     and every step still passes the harness's own approval policy. Nucleus is
     untouched (`promote_to_nucleus` keeps its own checkbox).
     """
-    import hashlib
     from longrun.core import matrix as mtx
-    steps = [str(t).strip() for t in (pattern or []) if str(t).strip()]
-    if len(steps) < 2:
-        return {"ok": False, "error": "a forged tool needs at least 2 steps (got %d)"
-                                      " — a single-tool repeat is a loop" % len(steps)}
-    known = set(_known_tools())
-    bad = [t for t in steps if not _dispatchable(t, known)]
-    if bad:
-        return {"ok": False, "error": "not replayable: %s" % ", ".join(bad)}
+    bnd = forge_bundle(pattern, support=support, draft=draft, name=name,
+                       description=description, repo_root=repo_root)
+    if not bnd.get("ok"):
+        return bnd
+    steps, ns, full = bnd["steps"], bnd["namespace"], bnd["matrix_tool"]
+    fpath, body = bnd["path"], bnd["artifacts"][0]["content"]
     if not mtx.is_enabled():
         return {"ok": False, "error": "Matrix is disabled — enable it before forging"}
-    fpath, ns = forge_target(steps, name, repo_root)
-    sub = "run"
-    full = "%s.%s" % (ns, sub)
     if os.path.exists(fpath):
         return {"ok": False, "error": "refusing to clobber %s (matrix.remove it first)"
                                       % fpath}
-    desc = str(description or "").strip() or (
-        "Replay the mined tool sequence %s in order: `inputs` carries one argument "
-        "object per step, the run stops at the first failure, and every step keeps "
-        "its own approval policy." % " \u2192 ".join(steps))
-    origin = os.path.basename(str(draft or "")) or "mined draft"
-    sc = mtx.scaffold("tool", full, description=desc, repo_root=repo_root)
+    sc = mtx.scaffold("tool", full, description=bnd["description"], repo_root=repo_root)
     if not sc.get("ok"):
         return {"ok": False, "error": "scaffold refused: %s" % sc.get("error"), "scaffold": sc}
-    body = _forge_body(ns, full, steps, desc, support, origin)
     try:
         with open(fpath, "w", encoding="utf-8", newline="\n") as f:
             f.write(body)
@@ -876,8 +899,7 @@ def forge_matrix(pattern, support=0, draft="", name="", description="",
     # `tool` (it is the executed tool's canonical name) and overwrites it, which
     # made every caller read "improve.forge" instead of the tool that was created.
     result = {"ok": ok, "matrix_tool": full, "namespace": ns, "path": fpath,
-              "steps": steps,
-              "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+              "steps": steps, "sha256": bnd["sha256"],
               "load": {"ok": hl.get("ok"), "errors": hl.get("errors") or []},
               "test": {k: test.get(k) for k in ("ok", "exit_code", "stdout",
                                                 "stderr", "path", "duration_ms")},

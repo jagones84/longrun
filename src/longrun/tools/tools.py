@@ -1536,7 +1536,11 @@ def _improve(args, run_id=None):
             # v662: stage 2 is `improve.evolve_once` — the SAME flow the end-of-turn
             # pass runs. This branch used to re-implement mine -> pipeline -> collect
             # archived, so "what does evolve do?" had two answers.
-            reports = improve.evolve_once(note=str(args.get("reason", "")))
+            # EV-17: this call is a GATED tool, so a human already approved this run
+            # and its code arm may write; the background pass has no such approval and
+            # therefore proposes the same bundle instead (see evolve_once).
+            reports = improve.evolve_once(note=str(args.get("reason", "")),
+                                          allow_code=True)
             for r in reports:
                 _pub("improve.evolve", pattern=r["pattern"], green=r["green"])
             return {"ok": True, "evolved": len(reports), "reports": reports}

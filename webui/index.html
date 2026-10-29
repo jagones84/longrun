@@ -9810,6 +9810,10 @@ function renderTools(el, d) {
   // JAG-451: approval policy BY CATEGORY — everything the harness emits on its own.
   const KINDS = [
     ["skills", "Self-generated skills", "mined skill drafts → promoted into skills/created/"],
+    // EV-17: evolve's CODE arm — a green mined pattern becomes a Matrix tool. AUTO
+    // makes the background pass write it; ASK (the default) opens a matrix proposal
+    // that writes + hot-loads only when you approve it; DENIED never emits code.
+    ["matrix", "Matrix code (self-evolve)", "executable Matrix tools forged from mined tool sequences"],
     ["proposals", "Rule / skill proposals", "agent-proposed changes to Global_rules.md / Project_rules.md or skills"],
     ["memory", "Distilled memory", "auto-written lessons in data/memory/"],
     ["subagent", "Subagent spawns", "delegating a subtask to a child agent"],

@@ -52,6 +52,18 @@ def set_selfevolve(**kw):
     registry.load_config(reload=True)
 
 
+def set_matrix_policy(value):
+    """EV-17: who authorises evolve's code — auto|required|denied ('' = unset)."""
+    cfg = registry.load_config()
+    kinds = cfg.setdefault("approvals", {}).setdefault("kinds", {})
+    if value:
+        kinds["matrix"] = value
+    else:
+        kinds.pop("matrix", None)
+    registry.save_config(cfg)
+    registry.load_config(reload=True)
+
+
 def forged_names():
     root = os.environ["LONGRUN_MATRIX_SRC"]
     tdir = os.path.join(root, "tools")
@@ -75,8 +87,9 @@ SE.mine = lambda hist, c: [{"pattern": list(P1), "support": 3},
 SE.pipeline = _pipe
 
 # ------------------------------------- A: one forge, reported ------------
+set_matrix_policy("")           # EV-17: unset + allow_code=True → the human gate
 set_selfevolve(forge_on_evolve=True, forge_per_run=1)
-reports = improve.evolve_once()
+reports = improve.evolve_once(allow_code=True)
 forged = [r for r in reports if (r.get("matrix") or {}).get("ok")]
 check("A1 exactly one pattern was forged", len(forged) == 1, reports)
 check("A2 the report names the Matrix tool",
@@ -88,7 +101,7 @@ check("A4 every report still states its skill outcome",
 
 # ------------------------------------- B: the bound holds ---------------
 set_selfevolve(forge_per_run=2)
-reports2 = improve.evolve_once()
+reports2 = improve.evolve_once(allow_code=True)
 made = [n for n in forged_names() if n.startswith("learned_")]
 check("B1 the bound is respected across patterns", len(made) == 2, made)
 check("B2 the next pattern is the one that gets forged",
@@ -121,7 +134,7 @@ _real_forge = SE.forge_from_draft
 SE.forge_from_draft = lambda d, **kw: {"ok": False, "error": "not replayable: batch"}
 try:
     set_selfevolve(forge_on_evolve=True, forge_per_run=1)
-    reports4 = improve.evolve_once()
+    reports4 = improve.evolve_once(allow_code=True)
 finally:
     SE.forge_from_draft = _real_forge
 check("D1 a red forge does not fail the evolve run", len(reports4) == 2, reports4)
@@ -137,6 +150,38 @@ try:
 except Exception as e:  # noqa: BLE001
     ok, reports5 = False, str(e)
 check("E1 an invalid bound degrades to 1 instead of crashing", ok is True, reports5)
+
+# ------------------------------- F: no human, no write (EV-17) ----------
+# The background pass has NOT been approved by anyone: with the `matrix` policy
+# at its default (`required`) a green pattern must become a PENDING proposal that
+# carries the exact bundle, and src/Matrix must stay untouched.
+set_selfevolve(forge_on_evolve=True, forge_per_run=1)
+set_matrix_policy("required")
+_before_files = forged_names()
+_before_ids = {p.get("id") for p in improve.list_proposals("pending")}
+reports6 = improve.evolve_once()
+_new = [p for p in improve.list_proposals("pending")
+        if p.get("scope") == "matrix" and p.get("id") not in _before_ids]
+row6 = (reports6[0].get("matrix") or {})
+check("F1 the background pass proposes instead of writing", row6.get("ok") is True
+      and row6.get("proposed"), reports6)
+check("F2 nothing was written to src/Matrix", forged_names() == _before_files,
+      forged_names())
+check("F3 the proposal is pending and carries the bundle",
+      len(_new) == 1 and len(_new[0].get("artifacts") or []) == 1
+      and len((_new[0]["artifacts"][0].get("sha256") or "")) == 64, _new)
+check("F4 the proposal names the tool the approval would create",
+      (_new[0]["artifacts"][0].get("name") or "")[:8] == "learned_", _new)
+
+# ------------------------------- G: denied writes nothing --------------
+_before_props = len(improve.list_proposals("pending"))
+set_matrix_policy("denied")
+reports7 = improve.evolve_once()
+row7 = (reports7[0].get("matrix") or {})
+check("G1 a DENIED policy emits no code and no prose", row7.get("denied")
+      and len(improve.list_proposals("pending")) == _before_props
+      and forged_names() == _before_files, (row7, forged_names()))
+set_matrix_policy("")
 
 SE.mine, SE.pipeline = _old_mine, _old_pipe
 
