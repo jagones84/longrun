@@ -91,8 +91,21 @@ set_selfevolve(forge_per_run=2)
 reports2 = improve.evolve_once()
 made = [n for n in forged_names() if n.startswith("learned_")]
 check("B1 the bound is respected across patterns", len(made) == 2, made)
-check("B2 the second pattern is the other one",
-      len({r["pattern"][1] for r in reports2 if (r.get("matrix") or {}).get("ok")}) >= 1, reports2)
+check("B2 the next pattern is the one that gets forged",
+      (reports2[1].get("matrix") or {}).get("ok") is True
+      and not (reports2[1].get("matrix") or {}).get("skipped"), reports2)
+# A second pass must not report the pattern it already forged as a CLOBBER ERROR
+# ("refusing to clobber …") — that is work already done, not a failure.
+check("B3 an already-forged pattern is skipped, not refused",
+      (reports2[0].get("matrix") or {}).get("ok") is True
+      and (reports2[0].get("matrix") or {}).get("skipped") == "already forged", reports2)
+_check_cleared = True
+for _n in made:
+    try:
+        os.remove(os.path.join(os.environ["LONGRUN_MATRIX_SRC"], "tools", _n + ".py"))
+    except OSError:
+        _check_cleared = False
+check("B4 the reset removed the forged modules", _check_cleared, forged_names())
 
 # ------------------------------------- C: the switch --------------------
 before = len([n for n in forged_names() if n.startswith("learned_")])

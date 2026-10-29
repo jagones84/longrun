@@ -627,6 +627,14 @@ def evolve_once(note=""):
                 break
             if not r.get("green") or not r.get("dir"):
                 continue
+            # An earlier pass may have forged this pattern already. Re-forging is
+            # refused as a clobber, which is not an error: it is work already done.
+            # Ask the ONE naming owner rather than guessing the module path.
+            tpath, _tns = selfevolve.forge_target(r.get("pattern") or [])
+            if os.path.isfile(tpath):
+                r["matrix"] = {"ok": True, "skipped": "already forged",
+                               "matrix_tool": os.path.basename(tpath)[:-3]}
+                continue
             fr = selfevolve.forge_from_draft(r["dir"])
             r["matrix"] = {"ok": bool(fr.get("ok")),
                            "matrix_tool": fr.get("matrix_tool"),

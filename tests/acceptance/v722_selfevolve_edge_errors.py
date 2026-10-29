@@ -11,7 +11,8 @@ model (or a user) actually gets wrong, and requires the same contract each time:
   C  forge refuses short, unreplayable and disabled-Matrix cases
   D  a hostile `name` cannot escape the Matrix tools dir
   E  mine / evolve on an empty history answer honestly with zero work
-  F  propose keeps its scope/content contract
+  F  propose keeps its scope/content contract, and its draft binding stays inside
+     the store
 """
 import json
 import os
@@ -124,6 +125,11 @@ refused("F1 propose with a bad scope", {"action": "propose", "scope": "wat",
                                         "content": "x"}, "invalid scope")
 refused("F2 propose with no content", {"action": "propose", "scope": "project",
                                        "content": "   "}, "content")
+# A skill proposal may bind ONE mined draft; a path outside the draft store is a
+# hostile binding, and it must answer a verdict like every other refusal.
+refused("F3 a skill proposal cannot bind a draft outside the store",
+        {"action": "propose", "scope": "skill", "content": "x",
+         "path": os.path.join(TMP, "elsewhere")}, "must be under")
 
 # ------------------------------------- G: the canonical schema --------------
 spec = registry.tool_spec("improve.forge") or {}

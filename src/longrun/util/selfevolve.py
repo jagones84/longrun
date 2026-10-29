@@ -801,6 +801,21 @@ def _forge_test(ns, full, steps):
     return head + body
 
 
+def forge_target(pattern, name="", repo_root=None):
+    """The module a forge of THIS pattern writes, and its namespace.
+
+    One owner of the naming rule: `forge_matrix` writes there, and `evolve` asks
+    here whether a pattern was already forged (so "already done" is not reported
+    as a clobber refusal).
+    """
+    from longrun.core import matrix as mtx
+    steps = [str(t).strip() for t in (pattern or []) if str(t).strip()]
+    ns = str(name or "").strip() or (MATRIX_FORGE_NS + "_" + _forge_slug(steps))
+    ns = re.sub(r"[^a-zA-Z0-9_]", "_", ns).strip("_")
+    _root, msrc, _mdot = mtx._roots(repo_root)
+    return os.path.join(msrc, "tools", ns + ".py"), ns
+
+
 def forge_matrix(pattern, support=0, draft="", name="", description="",
                  repo_root=None):
     """Turn a REPLAYABLE mined sequence into a tested Matrix tool (EV-11).
@@ -832,12 +847,9 @@ def forge_matrix(pattern, support=0, draft="", name="", description="",
         return {"ok": False, "error": "not replayable: %s" % ", ".join(bad)}
     if not mtx.is_enabled():
         return {"ok": False, "error": "Matrix is disabled — enable it before forging"}
-    ns = str(name or "").strip() or (MATRIX_FORGE_NS + "_" + _forge_slug(steps))
-    ns = re.sub(r"[^a-zA-Z0-9_]", "_", ns).strip("_")
+    fpath, ns = forge_target(steps, name, repo_root)
     sub = "run"
     full = "%s.%s" % (ns, sub)
-    _root, msrc, _mdot = mtx._roots(repo_root)
-    fpath = os.path.join(msrc, "tools", ns + ".py")
     if os.path.exists(fpath):
         return {"ok": False, "error": "refusing to clobber %s (matrix.remove it first)"
                                       % fpath}

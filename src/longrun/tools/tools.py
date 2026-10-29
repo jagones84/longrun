@@ -1573,7 +1573,7 @@ def _improve(args, run_id=None):
     if not content:
         return {"ok": False, "error": "content required for action=propose"}
     if improve.AGENT_WRITE.get(scope) == "forbidden":
-        return {"error": "scope not writable"}
+        return {"ok": False, "error": "scope %r is not writable by the agent" % scope}
     # JAG-451: honour the `proposals` approval policy (Settings ▸ Tools & approvals).
     pol = improve.approval_kind("proposals")
     if pol == "denied":
@@ -1589,7 +1589,7 @@ def _improve(args, run_id=None):
             from longrun.util.fswrite import path_under
             root = os.path.realpath(improve.DRAFT_DIR)
             if not path_under(want, root):
-                return {"error": "draft path must be under %s" % root}
+                return {"ok": False, "error": "draft path must be under %s" % root}
             target = want
     rec = improve.propose(scope, content, reason=str(args.get("reason", "")),
                           target_path=target)
