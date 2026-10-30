@@ -356,7 +356,7 @@ finally:
 
 check("repeated todo actions cannot bypass the wall-clock cap",
       _wall_calls["count"] == 2
-      and "Paused:" in (_wall_reply or {}).get("content", ""),
+      and "\u23f8" in (_wall_reply or {}).get("content", ""),
       {"calls": _wall_calls["count"],
        "reply": (_wall_reply or {}).get("content", "")})
 

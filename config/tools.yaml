@@ -384,6 +384,14 @@ tools:
       - "."
       - "/home/jagones/Repositories"
 
+  # Ask the OPERATOR to decide (human.ask). This tool is the ONLY source of a
+  # HUMAN IN THE LOOP card: the turn raises it because the AGENT asked, never
+  # because the harness decided to. Behind an approval prompt it would be
+  # unreachable exactly when it is needed, so it is auto-approved.
+  human:
+    enabled: true
+    approval: auto
+
   # ---- JAG-535/538: exclusive built-in automation tools (VEO) ---------------
   # Dual-permission gated: callable ONLY when enabled here AND the calling
   # session is `longrunAgent` or has `allow_longrun_agent: true`.

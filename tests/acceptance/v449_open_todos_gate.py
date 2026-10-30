@@ -74,9 +74,11 @@ cnt2, errs2 = server._apply_chat_todo_updates(
 check("C1 the one-shot retry is accepted", cnt2 == 1, cnt2)
 check("C2 no errors on the accepted retry", errs2 == [], errs2)
 
-# ---- D: static wiring of the turn-end HITL gate ------------------------------
+# ---- D: static wiring of the turn-end stop report ---------------------------
+# EV-39: the turn-end hook no longer OPENS the human card (that is `human.ask`);
+# what it still owes is a truthful `plan.stopped` with the real reason.
 src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
-check("D1 the turn-end gate is present (truthful stop reason)",
+check("D1 the turn-end stop report is present (truthful stop reason)",
       '_reason2 = _kg_stop_reason or "open_todos"' in src
       and "reason=_reason2" in src)
 check("D2 the gate reuses the open-node scan", "_open2" in src and "OPEN_STATUSES" in src)

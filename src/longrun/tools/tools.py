@@ -333,6 +333,39 @@ def _process(args, run_id):
             "stdout": "\n".join(lines) or "(no match)", "backend": "host", "sandboxed": False}
 
 
+def _human(args, run_id):
+    """`human.ask` — the agent's ONE way to ask the operator for a decision.
+
+    The card itself is rendered by the chat turn that received this call (the
+    agent loop turns it into `hitl.request` and ends the turn), so this handler
+    stays pure: it validates the question and returns the observation the model
+    sees. Called directly through `POST /api/tools/call` it is a no-op door, not
+    a substitute for the turn-level gate.
+    """
+    question = str((args or {}).get("question") or "").strip()
+    if not question:
+        return {"ok": False,
+                "error": "question required: say in one sentence what you need "
+                         "the operator to decide"}
+    steps = [str(s).strip() for s in ((args or {}).get("steps") or [])
+             if str(s).strip()]
+    options = [str(o).strip() for o in ((args or {}).get("options") or [])
+               if str(o).strip()]
+    return {"ok": True,
+            "backend": "harness",
+            "observation": (
+                "HUMAN IN THE LOOP requested: %s\n"
+                "The operator now sees the decision card%s. The turn ENDS here — "
+                "anything you write after this call is not shown."
+                % (question,
+                   (" with %d step(s): %s" % (len(steps), "; ".join(steps[:8])))
+                   if steps else ""),
+                ),
+            "question": question,
+            "steps": steps,
+            "options": options}
+
+
 def _glob(args, run_id):
     """List files matching a glob pattern, inside the allowed roots (read-only)."""
     import glob as _g
@@ -2397,6 +2430,7 @@ def _exclusive_tool(tool, args, run_id=None):
 _DISPATCH = {"shell": _shell, "shell.exec": _shell,
              "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
              "diff": _diff,
+             "human": _human, "human.ask": _human,
              "git": _git, "git.run": _git,
              "http": _http, "http.fetch": _http,
              "browser": _browser, "browser.fetch": _browser,

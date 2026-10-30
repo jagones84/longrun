@@ -565,6 +565,27 @@ _LEGACY_SCHEMAS = {
         "required": ["pattern"],
         "subject": "pattern",
     },
+    "human": {
+        "description": (
+            "Ask the OPERATOR to decide. This is the ONLY way a HUMAN IN THE LOOP "
+            "card is raised: the harness never opens one on its own. Use it when "
+            "the work genuinely cannot continue without a choice only the human "
+            "can make (a blocked plan, a missing credential/instruction, two "
+            "valid directions). The turn ends with the card; do not use it to "
+            "report progress or to hand back work you can finish yourself."),
+        "type": "object",
+        "properties": {
+            "question": {"type": "string",
+                         "description": "the decision you need, in one sentence"},
+            "steps": {"type": "array", "items": {"type": "string"},
+                      "description": "the steps awaiting that decision (id + label); "
+                                     "defaults to the plan's open steps"},
+            "options": {"type": "array", "items": {"type": "string"},
+                        "description": "the choices the operator should see"},
+        },
+        "required": ["question"],
+        "subject": "question",
+    },
     "matrix": {
         "description": ("Self-evolving Matrix suite (code in src/Matrix, runtime in the matrix "
                         "dir from `matrix.status.matrix_dot`; `.Matrix` is its legacy name). "
@@ -622,6 +643,7 @@ _SINGLE_SUBTOOL_MAP = {
     "reconcile": "reconcile.run",
     "python": "python.run",
     "glob": "glob.list",
+    "human": "human.ask",
 }
 
 # Default subtool when a legacy plain tool name is referenced without an explicit action.
@@ -646,6 +668,7 @@ LEGACY_DEFAULT_SUBTOOL = {
     "diff": "diff.files",
     "process": "process.list",
     "matrix": "matrix.status",
+    "human": "human.ask",
 }
 
 # Canonical schemas are per-subtool contracts, not copies of every property in

@@ -1696,6 +1696,32 @@ def _batch_items(act):
     return [c for c in (raw or []) if isinstance(c, dict)]
 
 
+HUMAN_TOOLS = ("human.ask", "human")
+
+
+def _human_ask_args(act):
+    """Args of a `human.ask` call carried by `act`, or None (EV-39).
+
+    The HUMAN IN THE LOOP card is the AGENT's declaration — the harness never
+    opens one by itself — so the call has to be recognised BEFORE the tool runs:
+    the turn ends WITH the card, and whatever prose the model writes after it is
+    never shown. Accepts the bare action, the tool envelope and a batch item,
+    because a model spells the same intent in all three.
+    """
+    if not isinstance(act, dict):
+        return None
+    items = _batch_items(act) if str(act.get("action")) == "batch" else [act]
+    for it in items:
+        tool = str(it.get("tool") or it.get("action") or "").strip()
+        if tool not in HUMAN_TOOLS:
+            continue
+        args = it.get("args")
+        if not isinstance(args, dict):
+            args = {k: v for k, v in it.items() if k not in ("action", "tool")}
+        return dict(args)
+    return None
+
+
 def _is_dispatch_item(it):
     """True when a batch item addresses a teammate, however it is spelled.
 
@@ -3475,6 +3501,45 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                     "observation")
             continue
+        _ask = _human_ask_args(act)
+        if _ask is not None:
+            # EV-39: the card exists because the AGENT asked for it. The turn ends
+            # here; the reply the operator sees is the question, not the model's
+            # prose (which may still be a half-written summary).
+            _q = str(_ask.get("question") or "").strip()
+            if not _q:
+                msgs.append({"role": "assistant", "content": answer})
+                _inject("human.ask needs `question`: state, in one sentence, the "
+                        "single decision you need from the operator. Nothing was "
+                        "sent.", "nudge")
+                continue
+            if autonomous and not goal_mode:
+                # JAG-295 parity: a JOB/routine has nobody attached, so parking it
+                # for a human would hang the run. The agent must decide itself.
+                msgs.append({"role": "assistant", "content": answer})
+                _inject("HUMAN IN THE LOOP is unavailable here: nobody is attached "
+                        "to this turn (a job or routine). Decide with what you "
+                        "have — mark the step 'done' with the evidence, or "
+                        "'superseded' with a reason — and finish.", "nudge")
+                continue
+            _steps = [{"id": "", "label": str(x).strip()}
+                      for x in (_ask.get("steps") or []) if str(x).strip()][:8]
+            if not _steps:
+                try:
+                    _ga = taskgraph.load(sess["id"]) or {}
+                    _steps = [{"id": n.get("id"), "label": n.get("label", "")}
+                              for n in taskgraph.plan_nodes(_ga)
+                              if n.get("status") in taskgraph.OPEN_STATUSES][:8]
+                except Exception:  # noqa: BLE001 — the card must never break a turn
+                    _steps = []
+            _hitl = {"reason": "asked", "question": _q, "open": _steps,
+                     "open_total": len(_steps),
+                     "options": [str(o) for o in (_ask.get("options") or [])][:6]}
+            on_event("hitl.request", session=sess["id"], reason="asked",
+                     question=_q, open=_steps, total=len(_steps),
+                     rounds=_kg_rounds)
+            msgs.append({"role": "assistant", "content": answer})
+            break
         _batch = _batch_items(act) if isinstance(act, dict) else []
         if isinstance(act, dict) and act.get("action") == "batch" and _batch:
             # JAG-533: several INDEPENDENT calls in one turn, run concurrently.
@@ -3958,7 +4023,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "unneeded, mark it 'superseded' with a SPECIFIC reason saying "
                         "WHY. Use todo.update for EVERY open step — do not skip any. "
                         "When the list is fully closed (0 open), your next message will "
-                        "be accepted as the final answer. Open now:\n%s"
+                        "be accepted as the final answer. If a step genuinely needs the "
+                        "OPERATOR's decision, call human.ask instead of closing it on a "
+                        "guess. Open now:\n%s"
                         % (len(_open), _open_todo_brief(sess)[1]), "continue")
                 else:
                     _inject(
@@ -3980,28 +4047,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                      open=len(_open), total=len(_nodes), rounds=_kg_rounds,
                      difficulty=_diff_level,
                      duration_s=round(time.time() - _kg_started, 1))
-            # JAG-171: HUMAN IN THE LOOP — never end on prose with open todos; ask
-            # the operator how to proceed (continue / close / replan / stop).
-            # JAG-189: but NOT on a user_pivot stop — the user is actively
-            # chatting, so the reply is theirs; the paused plan needs no gate.
-            # JAG-295: and NEVER on a headless turn (a JOB/routine, autonomous):
-            # there is nobody to answer, so the turn just stops.
-            if _kg.hitl_gate(_dec["reason"], _open,
-                             autonomous=(autonomous and not goal_mode)):
-                _hitl = {"reason": _dec["reason"],
-                         "open": [{"id": n.get("id"), "label": n.get("label", "")}
-                                  for n in _open[:8]],
-                         "open_total": len(_open)}  # JAG-431r4b: card payload
-                                        # truncated to 8 for compactness —
-                                        # always carry the TRUE count too so
-                                        # the bubble text reports it.
-                on_event("hitl.request", session=sess["id"], reason=_dec["reason"],
-                         open=_hitl["open"], total=len(_nodes), rounds=_kg_rounds)
+            # EV-39: the stop is RECORDED, never escalated on its own. The HUMAN
+            # IN THE LOOP card belongs to `human.ask` — the agent's judgement — so
+            # a pause with open steps is information for the operator (the plan
+            # panel and this event), not a card the harness decides to raise.
         for ch, t in collected:
             on_delta(ch, t)
         final_answer, think = answer, think
         break
-    if (not final_answer and not _is_aborted(sess["id"])
+    if (not final_answer and not _hitl and not _is_aborted(sess["id"])
             and not (goal_mode and _kg_stop_reason)):
         # JAG-78b: the loop ran out of tool steps without a prose answer — force
         # one, but BUFFER it. Streaming it live leaked raw tool-call JSON into
@@ -4051,15 +4105,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     if trace:
         trace.span("llm.chat", model=model, context=ctx_stats)
         trace.llm_call(msgs, answer + think)
-    # JAG-449: HARDEN "never end on open todos". The keepgoing stop block raises
-    # the human gate, but the loop can ALSO end by exhausting its tool-iteration
-    # budget (`while iters < CHAT_TOOL_MAX_ITERS`) or via an early artifact /
-    # term-action acceptance — paths that never reach that block, so `_hitl` was
-    # never set and the turn ended SILENTLY with the model's OWN steps still open
-    # (observed live: the Master room reported "audit complete" with 4 steps still
-    # open, four of them marked todo, and nothing for the user to act on).
-    # Raise the gate HERE for every remaining exit path. Explicit user goals have
-    # a human present even though their model turn is autonomous.
+    # JAG-449: HARDEN "never end on open todos". The keepgoing stop block used to
+    # raise the human gate here; EV-39 moved the card to the `human.ask` tool, so
+    # what remains is the HONEST STATUS of the turn: an explicit `/goal` that did
+    # not reach evidence-backed completion says so, and a stop with open steps is
+    # published as `plan.stopped` (the operator sees the list; no card is opened
+    # on the agent's behalf). Explicit user goals have a human present even though
+    # their model turn is autonomous.
     _goal_incomplete = False
     if (not _hitl and not _user_pivot and (not autonomous or goal_mode) and not plan_only
             and not _is_aborted(sess["id"])):
@@ -4070,37 +4122,30 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _goal_incomplete = goal_mode and not taskgraph.goal_complete(_g2)
         except Exception:  # noqa: BLE001 — the gate must never break a turn
             _all2, _open2, _goal_incomplete = [], [], goal_mode
-        if _open2:
-            # JAG-501: report the REAL cause, not a hard-coded "step_budget". The
-            # live card said "step_budget · 0 rounds · undefined" while the turn
-            # had actually ended on an unparsed action, which read like a budget
-            # exhaustion that never happened. `_kg_stop_reason` is set by every
+        _reason2 = _kg_stop_reason or "open_todos"
+        if _open2 and not _kg_stop_reason:
+            # JAG-501: report the REAL cause. `_kg_stop_reason` is set by every
             # typed stop; when the loop ended without one, the honest cause is
-            # "open_todos".
-            _reason2 = _kg_stop_reason or "open_todos"
-            _hitl = {"reason": _reason2,
-                     "open": [{"id": n.get("id"), "label": n.get("label", "")}
-                              for n in _open2[:8]],
-                     "open_total": len(_open2)}
+            # "open_todos". Guarded so one stop is not published twice.
             on_event("plan.stopped", session=sess["id"], reason=_reason2,
                      open=len(_open2), total=len(_all2), rounds=_kg_rounds,
                      duration_s=round(time.time() - _kg_started, 1),
                      difficulty=_diff_level)
-            on_event("hitl.request", session=sess["id"], reason=_reason2,
-                     open=_hitl["open"], total=len(_all2), rounds=_kg_rounds)
     meta = {"model": model, "node": _cur_node()}
     content = answer.strip()
     if _hitl:
-        # JAG-171: the turn stopped with open todos → the visible reply is the
-        # human gate, not the model's prose report.
-        # JAG-431r4b: `_hitl["open"]` is truncated to 8 for the card payload —
-        # the visible count must reflect the TRUE number of open steps, otherwise
-        # the bubble says "8 open step(s)" while the card actually hides the rest.
+        # EV-39: the turn asked the operator (human.ask). The visible reply is the
+        # QUESTION — the model's own prose was written before the human answered,
+        # so showing it would read as a conclusion nobody agreed to.
         _hitl_count = _hitl.get("open_total") or len(_hitl["open"])
-        content = ("⏸ Paused: %d open step(s) await your decision "
+        content = ("⏸ Your decision is needed: %s" % _hitl["question"]
+                   if _hitl.get("question") else
+                   "⏸ Paused: %d open step(s) await your decision "
                    "(see the HUMAN IN THE LOOP card)." % _hitl_count)
         meta = {"model": model, "hitl": True, "node": _cur_node(),
                 "open": len(_hitl["open"]), "reason": _hitl["reason"],
+                "question": _hitl.get("question") or "",
+                "options": _hitl.get("options") or [],
                 "hitl_open": _hitl["open"]}   # JAG-295: replayable card payload
     elif _goal_incomplete:
         _reason = _kg_stop_reason or "goal_incomplete"

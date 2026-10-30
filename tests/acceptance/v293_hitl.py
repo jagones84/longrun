@@ -44,9 +44,11 @@ with open(os.path.join(REPO, "src", "longrun", "core/server.py"), encoding="utf-
     srv = f.read()
 with open(os.path.join(REPO, "src", "longrun", "agent/agent.py"), encoding="utf-8") as f:
     srv += f.read()
-check("the server gates user goals but not headless autonomous jobs",
-      '_kg.hitl_gate(_dec["reason"], _open,' in srv
-      and "autonomous=(autonomous and not goal_mode)" in srv)
+check("the card is the AGENT's call (human.ask), never a harness stop reflex",
+      "_human_ask_args(act)" in srv and '"reason": "asked"' in srv
+      and '_kg.hitl_gate(_dec["reason"], _open,' not in srv)
+check("a headless turn cannot park for a human who is not there",
+      "nobody is attached" in srv)
 check("the server persists the open list (hitl_open)",
       '"hitl_open": _hitl["open"]' in srv)
 check("append_message merges meta FLAT into the message",
