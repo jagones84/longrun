@@ -352,7 +352,12 @@ def namespaces(allow=None) -> dict:
         row["tools"] += 1
         if t.get("enabled", True):
             row["enabled"] += 1
-        if registry.in_scope(name, allow):
+        if t.get("enabled", True) and registry.in_scope(name, allow):
+            # A DISABLED namespace is never admitted: `in_scope` only answers the
+            # role question, so a namespace switched off in config could still be
+            # listed as admitted and the report contradicted itself. Measured
+            # 2026-10-30: MCP server `time` (disabled) appeared in `admitted` and
+            # not in `enabled`, failing v718 A7.
             row["admitted"] += 1
     admitted = sorted(n for n, r in rows.items() if r["admitted"])
     return {"ok": True,
