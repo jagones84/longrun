@@ -472,11 +472,24 @@ def report(out, rows, parity):
     if ranked:
         ranked.sort(key=lambda kv: kv[1], reverse=True)
         best, best_v = ranked[0]
-        tail = ("" if len(ranked) == 1 else
-                " (next: %s)" % ", ".join("%s %.3f" % (n, v) for n, v in ranked[1:]))
-        lines += ["", "**Better on this run:** `%s` at %.3f%s. A raw model with no "
-                  "tools is the floor: an arm that does not beat it is not paying "
-                  "for itself." % (best, best_v, tail)]
+        tied = len(ranked) > 1 and ranked[0][1] == ranked[1][1]
+        if best_v <= 0 or tied:
+            # A run where every arm scores 0 has no winner: naming the floor
+            # "better" would read as a result when nothing was produced. Measured
+            # 2026-10-30: a single-arm raw run printed "Better on this run: raw at
+            # 0.000", which is the opposite of what the number says.
+            lines += ["", "**No arm beat the floor on this run:** best is `%s` at "
+                      "%.3f%s. A raw model with no tools is the floor: an arm that "
+                      "does not beat it is not paying for itself."
+                      % (best, best_v,
+                         (" (tied: %s)" % ", ".join("%s %.3f" % (n, v) for n, v in ranked))
+                         if tied else "")]
+        else:
+            tail = ("" if len(ranked) == 1 else
+                    " (next: %s)" % ", ".join("%s %.3f" % (n, v) for n, v in ranked[1:]))
+            lines += ["", "**Better on this run:** `%s` at %.3f%s. A raw model with no "
+                      "tools is the floor: an arm that does not beat it is not paying "
+                      "for itself." % (best, best_v, tail)]
     text = "\n".join(lines) + "\n"
     (Path(out) / "compare.md").write_text(text, encoding="utf-8")
     return payload, text

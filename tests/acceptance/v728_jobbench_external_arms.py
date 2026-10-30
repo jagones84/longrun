@@ -314,6 +314,12 @@ check("M6 the report orders the arms raw -> longrun -> harness2, always",
 check("M7 the report states WHO is better, and the raw floor",
       "**Better on this run:**" in _text3 and "`longrun` at 0.600" in _text3
       and "floor" in _text3, _text3[-400:])
+_zero = [{"task": "t/1", "arm": a, "delivered": 1, "ok": True,
+          "score": {"ok": True, "score": 0.0, "max": 72.0}} for a in JC.ARM_ORDER]
+_payload0, _text0 = JC.report(os.path.join(TMP, "report0"), _zero, {"judge_model": "j"})
+check("M8 an all-zero run crowns nobody (the floor is not a winner)",
+      "**Better on this run:**" not in _text0 and "No arm beat the floor" in _text0,
+      _text0[-400:])
 
 # N — adding the other arms must not pay for the sweep twice ----------------
 _prev = os.path.join(TMP, "prevrun")
