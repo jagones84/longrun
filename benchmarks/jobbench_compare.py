@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -275,6 +276,35 @@ def harness2_command(tasks, solver_model, extra=""):
     return cmd + ([extra] if extra else [])
 
 
+def _kill_tree(proc, grace=5.0):
+    """Stop a sweep AND everything it spawned — a budget that leaks agents is not one.
+
+    The sweep is started in its own session (`start_new_session=True`), so its pid
+    is also its process-group id: SIGTERM the group, then SIGKILL whatever ignored
+    it. Measured 2026-10-30: killing only the sweep's pid left an OpenCode/bun
+    rollout alive and still calling the model after the budget had expired.
+    """
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        pgid = os.getpgid(proc.pid)
+    except OSError:
+        pgid = None
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        if pgid is None:
+            proc.kill()
+            return
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            return
+        try:
+            proc.wait(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
 def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
                  timeout, judge_timeout, dry_run=False, reuse=None):
     """Run Harness²'s own sweep, then grade ITS `model_output/` with the same judge.
@@ -317,6 +347,11 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
         print("  harness2 (dry-run): %s" % " ".join(cmd), flush=True)
         return [], meta
     t0 = time.time()
+    # A Popen, not `run(timeout=)`: Harness² fans out into a process TREE (a sweep
+    # python -> OpenCode/bun -> the model calls). Killing only the sweep's own pid
+    # leaves those grandchildren alive and still spending, so the budget must be
+    # enforced on the whole process GROUP and nothing may outlive it.
+    proc = None
     try:
         # `stdin=DEVNULL` is LOAD-BEARING, not hygiene: Harness²'s proposer step
         # launches the OpenCode CLI without `stdin=` of its own, so the child would
@@ -325,21 +360,43 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
         # measured: inherit -> hung at 45 s, DEVNULL -> answers in 5 s, a closed
         # pipe -> answers in 22 s. Without this the sweep's rollouts finish and its
         # three improver sessions hang until the timeout kills the sweep.
-        r = subprocess.run(cmd, cwd=str(DEFAULT_HARNESS2), env=env, text=True,
-                           stdin=subprocess.DEVNULL, capture_output=True,
-                           timeout=timeout)
-        meta.update({"returncode": r.returncode, "stderr_tail": (r.stderr or "")[-1200:],
-                     "stdout_tail": (r.stdout or "")[-1200:],
+        proc = subprocess.Popen(cmd, cwd=str(DEFAULT_HARNESS2), env=env, text=True,
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True)
+        out_s, err_s = proc.communicate(timeout=timeout)
+        meta.update({"returncode": proc.returncode, "stderr_tail": (err_s or "")[-1200:],
+                     "stdout_tail": (out_s or "")[-1200:],
                      "duration_s": round(time.time() - t0, 1)})
+        meta["status"] = "ok" if proc.returncode == 0 else "failed"
+    except subprocess.TimeoutExpired as e:
+        # A BUDGET is not a failure. Harness² writes each label's files under
+        # `model_output/` as that rollout finishes, so a sweep cut at the wall-clock
+        # budget has still delivered whatever it completed — and that is exactly
+        # what a time-budgeted comparison wants to measure. Throwing the labels
+        # away (the old behaviour) turned a slow arm into "no data" instead of
+        # "this much quality in this much time". Measured 2026-10-30: one task is
+        # 7 opencode sessions of 40-100 steps, ~55 min end to end.
+        _kill_tree(proc)
+        meta.update({"status": "timeout", "duration_s": round(time.time() - t0, 1),
+                     "error": "sweep exceeded the %.0fs budget" % timeout,
+                     "stdout_tail": str(getattr(e, "output", "") or "")[-1200:],
+                     "stderr_tail": str(getattr(e, "stderr", "") or "")[-1200:]})
+        _write(arm / "command.json", meta)
+        print("  harness2 hit the %.0fs budget: grading what it delivered" % timeout,
+              flush=True)
+        return _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key,
+                               judge_timeout, elapsed=meta["duration_s"],
+                               timed_out=True), meta
     except (OSError, subprocess.SubprocessError) as e:
+        _kill_tree(proc)
         meta.update({"error": str(e), "duration_s": round(time.time() - t0, 1)})
         _write(arm / "command.json", meta)
         print("  harness2 FAILED to start: %s" % e, flush=True)
         return [], meta
-    meta["status"] = "ok" if r.returncode == 0 else "failed"
     _write(arm / "command.json", meta)
     return _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key,
-                           judge_timeout), meta
+                           judge_timeout, elapsed=meta.get("duration_s"),
+                           timed_out=meta["status"] != "ok"), meta
 
 
 def _h2_deliverables(label_dir):
@@ -359,13 +416,18 @@ def _h2_deliverables(label_dir):
                   if f.is_file() and not f.name.startswith("."))
 
 
-def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_timeout):
+def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_timeout,
+                    elapsed=None, timed_out=False):
     """Grade ITS `model_output/`: `<runs>/jb/dataset/<prof>/<task>/model_output/<label>`.
 
     Harness² is a SELF-IMPROVING harness: one sweep writes several labels (the
     `base1` baseline, then the improved attempts). The newest label is the arm's
     result, and `base1` is graded too — "what did the improvement buy" is the whole
     point of that harness, and a single number would hide it.
+
+    `elapsed`/`timed_out` carry the sweep's wall clock and whether it was cut at
+    the budget: a graded label is not the same claim as "the sweep finished", so
+    both travel with every row instead of being inferred later.
     """
     rows = []
     for task in tasks:
@@ -375,7 +437,8 @@ def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_tim
                         key=lambda p: p.stat().st_mtime) if base.is_dir() else []
         if not labels:
             rows.append({"task": task["id"], "arm": "harness2", "ok": False,
-                         "error": "no model_output under %s" % base, "score": None})
+                         "error": "no model_output under %s" % base, "score": None,
+                         "duration_s": elapsed, "timed_out": bool(timed_out)})
             continue
         slug = _slug(task["id"])
 
@@ -390,7 +453,8 @@ def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_tim
         row = {"task": task["id"], "arm": "harness2", "ok": bool(sc.get("ok")),
                "error": sc.get("error") or "", "delivered": len(files),
                "files": files[:40], "label": run_dir.name, "score": sc,
-               "labels": [p.name for p in labels]}
+               "labels": [p.name for p in labels],
+               "duration_s": elapsed, "timed_out": bool(timed_out)}
         baseline = next((p for p in labels if p.name.endswith("base1")), None)
         if baseline is not None and baseline != run_dir:
             b_sc, b_files = _scored(baseline, "baseline")
@@ -419,6 +483,15 @@ def _arm_rank(name):
     return ARM_ORDER.index(name) if name in ARM_ORDER else len(ARM_ORDER)
 
 
+def _secs(value):
+    """A duration for the report: seconds under a minute, minutes above, `-` when absent."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    return ("%.1fs" % v) if v < 60 else ("%.1fmin" % (v / 60.0))
+
+
 def report(out, rows, parity):
     """`compare.json` + `compare.md`: per-task numbers and the parity block."""
     def _ratio(r):
@@ -432,9 +505,11 @@ def report(out, rows, parity):
     for r in rows:
         a = arms.setdefault(r["arm"], {"tasks": 0, "delivered": 0, "scored": 0,
                                        "ratio_sum": 0.0, "ratio_n": 0,
-                                       "tokens": None, "usd": None})
+                                       "tokens": None, "usd": None, "time_s": 0.0})
         a["tasks"] += 1
         a["delivered"] += 1 if r.get("delivered") else 0
+        if r.get("duration_s") is not None:
+            a["time_s"] += float(r["duration_s"])
         rt = _ratio(r)
         if rt is not None:
             a["scored"] += 1
@@ -451,7 +526,7 @@ def report(out, rows, parity):
     summary = {}
     for name, a in arms.items():
         summary[name] = {"tasks": a["tasks"], "delivered": a["delivered"],
-                         "scored": a["scored"],
+                         "scored": a["scored"], "time_s": round(a["time_s"], 1),
                          "tokens": a["tokens"], "usd": (round(a["usd"], 6)
                                                         if a["usd"] is not None else None),
                          "mean_ratio": round(a["ratio_sum"] / a["ratio_n"], 4)
@@ -466,23 +541,30 @@ def report(out, rows, parity):
              "| parity | value |", "|---|---|"]
     for k, v in sorted(parity.items()):
         lines.append("| %s | `%s` |" % (k, v))
-    lines += ["", "| task | arm | delivered | score | max | ratio | note |",
-              "|---|---|---|---|---|---|---|"]
+    lines += ["", "| task | arm | delivered | score | max | ratio | time | note |",
+              "|---|---|---|---|---|---|---|---|"]
     for r in sorted(rows, key=lambda x: (x["task"], _arm_rank(x["arm"]))):
         sc = r.get("score") or {}
         rt = _ratio(r)
         note = sc.get("error") or r.get("error") or ""
-        lines.append("| %s | %s | %s | %s | %s | %s | %s |"
+        if r.get("timed_out"):
+            # "graded at the budget" is a different claim from "finished": saying
+            # it in the row is what keeps a truncated sweep from reading as a
+            # complete one.
+            note = ("cut at the budget; " + note) if note else "cut at the budget"
+        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s |"
                      % (r["task"], r["arm"], r.get("delivered", 0),
                         sc.get("score", "-"), sc.get("max", "-"),
                         ("%.3f" % rt) if rt is not None else "-",
+                        _secs(r.get("duration_s")),
                         str(note)[:60].replace("|", "/")))
-    lines += ["", "| arm | tasks | delivered | scored | mean ratio | tokens | usd |",
-              "|---|---|---|---|---|---|---|"]
+    lines += ["", "| arm | tasks | delivered | scored | mean ratio | time | tokens | usd |",
+              "|---|---|---|---|---|---|---|---|"]
     for name in sorted(summary, key=_arm_rank):
         s = summary[name]
-        lines.append("| %s | %s | %s | %s | %s | %s | %s |"
+        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s |"
                      % (name, s["tasks"], s["delivered"], s["scored"], s["mean_ratio"],
+                        _secs(s["time_s"]),
                         s["tokens"] if s["tokens"] is not None else "-",
                         ("$%.4f" % s["usd"]) if s["usd"] is not None else "-"))
     ranked = [(n, s["mean_ratio"]) for n, s in summary.items() if s["mean_ratio"] is not None]
@@ -531,6 +613,11 @@ def main(argv=None):
     ap.add_argument("--rebuild-index", action="store_true",
                     help="only rebuild <runs>/INDEX.md from the existing run.json files")
     ap.add_argument("--timeout", type=float, default=2400.0, help="per-task solver timeout")
+    ap.add_argument("--harness2-timeout", type=float, default=0.0,
+                    help="wall-clock budget for the whole Harness² sweep (0 = "
+                         "--timeout x tasks). Harness² is a multi-session pipeline "
+                         "(base + INV/DOM + AGG), so this is a budget: whatever it "
+                         "delivered when it runs out is graded and flagged")
     ap.add_argument("--judge-timeout", type=float, default=3600.0)
     ap.add_argument("--keep-sessions", action="store_true")
     ap.add_argument("--max-steps", type=int, default=40,
@@ -560,8 +647,12 @@ def main(argv=None):
     if not tasks:
         print("no JobBench task matched profession=%r" % args.profession)
         return 2
-    out = Path(args.out) if args.out else default_out(arms, args.model, len(tasks),
-                                                      scope=args.profession or "all")
+    out = (Path(args.out) if args.out else default_out(arms, args.model, len(tasks),
+                                                       scope=args.profession or "all")).resolve()
+    # ABSOLUTE, always: the run folder is handed to the Harness² child in
+    # `HARNESS2_RUNS_DIR`, and that child resolves it against ITS cwd (the Harness²
+    # checkout). Measured 2026-10-30: a relative --out put the whole sweep — and its
+    # model_output — inside the upstream repo, where grading never looked.
     os.makedirs(out, exist_ok=True)
     started = time.strftime("%Y-%m-%dT%H:%M:%S")
     write_manifest(out, run_id=out.name, suite=SUITE, started=started,
@@ -614,7 +705,8 @@ def main(argv=None):
             got, meta = run_harness2(tasks, out, solver_model=h2_model,
                                      judge_model=args.judge_model,
                                      judge_base=args.judge_base, key=key,
-                                     timeout=max(args.timeout * len(tasks), 3600),
+                                     timeout=(args.harness2_timeout
+                                              or args.timeout * len(tasks)),
                                      judge_timeout=args.judge_timeout,
                                      dry_run=args.harness2_dry_run,
                                      reuse=args.harness2_from)

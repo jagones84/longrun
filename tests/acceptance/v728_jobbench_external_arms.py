@@ -169,6 +169,34 @@ check("H5 no child of the driver may inherit an open stdin",
       and "stdin=subprocess.DEVNULL" in open(
           os.path.join(REPO, "benchmarks", "jobbench_judge.py"), encoding="utf-8").read(),
       "run_harness2 and judge must both pass stdin=DEVNULL")
+# A BUDGET, not a failure: Harness² writes each label's files as that rollout ends,
+# so a sweep cut at the wall clock has still delivered something. Discarding those
+# labels turned a slow arm into "no data" instead of "this much quality in this much
+# time" — measured 2026-10-30, one task is 7 OpenCode sessions and ~55 min.
+_h2repo = os.path.join(TMP, "h2repo")
+os.makedirs(os.path.join(_h2repo, ".venv", "bin"), exist_ok=True)
+_py = os.path.join(_h2repo, ".venv", "bin", "python")
+with open(_py, "w", encoding="utf-8") as f:
+    f.write("#!/bin/sh\nsleep 5\n")
+os.chmod(_py, 0o755)
+_orig_repo = JC.DEFAULT_HARNESS2
+JC.DEFAULT_HARNESS2 = type(_orig_repo)(_h2repo)
+try:
+    _rows_to, _meta_to = JC.run_harness2(
+        tasks, os.path.join(TMP, "h2budget"), solver_model="openrouter/x",
+        judge_model="j", judge_base="u", key="k", timeout=1, judge_timeout=60)
+finally:
+    JC.DEFAULT_HARNESS2 = _orig_repo
+check("H6 a sweep cut at the budget is GRADED, not thrown away",
+      _meta_to.get("status") == "timeout" and len(_rows_to) == 1
+      and _rows_to[0].get("timed_out") is True
+      and _rows_to[0].get("duration_s") is not None,
+      (_meta_to.get("status"), _rows_to))
+check("H7 the budget is a wall clock on the whole process tree",
+      'args.harness2_timeout' in _h2src
+      and "max(args.timeout * len(tasks), 3600)" not in _h2src
+      and "start_new_session=True" in _h2src and "os.killpg(pgid" in _h2src,
+      "a 1 h floor would make a short run impossible, and a sweep leaves agents running")
 
 # I ----------------------------------------------------------------------
 SRC = open(os.path.join(REPO, "benchmarks", "longrun_adapter.py"), encoding="utf-8").read()
