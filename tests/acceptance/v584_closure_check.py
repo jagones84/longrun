@@ -59,8 +59,10 @@ check("F4b three silent ends consult the raw check",
 check("F4b2 the explicit-finish gate consults _finish_gated once",
       _SRC.count("_selfcheck_left > 0 and _finish_gated(sess, goal_mode)") == 1,
       _SRC.count("_selfcheck_left > 0 and _finish_gated(sess, goal_mode)"))
-check("F4c every check decrements and re-enters bounded (v592 added the 4th)",
-      _SRC.count("_selfcheck_left -= 1") == 4)
+check("F4c every check decrements and re-enters bounded (v592 added the 4th; "
+      "EV-41 added the failed-call verdict in the finish + prose paths)",
+      _SRC.count("_selfcheck_left -= 1") == 6,
+      _SRC.count("_selfcheck_left -= 1"))
 check("F4d a finish WITH open work faces the check (v592 done-gate); a clean "
       "finish still disarms it",
       "_closure_check_prompt" in _seg and "_finish_gated(" in _seg)

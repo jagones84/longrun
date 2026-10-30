@@ -8,6 +8,7 @@ Policy (allowlist / approval) is enforced by the caller (server.py) via
 registry.classify(); this module only *runs* an already-permitted action.
 """
 
+import difflib
 import ipaddress
 import json
 import os
@@ -2487,6 +2488,31 @@ _DISPATCH = {"shell": _shell, "shell.exec": _shell,
 
 
 def normalize_args(tool: str, args: Any) -> Any:
+    """Repair the two shapes a model gets wrong without changing the request.
+
+    (a) one extra `{"args": {...}}` layer wrapping a flat argument object;
+    (b) a SINGLE value wrapped in a one-element list where the schema declares a
+        scalar (`{"tool_id": ["x"]}`) — that is one value, not a batch, so it is
+        unwrapped instead of spending a round on a usage error. A list with more
+        than one element is NOT coerced: the tool takes one value per call and
+        `_shape_notes` says so.
+    """
+    args = _unwrap_nested_args(tool, args)
+    if not isinstance(args, dict):
+        return args
+    props = _schema_props(tool)
+    out = args
+    for key, value in args.items():
+        spec = props.get(key) or {}
+        if (spec.get("type") in _SCALAR_TYPES
+                and isinstance(value, (list, tuple)) and len(value) == 1):
+            if out is args:
+                out = dict(args)
+            out[key] = value[0]
+    return out
+
+
+def _unwrap_nested_args(tool: str, args: Any) -> Any:
     """Unwrap one duplicate args layer when schema-required keys prove it safe."""
     if not isinstance(args, dict):
         return args
@@ -2574,9 +2600,66 @@ def _missing_any_of(tool: str, args: Any) -> list[list[str]]:
     return groups
 
 
+#: JSON-schema types that hold ONE value. A model that wraps one of these in a
+#: list has wrapped a single value, not asked for a batch (see `_shape_notes`).
+_SCALAR_TYPES = ("string", "number", "integer", "boolean")
+
+
+def _schema_props(tool: str) -> dict:
+    """The declared properties of a tool's argument object ({} when unknown)."""
+    try:
+        from longrun.tools import registry
+        schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
+        return dict(schema.get("properties") or {})
+    except Exception:  # noqa: BLE001 — validation must never block a call
+        return {}
+
+
+def _shape_notes(tool: str, args: Any) -> list[tuple[str, str]]:
+    """Problems with the SHAPE of the arguments: (kind, message) pairs.
+
+    `kind` is "unknown" (a key this tool does not declare) or "scalar" (a list
+    where the schema declares ONE value). Measured 2026-10-30:
+    `pmcp__gateway.describe` was called with `{"tool_ids": [...]}` twice — the
+    reply only said "missing REQUIRED argument(s) 'tool_id'", which reads as "you
+    passed nothing" to a model that DID pass a similar key, so it repeated the
+    call and then closed the turn. An unknown key must be named, with the
+    accepted arguments, or the model cannot see its own mistake.
+    """
+    props = _schema_props(tool)
+    if not isinstance(args, dict) or not props:
+        return []
+    notes = []
+    for key, value in args.items():
+        if str(key).startswith("_"):
+            continue
+        spec = props.get(key)
+        if spec is None:
+            near = difflib.get_close_matches(str(key), list(props), n=1, cutoff=0.6)
+            notes.append(("unknown",
+                          "unknown argument %r%s — %s accepts: %s"
+                          % (key, (" (did you mean %r?)" % near[0]) if near else "",
+                             tool, ", ".join(sorted(props)))))
+            continue
+        ptype = (spec or {}).get("type")
+        if ptype in _SCALAR_TYPES and isinstance(value, (list, tuple, dict)):
+            if isinstance(value, (list, tuple)):
+                n = len(value)
+                shape = "a list of %d" % n
+            else:
+                n = 1
+                shape = "an object"
+            notes.append(("scalar",
+                          "%r must be a %s, you sent %s%s"
+                          % (key, ptype, shape,
+                             " — this tool takes ONE value per call" if n > 1 else "")))
+    return notes
+
+
 def _missing_args_reply(tool: str, missing: list[str],
                         empty: list[str] | None = None,
-                        missing_any: list[list[str]] | None = None) -> dict[str, Any]:
+                        missing_any: list[list[str]] | None = None,
+                        args: Any = None) -> dict[str, Any]:
     """A failure that teaches: which args are required, their types, the example."""
     empty = list(empty or [])
     missing_any = list(missing_any or [])
@@ -2597,19 +2680,24 @@ def _missing_args_reply(tool: str, missing: list[str],
         groups = [" + ".join(group) for group in missing_any]
         problems.append("provide at least one REQUIRED argument set: %s"
                         % " OR ".join(groups))
+    # The key the model actually sent may simply not exist on this tool: without
+    # naming it, the reply reads as "you passed nothing".
+    shape = [text for _kind, text in _shape_notes(tool, args)] if args is not None else []
+    problems.extend(shape)
     required = list(full.get("required") or missing or empty)
     arg_names = list(dict.fromkeys(
         required + [name for group in missing_any for name in group]))
     return {"ok": False, "tool": tool, "exit_code": 64,
             "missing_args": missing, "empty_args": empty,
-            "missing_any_of": missing_any,
+            "missing_any_of": missing_any, "shape_problems": shape,
             "error": ("%s: %s. Required: %s. "
-                      "Arg types: %s. Example call: %s"
+                      "Arg types: %s. Accepted arguments: %s. Example call: %s"
                       % (tool, "; ".join(problems),
                          ", ".join(required) or (" OR ".join(
                              " + ".join(group) for group in missing_any)),
                          {name: (props.get(name) or {}).get("type")
                           for name in arg_names},
+                         ", ".join(sorted(props)) or "(none)",
                          {"action": "tool", "tool": tool,
                           "args": full.get("example_args") or {}})),
             "schema": {"required": required,
@@ -2623,7 +2711,14 @@ def _dispatch_execute_raw(tool, args, run_id=None):
     empty = _empty_required(tool, args)
     missing_any = _missing_any_of(tool, args)
     if missing or empty or missing_any:
-        return _missing_args_reply(tool, missing, empty, missing_any)
+        return _missing_args_reply(tool, missing, empty, missing_any, args=args)
+    # A value the tool CANNOT use (a list where the schema declares one value) is
+    # a broken call even when every required NAME is present: without this the
+    # handler received the raw list and failed later with a nonsense message
+    # ("no such file: ['/tmp/a', '/tmp/b']") the model cannot act on.
+    _scalar = [text for kind, text in _shape_notes(tool, args) if kind == "scalar"]
+    if _scalar:
+        return _missing_args_reply(tool, [], [], [], args=args)
     fn = _DISPATCH.get(tool)
     injected_action = None
     if fn is None and "." in str(tool or "") and "__" not in str(tool or ""):

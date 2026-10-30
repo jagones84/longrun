@@ -64,6 +64,8 @@ PMCP_PROMPT = (
     "1. `pmcp__gateway.catalog_search` {query} - find the server/tool for a task.\n"
     "2. `pmcp__gateway.describe` {tool_id} - get the exact arguments.\n"
     "3. `pmcp__gateway.invoke` {tool_id:\"server::tool\", arguments:{...}} - run it.\n"
+    "`tool_id` is ONE string per call (`describe`/`invoke` have no batch form): to\n"
+    "inspect or run two tools, call the gateway once per tool_id.\n"
     "Downstream servers are lazy: `invoke` starts them on its own, so NEVER call "
     "`connect_server` first and never assume a server is offline. `invoke` is "
     "approval-gated, so prefer your native tools/skills for local work and use the "
@@ -2443,6 +2445,24 @@ def _closure_check_prompt():
             "of closing.")
 
 
+def _failed_call_check_prompt(error):
+    """The bounded verdict for a turn that ends right AFTER a failed tool call.
+
+    The closure check above is driven by the PLAN: a turn with no open steps is
+    accepted even when its last tool call errored, so the model could close on a
+    failure it never looked at (measured 2026-10-30: `pmcp__gateway.describe`
+    rejected twice, then a prose "done"). This asks the same self-verdict, with
+    the failure in front of it.
+    """
+    return ("Closure check (harness — do not skip): your LAST tool call FAILED — "
+            "%s. If that call matters for what the user asked, fix the arguments "
+            "(the error names the accepted ones) and call the tool again. If your "
+            "answer already covers the task without it, then your reply MUST say "
+            "plainly WHAT failed and why the result still stands, and end with "
+            "{\"action\":\"finish\",\"summary\":\"<the final result>\"}. Never "
+            "present a failed call as a success." % str(error or "")[:300])
+
+
 def _turn_unfinished(sess, goal_mode):
     """True when the turn would close with work still open (never raises)."""
     try:
@@ -3216,6 +3236,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _think_buf = {"t": ""}
     _finished_cleanly = False
     _selfcheck_left = _SELFCHECK_MAX
+    _failed_checked = False   # one failed-call verdict per turn (never a loop)
     while goal_mode or iters < CHAT_TOOL_MAX_ITERS:
         # JAG-517: goal mode bypasses the iteration cap, so enforce its hard
         # wall-clock limit even when the model only emits harness todo actions.
@@ -3777,6 +3798,17 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                    _skill_hints(tool + " " + obs))
             elif len(obs) > CHAT_TOOL_OBS_LIMIT:
                 note = _offload_observation(sess, tool, obs)
+            elif _tool_failed and not _gate_only:
+                # A FAILED call is not a result, so it must not be offered the
+                # same "or report the result" ending as a successful one: a model
+                # that lands here reads permission to stop. Name the failure and
+                # the ONE way forward (the error text already carries the args).
+                note = ("Tool %s FAILED — this is NOT a result, do not report it as "
+                        "done. The error above names the exact contract (accepted "
+                        "arguments and their types): fix the arguments and call the "
+                        "tool again. If it genuinely cannot work, say plainly in "
+                        "your answer WHAT failed and what you did instead.\n\n%s"
+                        % (tool, obs))
             else:
                 note = ("Observation for tool %s:\n%s\n\n"
                         "Continue: call the next tool, or report the result. Keep your "
@@ -3802,6 +3834,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_closure_check_prompt(), "closure-check")
+                continue
+            if (_last_failed_err and not _last_tool_ok and not _failed_checked
+                    and _selfcheck_left > 0 and not _is_aborted(sess["id"])):
+                # A finish that follows a FAILED call must face the failure once.
+                _failed_checked = True
+                _selfcheck_left -= 1
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
                 continue
             _drv = _deliverable_review_text(sess, message, _deliv_since, _deliv_state)
             if _drv:
@@ -4041,6 +4081,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _drv:
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
+                continue
+            if (_last_failed_err and not _last_tool_ok and not _failed_checked
+                    and _selfcheck_left > 0 and not _is_aborted(sess["id"])):
+                # The plan says nothing is open, so this prose answer WOULD be
+                # accepted — but the turn's last real action was a FAILED tool
+                # call. Ask the self-verdict once instead of closing on it.
+                _failed_checked = True
+                _selfcheck_left -= 1
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
                 continue
             _kg_stop_reason = _dec["reason"]
             on_event("plan.stopped", session=sess["id"], reason=_dec["reason"],

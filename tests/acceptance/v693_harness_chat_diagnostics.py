@@ -58,7 +58,8 @@ class ChatDiagnostics(unittest.TestCase):
                 stores.append_message(sess, "user", message)
                 args = {"path": "candidate.json"}
                 action = json.dumps({"action": "tool", "tool": "fs.read", "args": args})
-                answers = iter((action, "Candidate diagnostics recorded."))
+                answers = iter((action, "Candidate diagnostics recorded.",
+                                "Candidate diagnostics recorded."))
                 events = []
 
                 def provider(msgs, model, role, on_delta, **kwargs):
@@ -88,7 +89,10 @@ class ChatDiagnostics(unittest.TestCase):
                         on_event=lambda kind, **data: events.append((kind, data)))
                     network.assert_not_called()
 
-                self.assertEqual(model_calls.call_count, 2)
+                # EV-41: a FAILED tool call earns ONE bounded failure verdict
+                # before the turn may close, so a failing case costs 3 model
+                # calls; a successful one still costs 2 (pin kept meaningful).
+                self.assertEqual(model_calls.call_count, 2 if ok else 3)
                 tool_calls.assert_called_once()
                 self.assertEqual(tool_calls.call_args.args, ("fs.read", args))
                 self.assertEqual(model, "fixture")
