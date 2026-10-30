@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""v702: while a turn runs, a typed prompt SENDS (queue/steer); Stop stays a chip.
+"""v702: while a turn runs, a typed prompt SENDS (queue/steer); Stop stays reachable.
 
 The operator asked for exactly this: during a steer/queue turn the red stop button
 must become send, so the prompt in the chat bar can be queued/steered — without
-losing the panic Stop. The display function is executed for real (Node), not
-grepped, and the routing function is executed with stubs.
+losing the panic Stop. EV-42 (operator, 2026-10-30): the separate LEFT stop chip
+looked like a second button ("si genera il bottone anche a sinistra … perché
+mai???"), so it is gone: the toolbar keeps ONE button, and Esc (caret in the
+composer) stops the running turn when a draft is typed.
+
+The display function is executed for real (Node), not grepped, and the routing
+function is executed with stubs.
 """
 import glob
 import json
@@ -54,7 +59,6 @@ const nodes = {
                         toggle(k, on) { on ? this._c.add(k) : this._c.delete(k); },
                         has(k) { return this._c.has(k); }},
             setAttribute(k, v) { this[k] = v; }},
-  stopChip: {hidden: null},
 };
 const $ = id => nodes[id];
 FUNCS
@@ -63,7 +67,6 @@ sendOrStop();
 const b = nodes.sendBtn;
 console.log(JSON.stringify({text: b.textContent, stop: b.classList.has("stop"),
                             title: b.title, label: b["aria-label"],
-                            chipHidden: nodes.stopChip.hidden,
                             stopped: stopped, sent: sent}));
 """
 
@@ -77,18 +80,16 @@ def state(busy, draft, qmode="queue"):
 
 
 class ComposerStopSend(unittest.TestCase):
-    def test_idle_sends_and_hides_the_stop_chip(self):
+    def test_idle_sends(self):
         got = state(False, "", "queue")
         self.assertEqual(got["text"], "↑")
         self.assertFalse(got["stop"])
-        self.assertTrue(got["chipHidden"])
         self.assertEqual((got["stopped"], got["sent"]), (0, 1))
 
     def test_busy_with_an_empty_box_is_the_red_stop(self):
         got = state(True, "   ", "queue")
         self.assertEqual(got["text"], "■")
         self.assertTrue(got["stop"])
-        self.assertFalse(got["chipHidden"])
         self.assertEqual(got["label"], "stop")
         self.assertEqual((got["stopped"], got["sent"]), (1, 0))
 
@@ -98,7 +99,7 @@ class ComposerStopSend(unittest.TestCase):
         self.assertFalse(got["stop"])
         self.assertEqual(got["label"], "send")
         self.assertIn("queue this prompt", got["title"])
-        self.assertFalse(got["chipHidden"])          # Stop stays one click away
+        self.assertIn("Esc stops the turn", got["title"])   # EV-42: one button only
         self.assertEqual((got["stopped"], got["sent"]), (0, 1))
 
     def test_busy_with_a_draft_sends_in_steer_mode(self):
@@ -107,8 +108,10 @@ class ComposerStopSend(unittest.TestCase):
         self.assertIn("steer this prompt", got["title"])
         self.assertEqual((got["stopped"], got["sent"]), (0, 1))
 
-    def test_markup_has_the_stop_chip_and_the_input_refreshes_the_button(self):
-        self.assertIn('id="stopChip" data-call="stopRun"', UI)
+    def test_the_toolbar_has_ONE_button_and_esc_is_the_stop(self):
+        # EV-42: no second stop control on the left; Esc in the composer stops.
+        self.assertNotIn('id="stopChip"', UI)
+        self.assertIn('e.key === "Escape" && composerBusy()', UI)
         self.assertIn("function composerDraft()", UI)
         self.assertIn("skillsAutocomplete(); _renderCmdChips(); refreshSendBtn();", UI)
 

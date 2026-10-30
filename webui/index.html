@@ -856,14 +856,12 @@
   #composerBar #sendBtn:disabled { opacity: .5; cursor: default; }
   #composerBar #sendBtn .kbd { display: none; }
   /* JAG-424: the SAME button IS "stop" while the active session runs — a red square.
-     This removes the separate stop control so the toolbar fits one row. */
+     This removes the separate stop control so the toolbar fits one row.
+     EV-42 (operator, 2026-10-30): the toolbar keeps exactly ONE button. The
+     v702 red chip on the LEFT is gone — the operator saw two stops; Esc (while
+     the caret is in the composer) is the way to stop with a draft typed. */
   #composerBar #sendBtn.stop { background: var(--err); color: #fff; border-radius: 10px; font-size: 14px; }
   #composerBar #sendBtn.stop:hover { filter: brightness(1.1); }
-  /* v702: while a turn runs the big button SENDs a typed prompt (queue/steer);
-     this chip keeps the panic Stop one click away instead of burying it. */
-  #composerBar #stopChip { flex: 0 0 auto; width: 26px; height: 26px; min-width: 26px; padding: 0;
-    border-radius: 8px; background: var(--err); color: #fff; font-size: 11px; line-height: 1; }
-  #composerBar #stopChip[hidden] { display: none; }
   /* JAG-463: queue indicator — a GREEN dot on the (stop) send button while messages are
      waiting to be sent, so "queued" is distinguishable from "idle red stop". */
   #composerBar #sendBtn { position: relative; }
@@ -1998,7 +1996,6 @@
             <option value="queue">queue</option>
             <option value="steer">steer</option>
           </select>
-          <button class="ghost" id="stopChip" data-call="stopRun" title="stop the running turn" aria-label="stop" hidden>■</button>
           <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence">🎙</button>
         </div>
         <div class="cb-right">
@@ -3414,10 +3411,18 @@ let _nowLast = "";
 function _updateNowBar() {
   _updateTreeTools();   // JAG-427: keep the chat tree controls in sync (cheap)
   const bar = $("nowbar"); if (!bar) return;
+  // A "doing" step means a turn is WORKING it. With no turn running it is a
+  // leftover — the plan was closed, the process restarted, or the node was ended
+  // elsewhere — and pinning the bar on it claims work that is not happening
+  // (live 2026-10-30: `A1.n39 (doing)` stayed on screen after the step was done).
+  // Only "blocked" is a real state without a running turn.
+  const _running = !!(sessionId && runningSessions[sessionId]);
   let n = _activeNodeId && _nodeById(_activeNodeId);
+  if (n && n.status === "doing" && !_running) n = null;
   if (!n) {
     const nodes = (typeof planNodes === "function" ? planNodes(graph) : ((graph && graph.nodes) || []));
-    n = nodes.find(x => x.status === "doing") || nodes.find(x => x.status === "blocked") || null;
+    n = (_running ? nodes.find(x => x.status === "doing") : null)
+        || nodes.find(x => x.status === "blocked") || null;
   }
   if (!n) { bar.hidden = true; return; }
   bar.hidden = false;
@@ -8992,11 +8997,11 @@ function setRunning(sid, on) {
   renderRuns();       // JAG-479: the rail's running COUNT follows the real signal
   refreshSendBtn();   // JAG-424: the send button becomes STOP while the ACTIVE turn runs
 }
-/* JAG-424 / v702: ONE composer button. Normally ↑ = send. While the ACTIVE session
-   runs a turn it still SENDS when the box holds text (the queue/steer picker decides
-   what happens to it) and becomes the red ■ only when the box is empty; the panic
-   Stop then lives on the small red chip beside the picker, so stopping never costs a
-   keystroke or a cleared draft. */
+/* JAG-424 / v702 / EV-42: ONE composer button. Normally ↑ = send. While the ACTIVE
+   session runs a turn it still SENDS when the box holds text (the queue/steer picker
+   decides what happens to it) and becomes the red ■ when the box is empty. There is
+   no second stop control: with a draft typed, Esc (caret in the composer) stops the
+   turn — the operator saw the old left chip as a duplicate button. */
 function composerBusy() { return !!(sessionId && runningSessions[sessionId]); }
 function composerDraft() {
   const el = $("inp");
@@ -9018,14 +9023,12 @@ function refreshSendBtn() {
   b.title = busy
     ? (draft
         ? (mode === "steer"
-            ? "steer this prompt into the running turn (Enter)"
-            : "queue this prompt — sent when the turn ends (Enter)")
-        : ("stop agent / chat · "
+            ? "steer this prompt into the running turn (Enter) · Esc stops the turn"
+            : "queue this prompt — sent when the turn ends (Enter) · Esc stops the turn")
+        : ("stop agent / chat (■) · "
            + (qn ? qn + " queued — Enter adds another" : "type to queue or steer")))
     : "send (Enter — Shift+Enter for a newline)";
   b.setAttribute("aria-label", (busy && !draft) ? "stop" : "send");
-  const chip = $("stopChip");
-  if (chip) chip.hidden = !busy;
 }
 /* JAG-218: a turn that finished while you were NOT looking at that session gets
    a bell marker on its rail row + a toast, so a background job that completes is
@@ -14558,6 +14561,11 @@ addEventListener("keydown", e => {
      - the slash menu open (Enter picks the highlighted command),
      - Shift held (Shift+Enter = newline); Ctrl/Cmd+Enter still sends too. */
 $("inp").addEventListener("keydown", e => {
+  // EV-42: with a draft typed the composer button sends, so Esc is the stop —
+  // scoped to the composer so it can never fight a dialog/palette Escape.
+  if (e.key === "Escape" && composerBusy() && !e.isComposing) {
+    e.preventDefault(); stopRun(); return;
+  }
   if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
   const menu = $("slashMenu");
   if (menu && !menu.hidden && _slashItems.length) return;
