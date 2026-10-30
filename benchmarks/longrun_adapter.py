@@ -27,17 +27,46 @@ import urllib.request
 from .protocol import AgentRef, HarnessResult
 
 _ENV_FILE = os.path.expanduser("~/.longrun/config/env")
+_REPO_ENV_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 
 
-def _token_from_env_file():
-    try:
-        with open(_ENV_FILE, encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("LONGRUN_TOKEN="):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
-    except OSError:
-        pass
-    return ""
+def _token_candidates():
+    """Every store a bearer may live in, most-authoritative first.
+
+    The repo `.env` is where `.env.template` documents `LONGRUN_TOKEN`, so it comes
+    before the legacy user file — and the caller VERIFIES the winner against
+    `/api/status` instead of trusting the order, because a stale copy in
+    `~/.longrun/config/env` answers 401 and used to turn a whole benchmark run into
+    a false zero.
+    """
+    out = []
+    for path in (_REPO_ENV_FILE, os.path.join(os.getcwd(), ".env"), _ENV_FILE):
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("LONGRUN_TOKEN="):
+                        tok = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if tok and tok not in out:
+                            out.append(tok)
+                        break
+        except OSError:
+            continue
+    return out
+
+
+def _first_working_token(base, candidates):
+    """The first candidate `/api/status` accepts -> (token, source_index)."""
+    for i, tok in enumerate(candidates):
+        req = urllib.request.Request(base + "/api/status",
+                                     headers={"Authorization": "Bearer " + tok})
+        try:
+            with urllib.request.urlopen(req, timeout=8) as r:
+                if r.status == 200:
+                    return tok, i
+        except (urllib.error.HTTPError, OSError):
+            continue
+    return (candidates[0] if candidates else ""), 0
 
 
 def _git_sha(root):
@@ -57,7 +86,16 @@ class LongrunAdapter:
                  keep_sessions=False, tag=None):
         self.base = (base or os.environ.get("LONGRUN_BASE")
                      or "http://127.0.0.1:8790").rstrip("/")
-        self.token = token or os.environ.get("LONGRUN_TOKEN") or _token_from_env_file()
+        # The bearer that ACTUALLY authenticates wins: an explicit token, else the
+        # env var, else the first dotenv candidate `/api/status` accepts.
+        self.token_source = "argument" if token else ("env" if os.environ.get("LONGRUN_TOKEN")
+                                                      else "")
+        self.token = token or os.environ.get("LONGRUN_TOKEN") or ""
+        if not self.token:
+            cands = _token_candidates()
+            self.token, _idx = _first_working_token(self.base, cands)
+            self.token_source = (("repo .env", "cwd .env", "~/.longrun/config/env")[_idx]
+                                 if cands else "")
         self.model = model
         self.timeout = float(timeout)
         self.repo = repo or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -102,6 +140,7 @@ class LongrunAdapter:
             "version": status.get("version") or selfinfo.get("version"),
             "git_sha": _git_sha(self.repo),
             "base_url": self.base,
+            "token_source": self.token_source,
             "model": self.model or status.get("model") or status.get("default_model"),
             "router": selfinfo.get("router"),
             "policy": self._policy,
@@ -184,9 +223,19 @@ class LongrunAdapter:
                       {"model": self.model})
         ws = task.get("workspace")
         if ws:
-            self._req("POST", "/api/sessions/%s/workspace" % urllib.parse.quote(sid),
-                      {"workspace": ws})
-        return AgentRef(id=title, session=sid, meta={"task": task.get("id")})
+            # The session workspace is `POST /api/workspace {session, workspace}`
+            # (api_v02.py:2410). This used to POST /api/sessions/<id>/workspace,
+            # which has NO route — a 404 nobody read, so an external benchmark
+            # silently measured an agent locked out of its own task folder.
+            st, obj = self._req("POST", "/api/workspace",
+                                {"session": sid, "workspace": ws}, timeout=15)
+            if st != 200 or obj.get("ok") is False:
+                return AgentRef(id=title, session=sid,
+                                meta={"task": task.get("id"),
+                                      "error": "workspace refused: %s"
+                                               % (obj.get("error") or st)})
+        return AgentRef(id=title, session=sid,
+                        meta={"task": task.get("id"), "workspace": ws or ""})
 
     def send_task(self, ref, prompt, timeout=None):
         t0 = time.time()

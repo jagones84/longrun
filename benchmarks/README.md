@@ -73,6 +73,29 @@ container orchestration, hidden tests and judge models; re-implementing them wou
 silently drift from the leaderboard. This repo produces the prediction artifact
 (plus a `summary.json` with provenance) and hands it to the official runner.
 
+## JobBench — the official suite, both harnesses, one judge (EV-23)
+
+`jobbench.py` / `jobbench_judge.py` / `jobbench_compare.py` drive the JobBench
+tasks shipped with Google's Harness² (arXiv 2610.14224) and grade them with the
+UPSTREAM `eval/judge.py` against each task's `RUBRICS.json`:
+
+```bash
+python3 -m benchmarks.jobbench_compare \
+  --profession biostatisticians --tasks 2 --arms longrun,harness2 \
+  --model openrouter:z-ai/glm-5.3-flash \
+  --judge-model z-ai/glm-5.3-flash --judge-base https://openrouter.ai/api/v1 \
+  --out .agent/BENCHMARKS/runs/$(date +%F)_jobbench_glm53flash
+```
+
+One model, three spellings (`provider:model` for Longrun, `provider/model` for
+Harness²/OpenCode, the bare id for the judge), and one scorer for both arms.
+Longrun is driven over `POST /api/chat`; Harness² has **no task endpoint**, so its
+arm is its own CLI sweep (`harness2 ... --bench jb`) — recorded as an asymmetry in
+every report. Artifacts live under `.agent/BENCHMARKS/` (never in this repo).
+
+A run that delivered nothing is a rubric-weighted **zero**; a judge that could not
+run is `None`, never `0`.
+
 ## Safety
 
 `humaneval.check()` executes candidate code in-process — run it on a trusted or
