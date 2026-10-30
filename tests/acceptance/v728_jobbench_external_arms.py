@@ -185,6 +185,15 @@ _text = JC.rebuild_index()
 check("J4 the index is derived from the manifests",
       _default.name in _text and "| ok |" in _text
       and os.path.isfile(os.path.join(JC.RUNS_ROOT, "INDEX.md")), _text[:300])
+# an index whose first row is not the newest run is a misleading index: the
+# folder name is not chronological (`_n3` sorts before `_n1-2` lexically).
+_older = JC.RUNS_ROOT / "2000-01-01_jobbench_old_longrun_n1"
+JC.write_manifest(_default, started="2026-10-30T14:00:00")
+JC.write_manifest(_older, run_id=_older.name, started="2000-01-01T00:00:00",
+                  suite="jobbench", status="ok", arms=["longrun"], n_tasks=1)
+_text = JC.rebuild_index()
+check("J5 the index lists the newest run first, by the manifest's own clock",
+      _text.index(_default.name) < _text.index(_older.name), _text[:400])
 
 # K — a benchmark turn may ask for the tool budget it needs ---------------
 AGENT = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()

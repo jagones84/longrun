@@ -115,6 +115,10 @@ def rebuild_index(root=None):
                 rows.append(json.loads(f.read_text(encoding="utf-8")))
             except ValueError:
                 continue
+    # Newest first by the manifest's own `started`: the folder name is not
+    # chronological (`_n3` sorts before `_n1-2` lexically), and an index whose
+    # first row is not the latest run is a misleading index.
+    rows.sort(key=lambda r: str(r.get("started") or ""), reverse=True)
     lines = ["# Benchmark runs", "",
              "Derived from each run's `run.json` — do not edit by hand.", "",
              "| run | started | suite | arms | solver | judge | n | status | mean ratio |",
