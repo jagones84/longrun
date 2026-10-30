@@ -347,6 +347,22 @@ check("N2 a self-improving sweep reports BOTH its improvement and its baseline",
       and (_rows_re[0].get("baseline") or {}).get("score", {}).get("ok") is True,
       _rows_re[0].get("baseline"))
 
+# N3 — Harness² writes its deliverables FLAT in the label folder (measured
+# 2026-10-30: three .xlsx at the root, no output/). The judge graded them 62/72
+# while the row said "delivered 0", which reads as "this arm produced nothing".
+_flat = os.path.join(_prev_base, "jb-oc-agg1__biostatisticians__task1__flat1")
+os.makedirs(_flat, exist_ok=True)
+with open(os.path.join(_flat, "Baseline_Subgroup_Analysis.xlsx"), "wb") as f:
+    f.write(b"PK\x03\x04stub")
+_rows_flat, _ = JC.run_harness2(tasks, os.path.join(TMP, "flatout"),
+                                solver_model="openrouter/x", judge_model="judge-x",
+                                judge_base="http://127.0.0.1:1/v1", key="k",
+                                timeout=30, judge_timeout=60, reuse=_prev)
+check("N3 a flat label (no output/ dir) is counted as delivered",
+      _rows_flat[0]["label"].endswith("flat1") and _rows_flat[0]["delivered"] == 1
+      and _rows_flat[0]["files"] == ["Baseline_Subgroup_Analysis.xlsx"],
+      (_rows_flat[0].get("label"), _rows_flat[0].get("files")))
+
 # O — the Longrun arm's own cost must SURVIVE the task -----------------------
 # Measured 2026-10-30: a finished Longrun task reported score+files but no tokens
 # and no dollars, because `delete_agent` removes the session and with it

@@ -342,6 +342,23 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
                            judge_timeout), meta
 
 
+def _h2_deliverables(label_dir):
+    """What a Harness² label DELIVERED: its files sit flat in the label folder.
+
+    Measured 2026-10-30: `model_output/<label>/Baseline_Subgroup_Analysis.xlsx`
+    (three workbooks at the root, no `output/`). The judge was always pointed at
+    that folder and scored 62/72, while the report — reading `<label>/output` like
+    the other arms — printed "delivered 0". An arm that delivered three files must
+    never be reported as having delivered none. `output/` is still honoured when a
+    label happens to use it.
+    """
+    p = Path(label_dir)
+    nested = p / "output"
+    root = nested if nested.is_dir() else p
+    return sorted(str(f.relative_to(root)) for f in root.rglob("*")
+                  if f.is_file() and not f.name.startswith("."))
+
+
 def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_timeout):
     """Grade ITS `model_output/`: `<runs>/jb/dataset/<prof>/<task>/model_output/<label>`.
 
@@ -366,7 +383,7 @@ def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_tim
             sc = JJ.judge(run_dir, task["rubrics"], Path(arm) / slug / ("judge-%s.json" % tag),
                           judge_model, judge_base, key,
                           evaluated_model="harness2-%s" % run_dir.name, timeout=judge_timeout)
-            return sc, jobbench.deliverables(run_dir)
+            return sc, _h2_deliverables(run_dir)
 
         run_dir = labels[-1]                        # the improved attempt
         sc, files = _scored(run_dir, "final")
