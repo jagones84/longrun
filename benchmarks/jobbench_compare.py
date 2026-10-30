@@ -39,9 +39,83 @@ from .bare_adapter import _env_file_key, _key
 DEFAULT_HARNESS2 = Path(os.environ.get("HARNESS2_REPO",
                                        "/home/jagones/Repositories/Harness2")).expanduser()
 
+SUITE = "jobbench"
+#: Where runs live by default. The repo ships no results; `.agent/` is local only.
+RUNS_ROOT = Path(os.environ.get("BENCH_RUNS_DIR")
+                 or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 ".agent", "BENCHMARKS", "runs")).expanduser()
+
 
 def _slug(task_id):
     return re.sub(r"[^A-Za-z0-9_.-]+", "__", task_id)
+
+
+def _model_slug(model):
+    return re.sub(r"[^A-Za-z0-9.]+", "-", str(model or "model")).strip("-")
+
+
+def default_out(arms, model, n_tasks, scope=""):
+    """The canonical folder for a run — one naming rule, collision-safe.
+
+    `<date>_<suite>_<model-slug>_<arms>_<scope>_n<N>`, with `-2`, `-3` appended when
+    the same combination is run twice, so a run folder is always self-describing
+    (what, with what, on which tasks) and never silently overwrites another one.
+    """
+    slug = "%s_%s_%s_%s%s_n%d" % (time.strftime("%Y-%m-%d"), SUITE, _model_slug(model),
+                                  "-".join(arms),
+                                  ("_" + _model_slug(scope)) if scope else "",
+                                  int(n_tasks))
+    path, i = RUNS_ROOT / slug, 2
+    while path.exists():
+        path = RUNS_ROOT / ("%s-%d" % (slug, i))
+        i += 1
+    return path
+
+
+def write_manifest(out, **fields):
+    """Merge `fields` into `<out>/run.json` (one manifest per run, never a guess)."""
+    path = Path(out) / "run.json"
+    data = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            data = {}
+    data.update(fields)
+    _write(path, data)
+    return data
+
+
+def rebuild_index(root=None):
+    """`runs/INDEX.md`, derived from every `run.json` (the manifest is the truth)."""
+    root = Path(root or RUNS_ROOT)
+    rows = []
+    if root.is_dir():
+        for d in sorted((p for p in root.iterdir() if p.is_dir()), reverse=True):
+            f = d / "run.json"
+            if not f.is_file():
+                continue
+            try:
+                rows.append(json.loads(f.read_text(encoding="utf-8")))
+            except ValueError:
+                continue
+    lines = ["# Benchmark runs", "",
+             "Derived from each run's `run.json` — do not edit by hand.", "",
+             "| run | started | suite | arms | solver | judge | n | status | mean ratio |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        means = r.get("arms_summary") or {}
+        mr = ", ".join("%s %s" % (k, v.get("mean_ratio"))
+                       for k, v in sorted(means.items())) or "-"
+        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+                     % (r.get("run_id", "?"), str(r.get("started", ""))[:16],
+                        r.get("suite", ""), ",".join(r.get("arms") or []),
+                        r.get("model", ""), r.get("judge_model", ""),
+                        r.get("n_tasks", ""), r.get("status", ""), mr))
+    text = "\n".join(lines) + "\n"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "INDEX.md").write_text(text, encoding="utf-8")
+    return text
 
 
 def _write(path, obj):
@@ -59,13 +133,13 @@ def _openrouter_key():
 
 # --------------------------------------------------------------- longrun arm
 def run_longrun(tasks, out, *, model, judge_model, judge_base, key, timeout,
-                judge_timeout, keep_sessions=False):
+                judge_timeout, keep_sessions=False, max_steps=None):
     """Drive the LIVE Longrun over REST, one session per task, then judge."""
     from .longrun_adapter import LongrunAdapter
     arm = Path(out) / "longrun"
     arm.mkdir(parents=True, exist_ok=True)
     ad = LongrunAdapter(model=model, timeout=timeout, keep_sessions=keep_sessions,
-                        tag="jobbench")
+                        tag="jobbench", max_steps=max_steps)
     rows, prov = [], {}
     try:
         prov = ad.provenance()
@@ -84,7 +158,14 @@ def run_longrun(tasks, out, *, model, judge_model, judge_base, key, timeout,
             row = {"task": task["id"], "arm": "longrun", "ok": bool(res.ok),
                    "error": res.error or "", "delivered": len(files),
                    "files": files[:40], "duration_s": round(time.time() - t0, 1),
-                   "model": model, "score": sc}
+                   "model": model, "score": sc,
+                   # The reply is the only evidence of WHY a turn delivered nothing:
+                   # keep its head and length, and the ids needed to open the session.
+                   "reply": (res.output or "")[:1200],
+                   "reply_len": len(res.output or ""),
+                   "run_id": res.run_id, "session": ref.session,
+                   "max_steps": max_steps,
+                   "workspace_error": (ref.meta or {}).get("error", "")}
             _write(arm / slug / "result.json", row)
             rows.append(row)
             ad.delete_agent(ref)
@@ -240,22 +321,44 @@ def main(argv=None):
     ap.add_argument("--judge-model", default="z-ai/glm-5.3-flash")
     ap.add_argument("--judge-base", default="https://openrouter.ai/api/v1")
     ap.add_argument("--judge-key-env", default="OPENROUTER_API_KEY")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", default=None,
+                    help="run folder; default: <runs>/<date>_jobbench_<model>_<arms>_n<N>")
+    ap.add_argument("--rebuild-index", action="store_true",
+                    help="only rebuild <runs>/INDEX.md from the existing run.json files")
     ap.add_argument("--timeout", type=float, default=2400.0, help="per-task solver timeout")
     ap.add_argument("--judge-timeout", type=float, default=3600.0)
     ap.add_argument("--keep-sessions", action="store_true")
+    ap.add_argument("--max-steps", type=int, default=40,
+                    help="real-tool steps per turn for the Longrun arm (server clamps "
+                         "it to its iteration cap); the chat default is 8")
     ap.add_argument("--harness2-dry-run", action="store_true",
                     help="print Harness²'s command without spending anything")
     args = ap.parse_args(argv)
 
+    if args.rebuild_index:
+        print(rebuild_index())
+        return 0
+
+    arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     tasks = jobbench.tasks(args.profession, args.tasks)
     if not tasks:
         print("no JobBench task matched profession=%r" % args.profession)
         return 2
-    os.makedirs(args.out, exist_ok=True)
+    out = Path(args.out) if args.out else default_out(arms, args.model, len(tasks),
+                                                      scope=args.profession or "all")
+    os.makedirs(out, exist_ok=True)
+    started = time.strftime("%Y-%m-%dT%H:%M:%S")
+    write_manifest(out, run_id=out.name, suite=SUITE, started=started,
+                   status="running", arms=arms, model=args.model,
+                   judge_model=args.judge_model, judge_base=args.judge_base,
+                   n_tasks=len(tasks), tasks=[t["id"] for t in tasks],
+                   corpus=str(jobbench.repo()), argv=sys.argv[1:])
+    print("run: %s" % out, flush=True)
     key = (_key([args.judge_key_env]) or _env_file_key([args.judge_key_env], "~/.hermes/.env")
            or _env_file_key([args.judge_key_env], ".env"))
     if not key:
+        write_manifest(out, status="failed", error="no %s" % args.judge_key_env,
+                       finished=time.strftime("%Y-%m-%dT%H:%M:%S"))
         print("no %s found (env, ~/.hermes/.env, ./.env)" % args.judge_key_env)
         return 2
     h2_model = args.harness2_model or args.model.replace(":", "/", 1)
@@ -264,21 +367,24 @@ def main(argv=None):
               "judge_model": args.judge_model, "judge_base": args.judge_base,
               "prompt": "upstream Harness2 PROMPT (verbatim)",
               "longrun_transport": "HTTP POST /api/chat",
+              "longrun_max_steps": args.max_steps,
               "harness2_transport": "CLI sweep (harness2 run_sweep --bench jb)"}
 
     rows = []
-    for arm in [a.strip() for a in args.arms.split(",") if a.strip()]:
+    for arm in arms:
         if arm == "longrun":
-            got, prov = run_longrun(tasks, args.out, model=args.model,
+            got, prov = run_longrun(tasks, out, model=args.model,
                                     judge_model=args.judge_model, judge_base=args.judge_base,
                                     key=key, timeout=args.timeout,
                                     judge_timeout=args.judge_timeout,
-                                    keep_sessions=args.keep_sessions)
+                                    keep_sessions=args.keep_sessions,
+                                    max_steps=args.max_steps)
             parity.update({"longrun_git": prov.get("git_sha", ""),
-                           "longrun_version": prov.get("version", "")})
+                           "longrun_version": prov.get("version", ""),
+                           "longrun_token_source": prov.get("token_source", "")})
             rows += got
         elif arm == "harness2":
-            got, meta = run_harness2(tasks, args.out, solver_model=h2_model,
+            got, meta = run_harness2(tasks, out, solver_model=h2_model,
                                      judge_model=args.judge_model,
                                      judge_base=args.judge_base, key=key,
                                      timeout=max(args.timeout * len(tasks), 3600),
@@ -288,13 +394,27 @@ def main(argv=None):
                            "harness2_cmd": " ".join(meta.get("command") or [])})
             rows += got
         else:
+            write_manifest(out, status="failed", error="unknown arm %r" % arm,
+                           finished=time.strftime("%Y-%m-%dT%H:%M:%S"))
             print("unknown arm %r" % arm)
             return 2
 
-    payload, text = report(args.out, rows, parity)
+    payload, text = report(out, rows, parity)
+    ok = all((r.get("score") or {}).get("ok") for r in rows) and bool(rows)
+    write_manifest(out, status=("ok" if ok else "incomplete"),
+                   finished=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                   arms_summary=payload.get("arms") or {},
+                   results=[{"task": r["task"], "arm": r["arm"],
+                             "score": (r.get("score") or {}).get("score"),
+                             "max": (r.get("score") or {}).get("max"),
+                             "delivered": r.get("delivered", 0),
+                             "note": (r.get("score") or {}).get("error") or r.get("error") or ""}
+                            for r in rows],
+                   compare_md="compare.md")
+    rebuild_index()
     print("\n" + text)
-    print("-> %s/compare.md" % args.out)
-    return 0 if all((r.get("score") or {}).get("ok") for r in rows) or not rows else 1
+    print("-> %s/compare.md" % out)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

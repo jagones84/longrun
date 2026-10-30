@@ -83,7 +83,7 @@ class LongrunAdapter:
     name = "longrun"
 
     def __init__(self, base=None, token=None, model=None, timeout=900.0, repo=None,
-                 keep_sessions=False, tag=None):
+                 keep_sessions=False, tag=None, max_steps=None):
         self.base = (base or os.environ.get("LONGRUN_BASE")
                      or "http://127.0.0.1:8790").rstrip("/")
         # The bearer that ACTUALLY authenticates wins: an explicit token, else the
@@ -108,6 +108,10 @@ class LongrunAdapter:
         # prefixes the session title so the runs are findable in the rail.
         self.keep_sessions = bool(keep_sessions)
         self.tag = tag
+        # A benchmark task needs as many real tool steps as the other arm gets;
+        # the chat default (8) measures a truncated turn, not the harness. The
+        # server clamps this to its own iteration cap.
+        self.max_steps = max_steps
 
     # ---- transport ----------------------------------------------------------
     def _req(self, method, path, body=None, timeout=None):
@@ -242,6 +246,8 @@ class LongrunAdapter:
         body = {"session": ref.session, "message": prompt}
         if self.model:
             body["model"] = self.model
+        if self.max_steps:
+            body["max_steps"] = int(self.max_steps)
         st, obj = self._req("POST", "/api/chat", body, timeout=timeout or self.timeout)
         dur = round(time.time() - t0, 3)
         ok = st == 200 and not obj.get("error")

@@ -84,8 +84,14 @@ python3 -m benchmarks.jobbench_compare \
   --profession biostatisticians --tasks 2 --arms longrun,harness2 \
   --model openrouter:z-ai/glm-5.3-flash \
   --judge-model z-ai/glm-5.3-flash --judge-base https://openrouter.ai/api/v1 \
-  --out .agent/BENCHMARKS/runs/$(date +%F)_jobbench_glm53flash
+  --max-steps 40
 ```
+
+Without `--out` the runner names the folder itself
+(`.agent/BENCHMARKS/runs/<date>_jobbench_<model>_<arms>_<scope>_n<N>`, `-2` on a
+repeat) and writes `run.json` + `compare.{json,md}` inside it; `runs/INDEX.md` is
+derived from the manifests. `--max-steps` is the per-turn real-tool budget for the
+Longrun arm (chat default 8 truncates a multi-artifact task).
 
 One model, three spellings (`provider:model` for Longrun, `provider/model` for
 Harness²/OpenCode, the bare id for the judge), and one scorer for both arms.

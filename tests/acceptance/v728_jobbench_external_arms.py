@@ -38,6 +38,7 @@ with open(os.path.join(JB, "eval", "judge.py"), "w", encoding="utf-8") as f:
     f.write("")
 os.environ["JOB_BENCH_REPO"] = JB
 os.environ["JOB_BENCH_JUDGE_PYTHON"] = sys.executable
+os.environ["BENCH_RUNS_DIR"] = os.path.join(TMP, "runs")
 sys.path.insert(0, REPO)
 
 from benchmarks import jobbench  # noqa: E402
@@ -157,6 +158,48 @@ check("I2 an external caller finds the token where the template says it lives",
       "token lookup must try the repo .env, not only ~/.longrun/config/env")
 check("I3 the bearer that answers /api/status wins (a stale copy cannot fake a zero)",
       "_first_working_token" in SRC and '"/api/status"' in SRC, SRC.count("_first_working_token"))
+
+# J — the output layout is organised BY DESIGN ------------------------------
+import time as _time  # noqa: E402
+
+_default = JC.default_out(["longrun"], "openrouter:z-ai/glm-5.3-flash", 3,
+                          scope="biostatisticians")
+_want = "%s_jobbench_openrouter-z-ai-glm-5.3-flash_longrun_biostatisticians_n3" \
+    % _time.strftime("%Y-%m-%d")
+check("J1 the run folder names date, suite, model, arm and scope",
+      _default.name == _want and _default.parent == JC.RUNS_ROOT, (_default.name, _want))
+os.makedirs(_default, exist_ok=True)
+_second = JC.default_out(["longrun"], "openrouter:z-ai/glm-5.3-flash", 3,
+                         scope="biostatisticians")
+check("J2 a repeated run never overwrites the previous one",
+      _second.name == _want + "-2", _second.name)
+JC.write_manifest(_default, run_id=_default.name, suite="jobbench", status="running",
+                  arms=["longrun"], model="openrouter:z-ai/glm-5.3-flash", n_tasks=3)
+JC.write_manifest(_default, status="ok", arms_summary={"longrun": {"mean_ratio": 0.5}})
+_man = json.load(open(os.path.join(_default, "run.json"), encoding="utf-8"))
+check("J3 one manifest per run carries both the start and the outcome",
+      _man.get("status") == "ok" and _man.get("arms") == ["longrun"]
+      and _man.get("arms_summary", {}).get("longrun", {}).get("mean_ratio") == 0.5, _man)
+_text = JC.rebuild_index()
+check("J4 the index is derived from the manifests",
+      _default.name in _text and "| ok |" in _text
+      and os.path.isfile(os.path.join(JC.RUNS_ROOT, "INDEX.md")), _text[:300])
+
+# K — a benchmark turn may ask for the tool budget it needs ---------------
+AGENT = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
+HTTP = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8").read()
+check("K1 the chat turn accepts a per-turn tool budget, clamped to the loop cap",
+      "max_steps=None):" in AGENT and "min(int(_want_steps), CHAT_TOOL_MAX_ITERS)" in AGENT,
+      "chat_once must accept max_steps and clamp it")
+check("K2 both chat endpoints carry the caller's budget",
+      'max_steps=body.get("max_steps")' in HTTP
+      and 'max_steps=qs.get("max_steps")' in HTTP, "httpapi must thread max_steps")
+SRC_AD = open(os.path.join(REPO, "benchmarks", "longrun_adapter.py"), encoding="utf-8").read()
+check("K3 the benchmark arm sends its budget and records it",
+      'body["max_steps"] = int(self.max_steps)' in SRC_AD
+      and '"max_steps": max_steps' in open(
+          os.path.join(REPO, "benchmarks", "jobbench_compare.py"), encoding="utf-8").read(),
+      "the arm must send max_steps and the row must show it")
 
 print("\n---\nv728: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

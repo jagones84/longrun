@@ -2703,7 +2703,8 @@ def _harness_start_note(sess):
 
 
 def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=None,
-              autonomous=False, plan_only=False, goal_mode=False, goal_started=None):
+              autonomous=False, plan_only=False, goal_mode=False, goal_started=None,
+              max_steps=None):
     """Run one streamed router call and persist exactly one assistant message.
 
     Contract (JAG-51): the caller appends the `user` message; this function is
@@ -2752,7 +2753,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # tool; the tool runs through the same approval gate as the agent loop and
     # its observation is fed back, then the model continues. Streaming deltas are
     # buffered per iteration so raw tool-call JSON is never shown to the user.
+    _want_steps = max_steps
     max_steps = CHAT_TOOL_MAX_STEPS if tool_ctx else 1
+    # A caller may ask for a bigger REAL-TOOL budget for one turn (a long,
+    # multi-artifact task) — never beyond the loop's own iteration cap, and never
+    # below one step. The default stays exactly what the chat always had.
+    if _want_steps is not None and tool_ctx:
+        try:
+            max_steps = max(1, min(int(_want_steps), CHAT_TOOL_MAX_ITERS))
+        except (TypeError, ValueError):
+            pass
     # JAG-344: a plan-only turn keeps a TIGHT real-tool budget (the master inspects
     # a little to inform its plan) and never continues past it (see the loop below).
     if plan_only:
