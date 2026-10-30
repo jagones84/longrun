@@ -263,14 +263,20 @@ def harness2_command(tasks, solver_model, extra=""):
 
 
 def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
-                 timeout, judge_timeout, dry_run=False):
-    """Run Harness²'s own sweep, then grade ITS `model_output/` with the same judge."""
+                 timeout, judge_timeout, dry_run=False, reuse=None):
+    """Run Harness²'s own sweep, then grade ITS `model_output/` with the same judge.
+
+    `reuse` names an EARLIER run folder: its sweep is not spent a second time, the
+    model_output already under it is graded again. A Harness² sweep costs ~12 min
+    per task (4 rollouts + 3 improver sessions), so adding the other two arms to a
+    finished sweep must not pay for it twice.
+    """
     arm = Path(out) / "harness2"
     arm.mkdir(parents=True, exist_ok=True)
     # Each sweep gets its OWN run store: Harness² refuses a directory that already
     # belongs to different models/tasks ("Choose a new HARNESS2_RUNS_DIR"), and a
     # shared store would also mix this run's model_output with an older one.
-    h2_runs = arm / "_h2runs"
+    h2_runs = (Path(reuse) / "harness2" / "_h2runs") if reuse else (arm / "_h2runs")
     h2_runs.mkdir(parents=True, exist_ok=True)
     cmd = harness2_command(tasks, solver_model)
     env = dict(os.environ)
@@ -286,6 +292,13 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
                 "OPENROUTER_API_KEY": key})
     meta = {"command": cmd, "env_model": solver_model, "cwd": str(DEFAULT_HARNESS2),
             "runs_dir": str(h2_runs), "status": "dry-run" if dry_run else ""}
+    if reuse:
+        meta.update({"status": "reused", "reused_from": str(reuse),
+                     "command": []})
+        _write(arm / "command.json", meta)
+        print("  harness2 (reused from %s)" % reuse, flush=True)
+        return _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key,
+                               judge_timeout), meta
     if dry_run:
         _write(arm / "command.json", meta)
         print("  harness2 (dry-run): %s" % " ".join(cmd), flush=True)
@@ -304,11 +317,16 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
         return [], meta
     meta["status"] = "ok" if r.returncode == 0 else "failed"
     _write(arm / "command.json", meta)
-    # Grade whatever IT produced: `<runs>/jb/dataset/<prof>/<task>/model_output/<label>`.
+    return _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key,
+                           judge_timeout), meta
+
+
+def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_timeout):
+    """Grade ITS `model_output/`: `<runs>/jb/dataset/<prof>/<task>/model_output/<label>`."""
     rows = []
     for task in tasks:
         prof, name = task["id"].split("/", 1)
-        base = h2_runs / "jb" / "dataset" / prof / name / "model_output"
+        base = Path(h2_runs) / "jb" / "dataset" / prof / name / "model_output"
         labels = sorted((p for p in base.iterdir() if p.is_dir()),
                         key=lambda p: p.stat().st_mtime, reverse=True) if base.is_dir() else []
         if not labels:
@@ -317,20 +335,20 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
             continue
         run_dir = labels[0]
         slug = _slug(task["id"])
-        sc = JJ.judge(run_dir, task["rubrics"], arm / slug / "judge.json", judge_model,
-                      judge_base, key, evaluated_model="harness2-%s" % run_dir.name,
-                      timeout=judge_timeout)
+        sc = JJ.judge(run_dir, task["rubrics"], Path(arm) / slug / "judge.json",
+                      judge_model, judge_base, key,
+                      evaluated_model="harness2-%s" % run_dir.name, timeout=judge_timeout)
         files = jobbench.deliverables(run_dir)
         row = {"task": task["id"], "arm": "harness2", "ok": bool(sc.get("ok")),
                "error": sc.get("error") or "", "delivered": len(files),
-               "label": run_dir.name, "model": solver_model, "score": sc}
-        _write(arm / slug / "result.json", row)
+               "files": files[:40], "label": run_dir.name, "score": sc}
+        _write(Path(arm) / slug / "result.json", row)
         rows.append(row)
         print("  harness2 %-41s delivered=%d score=%s"
               % (task["id"], len(files),
                  "%s/%s" % (sc.get("score"), sc.get("max")) if sc.get("ok") else sc.get("error")),
               flush=True)
-    return rows, meta
+    return rows
 
 
 # ------------------------------------------------------------------- report
@@ -438,6 +456,9 @@ def main(argv=None):
                          "the Longrun arm only — Harness² sweeps by domain")
     ap.add_argument("--harness2-dry-run", action="store_true",
                     help="print Harness²'s command without spending anything")
+    ap.add_argument("--harness2-from", default=None,
+                    help="grade an EARLIER run folder's Harness² sweep instead of "
+                         "spending a second one (adding the other arms is free)")
     args = ap.parse_args(argv)
 
     if args.rebuild_index:
@@ -510,7 +531,8 @@ def main(argv=None):
                                      judge_base=args.judge_base, key=key,
                                      timeout=max(args.timeout * len(tasks), 3600),
                                      judge_timeout=args.judge_timeout,
-                                     dry_run=args.harness2_dry_run)
+                                     dry_run=args.harness2_dry_run,
+                                     reuse=args.harness2_from)
             parity.update({"harness2_status": meta.get("status", ""),
                            "harness2_cmd": " ".join(meta.get("command") or [])})
             rows += got

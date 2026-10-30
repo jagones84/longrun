@@ -158,7 +158,8 @@ check("H3 a sweep gets its OWN run store, inside the run folder",
       _meta_h2.get("runs_dir"))
 _h2src = open(os.path.join(REPO, "benchmarks", "jobbench_compare.py"), encoding="utf-8").read()
 check("H4 grading follows that store, so an old model_output is never picked up",
-      "base = h2_runs /" in _h2src and '"OPENROUTER_API_KEY": key' in _h2src,
+      "base = Path(h2_runs) /" in _h2src and '"OPENROUTER_API_KEY": key' in _h2src
+      and '"HARNESS2_RUNS_DIR": str(h2_runs)' in _h2src,
       "the sweep env must carry the solver key and the per-run store")
 
 # I ----------------------------------------------------------------------
@@ -305,6 +306,22 @@ check("M6 the report orders the arms raw -> longrun -> harness2, always",
 check("M7 the report states WHO is better, and the raw floor",
       "**Better on this run:**" in _text3 and "`longrun` at 0.600" in _text3
       and "floor" in _text3, _text3[-400:])
+
+# N — adding the other arms must not pay for the sweep twice ----------------
+_prev = os.path.join(TMP, "prevrun")
+_prev_store = os.path.join(_prev, "harness2", "_h2runs", "jb", "dataset",
+                           "biostatisticians", "task1", "model_output", "label-x")
+os.makedirs(os.path.join(_prev_store, "output"), exist_ok=True)
+with open(os.path.join(_prev_store, "output", "reused.csv"), "w", encoding="utf-8") as f:
+    f.write("a,b\n1,2\n")
+_rows_re, _meta_re = JC.run_harness2(tasks, os.path.join(TMP, "reuseout"),
+                                     solver_model="openrouter/x", judge_model="judge-x",
+                                     judge_base="http://127.0.0.1:1/v1", key="k",
+                                     timeout=30, judge_timeout=60, reuse=_prev)
+check("N1 a reused sweep grades the PREVIOUS model_output instead of spending",
+      _meta_re.get("status") == "reused" and _meta_re.get("command") == []
+      and _rows_re[0]["delivered"] == 1 and _rows_re[0]["label"] == "label-x",
+      _meta_re)
 
 print("\n---\nv728: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
