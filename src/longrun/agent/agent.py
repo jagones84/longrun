@@ -2413,6 +2413,67 @@ def _finish_gated(sess, goal_mode):
         return False
 
 
+def _harness_state_roots():
+    """Directories the HARNESS owns — never a deliverable of the turn.
+
+    A session workspace can contain Longrun's own state (the tests stage every
+    `LONGRUN_*` dir inside it, and the harness writes a record of the turn there).
+    A note the harness wrote about the work is not the work, so the read-back must
+    not report it as an artifact.
+    """
+    roots = []
+    try:
+        from longrun.util import paths as _p
+    except Exception:  # noqa: BLE001
+        return roots
+    # Every managed root the paths module owns, by PATTERN rather than by a list
+    # that goes stale: a new `*_DIR` (the Matrix bridge scaffolding bit us this
+    # way) is excluded automatically.
+    for _name in dir(_p):
+        if not _name.endswith("_DIR") or _name == "REPO_ROOT":
+            continue
+        _v = getattr(_p, _name, None)
+        if isinstance(_v, str) and os.path.isabs(_v):
+            roots.append(_v)
+    for _name, _v in list(os.environ.items()):
+        if not _name.startswith("LONGRUN_") or not _v:
+            continue
+        if _name.endswith("_DIR") or _name in ("LONGRUN_DB", "LONGRUN_HOOKS"):
+            if os.path.isabs(_v):
+                roots.append(_v)
+    return roots
+
+
+def _deliverable_review_text(sess, request, since, state):
+    """Mechanical read-back of what this turn WROTE, once per turn (or None).
+
+    Companion of `_finish_gated`, but a CONTENT check instead of a status check:
+    the done-gate asks "is the plan closed?", this asks "did you ever look at the
+    file you are about to call delivered?". The answer is produced by inspecting
+    the artifacts themselves (`longrun.plan.artifacts`), so the observation is
+    true whether the model wrote them with `fs.write` or inside a `shell.exec`
+    python script.
+
+    Fires at most once: the point is to make the agent FACE its own output before
+    closing, not to loop on it. A turn that wrote no document costs one walk and
+    returns None. Never raises — an audit may slow a turn, never break it.
+    """
+    if int(state.get("left") or 0) <= 0:
+        return None
+    try:
+        from longrun.plan import artifacts as _art
+        text = _art.review(_chat_workspace(sess), request, since=since,
+                           exclude=_harness_state_roots())
+    except Exception:  # noqa: BLE001
+        state["left"] = 0
+        return None
+    if not text:
+        state["left"] = 0
+        return None
+    state["left"] = int(state.get("left") or 1) - 1
+    return text
+
+
 def _normalize_action(act):
     """JAG-264: accept the obvious near-misses weak models keep emitting.
 
@@ -2887,6 +2948,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # final prose answer reaches the user.
     _close_todo_rounds = 0
     _close_todo_max = 4
+    # Deliverable read-back (one shot): before the turn closes, the artifacts it
+    # WROTE are described back to it — sheets, empty ranges, `charts=0`, page
+    # counts. A status check cannot see a blank sheet; this can.
+    _deliv_since = time.time()
+    _deliv_state = {"left": 1}
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
     _fail_streak_tool = None
     _last_tool_hash = None  # JAG-178: detect a repeated identical call
@@ -3629,6 +3695,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_closure_check_prompt(), "closure-check")
                 continue
+            _drv = _deliverable_review_text(sess, message, _deliv_since, _deliv_state)
+            if _drv:
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_drv, "review")
+                continue
             _finished_cleanly = True
             final_answer = next(
                 (act[k].strip() for k in _FINISH_SUMMARY_KEYS
@@ -3655,6 +3726,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_closure_check_prompt(), "closure-check")
                     continue
+                _drv = _deliverable_review_text(sess, message, _deliv_since,
+                                                _deliv_state)
+                if _drv:
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_drv, "review")
+                    continue
                 final_answer = _txt
                 on_delta("answer", _txt)
                 break
@@ -3675,6 +3752,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _selfcheck_left -= 1
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_closure_check_prompt(), "closure-check")
+                    continue
+                _drv = _deliverable_review_text(sess, message, _deliv_since,
+                                                _deliv_state)
+                if _drv:
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_drv, "review")
                     continue
                 final_answer = answer
                 _final_is_artifact = True
@@ -3843,6 +3926,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "result) via todo.update. One step at a time. NEVER redo a step "
                         "already marked [x]. Open now:\n%s"
                         % (len(_open), _open_todo_brief(sess)[1]), "continue")
+                continue
+            _drv = _deliverable_review_text(sess, message, _deliv_since, _deliv_state)
+            if _drv:
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_drv, "review")
                 continue
             _kg_stop_reason = _dec["reason"]
             on_event("plan.stopped", session=sess["id"], reason=_dec["reason"],
