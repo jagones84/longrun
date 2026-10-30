@@ -336,12 +336,23 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
     meta = {"command": cmd, "env_model": solver_model, "cwd": str(DEFAULT_HARNESS2),
             "runs_dir": str(h2_runs), "status": "dry-run" if dry_run else ""}
     if reuse:
-        meta.update({"status": "reused", "reused_from": str(reuse),
-                     "command": []})
+        # A reused sweep still has a COST IN TIME, and that is half the comparison:
+        # carry the earlier sweep's own wall clock and budget verdict forward
+        # instead of printing "-" for the arm that took the longest.
+        earlier = {}
+        try:
+            earlier = json.loads((Path(reuse) / "harness2" / "command.json")
+                                 .read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            earlier = {}
+        meta.update({"status": "reused", "reused_from": str(reuse), "command": [],
+                     "duration_s": earlier.get("duration_s"),
+                     "reused_budget_status": earlier.get("status", "")})
         _write(arm / "command.json", meta)
         print("  harness2 (reused from %s)" % reuse, flush=True)
         return _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key,
-                               judge_timeout), meta
+                               judge_timeout, elapsed=meta.get("duration_s"),
+                               timed_out=earlier.get("status") == "timeout"), meta
     if dry_run:
         _write(arm / "command.json", meta)
         print("  harness2 (dry-run): %s" % " ".join(cmd), flush=True)
