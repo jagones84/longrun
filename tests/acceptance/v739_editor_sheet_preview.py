@@ -128,6 +128,17 @@ check("C4 the route is registered and the handler is exported",
       'path == "/api/fs/sheet"' in API_SRC and "def fs_sheet(" in API_SRC)
 check("C5 the grid has its own styling (sticky headers, tab per sheet)",
       ".xsheet table" in HTML and ".xsheet-tab" in HTML and ".xsheet-wrap" in HTML)
+# live defect (2026-10-30): the header width came from row 0, which in a real
+# workbook is a one-cell title — the dock reported "17 rows · 1 cols" for a
+# 6-column table. Width must be the widest row.
+check("C6 the table is as wide as the WIDEST row, not as wide as row 0",
+      "cols = Math.max(cols, r.length)" in UI
+      and "Array.from({ length: cols }" in UI)
+# and the fix never reached the operator's tab: /api/build fingerprinted only
+# index.html/orbit.html, so an edit in webui/assets/*.js had no reload chip.
+HTTP = _read("src", "longrun", "core", "httpapi.py")
+check("C7 /api/build fingerprints webui/assets so a JS fix reaches an open tab",
+      'os.path.join(WEBUI_DIR, "assets")' in HTTP)
 
 print("---")
 ok = sum(results)

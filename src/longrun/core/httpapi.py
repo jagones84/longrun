@@ -1908,7 +1908,21 @@ class Handler(BaseHTTPRequestHandler):
                 _active_idx = _mtx_b.webui_index_path()
             except Exception:  # noqa: BLE001
                 _active_idx = os.path.join(WEBUI_DIR, "index.html")
-            _uif = (_active_idx, os.path.join(ORBIT_WEB, "orbit.html"))
+            _uif = [_active_idx, os.path.join(ORBIT_WEB, "orbit.html")]
+            # EV-45c: the SPA's own JS/CSS live under webui/assets and are loaded
+            # ONCE by a tab. Fingerprinting only index.html meant a fix that lived
+            # in editor.js (the workbook viewer) was invisible to an open tab: no
+            # reload chip, no change, the operator kept the old script while the
+            # server served the new one (live 2026-10-30, "xlsx doesn't open").
+            _assets = os.path.join(WEBUI_DIR, "assets")
+            try:
+                for _root, _dirs, _names in os.walk(_assets):
+                    _dirs[:] = sorted(d for d in _dirs if not d.startswith("."))
+                    for _n in sorted(_names):
+                        if _n.lower().endswith((".js", ".css", ".html")):
+                            _uif.append(os.path.join(_root, _n))
+            except OSError:
+                pass
             try:
                 _b = "-".join("%d-%d" % (int(os.stat(p).st_mtime), os.stat(p).st_size)
                               for p in _uif)

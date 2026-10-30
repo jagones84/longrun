@@ -933,15 +933,23 @@ async function renderSheet(t) {
   if (!rows.length) {
     html += '<div class="remaining">empty sheet</div>';
   } else {
+    // The table is as WIDE as the widest row, not as wide as row 0: a workbook's
+    // first row is often a title/label spanning one cell, and using it as the
+    // header width clipped every other column (live: "17 rows · 1 cols" on a
+    // 6-column dispatch table).
+    let cols = 0;
+    rows.forEach((r) => { cols = Math.max(cols, r.length); });
     html += '<div class="xsheet-wrap"><table><thead><tr><th></th>' +
-      rows[0].map((_c, i) => "<th>" + colName(i) + "</th>").join("") + "</tr></thead><tbody>";
+      Array.from({ length: cols }, (_x, i) => "<th>" + colName(i) + "</th>").join("") +
+      "</tr></thead><tbody>";
     rows.forEach((r, ri) => {
+      const cells = r.concat(Array(Math.max(0, cols - r.length)).fill(""));
       html += "<tr><th>" + (ri + 1) + "</th>" +
-        r.map((c) => "<td>" + esc(String(c)) + "</td>").join("") + "</tr>";
+        cells.map((c) => "<td>" + esc(String(c)) + "</td>").join("") + "</tr>";
     });
     html += "</tbody></table></div>";
     html += '<div class="remaining">' + (d.truncated ? "first " + d.max_rows + " rows · " : "") +
-      rows.length + " rows · " + rows[0].length + " cols · " + esc(d.sheet) + "</div>";
+      rows.length + " rows · " + cols + " cols · " + esc(d.sheet) + "</div>";
   }
   html += "</div>";
   state.preview.innerHTML = html;
