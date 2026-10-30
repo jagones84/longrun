@@ -75,6 +75,9 @@ SECTIONS = [
             _f("overlap_lines", "chunk overlap (lines)", "int", min=0, max=500),
             _f("ignore", "code · ignore globs", "strlist",
                help="One glob per line. Applies to the CODE index only."),
+            _f("exclude_tests", "code · skip tests", "bool",
+               help="Leave the test tree out of the CODE index (tests/, spec/, "
+                    "test_*.py, *.test.ts…). The knowledge base is unaffected."),
             # v656: one label per line — the long ones ("documents · extracted
             # text cap (KB)") wrapped onto a second line inside their column and
             # the row tops no longer lined up; the size caps now pair two per row
