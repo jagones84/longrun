@@ -80,8 +80,12 @@ check("the more-menu is wired (toggle + outside click)",
       and '$("moreBtn").onclick' in ui)
 check("the more-menu opens upward, right-aligned",
       "#moreMenu { position: absolute; right: 0; bottom: calc(100% + 8px)" in ui)
-check("the mic sits before the model picker (compact right cluster)",
-      ui.index('id="micBtn"') < ui.index('id="model-btn"'))
+check("the mic sits next to SEND (right cluster, bigger than the toolbar)",
+      # EV-43: the operator moved the 🎙 out of the left tool strip and next to
+      # send — it is the control aimed at without looking, so it is 40px.
+      ui.index('id="micBtn"') > ui.index('id="model-btn"')
+      and ui.index('id="micBtn"') < ui.index('id="sendBtn"')
+      and "#composerBar .cb-right > #micBtn {" in ui)
 check("the right cluster stays ONE row and lets the model shrink (JAG-427)",
       "#composerBar .cb-right { flex-wrap: nowrap; justify-content: flex-end;" in ui
       and "#composerBar .cb-right .model-wrap > button { min-width: 34px; }" in ui)

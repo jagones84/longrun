@@ -237,18 +237,22 @@ def _provider_role(sess, ws, ctx):
                 _lines = []
                 for _r in _reports:
                     _lbl = _r.get("name") or _r.get("id")
-                    if _r.get("role"):
-                        _lbl += " (%s)" % _r["role"]
+                    _lbl += (" (%s)" % _r["role"]) if _r.get("role") else " (no role set)"
                     _lines.append("- %s \u2014 %s" % (_r.get("id"), _lbl))
-                out += ("\n\n## Your team (org chart)\n"
+                out += ("\n\n## Your team (org chart \u2014 rebuilt from live state every turn)\n"
                         "You are an ORCHESTRATOR. Your direct reports are:\n"
                         + "\n".join(_lines)
-                        + "\nDISTRIBUTE work: to hand a self-contained subtask to a "
+                        + "\nThis list is generated at prompt time from the SAME org "
+                        "chart the UI shows, so adding, renaming, re-roling or "
+                        "removing an agent appears here by itself: never keep your own copy of it, "
+                        "and never assume a teammate is missing because this block is short.\n"
+                        "DISTRIBUTE work: to hand a self-contained subtask to a "
                         'teammate, emit {"action":"dispatch","agent":"<A-id>",'
                         '"goal":"<the subtask>"} — it runs a REAL turn in that '
                         "teammate's own session (their role and model) and returns "
                         "their reply. Prefer dispatching parallelisable work to your "
-                        "team over doing everything yourself.")
+                        "team over doing everything yourself. `agent.list` re-reads "
+                        "the chart on demand (read-only, no grant required).")
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         pass
     return out

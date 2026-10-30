@@ -855,6 +855,14 @@
   #composerBar #sendBtn:hover { filter: brightness(1.12); }
   #composerBar #sendBtn:disabled { opacity: .5; cursor: default; }
   #composerBar #sendBtn .kbd { display: none; }
+  /* EV-43 (operator, 2026-10-30): the 🎙 moved from the left cluster to sit RIGHT
+     NEXT TO SEND, and it is larger than the toolbar controls — it is the one
+     button aimed at without looking. 40px round, same family as send; `.rec`
+     (line ~160) still paints it with the accent gradient while listening. */
+  #composerBar .cb-right > #micBtn {
+    width: 40px; height: 40px; min-width: 40px; padding: 0; border-radius: 50%;
+    font-size: 19px; justify-content: center; margin-right: 2px; }
+  #composerBar .cb-right > #micBtn.rec { color: #fff; }
   /* JAG-424: the SAME button IS "stop" while the active session runs — a red square.
      This removes the separate stop control so the toolbar fits one row.
      EV-42 (operator, 2026-10-30): the toolbar keeps exactly ONE button. The
@@ -1996,7 +2004,6 @@
             <option value="queue">queue</option>
             <option value="steer">steer</option>
           </select>
-          <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence">🎙</button>
         </div>
         <div class="cb-right">
           <div class="model-wrap">
@@ -2012,6 +2019,7 @@
               <button class="ghost mi" data-call="newSession" title="start a new session">＋ new session</button>
             </div>
           </div>
+          <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence">🎙</button>
           <button id="sendBtn" data-call="sendOrStop" title="send (Enter — Shift+Enter for a newline)" aria-label="send">↑</button>
         </div>
       </div>

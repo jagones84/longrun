@@ -117,7 +117,10 @@ check("C2 a delegated/plan-only turn cannot dispatch (no recursion)",
 check("C3 the chat tool prompt advertises dispatch",
       '"action":"dispatch"' in agent_src and "DISTRIBUTE work" in agent_src)
 check("C4 the role prompt lists the team (org chart) for an orchestrator",
-      "## Your team (org chart)" in prompt_src and "team_of(" in prompt_src)
+      "## Your team (org chart" in prompt_src and "team_of(" in prompt_src
+      # EV-43: the roster is rebuilt at prompt time and says so, so an orchestrator
+      # never trusts a stale copy of its own team.
+      and "rebuilt from live state every turn" in prompt_src)
 check("C5 the dispatch handler is re-exported by server",
       "_apply_chat_dispatch" in open(os.path.join(REPO, "src", "longrun", "core", "server.py"),
                                      encoding="utf-8").read())

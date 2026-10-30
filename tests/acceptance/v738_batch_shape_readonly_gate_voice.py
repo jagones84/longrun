@@ -90,8 +90,22 @@ _ok_mut, _why_mut = LRA.check_dual_permission("mcp.upsert", SID)
 check("B2 a MUTATING exclusive tool keeps the gate",
       _ok_mut is False and "dual-permission gate" in str(_why_mut), _why_mut)
 check("B3 the exemption is a named set, not a namespace wildcard",
-      LRA.READ_ONLY_EXCLUSIVE == frozenset({"mcp.test"})
+      set(LRA.READ_ONLY_EXCLUSIVE) == {"mcp.test", "agent.get", "agent.list",
+                                       "team.get", "team.list"}
       and "mcp.remove" not in LRA.READ_ONLY_EXCLUSIVE)
+check("B5 an orchestrator reads its org chart without a grant (names + roles)",
+      LRA.check_dual_permission("agent.list", SID)[0] is True
+      and LRA.check_dual_permission("agent.get", SID)[0] is True
+      and LRA.check_dual_permission("team.list", SID)[0] is True)
+check("B6 every org-chart WRITE keeps the gate",
+      all(LRA.check_dual_permission(t, SID)[0] is False
+          for t in ("agent.create", "agent.update", "agent.delete",
+                    "team.member_add", "team.member_remove")))
+PROMPT_SRC = _read("src", "longrun", "model", "prompt.py")
+check("B7 the roster says it is rebuilt each turn and how to re-read it",
+      "rebuilt from live state every turn" in PROMPT_SRC
+      and "`agent.list` re-reads" in PROMPT_SRC
+      and "never keep your own copy" in PROMPT_SRC)
 LRA.set_session_access(SID, True)
 check("B4 the Teamorg grant still opens the mutating path",
       LRA.check_dual_permission("mcp.upsert", SID)[0] is True)

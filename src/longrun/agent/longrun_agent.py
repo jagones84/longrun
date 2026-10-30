@@ -937,7 +937,15 @@ def set_session_access(sid, allowed):
 #: may run it — the operator asked for exactly that in a chat and got
 #: "not authorized" with `approvals.mode=full` on (live 2026-10-30), which reads as
 #: a harness bug rather than a safety boundary.
-READ_ONLY_EXCLUSIVE = frozenset({"mcp.test"})
+#: EV-43: the READ side of the org chart joins it for the same reason — an
+#: orchestrator must be able to look up who it may delegate to (`agent.list`,
+#: `agent.get`, `team.list`, `team.get` return records and counts, never config).
+#: Writes stay behind the gate: agent.create/update/delete, team.member_*.
+READ_ONLY_EXCLUSIVE = frozenset({
+    "mcp.test",
+    "agent.get", "agent.list",
+    "team.get", "team.list",
+})
 
 
 def check_dual_permission(tool, run_id=None):
