@@ -93,6 +93,17 @@ SECTIONS = [
             _f("image_min_chars", "image · min OCR chars", "int", min=0, max=5000,
                help="Images with fewer OCR chars than this go to the caption "
                     "model instead."),
+            _f("media_transcriber_python", "video · transcriber python", "text",
+               placeholder="~/mcp/yt-whisper/venv/bin/python",
+               help="Interpreter of the transcriber that turns a video URL into "
+                    "text. Empty = auto-discover."),
+            _f("media_transcriber_script", "video · transcriber script", "text",
+               placeholder="~/mcp/yt-whisper/transcribe.py",
+               help="Script run as `<python> <script> <url> --output_text …`. "
+                    "Empty = auto-discover; without one a video URL fails."),
+            _f("media_transcriber_model", "video · whisper size", "text",
+               placeholder="small",
+               help="Whisper model size used for the transcript."),
             _f("embed_batch", "embedding batch size", "int", min=1, max=512,
                help="Chunks sent to the embedding model per request."),
         ],

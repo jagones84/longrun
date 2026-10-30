@@ -858,6 +858,16 @@ def ensure_system_session():
         if not sess.get("title"):
             sess["title"] = LONGRUN_AGENT_TITLE
             changed = True
+    # EV-40: the supervisor owns the FIRST agent number. The pin lives in
+    # `agents.PINNED_AGENT_IDS`, so a registry written before the reservation
+    # (or a reset that emptied it) still shows `A1` for this session.
+    try:
+        from longrun.agent import agents as agents_mod
+        rec = agents_mod.REGISTRY.get(LONGRUN_AGENT_SESSION_ID)
+        if not rec or rec.get("id") != "A1":
+            agents_mod.REGISTRY.designate(LONGRUN_AGENT_SESSION_ID, kind="session")
+    except Exception:  # noqa: BLE001 — the session must exist even if the registry is broken
+        pass
     if changed:
         stores.save_session(sess)
     return sess

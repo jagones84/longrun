@@ -483,19 +483,31 @@ def add_source(notebook, ref, session_id=None):
     prepared = []          # [(path, text, lang, kind)]
     base = ""
     if ref.startswith("http://") or ref.startswith("https://"):
-        try:
-            if fetch_text is _chunk.fetch_url:
-                url_info = fetch_info(
-                    ref, max_kb=int(cfg.get("url_max_kb") or 51200),
-                    snapshot_dir=os.path.join(paths.KNOWLEDGE_DIR, "raw"))
-                text = url_info.get("text") or ""
-            else:
-                # A test / research executor overrode the TEXT fetcher: honour it
-                # (the rich fetcher stays available for callers that want metadata).
-                text = fetch_text(ref)
-                url_info = {"text": text, "kind": "url"}
-        except Exception as e:  # noqa: BLE001
-            return {"ok": False, "error": "fetch failed: %s" % e, "ref": ref}
+        if _chunk.is_media_url(ref):
+            # A video URL carries the words in its AUDIO: fetching the page
+            # yields only title/description/comments, so the source is
+            # transcribed. If no transcriber can do it, the add FAILS with the
+            # reason — a notebook full of page furniture that answers nothing is
+            # worse than a visible error.
+            text, terr = _chunk.transcribe_media_url(ref, cfg)
+            if terr:
+                return {"ok": False, "error": terr, "ref": ref}
+            url_info = {"text": text, "kind": "media-url", "engine": "whisper"}
+            text = str(text or "").strip()
+        else:
+            try:
+                if fetch_text is _chunk.fetch_url:
+                    url_info = fetch_info(
+                        ref, max_kb=int(cfg.get("url_max_kb") or 51200),
+                        snapshot_dir=os.path.join(paths.KNOWLEDGE_DIR, "raw"))
+                    text = url_info.get("text") or ""
+                else:
+                    # A test / research executor overrode the TEXT fetcher: honour it
+                    # (the rich fetcher stays available for callers that want metadata).
+                    text = fetch_text(ref)
+                    url_info = {"text": text, "kind": "url"}
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "error": "fetch failed: %s" % e, "ref": ref}
         if not str(text or "").strip():
             return {"ok": False,
                     "error": (url_info or {}).get("error") or "fetch produced no text",
@@ -686,11 +698,19 @@ def add_sources(notebook, values, session_id=None):
     refs = [r for r in dict.fromkeys(refs) if r]
     results = [add_source(notebook, r, session_id=session_id) for r in refs]
     ok = [x for x in results if x.get("ok")]
+    failed = [x for x in results if not x.get("ok")]
     added = [x for x in ok if not x.get("duplicate")]
     skipped = len(ok) - len(added)
-    return {"ok": bool(ok) and len(ok) == len(refs), "added": len(added),
-            "skipped": skipped, "total": len(refs),
-            "chunks": sum(x.get("chunks", 0) for x in added), "results": results}
+    out = {"ok": bool(ok) and len(ok) == len(refs), "added": len(added),
+           "skipped": skipped, "total": len(refs),
+           "chunks": sum(x.get("chunks", 0) for x in added), "results": results}
+    if failed:
+        # The Knowledge panel reads ONE top-level `error`; a per-ref failure only
+        # would leave the operator with a silently smaller notebook.
+        out["error"] = "; ".join(
+            "%s: %s" % (x.get("ref") or "?", x.get("error") or "failed")
+            for x in failed)
+    return out
 
 
 def add_source_text(notebook, ref, text, title=None, session_id=None):

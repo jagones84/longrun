@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from fnmatch import fnmatch
 
 from longrun.memory import docio
@@ -39,6 +40,28 @@ DATA_EXT = {".csv": "csv", ".tsv": "tsv", ".log": "log", ".eml": "email",
             ".srt": "subtitle", ".vtt": "subtitle", ".ini": "ini",
             ".cfg": "ini", ".conf": "ini"}
 EXTLESS = {"dockerfile": "dockerfile", "makefile": "makefile", "rakefile": "ruby", "procfile": "text"}
+
+#: Folders that hold TESTS of a codebase, not the codebase itself. The codebase
+#: index is a map of the product a search is about; a tree of hundreds of test
+#: files drowns every real symbol in the top-k. Opt-in per caller (see `walk`),
+#: because the KNOWLEDGE base ingests arbitrary folders where a `tests/` file may
+#: be exactly the evidence the user wanted.
+TEST_DIRS = {"tests", "test", "testing", "__tests__", "spec", "specs", "e2e",
+             "integration_tests", "unit_tests", "fixtures", "__mocks__",
+             "testdata", "test_data", "test-data", "coverage", "htmlcov"}
+TEST_GLOBS = ("test_*.py", "*_test.py", "conftest.py", "tests.py",
+              "*.test.js", "*.test.jsx", "*.test.ts", "*.test.tsx",
+              "*.test.mjs", "*.test.cjs", "*.spec.js", "*.spec.jsx",
+              "*.spec.ts", "*.spec.tsx", "*Test.java", "*Tests.java",
+              "*_spec.rb", "*_test.go")
+
+
+def is_test_path(rel):
+    """True when a repo path is a TEST (folder or file name convention)."""
+    parts = str(rel or "").replace("\\", "/").split("/")
+    if any(p.lower() in TEST_DIRS for p in parts[:-1]):
+        return True
+    return bool(parts) and any(fnmatch(parts[-1], g) for g in TEST_GLOBS)
 
 
 def lang_for(rel):
@@ -152,13 +175,18 @@ def _rel_dir(root, dirpath):
     return "" if rel == "." else rel
 
 
-def walk(root, cfg):
+def walk(root, cfg, exclude_tests=False):
     """Yield (rel, abspath, lang, kind) for indexable files under `root`.
 
     Git-ignored content is NEVER indexed: when `root` is a git work tree the
     exact `git ls-files` roster decides (nested .gitignore, negations, global
     excludes); otherwise the workspace-root .gitignore plus any nested
     .gitignore found while descending are applied.
+
+    `exclude_tests=True` drops the TEST tree (see `TEST_DIRS`/`TEST_GLOBS`): the
+    codebase index maps the code, and a repo with hundreds of test files makes
+    every real symbol lose the top-k to a fixture. The knowledge base leaves it
+    off — a folder someone points a notebook at must be indexed as given.
     """
     globs = cfg.get("ignore") or []
     maxb = int(cfg.get("max_file_kb") or 512) * 1024
@@ -170,6 +198,8 @@ def walk(root, cfg):
         for rel in listed:
             parts = rel.replace("\\", "/").split("/")
             if any(p in SKIP_DIRS or p.startswith(".") for p in parts[:-1]):
+                continue
+            if exclude_tests and is_test_path(rel):
                 continue
             lang, kind = lang_for(rel)
             if not lang:
@@ -200,10 +230,14 @@ def walk(root, cfg):
             rd = d if not rel_dir else os.path.join(rel_dir, d)
             if _git_ignored(rd, d, True, rules) or extra_ignored(d, rd, globs):
                 continue
+            if exclude_tests and d.lower() in TEST_DIRS:
+                continue
             keep.append(d)
         dirnames[:] = keep
         for fn in filenames:
             rel = fn if not rel_dir else os.path.join(rel_dir, fn)
+            if exclude_tests and is_test_path(rel):
+                continue
             lang, kind = lang_for(rel)
             if not lang:
                 continue
@@ -379,6 +413,85 @@ def _sniff_suffix(data, ctype, url):
     if ext in docio.BINARY_DOC_EXT:
         return ext
     return None
+
+
+#: A page whose payload is a VIDEO, not text. Fetched as HTML it yields the
+#: chrome — title, description, comments — and the words are never indexed.
+#: Measured 2026-10-30: a YouTube URL added to a notebook became a source of page
+#: furniture that answered nothing. The transcript comes from a transcriber; when
+#: none is installed the add must FAIL loudly instead of storing the furniture.
+MEDIA_URL_RE = re.compile(
+    r"^https?://(?:www\.|m\.|music\.)?"
+    r"(?:youtube\.com/(?:watch\?|shorts/|embed/|live/|v/)|youtu\.be/)", re.I)
+
+#: Where a transcriber usually lives on a workstation. Only a DISCOVERY order —
+#: the config keys below always win, and nothing here is required.
+DEFAULT_TRANSCRIBERS = (
+    ("~/mcp/yt-whisper/venv/bin/python", "~/mcp/yt-whisper/transcribe.py"),
+)
+
+
+def is_media_url(url):
+    """True when the URL addresses a video we must TRANSCRIBE, not read."""
+    return bool(MEDIA_URL_RE.match(str(url or "").strip()))
+
+
+def _transcriber(cfg):
+    """(python, script) of the transcriber to use, or ("", "") when none exists."""
+    py = str((cfg or {}).get("media_transcriber_python") or "").strip()
+    sc = str((cfg or {}).get("media_transcriber_script") or "").strip()
+    if py and sc:
+        return os.path.expanduser(py), os.path.expanduser(sc)
+    for py, sc in DEFAULT_TRANSCRIBERS:
+        py, sc = os.path.expanduser(py), os.path.expanduser(sc)
+        if os.path.isfile(py) and os.path.isfile(sc):
+            return py, sc
+    return "", ""
+
+
+def transcribe_media_url(url, cfg=None, timeout=None):
+    """(text, error) — the spoken words of a video URL.
+
+    Runs the transcriber OUT of process: loading a whisper model is seconds to
+    minutes and must not live inside the indexer. A failure is returned, never
+    raised — `knowledge.add_source` turns it into the error the operator sees.
+    """
+    cfg = cfg or {}
+    py, script = _transcriber(cfg)
+    if not script:
+        return "", ("no transcriber for a video URL: install yt-dlp + whisper, or "
+                    "set index.media_transcriber_python and "
+                    "index.media_transcriber_script in Settings ▸ Knowledge")
+    model = str(cfg.get("media_transcriber_model") or "small").strip()
+    lang = str(cfg.get("media_transcriber_language") or "").strip()
+    tmpdir = tempfile.mkdtemp(prefix="longrun-media-")
+    out_txt = os.path.join(tmpdir, "transcript.txt")
+    cmd = [py, script, url,
+           "--output_audio", os.path.join(tmpdir, "audio.m4a"),
+           "--output_text", out_txt, "--model", model]
+    if lang:
+        cmd += ["--language", lang]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=float(timeout or 1800))
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return "", "transcription timed out after %ss" % (timeout or 1800)
+    except OSError as exc:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return "", "transcriber could not start (%s): %s" % (script, exc)
+    text = ""
+    try:
+        if os.path.isfile(out_txt):
+            with open(out_txt, encoding="utf-8", errors="replace") as f:
+                text = f.read().strip()
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    if proc.returncode != 0 or not text:
+        tail = [x for x in (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]]
+        return "", ("transcription failed (exit %s): %s"
+                    % (proc.returncode, " / ".join(tail) or "no transcript produced"))
+    return text, ""
 
 
 def fetch_url_info(url, timeout=20, max_kb=None, snapshot_dir=None):

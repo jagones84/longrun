@@ -30,6 +30,13 @@ _LOCK = threading.RLock()
 AGENTS_FILE = os.environ.get("LONGRUN_AGENTS_FILE") or os.path.join(
     paths.DATA_DIR, "agents.json")
 
+#: Agent numbers that are RESERVED, not drawn from the sequence. The permanent
+#: system session (`longrunAgent`) is the harness's own supervisor: it exists
+#: before any operator session and cannot be deleted, so giving it the first
+#: number makes the label stable across resets instead of depending on which
+#: session happened to be born first. `seq` never goes below a pinned number.
+PINNED_AGENT_IDS = {"longrunAgent": 1}
+
 
 def _load():
     return read_registry(AGENTS_FILE, agents={}, seq=0)
@@ -257,11 +264,26 @@ class AgentRegistry:
         with _LOCK:
             d = _load()
             a = d["agents"].get(sid)
+            pin = PINNED_AGENT_IDS.get(sid)
             if not a:
-                d["seq"] += 1
-                a = {"id": "A%d" % d["seq"], "n": d["seq"], "session": sid,
-                     "created": round(time.time(), 3)}
+                if pin is None:
+                    d["seq"] += 1
+                a = {"id": "A%d" % (pin or d["seq"]), "n": pin or d["seq"],
+                     "session": sid, "created": round(time.time(), 3)}
                 d["agents"][sid] = a
+            if pin is not None:
+                pid = "A%d" % pin
+                # A registry written BEFORE the reservation existed (or a second
+                # holder) must never keep this label: move those records to the
+                # next free numbers, then take the slot.
+                for other_sid, other in d["agents"].items():
+                    if other_sid != sid and other.get("id") == pid:
+                        d["seq"] += 1
+                        other["id"], other["n"] = "A%d" % d["seq"], d["seq"]
+                a["id"], a["n"] = pid, pin
+                # The pinned number is a FLOOR for the counter, so a retract after
+                # deleting everything can never re-issue `A1` to a new session.
+                d["seq"] = max(int(d.get("seq") or 0), pin)
             if name:
                 nm = str(name)[:80].strip()
                 # JAG-294: names are unique across agents AND sessions. Reusing a

@@ -42,9 +42,23 @@ DEFAULT_CONFIG = {
     # searchable (an OpenAI-compatible model ref, e.g. openrouter:google/gemini-2.5-flash).
     "image_caption_model": "",
     "image_min_chars": 80,
+    # A video URL has no text to read: the WORDS are in the audio, so the source
+    # is transcribed by an out-of-process transcriber. These two keys name it
+    # (empty = auto-discover, see `chunk.DEFAULT_TRANSCRIBERS`); when no
+    # transcriber resolves, adding the URL FAILS with the reason instead of
+    # storing the page furniture. `media_transcriber_model` is a whisper size.
+    "media_transcriber_python": "",
+    "media_transcriber_script": "",
+    "media_transcriber_model": "small",
+    "media_transcriber_language": "",
     "chunk_lines": 60,
     "overlap_lines": 8,
     "ignore": ["*.min.js", "*.min.css", "*.map", "*.lock", "*.svg", "*.ipynb"],
+    # The CODEBASE index maps the product, not its test suite: `tests/`, `spec/`,
+    # `test_*.py`, `*.test.ts`… are skipped so a real symbol is not out-ranked by
+    # a fixture. The knowledge base is unaffected (it indexes what you point it
+    # at). Set false to index the whole tree again.
+    "exclude_tests": True,
     # JAG-403j: a SHIPPED default so a fresh clone has a working embedding model
     # (not an empty field). The overlay still overrides it — set "" to force bm25-only.
     "embed_model": "cohere:embed-multilingual-v3.0",

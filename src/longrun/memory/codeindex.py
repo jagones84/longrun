@@ -117,7 +117,8 @@ def build(ws: str, force: bool = False,
             scanned = 0
             newest = 0.0
             emit("scan", scanned_files=scanned)
-            for rel, abspath, lang, kind in _chunk.walk(ws, globs):
+            for rel, abspath, lang, kind in _chunk.walk(
+                    ws, globs, exclude_tests=bool(cfg.get("exclude_tests", True))):
                 scanned += 1
                 seen.add(abspath)
                 try:
@@ -369,7 +370,8 @@ def freshness(ws, budget_s=0.5, max_files=20000):
     cfg = _cfg.load_config()
     t0 = time.monotonic()
     try:
-        for _rel, abspath, _lang, _kind in _chunk.walk(real, cfg):
+        for _rel, abspath, _lang, _kind in _chunk.walk(
+                real, cfg, exclude_tests=bool(cfg.get("exclude_tests", True))):
             out["checked"] += 1
             try:
                 if os.stat(abspath).st_mtime > ref + 1e-6:
