@@ -260,7 +260,8 @@ def _goal_end(sess, goal_mode):
 
 def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                     sender=None, subjob=None, plan_only=False, sender_session=None,
-                    goal_mode=False, goal_started=None, max_steps=None):
+                    goal_mode=False, goal_started=None, max_steps=None,
+                    headless=False):
     """SSE producer for one chat request on `sess`.
 
     Contract (JAG-51): the caller has already appended the `user` message and
@@ -406,7 +407,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                 chat_once(sess, message, target, on_delta, trace=trace, on_event=_emit,
                           autonomous=autonomous, plan_only=plan_only,
                           goal_mode=goal_mode, goal_started=goal_started,
-                          max_steps=max_steps)
+                          max_steps=max_steps, headless=headless)
                 # JAG-431n: the JAG-76 "guarantee a plan" fallback is GONE.
                 #
                 # It ran a planner model call AFTER the turn had already answered,
@@ -2155,7 +2156,8 @@ class Handler(BaseHTTPRequestHandler):
                 sess, message, qs.get("model"), None, autonomous=_goal_mode,
                 goal_mode=_goal_mode,
                 goal_started=(time.time() if _goal_mode else None),
-                max_steps=qs.get("max_steps")))
+                max_steps=qs.get("max_steps"),
+                headless=bool(qs.get("headless"))))   # JAG-526
         # JAG-431r4: the old GET /api/agent/run block was DEAD — api_v02.handle()
         # (dispatched at the top of do_GET) already owns this path and drives the v2
         # loop (agent_stream_gen_v2). The unreachable copy called the OLD agent_run
@@ -2311,6 +2313,11 @@ class Handler(BaseHTTPRequestHandler):
             _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
             if not _goal_ok:
                 return self._send(409, _goal_payload)
+            # JAG-526: a client with nobody watching (a script, a benchmark,
+            # another agent) says so explicitly. It gets the loop's full
+            # autonomy — no HUMAN IN THE LOOP card — but its message is sent
+            # VERBATIM, so `mode=goal` is not the way to say it.
+            _headless = bool(body.get("headless") or qs.get("headless"))
             _goal_started = time.time() if _goal_mode else None
             _goal_wall_secs = None
             if _goal_mode:
@@ -2376,7 +2383,8 @@ class Handler(BaseHTTPRequestHandler):
                     reply, model = chat_once(sess, message, _tm, trace=trace,
                                              autonomous=_goal_mode, goal_mode=_goal_mode,
                                              goal_started=_goal_started,
-                                             max_steps=body.get("max_steps"))
+                                             max_steps=body.get("max_steps"),
+                                             headless=_headless)
                 except Exception as e:  # noqa: BLE001
                     # JAG-51: persist an explicit assistant error turn *before* the
                     # 502 — the user message must never stay orphaned.
@@ -2466,11 +2474,13 @@ class Handler(BaseHTTPRequestHandler):
             _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
             if not _goal_ok:
                 return self._send(409, _goal_payload)
+            _headless = bool(body.get("headless") or qs.get("headless"))   # JAG-526
             return sse_response(self, chat_stream_gen(
                 sess, message, body.get("model") or qs.get("model"), None,
                 autonomous=_goal_mode, goal_mode=_goal_mode,
                 goal_started=(time.time() if _goal_mode else None),
-                max_steps=body.get("max_steps") or qs.get("max_steps")))
+                max_steps=body.get("max_steps") or qs.get("max_steps"),
+                headless=_headless))
         if path == "/api/model/ensure":
             alias = body.get("model") or qs.get("model") or \
                 routing.pick("chat") or default_model()

@@ -243,7 +243,11 @@ class LongrunAdapter:
 
     def send_task(self, ref, prompt, timeout=None):
         t0 = time.time()
-        body = {"session": ref.session, "message": prompt}
+        body = {"session": ref.session, "message": prompt,
+                # A benchmark has NOBODY attached to answer a HUMAN IN THE LOOP
+                # card, and the upstream instruction must reach the model
+                # verbatim — so this is `headless`, not `mode: goal` (JAG-526).
+                "headless": True}
         if self.model:
             body["model"] = self.model
         if self.max_steps:

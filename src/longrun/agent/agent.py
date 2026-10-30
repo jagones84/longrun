@@ -2702,9 +2702,26 @@ def _harness_start_note(sess):
         pass
 
 
+def _turn_flags(autonomous=False, goal_mode=False, plan_only=False, headless=False):
+    """`(wrap_goal, autonomous)` for one turn — the ONE place the two questions
+    `autonomous` used to answer together are separated (JAG-526).
+
+    `autonomous` meant both "may this turn work without asking?" and "wrap the
+    message in GOAL MODE prose?". A headless caller (a script, a benchmark,
+    another agent over REST) needs only the first: nobody is attached to answer
+    a HUMAN IN THE LOOP card, so the turn must report its REAL reply instead of
+    parking — but its message must reach the model VERBATIM, because a benchmark
+    compares harnesses on the same instruction. The wrapper therefore stays tied
+    to goal mode / explicit autonomy, never to `headless`.
+    """
+    goal_mode = bool(goal_mode and not plan_only)
+    wrap = bool(goal_mode or (autonomous and not headless))
+    return wrap, bool(autonomous or goal_mode or headless)
+
+
 def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=None,
               autonomous=False, plan_only=False, goal_mode=False, goal_started=None,
-              max_steps=None):
+              max_steps=None, headless=False):
     """Run one streamed router call and persist exactly one assistant message.
 
     Contract (JAG-51): the caller appends the `user` message; this function is
@@ -2725,14 +2742,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     if on_event is None:
         on_event = publish
     goal_mode = bool(goal_mode and not plan_only)
-    autonomous = bool(autonomous or goal_mode)
+    _wrap_goal, autonomous = _turn_flags(autonomous, goal_mode, plan_only, headless)
     # JAG-58b: the chat IS the agent — same tool registry as the agent loop, so
     # the model can call tools inline before it answers. Falls back to plain chat
     # if the tool registry is unavailable.
     # JAG-70/JAG-100: one shared assembler builds the EXACT prompt sent here and
     # measured by the context indicator, so the number cannot drift from reality.
     tool_ctx = server._tool_context()
-    msgs, ctx_stats = assemble_turn(sess, message, tool_ctx, model, autonomous)
+    msgs, ctx_stats = assemble_turn(sess, message, tool_ctx, model, _wrap_goal)
     # JAG-172: everything appended to `msgs` from this index on is THIS turn's
     # agentic history (tool calls, observations, nudges). It is persisted at the
     # end of the turn so the model retains its own work across turns and the ctx

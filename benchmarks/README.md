@@ -91,7 +91,14 @@ Without `--out` the runner names the folder itself
 (`.agent/BENCHMARKS/runs/<date>_jobbench_<model>_<arms>_<scope>_n<N>`, `-2` on a
 repeat) and writes `run.json` + `compare.{json,md}` inside it; `runs/INDEX.md` is
 derived from the manifests. `--max-steps` is the per-turn real-tool budget for the
-Longrun arm (chat default 8 truncates a multi-artifact task).
+Longrun arm (chat default 8 truncates a multi-artifact task). `--only-task task2`
+re-runs ONE task by name instead of "the first N" (Longrun arm only: Harness²
+sweeps a whole domain).
+
+The Longrun arm sends `headless: true`: a benchmark has nobody attached to answer
+a HUMAN IN THE LOOP card, so the turn reports its real reply instead of parking.
+It is **not** `mode: goal` — that would wrap the message in GOAL MODE prose and
+break the verbatim-instruction parity the comparison depends on.
 
 One model, three spellings (`provider:model` for Longrun, `provider/model` for
 Harness²/OpenCode, the bare id for the judge), and one scorer for both arms.

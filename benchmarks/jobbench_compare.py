@@ -72,6 +72,22 @@ def default_out(arms, model, n_tasks, scope=""):
     return path
 
 
+def select_tasks(all_tasks, only=None, limit=None):
+    """The tasks a run actually uses — a re-run is named, never positional.
+
+    `only` is a list of task ids or their bare suffixes (`task2`); a re-run must
+    target the task that failed, not "the first N" again. `limit` keeps its
+    meaning only when nothing is named (`--tasks 3`).
+    """
+    tasks = list(all_tasks or [])
+    only = [o for o in (only or []) if o]
+    if only:
+        return [t for t in tasks
+                if t.get("id") in only
+                or any(str(t.get("id", "")).endswith("/" + o) for o in only)]
+    return tasks if limit is None else tasks[:max(0, int(limit))]
+
+
 def write_manifest(out, **fields):
     """Merge `fields` into `<out>/run.json` (one manifest per run, never a guess)."""
     path = Path(out) / "run.json"
@@ -331,6 +347,9 @@ def main(argv=None):
     ap.add_argument("--max-steps", type=int, default=40,
                     help="real-tool steps per turn for the Longrun arm (server clamps "
                          "it to its iteration cap); the chat default is 8")
+    ap.add_argument("--only-task", default="",
+                    help="comma list of task ids or suffixes to re-run (e.g. task2); "
+                         "the Longrun arm only — Harness² sweeps by domain")
     ap.add_argument("--harness2-dry-run", action="store_true",
                     help="print Harness²'s command without spending anything")
     args = ap.parse_args(argv)
@@ -340,7 +359,12 @@ def main(argv=None):
         return 0
 
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
-    tasks = jobbench.tasks(args.profession, args.tasks)
+    only = [t.strip() for t in args.only_task.split(",") if t.strip()]
+    if only and "harness2" in arms:
+        print("--only-task is the Longrun arm only: Harness² sweeps a whole domain")
+        return 2
+    tasks = jobbench.tasks(args.profession, None if only else args.tasks)
+    tasks = select_tasks(tasks, only, None if only else args.tasks)
     if not tasks:
         print("no JobBench task matched profession=%r" % args.profession)
         return 2

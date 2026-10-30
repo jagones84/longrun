@@ -189,8 +189,11 @@ check("J4 the index is derived from the manifests",
 # K — a benchmark turn may ask for the tool budget it needs ---------------
 AGENT = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
 HTTP = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8").read()
+import re as _re  # noqa: E402
+_sig = _re.search(r"def chat_once\(([^)]*)\)", AGENT, _re.S)
 check("K1 the chat turn accepts a per-turn tool budget, clamped to the loop cap",
-      "max_steps=None):" in AGENT and "min(int(_want_steps), CHAT_TOOL_MAX_ITERS)" in AGENT,
+      bool(_sig) and "max_steps" in _sig.group(1)
+      and "min(int(_want_steps), CHAT_TOOL_MAX_ITERS)" in AGENT,
       "chat_once must accept max_steps and clamp it")
 check("K2 both chat endpoints carry the caller's budget",
       'max_steps=body.get("max_steps")' in HTTP
