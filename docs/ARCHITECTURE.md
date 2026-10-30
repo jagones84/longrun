@@ -193,6 +193,15 @@ the model a second code lane:
   history and each module's mtime, and answers `used ×N` / `never used · N run(s)
   since it landed` / `new` — the same object `/api/improvement` serves and the
   WebUI renders.
+- `selfevolve.abstract` is the ABSTRACTION owner (EV-22), and the only step that
+  reads a repeat as a procedure: ONE single-shot completion (`improve.single_shot`,
+  role `reviewer`, injectable call seam) answers
+  `{compact, name, goal, why, confidence}`. The record is stored on the draft
+  (`abstract`, plus `purpose` = goal), `forge_from_draft` reads it, and the module
+  is therefore `learned_<meaning>_<hash8>` with the goal as its description;
+  `compact: false` means the repeat is a habit and nothing is written.
+  `evolve_once` runs it before the forge bound (`abstract_per_run`) and fails
+  OPEN when the model is unavailable — naming degrades, the code gate never does.
 
 Skill identity is canonical: the repository library and the Matrix runtime are
 one namespace, the repository copy wins deterministically, and a shadowed folder
