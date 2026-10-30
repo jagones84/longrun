@@ -278,8 +278,15 @@ def opencode_command(workspace, model, prompt):
     root = DEFAULT_HARNESS2
     bun = root / "dependencies" / "tools" / "node_modules" / ".bin" / "bun"
     oc = root / "dependencies" / "opencode" / "packages" / "opencode"
+    # `--dangerously-skip-permissions` is a PARITY flag, not a shortcut. A
+    # non-interactive `opencode run` auto-rejects EVERY permission ask ("permission
+    # requested: …; auto-rejecting"), so on 2026-10-30 the bare arm died after 4
+    # steps / 11.6 s with 0 files delivered on a task needing one scratch write —
+    # 0/88 that measures its permission gate, not its loop. Longrun runs with
+    # `approvals.mode=full` (see `setup()`), so parity requires this.
     return [str(bun), "run", "--cwd", str(oc), "--conditions=browser", "src/index.ts",
-            "run", prompt, "--dir", str(workspace), "--model", model, "--format", "json"]
+            "run", prompt, "--dir", str(workspace), "--model", model, "--format", "json",
+            "--dangerously-skip-permissions"]
 
 
 def _h2_env(key):

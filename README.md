@@ -9,7 +9,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-435%2F435%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-436%2F436%20tests-blue.svg)](#tests)
 
 **Longrun is the self-hosted AI agent harness that drives the LLM — teams of
 agents, real tools, and verification, on your own machine.** One Python process
@@ -475,7 +475,7 @@ LONGRUN_BATTERY_FULL=1 bash tests/battery.sh
 LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh
 ```
 
-The acceptance suite now contains **435/435 test files**.
+The acceptance suite now contains **436/436 test files**.
 See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ---

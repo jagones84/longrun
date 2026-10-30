@@ -62,6 +62,8 @@ function viewerFor(p) {
   const e = extOf(p);
   if (IMG_EXT.has(e)) return "image";
   if (e === "pdf") return "pdf";
+  // EV-45: a workbook is DATA, not a blob — the dock renders a table.
+  if (e === "xlsx" || e === "xlsm") return "sheet";
   if (e === "md" || e === "markdown") return "markdown";
   if (e === "html" || e === "htm") return "html";
   return "code";
@@ -885,6 +887,8 @@ function renderActive() {
     node.src = url;
     if (t.viewer === "pdf") node.setAttribute("style", "width:100%;height:100%;border:0");
     state.preview.appendChild(node);
+  } else if (t.viewer === "sheet") {
+    renderSheet(t);
   } else {
     state.preview.innerHTML = '<div class="remaining">binary file — no preview (' + esc(t.size ? t.size + " B" : "") + ")</div>";
   }
@@ -895,6 +899,66 @@ function renderActive() {
   state.toggleBtn.hidden = t.viewer !== "markdown";
   state.toggleBtn.textContent = t.mode === "code" ? "render" : "code";
   updateStatus();
+}
+
+/* EV-45: a spreadsheet opens as a TABLE. The dock asks /api/fs/sheet for one
+   sheet at a time (the server bounds it), renders a read-only grid with a tab
+   per sheet, and caches the answer on the TAB so switching sheets — or tabs and
+   back — never re-downloads the workbook. Read-only is deliberate: a text panel
+   is not a spreadsheet editor, so silence would be worse than a grid. */
+function colName(i) {
+  let s = "", n = i + 1;
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+async function renderSheet(t) {
+  if (!state.preview) return;
+  if (!t._sheet) {
+    state.preview.innerHTML = '<div class="remaining">loading sheet…</div>';
+    let d;
+    try { d = await jget("/api/fs/sheet?path=" + encodeURIComponent(t.path) + sessionQS()); }
+    catch (e) { state.preview.innerHTML = '<div class="remaining">sheet error: ' + esc(String(e)) + "</div>"; return; }
+    if (!d || d.error) {
+      state.preview.innerHTML = '<div class="remaining">' + esc((d && d.error) || "sheet error") + "</div>";
+      return;
+    }
+    t._sheet = d;
+  }
+  if (activeTab() !== t) return;   // the operator moved on while we were fetching
+  const d = t._sheet, rows = d.rows || [];
+  const tabs = (d.sheets || []).map((n) =>
+    '<button class="xsheet-tab' + (n === d.sheet ? " on" : "") + '" data-sheet="' + esc(n) + '">' +
+    esc(n) + "</button>").join("");
+  let html = '<div class="xsheet"><div class="xsheet-tabs">' + tabs + "</div>";
+  if (!rows.length) {
+    html += '<div class="remaining">empty sheet</div>';
+  } else {
+    html += '<div class="xsheet-wrap"><table><thead><tr><th></th>' +
+      rows[0].map((_c, i) => "<th>" + colName(i) + "</th>").join("") + "</tr></thead><tbody>";
+    rows.forEach((r, ri) => {
+      html += "<tr><th>" + (ri + 1) + "</th>" +
+        r.map((c) => "<td>" + esc(String(c)) + "</td>").join("") + "</tr>";
+    });
+    html += "</tbody></table></div>";
+    html += '<div class="remaining">' + (d.truncated ? "first " + d.max_rows + " rows · " : "") +
+      rows.length + " rows · " + rows[0].length + " cols · " + esc(d.sheet) + "</div>";
+  }
+  html += "</div>";
+  state.preview.innerHTML = html;
+  state.preview.querySelectorAll(".xsheet-tab").forEach((b) => {
+    b.onclick = async () => {
+      const want = b.dataset.sheet;
+      if (!want || want === d.sheet) return;
+      let nd;
+      try {
+        nd = await jget("/api/fs/sheet?path=" + encodeURIComponent(t.path) +
+                        "&sheet=" + encodeURIComponent(want) + sessionQS());
+      } catch (e) { return; }
+      if (!nd || nd.error) return;
+      t._sheet = nd;
+      renderSheet(t);
+    };
+  });
 }
 
 function updateStatus() {

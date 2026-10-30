@@ -350,6 +350,12 @@ check("P1 the bare-loop arm is OpenCode's own CLI, pointed at the task workspace
 check("P2 it takes the SAME model spelling Harness2 uses, and the same prompt",
       _cmd_oc[_cmd_oc.index("--model") + 1] == "openrouter/z-ai/glm-5.3-flash"
       and "PROMPT" in _cmd_oc, _cmd_oc)
+# EV-44: a non-interactive `opencode run` auto-REJECTS every permission ask, so
+# the arm died in 4 steps with nothing delivered (measured 2026-10-30, 0/88) —
+# that measures its permission gate, not its loop. The Longrun arm runs with
+# approvals=full, so parity requires skipping the asks here too.
+check("P4 the bare-loop arm runs with permissions skipped (parity with approvals=full)",
+      "--dangerously-skip-permissions" in _cmd_oc, _cmd_oc)
 _stream = ('{"type":"step_finish","part":{"tokens":{"input":100,"output":10,'
            '"reasoning":5},"cost":0.001}}\n'
            '{"type":"text","part":{"text":"done"}}\n'

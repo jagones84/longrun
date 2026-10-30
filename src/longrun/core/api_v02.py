@@ -1800,6 +1800,8 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, fs_find(qs))
         if path == "/api/fs/read":  # JAG-124: read a text file into the editor
             return _r(handler, 200, fs_read(qs))
+        if path == "/api/fs/sheet":  # EV-45: table preview for a spreadsheet
+            return _r(handler, 200, fs_sheet(qs))
         if path == "/api/fs/raw":  # JAG-150: raw bytes for inline image/pdf preview
             return _fs_raw(handler, qs)
         if path == "/api/term/poll":  # JAG-281: real terminal — new output since cursor
@@ -3208,6 +3210,92 @@ def fs_read(qs=None) -> dict:
     except (UnicodeDecodeError, ValueError):
         return {"path": p, "text": "", "size": size, "truncated": False, "binary": True}
     return {"path": p, "text": text, "size": size, "truncated": False, "binary": False}
+
+
+def _sheet_cell(v):
+    """One cell as display text — a spreadsheet value is never a Python repr."""
+    import datetime as _dt
+    if v is None:
+        return ""
+    if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
+        return v.isoformat()
+    if isinstance(v, float):
+        if v != v or v in (float("inf"), float("-inf")):
+            return ""
+        return ("%.10g" % v)
+    return str(v)
+
+
+SHEET_MAX_ROWS = 200
+SHEET_MAX_COLS = 60
+
+
+def fs_sheet(qs=None) -> dict:
+    """GET /api/fs/sheet — the editor's TABLE preview for a workbook.
+
+    Why a route and not the file itself: an `.xlsx` is a zip of XML, so
+    `/api/fs/read` correctly reports `binary: true` and the dock could only say
+    "binary file — no preview". That is a UI that hides real data the operator
+    owns. This returns the FIRST N rows of one sheet as text cells, with the
+    sheet names, so the dock renders a table (read-only: editing a workbook
+    through a text panel is not a thing).
+
+    Deliberately bounded (SHEET_MAX_ROWS x SHEET_MAX_COLS) and `data_only`:
+    formulas arrive as their last computed value, and one huge sheet can never
+    freeze the panel. `truncated` says the cut happened — the panel shows it.
+    """
+    import os as _os
+    q = qs or {}
+    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _fs_allowed_roots(q))
+    if not p:
+        return {"error": "path outside allowed roots"}
+    if not _os.path.isfile(p):
+        return {"error": "not a file: %s" % p}
+    ext = _os.path.splitext(p)[1].lower()
+    if ext not in (".xlsx", ".xlsm"):
+        return {"error": "not a workbook: %s (only .xlsx/.xlsm have a table "
+                         "preview — .xls needs Excel itself)" % ext,
+                "path": p}
+    try:
+        from openpyxl import load_workbook
+    except Exception:  # noqa: BLE001 — a missing optional dep is a message, not a 500
+        return {"error": "openpyxl is not installed on the server", "path": p}
+    try:
+        wb = load_workbook(p, read_only=True, data_only=True)
+    except Exception as e:  # noqa: BLE001 — a corrupt file must not break the panel
+        return {"error": "%s: %s" % (type(e).__name__, e), "path": p}
+    try:
+        names = list(wb.sheetnames or [])
+        if not names:
+            return {"path": p, "sheets": [], "sheet": "", "rows": [],
+                    "truncated": False}
+        want = str(q.get("sheet") or "").strip()
+        name = want if want in names else names[0]
+        ws = wb[name]
+        rows, cut = [], False
+        for r in ws.iter_rows(max_row=SHEET_MAX_ROWS, max_col=SHEET_MAX_COLS,
+                              values_only=True):
+            cells = [_sheet_cell(v) for v in r]
+            # openpyxl pads every row to the sheet's widest column: trim the
+            # trailing empties so a 3-column table is 3 columns in the panel.
+            while cells and not cells[-1].strip():
+                cells.pop()
+            rows.append(cells)
+            if len(rows) >= SHEET_MAX_ROWS:
+                cut = True
+                break
+        # Trailing empty rows are zip padding, not data: drop them so the table
+        # is the table and not 200 blank lines.
+        while rows and not any(str(c).strip() for c in rows[-1]):
+            rows.pop()
+        return {"path": p, "sheets": names, "sheet": name, "rows": rows,
+                "truncated": bool(cut), "max_rows": SHEET_MAX_ROWS,
+                "max_cols": SHEET_MAX_COLS}
+    finally:
+        try:
+            wb.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _fs_raw(handler, qs=None):

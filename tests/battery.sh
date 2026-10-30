@@ -17,6 +17,13 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/sf-battery-XXXXXX")"
 PYC="$TMP/pyc"
 RES="$TMP/results"
 export PYTHONPYCACHEPREFIX="$PYC"
+# EV-45b: never READ or WRITE a bytecode cache next to the source. Measured
+# 2026-10-30: a `__pycache__/jobbench_compare.cpython-312.pyc` written by a manual
+# driver run made a test assert on the OLD function body (a pin failed while the
+# source carried the fix). On this network mount the source mtime can land in the
+# same coarse tick as a previous compile, so python considered the stale .pyc
+# valid. Deterministic gate = no bytecode cache at all.
+export PYTHONDONTWRITEBYTECODE=1
 mkdir -p "$PYC" "$RES"
 
 # Live progress log. The aggregate summary only prints when EVERY test is done, so a
