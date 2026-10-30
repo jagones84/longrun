@@ -2464,6 +2464,18 @@ def _deliverable_review_text(sess, request, since, state):
         from longrun.plan import artifacts as _art
         text = _art.review(_chat_workspace(sess), request, since=since,
                            exclude=_harness_state_roots())
+        if text:
+            # Steps closed on the model's word alone are claims, not proof; the
+            # graph already knows which (taskgraph.claim_only_nodes). Naming them
+            # here is the cheapest way to make "done" mean "checkable".
+            from longrun.plan import taskgraph as _tg
+            _claims = _tg.claim_only_nodes(_tg.load(sess["id"]) or {})
+            if _claims:
+                text += ("\n\nCLOSED STEPS WITH NO SOURCE (%d): %s\n"
+                         "  * each of those is a CLAIM, not proof: name the file/sheet/"
+                         "value or the command output that backs it (`todo.update` with "
+                         "`sources`), or reopen the step." % (len(_claims),
+                                                             ", ".join(_claims[:8])))
     except Exception:  # noqa: BLE001
         state["left"] = 0
         return None

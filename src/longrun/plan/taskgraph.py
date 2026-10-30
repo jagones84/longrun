@@ -768,6 +768,27 @@ def cancel_node(graph, node_id):
     return update_node(graph, node_id, status="cancelled", source="cancel")
 
 
+def claim_only_nodes(graph):
+    """Ids of `done` nodes whose evidence is a CLAIM (no `sources`, no `observed`).
+
+    The graph already records the difference (F3): an entry with `sources` or an
+    `observed` marker is proof, the rest is the model's word. A close that only
+    ever produced the second kind is a close nobody can check — and the harness can
+    name it without knowing the task, the rubric or the domain.
+    """
+    out = []
+    for node in plan_nodes(graph or {}):
+        if node.get("status") != "done":
+            continue
+        entries = current_evidence(node)
+        if not entries:
+            continue          # `done` without any evidence is refused at write time
+        if any(e.get("sources") or e.get("observed") for e in entries):
+            continue
+        out.append(str(node.get("id")))
+    return out
+
+
 def audit_node(graph, node_id):
     """Read-only verdict on a node (RDD P1 / JAG-206).
 

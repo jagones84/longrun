@@ -123,6 +123,47 @@ check("C3 it is a checklist, not a grade (no score, an instruction to fix)",
 check("C4 nothing written → no read-back at all", A.review(TMP + "/nowhere", "", since=0) is None
       and A.review(os.path.join(TMP, "empty-dir"), "", since=0) is None)
 
+# F — the files the turn was GIVEN are accounted for -----------------------
+for _name, _body in (("alpha.csv", "x,y\n1,2\n"), ("beta.json", "{}"),
+                     ("gamma.txt", "notes\n")):
+    _p = os.path.join(WS, "task_folder", _name)
+    with open(_p, "w", encoding="utf-8") as f:
+        f.write(_body)
+    os.utime(_p, (_old, _old))
+
+_given = A.inputs(WS, since=SINCE)
+check("F1 the inputs the turn was GIVEN are listed",
+      {"task_folder/alpha.csv", "task_folder/beta.json",
+       "task_folder/gamma.txt"} <= set(_given), _given)
+check("F2 a file the turn WROTE is never reported as an input",
+      "output/report.xlsx" not in _given and "output/table.csv" not in _given, _given)
+_text_in = A.review(WS, "x", since=SINCE) or ""
+check("F3 the read-back demands an account of every input",
+      "INPUTS you were GIVEN" in _text_in and "explicitly dismissed" in _text_in,
+      _text_in[-400:])
+
+# G — a closed step with no SOURCE is a claim, and it is named -------------
+os.environ.setdefault("LONGRUN_GRAPH_DIR", os.path.join(TMP, "graph"))
+os.makedirs(os.environ["LONGRUN_GRAPH_DIR"], exist_ok=True)
+from longrun.plan import taskgraph as TG  # noqa: E402
+
+_g = TG.ensure("v731-sess", session_id="v731-sess")
+TG.begin_plan(_g)
+TG.add_node(_g, "read the inputs", node_id="n1")
+TG.update_node(_g, "n1", status="done", evidence="read 3 tables",
+               sources=["task_folder/alpha.csv:1"])
+TG.add_node(_g, "compare the averages", node_id="n2")
+TG.update_node(_g, "n2", status="done", evidence="the averages match")
+TG.add_node(_g, "write the notice", node_id="n3")
+TG.update_node(_g, "n3", status="superseded", reason="not needed: the client asked "
+               "for the workbook only")
+TG.save(_g)
+_claims = TG.claim_only_nodes(TG.load("v731-sess"))
+check("G1 a done step backed by a source is proof, not a claim", "n1" not in _claims, _claims)
+check("G2 a done step with only the model's word is reported, once",
+      _claims == ["n2"], _claims)
+check("G3 a superseded step is not a claim to fix", "n3" not in _claims, _claims)
+
 # D ----------------------------------------------------------------------
 _state = {"left": 1}
 _first = A.review(WS, "x", since=SINCE)
@@ -153,7 +194,7 @@ check("E2 it is resolved on the session's OWN workspace",
       "_chat_workspace(sess)" in SRC.split("def _deliverable_review_text")[1][:1400],
       "workspace resolver")
 check("E3 the audit can never break a turn (guarded import + except)",
-      "except Exception:  # noqa: BLE001" in SRC.split("def _deliverable_review_text")[1][:1400])
+      "except Exception:  # noqa: BLE001" in SRC.split("def _deliverable_review_text")[1][:2600])
 check("E4 it is fed as a harness turn the operator can see",
       SRC.count('_inject(_drv, "review")') >= 4, SRC.count('_inject(_drv, "review")'))
 

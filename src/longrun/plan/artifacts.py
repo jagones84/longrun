@@ -35,8 +35,11 @@ DELIVERABLE_EXTS = (".xlsx", ".xlsm", ".csv", ".pdf", ".docx", ".pptx",
                     ".md", ".txt", ".html", ".htm")
 
 #: Directories that are inputs, caches or tooling — never "what I wrote".
+#: Tool/cache directories only. An INPUT folder is deliberately NOT skipped: the
+#: mtime rule already separates "given to the turn" from "written by it", and a
+#: module that hard-codes a benchmark's folder name is not generic.
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
-             "task_folder", ".pytest_cache", ".mypy_cache"}
+             ".pytest_cache", ".mypy_cache"}
 
 MAX_FILES = 8
 MAX_CSV_ROWS = 5000
@@ -196,6 +199,45 @@ def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=()):
     return entries
 
 
+#: A source a task can hand over: documents PLUS the structured data formats that
+#: are never deliverables but are always evidence.
+INPUT_EXTS = DELIVERABLE_EXTS + (".json", ".xml", ".yaml", ".yml", ".db", ".sqlite")
+
+
+def inputs(workspace, since=0.0, limit=12, exclude=()):
+    """The files the turn was GIVEN: they existed before it started.
+
+    The mirror image of `inventory` — same workspace, opposite side of `since`. A
+    task normally hands the agent a set of sources; an answer that never accounts
+    for one of them rests on an input nobody looked at. That is a fact the harness
+    can state without knowing the task, so it states it.
+    """
+    root = str(workspace or "").strip()
+    if not root or not os.path.isdir(root):
+        return []
+    skip = {os.path.abspath(os.path.expanduser(str(p))) for p in (exclude or ()) if p}
+    if os.path.abspath(root) in skip:
+        return []
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames
+                       if d not in SKIP_DIRS
+                       and os.path.abspath(os.path.join(dirpath, d)) not in skip]
+        for name in filenames:
+            if not name.lower().endswith(INPUT_EXTS) or name.startswith("."):
+                continue
+            full = os.path.join(dirpath, name)
+            if os.path.abspath(full) in skip:
+                continue
+            if _mtime(full) + 1.0 >= float(since or 0.0):
+                continue  # written BY this turn, not given to it
+            try:
+                found.append(os.path.relpath(full, root))
+            except ValueError:
+                found.append(full)
+    return sorted(found)[:int(limit)]
+
+
 def _line(entry):
     """One human line per artifact: `path — <facts>`."""
     f = entry.get("facts") or {}
@@ -243,6 +285,12 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
               "element that shows `charts=0` is NOT delivered;",
               "  * if a requirement is missing, fix the artifact now — a requirement "
               "you cannot point at in the read-back is not done."]
+    given = inputs(workspace, since=since, exclude=exclude)
+    if given:
+        lines += ["", "INPUTS you were GIVEN (they existed before this turn): %d file(s) — %s"
+                  % (len(given), ", ".join(given)),
+                  "  * every input above must be used or explicitly dismissed; a source "
+                  "you never opened cannot back a claim."]
     head = " ".join(str(request or "").split())[:600]
     if head:
         lines += ["", "Request (head): " + head]
