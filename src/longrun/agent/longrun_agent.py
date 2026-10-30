@@ -14,7 +14,7 @@ substrate (Layer 2) of the Longrun harness:
     or `allow_matrix_promote` — those belong exclusively to the human operator).
   - Naming: every exclusive tool is exactly `namespace.tool` (two segments, one
     object namespace, one explicative verb: `agent.prompt_set`, `team.member_add`,
-    `kb.notebook_add`). No deeper dotted paths: they produced unreadable names
+    `kb.notebook_rename`). No deeper dotted paths: they produced unreadable names
     (`longrunAgent.teamorg.agents.prompt.set`) and unordered panels.
   - Dual-permission gate: an exclusive tool can execute ONLY when:
       1) the tool is enabled in the global Tool registry (`config/tools.yaml` /
