@@ -2521,6 +2521,52 @@ def _harness_state_roots():
     return roots
 
 
+def _other_session_roots(sess):
+    """Directories that belong to ANOTHER session's work, nested inside this one.
+
+    EV-46b: a chat whose workspace is a BROAD folder (the repo root) read back the
+    deliverables of a benchmark running next to it — fresh `.xlsx` files that the
+    chat never wrote, reported as "what you WROTE this turn" (live 2026-10-30,
+    twice). mtime alone cannot tell a concurrent writer from the model, but the
+    session table CAN: every session stores its workspace, so a workspace that is
+    strictly INSIDE mine is somebody else's tree. Exclude it and the campaign
+    folder that holds it (a run writes its report next to its workspace). A
+    directory that is my own workspace, or an ancestor of it, is never excluded —
+    otherwise a nested chat would erase its entire read-back.
+    """
+    out = []
+    try:
+        from longrun.memory import stores as _st
+        mine = os.path.abspath(str(_chat_workspace(sess) or "") or "/")
+        if mine in ("/", os.sep):
+            return []          # no workspace: nothing to subtract from
+        rows = _st.list_sessions()
+        for r in rows:
+            if str(r.get("id") or "") == str((sess or {}).get("id") or ""):
+                continue
+            ws = str(r.get("workspace") or "").strip()
+            if not ws:
+                continue
+            ws = os.path.abspath(os.path.expanduser(ws))
+            if ws == mine or mine.startswith(ws + os.sep) or not ws.startswith(mine + os.sep):
+                continue
+            # the workspace AND every folder between it and mine: a run keeps its
+            # report (`compare.md`) and its task trees NEXT TO the workspaces, and
+            # all of it is somebody else's tree.
+            node = ws
+            while node.startswith(mine + os.sep) and node != mine:
+                out.append(node)
+                parent = os.path.dirname(node)
+                if parent == node:
+                    break
+                node = parent
+                if len(out) >= 64:
+                    break
+    except Exception:  # noqa: BLE001 — an audit may slow a turn, never break it
+        return []
+    return sorted(set(out))
+
+
 def _deliverable_review_text(sess, request, since, state):
     """Mechanical read-back of what this turn WROTE, once per turn (or None).
 
@@ -2540,7 +2586,7 @@ def _deliverable_review_text(sess, request, since, state):
     try:
         from longrun.plan import artifacts as _art
         text = _art.review(_chat_workspace(sess), request, since=since,
-                           exclude=_harness_state_roots())
+                           exclude=_harness_state_roots() + _other_session_roots(sess))
         if text:
             # Steps closed on the model's word alone are claims, not proof; the
             # graph already knows which (taskgraph.claim_only_nodes). Naming them
