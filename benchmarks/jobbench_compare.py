@@ -289,6 +289,141 @@ def opencode_command(workspace, model, prompt):
             "--dangerously-skip-permissions"]
 
 
+#: OpenClaw's own CLI (a complete third-party harness: gateway + agent loop).
+#: `agent exec` is its ONE isolated headless turn — no chat channel, no session
+#: reuse — which is exactly the shape a benchmark needs. It requires Node
+#: >= 24.22 (the CLI refuses older: `node:sqlite is unavailable`) and the nvm copy
+#: is on no default PATH, so both are pinned here instead of assumed.
+OPENCLAW_BIN = "/home/jagones/.local/bin/openclaw"
+OPENCLAW_NODE_BIN = "/home/jagones/.nvm/versions/node/v24.22.1/bin"
+
+
+def openclaw_command(workspace, model, prompt, timeout):
+    """The OpenClaw arm's command line: one headless embedded agent turn."""
+    return [OPENCLAW_BIN, "agent", "exec", prompt, "--cwd", str(workspace),
+            "--model", model, "--json", "--timeout", str(int(max(30, timeout)))]
+
+
+def _openclaw_env(key):
+    """Env for OpenClaw: its node, the provider key, and its own `.env`.
+
+    OpenClaw resolves providers from its gateway config, which reads several
+    `*_API_KEY` variables; a missing one aborts the run BEFORE the model is chosen
+    ("Environment variable VLLM_API_KEY is missing"). The operator's real values
+    live in `~/.hermes/.env`, so they are merged here (never overriding what the
+    caller already set) instead of being guessed.
+    """
+    env = dict(os.environ)
+    env["PATH"] = OPENCLAW_NODE_BIN + os.pathsep + env.get("PATH", "")
+    env["OPENROUTER_API_KEY"] = key
+    dot = Path(os.path.expanduser("~/.hermes/.env"))
+    try:
+        body = dot.read_text(encoding="utf-8")
+    except OSError:
+        return env
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    return env
+
+
+def _openclaw_usage(stdout):
+    """Steps/tokens/cost + the reply from OpenClaw's `--json` envelope.
+
+    One object (not a JSONL stream): `usage.input/output`, `usage.cost.total`,
+    `assistantTurns`, `toolSummary.calls` and `final`. Anything missing stays 0
+    rather than inventing a number.
+    """
+    try:
+        obj = json.loads((stdout or "").strip() or "{}")
+    except ValueError:
+        return ({"steps": 0, "tokens_in": 0, "tokens_out": 0, "total_usd": 0.0,
+                 "source": "openclaw agent exec --json"}, "")
+    u = obj.get("usage") or {}
+    cost = u.get("cost") if isinstance(u.get("cost"), dict) else {}
+    tools = (obj.get("toolSummary") or {}).get("calls") or 0
+    usage = {
+        "steps": int(obj.get("assistantTurns") or tools or 0),
+        "tokens_in": int(u.get("input") or 0),
+        "tokens_out": int(u.get("output") or 0) + int(u.get("reasoningTokens") or 0),
+        "total_usd": round(float(cost.get("total") or obj.get("costUsd") or 0), 6),
+        "source": "openclaw agent exec --json",
+        "tool_calls": int(tools or 0),
+        "tool_failures": int((obj.get("toolSummary") or {}).get("failures") or 0),
+    }
+    return usage, str(obj.get("final") or "")
+
+
+def run_openclaw(tasks, out, *, solver_model, judge_model, judge_base, key, timeout,
+                 judge_timeout):
+    """Run OpenClaw's own headless turn per task, then grade its `output/`.
+
+    Same staging, same prompt, same judge as every other arm: the only thing that
+    changes is who runs the loop.
+    """
+    arm = Path(out) / "openclaw"
+    arm.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for task in tasks:
+        slug = _slug(task["id"])
+        ws = arm / slug / "workspace"
+        jobbench.stage(task, ws)
+        prompt = jobbench.prompt_for(task, ws)
+        cmd = openclaw_command(ws, solver_model, prompt, timeout)
+        meta = {"command": ["<prompt>" if i == 3 else c for i, c in enumerate(cmd)],
+                "model": solver_model, "workspace": str(ws),
+                "cwd": str(ws), "transport": "openclaw agent exec --json"}
+        t0 = time.time()
+        timed_out = False
+        proc = None
+        try:
+            proc = subprocess.Popen(cmd, cwd=str(ws), env=_openclaw_env(key),
+                                    text=True, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    start_new_session=True)
+            out_s, err_s = proc.communicate(timeout=timeout + 60)
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            timed_out, out_s, err_s, rc = True, "", "", -1
+        except (OSError, subprocess.SubprocessError) as exc:
+            meta["error"] = str(exc)
+            _write(arm / slug / "command.json", meta)
+            print("  openclaw FAILED to start: %s" % exc, flush=True)
+            rows.append({"task": task["id"], "arm": "openclaw", "ok": False,
+                         "error": str(exc), "delivered": 0, "files": [],
+                         "duration_s": round(time.time() - t0, 1),
+                         "model": solver_model, "score": None, "timed_out": False})
+            continue
+        meta.update({"returncode": rc, "status": "timeout" if timed_out else
+                     ("ok" if rc == 0 else "failed"),
+                     "duration_s": round(time.time() - t0, 1),
+                     "stderr_tail": (err_s or "")[-1200:]})
+        _write(arm / slug / "command.json", meta)
+        usage, reply = _openclaw_usage(out_s)
+        files = jobbench.deliverables(ws)
+        sc = JJ.score_run(task, ws, arm / slug / "judge.json", judge_model,
+                          judge_base, key, evaluated_model="openclaw-%s" % slug,
+                          timeout=judge_timeout)
+        row = {"task": task["id"], "arm": "openclaw", "ok": bool(sc.get("ok")),
+               "error": sc.get("error") or "", "delivered": len(files),
+               "files": files[:40], "duration_s": meta["duration_s"],
+               "model": solver_model, "score": sc, "usage": usage,
+               "steps": usage.get("steps"), "timed_out": timed_out,
+               "reply": (reply or "")[:1200], "reply_len": len(reply or "")}
+        _write(arm / slug / "result.json", row)
+        print("  openclaw %-50s delivered=%s steps=%s score=%s"
+              % (task["id"], len(files), usage.get("steps"),
+                 "%s/%s" % (sc.get("score"), sc.get("max")) if sc.get("ok")
+                 else sc.get("error")), flush=True)
+        rows.append(row)
+    return rows, {"model": solver_model, "transport": "openclaw agent exec --json",
+                  "cli": OPENCLAW_BIN, "node": OPENCLAW_NODE_BIN}
+
+
 def _h2_env(key):
     """Harness²'s own runtime env (isolated XDG dirs) + the solver key.
 
@@ -633,7 +768,7 @@ def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_tim
 #: harness, the evolving one. It is a LADDER, so each step answers one question:
 #: does a tool loop beat a single call (raw -> opencode), does this harness beat a
 #: bare loop (opencode -> longrun), does search beat both (-> harness2).
-ARM_ORDER = ("raw", "opencode", "longrun", "harness2")
+ARM_ORDER = ("raw", "opencode", "openclaw", "longrun", "harness2")
 
 
 def _arm_rank(name):
@@ -880,6 +1015,16 @@ def main(argv=None):
                                         judge_timeout=args.judge_timeout)
             parity.update({"opencode_model": prov_oc.get("model", ""),
                            "opencode_transport": prov_oc.get("transport", "")})
+            rows += got
+        elif arm == "openclaw":
+            got, prov_ocw = run_openclaw(tasks, out, solver_model=h2_model,
+                                         judge_model=args.judge_model,
+                                         judge_base=args.judge_base, key=key,
+                                         timeout=args.timeout,
+                                         judge_timeout=args.judge_timeout)
+            parity.update({"openclaw_model": prov_ocw.get("model", ""),
+                           "openclaw_transport": prov_ocw.get("transport", ""),
+                           "openclaw_cli": prov_ocw.get("cli", "")})
             rows += got
         elif arm == "harness2":
             got, meta = run_harness2(tasks, out, solver_model=h2_model,

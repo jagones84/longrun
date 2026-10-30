@@ -387,6 +387,32 @@ check("M8 an all-zero run crowns nobody (the floor is not a winner)",
       "**Better on this run:**" not in _text0 and "No arm beat the floor" in _text0,
       _text0[-400:])
 
+# P5/P6 — OpenClaw as its OWN arm (a complete third-party harness) ------------
+_cmd_ocw = JC.openclaw_command("/tmp/ws-ocw", "openrouter/z-ai/glm-5.3-flash",
+                               "PROMPT", 600)
+check("P5 the OpenClaw arm is one isolated headless turn in the task workspace",
+      _cmd_ocw[:3] == [JC.OPENCLAW_BIN, "agent", "exec"]
+      and _cmd_ocw[_cmd_ocw.index("--cwd") + 1] == "/tmp/ws-ocw"
+      and _cmd_ocw[_cmd_ocw.index("--model") + 1] == "openrouter/z-ai/glm-5.3-flash"
+      and _cmd_ocw[_cmd_ocw.index("--timeout") + 1] == "600"
+      and "--json" in _cmd_ocw and "PROMPT" in _cmd_ocw, _cmd_ocw)
+check("P5b OpenClaw runs on its own Node (the CLI refuses < 24.22)",
+      "24.22" in JC.OPENCLAW_NODE_BIN and JC.OPENCLAW_NODE_BIN in
+      JC._openclaw_env("K").get("PATH", ""), JC.OPENCLAW_NODE_BIN)
+_u_ocw, _r_ocw = JC._openclaw_usage(json.dumps({
+    "ok": True, "final": "done",
+    "usage": {"input": 13016, "output": 36, "reasoningTokens": 2,
+              "cost": {"total": 0.00138}},
+    "assistantTurns": 2, "toolSummary": {"calls": 1, "failures": 0}}))
+check("P6 the envelope's tokens/cost/steps are read, a broken one is zero",
+      _u_ocw["tokens_in"] == 13016 and _u_ocw["tokens_out"] == 38
+      and abs(_u_ocw["total_usd"] - 0.00138) < 1e-9 and _u_ocw["steps"] == 2
+      and _u_ocw["tool_calls"] == 1 and _r_ocw == "done"
+      and JC._openclaw_usage("not json")[0]["total_usd"] == 0.0)
+check("P6b openclaw sits between the bare loop and this harness in the ladder",
+      JC.ARM_ORDER.index("opencode") < JC.ARM_ORDER.index("openclaw")
+      < JC.ARM_ORDER.index("longrun"))
+
 # N — adding the other arms must not pay for the sweep twice ----------------
 _prev = os.path.join(TMP, "prevrun")
 _prev_base = os.path.join(_prev, "harness2", "_h2runs", "jb", "dataset",
