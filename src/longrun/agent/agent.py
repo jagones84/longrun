@@ -2792,6 +2792,31 @@ def _tool_markup_action(text):
     return {"action": "tool", "tool": tool.strip(), "args": args}
 
 
+def _tagged_action(text):
+    """`<action>NAME</action>` followed by its JSON object -> the action dict.
+
+    Local models mix an XML action TAG with the JSON payload (live 2026-10-30, the
+    model's own post-mortem: "action>finish</action> seguito da un JSON … il batch
+    non è mai stato eseguito"). The tag names the action and the JSON right after
+    it carries its parameters: that is the SAME request written two ways, so the
+    two halves are merged instead of burning a retry turn. When the payload
+    already carries a DIFFERENT `action`, the payload WINS and the tag is ignored
+    (a full action object is never re-labelled by a decorative tag).
+    """
+    m = re.search(r"<action>\s*([A-Za-z_.]+)\s*</action\s*>", str(text or ""), re.I)
+    if not m:
+        return None
+    name = m.group(1).strip().lower()
+    body = extract_json(str(text)[m.end():]) or extract_json(str(text))
+    if not isinstance(body, dict):
+        return None
+    if "action" in body:
+        return body if str(body.get("action") or "").strip().lower() == name else None
+    out = dict(body)
+    out["action"] = name
+    return out
+
+
 def _extract_action(answer):
     """Turn JSON, DSML, or Hermes-native tool calls into a harness action.
 
@@ -2808,6 +2833,9 @@ def _extract_action(answer):
         return _normalize_action(_dsml_action(answer))
     if _looks_like_tool_markup(answer):
         return _normalize_action(_tool_markup_action(answer))
+    tagged = _tagged_action(answer)
+    if tagged:
+        return _normalize_action(tagged)
     act = _normalize_action(extract_json(answer))
     if not act:
         act = _normalize_action(_dsml_action(answer))

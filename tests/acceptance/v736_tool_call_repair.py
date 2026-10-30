@@ -159,6 +159,25 @@ check("D2 the failure note is the only path that says NOT a result",
           os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
           encoding="utf-8").read())
 
+# ---- E: the XML tag + JSON envelope is the same request, not a lost batch ----
+# (the model's own post-mortem named this: "action>batch</action> + JSON … il
+# batch non è mai stato eseguito")
+_e1 = A._extract_action('<action>tool</action>\n{"tool":"shell.exec","args":{"command":"echo hi"}}')
+check("E1 <action>tool</action> + JSON is ONE action", _e1 == {
+    "action": "tool", "tool": "shell.exec", "args": {"command": "echo hi"}}, _e1)
+
+_e2 = A._extract_action('<action>batch</action>\n{"calls":[{"tool":"self.info","args":{}}]}')
+check("E2 <action>batch</action> + JSON keeps every call",
+      _e2 and _e2.get("action") == "batch" and len(_e2.get("calls") or []) == 1, _e2)
+
+_e3 = A._extract_action('<action>finish</action> {"summary":"all done"}')
+check("E3 <action>finish</action> + JSON carries the summary",
+      _e3 == {"summary": "all done", "action": "finish"}, _e3)
+
+_e4 = A._extract_action('<action>finish</action> {"action":"tool","tool":"shell.exec","args":{}}')
+check("E4 a full action object is never re-labelled by a conflicting tag",
+      _e4 and _e4.get("action") == "tool", _e4)
+
 print("\n---")
 print("v736: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
