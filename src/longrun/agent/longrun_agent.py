@@ -847,7 +847,7 @@ def ensure_system_session():
             "tool_cards": [],
             "injects": [],
         }
-        stores.ensure_job(sess)
+        stores.ensure_agent(sess)   # EV-30: the singleton session is an agent too
         changed = True
     else:
         for k, v in (("system", True), ("undeletable", True),

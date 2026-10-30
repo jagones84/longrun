@@ -117,7 +117,8 @@ with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
     html = f.read()
 check("the GUI uses the AX prefix for agents",
       "_agentNum" in html and "A${_anum}" in html and '_agents[sessionId]' in html
-      and '"J" + curJob' in html and '"A" + curJob' not in html)
+      # EV-30: the session sequence (J) is gone — the todo prefix falls back to A.
+      and '"A" + curJob' in html and '"J" + curJob' not in html)
 check("the GUI badges org agents and guards their delete",
       "org agent " in html and 'api("DELETE", "/api/agents/" + s.id)' in html
       and "is an ORG AGENT" in html)

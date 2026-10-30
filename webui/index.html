@@ -3060,12 +3060,11 @@ let curThink = null, curAns = null, feedSince = 0;
 let curJob = null;
 function _todoid(node) {
   const y = String((node && node.id) || "").replace(/\D+/g, "");
-  // v604: the label owner resolves against the roster (single source of truth).
-  // "A155.n40" was a phantom: node n40's session agent is A49, its session
-  // number is J155 — no A155 exists. Designated -> agent id (A49.n40);
-  // plain session -> its own session number (J180.n87); never a bare "A?".
+  // v604/EV-30: the label owner resolves against the roster (single source of
+  // truth). Every session IS an agent, so the prefix is always its A<n> id; the
+  // old plain-session fallback (J180.n87) is gone with the session sequence.
   const own = (_agents && sessionId && _agents[sessionId] && _agents[sessionId].id) || null;
-  return (own ? own : (curJob ? "J" + curJob : "J?")) + (y ? ".n" + y : "");
+  return (own || (curJob ? "A" + curJob : "A?")) + (y ? ".n" + y : "");
 }
 /* JAG-299: the JOB (JN) a step was created for, when a job scoped it. Lets the
    coordinator's list tell J2's steps apart from J3's instead of one blend. */
@@ -4997,7 +4996,7 @@ function selectSession(s) {
   _syncAttachmentBusyUI();
   _forceExpandActive = true;   // JAG-415: reveal this session's team group in the rail
   clearDone(s.id);   // JAG-218: opening a session clears its "finished" bell
-  curJob = _agentNum(s) || _sessJob[s.id] || null;   // JAG-290: agent id (not session seq)
+  curJob = _agentNum(s) || null;   // EV-30: the agent id IS the session's number
   _sessModel[s.id] = s.model || _sessModel[s.id] || "";
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
   renderQueue();   // JAG-174: show THIS session's queued messages, not the last one's
@@ -5115,13 +5114,12 @@ function _bindSidebarDrag(label, kind, id, group, container) {
     }
   });
 }
-/* JAG-290/v606: the badge and the todo prefix must show the AGENT id (e.g. A3), not the
-   session's internal sequence number. For a designated org agent we use its real
-   id; other sessions render their J sequence (never a fabricated A id — UP-1). */
+/* v606/EV-30: the badge and the todo prefix show the AGENT id (e.g. A3).
+   Every session IS an agent now, so the id always comes from the registry —
+   there is no session sequence number any more (it was the old J<n>). */
 function _agentNum(s) {
   const a = _agents[s && s.id];
-  const n = a ? (a.n || String(a.id || "").replace(/\D+/g, "")) : (s && s.job);
-  return n || null;
+  return a ? (a.n || String(a.id || "").replace(/\D+/g, "")) : null;
 }
 async function loadAgents() {
   try {
@@ -5195,15 +5193,16 @@ async function openSessMenu(row, s, ag) {
     if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
     if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); _forgetChatScrollState(s.id); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
-      if (ag) { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
+      // EV-30: every session has an agent record, but only a TEAM agent (one with
+      // reports / a role, kind != "session") is guarded — a plain chat deletes as before.
+      if (ag && ag.kind !== "session") { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
       else if (!(await confirmDelete("delete session " + (s.title || s.id) + "?"))) return;
       await api("DELETE", "/api/sessions/" + s.id);
       // JAG-462: drop EVERY browser-side per-session cache for the deleted id. Only
-      // the todo/scroll maps were pruned; `_sessModel`/`_sessJob`/`doneSessions` kept
-      // the key forever — unbounded growth, a stale `_sessJob` seeds a wrong todo
-      // prefix, and a stale `doneSessions` key leaves a permanent "🔔 (1)" in the title.
+      // the todo/scroll maps were pruned; `_sessModel`/`doneSessions` kept the key
+      // forever — unbounded growth, and a stale `doneSessions` key leaves a
+      // permanent "🔔 (1)" in the title.
       delete _sessModel[s.id];
-      delete _sessJob[s.id];
       clearDone(s.id);
       if (sessionId === s.id) { sessionId = null; $("log").innerHTML = ""; }
       loadSessions();
@@ -5240,9 +5239,11 @@ function _setAllGroups(collapse) {
 }
 /* JAG-415: rank every org agent by a DEPTH-FIRST walk of the reports_to tree, so
    the rail lists orchestrators first, in ORG order — never "last used". Agents not
-   wired into the tree fall back to their id order; non-agents keep server order. */
+   wired into the tree fall back to their id order; non-agents keep server order.
+   EV-30: every session carries an agent record, but only a TEAM agent takes part in
+   the org order — a plain chat must keep the server's last-used order. */
 function _orgRankMap() {
-  const agents = Object.values(_agents).filter(a => a && a.session);
+  const agents = Object.values(_agents).filter(a => a && a.session && a.kind !== "session");
   const byId = {}; agents.forEach(a => { byId[a.id] = a; });
   const by = {};   // reports_to id ("" = root) -> [agent]
   agents.forEach(a => { const p = a.reports_to || ""; (by[p] = by[p] || []).push(a); });
@@ -5289,10 +5290,12 @@ function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   const age = s.age ? (" · " + s.age) : "";
   const fol = s.workspace ? `<span class="ws" title="workspace: ${esc(s.workspace)}">📁</span>` : "";
   const _anum = _agentNum(s);
-  const jid = _anum ? (ag
-    ? `<span class="jid" title="agent id ${esc(ag.id)}">A${_anum}</span>`
-    : `<span class="jid" title="session sequence — no designated agent (team jobs live in Control)">J${_anum}</span>`) : "";
-  const agtag = ag ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + esc(ag.reports.join(", ")) : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
+  // EV-30: every session IS an agent, so the chip is always its A<n>. Before the
+  // roster arrives there is no id to show — never fabricate one (UP-1).
+  const jid = (ag && _anum)
+    ? `<span class="jid" title="agent id ${esc(ag.id)}">A${_anum}</span>` : "";
+  // EV-30: the ⬢ mark means "TEAM member" — a session's own identity record is not one.
+  const agtag = (ag && ag.kind !== "session") ? `<span title="org agent ${esc(ag.id)}${ag.name ? " — " + esc(ag.name) : ""}${(ag.reports && ag.reports.length) ? " · manages " + esc(ag.reports.join(", ")) : ""}" style="color:var(--acc2);flex-shrink:0">⬢</span>` : "";
   // JAG-339: the team symbol(s) this agent belongs to (may be several).
   const tchips = ag ? (ag.teams || []).map(id => { const t = _teamsById[id];
     return t ? `<span class="team" title="team ${esc(t.name)} — ${esc(t.id)}" style="flex-shrink:0">${esc(t.symbol || "•")}</span>` : ""; }).join("") : "";
@@ -5390,7 +5393,6 @@ async function loadSessions() {
   const _IDs = new Set(_all.map(s => s.id));
   _all.forEach(s => {
     _sessModel[s.id] = s.model || "";   // JAG-157: cache each session's model
-    _sessJob[s.id] = s.job || null;     // JAG-169: cache each session's job id
     _sessTitle[s.id] = s.title || s.id; // JAG-479: so the panel names every row
     // JAG-323: seed the busy marker from the authoritative server flag, so a page
     // load / refresh shows a HEADLESS run (job/routine turn) that no in-page event
@@ -7101,7 +7103,8 @@ async function loadPlan() {
   let g = null;
   try { g = await api("GET", "/api/sessions/" + encodeURIComponent(sessionId) + "/graph"); } catch (e) { g = null; }
   graph = (g && g.nodes && g.nodes.length) ? g : null;
-  curJob = _sessJob[sessionId] || curJob;   // JAG-169: keep JX aligned with the session
+  curJob = (_agents[sessionId] && (_agents[sessionId].n ||
+    String(_agents[sessionId].id || "").replace(/\D+/g, ""))) || curJob;  // EV-30
   renderGraph();
   _repaintChatNodes();   // JAG-465: labels/status of already-drawn chat rows
 }
@@ -7722,7 +7725,6 @@ let _modelsCache = [];   // flat [{ref,id,provider,pname,local,available,ctx,loa
 let _modelItems = [];    // items currently rendered, in visual order
 let _modelHi = 0;        // highlighted index (keyboard)
 let _sessModel = {};     // JAG-157: per-session model {sessionId: modelRef}
-let _sessJob = {};       // JAG-169: per-session job id {sessionId: JX}
 let _sessTitle = {};     // JAG-479: per-session title, so the runs panel names a row
 let _sessList = [];      // JAG-479: the last /api/sessions payload (real server truth)
 

@@ -44,9 +44,9 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      _purge_session_artifacts, _set_session_model, _sse_lock,
                      _sse_queues,
                      _start_event_pruning, _turn_lock, _valid_sid, agent_run,
-                     append_message, backfill_jobs, backfill_session_workspaces,
+                     append_message, backfill_agents, backfill_session_workspaces,
                      chat_once, clear_abort, clear_session, context_budget, default_model,
-                     ensure_job, ensure_model, ensure_reply_persisted, eval_list_tasks,
+                     ensure_agent, ensure_model, ensure_reply_persisted, eval_list_tasks,
                      eval_run, events_since, feed_seq, generate_plan,
                      get_or_create_session, get_run_trace, graph_post, keys_status,
                      list_sessions, load_plan, load_session, load_tasks, model_loaded,
@@ -2102,8 +2102,7 @@ class Handler(BaseHTTPRequestHandler):
             sess = load_session(sid) if sid else None
             if not sess:
                 return self._send(404, {"error": "session not found"})
-            if ensure_job(sess):   # JAG-169: backfill a stable JX on first read
-                save_session(sess)
+            ensure_agent(sess)   # EV-30: a stored session always has its A<n>
             return self._send(200, sess)
         if path == "/api/events":
             # JAG-262: filtered event-log history for post-mortem. Answers "what
@@ -2891,7 +2890,7 @@ def main():
     except Exception:  # noqa: BLE001 — provider metadata is optional
         pass
     backfill_session_workspaces()  # JAG-117: every session gets a folder
-    backfill_jobs()                # JAG-169: every session gets a stable JX id
+    backfill_agents()              # EV-30: every session gets its A<n> identity record
     reconcile_agent_models()       # JAG-309: agent model == its session's model
     reconcile_orphan_turns()       # JAG-262: close turns killed by a hard restart
     try:

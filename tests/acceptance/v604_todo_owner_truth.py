@@ -34,8 +34,11 @@ _head = _segs[2].split("taskCount")[0] if len(_segs) > 2 else ""
 
 check("T1 the label owner resolves against the roster (designated agent)",
       "_agents[sessionId]" in _todo)
-check("T2 no fabricated agent id anywhere (phantom A155 class is gone)",
-      '"A" + curJob' not in HTML and '"J" + curJob' in _todo)
+check("T2 the todo prefix is always a REAL agent id (EV-30: no session sequence)",
+      # The phantom this pinned was an A id that no agent owned (A155 for a session
+      # whose number was J155). Now every session IS an agent, so the prefix is its
+      # own A<n> and the J sequence no longer exists — there is nothing to fabricate.
+      '"J" + curJob' not in HTML and '"A" + curJob' in _todo)
 check("T3 the Plan header carries no session/job number (v607)",
       "const _jid" not in HTML and "session number" not in _head,
       "run id only; sidebar owns session identity")

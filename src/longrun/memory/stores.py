@@ -348,7 +348,6 @@ def _session_summary_row(s):
         "updated": upd,
         "messages": len(msgs),
         "workspace": s.get("workspace"),
-        "job": s.get("job"),
         "model": s.get("model"),
         "system": bool(s.get("system")),
         "undeletable": bool(s.get("undeletable")),
@@ -416,55 +415,36 @@ def list_sessions():
     return sorted(out, key=lambda s: s.get("updated") or 0, reverse=True)
 
 
-def _max_job():
-    """JAG-169/JAG-316: highest session job number ever assigned.
+def ensure_agent(sess):
+    """EV-30: a session IS an agent, so it is born with an `A<n>` id.
 
-    Must be MONOTONIC. The old version took the max only over LIVE session
-    files, so deleting the session that held the top number let the next session
-    reuse it — two different sessions could both be labelled ``J12`` over time,
-    contradicting the "assigned once, never shifts" contract. We now also read a
-    persisted high-water mark (``.jobseq``, deliberately not ``*.json`` so
-    ``list_sessions`` never reads it as a session).
+    The old contract handed a session a `J<n>` sequence from a MONOTONIC counter
+    (`ensure_job` + `.jobseq`) and only *designated* it as an agent later; the rail
+    then showed `J219` for a chat and `A8` for a team member. That contradicted
+    both the object model ("Agent = a session, id AX") and the operator rule
+    "IDs reset after resets/deletes — agent numbers, todos, jobs, every object".
+
+    The registry owns the number now, so it retracts on delete like every other id
+    (`fswrite.retract`). `kind="session"` keeps the record out of the org chart
+    while leaving it in `REGISTRY.list()`, which is what the WebUI reads to badge
+    the session. Returns True when the record was created.
     """
-    best = _read_seq()
-    for s in list_sessions():
-        try:
-            best = max(best, int(s.get("job") or 0))
-        except (TypeError, ValueError):
-            pass
-    return best
-
-
-def _read_seq():
+    sid = str((sess or {}).get("id") or "")
+    if not sid:
+        return False
     try:
-        with open(_JOBSEQ_FILE, encoding="utf-8") as f:
-            return int(f.read().strip() or "0")
-    except (FileNotFoundError, OSError, ValueError):
-        return 0
-
-
-def _write_seq(n):
-    try:
-        write_text(_JOBSEQ_FILE, str(int(n)))
-    except OSError:
-        pass
-
-
-def ensure_job(sess):
-    """JAG-169: a stable human id for a session — JX, X = job number.
-
-    Assigned ONCE and persisted, so it never shifts when other sessions are
-    deleted (unlike a position in the list). Returns True when it changed `sess`.
-    """
-    try:
-        if int(sess.get("job") or 0) > 0:
-            return False
-    except (TypeError, ValueError):
-        pass
-    n = _max_job() + 1
-    sess["job"] = n
-    _write_seq(n)   # JAG-316: keep the counter monotonic across deletes
-    return True
+        from longrun.agent import agents as agents_mod
+    except Exception:  # noqa: BLE001 — a session must exist even if the registry is broken
+        return False
+    reg = agents_mod.REGISTRY
+    if reg.get(sid):
+        return False
+    title = str(sess.get("title") or "").strip()[:80]
+    res = reg.designate(sid, name=title or None, kind="session")
+    if not res.get("ok"):
+        # A title that collides with another agent's name must not block the id.
+        res = reg.designate(sid, kind="session")
+    return bool(res.get("ok"))
 
 
 def ensure_session_workspace(sess, workspace=None):
@@ -500,18 +480,38 @@ def backfill_session_workspaces():
     return n
 
 
-def backfill_jobs():
-    """JAG-169: give every stored session a stable JX job id (assigned once)."""
+def backfill_agents():
+    """EV-30: give every stored session its `A<n>`, in creation order.
+
+    One-shot migration for sessions created under the old `J<n>` contract. Also
+    retires the monotonic counter file: nothing reads it any more, and leaving it
+    behind would keep a number the registry can now reuse.
+    """
     n = 0
     try:
-        for fn in sorted(os.listdir(SESSIONS_DIR)):
-            if not fn.endswith(".json"):
-                continue
-            s = read_json(os.path.join(SESSIONS_DIR, fn), None)
-            if s and ensure_job(s):
-                save_session(s)
-                n += 1
+        names = [f for f in sorted(os.listdir(SESSIONS_DIR)) if f.endswith(".json")]
     except FileNotFoundError:
+        return 0
+    rows = [s for s in (read_json(os.path.join(SESSIONS_DIR, f), None) for f in names) if s]
+
+    def _age(x):
+        try:
+            return float(x.get("created") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    for s in sorted(rows, key=_age):
+        if ensure_agent(s):
+            n += 1
+        if "job" in s:
+            # EV-30: the old J<n> is not migrated as a second label — the agent id
+            # is the session's identity now, and a stale `job` would be a second truth.
+            s.pop("job", None)
+            save_session(s)
+    try:
+        if os.path.isfile(_JOBSEQ_FILE):
+            os.remove(_JOBSEQ_FILE)   # EV-30: the monotonic session counter is gone
+    except OSError:
         pass
     return n
 
@@ -709,7 +709,7 @@ def get_or_create_session(sid, title=None, workspace=None, trust=None):
             s = load_session(sid)
             if s:
                 changed = ensure_session_workspace(s, workspace)
-                changed = ensure_job(s) or changed   # JAG-169: backfill a stable JX id
+                ensure_agent(s)   # EV-30: registry write — not a session-file change
                 if changed:
                     save_session(s)
                 _remember_workspace(s.get("workspace"))
@@ -722,8 +722,8 @@ def get_or_create_session(sid, title=None, workspace=None, trust=None):
         _sb.trust_profile(trust)  # raises ValueError on unknown names
         s["trust"] = str(trust).strip().lower()
     ensure_session_workspace(s, workspace)
-    ensure_job(s)                                # JAG-169: allocate JX on creation
     save_session(s)
+    ensure_agent(s)                              # EV-30: allocate A<n> on creation
     _remember_workspace(s.get("workspace"))
     return s
 

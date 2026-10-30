@@ -1,9 +1,16 @@
 """Agents — every Longrun session is a full-harness AGENT (id AX).
 
-A session may be *designated* as an ORG AGENT: it then carries a name, a role and a
-`reports_to` link (an org chart) and can take part in JOBS. Ad-hoc sessions stay
-untouched. This registry is the single source of truth the GUI reads to badge org
-agents and to guard their deletion.
+EV-30: a session is BORN with an `A<n>` id (`kind="session"`), because an agent IS
+a session (object model below). The registry owns that number, so it resets on
+delete exactly like every other id (`fswrite.retract`) — the old monotonic `J<n>`
+session counter was the one exception, and it contradicted the operator rule
+"IDs reset after resets/deletes — agent numbers, todos, jobs, every object".
+
+A session agent may additionally become an *ORG AGENT*: it then carries a name, a
+role and a `reports_to` link (the org chart) and can take part in team JOBS. Those
+are the ones the org table shows; `kind="session"` agents are deliberately hidden
+there (they have no reports and are not team members) while staying in `list()`,
+which is what the WebUI reads to badge every session with its `A<n>`.
 
 Object model (see .agent/docs/architecture/design-agents-jobs.md):
   * Agent  = a session, id ``AX``  (todos are ``AX.nY``)
@@ -237,8 +244,13 @@ class AgentRegistry:
             return True
 
     def designate(self, session_id, name=None, reports_to=None, role=None,
-                  model=None, workspace=None, daily_budget=None):
-        """Mark a session as an org agent (idempotent) and bind its metadata."""
+                  model=None, workspace=None, daily_budget=None, kind=None):
+        """Mark a session as an agent (idempotent) and bind its metadata.
+
+        `kind="session"` (EV-30) marks the record every session is born with: it
+        keeps the session OUT of the org chart and out of the "risky to delete"
+        guard, because it is an identity, not a team membership.
+        """
         sid = str(session_id or "")
         if not sid:
             return {"ok": False, "error": "session required"}
@@ -260,6 +272,14 @@ class AgentRegistry:
                 a["name"] = nm
             if role:
                 a["role"] = str(role)[:80]
+            if kind:
+                a["kind"] = str(kind)[:20]
+            elif (role or name or reports_to is not None) and a.get("kind") == "session":
+                # EV-30: naming / giving a role or a manager to a session's own
+                # record is a DELIBERATE act — it becomes a TEAM agent and joins the
+                # org chart. `ensure_agent` always passes kind="session", so the
+                # birth record can never be promoted by its own title.
+                a["kind"] = "team"
             if model is not None:
                 # JAG-309: "" clears the choice (back to the router default);
                 # None means "leave this field unchanged". An agent IS a session
@@ -419,7 +439,11 @@ class AgentRegistry:
     def tree(self):
         with _LOCK:
             d = _load()
-        agents = sorted(d["agents"].values(), key=lambda a: a.get("n", 0))
+        # EV-30: the org chart is made of TEAM agents. A session's own identity
+        # record (`kind="session"`) is not a membership, so it never shows here —
+        # otherwise every chat would appear as an org root.
+        agents = sorted((a for a in d["agents"].values()
+                         if a.get("kind") != "session"), key=lambda a: a.get("n", 0))
         for a in agents:                       # JAG-339: teams travel with the tree
             a["teams"] = self.teams_for(a.get("id"))
         by_id = {a["id"]: a for a in agents}
@@ -434,7 +458,9 @@ class AgentRegistry:
     def guards(self, session_id):
         """Whether deleting this session is risky (used by the main GUI)."""
         a = self.get(session_id)
-        if not a:
+        # EV-30: every session has an identity record now; only a TEAM agent can
+        # own reports or jobs, so a plain chat deletes exactly as it always did.
+        if not a or a.get("kind") == "session":
             return {"is_agent": False, "blocked": False}
         reports = [x["id"] for x in self.list()["agents"]
                    if x.get("reports_to") == a["id"]]

@@ -1648,6 +1648,15 @@ def _hms(ts):
         return "--:--:--"
 
 
+def _agent_id(session_id):
+    """EV-30: the session's own agent id (`A<n>`), or "" when the registry is down."""
+    try:
+        from longrun.agent import agents as _agents
+        return (_agents.REGISTRY.get(session_id) or {}).get("id") or ""
+    except Exception:  # noqa: BLE001 — a label must never break a transcript
+        return ""
+
+
 def _render_transcript(sess, limit=30, tail=False):
     """Flatten one session into an ordered, model-readable log.
 
@@ -1679,9 +1688,9 @@ def _render_transcript(sess, limit=30, tail=False):
                                          _truncate(str(j.get("text", "")).strip(), 600))))
     evs.sort(key=lambda x: x[0])
     evs = (evs[-limit:] if tail else evs[:limit])
-    head = ("session %s | job=%s | workspace=%s | %d message(s), %d tool card(s), "
+    head = ("session %s | agent=%s | workspace=%s | %d message(s), %d tool card(s), "
             "%d harness note(s)\n"
-            % (sess.get("id"), sess.get("job") or "-", sess.get("workspace") or "-",
+            % (sess.get("id"), _agent_id(sess.get("id")) or "-", sess.get("workspace") or "-",
                len(sess.get("messages", []) or []), len(sess.get("tool_cards", []) or []),
                len(sess.get("injects", []) or [])))
     body = "\n".join("%s  %s" % (_hms(e[0]), e[1]) for e in evs) or "  (empty transcript)"

@@ -26,19 +26,22 @@ check("T1 no phantom-A badge in sidebar rows",
       '"session sequence"}">A${_anum}' not in HTML,
       "the old unconditional A<sequence> render must be gone")
 
-check("T2 an agentless session renders its J sequence, honestly tooltiped",
-      "J${_anum}" in HTML and "no designated agent" in HTML,
-      "J-prefix + tooltip instead of a fake agent")
+check("T2 there is no 'agentless' session any more (EV-30 reversed this)",
+      # This used to assert a J sequence for sessions without a roster agent. The
+      # operator rule made every session an agent, so a row with no roster record
+      # renders NO chip (never a fabricated id) and the J namespace is gone.
+      "J${_anum}" not in HTML and "no designated agent" not in HTML,
+      "no J chip, no 'no designated agent' tooltip")
 
 check("T3 a roster agent still renders its real A id",
       ">A${_anum}</span>" in HTML and "agent id ${esc(ag.id)}" in HTML,
       "A-namespace kept for real roster agents only")
 
-check("T4 _agentNum still resolves roster-first, sequence-fallback",
+check("T4 _agentNum resolves ONLY against the roster (no sequence fallback)",
       "function _agentNum(s)" in HTML
       and "a.n || String(a.id" in HTML
-      and "(s && s.job)" in HTML,
-      "resolver untouched, only the render changed")
+      and "(s && s.job)" not in HTML,
+      "the session sequence fallback is gone with the sequence")
 
 print("\n%d/%d" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

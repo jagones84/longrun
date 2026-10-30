@@ -167,8 +167,10 @@ check("I2 the slash picker owns Enter while it is open (Shift+Enter excepted)",
       'e.key === "Enter" && !e.shiftKey' in _html
       and "if (menu && !menu.hidden && _slashItems.length) return;" in _html)
 check("I3 deleting a session drops its browser-side caches",
-      "delete _sessModel[s.id]" in _html and "delete _sessJob[s.id]" in _html
-      and "clearDone(s.id);" in _html)
+      "delete _sessModel[s.id]" in _html and "clearDone(s.id);" in _html
+      # EV-30: `_sessJob` is gone with the session sequence (J) — there is no J
+      # cache left to leak, and the map must not come back.
+      and "_sessJob" not in _html)
 
 # ---- J) harness: abort + plan-only -------------------------------------------
 _ag = _read("src/longrun/agent/agent.py")

@@ -29,6 +29,14 @@ def _prompt_chars(sid):
         return None
 
 
+def _agent_id(sid):
+    """EV-30: every session IS an agent, so the roster shows its `A<n>` id."""
+    try:
+        from longrun.agent import agents as _agents
+        return (_agents.REGISTRY.get(sid) or {}).get("id")
+    except Exception:  # noqa: BLE001 — a roster must never fail on one bad record
+        return None
+
 class SessionRegistry:
     """The roster of sessions, with live run status."""
 
@@ -43,7 +51,7 @@ class SessionRegistry:
                 "title": s.get("title") or ("session " + str(sid)[:6]),
                 "model": s.get("model"),
                 "workspace": s.get("workspace"),
-                "job": s.get("job"),
+                "agent": _agent_id(sid),
                 "messages": s.get("messages", 0),
                 "updated": s.get("updated"),
                 "running": sid in active,
