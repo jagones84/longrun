@@ -148,6 +148,18 @@ check("H1 Harness² is driven by its own official sweep",
       and "jb" in cmd and "--substrate" in cmd, cmd)
 check("H2 the sweep is restricted to the same tasks",
       "biostatisticians" in cmd and cmd[cmd.index("--max-tasks") + 1] == "1", cmd)
+_h2out = os.path.join(TMP, "h2out")
+_rows_h2, _meta_h2 = JC.run_harness2(tasks, _h2out, solver_model="openrouter/x",
+                                     judge_model="j", judge_base="u", key="k",
+                                     timeout=60, judge_timeout=60, dry_run=True)
+check("H3 a sweep gets its OWN run store, inside the run folder",
+      _meta_h2.get("runs_dir") == os.path.join(_h2out, "harness2", "_h2runs")
+      and os.path.isdir(_meta_h2["runs_dir"]),
+      _meta_h2.get("runs_dir"))
+_h2src = open(os.path.join(REPO, "benchmarks", "jobbench_compare.py"), encoding="utf-8").read()
+check("H4 grading follows that store, so an old model_output is never picked up",
+      "base = h2_runs /" in _h2src and '"OPENROUTER_API_KEY": key' in _h2src,
+      "the sweep env must carry the solver key and the per-run store")
 
 # I ----------------------------------------------------------------------
 SRC = open(os.path.join(REPO, "benchmarks", "longrun_adapter.py"), encoding="utf-8").read()
@@ -227,6 +239,72 @@ check("L2 an anchor that disappeared loses only its own note",
 _rsrc = open(os.path.join(REPO, "src", "longrun", "model", "routing.py"), encoding="utf-8").read()
 check("L3 save_config is the path that uses it",
       "_preserve_comments(old, new)" in _rsrc, "save_config must not strip comments")
+
+# M — the NO-HARNESS control: a raw model, judged like the others ----------
+check("M1 one model, three spellings: the raw arm takes the bare id",
+      JC.bare_model_id("openrouter:z-ai/glm-5.3-flash") == "z-ai/glm-5.3-flash"
+      and JC.bare_model_id("z-ai/glm-5.3-flash") == "z-ai/glm-5.3-flash",
+      JC.bare_model_id("openrouter:z-ai/glm-5.3-flash"))
+
+from benchmarks.protocol import HarnessResult  # noqa: E402
+
+
+class _FakeRaw:
+    """A model endpoint stand-in: records the prompt, answers with fixed text."""
+
+    def __init__(self, text):
+        self.text, self.prompts = text, []
+
+    def send_task(self, ref, prompt, timeout=None):
+        self.prompts.append(prompt)
+        return HarnessResult(ok=True, output=self.text)
+
+    def provenance(self):
+        return {"harness": "bare", "base_url": "http://stub", "model": "m", "tools": 0}
+
+
+with open(JUDGE, "w", encoding="utf-8") as f:      # the good stub judge again
+    f.write(
+        "import json, sys\n"
+        "argv = sys.argv[1:]\n"
+        "json.dump(argv, open(%r, 'w'))\n"
+        "details = argv[argv.index('--details-file') + 1]\n"
+        "json.dump({'total_score': 6.0, 'max_score': 10.0, 'judge_model': 'judge-x',\n"
+        "           'rubrics': [{'result': {'criteria_count': 2, 'criteria_passed': 1}}]},\n"
+        "          open(details, 'w'))\n" % ARGV)
+_fake = _FakeRaw("# Findings\n\nthe model's own text\n")
+_rows_raw, _prov_raw = JC.run_raw(tasks, os.path.join(TMP, "rawout"), model="openrouter:m",
+                                  judge_model="judge-x", judge_base="http://127.0.0.1:1/v1",
+                                  key="k", timeout=30, judge_timeout=120, adapter=_fake)
+check("M2 the raw arm sends the SAME verbatim instruction, with no tools",
+      _fake.prompts and "=== TASK FOLDER ===" in _fake.prompts[0]
+      and _prov_raw.get("tools") == 0, _fake.prompts[0][:200] if _fake.prompts else "-")
+check("M3 the model's text becomes the one deliverable the judge can read",
+      _rows_raw[0]["delivered"] == 1 and _rows_raw[0]["files"] == ["answer.md"]
+      and os.path.isfile(os.path.join(TMP, "rawout", "raw", JC._slug(tasks[0]["id"]),
+                                      "workspace", "output", "answer.md")),
+      _rows_raw[0].get("files"))
+check("M4 it is graded by the same judge as every other arm",
+      _rows_raw[0]["score"].get("score") == 6.0 and _rows_raw[0]["arm"] == "raw",
+      _rows_raw[0].get("score"))
+_empty_raw = _FakeRaw("")
+_rows_empty, _ = JC.run_raw(tasks, os.path.join(TMP, "rawout2"), model="openrouter:m",
+                            judge_model="judge-x", judge_base="http://127.0.0.1:1/v1",
+                            key="k", timeout=30, judge_timeout=120, adapter=_empty_raw)
+check("M5 a silent model delivers nothing and scores the real zero",
+      _rows_empty[0]["delivered"] == 0
+      and _rows_empty[0]["score"].get("no_output") is True, _rows_empty[0]["score"])
+
+_three = ([{"task": "t/1", "arm": a, "delivered": 1, "ok": True,
+            "score": {"ok": True, "score": v, "max": 10.0}}
+           for a, v in (("harness2", 4.0), ("raw", 2.0), ("longrun", 6.0))])
+_payload3, _text3 = JC.report(os.path.join(TMP, "report3"), _three, {"judge_model": "j"})
+check("M6 the report orders the arms raw -> longrun -> harness2, always",
+      _text3.index("| raw |") < _text3.index("| longrun |") < _text3.index("| harness2 |"),
+      _text3[-600:])
+check("M7 the report states WHO is better, and the raw floor",
+      "**Better on this run:**" in _text3 and "`longrun` at 0.600" in _text3
+      and "floor" in _text3, _text3[-400:])
 
 print("\n---\nv728: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

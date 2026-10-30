@@ -201,6 +201,56 @@ def run_longrun(tasks, out, *, model, judge_model, judge_base, key, timeout,
     return rows, prov
 
 
+# ------------------------------------------------------------------- raw arm
+def bare_model_id(model):
+    """`openrouter:z-ai/glm-5.3-flash` -> `z-ai/glm-5.3-flash` (a raw endpoint's id)."""
+    text = str(model or "")
+    return text.split(":", 1)[1] if ":" in text else text
+
+
+def run_raw(tasks, out, *, model, judge_model, judge_base, key, timeout,
+            judge_timeout, adapter=None):
+    """The NO-HARNESS control: one plain chat call per task, judged like the others.
+
+    Same corpus, same verbatim instruction, same weights, **no tools, no system
+    prompt, no memory** — the honest floor a harness must beat. A raw model cannot
+    create the files a rubric asks for, so its only artefact is its own text: the
+    reply is persisted as `output/answer.md` (the same `output/` convention every
+    arm is graded through). Without that the control would always score 0 and
+    would compare nothing.
+    """
+    from .bare_adapter import BareAdapter
+    arm = Path(out) / "raw"
+    arm.mkdir(parents=True, exist_ok=True)
+    ad = adapter or BareAdapter(base=judge_base, api_key=key, model=bare_model_id(model),
+                                timeout=timeout)
+    rows = []
+    for task in tasks:
+        slug = _slug(task["id"])
+        ws = arm / slug / "workspace"
+        jobbench.stage(task, ws)
+        t0 = time.time()
+        res = ad.send_task(None, jobbench.prompt_for(task, ws), timeout=timeout)
+        if res.ok and (res.output or "").strip():
+            (ws / "output" / "answer.md").write_text(res.output, encoding="utf-8")
+        files = jobbench.deliverables(ws)
+        sc = JJ.score_run(task, ws, arm / slug / "judge.json", judge_model,
+                          judge_base, key, evaluated_model="raw-%s" % slug,
+                          timeout=judge_timeout)
+        row = {"task": task["id"], "arm": "raw", "ok": bool(res.ok),
+               "error": res.error or "", "delivered": len(files), "files": files[:40],
+               "duration_s": round(time.time() - t0, 1), "model": bare_model_id(model),
+               "score": sc, "reply": (res.output or "")[:1200],
+               "reply_len": len(res.output or "")}
+        _write(arm / slug / "result.json", row)
+        rows.append(row)
+        print("  raw     %-42s delivered=%d score=%s"
+              % (task["id"], len(files),
+                 "%s/%s" % (sc.get("score"), sc.get("max")) if sc.get("ok") else sc.get("error")),
+              flush=True)
+    return rows, ad.provenance()
+
+
 # -------------------------------------------------------------- harness2 arm
 def harness2_command(tasks, solver_model, extra=""):
     """The official sweep command for the same tasks (Harness² has no HTTP API)."""
@@ -217,15 +267,25 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
     """Run Harness²'s own sweep, then grade ITS `model_output/` with the same judge."""
     arm = Path(out) / "harness2"
     arm.mkdir(parents=True, exist_ok=True)
+    # Each sweep gets its OWN run store: Harness² refuses a directory that already
+    # belongs to different models/tasks ("Choose a new HARNESS2_RUNS_DIR"), and a
+    # shared store would also mix this run's model_output with an older one.
+    h2_runs = arm / "_h2runs"
+    h2_runs.mkdir(parents=True, exist_ok=True)
     cmd = harness2_command(tasks, solver_model)
     env = dict(os.environ)
     env.update({"HARNESS2_SOLVER_MODEL": solver_model,
                 "HARNESS2_IMPROVER_MODEL": solver_model,
                 "HARNESS2_JUDGE_MODEL": judge_model,
                 "HARNESS2_JUDGE_BASE_URL": judge_base,
-                "HARNESS2_JUDGE_API_KEY": key})
+                "HARNESS2_JUDGE_API_KEY": key,
+                "HARNESS2_RUNS_DIR": str(h2_runs),
+                # The task-executor substrate (OpenCode) authenticates to the
+                # solver provider from its OWN env, not from our driver: without
+                # this the sweep starts and every rollout dies as unauthorized.
+                "OPENROUTER_API_KEY": key})
     meta = {"command": cmd, "env_model": solver_model, "cwd": str(DEFAULT_HARNESS2),
-            "status": "dry-run" if dry_run else ""}
+            "runs_dir": str(h2_runs), "status": "dry-run" if dry_run else ""}
     if dry_run:
         _write(arm / "command.json", meta)
         print("  harness2 (dry-run): %s" % " ".join(cmd), flush=True)
@@ -248,7 +308,7 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
     rows = []
     for task in tasks:
         prof, name = task["id"].split("/", 1)
-        base = DEFAULT_HARNESS2 / "runs" / "jb" / "dataset" / prof / name / "model_output"
+        base = h2_runs / "jb" / "dataset" / prof / name / "model_output"
         labels = sorted((p for p in base.iterdir() if p.is_dir()),
                         key=lambda p: p.stat().st_mtime, reverse=True) if base.is_dir() else []
         if not labels:
@@ -274,6 +334,15 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
 
 
 # ------------------------------------------------------------------- report
+#: The order every report uses: the no-harness floor, this harness, the other one.
+ARM_ORDER = ("raw", "longrun", "harness2")
+
+
+def _arm_rank(name):
+    """Position of an arm in the canonical order (an unknown arm sorts last)."""
+    return ARM_ORDER.index(name) if name in ARM_ORDER else len(ARM_ORDER)
+
+
 def report(out, rows, parity):
     """`compare.json` + `compare.md`: per-task numbers and the parity block."""
     def _ratio(r):
@@ -304,13 +373,15 @@ def report(out, rows, parity):
                "arms": summary, "rows": rows}
     _write(Path(out) / "compare.json", payload)
 
-    lines = ["# JobBench — Longrun vs Harness²", "",
+    lines = ["# JobBench — raw model vs Longrun vs Harness²", "",
+             "Arms in a fixed order: `raw` (no harness) → `longrun` (this harness) → "
+             "`harness2` (Google). One model, one instruction, one judge.", "",
              "| parity | value |", "|---|---|"]
     for k, v in sorted(parity.items()):
         lines.append("| %s | `%s` |" % (k, v))
     lines += ["", "| task | arm | delivered | score | max | ratio | note |",
               "|---|---|---|---|---|---|---|"]
-    for r in sorted(rows, key=lambda x: (x["task"], x["arm"])):
+    for r in sorted(rows, key=lambda x: (x["task"], _arm_rank(x["arm"]))):
         sc = r.get("score") or {}
         rt = _ratio(r)
         note = sc.get("error") or r.get("error") or ""
@@ -320,9 +391,19 @@ def report(out, rows, parity):
                         ("%.3f" % rt) if rt is not None else "-",
                         str(note)[:60].replace("|", "/")))
     lines += ["", "| arm | tasks | delivered | scored | mean ratio |", "|---|---|---|---|---|"]
-    for name, s in sorted(summary.items()):
+    for name in sorted(summary, key=_arm_rank):
+        s = summary[name]
         lines.append("| %s | %s | %s | %s | %s |"
                      % (name, s["tasks"], s["delivered"], s["scored"], s["mean_ratio"]))
+    ranked = [(n, s["mean_ratio"]) for n, s in summary.items() if s["mean_ratio"] is not None]
+    if ranked:
+        ranked.sort(key=lambda kv: kv[1], reverse=True)
+        best, best_v = ranked[0]
+        tail = ("" if len(ranked) == 1 else
+                " (next: %s)" % ", ".join("%s %.3f" % (n, v) for n, v in ranked[1:]))
+        lines += ["", "**Better on this run:** `%s` at %.3f%s. A raw model with no "
+                  "tools is the floor: an arm that does not beat it is not paying "
+                  "for itself." % (best, best_v, tail)]
     text = "\n".join(lines) + "\n"
     (Path(out) / "compare.md").write_text(text, encoding="utf-8")
     return payload, text
@@ -332,7 +413,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="benchmarks.jobbench_compare")
     ap.add_argument("--profession", default="", help="JobBench profession folder")
     ap.add_argument("--tasks", type=int, default=1, help="task cap")
-    ap.add_argument("--arms", default="longrun", help="comma list: longrun,harness2")
+    ap.add_argument("--arms", default="longrun",
+                    help="comma list: raw (no harness), longrun, harness2")
     ap.add_argument("--model", default="openrouter:z-ai/glm-5.3-flash",
                     help="solver model, Longrun spelling (provider:model)")
     ap.add_argument("--harness2-model", default="",
@@ -392,10 +474,12 @@ def main(argv=None):
     h2_model = args.harness2_model or args.model.replace(":", "/", 1)
     parity = {"corpus": str(jobbench.repo()), "tasks": ",".join(t["id"] for t in tasks),
               "solver_longrun": args.model, "solver_harness2": h2_model,
+              "solver_raw": bare_model_id(args.model),
               "judge_model": args.judge_model, "judge_base": args.judge_base,
               "prompt": "upstream Harness2 PROMPT (verbatim)",
               "longrun_transport": "HTTP POST /api/chat",
               "longrun_max_steps": args.max_steps,
+              "raw_transport": "one plain chat/completions call, no tools, no system prompt",
               "harness2_transport": "CLI sweep (harness2 run_sweep --bench jb)"}
 
     rows = []
@@ -410,6 +494,15 @@ def main(argv=None):
             parity.update({"longrun_git": prov.get("git_sha", ""),
                            "longrun_version": prov.get("version", ""),
                            "longrun_token_source": prov.get("token_source", "")})
+            rows += got
+        elif arm == "raw":
+            got, prov_raw = run_raw(tasks, out, model=args.model,
+                                    judge_model=args.judge_model, judge_base=args.judge_base,
+                                    key=key, timeout=args.timeout,
+                                    judge_timeout=args.judge_timeout)
+            parity.update({"raw_base_url": prov_raw.get("base_url", ""),
+                           "raw_model": prov_raw.get("model", ""),
+                           "raw_tools": prov_raw.get("tools", 0)})
             rows += got
         elif arm == "harness2":
             got, meta = run_harness2(tasks, out, solver_model=h2_model,

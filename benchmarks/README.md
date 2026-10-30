@@ -73,7 +73,7 @@ container orchestration, hidden tests and judge models; re-implementing them wou
 silently drift from the leaderboard. This repo produces the prediction artifact
 (plus a `summary.json` with provenance) and hands it to the official runner.
 
-## JobBench — the official suite, both harnesses, one judge (EV-23)
+## JobBench — the official suite, three arms, one judge (EV-23 / EV-26)
 
 `jobbench.py` / `jobbench_judge.py` / `jobbench_compare.py` drive the JobBench
 tasks shipped with Google's Harness² (arXiv 2610.14224) and grade them with the
@@ -81,11 +81,19 @@ UPSTREAM `eval/judge.py` against each task's `RUBRICS.json`:
 
 ```bash
 python3 -m benchmarks.jobbench_compare \
-  --profession biostatisticians --tasks 2 --arms longrun,harness2 \
+  --profession biostatisticians --tasks 2 \
+  --arms raw,longrun,harness2 \
   --model openrouter:z-ai/glm-5.3-flash \
   --judge-model z-ai/glm-5.3-flash --judge-base https://openrouter.ai/api/v1 \
   --max-steps 40
 ```
+
+The three arms are always reported in one fixed order — `raw` (no harness at all)
+→ `longrun` (this harness) → `harness2` (Google) — and `compare.md` ends with the
+plain sentence of who scored better on that run. The raw arm is the FLOOR: one
+plain `chat/completions` call with no tools and no system prompt, whose text is
+saved as `output/answer.md` so the judge can read it. An arm that does not beat
+the floor is not paying for itself.
 
 Without `--out` the runner names the folder itself
 (`.agent/BENCHMARKS/runs/<date>_jobbench_<model>_<arms>_<scope>_n<N>`, `-2` on a
