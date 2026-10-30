@@ -265,6 +265,143 @@ def run_raw(tasks, out, *, model, judge_model, judge_base, key, timeout,
     return rows, ad.provenance()
 
 
+# -------------------------------------------------------------- opencode arm
+def opencode_command(workspace, model, prompt):
+    """The bare AGENT LOOP: OpenCode alone, same prompt, no Harness² evolution.
+
+    Harness² is a meta-harness that proposes and evolves a harness spec and then
+    runs it on a substrate; `--substrate oc` means OpenCode executes the rollouts.
+    Measuring the substrate ON ITS OWN is what separates "this agent loop is good"
+    from "the search around it is good" — without it a Harness² score cannot say
+    which half earned the points.
+    """
+    root = DEFAULT_HARNESS2
+    bun = root / "dependencies" / "tools" / "node_modules" / ".bin" / "bun"
+    oc = root / "dependencies" / "opencode" / "packages" / "opencode"
+    return [str(bun), "run", "--cwd", str(oc), "--conditions=browser", "src/index.ts",
+            "run", prompt, "--dir", str(workspace), "--model", model, "--format", "json"]
+
+
+def _h2_env(key):
+    """Harness²'s own runtime env (isolated XDG dirs) + the solver key.
+
+    OpenCode reads its provider config from `XDG_CONFIG_HOME`, and Harness² keeps a
+    dedicated one so a sweep never collides with the operator's desktop OpenCode.
+    Reusing the same dirs keeps the substrate arm on the same provider/model wiring
+    instead of inventing a second config.
+    """
+    env = dict(os.environ)
+    env["OPENROUTER_API_KEY"] = key
+    dot = DEFAULT_HARNESS2 / ".env"
+    try:
+        text = dot.read_text(encoding="utf-8")
+    except OSError:
+        return env
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env.setdefault(k.strip(), v.strip())
+    return env
+
+
+def _oc_usage(stdout):
+    """Steps, tokens and dollars from `opencode run --format json` (a JSONL stream).
+
+    Each `step_finish` part carries the step's own `tokens` and `cost`; the last
+    `text` part is the agent's final answer. Summing the steps is the only honest
+    cost for this arm — the process prints nothing else.
+    """
+    steps = tin = tout = 0
+    usd = 0.0
+    reply = ""
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        part = obj.get("part") or {}
+        if obj.get("type") == "step_finish":
+            steps += 1
+            t = part.get("tokens") or {}
+            tin += int(t.get("input") or 0)
+            tout += int(t.get("output") or 0) + int(t.get("reasoning") or 0)
+            usd += float(part.get("cost") or 0)
+        elif obj.get("type") == "text" and isinstance(part.get("text"), str):
+            reply = part["text"]
+    return ({"steps": steps, "tokens_in": tin, "tokens_out": tout,
+             "total_usd": round(usd, 6), "source": "opencode step_finish"}, reply)
+
+
+def run_opencode(tasks, out, *, solver_model, judge_model, judge_base, key, timeout,
+                 judge_timeout):
+    """Run the bare agent loop per task, then grade its `output/` with the same judge."""
+    arm = Path(out) / "opencode"
+    arm.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for task in tasks:
+        slug = _slug(task["id"])
+        ws = arm / slug / "workspace"
+        jobbench.stage(task, ws)
+        prompt = jobbench.prompt_for(task, ws)
+        cmd = opencode_command(ws, solver_model, prompt)
+        meta = {"command": ["<prompt>" if i == 8 else c for i, c in enumerate(cmd)],
+                "model": solver_model, "workspace": str(ws),
+                "cwd": str(DEFAULT_HARNESS2)}
+        t0 = time.time()
+        timed_out = False
+        proc = None
+        try:
+            proc = subprocess.Popen(cmd, cwd=str(DEFAULT_HARNESS2), env=_h2_env(key),
+                                    text=True, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    start_new_session=True)
+            out_s, err_s = proc.communicate(timeout=timeout)
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            timed_out, out_s, err_s, rc = True, "", "", -1
+        except (OSError, subprocess.SubprocessError) as exc:
+            meta["error"] = str(exc)
+            _write(arm / slug / "command.json", meta)
+            print("  opencode FAILED to start: %s" % exc, flush=True)
+            rows.append({"task": task["id"], "arm": "opencode", "ok": False,
+                         "error": str(exc), "delivered": 0, "files": [],
+                         "duration_s": round(time.time() - t0, 1), "model": solver_model,
+                         "score": None, "timed_out": False})
+            continue
+        meta.update({"returncode": rc, "status": "timeout" if timed_out else
+                     ("ok" if rc == 0 else "failed"),
+                     "duration_s": round(time.time() - t0, 1),
+                     "stderr_tail": (err_s or "")[-1200:]})
+        _write(arm / slug / "command.json", meta)
+        usage, reply = _oc_usage(out_s)
+        files = jobbench.deliverables(ws)
+        sc = JJ.score_run(task, ws, arm / slug / "judge.json", judge_model,
+                          judge_base, key, evaluated_model="opencode-%s" % slug,
+                          timeout=judge_timeout)
+        row = {"task": task["id"], "arm": "opencode", "ok": bool(sc.get("ok")),
+               "error": sc.get("error") or "", "delivered": len(files),
+               "files": files[:40], "duration_s": meta["duration_s"],
+               "model": solver_model, "score": sc, "usage": usage,
+               "steps": usage.get("steps"), "timed_out": timed_out,
+               "reply": (reply or "")[:1200], "reply_len": len(reply or "")}
+        _write(arm / slug / "result.json", row)
+        if usage.get("steps"):
+            _write(arm / slug / "costs.json", usage)
+        rows.append(row)
+        print("  opencode %-40s delivered=%d steps=%s score=%s"
+              % (task["id"], len(files), usage.get("steps"),
+                 "%s/%s" % (sc.get("score"), sc.get("max")) if sc.get("ok") else sc.get("error")),
+              flush=True)
+    return rows, {"model": solver_model, "transport": "opencode run --format json",
+                  "cwd": str(DEFAULT_HARNESS2)}
+
+
 # -------------------------------------------------------------- harness2 arm
 def harness2_command(tasks, solver_model, extra=""):
     """The official sweep command for the same tasks (Harness² has no HTTP API)."""
@@ -485,8 +622,11 @@ def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_tim
 
 
 # ------------------------------------------------------------------- report
-#: The order every report uses: the no-harness floor, this harness, the other one.
-ARM_ORDER = ("raw", "longrun", "harness2")
+#: The order every report uses: the no-harness floor, the bare agent loop, this
+#: harness, the evolving one. It is a LADDER, so each step answers one question:
+#: does a tool loop beat a single call (raw -> opencode), does this harness beat a
+#: bare loop (opencode -> longrun), does search beat both (-> harness2).
+ARM_ORDER = ("raw", "opencode", "longrun", "harness2")
 
 
 def _arm_rank(name):
@@ -546,9 +686,11 @@ def report(out, rows, parity):
                "arms": summary, "rows": rows}
     _write(Path(out) / "compare.json", payload)
 
-    lines = ["# JobBench — raw model vs Longrun vs Harness²", "",
-             "Arms in a fixed order: `raw` (no harness) → `longrun` (this harness) → "
-             "`harness2` (Google). One model, one instruction, one judge.", "",
+    lines = ["# JobBench — raw vs bare agent loop vs Longrun vs Harness²", "",
+             "Arms in a fixed ladder: `raw` (no harness, one call) → `opencode` (the "
+             "bare agent loop Harness² itself runs on) → `longrun` (this harness) → "
+             "`harness2` (Google's evolving meta-harness). One model, one instruction, "
+             "one judge.", "",
              "| parity | value |", "|---|---|"]
     for k, v in sorted(parity.items()):
         lines.append("| %s | `%s` |" % (k, v))
@@ -583,17 +725,27 @@ def report(out, rows, parity):
         ranked.sort(key=lambda kv: kv[1], reverse=True)
         best, best_v = ranked[0]
         tied = len(ranked) > 1 and ranked[0][1] == ranked[1][1]
-        if best_v <= 0 or tied:
+        if best_v <= 0:
             # A run where every arm scores 0 has no winner: naming the floor
             # "better" would read as a result when nothing was produced. Measured
             # 2026-10-30: a single-arm raw run printed "Better on this run: raw at
             # 0.000", which is the opposite of what the number says.
             lines += ["", "**No arm beat the floor on this run:** best is `%s` at "
-                      "%.3f%s. A raw model with no tools is the floor: an arm that "
-                      "does not beat it is not paying for itself."
-                      % (best, best_v,
-                         (" (tied: %s)" % ", ".join("%s %.3f" % (n, v) for n, v in ranked))
-                         if tied else "")]
+                      "%.3f. A raw model with no tools is the floor: an arm that "
+                      "does not beat it is not paying for itself." % (best, best_v)]
+        elif tied:
+            # A TIE with a real score is a RESULT, not an absence of one: two arms
+            # reached the same quality, so the decision falls to what they cost.
+            # Measured 2026-10-30: `opencode` and `harness2` both scored 48/58 while
+            # one took 5 min and the other 20 — printing "no arm beat the floor"
+            # hid the only actionable fact.
+            _tops = [n for n, v in ranked if v == best_v]
+            _cost = ", ".join("%s %s" % (n, _secs(summary[n].get("time_s")))
+                              for n in _tops)
+            lines += ["", "**Tied at the top:** %s at %.3f — same result, different "
+                      "cost (%s). Read the time/cost columns before calling one of "
+                      "them better." % (", ".join("`%s`" % n for n in _tops), best_v,
+                                        _cost)]
         else:
             tail = ("" if len(ranked) == 1 else
                     " (next: %s)" % ", ".join("%s %.3f" % (n, v) for n, v in ranked[1:]))
@@ -610,7 +762,8 @@ def main(argv=None):
     ap.add_argument("--profession", default="", help="JobBench profession folder")
     ap.add_argument("--tasks", type=int, default=1, help="task cap")
     ap.add_argument("--arms", default="longrun",
-                    help="comma list: raw (no harness), longrun, harness2")
+                    help="comma list: raw (no harness), opencode (bare agent loop), "
+                         "longrun, harness2")
     ap.add_argument("--model", default="openrouter:z-ai/glm-5.3-flash",
                     help="solver model, Longrun spelling (provider:model)")
     ap.add_argument("--harness2-model", default="",
@@ -711,6 +864,15 @@ def main(argv=None):
             parity.update({"raw_base_url": prov_raw.get("base_url", ""),
                            "raw_model": prov_raw.get("model", ""),
                            "raw_tools": prov_raw.get("tools", 0)})
+            rows += got
+        elif arm == "opencode":
+            got, prov_oc = run_opencode(tasks, out, solver_model=h2_model,
+                                        judge_model=args.judge_model,
+                                        judge_base=args.judge_base, key=key,
+                                        timeout=args.timeout,
+                                        judge_timeout=args.judge_timeout)
+            parity.update({"opencode_model": prov_oc.get("model", ""),
+                           "opencode_transport": prov_oc.get("transport", "")})
             rows += got
         elif arm == "harness2":
             got, meta = run_harness2(tasks, out, solver_model=h2_model,

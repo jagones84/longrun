@@ -334,14 +334,46 @@ check("M5 a silent model delivers nothing and scores the real zero",
 
 _three = ([{"task": "t/1", "arm": a, "delivered": 1, "ok": True,
             "score": {"ok": True, "score": v, "max": 10.0}}
-           for a, v in (("harness2", 4.0), ("raw", 2.0), ("longrun", 6.0))])
+           for a, v in (("harness2", 4.0), ("raw", 2.0), ("longrun", 6.0),
+                         ("opencode", 3.0))])
 _payload3, _text3 = JC.report(os.path.join(TMP, "report3"), _three, {"judge_model": "j"})
-check("M6 the report orders the arms raw -> longrun -> harness2, always",
-      _text3.index("| raw |") < _text3.index("| longrun |") < _text3.index("| harness2 |"),
-      _text3[-600:])
+check("M6 the report orders the ladder raw -> opencode -> longrun -> harness2",
+      _text3.index("| raw |") < _text3.index("| opencode |")
+      < _text3.index("| longrun |") < _text3.index("| harness2 |"), _text3[-600:])
 check("M7 the report states WHO is better, and the raw floor",
       "**Better on this run:**" in _text3 and "`longrun` at 0.600" in _text3
       and "floor" in _text3, _text3[-400:])
+_cmd_oc = JC.opencode_command("/tmp/ws-pin", "openrouter/z-ai/glm-5.3-flash", "PROMPT")
+check("P1 the bare-loop arm is OpenCode's own CLI, pointed at the task workspace",
+      "src/index.ts" in _cmd_oc and _cmd_oc[_cmd_oc.index("--dir") + 1] == "/tmp/ws-pin"
+      and not any(str(x).endswith("run_sweep") for x in _cmd_oc), _cmd_oc)
+check("P2 it takes the SAME model spelling Harness2 uses, and the same prompt",
+      _cmd_oc[_cmd_oc.index("--model") + 1] == "openrouter/z-ai/glm-5.3-flash"
+      and "PROMPT" in _cmd_oc, _cmd_oc)
+_stream = ('{"type":"step_finish","part":{"tokens":{"input":100,"output":10,'
+           '"reasoning":5},"cost":0.001}}\n'
+           '{"type":"text","part":{"text":"done"}}\n'
+           '{"type":"step_finish","part":{"tokens":{"input":50,"output":20},'
+           '"cost":0.002}}\n')
+_u_oc, _r_oc = JC._oc_usage(_stream)
+check("P3 the substrate arm reports its own steps, tokens and dollars",
+      _u_oc["steps"] == 2 and _u_oc["tokens_in"] == 150 and _u_oc["tokens_out"] == 35
+      and abs(_u_oc["total_usd"] - 0.003) < 1e-9 and _r_oc == "done", (_u_oc, _r_oc))
+_env_oc = JC._h2_env("K")
+_h2dot = JC.DEFAULT_HARNESS2 / ".env"
+check("P4 it reuses Harness2's own XDG wiring, never a second provider config",
+      _env_oc.get("OPENROUTER_API_KEY") == "K"
+      and (not _h2dot.is_file()
+           or all(k in _env_oc for k in ("XDG_CONFIG_HOME", "XDG_DATA_HOME"))),
+      sorted(_env_oc)[:6])
+_tie = [{"task": "t/1", "arm": a, "delivered": 2, "ok": True, "duration_s": d,
+         "score": {"ok": True, "score": 48.0, "max": 58.0}}
+        for a, d in (("opencode", 306.0), ("longrun", 174.0), ("harness2", 1200.0))]
+_payload_t, _text_t = JC.report(os.path.join(TMP, "report_tie"), _tie, {"judge_model": "j"})
+check("M9 a tie at a REAL score is a result with its cost, not 'the floor won'",
+      "Tied at the top" in _text_t and "No arm beat the floor" not in _text_t
+      and "20.0min" in _text_t and "5.1min" in _text_t, _text_t[-500:])
+
 _zero = [{"task": "t/1", "arm": a, "delivered": 1, "ok": True,
           "score": {"ok": True, "score": 0.0, "max": 72.0}} for a in JC.ARM_ORDER]
 _payload0, _text0 = JC.report(os.path.join(TMP, "report0"), _zero, {"judge_model": "j"})
