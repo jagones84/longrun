@@ -2455,7 +2455,7 @@ def _longrun_agent(args, run_id=None):
     return {"ok": False, "exit_code": 127,
             "error": ("the `longrunAgent` meta tool is gone: exclusive tools are "
                       "called by their own two-segment name (`agent.prompt_set`, "
-                      "`team.member_add`, `kb.notebook_add`)")}
+                      "`team.member_add`, `kb.notebook_rename`)")}
 
 
 def _exclusive_tool(tool, args, run_id=None):

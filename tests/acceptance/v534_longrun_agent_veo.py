@@ -163,7 +163,6 @@ expected_tools = {
     "routine.delete",
     "session.create",
     "session.rename",
-    "session.list",
     "session.delete",
     "provider.upsert",
     "skill.remove",
@@ -396,13 +395,13 @@ check("E4 configure target='index' writes the shared index configuration",
       and indexcfg.load_config().get("auto_index") is False, r_idx)
 
 r_kb = T.execute(
-    "kb.notebook_add",
-    {"name": "veo-notebook"},
+    "kb.notebook_rename",
+    {"id": KB.create_notebook("veo-notebook")["id"], "name": "veo-notebook-2"},
     run_id="longrunAgent",
 )
-check("E5 webui.knowledge.notebook.create creates a real notebook",
+check("E5 kb.notebook_rename renames a real notebook",
       r_kb.get("ok") is True
-      and any("veo-notebook" in str(n) for n in KB.list_notebooks()), r_kb)
+      and any("veo-notebook-2" in str(n) for n in KB.list_notebooks()), r_kb)
 
 r_mcp = T.execute(
     "mcp.upsert",

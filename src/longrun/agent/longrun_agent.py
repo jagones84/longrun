@@ -519,15 +519,10 @@ TOOL_SCHEMAS = {
         "_namespace": "session",
         "_subtool": "rename",
     },
-    "session.list": {
-        "description": "session.list — List every session (id, title, workspace, model).",
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "_origin": "exclusive",
-        "_namespace": "session",
-        "_subtool": "list",
-    },
+    # NO `session.list` here. Reading the session table is NOT a VEO privilege:
+    # the nucleus `sessions.list` already does it, better (query + limit + the
+    # owning agent + RUNNING state). Two names for one read is a second truth —
+    # the operator sees a duplicate tool and the model has to guess.
     "session.delete": {
         "description": (
             "session.delete — Delete a session with its full cascade: running turn "
@@ -725,17 +720,12 @@ TOOL_SCHEMAS = {
         "_namespace": "mcp",
         "_subtool": "reload",
     },
-    "kb.notebook_add": {
-        "description": "kb.notebook_add — Create ONE knowledge notebook.",
-        "type": "object",
-        "properties": {
-            "name": {"type": "string", "description": "Notebook name."},
-        },
-        "required": ["name"],
-        "_origin": "exclusive",
-        "_namespace": "kb",
-        "_subtool": "notebook_add",
-    },
+    # NO `kb.notebook_add` / `kb.source_add` here: creating a notebook and
+    # attaching a source are ordinary knowledge operations that every agent can
+    # do through the nucleus `knowledge.create_notebook` / `knowledge.add_source`
+    # (the same `kb.create_notebook` / `kb.add_sources` underneath). Only the
+    # verbs the nucleus tool genuinely LACKS stay exclusive: rename, delete,
+    # source removal and a full re-embed.
     "kb.notebook_rename": {
         "description": "kb.notebook_rename — Rename ONE knowledge notebook.",
         "type": "object",
@@ -761,23 +751,6 @@ TOOL_SCHEMAS = {
         "_origin": "exclusive",
         "_namespace": "kb",
         "_subtool": "notebook_delete",
-    },
-    "kb.source_add": {
-        "description": (
-            "kb.source_add — Attach ONE source (file path / URL / inline "
-            "text) to a knowledge notebook and index it."
-        ),
-        "type": "object",
-        "properties": {
-            "notebook": {"type": "string", "description": "Notebook id or name."},
-            "title": {"type": "string", "description": "Source title (for inline text)."},
-            "ref": {"type": "string", "description": "File path or URL to index."},
-            "content": {"type": "string", "description": "Inline text to add as a source instead of a path."},
-        },
-        "required": ["notebook"],
-        "_origin": "exclusive",
-        "_namespace": "kb",
-        "_subtool": "source_add",
     },
     "kb.source_remove": {
         "description": "kb.source_remove — Detach ONE source from the knowledge base.",
@@ -1735,14 +1708,6 @@ def _session_rename(args):
             "stdout": "renamed session %s -> %s" % (sid, title)}
 
 
-def _session_list(_args=None):
-    from longrun.memory import stores
-
-    rows = stores.list_sessions()
-    return {"ok": True, "sessions": rows, "count": len(rows or []),
-            "stdout": "%d session(s)" % len(rows or [])}
-
-
 def _session_delete(args):
     from longrun.core import httpapi
 
@@ -2255,7 +2220,6 @@ _SUBTOOL_MAP = {
     "routine.delete": _routine_delete,
     "session.create": _session_create,
     "session.rename": _session_rename,
-    "session.list": _session_list,
     "session.delete": _session_delete,
     "webui.inspect": _webui_inspect,
     "webui.configure": _webui_configure,
@@ -2272,10 +2236,8 @@ _SUBTOOL_MAP = {
     "mcp.remove": lambda a: _webui_mcp(a, "remove"),
     "mcp.test": lambda a: _webui_mcp(a, "test"),
     "mcp.reload": lambda a: _webui_mcp(a, "reload"),
-    "kb.notebook_add": lambda a: _webui_knowledge(a, "notebook.create"),
     "kb.notebook_rename": lambda a: _webui_knowledge(a, "notebook.rename"),
     "kb.notebook_delete": lambda a: _webui_knowledge(a, "notebook.delete"),
-    "kb.source_add": lambda a: _webui_knowledge(a, "source.add"),
     "kb.source_remove": lambda a: _webui_knowledge(a, "source.remove"),
     "kb.reembed": lambda a: _webui_knowledge(a, "reembed"),
 }
@@ -2324,7 +2286,8 @@ SECTION_PROMPTS = {
         "`agent.create|update|delete|get|list|prompt_set|prompt_get|prompt_clear`, "
         "`job.create|dispatch|delete|get|list`, "
         "`routine.create|update|delete|get|list`, "
-        "`session.create|rename|delete|list`. "
+        "`session.create|rename|delete` (the session TABLE is the builtin "
+        "`sessions.list`). "
         "Always pick lightweight, cost-effective remote cloud models (e.g. "
         "`openrouter:deepseek/deepseek-v4.1-flash`, `deepseek:deepseek-flash`, "
         "`openrouter:z-ai/glm-5.3-flash`, "
@@ -2400,10 +2363,10 @@ SECTION_PROMPTS = {
     ),
     "knowledge": (
         "You are `longrunAgent` automating the Settings ▸ Knowledge panel. Inspect with "
-        "`webui.inspect` (`section:'knowledge'`) and manage notebooks and sources "
-        "with `kb.notebook_add|rename|delete`, "
-        "`kb.source_add|remove` and "
-        "`kb.reembed`."
+        "`webui.inspect` (`section:'knowledge'`). CREATE through the builtin "
+        "`knowledge.create_notebook` / `knowledge.add_source` (they are not VEO "
+        "privileges), and use the exclusive verbs only for what the builtin tool "
+        "cannot do: `kb.notebook_rename|delete`, `kb.source_remove`, `kb.reembed`."
     ),
     "index": (
         "You are `longrunAgent` automating the Settings ▸ Codebase index configuration. Inspect "

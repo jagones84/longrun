@@ -321,7 +321,7 @@ def _provider_longrun_agent(sess, ws, ctx):
             "graphical objects \u2014 the WebUI re-paints itself from the events your "
             "calls emit, so never try to \u201cclick\u201d or scrape the UI.\n"
             "Your exclusive tools use two-segment names `namespace.tool` "
-            "(`agent.prompt_set`, `team.member_add`, `kb.notebook_add`) and these "
+            "(`agent.prompt_set`, `team.member_add`, `kb.notebook_rename`) and these "
             "are ALL of them right now:\n"
         )
     else:
@@ -341,6 +341,14 @@ def _provider_longrun_agent(sess, ws, ctx):
         "is no sub-operation to choose. An argument named `action` is RESERVED and "
         "never part of any schema \u2014 never send it: the verb is already in the "
         "tool name.\n"
+        "- This list is the DELTA, not your whole surface. Anything a normal agent "
+        "may already do stays in the BUILTIN registry and is NOT duplicated here: "
+        "read the session table with `sessions.list`, inspect another session with "
+        "`sessions.read`, create a notebook with `knowledge.create_notebook`, "
+        "attach a source with `knowledge.add_source`, search it with "
+        "`knowledge.search`. Never look for a `session.list` / `kb.notebook_add` / "
+        "`kb.source_add`: they do not exist, because the builtin tool is the one "
+        "truth.\n"
         "- Dual permission: an exclusive call runs only when the tool is enabled "
         "in the global registry AND the calling session is `longrunAgent*` or carries "
         "`allow_longrun_agent`. Both halves are checked outside you \u2014 do not try to "

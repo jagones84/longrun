@@ -82,17 +82,24 @@ check("A2 the namespace mirrors the object model (agent/team/job/routine/session
               "team": ("create", "update", "delete", "get", "list"),
               "job": ("create", "dispatch", "delete", "get", "list"),
               "routine": ("create", "update", "delete", "get", "list"),
-              "session": ("create", "rename", "delete", "list"),
+              "session": ("create", "rename", "delete"),
           }.items() for verb in verbs),
       sorted(handlers))
+# The exclusive catalog is the DELTA over the builtin registry, never a second
+# copy of it: a create/read a normal agent can do stays builtin (EV-46).
 check("A3 typed object tools exist next to the config writer",
       all(n in handlers for n in (
           "provider.upsert", "provider.remove", "provider.add_model",
           "provider.remove_model", "provider.set_default", "provider.reload",
           "skill.remove", "mcp.upsert", "mcp.remove", "mcp.test", "mcp.reload",
-          "kb.notebook_add", "kb.notebook_rename", "kb.notebook_delete",
-          "kb.source_add", "kb.source_remove", "kb.reembed",
+          "kb.notebook_rename", "kb.notebook_delete",
+          "kb.source_remove", "kb.reembed",
           "webui.inspect", "webui.configure")))
+check("A3-dupe the builtin-owned verbs are NOT re-declared as exclusive",
+      not any(n in handlers for n in ("session.list", "kb.notebook_add",
+                                      "kb.source_add"))
+      and {"sessions.list", "knowledge.create_notebook",
+           "knowledge.add_source"} <= set(registry.TOOL_SCHEMAS))
 check("A3b naming contract: every exclusive tool is EXACTLY `namespace.tool`",
       all(len(k.split(".")) == 2 for k in handlers)
       and all(k.split(".", 1)[0] in LRA.EXCLUSIVE_NAMESPACES for k in handlers)
@@ -267,11 +274,11 @@ s_new = call("session.create", {"title": "JAG-537 probe"})
 psid = s_new.get("session")
 s_ren = call("session.rename",
              {"session": psid, "title": "JAG-537 probe (renamed)"})
-s_list = call("session.list", {})
-check("F1 sessions.create/rename/list operate on the real store",
+_rows = stores.list_sessions()
+check("F1 sessions.create/rename operate on the real store (the TABLE is builtin)",
       s_new.get("ok") is True and (stores.load_session(psid) or {}).get("title") == "JAG-537 probe (renamed)"
       and s_ren.get("ok") is True
-      and any(s.get("id") == psid for s in (s_list.get("sessions") or [])),
+      and any(s.get("id") == psid for s in _rows),
       (psid, s_new.get("title")))
 s_del = call("session.delete", {"session": psid})
 check("F2 sessions.delete removes the session file",
@@ -290,7 +297,9 @@ check("G1 a folder outside the workspaces root is NEVER deleted",
 
 # --- H: typed webui object tools --------------------------------------------
 KB = __import__("longrun.memory.knowledge", fromlist=["knowledge"])
-nb = call("kb.notebook_add", {"name": "jag537-nb"})
+# the CREATE is a builtin operation (knowledge.create_notebook); only the verbs
+# the builtin tool lacks are exclusive.
+nb = KB.create_notebook("jag537-nb")
 nb_id = nb.get("id")
 nb_ren = call("kb.notebook_rename",
               {"id": nb_id, "name": "jag537-nb-renamed"})
