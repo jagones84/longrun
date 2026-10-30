@@ -2610,6 +2610,15 @@ def _normalize_action(act):
             return dict(act, action="todo.update")
         if "note" in act:
             return dict(act, action="todo.replan")
+        # BATCH-BUG (live 2026-10-30): a model emits the batch PAYLOAD alone
+        # (`{"calls":[…]}`) — either without the `action` field at all, or as the
+        # half left over when the harness split `<action>batch</action>` off its
+        # JSON. With no action the dict fell through to the tool lane, matched no
+        # tool and was echoed back to the operator as PROSE while the calls never
+        # ran ("batch is broken"). The list IS the action: coerce by shape, like
+        # `todos`/`steps` above.
+        if isinstance(act.get("calls") or act.get("tool_calls"), list):
+            return dict(act, action="batch")
         # BATCH-BUG: a dispatch spelled without its action (bare address +
         # payload) must still reach the teammate, never the tool lane.
         _dargs = act.get("args") if isinstance(act.get("args"), dict) else {}

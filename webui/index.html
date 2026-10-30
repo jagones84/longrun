@@ -4673,6 +4673,57 @@ function confirmTextModal() {
 let _rec = null, _recOn = false;
 // JAG-416: after this much silence with no new speech, the mic closes by itself.
 const VOICE_SILENCE_MS = 3000;
+/* JAG-417: voice must START, not be explained. The Web Speech API exists only in
+   a SECURE CONTEXT and this UI is normally opened over plain HTTP on the LAN, so
+   the 🎙 was dead unless the operator read a wall of instructions. The server
+   already speaks TLS on port+1 (httpapi._start_tls), so derive that origin here
+   and carry the API token + the open session with it:
+     - the HTTPS page writes `lr_voice_https=1` — i.e. only AFTER the browser has
+       ACCEPTED the self-signed certificate. With that flag an http visit upgrades
+       by itself on boot, so voice really is the default;
+     - without the flag nothing navigates on its own: an unaccepted certificate
+       would show the browser interstitial, and THAT is the blocked page this must
+       never cause. The mic click probes TLS first and falls back to the help.
+   The microphone belongs to the machine running the browser (Windows desktop,
+   phone) — the DGX serves bytes and needs none — so one code path serves both. */
+function voiceTlsOrigin() {
+  if (window.isSecureContext) return null;
+  try {
+    const u = new URL(location.href);
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(u.hostname)) return null;
+    const p = u.port ? (Number(u.port) + 1) : 443;
+    return "https://" + u.hostname + ":" + p;
+  } catch (e) { return null; }
+}
+function voiceSecureUrl(extra) {
+  const base = voiceTlsOrigin();
+  if (!base) return null;
+  const qs = [];
+  if (typeof TOKEN !== "undefined" && TOKEN) qs.push("token=" + encodeURIComponent(TOKEN));
+  if (typeof sessionId !== "undefined" && sessionId) qs.push("session=" + encodeURIComponent(sessionId));
+  if (extra) qs.push(extra);
+  return base + "/" + (qs.length ? "?" + qs.join("&") : "");
+}
+/* True when this origin already TRUSTS the TLS certificate: a no-cors fetch
+   resolves on any HTTP status but rejects on the handshake, which is the only
+   question asked here. */
+function voiceHttpsReachable() {
+  const base = voiceTlsOrigin();
+  if (!base) return Promise.resolve(false);
+  return fetch(base + "/api/status", {mode: "no-cors", cache: "no-store"})
+    .then(() => true).catch(() => false);
+}
+function voiceUpgrade() {
+  if (window.isSecureContext) {
+    try { localStorage.setItem("lr_voice_https", "1"); } catch (e) {}
+    return;
+  }
+  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return;
+  let proven = false;
+  try { proven = localStorage.getItem("lr_voice_https") === "1"; } catch (e) {}
+  if (!proven) return;
+  voiceHttpsReachable().then(ok => { if (ok) location.replace(voiceSecureUrl("voice=1")); });
+}
 function voiceHelp(reason) {
   const secure = !!window.isSecureContext;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -4684,6 +4735,12 @@ function voiceHelp(reason) {
     "with no browser permission at all. Browser-based tools instead use the <b>Web Speech API</b>, which " +
     "browsers only expose on <b>HTTPS</b> or <b>localhost</b>: that is the only reason the 🎙 mic is blocked here.");
   if (!secure) {
+    const _go = voiceSecureUrl("voice=1");
+    if (_go) rows.push('<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:4px 0">' +
+      '<button id="voiceGoSecure" style="padding:8px 14px;border-radius:9px;border:1px solid var(--acc);' +
+      'background:rgba(124,140,255,.2);color:var(--txt);cursor:pointer;font:inherit;font-weight:600">' +
+      'Open the secure version →</button><span style="color:var(--dim)">one click: accept the certificate ' +
+      'once and 🎙 starts there</span></div>');
     rows.push("This page is served over plain HTTP (<code>" + esc(location.origin) +
       "</code>). Browsers only allow the microphone on <b>HTTPS</b> or <b>localhost</b>, so it is blocked here.");
     const _tlsPort = (location.port ? (Number(location.port) + 1) : 443);
@@ -4705,6 +4762,8 @@ function voiceHelp(reason) {
   }
   rows.push('<span class="remaining">On a host with no microphone (e.g. the DGX server itself) voice is unavailable — open the UI on the machine that has the mic.</span>');
   $("voiceHelpBody").innerHTML = rows.map(r => '<div style="margin:3px 0">' + r + "</div>").join("");
+  const _goBtn = $("voiceGoSecure");
+  if (_goBtn) _goBtn.onclick = () => { const u = voiceSecureUrl("voice=1"); if (u) location.assign(u); };
   $("voiceBackdrop").hidden = false; $("voiceHelp").hidden = false;
 }
 function closeVoiceHelp() { $("voiceBackdrop").hidden = true; $("voiceHelp").hidden = true; }
@@ -4714,10 +4773,17 @@ function _recSilenceStop() {
   if (_recSilence) { clearTimeout(_recSilence); _recSilence = null; }
   if (_recOn && _rec) { try { _rec.stop(); } catch (e) {} }
 }
-function micToggle() {
+async function micToggle() {
   const mic = $("micBtn");
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!window.isSecureContext) { voiceHelp("Voice input is blocked on an insecure origin."); return; }
+  if (!window.isSecureContext) {
+    // JAG-417: one click = voice. Probe the TLS port the server already serves;
+    // navigate only when the certificate is trusted HERE, so a fresh browser can
+    // never be parked on a certificate interstitial ("the page is blocked").
+    if (await voiceHttpsReachable()) { location.assign(voiceSecureUrl("voice=1")); return; }
+    voiceHelp("Voice input is blocked on an insecure origin.");
+    return;
+  }
   if (!SR) { voiceHelp("The browser Speech API is not available."); return; }
   if (_recOn) { _recSilenceStop(); return; }
   try {
@@ -14699,6 +14765,18 @@ ensureToken().then(() => {
   // which then looked like "the feature does not exist".
   const _boot = [
     loadGoal,   // G-1: also works on a deep-linked session (?session=)
+    voiceUpgrade,   // JAG-417: proven-TLS origins upgrade to https on their own
+    () => {         // ...and `?voice=1` (set by that upgrade) starts the mic here
+      let want = null;
+      try { want = new URL(location.href).searchParams.get("voice"); } catch (e) {}
+      if (!want) return;
+      try {
+        const u = new URL(location.href);
+        u.searchParams.delete("voice");
+        history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
+      } catch (e) {}
+      setTimeout(() => { try { micToggle(); } catch (e) {} }, 350);
+    },
     () => {
       loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn();
     },

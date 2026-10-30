@@ -930,6 +930,16 @@ def set_session_access(sid, allowed):
     return {"ok": True, "session": sid, "allow_longrun_agent": bool(allowed)}
 
 
+#: Exclusive tools that only OBSERVE the substrate. Everything else in the
+#: namespace rewrites config (mcp.upsert/remove/reload, provider.*, session.* …),
+#: which is why the gate exists. A probe that reports whether an
+#: already-configured MCP client answers cannot rewire anything, so a normal chat
+#: may run it — the operator asked for exactly that in a chat and got
+#: "not authorized" with `approvals.mode=full` on (live 2026-10-30), which reads as
+#: a harness bug rather than a safety boundary.
+READ_ONLY_EXCLUSIVE = frozenset({"mcp.test"})
+
+
 def check_dual_permission(tool, run_id=None):
     """Verify BOTH global tool enablement AND session privilege for an exclusive tool.
 
@@ -941,7 +951,7 @@ def check_dual_permission(tool, run_id=None):
         return False, "unknown tool %r" % tool
     if not spec.get("enabled"):
         return False, "tool %r is disabled in the global Tool panel (enable longrunAgent tools first)" % tool
-    if not session_has_access(run_id):
+    if tool not in READ_ONLY_EXCLUSIVE and not session_has_access(run_id):
         return False, (
             "session %r is not authorized to use %r — dual-permission gate requires "
             "either the permanent 'longrunAgent' system session or explicit session "
