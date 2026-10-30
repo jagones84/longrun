@@ -101,7 +101,8 @@ repeat) and writes `run.json` + `compare.{json,md}` inside it; `runs/INDEX.md` i
 derived from the manifests. `--max-steps` is the per-turn real-tool budget for the
 Longrun arm (chat default 8 truncates a multi-artifact task). `--only-task task2`
 re-runs ONE task by name instead of "the first N" (Longrun arm only: Harness²
-sweeps a whole domain).
+sweeps a whole domain). `--harness2-from <run>` grades an earlier run's Harness²
+sweep instead of spending a second one — a sweep costs four ~12-minute rollouts.
 
 The Longrun arm sends `headless: true`: a benchmark has nobody attached to answer
 a HUMAN IN THE LOOP card, so the turn reports its real reply instead of parking.

@@ -260,6 +260,18 @@ class LongrunAdapter:
             duration_s=dur, error="" if ok else str(obj.get("error"))[:400],
             provenance=self.provenance())
 
+    def usage(self, session):
+        """This session's token/cost totals from the live ledger (`GET /api/costs`).
+
+        Read it BEFORE deleting the session: the ledger is
+        `~/.longrun/data/costs/<sid>.json` and dies with the session, so a
+        benchmark that skipped this compared score-only against a harness whose
+        trajectory logs per-step cost.
+        """
+        st, obj = self._req("GET", "/api/costs?session=%s" % urllib.parse.quote(session),
+                            timeout=15)
+        return obj if st == 200 and isinstance(obj, dict) else {}
+
     def backup_session(self, ref):
         st, obj = self._req("POST", "/api/checkpoints", {"session": ref.session,
                                                          "label": "bench"})

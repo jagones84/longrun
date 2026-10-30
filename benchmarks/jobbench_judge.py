@@ -83,7 +83,10 @@ def judge(output_dir, rubrics, details_path, judge_model, api_base, api_key="",
     if api_key:
         env["JUDGE_API_KEY"] = api_key          # argv stays clean
     try:
-        r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout)
+        # Same rule as the Harness² sweep: a child must never inherit an open stdin,
+        # or a tool that reads it waits forever for an EOF that never comes.
+        r = subprocess.run(cmd, env=env, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL, timeout=timeout)
     except (OSError, subprocess.SubprocessError) as e:
         return {"ok": False, "error": "judge could not run: %s" % e}
     if r.returncode != 0:

@@ -161,6 +161,14 @@ check("H4 grading follows that store, so an old model_output is never picked up"
       "base = Path(h2_runs) /" in _h2src and '"OPENROUTER_API_KEY": key' in _h2src
       and '"HARNESS2_RUNS_DIR": str(h2_runs)' in _h2src,
       "the sweep env must carry the solver key and the per-run store")
+# A sweep's rollouts finish and its IMPROVER sessions then hang forever, because
+# Harness²'s proposer launches the OpenCode CLI without `stdin=` and the CLI reads
+# an inherited open stdin (measured: inherit -> hung 45 s, DEVNULL -> 5 s).
+check("H5 no child of the driver may inherit an open stdin",
+      "stdin=subprocess.DEVNULL" in _h2src
+      and "stdin=subprocess.DEVNULL" in open(
+          os.path.join(REPO, "benchmarks", "jobbench_judge.py"), encoding="utf-8").read(),
+      "run_harness2 and judge must both pass stdin=DEVNULL")
 
 # I ----------------------------------------------------------------------
 SRC = open(os.path.join(REPO, "benchmarks", "longrun_adapter.py"), encoding="utf-8").read()
@@ -309,19 +317,92 @@ check("M7 the report states WHO is better, and the raw floor",
 
 # N — adding the other arms must not pay for the sweep twice ----------------
 _prev = os.path.join(TMP, "prevrun")
-_prev_store = os.path.join(_prev, "harness2", "_h2runs", "jb", "dataset",
-                           "biostatisticians", "task1", "model_output", "label-x")
-os.makedirs(os.path.join(_prev_store, "output"), exist_ok=True)
-with open(os.path.join(_prev_store, "output", "reused.csv"), "w", encoding="utf-8") as f:
-    f.write("a,b\n1,2\n")
+_prev_base = os.path.join(_prev, "harness2", "_h2runs", "jb", "dataset",
+                          "biostatisticians", "task1", "model_output")
+for _label in ("jb-oc-agg1__biostatisticians__task1__base1",
+               "jb-oc-agg1__biostatisticians__task1__v2"):
+    os.makedirs(os.path.join(_prev_base, _label, "output"), exist_ok=True)
+    with open(os.path.join(_prev_base, _label, "output", "reused.csv"), "w",
+              encoding="utf-8") as f:
+        f.write("a,b\n1,2\n")
+_prev_store = os.path.join(_prev_base, "jb-oc-agg1__biostatisticians__task1__v2")
 _rows_re, _meta_re = JC.run_harness2(tasks, os.path.join(TMP, "reuseout"),
                                      solver_model="openrouter/x", judge_model="judge-x",
                                      judge_base="http://127.0.0.1:1/v1", key="k",
                                      timeout=30, judge_timeout=60, reuse=_prev)
 check("N1 a reused sweep grades the PREVIOUS model_output instead of spending",
       _meta_re.get("status") == "reused" and _meta_re.get("command") == []
-      and _rows_re[0]["delivered"] == 1 and _rows_re[0]["label"] == "label-x",
+      and _rows_re[0]["delivered"] == 1
+      and _rows_re[0]["label"] == "jb-oc-agg1__biostatisticians__task1__v2",
       _meta_re)
+check("N2 a self-improving sweep reports BOTH its improvement and its baseline",
+      len(_rows_re[0].get("labels") or []) == 2
+      and (_rows_re[0].get("baseline") or {}).get("label", "").endswith("base1")
+      and (_rows_re[0].get("baseline") or {}).get("score", {}).get("ok") is True,
+      _rows_re[0].get("baseline"))
+
+# O — the Longrun arm's own cost must SURVIVE the task -----------------------
+# Measured 2026-10-30: a finished Longrun task reported score+files but no tokens
+# and no dollars, because `delete_agent` removes the session and with it
+# `~/.longrun/data/costs/<sid>.json`. Harness² logs per-step token cost in its
+# trajectory, so a comparison that drops Longrun's cost compares only one side.
+class _FakeLongrun:
+    """The Longrun REST surface, faked: records the order of the two decisive calls."""
+
+    def __init__(self, usage, out):
+        self.calls, self._usage, self.out = [], usage, out
+
+    def provenance(self):
+        return {"harness": "longrun", "model": "m"}
+
+    def setup(self):
+        return None
+
+    def teardown(self):
+        return None
+
+    def create_agent(self, task):
+        from benchmarks.protocol import AgentRef
+        return AgentRef(id="t", session="sid-1", meta={"task": task.get("id")})
+
+    def send_task(self, ref, prompt, timeout=None):
+        wout = os.path.join(self.out, "longrun", JC._slug(tasks[0]["id"]),
+                            "workspace", "output")
+        os.makedirs(wout, exist_ok=True)
+        with open(os.path.join(wout, "cohort_summary.csv"), "w", encoding="utf-8") as f:
+            f.write("n,mean\n1,50\n")
+        return HarnessResult(ok=True, output="done", run_id="r1")
+
+    def usage(self, session):
+        self.calls.append("usage:%s" % session)
+        return self._usage
+
+    def delete_agent(self, ref):
+        self.calls.append("delete:%s" % ref.session)
+        return True
+
+
+_usage = {"calls": 41, "tokens_in": 512000, "tokens_out": 9000,
+          "total_usd": 0.0123, "latency_ms_p50": 4100}
+_fake_lr = _FakeLongrun(_usage, os.path.join(TMP, "lrout"))
+_rows_lr, _ = JC.run_longrun(tasks, os.path.join(TMP, "lrout"), model="openrouter:m",
+                             judge_model="judge-x", judge_base="http://127.0.0.1:1/v1",
+                             key="k", timeout=30, judge_timeout=120, adapter=_fake_lr)
+check("O1 the cost ledger is read BEFORE the session is deleted",
+      _fake_lr.calls[:2] == ["usage:sid-1", "delete:sid-1"], _fake_lr.calls)
+check("O2 the task's tokens and dollars are in the result row and on disk",
+      _rows_lr[0].get("usage", {}).get("total_usd") == 0.0123
+      and _rows_lr[0]["usage"]["tokens_in"] == 512000
+      and os.path.isfile(os.path.join(TMP, "lrout", "longrun",
+                                      JC._slug(tasks[0]["id"]), "costs.json")),
+      _rows_lr[0].get("usage"))
+_fake_none = _FakeLongrun(None, os.path.join(TMP, "lrout2"))
+_rows_none, _ = JC.run_longrun(tasks, os.path.join(TMP, "lrout2"), model="openrouter:m",
+                               judge_model="judge-x", judge_base="http://127.0.0.1:1/v1",
+                               key="k", timeout=30, judge_timeout=120, adapter=_fake_none)
+check("O3 a missing ledger never breaks the arm (usage is {}, not a crash)",
+      _rows_none[0].get("usage") == {} and _rows_none[0]["delivered"] == 1,
+      _rows_none[0].get("usage"))
 
 print("\n---\nv728: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

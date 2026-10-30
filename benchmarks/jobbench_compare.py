@@ -153,13 +153,14 @@ def _openrouter_key():
 
 # --------------------------------------------------------------- longrun arm
 def run_longrun(tasks, out, *, model, judge_model, judge_base, key, timeout,
-                judge_timeout, keep_sessions=False, max_steps=None):
+                judge_timeout, keep_sessions=False, max_steps=None, adapter=None):
     """Drive the LIVE Longrun over REST, one session per task, then judge."""
     from .longrun_adapter import LongrunAdapter
     arm = Path(out) / "longrun"
     arm.mkdir(parents=True, exist_ok=True)
-    ad = LongrunAdapter(model=model, timeout=timeout, keep_sessions=keep_sessions,
-                        tag="jobbench", max_steps=max_steps)
+    ad = adapter or LongrunAdapter(model=model, timeout=timeout,
+                                   keep_sessions=keep_sessions,
+                                   tag="jobbench", max_steps=max_steps)
     rows, prov = [], {}
     try:
         prov = ad.provenance()
@@ -172,13 +173,23 @@ def run_longrun(tasks, out, *, model, judge_model, judge_base, key, timeout,
             ref = ad.create_agent({"id": task["id"], "workspace": str(ws)})
             res = ad.send_task(ref, jobbench.prompt_for(task, ws), timeout=timeout)
             files = jobbench.deliverables(ws)
+            # The session's cost ledger lives under `~/.longrun/data/costs/<sid>.json`
+            # and `delete_agent` takes it away with the session. Measured 2026-10-30:
+            # a finished task reported score+files and NO tokens, so Longrun looked
+            # free next to Harness² (which logs per-step token cost in its
+            # trajectory). Read it while the session still exists.
+            usage = {}
+            try:
+                usage = ad.usage(ref.session) or {}
+            except Exception as exc:  # noqa: BLE001 — accounting never fails a task
+                usage = {"error": str(exc)[:200]}
             sc = JJ.score_run(task, ws, arm / slug / "judge.json", judge_model,
                               judge_base, key, evaluated_model="longrun-%s" % slug,
                               timeout=judge_timeout)
             row = {"task": task["id"], "arm": "longrun", "ok": bool(res.ok),
                    "error": res.error or "", "delivered": len(files),
                    "files": files[:40], "duration_s": round(time.time() - t0, 1),
-                   "model": model, "score": sc,
+                   "model": model, "score": sc, "usage": usage,
                    # The reply is the only evidence of WHY a turn delivered nothing:
                    # keep its head and length, and the ids needed to open the session.
                    "reply": (res.output or "")[:1200],
@@ -187,6 +198,8 @@ def run_longrun(tasks, out, *, model, judge_model, judge_base, key, timeout,
                    "max_steps": max_steps,
                    "workspace_error": (ref.meta or {}).get("error", "")}
             _write(arm / slug / "result.json", row)
+            if usage:
+                _write(arm / slug / "costs.json", usage)
             rows.append(row)
             ad.delete_agent(ref)
             print("  longrun %-42s delivered=%d score=%s"
@@ -305,8 +318,16 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
         return [], meta
     t0 = time.time()
     try:
+        # `stdin=DEVNULL` is LOAD-BEARING, not hygiene: Harness²'s proposer step
+        # launches the OpenCode CLI without `stdin=` of its own, so the child would
+        # INHERIT this process's stdin all the way down. An open stdin with no EOF
+        # (an ssh session, a parent pipeline) makes `opencode run` block forever —
+        # measured: inherit -> hung at 45 s, DEVNULL -> answers in 5 s, a closed
+        # pipe -> answers in 22 s. Without this the sweep's rollouts finish and its
+        # three improver sessions hang until the timeout kills the sweep.
         r = subprocess.run(cmd, cwd=str(DEFAULT_HARNESS2), env=env, text=True,
-                           capture_output=True, timeout=timeout)
+                           stdin=subprocess.DEVNULL, capture_output=True,
+                           timeout=timeout)
         meta.update({"returncode": r.returncode, "stderr_tail": (r.stderr or "")[-1200:],
                      "stdout_tail": (r.stdout or "")[-1200:],
                      "duration_s": round(time.time() - t0, 1)})
@@ -322,31 +343,51 @@ def run_harness2(tasks, out, *, solver_model, judge_model, judge_base, key,
 
 
 def _grade_harness2(tasks, arm, h2_runs, judge_model, judge_base, key, judge_timeout):
-    """Grade ITS `model_output/`: `<runs>/jb/dataset/<prof>/<task>/model_output/<label>`."""
+    """Grade ITS `model_output/`: `<runs>/jb/dataset/<prof>/<task>/model_output/<label>`.
+
+    Harness² is a SELF-IMPROVING harness: one sweep writes several labels (the
+    `base1` baseline, then the improved attempts). The newest label is the arm's
+    result, and `base1` is graded too — "what did the improvement buy" is the whole
+    point of that harness, and a single number would hide it.
+    """
     rows = []
     for task in tasks:
         prof, name = task["id"].split("/", 1)
         base = Path(h2_runs) / "jb" / "dataset" / prof / name / "model_output"
         labels = sorted((p for p in base.iterdir() if p.is_dir()),
-                        key=lambda p: p.stat().st_mtime, reverse=True) if base.is_dir() else []
+                        key=lambda p: p.stat().st_mtime) if base.is_dir() else []
         if not labels:
             rows.append({"task": task["id"], "arm": "harness2", "ok": False,
                          "error": "no model_output under %s" % base, "score": None})
             continue
-        run_dir = labels[0]
         slug = _slug(task["id"])
-        sc = JJ.judge(run_dir, task["rubrics"], Path(arm) / slug / "judge.json",
-                      judge_model, judge_base, key,
-                      evaluated_model="harness2-%s" % run_dir.name, timeout=judge_timeout)
-        files = jobbench.deliverables(run_dir)
+
+        def _scored(run_dir, tag):
+            sc = JJ.judge(run_dir, task["rubrics"], Path(arm) / slug / ("judge-%s.json" % tag),
+                          judge_model, judge_base, key,
+                          evaluated_model="harness2-%s" % run_dir.name, timeout=judge_timeout)
+            return sc, jobbench.deliverables(run_dir)
+
+        run_dir = labels[-1]                        # the improved attempt
+        sc, files = _scored(run_dir, "final")
         row = {"task": task["id"], "arm": "harness2", "ok": bool(sc.get("ok")),
                "error": sc.get("error") or "", "delivered": len(files),
-               "files": files[:40], "label": run_dir.name, "score": sc}
+               "files": files[:40], "label": run_dir.name, "score": sc,
+               "labels": [p.name for p in labels]}
+        baseline = next((p for p in labels if p.name.endswith("base1")), None)
+        if baseline is not None and baseline != run_dir:
+            b_sc, b_files = _scored(baseline, "baseline")
+            row["baseline"] = {"label": baseline.name, "score": b_sc,
+                               "delivered": len(b_files)}
         _write(Path(arm) / slug / "result.json", row)
         rows.append(row)
-        print("  harness2 %-41s delivered=%d score=%s"
+        b = row.get("baseline") or {}
+        print("  harness2 %-41s delivered=%d score=%s%s"
               % (task["id"], len(files),
-                 "%s/%s" % (sc.get("score"), sc.get("max")) if sc.get("ok") else sc.get("error")),
+                 "%s/%s" % (sc.get("score"), sc.get("max")) if sc.get("ok") else sc.get("error"),
+                 ("  (baseline %s/%s)" % ((b.get("score") or {}).get("score"),
+                                          (b.get("score") or {}).get("max"))
+                  if b.get("score") and b["score"].get("ok") else "")),
               flush=True)
     return rows
 
@@ -373,7 +414,8 @@ def report(out, rows, parity):
     arms = {}
     for r in rows:
         a = arms.setdefault(r["arm"], {"tasks": 0, "delivered": 0, "scored": 0,
-                                       "ratio_sum": 0.0, "ratio_n": 0})
+                                       "ratio_sum": 0.0, "ratio_n": 0,
+                                       "tokens": None, "usd": None})
         a["tasks"] += 1
         a["delivered"] += 1 if r.get("delivered") else 0
         rt = _ratio(r)
@@ -381,10 +423,20 @@ def report(out, rows, parity):
             a["scored"] += 1
             a["ratio_sum"] += rt
             a["ratio_n"] += 1
+        u = r.get("usage") or {}
+        if u:
+            # An arm that reports no ledger stays `None` ("not recorded"), which is
+            # not the same claim as "$0".
+            a["tokens"] = (a["tokens"] or 0) + int(u.get("tokens_in") or 0) \
+                + int(u.get("tokens_out") or 0)
+            if u.get("total_usd") is not None:
+                a["usd"] = (a["usd"] or 0.0) + float(u["total_usd"])
     summary = {}
     for name, a in arms.items():
         summary[name] = {"tasks": a["tasks"], "delivered": a["delivered"],
                          "scored": a["scored"],
+                         "tokens": a["tokens"], "usd": (round(a["usd"], 6)
+                                                        if a["usd"] is not None else None),
                          "mean_ratio": round(a["ratio_sum"] / a["ratio_n"], 4)
                          if a["ratio_n"] else None}
     payload = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "parity": parity,
@@ -408,11 +460,14 @@ def report(out, rows, parity):
                         sc.get("score", "-"), sc.get("max", "-"),
                         ("%.3f" % rt) if rt is not None else "-",
                         str(note)[:60].replace("|", "/")))
-    lines += ["", "| arm | tasks | delivered | scored | mean ratio |", "|---|---|---|---|---|"]
+    lines += ["", "| arm | tasks | delivered | scored | mean ratio | tokens | usd |",
+              "|---|---|---|---|---|---|---|"]
     for name in sorted(summary, key=_arm_rank):
         s = summary[name]
-        lines.append("| %s | %s | %s | %s | %s |"
-                     % (name, s["tasks"], s["delivered"], s["scored"], s["mean_ratio"]))
+        lines.append("| %s | %s | %s | %s | %s | %s | %s |"
+                     % (name, s["tasks"], s["delivered"], s["scored"], s["mean_ratio"],
+                        s["tokens"] if s["tokens"] is not None else "-",
+                        ("$%.4f" % s["usd"]) if s["usd"] is not None else "-"))
     ranked = [(n, s["mean_ratio"]) for n, s in summary.items() if s["mean_ratio"] is not None]
     if ranked:
         ranked.sort(key=lambda kv: kv[1], reverse=True)
