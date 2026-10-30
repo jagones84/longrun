@@ -565,9 +565,9 @@ def tool_context():
         "`args` object.",
         '  {"action":"tool","tool":"fs.read","args":{"path":"src/foo.py",'
         '"start_line":1,"end_line":60}}',
-        "One call per turn is the default. When several calls are INDEPENDENT "
-        "(none needs another's output), you MAY issue them together and the "
-        "harness runs them CONCURRENTLY:",
+        "One call per turn is the default. INDEPENDENT calls (none needs "
+        "another's output) MAY go together — the harness runs them "
+        "CONCURRENTLY:",
         '  {"action":"batch","calls":[{"tool":"fs.read","args":{"path":"a.py"}},'
         '{"tool":"fs.read","args":{"path":"b.py"}}]}',
         "Each item of `calls` is a FULL action — a tool call, "

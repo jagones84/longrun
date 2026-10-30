@@ -1424,7 +1424,7 @@ def _improve(args, run_id=None):
     args = args or {}
     scope = str(args.get("scope", "")).strip()
     action = str(args.get("action", "propose") or "propose").strip()
-    if action in ("mine", "evolve", "verify", "promote", "forge"):
+    if action in ("mine", "evolve", "verify", "promote", "forge", "abstract"):
         scope = "mine"
     content = str(args.get("content", "")).strip()
     # JAG-491: audit the WHOLE backlog (proposals + distilled lessons) with an LLM
@@ -1531,6 +1531,21 @@ def _improve(args, run_id=None):
                 description=str(args.get("content") or ""))
             _pub("improve.forge", matrix_tool=res.get("matrix_tool"),
                  ok=bool(res.get("ok")))
+            return res
+        if action == "abstract":
+            # EV-22: the abstraction step the operator asked for ("il forge
+            # produce bundle da pattern di sequenza, non capisce il significato").
+            # ONE single-shot call names the capability and says whether the
+            # repeat IS one; the record lands on the draft and is what a forge
+            # then uses as the module's name and description.
+            if not path:
+                return {"ok": False, "error": "path required for action=abstract"}
+            if not _inside_proposals(path):
+                return {"ok": False,
+                        "error": "abstract path must be under %s" % proposals_root}
+            res = improve.abstract_draft(path, model=args.get("model") or None)
+            _pub("improve.abstract", compact=bool(res.get("compact")),
+                 name=res.get("name") or "")
             return res
         if action == "evolve":
             # v662: stage 2 is `improve.evolve_once` — the SAME flow the end-of-turn

@@ -8564,6 +8564,16 @@ async function draftAct(path, action, slot) {
       : ("❌ " + (why || "not verified").slice(0, 110));
     return;
   }
+  if (action === "abstract") {
+    // EV-22: the record is on the server; state the verdict here and let the
+    // reload render the goal. `compact:false` means "do not forge this".
+    if (slot) slot.textContent = res.ok
+      ? (res.compact
+        ? ("capability · " + String(res.name || "") + " — " + String(res.goal || "").slice(0, 80))
+        : ("not a capability · " + String(res.why || "the model saw no capability").slice(0, 90)))
+      : ("abstraction failed · " + String(res.error || (j && j.reason) || st || "").slice(0, 110));
+    return;
+  }
   if (action === "forge") {
     // `matrix_tool`, not `tool`: the dispatch envelope owns `tool` (the executed
     // tool's canonical name) and overwrites it.
@@ -8761,10 +8771,16 @@ async function loadImprovement() {
         const row = document.createElement("div"); row.className = "imp-row";
         const proof = x.verified === true ? "verified"
           : (x.verified === false ? "verify failed" : "unverified");
+        const ab = x.abstract || {};
+        const notCap = ab.compact === false;
         row.innerHTML = '<b>' + esc(x.name || "") + '</b> <span class="remaining">' +
           esc(x.status || "proposed") + " · support ×" + esc(String(x.support || 0)) +
           " · " + esc(String(x.steps || 0)) + " steps · " + esc(proof) +
           (x.green_streak ? " · green ×" + esc(String(x.green_streak)) : "") +
+          // EV-22: the abstraction step's record — the goal names what the
+          // sequence IS, and a refusal says why it must not become code.
+          (ab.goal ? " · <i>" + esc(String(ab.goal)) + "</i>" : "") +
+          (notCap ? " · <span class=\"sk-badge\">not a capability</span>" : "") +
           // EV-16: a forged draft IS a live Matrix tool (the server checks the
           // module, not a recorded flag), so the row states it and offers no forge.
           (x.matrix_tool ? " · <span class=\"sk-badge sk-matrix\">matrix tool · " +
@@ -8785,12 +8801,17 @@ async function loadImprovement() {
         };
         acts.appendChild(mk("verify", "verify", "run the draft's sandbox check now (real tool call)"));
         acts.appendChild(mk("promote", "promote", "install this verified draft under skills/created — approval-gated"));
+        // EV-22: the naming step, as a real tool call — ask the model what
+        // capability this sequence is; the verdict is recorded on the draft and
+        // is what a forge then uses as the tool's name.
+        acts.appendChild(mk("name", "abstract", "ask the model what capability this sequence IS (one call, recorded on the draft)"));
         // v719: the mining lane's executive arm — the same tool call the agent
         // uses, which writes a REAL Matrix tool and keeps it only if its own test
         // and contract gate pass. Approval-gated like promote.
         // EV-16: not offered when the module is already live (the server would
         // refuse it as a clobber) — a dead button is a lie about the state.
-        if (!x.matrix_tool) {
+        // EV-22: and not offered when the abstraction said it is not a capability.
+        if (!x.matrix_tool && !notCap) {
           acts.appendChild(mk("forge", "forge", "turn this sequence into a tested Matrix tool (approval-gated)"));
         }
         acts.appendChild(slot);

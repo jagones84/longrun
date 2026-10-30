@@ -401,6 +401,18 @@ STAGE2_DEFAULTS = {
     # Bounded per run so one evolve pass cannot flood src/Matrix.
     "forge_on_evolve": True,
     "forge_per_run": 1,
+    # EV-22: the ABSTRACTION step. A green sequence is not automatically a
+    # capability: before it is forged, ONE single-shot model call decides whether
+    # the repeat MEANS something and names it (arXiv 2606.02994 ARISE — recurring
+    # procedures are induced into subroutines; Agent Workflow Memory — a workflow
+    # is a goal + a routine, and the goal is what names it). `compact: false`
+    # stops a habit/retry/noise from being written as a tool; `compact: true`
+    # makes the module `learned_<meaning>_<hash>` instead of a step slug.
+    # Bounded per run (one call, ≤700 tokens) because the pass runs at end of turn.
+    "abstract_on_evolve": True,
+    "abstract_per_run": 1,
+    "abstract_model": "",     # "" = the router's `reviewer` role
+    "abstract_timeout": 60,
 }
 
 # JAG-426: a hard ceiling on machine-created skills. An unbounded auto-library
@@ -782,6 +794,153 @@ def _forge_slug(pattern):
     return "%s_%s" % (base or "seq", digest)
 
 
+ABSTRACT_SYSTEM = (
+    "You name CAPABILITIES, not steps. You are given a tool sequence that one "
+    "agent harness executed in the same order across several independent runs, "
+    "plus one line per tool taken from the harness's own catalogue. Decide "
+    "whether the repetition MEANS something: a compact, reusable capability the "
+    "harness was missing. A retry, a habit, a single-tool loop, or a sequence "
+    "that only restates one existing tool is NOT a capability. Answer with ONE "
+    "JSON object and nothing else: "
+    '{"compact": true|false, "name": "<2-4 words, snake_case>", '
+    '"goal": "<one sentence: what the caller gets>", '
+    '"why": "<one sentence: the evidence in the sequence>", '
+    '"confidence": <0.0-1.0>}.'
+)
+
+
+def _tool_brief(names):
+    """One line per tool, from the registry's own description (nothing invented)."""
+    try:
+        from longrun.tools import registry
+        cat = {str(r.get("name")): str(r.get("description") or "")
+               for r in registry.catalog()}
+    except Exception:  # noqa: BLE001 — a prompt must never fail on the catalogue
+        cat = {}
+    return {str(n): (cat.get(str(n)) or "")[:240] for n in (names or [])}
+
+
+def semantic_namespace(pattern, name):
+    """The Matrix namespace of a SEMANTICALLY named pattern (readable + unique).
+
+    EV-22: the meaning names the tool (`learned_<name>_<hash8>`), and the short
+    hash of the sequence keeps two different procedures that were named alike
+    from colliding, so "already forged" stays a truthful answer.
+    """
+    base = re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")[:40].strip("_")
+    if not base:
+        return ""
+    return "%s_%s_%s" % (MATRIX_FORGE_NS, base, _forge_slug(pattern).rsplit("_", 1)[-1])
+
+
+def _abstract_prompt(pattern, support, briefs):
+    payload = {"sequence": list(pattern), "repeated_across_runs": int(support),
+               "tools": briefs}
+    return [{"role": "system", "content": ABSTRACT_SYSTEM},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
+
+
+def _norm_abstract(data, pattern):
+    """Normalise a model answer into the record a draft stores (no trust in it)."""
+    try:
+        conf = max(0.0, min(1.0, float(data.get("confidence"))))
+    except (TypeError, ValueError):
+        conf = 0.0
+    compact = bool(data.get("compact"))
+    raw = str(data.get("name") or "")
+    name = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")[:40].strip("_")
+    goal = " ".join(str(data.get("goal") or "").split())[:240]
+    why = " ".join(str(data.get("why") or "").split())[:240]
+    return {"compact": compact, "name": name if compact else "",
+            "namespace": semantic_namespace(pattern, name) if compact and name else "",
+            "goal": goal, "why": why, "confidence": round(conf, 3)}
+
+
+def abstract(pattern, support=0, draft="", model=None, call=None, timeout=None,
+             write=True):
+    """Name the capability a repeated sequence IS — the ring ③ that was missing.
+
+    EV-22 (arXiv 2606.02994 ARISE, Agent Workflow Memory): a repeat becomes a
+    subroutine only after something reads it as a PROCEDURE and states its goal.
+    Until now a forge replayed the steps and named itself after them.
+
+    One single-shot model call, injectable as `call(msgs, model, timeout) ->
+    (answer, model_used)` so a test is deterministic. Failure is fail-OPEN on
+    naming (`ok: False`, `compact: True`) because an unreachable model must not
+    stop the lane — the forge is still tested and verified — and fail-CLOSED on
+    code, which the forge gate already owns. Never raises.
+    """
+    steps = [str(t).strip() for t in (pattern or []) if str(t).strip()]
+    if len(steps) < 2:
+        return {"ok": False, "compact": False, "confidence": 0.0,
+                "error": "abstraction needs at least 2 steps (got %d)" % len(steps),
+                "steps": steps}
+    c = cfg()
+    try:
+        tmo = float(timeout if timeout is not None else (c.get("abstract_timeout") or 60))
+    except (TypeError, ValueError):
+        tmo = 60.0
+    msgs = _abstract_prompt(steps, support, _tool_brief(steps))
+    try:
+        if call is not None:
+            answer, used = call(msgs, model, tmo)
+        else:
+            from longrun.util import improve as _imp
+            answer, used = _imp.single_shot(msgs, model=model, role="reviewer",
+                                            timeout=tmo, max_tokens=700)
+    except Exception as e:  # noqa: BLE001 — the lane must survive a dead model
+        return {"ok": False, "compact": True, "confidence": 0.0, "name": "",
+                "namespace": "", "goal": "", "why": "", "model": "",
+                "error": "abstraction unavailable: %s" % e, "steps": steps}
+    from longrun.util.textkit import _iter_json_objects
+    data = {}
+    for obj in _iter_json_objects(str(answer or "")):
+        if isinstance(obj, dict) and ("compact" in obj or "name" in obj):
+            data = obj
+            break
+    if not data:
+        return {"ok": False, "compact": True, "confidence": 0.0, "name": "",
+                "namespace": "", "goal": "", "why": "", "model": str(used or ""),
+                "error": "the model's answer carried no JSON verdict",
+                "steps": steps}
+    rec = _norm_abstract(data, steps)
+    rec.update({"ok": True, "model": str(used or ""), "steps": steps,
+                "raw": " ".join(str(answer or "").split())[:400]})
+    if write and draft:
+        prop_path = os.path.join(str(draft), "proposal.json")
+        prop = _read_json(prop_path) or {}
+        if prop:
+            rec["ts"] = round(time.time(), 3)
+            prop["abstract"] = dict(rec, ts=rec["ts"])
+            # One truth: the purpose the forge/promote path already reads is the
+            # goal the model stated, so the draft says what it is for.
+            if rec.get("compact") and rec.get("goal") and \
+                    not str(prop.get("purpose") or "").strip():
+                prop["purpose"] = rec["goal"]
+            try:
+                _write_json(prop_path, prop)
+            except OSError:
+                pass
+    try:
+        from longrun.util import improve as _imp
+        _imp.ledger_add("abstract", origin="mining",
+                        draft=os.path.basename(str(draft or "")) or "",
+                        pattern=steps, name=rec.get("name"),
+                        compact=rec.get("compact"),
+                        confidence=rec.get("confidence"), ok=bool(rec.get("ok")),
+                        error=rec.get("error"))
+    except Exception:  # noqa: BLE001 — the ledger must never break the lane
+        pass
+    return rec
+
+
+def draft_abstract(proposal_dir):
+    """The abstraction recorded on a draft (or `{}`) — one owner of the read."""
+    prop = _read_json(os.path.join(str(proposal_dir), "proposal.json")) or {}
+    ab = prop.get("abstract")
+    return dict(ab) if isinstance(ab, dict) else {}
+
+
 def _forge_body(ns, full, steps, description, support, origin):
     """The REAL module a forged tool ships (the scaffold stub is a placeholder).
 
@@ -1062,8 +1221,14 @@ def forge_from_draft(proposal_dir, name="", description=""):
     if not prop:
         return {"ok": False, "error": "no proposal.json in %s" % proposal_dir}
     pattern = _pattern_of(prop)
+    ab = prop.get("abstract") if isinstance(prop.get("abstract"), dict) else {}
+    # EV-22: the name the abstraction step recorded wins, so the module is called
+    # after its MEANING; an explicit caller still overrides it.
+    ns = str(ab.get("namespace") or "") if ab.get("compact") else ""
     res = forge_matrix(pattern, support=int(prop.get("support") or 0), draft=proposal_dir,
-                       name=name, description=description or str(prop.get("purpose") or ""))
+                       name=name or ns,
+                       description=(description or str(ab.get("goal") or "")
+                                    or str(prop.get("purpose") or "")))
     prop["matrix_tool"] = ({"matrix_tool": res.get("matrix_tool"),
                             "namespace": res.get("namespace"),
                             "path": res.get("path"), "ok": bool(res.get("ok")),

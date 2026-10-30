@@ -452,16 +452,17 @@ _LEGACY_SCHEMAS = {
     "improve": {
         "description": ("Self-improvement. propose registers a rule/skill proposal; "
                         "mine/evolve/verify/promote drive the self-evolving skill "
-                        "miner; forge turns a mined sequence into a tested Matrix "
-                        "tool; review audits THE WHOLE backlog (proposals + "
-                        "distilled lessons) with an LLM against the current "
-                        "codebase and reports keep/implemented/obsolete/update/"
-                        "conflict for each artifact."),
+                        "miner; abstract names the capability a mined sequence IS "
+                        "before it becomes code; forge turns a mined sequence into a "
+                        "tested Matrix tool; review audits THE WHOLE backlog "
+                        "(proposals + distilled lessons) with an LLM against the "
+                        "current codebase and reports keep/implemented/obsolete/"
+                        "update/conflict for each artifact."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["propose", "mine", "evolve", "verify", "promote",
-                                "forge", "review"],
+                                "forge", "abstract", "review"],
                        "default": "propose"},
             "scope": {"type": "string",
                       "enum": ["skill", "project", "global", "mine", "review"],
@@ -700,6 +701,8 @@ _SUBTOOL_FIELDS = {
         # both are real arguments of action=forge, so the canonical schema declares
         # them (a narrowed field list must never hide an argument the tool reads).
         "forge": ["path", "name", "content"],
+        # EV-22: the abstraction step (name the capability a repeat IS).
+        "abstract": ["path"],
         "review": ["limit", "model"],
     },
     "web": {
@@ -747,6 +750,8 @@ _SUBTOOL_REQUIRED = {
     # schema inherited the legacy `scope` requirement, so `{"action":"forge",
     # "path":…}` answered "missing scope" for an argument forge never reads.
     "improve.forge": ["path"],
+    # EV-22: the abstraction step reads the same draft folder forge does.
+    "improve.abstract": ["path"],
     "improve.review": [],
     "web.search": ["query"], "web.fetch": ["url"],
     "diff.files": ["a", "b"], "diff.text": ["text_a", "text_b"],
@@ -886,6 +891,12 @@ _SUBTOOL_GUIDANCE = {
         "its sequence with the caller's per-step arguments, and it is kept only "
         "after matrix.test + matrix.verify_target pass (otherwise the file is "
         "removed). Approval-gated; `name` sets the tool namespace."
+    ),
+    "improve.abstract": (
+        "Name the CAPABILITY a mined draft (`path`) is, before it becomes code: "
+        "one model call returns compact/name/goal/why/confidence, records it on "
+        "the draft, and a `compact: false` verdict means the repeat is a habit, "
+        "not a capability — do not forge it."
     ),
     "improve.review": (
         "LLM-audit the whole backlog (proposals + distilled lessons) against the "

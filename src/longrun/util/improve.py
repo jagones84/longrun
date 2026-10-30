@@ -251,17 +251,30 @@ def _parse_verdicts(answer):
     return []
 
 
+def single_shot(messages, model=None, role="reviewer", timeout=180, max_tokens=4000):
+    """ONE non-agentic completion -> (answer, model_used). The only owner.
+
+    Both model-driven judgements in this module call it (the backlog reviewer and,
+    since EV-22, the self-evolve abstraction), so role/model policy, the no-op
+    delta sink and the timeout live in one place instead of being copy-pasted.
+    """
+    from longrun.core import server
+    answer, _think, used = server.stream_with_fallback(
+        messages, model, role, lambda *_a: None, timeout=timeout,
+        max_tokens=max_tokens)
+    return answer, used
+
+
 def _review_batch(batch, model):
     """One LLM call for a small batch -> (verdicts, model_used)."""
-    from longrun.core import server
     payload = [{"id": it["id"], "kind": it["kind"], "scope": it["scope"],
                 "origin": it["origin"], "text": it["text"][:1500],
                 "reason": it["reason"], "evidence": it.get("evidence") or []}
                for it in batch]
     msgs = [{"role": "system", "content": REVIEW_SYSTEM},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
-    answer, _think, used = server.stream_with_fallback(
-        msgs, model, "reviewer", lambda *_a: None, timeout=180, max_tokens=4000)
+    answer, used = single_shot(msgs, model=model, role="reviewer", timeout=180,
+                               max_tokens=4000)
     return _parse_verdicts(answer), used
 
 
@@ -413,14 +426,17 @@ def list_drafts(limit=50):
         # The file is checked, not the recorded field: a removed tool is not live.
         pattern = [str(x) for x in (rec.get("pattern") or [])]
         rec_mt = rec.get("matrix_tool") if isinstance(rec.get("matrix_tool"), dict) else {}
+        ab = rec.get("abstract") if isinstance(rec.get("abstract"), dict) else {}
         forged = ""
         if pattern:
             try:
                 from longrun.util import selfevolve as _se
                 # The namespace the forge RECORDED wins (a forge may be given an
-                # explicit name); the derived default is the fallback for a draft
-                # forged before that field existed. Either way the MODULE decides.
-                cands = [str(rec_mt.get("namespace") or ""), _se.forge_target(pattern)[1]]
+                # explicit name); the semantic name from EV-22 and the derived
+                # default follow. Either way the MODULE decides.
+                cands = [str(rec_mt.get("namespace") or ""),
+                         str(ab.get("namespace") or "") if ab.get("compact") else "",
+                         _se.forge_target(pattern)[1]]
                 for ns in cands:
                     if not ns:
                         continue
@@ -439,6 +455,14 @@ def list_drafts(limit=50):
                      # check could tell what the draft replays.
                      "pattern": pattern,
                      "matrix_tool": forged,
+                     # EV-22: what the sequence MEANS (the abstraction step), so
+                     # the panel can show a goal instead of a slug.
+                     "abstract": {"compact": bool(ab.get("compact")),
+                                  "name": str(ab.get("name") or ""),
+                                  "goal": str(ab.get("goal") or ""),
+                                  "why": str(ab.get("why") or ""),
+                                  "confidence": float(ab.get("confidence") or 0.0)}
+                                 if ab else {},
                      "created": float(rec.get("created") or 0),
                      "green_streak": int(rec.get("green_streak") or 0),
                      "verified": bool(verify.get("green")) if verify else None,
@@ -625,6 +649,28 @@ def diff_preview(rec):
             "added": sum(1 for l in diff if l.startswith("+") and not l.startswith("+++"))}
 
 
+def abstract_draft(proposal_dir, model=None):
+    """Name the capability a mined draft's sequence IS, and record it (EV-22).
+
+    The operator-facing door (`improve{action:"abstract"}`) and the background
+    pass share `selfevolve.abstract`; this wrapper only reads the draft's pattern
+    and refuses anything that is not a draft.
+    """
+    from longrun.util import selfevolve
+    prop_path = os.path.join(str(proposal_dir), "proposal.json")
+    if not os.path.isfile(prop_path):
+        return {"ok": False, "compact": False,
+                "error": "not a draft: no proposal.json in %s" % proposal_dir}
+    try:
+        with open(prop_path, encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, ValueError) as e:
+        return {"ok": False, "compact": False, "error": "unreadable draft: %s" % e}
+    pattern = [str(x) for x in ((rec or {}).get("pattern") or [])]
+    return selfevolve.abstract(pattern, support=int((rec or {}).get("support") or 0),
+                              draft=str(proposal_dir), model=model)
+
+
 def evolve_once(note="", allow_code=None):
     """Stage 2 over every repeated pattern -> one report per pattern.
 
@@ -671,17 +717,42 @@ def evolve_once(note="", allow_code=None):
             cap = max(0, int(c.get("forge_per_run") or 0))
         except (TypeError, ValueError):
             cap = 1
+        try:
+            acap = max(0, int(c.get("abstract_per_run") or 0))
+        except (TypeError, ValueError):
+            acap = 1
         mode = "auto" if allow_code else (approval_kind("matrix") or "required")
         done = 0
+        named = 0
         for r in reports:
             if done >= cap:
                 break
             if not r.get("green") or not r.get("dir"):
                 continue
+            # EV-22: name the capability BEFORE writing it as one. ONE bounded
+            # single-shot call decides whether the repeat MEANS something; a
+            # "not a capability" verdict spends the abstraction bound, not the
+            # forge bound, and leaves src/Matrix untouched. A dead model is
+            # fail-open: `ok: False` with `compact: True`, so the lane still runs.
+            if c.get("abstract_on_evolve") and named < acap:
+                named += 1
+                ab = selfevolve.abstract(
+                    r.get("pattern") or [], support=r.get("support") or 0,
+                    draft=r["dir"], model=str(c.get("abstract_model") or "") or None)
+                r["abstract"] = {k: ab.get(k) for k in ("ok", "compact", "name",
+                                                       "namespace", "goal", "why",
+                                                       "error")}
+                if ab.get("ok") and not ab.get("compact"):
+                    r["matrix"] = {"ok": False,
+                                   "skipped": "not a capability: %s"
+                                   % (ab.get("why") or ab.get("goal")
+                                      or "the model saw no capability in the repeat")}
+                    continue
+            ab_ns = str((r.get("abstract") or {}).get("namespace") or "")
             # An earlier pass may have forged this pattern already. Re-forging is
             # refused as a clobber, which is not an error: it is work already done.
             # Ask the ONE naming owner rather than guessing the module path.
-            tpath, _tns = selfevolve.forge_target(r.get("pattern") or [])
+            tpath, _tns = selfevolve.forge_target(r.get("pattern") or [], ab_ns)
             if os.path.isfile(tpath):
                 r["matrix"] = {"ok": True, "skipped": "already forged",
                                "matrix_tool": os.path.basename(tpath)[:-3]}
@@ -701,7 +772,7 @@ def evolve_once(note="", allow_code=None):
             # 'required': build the SAME bytes a forge would write and put them in
             # front of the operator. Nothing touches src/Matrix until the approval.
             bnd = selfevolve.forge_bundle(r["pattern"], support=r.get("support") or 0,
-                                          draft=r["dir"])
+                                          draft=r["dir"], name=ab_ns)
             if not bnd.get("ok"):
                 r["matrix"] = {"ok": False, "error": bnd.get("error")}
                 continue

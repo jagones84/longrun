@@ -85,7 +85,9 @@ def _pipe(pattern, out, support=0, **kw):
 
 
 SE.pipeline = _pipe
-configure(forge_on_evolve=True, forge_per_run=1)
+# EV-22: the abstraction step is a model call; this test is about the APPROVAL
+# ring, so the naming step is off here (v727 covers it end to end).
+configure(forge_on_evolve=True, forge_per_run=1, abstract_on_evolve=False)
 policy("required")
 
 # ------------------------------------- A: proposal, no code -------------

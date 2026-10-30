@@ -88,7 +88,9 @@ SE.pipeline = _pipe
 
 # ------------------------------------- A: one forge, reported ------------
 set_matrix_policy("")           # EV-17: unset + allow_code=True → the human gate
-set_selfevolve(forge_on_evolve=True, forge_per_run=1)
+# EV-22: the abstraction step is a model call; this test is about the forge arm,
+# so the naming step is off here (v727 covers it end to end).
+set_selfevolve(forge_on_evolve=True, forge_per_run=1, abstract_on_evolve=False)
 reports = improve.evolve_once(allow_code=True)
 forged = [r for r in reports if (r.get("matrix") or {}).get("ok")]
 check("A1 exactly one pattern was forged", len(forged) == 1, reports)

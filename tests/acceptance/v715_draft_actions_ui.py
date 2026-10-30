@@ -118,7 +118,9 @@ check("B4 the row says a draft is material, not installed",
 check("B5 a forged draft shows its Matrix tool",
       'x.matrix_tool ? " · <span class=\\"sk-badge sk-matrix\\">matrix tool · "' in UI, "")
 check("B6 forge is not offered when the module is already live",
-      "if (!x.matrix_tool) {" in UI, "")
+      # EV-22: the condition also excludes a draft the abstraction refused
+      # ("not a capability"), which is the intended behaviour, not a regression.
+      "if (!x.matrix_tool && !notCap) {" in UI, "")
 
 print("\n---\nv715: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
