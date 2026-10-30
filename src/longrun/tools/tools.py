@@ -2604,6 +2604,13 @@ def _missing_any_of(tool: str, args: Any) -> list[list[str]]:
 #: list has wrapped a single value, not asked for a batch (see `_shape_notes`).
 _SCALAR_TYPES = ("string", "number", "integer", "boolean")
 
+#: Keys the HARNESS adds to the arguments before dispatch (JAG-163 pins the
+#: session workspace as the tool's working directory). They are not the model's
+#: arguments, so a shape note must never blame the model for one of them —
+#: measured live 2026-10-30: every usage error also said "unknown argument
+#: 'workspace'", which buries the real mistake the model made.
+HARNESS_ARG_KEYS = frozenset({"workspace"})
+
 
 def _schema_props(tool: str) -> dict:
     """The declared properties of a tool's argument object ({} when unknown)."""
@@ -2631,7 +2638,7 @@ def _shape_notes(tool: str, args: Any) -> list[tuple[str, str]]:
         return []
     notes = []
     for key, value in args.items():
-        if str(key).startswith("_"):
+        if str(key).startswith("_") or str(key) in HARNESS_ARG_KEYS:
             continue
         spec = props.get(key)
         if spec is None:

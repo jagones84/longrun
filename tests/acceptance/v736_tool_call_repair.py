@@ -72,6 +72,11 @@ check("A6 a list of TWO for a scalar says it takes one value per call",
       "'path' must be a string, you sent a list of 2" in _err2
       and "ONE value per call" in _err2, _err2)
 
+_ws = T.execute("fs.read", {"paths": ["/tmp/x.txt"], "workspace": "/tmp"})
+_notes = [str(x) for x in (_ws.get("shape_problems") or [])]
+check("A7 a key the HARNESS injected is never blamed on the model",
+      len(_notes) == 1 and "workspace" not in _notes[0], _notes)
+
 # ---- B: one value in a one-element list is unwrapped ------------------------
 check("B1 normalize_args unwraps a single-element list for a scalar",
       T.normalize_args("fs.read", {"path": ["/tmp/x"]}) == {"path": "/tmp/x"})
