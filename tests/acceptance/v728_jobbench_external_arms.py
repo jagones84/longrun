@@ -40,6 +40,7 @@ os.environ["JOB_BENCH_REPO"] = JB
 os.environ["JOB_BENCH_JUDGE_PYTHON"] = sys.executable
 os.environ["BENCH_RUNS_DIR"] = os.path.join(TMP, "runs")
 sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.join(REPO, "src"))
 
 from benchmarks import jobbench  # noqa: E402
 from benchmarks import jobbench_judge as JJ  # noqa: E402
@@ -200,6 +201,20 @@ check("K3 the benchmark arm sends its budget and records it",
       and '"max_steps": max_steps' in open(
           os.path.join(REPO, "benchmarks", "jobbench_compare.py"), encoding="utf-8").read(),
       "the arm must send max_steps and the row must show it")
+
+# L — a settings save cannot eat the operator's comments (EV-24) -----------
+from longrun.model import routing as _rt  # noqa: E402
+
+_old = "# why this exists\nquota_cooldown: true\nroles:\n  chat:\n    model: a\n"
+_new = "roles:\n  chat:\n    model: b\nquota_cooldown: false\n"
+_kept = _rt._preserve_comments(_old, _new)
+check("L1 a comment block survives a re-serialised save",
+      "# why this exists\nquota_cooldown: false" in _kept, _kept)
+check("L2 an anchor that disappeared loses only its own note",
+      "roles:" in _kept and _kept.count("#") == 1, _kept)
+_rsrc = open(os.path.join(REPO, "src", "longrun", "model", "routing.py"), encoding="utf-8").read()
+check("L3 save_config is the path that uses it",
+      "_preserve_comments(old, new)" in _rsrc, "save_config must not strip comments")
 
 print("\n---\nv728: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

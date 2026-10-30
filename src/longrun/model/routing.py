@@ -89,12 +89,62 @@ def load_config(reload=False):
         return cfg
 
 
+_COMMENT_ANCHOR = re.compile(r"^(\s*)([A-Za-z0-9_.-]+):")
+
+
+def _comment_anchor(line):
+    """`(indent, key)` for a mapping line, else None (comments/sequences/lists)."""
+    m = _COMMENT_ANCHOR.match(line or "")
+    return (len(m.group(1)), m.group(2)) if m else None
+
+
+def _preserve_comments(old_text, new_text):
+    """Carry each comment block onto the same KEY in a re-serialised dump.
+
+    `_yaml_dump` cannot emit comments, so every settings save used to strip the
+    operator's notes from `config/routing.yaml` (found when a benchmark run pinned
+    the roles and restored them: the I-2 comment block vanished). A block is keyed
+    by (indent, key) — not by the whole line — because the VALUE is exactly what a
+    settings save changes; a key that no longer exists simply loses its note.
+    """
+    blocks, pending = {}, []
+    for line in (old_text or "").splitlines():
+        s = line.strip()
+        if s.startswith("#"):
+            pending.append(line)
+            continue
+        if not s:
+            pending = []
+            continue
+        a = _comment_anchor(line)
+        if pending and a is not None:
+            blocks.setdefault(a, []).extend(pending)
+            pending = []
+    if not blocks:
+        return new_text
+    out, seen = [], set()
+    for line in new_text.splitlines():
+        a = _comment_anchor(line)
+        if a is not None and a in blocks and a not in seen:
+            out.extend(blocks[a])
+            seen.add(a)
+        out.append(line)
+    text = "\n".join(out)
+    return text + ("\n" if new_text.endswith("\n") else "")
+
+
 def save_config(cfg):
     global _cache
     with _lock:
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        new = _yaml_dump(cfg)
+        try:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                old = f.read()
+        except OSError:
+            old = ""
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            f.write(_yaml_dump(cfg))
+            f.write(_preserve_comments(old, new) if old else new)
         _cache = cfg
 
 
