@@ -1047,6 +1047,31 @@ def _offload_observation(sess, tool, text):
     return ref
 
 
+def _fit_batch_observations(results, limit, offload):
+    """Hand each batched result to the model WHOLE, inside one shared budget.
+
+    Returns `[(result, observation_text)]` in the order the model asked. A result
+    that no longer fits is not shortened: `offload(tool, text)` writes it out in
+    full and returns a reference the model can follow. Two rules make this safe:
+
+    * no observation is ever cut silently — a truncated file reads as a complete
+      one, which is how a 5 KB CSV "became" 10 rows when it had 12;
+    * the budget is shared, not per-call, so a batch cannot multiply the context.
+    """
+    fitted, used = [], 0
+    for r in results or []:
+        obs = str(r.get("obs") or "")
+        if used + len(obs) > limit:
+            try:
+                obs = str(offload(str(r.get("tool") or "tool"), obs))
+            except Exception:  # noqa: BLE001 — a reference must never sink the batch
+                obs = "[%s: %d chars, could not be written to a file]" % (
+                    r.get("tool"), len(obs))
+        used += len(obs)
+        fitted.append((r, obs))
+    return fitted
+
+
 def _chat_tool_call(act, av02):
     """Accept the canonical {"action":"tool","tool":X,"args":{...}} and the
     model's frequent variant {"action":X,"args":{...}} when X is a real tool
@@ -1859,7 +1884,11 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         if ok:
             _note_chat_mutation(sess, tool, args)   # F1: the step is no longer text-only
         obs = res.get("observation") or res.get("error") or str(status)
-        obs = str(obs)[:4000]
+        # JAG-88 parity: the single-call path renders up to CHAT_OBS_FULL and then
+        # offloads; a batch used to cut EVERY observation at 4000 chars with no
+        # marker, so a 5 KB reference file reached the model missing its last rows
+        # and was read as complete. `_fit_batch_observations` now owns the budget.
+        obs = str(obs)[:CHAT_OBS_FULL]
         on_event("tool.result", session=sess["id"], tool=tool, ok=ok, args=args,
                  output=obs, summary="%s: %s" % (tool, "ok" if ok else (status or "error")))
         try:
@@ -1944,7 +1973,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
             except Exception as e:  # noqa: BLE001 — one item must not sink the batch
                 _dobs, _dok = "dispatch raised: %s" % str(e)[:200], False
             return (_i, {"tool": "dispatch", "ok": _dok,
-                         "obs": _dobs[:4000]})
+                         "obs": _dobs[:CHAT_OBS_FULL]})
 
         def _run_group(group):
             return [_one_dispatch(p) for p in group]
@@ -1959,12 +1988,14 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
     lines = ["Batch of %d call(s) ran (tools: %d, subagents: %d, dispatches: %d)."
              % (len(tool_items) + len(sub_items) + len(dispatch_items),
                 len(tool_items), len(sub_items), len(dispatch_items))]
-    for r in results:
+    for r, obs in _fit_batch_observations(
+            results, CHAT_TOOL_OBS_LIMIT,
+            lambda t, o: _offload_observation(sess, t, o)):
         lines.append("\n### %s %s\n%s"
-                     % (r.get("tool"), "OK" if r.get("ok") else "FAILED",
-                        r.get("obs") or ""))
+                     % (r.get("tool"), "OK" if r.get("ok") else "FAILED", obs))
     lines.append("\nContinue: call the next tool, delegate, or report the result.")
     return "\n".join(lines)
+
 
 
 # JAG-93: post-turn reflection -> one append-only lesson in the memory store
