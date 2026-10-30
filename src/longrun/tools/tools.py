@@ -669,7 +669,12 @@ def _git(args, run_id):
 def _http_fetch(url, allow_hosts, max_bytes, method="GET"):
     ok, host = _host_allowed(url, allow_hosts)
     if not ok:
-        return None, "host %r not in allow_hosts %s" % (host, allow_hosts)
+        # The allow-list is a security boundary and stays: what was missing was
+        # the way OUT of it. Told only "not in allow_hosts", the model gave up on
+        # the file and used a page reader instead (measured 2026-10-30).
+        return None, ("host %r not in allow_hosts %s — this tool only reaches the "
+                      "configured hosts; use web.fetch for the public internet"
+                      % (host, allow_hosts))
     req = urllib.request.Request(url, method=method,
                                  headers={"User-Agent": "Longrun/0.2 (+harness)"})
     t0 = time.time()
@@ -877,13 +882,47 @@ def _web_search(query, n, providers=None):
     return [], last_engine
 
 
+_DATA_URL = re.compile(r"\.(csv|tsv|json|jsonl|xml|txt|yaml|yml|md|parquet)$", re.I)
+
+
+def _raw_alternative(url):
+    """The `raw` form of a file URL, when the host serves one (github blob)."""
+    m = re.match(r"^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/(?:blob|raw)/"
+                 r"([^/]+)/(.+)$", url)
+    if m:
+        return ("https://raw.githubusercontent.com/%s/%s/%s/%s"
+                % (m.group(1), m.group(2), m.group(3), m.group(4)))
+    return ""
+
+
 def _web_fetch(url, max_bytes):
-    """Readable page text: try the keyless r.jina.ai reader, else direct HTML->text."""
+    """Readable page text: try the keyless r.jina.ai reader, else direct HTML->text.
+
+    A DATA file is never sent to the page reader: the reader renders a PAGE, so
+    `.../blob/master/apparel.csv` came back as markdown with the CSV fields
+    mashed into one paragraph, and the turn concluded that the row it needed was
+    absent while the raw file contained it (measured 2026-10-30). For a
+    data-looking URL the bytes are fetched directly, and if the server answers
+    with HTML the observation says so and names the raw URL to ask for.
+    """
     if not re.match(r"^https?://", url):
         url = "https://" + url
     ok, host = _public_host(url)
     if not ok:
         return None, host
+    if _DATA_URL.search(url.split("?")[0].split("#")[0]):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _WEB_UA})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                raw = r.read(max_bytes).decode("utf-8", "replace")
+            if raw.strip() and not raw.lstrip()[:15].lower().startswith(("<!doctype", "<html")):
+                return {"url": url, "text": raw, "via": "direct", "host": host}, None
+            raw_url = _raw_alternative(url)
+            return None, ("the server answered with an HTML PAGE, not the data file "
+                          "%s — ask for the raw URL%s and fetch that instead"
+                          % (url, (": " + raw_url) if raw_url else ""))
+        except Exception as e:  # noqa: BLE001
+            return None, "fetch failed: %s" % e
     try:
         req = urllib.request.Request("https://r.jina.ai/" + url,
                                      headers={"User-Agent": _WEB_UA})

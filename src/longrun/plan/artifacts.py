@@ -128,6 +128,106 @@ def _text_facts(path):
             "head": " ".join(data.split())[:160]}
 
 
+def _xlsx_text(path, limit=MAX_TEXT_CHARS):
+    """Every cell value as text — what a reader WITHOUT a renderer can see."""
+    try:
+        from openpyxl import load_workbook
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        wb = load_workbook(path, read_only=True, data_only=True)
+    except Exception:  # noqa: BLE001
+        return ""
+    out, used = [], 0
+    try:
+        for ws in wb.worksheets:
+            out.append(str(ws.title))
+            for row in ws.iter_rows(values_only=True):
+                line = " ".join(str(c) for c in row if c is not None)
+                if not line:
+                    continue
+                out.append(line)
+                used += len(line) + 1
+                if used >= limit:
+                    return "\n".join(out)[:limit]
+    except Exception:  # noqa: BLE001 — one broken sheet must not sink the audit
+        pass
+    finally:
+        try:
+            wb.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return "\n".join(out)[:limit]
+
+
+def _pdf_text(path, pages=10, limit=MAX_TEXT_CHARS):
+    """The first `pages` pages of a PDF as text (empty when no reader)."""
+    try:
+        from pypdf import PdfReader
+    except Exception:  # noqa: BLE001
+        try:
+            from PyPDF2 import PdfReader  # type: ignore
+        except Exception:  # noqa: BLE001
+            return ""
+    try:
+        reader = PdfReader(path)
+        parts = [(p.extract_text() or "") for p in reader.pages[:pages]]
+        return "\n".join(parts)[:limit]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _ooxml_text(path, prefix, limit=MAX_TEXT_CHARS):
+    """Text of an OOXML part set (docx/pptx) with the stdlib only."""
+    import re
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = sorted(n for n in z.namelist()
+                           if n.startswith(prefix) and n.endswith(".xml"))
+            blob, used = [], 0
+            for name in names:
+                data = z.read(name).decode("utf-8", "replace")
+                hits = re.findall(r"<a:t>([^<]*)</a:t>|<w:t[^>]*>([^<]*)</w:t>", data)
+                text = " ".join(a or b for a, b in hits)
+                blob.append(text)
+                used += len(text)
+                if used >= limit:
+                    break
+            return "\n".join(blob)[:limit]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def deliverable_text(path, limit=MAX_TEXT_CHARS):
+    """The words a reader can search INSIDE a deliverable (capped, never raises).
+
+    EV-37: the read-back used to count structure (`charts=1`) and never read the
+    words. A rubric — or a colleague — credits a figure by FINDING it, so the
+    question "is the source named, is the number written down" is mechanical and
+    worth answering.
+    """
+    suffix = Path(path).suffix.lower()
+    try:
+        if suffix in (".xlsx", ".xlsm"):
+            if os.path.getsize(path) > MAX_WORKBOOK_BYTES:
+                return ""
+            return _xlsx_text(path, limit)
+        if suffix == ".pdf":
+            if os.path.getsize(path) > MAX_PDF_BYTES:
+                return ""
+            return _pdf_text(path, limit=limit)
+        if suffix == ".docx":
+            return _ooxml_text(path, "word/", limit)
+        if suffix == ".pptx":
+            return _ooxml_text(path, "ppt/slides/", limit)
+        if suffix in (".csv", ".md", ".txt", ".html", ".htm"):
+            return Path(path).read_text(encoding="utf-8", errors="replace")[:limit]
+    except Exception:  # noqa: BLE001 — the audit must never break a turn
+        return ""
+    return ""
+
+
 def facts(path):
     """Structural facts for one file (never raises)."""
     suffix = Path(path).suffix.lower()
@@ -202,6 +302,12 @@ def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=()):
 #: A source a task can hand over: documents PLUS the structured data formats that
 #: are never deliverables but are always evidence.
 INPUT_EXTS = DELIVERABLE_EXTS + (".json", ".xml", ".yaml", ".yml", ".db", ".sqlite")
+
+#: The formats a figure comes FROM. A prose brief is an input, not a source: it
+#: tells you what to do, it does not supply the numbers, so a deliverable is not
+#: required to cite it.
+DATA_EXTS = (".csv", ".tsv", ".xlsx", ".xlsm", ".json", ".xml", ".yaml", ".yml",
+             ".db", ".sqlite")
 
 
 def inputs(workspace, since=0.0, limit=12, exclude=()):
@@ -291,6 +397,30 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
                   % (len(given), ", ".join(given)),
                   "  * every input above must be used or explicitly dismissed; a source "
                   "you never opened cannot back a claim."]
+        # EV-37: a figure whose source is never NAMED cannot be credited by a
+        # reader — or a grader — however correct it is. Mechanical test: is the
+        # input's filename inside the text of what you wrote?
+        try:
+            blob = " ".join(deliverable_text(os.path.join(workspace, e["path"]))
+                            for e in entries)[:MAX_TEXT_CHARS]
+        except Exception:  # noqa: BLE001
+            blob = ""
+        if blob:
+            # A DATA source must be named; the prose brief must not. Requiring
+            # `TASK_INSTRUCTIONS.txt` in the report is noise the model then spends
+            # turns on (measured 2026-10-30), and a brief is not a source of
+            # figures — the numbers come from the data files.
+            unnamed = [g for g in given
+                       if os.path.splitext(g)[1].lower() in DATA_EXTS
+                       and os.path.basename(g) not in blob]
+            if unnamed:
+                lines += ["  * NOT NAMED in any deliverable: %s — name the file a "
+                          "figure came from; an invisible source cannot be credited."
+                          % ", ".join(unnamed[:8])]
+    if any((e.get("facts") or {}).get("charts") for e in entries):
+        lines += ["  * a chart is a PICTURE: a reader that extracts text sees only your "
+                  "cells — the plotted numbers must also appear as cells (a caption "
+                  "naming the chart is not the data)."]
     head = " ".join(str(request or "").split())[:600]
     if head:
         lines += ["", "Request (head): " + head]
