@@ -42,6 +42,34 @@ STATUSES = ("todo", "doing", "done", "blocked", "cancelled", "superseded")
 OPEN_STATUSES = ("todo", "doing", "blocked")
 CLOSED_STATUSES = ("done", "cancelled", "superseded")
 
+#: Every spelling a model actually writes for the six STATUSES. Measured
+#: 2026-10-31: `todo.update` refused a whole call because a step carried no
+#: status at all (only `sources`), and the six accepted words are not the words
+#: models reach for ("in_progress", "completed", "pending").
+STATUS_ALIASES = {
+    "todo": "todo", "pending": "todo", "open": "todo", "not_started": "todo",
+    "backlog": "todo", "queued": "todo",
+    "doing": "doing", "in_progress": "doing", "inprogress": "doing",
+    "in progress": "doing", "active": "doing", "started": "doing",
+    "running": "doing", "wip": "doing",
+    "done": "done", "complete": "done", "completed": "done",
+    "finished": "done", "closed": "done",
+    "blocked": "blocked", "blocked_by_dependency": "blocked", "stuck": "blocked",
+    "cancelled": "cancelled", "canceled": "cancelled", "dropped": "cancelled",
+    "superseded": "superseded", "replaced": "superseded", "obsolete": "superseded",
+}
+
+
+def normalize_status(raw):
+    """Map what a model writes onto a STATUS; "" when it is not a status at all.
+
+    `""` is NOT an error by itself: a step may legitimately carry only
+    evidence/sources (a partial update), and the caller decides what that means.
+    """
+    s = str(raw or "").strip().lower().replace("-", "_")
+    s = " ".join(s.split())
+    return STATUS_ALIASES.get(s, s if s in STATUSES else "")
+
 # The model is asked to answer the FIRST action of every run with this tool call.
 # Two wire formats are accepted, both stream-friendly:
 #   NDJSON:   {"tool":"write_todos"}\n{"label":"...","deps":[]}\n{"label":"...","deps":[0]}

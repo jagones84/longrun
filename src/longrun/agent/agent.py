@@ -1323,8 +1323,27 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
             if _nd is None:
                 errors.append("step %r not found" % (_ref,))
                 continue
-            status = str(step.get("status") or "").strip().lower()
+            _raw_status = str(step.get("status") or "").strip()
+            status = taskgraph.normalize_status(_raw_status)
             ev = step.get("evidence")
+            if not status and _raw_status:
+                errors.append(
+                    "step %s: bad status %r (accepted: %s)"
+                    % (_nd["id"], _raw_status, "|".join(taskgraph.STATUSES)))
+                continue
+            # 2026-10-31: a step may carry ONLY evidence/sources (the model
+            # attaching proof to a step it is not moving). The old code read that
+            # as `status == ""` and refused the whole call with "bad status ''" —
+            # measured in 3 of 3 kept benchmark sessions, where the sources the
+            # model had collected were silently thrown away.
+            _partial = bool(ev or step.get("sources") or step.get("reason")
+                            or step.get("label"))
+            if not status and not _partial:
+                errors.append(
+                    "step %s: nothing to update — give a status (%s) or "
+                    "evidence/sources for it."
+                    % (_nd["id"], "|".join(taskgraph.STATUSES)))
+                continue
             try:
                 if status == "done":
                     # JAG-431r4b: require evidence — `complete_node` substitutes
@@ -1379,13 +1398,22 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
                     _nd = taskgraph.complete_node(
                         graph, node_id=_nd["id"], evidence=_ev, source="model:update_todos",
                         sources=(step.get("sources") or step.get("source_refs")))
-                elif status in taskgraph.STATUSES:
+                elif status:
                     _nd = taskgraph.update_node(
                         graph, _nd["id"], status=status, evidence=ev,
-                        reason=step.get("reason"), source="model:update_todos")
+                        reason=step.get("reason"), source="model:update_todos",
+                        sources=(step.get("sources") or step.get("source_refs")))
                 else:
-                    errors.append("step %s: bad status %r" % (_nd["id"], status))
-                    continue
+                    # Partial update: proof/links/reason WITHOUT moving the step.
+                    # `update_node` only stores evidence ENTRIES, so a step that
+                    # carries sources but no sentence still needs one: the link IS
+                    # the evidence the model collected.
+                    _srcs = step.get("sources") or step.get("source_refs")
+                    _ev_partial = ev or ("sources attached" if _srcs else None)
+                    _nd = taskgraph.update_node(
+                        graph, _nd["id"], evidence=_ev_partial, reason=step.get("reason"),
+                        label=step.get("label"), source="model:update_todos",
+                        sources=_srcs)
             except (KeyError, ValueError) as _e:
                 errors.append("step %s: %s" % (_nd["id"], _e))
                 continue

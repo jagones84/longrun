@@ -156,6 +156,32 @@ def _shell_terminal(sid, cwd):
     return term.get(sid, cwd)
 
 
+def _shell_hinted(args, run_id):
+    """Dispatch entry for `shell`: a failed heredoc explains itself.
+
+    Measured 2026-10-31: 3 of 18 `shell.exec` calls in one benchmark session died
+    as `python3 - <<'PY' …` patch scripts (EV-50). The exit code and the stdout
+    were correct, but nothing told the model that the FILE route is the way out —
+    it retried the same shape. The hint is added only on a failure and only when
+    the command used a heredoc, so it cannot fire on a working call.
+
+    The rule lives here, not inside `_shell`, because `_shell` is pinned by v595
+    as the function that resolves the session trust and skips the host terminal
+    for a locked session; a wrapper keeps that source contract intact.
+    """
+    res = _shell(args, run_id)
+    try:
+        cmd = str(args.get("command") or "")
+        if isinstance(res, dict) and not res.get("ok") and "<<" in cmd:
+            res.setdefault(
+                "hint", "a heredoc in `command` failed and its program was never "
+                        "run: write the script with fs.write to a FILE, then run "
+                        "`python3 <file>` (or use python.run)")
+    except Exception:  # noqa: BLE001 — a hint must never break the call
+        pass
+    return res
+
+
 def _shell(args, run_id):
     """Run a command, or manage the session terminal.
 
@@ -667,6 +693,26 @@ def _git(args, run_id):
 
 # ----------------------------------------------------------------- http ------
 
+def http_route(url, allow_hosts, approvals_full):
+    """Where `http.fetch` may go: ('allow' | 'public' | 'deny', host).
+
+    The allow-list is a capability boundary, not an approval gate — which is why
+    `approvals.mode=full` alone used to leave `api.github.com` unreachable
+    ("host not in allow_hosts [127.0.0.1, localhost]", live 2026-10-31, where the
+    model then wasted turns on curl). FULL means the operator already said
+    "never ask", so an unlisted host is served by the SAME SSRF-guarded public
+    reader the `web`/`browser` tools use (private/loopback/link-local still
+    blocked). Any other mode keeps the strict list — a restricted mode must not
+    silently widen the network reach.
+    """
+    ok, host = _host_allowed(url, allow_hosts)
+    if ok:
+        return "allow", host
+    if approvals_full or not allow_hosts:
+        return "public", host
+    return "deny", host
+
+
 def _http_fetch(url, allow_hosts, max_bytes, method="GET"):
     ok, host = _host_allowed(url, allow_hosts)
     if not ok:
@@ -690,8 +736,28 @@ def _http_fetch(url, allow_hosts, max_bytes, method="GET"):
 
 def _http(args, run_id):
     spec = registry.tool_spec("http")
-    data, err = _http_fetch(str(args.get("url", "")), spec["allow_hosts"],
-                            int(args.get("max_bytes", 32768)), args.get("method", "GET"))
+    url = str(args.get("url", ""))
+    max_bytes = int(args.get("max_bytes", 32768))
+    route, host = http_route(url, spec["allow_hosts"], registry._approvals_full())
+    if route == "deny":
+        return {"ok": False, "backend": "host(http)", "sandboxed": False,
+                "error": ("host %r is not in this tool's allow_hosts %s — either "
+                          "use web.fetch for the public internet, or select "
+                          "approvals.mode=full (which lifts this list)"
+                          % (host, spec["allow_hosts"]))}
+    if route == "public":
+        pub, perr = _web_fetch(url, max_bytes)
+        if perr:
+            return {"ok": False, "error": perr, "backend": "host(http/public)",
+                    "sandboxed": False}
+        body = _truncate(pub["text"], 8192)
+        return {"ok": True, "exit_code": 0,
+                "stdout": "HTTP 200 (%s, public reader)\n%s"
+                          % (pub.get("host") or host, body),
+                "stderr": "", "status": 200, "bytes": len(pub["text"]),
+                "backend": "host(http/public)", "sandboxed": False}
+    data, err = _http_fetch(url, spec["allow_hosts"], max_bytes,
+                            args.get("method", "GET"))
     if err:
         return {"ok": False, "error": err, "backend": "host(http)", "sandboxed": False}
     body = _truncate(data["body"], 8192)
@@ -2467,7 +2533,7 @@ def _exclusive_tool(tool, args, run_id=None):
     return res
 
 
-_DISPATCH = {"shell": _shell, "shell.exec": _shell,
+_DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
              "diff": _diff,
              "human": _human, "human.ask": _human,
@@ -3095,6 +3161,8 @@ def observation(res, max_chars=1600):
         bits = [head, "ERROR: " + _truncate(str(res["error"]).strip(), max_chars)]
         if res.get("warning"):
             bits.append("warning: " + _truncate(str(res["warning"]).strip(), max_chars))
+        if res.get("hint"):
+            bits.append("hint: " + _truncate(str(res["hint"]).strip(), max_chars))
         if res.get("stdout"):
             bits.append("stdout: " + _truncate(str(res["stdout"]).strip(), max_chars))
         if res.get("stderr"):
@@ -3112,7 +3180,7 @@ def observation(res, max_chars=1600):
                         "A duplicate write is worse than a slow one.")
         extras = {k: v for k, v in res.items()
                   if k not in _OBS_NOISE
-                  and k not in ("error", "args", "observation", "content", "stdout", "stderr", "warning")}
+                  and k not in ("error", "args", "observation", "content", "stdout", "stderr", "warning", "hint")}
         if extras:
             bits.append("result: " + _truncate(
                 json.dumps(extras, ensure_ascii=False, default=str), max_chars))
@@ -3124,6 +3192,9 @@ def observation(res, max_chars=1600):
     # normal shell result hid "ran on the host" from the model.
     if res.get("warning"):
         bits.append("warning: " + _truncate(str(res["warning"]).strip(), max_chars))
+        has_body = True
+    if res.get("hint"):
+        bits.append("hint: " + _truncate(str(res["hint"]).strip(), max_chars))
         has_body = True
     if res.get("stdout"):
         bits.append("stdout: " + _truncate(str(res["stdout"]).strip(), max_chars))
@@ -3141,7 +3212,7 @@ def observation(res, max_chars=1600):
         has_body = True
     if not has_body:
         extras = {k: v for k, v in res.items()
-                  if k not in _OBS_NOISE and k not in ("path", "content", "stdout", "stderr", "warning")}
+                  if k not in _OBS_NOISE and k not in ("path", "content", "stdout", "stderr", "warning", "hint")}
         if extras:
             bits.append("result: " + _truncate(
                 json.dumps(extras, ensure_ascii=False, default=str), max_chars))
