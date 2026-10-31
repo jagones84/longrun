@@ -589,6 +589,67 @@ _FORMAT_WORDS = ("conditional format", "conditional-format", "highlight", "colou
                  "color code", "colour code")
 
 
+#: A directory the request points at (`output/`, `deliverables/`, `reports/q1/`).
+_DIR_TOKEN_RE = re.compile(r"(?<![\w/])((?:[A-Za-z0-9_.-]+/)+)(?![\w/])")
+_LOCATION_WORDS = ("save", "write", "put", "place", "store", "deliver", "land",
+                   "output", "drop", "export", "folder", "directory")
+
+
+def target_dir(workspace, request):
+    """The directory the request names for the deliverables, if it exists on disk.
+
+    Generic by construction: any path-shaped token in the request, kept only when it
+    is really a directory under the workspace, and only when the request talks about
+    putting files somewhere. The most-mentioned one wins.
+    """
+    text = str(request or "")
+    if not text or not any(w in text.lower() for w in _LOCATION_WORDS):
+        return ""
+    seen = {}
+    for m in _DIR_TOKEN_RE.finditer(text):
+        tok = m.group(1).rstrip("/")
+        if not tok or tok.startswith(".") or ".." in tok:
+            continue
+        if os.path.isdir(os.path.join(workspace, tok)):
+            seen[tok] = seen.get(tok, 0) + 1
+    if not seen:
+        return ""
+    return sorted(seen.items(), key=lambda kv: (-kv[1], len(kv[0]), kv[0]))[0][0]
+
+
+def _location_gaps(workspace, request, entries):
+    """Where the files WENT vs where the request said to put them.
+
+    Measured 2026-10-31 (JobBench dispatch, session `656a2e7559fd`): the deliverable
+    sat at the workspace root, the destination stayed EMPTY, the last shell call had
+    failed, and no harness message mentioned it — the turn closed on 12 minutes of
+    work nobody would look at. The rule is not about that job: a request that names a
+    destination means the work must be THERE.
+    """
+    target = target_dir(workspace, request)
+    if not target:
+        return []
+    inside, outside = [], []
+    for entry in entries:
+        rel = str(entry.get("path") or "")
+        if rel == target or rel.startswith(target + "/") or rel.startswith(target + os.sep):
+            inside.append(rel)
+            continue
+        if os.path.splitext(rel)[1].lower() in DELIVERABLE_EXTS:
+            outside.append(rel)
+    out = []
+    if not inside:
+        out.append("the destination the request names (`%s/`) holds NO new file — "
+                   "work saved anywhere else is not delivered" % target)
+    if outside:
+        shown = ", ".join(outside[:6])
+        more = "" if len(outside) <= 6 else ", …"
+        out.append("%d deliverable file(s) written OUTSIDE `%s/`: %s%s — the request "
+                   "says they belong there; move them and re-check"
+                   % (len(outside), target, shown, more))
+    return out
+
+
 def _request_gaps(request, entries):
     """Gaps that only exist because the REQUEST named them (visual / formatting)."""
     text = " ".join(str(request or "").lower().split())
@@ -633,6 +694,9 @@ def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
         if "columns" in facts and not facts.get("rows"):
             out.append("%s: csv with no data rows" % entry["path"])
     out.extend(_request_gaps(request, entries))
+    # The destination the request names: an empty `output/` with the work sitting one
+    # directory up is a failed delivery, not a formatting nit.
+    out.extend(_location_gaps(workspace, request, entries))
     # A record set the inputs hold and the delivery never mentions is incomplete
     # for the same reason an empty sheet is: the reader was handed the source and
     # asked for the records in it. Bounded by `coverage()`'s own caps.
@@ -707,6 +771,9 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
     # not a note but a missing deliverable, and the model is told so by name.
     for _g in _request_gaps(request, entries):
         lines += ["  * " + _g]
+    # ...and it can say WHERE the files go. Location is part of the delivery.
+    for _g in _location_gaps(workspace, request, entries):
+        lines += ["  * " + _g + "."]
     head = " ".join(str(request or "").split())[:600]
     if head:
         lines += ["", "Request (head): " + head]
