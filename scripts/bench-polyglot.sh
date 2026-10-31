@@ -9,7 +9,14 @@
 #   limit  tasks from the track (default 10; --check always covers all)
 #   arms   comma list: longrun,openclaw,opencode,raw (default longrun,openclaw)
 #   language  python (wired) | go (wired, needs docker)
-# Env: MODEL, TASK_TIMEOUT, MAX_STEPS.
+# Env: MODEL, TASK_TIMEOUT, MAX_STEPS, ORDER.
+#
+# ORDER is `hardest` by default: ranking by test breadth × exemplar size, so the
+# set is not the alphabetically-first easy head of the track (that one produced
+# 10/10 for every arm and ranked nothing — measured 2026-10-31). Set ORDER=alpha
+# for the plain track order, or LIMIT=33 for the whole python track.
+# The report refuses to look like a ranking when every arm solves every task: it
+# prints SATURATED instead.
 #
 # Prove the suite before spending: python3 -m benchmarks.polyglot_compare --check
 set -u
@@ -19,6 +26,7 @@ TAG="${1:?usage: bench-polyglot.sh <tag> [limit] [arms] [language]}"
 LIMIT="${2:-10}"
 ARMS="${3:-longrun,openclaw}"
 LANG="${4:-python}"
+ORDER="${ORDER:-hardest}"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 OUT=".agent/BENCHMARKS/runs/${STAMP}_polyglot_${TAG}"
 LOG="${OUT}/bench.log"
@@ -31,9 +39,9 @@ mkdir -p "$OUT"
 echo "$OUT" > .agent/trash/last_polyglot_run.txt
 
 {
-  echo "=== polyglot ${TAG} START $(date -Is) git=$(git rev-parse --short HEAD) arms=${ARMS} limit=${LIMIT} lang=${LANG}"
+  echo "=== polyglot ${TAG} START $(date -Is) git=$(git rev-parse --short HEAD) arms=${ARMS} limit=${LIMIT} order=${ORDER} lang=${LANG}"
   python3 -u -m benchmarks.polyglot_compare \
-    --language "$LANG" --limit "$LIMIT" --arms "$ARMS" \
+    --language "$LANG" --limit "$LIMIT" --order "$ORDER" --arms "$ARMS" \
     --model "${MODEL:-openrouter:z-ai/glm-5.3-flash}" \
     --timeout "${TASK_TIMEOUT:-600}" --max-steps "${MAX_STEPS:-40}" \
     --keep-sessions --tag "$TAG" --out "$OUT"

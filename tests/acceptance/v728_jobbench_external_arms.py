@@ -446,14 +446,19 @@ check("M8 an all-zero run crowns nobody (the floor is not a winner)",
       _text0[-400:])
 
 # P5/P6 — OpenClaw as its OWN arm (a complete third-party harness) ------------
+# v754 changed the transport on purpose: `agent exec` stores no session, so a sweep
+# was invisible in the operator's Control UI. The arm now asks the Gateway for a
+# STORED session (`--session-key`), and `agent` has no `--cwd`, so the prompt's
+# absolute paths carry the workspace instead.
 _cmd_ocw = JC.openclaw_command("/tmp/ws-ocw", "openrouter/z-ai/glm-5.3-flash",
-                               "PROMPT", 600)
-check("P5 the OpenClaw arm is one isolated headless turn in the task workspace",
-      _cmd_ocw[:3] == [JC.OPENCLAW_BIN, "agent", "exec"]
-      and _cmd_ocw[_cmd_ocw.index("--cwd") + 1] == "/tmp/ws-ocw"
+                               "PROMPT", 600, session_key="jobbench:ws-ocw")
+check("P5 the OpenClaw arm is one Gateway turn in a STORED, visible session",
+      _cmd_ocw[:3] == [JC.OPENCLAW_BIN, "agent", "--session-key"]
+      and _cmd_ocw[_cmd_ocw.index("--session-key") + 1] == "jobbench:ws-ocw"
+      and _cmd_ocw[_cmd_ocw.index("--message") + 1] == "PROMPT"
       and _cmd_ocw[_cmd_ocw.index("--model") + 1] == "openrouter/z-ai/glm-5.3-flash"
       and _cmd_ocw[_cmd_ocw.index("--timeout") + 1] == "600"
-      and "--json" in _cmd_ocw and "PROMPT" in _cmd_ocw, _cmd_ocw)
+      and "--json" in _cmd_ocw and "--state-dir" not in _cmd_ocw, _cmd_ocw)
 check("P5b OpenClaw runs on its own Node (the CLI refuses < 24.22)",
       "24.22" in JC.OPENCLAW_NODE_BIN and JC.OPENCLAW_NODE_BIN in
       JC._openclaw_env("K").get("PATH", ""), JC.OPENCLAW_NODE_BIN)

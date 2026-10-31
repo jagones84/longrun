@@ -21,6 +21,7 @@ workspace — staging it would hand the agent the answer.
 """
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -78,11 +79,46 @@ def _files_of(exercise, language):
     return sources[0], tests[0]
 
 
-def load_tasks(language="python", limit=None, only=None):
+def difficulty(task):
+    """The task's own size: how many behaviours its tests demand, how much code the
+    reference solution needs.
+
+    The Aider fork carries no curated difficulty field (checked 2026-10-31: every
+    exercise `.meta/config.json` has authors/blurb/contributors/files only), so the
+    only honest signal is the one inside the task. Both numbers are read from files
+    and are deterministic — no invented score, no "feels hard".
+    """
+    test_body = (Path(task["dir"]) / task["test"]).read_text(encoding="utf-8",
+                                                              errors="replace")
+    exemplar = Path(task["dir"]) / ".meta" / ("example" + Path(task["source"]).suffix)
+    try:
+        exemplar_lines = len(exemplar.read_text(encoding="utf-8",
+                                                errors="replace").splitlines())
+    except OSError:
+        exemplar_lines = 0
+    return {"tests": len(re.findall(r"^\s*def test_", test_body, re.M)),
+            "exemplar_lines": exemplar_lines}
+
+
+def _rank_key(task):
+    """Hardest first: test breadth, then how much reference code it implies.
+
+    Alphabetical order — what a bare `--limit 10` used to take — is an accident of
+    the directory listing: it swept the easy head of the track, which is why two
+    harnesses both scored 10/10 and the set could not rank anything (2026-10-31).
+    """
+    d = difficulty(task)
+    return (d["tests"] * max(d["exemplar_lines"], 1), d["tests"])
+
+
+def load_tasks(language="python", limit=None, only=None, order="alpha"):
     """Tasks = exercises that have instructions, one source, one test, an exemplar.
 
     A task without `.meta/example.py` cannot be checked end-to-end (the `--check`
     mode proves the verifier), so it is skipped rather than trusted.
+
+    `order="hardest"` sorts by `_rank_key` BEFORE `limit`, so `--limit 10` takes the
+    ten heaviest tasks instead of the ten first names in the alphabet.
     """
     if language not in WIRED:
         raise SystemExit(
@@ -109,7 +145,14 @@ def load_tasks(language="python", limit=None, only=None):
         wanted = set(only)
         tasks = [t for t in tasks if t["id"] in wanted or t["exercise"] in wanted]
     tasks = [t for t in tasks if t["id"] not in KNOWN_BAD]
-    return tasks[: (limit or len(tasks))]
+    if order == "hardest":
+        tasks.sort(key=_rank_key, reverse=True)
+    elif order != "alpha":
+        raise SystemExit("unknown order %r (alpha|hardest)" % order)
+    tasks = tasks[: (limit or len(tasks))]
+    for t in tasks:
+        t.update(difficulty(t))
+    return tasks
 
 
 def stage(task, ws):

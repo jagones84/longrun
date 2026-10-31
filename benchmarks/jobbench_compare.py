@@ -333,32 +333,51 @@ def opencode_command(workspace, model, prompt):
 #: is on no default PATH, so both are pinned here instead of assumed.
 OPENCLAW_BIN = "/home/jagones/.local/bin/openclaw"
 OPENCLAW_NODE_BIN = "/home/jagones/.nvm/versions/node/v24.22.1/bin"
+#: The systemd unit's EnvironmentFile: it holds the VALUE behind
+#: `gateway.auth.token` in `openclaw.json`, which stores the secret reference
+#: `$OPENCLAW_GATEWAY_TOKEN`.
+OPENCLAW_GATEWAY_ENV = "/home/jagones/.openclaw/gateway.systemd.env"
 
 
-def openclaw_command(workspace, model, prompt, timeout):
-    """The OpenClaw arm's command line: one headless embedded agent turn.
+def openclaw_command(workspace, model, prompt, timeout, session_key=None):
+    """The OpenClaw arm's command line: one agent turn in a REAL session.
 
-    `--state-dir` is pinned INSIDE the task folder. `agent exec` is documented as
-    "one isolated headless embedded agent turn" and without the pin its state is
-    temporary, so the turn leaves no session and no transcript to inspect —
-    measured 2026-10-31: `openclaw sessions list` showed 25 sessions (cron,
-    telegram, main) and none from the benchmark. With the pin the evidence stays
-    in the run folder, next to the workspace it edited.
+    Two transports exist and they differ in the only way that matters to the
+    operator:
+
+    * `agent exec` — "one isolated headless embedded agent turn". Verified
+      2026-10-31: it leaves NO session (`openclaw sessions list` showed 25 operator
+      sessions and none from any benchmark), so a running sweep was invisible in
+      the dashboard ("dove cazzo li lanci?").
+    * `agent --session-key …` — runs the turn through the Gateway and STORES the
+      session as `agent:coordinator:<key>`, which `sessions list` and the GUI show.
+
+    This arm uses the Gateway path. `agent` has no `--cwd` (only `agent exec`
+    does), so the prompt must carry ABSOLUTE paths — both benchmark prompts already
+    do. Measured end-to-end on /tmp/ocprobe: the turn edited the file, `pytest`
+    passed, and `agent:coordinator:polyglot:probe` appeared in the session list.
+    Auth comes from `_openclaw_env` (the gateway token is a secret reference).
     """
-    ws = Path(workspace)
-    return [OPENCLAW_BIN, "agent", "exec", prompt, "--cwd", str(ws),
-            "--model", model, "--json", "--timeout", str(int(max(30, timeout))),
-            "--state-dir", str(ws.parent / "ocstate")]
+    key = session_key or ("bench:" + Path(workspace).name)
+    return [OPENCLAW_BIN, "agent", "--session-key", key, "--message", prompt,
+            "--model", model, "--json", "--timeout", str(int(max(30, timeout)))]
 
 
 def _openclaw_env(key):
-    """Env for OpenClaw: its node, the provider key, and its own `.env`.
+    """Env for OpenClaw: its node, the provider key, the gateway token, its `.env`.
 
     OpenClaw resolves providers from its gateway config, which reads several
     `*_API_KEY` variables; a missing one aborts the run BEFORE the model is chosen
     ("Environment variable VLLM_API_KEY is missing"). The operator's real values
     live in `~/.hermes/.env`, so they are merged here (never overriding what the
     caller already set) instead of being guessed.
+
+    The Gateway token is separate and mandatory for the session-creating transport:
+    `openclaw.json` keeps `gateway.auth.token` as the secret reference
+    `$OPENCLAW_GATEWAY_TOKEN`, and the value lives in the systemd unit's
+    EnvironmentFile. Without it the CLI answers "gateway.auth.token is configured
+    as a secret reference but is unavailable in this command path" and no turn ever
+    starts — measured 2026-10-31. Names are read, values are never logged.
     """
     env = dict(os.environ)
     env["PATH"] = OPENCLAW_NODE_BIN + os.pathsep + env.get("PATH", "")
@@ -366,6 +385,17 @@ def _openclaw_env(key):
     dot = Path(os.path.expanduser("~/.hermes/.env"))
     try:
         body = dot.read_text(encoding="utf-8")
+    except OSError:
+        body = ""
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    gw = Path(os.environ.get("OPENCLAW_GATEWAY_ENV") or OPENCLAW_GATEWAY_ENV)
+    try:
+        body = gw.read_text(encoding="utf-8")
     except OSError:
         return env
     for line in body.splitlines():
@@ -380,36 +410,55 @@ def _openclaw_env(key):
 def _openclaw_usage(stdout):
     """Steps/tokens/cost + the reply from OpenClaw's `--json` envelope.
 
-    One object (not a JSONL stream): `usage.input/output`, `usage.cost.total`,
-    `assistantTurns`, `toolSummary.calls` and `final`. Anything missing stays 0
-    rather than inventing a number.
+    TWO envelope shapes, because the arm changed transport on 2026-10-31:
+
+    * `agent exec --json`: `usage.*`, `assistantTurns`, `toolSummary.calls`, `final`.
+    * `agent --session-key … --json` (Gateway, the arm now): the same numbers live
+      under `result.meta.agentMeta` (`usage`, `assistantTurns`) and
+      `result.meta.toolSummary`, with the reply in `result.payloads[].text` or
+      `result.meta.finalAssistantVisibleText`.
+
+    Anything missing stays 0 rather than inventing a number.
     """
     try:
         obj = json.loads((stdout or "").strip() or "{}")
     except ValueError:
         return ({"steps": 0, "tokens_in": 0, "tokens_out": 0, "total_usd": 0.0,
-                 "source": "openclaw agent exec --json"}, "")
-    u = obj.get("usage") or {}
+                 "source": "openclaw --json (unparsable)"}, "")
+    result = obj.get("result") if isinstance(obj.get("result"), dict) else {}
+    meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
+    am = meta.get("agentMeta") if isinstance(meta.get("agentMeta"), dict) else {}
+    u = am.get("usage") or obj.get("usage") or {}
     cost = u.get("cost") if isinstance(u.get("cost"), dict) else {}
-    tools = (obj.get("toolSummary") or {}).get("calls") or 0
+    tools_sum = meta.get("toolSummary") or obj.get("toolSummary") or {}
+    tools = tools_sum.get("calls") or 0
+    reply = ""
+    for p in result.get("payloads") or []:
+        if isinstance(p, dict) and p.get("text"):
+            reply = str(p["text"])
+            break
+    reply = reply or str(meta.get("finalAssistantVisibleText") or obj.get("final") or "")
     usage = {
-        "steps": int(obj.get("assistantTurns") or tools or 0),
+        "steps": int(am.get("assistantTurns") or obj.get("assistantTurns") or tools or 0),
         "tokens_in": int(u.get("input") or 0),
         "tokens_out": int(u.get("output") or 0) + int(u.get("reasoningTokens") or 0),
-        "total_usd": round(float(cost.get("total") or obj.get("costUsd") or 0), 6),
-        "source": "openclaw agent exec --json",
+        "total_usd": round(float(cost.get("total") or am.get("costUsd")
+                                 or obj.get("costUsd") or 0), 6),
+        "source": "openclaw agent --session-key --json",
         "tool_calls": int(tools or 0),
-        "tool_failures": int((obj.get("toolSummary") or {}).get("failures") or 0),
+        "tool_failures": int(tools_sum.get("failures") or 0),
     }
-    return usage, str(obj.get("final") or "")
+    return usage, reply
 
 
 def run_openclaw(tasks, out, *, solver_model, judge_model, judge_base, key, timeout,
                  judge_timeout):
-    """Run OpenClaw's own headless turn per task, then grade its `output/`.
+    """Run OpenClaw's own turn per task, then grade its `output/`.
 
     Same staging, same prompt, same judge as every other arm: the only thing that
-    changes is who runs the loop.
+    changes is who runs the loop. Each task gets its own STORED session
+    (`jobbench:<task>`), so the operator can open the sweep in the dashboard while
+    it runs and read each transcript afterwards.
     """
     arm = Path(out) / "openclaw"
     arm.mkdir(parents=True, exist_ok=True)
@@ -418,12 +467,13 @@ def run_openclaw(tasks, out, *, solver_model, judge_model, judge_base, key, time
         slug = _slug(task["id"])
         ws = arm / slug / "workspace"
         jobbench.stage(task, ws)
-        (ws.parent / "ocstate").mkdir(parents=True, exist_ok=True)
         prompt = jobbench.prompt_for(task, ws)
-        cmd = openclaw_command(ws, solver_model, prompt, timeout)
-        meta = {"command": ["<prompt>" if i == 3 else c for i, c in enumerate(cmd)],
+        cmd = openclaw_command(ws, solver_model, prompt, timeout,
+                               session_key="jobbench:%s" % slug)
+        meta = {"command": ["<prompt>" if i == 5 else c for i, c in enumerate(cmd)],
                 "model": solver_model, "workspace": str(ws),
-                "cwd": str(ws), "transport": "openclaw agent exec --json"}
+                "session_key": "jobbench:%s" % slug,
+                "transport": "openclaw agent --session-key --json"}
         t0 = time.time()
         timed_out = False
         proc = None
@@ -468,7 +518,8 @@ def run_openclaw(tasks, out, *, solver_model, judge_model, judge_base, key, time
                  "%s/%s" % (sc.get("score"), sc.get("max")) if sc.get("ok")
                  else sc.get("error")), flush=True)
         rows.append(row)
-    return rows, {"model": solver_model, "transport": "openclaw agent exec --json",
+    return rows, {"model": solver_model,
+                  "transport": "openclaw agent --session-key --json",
                   "cli": OPENCLAW_BIN, "node": OPENCLAW_NODE_BIN}
 
 

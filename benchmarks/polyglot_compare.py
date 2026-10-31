@@ -7,7 +7,13 @@ No LLM judge, no rubric, no ±12-point noise.
 
     python3 -m benchmarks.polyglot_compare \
         --arms longrun,openclaw,opencode --model openrouter:z-ai/glm-5.3-flash \
-        --limit 10 --out .agent/BENCHMARKS/runs/2026-11-01_polyglot_py10
+        --order hardest --limit 10 --out .agent/BENCHMARKS/runs/2026-11-01_polyglot_hard10
+
+`--order hardest` ranks the track by the task's own size (test breadth × exemplar
+lines) before `--limit` takes its slice, so the set is not the alphabetically-first
+easy head: that slice let every arm score 10/10 and ranked nothing (2026-10-31).
+`--limit 33` runs the whole python track. A run where every arm solves every task
+is reported as **SATURATED**, not as a tie.
 
 Before spending anything, prove the suite itself is sound (no model involved):
 
@@ -70,21 +76,25 @@ def _run_longrun(tasks, out, args):
 
 def _run_cli(arm, tasks, out, args, cmd_fn, env_fn, usage_fn):
     rows = []
+    run_tag = Path(out).name
     for task in tasks:
         slug = _slug(task["id"])
         ws = Path(out) / arm / slug / "workspace"
         polyglot.stage(task, ws)
-        if arm == "openclaw":
-            # The state dir the CLI writes its session/transcript into; the caller
-            # pins it with `--state-dir` (see jobbench_compare.openclaw_command).
-            (ws.parent / "ocstate").mkdir(parents=True, exist_ok=True)
         prompt = polyglot.prompt_for(task, ws)
         # A CLI peer takes the OpenRouter id (`openrouter/vendor/model`), NOT the
         # Longrun alias (`openrouter:vendor/model`). Passed verbatim, openclaw
         # refuses it by modelPolicy and answers in 1 s with 0 tool calls — measured
         # 2026-10-31 (0/10, "Model override ... is not allowed for agent
         # 'coordinator'"), a configuration failure that reads like a model failure.
-        cmd = cmd_fn(ws, args.model.replace(":", "/", 1), prompt)
+        model = args.model.replace(":", "/", 1)
+        if arm == "openclaw":
+            # A STORED session per task (`polyglot:<run>:<exercise>`), so the sweep
+            # is visible in the dashboard while it runs — `agent exec` left none.
+            cmd = openclaw_command(ws, model, prompt, args.timeout,
+                                   session_key="polyglot:%s:%s" % (run_tag, task["exercise"]))
+        else:
+            cmd = cmd_fn(ws, model, prompt)
         t0 = time.time()
         timed_out = False
         try:
@@ -142,6 +152,36 @@ def _run_raw(tasks, out, args):
 
 
 # ------------------------------------------------------------------- reports
+def _per_task(rows):
+    """task -> {arm: resolved} for every arm that produced a row."""
+    out = {}
+    for r in rows:
+        out.setdefault(r["task"], {})[r["arm"]] = bool(r.get("resolved"))
+    return out
+
+
+def _ties(rows, arms):
+    """Tasks every arm ran to the SAME verdict: they carry no ranking signal."""
+    return [t for t, d in _per_task(rows).items()
+            if len(d) == len(arms) and len({d.get(a) for a in arms}) == 1]
+
+
+def _saturated(rows, arms):
+    """True when every arm solved every task: the set cannot rank anything.
+
+    This is the honest guard behind the operator's complaint (2026-10-31): "taking
+    high scores means the benchmark is bad — are there tests where models do NOT
+    get 10/10?". A run where all arms are perfect is reported as SATURATED instead
+    of being sold as a tie.
+    """
+    per_task = _per_task(rows)
+    full = [t for t, d in per_task.items() if len(d) == len(arms)]
+    ties = _ties(rows, arms)
+    if not full or not arms:
+        return False, 0, 0
+    return (len(ties) == len(full)), len(full) - len(ties), len(full)
+
+
 def _report(out, rows, parity):
     by_arm = {}
     for r in rows:
@@ -155,22 +195,73 @@ def _report(out, rows, parity):
         rec["tokens"] += (int(usage.get("tokens_in") or 0)
                           + int(usage.get("tokens_out") or 0)
                           if usage else int(r.get("tokens") or 0))
+    arms = sorted(by_arm)
     lines = ["| arm | resolved | n | pass@1 | tests_modified | time | tokens |",
              "|---|---|---|---|---|---|---|"]
-    for arm, rec in sorted(by_arm.items()):
+    for arm in arms:
+        rec = by_arm[arm]
         lines.append("| %s | %d | %d | %.3f | %d | %ss | %d |"
                      % (arm, rec["resolved"], rec["n"],
                         (rec["resolved"] / rec["n"]) if rec["n"] else 0.0,
                         rec["invalid"], rec["duration_s"], rec["tokens"]))
+    flat, discriminating, scored = _saturated(rows, arms)
+    verdict = ("**SATURATED — every arm solved every task.** This set cannot rank "
+               "the harnesses: take `--order hardest`, a bigger `--limit`, or the "
+               "full track (`--limit 33`)."
+               if flat else
+               "Discriminating tasks: **%d/%d** (tasks where the arms disagree)."
+               % (discriminating, scored))
     md = ("# Polyglot (Exercism, Python track) — harnesses on the same tasks\n\n"
           "Scored by each exercise's own `pytest` suite: deterministic, no judge.\n\n"
-          "model `%s` · dataset `%s` @ `%s` · tasks %d · arms %s\n\n%s\n"
+          "model `%s` · dataset `%s` @ `%s` · tasks %d · order `%s` · arms %s\n\n"
+          "%s\n\n%s\n%s\n"
           % (parity.get("model"), parity.get("dataset"), parity.get("dataset_commit"),
-             parity.get("n_tasks"), ", ".join(sorted(by_arm)), "\n".join(lines)))
+             parity.get("n_tasks"), parity.get("order"), ", ".join(arms),
+             "\n".join(lines), verdict, _task_table(rows, parity)))
     (Path(out) / "compare.md").write_text(md, encoding="utf-8")
     _write(Path(out) / "run.json", {"parity": parity, "arms": by_arm,
+                                    "saturated": flat,
+                                    "discriminating_tasks": discriminating,
                                     "generated": round(time.time(), 3)})
     print(md)
+    if flat:
+        print("WARNING: saturated set — every arm solved every task; this run "
+              "cannot rank harnesses.")
+    return flat
+
+
+def _ties(rows, arms):
+    per_task = {}
+    for r in rows:
+        per_task.setdefault(r["task"], {})[r["arm"]] = bool(r.get("resolved"))
+    return [t for t, d in per_task.items()
+            if len(d) == len(arms) and len({d.get(a) for a in arms}) == 1]
+
+
+def _task_table(rows, parity):
+    """One row per task: its size (the difficulty signal) and who solved it."""
+    arms = sorted({r["arm"] for r in rows})
+    stats = {s["id"]: s for s in parity.get("task_stats") or []}
+    per_task = {}
+    for r in rows:
+        per_task.setdefault(r["task"], {})[r["arm"]] = r
+    lines = ["| task | tests | exemplar lines | " + " | ".join(arms) + " |",
+             "|---|---|---|" + "---|" * len(arms)]
+    for task in sorted(per_task):
+        st = stats.get(task) or {}
+        cells = []
+        for arm in arms:
+            r = per_task[task].get(arm)
+            if not r:
+                cells.append("—")
+            elif r.get("resolved"):
+                cells.append("pass (%.0fs)" % float(r.get("duration_s") or 0))
+            else:
+                cells.append(str(r.get("status") or "fail"))
+        lines.append("| %s | %s | %s | %s |"
+                     % (task, st.get("tests", "?"), st.get("exemplar_lines", "?"),
+                        " | ".join(cells)))
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------- check
@@ -189,8 +280,9 @@ def _check(tasks, timeout=180.0):
             polyglot.stage(task, ws)
             stub = polyglot.verify(task, ws, timeout=timeout)
             ok = ref["resolved"] and not stub["resolved"] and stub["status"] != "tests_modified"
-            print("  %-30s exemplar=%-6s stub=%-6s %s"
-                  % (task["id"], ref["status"], stub["status"], "OK" if ok else "BROKEN"),
+            print("  %-30s exemplar=%-6s stub=%-6s tests=%-3s exemplar_lines=%-3s %s"
+                  % (task["id"], ref["status"], stub["status"], task.get("tests", "?"),
+                     task.get("exemplar_lines", "?"), "OK" if ok else "BROKEN"),
                   flush=True)
             if not ok:
                 bad.append((task["id"], "exemplar=%s stub=%s"
@@ -207,6 +299,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="benchmarks.polyglot_compare")
     ap.add_argument("--language", default="python", help="track to run (python is wired)")
     ap.add_argument("--limit", type=int, default=10, help="tasks from the track")
+    ap.add_argument("--order", default="alpha", choices=("alpha", "hardest"),
+                    help="alpha (track order) or hardest (test breadth x exemplar size); "
+                         "hardest is the set that can actually rank the harnesses")
     ap.add_argument("--only", default="", help="comma list of exercise names/ids")
     ap.add_argument("--arms", default="longrun,openclaw,opencode")
     ap.add_argument("--model", default="openrouter:z-ai/glm-5.3-flash")
@@ -223,7 +318,7 @@ def main(argv=None):
 
     only = [s.strip() for s in args.only.split(",") if s.strip()]
     tasks = polyglot.load_tasks(args.language, limit=None if args.check else args.limit,
-                                only=only)
+                                only=only, order=args.order)
     if not tasks:
         print("no tasks: check %s (POLYGLOT_DIR)" % polyglot.dataset_root())
         return 2
@@ -241,8 +336,11 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     parity = {"model": args.model, "dataset": str(polyglot.dataset_root()),
               "dataset_commit": polyglot.dataset_commit(),
-              "language": args.language, "n_tasks": len(tasks),
+              "language": args.language, "order": args.order, "n_tasks": len(tasks),
               "tasks": [t["id"] for t in tasks],
+              "task_stats": [{"id": t["id"], "tests": t.get("tests"),
+                              "exemplar_lines": t.get("exemplar_lines")}
+                             for t in tasks],
               "scoring": "each exercise's own pytest suite; exit code only",
               "python": sys.version.split()[0],
               "git": subprocess.run(["git", "rev-parse", "--short", "HEAD"],
@@ -256,10 +354,8 @@ def main(argv=None):
             got, _prov = _run_cli("opencode", tasks, out, args, opencode_command,
                                   _h2_env, _oc_usage)
         elif arm == "openclaw":
-            got, _prov = _run_cli(
-                "openclaw", tasks, out, args,
-                lambda ws, m, p: openclaw_command(ws, m, p, args.timeout),
-                _openclaw_env, _openclaw_usage)
+            got, _prov = _run_cli("openclaw", tasks, out, args, None,
+                                  _openclaw_env, _openclaw_usage)
         elif arm == "raw":
             got, _prov = _run_raw(tasks, out, args)
         else:
