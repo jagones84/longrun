@@ -84,11 +84,13 @@ def syntax_gate(tool, path, snap, res):
 
     Unlike `verify()` above — which needs an operator-configured command —
     this ALWAYS runs for `.py` targets of fs.write/fs.edit: the new content
-    is `compile()`d, and on SyntaxError/ValueError the change is rolled back
-    to the pre-image (via `restore()`) and the result becomes a failure
-    carrying the error, so the model can fix it next turn (fix-and-retry,
-    not silent acceptance). Anything else (green, out of scope, unreadable
-    file) passes `res` through untouched. Never raises.
+    is `compile()`d, and on SyntaxError/ValueError the result becomes a
+    failure carrying the error, so the model can fix it next turn
+    (fix-and-retry, not silent acceptance). An EXISTING file is rolled back
+    to the pre-image; a NEW file is KEPT — `restore()` would DELETE it, so
+    one bad line used to destroy a whole freshly-written script. Anything
+    else (green, out of scope, unreadable file) passes `res` through
+    untouched. Never raises.
     """
     try:
         if tool not in TARGET_TOOLS:
@@ -103,7 +105,14 @@ def syntax_gate(tool, path, snap, res):
         try:
             compile(content, str(path), "exec")
         except (SyntaxError, ValueError) as e:
-            rolled = restore(path, snap)
+            # A NEW FILE IS NOT ROLLED BACK. `restore()` deletes a file that did not
+            # exist before, so the gate used to answer a 240-line script with one
+            # bad line by deleting the whole script — the model then had to write it
+            # again from scratch (measured 2026-10-31, JobBench bookkeeping: two
+            # attempts, `output/` empty, 0/88). There is nothing to protect on a
+            # file that did not exist: the error keeps the file and names the line.
+            new_file = not (isinstance(snap, dict) and snap.get("exists"))
+            rolled = False if new_file else restore(path, snap)
             failed = dict(res)
             failed["ok"] = False
             failed["exit_code"] = 1
@@ -112,11 +121,15 @@ def syntax_gate(tool, path, snap, res):
                 detail = "line %s: %s" % (e.lineno, e.msg)
             except AttributeError:
                 detail = str(e)
-            failed["error"] = ("syntax gate: %s does not parse (%s); the change "
-                               "has been rolled back%s — fix the syntax and retry."
-                               % (path, detail,
-                                  "" if rolled else " (ROLLBACK FAILED)"))
-            return failed, {"ran": True, "green": False,
+            if new_file:
+                advice = ("the file is KEPT — fix that line with fs.edit (path=%s) "
+                          "instead of writing the whole file again." % path)
+            else:
+                advice = ("the change has been rolled back%s — fix the syntax and "
+                          "retry." % ("" if rolled else " (ROLLBACK FAILED)"))
+            failed["error"] = "syntax gate: %s does not parse (%s); %s" % (
+                path, detail, advice)
+            return failed, {"ran": True, "green": False, "new_file": new_file,
                             "rolled_back": rolled, "error": detail}
         return res, {"ran": True, "green": True}
     except Exception:  # noqa: BLE001 — the gate must never break a write

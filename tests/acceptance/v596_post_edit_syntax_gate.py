@@ -76,6 +76,23 @@ if callable(gate):
     check("A4 broken python is rolled back to the pre-image",
           restored == "x = 1\n" and rep.get("rolled_back") is True,
           repr(restored[:60]))
+    # A NEW FILE IS KEPT: `restore()` would DELETE a file that did not exist,
+    # so one bad line used to destroy a whole freshly-written script (measured
+    # 2026-10-31 on JobBench bookkeeping: rejected 240-line script, `output/`
+    # empty, 0/88). The gate fails the write but nothing is deleted.
+    newpy = os.path.join(ws, "fresh.py")
+    with open(newpy, "w", encoding="utf-8") as f:
+        f.write("def broken(:\n")
+    out, rep = gate("fs.write", newpy, {"exists": False}, {"ok": True, "path": newpy})
+    with open(newpy, encoding="utf-8") as f:
+        kept = f.read()
+    check("A7 a NEW file that does not parse is KEPT, not deleted",
+          out.get("ok") is False and os.path.exists(newpy) and kept == "def broken(:\n"
+          and rep.get("new_file") is True and rep.get("rolled_back") is False,
+          repr({k: rep.get(k) for k in ("new_file", "rolled_back")}))
+    check("A8 the new-file error says the file is KEPT and names fs.edit",
+          "KEPT" in str(out.get("error") or "") and "fs.edit" in str(out.get("error") or ""),
+          repr(out.get("error"))[:160])
     txt = os.path.join(ws, "notes.txt")
     with open(txt, "w", encoding="utf-8") as f:
         f.write("def broken(:\n")
@@ -87,7 +104,7 @@ if callable(gate):
     check("A6 non-write/edit tools are out of scope",
           out.get("ok") is True and rep.get("ran") is False, repr(rep))
 else:
-    for n in ("A2", "A3", "A4", "A5", "A6"):
+    for n in ("A2", "A3", "A4", "A5", "A6", "A7", "A8"):
         check(n, False, "syntax_gate missing")
 
 # ---- B: the tools honor the gate with zero config ------------------------------
@@ -123,9 +140,16 @@ try:
           repr({k: r.get(k) for k in ("ok",)}) + " " + repr(after[:60]))
     r = _tools._fs_write({"path": os.path.join(ws, "new.py"),
                           "content": "def broken(:\n"}, "v596")
-    check("B4 _fs_write with broken python fails and leaves no file",
-          r.get("ok") is False and not os.path.exists(os.path.join(ws, "new.py")),
+    # A new file that does not parse FAILS the call but is NOT deleted: the
+    # model fixes one line with fs.edit instead of writing the whole script again.
+    check("B4 _fs_write with broken python fails but KEEPS the new file",
+          r.get("ok") is False and r.get("syntax_failed") is True
+          and os.path.exists(os.path.join(ws, "new.py")),
           repr({k: r.get(k) for k in ("ok", "syntax_failed")}))
+    with open(os.path.join(ws, "new.py"), encoding="utf-8") as f:
+        _kept = f.read()
+    check("B5 the kept new file holds what was written (fix that ONE line)",
+          _kept == "def broken(:\n", repr(_kept[:60]))
 finally:
     _tools.registry.tool_spec = _orig_spec
 

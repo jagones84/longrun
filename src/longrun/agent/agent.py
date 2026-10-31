@@ -2567,6 +2567,40 @@ def _other_session_roots(sess):
     return sorted(set(out))
 
 
+def _stop_floor_text(sess, since, floor_used, reason, open_count):
+    """The one named round a hard stop earns when NOTHING was written.
+
+    A work loop that exhausts its rounds with steps open and an empty workspace
+    used to close exactly like a finished turn. Measured 2026-10-31 on JobBench
+    `bookkeeping_accounting_and_auditing_clerks/task1`: a rejected 240-line script,
+    then `plan.stopped budget open=2` with `output/` empty and the arm scored 0/88.
+
+    Only a stop that FAILED with work OUTSTANDING earns the round: a
+    `goal_reached` / `user_stop` close is not a delivery that went missing, and
+    with nothing open there is nothing left to deliver. Returns the message to
+    inject, or None. Called from BOTH stop paths — the two loops share one truth,
+    so a fix in one cannot miss the other.
+    """
+    if floor_used:
+        return None
+    if not open_count or reason not in ("budget", "no_progress"):
+        return None
+    try:
+        from longrun.plan import artifacts as _art
+        if _art.inventory(_chat_workspace(sess), since=since,
+                          exclude=_harness_state_roots() + _other_session_roots(sess)):
+            return None
+    except Exception:  # noqa: BLE001 — the floor must never break a stop
+        return None
+    return ("DELIVERY FLOOR — the harness stopped the work loop (%s) and NOTHING "
+            "has been written for this request (%d step(s) still open). Produce "
+            "the deliverable files NOW, or state exactly what is missing and why "
+            "you cannot produce them. A summary of what you READ is not a "
+            "delivery, and a script you failed to write is not one either: if the "
+            "file already exists on disk, correct that line with fs.edit."
+            % (reason, open_count))
+
+
 def _deliverable_review_text(sess, request, since, state):
     """Mechanical read-back of what this turn WROTE, once per turn (or None).
 
@@ -2605,8 +2639,18 @@ def _deliverable_review_text(sess, request, since, state):
         state["left"] = 0
         return None
     if not text:
-        state["left"] = 0
-        return None
+        # A turn that wrote NOTHING is not "nothing to say" when the request asked
+        # for a file: measured 2026-10-31 (JobBench `5757c9eb681c`) the model's
+        # generator died twice, it answered in prose, and the harness closed without
+        # a word. One shot, then silent.
+        try:
+            from longrun.plan import artifacts as _art0
+            text = _art0.nothing_written(request)
+        except Exception:  # noqa: BLE001
+            text = None
+        if not text:
+            state["left"] = 0
+            return None
     state["left"] = int(state.get("left") or 1) - 1
     # ONE more cycle when the delivery is mechanically incomplete. Measured
     # 2026-10-31 on JobBench with the same model in four arms: longrun closed at
@@ -3384,38 +3428,19 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if not goal_mode:
                 _dec = _pivot_decide(_user_pivot, _dec, len(_open), _pivot_state)
             if not _dec["continue"]:
+                # DELIVERY FLOOR: one extra round, ONCE, when a hard stop leaves
+                # open steps and an empty workspace (see `_stop_floor_text`).
+                _floor = _stop_floor_text(sess, _deliv_since, _delivery_floor_used,
+                                          _dec["reason"], len(_open))
+                if _floor:
+                    _delivery_floor_used = True
+                    _kg_rounds += 1
+                    _inject(_floor, "continue")
+                    continue
                 _kg_stop_reason = _dec["reason"]
                 on_event("plan.stopped", session=sess["id"], reason=_dec["reason"],
                          open=len(_open), total=len(_nodes), rounds=_kg_rounds,
                          difficulty=_diff_level, duration_s=round(time.time() - _kg_started, 1))
-                # DELIVERY FLOOR (2026-10-31): a work loop that exhausts its rounds
-                # with steps open and NOTHING written used to close like a finished
-                # turn. Measured on JobBench `medical_secretaries/task1` (session
-                # `873ae518102d`): 27 calls, plan 3/4 open, `output/` empty, result
-                # "ok" and the arm scored 0. One extra round, ONCE, with the
-                # emptiness named — the model may still fail, but it cannot be
-                # silent about it.
-                if (not _delivery_floor_used and _open
-                        and _dec["reason"] in ("budget", "no_progress")):
-                    try:
-                        from longrun.plan import artifacts as _art3
-                        _nothing_written = not _art3.inventory(
-                            _chat_workspace(sess), since=_deliv_since,
-                            exclude=_harness_state_roots() + _other_session_roots(sess))
-                    except Exception:  # noqa: BLE001
-                        _nothing_written = False
-                    if _nothing_written:
-                        _delivery_floor_used = True
-                        _kg_stop_reason = None
-                        _kg_rounds += 1
-                        _inject("DELIVERY FLOOR — the harness stopped the work loop "
-                                "(%s) and NOTHING has been written for this request "
-                                "(%d step(s) still open). Produce the deliverable "
-                                "files NOW, or state exactly what is missing and why "
-                                "you cannot produce them; a summary of what you READ "
-                                "is not a delivery." % (_dec["reason"], len(_open)),
-                                "continue")
-                        continue
                 break
             _kg_rounds += 1
             _kg_prev = _cur
@@ -4218,6 +4243,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
+                continue
+            # DELIVERY FLOOR: the same one named round the budget path grants, so a
+            # stop here cannot be silent about an empty workspace either. The
+            # read-back above is skipped once `_deliv_state` is spent, which is
+            # exactly the state a long turn reaches (measured 2026-10-31).
+            _floor = _stop_floor_text(sess, _deliv_since, _delivery_floor_used,
+                                      _dec["reason"], len(_open))
+            if _floor:
+                _delivery_floor_used = True
+                _inject(_floor, "continue")
                 continue
             _kg_stop_reason = _dec["reason"]
             on_event("plan.stopped", session=sess["id"], reason=_dec["reason"],

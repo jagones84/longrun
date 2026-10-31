@@ -425,6 +425,33 @@ def _line(entry):
 #: printed `conditional-formatting=0`, the model answered "done", and the rubric
 #: that weights red/yellow highlighting scored 0. The fact was shown and never
 #: required.
+#: Nouns that make an ARTIFACT part of the request. A turn that writes no file at
+#: all when the job asked for a workbook/report/letter used to be told NOTHING: the
+#: read-back returned None (nothing to describe) and the turn closed. Measured
+#: 2026-10-31 on JobBench medical_secretaries, session `5757c9eb681c`: two failed
+#: generator scripts, then a prose answer with `output/` empty and no harness word
+#: about it.
+_ARTIFACT_WORDS = ("file", "files", "document", "report", "workbook", "spreadsheet",
+                   "sheet", "csv", "xlsx", "xls", "docx", "doc", "letter", "memo",
+                   "template", "invoice", "presentation", "slide", "pdf", "save the")
+
+
+def names_artifact(request):
+    """True when the request asks for a FILE (so writing nothing is a failure)."""
+    text = " ".join(str(request or "").lower().split())
+    return any(w in text for w in _ARTIFACT_WORDS)
+
+
+def nothing_written(request):
+    """The read-back for a turn that wrote NOTHING while the request named a file."""
+    if not names_artifact(request):
+        return None
+    return ("READ-BACK (harness: mechanical file inspection): you have written NO "
+            "file for this request — the workspace has no new document at all. "
+            "The request names a deliverable file, so a prose answer is not the "
+            "result. Produce the file now (and if a previous attempt failed, fix "
+            "the failure instead of summarising it), or state exactly what blocks "
+            "you and what the user must supply.")
 _VISUAL_WORDS = ("chart", "graph", "plot", "visual", "histogram", "dashboard")
 _FORMAT_WORDS = ("conditional format", "conditional-format", "highlight", "colour-code",
                  "color-code", "red fill", "yellow", "fill color", "fill colour",

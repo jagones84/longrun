@@ -264,7 +264,25 @@ check("E5 a gap earns one extra cycle; the wiring is the one that raises `left`"
       "gaps wiring")
 check("E6 a stop that leaves NOTHING written earns one named delivery round",
       "DELIVERY FLOOR" in SRC and "_delivery_floor_used = False" in SRC
-      and SRC.count("_delivery_floor_used = True") == 1, "delivery floor")
+      and "def _stop_floor_text(" in SRC, "delivery floor")
+check("E8 the floor is granted from BOTH stop paths, through ONE helper",
+      # The two work loops (budget exhaustion and the plain stop) share the
+      # helper: a fix in one cannot miss the other (regression measured
+      # 2026-10-31 — the read-back is spent by then, so only the floor fires).
+      SRC.count("_stop_floor_text(sess, _deliv_since, _delivery_floor_used,") == 2
+      and SRC.count("_delivery_floor_used = True") == 2
+      and SRC.count('_inject(_floor, "continue")') == 2,
+      "helper call sites")
+check("E9 the floor needs OPEN work and a FAILED stop, not a clean close",
+      # A `goal_reached` / `user_stop` close (or zero open steps) is not a
+      # delivery that went missing: granting the round there added a model call
+      # after the final answer (v510 regression).
+      'reason not in ("budget", "no_progress")' in SRC
+      and "if not open_count or reason not in" in SRC, "floor guard")
+check("E7 zero artifacts is SAID OUT LOUD when the request names a file",
+      "written NO file" in (A.nothing_written("produce a workbook of referrals") or "")
+      and A.nothing_written("how many sessions are running?") is None,
+      A.nothing_written("produce a workbook of referrals"))
 
 print("\n---")
 print("v731: %d/%d PASS" % (sum(results), len(results)))
