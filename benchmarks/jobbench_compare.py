@@ -190,14 +190,15 @@ def _openrouter_key():
 
 # --------------------------------------------------------------- longrun arm
 def run_longrun(tasks, out, *, model, judge_model, judge_base, key, timeout,
-                judge_timeout, keep_sessions=False, max_steps=None, adapter=None):
+                judge_timeout, keep_sessions=False, max_steps=None, adapter=None,
+                tag="jobbench"):
     """Drive the LIVE Longrun over REST, one session per task, then judge."""
     from .longrun_adapter import LongrunAdapter
     arm = Path(out) / "longrun"
     arm.mkdir(parents=True, exist_ok=True)
     ad = adapter or LongrunAdapter(model=model, timeout=timeout,
                                    keep_sessions=keep_sessions,
-                                   tag="jobbench", max_steps=max_steps)
+                                   tag=tag, max_steps=max_steps)
     rows, prov = [], {}
     try:
         prov = ad.provenance()
@@ -999,6 +1000,9 @@ def main(argv=None):
                          "delivered when it runs out is graded and flagged")
     ap.add_argument("--judge-timeout", type=float, default=3600.0)
     ap.add_argument("--keep-sessions", action="store_true")
+    ap.add_argument("--tag", default=None,
+                    help="prefix for the Longrun session titles so a run is findable "
+                         "in the Sessions rail (default: jobbench)")
     ap.add_argument("--max-steps", type=int, default=40,
                     help="real-tool steps per turn for the Longrun arm (server clamps "
                          "it to its iteration cap); the chat default is 8")
@@ -1082,7 +1086,8 @@ def main(argv=None):
                                     key=key, timeout=args.timeout,
                                     judge_timeout=args.judge_timeout,
                                     keep_sessions=args.keep_sessions,
-                                    max_steps=args.max_steps)
+                                    max_steps=args.max_steps,
+                                    tag=args.tag or "jobbench")
             parity.update({"longrun_git": prov.get("git_sha", ""),
                            "longrun_version": prov.get("version", ""),
                            "longrun_token_source": prov.get("token_source", "")})
