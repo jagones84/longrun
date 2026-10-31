@@ -2616,7 +2616,7 @@ def _deliverable_review_text(sess, request, since, state):
     # a clean delivery earns nothing, and `left` caps the total at two read-backs.
     try:
         from longrun.plan import artifacts as _art2
-        if _art2.gaps(_chat_workspace(sess), since=since,
+        if _art2.gaps(_chat_workspace(sess), request=request, since=since,
                       exclude=_harness_state_roots() + _other_session_roots(sess)):
             state["left"] = max(int(state["left"]), 1)
     except Exception:  # noqa: BLE001 — never break a turn over an audit

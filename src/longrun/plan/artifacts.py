@@ -419,16 +419,50 @@ def _line(entry):
     return "%s (%s) — %d bytes%s" % (entry["path"], kind, f.get("size", 0), tail)
 
 
-def gaps(workspace, since=0.0, limit=MAX_FILES, exclude=()):
+#: Words that make a VISUAL element part of the REQUEST. A workbook with `charts=0`
+#: is not a style preference when the job asked for a picture: it is a missing
+#: deliverable. Measured 2026-10-31 (JobBench medical_secretaries): the read-back
+#: printed `conditional-formatting=0`, the model answered "done", and the rubric
+#: that weights red/yellow highlighting scored 0. The fact was shown and never
+#: required.
+_VISUAL_WORDS = ("chart", "graph", "plot", "visual", "histogram", "dashboard")
+_FORMAT_WORDS = ("conditional format", "conditional-format", "highlight", "colour-code",
+                 "color-code", "red fill", "yellow", "fill color", "fill colour",
+                 "color code", "colour code")
+
+
+def _request_gaps(request, entries):
+    """Gaps that only exist because the REQUEST named them (visual / formatting)."""
+    text = " ".join(str(request or "").lower().split())
+    if not text:
+        return []
+    books = [e for e in entries if "sheets" in (e.get("facts") or {})]
+    if not books:
+        return []
+    out = []
+    if any(w in text for w in _VISUAL_WORDS) and not any(
+            (e.get("facts") or {}).get("charts") for e in books):
+        out.append("the request names a chart/visual and no workbook has one "
+                   "(charts=0): a picture the reader can see is part of the job")
+    if any(w in text for w in _FORMAT_WORDS) and not any(
+            (e.get("facts") or {}).get("conditional_formatting") for e in books):
+        out.append("the request names conditional formatting/highlighting and every "
+                   "workbook reports conditional-formatting=0")
+    return out
+
+
+def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
     """Mechanical reasons a delivery is INCOMPLETE — facts, never prose.
 
     Used to decide whether a turn EARNED one more read-back cycle: a sheet whose
-    content stops at the header, a csv with no data rows, an unreadable file. The
-    strings are only for the log; the decision is `bool(gaps(...))`, so boilerplate
-    wording in the checklist can never trigger a cycle by accident.
+    content stops at the header, a csv with no data rows, an unreadable file, and
+    the two request-driven ones above. The strings are only for the log; the
+    decision is `bool(gaps(...))`, so boilerplate wording in the checklist can never
+    trigger a cycle by accident.
     """
     out = []
-    for entry in inventory(workspace, since=since, limit=limit, exclude=exclude):
+    entries = inventory(workspace, since=since, limit=limit, exclude=exclude)
+    for entry in entries:
         facts = entry.get("facts") or {}
         if facts.get("error") or facts.get("empty") or facts.get("size") == 0:
             out.append("%s: empty or unreadable" % entry["path"])
@@ -440,6 +474,7 @@ def gaps(workspace, since=0.0, limit=MAX_FILES, exclude=()):
                            % (entry["path"], sheet["name"], filled))
         if "columns" in facts and not facts.get("rows"):
             out.append("%s: csv with no data rows" % entry["path"])
+    out.extend(_request_gaps(request, entries))
     return out
 
 
@@ -495,6 +530,10 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
         lines += ["  * a chart is a PICTURE: a reader that extracts text sees only your "
                   "cells — the plotted numbers must also appear as cells (a caption "
                   "naming the chart is not the data)."]
+    # The request can DEMAND a visual or a formatting rule; then the fact above is
+    # not a note but a missing deliverable, and the model is told so by name.
+    for _g in _request_gaps(request, entries):
+        lines += ["  * " + _g]
     head = " ".join(str(request or "").split())[:600]
     if head:
         lines += ["", "Request (head): " + head]

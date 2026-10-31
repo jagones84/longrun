@@ -227,6 +227,27 @@ check("D4 a mechanically incomplete delivery is reported as a gap",
 check("D5 a clean delivery has no gap, so it earns no extra cycle",
       A.gaps(_clean, since=0) == [], A.gaps(_clean, since=0))
 
+# D6-D8 — the REQUEST can make a fact a missing deliverable. Measured 2026-10-31:
+# the read-back printed `conditional-formatting=0`, the model answered "done", and
+# the rubric weighted 10 for red/yellow highlighting scored 0.
+import shutil  # noqa: E402
+
+_vw = os.path.join(TMP, "visual")
+os.makedirs(_vw, exist_ok=True)
+shutil.copy(os.path.join(OUT, "hollow.xlsx"), os.path.join(_vw, "book.xlsx"))
+_vis = A.gaps(_vw, request="produce a workbook with a bar chart of returns", since=0)
+check("D6 a requested chart is a GAP when no workbook has one",
+      any("charts=0" in g for g in _vis), _vis)
+_fmt = A.gaps(_vw, request="highlight urgent rows with conditional formatting", since=0)
+check("D7 a requested formatting rule is a GAP when every workbook reports 0",
+      any("conditional-formatting=0" in g for g in _fmt), _fmt)
+_plain = A.gaps(_vw, request="summarise the referral table", since=0)
+check("D8 a request that names no visual adds no visual gap",
+      not any("charts=0" in g or "conditional-formatting=0" in g for g in _plain), _plain)
+_wchart = A.gaps(WS, request="produce a workbook with a bar chart", since=SINCE)
+check("D9 a workbook that HAS the chart satisfies the request",
+      not any("charts=0" in g for g in _wchart), _wchart)
+
 # E ----------------------------------------------------------------------
 SRC = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
 check("E1 every floor that accepts a final answer runs the read-back first",
