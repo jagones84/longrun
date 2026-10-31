@@ -1,0 +1,21 @@
+# Terminal-Bench suite for THIS host (aarch64, no x86 emulation) — scope manifest.
+#
+# Why these tasks: each one is a multi-step terminal job whose end state is graded by
+# the task's own tests, so a harness cannot pass it by describing the work. The list
+# is a CANDIDATE set: `scripts/tb-screen.sh` proves which of them build and run here
+# with the oracle agent (no model call), and only the PASS rows belong to the suite.
+#
+# hello-world is the plumbing control (it must always pass: if it fails, the adapter
+# is broken, not the harness).
+hello-world
+count-dataset-tokens
+analyze-access-logs
+modernize-fortran-build
+cobol-modernization
+cancel-async-tasks
+circuit-fibsqrt
+chess-best-move
+build-pmars
+grid-pattern-transform
+pypi-server
+postgres-csv-clean
