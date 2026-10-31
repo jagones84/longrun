@@ -91,8 +91,43 @@ task_root = os.path.join(tb_home, "original-tasks")
 if os.path.isdir(task_root):
     missing = [t for t in tasks if not os.path.isdir(os.path.join(task_root, t))]
     check("D4 every id exists in the official checkout", not missing, missing)
+
+    def _label(task_id):
+        """The benchmark's own `difficulty:` line for a task, or empty."""
+        path = os.path.join(task_root, task_id, "task.yaml")
+        try:
+            for line in open(path, encoding="utf-8"):
+                if line.startswith("difficulty:"):
+                    return line.split(":", 1)[1].strip()
+        except OSError:
+            return ""
+        return ""
+
+    # An easy slice saturates: the alphabetically-first 10 polyglot tasks were solved
+    # 10/10 by BOTH arms (2026-10-31) and ranked nothing. The same rule applies here,
+    # so every scored entry must carry the benchmark's OWN hard label; hello-world is
+    # the plumbing control and is never scored.
+    labels = {t: _label(t) for t in tasks if t != "hello-world"}
+    check("D5 every scored entry carries difficulty: hard",
+          all(v == "hard" for v in labels.values()), labels)
 else:
-    print("SKIP D4 the terminal-bench checkout is not on this machine")
+    print("SKIP D4/D5 the terminal-bench checkout is not on this machine")
+
+# The suite is not "the official tasks": it is the official HARD tasks this host can
+# actually run. A task whose oracle fails (port-compressor: its own reference solution
+# trips test_no_unsafe_rust) or whose image needs x86 is not a suite member, however
+# official it is. The screen table is local evidence (.agent is gitignored).
+screen = os.path.join(REPO, ".agent/BENCHMARKS/tb_arm64_hard_screen.tsv")
+if os.path.isfile(screen):
+    verdicts = {}
+    for line in open(screen, encoding="utf-8"):
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) >= 2 and parts[0] != "task":
+            verdicts[parts[0]] = parts[1]  # the newest row for a task wins
+    unscoped = [t for t in tasks if verdicts.get(t) != "PASS"]
+    check("D6 every entry passed the arm64 oracle screen", not unscoped, unscoped)
+else:
+    print("SKIP D6 the arm64 screen table is not on this machine")
 
 # ---- E. the launcher is the only entry point, and it refuses to overwrite ------
 launcher = open(os.path.join(REPO, "scripts/bench-terminal-bench.sh"), encoding="utf-8").read()
