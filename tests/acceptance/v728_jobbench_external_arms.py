@@ -275,6 +275,20 @@ JC.write_manifest(_older, run_id=_older.name, started="2000-01-01T00:00:00",
 _text = JC.rebuild_index()
 check("J5 the index lists the newest run first, by the manifest's own clock",
       _text.index(_default.name) < _text.index(_older.name), _text[:400])
+# A multi-task sweep writes `<runs>/<suite>/<task>/run.json`; the index used to scan
+# only the direct children, so every nested suite was INVISIBLE — measured
+# 2026-10-31: 36 run folders on disk, 28 in INDEX.md, the four newest suites gone.
+_nested = JC.RUNS_ROOT / "2026-10-31_v8_3arm" / "medical"
+JC.write_manifest(_nested, run_id="medical", started="2026-10-31T12:21:23",
+                  suite="jobbench", status="ok", arms=["raw", "longrun"], n_tasks=1)
+_junk = JC.RUNS_ROOT / "2026-10-31_v8_3arm" / "medical" / "harness2" / "_h2runs"
+JC.write_manifest(_junk, run_id="junk", started="2026-10-31T12:21:23",
+                  suite="jobbench", status="ok", arms=["harness2"], n_tasks=1)
+_text = JC.rebuild_index()
+check("J6 a nested sweep appears in the index, and a harness's private scratch does not",
+      "2026-10-31_v8_3arm/medical" in _text and "junk" not in _text
+      and _text.index("2026-10-31_v8_3arm/medical") < _text.index(_default.name),
+      [ln for ln in _text.splitlines() if "v8" in ln or "junk" in ln])
 
 # K — a benchmark turn may ask for the tool budget it needs ---------------
 AGENT = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()

@@ -127,18 +127,31 @@ def write_manifest(out, **fields):
 
 
 def rebuild_index(root=None):
-    """`runs/INDEX.md`, derived from every `run.json` (the manifest is the truth)."""
+    """`runs/INDEX.md`, derived from every `run.json` (the manifest is the truth).
+
+    A manifest may sit one or two levels under `runs/`: a single-arm run writes
+    `<runs>/<run>/run.json`, while a multi-task sweep writes
+    `<runs>/<suite>/<task>/run.json`. The first version scanned only the direct
+    children, so EVERY nested sweep was invisible in the index — measured
+    2026-10-31: 36 run folders on disk, 28 in `INDEX.md`, and the four newest
+    suites (`_v2`, `_v6`, `_v7`, `_v8`) missing entirely. A derived index that
+    silently drops the newest runs is worse than no index.
+    """
     root = Path(root or RUNS_ROOT)
     rows = []
     if root.is_dir():
-        for d in sorted((p for p in root.iterdir() if p.is_dir()), reverse=True):
-            f = d / "run.json"
-            if not f.is_file():
+        for f in sorted(root.rglob("run.json")):
+            rel = f.parent.relative_to(root)
+            # `_h2runs` and friends are a harness's PRIVATE scratch, not our run.
+            if any(part.startswith("_") for part in rel.parts):
                 continue
             try:
-                rows.append(json.loads(f.read_text(encoding="utf-8")))
-            except ValueError:
+                man = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
                 continue
+            if isinstance(man, dict):
+                man["_path"] = str(rel)
+                rows.append(man)
     # Newest first by the manifest's own `started`: the folder name is not
     # chronological (`_n3` sorts before `_n1-2` lexically), and an index whose
     # first row is not the latest run is a misleading index.
@@ -152,7 +165,7 @@ def rebuild_index(root=None):
         mr = ", ".join("%s %s" % (k, v.get("mean_ratio"))
                        for k, v in sorted(means.items())) or "-"
         lines.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s |"
-                     % (r.get("run_id", "?"), str(r.get("started", ""))[:16],
+                     % (r.get("_path") or r.get("run_id", "?"), str(r.get("started", ""))[:16],
                         r.get("suite", ""), ",".join(r.get("arms") or []),
                         r.get("model", ""), r.get("judge_model", ""),
                         r.get("n_tasks", ""), r.get("status", ""), mr))
