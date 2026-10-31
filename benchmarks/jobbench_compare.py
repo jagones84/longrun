@@ -794,17 +794,39 @@ def report(out, rows, parity):
         except (KeyError, TypeError, ValueError, ZeroDivisionError):
             return None
 
+    def _cut(r):
+        """The run was CUT at the wall clock — it has no score, only a duration."""
+        if r.get("timed_out"):
+            return True
+        err = str(r.get("error") or "").lower()
+        return "timed out" in err or "timeout" in err
+
+    def _empty(r):
+        """Finished, but produced no deliverable at all (no_output from the judge)."""
+        return not _cut(r) and (r.get("score") or {}).get("no_output") is True
+
     arms = {}
     for r in rows:
         a = arms.setdefault(r["arm"], {"tasks": 0, "delivered": 0, "scored": 0,
+                                       "timeouts": 0, "empty": 0,
                                        "ratio_sum": 0.0, "ratio_n": 0,
                                        "tokens": None, "usd": None, "time_s": 0.0})
         a["tasks"] += 1
         a["delivered"] += 1 if r.get("delivered") else 0
         if r.get("duration_s") is not None:
             a["time_s"] += float(r["duration_s"])
+        # A CUT TASK IS NOT A SCORE (2026-10-30). A row killed at the wall clock
+        # carries score 0 and max 94, so folding it into the mean made an arm look
+        # eight times worse than it was: the two longrun re-runs that timed out on
+        # endpoint latency (p50 19.5 s vs 2.4 s) dragged a 0.57 mean down to 0.19.
+        # A timeout is counted as a timeout, never as a 0.000 result — and neither
+        # is a run that finished with nothing to grade.
+        if _cut(r):
+            a["timeouts"] += 1
+        elif _empty(r):
+            a["empty"] += 1
         rt = _ratio(r)
-        if rt is not None:
+        if rt is not None and not _cut(r) and not _empty(r):
             a["scored"] += 1
             a["ratio_sum"] += rt
             a["ratio_n"] += 1
@@ -819,9 +841,14 @@ def report(out, rows, parity):
     summary = {}
     for name, a in arms.items():
         summary[name] = {"tasks": a["tasks"], "delivered": a["delivered"],
-                         "scored": a["scored"], "time_s": round(a["time_s"], 1),
+                         "scored": a["scored"], "timeouts": a["timeouts"],
+                         "no_output": a["empty"],
+                         "time_s": round(a["time_s"], 1),
                          "tokens": a["tokens"], "usd": (round(a["usd"], 6)
                                                         if a["usd"] is not None else None),
+                         # None when EVERY task of this arm was cut at the budget:
+                         # an arm with no completed task has no mean, and printing
+                         # 0.000 would state the opposite.
                          "mean_ratio": round(a["ratio_sum"] / a["ratio_n"], 4)
                          if a["ratio_n"] else None}
     payload = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "parity": parity,
@@ -847,18 +874,23 @@ def report(out, rows, parity):
             # it in the row is what keeps a truncated sweep from reading as a
             # complete one.
             note = ("cut at the budget; " + note) if note else "cut at the budget"
+        _score_cell = ("TIMEOUT" if _cut(r) else
+                       ("NO OUTPUT" if _empty(r) else sc.get("score", "-")))
+        _ratio_cell = ("-" if (_cut(r) or _empty(r)) else (
+            ("%.3f" % rt) if rt is not None else "-"))
         lines.append("| %s | %s | %s | %s | %s | %s | %s | %s |"
                      % (r["task"], r["arm"], r.get("delivered", 0),
-                        sc.get("score", "-"), sc.get("max", "-"),
-                        ("%.3f" % rt) if rt is not None else "-",
+                        _score_cell, sc.get("max", "-"), _ratio_cell,
                         _secs(r.get("duration_s")),
                         str(note)[:60].replace("|", "/")))
-    lines += ["", "| arm | tasks | delivered | scored | mean ratio | time | tokens | usd |",
-              "|---|---|---|---|---|---|---|---|"]
+    lines += ["", "| arm | tasks | delivered | scored | timeouts | no output | mean ratio | time | tokens | usd |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
     for name in sorted(summary, key=_arm_rank):
         s = summary[name]
-        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s |"
-                     % (name, s["tasks"], s["delivered"], s["scored"], s["mean_ratio"],
+        _mean = ("%.4f" % s["mean_ratio"]) if s["mean_ratio"] is not None else "n/a"
+        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+                     % (name, s["tasks"], s["delivered"], s["scored"],
+                        s.get("timeouts") or 0, s.get("no_output") or 0, _mean,
                         _secs(s["time_s"]),
                         s["tokens"] if s["tokens"] is not None else "-",
                         ("$%.4f" % s["usd"]) if s["usd"] is not None else "-"))

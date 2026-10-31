@@ -140,6 +140,28 @@ check("G2 the mean ratio is per arm",
       and payload["arms"]["harness2"]["mean_ratio"] == 0.5, payload["arms"])
 check("G3 compare.md renders both arms", "| longrun |" in text
       and "| harness2 |" in text, text[:300])
+# 2026-10-30: two longrun re-runs of the same task were killed at the wall clock
+# (endpoint p50 19.5 s vs 2.4 s) and entered the mean as 0.000, so a 0.57 arm read
+# as 0.19. A cut run has no score; it is counted as a TIMEOUT, and an arm with no
+# completed task has no mean at all.
+_rows_cut = [{"task": "t1", "arm": "longrun", "delivered": 3, "ok": True,
+              "score": {"ok": True, "score": 9.0, "max": 10.0}, "duration_s": 138.1},
+             {"task": "t2", "arm": "longrun", "delivered": 0, "ok": False,
+              "error": "TimeoutError('timed out')",
+              "score": {"ok": True, "score": 0.0, "max": 10.0, "no_output": True},
+              "duration_s": 600.2},
+             {"task": "t1", "arm": "openclaw", "delivered": 0, "ok": True,
+              "score": {"ok": True, "score": 0.0, "max": 10.0, "no_output": True},
+              "duration_s": 625.5}]
+_p2, _t2 = JC.report(os.path.join(TMP, "report2"), _rows_cut, {})
+check("G4 a TIMEOUT is not averaged as a zero (the mean covers completed tasks)",
+      _p2["arms"]["longrun"]["mean_ratio"] == 0.9
+      and _p2["arms"]["longrun"]["timeouts"] == 1, _p2["arms"]["longrun"])
+check("G5 a run that finished with NO output has no mean instead of 0.000",
+      _p2["arms"]["openclaw"]["mean_ratio"] is None
+      and _p2["arms"]["openclaw"]["no_output"] == 1, _p2["arms"]["openclaw"])
+check("G6 the per-task row says TIMEOUT / NO OUTPUT, never a bare 0",
+      "| TIMEOUT |" in _t2 and "| NO OUTPUT |" in _t2, _t2[:600])
 
 # H ----------------------------------------------------------------------
 cmd = JC.harness2_command([tasks[0]], "openrouter/z-ai/glm-5.3-flash")
