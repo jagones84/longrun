@@ -336,9 +336,19 @@ OPENCLAW_NODE_BIN = "/home/jagones/.nvm/versions/node/v24.22.1/bin"
 
 
 def openclaw_command(workspace, model, prompt, timeout):
-    """The OpenClaw arm's command line: one headless embedded agent turn."""
-    return [OPENCLAW_BIN, "agent", "exec", prompt, "--cwd", str(workspace),
-            "--model", model, "--json", "--timeout", str(int(max(30, timeout)))]
+    """The OpenClaw arm's command line: one headless embedded agent turn.
+
+    `--state-dir` is pinned INSIDE the task folder. `agent exec` is documented as
+    "one isolated headless embedded agent turn" and without the pin its state is
+    temporary, so the turn leaves no session and no transcript to inspect —
+    measured 2026-10-31: `openclaw sessions list` showed 25 sessions (cron,
+    telegram, main) and none from the benchmark. With the pin the evidence stays
+    in the run folder, next to the workspace it edited.
+    """
+    ws = Path(workspace)
+    return [OPENCLAW_BIN, "agent", "exec", prompt, "--cwd", str(ws),
+            "--model", model, "--json", "--timeout", str(int(max(30, timeout))),
+            "--state-dir", str(ws.parent / "ocstate")]
 
 
 def _openclaw_env(key):
@@ -408,6 +418,7 @@ def run_openclaw(tasks, out, *, solver_model, judge_model, judge_base, key, time
         slug = _slug(task["id"])
         ws = arm / slug / "workspace"
         jobbench.stage(task, ws)
+        (ws.parent / "ocstate").mkdir(parents=True, exist_ok=True)
         prompt = jobbench.prompt_for(task, ws)
         cmd = openclaw_command(ws, solver_model, prompt, timeout)
         meta = {"command": ["<prompt>" if i == 3 else c for i, c in enumerate(cmd)],

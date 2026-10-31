@@ -74,6 +74,10 @@ def _run_cli(arm, tasks, out, args, cmd_fn, env_fn, usage_fn):
         slug = _slug(task["id"])
         ws = Path(out) / arm / slug / "workspace"
         polyglot.stage(task, ws)
+        if arm == "openclaw":
+            # The state dir the CLI writes its session/transcript into; the caller
+            # pins it with `--state-dir` (see jobbench_compare.openclaw_command).
+            (ws.parent / "ocstate").mkdir(parents=True, exist_ok=True)
         prompt = polyglot.prompt_for(task, ws)
         # A CLI peer takes the OpenRouter id (`openrouter/vendor/model`), NOT the
         # Longrun alias (`openrouter:vendor/model`). Passed verbatim, openclaw
