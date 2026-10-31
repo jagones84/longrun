@@ -1,21 +1,36 @@
 # Terminal-Bench suite for THIS host (aarch64, no x86 emulation) — scope manifest.
 #
-# Why these tasks: each one is a multi-step terminal job whose end state is graded by
-# the task's own tests, so a harness cannot pass it by describing the work. The list
-# is a CANDIDATE set: `scripts/tb-screen.sh` proves which of them build and run here
-# with the oracle agent (no model call), and only the PASS rows belong to the suite.
+# Every entry is `difficulty: hard` in the task's OWN task.yaml (the benchmark's
+# curated label, not my opinion) — a suite of easy tasks saturates and ranks nothing.
+# Membership is proven, not assumed: `scripts/tb-screen.sh` runs each candidate with
+# the ORACLE agent (the task's own reference solution, zero model calls) and only the
+# rows that PASS both the build and the tests stay here. Evidence, 2026-10-31:
+# `.agent/BENCHMARKS/tb_arm64_hard_screen.tsv` (13 PASS / 15, then 12 kept: the
+# control task is not scored).
 #
-# hello-world is the plumbing control (it must always pass: if it fails, the adapter
-# is broken, not the harness).
+# Dropped AFTER screening, with the reason read from the trial's own results.json:
+#   port-compressor    oracle fails `test_no_unsafe_rust` — upstream reference
+#                      solution violates its own test, so nothing can pass here.
+#   find-official-code oracle fails `test_result_jsonl_content` — the reference
+#                      solution needs live web search to resolve real repo URLs.
+#
+# Excluded before screening (read from the Dockerfiles): every task pinned to
+# `--platform=linux/amd64` (reverse-engineering, run-pdp11-code) and every task that
+# trains a model on a GPU (torch-*, cartpole-rl-training, hf-train-lora-adapter,
+# stable-parallel-kmeans, video-processing).
+#
+# hello-world is the plumbing control: if IT fails, the adapter is broken, not the
+# harness — so it stays first and is never scored as part of the difficulty set.
 hello-world
-count-dataset-tokens
-analyze-access-logs
-modernize-fortran-build
-cobol-modernization
-cancel-async-tasks
-circuit-fibsqrt
-chess-best-move
-build-pmars
-grid-pattern-transform
-pypi-server
-postgres-csv-clean
+configure-git-webserver
+password-recovery
+write-compressor
+polyglot-rust-c
+regex-chess
+sparql-university
+organization-json-generator
+parallelize-graph
+fix-code-vulnerability
+movie-helper
+rare-mineral-allocation
+fix-ocaml-gc
