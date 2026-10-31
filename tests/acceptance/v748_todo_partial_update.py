@@ -9,6 +9,7 @@ the words models write.
 
 Deterministic, no live model, no network, no server.
 """
+import json
 import os
 import sys
 import tempfile
@@ -98,6 +99,34 @@ n = _node("upd-bad")
 changed, errors = _apply("upd-bad", [{"id": n["id"], "status": "wat"}])
 check("E3 a junk status is refused with the accepted list",
       changed == 0 and bool(errors) and "doing" in errors[0], errors)
+
+# ---- F. a call with NO steps is a REFUSAL, not a success (2026-11-01) -------
+# Session b7329cccf94c: `{"steps": []}` answered ok=True/exit=0 "plan updated"
+# while nothing changed. The model retried six times (by id and by index), decided
+# the tool was broken and parked the whole session on a HUMAN-IN-THE-LOOP question.
+n = _node("upd-nosteps")
+changed, errors = _apply("upd-nosteps", [])
+check("F1 an empty step list is refused", changed == 0 and bool(errors), errors)
+check("F2 the refusal says what to send",
+      bool(errors) and "steps" in errors[0], errors)
+
+# The exact leak the DSML parser produced: the list as a JSON STRING.
+n = _node("upd-strsteps")
+changed, errors = _apply("upd-strsteps", json.dumps([{"id": n["id"], "status": "done",
+                                                      "evidence": "x"}]))
+check("F3 a JSON-string step list is decoded and applied",
+      changed == 1 and not errors, errors)
+
+# The nudge must never open with "Noted — plan updated" after a no-op.
+sess = _sess("upd-nudge")
+_g = taskgraph.ensure("upd-nudge", session_id="upd-nudge")
+taskgraph.add_node(_g, "an open step", status="todo")
+_noop = agent._nudge_open_todos(sess, errors=["no steps received"], changed=0)
+check("F4 the nudge tells the truth about a no-op",
+      _noop.startswith("Nothing was applied"), _noop[:80])
+_ok = agent._nudge_open_todos(sess, errors=[], changed=1)
+check("F5 an applied update still reads as a plan update",
+      _ok.startswith("Noted — plan updated"), _ok[:80])
 
 print("%d/%d checks" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

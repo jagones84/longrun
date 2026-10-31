@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # TARGETED battery — the tests of the fix in flight. OVERWRITE this file on every
 # fix: the list below replaces nothing else, it only narrows the gate. The full
 # suite (tests/battery.sh) runs when the operator asks or when the last full run
@@ -14,7 +14,7 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # ---- fix under test (overwrite this line) --------------------------------
-TESTS="v755_tb_adapter v354_ui_links_pins"
+TESTS="v369_dsml_tool_calls v748_todo_partial_update v755_tb_adapter v354_ui_links_pins"
 # --------------------------------------------------------------------------
 
 LONGRUN_BATTERY_TESTS="$TESTS" exec bash "$HERE/battery.sh"

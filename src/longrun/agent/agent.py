@@ -990,7 +990,7 @@ def _open_todo_brief(sess, limit=10):
     return len(opn), "\n".join(lines)
 
 
-def _nudge_open_todos(sess, errors=None):
+def _nudge_open_todos(sess, errors=None, changed=None):
     """JAG-271: the post-update nudge — NAMES the exact steps still open (by id).
 
     Replaces the old generic "mark the next step 'doing'" which named nothing.
@@ -999,19 +999,25 @@ def _nudge_open_todos(sess, errors=None):
     model saw "STILL OPEN" but not WHY it could not close — it then flailed and
     the turn ended with the list open. The reasons now ride the nudge, so the
     model knows to retry the SAME close (the delegation marker is one-shot).
+
+    2026-11-01: `changed` is the number of steps the call actually applied. A call
+    that applied NOTHING must never open with "Noted — plan updated": the model in
+    session b7329cccf94c read that as success six times and gave up on the tool.
     """
     on, brief = _open_todo_brief(sess)
+    _head = ("Nothing was applied — " if changed == 0
+             else "Noted — plan updated (by id). ")
     _refused = ""
     if errors:
         _refused = ("\n! These updates were REFUSED — fix and retry EXACTLY these "
                     "steps (a refusal is one-shot: a corrected retry is accepted):\n! "
                     + "\n! ".join(str(e) for e in errors[:6]))
     if on:
-        return ("Noted — plan updated (by id). STILL OPEN (%d):\n%s%s\n"
+        return ("%sSTILL OPEN (%d):\n%s%s\n"
                 "Now do the FIRST one: mark it 'doing' before you start it, then 'done' "
                 "with concrete evidence when it is really finished. Never redo a [x] "
                 "step; close an unwanted one as 'superseded' WITH a reason."
-                % (on, brief, _refused))
+                % (_head, on, brief, _refused))
     try:
         _has_current_plan = bool(taskgraph.plan_nodes(
             taskgraph.load(sess["id"]) or {}))
@@ -1346,6 +1352,13 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
         steps = act.get("steps") or act.get("todos") or []
         if isinstance(steps, dict):
             steps = [steps]
+        if isinstance(steps, str):
+            # A payload that reached us still JSON-encoded (a markup parameter with no
+            # `string="false"`): decode it instead of dropping it.
+            try:
+                steps = json.loads(steps)
+            except (TypeError, ValueError):
+                steps = []
         if not isinstance(steps, list):
             steps = []
         on_event("tool.call", session=sess["id"], tool="todo.update",
@@ -1354,6 +1367,16 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
         # JAG-269: reasons/misses are surfaced (not swallowed) so the model learns
         # WHY a close was rejected instead of silently seeing "0/N updated".
         errors = []
+        # 2026-11-01 (session b7329cccf94c): an EMPTY step list used to answer
+        # ok=True/exit=0 "plan updated" while nothing changed. The model retried six
+        # times (by id and by index), concluded the tool was broken and parked the
+        # whole session on a HUMAN-IN-THE-LOOP question. A no-op is a REFUSAL.
+        if not steps:
+            errors.append(
+                "no steps received — this call changed nothing. Send "
+                '{"action":"todo.update","steps":[{"id":"n123","status":'
+                '"doing|done|blocked","evidence":"what was produced/verified"}]} '
+                "(or use `index` for the position in the OPEN list).")
         for step in steps:
             if not isinstance(step, dict):
                 continue
@@ -2930,11 +2953,21 @@ def _dsml_action(text):
     if m:
         attrs = m.group(1)
         tail = text[m.end():]
-        # The invoke body ends at its OWN close tag; a stray `</… parameter>`
-        # inside (the malformed dialect) must not truncate it.
-        endm = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*(?:invoke|invocation)?\s*>",
-                         tail, re.I)
-        body = tail[:endm.start()] if endm else tail
+        # The body ends at the invoke's OWN close tag. The first `</…>` after the
+        # invoke is NOT necessarily that tag: this model closes a PARAMETER with the
+        # bare marker (`</|DSML|>`, no `parameter` word), which the old regex
+        # accepted as the invoke close — it truncated the body before the parameters
+        # were even seen, so `todo.update` reached the harness with `steps: []` and
+        # answered "plan updated" six times without applying anything (measured in
+        # session b7329cccf94c, 2026-11-01). Cut at the NEXT invoke first, then look
+        # for an explicit `</…invoke>` inside that block.
+        nxt = re.search(_DSML_TAG + r"(?:invoke|invocation)\b", tail, re.I)
+        block = tail[:nxt.start()] if nxt else tail
+        # Only a REAL `</…invoke>` ends the body. A bare `</|DSML|>` cannot, because
+        # that is also how this dialect closes a parameter.
+        endm = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*(?:invoke|invocation)\s*>",
+                         block, re.I)
+        body = block[:endm.start()] if endm else block
         nm = re.search(r'\bname\s*=\s*"([^"]*)"', attrs)
         name = nm.group(1).strip() if nm else ""
     else:
@@ -3761,7 +3794,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if act["action"] == "todo.update":
                 _n_ch, _errs = _apply_chat_todo_updates(
                     sess, act, on_event, node=_node_here, after=_after())
-                nudge = _nudge_open_todos(sess, errors=_errs)
+                nudge = _nudge_open_todos(sess, errors=_errs, changed=_n_ch)
             else:
                 _apply_chat_replan(sess, act, on_event, node=_node_here,
                                    after=_after())

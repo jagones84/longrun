@@ -297,6 +297,39 @@ check("F11 trailing junk after a string=\"false\" value is ignored",
                                   "args": {"command": "ls"}},
       str(a._extract_action(JUNK)))
 
+# ------------------------------------- the bare-marker PARAMETER close (2026-11-01)
+# Session b7329cccf94c, verbatim shape: the invoke's parameter is closed with the
+# bare marker (`</|DSML|>`, no `parameter` word). The old body regex took THAT as
+# the invoke close, truncated the body before the parameters, and returned
+# {"action":"tool","tool":"todo.update","args":{}} — six "plan updated" answers
+# that applied nothing and parked the session on a HUMAN-IN-THE-LOOP question.
+MALFORMED_CLOSE = (OPEN + " calls>\n"
+                   + OPEN + ' invoke name="todo.update">\n'
+                   + OPEN + ' parameter name="steps">[{"id": "n163", "status": "done",'
+                     ' "evidence": "6 criteria in trash/sota-criteria.json"}]' + CLOSE + ">\n"
+                   + CLOSE + ">\n" + CLOSE + ">")
+check("G1 a parameter closed with the bare marker still carries its value",
+      a._extract_action(MALFORMED_CLOSE) == {
+          "action": "todo.update",
+          "steps": [{"id": "n163", "status": "done",
+                     "evidence": "6 criteria in trash/sota-criteria.json"}]},
+      str(a._extract_action(MALFORMED_CLOSE)))
+check("G2 the decoded steps are a LIST, never a JSON string",
+      isinstance((a._extract_action(MALFORMED_CLOSE) or {}).get("steps"), list),
+      str(type((a._extract_action(MALFORMED_CLOSE) or {}).get("steps"))))
+# Two invokes in one block: the first must not swallow the second's parameters.
+TWO_INVOKES = (OPEN + " calls>\n"
+               + OPEN + ' invoke name="todo.update">\n'
+               + OPEN + ' parameter name="steps">[{"id": "n1", "status": "doing"}]' + CLOSE + ">\n"
+               + CLOSE + ">\n"
+               + OPEN + ' invoke name="fs.read">\n'
+               + OPEN + ' parameter name="path">/tmp/a</' + D + " parameter>\n"
+               + CLOSE + " invoke>\n" + CLOSE + " calls>")
+check("G3 the first invoke does not absorb the next one's parameters",
+      a._extract_action(TWO_INVOKES) == {"action": "todo.update",
+                                         "steps": [{"id": "n1", "status": "doing"}]},
+      str(a._extract_action(TWO_INVOKES)))
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))
