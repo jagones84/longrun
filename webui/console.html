@@ -7,77 +7,76 @@
 <title>LONGRUN // ORBITAL COMMAND DECK</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='24' cy='24' r='20' fill='none' stroke='%234fd6ff' stroke-width='2'/%3E%3Cpath d='M24 5 L27.5 20.5 L43 24 L27.5 27.5 L24 43 L20.5 27.5 L5 24 L20.5 20.5 Z' fill='%23a7ecff'/%3E%3C/svg%3E">
 <style>
+  /* 2026-10-31 WEBUI refactor — legacy deck re-skinned in the same
+     "Graphite Instrument" language as Sessions and Control: neutral graphite,
+     one copper signal, hairline depth, no scanlines / starfield / glow. */
   :root{
-    --bg:#04070e; --bg2:#070d18; --panel:rgba(11,20,36,.66); --panel-solid:#0b1424;
-    --ink:#dcebff; --muted:#7f9ac0; --faint:#3f5375;
-    --line:rgba(88,160,220,.16); --line2:rgba(88,160,220,.34);
-    --cyan:#4fd6ff; --ice:#a7ecff; --amber:#ffb454; --green:#3ff0a6; --red:#ff5d6c;
-    --glow:0 0 14px rgba(79,214,255,.30);
-    --mono:ui-monospace,"SFMono-Regular","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
-    --sans:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",sans-serif;
-    --gap:14px; --r:4px;
+    --bg:#0b0d11; --bg2:#101318; --panel:#12151b; --panel-solid:#12151b;
+    --ink:#e7e9ee; --muted:#9aa1ae; --faint:#6d7480;
+    --line:#23272f; --line2:#2d323b;
+    --cyan:#cf8a4a; --ice:#e7e9ee; --amber:#d9a441; --green:#5fbf8a; --red:#dd6f63;
+    --mono:ui-monospace,"JetBrains Mono","Cascadia Code",SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:Inter,ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --gap:14px; --r:12px; --r-sm:8px;
+    --shadow1:0 1px 2px rgba(0,0,0,.30),0 10px 26px rgba(0,0,0,.26);
+    color-scheme:dark;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
-    margin:0; background:
-      radial-gradient(1200px 700px at 78% -10%, rgba(30,70,120,.30), transparent 60%),
-      radial-gradient(900px 600px at 8% 110%, rgba(20,50,90,.28), transparent 60%),
-      linear-gradient(160deg,var(--bg2),var(--bg) 60%);
-    color:var(--ink); font-family:var(--sans); overflow-x:hidden;
-    -webkit-font-smoothing:antialiased;
+    margin:0; background:linear-gradient(180deg,#0e1116 0%,var(--bg) 240px);
+    color:var(--ink); font-family:var(--sans); font-size:13px; overflow-x:hidden;
+    -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums;
   }
-  #stars{position:fixed; inset:0; z-index:0; display:block}
-  .scan{position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.5;
-    background:repeating-linear-gradient(0deg, rgba(255,255,255,.020) 0 1px, transparent 1px 3px);
-    mix-blend-mode:overlay}
-  .vignette{position:fixed; inset:0; z-index:1; pointer-events:none;
-    background:radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.55))}
+  ::selection{background:color-mix(in srgb,var(--cyan) 40%,transparent);color:var(--ink)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3b414c;border-radius:999px;border:3px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:var(--cyan);background-clip:padding-box}
+  /* The starfield, scanline overlay and vignette are retired: the deck is a
+     surface, not a video-game HUD. Elements stay in the DOM (harmless). */
+  #stars,.scan,.vignette{display:none !important}
 
   .wrap{position:relative; z-index:2; max-width:1600px; margin:0 auto; padding:16px clamp(12px,2.4vw,28px) 28px}
 
   /* ---------- header ---------- */
   .hud{display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-    padding:10px 14px; margin-bottom:var(--gap);
-    background:linear-gradient(180deg,rgba(14,26,44,.78),rgba(9,16,30,.55));
-    border:1px solid var(--line); border-radius:var(--r); backdrop-filter:blur(6px);
-    box-shadow:inset 0 1px 0 rgba(140,200,255,.06)}
+    padding:12px 16px; margin-bottom:var(--gap);
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--r)}
   .brand{display:flex; align-items:center; gap:12px; min-width:0}
-  .sigil{width:34px;height:34px;flex:none;filter:drop-shadow(0 0 6px rgba(79,214,255,.6))}
-  .brand h1{margin:0; font-family:var(--mono); font-size:16px; letter-spacing:.24em;
-    text-transform:uppercase; color:var(--ice); text-shadow:var(--glow); white-space:nowrap}
-  .brand .sub{display:block; font-size:10px; letter-spacing:.42em; color:var(--muted); margin-top:2px}
+  .sigil{width:30px;height:30px;flex:none}
+  .brand h1{margin:0; font-family:var(--sans); font-size:16px; letter-spacing:-.01em;
+    text-transform:none; color:var(--ink); font-weight:700; white-space:nowrap}
+  .brand .sub{display:block; font-size:11px; letter-spacing:.02em; color:var(--muted); margin-top:1px}
   .spacer{flex:1 1 auto}
   .stat{display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11px;
-    letter-spacing:.1em; color:var(--muted); white-space:nowrap}
-  .led{width:9px;height:9px;border-radius:50%; background:var(--faint); box-shadow:0 0 0 0 rgba(0,0,0,0)}
-  .led.on{background:var(--green); box-shadow:0 0 10px var(--green); animation:pulse 2.4s infinite}
-  .led.warn{background:var(--amber); box-shadow:0 0 10px var(--amber)}
-  .led.off{background:var(--red); box-shadow:0 0 10px var(--red)}
+    letter-spacing:.02em; color:var(--muted); white-space:nowrap}
+  .led{width:8px;height:8px;border-radius:50%; background:var(--faint)}
+  .led.on{background:var(--green); box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 16%,transparent); animation:pulse 2.4s infinite}
+  .led.warn{background:var(--amber); box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 16%,transparent)}
+  .led.off{background:var(--red)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-  .clock{font-family:var(--mono); font-size:12px; color:var(--ice); letter-spacing:.12em}
+  .clock{font-family:var(--mono); font-size:12px; color:var(--ink); letter-spacing:.02em}
 
-  .btn{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
-    color:var(--ice); background:rgba(20,40,66,.6); border:1px solid var(--line2);
-    border-radius:3px; padding:7px 12px; cursor:pointer; transition:.15s}
-  .btn:hover{background:rgba(40,80,130,.6); box-shadow:var(--glow)}
-  .btn:focus-visible,.inp:focus-visible,a:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+  .btn{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:0; text-transform:none;
+    color:var(--ink); background:var(--panel2); border:1px solid var(--line2);
+    border-radius:var(--r-sm); padding:7px 12px; cursor:pointer;
+    transition:background .12s,border-color .12s,color .12s}
+  .btn:hover{background:color-mix(in srgb,var(--panel2) 80%,#ffffff); border-color:var(--line2)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn:focus-visible,.inp:focus-visible,a:focus-visible{outline:2px solid color-mix(in srgb,var(--cyan) 70%,transparent); outline-offset:2px}
   .inp{font-family:var(--mono); font-size:12px; color:var(--ink);
-    background:rgba(6,12,22,.8); border:1px solid var(--line2); border-radius:3px; padding:7px 10px}
+    background:var(--bg2); border:1px solid var(--line2); border-radius:var(--r-sm); padding:7px 10px; outline:none}
+  .inp:focus{border-color:var(--cyan); box-shadow:0 0 0 3px color-mix(in srgb,var(--cyan) 16%,transparent)}
 
   /* ---------- deck grid ---------- */
   .deck{display:grid; gap:var(--gap); grid-template-columns:repeat(12,1fr)}
   .panel{position:relative; background:var(--panel); border:1px solid var(--line);
-    border-radius:var(--r); padding:12px 14px 14px; backdrop-filter:blur(7px);
-    box-shadow:inset 0 1px 0 rgba(140,200,255,.05)}
-  .panel::before,.panel::after{content:""; position:absolute; width:12px; height:12px; border:1px solid var(--line2); pointer-events:none}
-  .panel::before{top:-1px;left:-1px; border-right:0;border-bottom:0}
-  .panel::after{bottom:-1px;right:-1px; border-left:0;border-top:0}
-  .p-head{display:flex; align-items:center; gap:8px; margin:0 0 10px; font-family:var(--mono);
-    font-size:10.5px; letter-spacing:.28em; text-transform:uppercase; color:var(--muted)}
-  .p-head::after{content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--line2),transparent)}
-  .p-head .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:var(--glow)}
-  .p-head .tag{font-size:10px; color:var(--faint); letter-spacing:.14em}
+    border-radius:var(--r); padding:12px 14px 14px}
+  .p-head{display:flex; align-items:center; gap:8px; margin:0 0 10px; font-family:var(--sans);
+    font-size:12px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--ink)}
+  .p-head::after{content:""; flex:1; height:1px; background:var(--line)}
+  .p-head .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan)}
+  .p-head .tag{font-family:var(--mono); font-size:10px; color:var(--faint); letter-spacing:.02em; text-transform:none}
 
   .vitals{grid-column:span 7} .core{grid-column:span 5}
   .graph{grid-column:span 5} .feed{grid-column:span 4} .sessions{grid-column:span 3}
@@ -90,12 +89,12 @@
   .gauges{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px}
   .gauge{display:flex; flex-direction:column; align-items:center; gap:4px}
   .gauge svg{width:100%; max-width:132px; height:auto}
-  .gauge .gv{font-family:var(--mono); font-size:17px; color:var(--ice); letter-spacing:.04em; margin-top:-30px}
-  .gauge .gl{font-family:var(--mono); font-size:9.5px; letter-spacing:.22em; color:var(--muted); text-transform:uppercase}
+  .gauge .gv{font-family:var(--mono); font-size:17px; color:var(--ink); letter-spacing:0; margin-top:-30px}
+  .gauge .gl{font-family:var(--sans); font-size:10px; letter-spacing:.06em; color:var(--muted); text-transform:uppercase}
   .chiprow{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px}
-  .chip{font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; color:var(--muted);
-    border:1px solid var(--line); border-radius:999px; padding:4px 10px; background:rgba(8,16,30,.5)}
-  .chip b{color:var(--ice); font-weight:600}
+  .chip{font-family:var(--mono); font-size:10.5px; letter-spacing:.02em; color:var(--muted);
+    border:1px solid var(--line); border-radius:6px; padding:4px 9px; background:var(--bg2)}
+  .chip b{color:var(--ink); font-weight:600}
 
   /* ---------- reactor core ---------- */
   .core-body{display:grid; place-items:center; min-height:230px}
@@ -109,90 +108,90 @@
   .graph-wrap{position:relative; height:240px}
   .graph-svg{width:100%; height:100%; display:block}
   .graph-empty{position:absolute; inset:0; display:grid; place-items:center; color:var(--faint);
-    font-family:var(--mono); font-size:11px; letter-spacing:.28em; text-transform:uppercase}
+    font-family:var(--sans); font-size:11px; letter-spacing:.02em; text-transform:none}
   .graph-empty[hidden]{display:none}
   .gnode{cursor:pointer}
   .gnode circle{transition:.2s}
   .gnode text{font-family:var(--mono); font-size:3.2px; fill:var(--muted); pointer-events:none}
   .glink{stroke:var(--line2); stroke-width:.4; fill:none}
-  .gempty{fill:var(--faint); font-family:var(--mono)}
+  .gempty{fill:var(--faint); font-family:var(--sans)}
   .graph-detail{margin-top:8px; font-family:var(--mono); font-size:11px; color:var(--muted); min-height:16px}
 
   /* ---------- feed ---------- */
-  .feed-body{font-family:var(--mono); font-size:11px; line-height:1.55; height:238px; overflow:auto;
-    background:rgba(4,9,16,.5); border:1px solid var(--line); border-radius:3px; padding:8px 10px}
-  .ev{display:flex; gap:8px; align-items:baseline; padding:1px 0; animation:evIn .25s ease}
-  @keyframes evIn{from{opacity:0; transform:translateX(-4px)}to{opacity:1;transform:none}}
+  .feed-body{font-family:var(--mono); font-size:11px; line-height:1.6; height:238px; overflow:auto;
+    background:var(--bg2); border:1px solid var(--line); border-radius:var(--r-sm); padding:8px 10px}
+  .ev{display:flex; gap:8px; align-items:baseline; padding:1px 0; animation:evIn .2s ease}
+  @keyframes evIn{from{opacity:0; transform:translateY(2px)}to{opacity:1;transform:none}}
   .ev .t{color:var(--faint); flex:none}
-  .ev .k{flex:none; padding:0 6px; border-radius:2px; font-size:9.5px; letter-spacing:.06em;
-    border:1px solid var(--line2); color:var(--ice); background:rgba(20,40,66,.4)}
+  .ev .k{flex:none; padding:0 6px; border-radius:4px; font-size:9.5px; letter-spacing:.03em;
+    border:1px solid var(--line2); color:var(--ink); background:var(--panel2)}
   .ev .m{color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .ev.k-tool .k{color:var(--cyan); border-color:rgba(79,214,255,.5)}
-  .ev.k-err .k,.ev.k-error .k{color:var(--red); border-color:rgba(255,93,108,.5)}
-  .ev.k-done .k,.ev.k-task .k{color:var(--green); border-color:rgba(63,240,166,.5)}
-  .ev.k-plan .k,.ev.k-run .k{color:var(--amber); border-color:rgba(255,180,84,.5)}
+  .ev.k-tool .k{color:var(--cyan); border-color:color-mix(in srgb,var(--cyan) 50%,transparent)}
+  .ev.k-err .k,.ev.k-error .k{color:var(--red); border-color:color-mix(in srgb,var(--red) 50%,transparent)}
+  .ev.k-done .k,.ev.k-task .k{color:var(--green); border-color:color-mix(in srgb,var(--green) 50%,transparent)}
+  .ev.k-plan .k,.ev.k-run .k{color:var(--amber); border-color:color-mix(in srgb,var(--amber) 50%,transparent)}
 
   /* ---------- sessions ---------- */
-  .sess-list{display:flex; flex-direction:column; gap:6px; max-height:238px; overflow:auto}
-  .sess{display:flex; align-items:center; gap:8px; padding:7px 9px; border:1px solid var(--line);
-    border-radius:3px; background:rgba(8,16,30,.4); cursor:pointer; font-family:var(--mono);
-    font-size:11px; color:var(--muted); transition:.15s}
-  .sess:hover{border-color:var(--line2); background:rgba(20,40,66,.5)}
-  .sess[aria-selected="true"]{border-color:var(--cyan); box-shadow:inset 0 0 0 1px rgba(79,214,255,.3)}
-  .sess .id{color:var(--ice)} .sess .meta{margin-left:auto; color:var(--faint); font-size:10px}
+  .sess-list{display:flex; flex-direction:column; gap:4px; max-height:238px; overflow:auto}
+  .sess{display:flex; align-items:center; gap:8px; padding:8px 9px; border:1px solid var(--line);
+    border-radius:var(--r-sm); background:transparent; cursor:pointer; font-family:var(--mono);
+    font-size:11px; color:var(--muted); transition:background .12s,border-color .12s}
+  .sess:hover{border-color:var(--line2); background:var(--hover,rgba(255,255,255,.045))}
+  .sess[aria-selected="true"]{border-color:var(--cyan); background:color-mix(in srgb,var(--cyan) 10%,transparent)}
+  .sess .id{color:var(--ink)} .sess .meta{margin-left:auto; color:var(--faint); font-size:10px}
 
   /* ---------- models ---------- */
   .models-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px}
-  .model{border:1px solid var(--line); border-radius:3px; padding:9px 10px; background:rgba(8,16,30,.4);
+  .model{border:1px solid var(--line); border-radius:var(--r-sm); padding:9px 10px; background:var(--bg2);
     font-family:var(--mono); font-size:11px}
-  .model .mn{display:flex; align-items:center; gap:8px; color:var(--ice); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .model .bar{height:4px; background:rgba(120,180,240,.14); border-radius:2px; margin-top:8px; overflow:hidden}
-  .model .bar i{display:block; height:100%; background:linear-gradient(90deg,var(--cyan),var(--amber))}
+  .model .mn{display:flex; align-items:center; gap:8px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .model .bar{height:4px; background:var(--line); border-radius:2px; margin-top:8px; overflow:hidden}
+  .model .bar i{display:block; height:100%; background:var(--cyan)}
   .model .mm{display:flex; justify-content:space-between; margin-top:6px; color:var(--faint); font-size:10px}
 
   /* ---------- command console ---------- */
   .cmd{grid-column:span 12}
   .cmd-bar{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
   .cmd-bar .inp{flex:1 1 340px; min-width:200px}
-  .cmd-bar .btn.primary{border-color:rgba(79,214,255,.6); box-shadow:var(--glow)}
-  .cmd-bar .btn.danger{border-color:rgba(255,93,108,.5); color:#ffd0d5}
-  .cmd-bar .hint{font-family:var(--mono); font-size:10px; letter-spacing:.12em; color:var(--faint); text-transform:uppercase}
+  .cmd-bar .btn.primary{background:var(--cyan); border-color:var(--cyan); color:#1b1206}
+  .cmd-bar .btn.danger{border-color:color-mix(in srgb,var(--red) 50%,transparent); color:var(--red)}
+  .cmd-bar .hint{font-family:var(--sans); font-size:10.5px; letter-spacing:.02em; color:var(--faint); text-transform:none}
   .cmd-out{margin-top:10px; font-family:var(--mono); font-size:12px; line-height:1.6;
-    height:220px; overflow:auto; background:rgba(4,9,16,.55); border:1px solid var(--line);
-    border-radius:3px; padding:10px 12px; white-space:pre-wrap; word-break:break-word}
-  .cmd-out .you{color:var(--ice)}
+    height:220px; overflow:auto; background:var(--bg2); border:1px solid var(--line);
+    border-radius:var(--r-sm); padding:10px 12px; white-space:pre-wrap; word-break:break-word}
+  .cmd-out .you{color:var(--ink)}
   .cmd-out .you::before{content:"\00bb "; color:var(--cyan)}
   .cmd-out .ai{color:var(--ink)}
   .cmd-out .think{color:var(--faint); font-style:italic}
-  .cmd-out .sys{color:var(--muted); font-size:11px; letter-spacing:.06em}
+  .cmd-out .sys{color:var(--muted); font-size:11px; letter-spacing:0}
   .cmd-out .err{color:var(--red)}
-  .cmd-out .tc{display:inline-block; margin:2px 6px 2px 0; padding:1px 8px; border-radius:2px;
-    font-size:10.5px; letter-spacing:.05em; border:1px solid rgba(79,214,255,.5); color:var(--cyan);
-    background:rgba(20,40,66,.4)}
-  .cmd-out .tc.ok{border-color:rgba(63,240,166,.5); color:var(--green)}
-  .cmd-out .tc.bad{border-color:rgba(255,93,108,.5); color:var(--red)}
+  .cmd-out .tc{display:inline-block; margin:2px 6px 2px 0; padding:1px 8px; border-radius:4px;
+    font-size:10.5px; letter-spacing:.02em; border:1px solid color-mix(in srgb,var(--cyan) 50%,transparent); color:var(--cyan);
+    background:var(--panel2)}
+  .cmd-out .tc.ok{border-color:color-mix(in srgb,var(--green) 50%,transparent); color:var(--green)}
+  .cmd-out .tc.bad{border-color:color-mix(in srgb,var(--red) 50%,transparent); color:var(--red)}
   .cmd-cursor{display:inline-block; width:7px; height:12px; background:var(--cyan);
     vertical-align:-1px; animation:pulse 1s steps(1) infinite}
   @media (prefers-reduced-motion: reduce){ .cmd-cursor{animation:none} }
 
-  footer{margin-top:var(--gap); font-family:var(--mono); font-size:10px; letter-spacing:.16em;
-    color:var(--faint); display:flex; gap:14px; flex-wrap:wrap; text-transform:uppercase}
+  footer{margin-top:var(--gap); font-family:var(--sans); font-size:10.5px; letter-spacing:.02em;
+    color:var(--faint); display:flex; gap:14px; flex-wrap:wrap; text-transform:none}
 
   .linkbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
   .offline{position:fixed; top:0; left:0; right:0; z-index:5; text-align:center;
-    font-family:var(--mono); font-size:10px; letter-spacing:.32em; text-transform:uppercase;
-    color:#0a0f18; background:linear-gradient(90deg,var(--amber),#ffd08a,var(--amber)); padding:3px}
+    font-family:var(--sans); font-size:11px; letter-spacing:.02em; text-transform:none;
+    color:#1b1206; background:var(--amber); padding:5px}
   .sr{position:absolute; width:1px;height:1px; overflow:hidden; clip:rect(0 0 0 0)}
   @media (prefers-reduced-motion: reduce){
-    .spin,.led.on{animation:none !important} #stars{display:none}
+    .spin,.led.on{animation:none !important}
   }
   /* JAG-425 (#7): the standalone deck is LEGACY — say so, and point at the
      maintained in-app Control view. */
   .legacy-note{position:relative; z-index:3; margin:10px auto 0; max-width:1600px;
-    padding:8px 14px; border:1px solid var(--line2); border-left:3px solid var(--amber);
-    border-radius:var(--r); background:rgba(255,180,84,.08); color:var(--muted);
-    font-family:var(--mono); font-size:11px; letter-spacing:.04em}
-  .legacy-note a{color:var(--ice)}
+    padding:9px 14px; border:1px solid var(--line2); border-left:2px solid var(--amber);
+    border-radius:var(--r-sm); background:color-mix(in srgb,var(--amber) 8%,transparent); color:var(--muted);
+    font-family:var(--sans); font-size:11.5px; letter-spacing:0}
+  .legacy-note a{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -211,9 +210,9 @@
   <header class="hud">
     <div class="brand">
       <svg class="sigil" viewBox="0 0 48 48" role="img" aria-label="Longrun sigil">
-        <circle cx="24" cy="24" r="20" fill="none" stroke="#4fd6ff" stroke-width="1.2" opacity=".5"/>
-        <circle cx="24" cy="24" r="13" fill="none" stroke="#4fd6ff" stroke-width="1" opacity=".8" stroke-dasharray="3 4"/>
-        <path d="M24 6 L27 21 L42 24 L27 27 L24 42 L21 27 L6 24 L21 21 Z" fill="#a7ecff" opacity=".92"/>
+        <circle cx="24" cy="24" r="20" fill="none" stroke="#cf8a4a" stroke-width="1.2" opacity=".55"/>
+        <circle cx="24" cy="24" r="13" fill="none" stroke="#cf8a4a" stroke-width="1" opacity=".8" stroke-dasharray="3 4"/>
+        <path d="M24 6 L27 21 L42 24 L27 27 L24 42 L21 27 L6 24 L21 21 Z" fill="#e7e9ee" opacity=".92"/>
       </svg>
       <div>
         <h1>Longrun</h1>
@@ -245,14 +244,14 @@
       <h2 class="p-head" id="h-core"><span class="dot"></span>Reactor Core</h2>
       <div class="core-body">
         <svg class="reactor" viewBox="0 0 200 200" role="img" aria-label="Reactor load indicator">
-          <circle cx="100" cy="100" r="88" fill="none" stroke="rgba(88,160,220,.18)" stroke-width="1"/>
-          <g class="spin"><circle cx="100" cy="100" r="74" fill="none" stroke="#4fd6ff" stroke-width="1" stroke-dasharray="2 9" opacity=".7"/></g>
-          <g class="spin rev"><circle cx="100" cy="100" r="60" fill="none" stroke="#ffb454" stroke-width="1" stroke-dasharray="14 6" opacity=".55"/></g>
-          <circle cx="100" cy="100" r="46" fill="none" stroke="rgba(88,160,220,.28)" stroke-width="1"/>
+          <circle cx="100" cy="100" r="88" fill="none" stroke="rgba(207,138,74,.18)" stroke-width="1"/>
+          <g class="spin"><circle cx="100" cy="100" r="74" fill="none" stroke="#cf8a4a" stroke-width="1" stroke-dasharray="2 9" opacity=".7"/></g>
+          <g class="spin rev"><circle cx="100" cy="100" r="60" fill="none" stroke="#d9a441" stroke-width="1" stroke-dasharray="14 6" opacity=".55"/></g>
+          <circle cx="100" cy="100" r="46" fill="none" stroke="rgba(207,138,74,.26)" stroke-width="1"/>
           <circle id="coreGlow" cx="100" cy="100" r="40" fill="url(#cg)" opacity=".9"/>
-          <circle id="coreCore" cx="100" cy="100" r="18" fill="#a7ecff"/>
+          <circle id="coreCore" cx="100" cy="100" r="18" fill="#e7e9ee"/>
           <defs>
-            <radialGradient id="cg"><stop offset="0%" stop-color="#4fd6ff" stop-opacity=".9"/><stop offset="70%" stop-color="#2b6f9e" stop-opacity=".25"/><stop offset="100%" stop-color="#000" stop-opacity="0"/></radialGradient>
+            <radialGradient id="cg"><stop offset="0%" stop-color="#cf8a4a" stop-opacity=".85"/><stop offset="70%" stop-color="#7a5230" stop-opacity=".22"/><stop offset="100%" stop-color="#000" stop-opacity="0"/></radialGradient>
           </defs>
         </svg>
       </div>
@@ -367,7 +366,7 @@
     const R = 42, C = 2*Math.PI*R, off = C*(1-pct/100);
     return '<div class="gauge">'
       + '<svg viewBox="0 0 100 100">'
-      + '<circle cx="50" cy="52" r="'+R+'" fill="none" stroke="rgba(88,160,220,.16)" stroke-width="7"/>'
+      + '<circle cx="50" cy="52" r="'+R+'" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="7"/>'
       + '<circle cx="50" cy="52" r="'+R+'" fill="none" stroke="'+color+'" stroke-width="7" stroke-linecap="round"'
       + ' stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 50 52)"'
       + ' style="filter:drop-shadow(0 0 5px '+color+')"/>'
@@ -384,10 +383,10 @@
     const tools = st.tools || {}; const toolPct = tools.registered ? (tools.enabled/tools.registered*100) : 0;
     const runs = st.runs || {}; const runPct = Math.min(100, (runs.active||0)/8*100);
     $("gauges").innerHTML =
-      gaugeSVG(memPct, memPct>85?"#ff5d6c":"#4fd6ff", "g-mem")
-      + gaugeSVG(ctxPct, ctxPct>75?"#ffb454":"#3ff0a6", "g-ctx")
-      + gaugeSVG(toolPct, "#4fd6ff", "g-tool")
-      + gaugeSVG(runPct, "#ffb454", "g-run")
+      gaugeSVG(memPct, memPct>85?"#dd6f63":"#74a9c7", "g-mem")
+      + gaugeSVG(ctxPct, ctxPct>75?"#d9a441":"#5fbf8a", "g-ctx")
+      + gaugeSVG(toolPct, "#cf8a4a", "g-tool")
+      + gaugeSVG(runPct, "#d9a441", "g-run")
       .replace(/<div class="gv"/g, '<div class="gv" data-gv')
     ;
     // labels under each gauge
@@ -426,7 +425,7 @@
     const core = $("coreCore"), glow = $("coreGlow");
     const s = 0.75 + Math.min(1, load/100)*0.7;
     core.setAttribute("r", (16*s).toFixed(1));
-    core.setAttribute("fill", load>85?"#ff5d6c":(load>60?"#ffb454":"#a7ecff"));
+    core.setAttribute("fill", load>85?"#dd6f63":(load>60?"#d9a441":"#e7e9ee"));
     glow.setAttribute("opacity", (0.35+Math.min(1,load/100)*0.6).toFixed(2));
   }
 
@@ -483,7 +482,7 @@
     });
     return pos;
   }
-  const STATUS_COLOR = {done:"#3ff0a6", doing:"#4fd6ff", blocked:"#ff5d6c", cancelled:"#46597a", todo:"#7f9ac0"};
+  const STATUS_COLOR = {done:"#5fbf8a", doing:"#74a9c7", blocked:"#dd6f63", cancelled:"#6d7480", todo:"#9aa1ae"};
   function renderGraph(){
     const svg = $("graphSvg"); svg.setAttribute("viewBox","0 0 200 100");
     const empty = $("graphEmpty");

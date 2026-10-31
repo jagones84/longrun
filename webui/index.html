@@ -16,14 +16,22 @@
 <link rel="stylesheet" href="/assets/filtersort.css">
 <style>
   :root {
-    --bg: #070810; --panel: rgba(18,22,38,.74); --panel2: rgba(13,17,32,.82);
-    --line: rgba(130,150,255,.13); --txt: #e2e6ff; --dim: #8189b0;
-    --acc: #7c8cff; --acc2: #b56cff; --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
-    --radius: 12px;
+    /* 2026-10-31 WEBUI refactor — "Graphite Instrument".
+       Neutral graphite surfaces, hairlines, ONE signal colour (copper), no glows.
+       Type: sans for chrome, mono only for ids / code / tabular data. */
+    --sans: Inter, ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace;
+    --bg: #0b0d11; --bg2: #101318; --bg-2: #101318; --bg-3: #14181f;
+    --panel: #12151b; --panel2: #171b23;
+    --line: #23272f; --line-2: #2d323b;
+    --txt: #e7e9ee; --ink: #d7dae0; --dim: #9aa1ae; --muted: #858d9b;
+    --acc: #cf8a4a; --accent: #cf8a4a; --acc2: #93b3c9;
+    --you: #a3bdd7; --info: #74a9c7;
+    --ok: #5fbf8a; --warn: #d9a441; --err: #dd6f63;
+    --radius: 12px; --r-sm: 8px;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.30), 0 10px 26px rgba(0,0,0,.26);
+    --shadow-2: 0 18px 48px rgba(0,0,0,.46);
     --zoom: 1;   /* JAG-359: live UI zoom, so the shell can fill the real viewport */
-    /* v0.8 redesign tokens */
-    --accent: #8b7bf0; --you: #8fb6ff; --info: #5ac8fa;
-    --bg-2: #121722; --bg-3: #161b25; --line-2: #1e2431; --ink: #c3cad6; --muted: #7b8494;
     /* JAG-127d: native controls (select popups, etc.) follow the dark theme —
      * without this the <select> dropdown rendered with a WHITE background. */
     color-scheme: dark;
@@ -32,54 +40,58 @@
   #qmode { color-scheme: inherit; }
   #qmode option { background: var(--menubg); color: var(--txt); }
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
-  /* JAG-127b: scrollbars themed to the blue/purple GUI (the native blue-grey
-   * default clashed). Thin, accent-tinted, transparent track. */
-  * { scrollbar-width: thin; scrollbar-color: rgba(139,123,240,.45) transparent; }
+  /* 2026-10-31: browser surfaces belong to the design system — thin graphite
+     scrollbars, copper selection/caret, one focus ring, tabular numerals. */
+  * { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 999px;
-    border: 2px solid transparent; background-clip: padding-box; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--scroll); background-clip: padding-box; }
+    border: 3px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--acc); background-clip: padding-box; }
   ::-webkit-scrollbar-corner { background: transparent; }
+  ::selection { background: color-mix(in srgb, var(--acc) 40%, transparent); color: var(--txt); }
+  html { caret-color: var(--acc); }
+  :focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 70%, transparent); outline-offset: 2px; }
   html, body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; height: 100%; }
   body {
-    background: radial-gradient(1200px 800px at 80% -10%, #141a3a 0%, var(--bg) 55%),
-                radial-gradient(900px 700px at -10% 110%, #241638 0%, transparent 60%);
-    color: var(--txt); font: 14px/1.55 ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 88%, #ffffff) 0%, var(--bg) 240px);
+    color: var(--txt); font: 13px/1.5 var(--sans);
     /* JAG-359: `dvh` is an absolute unit, so the CSS `zoom` on <html> scaled it and
        left a gap at the bottom (and overflow when zoomed in). Divide by the live
        zoom so the shell always fills the REAL viewport, whatever the zoom. */
     height: calc(100dvh / var(--zoom, 1)); display: flex; flex-direction: column; overflow: hidden;
+    font-variant-numeric: tabular-nums;
   }
   header {
-    display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex-wrap: wrap;
-    border-bottom: 1px solid var(--line); background: rgba(8,10,20,.6); backdrop-filter: blur(10px);
+    display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 52px; flex-wrap: nowrap;
+    border-bottom: 1px solid var(--line); background: var(--panel);
   }
-  header .logo { font-weight: 700; letter-spacing: .06em; font-size: 16px;
-    background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  /* JAG-424g: the wordmark is gradient-clipped text (color:transparent), so the mark's
-     `stroke="currentColor"` came out INVISIBLE. Give the svg its own visible colour. */
-  header .logo svg { color: var(--acc); }
+  header .logo { font-weight: 700; letter-spacing: .02em; font-size: 14.5px; color: var(--txt);
+    display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  /* JAG-424g: the wordmark used to be gradient-clipped text (color:transparent), so the
+     mark's `stroke="currentColor"` came out INVISIBLE. Solid ink now; the SVG inherits it. */
+  header .logo svg { color: var(--acc); flex: 0 0 auto; }
   header .sub { color: var(--dim); font-size: 11px; }
   /* JAG-357: the active session's name, shown in the topbar when the left panel is
      collapsed — you hide the PANEL, never the fact of which session you are in. */
   .sessbadge { display: inline-flex; align-items: center; gap: 6px; max-width: 42vw;
-    padding: 3px 11px; border-radius: 999px; border: 1px solid var(--acc);
-    background: var(--chipbg); color: var(--txt); font-size: 12px; font-weight: 600;
+    padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line-2);
+    background: var(--panel2); color: var(--txt); font-size: 12px; font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sessbadge[hidden] { display: none; }
-  .pill { font-size: 10px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); white-space: nowrap; }
+  .pill { font-size: 10.5px; padding: 4px 10px; border: 1px solid var(--line-2); border-radius: 999px;
+    color: var(--dim); white-space: nowrap; background: var(--panel2); }
   .pill.ok { color: var(--ok); border-color: color-mix(in srgb, currentColor 40%, transparent); }
-  .pill.warn { color: var(--warn); border-color: rgba(251,191,36,.4); }
+  .pill.warn { color: var(--warn); border-color: color-mix(in srgb, currentColor 40%, transparent); }
   /* JAG-359: the topbar indicators are compact GRAPHICS, not debug text — a tiny
      ring for the context load, a status DOT for the sandbox. The verbose string
      lives in the tooltip. The context indicator turns RED from 70% up. */
-  .pill.meter { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px;
+  .pill.meter { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 5px;
     font-size: 11px; }
   .pill.meter b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .mring { width: 16px; height: 16px; flex: 0 0 auto; transform: rotate(-90deg); }
-  .mring .mtrk { fill: none; stroke: var(--line); stroke-width: 4.4; }
-  .mring .mfill { fill: none; stroke: var(--accent); stroke-width: 4.4; stroke-linecap: round;
+  .mring .mtrk { fill: none; stroke: var(--line-2); stroke-width: 4; }
+  .mring .mfill { fill: none; stroke: var(--acc); stroke-width: 4; stroke-linecap: round;
     stroke-dasharray: 100 100; stroke-dashoffset: 100; transition: stroke-dashoffset .3s, stroke .3s; }
   .pill.meter.hot .mfill { stroke: var(--err); }
   .pill.meter.hot b { color: var(--err); }
@@ -106,8 +118,8 @@
   }
   .pill.sbox.ok, .pill.sbox.warn { color: var(--dim); }
   .sdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--dim); opacity: .8; }
-  #sbxPill.ok .sdot { background: var(--ok); opacity: 1; box-shadow: 0 0 7px var(--ok); }
-  #sbxPill.warn .sdot { background: var(--warn); opacity: 1; box-shadow: 0 0 7px var(--warn); }
+  #sbxPill.ok .sdot { background: var(--ok); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent); }
+  #sbxPill.warn .sdot { background: var(--warn); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 16%, transparent); }
   /* JAG-113: custom model picker (no native <select>) */
   /* JAG-116: the selector must be legible — not the dim .pill default */
   .model-btn { cursor: pointer; color: var(--txt); font-weight: 600; max-width: 340px;
@@ -121,8 +133,8 @@
   .model-wrap { position: relative; display: inline-flex; }
   #modelMenu { position: absolute; right: 0; bottom: calc(100% + 8px); width: 360px; max-height: 62vh;
     overflow-y: auto; z-index: 30; padding: 6px; background: var(--menubg);
-    border: 1px solid rgba(120,140,255,.28); border-radius: 12px;
-    box-shadow: 0 18px 40px rgba(0,0,0,.7); }
+    border: 1px solid var(--line-2); border-radius: var(--r-sm);
+    box-shadow: var(--shadow-2); }
   #modelMenu[hidden] { display: none; }
   #modelMenu .mh { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; padding: 8px 8px 2px; }
   #modelMenu .mi { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px;
@@ -158,9 +170,9 @@
   .chatatt:hover { border-color: var(--acc); background: var(--sel); }
   .chatatt:focus { outline: 1px solid var(--acc); }
   /* JAG-278: mic button recording state. */
-  #micBtn.rec { color: #fff; background: linear-gradient(90deg, var(--acc), var(--acc2));
+  #micBtn.rec { color: #1b1206; background: var(--acc);
     border-color: transparent; animation: micpulse 1.1s ease-in-out infinite; }
-  @keyframes micpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(108,140,255,.6); } 50% { box-shadow: 0 0 0 6px rgba(108,140,255,0); } }
+  @keyframes micpulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 55%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--acc) 0%, transparent); } }
   /* JAG-279: transient toast (copy confirmations, attach feedback). */
   #sfToast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 9999;
     display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
@@ -171,7 +183,7 @@
   .sf-toast.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
   .sf-toast.err { border-color: rgba(248,113,113,.6); }
   /* JAG-500: click-to-reload chip — #sfToast is pointer-events:none, the chip opts back in. */
-  .sf-toast.action { pointer-events: auto; cursor: pointer; border-color: color-mix(in srgb, var(--accent, #8b7bf0) 60%, transparent); }
+  .sf-toast.action { pointer-events: auto; cursor: pointer; border-color: color-mix(in srgb, var(--acc) 60%, transparent); }
   /* JAG-279: tiny copy affordances in the Context panel (curated). */
   .ctxlistbar { display: flex; align-items: center; gap: 8px; margin: 9px 0 3px; }
   .ctxlistbar .ctxlistlab { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
@@ -205,7 +217,7 @@
   /* ---------------- sidebar ---------------- */
   aside {
     border-right: 1px solid var(--line); padding: 12px; overflow: hidden;
-    background: rgba(8,10,20,.45); display: flex; flex-direction: column; gap: 10px;
+    background: var(--bg); display: flex; flex-direction: column; gap: 10px;
     min-height: 0;
   }
   /* v629: the rail is organised as named BLOCKS with ONE rhythm (10px between
@@ -237,10 +249,10 @@
   /* v629: ONLY the list scrolls. The header + tools stay put, so revealing a
      session (🎯 / Jobs → session) can never scroll the ▲/▼ tools and the filters
      out of view. */
-  aside .rail-list { margin: 0; padding: 8px; flex: 1 1 auto; min-height: 0;
-    overflow-y: auto; overflow-x: hidden; }
-  aside h2 { font-size: 10px; letter-spacing: .18em; color: var(--dim); margin: 0;
-    text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+  aside .rail-list { margin: 0; padding: 0; flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; overflow-x: hidden; background: transparent; border: 0; border-radius: 0; }
+  aside h2 { font-size: 12px; letter-spacing: .02em; color: var(--txt); margin: 0; font-weight: 600;
+    text-transform: none; display: flex; align-items: center; gap: 6px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
   .step, .task { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 8px; margin-bottom: 4px; font-size: 12.5px; }
   .step:hover, .task:hover { background: var(--hover); cursor: pointer; }
@@ -281,7 +293,7 @@
   .task.stacked .tmain { display: flex; flex-wrap: wrap; width: 100%; min-width: 0; }
   .task.stacked .tlabel { flex: 0 0 100%; }
   .graphrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
-  .task.fresh { animation: pop .5s ease; border: 1px dashed rgba(181,108,255,.4); }
+  .task.fresh { animation: pop .5s ease; border: 1px dashed color-mix(in srgb, var(--acc) 45%, transparent); }
   @keyframes pop { from { transform: scale(.96); opacity: .3; } }
   /* v651: a path / model ref printed in a card must WRAP inside it.
      v653: `break-word`, not `anywhere`. `anywhere` collapses the element's
@@ -318,11 +330,11 @@
      and the meta (msgs · age) rides the badge line on the right — so the name is
      never truncated and the row is tighter (was the name beside the badges, meta
      below → 2 lines with truncated names). */
-  .sess { display: flex; flex-wrap: wrap; align-items: center; gap: 0 7px; padding: 4px 10px;
-    border-radius: 10px; border: 1px solid transparent; margin-bottom: 3px; cursor: pointer;
-    line-height: 1.12; }
+  .sess { display: flex; flex-wrap: wrap; align-items: center; gap: 0 7px; padding: 6px 8px;
+    border-radius: var(--r-sm); border: 1px solid transparent; margin-bottom: 2px; cursor: pointer;
+    line-height: 1.22; }
   .sess:hover { background: var(--hover); }
-  .sess.active { border-color: var(--accent); background: var(--sel); }
+  .sess.active { border-color: color-mix(in srgb, var(--acc) 55%, transparent); background: var(--sel); }
   /* JAG-168: a session busy with a chat turn keeps running in the background. */
   .sess.running { border-color: var(--ok); }
   /* JAG-218: a live turn shows a spinning CIRCULAR ring on the rail row. */
@@ -418,7 +430,7 @@
   .sgroup-h .gcount { color: var(--dim); font-weight: 600; background: var(--hover);
     border-radius: 999px; padding: 0 7px; min-width: 16px; text-align: center;
     text-transform: none; letter-spacing: 0; }
-  .sgroup-b { padding-left: 5px; margin-left: 4px; border-left: 2px solid var(--tcol, var(--line)); }
+  .sgroup-b { padding-left: 6px; margin-left: 4px; border-left: 1px solid color-mix(in srgb, var(--tcol, var(--line)) 55%, transparent); }
   .sgroup.collapsed .sgroup-b { display: none; }
   .sess .t, .sgroup-h .gname { cursor: grab; }
   .sess.dragging .t, .sgroup.dragging .gname { cursor: grabbing; user-select: none; }
@@ -450,12 +462,12 @@
     text-overflow: ellipsis; max-width: 120px; flex-shrink: 1; }
 
   /* context meter */
-  .meter { height: 14px; border-radius: 999px; background: var(--chipbg);
-    overflow: hidden; margin: 6px 0 8px; box-shadow: inset 0 0 0 1px var(--line); }
+  .meter { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden;
+    margin: 6px 0 8px; }
   .meter > i { display: block; height: 100%; border-radius: 999px; min-width: 6px;
-    background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .4s ease; }
-  .meter > i.hot { background: linear-gradient(90deg, var(--warn), var(--err)); }
-  .meter > i.near { background: linear-gradient(90deg, var(--warn), var(--acc2)); }
+    background: var(--acc); transition: width .4s ease; }
+  .meter > i.hot { background: var(--err); }
+  .meter > i.near { background: var(--warn); }
   /* JAG-278: one horizontal row — % + bar + state + compact — to save vertical space. */
   .ctxhead { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .ctxhead .meter { flex: 1; margin: 0; }
@@ -552,15 +564,18 @@
   .runbody .costrow:last-child { border-bottom: 0; }
 
   /* approvals */
-  button { background: linear-gradient(90deg, var(--acc), var(--acc2)); border: 0; color: #fff;
-    border-radius: var(--radius); padding: 12px 22px; font: inherit; font-weight: 600; cursor: pointer; }
-  button:active { transform: scale(.97); }
-  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--dim); font-weight: 400; padding: 8px 14px; }
+  button { background: var(--panel2); border: 1px solid var(--line-2); color: var(--txt);
+    border-radius: var(--r-sm); padding: 7px 13px; font: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
+  button:hover { background: color-mix(in srgb, var(--panel2) 80%, #ffffff); border-color: var(--line-2); }
+  button:active { transform: translateY(1px); }
+  button.ghost { background: transparent; border: 1px solid var(--line-2); color: var(--dim); font-weight: 500; padding: 6px 11px; }
   button.ghost:hover { color: var(--txt); border-color: var(--acc); }
-  /* JAG-159: the settings gear gets an accent (blue) border so it stands out. */
-  #settingsBtn { border-color: rgba(108,140,255,.55); color: var(--accent, #8b7bf0); }
-  .feed-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
-  .feed-dot.off { background: var(--dim); box-shadow: none; }
+  /* JAG-159: the settings gear gets an accent (copper) border so it stands out. */
+  #settingsBtn { border-color: var(--line-2); color: var(--dim); }
+  #settingsBtn:hover { color: var(--acc); border-color: var(--acc); }
+  .feed-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .feed-dot.off { background: var(--dim); }
 
   /* JAG-447: the Improvement panel — proposals (with a diff preview), the
      audit ledger changelog and the memory provenance split. */
@@ -569,7 +584,7 @@
   .imp-card summary::-webkit-details-marker { display: none; }
   .imp-row summary { cursor: pointer; list-style: none; }
   .imp-row summary::-webkit-details-marker { display: none; }
-  a.impfile { display: inline-block; color: var(--hc, #7c8cff); text-decoration: none;
+  a.impfile { display: inline-block; color: var(--hc, var(--acc)); text-decoration: none;
     border-bottom: 1px dashed currentColor; font-size: 11px; margin: 1px 2px;
     max-width: 100%; overflow-wrap: break-word; }   /* v651/v653: a long path wraps inside its card, without collapsing the chip to one character */
   a.impfile:hover { text-decoration: underline; }
@@ -640,7 +655,7 @@
   /* JAG-116: "jump to bottom" — appears only when the reader scrolled up */
   #jumpBtn { position: absolute; right: 22px; bottom: 96px; z-index: 6; width: 34px; height: 34px;
     padding: 0; border-radius: 999px; font-size: 16px; line-height: 1; color: var(--txt);
-    background: var(--panel2); border: 1px solid rgba(108,140,255,.5);
+    background: var(--panel2); border: 1px solid var(--line-2);
     box-shadow: 0 6px 18px rgba(0,0,0,.5); }
   #jumpBtn[hidden] { display: none; }
   #jumpBtn:hover { background: var(--sel); }
@@ -675,15 +690,15 @@
     top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; background: currentColor;
     transform: rotate(-45deg); pointer-events: none; }
   #toolsBar button[hidden] { display: none; }
-  .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc2); transition: box-shadow .25s; }
+  .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc); transition: box-shadow .25s; }
   /* JAG-428: flash the session row the topbar's "reveal" button centered. */
-  .sess.dotflash { box-shadow: 0 0 0 2px var(--acc2); border-radius: 10px; transition: box-shadow .25s; }
-  #log { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px; scroll-behavior: smooth; }
+  .sess.dotflash { box-shadow: 0 0 0 2px var(--acc); border-radius: 10px; transition: box-shadow .25s; }
+  #log { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px; scroll-behavior: smooth; }
   /* JAG-274: sticky "current step" bar — the active todo + its latest activity,
      always visible at the bottom of the chat, so you see what the agent is doing
      NOW even when the step's section has scrolled up. */
-  #nowbar { display: flex; align-items: center; gap: 8px; padding: 5px 14px; cursor: pointer;
-    background: linear-gradient(90deg, rgba(108,140,255,.14), rgba(57,211,195,.08));
+  #nowbar { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer;
+    background: var(--panel2);
     border-top: 1px solid var(--line); font-size: 11px; color: var(--txt); z-index: 5; }
   #nowbar .nid { font-family: ui-monospace, monospace; color: var(--acc2); flex-shrink: 0; }
   #nowbar .nst { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px;
@@ -691,15 +706,17 @@
   #nowbar .nst.doing { color: var(--warn); border-color: var(--warn); }
   #nowbar .nlbl { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   #nowbar .nlast { color: var(--dim); font-size: 10px; flex-shrink: 0; max-width: 40%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .msg { margin-bottom: 14px; max-width: 100%; }
-  .msg .who { font-size: 10px; letter-spacing: .14em; color: var(--dim); margin-bottom: 4px; }
-  .msg.user .who { color: var(--acc2); }
-  .msg .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 9px 13px;
-    white-space: pre-wrap; word-break: break-word; font-size: 12.5px; line-height: 1.5; }
-  .msg.user .bubble { border-color: rgba(181,108,255,.25); }
+  .msg { margin-bottom: 16px; max-width: 100%; }
+  .msg .who { font-size: 10px; letter-spacing: .12em; color: var(--dim); margin-bottom: 5px;
+    text-transform: uppercase; }
+  .msg.user .who { color: var(--acc); }
+  .msg .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+    white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.55; }
+  .msg.user .bubble { border-color: color-mix(in srgb, var(--acc) 30%, var(--line));
+    background: color-mix(in srgb, var(--acc) 5%, var(--panel)); }
   details.think { margin-bottom: 8px; }
   details.think summary { cursor: pointer; font-size: 11px; color: var(--acc); letter-spacing: .08em; }
-  details.think .t { color: var(--dim); font-size: 12px; white-space: pre-wrap; border-left: 2px solid rgba(108,140,255,.3);
+  details.think .t { color: var(--dim); font-size: 12px; white-space: pre-wrap; border-left: 1px solid var(--line-2);
     padding: 6px 0 6px 12px; margin-top: 6px; max-height: 320px; overflow-y: auto; }
   /* v1.6.3 (JAG-55): copy affordance + inline tool-call mini-cards */
   .msg .who { display: flex; align-items: center; gap: 6px; }
@@ -731,7 +748,7 @@
   .tctree .st.done { color: var(--ok); border-color: var(--ok); }
   .tctree .st.blocked { color: var(--err); border-color: var(--err); }
   .tctree .st.superseded { color: var(--dim); text-decoration: line-through; opacity: .7; }
-  .tctree .tc-kids { margin: 6px 0 6px 16px; padding-left: 10px; border-left: 2px solid rgba(108,140,255,.25); }
+  .tctree .tc-kids { margin: 6px 0 6px 16px; padding-left: 10px; border-left: 1px solid var(--line-2); }
   /* JAG-169: the todo id AX.nY, monospaced and visible in chat + panel. */
   .tctree .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); margin-right: 0; }
   /* JAG-278 -> v629: a todo's JUSTIFICATION is a full-width line UNDER the row
@@ -741,7 +758,7 @@
      label. It is a sibling of <summary>, so it stays readable while the group
      is collapsed. */
   .tctree > .tcwhy { margin: 2px 0 2px 10px; padding: 1px 8px 1px 10px;
-    border-left: 2px solid color-mix(in srgb, var(--acc2) 45%, transparent);
+    border-left: 1px solid color-mix(in srgb, var(--acc2) 55%, transparent);
     color: var(--dim); font-size: 11px; font-style: italic; line-height: 1.45;
     white-space: pre-wrap; overflow-wrap: anywhere; }
   .tctree[data-st="done"] > .tcwhy {
@@ -798,7 +815,7 @@
   .hinj { margin: 4px 0; font-size: 11.5px; }
   .hinj > summary { cursor: pointer; color: var(--info); letter-spacing: .04em; }
   .hinj .hbody { white-space: pre-wrap; color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px;
-    border-left: 2px solid rgba(120,120,255,.3); padding: 6px 0 6px 10px; margin-top: 4px; max-height: 260px; overflow: auto; }
+    border-left: 1px solid var(--line-2); padding: 6px 0 6px 10px; margin-top: 4px; max-height: 260px; overflow: auto; }
   .hinj .hkind { font-size: 9px; text-transform: uppercase; letter-spacing: .1em; color: var(--acc); border: 1px solid var(--line);
     border-radius: 5px; padding: 0 5px; margin-left: 6px; }
   /* JAG-171: HUMAN IN THE LOOP card. */
@@ -813,12 +830,12 @@
   .cursor { display: inline-block; width: 8px; height: 14px; background: var(--acc); margin-left: 2px;
     vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  #composer { display: flex; flex-direction: column; gap: 8px; padding: 8px 18px 10px; border-top: 1px solid var(--line); background: rgba(8,10,20,.6); position: relative; flex: 0 0 auto; }
+  #composer { display: flex; flex-direction: column; gap: 8px; padding: 10px 18px 12px; border-top: 1px solid var(--line); background: var(--panel); position: relative; flex: 0 0 auto; }
   /* G-1: the Active-goal bar renders the DURABLE goal (`GET /api/goal`), so a goal
      survives the turn, the tab and a service restart. One line, like the toolbar:
      objective (flex) · status/steps (fixed) · pause · edit · delete. */
   #goalBar { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
-    border: 1px solid var(--line); border-left: 3px solid var(--acc); border-radius: 10px;
+    border: 1px solid var(--line); border-left: 2px solid var(--acc); border-radius: 10px;
     background: color-mix(in srgb, var(--acc) 7%, transparent); font-size: 12px; }
   #goalBar[hidden] { display: none; }
   #goalBar.paused { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
@@ -925,28 +942,30 @@
     min-height: 0; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
     background: transparent; color: var(--txt); font-size: 12px; font-weight: 500; }
   #moreMenu .mi:hover { background: var(--hover); }
-  /* JAG-416: top-level section tabs (Session / Control) — a segmented control, the
-     primary navigation. Session = this app; Control = the agent control deck. */
-  .topTabs { display: inline-flex; align-items: center; gap: 2px; padding: 3px;
-    border: 1px solid var(--line); border-radius: 11px; background: var(--panel2); flex: 0 0 auto; }
-  .topTabs .ttab { display: inline-flex; align-items: center; height: 26px; padding: 0 14px;
-    border-radius: 8px; color: var(--dim); font-size: 12px; font-weight: 600;
-    text-decoration: none; white-space: nowrap; transition: background .15s, color .15s; }
-  .topTabs .ttab:hover { color: var(--txt); background: var(--hover); }
-  .topTabs .ttab.active { color: var(--txt); background: var(--sel); box-shadow: inset 0 0 0 1px var(--acc); }
+  /* JAG-416: top-level section tabs (Session / Control) — the primary navigation.
+     A quiet tab strip: the active section is marked by a copper rule, not a pill. */
+  .topTabs { display: inline-flex; align-items: stretch; gap: 2px; padding: 0;
+    border: 0; border-radius: 0; background: transparent; flex: 0 0 auto; height: 52px; }
+  .topTabs .ttab { display: inline-flex; align-items: center; height: 52px; padding: 0 14px;
+    border-radius: 0; color: var(--dim); font-size: 12.5px; font-weight: 600;
+    text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent;
+    transition: color .12s, border-color .12s; }
+  .topTabs .ttab:hover { color: var(--txt); background: transparent; }
+  .topTabs .ttab.active { color: var(--txt); background: transparent; box-shadow: none;
+    border-bottom-color: var(--acc); }
   /* JAG-420: Control deck as an IN-PAGE view (top tabs swap sub-views, banner stays constant). */
   #topbar { position: sticky; top: 0; z-index: 25; }
-  #controlView { position: fixed; left: 0; right: 0; top: 44px; bottom: 0; z-index: 20;
+  #controlView { position: fixed; left: 0; right: 0; top: 52px; bottom: 0; z-index: 20;
     background: var(--bg); display: none; }
   #controlView.on { display: block; }
   #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
   /* the session/inspector edge handles make no sense on the Control view */
   body.control-on .edge-handle { display: none !important; }
   #composer #inp { width: 100%; }
-  #inp, .inp { background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
-    border-radius: var(--radius); padding: 12px 16px; font: inherit; outline: none; }
-  #inp { flex: 0 0 auto; resize: none; max-height: 160px; overflow-y: hidden; line-height: 1.4;
-    font-size: 12.5px; min-height: 38px; }  /* JAG-415: grows with the text to 160px, then scrolls */
+  #inp, .inp { background: var(--bg-2); border: 1px solid var(--line-2); color: var(--txt);
+    border-radius: var(--r-sm); padding: 11px 14px; font: inherit; outline: none; }
+  #inp { flex: 0 0 auto; resize: none; max-height: 160px; overflow-y: hidden; line-height: 1.45;
+    font-size: 13px; min-height: 42px; }  /* JAG-415: grows with the text to 160px, then scrolls */
   /* JAG-127b: queued/steer messages typed while a turn is still running */
   #queueBar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px 0; }
   #queueBar[hidden] { display: none; }
@@ -958,7 +977,7 @@
   /* JAG-364: the attachment marker on a queued message (images / files / text) */
   .qchip .qatt { flex: 0 0 auto; color: var(--acc2); font-size: 10.5px; font-weight: 600;
     max-width: 190px; }
-  #inp:focus, .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,140,255,.12); }
+  #inp:focus, .inp:focus { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 16%, transparent); }
 
   /* JAG-290: in a short or zoomed (narrow) window the composer's send/stop row must
      stay ANCHORED to the frame bottom. The log shrinks first (see #log min-height:0),
@@ -992,14 +1011,14 @@
     #aside {
       position: fixed; z-index: 9; inset: 0 0 0 auto; width: min(92vw, 400px);
       transform: translateX(105%); transition: transform .28s ease;
-      background: var(--aside); backdrop-filter: blur(14px);
+      background: var(--aside);
       padding-top: max(14px, env(safe-area-inset-top));
     }
     #aside.open { transform: translateX(0); }
     #aside.show { display: block !important; }
     .backdrop.show { display: block; }
     #tabbar {
-      display: flex; border-top: 1px solid var(--line); background: var(--menubg); backdrop-filter: blur(12px);
+      display: flex; border-top: 1px solid var(--line); background: var(--menubg);
       padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); gap: 6px;
       /* JAG-381: the nav must stay above the dimmer (z-index 8) AND above the open
          drawers (15/16) so a tab can be switched directly — else the drawer covers
@@ -1084,13 +1103,13 @@
   @media (max-width: 1100px) {
     [data-col="context"] { display: none; }
     .resizer { display: none; }
-    body.show-right [data-col="context"] { display: flex !important; position: fixed; right: 46px; top: 44px; bottom: var(--sf-bottombar, 0px); width: min(var(--drawer-w-right, 300px), calc(100vw - 46px)) !important; transform: none; z-index: 15; box-shadow: -12px 0 30px rgba(0,0,0,.5); }
-    body.show-right #toolsBar:not([hidden]) { display: flex; position: fixed; right: 0; top: 44px;
+    body.show-right [data-col="context"] { display: flex !important; position: fixed; right: 46px; top: 52px; bottom: var(--sf-bottombar, 0px); width: min(var(--drawer-w-right, 300px), calc(100vw - 46px)) !important; transform: none; z-index: 15; box-shadow: -12px 0 30px rgba(0,0,0,.42); }
+    body.show-right #toolsBar:not([hidden]) { display: flex; position: fixed; right: 0; top: 52px;
       bottom: var(--sf-bottombar, 0px); z-index: 17; }
     body.show-right #toolsBar[hidden] { display: none; }
     /* JAG-368: a fixed DRAWER gets a draggable grip on its INNER edge (left, for the
        right drawer) so the inspector can be widened on a phone too. Positioned in JS. */
-    body.show-right #resize-right { display: block !important; position: fixed; top: 44px; bottom: var(--sf-bottombar, 0px);
+    body.show-right #resize-right { display: block !important; position: fixed; top: 52px; bottom: var(--sf-bottombar, 0px);
       width: 16px; z-index: 16; background: transparent; touch-action: none; }
     body.show-right #resize-right.active { background: var(--accent); }
   }
@@ -1101,9 +1120,9 @@
      drawer never actually slid in on screen. */
   @media (max-width: 900px) {
     [data-col="sessions"] { display: none; }
-    body.show-left #aside { display: flex !important; position: fixed; left: 0; right: 0; top: 44px; bottom: var(--sf-bottombar, 0px); width: calc(100vw / var(--zoom, 1)) !important; max-width: calc(100vw / var(--zoom, 1)); transform: none; z-index: 15; box-shadow: 12px 0 30px rgba(0,0,0,.5); }
+    body.show-left #aside { display: flex !important; position: fixed; left: 0; right: 0; top: 52px; bottom: var(--sf-bottombar, 0px); width: calc(100vw / var(--zoom, 1)) !important; max-width: calc(100vw / var(--zoom, 1)); transform: none; z-index: 15; box-shadow: 12px 0 30px rgba(0,0,0,.42); }
     /* JAG-368: the left DRAWER gets a draggable grip on its inner (right) edge. */
-    body.show-left #resize-left { display: block !important; position: fixed; top: 44px; bottom: var(--sf-bottombar, 0px);
+    body.show-left #resize-left { display: block !important; position: fixed; top: 52px; bottom: var(--sf-bottombar, 0px);
       width: 16px; z-index: 16; background: transparent; touch-action: none; }
     body.show-left #resize-left.active { background: var(--accent); }
     body.show-left #resize-left { display: none !important; }
@@ -1177,7 +1196,7 @@
   .planwarn { border: 1px solid rgba(251,191,36,.45); background: rgba(251,191,36,.10);
     border-radius: 10px; padding: 8px 10px; }
   .plan-history-note { display: block; margin-bottom: 6px; padding: 6px 8px;
-    border-left: 2px solid var(--dim); color: var(--dim); white-space: normal; }
+    border-left: 1px solid var(--line-2); color: var(--dim); white-space: normal; }
   .planwarn ul { margin: 6px 0 6px 18px; padding: 0; }
   .planwarn li { font-size: 12px; }
   /* JAG-127: a produced readable file renders as a link in the reply */
@@ -1250,7 +1269,7 @@
   .diag-badge { padding: 4px 8px; font-size: 10px; white-space: nowrap; }
   .diag-badge.error { color: var(--err); border-color: var(--err); }
   .diag-badge.warning { color: var(--warn); border-color: var(--warn); }
-  .diag-issue { border-left: 3px solid var(--warn); margin-bottom: 8px; }
+  .diag-issue { border-left: 1px solid var(--warn); margin-bottom: 8px; }
   .diag-issue.error { border-left-color: var(--err); }
   .diag-issue.info { border-left-color: var(--acc); }
   .diag-issue-head { display: flex; align-items: flex-start; gap: 8px; }
@@ -1258,14 +1277,14 @@
   .diag-severity { color: var(--dim); font-size: 10px; text-transform: uppercase; }
   /* JAG-505: a healthy diagnostics run must LOOK healthy. */
   .diag-ok { color: var(--ok); font-weight: 600; }
-  .card.diag-ok { border-left: 3px solid var(--ok);
+  .card.diag-ok { border-left: 1px solid var(--ok);
     background: color-mix(in srgb, var(--ok) 6%, transparent); }
   /* JAG-3xx: on a phone the fixed 190px nav column left almost no room for the content
      and it could NOT be reduced (there was no handle). Turn the nav into a compact TOP
      tab strip and let the window fill the screen, so there is no "left width" to fight. */
   @media (max-width: 640px) {
-    #settingsWin { left: 0 !important; top: 44px !important; width: 100vw !important;
-      height: calc(100dvh - 44px) !important; border-radius: 0 !important; }
+    #settingsWin { left: 0 !important; top: 52px !important; width: 100vw !important;
+      height: calc(100dvh - 52px) !important; border-radius: 0 !important; }
     #settingsWin .sw-body { flex-direction: column; }
     #settingsWin .sw-nav { flex: 0 0 auto; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
       border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; }
@@ -1294,7 +1313,7 @@
   #swMain .kb-row:hover { border-color: var(--acc); }
   /* JAG-526: the notebook that belongs to the chat on screen is ALWAYS marked
      (a `*` plus an accent edge), so opening Knowledge never requires guessing. */
-  #swMain .kb-row.kb-current { border-color: var(--acc); box-shadow: inset 3px 0 0 var(--acc); }
+  #swMain .kb-row.kb-current { border-color: var(--acc); box-shadow: inset 2px 0 0 var(--acc); }
   #swMain .kb-cur { flex: 0 0 auto; color: var(--acc); font-weight: 700; font-size: 11px;
     letter-spacing: .04em; white-space: nowrap; }
   #swMain .kb-kind { flex: 0 0 auto; min-width: 36px; text-align: center; font-size: 9.5px;
@@ -1358,7 +1377,7 @@
   }
   .hcard-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
   .hcard-hd .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px;
-    background: var(--hc, #6c8cff); box-shadow: 0 0 10px var(--hc, #6c8cff); }
+    background: var(--hc, var(--acc)); }
   .hcard-hd b { font-size: 13px; color: var(--txt); letter-spacing: .01em; }
   .hcard-hd .hc-sub { font-size: 12px; color: var(--dim); }
   /* v643: the card's save button sits at the END of its header row, so every
@@ -1508,7 +1527,7 @@
     background: var(--panel2); border: 1px solid var(--line-2); border-radius: 6px;
     color: var(--txt); padding: 3px 7px; font: inherit; font-size: 12px; width: 84px;
   }
-  #swMain .sw-cat[data-cat="harness"] label input[type=checkbox] { width: auto; accent-color: var(--hc, #6c8cff); }
+  #swMain .sw-cat[data-cat="harness"] label input[type=checkbox] { width: auto; accent-color: var(--hc, var(--acc)); }
   #swMain .sw-cat[data-cat="harness"] #vfCmd,
   #swMain .sw-cat[data-cat="harness"] #vfPaths,
   #swMain .sw-cat[data-cat="harness"] #seCat { width: 190px; }
@@ -1550,144 +1569,143 @@
   .bubble.md-content pre code { background: none; padding: 0; }
   .bubble.md-content table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
   .bubble.md-content th, .bubble.md-content td { border: 1px solid var(--line-2); padding: 4px 8px; }
-  .bubble.md-content blockquote { border-left: 3px solid var(--line); margin: 6px 0; padding: 2px 10px; color: var(--dim); }
+  .bubble.md-content blockquote { border-left: 1px solid var(--line-2); margin: 6px 0; padding: 2px 10px; color: var(--dim);
+    background: color-mix(in srgb, var(--panel2) 60%, transparent); border-radius: 0 6px 6px 0; }
   .bubble.md-content a { color: var(--accent); }
   .bubble.md-content img { max-width: 100%; border-radius: 8px; }
   .bubble .artprev { margin-top: 6px; }
   .bubble .artprev iframe { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-  /* ==== theme system: indigo (default) · dark · midnight · sand · sepia · forest · celestial · sakura · haze ==== */
+  /* ==== theme system: graphite (default) · dark · midnight · sand · sepia · forest · celestial · sakura · haze ==== */
+  /* 2026-10-31: every theme is rebuilt on the same discipline — neutral surfaces,
+     one signal colour, no glows. Ids are unchanged (they are persisted in
+     localStorage and pinned by the acceptance tests). */
   :root {
-    --grad-a: #141a3a; --grad-b: #241638; --hdr: rgba(8,10,20,.6);
-    --bg2: #121722; --aside: #10131f; --composer: rgba(8,10,20,.6);
-    --hover: rgba(120,140,255,.14); --sel: rgba(120,140,255,.2);
-    --hl: rgba(120,140,255,.22); --menubg: #0f1320;
-    --menuline: rgba(120,140,255,.28); --chipbg: rgba(120,140,255,.14);
-    --chipbd: rgba(130,150,255,.16); --scroll: rgba(139,123,240,.45);
+    --grad-a: #0e1116; --grad-b: #0b0d11; --hdr: #12151b;
+    --bg2: #101318; --aside: #0b0d11; --composer: #12151b;
+    --hover: rgba(255,255,255,.045); --sel: rgba(207,138,74,.16);
+    --hl: rgba(207,138,74,.22); --menubg: #14181f;
+    --menuline: #3a3f49; --chipbg: rgba(255,255,255,.06);
+    --chipbd: #2d323b; --scroll: #3b414c;
   }
   html[data-theme="dark"] {
-    --bg: #0b0d12; --panel: rgba(24,27,34,.78); --panel2: rgba(17,19,25,.88);
-    --line: rgba(255,255,255,.09); --txt: #e9edf3; --dim: #8b93a3;
-    --acc: #8fa6c8; --acc2: #b9c6dc; --ok: #57d38a; --warn: #e6b455; --err: #e77b7b;
-    --accent: #9fb0cb; --you: #a9c2e8; --info: #6fc7e8;
-    --bg-2: #14171e; --bg-3: #181c24; --line-2: #232833; --ink: #c7ced9; --muted: #7e8697;
-    --bg2: #14171e; --grad-a: #1b2029; --grad-b: #121319; --hdr: rgba(11,13,18,.74);
-    --aside: #12151b; --composer: rgba(8,10,14,.7);
-    --hover: rgba(159,176,203,.12); --sel: rgba(159,176,203,.18);
-    --hl: rgba(159,176,203,.2); --menubg: #0d1015;
-    --menuline: rgba(159,176,203,.24); --chipbg: rgba(159,176,203,.12);
-    --chipbd: rgba(159,176,203,.18); --scroll: rgba(159,176,203,.4);
+    --bg: #0c0d10; --panel: #14161b; --panel2: #181b21;
+    --line: #262a31; --txt: #e9eaee; --dim: #a0a6b0;
+    --acc: #b8c4d6; --acc2: #8fa7c0; --ok: #6cc48f; --warn: #d9a441; --err: #e07f74;
+    --accent: #b8c4d6; --you: #b6c6db; --info: #7fb4d2;
+    --bg-2: #14161b; --bg-3: #1a1e25; --line-2: #333841; --ink: #d6d9df; --muted: #8b929c;
+    --bg2: #14161b; --grad-a: #171a20; --grad-b: #0c0d10; --hdr: #14161b;
+    --aside: #0c0d10; --composer: #14161b;
+    --hover: rgba(255,255,255,.05); --sel: rgba(184,196,214,.16);
+    --hl: rgba(184,196,214,.22); --menubg: #14161b;
+    --menuline: #3a404a; --chipbg: rgba(255,255,255,.06);
+    --chipbd: #333841; --scroll: #3d434e;
     color-scheme: dark;
   }
   html[data-theme="sand"] {
-    /* JAG-425 (#10): the sand theme is the only LIGHT one; its secondary text and
-       link colours sat around 3.9–4.2:1 on the panel background. Darkened to clear
-       WCAG AA (4.5:1) for normal text while keeping the warm hue. */
-    --bg: #c8bda2; --panel: rgba(206,197,173,.96); --panel2: rgba(196,186,160,.97);
-    --line: rgba(86,74,52,.30); --txt: #3a3327; --dim: #514730;
-    --acc: #6f4519; --acc2: #9a7c42; --ok: #1f5a37; --warn: #66440a; --err: #8a2f1c;
-    --accent: #6f4519; --you: #3f6288; --info: #3a7278;
-    --bg-2: #c1b69d; --bg-3: #b9ae8b; --line-2: #ada082; --ink: #3e3628; --muted: #514730;
-    --bg2: #c1b69d; --grad-a: #ccc2a8; --grad-b: #c3b89f; --hdr: rgba(203,194,169,.95);
-    --aside: #ccc2a8; --composer: rgba(206,197,173,.85);
-    --hover: rgba(122,96,58,.12); --sel: rgba(122,96,58,.18);
-    --hl: rgba(122,96,58,.2); --menubg: #cec5ac;
-    --menuline: rgba(122,96,58,.32); --chipbg: rgba(122,96,58,.12);
-    --chipbd: rgba(122,96,58,.26); --scroll: rgba(122,96,58,.45);
+    /* JAG-425 (#10): the sand theme is a LIGHT paper surface; text and accents are
+       tuned to clear WCAG AA (4.5:1) on the panel background. */
+    --bg: #d9d1c0; --panel: #e6dfcf; --panel2: #ded5c3;
+    --line: #b4a992; --txt: #2f2b23; --dim: #574f3f;
+    --acc: #8a5a2b; --acc2: #7d6a3f; --ok: #2f6b45; --warn: #7a5408; --err: #96382a;
+    --accent: #8a5a2b; --you: #3f5c7e; --info: #356b78;
+    --bg-2: #ded5c3; --bg-3: #d4c9b3; --line-2: #a2967c; --ink: #332e25; --muted: #574f3f;
+    --bg2: #ded5c3; --grad-a: #e2dbcb; --grad-b: #d9d1c0; --hdr: #e6dfcf;
+    --aside: #d9d1c0; --composer: #e6dfcf;
+    --hover: rgba(90,72,44,.08); --sel: rgba(138,90,43,.14);
+    --hl: rgba(138,90,43,.18); --menubg: #e6dfcf;
+    --menuline: #a2967c; --chipbg: rgba(90,72,44,.08);
+    --chipbd: #b4a992; --scroll: #a2967c;
     color-scheme: light;
   }
   html[data-theme="midnight"] {
-    --bg: #070d18; --panel: rgba(14,22,38,.82); --panel2: rgba(10,17,30,.9);
-    --line: rgba(120,150,210,.15); --txt: #d7e0f2; --dim: #7d89a6;
-    --acc: #6b8cff; --acc2: #7fd4c8; --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
-    --accent: #6b8cff; --you: #8fb6ff; --info: #5ac8fa;
-    --bg-2: #0d1729; --bg-3: #111d33; --line-2: #1a2740; --ink: #c3cfe4; --muted: #7d89a6;
-    --bg2: #0d1729; --grad-a: #101c38; --grad-b: #0d1428; --hdr: rgba(8,14,26,.8);
-    --aside: #0c1526; --composer: rgba(8,14,26,.66);
-    --hover: rgba(107,140,255,.14); --sel: rgba(107,140,255,.2);
-    --hl: rgba(107,140,255,.22); --menubg: #0b1424;
-    --menuline: rgba(107,140,255,.3); --chipbg: rgba(107,140,255,.14);
-    --chipbd: rgba(120,150,210,.2); --scroll: rgba(107,140,255,.45);
+    --bg: #081019; --panel: #0e1926; --panel2: #111e2d;
+    --line: #24313f; --txt: #dbe3ec; --dim: #93a0b0;
+    --acc: #7fa6cc; --acc2: #86c3b8; --ok: #5fbf8a; --warn: #d9a441; --err: #dd6f63;
+    --accent: #7fa6cc; --you: #a6c2db; --info: #74a9c7;
+    --bg-2: #0e1926; --bg-3: #13202f; --line-2: #2d3c4c; --ink: #cdd6e0; --muted: #8794a3;
+    --bg2: #0e1926; --grad-a: #111f30; --grad-b: #081019; --hdr: #0e1926;
+    --aside: #081019; --composer: #0e1926;
+    --hover: rgba(255,255,255,.05); --sel: rgba(127,166,204,.16);
+    --hl: rgba(127,166,204,.22); --menubg: #0e1926;
+    --menuline: #33445a; --chipbg: rgba(127,166,204,.10);
+    --chipbd: #2d3c4c; --scroll: #35465a;
     color-scheme: dark;
   }
   html[data-theme="sepia"] {
-    --bg: #17120c; --panel: rgba(38,31,22,.84); --panel2: rgba(29,23,16,.9);
-    --line: rgba(214,180,124,.16); --txt: #e6d8bf; --dim: #9c8767;
-    --acc: #c99a5b; --acc2: #d7bb84; --ok: #6fb98a; --warn: #d9b45c; --err: #de8a6f;
-    --accent: #c99a5b; --you: #b9c0d6; --info: #8fb3b8;
-    --bg-2: #221a12; --bg-3: #2a2016; --line-2: #3a2d1e; --ink: #d3c3a6; --muted: #9c8767;
-    --bg2: #221a12; --grad-a: #2a2015; --grad-b: #1d160f; --hdr: rgba(23,18,12,.82);
-    --aside: #221a11; --composer: rgba(23,18,12,.7);
-    --hover: rgba(201,154,91,.14); --sel: rgba(201,154,91,.2);
-    --hl: rgba(201,154,91,.22); --menubg: #211a11;
-    --menuline: rgba(201,154,91,.3); --chipbg: rgba(201,154,91,.14);
-    --chipbd: rgba(214,180,124,.2); --scroll: rgba(201,154,91,.45);
+    --bg: #16120c; --panel: #221c14; --panel2: #2a2218;
+    --line: #3a2e1f; --txt: #e9dcc6; --dim: #a99a7e;
+    --acc: #c89a63; --acc2: #d7bb84; --ok: #6fb98a; --warn: #d9b45c; --err: #de8a6f;
+    --accent: #c89a63; --you: #b9c0d6; --info: #8fb3b8;
+    --bg-2: #221c14; --bg-3: #2a2218; --line-2: #463726; --ink: #d8c9ae; --muted: #a99a7e;
+    --bg2: #221c14; --grad-a: #2a2117; --grad-b: #16120c; --hdr: #221c14;
+    --aside: #16120c; --composer: #221c14;
+    --hover: rgba(255,255,255,.045); --sel: rgba(200,154,99,.16);
+    --hl: rgba(200,154,99,.22); --menubg: #221c14;
+    --menuline: #463726; --chipbg: rgba(200,154,99,.10);
+    --chipbd: #463726; --scroll: #4a3a27;
     color-scheme: dark;
   }
   html[data-theme="forest"] {
-    --bg: #0c1410; --panel: rgba(20,31,25,.82); --panel2: rgba(15,24,19,.9);
-    --line: rgba(140,190,160,.14); --txt: #d8e6dc; --dim: #7f9488;
-    --acc: #6fae8b; --acc2: #9ccfae; --ok: #5bd08a; --warn: #d7b25c; --err: #e0836f;
-    --accent: #7fbf95; --you: #a9c9d8; --info: #7fb8c4;
-    --bg-2: #122019; --bg-3: #16281f; --line-2: #20352a; --ink: #c3d4c9; --muted: #7f9488;
-    --bg2: #122019; --grad-a: #14301f; --grad-b: #0e1a14; --hdr: rgba(11,19,15,.8);
-    --aside: #111d16; --composer: rgba(11,19,15,.66);
-    --hover: rgba(111,174,139,.14); --sel: rgba(111,174,139,.2);
-    --hl: rgba(111,174,139,.22); --menubg: #101d16;
-    --menuline: rgba(111,174,139,.3); --chipbg: rgba(111,174,139,.14);
-    --chipbd: rgba(140,190,160,.2); --scroll: rgba(111,174,139,.45);
+    --bg: #0d1310; --panel: #141d18; --panel2: #18231c;
+    --line: #253329; --txt: #dde8e0; --dim: #96a89a;
+    --acc: #7fb694; --acc2: #9ccfae; --ok: #5fbf8a; --warn: #d9a441; --err: #dd7d6b;
+    --accent: #7fb694; --you: #a9c9d8; --info: #7fb8c4;
+    --bg-2: #141d18; --bg-3: #1a2820; --line-2: #2f4034; --ink: #cfdcd3; --muted: #8fa294;
+    --bg2: #141d18; --grad-a: #17241c; --grad-b: #0d1310; --hdr: #141d18;
+    --aside: #0d1310; --composer: #141d18;
+    --hover: rgba(255,255,255,.045); --sel: rgba(127,182,148,.16);
+    --hl: rgba(127,182,148,.22); --menubg: #141d18;
+    --menuline: #35473a; --chipbg: rgba(127,182,148,.10);
+    --chipbd: #2f4034; --scroll: #3a4c3e;
     color-scheme: dark;
   }
   html[data-theme="celestial"] {
-    /* Pastel sky-blue daylight eye-saver: powder-blue surfaces, near-black
-       slate-blue text + deepened steel-blue accents clear WCAG AA (4.5:1). */
-    --bg: #d7e1ee; --panel: rgba(226,234,246,.96); --panel2: rgba(216,226,240,.97);
-    --line: rgba(70,95,135,.30); --txt: #2c3a52; --dim: #4d5f7d;
-    --acc: #2f5b94; --acc2: #4d7fb5; --ok: #1f6b45; --warn: #6b4d08; --err: #8f2f1e;
-    --accent: #2f5b94; --you: #37688f; --info: #2f7f8f;
-    --bg-2: #ccd8e8; --bg-3: #c2d0e2; --line-2: #b3c2d6; --ink: #31405a; --muted: #4d5f7d;
-    --bg2: #ccd8e8; --grad-a: #d8e2f1; --grad-b: #ccd6e6; --hdr: rgba(216,226,240,.95);
-    --aside: #d3ddee; --composer: rgba(226,234,246,.85);
-    --hover: rgba(47,91,148,.12); --sel: rgba(47,91,148,.18);
-    --hl: rgba(47,91,148,.2); --menubg: #d6e0ef;
-    --menuline: rgba(47,91,148,.32); --chipbg: rgba(47,91,148,.12);
-    --chipbd: rgba(47,91,148,.26); --scroll: rgba(47,91,148,.45);
+    /* Pastel sky-blue daylight eye-saver: powder-blue paper, near-black slate text. */
+    --bg: #dfe6ef; --panel: #eaf0f7; --panel2: #e2e9f2;
+    --line: #b6c3d3; --txt: #24303f; --dim: #4e5f74;
+    --acc: #3b6a9a; --acc2: #4d7fb5; --ok: #1f6b45; --warn: #6b4d08; --err: #8f2f1e;
+    --accent: #3b6a9a; --you: #37688f; --info: #2f7f8f;
+    --bg-2: #e2e9f2; --bg-3: #d8e1ec; --line-2: #a6b6c9; --ink: #2b3747; --muted: #4e5f74;
+    --bg2: #e2e9f2; --grad-a: #e5ecf4; --grad-b: #dfe6ef; --hdr: #eaf0f7;
+    --aside: #dfe6ef; --composer: #eaf0f7;
+    --hover: rgba(59,106,154,.08); --sel: rgba(59,106,154,.14);
+    --hl: rgba(59,106,154,.18); --menubg: #eaf0f7;
+    --menuline: #a6b6c9; --chipbg: rgba(59,106,154,.08);
+    --chipbd: #b6c3d3; --scroll: #a6b6c9;
     color-scheme: light;
   }
   html[data-theme="sakura"] {
-    /* Pastel cherry-blossom daylight eye-saver: muted blossom surfaces, deep
-       warm text + the darkened blossom accent (#a14d6e) clear WCAG AA. */
-    --bg: #e9d5d8; --panel: rgba(240,226,229,.96); --panel2: rgba(232,216,220,.97);
-    --line: rgba(125,90,99,.30); --txt: #453136; --dim: #6e4f57;
-    --acc: #a14d6e; --acc2: #8f5f6e; --ok: #2f6b45; --warn: #6b4d08; --err: #8f2f1e;
-    --accent: #a14d6e; --you: #5a6e9c; --info: #4d7f7a;
-    --bg-2: #e2cbcf; --bg-3: #d8bfc4; --line-2: #cdb2b8; --ink: #4a353b; --muted: #6e4f57;
-    --bg2: #e2cbcf; --grad-a: #ecdbde; --grad-b: #e4ccd1; --hdr: rgba(232,222,225,.95);
-    --aside: #e5d2d6; --composer: rgba(240,226,229,.85);
-    --hover: rgba(161,77,110,.12); --sel: rgba(161,77,110,.18);
-    --hl: rgba(161,77,110,.2); --menubg: #e8d6da;
-    --menuline: rgba(161,77,110,.32); --chipbg: rgba(161,77,110,.12);
-    --chipbd: rgba(161,77,110,.26); --scroll: rgba(161,77,110,.45);
+    /* Pastel cherry-blossom daylight eye-saver: muted blossom paper, deep warm text. */
+    --bg: #ece0e3; --panel: #f4eaec; --panel2: #ecdfe2;
+    --line: #cdaeb6; --txt: #3b2c30; --dim: #6b4d55;
+    --acc: #9d5573; --acc2: #8f5f6e; --ok: #2f6b45; --warn: #6b4d08; --err: #8f2f1e;
+    --accent: #9d5573; --you: #5a6e9c; --info: #4d7f7a;
+    --bg-2: #ecdfe2; --bg-3: #e3d3d7; --line-2: #bd9ba4; --ink: #433237; --muted: #6b4d55;
+    --bg2: #ecdfe2; --grad-a: #f0e5e8; --grad-b: #ece0e3; --hdr: #f4eaec;
+    --aside: #ece0e3; --composer: #f4eaec;
+    --hover: rgba(157,85,115,.08); --sel: rgba(157,85,115,.14);
+    --hl: rgba(157,85,115,.18); --menubg: #f4eaec;
+    --menuline: #bd9ba4; --chipbg: rgba(157,85,115,.08);
+    --chipbd: #cdaeb6; --scroll: #bd9ba4;
     color-scheme: light;
   }
   html[data-theme="haze"] {
-    /* Muted lavender-grey night eye-saver: desaturated dark surfaces, soft
-       off-white text (never pure white) + pastel lavender accents, low glare. */
-    --bg: #1c2230; --panel: rgba(32,39,55,.85); --panel2: rgba(26,32,45,.9);
-    --line: rgba(165,180,252,.14); --txt: #cfd8e6; --dim: #8f99b0;
-    --acc: #a5b4fc; --acc2: #9fd4cb; --ok: #6fd3a0; --warn: #d9b45c; --err: #e0837f;
-    --accent: #a5b4fc; --you: #a9c2e8; --info: #7fc4d8;
-    --bg-2: #222a3c; --bg-3: #283145; --line-2: #323c52; --ink: #c2ccdd; --muted: #8f99b0;
-    --bg2: #222a3c; --grad-a: #252e42; --grad-b: #1d2434; --hdr: rgba(28,34,48,.82);
-    --aside: #202839; --composer: rgba(28,34,48,.7);
-    --hover: rgba(165,180,252,.14); --sel: rgba(165,180,252,.2);
-    --hl: rgba(165,180,252,.22); --menubg: #1e2536;
-    --menuline: rgba(165,180,252,.3); --chipbg: rgba(165,180,252,.14);
-    --chipbd: rgba(165,180,252,.2); --scroll: rgba(165,180,252,.45);
+    /* Muted lavender-grey night eye-saver: desaturated graphite, soft off-white text. */
+    --bg: #1a1f27; --panel: #222832; --panel2: #272e39;
+    --line: #343c49; --txt: #d6dee8; --dim: #9aa6b6;
+    --acc: #a9b6cd; --acc2: #9fd4cb; --ok: #6fd3a0; --warn: #d9b45c; --err: #e0837f;
+    --accent: #a9b6cd; --you: #a9c2e8; --info: #7fc4d8;
+    --bg-2: #222832; --bg-3: #2a313c; --line-2: #3f4857; --ink: #cbd4e0; --muted: #9aa6b6;
+    --bg2: #222832; --grad-a: #262d38; --grad-b: #1a1f27; --hdr: #222832;
+    --aside: #1a1f27; --composer: #222832;
+    --hover: rgba(255,255,255,.05); --sel: rgba(169,182,205,.16);
+    --hl: rgba(169,182,205,.22); --menubg: #222832;
+    --menuline: #47505f; --chipbg: rgba(169,182,205,.10);
+    --chipbd: #3f4857; --scroll: #4a5464;
     color-scheme: dark;
   }
   /* theme polish: re-point the tinted hotspots at the tokens (later rules win) */
-  body { background: radial-gradient(1200px 800px at 80% -10%, var(--grad-a) 0%, var(--bg) 55%),
-                    radial-gradient(900px 700px at -10% 110%, var(--grad-b) 0%, transparent 60%); }
+  body { background: linear-gradient(180deg, var(--grad-a) 0%, var(--bg) 240px); }
   header { background: var(--hdr); }
   aside { background: var(--aside); }
   .step:hover, .task:hover { background: var(--hover); }
@@ -1866,6 +1884,171 @@
   .u-fs115{font-size:11.5px !important}
   .u-wba{word-break:break-all !important}
   .u-oa{overflow:auto !important}
+
+  /* ======================================================================
+     2026-10-31 — WEBUI GRAPHICAL SYSTEM ("Graphite Instrument").
+     This layer sets the rhythm, density and component shape of the shell.
+     It never changes behaviour, ids or routes; it supersedes the older
+     decorative rules above it. Keep it grouped: type, chrome, rail, chat,
+     inspector, dialogs, mobility.
+     ====================================================================== */
+
+  /* --- type scale ------------------------------------------------------- */
+  h1, h2, h3, h4 { font-family: var(--sans); letter-spacing: -.01em; }
+  h1 { font-size: 18px; font-weight: 700; }
+  h2 { font-size: 13px; font-weight: 600; }
+  h3 { font-size: 12.5px; font-weight: 600; }
+  code, kbd, samp, pre, .jid, .tcid, .aid, .ch-id { font-family: var(--mono); }
+  .remaining, .cb-line, .ctxrow, .imp-row, .mts { font-variant-numeric: tabular-nums; }
+  .mts { font-family: var(--mono); letter-spacing: 0; opacity: .7; }
+
+  /* --- top bar ---------------------------------------------------------- */
+  #topbar { gap: 10px; }
+  #topbar .logo { padding-right: 6px; }
+  #topbar .topTabs { margin-right: 4px; }
+  #topbar .pill.sbox { background: transparent; border-color: transparent; padding: 4px 8px; }
+  #topbar .pill.sbox:hover { background: var(--hover); border-color: var(--line); }
+  #topbar #settingsBtn, #topbar #palette-open {
+    height: 30px; min-height: 30px; padding: 0 10px; border-radius: var(--r-sm);
+    background: transparent; border-color: transparent; color: var(--dim); font-size: 12px; }
+  #topbar #settingsBtn:hover, #topbar #palette-open:hover {
+    color: var(--txt); background: var(--hover); border-color: var(--line); }
+  #topbar #buildChip { height: 30px; min-height: 30px; border-color: var(--acc); color: var(--acc); }
+  .sessbadge { background: var(--hover); border-color: var(--line); }
+
+  /* --- sessions rail ---------------------------------------------------- */
+  aside { padding: 14px 12px; }
+  aside .rail { gap: 8px; }
+  .rail-head { padding-bottom: 2px; }
+  .rail-head h2 { font-size: 12.5px; }
+  .srail-tools button { width: 22px; height: 22px; padding: 0; border-radius: 6px;
+    border: 1px solid transparent; background: transparent; color: var(--dim); font-size: 10px; }
+  .srail-tools button:hover { color: var(--txt); border-color: var(--line-2); background: var(--hover); }
+  aside .rail-tools { gap: 6px; padding: 2px 0 10px; border-bottom: 1px solid var(--line); }
+  aside .rail-tools .rail-btn { width: 28px; height: 28px; border-radius: var(--r-sm);
+    border-color: transparent; background: transparent; color: var(--dim); font-size: 13px; }
+  aside .rail-tools .rail-btn:hover { color: var(--txt); background: var(--hover); border-color: var(--line); }
+  aside .rail-tools .rail-toggle[aria-pressed="true"] {
+    color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, transparent);
+    background: color-mix(in srgb, var(--acc) 12%, transparent); }
+  .runs-bar { padding: 5px 8px; border-color: var(--line); border-radius: var(--r-sm);
+    background: transparent; font-size: 11px; }
+  .runs-bar:hover { background: var(--hover); }
+  .rail-search { padding-top: 2px; }
+  .rail-search .inp { padding: 7px 10px; font-size: 12px; }
+  aside .rail-list { margin-top: 4px; }
+  .sess { border-radius: var(--r-sm); }
+  .sess .t { font-size: 13px; font-weight: 500; color: var(--txt); }
+  .sess.active .t { font-weight: 600; }
+  .sess .n { font-size: 10.5px; }
+  .sess .jid { color: var(--dim); background: transparent; border-color: var(--line);
+    font-size: 9.5px; padding: 0 5px; }
+  .sess .menu-btn { font-size: 13px; padding: 1px 5px; }
+  .sgroup { margin: 6px 0 4px; }
+  .sgroup-h { padding: 5px 6px; border-radius: 6px; font-size: 10.5px;
+    letter-spacing: .08em; color: var(--dim); }
+  .sgroup-h .gcount { background: transparent; border: 1px solid var(--line); color: var(--dim); }
+  .runs-panel, .sess-menu { border-radius: var(--r-sm); border-color: var(--line-2); box-shadow: var(--shadow-2); }
+  .runs-panel { padding: 6px; }
+  .rp-row { border-radius: 6px; }
+
+  /* --- chat ------------------------------------------------------------- */
+  #chatHead { padding: 8px 16px; background: transparent; min-height: 40px; }
+  #chatHead .ch-title { font-size: 13px; }
+  #chatHead .ch-copy { padding: 4px 7px; border-radius: 6px; }
+  #chatSearchBar { padding: 8px 16px; background: transparent; }
+  #chatSearchInput { padding: 7px 10px; border-radius: var(--r-sm); }
+  #log { padding: 24px 28px 12px; }
+  .msg .who { gap: 8px; }
+  .msg .copy { padding: 2px 8px; border-radius: 6px; font-size: 10px; }
+  .toolcard { border-radius: 10px; background: var(--panel); padding: 8px 11px; }
+  .tctree > summary { border-radius: var(--r-sm); background: transparent; }
+  .tctree > summary:hover { background: var(--hover); }
+  .fgroup > summary { border-radius: var(--r-sm); }
+  #dots { scrollbar-width: none; }
+  #jumpBtn { border-radius: 50%; box-shadow: var(--shadow-1); border-color: var(--line-2);
+    background: var(--panel2); color: var(--txt); }
+  #jumpBtn:hover { border-color: var(--acc); }
+  #toolsBar { flex: 0 0 44px; width: 44px; min-width: 44px; background: transparent;
+    border-left: 1px solid var(--line); border-right: 0; }
+  #toolsBar button { width: 30px; height: 30px; border-radius: var(--r-sm);
+    background: transparent; border-color: transparent; color: var(--dim); }
+  #toolsBar button:hover { background: var(--hover); border-color: var(--line);
+    color: var(--acc); }
+  #composer { margin: 10px 14px 12px; padding: 10px; border: 1px solid var(--line);
+    border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-1); }
+  #composer #inp { background: transparent; border: 0; padding: 6px 6px 4px;
+    min-height: 40px; }
+  #composer #inp:focus { box-shadow: none; border: 0; }
+  #composerBar .cb-left > button, #composerBar .cb-right > button,
+  #composerBar .cb-right .model-wrap > button, #composerBar .more-wrap > button {
+    height: 32px; min-height: 32px; border-radius: var(--r-sm); }
+  #composerBar #sendBtn { width: 34px; height: 34px; min-width: 34px;
+    background: var(--acc); color: #1b1206; }
+  #composerBar #sendBtn.stop { background: var(--err); color: #fff; border-radius: var(--r-sm); }
+  #composerBar .cb-right > #micBtn { width: 36px; height: 36px; min-width: 36px; }
+  #composerBar .cb-left > select#qmode { height: 32px; color: var(--dim); font-size: 11.5px; }
+  #attachRow { padding: 4px 4px 0; }
+  .attchip, .chatatt { background: var(--hover); border-color: var(--line); }
+  #goalBar { border-radius: var(--r-sm); }
+  #queueBar { padding-top: 2px; }
+  .qchip { background: var(--hover); border-color: var(--line); }
+
+  /* --- inspector -------------------------------------------------------- */
+  #inspector { padding: 8px; }
+  #inspector section { border-bottom: 1px solid var(--line); }
+  #inspector .insp-hd { padding: 8px 6px; font-size: 12px; border-radius: 6px; }
+  #inspector .insp-hd:hover { background: var(--hover); }
+  #inspector .insp-body { padding: 2px 6px 10px; }
+  #inspector .card { padding: 8px 10px; border-radius: 10px; background: var(--bg-2); }
+  #inspector .card > div { min-width: 0; }
+  .ctxpct { font-size: 17px; }
+  .ctxbd .bdbar .bt { height: 4px; background: var(--line); }
+  .ctxitem { padding: 5px 2px; }
+  .costtot { font-size: 15px; }
+  .imp-card { border-radius: 10px; background: var(--bg-2); }
+  .imp-diff { border-radius: 8px; }
+  .lnk { color: var(--acc); }
+
+  /* --- menus, dialogs, settings ---------------------------------------- */
+  #plusMenu, #moreMenu, #modelMenu, .smodal, #newSessDlg, #rwDlg, #dirPicker,
+  #diffView, #imgView, #mcpJsonWin .mj-card {
+    background: var(--menubg); border: 1px solid var(--line-2);
+    border-radius: 12px; box-shadow: var(--shadow-2); }
+  #settingsWin { background: var(--menubg); border-color: var(--line-2);
+    border-radius: 14px; box-shadow: var(--shadow-2); }
+  #settingsWin .sw-head { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  #settingsWin .sw-nav { padding: 10px 8px; border-right: 1px solid var(--line); }
+  #settingsWin .sw-nav button { padding: 8px 10px; border-radius: var(--r-sm); font-size: 12px; }
+  #settingsWin .sw-nav button.active { background: var(--hover); border-color: transparent;
+    box-shadow: inset 2px 0 0 var(--acc); color: var(--txt); }
+  #settingsWin .sw-main { padding: 14px 16px; }
+  #settingsWin .sw-main .sw-cat h2 { font-size: 11.5px; letter-spacing: .06em; margin: 18px 0 8px; }
+  #swMain .kb-row { background: transparent; border-radius: var(--r-sm); padding: 5px 8px; }
+  #swMain .kb-row:hover { background: var(--hover); }
+  .themegrid { gap: 8px; }
+  .themecard { border-radius: 10px; background: var(--bg-2); padding: 8px; }
+  .themecard:hover { border-color: var(--line-2); background: var(--panel); }
+  .themecard.active { border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
+  .smback, #nsBackdrop, #rwBackdrop, #dirBackdrop, #diffBackdrop, #imgBackdrop,
+  #palette, #qmode option { background: rgba(0,0,0,.6); }
+  #sfToast .sf-toast, .sf-toast, .done-toast { border-radius: 10px;
+    border-color: var(--line-2); box-shadow: var(--shadow-2); }
+  .edge-handle { border-color: var(--line-2); background: var(--panel2);
+    box-shadow: var(--shadow-1); }
+  .edge-handle:hover { background: var(--panel2); border-color: var(--acc); }
+  .resizer:hover, .resizer.active { background: var(--acc); }
+  #tabbar { gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
+  #tabbar button { min-height: 42px; border-radius: var(--r-sm); border-color: transparent;
+    background: transparent; color: var(--dim); font-size: 11.5px; }
+  #tabbar button.active { color: var(--txt); border-color: var(--line-2); background: var(--hover); }
+
+  /* --- one authored motion moment -------------------------------------- */
+  @keyframes panelIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  #chatHead, #nowbar { animation: panelIn .16s ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    #chatHead, #nowbar { animation: none; }
+  }
 </style>
 <script>
 /* JAG-352: apply the saved theme + text-weight before first paint (no flash). */
@@ -6376,8 +6559,8 @@ async function loadCtxItems() {
 function _fmtTok(n) { n = n || 0; return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n); }
 /* JAG-355: donut for the context composition. r is chosen so the circumference is
    exactly 100, so each stroke-dasharray value IS the segment percentage. */
-const CTX_COLS = ["#6c8cff", "#8b7bf0", "#39d3c3", "#e0a458", "#d96a8f", "#5bd08a",
-                  "#b07be0", "#7f9ac0", "#c9a227", "#d97a7a", "#8a94a8", "#4a5568"];
+const CTX_COLS = ["#c47a3a", "#6f8fa8", "#5a9a78", "#b8862f", "#b06a7c", "#4f9a6a",
+                  "#8b90b8", "#6d8296", "#8a8a3f", "#c06a5a", "#8a94a8", "#4a5568"];
 /* JAG-364: short labels for the context breakdown bars (the full label stays in the
    tooltip) — keeps the bars wide instead of the words. */
 const CTX_ABBR = {
@@ -11553,24 +11736,24 @@ const SETTINGS_CATS = [
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
    by the inline boot script above, these helpers just re-render and save. */
 const THEMES = [
-  { id: "indigo", name: "Indigo", desc: "Blue & purple — the house style",
-    sw: "linear-gradient(120deg,#141a3a,#241638 58%,#8b7bf0)", t: "#e2e6ff", a: "#7c8cff" },
+  { id: "indigo", name: "Graphite", desc: "Neutral graphite + copper — the house style",
+    sw: "linear-gradient(120deg,#0b0d11,#171b23 58%,#cf8a4a)", t: "#e7e9ee", a: "#cf8a4a" },
   { id: "dark", name: "Dark", desc: "Neutral graphite, low glare",
-    sw: "linear-gradient(120deg,#0e1116,#1a1f28 58%,#9fb0cb)", t: "#e9edf3", a: "#8fa6c8" },
+    sw: "linear-gradient(120deg,#0c0d10,#181b21 58%,#b8c4d6)", t: "#e9eaee", a: "#b8c4d6" },
   { id: "midnight", name: "Midnight", desc: "Deep blue-black — night eye-saver",
-    sw: "linear-gradient(120deg,#0a1020,#101a2e 58%,#6b8cff)", t: "#d7e0f2", a: "#6b8cff" },
+    sw: "linear-gradient(120deg,#081019,#111e2d 58%,#7fa6cc)", t: "#dbe3ec", a: "#7fa6cc" },
   { id: "forest", name: "Forest", desc: "Deep muted green — calm focus",
-    sw: "linear-gradient(120deg,#16281f,#0c1410 58%,#6fae8b)", t: "#d8e6dc", a: "#6fae8b" },
+    sw: "linear-gradient(120deg,#141d18,#0d1310 58%,#7fb694)", t: "#dde8e0", a: "#7fb694" },
   { id: "sand", name: "Sand", desc: "Warm cream, low glare — soft daylight",
-    sw: "linear-gradient(120deg,#ddc9a3,#cbb588 58%,#9c5f24)", t: "#382f21", a: "#9c5f24" },
+    sw: "linear-gradient(120deg,#e2dbcb,#d9d1c0 58%,#8a5a2b)", t: "#2f2b23", a: "#8a5a2b" },
   { id: "sepia", name: "Sepia", desc: "Dark warm amber — night reading",
-    sw: "linear-gradient(120deg,#2a2015,#17120c 58%,#c99a5b)", t: "#e6d8bf", a: "#c99a5b" },
+    sw: "linear-gradient(120deg,#2a2218,#16120c 58%,#c89a63)", t: "#e9dcc6", a: "#c89a63" },
   { id: "celestial", name: "Celestial", desc: "Pastel sky blue — soft daylight eye-saver",
-    sw: "linear-gradient(120deg,#d8e2f1,#d7e1ee 58%,#2f5b94)", t: "#2c3a52", a: "#2f5b94" },
+    sw: "linear-gradient(120deg,#e5ecf4,#dfe6ef 58%,#3b6a9a)", t: "#24303f", a: "#3b6a9a" },
   { id: "sakura", name: "Sakura", desc: "Pastel cherry blossom — warm soft daylight",
-    sw: "linear-gradient(120deg,#ecdbde,#e9d5d8 58%,#a14d6e)", t: "#453136", a: "#a14d6e" },
+    sw: "linear-gradient(120deg,#f0e5e8,#ece0e3 58%,#9d5573)", t: "#3b2c30", a: "#9d5573" },
   { id: "haze", name: "Haze", desc: "Muted lavender-grey — night eye-saver",
-    sw: "linear-gradient(120deg,#252e42,#1c2230 58%,#a5b4fc)", t: "#cfd8e6", a: "#a5b4fc" },
+    sw: "linear-gradient(120deg,#262d38,#1a1f27 58%,#a9b6cd)", t: "#d6dee8", a: "#a9b6cd" },
 ];
 function renderThemeGrid() {
   const g = $("themeGrid"); if (!g) return;
@@ -14120,7 +14303,7 @@ $("palette-open").onclick = openPalette;
    (JAG-283) — dividing by the live zoom keeps the deck flush with the banner. */
 function _tabTop() {
   const h = document.getElementById("topbar");
-  if (!h) return 44;
+  if (!h) return 52;
   const z = (typeof _zoom === "number" && _zoom > 0) ? _zoom : 1;
   return Math.round(h.getBoundingClientRect().height / z);
 }

@@ -42,9 +42,10 @@ check("A3 a real token block per theme",
                               'html[data-theme="sepia"]', 'html[data-theme="celestial"]',
                               'html[data-theme="sakura"]', 'html[data-theme="haze"]')), "")
 check("A4 Sand is creamier (lower luminance than the old near-white)",
-      "--bg: #c8bda2" in HTML and "#e7d9bd" not in HTML, "")
+      # 2026-10-31: the paper palette was rebuilt; sand stays a cream paper.
+      "--bg: #d9d1c0" in HTML and "#e7d9bd" not in HTML, "")
 check("A5 Sand and Sepia are no longer identical",
-      "--bg: #c8bda2" in HTML and "--bg: #17120c" in HTML, "")
+      "--bg: #d9d1c0" in HTML and "--bg: #16120c" in HTML, "")
 check("A6 three light themes (Sand + Celestial + Sakura)",
       HTML.count("color-scheme: light") == 3, str(HTML.count("color-scheme: light")))
 
@@ -105,7 +106,9 @@ check("F4 the toggle behaviour is preserved (collapsed/show + resize)",
 check("G1 the composer background is token-driven",
       "--composer:" in HTML and "#composer { background: var(--composer); }" in HTML, "")
 check("G2 Sand gives the composer a light background; dark themes stay dark",
-      "--composer: rgba(206,197,173,.85)" in HTML and "--composer: rgba(23,18,12,.7)" in HTML, "")
+      # 2026-10-31: the palettes were rebuilt on the graphite system; the contract
+      # (sand = light composer, sepia = dark composer) is unchanged.
+      "--composer: #e6dfcf" in HTML and "--composer: #221c14" in HTML, "")
 
 # --- H: the deck is renamed Control (top-level tabs) ------------------------
 check("H1 the WebUI has top-level Sessions + Control tabs",
