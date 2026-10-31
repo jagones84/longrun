@@ -378,6 +378,18 @@ check("P2 it takes the SAME model spelling Harness2 uses, and the same prompt",
 # approvals=full, so parity requires skipping the asks here too.
 check("P4 the bare-loop arm runs with permissions skipped (parity with approvals=full)",
       "--dangerously-skip-permissions" in _cmd_oc, _cmd_oc)
+# The MASK in `command.json` must hide the prompt and nothing else: masking the
+# wrong index hid `--dir` and made the arm LOOK mis-invoked (2026-10-31). The
+# mask index is 7, so the prompt must BE at 7 and the first flag at 8.
+check("P7 the recorded command masks index 7 = the prompt (so --dir stays visible)",
+      _cmd_oc[7] == "PROMPT" and _cmd_oc[8] == "--dir" and _cmd_oc[9] == "/tmp/ws-pin",
+      _cmd_oc[6:11])
+# 2026-10-31: an empty key produced a full table of zeros in 106 s. The preflight
+# refuses to start when the OpenRouter budget is gone, and stays out of the way
+# for any other provider (no portable budget endpoint).
+check("P8 the key preflight refuses an exhausted budget and ignores other providers",
+      JC.key_budget("k", "https://api.deepseek.com/v1") is None,
+      JC.key_budget("k", "https://api.deepseek.com/v1"))
 _stream = ('{"type":"step_finish","part":{"tokens":{"input":100,"output":10,'
            '"reasoning":5},"cost":0.001}}\n'
            '{"type":"text","part":{"text":"done"}}\n'

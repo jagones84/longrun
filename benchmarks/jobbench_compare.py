@@ -55,6 +55,29 @@ def _model_slug(model):
     return re.sub(r"[^A-Za-z0-9.]+", "-", str(model or "model")).strip("-")
 
 
+def key_budget(key, base):
+    """Remaining credit on the solver key (OpenRouter), or None when unknown.
+
+    Measured 2026-10-31: a full four-arm sweep finished in 106 s with every arm at
+    `0.0` — not because a harness is bad, but because the key had $0.00 left
+    ("Key limit exceeded (total limit)"). A benchmark that cannot call the model
+    must REFUSE to spend, not produce a table of zeros that looks like a result.
+    """
+    base = str(base or "")
+    if "openrouter.ai" not in base:
+        return None          # another provider: no portable budget endpoint
+    import urllib.request
+    url = base.rstrip("/") + "/key"
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer %s" % key})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            d = (json.load(resp) or {}).get("data") or {}
+        rem = d.get("limit_remaining")
+        return None if rem is None else float(rem)
+    except Exception:  # noqa: BLE001 — an inspection must never block a run
+        return None
+
+
 def default_out(arms, model, n_tasks, scope=""):
     """The canonical folder for a run — one naming rule, collision-safe.
 
@@ -491,7 +514,12 @@ def run_opencode(tasks, out, *, solver_model, judge_model, judge_base, key, time
         jobbench.stage(task, ws)
         prompt = jobbench.prompt_for(task, ws)
         cmd = opencode_command(ws, solver_model, prompt)
-        meta = {"command": ["<prompt>" if i == 8 else c for i, c in enumerate(cmd)],
+        # Mask the PROMPT only (index 7: bun run --cwd <oc> --conditions=browser
+        # src/index.ts run <PROMPT> --dir …). It used to mask index 8, which is
+        # `--dir`, so command.json showed a workspace as a bare positional and hid
+        # the flag — and reading that file suggested the arm was invoked wrong when
+        # it was not (2026-10-31). The record must show every real flag.
+        meta = {"command": ["<prompt>" if i == 7 else c for i, c in enumerate(cmd)],
                 "model": solver_model, "workspace": str(ws),
                 "cwd": str(DEFAULT_HARNESS2)}
         t0 = time.time()
@@ -1006,6 +1034,18 @@ def main(argv=None):
                        finished=time.strftime("%Y-%m-%dT%H:%M:%S"))
         print("no %s found (env, ~/.hermes/.env, ./.env)" % args.judge_key_env)
         return 2
+    # Refuse to spend on a key that cannot answer: without this, a dead key
+    # produced a full table of zeros in 106 s (2026-10-31) and every row looked
+    # like a harness verdict.
+    remaining = key_budget(key, args.judge_base)
+    if remaining is not None and remaining <= 0:
+        write_manifest(out, status="failed", finished=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                       error="key budget exhausted: %.4f USD left" % remaining)
+        print("REFUSED: the solver key has %.4f USD left on %s — top it up, or run "
+              "with another provider. No arm was started." % (remaining, args.judge_base))
+        return 3
+    if remaining is not None:
+        print("key budget: %.4f USD left" % remaining, flush=True)
     h2_model = args.harness2_model or args.model.replace(":", "/", 1)
     parity = {"corpus": str(jobbench.repo()), "tasks": ",".join(t["id"] for t in tasks),
               "solver_longrun": args.model, "solver_harness2": h2_model,
@@ -1016,6 +1056,10 @@ def main(argv=None):
               "longrun_max_steps": args.max_steps,
               "raw_transport": "one plain chat/completions call, no tools, no system prompt",
               "harness2_transport": "CLI sweep (harness2 run_sweep --bench jb)"}
+    if remaining is not None:
+        # The budget at the moment the run started: a reader can tell whether the
+        # run was affordable without guessing.
+        parity["key_remaining_usd"] = "%.4f" % remaining
 
     rows = []
     for arm in arms:
