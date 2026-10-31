@@ -284,6 +284,105 @@ check("E7 zero artifacts is SAID OUT LOUD when the request names a file",
       and A.nothing_written("how many sessions are running?") is None,
       A.nothing_written("produce a workbook of referrals"))
 
+# H — RECORD COVERAGE: the inputs' records must be accounted for ----------------
+# Measured 2026-10-31 with a FRESH official judge on artefacts that already existed:
+# bookkeeping longrun 26/88 vs openclaw 52/88, medical longrun 12/78 vs opencode
+# 58/78. Every rubric lost was "state X for THIS record" — AP10260 (visible to the
+# turn, absent from the deliverable), REF-2026-0210, a per-issue corrective action.
+# The read-back described what was WRITTEN and which file was NAMED, never which
+# RECORDS the inputs hold, so an exhaustive-looking summary closed as done.
+WS2 = os.path.join(TMP, "ws2")
+OUT2 = os.path.join(WS2, "output")
+TF2 = os.path.join(WS2, "task_folder")
+os.makedirs(OUT2, exist_ok=True)
+os.makedirs(TF2, exist_ok=True)
+
+with open(os.path.join(TF2, "invoices.csv"), "w", encoding="utf-8") as f:
+    f.write("invoice,vendor,amount\n"
+            "AP10260,ABC Supplies,3084.27\n"
+            "AP10758,ABC Supplies,2204.28\n"
+            "AP10362,ABC Supplies,2005.72\n"
+            "AP10498,ABC Supplies,597.75\n"
+            "AP10155,ABC Supplies,249.12\n")
+with open(os.path.join(TF2, "brief.txt"), "w", encoding="utf-8") as f:
+    f.write("Reconcile AP10003, AP99999 and CHK-1402 per the policy Q1-2024.\n")
+with open(os.path.join(TF2, "tiny.csv"), "w", encoding="utf-8") as f:
+    f.write("id,amount\nAP10003,4433.05\nAP10758,2204.28\n")
+_old2 = time.time() - 3600
+for _n in ("invoices.csv", "brief.txt", "tiny.csv"):
+    os.utime(os.path.join(TF2, _n), (_old2, _old2))
+
+_xin = Workbook()
+_xs = _xin.active
+_xs.title = "Register"
+_xs.append(("txn", "amount"))
+for _t in ("CHK-1401", "CHK-1402", "EFT-2210"):
+    _xs.append((_t, 1000))
+_xin.save(os.path.join(TF2, "register.xlsx"))
+os.utime(os.path.join(TF2, "register.xlsx"), (_old2, _old2))
+
+SINCE2 = time.time() - 1
+# the turn's answer: an ABC summary that enumerates TWO of the five invoices, and
+# ONE of the two CHK records in the register — so each family is engaged, incomplete
+with open(os.path.join(OUT2, "audit.csv"), "w", encoding="utf-8") as f:
+    f.write("invoice,variance\nAP10758,0\nAP10362,0\nCHK-1401,matched\n")
+
+_cov = {c["path"]: c for c in A.coverage(WS2, since=SINCE2)}
+_inv = _cov.get("task_folder/invoices.csv") or {}
+_fams = {f["stem"]: f for f in _inv.get("families") or []}
+check("H1 an input record set is compared with the deliverable",
+      _inv.get("total") == 5 and "AP" in _fams, _cov)
+check("H2 the records the answer never mentions are NAMED",
+      set((_fams.get("AP") or {}).get("missing") or [])
+      == {"AP10260", "AP10498", "AP10155"}, _fams.get("AP"))
+check("H3 identifiers inside a workbook INPUT are covered too",
+      set((( {f["stem"]: f for f in (_cov.get("task_folder/register.xlsx")
+                                     or {}).get("families") or []}
+            ).get("CHK") or {}).get("missing") or []) == {"CHK-1402"},
+      _cov.get("task_folder/register.xlsx"))
+check("H4 a prose brief is not a record set",
+      "task_folder/brief.txt" not in _cov, sorted(_cov))
+check("H5 two identifiers are not a record set (no noise below the floor)",
+      "task_folder/tiny.csv" not in _cov, sorted(_cov))
+check("H6 a complete answer reports nothing",
+      A.coverage(WS2, since=SINCE2 + 10 ** 9) == [], "future since")
+_covline = A._coverage_line(_inv) if _inv else ""
+check("H7 the line names the family, the fraction and the missing records",
+      "AP: 3 of 5 never appear" in _covline and "AP10260" in _covline, _covline)
+_g2 = A.gaps(WS2, since=SINCE2)
+check("H8 an unaccounted record is a mechanical gap (it earns a cycle)",
+      any("incomplete record family" in g for g in _g2), _g2)
+_r2 = A.review(WS2, since=SINCE2) or ""
+check("H9 the read-back SAYS it, and says what to do about it",
+      "RECORDS NOT ACCOUNTED FOR" in _r2 and "out of scope" in _r2,
+      _r2[-600:])
+check("H10 the audit never raises on a workspace that does not exist",
+      A.coverage(os.path.join(TMP, "nowhere"), since=SINCE2) == [], "missing ws")
+
+# A REGISTER is not a checklist: 300 ledger ids the report never enumerates must not
+# be held against it (a real AP subledger holds 800; demanding all of them is noise
+# that costs turns), while a family it DID engage still is.
+WS3 = os.path.join(TMP, "ws3")
+os.makedirs(os.path.join(WS3, "output"), exist_ok=True)
+os.makedirs(os.path.join(WS3, "task_folder"), exist_ok=True)
+with open(os.path.join(WS3, "task_folder", "ledger.csv"), "w", encoding="utf-8") as f:
+    f.write("gl,amount\n")
+    for _i in range(300):
+        f.write("GL%05d,10.0\n" % _i)
+    for _i in range(1, 5):
+        f.write("CHK-140%d,20.0\n" % _i)
+_old3 = time.time() - 3600
+os.utime(os.path.join(WS3, "task_folder", "ledger.csv"), (_old3, _old3))
+SINCE3 = time.time() - 1
+with open(os.path.join(WS3, "output", "answer.csv"), "w", encoding="utf-8") as f:
+    f.write("check,note\nCHK-1401,ok\nCHK-1403,ok\nCHK-1404,ok\n")
+_cov3 = {c["path"]: c for c in A.coverage(WS3, since=SINCE3)}
+_f3 = {f["stem"]: f for f in (_cov3.get("task_folder/ledger.csv") or {}).get("families") or []}
+check("H11 a 300-row register is not held against the report",
+      "GL" not in _f3, sorted(_f3))
+check("H12 the family the report DID engage is still checked",
+      (_f3.get("CHK") or {}).get("missing") == ["CHK-1402"], _f3.get("CHK"))
+
 print("\n---")
 print("v731: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

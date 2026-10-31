@@ -27,6 +27,7 @@ Design rules
 """
 import csv
 import os
+import re
 import time
 from pathlib import Path
 
@@ -381,6 +382,136 @@ def inputs(workspace, since=0.0, limit=12, exclude=()):
     return sorted(found)[:int(limit)]
 
 
+#: An identifier a RECORD carries: `AP10260`, `CHK-1402`, `EFT-2210`,
+#: `REF-2026-0207`, `IC-2025-0115-013`, `AET-5567201`, `M84.451A`, `STA27`.
+#: Every token must also contain a DIGIT — checked in `coverage()`, not in the
+#: pattern, because `GAS-ODOR` and `DUPLICATE_RISK` are hyphenated words, not
+#: records, and they matched the hyphenated alternative (measured on the real
+#: dispatch workspace, 2026-10-31).
+_ID_RE = re.compile(
+    r"\b(?:"
+    r"[A-Z]{2,}\d{2,}"                        # AP10260
+    r"|[A-Z]{2,}(?:[-_.][A-Z0-9]+)+"          # CHK-1402, REF-2026-0207, AET-5567201
+    r"|[A-Z]\d{2}\.[0-9A-Z]{1,4}"             # M84.451A (ICD-10 style)
+    r")\b")
+
+#: A file is a RECORD SET only when it carries at least this many identifiers. Below
+#: it there is nothing to enumerate, and the fact would be noise.
+COVERAGE_MIN_IDS = 3
+#: A FAMILY larger than this is a register (`AP` x800 in the AP subledger): the
+#: deliverable cannot enumerate it and a demand to would be noise. A family the
+#: deliverable already ENGAGED with is the useful unit — it cites CHK-1401 and
+#: CHK-1403, so CHK-1402 missing is a fact about its own work.
+COVERAGE_MAX_FAMILY = 50
+#: How many missing identifiers are named in one line (the rest are counted).
+COVERAGE_SHOW = 6
+#: How many families are reported per file.
+COVERAGE_MAX_FAMILIES = 4
+#: How many input files are inspected per read-back (bounded: a review may not walk
+#: a 700-file tree on every turn).
+COVERAGE_MAX_FILES = 6
+
+_STEM_RE = re.compile(r"[A-Za-z]+")
+
+
+def _stem(tok):
+    """The alphabetic stem of an identifier — `CHK-1402` -> `CHK`, `AP10260` -> `AP`."""
+    m = _STEM_RE.match(tok)
+    return (m.group(0) if m else "")[:6]
+
+
+def coverage(workspace, since=0.0, limit=MAX_FILES, exclude=()):
+    """Identifiers the INPUTS hold that the deliverables never mention.
+
+    The read-back described what was WRITTEN and which input was NAMED; it never
+    asked whether the RECORDS inside those inputs were accounted for. Measured
+    2026-10-31 (JobBench, same model, fresh official judge on the same artefacts):
+    bookkeeping longrun 26/88 against openclaw 52/88, medical longrun 12/78 against
+    opencode 58/78. Every rubric lost was "state X for THIS record" — `AP10260`
+    (visible to the turn, absent from its own vendor table), `CHK-1402` unflagged,
+    a per-issue corrective action nobody wrote. A summary that never names the
+    record looks complete and is not.
+
+    The unit is the FAMILY the deliverable already engaged with, not the whole file:
+    a report that cites `CHK-1401` and `CHK-1403..1406` is told that `CHK-1402` of
+    the same six is absent, while the 800-row `AP` register (a family the report
+    never enumerates and could not) is not held against it.
+
+    Returns `[{"path", "total", "families": [{"stem", "total", "missing": [...]}]}]`,
+    at most one entry per input record set, facts only. Never raises.
+    """
+    try:
+        given = inputs(workspace, since=since, exclude=exclude)
+        if not given:
+            return []
+        entries = inventory(workspace, since=since, limit=limit, exclude=exclude)
+        if not entries:
+            return []
+        parts, used = [], 0
+        for entry in entries:
+            text = deliverable_text(os.path.join(workspace, entry["path"]))
+            if text:
+                parts.append(text)
+                used += len(text)
+                if used >= MAX_TEXT_CHARS:
+                    break
+        blob = " ".join(parts)[:MAX_TEXT_CHARS]
+        if not blob:
+            return []
+        out = []
+        for name in given[:COVERAGE_MAX_FILES]:
+            if os.path.splitext(name)[1].lower() not in DATA_EXTS:
+                continue  # a brief or a README is not a record set
+            text = deliverable_text(os.path.join(workspace, name))
+            if not text:
+                continue  # .db and other unreadable-in-place formats: no claim
+            ids, seen = [], set()
+            for m in _ID_RE.finditer(text):
+                tok = m.group(0)
+                if tok in seen or len(tok) < 4:
+                    continue
+                if not any(ch.isdigit() for ch in tok):
+                    continue  # `GAS-ODOR` is a hyphenated word, not a record
+                seen.add(tok)
+                ids.append(tok)
+            if len(ids) < COVERAGE_MIN_IDS:
+                continue
+            families = {}
+            for tok in ids:
+                families.setdefault(_stem(tok), []).append(tok)
+            gaps = []
+            for stem, members in families.items():
+                if not stem or len(members) > COVERAGE_MAX_FAMILY:
+                    continue  # a register, not a checklist
+                if not any(t in blob for t in members):
+                    continue  # the deliverable never engaged this family at all
+                missing = [t for t in members if t not in blob]
+                if missing:
+                    gaps.append({"stem": stem, "total": len(members), "missing": missing})
+            if gaps:
+                out.append({"path": name, "total": len(ids), "families": gaps})
+        return out
+    except Exception:  # noqa: BLE001 — the audit may never break a turn
+        return []
+
+
+def _coverage_bits(item):
+    """`CHK: 1 of 6 never appear (CHK-1402)` — the families, self-contained."""
+    bits = []
+    for fam in item["families"][:COVERAGE_MAX_FAMILIES]:
+        shown = fam["missing"][:COVERAGE_SHOW]
+        more = "" if len(fam["missing"]) <= COVERAGE_SHOW else ", …"
+        bits.append("%s: %d of %d never appear (%s%s)"
+                    % (fam["stem"], len(fam["missing"]), fam["total"],
+                       ", ".join(shown), more))
+    return "; ".join(bits)
+
+
+def _coverage_line(item):
+    """One line per file: which record FAMILIES the answer left incomplete."""
+    return "%s — %s" % (item["path"], _coverage_bits(item))
+
+
 def _line(entry):
     """One human line per artifact: `path — <facts>`."""
     f = entry.get("facts") or {}
@@ -502,6 +633,12 @@ def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
         if "columns" in facts and not facts.get("rows"):
             out.append("%s: csv with no data rows" % entry["path"])
     out.extend(_request_gaps(request, entries))
+    # A record set the inputs hold and the delivery never mentions is incomplete
+    # for the same reason an empty sheet is: the reader was handed the source and
+    # asked for the records in it. Bounded by `coverage()`'s own caps.
+    for item in coverage(workspace, since=since, limit=limit, exclude=exclude):
+        out.append("%s: incomplete record family (%s)"
+                   % (item["path"], _coverage_bits(item)))
     return out
 
 
@@ -553,6 +690,15 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
                 lines += ["  * NOT NAMED in any deliverable: %s — name the file a "
                           "figure came from; an invisible source cannot be credited."
                           % ", ".join(unnamed[:8])]
+        # The CONTENT, not only the name: a source is accounted for when its
+        # records are, and "I analysed it" cannot be seen by a reader. Every rubric
+        # this harness lost on 2026-10-31 was of this shape ("state X for THIS
+        # record"), never "write a nicer report".
+        for item in coverage(workspace, since=since, limit=limit, exclude=exclude):
+            lines += ["  * RECORDS NOT ACCOUNTED FOR — " + _coverage_line(item)
+                      + ". Name each one in the deliverable (a row, a line, a cell) "
+                        "or say explicitly why it is out of scope; a summary that "
+                        "never mentions it does not cover it."]
     if any((e.get("facts") or {}).get("charts") for e in entries):
         lines += ["  * a chart is a PICTURE: a reader that extracts text sees only your "
                   "cells — the plotted numbers must also appear as cells (a caption "
