@@ -48,8 +48,8 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      chat_once, clear_abort, clear_session, context_budget, default_model,
                      ensure_agent, ensure_model, ensure_reply_persisted, eval_list_tasks,
                      eval_run, events_since, feed_seq, generate_plan,
-                     get_or_create_session, get_run_trace, graph_post, keys_status,
-                     list_sessions, load_plan, load_session, load_tasks, model_loaded,
+                     get_or_create_session, get_run_trace, graph_post, heartbeat_frame,
+                     keys_status, list_sessions, load_plan, load_session, load_tasks, model_loaded,
                      publish, push_abort, push_steer, query_events,
                      reconcile_agent_models, reconcile_orphan_turns, router_models,
                      runs_summary, save_session, save_tasks, self_knowledge,
@@ -468,7 +468,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     # v0.6.1 (JAG-48): no keep-alive here — one `done`, then the generator is
     # exhausted and sse_response closes the connection.
     try:
-        yield from sse_pump(q, t, idle_timeout=CHAT_STREAM_IDLE or None)
+        yield from sse_pump(q, t, idle_timeout=CHAT_STREAM_IDLE or None, heartbeat=True)
     finally:
         # JAG-51 safety net: if the producer is already gone without a reply
         # (e.g. the pump gave up on silence), still leave an assistant trace.
@@ -553,6 +553,9 @@ def chat_attach_gen(sid, since=0):
             idle += 1
             if idle % 15 == 0:
                 yield ": ping\n\n"
+                # 2026-11-01: a named frame, so the page can prove this socket is
+                # still delivering bytes (a comment is invisible to EventSource).
+                yield heartbeat_frame()
     yield "event: done\ndata: {}\n\n"
 
 
@@ -561,7 +564,8 @@ def feed_gen(since=0):
     with _sse_lock:
         _sse_queues.add(q)
     try:
-        yield from sse_tail(q, events_since(since, limit=FEED_REPLAY_MAX), ": feed open\n\n")
+        yield from sse_tail(q, events_since(since, limit=FEED_REPLAY_MAX), ": feed open\n\n",
+                            heartbeat=True)
     finally:
         with _sse_lock:
             _sse_queues.discard(q)

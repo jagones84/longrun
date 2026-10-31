@@ -105,7 +105,11 @@ check("Q1b shipped browser default is enabled", "enabled: true" in Y.split("brow
       if "browser:" in Y else False)
 check("Q2 chat.done auto-rebuilds this session (reloadChat)",
       'chat.done' in HTML and "reloadChat()" in HTML
-      and "d.session === sessionId) reloadChat()" in HTML)
+      # 2026-11-01: the rebuild is now conditional — a turn THIS tab already
+      # streamed to `done` needs no rebuild (it only re-parsed the log and blanked
+      # the chat); a turn it did not render still goes through reloadChat().
+      and "if (d.session && d.session === sessionId) {" in HTML
+      and "else reloadChat();" in HTML)
 
 print("---")
 passed = sum(results)

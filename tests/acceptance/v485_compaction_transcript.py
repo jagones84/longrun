@@ -130,7 +130,12 @@ check("4a loadHistory is generation-guarded and clears the log FIRST",
       "let _historySeq = 0;" in ui
       and "const _gen = ++_historySeq;" in ui
       and "const _stale = () => _gen !== _historySeq" in ui
-      and '$("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();\n  _historyReplaySession'
+      # 2026-11-01: the clear moved into `_paintHistoryStart()` so the previous
+      # transcript stays readable during the history/graph round-trips; the
+      # generation guard and the "queue live node events from this instant" flag
+      # are still the first two statements of the rebuild.
+      and "  _historyReplaySession = _historySid;" in ui
+      and 'function _paintHistoryStart() {\n  $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();'
       in ui)
 check("4b every await in loadHistory re-checks the generation",
       ui.count("if (_stale()) return;") >= 3)

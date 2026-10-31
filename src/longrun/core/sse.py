@@ -73,8 +73,20 @@ def sse_response(handler, gen, keepalive=False):
         sse_close(handler)
 
 
+def heartbeat_frame(ts=None):
+    """A named SSE event a JS client can SEE (an SSE comment it cannot).
+
+    `: ping` keeps proxies and NATs from idling the socket out, but `EventSource`
+    never surfaces a comment, so the page had no way to tell a healthy silent
+    stream from a half-open one: the browser fires no `error` when the peer
+    vanishes without a FIN, and the client then treats a dead handle as proof of
+    liveness (the "chat freezes until ↻" report). This frame is that proof.
+    """
+    return 'event: heartbeat\ndata: {"t": %d}\n\n' % int(ts if ts is not None else time.time())
+
+
 def sse_pump(q, worker, open_comment=": stream open\n\n", terminal="done",
-             idle_timeout=None):
+             idle_timeout=None, heartbeat=False):
     """Drain a producer queue into SSE frames, then stop for good.
 
     v0.6.1 (JAG-48): the stream is *terminal* — it ends with exactly one
@@ -106,6 +118,8 @@ def sse_pump(q, worker, open_comment=": stream open\n\n", terminal="done",
             if idle_s >= 5.0:
                 idle_s = 0.0
                 yield ": ping\n\n"  # heartbeat: keeps the SSE channel alive
+                if heartbeat:
+                    yield heartbeat_frame()
             continue
         if item is None:
             break
@@ -116,7 +130,8 @@ def sse_pump(q, worker, open_comment=": stream open\n\n", terminal="done",
     yield "event: %s\ndata: {}\n\n" % terminal
 
 
-def sse_tail(q, backlog=None, open_comment=": tail open\n\n", idle_limit=600):
+def sse_tail(q, backlog=None, open_comment=": tail open\n\n", idle_limit=600,
+             heartbeat=False):
     """Drain a LOOPBACK tail queue into SSE frames, then stop (JAG-483).
 
     The durable feed (``/api/feed``) and the blackboard watcher are the two
@@ -138,6 +153,11 @@ def sse_tail(q, backlog=None, open_comment=": tail open\n\n", idle_limit=600):
         except queue.Empty:
             idle += 1
             yield ": ping\n\n"
+            # Every 5th silent second also carries a NAMED event: comments are
+            # invisible to JS, so this is what lets the page prove the feed is
+            # still alive and reconnect when it is not (2026-11-01).
+            if heartbeat and idle % 5 == 0:
+                yield heartbeat_frame()
 
 
 class ThinkCoalescer:

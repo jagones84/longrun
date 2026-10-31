@@ -4072,6 +4072,18 @@ function ensureAnswer() {
 }
 function endStream() {
   flushThink();  // JAG-265: emit any buffered chain-of-thought before teardown
+  // 2026-11-01: the answer render is throttled (appendAnswer). The turn's LAST
+  // deltas can still be pending here — paint them once, unconditionally, before
+  // the bubble handle is dropped. Without this the tail of a reply would only show
+  // up on the next rebuild.
+  if (_mdRaf) {
+    try { clearTimeout(_mdRaf); cancelAnimationFrame(_mdRaf); } catch (e) {}
+    _mdRaf = null;
+  }
+  if (curAns) {
+    const _b = curAns.querySelector(".bubble");
+    if (_b && _b.dataset.raw != null) renderAnswerBubble(_b);
+  }
   if (cursorEl) { cursorEl.remove(); cursorEl = null; }
   _tidyThink();
   curAns = curThink = null;
@@ -5218,6 +5230,14 @@ function send(text, display, atts) {
    duplication. `adopt` lets the own-turn path name a brand-new session. */
 function _bindRenderStream(es, live, adopt) {
   adopt = adopt || (() => {});
+  // 2026-11-01: the server stamps this stream with a NAMED `heartbeat` every few
+  // seconds (sse.py:heartbeat_frame). `EventSource` fires no `error` when the peer
+  // disappears without a FIN (WiFi handover, laptop sleep, a proxy holding the
+  // socket), so a handle alone proved nothing — `reconcileTurn` read the dead
+  // handle as "a live stream is authoritative" and the chat painted nothing until
+  // a manual ↻. This is the liveness signal that watchdog reads.
+  es._lrSeen = Date.now();
+  es.addEventListener("heartbeat", () => { es._lrSeen = Date.now(); });
   es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); adopt(d.session);
     setRunning(d.session, true); if (!live()) return; setRun(d.run_id);
     _activeScope = null; _activeNodeId = null; _nowLast = ""; _sysInjectEl = null; _updateNowBar(); });
@@ -6123,6 +6143,13 @@ function reloadChat() {
   if (!sessionId) return;
   loadHistory(); loadPlan(); loadCtx();
 }
+/* 2026-11-01: the ONE place a transcript rebuild empties the log. It runs as late
+   as possible — every payload in hand, the very first node about to be created —
+   so the previous transcript stays readable while the new one is fetched and
+   ordered, instead of leaving an empty chat for the whole round-trip. */
+function _paintHistoryStart() {
+  $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
+}
 async function loadHistory() {
   if (!sessionId) return;
   const _historySid = sessionId;
@@ -6136,7 +6163,12 @@ async function loadHistory() {
   const _gen = ++_historySeq;
   const _stale = () => _gen !== _historySeq || sessionId !== _historySid;
   _historyGraphPending.clear();
-  $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
+  // 2026-11-01: the clear used to happen HERE — before the history + graph +
+  // thread-title round-trips — so the operator stared at an EMPTY chat for the
+  // whole rebuild of a 700 KB log ("per qualche secondo non si vede la chat").
+  // The queue flag must still be set first (live node events are queued from this
+  // instant), but the old transcript stays readable until the new one is built:
+  // the clear now runs in `_paintHistoryStart()` right before the first paint.
   _historyReplaySession = _historySid;
   _stick = false;  // replay silently; jump once after rebuilding instead of scrolling per item
   const s = await api("GET", "/api/history?session=" + encodeURIComponent(_historySid));
@@ -6213,6 +6245,7 @@ async function loadHistory() {
   // Setting `_activeNodeId` and letting `_logAppend` -> `_openSection` place each item
   // means a step's work is reopened at the BOTTOM whenever its last section is no
   // longer the last element — so the newest work is never buried "up" in an old card.
+  _paintHistoryStart();   // 2026-11-01: empty the log only NOW (see its docstring)
   evs.forEach(e => {
     if (e.t === "m") {
       const m = e.v;
@@ -9566,7 +9599,22 @@ async function attachIfRunning(sid) {
      - it does not                  -> clear the busy state and SAY so.
    Returns true when it re-attached, false when there was nothing to do. */
 async function reconcileTurn(sid, force) {
-  if (!sid || turnSSE[sid]) return false;      // a live stream is authoritative
+  if (!sid) return false;
+  // 2026-11-01: a handle is NOT liveness. This used to be
+  // `if (!sid || turnSSE[sid]) return false;` — a stream whose peer vanished
+  // silently (no FIN → no `error`) then satisfied "a live stream is authoritative"
+  // forever: the turn kept running server-side, the chat painted nothing, and only
+  // a manual rebuild showed the result. A handle that is CLOSED, or that has seen
+  // no `heartbeat` for SILENT_MS, is dropped here and the normal ask-the-server
+  // path below takes over (it re-attaches and replays, so nothing is lost).
+  const SILENT_MS = 20000;
+  const es0 = turnSSE[sid];
+  if (es0) {
+    const silent = typeof es0._lrSeen === "number" && (Date.now() - es0._lrSeen) > SILENT_MS;
+    if (es0.readyState !== 2 && !silent) return false;   // healthy -> authoritative
+    try { es0.close(); } catch (e) {}
+    delete turnSSE[sid];
+  }
   if (!force && !runningSessions[sid]) return false;
   let active = null;
   try {
@@ -9815,6 +9863,7 @@ async function loadRunning() {
   if (!tools.length && !activeRuns.length && !doneRuns.length) box.textContent = "nothing running";
 }
 
+let _feedWatch = 0;   // 2026-11-01: the feed liveness timer (one at a time)
 function connectFeed() {
   // v624: the /api/build fingerprint covers index.html AND orbit.html, but no
   // client polled it — a pinned tab or phone PWA silently ran yesterday's UI.
@@ -9838,7 +9887,24 @@ function connectFeed() {
   } catch (_) {}
   const _qs = (authQS() ? "?" + authQS() + "&" : "?") + "since=" + feedSince;
   const es = new EventSource("/api/feed" + _qs);
-  es.addEventListener("error", () => { es.close(); setTimeout(connectFeed, 5000); });
+  // 2026-11-01: the feed is the page's only source of "a turn ended / a session
+  // changed". It used to react to `error` ONLY — a half-open socket never fires
+  // one, so the rail, the plan panel and `chat.done` (which reconciles the
+  // transcript) all went silent together until F5/↻. The server's named
+  // `heartbeat` is the proof of life; when it stops, re-open the feed.
+  es._lrSeen = Date.now();
+  es.addEventListener("heartbeat", () => { es._lrSeen = Date.now(); });
+  if (_feedWatch) clearInterval(_feedWatch);
+  _feedWatch = setInterval(() => {
+    if (Date.now() - (es._lrSeen || 0) < 20000) return;
+    clearInterval(_feedWatch); _feedWatch = 0;
+    try { es.close(); } catch (e) {}
+    connectFeed();
+  }, 10000);
+  es.addEventListener("error", () => {
+    if (_feedWatch) { clearInterval(_feedWatch); _feedWatch = 0; }
+    es.close(); setTimeout(connectFeed, 5000);
+  });
   ["config.saved", "providers.update", "rules.update", "settings.changed",
    "settings.diagnostic"].forEach(kind =>
     es.addEventListener(kind, scheduleDiagnosticsRefresh));
@@ -9913,7 +9979,14 @@ function connectFeed() {
     // Q2: when THIS tab's session finished, rebuild the chat automatically — the
     // same reloadChat() the ↻ button runs — so the transcript is chronological
     // without a manual refresh. Other sessions only re-measure context.
-    if (d.session && d.session === sessionId) reloadChat();
+    // 2026-11-01: a turn THIS tab streamed to `done` is already the transcript on
+    // screen. Rebuilding it re-parsed the whole (700 KB-) log for nothing and
+    // blanked the chat at the end of EVERY turn. Only a turn whose live render
+    // this tab missed (a job / another tab / a dead stream) needs the rebuild.
+    if (d.session && d.session === sessionId) {
+      if (_streamedDone[d.session] || turnSSE[d.session]) { loadPlan(); loadCtx(); }
+      else reloadChat();
+    }
     else if (!d.session) loadCtx();
     // JAG-500: pull the persisted reply ONLY for a turn this tab did not render
     // (see _rebuildOnFeedDone — a deferred, race-proof check).
@@ -13790,14 +13863,26 @@ function renderAnswerBubble(b) {
   b.querySelectorAll('a[href^="http"]').forEach(a => { a.target = "_blank"; a.rel = "noopener noreferrer"; });
   if (cursorEl && curAns && b === curAns.querySelector(".bubble")) b.appendChild(cursorEl);
 }
-let _mdRaf = null;
+let _mdRaf = null, _mdAt = 0;
+/* 2026-11-01: streaming used to re-render the WHOLE accumulated markdown on every
+   animation frame — measured 14 ms/frame on a 48 KB answer, i.e. O(n²) over a turn
+   and a saturated main thread on a long reply. It also hung forever in a throttled
+   or background tab: `requestAnimationFrame` never fires there, `_mdRaf` stayed
+   set and every later delta was buffered without ever being painted. Now: at most
+   one render per 110 ms, scheduled by a TIMER when a frame would be too soon (a
+   timer keeps running when rAF does not), and `endStream()` flushes the tail. */
+const _MD_MIN_MS = 110;
+function _mdRender(b) {
+  _mdRaf = null; _mdAt = performance.now();
+  renderAnswerBubble(b); _chatSearchScheduleRefresh(); scroll();
+}
 function appendAnswer(t) {
   const b = ensureAnswer();
   b.dataset.raw = (b.dataset.raw || "") + t;
-  if (_mdRaf) return;
-  _mdRaf = requestAnimationFrame(() => {
-    _mdRaf = null; renderAnswerBubble(b); _chatSearchScheduleRefresh(); scroll();
-  });
+  if (_mdRaf) return;                       // a render is already scheduled
+  const wait = _MD_MIN_MS - (performance.now() - _mdAt);
+  if (wait > 0) { _mdRaf = setTimeout(() => _mdRender(b), wait); return; }
+  _mdRaf = requestAnimationFrame(() => _mdRender(b));
 }
 /* Turn file paths + URLs into clickable links, walking text nodes so it also
    works on already-rendered (markdown) HTML. Idempotent (skips <a>/<code>/<pre>). */
