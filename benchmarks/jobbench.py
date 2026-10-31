@@ -16,6 +16,7 @@ Layout of one task (upstream):
 
     dataset/main/<profession>/task<N>/
         task_folder/            inputs the agent may read (TASK_INSTRUCTIONS.txt inside)
+        files_required_to_search/  MORE inputs, 57 tasks ship this folder
         RUBRICS.json            the weighted criteria the official judge grades
         task_card.md            human description (not shown to the agent)
 
@@ -100,12 +101,34 @@ def prompt_for(task, workspace):
 
 
 def stage(task, workspace):
-    """Materialise a clean workspace: `task_folder/` (a copy) + an empty `output/`."""
+    """Materialise a clean workspace: `task_folder/` (a copy) + an empty `output/`.
+
+    The task's SECOND input set is merged INTO `task_folder/`, because the official
+    prompt promises "all reference files are in the task folder". Measured
+    2026-10-31 on `bookkeeping_accounting_and_auditing_clerks/task1`: the AP
+    subledger lived in `files_required_to_search/`, which the staging ignored, so
+    the honest arm reported "AP subledger not provided" and scored 0/88 while an
+    arm that walked the dataset outside its own workspace scored 50/88. The folder
+    is an input like any other: copy it in, and the sentence becomes true.
+    """
     ws = Path(workspace)
     shutil.rmtree(ws, ignore_errors=True)
     (ws / "output").mkdir(parents=True)
     shutil.copytree(Path(task["folder"]), ws / "task_folder")
+    for extra in search_folders(task):
+        for src in sorted(extra.rglob("*")):
+            if not src.is_file():
+                continue
+            dst = ws / "task_folder" / src.relative_to(extra)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
     return ws
+
+
+def search_folders(task):
+    """The extra input folders shipped next to `task_folder/` (may be empty)."""
+    extra = Path(task["folder"]).parent / "files_required_to_search"
+    return [extra] if extra.is_dir() else []
 
 
 def deliverables(workspace):

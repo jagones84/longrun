@@ -31,6 +31,13 @@ with open(os.path.join(TASK, "task_folder", "TASK_INSTRUCTIONS.txt"), "w",
     f.write("Produce cohort_summary.csv from framingham.csv.\n")
 with open(os.path.join(TASK, "task_folder", "framingham.csv"), "w", encoding="utf-8") as f:
     f.write("id,age\n1,50\n")
+# The SECOND input set. 57 official tasks ship one; the staging used to ignore it,
+# so an arm that refused to look outside its workspace was graded on data it never
+# received (`bookkeeping.../task1`, 2026-10-31).
+os.makedirs(os.path.join(TASK, "files_required_to_search"), exist_ok=True)
+with open(os.path.join(TASK, "files_required_to_search", "ap_ledger.csv"), "w",
+          encoding="utf-8") as f:
+    f.write("invoice,amount\nAP10003,4433.05\n")
 with open(os.path.join(TASK, "RUBRICS.json"), "w", encoding="utf-8") as f:
     json.dump({"rubrics": [{"weight": 4, "criterion": "a"}, {"weight": 6, "criterion": ["b", "c"]}]}, f)
 os.makedirs(os.path.join(JB, "eval"), exist_ok=True)
@@ -72,6 +79,9 @@ check("B1 the inputs were copied and output/ is empty",
       os.path.isfile(os.path.join(ws, "task_folder", "framingham.csv"))
       and os.path.isdir(os.path.join(ws, "output"))
       and os.listdir(os.path.join(ws, "output")) == [], os.listdir(ws))
+check("B4 files_required_to_search is staged INSIDE the task folder",
+      os.path.isfile(os.path.join(ws, "task_folder", "ap_ledger.csv")),
+      sorted(os.listdir(os.path.join(ws, "task_folder"))))
 check("C1 nothing outside output/ counts as a deliverable",
       jobbench.deliverables(ws) == [], jobbench.deliverables(ws))
 with open(os.path.join(ws, "output", "cohort_summary.csv"), "w", encoding="utf-8") as f:
