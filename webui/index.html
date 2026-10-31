@@ -5262,6 +5262,10 @@ function _bindRenderStream(es, live, adopt) {
     if (!live()) return;
     if (d.channel === "think") { pushThink(d.text); } else { appendAnswer(d.text); }
     scroll(); });
+  // 2026-11-01: every `chat.delta` frame now carries its durable `id:`. Keeping the
+  // last one lets a recovered socket re-attach from HERE instead of replaying the
+  // whole turn into a bubble that already shows it (duplicated text/cards).
+  es.addEventListener("chat.delta", e => { if (e.lastEventId) es._lrId = e.lastEventId; });
   es.addEventListener("tool.call", e => { if (live()) toolCard(JSON.parse(e.data).tool); });
   es.addEventListener("tool.result", e => { if (live()) updateToolCard(JSON.parse(e.data)); });
   /* v648: approval.request and improve.proposal are NOT bound here. connectFeed
@@ -9556,9 +9560,15 @@ function _wireRunsPanel() {
    chat.delta text and then resumes live until `done`, so a reload no longer looks
    like an interrupted run. It renders ONLY the streaming text — tool cards / todo
    tree / injects are rebuilt by loadHistory, so replaying them would duplicate. */
-function attachTurn(sid) {
+function attachTurn(sid, since) {
   if (!sid || turnSSE[sid]) return;
-  const es = new EventSource("/api/chat/attach?session=" + encodeURIComponent(sid) + (authQS() ? "&" + authQS() : ""));
+  // 2026-11-01: `since` resumes a RECOVERED socket exactly where the dead one
+  // stopped (the frame ids the server now publishes). Without it the stream
+  // replays the whole turn — correct on a fresh log after F5, duplicate text and
+  // duplicate tool cards when the transcript is already on screen.
+  const es = new EventSource("/api/chat/attach?session=" + encodeURIComponent(sid) +
+    (since ? "&since=" + encodeURIComponent(since) : "") +
+    (authQS() ? "&" + authQS() : ""));
   turnSSE[sid] = es; setRunning(sid, true);
   const live = () => sessionId === sid;
   const end = (reload) => {
@@ -9609,9 +9619,11 @@ async function reconcileTurn(sid, force) {
   // path below takes over (it re-attaches and replays, so nothing is lost).
   const SILENT_MS = 20000;
   const es0 = turnSSE[sid];
+  let resumeId = "";
   if (es0) {
     const silent = typeof es0._lrSeen === "number" && (Date.now() - es0._lrSeen) > SILENT_MS;
     if (es0.readyState !== 2 && !silent) return false;   // healthy -> authoritative
+    resumeId = es0._lrId || "";                          // resume from the last frame
     try { es0.close(); } catch (e) {}
     delete turnSSE[sid];
   }
@@ -9621,7 +9633,7 @@ async function reconcileTurn(sid, force) {
     const out = await api("GET", "/api/chat/live");
     active = out.active || [];
   } catch (e) { return false; }                // offline: never guess, keep waiting
-  if (active.indexOf(sid) >= 0) { attachTurn(sid); return true; }
+  if (active.indexOf(sid) >= 0) { attachTurn(sid, resumeId); return true; }
   setRunning(sid, false);
   if (sid === sessionId) {
     endStream();

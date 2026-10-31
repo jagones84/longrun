@@ -307,9 +307,14 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     clear_abort(sess["id"])
 
     def _delta(channel, text):
-        q.put("event: chat.delta\ndata: %s\n\n" % json.dumps(
+        # 2026-11-01: publish FIRST (it returns the durable event) and announce it
+        # on the turn stream with `id:` — the client remembers the last delta id so
+        # a recovery re-attach can resume from there instead of replaying (and
+        # duplicating) the whole turn.
+        ev = publish("chat.delta", session=sess["id"], channel=channel, text=text)
+        eid = (ev or {}).get("id")
+        q.put(("id: %d\n" % eid if eid else "") + "event: chat.delta\ndata: %s\n\n" % json.dumps(
             {"session": sess["id"], "channel": channel, "text": text}, ensure_ascii=False))
-        publish("chat.delta", session=sess["id"], channel=channel, text=text)
 
     _coalesce = ThinkCoalescer(_delta)
 
@@ -325,8 +330,12 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
         def _emit(kind, **d):
             # graph/model events go to BOTH this chat stream and the feed, so
             # the WebUI can render the task graph live either way.
-            q.put("event: %s\ndata: %s\n\n" % (kind, json.dumps(d, ensure_ascii=False)))
-            publish(kind, **d)
+            # 2026-11-01: publish first and carry its durable id on the frame, so a
+            # client that lost the socket can re-attach from that exact point.
+            ev = publish(kind, **d)
+            eid = (ev or {}).get("id")
+            q.put(("id: %d\n" % eid if eid else "") + "event: %s\ndata: %s\n\n" % (
+                kind, json.dumps(d, ensure_ascii=False)))
 
         try:
             # JAG-201: the transcript read-modify-write happens INSIDE the lock —

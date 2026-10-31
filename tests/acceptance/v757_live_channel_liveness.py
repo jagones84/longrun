@@ -76,11 +76,19 @@ check("A4 the chat stream, the re-attach stream and the feed all ask for it",
       "sse_pump(q, t, idle_timeout=CHAT_STREAM_IDLE or None, heartbeat=True)" in API
       and "heartbeat=True)" in API.split("def feed_gen", 1)[1][:400]
       and API.split("def chat_attach_gen", 1)[1].split("yield heartbeat_frame()", 1)[0].count(": ping") == 1)
+check("A6 turn frames carry their durable id, so a recovery can resume from it",
+      API.count('"id: %d\\n" % eid if eid else ""') == 2
+      and 'ev = publish(kind, **d)' in API
+      and 'ev = publish("chat.delta", session=sess["id"], channel=channel, text=text)' in API)
 
 # ---- A2/E: the client side ---------------------------------------------------
 check("A5 _bindRenderStream stamps every heartbeat on the handle",
       'es.addEventListener("heartbeat", () => { es._lrSeen = Date.now(); })' in UI
       and "es._lrSeen = Date.now();" in UI)
+check("A7 a recovered stream resumes from the last frame id (no duplicated text)",
+      "if (e.lastEventId) es._lrId = e.lastEventId;" in UI
+      and "function attachTurn(sid, since) {" in UI
+      and '(since ? "&since=" + encodeURIComponent(since) : "")' in UI)
 
 
 def harness(body, live, running, api_result):
@@ -90,7 +98,7 @@ const turnSSE = LIVE;
 const runningSessions = RUNNING;
 let calls = { attach: 0, clear: [], endStream: 0, said: [] };
 const api = async () => (API);
-function attachTurn(sid) { calls.attach++; }
+function attachTurn(sid, since) { calls.attach++; calls.since = since || ""; }
 function setRunning(sid, on) { calls.clear.push([sid, on]); if (!on) delete runningSessions[sid]; }
 function endStream() { calls.endStream++; }
 function who(role, text) { calls.said.push(text); }
@@ -132,6 +140,11 @@ got = harness("turnSSE['S1']._lrSeen = Date.now() - 60000; await reconcileTurn('
 check("B5 a silent handle whose turn is gone clears the busy state",
       got.get("calls", {}).get("clear") == [["S1", False]]
       and "no longer running" in (got.get("calls", {}).get("said") or [""])[0], got)
+# the recovery resumes from the last rendered frame, never from the turn's start
+got = harness("turnSSE['S1']._lrSeen = Date.now() - 60000; turnSSE['S1']._lrId = '4242';"
+              " await reconcileTurn('S1');",
+              {"S1": "__HANDLE__"}, {"S1": True}, {"active": ["S1"]})
+check("B6 the re-attach carries the last frame id", got.get("calls", {}).get("since") == "4242", got)
 
 # ---- C: the feed watchdog ----------------------------------------------------
 check("C1 the feed reconnects when its heartbeat stops",
