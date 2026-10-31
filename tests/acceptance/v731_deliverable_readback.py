@@ -216,6 +216,17 @@ check("D2 the gate consumes its budget: the second call is silent", _gate(_state
 check("D3 an empty turn burns the budget instead of retrying",
       _gate({"left": 1}, ws=os.path.join(TMP, "empty-dir")) is None)
 
+# D4/D5 — an incomplete delivery earns ONE more cycle, a clean one earns none.
+_clean = os.path.join(TMP, "clean")
+os.makedirs(_clean, exist_ok=True)
+with open(os.path.join(_clean, "ok.csv"), "w", encoding="utf-8") as f:
+    f.write("a,b\n1,2\n")
+check("D4 a mechanically incomplete delivery is reported as a gap",
+      any("hollow" in g for g in A.gaps(WS, since=SINCE))
+      and any("empty.txt" in g for g in A.gaps(WS, since=SINCE)), A.gaps(WS, since=SINCE))
+check("D5 a clean delivery has no gap, so it earns no extra cycle",
+      A.gaps(_clean, since=0) == [], A.gaps(_clean, since=0))
+
 # E ----------------------------------------------------------------------
 SRC = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
 check("E1 every floor that accepts a final answer runs the read-back first",
@@ -227,6 +238,9 @@ check("E3 the audit can never break a turn (guarded import + except)",
       "except Exception:  # noqa: BLE001" in SRC.split("def _deliverable_review_text")[1][:2600])
 check("E4 it is fed as a harness turn the operator can see",
       SRC.count('_inject(_drv, "review")') >= 4, SRC.count('_inject(_drv, "review")'))
+check("E5 a gap earns one extra cycle; the wiring is the one that raises `left`",
+      "_art2.gaps(" in SRC and 'state["left"] = max(int(state["left"]), 1)' in SRC,
+      "gaps wiring")
 
 print("\n---")
 print("v731: %d/%d PASS" % (sum(results), len(results)))

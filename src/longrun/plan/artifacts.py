@@ -419,6 +419,30 @@ def _line(entry):
     return "%s (%s) — %d bytes%s" % (entry["path"], kind, f.get("size", 0), tail)
 
 
+def gaps(workspace, since=0.0, limit=MAX_FILES, exclude=()):
+    """Mechanical reasons a delivery is INCOMPLETE — facts, never prose.
+
+    Used to decide whether a turn EARNED one more read-back cycle: a sheet whose
+    content stops at the header, a csv with no data rows, an unreadable file. The
+    strings are only for the log; the decision is `bool(gaps(...))`, so boilerplate
+    wording in the checklist can never trigger a cycle by accident.
+    """
+    out = []
+    for entry in inventory(workspace, since=since, limit=limit, exclude=exclude):
+        facts = entry.get("facts") or {}
+        if facts.get("error") or facts.get("empty") or facts.get("size") == 0:
+            out.append("%s: empty or unreadable" % entry["path"])
+            continue
+        for sheet in facts.get("sheets") or []:
+            filled = sheet.get("filled_rows")
+            if filled is not None and filled <= 1 and (sheet.get("rows") or 0) > 1:
+                out.append("%s[%s]: content stops at the header (%d filled row(s))"
+                           % (entry["path"], sheet["name"], filled))
+        if "columns" in facts and not facts.get("rows"):
+            out.append("%s: csv with no data rows" % entry["path"])
+    return out
+
+
 def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
     """The read-back observation, or None when this turn wrote no document.
 

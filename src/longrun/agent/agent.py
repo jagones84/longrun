@@ -2577,9 +2577,11 @@ def _deliverable_review_text(sess, request, since, state):
     true whether the model wrote them with `fs.write` or inside a `shell.exec`
     python script.
 
-    Fires at most once: the point is to make the agent FACE its own output before
-    closing, not to loop on it. A turn that wrote no document costs one walk and
-    returns None. Never raises — an audit may slow a turn, never break it.
+    Fires at most ONCE per turn, plus one extra cycle when the delivery is
+    mechanically incomplete (`artifacts.gaps`): the point is to make the agent FACE
+    its own output before closing, not to loop on it. A turn that wrote no document
+    costs one walk and returns None. Never raises — an audit may slow a turn, never
+    break it.
     """
     if int(state.get("left") or 0) <= 0:
         return None
@@ -2606,6 +2608,19 @@ def _deliverable_review_text(sess, request, since, state):
         state["left"] = 0
         return None
     state["left"] = int(state.get("left") or 1) - 1
+    # ONE more cycle when the delivery is mechanically incomplete. Measured
+    # 2026-10-31 on JobBench with the same model in four arms: longrun closed at
+    # 140-197 s / 17-42 calls while openclaw spent 390-527 s, and every rubric it
+    # lost needed a second pass over data it already had (a shared insurance ID
+    # across three rows, a tier assigned from one field). The gate stays a GATE:
+    # a clean delivery earns nothing, and `left` caps the total at two read-backs.
+    try:
+        from longrun.plan import artifacts as _art2
+        if _art2.gaps(_chat_workspace(sess), since=since,
+                      exclude=_harness_state_roots() + _other_session_roots(sess)):
+            state["left"] = max(int(state["left"]), 1)
+    except Exception:  # noqa: BLE001 — never break a turn over an audit
+        pass
     return text
 
 
