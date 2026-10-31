@@ -262,6 +262,9 @@ check("E4 it is fed as a harness turn the operator can see",
 check("E5 a gap earns one extra cycle; the wiring is the one that raises `left`",
       "_art2.gaps(" in SRC and 'state["left"] = max(int(state["left"]), 1)' in SRC,
       "gaps wiring")
+check("E6 a stop that leaves NOTHING written earns one named delivery round",
+      "DELIVERY FLOOR" in SRC and "_delivery_floor_used = False" in SRC
+      and SRC.count("_delivery_floor_used = True") == 1, "delivery floor")
 
 print("\n---")
 print("v731: %d/%d PASS" % (sum(results), len(results)))

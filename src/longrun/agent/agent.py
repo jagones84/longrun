@@ -3140,6 +3140,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # counts. A status check cannot see a blank sheet; this can.
     _deliv_since = time.time()
     _deliv_state = {"left": 1}
+    _delivery_floor_used = False  # one extra round when a stop leaves nothing written
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
     _fail_streak_tool = None
     _last_tool_hash = None  # JAG-178: detect a repeated identical call
@@ -3387,6 +3388,34 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 on_event("plan.stopped", session=sess["id"], reason=_dec["reason"],
                          open=len(_open), total=len(_nodes), rounds=_kg_rounds,
                          difficulty=_diff_level, duration_s=round(time.time() - _kg_started, 1))
+                # DELIVERY FLOOR (2026-10-31): a work loop that exhausts its rounds
+                # with steps open and NOTHING written used to close like a finished
+                # turn. Measured on JobBench `medical_secretaries/task1` (session
+                # `873ae518102d`): 27 calls, plan 3/4 open, `output/` empty, result
+                # "ok" and the arm scored 0. One extra round, ONCE, with the
+                # emptiness named — the model may still fail, but it cannot be
+                # silent about it.
+                if (not _delivery_floor_used and _open
+                        and _dec["reason"] in ("budget", "no_progress")):
+                    try:
+                        from longrun.plan import artifacts as _art3
+                        _nothing_written = not _art3.inventory(
+                            _chat_workspace(sess), since=_deliv_since,
+                            exclude=_harness_state_roots() + _other_session_roots(sess))
+                    except Exception:  # noqa: BLE001
+                        _nothing_written = False
+                    if _nothing_written:
+                        _delivery_floor_used = True
+                        _kg_stop_reason = None
+                        _kg_rounds += 1
+                        _inject("DELIVERY FLOOR — the harness stopped the work loop "
+                                "(%s) and NOTHING has been written for this request "
+                                "(%d step(s) still open). Produce the deliverable "
+                                "files NOW, or state exactly what is missing and why "
+                                "you cannot produce them; a summary of what you READ "
+                                "is not a delivery." % (_dec["reason"], len(_open)),
+                                "continue")
+                        continue
                 break
             _kg_rounds += 1
             _kg_prev = _cur
