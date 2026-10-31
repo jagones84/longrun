@@ -57,8 +57,42 @@ def _mtime(path):
         return 0.0
 
 
+#: Row cap for the FILLED-range count. A sheet whose cells were styled (borders,
+#: conditional formatting, column widths) advertises a used range far larger than
+#: its content, and walking every cell of a 100k-row workbook inside a read-back
+#: would cost more than the fact is worth.
+MAX_SCAN_ROWS = 5000
+
+
+def _filled_span(ws, limit=MAX_SCAN_ROWS):
+    """(rows, cols) that actually HOLD something: a blank styled cell is not data."""
+    rows = cols = 0
+    try:
+        for i, values in enumerate(ws.iter_rows(values_only=True)):
+            if i >= limit:
+                break
+            width = 0
+            for j, value in enumerate(values, 1):
+                if value is not None and str(value).strip():
+                    width = j
+            if width:
+                rows += 1
+                cols = max(cols, width)
+    except Exception:  # noqa: BLE001 — an unreadable cell is a fact, not a crash
+        pass
+    return rows, cols
+
+
 def _workbook_facts(path):
-    """Sheets with their used range, plus charts and conditional formatting."""
+    """Sheets with their used range AND their filled range, plus charts/formatting.
+
+    `max_row`/`max_column` are what openpyxl calls the used range: they grow with
+    FORMATTING, not with data. Measured 2026-10-31 on JobBench
+    `medical_secretaries/task1`: the arm's Referral Log reported `20x30` and held
+    exactly ONE filled row (the rest was styled empty), the read-back said `20x30`,
+    the agent trusted it and closed the turn. The read-back must therefore state
+    how much of the range is actually CONTENT.
+    """
     try:
         from openpyxl import load_workbook
     except Exception:  # noqa: BLE001 — a missing reader is a fact, not a crash
@@ -75,8 +109,11 @@ def _workbook_facts(path):
             cf += len(list(ws.conditional_formatting))
         except Exception:  # noqa: BLE001
             pass
+        filled_rows, filled_cols = _filled_span(ws)
         sheets.append({"name": ws.title, "rows": int(ws.max_row or 0),
-                       "cols": int(ws.max_column or 0)})
+                       "cols": int(ws.max_column or 0),
+                       "filled_rows": filled_rows,
+                       "filled_cols": filled_cols})
     try:
         wb.close()
     except Exception:  # noqa: BLE001
@@ -351,12 +388,22 @@ def _line(entry):
     if f.get("error"):
         return "%s (%s) — %s" % (entry["path"], kind, f["error"])
     if "sheets" in f:
-        cells = ", ".join("%s %dx%d" % (s["name"], s["rows"], s["cols"])
-                          for s in f["sheets"][:8])
-        return ("%s (%s) — %d sheet(s): %s; charts=%d; conditional-formatting=%d%s"
+        def _sheet_cell(s):
+            """`Name 20x30` is the USED range; add the FILLED one when it differs."""
+            used = "%s %dx%d" % (s["name"], s["rows"], s["cols"])
+            filled = s.get("filled_rows")
+            if filled is None or filled >= s["rows"]:
+                return used
+            return "%s [%d row(s) filled]" % (used, filled)
+        cells = ", ".join(_sheet_cell(s) for s in f["sheets"][:8])
+        hollow = [s["name"] for s in f["sheets"]
+                  if (s.get("filled_rows") is not None
+                      and s.get("filled_rows") <= 1 and (s["rows"] or 0) > 1)]
+        return ("%s (%s) — %d sheet(s): %s; charts=%d; conditional-formatting=%d%s%s"
                 % (entry["path"], kind, len(f["sheets"]), cells, f.get("charts", 0),
                    f.get("conditional_formatting", 0),
-                   "; EMPTY" if f.get("size") == 0 else ""))
+                   "; EMPTY" if f.get("size") == 0 else "",
+                   ("; NO DATA in " + ", ".join(hollow[:4])) if hollow else ""))
     if "columns" in f:
         return ("%s (csv) — %d row(s), columns: %s"
                 % (entry["path"], f.get("rows", 0), ", ".join(f["columns"])))
@@ -389,6 +436,9 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
               "  * every file/sheet/column/figure the request names must be visible above;",
               "  * an empty artifact, a sheet with no rows, or a requested visual "
               "element that shows `charts=0` is NOT delivered;",
+              "  * `Name 20x30` is the USED range and grows with formatting: when a "
+              "sheet also prints `[N row(s) filled]` or `NO DATA`, N is what a reader "
+              "actually sees. Formatting is not content;",
               "  * if a requirement is missing, fix the artifact now — a requirement "
               "you cannot point at in the read-back is not done."]
     given = inputs(workspace, since=since, exclude=exclude)

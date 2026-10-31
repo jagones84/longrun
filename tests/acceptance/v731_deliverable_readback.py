@@ -93,6 +93,36 @@ check("A4 a csv is described by header and row count",
 check("A5 an empty artifact is reported as EMPTY",
       "EMPTY" in A._line(inv["output/empty.txt"]), A._line(inv["output/empty.txt"]))
 
+# A7/A8 — FORMATTING is not content. Measured 2026-10-31 on JobBench
+# `medical_secretaries/task1`: the Referral Log reported `20x30` to the read-back
+# and held ONE filled row (the other 17 referrals were styled empty cells), so the
+# agent read "20 rows" and closed the turn on a workbook with one row of data.
+from openpyxl.styles import PatternFill  # noqa: E402
+
+_wb2 = Workbook()
+_hdr = _wb2.active
+_hdr.title = "Header Only"
+_hdr.append(("Referral_ID", "Patient"))
+for _r in range(2, 21):
+    for _c in range(1, 31):
+        _hdr.cell(row=_r, column=_c).fill = PatternFill("solid", fgColor="FFEB9C")
+_one = _wb2.create_sheet("One Row")
+_one.append(("Referral_ID", "Patient"))
+_one.append(("REF-2026-0218", "Thompson"))
+for _r in range(3, 21):
+    for _c in range(1, 31):
+        _one.cell(row=_r, column=_c).fill = PatternFill("solid", fgColor="FFEB9C")
+_wb2.save(os.path.join(OUT, "hollow.xlsx"))
+_hf = {e["path"]: e for e in A.inventory(WS, since=SINCE)}["output/hollow.xlsx"]["facts"]
+check("A7 a styled-but-empty sheet reports how many rows are FILLED",
+      [s.get("filled_rows") for s in _hf["sheets"]] == [1, 2] and _hf["sheets"][0]["rows"] >= 20,
+      _hf["sheets"])
+_line_h = A._line({e["path"]: e for e in A.inventory(WS, since=SINCE)}["output/hollow.xlsx"])
+check("A8 a sheet whose content stops at the header is flagged NO DATA",
+      "NO DATA in Header Only" in _line_h and "[2 row(s) filled]" in _line_h, _line_h)
+check("A9 a fully filled sheet prints no filled-range qualifier",
+      "filled]" not in A._line(inv["output/report.xlsx"]), A._line(inv["output/report.xlsx"]))
+
 # B ----------------------------------------------------------------------
 check("B1 the staged INPUT is not a deliverable of this turn",
       "task_folder/input.csv" not in inv and not any(
