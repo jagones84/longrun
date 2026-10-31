@@ -2692,6 +2692,8 @@ _ARG_ALIASES = {
     "sid": "session", "session_id": "session", "sessionid": "session",
     "find": "search", "old_string": "search", "old_str": "search",
     "old_text": "search", "needle": "search", "search_text": "search",
+    "new_string": "replace", "new_str": "replace", "new_text": "replace",
+    "replacement": "replace", "replace_with": "replace", "content": "replace",
     "q": "query", "query_string": "query", "keywords": "query",
     "file": "path", "filename": "path", "filepath": "path", "file_path": "path",
     "glob": "pattern", "wildcard": "pattern",
