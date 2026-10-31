@@ -4,7 +4,9 @@
 # transcript, no judge, so the harness is the only variable.
 #
 # Usage: scripts/bench-terminal-bench.sh <tag> <task-id> [task-id ...]
-# Env:   MODEL (longrun model id), TASK_TIMEOUT (s per task), TB_HOME (checkout)
+# Env:   MODEL (longrun model id), TASK_TIMEOUT (s per task), TB_HOME (checkout),
+#        N_CONCURRENT (trials at once, default 2 — each trial runs its own harness
+#        server, and 4 of them on one GB10 is where memory pressure starts)
 #
 # Why the wrapper exists: `tb` must import benchmarks/terminal_bench_agent.py (host
 # side) while itself running from its own venv, and the run folder must refuse to be
@@ -40,7 +42,8 @@ PYTHONPATH="$REPO" "$TB" run -p "$TB_HOME/original-tasks" \
   --output-path "$OUT" --run-id "$TAG" --no-upload-results \
   --agent-import-path benchmarks.terminal_bench_agent:LongrunAgent \
   --agent-kwarg "model_name=${MODEL:-openrouter:z-ai/glm-5.3-flash}" \
-  --agent-kwarg "timeout=${TASK_TIMEOUT:-1800}" $ARGS
+  --agent-kwarg "timeout=${TASK_TIMEOUT:-1800}" \
+  --n-concurrent "${N_CONCURRENT:-2}" $ARGS
 rc=$?
 echo "tb exit=$rc"
 echo "run folder: $OUT"

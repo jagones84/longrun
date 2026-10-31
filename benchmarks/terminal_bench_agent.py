@@ -169,7 +169,15 @@ class LongrunAgent(BaseAgent):
         with tarfile.open(fileobj=buf, mode="w") as tar:
             tar.add(str(SRC), arcname="src/longrun")
             tar.add(str(SHIM), arcname="server.py")
-            tar.add(str(REPO / "config"), arcname="config")
+            for item in sorted((REPO / "config").iterdir()):
+                # Never ship the operator's MCP clients: they point at the HOST
+                # (`http://192.168.1.37:3344/mcp`), so the in-container server booted
+                # with them and logged `PMCP: connected with 26 tools` (measured
+                # 2026-10-31). The score is the task container's end state — an arm
+                # that can act outside it is not being measured.
+                if item.name.startswith("mcp_clients"):
+                    continue
+                tar.add(str(item), arcname="config/" + item.name)
         data = buf.getvalue()
         box.sh("mkdir -p %s" % DEST, check=True)
         # put_archive needs a file object; the container path is the tar root.

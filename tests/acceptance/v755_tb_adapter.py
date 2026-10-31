@@ -77,6 +77,11 @@ check("C1 the upload ships config/ (providers.yaml is what points at OpenRouter)
 check("C2 the shipped providers.yaml really names the OpenRouter endpoint",
       "https://openrouter.ai/api/v1" in open(
           os.path.join(REPO, "config/providers.yaml"), encoding="utf-8").read())
+# The operator's MCP clients answer from the HOST (192.168.1.37:3344) — the first
+# sweep's containers logged `PMCP: connected with 26 tools`, i.e. an arm able to act
+# outside the task container it is being scored on. Never shipped.
+check("C3 the upload never ships the operator's MCP clients",
+      'item.name.startswith("mcp_clients")' in src)
 
 # ---- D. the suite manifest is explicit and starts with its control task --------
 manifest = os.path.join(REPO, "benchmarks/terminal_bench_tasks.txt")
