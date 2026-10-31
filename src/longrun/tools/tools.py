@@ -2488,7 +2488,7 @@ _DISPATCH = {"shell": _shell, "shell.exec": _shell,
 
 
 def normalize_args(tool: str, args: Any) -> Any:
-    """Repair the two shapes a model gets wrong without changing the request.
+    """Repair the three shapes a model gets wrong without changing the request.
 
     (a) one extra `{"args": {...}}` layer wrapping a flat argument object;
     (b) a SINGLE value wrapped in a one-element list where the schema declares a
@@ -2496,6 +2496,9 @@ def normalize_args(tool: str, args: Any) -> Any:
         unwrapped instead of spending a round on a usage error. A list with more
         than one element is NOT coerced: the tool takes one value per call and
         `_shape_notes` says so.
+    (c) a key the model knows by ANOTHER name (`cmd` -> `command`, `id` ->
+        `agent` on a single-required tool) — `_repair_arg_names`, which never
+        guesses an ambiguous one.
     """
     args = _unwrap_nested_args(tool, args)
     if not isinstance(args, dict):
@@ -2509,7 +2512,7 @@ def normalize_args(tool: str, args: Any) -> Any:
             if out is args:
                 out = dict(args)
             out[key] = value[0]
-    return out
+    return _repair_arg_names(tool, out)
 
 
 def _unwrap_nested_args(tool: str, args: Any) -> Any:
@@ -2611,15 +2614,84 @@ _SCALAR_TYPES = ("string", "number", "integer", "boolean")
 #: 'workspace'", which buries the real mistake the model made.
 HARNESS_ARG_KEYS = frozenset({"workspace"})
 
+#: Names a model REACHES FOR that mean a declared argument. Measured 2026-10-31 on
+#: the live event DB: 25 usage errors were this and nothing else — `cmd` for
+#: `command` (8x), `id` for the entity of every `*.get`, `session_id` for
+#: `session`, `find` for `search`, `path` for `pattern`. Each one costs a whole
+#: round (the model must re-issue the call) and some turns ended there. A synonym
+#: that is unambiguous inside ONE tool's schema is repaired instead of billed.
+_ARG_ALIASES = {
+    "cmd": "command", "command_line": "command", "cmdline": "command",
+    "shell_command": "command", "script": "command",
+    "sid": "session", "session_id": "session", "sessionid": "session",
+    "find": "search", "old_string": "search", "old_str": "search",
+    "old_text": "search", "needle": "search", "search_text": "search",
+    "q": "query", "query_string": "query", "keywords": "query",
+    "file": "path", "filename": "path", "filepath": "path", "file_path": "path",
+    "glob": "pattern", "wildcard": "pattern",
+    "text": "content", "body": "content", "data": "content",
+}
 
-def _schema_props(tool: str) -> dict:
-    """The declared properties of a tool's argument object ({} when unknown)."""
+#: An argument whose only content is "which thing" — the shape a `*.get` takes.
+#: `{"id": "A1"}` for `agent.get` is unambiguous: the tool has ONE required
+#: identifier and the name it was given is not declared, so it can only be that.
+_IDENT_ARG_NAMES = frozenset({"id", "name", "key", "ref", "target", "identifier"})
+
+
+def _schema_shape(tool: str) -> tuple:
+    """`(properties, required)` of a tool's argument object, `({}, [])` when unknown."""
     try:
         from longrun.tools import registry
         schema = ((registry.tool_spec(tool) or {}).get("schema") or {})
-        return dict(schema.get("properties") or {})
+        return (dict(schema.get("properties") or {}),
+                list(schema.get("required") or []))
     except Exception:  # noqa: BLE001 — validation must never block a call
-        return {}
+        return {}, []
+
+
+def _repair_arg_names(tool: str, args: dict) -> dict:
+    """Rename an argument the model knows by a DIFFERENT (but unambiguous) name.
+
+    Two rules, both provable from the schema alone:
+
+    (a) a declared synonym (`cmd` -> `command`), applied only when the synonym is
+        not itself declared and the target is;
+    (b) a tool with exactly ONE required argument that received one undeclared key
+        shaped like an identifier (`{"id": "A1"}` on `agent.get`) — renames it to
+        that required argument. An AMBIGUOUS key is never repaired: `glob.list`
+        with `{"path": ...}` could mean `root` or `pattern`, so it stays a usage
+        error with the did-you-mean hint rather than a silently wrong search.
+    """
+    props, required = _schema_shape(tool)
+    if not props or not isinstance(args, dict):
+        return args
+    out = args
+    for key in list(args):
+        if str(key) in props or str(key) in HARNESS_ARG_KEYS or str(key).startswith("_"):
+            continue
+        target = _ARG_ALIASES.get(str(key).lower())
+        if not target or target not in props or target in args:
+            continue
+        if out is args:
+            out = dict(args)
+        out[target] = out.pop(key)
+    if out is not args:
+        return out
+    undeclared = [k for k in args
+                  if str(k) not in props and str(k) not in HARNESS_ARG_KEYS
+                  and not str(k).startswith("_")]
+    absent = [r for r in required if not args.get(r)]
+    if len(required) == 1 and len(undeclared) == 1 and absent == list(required):
+        name = str(undeclared[0]).lower()
+        if name in _IDENT_ARG_NAMES or name.endswith("_id") or name == required[0] + "id":
+            out = dict(args)
+            out[required[0]] = out.pop(undeclared[0])
+    return out
+
+
+def _schema_props(tool: str) -> dict:
+    """The declared properties of a tool's argument object ({} when unknown)."""
+    return _schema_shape(tool)[0]
 
 
 def _shape_notes(tool: str, args: Any) -> list[tuple[str, str]]:

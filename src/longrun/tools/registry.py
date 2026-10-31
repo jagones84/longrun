@@ -72,7 +72,12 @@ _LEGACY_SCHEMAS = {
                         "they typed. Under docker/bwrap/nsjail it runs isolated instead. "
                         "Returns exit code + captured stdout/stderr. "
                         "action=read returns the last `lines` of the terminal session "
-                        "(including the operator's own commands); action=reset kills it."),
+                        "(including the operator's own commands); action=reset kills it. "
+                        "For anything longer than one line prefer a FILE over an inline "
+                        "string: `fs.write` the script then run `python3 <file>`, or use "
+                        "`python.run` (it stages the snippet itself). A multi-line "
+                        "heredoc inside `command` is the most common source of "
+                        "SyntaxError turns."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
