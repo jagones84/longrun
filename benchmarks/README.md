@@ -118,6 +118,45 @@ every report. Artifacts live under `.agent/BENCHMARKS/` (never in this repo).
 A run that delivered nothing is a rubric-weighted **zero**; a judge that could not
 run is `None`, never `0`.
 
+## Polyglot (Exercism) — deterministic harness comparison, no judge (2026-10-31)
+
+The JobBench judge moves ±8-12 points on the SAME artefact, so it can rank a
+harness against itself. For "is harness A better than harness B" the score must be
+mechanical. `polyglot.py` + `polyglot_compare.py` run the **Aider polyglot corpus**
+(`Aider-AI/polyglot-benchmark`, the Exercism exercises the Aider leaderboard uses)
+and decide every task by running the exercise's OWN test suite:
+
+```bash
+# 1. prove the suite itself (no model, no spend): exemplar must pass, stub must fail
+python3 -m benchmarks.polyglot_compare --check              # python track
+python3 -m benchmarks.polyglot_compare --check --language go
+
+# 2. same model, three harnesses, ten exercises
+python3 -m benchmarks.polyglot_compare \
+  --arms longrun,openclaw,opencode \
+  --model openrouter:z-ai/glm-5.3-flash --limit 10 \
+  --keep-sessions --out .agent/BENCHMARKS/runs/2026-11-01_polyglot_py10
+```
+
+- **Score** = `pytest` (python) or `go test` (Go, in `golang:1.22-bookworm` with the
+  network off) exit code inside the task workspace. `tests_modified` is reported as
+  an INVALID row: an arm that edits the grader did not solve the task.
+- **No leak**: `.meta/example.*` (the reference solution) is never staged.
+- **Wired tracks**: `python` (33 tasks, native `pytest`) and `go` (14 tasks, in a
+  container). JS/Rust/Java need their own image with npm/cargo/mvn deps;
+  `load_tasks` refuses them by name instead of scoring 0. `go/ledger` is excluded
+  (`KNOWN_BAD`): its tests pass on the untouched stub, so it would pay free points.
+- **Dataset**: clone `https://github.com/Aider-AI/polyglot-benchmark` next to the
+  repo (default `/home/jagones/Repositories/polyglot-benchmark`, override with
+  `POLYGLOT_DIR`). `run.json` records the dataset commit.
+- `--check` is the suite's own regression test: a task whose exemplar does not pass
+  or whose stub does pass is a broken task, and the runner refuses it.
+
+Why not SWE-bench / Claw-SWE-Bench here: their evaluation images are `x86_64` only
+(`sweb.eval.x86_64.<instance>`), and this host is `aarch64` with no x86 emulation —
+the containers cannot run. Polyglot needs no prebuilt image, so it is the only
+deterministic SWE-shaped suite this machine can execute today.
+
 ## Safety
 
 `humaneval.check()` executes candidate code in-process — run it on a trusted or
