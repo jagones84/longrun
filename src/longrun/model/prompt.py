@@ -38,6 +38,7 @@ SECTIONS = [
     {"id": "memory-policy", "order": 30, "kind": "static"},
     {"id": "capability",    "order": 40, "kind": "static"},
     {"id": "task-policy",   "order": 45, "kind": "static"},
+    {"id": "verify-policy", "order": 47, "kind": "static"},
     {"id": "self-summary",  "order": 50, "kind": "dynamic"},
     {"id": "agent-role",    "order": 52, "kind": "dynamic"},
     {"id": "longrun-agent", "order": 53, "kind": "dynamic"},
@@ -56,6 +57,7 @@ _STATIC_ATTRS = {
     "skills-policy": "SKILLS_POLICY",
     "memory-policy": "MEMORY_POLICY",
     "task-policy": "TASK_POLICY",
+    "verify-policy": "VERIFY_POLICY",
 }
 
 

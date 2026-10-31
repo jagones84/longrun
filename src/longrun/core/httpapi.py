@@ -858,7 +858,8 @@ def context_items(session_id=None):
         return sum(context_engine.count_tokens(_secs.get(i, "")) for i in ids)
 
     tok["system"] = _stok("identity", "prompt-map", "self-summary", "rules-policy",
-                          "skills-policy", "memory-policy", "capability", "task-policy")
+                          "skills-policy", "memory-policy", "capability", "task-policy",
+                          "verify-policy")
     tok["tools"] = _stok("tools")
     tok["rules"] = _stok("rules") or rules_tokens
     tok["skills"] = _stok("skills")

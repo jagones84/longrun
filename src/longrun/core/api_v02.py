@@ -940,6 +940,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                 sysp = (prompt_mod.prompt_map_text() + "\n\n" + prompt_mod.capability_text()
                         + "\n\n" + srv.SYSTEM_PROMPT + "\n\n" + AGENT_PROMPT_V2 + "\n\n"
                         + srv.RULES_POLICY + ("\n" + rb if rb else "") + "\n\n"
+                        + srv.VERIFY_POLICY + "\n\n"
                         + srv.SKILLS_POLICY + ("\n" + _sk if _sk else "") + "\n\n"
                         + tool_context() + ("\n\n" + mx if mx else ""))
                 if not hist:

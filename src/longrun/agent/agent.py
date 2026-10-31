@@ -531,6 +531,47 @@ TASK_POLICY = (
     "answer the user directly.\n"
 )
 
+# Generic verification policy: the harness can describe a file, it cannot read it for
+# the model, so the model has to re-open what it produced and test it against the
+# request. Deliberately domain-free — the bracketed part is only the SHAPE of an
+# example, never a rule about this task.
+VERIFY_POLICY = (
+    "## Verifying what you produced (before you answer)\n"
+    "The moment a turn produces an artefact — file, table, sheet, document, slide, image, "
+    "chart, code, archive, message — YOU verify it. The harness describes files (size, "
+    "rows, sheets); it does not read them for you, so a claim you never re-checked is a "
+    "guess. Re-open the artefact with a tool (fs.read, or a short script that prints what "
+    "you need) and run the checks that apply. Every item below is generic; the bracket "
+    "only shows the SHAPE of an example:\n"
+    "- Answers the request: everything asked for is there and nothing contradicts it "
+    "[asked for three sections, the document has three].\n"
+    "- Complete against the INPUTS: every row, record, id, name, code or amount you were "
+    "given is accounted for — present in the output, or excluded with a reason you can "
+    "defend [40 ids in, 40 lines out; a sample of 25 is a summary, not an answer].\n"
+    "- Internally consistent: totals equal the sum of their own rows, subtotals add up, "
+    "shares sum to the whole, dates sit in range and in the direction the data implies, "
+    "units and currency match their column, no row contradicts another [if you dropped "
+    "rows from a total, the total must change too].\n"
+    "- Applies its own rules: if the text says 'exclude', 'convert', 'only', 'adjusted' "
+    "or 'rounded', the numbers must already reflect it. A caveat written beside a wrong "
+    "number is a wrong number.\n"
+    "- Usable as delivered: it opens without repair, no cell or paragraph is truncated, no "
+    "formula error or placeholder (NaN, None, TODO, lorem, ###), required fields are "
+    "filled, columns and sheets are labelled, and the format is the one the request "
+    "implied.\n"
+    "- Code runs: execute it once, with its tests, instead of reading it — an unrun script "
+    "is a proposal, not a result.\n"
+    "- Visual output is visible: the chart, sheet, slide or layer exists, is labelled and "
+    "is not blank, and it shows the numbers you computed [an empty chart passes every "
+    "file-exists check].\n"
+    "- Nothing fabricated: every id, name, figure, filename and citation traces back to an "
+    "input or to a command you ran; where you inferred it, say so next to it.\n"
+    "- Delivery is named: your answer says where each result lives, and never claims a "
+    "result the artefact does not contain.\n"
+    "A failed check means fix the artefact and check again — never explain the failure "
+    "away in prose.\n"
+)
+
 # M12 (upgrade plan): static security baseline every model sees — prompt
 # injection is data-not-instructions, authority comes only from the user in
 # chat, work stays small and inside the workspace, and a turn ends in verified

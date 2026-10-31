@@ -226,7 +226,7 @@ from longrun.agent.agent import (SYSTEM_PROMPT, PMCP_PROMPT, system_prompt, RULE
                     CHAT_TOOL_MAX_STEPS, CHAT_TOOL_MAX_ITERS, PLAN_ONLY_MAX_STEPS,
                     PLAN_ONLY_TOOLS, _LAST_SYS_INJECT, CHAT_TOOL_OBS_LIMIT,
                     SUBAGENT_WAIT, CHAT_OBS_FULL, CHAT_TOOL_PROMPT, TASK_POLICY,
-                    SECURITY_POLICY,
+                    SECURITY_POLICY, VERIFY_POLICY,
                     HARNESS_MARK, harness_wrap, _pivot_decide, _pivot_sync_text,
                     _next_stale, _looks_like_json_action, _JSON_ACTION_KEYS,
                     _JSON_TOOL_ARG_KEYS, _looks_like_action_dict, _PROMISE_RE,
