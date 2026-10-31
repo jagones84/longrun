@@ -18,11 +18,19 @@ TASKS="${2:-1}"
 ARMS="${3:-longrun}"
 MODEL="${4:-openrouter:z-ai/glm-5.3-flash}"
 JUDGE="${JUDGE_MODEL:-z-ai/glm-5.3-flash}"
-STAMP="$(date +%Y-%m-%d_%H%M)"
+STAMP="$(date +%Y-%m-%d_%H%M%S)"
 OUTROOT=".agent/BENCHMARKS/runs/${STAMP}_${TAG}"
 LOG="${OUTROOT}/bench.log"
 
+# A run must never land on an existing folder: `jobbench.stage` wipes each
+# workspace and the judge files are rewritten, so a reused --out silently
+# replaces the evidence of the previous run instead of adding a row.
+if [ -e "$OUTROOT" ]; then
+  echo "refusing to reuse existing run folder: $OUTROOT (choose another tag)" >&2
+  exit 2
+fi
 mkdir -p "$OUTROOT"
+echo "$OUTROOT" > .agent/trash/last_bench_run.txt
 
 one() {
   local prof="$1" label="$2"

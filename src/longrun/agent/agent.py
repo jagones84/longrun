@@ -742,11 +742,48 @@ def _looks_like_tool_markup(text):
                 and re.search(r"<function\s*=", t, re.I))
 
 
+def _argkv_action(text):
+    """Parse the `<arg_key>K</arg_key><arg_value>V</arg_value>` template dialect.
+
+    Measured 2026-10-31 on the JobBench bookkeeping task (session `cfbf25499a77`):
+    glm-5.3-flash emitted its NATIVE tool-call template instead of the harness
+    JSON — `<tool_call>action</arg_key><arg_value>tool</arg_value><arg_key>tool
+    </arg_key>...` (the first key loses its opening tag). Every such turn was
+    "not a valid action", the invalid streak reached its cap, and the turn closed
+    with `no_valid_action` and **0 delivered files**: 0/88 where the previous run
+    took 10/88. The dialect carries the full call, so parse it instead of
+    dropping it.
+    """
+    t = str(text or "")
+    if "<arg_value>" not in t:
+        return None
+    pairs = re.findall(r"([A-Za-z_][\w.]*)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>",
+                       t, re.S)
+    if not pairs:
+        return None
+    data = {}
+    for key, raw in pairs:
+        val = raw.strip()
+        try:
+            data[key] = json.loads(val)
+        except (TypeError, ValueError):
+            data[key] = val
+    if data.get("action") == "tool" and isinstance(data.get("tool"), str):
+        args = data.get("args")
+        return {"action": "tool", "tool": data["tool"].strip(),
+                "args": args if isinstance(args, dict) else {}}
+    if isinstance(data.get("action"), str) and data["action"].strip():
+        return data
+    return None
+
+
 def _looks_like_json_action(text):
     """True when `text` is a (possibly malformed/truncated) tool-call JSON OR the
     model's native DSML/Hermes markup — machine text never shown as a chat reply."""
     t = (text or "").strip()
     if _looks_like_dsml(t) or _looks_like_tool_markup(t):
+        return True
+    if "<arg_value>" in t and "</arg_key>" in t:
         return True
     if not t.startswith(("{", "[")):
         return False
@@ -3051,6 +3088,9 @@ def _extract_action(answer):
     """
     if _looks_like_dsml(answer):
         return _normalize_action(_dsml_action(answer))
+    kv = _argkv_action(answer)
+    if kv:
+        return _normalize_action(kv)
     if _looks_like_tool_markup(answer):
         return _normalize_action(_tool_markup_action(answer))
     tagged = _tagged_action(answer)
