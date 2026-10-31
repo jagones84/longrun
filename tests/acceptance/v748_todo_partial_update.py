@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v745 — todo.update accepts a PARTIAL step (proof/sources) and status aliases.
+"""v748 — todo.update accepts a PARTIAL step (proof/sources) and status aliases.
 
 Measured 2026-10-31 in all three kept benchmark sessions: the model attached the
 sources it had collected with a step that carried no `status`, and the harness
