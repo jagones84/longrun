@@ -2688,10 +2688,12 @@ def _deliverable_review_text(sess, request, since, state):
     """
     if int(state.get("left") or 0) <= 0:
         return None
+    had_files = False
     try:
         from longrun.plan import artifacts as _art
         text = _art.review(_chat_workspace(sess), request, since=since,
                            exclude=_harness_state_roots() + _other_session_roots(sess))
+        had_files = bool(text)
         if text:
             # Steps closed on the model's word alone are claims, not proof; the
             # graph already knows which (taskgraph.claim_only_nodes). Naming them
@@ -2721,6 +2723,15 @@ def _deliverable_review_text(sess, request, since, state):
             state["left"] = 0
             return None
     state["left"] = int(state.get("left") or 1) - 1
+    if had_files:
+        # The read-back is a GATE, not a courtesy: from here the turn may not close
+        # until it used a real tool again. Measured 2026-10-31 (JobBench dispatch,
+        # session da08393e): the read-back fired at 19:53:46, the model answered
+        # "All four deliverables are complete, verified by read-back" at 19:54:01
+        # having run NOTHING in between — the only call was `todo.update`, which is
+        # bookkeeping and never counts as work. `_review_action_owed` catches that.
+        state["review_sent"] = True
+        state["after_review"] = False
     # ONE more cycle when the delivery is mechanically incomplete. Measured
     # 2026-10-31 on JobBench with the same model in four arms: longrun closed at
     # 140-197 s / 17-42 calls while openclaw spent 390-527 s, and every rubric it
@@ -2735,6 +2746,32 @@ def _deliverable_review_text(sess, request, since, state):
     except Exception:  # noqa: BLE001 — never break a turn over an audit
         pass
     return text
+
+
+def _review_action_owed(state):
+    """True when a read-back was sent and the turn has done no real work since.
+
+    `todo.update` / `todo.replan` are handled in their own branches and never reach
+    the tool dispatch, so "used a tool" here means a tool that can actually open,
+    run or rewrite the artifact. The state lives in `_deliv_state` because the
+    read-back and the close are two points of the same loop.
+    """
+    return bool((state or {}).get("review_sent")) and not bool((state or {}).get("after_review"))
+
+
+def _verify_gate_text():
+    """The one round a delivery earns when it tried to close without opening itself.
+
+    Deliberately concrete: name the shape of the call, not the domain. The point is
+    that the answer must be backed by output the model has SEEN in this turn.
+    """
+    return ("VERIFY GATE — you are closing without touching anything since the "
+            "harness read your output back. A claim like 'verified by read-back' is "
+            "not verification: the read-back only listed the files. Do it NOW: open "
+            "the artifact you produced (`fs.read`, or a short script that prints rows/"
+            "sheets/totals) and check it against the request. If a number, row, sheet "
+            "or section is wrong or missing, fix it and check again. Then answer with "
+            "the concrete output you saw.")
 
 
 def _normalize_action(act):
@@ -3253,6 +3290,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # counts. A status check cannot see a blank sheet; this can.
     _deliv_since = time.time()
     _deliv_state = {"left": 1}
+    _verify_gate_used = False   # one round when the turn closes without opening its output
     _delivery_floor_used = False  # one extra round when a stop leaves nothing written
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
     _fail_streak_tool = None
@@ -3897,6 +3935,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             work_steps += 1
             _total_work_steps += 1
             _raw_tool = tool
+            # The VERIFY GATE reads this: a real tool call after the read-back is the
+            # only thing that discharges it (`todo.*` never reaches this branch).
+            if _deliv_state.get("review_sent"):
+                _deliv_state["after_review"] = True
             tool = _card_tool_name(_raw_tool, args)
             used_tools.append(tool)
             on_event("tool.call", session=sess["id"], tool=tool,
@@ -4068,6 +4110,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _drv:
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
+                continue
+            if (_review_action_owed(_deliv_state) and not _verify_gate_used
+                    and not _is_aborted(sess["id"])):
+                # The read-back was sent and NOTHING was opened since: the answer
+                # would be a claim. One round, then the normal stop applies.
+                _verify_gate_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_verify_gate_text(), "closure-check")
                 continue
             _finished_cleanly = True
             final_answer = next(
