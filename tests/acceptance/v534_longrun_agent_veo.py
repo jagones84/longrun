@@ -489,10 +489,13 @@ check("G2 _togglePin refuses to unpin a system session and can never store it",
       and 'toast("longrunAgent is a permanent system session' in HTML)
 check("G3 the row menu shows a DISABLED permanent pin instead of an Unpin toggle",
       'data-a="pin-sys" disabled' in HTML and "📌 Pinned (permanent)" in HTML)
+# v752: the fallback comparator is now the shared sort (_sessSort), which keeps the
+# system session first under EVERY sort mode — the guarantee is stronger, not weaker.
 check("G4 the system session sorts above every other pinned row (and in the flat list)",
       "const _sysFirst = (a, b) =>" in HTML
-      and "visible.filter(s => isPinned(s.id)).sort(_sysFirst)" in HTML
-      and "visible.slice().sort(_sysFirst)" in HTML)
+      and "visible.filter(s => isPinned(s.id)).sort(_sessSort)" in HTML
+      and "visible.slice().sort(_sessSort)" in HTML
+      and "const _sessSort = (a, b) => ((_isSystemSess(a) ? 0 : 1)" in HTML)
 check("G5 'hide empty' can never hide the stateless system session",
       "(_isSystemSess(s) || !hideEmpty || (s.messages || 0) > 0)" in HTML)
 

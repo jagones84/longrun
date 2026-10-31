@@ -1,6 +1,6 @@
 roles:
   chat:
-    model: openrouter:deepseek/deepseek-v4-flash-0731
+    model: openrouter:z-ai/glm-5.3-flash
     fallbacks:
     - openrouter:z-ai/glm-5.3-flash
   agent:

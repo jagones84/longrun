@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Longrun">
 <meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="/assets/filtersort.css">
 <style>
   :root {
     --bg: #070810; --panel: rgba(18,22,38,.74); --panel2: rgba(13,17,32,.82);
@@ -1942,12 +1943,13 @@
           <span class="rb-done" title="finished while you were elsewhere">🔔 <b id="runsBarDone">0</b></span>
           <span class="rb-caret" aria-hidden="true">▾</span>
         </button>
-        <!-- v632: a FILTER toggle, not a labelled checkbox: the funnel is filled
-             and accent-coloured while the filter is on (M3 icon-button rule:
-             filled = selected), with aria-pressed for screen readers. The native
-             checkbox stays as the single source of truth for the filter. -->
+        <!-- v752: the funnel is the ONE filter+sort control of the rail. It opens
+             the shared panel (webui/assets/filtersort.js, the same control as the
+             Control AGENTS table): team scope, sort key + direction, hide-empty and
+             running-only. The native #hide-empty checkbox stays the effective value
+             of the "hide empty" filter, mirrored from the panel state. -->
         <button type="button" class="rail-btn rail-toggle" id="hideEmptyBtn" aria-pressed="false"
-                title="hide empty sessions" aria-label="hide empty sessions">
+                title="filter and sort sessions" aria-label="filter and sort sessions">
           <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">
             <path d="M2.5 3.2h11L9.2 8.3v4.4l-2.4-1.2V8.3L2.5 3.2z" fill="none"
                   stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
@@ -3064,6 +3066,7 @@
   <div class="cap" id="imgCap"></div>
 </div>
 <script src="/assets/dragsort.js"></script>
+<script src="/assets/filtersort.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 /* JAG-229: numeric settings inputs must never silently become 0/NaN when the
@@ -5207,6 +5210,10 @@ function _bindSidebarDrag(label, kind, id, group, container) {
         ? _teamOrderBase : (_sessionOrderBase[group] || []);
       const next = DragSort.moveItem(base, cid, targetId, after);
       if (next.some((x, i) => x !== base[i])) {
+        // v752: dropping a row IS an order choice — switch the shared sort to
+        // "manual (drag order)" first, or the active sort would re-place the row on
+        // the next render and the drag would look ignored.
+        if (_sessFs && _sessFs.get().sort !== "manual") _sessFs.setSilent({ sort: "manual" });
         _persistSidebarOrder(kind, group, next);
       }
     }
@@ -5480,6 +5487,12 @@ async function loadSessions() {
     _pruneChatScrollState(out.sessions);
   }
   const box = $("sessions"); box.innerHTML = "";
+  // v752: ONE filter+sort state for the rail, the same spec the Control AGENTS
+  // table mounts (webui/assets/filtersort.js). refreshTeams() clamps a stored
+  // team id that no longer exists against the team list this render just loaded.
+  if (_sessFs) _sessFs.refreshTeams();
+  const fs = window.FilterSort ? FilterSort.get("sessions")
+    : {sort: "updated", dir: "desc", team: "ALL", hideEmpty: false, running: false};
   const q = ($("session-search") ? $("session-search").value : "").toLowerCase();
   const hideEmpty = $("hide-empty") ? $("hide-empty").checked : false;
   (out.sessions || []).forEach(s => { if (s.id === sessionId) _activeTitle = s.title || s.id; });
@@ -5505,16 +5518,22 @@ async function loadSessions() {
     _saveUnread();
     updateDoneTitle();
   }
+  const teamsOf = s => { const ag = _agents[s.id]; return ag ? (ag.teams || []).filter(t => _teamsById[t]) : []; };
+  // v752: team scope and running-only are the SHARED filters, applied here only.
+  const teamScope = fs.team || "ALL";
+  const inScope = s => teamScope === "ALL"
+    || (teamScope === "__none__" ? !teamsOf(s).length : teamsOf(s).includes(teamScope));
   const visible = (out.sessions || []).filter(s =>
     // JAG-535: the permanent system session is stateless, so it is ALWAYS empty —
     // "hide empty" must never make the VEO vanish from the rail.
     (_isSystemSess(s) || !hideEmpty || (s.messages || 0) > 0)
+    && (!fs.running || !!runningSessions[s.id])
+    && inScope(s)
     && ((s.title || s.id || "").toLowerCase().includes(q)));
   const isPinned = id => pinnedIds.includes(id);
   visible.sort((a, b) => (pinnedIds.includes(b.id) ? 1 : 0) - (pinnedIds.includes(a.id) ? 1 : 0));
   const visibleIds = new Set(visible.map(s => s.id));
   const onlyVisible = list => list.filter(s => visibleIds.has(s.id));
-  const teamsOf = s => { const ag = _agents[s.id]; return ag ? (ag.teams || []).filter(t => _teamsById[t]) : []; };
   // JAG-415: within a group, orchestrators (org agents) come FIRST, in ORG-tree
   // order — a depth-first walk of reports_to, never "last used".
   const orgRank = _orgRankMap();
@@ -5528,6 +5547,34 @@ async function loadSessions() {
   // JAG-535: the permanent system session sorts ABOVE everything — before any other
   // pinned row, and in the flat (no-team) list too.
   const _sysFirst = (a, b) => (_isSystemSess(a) ? 0 : 1) - (_isSystemSess(b) ? 0 : 1) || _ord(a, b);
+  // v752: the rail's sort IS the shared spec (webui/assets/filtersort.js), the same
+  // keys the Control AGENTS table offers. It is the FALLBACK order: a row the
+  // operator dragged keeps its place (DragSort + /api/sidebar/order) and the sort
+  // only decides where the remaining rows land — never a second order truth.
+  const _mul = fs.dir === "asc" ? 1 : -1;
+  const _cmpTxt = (x, y) => String(x || "").localeCompare(String(y || ""));
+  const _agOf = s => _agents[s.id] || {};
+  const _firstTeam = s => { const t = teamsOf(s)[0]; return t && _teamsById[t] ? (_teamsById[t].name || "") : ""; };
+  const _SESS_SORT = {
+    updated: (a, b) => ((a.updated || 0) - (b.updated || 0)) * _mul || _sysFirst(a, b),
+    name: (a, b) => _cmpTxt(a.title || a.id, b.title || b.id) * _mul,
+    role: (a, b) => _cmpTxt(_agOf(a).role, _agOf(b).role) * _mul,
+    model: (a, b) => _cmpTxt(a.model, b.model) * _mul,
+    team: (a, b) => _cmpTxt(_firstTeam(a), _firstTeam(b)) * _mul || _sysFirst(a, b),
+    id: (a, b) => ((_agOf(a).n || 1e9) - (_agOf(b).n || 1e9)) * _mul,
+    // ascending = running rows first (the natural direction of "running first")
+    running: (a, b) => ((runningSessions[a.id] ? 0 : 1) - (runningSessions[b.id] ? 0 : 1)) * _mul || _sysFirst(a, b),
+    leader: _sysFirst,
+    manual: _sysFirst
+  };
+  const _keySort = _SESS_SORT[fs.sort] || _sysFirst;
+  // JAG-535 survives every sort mode: the permanent system session stays first.
+  const _sessSort = (a, b) => ((_isSystemSess(a) ? 0 : 1) - (_isSystemSess(b) ? 0 : 1)) || _keySort(a, b);
+  // v752: the stored drag order IS a sort mode, never a silent override. Under any
+  // other key the rank list is empty, so the chosen sort reaches EVERY row — the bug
+  // was a group dragged once kept that old order and looked untouched by the sort.
+  const _manual = fs.sort === "manual";
+  const _stored = (g) => (_manual ? (_sidebarOrder.sessions[g] || []) : []);
   const teams = _sidebarOrdered(
     Object.values(_teamsById).sort((a, b) => (a.n || 0) - (b.n || 0)),
     _sidebarOrder.teams, t => t.id);
@@ -5540,13 +5587,13 @@ async function loadSessions() {
     _lastGroupKeys = [];
     box.dataset.flatOrderGroup = "__none__";
     const defaultFlat = _all.slice().sort((a, b) =>
-      (isPinned(b.id) ? 1 : 0) - (isPinned(a.id) ? 1 : 0) || _sysFirst(a, b));
-    const flatAll = _sidebarOrdered(defaultFlat, _sidebarOrder.sessions.__none__,
-      s => s.id, _sysFirst, true);
+      (isPinned(b.id) ? 1 : 0) - (isPinned(a.id) ? 1 : 0) || _sessSort(a, b));
+    const flatAll = _sidebarOrdered(defaultFlat, _stored("__none__"),
+      s => s.id, _sessSort, true);
     _sessionOrderBase.__none__ = flatAll.map(s => s.id);
-    const flat = _sidebarOrdered(visible.slice().sort(_sysFirst),
-      _sidebarOrder.sessions.__none__,
-      s => s.id, _sysFirst, true);
+    const flat = _sidebarOrdered(visible.slice().sort(_sessSort),
+      _stored("__none__"),
+      s => s.id, _sessSort, true);
     onlyVisible(flat).forEach(s =>
       box.appendChild(_sessRowEl(s, pinnedIds, _agents[s.id], "__none__", box)));
   } else {
@@ -5569,30 +5616,32 @@ async function loadSessions() {
     }
     const groups = [];
     _sessionOrderBase.__pinned__ = _sidebarOrdered(
-      _all.filter(s => isPinned(s.id)).sort(_sysFirst),
-      _sidebarOrder.sessions.__pinned__, s => s.id, _ord, true).map(s => s.id);
+      _all.filter(s => isPinned(s.id)).sort(_sessSort),
+      _stored("__pinned__"), s => s.id, _sessSort, true).map(s => s.id);
     // v652: one session id may be claimed by several groups (pinned + team, or
     // two teams). `_drawn` makes the first claim the only one, so the rail never
     // lists the same object twice.
     const _drawn = new Set();
-    const pinGroup = _sidebarOrdered(visible.filter(s => isPinned(s.id)).sort(_sysFirst),
-      _sidebarOrder.sessions.__pinned__, s => s.id, _ord, true);
+    const pinGroup = _sidebarOrdered(visible.filter(s => isPinned(s.id)).sort(_sessSort),
+      _stored("__pinned__"), s => s.id, _sessSort, true);
     pinGroup.forEach(s => _drawn.add(s.id));
     if (pinGroup.length) groups.push({ key: "__pinned__", symbol: "📌", name: "Pinned", col: "var(--warn)", sessions: pinGroup });
     // JAG-415: "No team" sits right BELOW Pinned, before the teams.
-    const adhocAll = _sidebarOrdered(_all.filter(s => teamsOf(s).length === 0 && !_drawn.has(s.id)).sort(_ord),
-      _sidebarOrder.sessions.__none__, s => s.id, _ord);
+    const adhocAll = _sidebarOrdered(_all.filter(s => teamsOf(s).length === 0 && !_drawn.has(s.id)).sort(_sessSort),
+      _stored("__none__"), s => s.id, _sessSort);
     _sessionOrderBase.__none__ = adhocAll.map(s => s.id);
     const adhoc = onlyVisible(adhocAll);
     adhoc.forEach(s => _drawn.add(s.id));
     if (adhoc.length) groups.push({ key: "__none__", symbol: "◇", name: "No team", col: "var(--dim)", sessions: adhoc });
     teams.forEach(t => {
-      const allMembers = _sidebarOrdered(_all.filter(s => teamsOf(s).includes(t.id) && !_drawn.has(s.id)).sort(_ord),
-        _sidebarOrder.sessions[t.id], s => s.id, _ord);
+      const allMembers = _sidebarOrdered(_all.filter(s => teamsOf(s).includes(t.id) && !_drawn.has(s.id)).sort(_sessSort),
+        _stored(t.id), s => s.id, _sessSort);
       _sessionOrderBase[t.id] = allMembers.map(s => s.id);
       const ss = onlyVisible(allMembers);
       ss.forEach(s => _drawn.add(s.id));
-      if (ss.length) groups.push({ key: t.id, symbol: t.symbol || "•", name: t.name || t.id, id: t.id, col: t.color || "var(--acc)", sessions: ss });
+      // v752: a scoped team stays visible even when the filters emptied it, so the
+      // operator can see "this team has nothing that matches" instead of silence.
+      if (ss.length || t.id === teamScope) groups.push({ key: t.id, symbol: t.symbol || "•", name: t.name || t.id, id: t.id, col: t.color || "var(--acc)", sessions: ss });
     });
     _lastGroupKeys = groups.map(g => g.key);
     groups.forEach(g => {
@@ -5628,7 +5677,12 @@ async function loadSessions() {
       box.appendChild(sec);
     });
   }
-  if (!visible.length) box.innerHTML = '<div class="remaining">no sessions yet</div>';
+  if (!visible.length) {
+    // v752: distinguish "nothing exists" from "the filter hides everything".
+    const filtered = teamScope !== "ALL" || hideEmpty || fs.running || !!q;
+    box.innerHTML = '<div class="remaining">' +
+      (filtered ? "no sessions match this filter" : "no sessions yet") + '</div>';
+  }
   updateSessBadge();   // JAG-357: keep the topbar badge in sync with the active session
   renderChatHead();   // JAG-480: the chat header names the session you are reading
   _repaintCtx();   // JAG-424g: re-apply the context ring on the freshly rendered active row
@@ -14771,16 +14825,31 @@ $("inp").addEventListener("paste", e => {
     setOpen(false);
   });
 })();
-/* v632: hide-empty is an ICON toggle (funnel). The native checkbox stays the
-   single source of truth, so every existing filter path keeps working. */
-(function bindHideEmpty() {
-  const cb = $("hide-empty"), btn = $("hideEmptyBtn");
-  if (!cb || !btn) return;
-  btn.addEventListener("click", () => {
-    cb.checked = !cb.checked;
-    btn.setAttribute("aria-pressed", cb.checked ? "true" : "false");
-    loadSessions();
+/* v752: the rail's funnel is the ONE filter+sort control — the same shared panel
+   the Control AGENTS table mounts (webui/assets/filtersort.js): team scope, sort
+   key + direction, hide-empty, running-only. `#hide-empty` stays the effective
+   value of its filter, mirrored from the panel state, so every existing filter
+   path keeps working unchanged. */
+let _sessFs = null;
+function _sessTeamOptions() {
+  const list = [{ id: "ALL", label: "ALL teams" }, { id: "__none__", label: "No team" }];
+  Object.values(_teamsById).sort((a, b) => (a.n || 0) - (b.n || 0)).forEach(t => {
+    const n = Array.isArray(t.members) ? " (" + t.members.length + ")" : "";
+    list.push({ id: t.id, label: (t.symbol ? t.symbol + " " : "") + (t.name || t.id) + n });
   });
+  return list;
+}
+(function bindSessionFilter() {
+  const btn = $("hideEmptyBtn"), cb = $("hide-empty");
+  if (!btn || !cb || !window.FilterSort) return;
+  _sessFs = FilterSort.mount({
+    key: "sessions", button: btn, host: document.body, panelId: "fsPanelSessions",
+    ids: { team: "sessTeam", sort: "sessSort", dir: "sessDir",
+           hideEmpty: "sessHideEmpty", running: "sessRunning" },
+    teams: _sessTeamOptions,
+    onChange: (st) => { cb.checked = !!st.hideEmpty; loadSessions(); }
+  });
+  cb.checked = !!FilterSort.get("sessions").hideEmpty;
 })();
 $("compactBtn").onclick = compactNow;
 

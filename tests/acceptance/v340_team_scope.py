@@ -67,8 +67,10 @@ check("C3 Orbit renders AX.nY everywhere (label + SVG node text + hint)",
       and "'.n' + esc(y)" in orbit               # the SVG node text (JAG-342 miss)
       and "'.T'" not in orbit and '".T"' not in orbit
       and ".TY" not in orbit and ".TX" not in orbit)
+# v752: the scope control moved into the shared filter panel; its id is declared by
+# the mount config, so #teamSel still exists in the rendered page and still scopes.
 check("C4 Orbit has a team selector that scopes the board",
-      'id="teamSel"' in orbit and "renderTeams" in orbit and "inTeam" in orbit)
+      'team: "teamSel"' in orbit and "renderTeams" in orbit and "inTeam" in orbit)
 
 # --- D: an EMPTY team is assignable and visible (live bug, 2026-10-22) --------
 # Operator: "i cant add agents to a team, i created a new team and where are the
@@ -167,9 +169,12 @@ check("G3 the deck marks the empty prompt on the button (red asterisk + title)",
       and "This prompt is <b>EMPTY</b>" in orbit)
 check("G4 the header counts the rows whose prompt is empty",
       '" with an EMPTY prompt"' in orbit and "haswarn" in orbit)
-check("G5 leadership first is the DEFAULT order, with the flat id order kept",
-      'this.sort = "org";' in orbit and '<option value="id">agent id' in orbit
-      and '<option value="default" selected>' in orbit)
+# v752: the mode ids now come from the shared filter panel (webui/assets/filtersort.js);
+# "org" was renamed "leader" (same walk) and the inline <option> list moved there.
+check("G5 leadership first is the DEFAULT order (flat id mode still offered)",
+      'this.sort = "leader"; this.dir = "asc";' in orbit
+      and 'defaults: { sort: "leader", dir: "asc" }' in orbit
+      and 'else if (k === "id") list.sort((a, b) => byN(a, b) * mul);' in orbit)
 check("G6 the deck's default sort ranks by the reports_to tree (orchestrator first)",
       "const r = this._orgRank(list);" in orbit and "depth-first reports_to walk" in orbit)
 check("G7 a team group header is keyboard-operable (groups start collapsed)",

@@ -47,9 +47,11 @@ ORBIT = open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"),
 # ---- A. the session rail draws a session ONCE --------------------------------
 check("A1 the rail keeps a drawn set for the render pass",
       "const _drawn = new Set();" in UI)
+# v752: the pinned group is ordered by the shared sort comparator (_sessSort), which
+# still guarantees the system row first and pins before anything else.
 check("A2 Pinned claims its rows first",
       "pinGroup.forEach(s => _drawn.add(s.id));" in UI
-      and "visible.filter(s => isPinned(s.id)).sort(_sysFirst)" in UI)
+      and "visible.filter(s => isPinned(s.id)).sort(_sessSort)" in UI)
 check("A3 'No team' skips what Pinned already drew",
       "teamsOf(s).length === 0 && !_drawn.has(s.id)" in UI
       and "adhoc.forEach(s => _drawn.add(s.id));" in UI)

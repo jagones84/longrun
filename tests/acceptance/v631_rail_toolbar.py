@@ -74,11 +74,16 @@ check("A5 Esc closes the search row and clears the filter",
 check("A6 the running/finished chip is still there (with its counts)",
       'id="runsBarRun"' in UI and 'id="runsBarDone"' in UI
       and 'id="runsPanel"' in UI and "position: fixed" in block(".runs-panel"))
-check("A7 hide-empty is an ICON toggle (funnel) whose state is visible",
+# v752: the funnel became the SHARED filter+sort control (the same panel as the
+# Control AGENTS table). It now opens that panel instead of toggling the checkbox
+# directly; #hide-empty stays the rail's effective hide-empty value and the
+# pressed state still reads as a filled funnel.
+check("A7 the funnel is the shared filter+sort control (state visible)",
       'id="hideEmptyBtn" aria-pressed="false"' in UI
       and '<input type="checkbox" id="hide-empty" hidden>' in UI
       and 'aria-pressed="true"] svg path { fill: currentColor; }' in UI
-      and 'cb.checked = !cb.checked;' in UI)
+      and 'FilterSort.mount({' in UI
+      and 'cb.checked = !!st.hideEmpty;' in UI)
 check("A8 the revealed list re-closes the search row when it clears the filter",
       'const row = $("railSearchRow"); if (row) row.hidden = true;' in UI)
 
