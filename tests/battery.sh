@@ -4,6 +4,8 @@
 #   bash tests/battery.sh          # fast gate: heavy tests skipped, tests run in PARALLEL
 #   LONGRUN_BATTERY_FULL=1 bash tests/battery.sh   # full suite (adds the heavy tests)
 #   LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh   # force sequential (debugging)
+#   LONGRUN_BATTERY_TESTS="v753_stop_kills_work" bash tests/battery.sh  # only these
+#   bash tests/battery_tmp.sh      # the targeted launcher (overwritten per fix)
 #
 # JAG-449: the heavy tests (real vector-index builds / doc ingestion) are ~50s
 # together and are SKIPPED by default so the gate stays quick. Every test gets its
@@ -23,8 +25,19 @@ export PYTHONPYCACHEPREFIX="$PYC"
 # source carried the fix). On this network mount the source mtime can land in the
 # same coarse tick as a previous compile, so python considered the stale .pyc
 # valid. Deterministic gate = no bytecode cache at all.
+#
+# v753: "no cache at all" also meant every one of the 442 test processes recompiled
+# the whole package — measured 0.65 s of a 0.70 s import (.agent/trash/import_probe.py:
+# 0.655/0.663/0.679/0.801/0.617 s cold vs 0.043 s from cache). The cache now lives in
+# THIS run's throwaway dir and is precompiled ONCE below, so it can never be stale
+# across runs (the dir is new every run) and the tests stay read-only
+# (PYTHONDONTWRITEBYTECODE=1): no test can ever write a .pyc, and nothing is written
+# next to the source. LONGRUN_BATTERY_NOPYC=1 restores the compile-every-time path.
 export PYTHONDONTWRITEBYTECODE=1
 mkdir -p "$PYC" "$RES"
+if [ "${LONGRUN_BATTERY_NOPYC:-0}" != "1" ]; then
+  python3 -m compileall -q -j 0 src >/dev/null 2>&1 || true
+fi
 
 # Live progress log. The aggregate summary only prints when EVERY test is done, so a
 # hung gate used to look like an empty screen. This file is TRUNCATED on every run
@@ -38,20 +51,38 @@ export PROGRESS
 # Heavy tests skipped unless LONGRUN_BATTERY_FULL=1
 SLOW_TESTS="v408_doc_ingest v399_codebase_index v431r5_pdf_kb v400_knowledge_notebooks v409_embed_providers v402_research"
 
+# TARGETED run (the fix under test): `LONGRUN_BATTERY_TESTS="v753_x v750_y"` runs
+# ONLY those files. The launcher is tests/battery_tmp.sh, overwritten on every fix.
+# A name that does not exist is an ERROR (exit 2): an empty battery would print
+# GREEN and prove nothing.
+ONLY="${LONGRUN_BATTERY_TESTS:-}"
 LIST=""
 SKIP=0
-for t in tests/acceptance/v*.py; do
-  name=$(basename "$t" .py)
-  if [ "${LONGRUN_BATTERY_FULL:-0}" != "1" ]; then
-    case " $SLOW_TESTS " in
-      *" $name "*)
-        SKIP=$((SKIP + 1))
-        continue
-        ;;
-    esac
+if [ -n "$ONLY" ]; then
+  MISSING=""
+  for name in $ONLY; do
+    t="tests/acceptance/$name.py"
+    [ -f "$t" ] || { MISSING="$MISSING $name"; continue; }
+    LIST="$LIST $t"
+  done
+  if [ -n "$MISSING" ]; then
+    echo "=== battery: unknown test(s):$MISSING (see tests/acceptance/) ==="
+    exit 2
   fi
-  LIST="$LIST $t"
-done
+else
+  for t in tests/acceptance/v*.py; do
+    name=$(basename "$t" .py)
+    if [ "${LONGRUN_BATTERY_FULL:-0}" != "1" ]; then
+      case " $SLOW_TESTS " in
+        *" $name "*)
+          SKIP=$((SKIP + 1))
+          continue
+          ;;
+      esac
+    fi
+    LIST="$LIST $t"
+  done
+fi
 
 # One isolated test run (its own throwaway data dirs).
 _run_one() {
@@ -96,8 +127,10 @@ export -f _run_one
 export PYC RES
 
 JOBS="${LONGRUN_BATTERY_JOBS:-$(nproc 2>/dev/null || echo 4)}"
-# More workers caused CPU / filesystem contention on the DGX. Twelve workers
-# benchmarked faster than both eight and nproc while keeping the gate near 12s.
+# More workers only add CPU / filesystem contention on the DGX. Measured
+# 2026-10-31 (442 tests, nproc=20, back-to-back): 12 workers -> 141-160 s;
+# 18 -> 170 s and 20 -> 166 s, both WITH a failure (v225_compact_bounded asserts a
+# 3 s wall budget and loses it under starvation). Twelve is the cap.
 if [ -z "${LONGRUN_BATTERY_JOBS:-}" ] && [ "$JOBS" -gt 12 ]; then
   JOBS=12
 fi
@@ -134,6 +167,21 @@ rm -rf "$TMP"
 printf 'DONE  pass=%s total=%s fail=%s %s\n' \
   "$pass" "$total" "$fail" "$(date -u +%FT%TZ)" >> "$PROGRESS"
 
+# Stamps: which gate ran, when, with what result. `.agent/logs/` is gitignored, so
+# this is operator memory, not a shipped artifact. The last FULL run is what the
+# rules use to decide whether a full battery is overdue.
+STAMP_DIR="$ROOT/.agent/logs"
+mkdir -p "$STAMP_DIR"
+MODE="full"
+[ "${LONGRUN_BATTERY_FULL:-0}" = "1" ] || MODE="fast"
+[ -n "$ONLY" ] && MODE="targeted"
+printf 'date=%s mode=%s pass=%s total=%s fail=%s tests=%s\n' \
+  "$(date -u +%FT%TZ)" "$MODE" "$pass" "$total" "$fail" "${ONLY:-all}" \
+  > "$STAMP_DIR/battery-last-run.txt"
+if [ "$MODE" = "full" ]; then
+  cp "$STAMP_DIR/battery-last-run.txt" "$STAMP_DIR/battery-last-full.txt"
+fi
+
 if [ "$fail" -eq 0 ]; then
   if [ "$SKIP" -gt 0 ]; then
     echo "=== battery: $pass/$total GREEN ($SKIP heavy skipped — LONGRUN_BATTERY_FULL=1 to run) ==="
@@ -142,6 +190,12 @@ if [ "$fail" -eq 0 ]; then
   fi
 else
   echo "=== battery: $pass/$total (FAILURES — see above) ==="
+fi
+LAST_FULL="$STAMP_DIR/battery-last-full.txt"
+if [ -f "$LAST_FULL" ]; then
+  echo "last full battery: $(cut -d' ' -f1 "$LAST_FULL")"
+else
+  echo "last full battery: never recorded"
 fi
 echo "progress log: $PROGRESS"
 exit "$fail"

@@ -2447,14 +2447,16 @@ class Handler(BaseHTTPRequestHandler):
                     sids = list(_ACTIVE_CHAT.keys())
                 for _s in sids:
                     push_abort(_s)
+                    abort_session_processes(_s)
                 publish("chat.abort", session=None, all=len(sids))
                 return self._send(200, {"ok": True, "aborted": sids})
             sid = body.get("session") or qs.get("session")
             if not sid:
                 return self._send(400, {"error": "session required"})
             push_abort(sid)
-            publish("chat.abort", session=sid)
-            return self._send(200, {"ok": True, "aborted": sid})
+            stopped = abort_session_processes(sid)
+            publish("chat.abort", session=sid, stopped=stopped)
+            return self._send(200, {"ok": True, "aborted": sid, "stopped": stopped})
         if path == "/api/improve":
             # JAG-128B: approve/reject a self-improvement proposal.
             from longrun.util import improve as improve_mod
@@ -2735,6 +2737,29 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def abort_session_processes(sid):
+    """Hard-stop what a session is RUNNING: its shell child and its sandbox job.
+
+    The abort flag alone is checked at the next loop iteration, so a `pytest` /
+    `ssh` that never returns kept the turn alive for minutes after the operator
+    pressed Stop (measured 2026-10-31, session A117: "stop requested" and still
+    running at 9 min). Killing the processes makes the tool return, which lets the
+    flag take effect. Never raises.
+    """
+    out = {}
+    try:
+        from longrun.tools import term as _term
+        out["terminal"] = bool(_term.interrupt_session(sid))
+    except Exception:  # noqa: BLE001
+        out["terminal"] = False
+    try:
+        from longrun.tools import sandbox as _sb
+        out["job"] = _sb.cancel_run(sid).get("cancelled", 0)
+    except Exception:  # noqa: BLE001
+        out["job"] = 0
+    return out
+
+
 def delete_session(sid):
     """Delete a session and EVERYTHING that only exists for it.
 
@@ -2758,6 +2783,7 @@ def delete_session(sid):
     if not os.path.isfile(fpath):
         return {"ok": False, "status": 404, "error": "session not found"}
     push_abort(sid)
+    abort_session_processes(sid)
     with _deleted_lock:
         _DELETED_SESSIONS.add(sid)
         _persist_tombstones()

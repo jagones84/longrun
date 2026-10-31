@@ -234,6 +234,7 @@ class Shell:
             return {"ok": False, "exit_code": 1, "stdout": "", "error": err}
         with self._lock:
             start = self.seq
+        t0 = time.time()
         self._emit("cmd", text=cmd, origin=origin)
         try:
             self._write(cmd)
@@ -290,8 +291,15 @@ class Shell:
             reset(self.key)
             return {"ok": False, "exit_code": 124, "stdout": text, "timed_out": True,
                     "error": "timeout — the terminal was reset"}
-        return {"ok": code == 0, "exit_code": code if code is not None else 1,
-                "stdout": text}
+        res = {"ok": code == 0, "exit_code": code if code is not None else 1,
+               "stdout": text}
+        # A Stop that killed the child leaves a normal exit code behind (the shell
+        # reports 130). Mark it so the agent and the operator see WHY it ended.
+        _int = float(getattr(self, "interrupted_at", 0) or 0)
+        if _int and _int >= t0:
+            res["interrupted"] = True
+            res["error"] = "interrupted by user (stop)"
+        return res
 
     def poll(self, cursor):
         """Return events newer than `cursor` plus the new cursor."""
@@ -330,6 +338,36 @@ class Shell:
                 self.proc.wait(timeout=0.5)
             except Exception:  # noqa: BLE001
                 pass
+
+    def interrupt(self):
+        """STOP the command in flight, right now — the operator's Stop button.
+
+        `run_capture` only gives up on its own TIMEOUT; a Stop that merely sets a
+        flag cannot reach inside a `pytest`/`ssh` that never returns, and the
+        session kept showing "running" for minutes (measured 2026-10-31: a `forth`
+        test loop, the UI stuck at 9 min after "stop requested"). This is the
+        hard-stop path: SIGINT the shell's children, then SIGKILL, then (last
+        resort) kill the shell itself so the turn can finish and the next command
+        gets a fresh one.
+        """
+        hit = _interrupt_child(self)
+        self.interrupted_at = time.time()
+        for _ in range(6):
+            if not self.busy:
+                return bool(hit)
+            time.sleep(0.25)
+        _kill_children(self)
+        for _ in range(4):
+            if not self.busy:
+                return True
+            time.sleep(0.25)
+        try:
+            self.proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+        with _LOCK:
+            _SHELLS.pop(self.key, None)
+        return True
 
 
 _SHELLS = {}
@@ -444,3 +482,17 @@ def status():
         _reap_locked()
         return [{"key": k, "cwd": s.cwd, "busy": s.busy, "kind": s.kind,
                  "idle_secs": int(time.time() - s.last)} for k, s in _SHELLS.items()]
+
+
+def interrupt_session(key):
+    """Interrupt the command in flight for one session. Never raises.
+
+    Called from the Stop door (`/api/chat/abort`) and from `session.delete`: a flag
+    alone cannot stop a child process that never returns.
+    """
+    try:
+        with _LOCK:
+            sh = _SHELLS.get(str(key or ""))
+        return bool(sh and sh.interrupt())
+    except Exception:  # noqa: BLE001 — a stop must never break the caller
+        return False

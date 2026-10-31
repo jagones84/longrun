@@ -132,6 +132,19 @@ def cancel(job_id):
     return {"cancelled": True, "job": job_id, "pid": entry["proc"].pid}
 
 
+def cancel_run(run_id):
+    """Stop the job a session launched (the operator's Stop button).
+
+    `run()` tracks its job under `job_id or run_id`, so one lookup covers every
+    backend. Idempotent: a session with nothing running answers 0.
+    """
+    rid = str(run_id or "")
+    if not rid:
+        return {"cancelled": 0}
+    res = cancel(rid)
+    return {"cancelled": 1 if res.get("cancelled") else 0, "job": rid, "pid": res.get("pid")}
+
+
 def _wait_bounded(entry, sinks, timeout, limit):
     """Drain both POSIX pipes without growing either output file past `limit`.
 
