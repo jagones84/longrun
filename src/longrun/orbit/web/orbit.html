@@ -15,39 +15,58 @@
 try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchParams(location.search).get("token")||""}catch(e){};var l=document.createElement("link");l.rel="manifest";l.href="/manifest.webmanifest"+(t?"?token="+encodeURIComponent(t):"");document.head.appendChild(l);if("serviceWorker" in navigator){navigator.serviceWorker.register("/sw.js").catch(function(){})}})()}catch(e){}</script>
 <style>
   :root{
-    --bg:#070810; --panel:#0e1320; --panel2:#121829; --line:#1f2940;
-    --txt:#e2e6ff; --dim:#8189b0; --acc:#7c8cff; --acc2:#39d3c3;
-    --ok:#57d38c; --warn:#e0a458; --err:#e06a6a; --ice:#bfe3ff;
+    /* 2026-10-31 WEBUI refactor — same "Graphite Instrument" system as the Sessions view. */
+    --sans:Inter,ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"JetBrains Mono","Cascadia Code",SFMono-Regular,Menlo,Consolas,monospace;
+    --bg:#0b0d11; --panel:#12151b; --panel2:#171b23; --line:#23272f; --line2:#2d323b;
+    --txt:#e7e9ee; --dim:#9aa1ae; --acc:#cf8a4a; --acc2:#93b3c9;
+    --ok:#5fbf8a; --warn:#d9a441; --err:#dd6f63; --ice:#e7e9ee;
+    --r:12px; --r-sm:8px;
+    --shadow1:0 1px 2px rgba(0,0,0,.30),0 10px 26px rgba(0,0,0,.26);
+    --shadow2:0 18px 48px rgba(0,0,0,.46);
   }
   *{box-sizing:border-box}
   html,body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;margin:0;height:100%}
-  body{background:radial-gradient(1200px 600px at 70% -10%,#101a30 0%,var(--bg) 60%);
-    color:var(--txt);font:13px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+  body{background:linear-gradient(180deg,var(--ga,#0e1116) 0%,var(--bg) 240px);
+    color:var(--txt);font:13px/1.5 var(--sans);font-variant-numeric:tabular-nums;
     /* v621: standalone PWA on a notched phone — keep content out from under the notch. */
     padding:env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0)}
   a{color:var(--acc);text-decoration:none} a:hover{text-decoration:underline}
   button,input,select,textarea{font:inherit;color:var(--txt)}
-  header{display:flex;align-items:center;gap:12px;padding:11px 18px;
-    border-bottom:1px solid var(--line);background:rgba(10,14,24,.72);position:sticky;top:0;z-index:5;backdrop-filter:blur(6px)}
-  header h1{margin:0;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ice)}
-  .tag{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:2px 9px;letter-spacing:.06em}
-  .tag.beta{color:var(--warn);border-color:rgba(224,164,88,.45)}
+  ::selection{background:color-mix(in srgb,var(--acc) 40%,transparent);color:var(--txt)}
+  html{caret-color:var(--acc)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3b414c;border-radius:999px;border:3px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:var(--acc);background-clip:padding-box}
+  :focus-visible{outline:2px solid color-mix(in srgb,var(--acc) 70%,transparent);outline-offset:2px}
+  header{display:flex;align-items:center;gap:12px;padding:0 16px;height:52px;
+    border-bottom:1px solid var(--line);background:var(--hdr,#12151b);position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:14px;letter-spacing:.02em;text-transform:none;color:var(--txt);font-weight:700}
+  .tag{font-size:10px;color:var(--dim);border:1px solid var(--line2);border-radius:999px;padding:2px 9px;letter-spacing:.04em}
+  .tag.beta{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
   .spacer{flex:1}
-  .led{width:8px;height:8px;border-radius:50%;background:var(--err);box-shadow:0 0 8px currentColor}
-  .led.on{background:var(--ok)}
+  .led{width:8px;height:8px;border-radius:50%;background:var(--err)}
+  .led.on{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 16%,transparent)}
   /* JAG-416: top-level section tabs (Sessions / Control), matching the Sessions view. */
-  .logo{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ice);font-weight:700}
-  .topTabs{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:11px;background:var(--panel2)}
-  .topTabs .ttab{display:inline-flex;align-items:center;height:26px;padding:0 14px;border-radius:8px;color:var(--dim);font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap;transition:background .15s,color .15s}
-  .topTabs .ttab:hover{color:var(--txt);background:rgba(127,127,127,.14)}
-  .topTabs .ttab.active{color:var(--txt);background:var(--ga);box-shadow:inset 0 0 0 1px var(--acc)}
-  .btn{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:6px 11px;cursor:pointer}
-  .btn:hover{border-color:var(--acc);color:#fff}
-  .btn.primary{background:linear-gradient(180deg,#5a78ff,#4c63e0);border-color:#5a78ff;color:#fff;font-weight:600}
+  .logo{font-size:14px;letter-spacing:.02em;text-transform:none;color:var(--txt);font-weight:700;
+    display:inline-flex;align-items:center;gap:8px}
+  .logo svg{color:var(--acc)}
+  .topTabs{display:inline-flex;align-items:stretch;gap:2px;padding:0;border:0;border-radius:0;background:transparent;height:52px}
+  .topTabs .ttab{display:inline-flex;align-items:center;height:52px;padding:0 14px;border-radius:0;
+    color:var(--dim);font-size:12.5px;font-weight:600;text-decoration:none;white-space:nowrap;
+    border-bottom:2px solid transparent;transition:color .12s,border-color .12s}
+  .topTabs .ttab:hover{color:var(--txt);background:transparent}
+  .topTabs .ttab.active{color:var(--txt);background:transparent;box-shadow:none;border-bottom-color:var(--acc)}
+  .btn{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-sm);
+    padding:6px 11px;cursor:pointer;font-size:12px;font-weight:600;color:var(--txt);
+    transition:background .12s,border-color .12s,color .12s}
+  .btn:hover{border-color:var(--line2);background:color-mix(in srgb,var(--panel2) 80%,#ffffff);color:var(--txt)}
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:#1b1206}
   .btn.ghost{background:transparent}
-  .btn.no{border-color:rgba(224,106,106,.5);color:var(--err)}
-  .inp{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 10px;width:100%}
-  .inp.mini{padding:2px 4px;border-radius:6px;font-size:11px}
+  .btn.no{border-color:color-mix(in srgb,var(--err) 50%,transparent);color:var(--err)}
+  .inp{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-sm);padding:7px 10px;width:100%;outline:none}
+  .inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 16%,transparent)}
+  .inp.mini{padding:2px 6px;border-radius:6px;font-size:11px}
   /* JAG-342: one panel per row, top-to-bottom (mobile-style) — the two-column grid
      clipped wide panels (ORG CHART) and forced a page-level horizontal scrollbar. */
   .wrap{display:flex;flex-direction:column;gap:0;padding:4px}
@@ -55,19 +74,19 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      pane ALONE in the center-RH area. Narrow screens: the rail becomes a
      horizontal strip on top (same buttons, same applyView truth). */
   .wrap.deck{flex-direction:row;gap:8px;align-items:stretch}
-  #deckRail{display:flex;flex-direction:column;gap:2px;flex:0 0 auto;min-width:132px;max-width:170px;
+  #deckRail{display:flex;flex-direction:column;gap:2px;flex:0 0 auto;min-width:144px;max-width:184px;
     position:sticky;top:6px;align-self:flex-start;max-height:calc(100vh - 12px);overflow-y:auto;
-    padding:8px 6px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}
-  #deckRail .rlbl{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--txt);padding:8px 8px 5px}
+    padding:8px 6px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+  #deckRail .rlbl{font-size:10.5px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--dim);padding:8px 8px 5px}
   #deckRail .rlbl:first-child{padding-top:2px}
   /* v624: PANELS and VIEWS read as two headed subpanels, not one flat list. */
-  #deckRail .rsec{border:1px solid var(--line);border-radius:9px;padding:3px;margin-bottom:7px;background:rgba(255,255,255,.012)}
+  #deckRail .rsec{border:1px solid var(--line);border-radius:var(--r-sm);padding:3px;margin-bottom:7px;background:transparent}
   #deckRail .rsec > .rlbl{padding-top:5px}
   #deckRail button{display:flex;align-items:center;width:100%;text-align:left;gap:8px;
-    background:transparent;border:1px solid transparent;border-radius:8px;color:var(--dim);
-    font-size:12px;font-weight:600;padding:7px 8px;cursor:pointer;white-space:nowrap}
-  #deckRail button:hover{color:var(--txt);background:rgba(127,127,127,.14)}
-  #deckRail button[aria-current="page"]{color:var(--txt);background:var(--ga);box-shadow:inset 0 0 0 1px var(--acc)}
+    background:transparent;border:1px solid transparent;border-radius:6px;color:var(--dim);
+    font-size:12.5px;font-weight:500;padding:7px 8px;cursor:pointer;white-space:nowrap}
+  #deckRail button:hover{color:var(--txt);background:var(--hover,rgba(255,255,255,.045))}
+  #deckRail button[aria-current="page"]{color:var(--txt);background:var(--sel,rgba(207,138,74,.14));box-shadow:inset 2px 0 0 var(--acc);border-color:transparent}
   #deckRail button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   .deckBody{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
   @media (max-width:1100px){
@@ -125,7 +144,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      primary is a single solid accent, so the row does not look like boxed 2010 pills. */
   .toolbar>.btn.ghost{background:transparent;border-color:transparent;color:var(--dim)}
   .toolbar>.btn.ghost:hover{background:var(--panel2);color:var(--txt)}
-  .toolbar>.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+  .toolbar>.btn.primary{background:var(--acc);border-color:var(--acc);color:#1b1206;font-weight:600}
   .toolbar>.lbl{font-size:11px;color:var(--dim);flex:none}
   .toolbar>.sp{flex:1}
   /* I-8: the "only empty ROLE.md" checkbox STACKS under the ⚡ automate (Teamorg)
@@ -138,11 +157,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* the "AI" provenance badge: this prompt was written by longrunAgent, not typed
      by the operator. Reads the one automation ledger (see agent/automation_log.py). */
   .aibadge{display:inline-block;margin-left:3px;padding:0 4px;border-radius:5px;font-size:9px;
-    letter-spacing:.04em;background:var(--acc);color:#fff;vertical-align:middle;cursor:help}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-  .panel > h2{margin:0;padding:6px 10px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+    letter-spacing:.04em;background:var(--acc);color:#1b1206;vertical-align:middle;cursor:help}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+  .panel > h2{margin:0;padding:9px 12px;font-size:12px;letter-spacing:0;text-transform:none;color:var(--txt);font-weight:600;
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
-  .panel > h2 .n{margin-left:auto;color:var(--ice);font-size:10px}
+  .panel > h2 .n{margin-left:auto;color:var(--dim);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums}
   .pad{padding:8px}
   /* JAG-424f: the Routines/Jobs create rows must keep the ＋ button IN the frame — a
      full-width <select> with long options (agent names) would otherwise refuse to shrink
@@ -170,16 +189,16 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at td.c-act .btn{width:22px;height:22px;padding:0;justify-content:center}
   table.at thead th{position:sticky;top:0;z-index:3;background:var(--panel);
     box-shadow:0 1px 0 var(--line)}
-  table.at th{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
-    text-align:left;padding:4px 5px;font-weight:600;white-space:nowrap}
-  table.at td{padding:2px 3px;border-bottom:1px solid var(--line);vertical-align:middle}
-  table.at tbody tr:nth-child(even) td{background:rgba(255,255,255,.014)}
-  table.at tbody tr:hover td{background:rgba(108,140,255,.075)}
+  table.at th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
+    text-align:left;padding:6px 5px;font-weight:600;white-space:normal;line-height:1.25}
+  table.at td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.at tbody tr:nth-child(even) td{background:rgba(255,255,255,.018)}
+  table.at tbody tr:hover td{background:color-mix(in srgb,var(--acc) 7%,transparent)}
   /* JAG-451: an agent picked from the org chart is highlighted here so the user
      lands on the right row, ready to edit it. */
-  table.at tr.rowsel td{background:rgba(108,140,255,.16)}
-  table.at tr.rowsel td.aid{box-shadow:inset 3px 0 0 var(--acc)}
-  table.at tr.rowsel{outline:1px solid var(--acc);outline-offset:-1px}
+  table.at tr.rowsel td{background:color-mix(in srgb,var(--acc) 12%,transparent)}
+  table.at tr.rowsel td.aid{box-shadow:inset 2px 0 0 var(--acc)}
+  table.at tr.rowsel{outline:1px solid color-mix(in srgb,var(--acc) 60%,transparent);outline-offset:-1px}
   table.at input.inp.mini{min-width:0;width:100%}
   table.at select.inp.mini{max-width:100%;min-width:0}
   table.at tr.brief td{background:rgba(9,14,26,.6);padding:9px}
@@ -191,8 +210,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at .pbtn.missing{border-color:rgba(224,106,106,.55);color:var(--err)}
   table.at .pbtn.missing:hover{border-color:var(--err);background:rgba(224,106,106,.10)}
   .req{color:var(--err);font-weight:700;margin-left:3px;font-size:13px;line-height:1}
-  .warnbox{border:1px solid rgba(224,106,106,.45);background:rgba(224,106,106,.09);
-    color:#ffd9d9;border-radius:8px;padding:6px 9px;margin:0 0 7px}
+  .warnbox{border:1px solid color-mix(in srgb,var(--err) 45%,transparent);background:color-mix(in srgb,var(--err) 9%,transparent);
+    color:var(--txt);border-radius:var(--r-sm);padding:6px 9px;margin:0 0 7px}
   .haswarn{color:var(--warn)}
   /* JAG-2.8: the group header is Tab-reachable now, so it needs a focus ring. */
   .grp-h:focus-visible{outline:1px solid var(--acc);outline-offset:-2px;border-radius:6px}
@@ -217,7 +236,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at tr.drop-before td{box-shadow:inset 0 2px var(--acc)}
   table.at tr.drop-after td{box-shadow:inset 0 -2px var(--acc)}
   .rl{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:1px 7px;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
-  .dotr{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc2);box-shadow:0 0 6px currentColor;margin-left:5px;vertical-align:middle}
+  .dotr{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc2);margin-left:5px;vertical-align:middle}
   /* org chart */
   /* JAG-342 + JAG-342-zoom: the panel is a fixed viewport; a transform (scale+pan)
      on the inner canvas fits the whole tree and zooms it. overflow:hidden keeps the
@@ -253,14 +272,14 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .ctxmenu{position:fixed;z-index:90;background:var(--panel2);border:1px solid var(--line);
     border-radius:9px;padding:4px;min-width:186px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px}
   .ctxmenu div{padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
-  .ctxmenu div:hover{background:var(--brief);color:#fff}
+  .ctxmenu div:hover{background:var(--brief);color:var(--txt)}
   .ctxmenu .sep{height:1px;background:var(--line);margin:4px 2px;padding:0}
   /* JAG-2.0: agents grouped by team + per-agent team picker + org-chart hint/tools. */
   .panel > h2 .hint{margin-left:8px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     font-size:10px;color:var(--dim);text-transform:none;letter-spacing:0;font-weight:400}
   .tmbtn{max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
   .tmmenu label.tmopt{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
-  .tmmenu label.tmopt:hover{background:var(--brief);color:#fff}
+  .tmmenu label.tmopt:hover{background:var(--brief);color:var(--txt)}
   .tmmenu label.tmopt input{accent-color:var(--acc)}
   /* JAG-2.3: the per-team assign picker (34+ agents must scroll, not overflow). */
   .tmmenu{max-height:62vh;overflow:auto}
@@ -280,7 +299,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   tr.grp-head .gc{margin-left:auto;font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:0 7px}
   /* JAG-482: per-TEAM kebab (right of the team name) — bulk actions on the team's sessions. */
   tr.grp-head .kebab{border:0;background:none;color:var(--dim);cursor:pointer;font-size:14px;line-height:1;padding:1px 6px;border-radius:6px}
-  tr.grp-head .kebab:hover{background:var(--brief);color:#fff}
+  tr.grp-head .kebab:hover{background:var(--brief);color:var(--txt)}
   tr.grp-empty td{padding:0;border-bottom:1px solid var(--line)}
   tr[hidden]{display:none}
   /* constellation — a DOCKED panel in the page grid (JAG-297) */
@@ -288,13 +307,13 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .csvg{display:block;width:100%;height:100%}
   .ctools{display:flex;gap:5px;margin-left:auto}
   .btn.mini{padding:2px 8px;font-size:11px}
-  .btn.on{border-color:var(--acc);color:#fff;background:rgba(108,140,255,.16)}
+  .btn.on{border-color:var(--acc);color:var(--txt);background:color-mix(in srgb,var(--acc) 14%,transparent)}
   .cdetail{padding:7px 11px;border-top:1px solid var(--line);font-size:11px;color:var(--dim);min-height:18px}
   .clegend{display:flex;gap:11px;flex-wrap:wrap;padding:6px 11px;border-top:1px solid var(--line);
     font-size:10px;color:var(--dim)}
   .clegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;vertical-align:middle}
-  .clegend s{display:inline-block;width:16px;height:0;border-top:2px solid #7c8cff;margin-right:4px;vertical-align:middle;text-decoration:none}
-  .clegend s.dash{border-top-style:dashed;border-color:rgba(108,140,255,.7)}
+  .clegend s{display:inline-block;width:16px;height:0;border-top:2px solid var(--acc);margin-right:4px;vertical-align:middle;text-decoration:none}
+  .clegend s.dash{border-top-style:dashed;border-color:color-mix(in srgb,var(--acc) 70%,transparent)}
   /* compact AGENTS table so JOB fits on its right */
   .panel.ag table.at button{white-space:nowrap;padding:2px 4px}
   .panel.ag table.at tr.brief textarea{min-height:150px}
@@ -304,16 +323,16 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .cnode text{font:11px ui-monospace,monospace;fill:#dbe3f4;pointer-events:none}
   .clink{stroke:rgba(120,160,220,.45);stroke-width:1.1;fill:none;stroke-linecap:round}
   .clink.dep{stroke-dasharray:4 3}
-  .clink.job{stroke:#7c8cff;stroke-width:2.2}
+  .clink.job{stroke:var(--acc);stroke-width:2.2}
   .clink.assign{stroke-dasharray:3 3}
-  .cdot{fill:rgba(150,180,235,.78)}
+  .cdot{fill:var(--acc2);opacity:.75}
   .cjobg,.csubg{cursor:pointer}
   .cjobg:hover .cjob{stroke-width:2.6}
   .csubg:hover .csub{stroke-width:2.6}
-  .cjob{fill:#1a1408;stroke:#e0a458}
-  .csub{fill:#08202a;stroke:#5ac8fa}
-  .cagent{fill:#0b1a22;stroke:#39d3c3}
-  .cagent.self{stroke:#6c8cff}
+  .cjob{fill:#1a1408;stroke:var(--warn)}
+  .csub{fill:#08202a;stroke:var(--acc2)}
+  .cagent{fill:#0b1a22;stroke:var(--ok)}
+  .cagent.self{stroke:var(--acc)}
   .cpop{position:absolute;max-width:340px;background:var(--panel2);border:1px solid var(--line);
     border-radius:9px;padding:9px 11px;font-size:11px;color:var(--txt);z-index:70;
     box-shadow:0 12px 30px rgba(0,0,0,.5)}
@@ -340,55 +359,65 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   #feed{font-family:ui-monospace,monospace;font-size:11px;color:var(--dim);padding:8px 12px;max-height:24vh;overflow:auto}
   #feed b{color:var(--ice);font-weight:600}
   /* JAG-353: Control honours the app theme (shared localStorage) so it matches the
-     WebUI. Per-theme token overrides + the few rules that were hardcoded dark. */
-  :root{ --ga:#101a30; --hdr:rgba(10,14,24,.72); --cbody:#060912;
-         --linktext:#dbe3f4; --link:rgba(120,160,220,.45); --brief:rgba(9,14,26,.6);
-         --cjob-f:#1a1408; --csub-f:#08202a; --cagent-f:#0b1a22; color-scheme:dark; }
-  html[data-theme="dark"]{ --bg:#0b0d12; --panel:#16191f; --panel2:#1b1f26; --line:#2a2f38;
-    --txt:#e9edf3; --dim:#8b93a3; --acc:#8fa6c8; --acc2:#9fb0cb; --ice:#dbe3ee;
-    --ga:#1b2029; --hdr:rgba(11,13,18,.8); --cbody:#0d1015; --brief:rgba(255,255,255,.04);
-    --cjob-f:#1c1913; --csub-f:#12181c; --cagent-f:#131a17; color-scheme:dark; }
-  html[data-theme="midnight"]{ --bg:#070d18; --panel:#0e1626; --panel2:#101c30; --line:#1a2740;
-    --txt:#d7e0f2; --dim:#7d89a6; --acc:#6b8cff; --acc2:#7fd4c8; --ice:#bfe3ff;
-    --ga:#101c38; --hdr:rgba(8,14,26,.84); --cbody:#060c16; --brief:rgba(107,140,255,.06);
-    --cjob-f:#1a1408; --csub-f:#08202a; --cagent-f:#0b1a22; color-scheme:dark; }
-  html[data-theme="sand"]{ --bg:#d9c49c; --panel:#e2d4b6; --panel2:#d8c9a9; --line:#c2ad84;
-    --txt:#382f21; --dim:#665639; --acc:#9c5f24; --acc2:#a9853f; --ice:#5a4a30;
-    --ga:#ddc9a3; --hdr:rgba(222,208,178,.95); --cbody:#ded0ae; --linktext:#453b2c;
-    --link:rgba(120,92,52,.55); --brief:rgba(156,95,36,.08);
-    --cjob-f:#e0cfa9; --csub-f:#d3dee6; --cagent-f:#d7e2d5;
-    --ok:#3c8556; --warn:#9c7018; --err:#a8482f; color-scheme:light; }
-  html[data-theme="sepia"]{ --bg:#17120c; --panel:#261f16; --panel2:#1d1710; --line:#3a2d1e;
-    --txt:#e6d8bf; --dim:#9c8767; --acc:#c99a5b; --acc2:#d7bb84; --ice:#e6d8bf;
-    --ga:#2a2015; --hdr:rgba(23,18,12,.84); --cbody:#120e09; --linktext:#e6d8bf;
-    --link:rgba(214,180,124,.45); --brief:rgba(201,154,91,.06);
-    --cjob-f:#231a10; --csub-f:#141d20; --cagent-f:#161c14;
+     WebUI. Per-theme token overrides + the few rules that were hardcoded dark.
+     2026-10-31: values rebuilt on the graphite/copper system; ids unchanged. */
+  :root{ --ga:#0e1116; --hdr:#12151b; --cbody:#0b0d11;
+         --linktext:#e7e9ee; --link:#3a404b; --brief:#171b23;
+         --cjob-f:#241c12; --csub-f:#122028; --cagent-f:#14211c;
+         --hover:rgba(255,255,255,.045); --sel:rgba(207,138,74,.14); color-scheme:dark; }
+  html[data-theme="dark"]{ --bg:#0c0d10; --panel:#14161b; --panel2:#181b21; --line:#262a31; --line2:#333841;
+    --txt:#e9eaee; --dim:#a0a6b0; --acc:#b8c4d6; --acc2:#8fa7c0; --ice:#e9eaee;
+    --ga:#171a20; --hdr:#14161b; --cbody:#0c0d10; --brief:#181b21;
+    --cjob-f:#1f1c16; --csub-f:#141b1e; --cagent-f:#151c17;
+    --hover:rgba(255,255,255,.05); --sel:rgba(184,196,214,.14); color-scheme:dark; }
+  html[data-theme="midnight"]{ --bg:#081019; --panel:#0e1926; --panel2:#111e2d; --line:#24313f; --line2:#2d3c4c;
+    --txt:#dbe3ec; --dim:#93a0b0; --acc:#7fa6cc; --acc2:#86c3b8; --ice:#dbe3ec;
+    --ga:#111f30; --hdr:#0e1926; --cbody:#081019; --brief:#111e2d;
+    --cjob-f:#1f1a12; --csub-f:#102129; --cagent-f:#13211c;
+    --hover:rgba(255,255,255,.05); --sel:rgba(127,166,204,.14); color-scheme:dark; }
+  html[data-theme="sand"]{ --bg:#d9d1c0; --panel:#e6dfcf; --panel2:#ded5c3; --line:#b4a992; --line2:#a2967c;
+    --txt:#2f2b23; --dim:#574f3f; --acc:#8a5a2b; --acc2:#7d6a3f; --ice:#2f2b23;
+    --ga:#e2dbcb; --hdr:#e6dfcf; --cbody:#ded5c3; --linktext:#2f2b23;
+    --link:rgba(90,72,44,.45); --brief:#ded5c3;
+    --cjob-f:#e8dcc4; --csub-f:#d9e2e6; --cagent-f:#dbe4d6;
+    --hover:rgba(90,72,44,.08); --sel:rgba(138,90,43,.12);
+    --ok:#2f6b45; --warn:#7a5408; --err:#96382a; color-scheme:light; }
+  html[data-theme="sepia"]{ --bg:#16120c; --panel:#221c14; --panel2:#2a2218; --line:#3a2e1f; --line2:#463726;
+    --txt:#e9dcc6; --dim:#a99a7e; --acc:#c89a63; --acc2:#d7bb84; --ice:#e9dcc6;
+    --ga:#2a2117; --hdr:#221c14; --cbody:#16120c; --linktext:#e9dcc6;
+    --link:rgba(120,96,62,.5); --brief:#2a2218;
+    --cjob-f:#2a2115; --csub-f:#182023; --cagent-f:#1a2017;
+    --hover:rgba(255,255,255,.045); --sel:rgba(200,154,99,.14);
     --ok:#6fb98a; --warn:#d9b45c; --err:#de8a6f; color-scheme:dark; }
-  html[data-theme="forest"]{ --bg:#0c1410; --panel:#141f19; --panel2:#0f1813; --line:#20352a;
-    --txt:#d8e6dc; --dim:#7f9488; --acc:#6fae8b; --acc2:#9ccfae; --ice:#cfe6d8;
-    --ga:#14301f; --hdr:rgba(11,19,15,.84); --cbody:#08110c; --linktext:#d8e6dc;
-    --link:rgba(140,190,160,.45); --brief:rgba(111,174,139,.06);
-    --cjob-f:#12241a; --csub-f:#10222a; --cagent-f:#12241c;
-    --ok:#5bd08a; --warn:#d7b25c; --err:#e0836f; color-scheme:dark; }
-  html[data-theme="celestial"]{ --bg:#d7e1ee; --panel:#e2eaf6; --panel2:#d8e2f0; --line:#9db1cc;
-    --txt:#2c3a52; --dim:#4d5f7d; --acc:#2f5b94; --acc2:#4d7fb5; --ice:#2c3a52;
-    --ga:#d8e2f1; --hdr:rgba(216,226,240,.95); --cbody:#d4deeb; --linktext:#2c3a52;
-    --link:rgba(47,91,148,.5); --brief:rgba(47,91,148,.08);
-    --cjob-f:#d9e4f2; --csub-f:#d3e2ea; --cagent-f:#d8e4e4;
+  html[data-theme="forest"]{ --bg:#0d1310; --panel:#141d18; --panel2:#18231c; --line:#253329; --line2:#2f4034;
+    --txt:#dde8e0; --dim:#96a89a; --acc:#7fb694; --acc2:#9ccfae; --ice:#dde8e0;
+    --ga:#17241c; --hdr:#141d18; --cbody:#0d1310; --linktext:#dde8e0;
+    --link:rgba(90,120,100,.5); --brief:#18231c;
+    --cjob-f:#1b2317; --csub-f:#142224; --cagent-f:#16261d;
+    --hover:rgba(255,255,255,.045); --sel:rgba(127,182,148,.14);
+    --ok:#5fbf8a; --warn:#d9a441; --err:#dd7d6b; color-scheme:dark; }
+  html[data-theme="celestial"]{ --bg:#dfe6ef; --panel:#eaf0f7; --panel2:#e2e9f2; --line:#b6c3d3; --line2:#a6b6c9;
+    --txt:#24303f; --dim:#4e5f74; --acc:#3b6a9a; --acc2:#4d7fb5; --ice:#24303f;
+    --ga:#e5ecf4; --hdr:#eaf0f7; --cbody:#e2e9f2; --linktext:#24303f;
+    --link:rgba(59,106,154,.45); --brief:#e2e9f2;
+    --cjob-f:#e9e3cf; --csub-f:#d8e4ea; --cagent-f:#dbe5dc;
+    --hover:rgba(59,106,154,.08); --sel:rgba(59,106,154,.12);
     --ok:#1f6b45; --warn:#6b4d08; --err:#8f2f1e; color-scheme:light; }
-  html[data-theme="sakura"]{ --bg:#e9d5d8; --panel:#f0e2e5; --panel2:#e8d8dc; --line:#c4a3ab;
-    --txt:#453136; --dim:#6e4f57; --acc:#a14d6e; --acc2:#8f5f6e; --ice:#453136;
-    --ga:#ecdbde; --hdr:rgba(232,222,225,.95); --cbody:#e7d6da; --linktext:#453136;
-    --link:rgba(161,77,110,.5); --brief:rgba(161,77,110,.08);
-    --cjob-f:#eedbde; --csub-f:#e8d8de; --cagent-f:#e6dcd8;
+  html[data-theme="sakura"]{ --bg:#ece0e3; --panel:#f4eaec; --panel2:#ecdfe2; --line:#cdaeb6; --line2:#bd9ba4;
+    --txt:#3b2c30; --dim:#6b4d55; --acc:#9d5573; --acc2:#8f5f6e; --ice:#3b2c30;
+    --ga:#f0e5e8; --hdr:#f4eaec; --cbody:#ecdfe2; --linktext:#3b2c30;
+    --link:rgba(120,80,95,.45); --brief:#ecdfe2;
+    --cjob-f:#efe1d9; --csub-f:#e3e3e6; --cagent-f:#e4e2da;
+    --hover:rgba(157,85,115,.08); --sel:rgba(157,85,115,.12);
     --ok:#2f6b45; --warn:#6b4d08; --err:#8f2f1e; color-scheme:light; }
-  html[data-theme="haze"]{ --bg:#1c2230; --panel:#202737; --panel2:#1a202d; --line:#323c52;
-    --txt:#cfd8e6; --dim:#8f99b0; --acc:#a5b4fc; --acc2:#9fd4cb; --ice:#cfd8e6;
-    --ga:#252e42; --hdr:rgba(28,34,48,.84); --cbody:#181e2a; --linktext:#cfd8e6;
-    --link:rgba(165,180,252,.45); --brief:rgba(165,180,252,.06);
-    --cjob-f:#232b3d; --csub-f:#1c2a33; --cagent-f:#1e2a30;
+  html[data-theme="haze"]{ --bg:#1a1f27; --panel:#222832; --panel2:#272e39; --line:#343c49; --line2:#3f4857;
+    --txt:#d6dee8; --dim:#9aa6b6; --acc:#a9b6cd; --acc2:#9fd4cb; --ice:#d6dee8;
+    --ga:#262d38; --hdr:#222832; --cbody:#1a1f27; --linktext:#d6dee8;
+    --link:rgba(140,155,180,.45); --brief:#272e39;
+    --cjob-f:#2a2620; --csub-f:#1e2a30; --cagent-f:#1f2a25;
+    --hover:rgba(255,255,255,.05); --sel:rgba(169,182,205,.14);
     --ok:#6fd3a0; --warn:#d9b45c; --err:#e0837f; color-scheme:dark; }
-  body{background:radial-gradient(1200px 600px at 70% -10%,var(--ga) 0%,var(--bg) 60%)}
+  body{background:linear-gradient(180deg,var(--ga) 0%,var(--bg) 240px)}
   header{background:var(--hdr)}
   .cbody{background:var(--cbody)}
   .cnode text{fill:var(--linktext)}
@@ -536,6 +565,44 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   #viewList:empty{display:none}
   #viewList button{text-align:left}
   @media (max-width:1100px){ #viewBar{flex-wrap:wrap} }
+
+  /* ======================================================================
+     2026-10-31 — CONTROL DECK GRAPHICAL SYSTEM.
+     Same "Graphite Instrument" language as the Sessions view: quiet surfaces,
+     one copper signal, hairline depth, tabular data, no glow theatre.
+     ====================================================================== */
+  .wrap.deck{gap:12px}
+  .deckBody{gap:12px}
+  .toolbar{gap:8px;padding:9px 10px;flex-wrap:wrap}
+  .toolbar>.inp,.toolbar>.btn{height:32px;min-height:32px;border-radius:var(--r-sm)}
+  .toolbar>.btn.ghost{color:var(--dim)}
+  .toolbar>.btn.ghost:hover{color:var(--txt);background:var(--hover)}
+  .pad{padding:10px}
+  .scroll{max-height:42vh}
+  .panel.ag .scroll{max-height:46vh}
+  .node{border-radius:var(--r-sm);padding:6px 10px}
+  .node.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+  .ctxmenu,.cpop{background:var(--panel2);border-color:var(--line2);
+    border-radius:var(--r-sm);box-shadow:var(--shadow2)}
+  .cdetail{padding:8px 12px}
+  .clegend{padding:8px 12px;gap:12px}
+  .job{padding:7px 10px}
+  .job-meta{padding:0 10px 6px 46px}
+  .runrow{padding:6px 12px}
+  .orgrow{padding:6px 12px}
+  .empty{padding:16px;color:var(--dim)}
+  .rl{border-color:var(--line);padding:1px 8px}
+  .aid,.aidbtn{font-family:var(--mono);color:var(--acc2)}
+  .rowgrip{color:var(--dim)}
+  .rz-cols{background:transparent;border-left:1px solid var(--line)}
+  .rz-cols:hover,.rz-cols:active{background:var(--acc)}
+  #viewBar{border-radius:var(--r);background:var(--panel)}
+  .rz-vcol:hover,.rz-vcol:active,.rz-vrow:hover,.rz-vrow:active{background:var(--acc)}
+  .pbtn.missing:hover{background:color-mix(in srgb,var(--err) 10%,transparent)}
+  .cbody{background:var(--cbody)}
+  @media (prefers-reduced-motion: reduce){
+    .cnode.focusring circle,.job.focusring,.runrow.focusring,.clink.focusring{animation:none}
+  }
 </style>
 </head>
 <body>
@@ -716,11 +783,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       </div>
       <div class="cdetail" id="constDetail">click a task · job · subjob for its details · double-click opens it in the Sessions tab</div>
       <div class="clegend">
-        <span><i style="background:#3ff0a6"></i>done</span>
-        <span><i style="background:#4fd6ff"></i>doing</span>
-        <span><i style="background:#7f9ac0"></i>todo</span>
-        <span><i style="background:#ff5d6c"></i>blocked</span>
-        <span><i style="background:#46597a"></i>superseded</span>
+        <span><i style="background:#5fbf8a"></i>done</span>
+        <span><i style="background:#74a9c7"></i>doing</span>
+        <span><i style="background:#9aa1ae"></i>todo</span>
+        <span><i style="background:#dd6f63"></i>blocked</span>
+        <span><i style="background:#4a5568"></i>superseded</span>
         <span><s></s>assigned to (job/subjob → agent)</span>
         <span><s class="dash"></s>depends on (prereq → task)</span>
         <span>click a task · job · subjob for details · double-click opens it</span>
@@ -2025,7 +2092,7 @@ class Constellation {
       " Q" + cx.toFixed(1) + " " + cy.toFixed(1) + " " + g.x2.toFixed(1) + " " + g.y2.toFixed(1); }
   _defs(){ return '<defs>' +
     '<marker id="mDep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="rgba(150,180,235,.85)"/></marker>' +
-    '<marker id="mJob" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7c8cff"/></marker>' +
+    '<marker id="mJob" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--acc)"/></marker>' +
     '<marker id="mAsg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="rgba(108,140,255,.8)"/></marker>' +
     '</defs>'; }
   _nodesSvg(a, nodes, pos, small){

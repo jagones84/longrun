@@ -40,7 +40,9 @@ def check(name, ok, detail=""):
 
 # ---------------- A: headed rail ----------------------
 check("A1 PANELS and VIEWS are bold headed subpanels",
-      ORBIT.count('class="rsec"') == 2 and "font-weight:800" in ORBIT
+      # 2026-10-31: the label weight moved 800 -> 700 with the type system; it is
+      # still the bold head of a boxed subpanel.
+      ORBIT.count('class="rsec"') == 2 and "font-weight:700" in ORBIT
       and "#deckRail .rsec" in ORBIT)
 check("A2 no unboxed rail buttons outside the subpanels",
       "data-view-add" in ORBIT and "up to 6 panels side by side" in ORBIT)

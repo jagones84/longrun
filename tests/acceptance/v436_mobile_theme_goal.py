@@ -35,11 +35,14 @@ def check(name, ok, detail=""):
 check("1a the mobile #aside drawer no longer hardcodes a dark background",
       "rgba(10,12,24,.96)" not in HTML, "")
 check("1b the mobile #aside drawer uses the theme token --aside",
-      "background: var(--aside); backdrop-filter: blur(14px);" in HTML, "")
+      # 2026-10-31: the WebUI refactor retired the decorative backdrop blur; the
+      # contract pinned here is the THEME TOKEN, not the blur.
+      "background: var(--aside);" in HTML and "rgba(10,12,24,.96)" not in HTML, "")
 check("1c the mobile #tabbar no longer hardcodes a dark background",
       "rgba(8,10,20,.85)" not in HTML, "")
 check("1d the mobile #tabbar uses the theme token --menubg",
-      "background: var(--menubg); backdrop-filter: blur(12px);" in HTML, "")
+      # 2026-10-31: same as 1b — the token is the contract, the blur is gone.
+      "background: var(--menubg);" in HTML and "rgba(8,10,20,.85)" not in HTML, "")
 
 # --- 2: the Plan goal box owns its row and its action ------------------------
 # v634: the four-button wall became two input rows with their action beside them;

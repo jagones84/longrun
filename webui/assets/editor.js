@@ -123,38 +123,38 @@ const state = { tabs: [], active: -1, host: null, preview: null, tabsEl: null, s
   treeSid: null };   // JAG-524: which session's workspace the rendered tree mirrors
 
 const STYLE = `
-#editorDock{position:relative;flex:0 0 auto;min-height:0;background:var(--bg2,#0f1320);
-  border-left:1px solid var(--line,#26304a);display:flex;flex-direction:column;z-index:5;font-size:12px}
+#editorDock{position:relative;flex:0 0 auto;min-height:0;background:var(--bg-2,#101318);
+  border-left:1px solid var(--line,#23272f);display:flex;flex-direction:column;z-index:5;font-size:12px;font-family:var(--sans,Inter,ui-sans-serif,system-ui,sans-serif)}
 #editorDock[hidden]{display:none}
 #editorDock .ed-resize{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:6;touch-action:none}
 /* JAG-511: the header used to be ONE wrapping row (title + path + 6 buttons), so on
    a 320px dock it broke into two ~30px lines of chrome above the code. It is now a
    compact two-line block: a 9px eyebrow with the window buttons, then the path with
    the four tree buttons. The title no longer competes with the path for width. */
-#editorDock .ed-head{display:flex;flex-direction:column;gap:1px;padding:3px 8px 4px;border-bottom:1px solid var(--line,#26304a)}
+#editorDock .ed-head{display:flex;flex-direction:column;gap:1px;padding:5px 8px 6px;border-bottom:1px solid var(--line,#23272f)}
 #editorDock .ed-hrow{display:flex;align-items:center;gap:4px;min-width:0}
-#editorDock .ed-title{font-size:9px;line-height:1.1;letter-spacing:.14em;text-transform:uppercase;opacity:.55;font-weight:600}
+#editorDock .ed-title{font-size:9px;line-height:1.1;letter-spacing:.10em;text-transform:uppercase;color:var(--dim,#9aa1ae);opacity:.9;font-weight:600}
 #editorDock .ed-hrow .ed-win{margin-left:auto}
-#editorDock .ed-head .ghost{padding:0 4px;font-size:11px;line-height:1.35;min-height:0;border-radius:4px}
-#editorDock .ed-status{flex:1;min-width:0;opacity:.7;font-family:monospace;font-size:10px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#editorDock .ed-tabs{display:flex;gap:4px;overflow-x:auto;padding:3px 6px;border-bottom:1px solid var(--line,#26304a)}
-#editorDock .ed-tab{display:flex;gap:6px;align-items:center;padding:3px 8px;border:1px solid var(--line,#26304a);border-radius:6px;cursor:pointer;white-space:nowrap;font-family:monospace;font-size:11px}
-#editorDock .ed-tab.active{border-color:var(--accent,#8b7bf0);background:rgba(139,123,240,.14)}
-#editorDock .ed-tab .dirty{color:var(--warn,#e0b341)}
+#editorDock .ed-head .ghost{padding:1px 5px;font-size:11px;line-height:1.35;min-height:0;border-radius:6px}
+#editorDock .ed-status{flex:1;min-width:0;color:var(--dim,#9aa1ae);font-family:var(--mono,ui-monospace,monospace);font-size:10px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#editorDock .ed-tabs{display:flex;gap:4px;overflow-x:auto;padding:4px 6px;border-bottom:1px solid var(--line,#23272f)}
+#editorDock .ed-tab{display:flex;gap:6px;align-items:center;padding:3px 8px;border:1px solid var(--line,#23272f);border-radius:6px;cursor:pointer;white-space:nowrap;font-family:var(--mono,ui-monospace,monospace);font-size:11px}
+#editorDock .ed-tab.active{border-color:var(--acc,#cf8a4a);background:color-mix(in srgb,var(--acc,#cf8a4a) 12%,transparent)}
+#editorDock .ed-tab .dirty{color:var(--warn,#d9a441)}
 #editorDock .ed-tab .x{opacity:.55}
 #editorDock .ed-body{flex:1;min-height:0;display:flex;flex-direction:row}
-#editorDock .ed-tree{width:210px;flex:0 0 auto;overflow:auto;border-right:1px solid var(--line,#26304a);padding:6px;font-family:monospace;font-size:11px}
+#editorDock .ed-tree{width:210px;flex:0 0 auto;overflow:auto;border-right:1px solid var(--line,#23272f);padding:6px;font-family:var(--mono,ui-monospace,monospace);font-size:11px}
 #editorDock .ed-tree[hidden]{display:none}
 /* JAG-501: keyboard search inside the tree pane — one shared controller
    (fsfind.js) also used by the workspace / file pickers in index.html. */
 #editorDock .ed-search{width:100%;box-sizing:border-box;margin:0 0 6px;padding:3px 6px;
-  font-family:monospace;font-size:11px;background:var(--bg2,#11161f);color:var(--fg,#dde3ee);
-  border:1px solid var(--line,#26304a);border-radius:4px}
-#editorDock .ed-search:focus{outline:none;border-color:var(--accent,#8b7bf0)}
+  font-family:var(--mono,ui-monospace,monospace);font-size:11px;background:var(--panel2,#171b23);color:var(--txt,#e7e9ee);
+  border:1px solid var(--line-2,#2d323b);border-radius:6px;outline:none}
+#editorDock .ed-search:focus{border-color:var(--acc,#cf8a4a)}
 #editorDock .ed-hits .ed-trow{padding-left:4px}
-#editorDock .ed-hits .ed-trow.hl{background:rgba(139,123,240,.28)}
+#editorDock .ed-hits .ed-trow.hl{background:var(--hl,rgba(207,138,74,.22))}
 #editorDock .ed-tree-resize{flex:0 0 5px;width:5px;cursor:col-resize;background:transparent;touch-action:none}
-#editorDock .ed-tree-resize:hover,#editorDock .ed-tree-resize.active{background:var(--accent,#8b7bf0)}
+#editorDock .ed-tree-resize:hover,#editorDock .ed-tree-resize.active{background:var(--acc,#cf8a4a)}
 #editorDock .ed-tree[hidden]+.ed-tree-resize{display:none}
 /* JAG-3xx: on TOUCH a 5px grip is impossible to hit and the 210px default tree eats
    most of the dock, so widen both grips and give the tree less room by default. */
@@ -165,8 +165,8 @@ const STYLE = `
 }
 #editorDock .ed-main{flex:1;min-width:0;display:flex;flex-direction:column}
 #editorDock .ed-trow{cursor:pointer;padding:2px 4px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#editorDock .ed-trow:hover{background:rgba(108,140,255,.12)}
-#editorDock .ed-trow.active{background:rgba(139,123,240,.18)}
+#editorDock .ed-trow:hover{background:var(--hover,rgba(255,255,255,.045))}
+#editorDock .ed-trow.active{background:var(--sel,rgba(207,138,74,.16))}
 #editorDock .ed-host{flex:1;min-height:0;overflow:auto}
 #editorDock .ed-host.hidden{display:none}
 #editorDock .ed-preview{flex:1;min-height:0;overflow:auto;padding:12px;line-height:1.5}
@@ -174,52 +174,52 @@ const STYLE = `
 /* JAG-499b: closing the last tab keeps the dock OPEN on an empty state (the file
    tree stays reachable) instead of making the whole editor disappear. */
 #editorDock .ed-empty{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:6px;padding:16px;text-align:center;opacity:.75}
+  justify-content:center;gap:6px;padding:16px;text-align:center;color:var(--dim,#9aa1ae)}
 #editorDock .ed-empty[hidden]{display:none}
-#editorDock .ed-empty .ed-empty-t{font-weight:600}
-#editorDock .ed-empty .ed-empty-h{opacity:.8;font-size:11px}
+#editorDock .ed-empty .ed-empty-t{font-weight:600;color:var(--txt,#e7e9ee)}
+#editorDock .ed-empty .ed-empty-h{font-size:11px}
 #editorDock .ed-preview img{max-width:100%}
 #editorDock .ed-preview iframe{width:100%;height:100%;border:0;background:#fff}
-#editorDock .ed-preview .md h1,#editorDock .ed-preview .md h2{border-bottom:1px solid var(--line,#26304a);padding-bottom:4px}
-#editorDock .ed-preview .md h1{color:#9db4ff}#editorDock .ed-preview .md h2{color:#a9e0c0}
-#editorDock .ed-preview .md h3{color:#e0b341}
-#editorDock .ed-preview .md code{background:rgba(255,255,255,.07);padding:1px 4px;border-radius:4px}
-#editorDock .ed-preview .md pre{background:rgba(255,255,255,.05);padding:8px;border-radius:6px;overflow:auto}
-#editorDock .ed-preview .md a{color:#7fb0ff}
-#editorDock .ed-foot{display:flex;gap:6px;padding:4px 8px;border-top:1px solid var(--line,#26304a)}
-#editorDock.ed-overlay{position:fixed;top:44px;right:0;bottom:0;height:auto;width:min(520px,92vw);z-index:40;box-shadow:-16px 0 40px rgba(0,0,0,.45)}
+#editorDock .ed-preview .md h1,#editorDock .ed-preview .md h2{border-bottom:1px solid var(--line,#23272f);padding-bottom:4px}
+#editorDock .ed-preview .md h1{color:var(--txt,#e7e9ee)}#editorDock .ed-preview .md h2{color:var(--txt,#e7e9ee)}
+#editorDock .ed-preview .md h3{color:var(--txt,#e7e9ee)}
+#editorDock .ed-preview .md code{background:var(--chipbg,rgba(255,255,255,.06));padding:1px 4px;border-radius:4px}
+#editorDock .ed-preview .md pre{background:var(--bg-3,#14181f);padding:8px;border-radius:6px;overflow:auto}
+#editorDock .ed-preview .md a{color:var(--acc,#cf8a4a)}
+#editorDock .ed-foot{display:flex;gap:6px;padding:5px 8px;border-top:1px solid var(--line,#23272f)}
+#editorDock.ed-overlay{position:fixed;top:52px;right:0;bottom:0;height:auto;width:min(520px,92vw);z-index:40;box-shadow:-16px 0 40px rgba(0,0,0,.42)}
 /* JAG-453: detachable editor — DOCK (default) ⇄ FLOAT ⇄ FULL. A Windows-style
    title bar: drag it to move (float), re-attach / fullscreen / close on the right
    (close turns red on hover), and a bottom-right grip to resize. */
 #editorDock.ed-float{position:fixed;z-index:44;width:min(780px,92vw);height:min(640px,82vh);
-  border:1px solid var(--line,#26304a);border-radius:10px;overflow:hidden;
-  box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  border:1px solid var(--line-2,#2d323b);border-radius:12px;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.46)}
 #editorDock.ed-full{position:fixed;z-index:44;left:0;top:0;right:0;bottom:0;width:auto;height:auto;
   border:0;border-radius:0;box-shadow:none}
 #editorDock.ed-float .ed-resize,#editorDock.ed-full .ed-resize{display:none}
 #editorDock.ed-float .ed-head{cursor:move;user-select:none}
 #editorDock .ed-win{display:flex;align-items:center;gap:2px;margin-left:6px}
-#editorDock .ed-wbtn{background:transparent;border:0;color:var(--txt,#e6edf7);width:22px;height:18px;border-radius:4px;
+#editorDock .ed-wbtn{background:transparent;border:0;color:var(--dim,#9aa1ae);width:22px;height:18px;border-radius:4px;
   cursor:pointer;font:inherit;font-size:11px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0}
-#editorDock .ed-wbtn:hover{background:rgba(255,255,255,.13)}
+#editorDock .ed-wbtn:hover{background:rgba(255,255,255,.10);color:var(--txt,#e7e9ee)}
 #editorDock .ed-wbtn[hidden]{display:none}
-#editorDock .ed-wbtn.ed-x:hover{background:#e81123;color:#fff}
+#editorDock .ed-wbtn.ed-x:hover{background:var(--err,#dd6f63);color:#fff}
 #editorDock .ed-grip{position:absolute;right:0;bottom:0;width:18px;height:18px;z-index:7;display:none;
   cursor:nwse-resize;touch-action:none;
   background:linear-gradient(135deg,transparent 52%,rgba(255,255,255,.30) 52%,rgba(255,255,255,.30) 62%,transparent 62%,
     transparent 74%,rgba(255,255,255,.30) 74%,rgba(255,255,255,.30) 84%,transparent 84%)}
 #editorDock.ed-float .ed-grip{display:block}
-.ed-tab-note{color:var(--warn,#e0b341)}
-#editorDock.ed-drop{outline:2px dashed var(--accent,#8b7bf0);outline-offset:-4px}
-#edCtx{position:fixed;z-index:60;background:var(--toolbar-menu-bg,#0f172a);border:1px solid var(--line,#26304a);
-  border-radius:.5rem;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:12px;min-width:160px}
-#edCtx button{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--txt,#e6edf7);
-  padding:6px 10px;border-radius:.35rem;cursor:pointer;font:inherit;font-size:12px}
-#edCtx button:hover{background:rgba(108,140,255,.16)}
-.ed-tab .tmp{color:var(--accent,#8b7bf0)}
+.ed-tab-note{color:var(--warn,#d9a441)}
+#editorDock.ed-drop{outline:2px dashed var(--acc,#cf8a4a);outline-offset:-4px}
+#edCtx{position:fixed;z-index:60;background:var(--menubg,#14181f);border:1px solid var(--line-2,#2d323b);
+  border-radius:8px;padding:4px;box-shadow:0 18px 48px rgba(0,0,0,.46);font-size:12px;min-width:160px}
+#edCtx button{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--txt,#e7e9ee);
+  padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
+#edCtx button:hover{background:var(--hover,rgba(255,255,255,.045))}
+.ed-tab .tmp{color:var(--acc,#cf8a4a)}
 .ed-tab.ext{border-style:dashed}
-.ed-tab .ext-i{color:var(--warn,#e0b341);font-size:10px}
-.ed-trow.flash{outline:1px solid var(--accent,#8b7bf0);background:rgba(139,123,240,.2)}
+.ed-tab .ext-i{color:var(--warn,#d9a441);font-size:10px}
+.ed-trow.flash{outline:1px solid var(--acc,#cf8a4a);background:var(--sel,rgba(207,138,74,.16))}
 `;
 
 function buildDock() {

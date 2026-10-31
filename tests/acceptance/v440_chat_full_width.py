@@ -26,10 +26,10 @@ def check(name, ok, detail=""):
 
 
 check("1a the message cap is gone — .msg uses the full width",
-      ".msg { margin-bottom: 14px; max-width: 100%; }" in idx)
+      ".msg { margin-bottom: 16px; max-width: 100%; }" in idx)
 check("1b no 860px message cap remains", "max-width: 860px" not in idx)
 check("1c the chat log itself is not width-capped",
-      "#log { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px; scroll-behavior: smooth; }" in idx)
+      "#log { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px; scroll-behavior: smooth; }" in idx)
 
 print("---")
 okc = sum(results)
