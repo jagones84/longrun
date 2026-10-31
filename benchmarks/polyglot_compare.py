@@ -75,7 +75,12 @@ def _run_cli(arm, tasks, out, args, cmd_fn, env_fn, usage_fn):
         ws = Path(out) / arm / slug / "workspace"
         polyglot.stage(task, ws)
         prompt = polyglot.prompt_for(task, ws)
-        cmd = cmd_fn(ws, args.model, prompt)
+        # A CLI peer takes the OpenRouter id (`openrouter/vendor/model`), NOT the
+        # Longrun alias (`openrouter:vendor/model`). Passed verbatim, openclaw
+        # refuses it by modelPolicy and answers in 1 s with 0 tool calls — measured
+        # 2026-10-31 (0/10, "Model override ... is not allowed for agent
+        # 'coordinator'"), a configuration failure that reads like a model failure.
+        cmd = cmd_fn(ws, args.model.replace(":", "/", 1), prompt)
         t0 = time.time()
         timed_out = False
         try:
@@ -222,8 +227,13 @@ def main(argv=None):
         return _check(tasks)
 
     args.key = _openrouter_key()
+    # ABSOLUTE, always. `_run_cli` starts the peer with `cwd=Harness2`, so a
+    # relative `--cwd .agent/...` is resolved against that repo and the peer dies
+    # with "Working directory does not exist" in 1.5 s — measured 2026-10-31 on the
+    # first openclaw run (0/10, 0 tool calls, 0 tokens): a broken measurement that
+    # looked exactly like a model failure.
     out = Path(args.out or (".agent/BENCHMARKS/runs/2026-11-01_polyglot_%s_%d"
-                            % (args.language, len(tasks))))
+                            % (args.language, len(tasks)))).resolve()
     out.mkdir(parents=True, exist_ok=True)
     parity = {"model": args.model, "dataset": str(polyglot.dataset_root()),
               "dataset_commit": polyglot.dataset_commit(),
