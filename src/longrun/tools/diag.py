@@ -213,6 +213,14 @@ def settings_report(session=None, model=None, code=None, source=None, limit=50) 
     return out
 
 
+#: A discovery answer must stay READABLE: a broad query used to return the whole
+#: registry (27 kB), the harness offloaded it to a file and the model burned steps
+#: shell-grepping its own discovery result (measured 2026-11-01, GAIA).
+TOOL_QUERY_LIMIT = 12
+TOOL_INDEX_LIMIT = 60
+TOOL_DESC_CHARS = 160
+
+
 def tools_report(tool=None, query=None) -> dict:
     """What the harness can do right now: native tools + their policy + MCP.
 
@@ -245,6 +253,7 @@ def tools_report(tool=None, query=None) -> dict:
                          "approval": t.get("approval"),
                          "description": (t.get("description") or "").strip()}
              for t in cat if t.get("name")}
+    capped = False
     if tool:
         want = str(tool).strip()
         entry = index.get(want)
@@ -304,15 +313,49 @@ def tools_report(tool=None, query=None) -> dict:
         # the whole phrase, those are the only hits returned.
         if exact:
             hits = exact
-        index = {n: index[n] for n in sorted(hits, key=lambda n: (-hits[n], n))}
+
+        def _rank(name):
+            # A NAME hit outranks a description hit: the cap below must never drop
+            # `web.search` because a dozen unrelated descriptions mention "web".
+            low = name.lower()
+            if phrase and phrase in low:
+                boost = 4
+            elif any(w in low for w in words):
+                boost = 2
+            else:
+                boost = 0
+            return (-(hits[name] + boost), name)
+
+        index = {n: index[n] for n in sorted(hits, key=_rank)}
         native = [n for n in native if n in index]
         external = [n for n in external if n in index]
         enabled = [n for n in enabled if n in index]
+        # 2026-11-01: a broad query ("web search fetch page") matched every tool and
+        # the answer was 27 kB — the harness offloaded it to a file and the model spent
+        # steps SHELL-GREPPING its own discovery result (GAIA a1e91b78/46719c30). A
+        # search that returns everything is not a search: cap it and say so.
+        if len(index) > TOOL_QUERY_LIMIT:
+            keep = list(index)[:TOOL_QUERY_LIMIT]
+            index = {n: index[n] for n in keep}
+            native = [n for n in native if n in index]
+            external = [n for n in external if n in index]
+            enabled = [n for n in enabled if n in index]
+            capped = True
+    if not query and len(index) > TOOL_INDEX_LIMIT:
+        index = {n: index[n] for n in sorted(index)[:TOOL_INDEX_LIMIT]}
+        capped = True
     out = {"ok": True, "count": len(native), "external_count": len(external),
            "native": sorted(native), "external": sorted(external),
-           "enabled_count": len(enabled), "tools": index}
+           "enabled_count": len(enabled), "tools": {
+               n: {k: (v[:TOOL_DESC_CHARS] + "…" if k == "description"
+                       and isinstance(v, str) and len(v) > TOOL_DESC_CHARS else v)
+                   for k, v in e.items()}
+               for n, e in index.items()}}
     if query:
         out["query"] = query
+    if capped:
+        out["capped"] = ("showing the %d best matches — narrow the words, or ask for "
+                         "one tool by name" % TOOL_QUERY_LIMIT)
     out["hint"] = ("read a schema with self {action:'tools', tool:'<name>'} "
                    "BEFORE calling a tool you have not used in this session")
     if query and not native and not external:

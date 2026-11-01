@@ -30,16 +30,23 @@ import json, os, sys
 # openclaw surfaces as the misleading "This model was not found" (measured 2026-11-01
 # from the sandbox err.log: `status=404 rawError=404 Path /chat/completions not found`).
 base = os.environ.get("OC_BASE_URL", "http://localhost:13131/v1").rstrip("/")
+# openclaw's own idle timeout is 300 s per model call, and the sandbox model streams
+# slowly through the bridge: two GAIA samples died on `LLM idle timeout (300s)` while
+# longrun was still working (measured 2026-11-01). The error message names the knob —
+# `models.providers.<id>.timeoutSeconds` and `agents.defaults.timeoutSeconds` — so a
+# run budget of OC_TIMEOUT is written into BOTH, keeping the arms on one clock.
+_budget = int(os.environ.get("OC_TIMEOUT", "1200"))
 cfg = {
     "models": {"mode": "replace", "providers": {"litellm": {
         "baseUrl": base,
         "apiKey": os.environ.get("OC_API_KEY", "inspect"),
         "api": "openai-completions",
+        "timeoutSeconds": _budget,
         "models": [{"id": os.environ.get("OC_MODEL", "inspect"),
                     "name": "Inspect sandbox bridge",
                     "contextWindow": 200000, "maxTokens": 32000}],
     }}},
-    "agents": {"defaults": {"model": {
+    "agents": {"defaults": {"timeoutSeconds": _budget, "model": {
         "primary": "litellm/" + os.environ.get("OC_MODEL", "inspect")}}},
 }
 with open(sys.argv[1], "w", encoding="utf-8") as fh:

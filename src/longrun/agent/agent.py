@@ -4612,6 +4612,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                      difficulty=_diff_level)
     meta = {"model": model, "node": _cur_node()}
     content = answer.strip()
+    if not content or _looks_like_json_action(content):
+        # A turn that stops ON an action (or on nothing) has no answer to hand over.
+        # Measured 2026-11-01 on GAIA: sample `46719c30` was graded on a raw
+        # `{"action":"tool","tool":"web.fetch",…}` envelope, and `a1e91b78` returned an
+        # empty string after 31 steps — both read as "the harness answered", so the
+        # failure was invisible. Say what happened, in prose, and never leak the envelope.
+        content = (("The turn ended before a final answer: the last message was still "
+                    "an action (%s)." % content[:200].replace("\n", " "))
+                   if content else
+                   "The turn ended without producing an answer.")
     if _hitl:
         # EV-39: the turn asked the operator (human.ask). The visible reply is the
         # QUESTION — the model's own prose was written before the human answered,

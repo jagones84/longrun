@@ -131,6 +131,25 @@ _src_batch = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
 check("X4 a batch item that is a harness action says which rule it broke",
       "TOP-LEVEL harness action, not a tool" in _src_batch)
 
+# ---- Y/Z. a turn never hands back nothing or an envelope, and discovery is small ----
+check("Y1 the reply is sanitised when the turn stops on an action or on nothing",
+      "The turn ended before a final answer" in _src
+      and "The turn ended without producing an answer." in _src)
+_oc = open(os.path.join(REPO, "benchmarks", "inspect_sandbox", "openclaw_turn.sh"),
+           encoding="utf-8").read()
+check("Y2 the openclaw turn carries an explicit timeout budget",
+      '"timeoutSeconds": _budget' in _oc and '"timeoutSeconds": _budget, "model"' in _oc)
+
+from longrun.tools import diag                                        # noqa: E402
+
+_big = diag.tools_report(query="web search fetch page read write run file")
+check("Z1 a broad query is CAPPED (a 27 kB discovery answer is not a search)",
+      len(_big.get("tools") or {}) <= diag.TOOL_QUERY_LIMIT and _big.get("capped"),
+      len(_big.get("tools") or {}))
+check("Z2 every listed description is trimmed to one line",
+      all(len(v.get("description") or "") <= diag.TOOL_DESC_CHARS + 1
+          for v in (_big.get("tools") or {}).values()))
+
 print("---")
 okc = sum(results)
 print("\nv764: %d/%d PASS" % (okc, len(results)))
