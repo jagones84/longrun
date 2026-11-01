@@ -69,6 +69,29 @@ check("T5c action=info still carries the full report (the ONE copy)",
       {"repo_path", "config", "docs", "service", "skills", "namespaces", "mcp"}
       <= set(T._self({"action": "info"}, SID).keys()), "")
 
+# ---- T5d/T5e. self.trace reports what the HARNESS did, not the model ---------
+# The survey this comes from (Awesome-Agent-Harness, ETCSLV) rates nearly every system
+# `Partial` on V (evaluation interface): a transcript shows the model's work, not the
+# runtime's decisions. Finding one wasted turn meant reading 435 messages by hand
+# (2026-11-01, `9b5db7c6a45f`: two `CONTINUE` injects, three identical answers).
+from longrun.memory import stores as ST                                       # noqa: E402
+_TS = SID   # reuse the one isolated session: a second ledger would leak into T11
+_ts = ST.get_or_create_session(_TS)
+ST.append_message(_ts, "user", "answer with R1A")
+ST.append_message(_ts, "assistant", "R1A")
+ST.append_message(_ts, "user", "[harness] CONTINUE — your TASK LIST still has 2 open step(s)")
+ST.append_message(_ts, "assistant", "R1A")
+ST.append_message(_ts, "assistant", "[tool] exit=1 ok=False backend=host sandboxed=False")
+_tr = (T._self({"action": "trace", "session": _TS}, _TS) or {}).get("trace") or {}
+check("T5d self.trace counts the gates the harness fired and spots the repeated answer",
+      _tr.get("gates", {}).get("continue") == 1
+      and len(_tr.get("repeated_answers") or []) == 1
+      and _tr.get("tool_calls_reported_failed") == 1
+      and _tr.get("gate_source") == "messages", _tr)
+check("T5e an empty/unknown session is a clean error, never a traceback",
+      (T._self({"action": "trace", "session": "nope-nope"}, "nope-nope") or {})
+      .get("trace", {}).get("ok") is False)
+
 s = T._sessions({"action": "send"}, SID)
 check("T6 send without session+message refused (exit 64, no live touch)",
       s.get("exit_code") == 64 and "required" in s.get("error", ""), s.get("error"))

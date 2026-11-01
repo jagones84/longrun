@@ -201,15 +201,19 @@ _LEGACY_SCHEMAS = {
                         "action=diagnostics: the EXACT Settings diagnostics report "
                         "(same collector, no duplicate checks) with file/field/panel/"
                         "session/model isolation; filter with `code` or `source`. "
+                        "action=trace: what the HARNESS did in a session — every gate it "
+                        "fired with its count, the context it spent injecting them, and "
+                        "the replies the model repeated (the loop signature). Use it to "
+                        "find WASTED TURNS, which a transcript alone hides. "
                         "Read-only, always safe, no external dependency."),
         "type": "object",
         "properties": {
             "action": {"type": "string",
                        "enum": ["info", "diagnose", "logs", "context", "tools",
-                                "diagnostics", "sj"],
+                                "diagnostics", "sj", "trace"],
                        "description": "what to report (default: info)"},
             "session": {"type": "string",
-                        "description": "session id for action=logs|context|diagnostics|sj (default: this run's session)"},
+                        "description": "session id for action=logs|context|diagnostics|sj|trace (default: this run's session)"},
             "job": {"type": "string",
                     "description": "action=sj: one Session Job id (e.g. 'SJ1'); omit for every job of the session"},
             "limit": {"type": "integer", "description": "max rows for action=logs (default 100) or action=diagnostics (default 50)"},

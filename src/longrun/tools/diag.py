@@ -171,6 +171,124 @@ def context(session) -> dict:
     return {"ok": True, "session": session, "context": st}
 
 
+# ------------------------------------------------------------------- trace ----
+
+#: The harness's own interventions, recognised by their leading words in the transcript.
+#: `_inject(content, kind)` records `gate: kind` on new messages; the text table below is
+#: what older sessions (written before the field existed) can still be read with.
+_GATE_HINTS = (
+    ("delivery_floor", "DELIVERY FLOOR"),
+    ("evidence_gate", "EVIDENCE GATE"),
+    ("closure_check", "CLOSING CHECK"),
+    ("continue", "CONTINUE"),
+    ("plan", "plan updated"),
+    ("todos", "Task list saved"),
+    ("observation", "Observation"),
+    ("off_intent", "off-intent"),
+)
+
+
+def _gate_of(content):
+    """The gate name behind a `[harness] …` turn: the stored `gate`, else the prose."""
+    text = str(content or "")
+    for name, hint in _GATE_HINTS:
+        if hint.lower() in text.lower():
+            return name
+    return "other"
+
+
+def harness_trace(session, limit=40) -> dict:
+    """What the HARNESS did in this session — the half a transcript hides.
+
+    The survey this comes from (Awesome-Agent-Harness, ETCSLV) rates almost every system
+    `Partial` on **V (evaluation interface)** because a transcript shows the model's work
+    but not the runtime's decisions. Longrun already stores both halves and nothing joined
+    them: finding a wasted turn meant reading 435 messages by hand (done 2026-11-01 on
+    `9b5db7c6a45f`, where three identical answers followed two `CONTINUE` injects). This
+    turns that hour into one call.
+
+    Reads the persisted transcript only: no model call, no write. The gate NAMES come
+    from `sess["injects"]` (already written by `stores.persist_inject` with its `kind`),
+    so nothing is re-derived when that ledger exists; the prose table is only the fallback
+    for sessions written before it.
+    """
+    if not session:
+        return {"ok": False, "error": "session id required"}
+    try:
+        from longrun.memory import stores
+        sess = stores.load_session(session) or {}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": "cannot read session: %s" % e}
+    msgs = sess.get("messages") or []
+    if not msgs:
+        return {"ok": False, "error": "session has no messages: %s" % session}
+    roles = {"user": 0, "assistant": 0, "other": 0}
+    gates, events, repeats = {}, [], []
+    inject_chars = 0
+    prev_assistant = None
+    failed_tools = 0
+    for i, m in enumerate(msgs):
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "other")
+        body = str(m.get("content") or "")
+        roles[role if role in roles else "other"] += 1
+        if role == "assistant":
+            head = body.strip()[:160]
+            if prev_assistant is not None and head and head == prev_assistant:
+                repeats.append({"i": i, "text": head})
+            prev_assistant = head
+    # ONE source for the gates: the injection ledger, when it exists.
+    ledger = sess.get("injects") or []
+    if ledger:
+        for rec in ledger:
+            if not isinstance(rec, dict) or rec.get("kind") in (None, "system"):
+                continue
+            gate = str(rec.get("kind") or "inject")
+            text = str(rec.get("text") or "")
+            gates[gate] = gates.get(gate, 0) + 1
+            inject_chars += len(text)
+            # A tool result reaches the model AS an observation inject, so a failure is
+            # counted here — the assistant messages never carry it.
+            if "ok=False" in text or '"ok": false' in text:
+                failed_tools += 1
+            if len(events) < limit:
+                events.append({"after": rec.get("after"), "gate": gate,
+                               "text": text[:110].replace("\n", " ")})
+    else:
+        for i, m in enumerate(msgs):
+            if not isinstance(m, dict) or m.get("role") != "user":
+                continue
+            body = str(m.get("content") or "")
+            if not body.startswith("[harness]"):
+                continue
+            gate = _gate_of(body)
+            gates[gate] = gates.get(gate, 0) + 1
+            inject_chars += len(body)
+            if "ok=False" in body or '"ok": false' in body:
+                failed_tools += 1
+            if len(events) < limit:
+                events.append({"i": i, "gate": gate,
+                               "text": body[:110].replace("\n", " ")})
+    # An assistant echo that reports a failure counts once too (some tools answer inline).
+    failed_tools += sum(1 for m in msgs if isinstance(m, dict)
+                        and m.get("role") == "assistant"
+                        and ("ok=False" in str(m.get("content") or "")
+                             or '"ok": false' in str(m.get("content") or "")))
+    return {
+        "ok": True, "session": session, "messages": len(msgs), "roles": roles,
+        "gate_source": "injects" if ledger else "messages",
+        "harness_turns": sum(gates.values()), "inject_chars": inject_chars,
+        "gates": dict(sorted(gates.items(), key=lambda kv: -kv[1])),
+        "repeated_answers": repeats, "events": events,
+        "tool_calls_reported_failed": failed_tools,
+        "reading": ("`repeated_answers` is the loop signature: the same reply twice means "
+                    "a gate kept the turn alive after the work was done. "
+                    "`inject_chars` is what the harness spent of the context by talking "
+                    "to the model about its own bookkeeping."),
+    }
+
+
 # ------------------------------------------------------------------- tools ----
 
 def settings_report(session=None, model=None, code=None, source=None, limit=50) -> dict:

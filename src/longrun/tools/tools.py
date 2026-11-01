@@ -1325,9 +1325,14 @@ def _self(args, run_id):
             from longrun.agent import session_jobs as _sj
             info["sj"] = _sj.describe((args or {}).get("session") or run_id,
                                       (args or {}).get("job"))
+        elif action in ("trace", "trail"):
+            # What the HARNESS did, not what the model did: which gates fired, how many
+            # turns they cost and whether the model answered twice (the loop signature).
+            # Born from reading a 435-message transcript by hand on 2026-11-01.
+            info["trace"] = diag_mod.harness_trace((args or {}).get("session") or run_id)
         else:
             info["error"] = ("unknown action %r — use info|diagnose|logs|context|"
-                             "tools|diagnostics|sj" % action)
+                             "tools|diagnostics|sj|trace" % action)
     info["action"] = action
     return info
 
