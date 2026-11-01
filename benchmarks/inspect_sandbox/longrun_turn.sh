@@ -60,56 +60,6 @@ import json, os, sys, urllib.request
 q = open(sys.argv[1]).read()
 model = os.environ.get("LR_MODEL", "z-ai/glm-5.3-flash")
 
-# What the harness ITSELF resolved for the provider, so the probes below cannot hide a
-# config the running server did not actually read.
-try:
-    _cat = json.loads(urllib.request.urlopen(
-        "http://127.0.0.1:8791/api/providers", timeout=30).read())
-    print("[catalog]", json.dumps(_cat)[:900], file=sys.stderr)
-except Exception as _ce:  # noqa: BLE001
-    print("[catalog] failed", repr(_ce), file=sys.stderr)
-
-# Raw calls to the bridge, so a rejected request reports the bridge's own body
-# instead of a bare 502 the harness can only summarize. The variants replicate the
-# fields the harness actually sends (stream, stream_options, a long system prompt).
-_base = os.environ.get("LR_BASE_URL", "")
-if _base:
-    _probes = [
-        ("stream+options", {"model": model, "stream": True,
-                            "stream_options": {"include_usage": True},
-                            "temperature": 0.7,
-                            "messages": [{"role": "user", "content": "say ok"}]}),
-        ("long-system", {"model": model, "stream": False, "temperature": 0.7,
-                         "messages": [{"role": "system", "content": "x" * 20000},
-                                      {"role": "user", "content": "say ok"}]}),
-    ]
-    for _name, _payload in _probes:
-        _r = urllib.request.Request(
-            _base.rstrip("/") + "/chat/completions",
-            data=json.dumps(_payload).encode(),
-            headers={"Content-Type": "application/json",
-                     "Authorization": "Bearer inspect"}, method="POST")
-        try:
-            with urllib.request.urlopen(_r, timeout=120) as _x:
-                print("[bridge-probe %s]" % _name, _x.status,
-                      _x.read()[:160], file=sys.stderr)
-        except Exception as _e:  # noqa: BLE001
-            _err = getattr(_e, "read", lambda: b"")()
-            print("[bridge-probe %s]" % _name, repr(_e)[:200],
-                  _err[:600], file=sys.stderr)
-    # Exactly what the harness does before every call (rllm._reachable): a bare TCP
-    # connect + close. A server that does not tolerate a connection with no request
-    # would look "unreachable" here and the harness would never send the call.
-    try:
-        import socket
-        from urllib.parse import urlsplit
-        _u = urlsplit(_base)
-        _sock = socket.create_connection((_u.hostname, _u.port or 80), timeout=3)
-        _sock.close()
-        print("[reachable] ok", file=sys.stderr)
-    except OSError as _re:
-        print("[reachable] FAIL", repr(_re), file=sys.stderr)
-
 def post(path, body):
     r = urllib.request.Request("http://127.0.0.1:8791" + path,
                               data=json.dumps(body).encode(),
@@ -148,6 +98,14 @@ except Exception as exc:  # noqa: BLE001 — a failed turn must say WHY, not jus
 text = out.get("reply") or out.get("message") or ""
 if isinstance(text, dict):
     text = text.get("content") or ""
+# The scorer compares the ANSWER: the harness's own think markup must not travel with
+# it (measured 2026-11-01: the reply began with `<think signature="reasoning-details://…">`
+# and GAIA scored it wrong although the answer was inside).
+try:
+    from longrun.util.textkit import strip_think
+    text, _think = strip_think(text)
+except Exception as _se:  # noqa: BLE001
+    print("[turn] strip_think unavailable: %r" % (_se,), file=sys.stderr)
 print(text.strip() or "(no answer)")
 try:
     c = json.loads(urllib.request.urlopen(

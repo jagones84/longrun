@@ -81,12 +81,20 @@ check("C6 openclaw runs embedded and isolated (no gateway inside a task containe
       "--isolated" in oc_turn and "--auth-env-only" in oc_turn)
 
 # ---- D. the driver is a file, not an inline ssh line ------------------------
+import subprocess  # noqa: E402
+
 for name in ("longrun_turn.sh", "openclaw_turn.sh", "build_image.sh"):
     path = os.path.join(SBX, name)
     check("D1 %s exists and is committed" % name, os.path.isfile(path))
     with open(path, "rb") as fh:
         raw = fh.read()
     check("D2 %s is LF (a CRLF shell script dies with exit 127)" % name, b"\r\n" not in raw)
+    # The turn drivers embed python inside a single-quoted shell string, so ONE
+    # apostrophe in a comment ends the program and the shell then parses python as
+    # shell (`syntax error near unexpected token '('`). Measured 2026-11-01.
+    syntax = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
+    check("D3 %s parses as shell (no apostrophe escaped the embedded python)" % name,
+          syntax.returncode == 0, (syntax.stderr or "").strip()[:200])
 
 print("%d/%d checks" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

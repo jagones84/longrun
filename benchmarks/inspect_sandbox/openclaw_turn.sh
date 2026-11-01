@@ -23,7 +23,19 @@ raw = sys.stdin.read()
 try:
     d = json.loads(raw)
 except Exception:
-    print((raw or "").strip() or "(no answer)")
-    raise SystemExit(0)
-print((d.get("final") or "").strip() or "(no answer)")
+    d = {}
+final = (d.get("final") or "").strip()
+if not final:
+    # An empty final is a HARNESS answer of nothing: say why, on stderr, so the
+    # Inspect log carries the diagnosis (measured 2026-11-01: the run printed
+    # no-answer and the error lived only inside the sandbox).
+    sys.stderr.write("[oc] rc=%r ok=%r status=%r\n" % (d.get("rc"), d.get("ok"), d.get("status")))
+    sys.stderr.write("[oc] envelope=%s\n" % (raw[:600] or "<empty stdout>"))
+    try:
+        sys.stderr.write("[oc] err.log:\n%s\n" % open("/tmp/oc/err.log", encoding="utf-8",
+                                                       errors="replace").read()[-2500:])
+    except OSError:
+        pass
+    raise SystemExit(1)
+print(final)
 '
