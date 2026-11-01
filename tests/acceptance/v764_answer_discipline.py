@@ -215,6 +215,28 @@ os.environ.pop("LONGRUN_MODEL_CALL_TIMEOUT", None)
 check("E12 the default per-call timeout is 300 s",
       A._model_call_timeout() == 300)
 
+# ---- E13/E14. a turn may not close on a PLAN or on a bare reasoning block ----
+# Measured 2026-11-01 on GAIA `46719c30` (11 turns): the final message ended
+# "…I need to determine which had prior papers and find their first paper" — a status
+# update, graded as the answer, while the plan was already closed.
+check("E13 a reply that is still describing the next step is not an answer",
+      A._narrates_intent("Authors are Pietro Murano and Iram N. Khan. I need to "
+                         "determine which had prior papers and find their first paper."
+                         " Murano has an extensive publication record; let me grep it.")
+      and A._narrates_intent("Let me search the journal index next.")
+      and not A._narrates_intent("The Castle")
+      and not A._narrates_intent("The word is fluffy, from the 1968 and 1974 reviews.")
+      and not A._narrates_intent("17000"))
+# Measured 2026-11-01 on GAIA `72e110e7`: the reply was ONLY a `<think …>` block
+# carrying `{"action":"tool","tool":"web.search",…}`. `strip_think` left the ACTION,
+# it was printed as the answer, and the scorer graded a JSON envelope.
+_THINK_ONLY = ('<think signature="reasoning-details://x">{"action":"tool",'
+               '"tool":"web.search","args":{"query":"x"}}</think>')
+check("E14 a reply with no VISIBLE part after the reasoning strip is not an answer",
+      A._visible_reply(_THINK_ONLY) == ""
+      and A._visible_reply(_THINK_ONLY + "fluffy") == "fluffy"
+      and A._visible_reply("17") == "17")
+
 # ---- S. a keyless search must return real, followable URLs ----
 # Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with
 # a 14 kB bot page, and the GAIA sandbox has no Tavily/Brave key — so the only path

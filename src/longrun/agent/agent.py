@@ -2964,6 +2964,64 @@ def _evidence_gate_text():
             "Do not guess a number you have not seen.")
 
 
+#: A reply that ENDS on what it is about to do. The tail is what matters: a long,
+#: correct analysis can contain "I need to" in the middle and still finish on the
+#: value; only the last sentence decides.
+_INTENT_TAIL = re.compile(
+    r"\b(?:i (?:need|have|must|should|will|'ll|am going)\s+to|let me|next,? i|"
+    r"now i|i'm going to|need to (?:find|determine|check|search|look|verify|fetch|"
+    r"grep|compute|calculate|identify|locate|try))\b", re.I)
+
+
+def _narrates_intent(answer):
+    """True when the reply is still describing the NEXT step instead of giving it.
+
+    Measured 2026-11-01 on GAIA `46719c30` (11 turns): the final message was
+    "…Authors are Pietro Murano and Iram N. Khan. I need to determine which had prior
+    papers and find their first paper…" — a status update, graded as the answer. The
+    plan was already closed, so no other check had a reason to fire.
+
+    Scanned over the TAIL, not the last line: the model keeps talking after the
+    sentence that says what it is about to do. Firing costs ONE round with a bounded
+    instruction; missing it costs the sample, so the trigger leans towards firing.
+    """
+    try:
+        text = str(answer or "").strip()
+        if not text:
+            return False
+        tail = text[-400:]
+        return bool(_INTENT_TAIL.search(tail))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _intent_gate_text():
+    """The one round a reply that ends on "I need to…" earns."""
+    return ("CLOSING CHECK — your last message describes the NEXT step instead of "
+            "giving the result, and this turn is graded on the RESULT.\n"
+            "  * the work is done → reply with the value alone (a number, a date, a "
+            "name: no sentence around it, no summary of what you did);\n"
+            "  * it is not done → make the next tool call NOW, in this message, as "
+            "{\"action\":\"tool\",\"tool\":\"<name>\",\"args\":{…}}.\n"
+            "Never end a turn on a statement of intent.")
+
+
+def _visible_reply(text):
+    """What survives the reasoning strip — i.e. what a user or a scorer will SEE.
+
+    Measured 2026-11-01 on GAIA `72e110e7`: the reply was nothing but a `<think …>`
+    block containing `{"action":"tool","tool":"web.search",…}`. The turn was "answered"
+    by the harness, the reasoning was stripped for display, and the ACTION became the
+    final answer. A reply with no visible part is not an answer.
+    """
+    try:
+        from longrun.util.textkit import strip_think
+        out, _think = strip_think(str(text or ""))
+        return (out or "").strip()
+    except Exception:  # noqa: BLE001 — the guard must never break a turn
+        return str(text or "").strip()
+
+
 def _model_call_timeout():
     """Per-CALL timeout for the chat model — never an undocumented 300 s cap.
 
@@ -3735,6 +3793,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _selfcheck_left = _SELFCHECK_MAX
     _failed_checked = False   # one failed-call verdict per turn (never a loop)
     _evidence_used = False    # one evidence-gate round per turn (never a loop)
+    _intent_used = False      # one closing-check round when the reply ends on a plan
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
     _think_action_used = False  # one round when the action hides in the reasoning
     _timeout_retried = False   # one retry when the MODEL CALL itself times out
@@ -4403,6 +4462,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
                 continue
+            if (not _intent_used and _narrates_intent(answer)
+                    and not _is_aborted(sess["id"])):
+                # A close that ENDS on "I need to…" is a status update, not an answer.
+                _intent_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_intent_gate_text(), "closure-check")
+                continue
             if (not _evidence_used and not _total_work_steps
                     and _needs_evidence(message) and not _is_aborted(sess["id"])):
                 # A finished fact with zero tool calls in the whole turn: nothing
@@ -4455,6 +4521,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _drv:
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_drv, "review")
+                    continue
+                if (not _intent_used and _narrates_intent(answer)
+                        and not _is_aborted(sess["id"])):
+                    _intent_used = True
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_intent_gate_text(), "closure-check")
                     continue
                 if (not _evidence_used and not _total_work_steps
                         and _needs_evidence(message) and not _is_aborted(sess["id"])):
@@ -4658,6 +4730,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
                 continue
+            if (not _intent_used and _narrates_intent(answer)
+                    and not _is_aborted(sess["id"])):
+                # The reply ends on what it is about to do — say so, once.
+                _intent_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_intent_gate_text(), "closure-check")
+                continue
             if (not _evidence_used and not _total_work_steps
                     and _needs_evidence(message) and not _is_aborted(sess["id"])):
                 # A prose answer to a fact request, with zero tool calls behind it.
@@ -4776,15 +4855,21 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                      difficulty=_diff_level)
     meta = {"model": model, "node": _cur_node()}
     content = answer.strip()
-    if not content or _looks_like_json_action(content):
+    # A message that is NOTHING BUT a reasoning block is not an answer either: the
+    # reasoning is stripped for display, so what reaches the user (or the scorer) is
+    # what follows it — which can be a bare tool envelope. Measured 2026-11-01 on GAIA
+    # `72e110e7`: the reply was `<think …>{"action":"tool","tool":"web.search",…}` and,
+    # after `strip_think`, the ACTION was handed over as the final answer.
+    _visible = _visible_reply(content)
+    if not content or _looks_like_json_action(content) or not _visible:
         # A turn that stops ON an action (or on nothing) has no answer to hand over.
         # Measured 2026-11-01 on GAIA: sample `46719c30` was graded on a raw
         # `{"action":"tool","tool":"web.fetch",…}` envelope, and `a1e91b78` returned an
         # empty string after 31 steps — both read as "the harness answered", so the
         # failure was invisible. Say what happened, in prose, and never leak the envelope.
         content = (("The turn ended before a final answer: the last message was still "
-                    "an action (%s)." % content[:200].replace("\n", " "))
-                   if content else
+                    "an action (%s)." % (_visible or content)[:200].replace("\n", " "))
+                   if (_visible or content) else
                    "The turn ended without producing an answer.")
     if _hitl:
         # EV-39: the turn asked the operator (human.ask). The visible reply is the
