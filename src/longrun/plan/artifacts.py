@@ -575,8 +575,14 @@ _PRODUCE_VERBS = ("write", "create", "produce", "generate", "save", "export", "m
                   "build", "prepare", "draft", "compose", "assemble", "fill in",
                   "fill out", "update the", "edit the", "convert", "compile", "render")
 #: An explicit target (`out/report.csv`, `notes.md`) is a deliverable on its own.
+#: It must carry a FILE EXTENSION: the first version accepted any `a/b`, which made
+#: the phrase "a comma separated list of numbers and/or strings" (in every GAIA
+#: question's instruction block) look like a deliverable — the read-back then fired
+#: on 9 of 12 question-answering turns and the model spent them arguing with it
+#: (measured 2026-11-01, run `final3`: `5d0080cb` 22 turns, `b816bfce` 37 turns).
 _TARGET_PATH = re.compile(
-    r"[\w.-]+/[\w.-]+|\b[\w-]+\.(?:csv|xlsx|xls|docx|pdf|md|json|txt|tsv|parquet)\b")
+    r"(?:[\w.-]+/)*[\w-]+\.(?:csv|xlsx|xls|docx|pdf|md|json|txt|tsv|parquet|html|"
+    r"pptx?|py|sh|ya?ml)\b")
 
 
 def names_artifact(request):

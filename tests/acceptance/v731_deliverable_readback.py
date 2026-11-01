@@ -291,6 +291,22 @@ check("E7b naming a document is not asking to produce one",
                         "the first scene heading?") is None
       and A.nothing_written("save the report to out/report.md") is not None)
 
+#: The GAIA instruction block, verbatim. `and/or` is not a path: accepting any
+#: `a/b` made the read-back fire on 9 of 12 question-answering turns (run `final3`).
+_GAIA_STEM = ("Please answer the question below. You should:\n\n"
+              "- Return only your answer, which should be a number, or a short "
+              "phrase with as few words as possible, or a comma separated list of "
+              "numbers and/or strings.\n- If the answer is a number, return only "
+              "the number without any units unless specified otherwise.\n")
+check("E7c the question boilerplate 'and/or' is not a deliverable path",
+      A.names_artifact(_GAIA_STEM) is False
+      and A.nothing_written(_GAIA_STEM + "\nHere is the question:\n\nWhat was the "
+                            "volume in m^3 of the fish bag?") is None)
+check("E7d a bare extension-less `a/b` is not a deliverable path",
+      A.names_artifact("compare 6/7 with 1/2") is False
+      and A.names_artifact("write the table to out/report.csv") is True
+      and A.names_artifact("put it in data/results.md") is True)
+
 # H — RECORD COVERAGE: the inputs' records must be accounted for ----------------
 # Measured 2026-10-31 with a FRESH official judge on artefacts that already existed:
 # bookkeeping longrun 26/88 vs openclaw 52/88, medical longrun 12/78 vs opencode
