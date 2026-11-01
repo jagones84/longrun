@@ -113,7 +113,10 @@ with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
     ui = f.read()
 
 check("server has the reasoning helper + field",
-      "def _reasoning_effort" in srv and 'body["reasoning_effort"] = effort' in srv)
+      # 2026-11-01: the flat `body["reasoning_effort"] = effort` pin was the bug this
+      # feature replaced — one shape for every provider. The body now merges the shape the
+      # model's DIALECT needs (`_reasoning_fields`), so the pin follows the new truth.
+      "def _reasoning_effort" in srv and "body.update(_reasoning_fields(" in srv)
 check("update_policy accepts a reasoning section", 'body.get("reasoning")' in av)
 check("GET /api/tools exposes reasoning",
       '"reasoning": registry.load_config().get("reasoning")' in av)

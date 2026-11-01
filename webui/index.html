@@ -3063,7 +3063,7 @@
                 <option value="xhigh">xhigh</option>
               </select>
             </label>
-            <label class="u-df u-g6 u-aic" title="Which provider DIALECT the reasoning parameter is sent in. They are NOT interchangeable: z.ai and qwen take a boolean enable_thinking, OpenRouter an object reasoning:{effort}, OpenAI a flat reasoning_effort.">dialect
+            <label class="u-df u-g6 u-aic" title="Which provider DIALECT the reasoning parameter is sent in. They are NOT interchangeable: OpenRouter takes reasoning:{effort|max_tokens}, z.ai thinking:{type} + an effort of max/high/low, Qwen enable_thinking + thinking_budget, llama.cpp chat_template_kwargs (its flat reasoning_effort is dropped silently). `auto` reads it from the provider of the selected model.">dialect
               <select id="reFormat" data-change="saveReasoning" class="inp u-p610 u-fs12" style="width:auto">
                 <option value="auto">auto (from the model)</option>
                 <option value="openai">openai</option>
@@ -3073,9 +3073,11 @@
                 <option value="zai">zai</option>
                 <option value="qwen">qwen</option>
                 <option value="qwen-chat-template">qwen-chat-template</option>
+                <option value="llamacpp">llamacpp</option>
               </select>
             </label>
           </div>
+          <div class="remaining u-mt6" title="A level is a FLOOR, never a cap: `high` asks for 24000 thinking tokens (xhigh 32000). Off leaves the provider's own default alone, because a model that thinks by default keeps thinking; pick `none` to switch thinking off where the provider allows it (not every model does).">a level is a floor · off = provider default · `none` = switch thinking off</div>
           <div class="remaining u-mt6" id="reResult"></div>
         </div>
         <h2>Compaction model <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>

@@ -238,33 +238,81 @@ check("E14 a reply with no VISIBLE part after the reasoning strip is not an answ
       and A._visible_reply(_THINK_ONLY + "fluffy") == "fluffy"
       and A._visible_reply("17") == "17")
 
-# ---- E15/E16. the reasoning parameter has a DIALECT per provider ----
-# Measured 2026-11-01 (45 real calls, `.agent/docs/research/2026-11-01_reasoning-effort.md`):
-# on `z-ai/glm-5.3-flash` the flat `reasoning_effort` bought 107 mean reasoning tokens
-# where the z.ai `enable_thinking` switch bought 341, and the provider default 1418. A
-# single shape for every provider is the defect; these pin the mapping and the wire shape.
-check("E15 the dialect follows the model, and an explicit format wins",
-      R._reasoning_format({}, "openrouter/z-ai/glm-5.3-flash") == "zai"
-      and R._reasoning_format({}, "openrouter/deepseek/deepseek-r1") == "deepseek"
-      and R._reasoning_format({}, "openrouter/qwen/qwen3.7-max") == "qwen"
-      and R._reasoning_format({}, "openrouter/anthropic/claude-4") == "openai"
-      and R._reasoning_format({}, "glm-4.6") == "zai"
-      and R._reasoning_format({"format": "openrouter"}, "z-ai/glm-5.3") == "openrouter")
-_ON = {"enabled": True, "effort": "medium"}
-check("E16 each dialect sends ITS OWN field and never a foreign one",
-      R._reasoning_fields("z-ai/glm-5.3-flash", _ON) == {"enable_thinking": True}
-      and R._reasoning_fields("openrouter/openai/gpt-5", _ON) ==
-      {"reasoning_effort": "medium"}
-      and R._reasoning_fields("x", {"enabled": True, "effort": "medium",
-                                    "format": "openrouter"}) ==
-      {"reasoning": {"effort": "medium"}}
-      and R._reasoning_fields("x", {"enabled": True, "effort": "medium",
-                                    "format": "qwen-chat-template"}) ==
-      {"chat_template_kwargs": {"enable_thinking": True}}
-      and R._reasoning_fields("openrouter/openai/gpt-5",
-                              {"enabled": True, "effort": "none"}) == {}
-      and R._reasoning_fields("z-ai/glm-5.3-flash",
-                              {"enabled": False, "effort": "high"}) == {})
+# ---- E15/E16/E17. the reasoning parameter has a DIALECT per provider ----
+# Measured 2026-11-01 (`.agent/docs/research/2026-11-01_reasoning-effort.md`): a single
+# shape for every provider is the defect. On `z-ai/glm-5.3-flash` a flat
+# `reasoning_effort: high` bought 107 mean reasoning tokens against 1419 for the provider
+# default — the "level" was CAPPING the thinking. On a local llama.cpp model the flat
+# field is dropped entirely (its template only reads `chat_template_kwargs`, where
+# `reasoning_effort: "none"` is the one value with a measurable effect). Vendor docs, read
+# the same day: z.ai `thinking:{type}` + `reasoning_effort: max|high|low` (default `max`),
+# OpenRouter `reasoning:{effort|max_tokens}` (never both), Qwen `enable_thinking` +
+# `thinking_budget`, DeepSeek `thinking:{type}` + `reasoning_effort`.
+_po = R._provider_of
+R._provider_of = lambda m: {"id": "openrouter", "kind": "openrouter"}
+check("E15 the dialect follows the PROVIDER first (one model, two APIs)",
+      R._reasoning_format({}, "z-ai/glm-5.3-flash") == "openrouter")
+R._provider_of = lambda m: {"id": "dgx", "kind": "llamacpp", "local": True}
+check("E15b a local llamacpp provider gets the llamacpp dialect",
+      R._reasoning_format({}, "nex-n25-mini-uncensored-q8") == "llamacpp")
+R._provider_of = lambda m: {"id": "deepseek", "kind": "deepseek"}
+check("E15c a direct vendor endpoint keeps its own dialect",
+      R._reasoning_format({}, "deepseek-v4-pro") == "deepseek")
+R._provider_of = _po
+check("E15d with no provider the MODEL family decides, and an explicit format wins",
+      R._reasoning_format({}, "glm-4.6") == "zai"
+      and R._reasoning_format({}, "deepseek/deepseek-r1") == "deepseek"
+      and R._reasoning_format({}, "qwen/qwen3.7-max") == "qwen"
+      and R._reasoning_format({}, "anthropic/claude-4") == "openai"
+      and R._reasoning_format({"format": "openrouter"}, "glm-4.6") == "openrouter")
+_LV = R._LEVEL_BUDGET                                                        # noqa: E305
+check("E16 a level is a FLOOR, not a cap: `high` asks for most of the budget",
+      _LV["high"] == 24000 and _LV["xhigh"] == 32000 and _LV["minimal"] == 1024)
+_F = R._reasoning_fields                                                    # noqa: E305
+check("E17 each dialect sends ITS OWN field and never a foreign one",
+      _F("x", {"enabled": True, "effort": "high", "format": "openai"}) ==
+      {"reasoning_effort": "high"}
+      and _F("x", {"enabled": True, "effort": "xhigh", "format": "openai"}) ==
+      {"reasoning_effort": "high"}
+      and _F("x", {"enabled": True, "effort": "none", "format": "openai"}) ==
+      {"reasoning_effort": "none"}
+      and _F("x", {"enabled": True, "effort": "high", "format": "superpowers"}) ==
+      {"reasoning_effort": "high"})
+check("E17b z.ai `high` becomes its documented MAX (default is already max)",
+      _F("glm-5.3", {"enabled": True, "effort": "high", "format": "zai"}) ==
+      {"thinking": {"type": "enabled"}, "reasoning_effort": "max"}
+      and _F("glm-5.3", {"enabled": True, "effort": "none", "format": "zai"}) ==
+      {"thinking": {"type": "disabled"}})
+check("E17c OpenRouter gets a NUMBER and never effort+max_tokens together",
+      _F("x", {"enabled": True, "effort": "high", "format": "openrouter"},
+         max_tokens=64000) == {"reasoning": {"max_tokens": 24000}}
+      and _F("x", {"enabled": True, "effort": "high", "format": "openrouter"},
+             max_tokens=8000) == {"reasoning": {"max_tokens": 6976}}
+      and _F("x", {"enabled": True, "effort": "high", "format": "openrouter"},
+             max_tokens=1500) == {"reasoning": {"effort": "high"}}
+      and _F("x", {"enabled": True, "effort": "none", "format": "openrouter"}) ==
+      {"reasoning": {"enabled": False}})
+check("E17f a GLM through OpenRouter asks for `max` — the only shape measured to RAISE "
+      "it — and never for a disable it would reject",
+      _F("z-ai/glm-5.3-flash", {"enabled": True, "effort": "high",
+                                "format": "openrouter"}) == {"reasoning": {"effort": "max"}}
+      and _F("z-ai/glm-5.3-flash", {"enabled": True, "effort": "low",
+                                    "format": "openrouter"}) == {"reasoning": {"effort": "low"}}
+      and _F("z-ai/glm-5.3-flash", {"enabled": True, "effort": "none",
+                                    "format": "openrouter"}) == {})
+check("E17d qwen carries a budget, llama.cpp carries the template kwargs",
+      _F("qwen3.8-max", {"enabled": True, "effort": "low", "format": "qwen"},
+          max_tokens=64000) == {"enable_thinking": True, "thinking_budget": 4096}
+      and _F("qwen3.8-max", {"enabled": True, "effort": "none", "format": "qwen"}) ==
+      {"enable_thinking": False}
+      and _F("nex-n25", {"enabled": True, "effort": "high", "format": "llamacpp"}) ==
+      {"chat_template_kwargs": {"enable_thinking": True, "reasoning_effort": "high"}}
+      and _F("nex-n25", {"enabled": True, "effort": "none", "format": "llamacpp"}) ==
+      {"chat_template_kwargs": {"enable_thinking": False, "reasoning_effort": "none"}})
+check("E17e OFF sends nothing; enabled-without-a-level sends nothing either",
+      _F("x", {"enabled": False, "effort": "high", "format": "openai"}) == {}
+      and _F("x", {"enabled": True, "effort": "", "format": "openai"}) == {}
+      and _F("x", {}) == {})
 
 # ---- S. a keyless search must return real, followable URLs ----
 # Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with

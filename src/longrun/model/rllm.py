@@ -692,38 +692,93 @@ def _reasoning_effort():
     return None
 
 
-#: The provider DIALECTS for the reasoning parameter, named exactly as openclaw names
-#: them (`MODEL_DATA_THINKING_FORMATS`), so the two harnesses speak one language:
-#:
-#:   openai            `reasoning_effort: "<level>"`
-#:   openrouter        `reasoning: {effort: "<level>"}`
-#:   deepseek          `thinking: {type: "enabled"}` + `reasoning_effort`
-#:   together          `reasoning: {enabled: true}` + `reasoning_effort`
-#:   zai               `enable_thinking: true`   (a SWITCH, not a level)
-#:   qwen              `enable_thinking: true`   (a SWITCH, not a level)
-#:   qwen-chat-template `chat_template_kwargs: {enable_thinking: true}`
-#:
-#: Longrun used to send ONLY the `openai` shape to every provider, which is why the
-#: switch behaved oddly on a z.ai model. Measured 2026-11-01 (45 real calls,
-#: `.agent/docs/research/2026-11-01_reasoning-effort.md`), mean reasoning tokens over six
-#: verifiable questions on `z-ai/glm-5.3-flash`:
-#:
-#:   no field (provider default) 1418 | openai 107 | openrouter 135 | **zai 341**
-#:
-#: and on the hardest question 7746 / 250 / 248 / **1504**. Adding an `effort` NEXT TO
-#: `enable_thinking` throws the gain away (226), so for zai the switch wins alone.
-REASONING_FORMATS = ("auto", "openai", "openrouter", "deepseek", "together",
-                     "zai", "qwen", "qwen-chat-template")
+#: The reasoning LEVELS, lowest first. An EMPTY effort means "leave the provider alone"
+#: (the shipped default); `none` is an EXPLICIT request to stop thinking.
 _LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
+
+#: What a level asks for, in thinking TOKENS, for the providers that take a NUMBER
+#: instead of a level name. The numbers are far apart on purpose: Anthropic's floor is
+#: 1024 and OpenRouter's ceiling 32000, so `high` asks for most of what the provider can
+#: give — a level must be a FLOOR, never a cap (measured 2026-11-01: a flat
+#: `reasoning_effort: high` gave a z.ai model 107 reasoning tokens against 1419 for the
+#: provider default, i.e. the "level" was silently CAPPING the thinking).
+_LEVEL_BUDGET = {"minimal": 1024, "low": 4096, "medium": 12000,
+                 "high": 24000, "xhigh": 32000}
+
+#: The provider DIALECTS for the reasoning parameter, named exactly as openclaw names
+#: them (`MODEL_DATA_THINKING_FORMATS`), so the two harnesses speak one language. Each
+#: line cites the vendor documentation it comes from (read 2026-11-01):
+#:
+#:   openai             `reasoning_effort: "<level>"`                  (OpenAI chat API)
+#:   openrouter         `reasoning: {effort|max_tokens}`               (openrouter.ai/docs/use-cases/reasoning-tokens)
+#:   zai                `thinking: {type}` + `reasoning_effort`        (docs.z.ai/guides/capabilities/thinking)
+#:   deepseek           `thinking: {type}` + `reasoning_effort`        (api-docs.deepseek.com)
+#:   qwen               `enable_thinking` + `thinking_budget`          (alibabacloud.com/help/en/model-studio/deep-thinking)
+#:   qwen-chat-template `chat_template_kwargs`                         (vLLM)
+#:   together           `reasoning: {enabled}` + `reasoning_effort`    (Together)
+#:   llamacpp           `chat_template_kwargs` (+ budget)              (llama.cpp server b10999)
+#:
+#: Two rules that took a measurement each to learn:
+#:   * z.ai's documented effort scale is `max` > `high` > `low` and `max` is the
+#:     DEFAULT, so `high` never raises the depth — it lowers it. `high`/`xhigh` are
+#:     therefore mapped to `max`; the switch can only stop suppressing, not add.
+#:   * the flat `reasoning_effort` is NOT a llama.cpp sampling parameter: it is dropped
+#:     silently, so a local model ignored it completely. The template reads
+#:     `chat_template_kwargs`, and there `reasoning_effort: "none"` is the one value that
+#:     measurably changes anything (reasoning 0 chars vs ~800 default).
+REASONING_FORMATS = ("auto", "openai", "openrouter", "deepseek", "together",
+                     "zai", "qwen", "qwen-chat-template", "llamacpp")
+
+#: The level names a provider that lacks `xhigh` understands.
+_EFFORT_WORD = {"minimal": "minimal", "low": "low", "medium": "medium",
+                "high": "high", "xhigh": "high"}
+#: z.ai's own scale: max (default, deepest) / high / low. Anything at or above `high`
+#: must become `max`, or the setting would think LESS than the default it replaces.
+_ZAI_EFFORT = {"minimal": "low", "low": "low", "medium": "high",
+               "high": "max", "xhigh": "max"}
+
+
+def _is_zai_family(model_id):
+    """True for the GLM / z.ai family, whatever API it is reached through."""
+    m = str(model_id or "").lower()
+    return "z-ai/" in m or "/glm" in m or m.startswith("glm") or "zhipu" in m
+
+
+def _provider_of(model_id):
+    """The provider entry a model ref belongs to, or None (never raises).
+
+    Dialect detection needs the provider, not just the model id: the SAME
+    `z-ai/glm-5.3-flash` must speak OpenRouter's dialect when it is called through
+    OpenRouter and z.ai's own dialect only on a direct z.ai endpoint.
+    """
+    try:
+        if not model_id:
+            return None
+        from longrun.model import providers
+        hit = providers.resolve(str(model_id))
+        return hit[0] if hit else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _reasoning_format(cfg, model_id):
-    """The dialect to use: configured, else resolved from the MODEL id."""
+    """The dialect to use: configured, else the PROVIDER's kind, else the model family."""
     fmt = str((cfg or {}).get("format") or "auto").strip().lower()
     if fmt in REASONING_FORMATS and fmt != "auto":
         return fmt
+    p = _provider_of(model_id)
+    if p is not None:
+        kind = str(p.get("kind") or "").strip().lower()
+        if kind == "openrouter":
+            return "openrouter"
+        if kind in ("llamacpp", "llama.cpp"):
+            return "llamacpp"
+        if kind == "deepseek":
+            return "deepseek"
+        if kind in ("openai", "anthropic", "gemini", "google"):
+            return "openai"
     m = str(model_id or "").lower()
-    if "z-ai/" in m or "/glm" in m or m.startswith("glm") or "zhipu" in m:
+    if _is_zai_family(m):
         return "zai"
     if "deepseek" in m:
         return "deepseek"
@@ -732,11 +787,32 @@ def _reasoning_format(cfg, model_id):
     return "openai"
 
 
-def _reasoning_fields(model_id, cfg=None):
+def _fit_budget(tokens, max_tokens=None):
+    """The thinking budget that fits inside the answer budget; 0 when nothing fits.
+
+    OpenRouter/Anthropic reject a reasoning budget that is not strictly BELOW
+    `max_tokens`, cap the value at 32000 and floor it at 1024 — a caller that returns 0
+    must fall back to an effort name instead of sending an impossible number.
+    """
+    t = int(tokens or 0)
+    if t <= 0:
+        return 0
+    t = min(t, 32000)
+    if max_tokens:
+        room = int(max_tokens) - 1024
+        if room < 1024:
+            return 0
+        t = min(t, room)
+    return max(1024, t)
+
+
+def _reasoning_fields(model_id, cfg=None, max_tokens=None):
     """The reasoning fields to merge into the body for `model_id` (never raises).
 
     `cfg` is the `reasoning` block; when None it is read from the live config, which is
     what the request path does. Passing it explicitly is what makes the mapping testable.
+    `max_tokens` is the answer budget of the SAME body, needed because a thinking budget
+    must stay strictly below it (OpenRouter/Anthropic rule).
     """
     try:
         if cfg is None:
@@ -753,28 +829,59 @@ def _reasoning_fields(model_id, cfg=None):
                 return {}
             eff = str(r.get("effort") or "").strip().lower()
             if eff not in _LEVELS:
-                eff = ""
+                return {}   # no level chosen: leave the provider's own default alone
         fmt = _reasoning_format(r, model_id)
         on = eff != "none"
+        budget = _fit_budget(_LEVEL_BUDGET.get(eff) or 0, max_tokens)
+        word = _EFFORT_WORD.get(eff, "")
         if fmt == "openrouter":
-            return {"reasoning": {"effort": eff}} if eff and on else {}
+            # One of `effort` / `max_tokens`, never both (HTTP 400 otherwise). Measured on
+            # `z-ai/glm-5.3-flash` through OpenRouter, reasoning tokens: nothing 487 |
+            # effort:xhigh 309 | max_tokens 24000 155 | **effort:max 1244** — so for the
+            # GLM family only the literal `max` raises the depth above the default, and
+            # every other shape lowers it. On a model whose default is thinking-OFF the
+            # number wins: gemini-2.5-flash 0 tokens by default, 4305 with max_tokens
+            # 24000. Both rows were taken live on 2026-11-01.
+            if not on:
+                # A thinking-ONLY model answers 400 ("Reasoning is mandatory for this
+                # endpoint and cannot be disabled") — sending nothing is the only request
+                # it accepts, and a 400 + retry would cost a round every turn.
+                return {} if _is_zai_family(model_id) else {"reasoning": {"enabled": False}}
+            if _is_zai_family(model_id):
+                deep = "max" if eff in ("high", "xhigh") else (
+                    "high" if eff == "medium" else "low")
+                return {"reasoning": {"effort": deep}}
+            if budget:
+                return {"reasoning": {"max_tokens": budget}}
+            return {"reasoning": {"effort": word or "high"}}
         if fmt == "zai":
-            return {"enable_thinking": on}
+            if not on:
+                return {"thinking": {"type": "disabled"}}
+            return {"thinking": {"type": "enabled"},
+                    "reasoning_effort": _ZAI_EFFORT.get(eff, "max")}
         if fmt == "qwen":
-            return {"enable_thinking": on}
-        if fmt == "qwen-chat-template":
-            return {"chat_template_kwargs": {"enable_thinking": on}}
-        if fmt == "deepseek":
-            out = {"thinking": {"type": "enabled" if on else "disabled"}}
-            if eff and on:
-                out["reasoning_effort"] = eff
+            if not on:
+                return {"enable_thinking": False}
+            out = {"enable_thinking": True}
+            if budget:
+                out["thinking_budget"] = budget
             return out
+        if fmt in ("qwen-chat-template", "llamacpp"):
+            # The template — not llama.cpp's sampler — reads these, which is why the flat
+            # field never worked locally. `reasoning_effort: "none"` is the ONE value that
+            # measurably stops a local model from thinking.
+            kw = {"enable_thinking": on, "reasoning_effort": (word or "high") if on else "none"}
+            return {"chat_template_kwargs": kw}
+        if fmt == "deepseek":
+            if not on:
+                return {"thinking": {"type": "disabled"}}
+            return {"thinking": {"type": "enabled"}, "reasoning_effort": word or "high"}
         if fmt == "together":
             out = {"reasoning": {"enabled": on}}
-            if eff and on:
-                out["reasoning_effort"] = eff
+            if on:
+                out["reasoning_effort"] = word or "high"
             return out
-        return {"reasoning_effort": eff} if eff and on else {}
+        return {"reasoning_effort": "none" if not on else (word or "high")}
     except Exception:  # noqa: BLE001
         return {}
 
@@ -818,7 +925,7 @@ def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=F
     if max_tokens:
         body["max_tokens"] = int(max_tokens)
     if not no_reasoning:
-        body.update(_reasoning_fields(model_id))
+        body.update(_reasoning_fields(model_id, max_tokens=max_tokens))
     return body
 
 
