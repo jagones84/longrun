@@ -57,6 +57,17 @@ check("T4 unknown SJ id falls back to latest open (never a traceback)",
 check("T5 SJ payload carries no team-job keys (segregated layers)",
       set(r["sj"]["jobs"][0].keys()) == {"id", "goal", "status", "created", "ended", "subjobs"},
       sorted(r["sj"]["jobs"][0].keys()))
+# S4 (2026-11-01): measured on the live harness, `self.sj {"job":"SJ13"}` answered 7 587
+# chars, ~85% of it the static paths/config/recipe block that the SYSTEM PROMPT already
+# carries (`agent.self_summary`). A diagnostic branch now ships only its own payload plus
+# one pointer line; `action:"info"` keeps the full report.
+check("T5b a dynamic self action does not repeat the static block the prompt already has",
+      not ({"repo_path", "config", "docs", "install_skill", "skills_dir", "namespaces",
+            "mcp"} & set(r.keys()))
+      and "self.info" in (r.get("hint") or ""), sorted(r.keys()))
+check("T5c action=info still carries the full report (the ONE copy)",
+      {"repo_path", "config", "docs", "service", "skills", "namespaces", "mcp"}
+      <= set(T._self({"action": "info"}, SID).keys()), "")
 
 s = T._sessions({"action": "send"}, SID)
 check("T6 send without session+message refused (exit 64, no live touch)",

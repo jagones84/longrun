@@ -1173,39 +1173,49 @@ def _self(args, run_id):
         _version = str(getattr(_srv, "VERSION", "unknown"))
     except Exception:  # noqa: BLE001
         _version = "unknown"
-    info = {
-        "ok": True, "backend": "host", "sandboxed": False, "exit_code": 0,
-        "name": "Longrun", "version": _version,
-        "repo_path": REPO,
-        "data_dir": _paths.DATA_DIR,
-        "sessions_dir": _paths.SESSIONS_DIR,
-        "webui": os.path.join(REPO, "webui"),
-        "entrypoint": os.path.join(REPO, "server.py"), "port": 8790,
-        "router": ROUTER_BASE,
-        "config": {"tools": os.path.join(REPO, "config", "tools.yaml"),
-                   "tools_overlay": os.path.join(_paths.DATA_DIR, "tools.overlay.yaml"),
-                   "routing": os.path.join(REPO, "config", "routing.yaml"),
-                   "mcp_clients": os.path.join(REPO, "config", "mcp_clients.yaml")},
-        "docs": {"plan": os.path.join(REPO, "docs", "PLAN.md"),
-                 "readme": os.path.join(REPO, "README.md"),
-                 "architecture": os.path.join(REPO, "docs", "ARCHITECTURE.md")},
-        "service": {"unit": "longrun.service", "scope": "user",
-                    "unit_file": os.path.join(REPO, "deploy", "longrun.service"),
-                    "restart_cmd": osutil.service_hint()},
-        "skills_dir": os.path.join(REPO, "skills"),
-        "install_skill": (
-            "A skill is a directory with a SKILL.md. Drop/clone it into a "
-            "category under skills/ (e.g. skills/ops/<name>/SKILL.md), or symlink "
-            "an existing distribution dir: `ln -sfn <source-dir> skills/<cat>`. "
-            "Skills are picked up automatically by the `skills` tool (no reload "
-            "needed). External MCP servers: add an entry to "
-            "config/mcp_clients.yaml with either command+args (stdio) or url "
-            "(HTTP); tools are discovered via tools/list and exposed as "
-            "<client>__<tool> in the registry. Harness-native tools go in "
-            "registry.TOOL_SCHEMAS + tools.py with policy in config/tools.yaml. "
-            "Apply with POST /api/tools (reload) or restart: %s."
-        ) % osutil.service_hint(),
-    }
+    info = {"ok": True, "backend": "host", "sandboxed": False, "exit_code": 0,
+            "name": "Longrun", "version": _version}
+    # S4 (2026-11-01): the static block below (repo_path, data_dir, config paths, docs,
+    # service unit, skills_dir, install_skill, mcp, namespaces) is ALREADY in the system
+    # prompt (agent.self_summary). Measured on `self.sj {"job":"SJ13"}`: 7 587 chars of
+    # output, of which ~1 500 were this block against a ~1 000-char SJ payload — 85% of a
+    # diagnostic call was context the model already had, and ten such calls in one session
+    # are ~60 KB of transcript. JAG-426 shipped it on every branch "so the model never
+    # loses the paths"; the fix keeps that promise with ONE line of pointer instead of a
+    # copy: the paths are in `info` (and in the prompt) and nowhere else.
+    full = action in ("info", "")
+    if full:
+        info.update({
+            "repo_path": REPO,
+            "data_dir": _paths.DATA_DIR,
+            "sessions_dir": _paths.SESSIONS_DIR,
+            "webui": os.path.join(REPO, "webui"),
+            "entrypoint": os.path.join(REPO, "server.py"), "port": 8790,
+            "router": ROUTER_BASE,
+            "config": {"tools": os.path.join(REPO, "config", "tools.yaml"),
+                       "tools_overlay": os.path.join(_paths.DATA_DIR, "tools.overlay.yaml"),
+                       "routing": os.path.join(REPO, "config", "routing.yaml"),
+                       "mcp_clients": os.path.join(REPO, "config", "mcp_clients.yaml")},
+            "docs": {"plan": os.path.join(REPO, "docs", "PLAN.md"),
+                     "readme": os.path.join(REPO, "README.md"),
+                     "architecture": os.path.join(REPO, "docs", "ARCHITECTURE.md")},
+            "service": {"unit": "longrun.service", "scope": "user",
+                        "unit_file": os.path.join(REPO, "deploy", "longrun.service"),
+                        "restart_cmd": osutil.service_hint()},
+            "skills_dir": os.path.join(REPO, "skills"),
+            "install_skill": (
+                "A skill is a directory with a SKILL.md. Drop/clone it into a "
+                "category under skills/ (e.g. skills/ops/<name>/SKILL.md), or symlink "
+                "an existing distribution dir: `ln -sfn <source-dir> skills/<cat>`. "
+                "Skills are picked up automatically by the `skills` tool (no reload "
+                "needed). External MCP servers: add an entry to "
+                "config/mcp_clients.yaml with either command+args (stdio) or url "
+                "(HTTP); tools are discovered via tools/list and exposed as "
+                "<client>__<tool> in the registry. Harness-native tools go in "
+                "registry.TOOL_SCHEMAS + tools.py with policy in config/tools.yaml. "
+                "Apply with POST /api/tools (reload) or restart: %s."
+            ) % osutil.service_hint(),
+        })
     # JAG-462: report the EFFECTIVE external MCP surface. Without this, a model asked
     # "what MCP do I have?" read the TRACKED `config/mcp_clients.yaml` (which ships
     # `clients: {}` as an example) and wrongly answered "no external MCP servers are
@@ -1218,31 +1228,36 @@ def _self(args, run_id):
             _tools = sorted(t.get("name") for t in (_mc.list_tools() or []) if t.get("name"))
         except Exception:  # noqa: BLE001
             _tools = []
-        info["mcp"] = {
-            "clients": _clients,
-            "tools_count": len(_tools),
-            "tools_available": _tools[:40],
-            "note": ("the tracked config/mcp_clients.yaml holds EXAMPLES; the real "
-                     "clients live in the gitignored config/mcp_clients.local.json"),
-        }
+        if full:
+            info["mcp"] = {
+                "clients": _clients,
+                "tools_count": len(_tools),
+                "tools_available": _tools[:40],
+                "note": ("the tracked config/mcp_clients.yaml holds EXAMPLES; the real "
+                         "clients live in the gitignored config/mcp_clients.local.json"),
+            }
     except Exception:  # noqa: BLE001 — the self report must never fail on MCP
         pass
     try:
         from longrun.memory import skills as skills_mod
         sk = skills_mod.list_skills()
-        info["skills"] = {"dir": info["skills_dir"], "count": len(sk),
-                          "categories": sorted({s["category"] for s in sk})}
+        if full:
+            info["skills"] = {"dir": info["skills_dir"], "count": len(sk),
+                              "categories": sorted({s["category"] for s in sk})}
     except Exception as e:  # noqa: BLE001
-        info["skills"] = {"error": str(e)}
+        if full:
+            info["skills"] = {"error": str(e)}
     try:
-        if osutil.IS_POSIX:
-            out = sp.run(["systemctl", "--user", "is-active", "longrun.service"],
-                         capture_output=True, text=True, timeout=4).stdout.strip()
-            info["service"]["active"] = out or "unknown"
-        else:
-            info["service"]["active"] = "n/a (no systemd on this host)"
+        if full:
+            if osutil.IS_POSIX:
+                out = sp.run(["systemctl", "--user", "is-active", "longrun.service"],
+                             capture_output=True, text=True, timeout=4).stdout.strip()
+                info["service"]["active"] = out or "unknown"
+            else:
+                info["service"]["active"] = "n/a (no systemd on this host)"
     except Exception:
-        info["service"]["active"] = "unknown"
+        if full:
+            info["service"]["active"] = "unknown"
     # v718: a capability answer also needs WHO is asking. The dispatch contract is
     # `fn(args, run_id)`, so nothing else reaches a handler — but the identity is
     # already decided at the gate (`api_v02._session_scope`, ONE resolver). Read it,
@@ -1271,11 +1286,17 @@ def _self(args, run_id):
     try:
         from longrun.tools import diag as _diag
         _scope = ident.get("scope")
-        info["namespaces"] = _diag.namespaces(_scope if isinstance(_scope, list) else None)
+        if full:
+            info["namespaces"] = _diag.namespaces(_scope if isinstance(_scope, list) else None)
     except Exception as e:  # noqa: BLE001
-        info["namespaces"] = {"error": str(e)}
-    # JAG-426: on-demand dynamic diagnosis. Every branch is additive: the static
-    # info above always ships, so the model never loses the paths/recipe it had.
+        if full:
+            info["namespaces"] = {"error": str(e)}
+    # JAG-426: on-demand dynamic diagnosis. S4 (2026-11-01) made each branch answer with
+    # ITS OWN payload: the static block is in the system prompt (`agent.self_summary`) and
+    # in `action:"info"`, so repeating it here only inflated the transcript. The pointer
+    # below is the whole replacement for that copy.
+    if not full:
+        info["hint"] = "paths, config, docs and the extension recipe: self.info (also in the system prompt)"
     if action not in ("info", ""):
         from longrun.tools import diag as diag_mod
         if action in ("diagnose", "health"):
