@@ -1,0 +1,24 @@
+# Sandbox with NETWORK, for the arms that need it (GAIA browses the open web).
+#
+# Inspect's `docker:<Dockerfile>` form does NOT give you this: it generates an
+# auto-compose file with `network_mode: none` hard-coded
+# (inspect_ai/util/_sandbox/docker/config.py: COMPOSE_DOCKERFILE_YAML), so every
+# fetch inside the task dies on `dns resolution failed: [Errno -3]` and the model
+# answers from memory. Passing a COMPOSE file instead is the supported way to
+# choose the network mode: the field is part of Inspect's own ComposeConfig
+# (`_sandbox/compose.py`, `network_mode: str | None`).
+#
+#   inspect eval inspect_evals/gaia \
+#     --sandbox docker:/home/jagones/Repositories/longrun/benchmarks/inspect_sandbox/compose.yaml ...
+#
+# Trade-off: with the network the answer depends on what the web says right now, so
+# the run is no longer reproducible offline. Use it deliberately, one run at a time.
+services:
+  default:
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+    command: "tail -f /dev/null"
+    init: true
+    network_mode: bridge
+    stop_grace_period: 1s

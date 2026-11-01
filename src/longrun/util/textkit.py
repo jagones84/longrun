@@ -9,12 +9,40 @@ import json
 import re
 
 
+#: Every reasoning-wrapper a model has been seen to emit. The LITERAL `<think>` was
+#: the only one matched before 2026-11-01, so `<think signature="reasoning-details://…">`
+#: — what the routed model actually sends — went straight through to the answer surface
+#: (measured on GAIA: the graded answer became the whole thinking block).
+_THINK_BLOCK = re.compile(
+    r"<(think|thinking|reasoning|analysis|thought)(?:\s[^>]*)?>(.*?)</\1\s*>",
+    re.S | re.I)
+#: An opening tag that was never closed. Dropping only the tag keeps whatever text
+#: follows, which is the honest choice: the reasoning and the answer are then
+#: indistinguishable, and cutting at the tag would throw the answer away.
+_THINK_OPEN = re.compile(r"<(think|thinking|reasoning|analysis|thought)(?:\s[^>]*)?>", re.I)
+
+
 def strip_think(text):
-    """Split optional <think>...</think> out of content."""
-    m = re.search(r"<think>(.*?)</think>", text, re.S)
-    if m:
-        return text[: m.start()] + text[m.end():], m.group(1)
-    return text, None
+    """Split every `<think …>…</think>` block out of content.
+
+    Tolerates attributes (`<think signature="…">`), any case, the
+    `thinking`/`reasoning`/`analysis`/`thought` spellings, and SEVERAL blocks. An
+    unclosed opening tag is dropped as a token (the body is kept), because a turn
+    that never closed the block still has to answer.
+    """
+    if not text or "<" not in text:
+        return text, None
+    found = []
+
+    def _take(m):
+        found.append(m.group(2))
+        return ""
+
+    clean = _THINK_BLOCK.sub(_take, text)
+    if not found:
+        return _THINK_OPEN.sub("", text), None
+    clean = _THINK_OPEN.sub("", clean)
+    return clean, "\n\n".join(found).strip() or None
 
 
 def _iter_json_objects(text):

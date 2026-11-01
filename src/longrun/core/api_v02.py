@@ -486,52 +486,22 @@ _GATEWAY_PREFIX = "pmcp__gateway."
 _GATEWAY_KEEP = ("catalog_search", "describe", "invoke")
 
 
-def _brace_index(subs):
-    """Render subtool names as a COMPACT nested index (`{a, b{c,d}}`).
-
-    JAG-537/538: an exclusive namespace holds one tool per object per verb
-    (`team.member_add`, `agent.prompt_set`). Nesting the two-segment names in the
-    prompt index shares the namespace, so the index stays a name index instead of
-    becoming a catalogue.
-    """
-    tree = {}
-    for s in subs:
-        parts = str(s).split(".")
-        node = tree
-        for p in parts[:-1]:
-            nxt = node.get(p)
-            if not isinstance(nxt, dict):
-                nxt = {}
-                node[p] = nxt
-            node = nxt
-        node.setdefault("", []).append(parts[-1])
-
-    def render(node):
-        leaves = sorted(node.get("", []) or [])
-        kids = sorted(k for k in node if k)
-        return "{%s}" % ",".join(leaves + ["%s%s" % (k, render(node[k])) for k in kids])
-
-    return render(tree)
-
-
 def tool_context():
-    """Render the tool DISCOVERY contract + a compact name index for the prompt.
+    """Render the tool DISCOVERY contract + a NAMESPACE map for the prompt.
 
-    JAG-513: the prompt used to carry the whole registry (every subtool with its
-    argument list, its approval policy and a truncated description). That is a
-    large, always-stale block: the model read the SYNOPSIS and still guessed the
-    arguments, and a truncated description ("fs.read — Read a text file from the
-    harness filesystem") hid the line-range contract that matters. The registry is
-    now DISCOVERABLE at call time — the same shape skills use — so the prompt only
-    carries what the prompt alone can answer:
+    JAG-513 removed the registry dump from the prompt; JAG-513b (2026-11-01) removes
+    the member list too. The prompt used to name every enabled tool (`fs{a,b,c…}`),
+    which is a static enumeration of a registry that changes with the config: it
+    grows until it is unreadable and it teaches the model to pick a name from a
+    list instead of reading that tool's contract. Frontier harnesses keep the
+    prompt to the PROTOCOL and let the model SEARCH (progressive disclosure), so
+    the prompt now answers only:
       * the protocol (args is one JSON object, never positional/`key=value`),
-      * HOW to look a tool up (`self.tools {query:"<words>"}` / `{tool:"<name>"}`),
-      * the ENABLED NAMES, grouped by namespace, so nothing has to be invented.
-
-    Only ENABLED tools are listed: a disabled tool is not callable, and naming it
-    here used to make the model insist on it.
+      * HOW to list / search / read a schema (`self.tools`),
+      * WHICH namespaces exist and how many tools each holds — enough to aim a
+        search, never a catalogue.
     """
-    groups, singles = {}, []
+    counts = {}
     gw_collapsed = 0
     disabled = 0
     for t in registry.catalog():
@@ -540,25 +510,28 @@ def tool_context():
             continue
         nm = t["name"]
         if nm.startswith(_GATEWAY_PREFIX):
-            short = nm[len(_GATEWAY_PREFIX):]
-            if short not in _GATEWAY_KEEP:
+            if nm[len(_GATEWAY_PREFIX):] not in _GATEWAY_KEEP:
                 gw_collapsed += 1
                 continue
-        if "." in nm and "__" not in nm:
-            ns, sub = nm.split(".", 1)
-            groups.setdefault(ns, []).append(sub)
-        else:
-            singles.append(nm)
+            counts[_GATEWAY_PREFIX.rstrip(".")] = counts.get(
+                _GATEWAY_PREFIX.rstrip("."), 0) + 1
+            continue
+        ns = nm.split("__", 1)[0] if "__" in nm else nm.split(".", 1)[0]
+        counts[ns] = counts.get(ns, 0) + 1
     lines = [
         "## Tool discovery — read before you call",
-        "The index below is the ONLY allowlist: a tool that is not here (or not "
-        "enabled) cannot be called. Never invent a name and never guess an argument.",
-        '- `self.tools {query:"<words>"}` → the tools matching those '
-        "words, each with its one-line description.",
-        '- `self.tools {tool:"<name>"}` → that tool\'s FULL input '
-        "schema: every property, its type, its default and which ones are "
-        "REQUIRED. Read it BEFORE the first call of a tool you have not used in "
+        "The tools are NOT listed here on purpose: the registry depends on this "
+        "config and would go stale in a prompt. SEARCH it instead of guessing:",
+        '- `self.tools {query:"<words>"}` → every tool whose NAME or one-line '
+        "DESCRIPTION matches those words, best match first. Use your task's own "
+        "words (\"read a file\", \"run a command\", \"search the web\").",
+        "- `self.tools {}` → the whole index: every enabled tool, one line each.",
+        '- `self.tools {tool:"<name>"}` → that tool\'s FULL input contract: every '
+        "property, its type, its default, which ones are REQUIRED, and a valid "
+        "example call. Read it BEFORE the first call of a tool you have not used in "
         "this session — the schema is authoritative, your memory is not.",
+        "The index is the ONLY allowlist: a tool that is not in it (or is disabled) "
+        "cannot be called. Never invent a name and never guess an argument.",
         "`args` is ALWAYS one JSON object — never positional, never "
         "`key=value`, never a JSON string:",
         "Put tool fields directly inside that object; never nest another "
@@ -593,14 +566,10 @@ def tool_context():
         "`## Input from dependencies` (use `input_from:\"<label>\"` to take just "
         "one dependency's output). Never invent `deps` you do not need: items with "
         "no `deps` start together, which is faster.",
-        "Enabled tools, grouped by namespace — `ns{a,b}` means the two callable "
-        "names `ns.a` and `ns.b`, and a nested group shares its prefix "
-        "(`ns{a{b,c}}` means `ns.a.b` and `ns.a.c`):",
+        "Enabled namespaces and how many tools each holds (`search` them, do not "
+        "guess a member name):",
+        "  " + " ".join("%s(%d)" % (ns, counts[ns]) for ns in sorted(counts)),
     ]
-    for ns in sorted(groups):
-        lines.append("  %s%s" % (ns, _brace_index(groups[ns])))
-    for nm in sorted(singles):
-        lines.append("  " + nm)
     if gw_collapsed:
         lines.append("  (+ %d more `%s*` tools — reach them via "
                      "`%scatalog_search` -> `describe` -> `invoke`)"

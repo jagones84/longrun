@@ -273,8 +273,8 @@ _tctx = api_v02.tool_context()
 check("F1 the prompt teaches the CANONICAL form, never the `action` alias",
       'self.tools {query:"<words>"}' in _tctx and 'self.tools {tool:"<name>"}' in _tctx
       and 'action:"tools"' not in _tctx and "with `self.sj`" in _tctx)
-check("F2 the compact index notation is explained",
-      "`ns{a,b}` means the two callable " in _tctx)
+check("F2 the namespace map notation is explained (counts, no member list)",
+      "how many tools each holds" in _tctx and "`ns{a,b}`" not in _tctx)
 check("F3 a legacy `self` + action reaches the card as the canonical name",
       A._card_tool_name("self", {"action": "sj"}) == "self.sj")
 check("F4 the card DROPS the echo `action` once the name carries it",

@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""v764 — the ANSWER is a value, and a REJECTION is a contract (2026-11-01).
+
+Three defects found by reading the GAIA transcripts of the sandbox arms, all of them
+in the harness rather than in the model:
+
+  T  `strip_think` matched the LITERAL `<think>` only, so the routed model's real
+     markup (`<think signature="reasoning-details://…">`) reached the answer
+     surface and the graded answer became the whole thinking block.
+  R  an invalid action was rejected with no tool name and no schema, so the model
+     guessed `{"action":"web"}`, `{"action":"http"}`, `{"action":"browser"}` in a
+     row instead of reading the registry.
+  N  a failed tool told the model to "say plainly in your answer WHAT failed",
+     which turned a finished answer (`17`) into `17 Note: all network lookups…`.
+
+Deterministic: no live model, no network, no server.
+Run: python3 tests/acceptance/v764_answer_discipline.py
+"""
+import os
+import sys
+import tempfile
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TMP = tempfile.mkdtemp(prefix="sf-v764-")
+os.environ.setdefault("LONGRUN_DATA_DIR", os.path.join(TMP, "data"))
+os.environ.setdefault("LONGRUN_CONFIG_DIR", os.path.join(TMP, "cfg"))
+os.environ.setdefault("LONGRUN_DB", os.path.join(TMP, "events.db"))
+os.environ.setdefault("LONGRUN_SESSIONS_DIR", os.path.join(TMP, "sessions"))
+sys.path.insert(0, os.path.join(REPO, "src"))
+
+from longrun.util.textkit import strip_think                       # noqa: E402
+# `agent` imports `core.server` at module scope, and `core.server` imports names
+# BACK from `agent`: importing the agent first is a circular import. Load the
+# server first, the way every other acceptance test does.
+from longrun.core import server as _server                        # noqa: E402,F401
+from longrun.agent import agent as A                               # noqa: E402
+from longrun.tools import registry                                 # noqa: E402
+
+registry._external_tools = lambda: {}
+
+results = []
+
+
+def check(name, ok, detail=""):
+    results.append(bool(ok))
+    print(("PASS " if ok else "FAIL ") + name + ((" :: " + str(detail)) if detail else ""))
+
+
+# --------------------- T. reasoning markup, whatever the model calls it ----
+clean, think = strip_think('4')
+check("T1 plain text is untouched", clean == "4" and think is None, (clean, think))
+
+_signed = ('<think signature="reasoning-details://[{&quot;type&quot;: '
+           '&quot;reasoning.text&quot;}]">\nThe answer must be just the number.\n</think>'
+           '\n\n3')
+clean, think = strip_think(_signed)
+check("T2 a SIGNED think block is stripped and kept as reasoning",
+      clean.strip() == "3" and "just the number" in (think or ""), (clean, think))
+
+clean, _ = strip_think("a <THINKING>hmm</THINKING> b")
+check("T3 case and the `thinking` spelling are stripped", clean.strip() == "a  b", clean)
+
+clean, think = strip_think("<think>one</think>X<think>two</think>")
+check("T4 every block is stripped, not just the first",
+      clean == "X" and "one" in (think or "") and "two" in (think or ""), (clean, think))
+
+clean, _ = strip_think("<think signature='x'>unclosed body 7")
+check("T5 an unclosed tag is dropped but its body survives (never lose the answer)",
+      "<think" not in clean and "7" in clean, clean)
+
+clean, _ = strip_think('<reasoning>r</reasoning> 42')
+check("T6 the `reasoning` spelling is stripped", clean.strip() == "42", clean)
+
+# ------------------- R. a rejection names the way out (no blind guessing) ----
+note = A._invalid_action_note({"action": "web"})
+check("R1 a bad action names the tools it probably meant",
+      "web.search" in note or "web.fetch" in note, note[:200])
+check("R2 the rejection points at the QUERY and the SCHEMA lookup",
+      'self.tools {query:' in note and 'self.tools {tool:' in note, note[-220:])
+check("R3 it still states the three valid shapes",
+      '"action":"tool"' in note and "todo.write" in note and "plain prose" in note)
+check("R4 it echoes what the model emitted",
+      '"action": "web"' in note or '"action":"web"' in note, note[:120])
+_bare = A._invalid_action_note(None, "I will now do it")
+check("R5 a non-dict rejection never raises and still teaches",
+      "That was not a valid action" in _bare and "self.tools" in _bare, _bare[:120])
+_miss = A._tool_near_misses("fs.raed")
+check("R6 a MISSPELLED tool name resolves to its real neighbours",
+      any(n.startswith("fs.") for n in _miss), _miss)
+
+# ------------------ N. the final answer never carries the diagnostics ----
+_src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
+check("N1 the failed-tool note no longer invites a failure report in the answer",
+      "say plainly in your answer" not in _src)
+check("N2 it says where the disclosure belongs and that the answer stays the answer",
+      "record WHAT failed" in _src and "never a failure report appended" in _src)
+
+# --------------------- the prompt carries no member catalogue --------------
+from longrun.core import api_v02  # noqa: E402
+
+_tctx = api_v02.tool_context()
+check("P1 the prompt maps namespaces with counts and no `ns{a,b}` member list",
+      "fs(" in _tctx and "fs{" not in _tctx, len(_tctx))
+check("P2 the prompt teaches list / search / schema, in that order",
+      "self.tools {}" in _tctx and 'self.tools {query:' in _tctx
+      and 'self.tools {tool:' in _tctx)
+
+print("---")
+okc = sum(results)
+print("\nv764: %d/%d PASS" % (okc, len(results)))
+sys.exit(0 if okc == len(results) else 1)

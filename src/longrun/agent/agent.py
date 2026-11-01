@@ -817,9 +817,66 @@ def _looks_like_action_dict(act):
     return bool(keys & set(_JSON_TOOL_ARG_KEYS))
 
 
-# JAG-74: "act, don't announce". A reply that ANNOUNCES work in the first person
-# (and is short) is a promise of imminent work, not a result. If no tool ran this
-# turn we nudge the model once to actually do it (or conclude).
+def _tool_near_misses(name, limit=6):
+    """Enabled tool names a bad `tool`/`action` value most likely MEANT.
+
+    Measured 2026-11-01 on GAIA: the model emitted `{"action":"web"}`, then
+    `{"action":"http"}`, then `{"action":"browser"}`, and the rejection named no
+    tool at all — so it kept guessing instead of reading the registry. A rejection
+    is only useful if it shortens the search.
+    """
+    want = str(name or "").strip()
+    if not want:
+        return []
+    try:
+        from longrun.tools import registry
+        names = [t["name"] for t in registry.catalog()
+                 if t.get("name") and t.get("enabled", True)]
+    except Exception:  # noqa: BLE001 — a rejection must never fail on the registry
+        return []
+    low = want.lower()
+    hits = [n for n in names
+            if n == want or n.lower() == low
+            or n.split(".")[0] == low or n.split(".")[-1] == low
+            or n.split(".")[0] == n.split(".")[0] and n.startswith(low + ".")]
+    if not hits:
+        import difflib
+        hits = difflib.get_close_matches(want, names, n=limit, cutoff=0.6)
+    return sorted(hits)[:limit]
+
+
+def _invalid_action_note(act, answer=""):
+    """The retry note for a reply that is neither a tool call nor a plain answer.
+
+    It carries everything the model needs to recover WITHOUT a second guess: the
+    offending snippet, the only three valid shapes, the tools it probably meant,
+    and the exact discovery calls that return a description or a full schema.
+    """
+    try:
+        snip = json.dumps(act, ensure_ascii=False)[:220]
+    except Exception:  # noqa: BLE001
+        snip = str(act if act is not None else answer)[:220]
+    lines = [
+        "That was not a valid action. You emitted: " + snip,
+        'Emit either {"action":"tool","tool":"<name>","args":{...}} for a real '
+        "tool, a top-level harness action (todo.write / todo.update / "
+        "todo.replan), or answer the user in plain prose (no JSON).",
+    ]
+    if isinstance(act, dict):
+        raw = act.get("tool") or act.get("tool_name") or act.get("action") or ""
+        if isinstance(raw, str):
+            near = _tool_near_misses(raw)
+            if near:
+                lines.append("Did you mean: %s ?" % ", ".join(near))
+    lines.append(
+        "Do not guess a name or an argument — read the registry: "
+        '`self.tools {query:"<words>"}` lists the tools matching those words with '
+        'their one-line description, `self.tools {tool:"<name>"}` returns the tool\'s '
+        "FULL input schema (every property, its type, which are REQUIRED) plus a "
+        "valid example call. `self.tools {}` dumps the whole index.")
+    return "\n".join(lines)
+
+
 # JAG-384: the announcement is often NOT the first sentence. Observed live: the
 # turn goal "…non cambiare nulla proponi solo" got the reply "No: **non l'ho ancora
 # provata sulla codebase**. …\n\nDa ora procedo **in sola lettura**: analizzo e
@@ -840,7 +897,11 @@ _PROMISE_RE = re.compile(
 
 
 def _looks_like_promise(text):
-    """True when the reply only announces an action (and is not a result)."""
+    """True when the reply only announces an action (and is not a result).
+
+    JAG-74: "act, don't announce" — a reply that only promises work, in a turn
+    where no tool ran, is nudged once to actually do it (or conclude).
+    """
     t = (text or "").strip()
     return bool(t) and len(t) <= 400 and bool(_PROMISE_RE.search(t))
 
@@ -4144,9 +4205,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 note = ("Tool %s FAILED — this is NOT a result, do not report it as "
                         "done. The error above names the exact contract (accepted "
                         "arguments and their types): fix the arguments and call the "
-                        "tool again. If it genuinely cannot work, say plainly in "
-                        "your answer WHAT failed and what you did instead.\n\n%s"
-                        % (tool, obs))
+                        "tool again. Read the contract instead of guessing: "
+                        '`self.tools {tool:"%s"}` returns its input schema and a valid '
+                        "example call. If it genuinely cannot work, record WHAT failed "
+                        "in the task-list evidence (or in your own notes) and answer "
+                        "the user's question DIRECTLY: the final answer is the answer "
+                        "only, never a failure report appended to it.\n\n%s"
+                        % (tool, tool, obs))
             else:
                 note = ("Observation for tool %s:\n%s\n\n"
                         "Continue: call the next tool, or report the result. Keep your "
@@ -4270,15 +4335,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _kg_stop_reason = "no_valid_action"
                 on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
                 break
-            try:
-                _snip = json.dumps(act, ensure_ascii=False)[:220]
-            except Exception:  # noqa: BLE001
-                _snip = str(act)[:220]
-            _inject(
-                "That was not a valid action. You emitted: " + _snip + "\n"
-                'Emit either {"action":"tool","tool":"<name>","args":{...}} for a real '
-                "tool, a top-level harness action (todo.write / todo.update / "
-                "todo.replan), or answer the user in plain prose (no JSON).", "retry")
+            _inject(_invalid_action_note(act, answer), "retry")
             continue
         if _looks_like_dsml(answer):
             # JAG-526: recognised native markup that carries no usable tool name

@@ -111,5 +111,14 @@ for name in ("longrun_turn.sh", "openclaw_turn.sh", "build_image.sh"):
     check("D3 %s parses as shell (no apostrophe escaped the embedded python)" % name,
           syntax.returncode == 0, (syntax.stderr or "").strip()[:200])
 
+# Inspect's `docker:<Dockerfile>` form hard-codes `network_mode: none` in the
+# auto-compose it generates, so an arm that must browse (GAIA) has to be handed a
+# COMPOSE file instead — that is the only supported place to choose the mode.
+_cpath = os.path.join(SBX, "compose.yaml")
+_compose = open(_cpath, encoding="utf-8").read() if os.path.isfile(_cpath) else ""
+check("D4 a network-enabled compose exists for the browsing tasks",
+      "network_mode: bridge" in _compose and "dockerfile: \"Dockerfile\"" in _compose,
+      _cpath)
+
 print("%d/%d checks" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

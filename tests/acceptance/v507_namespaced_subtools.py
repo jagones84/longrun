@@ -119,8 +119,9 @@ else:
 check("E Matrix prompt, MANUAL.md, and api_v02.tool_context() expose <namespace>.<subtool> syntax",
       "<namespace>.<subtool>" in prompt_txt
       and "<namespace>.<subtool>" in manual_txt
-      # JAG-513: the prompt index groups them as `namespace{a,b,c}`.
-      and "Tool discovery" in tctx and "memory{" in tctx and "matrix{" in tctx)
+      # JAG-513b: the prompt maps the NAMESPACES (`memory(9) matrix(4)`), never the
+      # member list — the members are discovered with `self.tools`.
+      and "Tool discovery" in tctx and "memory(" in tctx and "matrix(" in tctx)
 
 # F: sessions can TALK to each other (JAG-532).
 # A running peer gets the message inside its current turn (the operator's steer

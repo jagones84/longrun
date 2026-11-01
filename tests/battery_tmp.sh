@@ -14,7 +14,7 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # ---- fix under test (overwrite this line) --------------------------------
-TESTS="v755_tb_adapter v756_tb_openclaw_arm v757_inspect_arms v354_ui_links_pins"
+TESTS="v764_answer_discipline v757_inspect_arms v510_tool_discovery v198_skills_tools_awareness v507_namespaced_subtools v583_parallel_dispatch v582_batch_dispatch v536_ui_edit_parity v354_ui_links_pins"
 # --------------------------------------------------------------------------
 
 LONGRUN_BATTERY_TESTS="$TESTS" exec bash "$HERE/battery.sh"
