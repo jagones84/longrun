@@ -355,9 +355,13 @@
     border: 2px solid var(--line); border-top-color: var(--ok);
     animation: sfspin .7s linear infinite; }
   @keyframes sfspin { to { transform: rotate(360deg); } }
-  /* JAG-218: a turn that finished while you were on ANOTHER session -> a bell. */
+  /* JAG-218: a turn that finished while you were on ANOTHER session -> a pip.
+     2026-11-01: it was a bell EMOJI, i.e. a colour glyph in a monochrome rail (the same
+     defect the tab bar and the tool rail were rebuilt to remove). A filled dot is the
+     same signal as the spinning ring, in the same 11px box, so the rows still align. */
   .sess.done { border-color: var(--warn); }
-  .sess.done::before { content: "🔔"; font-size: 10px; flex-shrink: 0;
+  .sess.done::before { content: ""; width: 11px; height: 11px; flex-shrink: 0;
+    box-sizing: border-box; border-radius: 50%; background: var(--warn);
     animation: sfpulse 1.2s ease-in-out infinite; }
   @keyframes sfpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
   /* JAG-479: the Sessions rail states the two REAL signals — how many agents are
@@ -376,6 +380,11 @@
   .runs-bar.has-done .rb-done { color: var(--warn); font-weight: 600; }
   .runs-bar .rb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
   .runs-bar.has-run .rb-dot { background: var(--ok); animation: sfpulse 1.2s ease-in-out infinite; }
+  /* 2026-11-01: the "finished" counter carries a PIP, not a bell emoji — the same mark
+     the session row uses, in the same 8px slot as the running dot. Unscoped: the toast
+     and the runs bar share it. */
+  .rb-pip { width: 8px; height: 8px; border-radius: 50%; background: var(--warn);
+    flex-shrink: 0; display: inline-block; vertical-align: -1px; }
   .runs-bar .rb-caret { margin-left: auto; font-size: 9px; flex-shrink: 0; }
   .runs-panel { position: fixed; z-index: 60; max-height: 60vh; overflow-y: auto;
     background: var(--menubg); border: 1px solid var(--line-2); border-radius: 10px;
@@ -393,6 +402,11 @@
   .rp-row:hover { background: var(--hover); }
   .rp-row:focus-visible { outline: 2px solid var(--acc); outline-offset: -1px; }
   .rp-row .rp-ic { width: 11px; flex-shrink: 0; text-align: center; font-size: 10px; }
+  /* 2026-11-01: both row states are MONOCHROME pips (10px): green ring for a live turn,
+     filled amber for one that finished while you were elsewhere. The "done" row used to
+     print a bell emoji inside this same 11px slot. */
+  .rp-row.done .rp-ic::before { content: ""; display: block; width: 9px; height: 9px;
+    margin: 0 auto; border-radius: 50%; background: var(--warn); }
   .rp-row.run .rp-ic::before { content: ""; display: block; width: 10px; height: 10px;
     box-sizing: border-box; border-radius: 50%; border: 2px solid var(--line);
     border-top-color: var(--ok); animation: sfspin .7s linear infinite; }
@@ -407,7 +421,7 @@
   @media (prefers-reduced-motion: reduce) { .sess.running::before, .sess.done::before,
     .runs-bar .rb-dot, .rp-row.run .rp-ic::before { animation: none; } }
   .sess .t { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 500; }
-  .sess .n { margin-left: auto; color: var(--dim); font-size: 10px; letter-spacing: .02em; }
+  .sess .n { margin-left: auto; color: var(--dim); font-size: 11px; letter-spacing: .02em; }
   .sess .ws { font-size: 12px; flex-shrink: 0; opacity: .85; }
   .sess .team { font-size: 12px; line-height: 1; flex-shrink: 0; }
   /* JAG-354: pinned sessions are marked in the rail (and sorted to the top). */
@@ -465,12 +479,15 @@
     padding: 10px 14px; font-size: 12.5px; cursor: pointer;
     box-shadow: 0 8px 24px rgba(0,0,0,.5); }
   .done-toast:hover { border-color: rgba(250,204,21,.9); }
-  /* JAG-169: the session's stable job id (JX) shown in the rail. */
-  .sess .jid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); flex-shrink: 0;
-    background: var(--hover); border: 1px solid var(--accent);
+  /* JAG-169: the session's stable job id (JX) shown in the rail.
+     2026-11-01: an IDENTIFIER, not an accent surface — it used to be --acc2 text on an
+     --accent border (two accents for a hex id) and was re-declared a second time below,
+     dim on a hairline. One definition, dim on a hairline, at the row's smallest size. */
+  .sess .jid { font-size: 10.5px; color: var(--dim); flex-shrink: 0;
+    background: var(--hover); border: 1px solid var(--line);
     border-radius: 6px; padding: 1px 5px; }
   /* JAG-2.8: agent role label in the session rail (e.g. "Senior Project Manager") */
-  .sess .nrl { font-size: 9px; color: var(--dim); white-space: nowrap; overflow: hidden;
+  .sess .nrl { font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; max-width: 120px; flex-shrink: 1; }
 
   /* context meter */
@@ -731,15 +748,29 @@
     padding: 6px 0 6px 12px; margin-top: 6px; max-height: 320px; overflow-y: auto; }
   /* v1.6.3 (JAG-55): copy affordance + inline tool-call mini-cards */
   .msg .who { display: flex; align-items: center; gap: 6px; }
+  /* 2026-11-01: WCAG 2.2 AA wants a 24x24 pointer target. The copy affordance was
+     28x21 because its box came from the 10px label + 1px padding, so a near miss on
+     the glyph did nothing. The box is explicit now; the label still decides the look. */
   .msg .copy { margin-left: auto; background: transparent; border: 1px solid var(--line); color: var(--dim); font-size: 10px;
-    padding: 1px 7px; border-radius: 6px; cursor: pointer; }
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 28px; min-height: 24px; padding: 0 7px; border-radius: 6px; cursor: pointer; }
   .msg .copy:hover { color: var(--txt); border-color: var(--acc); }
   .toolcard { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 2px 0 10px; padding: 6px 10px;
     border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); font-size: 12px; max-width: 640px; }
-  .toolcard-head { display: flex; align-items: center; gap: 8px; }
+  /* 2026-11-01: the head is the card's disclosure control (role=button), so it is a ROW,
+     not a text strip: it measured 401x18 before, i.e. an 18px tap target repeated on
+     every tool call in the transcript. The wrench emoji that opened it is gone — the
+     tool name is the label. */
+  .toolcard-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
   .toolcard .tc-name { font-weight: 600; color: var(--txt); }
   .toolcard .tc-meta { color: var(--dim); font-size: 11px; margin-left: auto; }
   .toolcard.pending { opacity: .7; }
+  /* 2026-11-01: the tool-card verdict is a PIP, not a ✅/⛔ emoji. The card already
+     carries `ok`/`err`, so the class paints the dot — no per-update text write. */
+  .toolcard .tc-ic { width: 8px; height: 8px; border-radius: 50%; background: var(--dim);
+    flex: 0 0 auto; }
+  .toolcard.ok .tc-ic { background: var(--ok); }
+  .toolcard.err .tc-ic { background: var(--err); }
   .toolcard.err { border-color: rgba(255,119,119,.5); }
   /* JAG-166: in-chat task tree + visible harness→LLM injections */
   .tctree { margin: 4px 0; position: relative; }
@@ -780,7 +811,11 @@
      In the chat it sits on the group's summary line as a SIBLING of <summary>
      (an interactive control nested inside <summary> is an a11y anti-pattern). */
   .tc-rw, .task-rw, .fgroup-rw { background: none; border: 1px solid transparent; color: var(--dim);
-    cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 4px; border-radius: 6px; flex: 0 0 auto; }
+    cursor: pointer; font-size: 12px; line-height: 1;
+    /* 2026-11-01: 24x24 (WCAG 2.2 AA). Measured before: fgroup-rw 20x15, tc-rw 20x15 —
+       an absolute-positioned glyph whose hit area was smaller than the glyph itself. */
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; padding: 0; border-radius: 6px; flex: 0 0 auto; }
   .tctree > .tc-rw { position: absolute; top: 3px; right: 6px; z-index: 2; }
   .task-rw { margin-left: 6px; }
   /* JAG-431m: per-free-thread rewind (⏮) — a SIBLING of <summary> (positioned
@@ -1940,7 +1975,11 @@
   aside .rail { gap: 8px; }
   .rail-head { padding-bottom: 2px; }
   .rail-head h2 { font-size: 12.5px; }
-  .srail-tools button { width: 22px; height: 22px; padding: 0; border-radius: 6px;
+  /* 2026-11-01: 24x24 (WCAG 2.2 AA). Measured before: 22x22 — two pixels short, on the
+     one control pair (collapse/expand all) that sits in every rail head. The second
+     copy of this rule further down repeated the same 22px value; it is the same box,
+     so it is declared once, here. */
+  .srail-tools button { width: 24px; height: 24px; padding: 0; border-radius: 6px;
     border: 1px solid transparent; background: transparent; color: var(--dim); font-size: 10px; }
   .srail-tools button:hover { color: var(--txt); border-color: var(--line-2); background: var(--hover); }
   aside .rail-tools { gap: 6px; padding: 2px 0 10px; border-bottom: 1px solid var(--line); }
@@ -1959,9 +1998,9 @@
   .sess { border-radius: var(--r-sm); }
   .sess .t { font-size: 13px; font-weight: 500; color: var(--txt); }
   .sess.active .t { font-weight: 600; }
-  .sess .n { font-size: 10.5px; }
-  .sess .jid { color: var(--dim); background: transparent; border-color: var(--line);
-    font-size: 9.5px; padding: 0 5px; }
+  /* 2026-11-01: the row meta is declared ONCE, in the rail block above (type scale:
+     11px count, 10.5px role and id). This block used to re-declare all three, which is
+     how the row ended up with 9px / 10px / 9.5px for the same line of information. */
   .sess .menu-btn { font-size: 13px; padding: 1px 5px; }
   .sgroup { margin: 6px 0 4px; }
   .sgroup-h { padding: 5px 6px; border-radius: 6px; font-size: 10.5px;
@@ -2093,8 +2132,6 @@
     letter-spacing: .09em; text-transform: uppercase; color: var(--dim);
     display: flex; align-items: center; justify-content: space-between; gap: 6px; }
   .srail-tools { display: inline-flex; gap: 2px; }
-  .srail-tools button { width: 22px; height: 22px; padding: 0; font-size: 10px;
-    line-height: 1; border-radius: 5px; }
   /* the sessions toolbar is a COMPACT strip and carries the single hairline
      (the head has none) — one divider per rail, not two */
   aside .rail-tools { gap: 4px; padding: 4px 12px 8px; border-bottom: 1px solid var(--line); }
@@ -2280,7 +2317,7 @@
                 title="agents in flight · sessions that finished while you were elsewhere">
           <span class="rb-dot" aria-hidden="true"></span>
           <span class="rb-run"><b id="runsBarRun">0</b> run</span>
-          <span class="rb-done" title="finished while you were elsewhere">🔔 <b id="runsBarDone">0</b></span>
+          <span class="rb-done" title="finished while you were elsewhere"><span class="rb-pip" aria-hidden="true"></span> <b id="runsBarDone">0</b></span>
           <span class="rb-caret" aria-hidden="true">▾</span>
         </button>
         <!-- v752: the funnel is the ONE filter+sort control of the rail. It opens
@@ -4132,7 +4169,7 @@ function toolCard(tool, args, ts) {
   const id = "tc" + Math.random().toString(36).slice(2, 8);
   const wrap = document.createElement("div");
   wrap.innerHTML = `<div class="toolcard" data-tool="${esc(name)}">` +
-    `<div class="toolcard-head" role="button" tabindex="0" aria-expanded="false" aria-controls="${id}"><span class="tc-ic">🔧</span>` +
+    `<div class="toolcard-head" role="button" tabindex="0" aria-expanded="false" aria-controls="${id}"><span class="tc-ic" aria-hidden="true"></span>` +
     `<span class="tc-name">${esc(name)}</span>${_tsSpan(ts)}<span class="tc-meta">running…</span><span class="tc-chev">▾</span></div>` +
     `<div class="toolcard-body" id="${id}"><pre class="tc-args"></pre><pre class="tc-out"></pre></div></div>`;
   const d = wrap.firstElementChild;
@@ -4172,7 +4209,7 @@ function updateToolCard(data) {
   const card = cards.reverse().find(c => c.dataset.tool === tool) || toolCard(tool);
   card.classList.remove("pending");
   card.classList.add(data.ok ? "ok" : "err");
-  card.querySelector(".tc-ic").textContent = data.ok ? "✅" : "⛔";
+  // 2026-11-01: no text write — `ok`/`err` above already paints the .tc-ic pip.
   // JAG-465: a `dispatch` card remembers the TEAMMATE's session — one click opens
   // their chat at the delegated message (the other half of the cross-chat link).
   {
@@ -5694,7 +5731,7 @@ async function openSessMenu(row, s, ag) {
       // JAG-462: drop EVERY browser-side per-session cache for the deleted id. Only
       // the todo/scroll maps were pruned; `_sessModel`/`doneSessions` kept the key
       // forever — unbounded growth, and a stale `doneSessions` key leaves a
-      // permanent "🔔 (1)" in the title.
+      // permanent "bell (1)" in the title.
       delete _sessModel[s.id];
       clearDone(s.id);
       if (sessionId === s.id) { sessionId = null; $("log").innerHTML = ""; }
@@ -5900,7 +5937,7 @@ async function loadSessions() {
     else if (!turnSSE[s.id]) delete runningSessions[s.id];
   });
   // JAG-479: a session that no longer EXISTS must not leave a ghost "unread" row —
-  // nor a permanent "(1) 🔔" in the tab title.
+  // nor a permanent "(1) bell" in the tab title.
   if (Object.keys(doneSessions).some(id => !_IDs.has(id))) {
     Object.keys(doneSessions).forEach(id => { if (!_IDs.has(id)) delete doneSessions[id]; });
     _saveUnread();
@@ -9635,7 +9672,7 @@ function showDoneToast(sid) {
     t.setAttribute("role", "status");
     document.body.appendChild(t);
   }
-  t.innerHTML = "🔔 <b>" + esc(name || "session") +
+  t.innerHTML = '<span class="rb-pip" aria-hidden="true"></span> <b>' + esc(name || "session") +
     "</b> finished — click to open";
   t.hidden = false;
   t.onclick = () => { selectSession({ id: sid }); t.hidden = true; };
@@ -9677,7 +9714,7 @@ function _runsRow(s, kind) {
   a.title = (s.title || s.id) + " — open this chat";
   const meta = [_sessModel[s.id], s.age,
                 (s.messages ? s.messages + " msg" : "")].filter(Boolean).join(" · ");
-  a.innerHTML = `<span class="rp-ic" aria-hidden="true">${kind === "run" ? "" : "🔔"}</span>`
+  a.innerHTML = `<span class="rp-ic" aria-hidden="true"></span>`
     + `<span class="rp-t">${esc(s.title || s.id)}</span>`
     + `<span class="rp-m">${esc(meta)}</span>`;
   a.onclick = e => { e.preventDefault(); selectSession({ id: s.id }); closeRunsPanel(); };
@@ -9695,8 +9732,10 @@ function _renderRunsBody(running, unread) {
     }
     items.forEach(s => body.appendChild(_runsRow(s, kind)));
   };
-  section("⚡ running (" + running.length + ")", running, "run", "no agent running");
-  section("🔔 finished — unread (" + unread.length + ")", unread, "done", "nothing unread");
+  // 2026-11-01: text labels only. The two section headers carried ⚡ and a bell emoji,
+  // and the row carried the same bell again — three colour glyphs for two words.
+  section("running (" + running.length + ")", running, "run", "no agent running");
+  section("finished — unread (" + unread.length + ")", unread, "done", "nothing unread");
   if (unread.length) {
     const b = document.createElement("button");
     b.type = "button"; b.className = "rp-mark"; b.textContent = "mark all read";
