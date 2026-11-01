@@ -59,7 +59,9 @@ check("B2 a drawer grip is glued to the drawer's inner edge (centred on the bord
       and 'const edge = (s.side === "left") ? r.right : r.left;' in HTML
       and 's.el.style.left = Math.round(edge - half) + "px";' in HTML, "")
 check("B3 each drawer carries a resizable width + a shown grip",
-      'right: 46px; top: 44px;' in HTML
+      # 2026-11-01: same 44 -> 52 correction as F2 below — the drawer hangs from the
+      # 52px topbar, not from a 44px one that no longer exists.
+      'right: 46px; top: 52px;' in HTML
       and 'width: min(var(--drawer-w-right, 300px), calc(100vw - 46px)) !important' in HTML
       and 'body.show-right #toolsBar:not([hidden]) { display: flex; position: fixed; right: 0;' in HTML
       and 'body.show-right #resize-right { display: block !important; position: fixed;' in HTML
@@ -173,7 +175,10 @@ check("F1 mobile left and right panels fill the usable viewport width",
       and "max-width: calc(100vw / var(--zoom, 1))" in HTML
       and "left: 0; right: 0;" in HTML, "")
 check("F2 fullscreen mobile drawers preserve top and bottom navigation",
-      "top: 44px;" in HTML and "bottom: var(--sf-bottombar, 0px)" in HTML
+      # 2026-11-01: the drawer's top edge is the TOPBAR's height, and the topbar is
+      # 52px (measured: the chat tool rail and #controlView both start at y=52). The
+      # pin still said 44px, so it failed against a bar that had already grown.
+      "top: 52px;" in HTML and "bottom: var(--sf-bottombar, 0px)" in HTML
       and "position: relative; z-index: 18;" in HTML, "")
 check("F3 mobile panel handles close the opposite drawer and sync the tab state",
       "function _toggleMobileDrawer(side)" in HTML

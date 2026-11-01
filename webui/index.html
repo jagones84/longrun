@@ -105,6 +105,18 @@
     padding: 3px 11px; }
   /* JAG-424: on a phone the banner keeps only the sandbox DOT (no word) and drops the
      LONGRUN wordmark, so the header never overflows / forces a horizontal scrollbar. */
+  /* 2026-11-01: ONE box for the topbar actions (32x32, 8px radius, monochrome SVG).
+     They were text glyphs of two different widths, so the cluster never lined up. */
+  #settingsBtn, #palette-open { width: 32px; height: 32px; padding: 0; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  #settingsBtn svg, #palette-open svg { display: block; }
+  @media (max-width: 640px) {
+    /* a phone keeps brand + sections + settings. The session badge here only ever
+       showed its 🗂 emoji (the bar clipped it to 24px) and it DUPLICATES the chat head
+       directly below (name + id + copy + search) — that emoji is what the operator
+       called "an horrible folder icon". */
+    #sessBadge { display: none !important; }
+  }
   @media (max-width: 640px) {
     /* JAG-425 (#4): the sandbox word is VISUALLY hidden on a phone but stays in the
        a11y tree, so the state is never conveyed by colour alone. */
@@ -652,11 +664,15 @@
   #chatSearchBar button { flex: 0 0 auto; min-width: 28px; padding: 3px 7px; }
   mark.chat-search-hit { color: inherit; background: rgba(232,178,58,.35); border-radius: 2px; }
   mark.chat-search-hit.current { outline: 1px solid var(--acc); }
-  /* JAG-116: "jump to bottom" — appears only when the reader scrolled up */
-  #jumpBtn { position: absolute; right: 22px; bottom: 96px; z-index: 6; width: 34px; height: 34px;
+  /* JAG-116: "jump to bottom" — appears only when the reader scrolled up.
+     2026-11-01: `bottom` is measured in updateJump() (just above the transcript's last
+     line, clear of the composer); the value here is only the pre-JS fallback. */
+  #jumpBtn { position: absolute; right: 18px; bottom: 16px; z-index: 6; width: 36px; height: 36px;
     padding: 0; border-radius: 999px; font-size: 16px; line-height: 1; color: var(--txt);
     background: var(--panel2); border: 1px solid var(--line-2);
     box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+  /* a finger target, not a mouse target (Apple/Material both want >= 40px) */
+  @media (max-width: 900px) { #jumpBtn { width: 40px; height: 40px; right: 14px; font-size: 17px; } }
   #jumpBtn[hidden] { display: none; }
   #jumpBtn:hover { background: var(--sel); }
   /* JAG-267/JAG-459: one dot per operator prompt; delegated assignments are excluded. */
@@ -683,12 +699,7 @@
     border-radius: 8px; background: var(--panel2); border: 1px solid var(--line);
     color: var(--txt); transition: color .12s, border-color .12s; }
   #toolsBar button:hover { color: var(--accent); border-color: var(--acc); }
-  /* JAG-527: the 🧠 button CLOSES the chain-of-thought blocks; a diagonal bar
-     over the glyph makes the "collapse / hide" meaning obvious. */
-  #toolsBar button.slashed { position: relative; }
-  #toolsBar button.slashed::after { content: ""; position: absolute; left: 5px; right: 5px;
-    top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; background: currentColor;
-    transform: rotate(-45deg); pointer-events: none; }
+  #toolsBar button svg { display: block; }
   #toolsBar button[hidden] { display: none; }
   .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc); transition: box-shadow .25s; }
   /* JAG-428: flash the session row the topbar's "reveal" button centered. */
@@ -1025,9 +1036,13 @@
          most of the bar and only its exposed sliver responds. */
       position: relative; z-index: 18;
     }
-    #tabbar button { flex: 1; background: transparent; border: 1px solid var(--line); color: var(--dim);
-      padding: 9px 4px; font-size: 11px; font-weight: 400; border-radius: 10px; }
-    #tabbar button.active { color: var(--txt); border-color: var(--accent); background: var(--sel); }
+    #tabbar button { flex: 1 1 0; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 3px; min-height: 48px; padding: 6px 2px;
+      background: transparent; border: 0; color: var(--dim);
+      font-size: 10.5px; font-weight: 500; letter-spacing: .01em; border-radius: 10px; }
+    #tabbar button svg { display: block; flex: 0 0 auto; }
+    #tabbar button.active { color: var(--accent); background: transparent; }
+    #tabbar button:active { background: var(--hover); }
     #tabbar .badge { color: var(--warn); }
     #log { padding: 14px; }
     #composer { padding: 10px 12px; gap: 8px; }
@@ -2042,10 +2057,10 @@
     box-shadow: var(--shadow-1); }
   .edge-handle:hover { background: var(--panel2); border-color: var(--acc); }
   .resizer:hover, .resizer.active { background: var(--acc); }
+  /* 2026-11-01: the bar itself is tuned here; its BUTTONS are declared once, in the
+     phone block above (icon over label). Two truths about the same control is how the
+     tab bar ended up with a bordered pill per tab on one layer and none on another. */
   #tabbar { gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
-  #tabbar button { min-height: 42px; border-radius: var(--r-sm); border-color: transparent;
-    background: transparent; color: var(--dim); font-size: 11.5px; }
-  #tabbar button.active { color: var(--txt); border-color: var(--line-2); background: var(--hover); }
 
   /* --- one authored motion moment -------------------------------------- */
   @keyframes panelIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -2164,15 +2179,18 @@
      category labels at three different weights, and a legend crammed into the
      window head. Same grammar as the inspector now: an 11px spaced label, then a
      bordered card, 18px between categories, and the LIVE/save legend as a chip. */
-  #settingsWin .sw-main { padding: 16px 18px 26px; }
+  /* 2026-11-01 (second pass): the operator read Settings as "full of useless spacing".
+     Measured: a card holding ONE control was 61px tall and each category added 20px of
+     air above it. Same grammar, tighter rhythm — 8/11 padding, 14px between categories. */
+  #settingsWin .sw-main { padding: 14px 16px 20px; }
   #settingsWin .sw-main .sw-cat h2 {
-    margin: 20px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .09em;
+    margin: 14px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .09em;
     color: var(--dim); text-transform: uppercase; }
   #settingsWin .sw-main .sw-cat h2:first-child { margin-top: 0; }
   #settingsWin .sw-main .card {
     background: var(--bg-2); border: 1px solid var(--line);
-    border-radius: 10px; padding: 10px 12px; }
-  #settingsWin .sw-main .card + h2 { margin-top: 20px; }
+    border-radius: 10px; padding: 8px 11px; }
+  #settingsWin .sw-main .card + h2 { margin-top: 14px; }
   #settingsWin .sw-main .remaining { font-size: 10.5px; }
   #settingsWin .sw-nav { padding: 10px; }
   #settingsWin .sw-nav button { padding: 7px 10px; margin-bottom: 2px; font-size: 12px; }
@@ -2220,12 +2238,22 @@
   <!-- JAG-424: the sandbox pill moved OUT of the ☰ menu onto the banner line. -->
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
       id="sbxTxt">…</span></span>
-  <button class="ghost" id="settingsBtn" title="settings" data-call="toggleSettings">⚙</button>
+  <!-- 2026-11-01: both topbar actions are 32px monochrome SVG buttons with the same box.
+       They used to be TEXT ("⚙" and "⌘K"): U+2699 renders as a colour emoji on Android
+       and "⌘K" is a keyboard hint, not a control — the operator read the pair as
+       "not standard, not well placed". The shortcut stays in the tooltip. -->
+  <button class="ghost" id="settingsBtn" title="settings" aria-label="settings" data-call="toggleSettings">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+  </button>
   <button class="ghost diag-badge" id="settingsDiagBadge" data-call="openSettings"
           data-args='["diagnostics"]' aria-label="settings diagnostics" title="configuration diagnostics" hidden></button>
   <!-- JAG-533: the command palette is a DIRECT button — the top-right "☰" app
        menu that used to hold it was a wrapper around a single item. -->
-  <button class="ghost" id="palette-open" title="command palette (Cmd/Ctrl+K)" aria-label="command palette">⌘K</button>
+  <button class="ghost" id="palette-open" title="search &amp; commands (Ctrl/⌘ K)" aria-label="search and commands">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+  </button>
   <!-- v624: long-lived tab / installed PWA vs a redeployed server: the
        /api/build fingerprint moves — show an in-place reload chip instead of
        looking stale (same watcher as the Control deck). -->
@@ -2352,33 +2380,40 @@
               <button class="ghost mi" data-call="newSession" title="start a new session">＋ new session</button>
             </div>
           </div>
-          <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence">🎙</button>
+          <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence" aria-label="voice input"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14.5a3.2 3.2 0 0 0 3.2-3.2V6.2a3.2 3.2 0 0 0-6.4 0v5.1A3.2 3.2 0 0 0 12 14.5Z"/><path d="M6.4 11.2a5.6 5.6 0 0 0 11.2 0"/><path d="M12 16.8V20"/></svg></button>
           <button id="sendBtn" data-call="sendOrStop" title="send (Enter — Shift+Enter for a newline)" aria-label="send">↑</button>
         </div>
       </div>
     </div>
     <div id="tabbar">
-      <button data-tab="chat" class="active" data-call="openTab" data-args='["chat"]'>💬 chat</button>
-      <button data-tab="sessions" data-call="openTab" data-args='["sessions"]'>🗂 sessions</button>
-      <button data-tab="tasks" data-call="openTab" data-args='["tasks"]'>✅ tasks</button>
-      <button data-tab="context" data-call="openTab" data-args='["context"]'>📊 context</button>
-      <button data-tab="feed" data-call="openTab" data-args='["feed"]'>📡 feed</button>
+      <!-- 2026-11-01: monochrome SVG icons, 20px above a 10.5px label — the standard
+           bottom navigation. They were five COLOUR EMOJI (a speech bubble, a folder,
+           a check, a bar chart, an antenna) and the folder reads as "unknown icon"
+           the moment the label is clipped. -->
+      <button data-tab="chat" class="active" data-call="openTab" data-args='["chat"]' aria-label="chat"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5A8.5 8.5 0 0 1 12.5 20H8l-4.5 3v-3.8A8.5 8.5 0 1 1 21 11.5Z"/></svg><span>chat</span></button>
+      <button data-tab="sessions" data-call="openTab" data-args='["sessions"]' aria-label="sessions"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z"/><path d="m3 12.4 9 4.5 9-4.5"/></svg><span>sessions</span></button>
+      <button data-tab="tasks" data-call="openTab" data-args='["tasks"]' aria-label="tasks"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.6 6 1.3 1.3L7.4 4.7"/><path d="m3.6 12 1.3 1.3 2.5-2.6"/><path d="m3.6 18 1.3 1.3 2.5-2.6"/></svg><span>tasks</span></button>
+      <button data-tab="context" data-call="openTab" data-args='["context"]' aria-label="context"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20h17"/><path d="M7 20v-6M12 20V7.5M17 20v-9.5"/></svg><span>context</span></button>
+      <button data-tab="feed" data-call="openTab" data-args='["feed"]' aria-label="feed"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.7 8.7a4.7 4.7 0 0 0 0 6.6M15.3 15.3a4.7 4.7 0 0 0 0-6.6M5.7 5.7a9 9 0 0 0 0 12.6M18.3 18.3a9 9 0 0 0 0-12.6"/></svg><span>feed</span></button>
     </div>
   </div>
   <aside id="toolsBar" data-col="tools" hidden aria-label="chat tools">
+    <!-- 2026-11-01: the rail carries monochrome SVG icons, one 17px mark per 30px box.
+         It shipped with four COLOUR EMOJI (a book, a target, a brain, a tag) and two
+         box-drawing glyphs, so the column read as a sticker sheet, not one instrument. -->
     <button class="ghost" id="kbSessionBtn" data-call="openSessionNotebook"
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
-            aria-label="open this session's knowledge notebook">📖</button>
+            aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>
     <button class="ghost" type="button" id="chatReloadBtn"
             title="refresh this chat and rebuild its transcript in chronological order"
-            aria-label="refresh this chat">↻</button>
+            aria-label="refresh this chat"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.4V9h-4.6"/></svg></button>
     <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession"
             title="reveal this session in the sessions panel — expand its group and center it"
-            aria-label="reveal the current session in the sessions panel">🎯</button>
-    <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups">⊞</button>
-    <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought">⊟</button>
-    <button class="ghost slashed" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks">🧠</button>
-    <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups">🏷</button>
+            aria-label="reveal the current session in the sessions panel"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg></button>
+    <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M12 8.2v7.6M8.2 12h7.6"/></svg></button>
+    <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M8.2 12h7.6"/></svg></button>
+    <button class="ghost" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3 21 21"/><path d="M10.7 6.3A9.8 9.8 0 0 1 21.4 12a14 14 0 0 1-2.3 3"/><path d="M6.4 8A14 14 0 0 0 2.6 12 9.8 9.8 0 0 0 15.1 16.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
+    <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.2A1.2 1.2 0 0 1 4 3h7.8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.4Z"/><circle cx="7.6" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
   </aside>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
   <aside id="rail" data-col="context">
@@ -2961,7 +2996,7 @@
 <div class="backdrop" id="backdrop" data-call="closeAside"></div>
 <div id="settingsWin" hidden>
   <div class="sw-head">
-    <span class="grip">⠿</span><span class="sw-title">⚙ Settings</span>
+    <span class="grip">⠿</span><span class="sw-title">Settings</span>
     <span class="remaining sw-legend" title="live: the config is written the moment you change the control. save: the value is only written when you press the save button of that card."><span class="set-chip live">live</span> applies on change · <span class="set-chip save">save</span> needs the save button</span>
     <span class="sp"></span>
     <button class="ghost" data-call="closeSettings" title="close (Esc)">✕</button>
@@ -3952,6 +3987,16 @@ let _stick = true;
 function _nearBottom() { const l = $("log"); return !l || (l.scrollHeight - l.scrollTop - l.clientHeight) < 48; }
 function updateJump() {
   const b = $("jumpBtn"), l = $("log"); if (!b || !l) return;
+  // 2026-11-01: anchor the control ABOVE the conversation, not at a constant `bottom`.
+  // `bottom:96px` on a phone landed inside the composer and on top of send/stop
+  // (measured 390x844: button y 714..748 inside composer y 655..761, send 287..321) —
+  // exactly what the operator saw. The log's own bottom edge is the only reference that
+  // follows the composer as it grows (attachments, queue, slash menu).
+  const chat = $("chat");
+  if (chat) {
+    const gap = chat.getBoundingClientRect().bottom - l.getBoundingClientRect().bottom;
+    b.style.bottom = Math.round((gap > 0 ? gap : 0) + 14) + "px";
+  }
   b.hidden = !(l.scrollHeight - l.clientHeight > 80 && !_nearBottom());
   _dotRailCur();
 }
@@ -12295,23 +12340,36 @@ function buildSettingsWin() {
   if (document.querySelector("#swNav button")) return;
   $("swNav").innerHTML = SETTINGS_CATS.map(([k, label]) =>
     `<button data-cat="${k}" onclick="settingsCategory('${k}')">${label}</button>`).join("");
-  // JAG-431r4: a corrupted/legacy `sf_settings_pos` must not throw here — that
-  // aborted buildSettingsWin before it unhid the window, so ⚙ could never open.
-  let pos = null;
-  try { pos = JSON.parse(localStorage.getItem("sf_settings_pos") || "null"); } catch (e) { pos = null; }
   const w = settingsWin();
-  if (pos) {
-    w.style.left = pos.x + "px"; w.style.top = pos.y + "px";
-    // v650: a settings window is a PANEL, not a workspace. A size saved by an
-    // older, roomier layout is restored up to the design width (760) and no
-    // further, so a stretched window never turns every field into a 600px bar
-    // (operator: "tutti i menu sono poco compatti, super larghi").
-    if (pos.w) w.style.width = Math.min(pos.w, innerWidth, 760) + "px";
-    if (pos.h) w.style.height = Math.min(pos.h, innerHeight) + "px";
-  } else { w.style.left = Math.max(20, (innerWidth - 760) / 2) + "px"; w.style.top = "70px"; }
-  _clampBox(w);   // JAG-3xx: a desktop-saved position must not land off-screen on a phone
+  _applySettingsGeom(w);
   dragify(w.querySelector(".sw-head"), w, "sf_settings_pos");
   resizify(w.querySelector(".sw-resize"), w, "sf_settings_pos");
+}
+/* 2026-11-01: the window never had a DEFAULT position. `buildSettingsWin()` returns
+   early as soon as the nav exists, so its positioning block only ever ran on the very
+   first build — and the panel opened flush in the top-left corner (measured: inline
+   left/top 0px, offsetParent BODY, saved spot absent). One function owns the geometry:
+   the operator's spot when they dragged it, the centre otherwise, plus the viewport
+   clamp on every open. v650: a size saved by a roomier layout is restored up to the
+   design width (760) and no further, so a field never becomes a 600px bar; the same
+   saved size is re-clamped to the CURRENT viewport on every open, so a window sized on
+   a wide desktop shrinks instead of overflowing a smaller one. */
+function _applySettingsGeom(w) {
+  if (!w) return;
+  let pos = null;
+  try { pos = JSON.parse(localStorage.getItem("sf_settings_pos") || "null"); } catch (e) { pos = null; }
+  if (innerWidth <= 640) return;                       // full screen (CSS media query)
+  if (pos && (Number(pos.x) || Number(pos.y))) {
+    w.style.left = Math.max(0, Number(pos.x) || 0) + "px";
+    w.style.top = Math.max(0, Number(pos.y) || 0) + "px";
+    if (pos.w) w.style.width = Math.min(pos.w, innerWidth, 760) + "px";
+    if (pos.h) w.style.height = Math.min(pos.h, innerHeight) + "px";
+  } else {
+    const r = w.getBoundingClientRect();
+    w.style.left = Math.max(16, Math.round((innerWidth - r.width) / 2)) + "px";
+    w.style.top = Math.max(56, Math.round((innerHeight - r.height) / 2) - 24) + "px";
+  }
+  _clampBox(w);
 }
 function openSettings(cat) {
   buildSettingsWin(); settingsWin().hidden = false;
@@ -12321,7 +12379,7 @@ function openSettings(cat) {
     loadSettingsForms._loaded = true;
     loadSettingsForms();
   }
-  _clampBox(settingsWin());   // JAG-3xx: re-clamp on every open (viewport may have changed)
+  _applySettingsGeom(settingsWin());   // JAG-3xx: re-place on every open (the viewport may have changed)
   const saved = cat || localStorage.getItem("sf_settings_cat") || "models";
   const known = SETTINGS_CATS.some(([k]) => k === saved);
   settingsCategory(known ? saved : "models");
@@ -14586,22 +14644,26 @@ function paletteItems() {
     { label: "\uFF0B New session", run: () => newSession() },
     { label: 'Clear session', run: () => clearSession() },
     { label: "\u21BB Compact context", run: () => compactNow() },
-    { label: "\u2699 Open settings", run: () => openSettings() },
+    // 2026-11-01: no ⚙ on the palette rows — U+2699 renders as a colour emoji on
+    // Android, the same defect the topbar button was rebuilt to remove.
+    { label: "Open settings", run: () => openSettings() },
   ];
-  SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "\u2699 Settings \u25B8 " + label, run: () => openSettings(k) }));
+  SETTINGS_CATS.forEach(([k, label]) => items.push({ label: "Settings \u25B8 " + label, run: () => openSettings(k) }));
   [["approvals", "Approvals"], ["context", "Context"], ["plan", "Plan"], ["rules", "Role"], ["files", "Workspace"], ["codebase", "Codebase"], ["terminal", "Terminal"], ["feed", "Feed"]]
     .forEach(([k, label]) => items.push({ label: "\u25B8 Inspector \u00A7 " + label, run: () => focusInsp(k) }));
   return items;
 }
 /* JAG-157: live items — sessions (switch to it). Loaded when the palette opens
    so it always reflects new sessions. JAG-160: the per-MCP-server entries were
-   removed; the generic "Settings ▸ MCP" item is the single MCP entry point. */
+   removed; the generic "Settings ▸ MCP" item is the single MCP entry point.
+   2026-11-01: no glyph on the session rows — the palette is a TEXT list, and a lone
+   folder emoji on some rows (and none on the others) was the "horrible icon". */
 async function loadPaletteDynamic() {
   const dyn = [];
   try {
     const d = await api("GET", "/api/sessions");
     (d.sessions || []).slice(0, 40).forEach(s => dyn.push({
-      label: "\uD83D\uDDC2 session \u25B8 " + (s.title || s.id),
+      label: "session \u25B8 " + (s.title || s.id),
       run: () => selectSession(s),
     }));
   } catch (e) { /* best effort */ }
@@ -15013,7 +15075,10 @@ function updateSessBadge() {
   if (!b) return;
   const on = !_panelShown('[data-col="sessions"]') && !!_activeTitle;
   b.hidden = !on;
-  if (on) b.textContent = "\uD83D\uDDC2 " + _activeTitle;
+  // 2026-11-01: no glyph. The badge used to be "🗂 <title>" and, clipped to a sliver
+  // in a narrow bar, it rendered as a lone folder emoji — the "horrible icon" the
+  // operator saw. The title alone ellipsizes honestly.
+  if (on) b.textContent = _activeTitle;
 }
 /* JAG-480: the chat's own header shows the ACTIVE session's exact name and id. The
    name is what the rail's search box matches, so keeping it visible (and copyable)
@@ -15125,6 +15190,7 @@ function positionHandles() {
    toggle, a load, a CSS transition) — one call can land before layout settles. */
 function _settleHandles() {
   _fitPanels();   // JAG-361: the panels must fit before the handles are glued
+  updateJump();   // 2026-11-01: the jump control is measured from the log's bottom edge
   let n = 0;
   const tick = () => { positionHandles(); if (++n < 24) requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
