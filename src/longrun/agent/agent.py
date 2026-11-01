@@ -51,7 +51,15 @@ SYSTEM_PROMPT = (
     "You are Longrun, the reasoning core of a frontier-style agent harness "
     "running locally on a DGX Spark (GB10, ARM64, unified memory) behind a "
     "llama.cpp router. Be direct, concrete and useful. When asked to plan or "
-    "act, produce compact, actionable output."
+    "act, produce compact, actionable output.\n"
+    # Measured 2026-11-01 (GAIA): the model answered \"…are: X (2005), Y (2009) and
+    # Z (2009).\" to a \"how many\" question. The reasoning was right and the answer
+    # was unusable — a value wrapped in a sentence is not the value. The shape of
+    # the answer belongs to the REQUEST, so the rule is stated once, in the prompt.
+    "When the user asks for a specific fact or quantity, the answer IS the value "
+    "alone (a number, a date, a name, a short phrase) with no sentence wrapped "
+    "around it. Explain only when an explanation was asked for, or when the "
+    "request is open (a plan, an analysis, a document)."
 )
 
 # JAG-159: the PMCP gateway block is injected only when a `pmcp` MCP client is

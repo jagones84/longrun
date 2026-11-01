@@ -127,7 +127,7 @@ def dump_forensic(sid, text):
     re-running it (measured 2026-11-01). The answer is graded; this file is the
     diagnosis: every message, every durable event, the plan, the workspace listing.
     """
-    rec = {"answer": text, "session": sid}
+    rec = {"answer": text, "session": sid, "question": q[:4000]}
     try:
         rec["plan"] = get("/api/sessions/%s/graph" % sid, timeout=20)
     except Exception as exc:  # noqa: BLE001

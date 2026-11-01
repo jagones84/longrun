@@ -24,6 +24,7 @@ from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.model import ModelOutput, user_prompt
 from inspect_ai.util import sandbox
 
+import hashlib
 import os
 
 #: The name the sandbox bridge ANSWERS to. `targets_inspect_model()` only redirects a
@@ -49,7 +50,7 @@ def _answer(state: AgentState, text: str) -> AgentState:
 FORENSIC_DIR = os.environ.get("GAIA_FORENSIC_DIR", "")
 
 
-async def _keep_forensic(state: AgentState, arm: str, path: str) -> None:
+async def _keep_forensic(state: AgentState, arm: str, path: str, question: str = "") -> None:
     """Lift the arm's own transcript out of the container BEFORE it is destroyed.
 
     The sandbox is torn down when the trial ends, so the session store, the plan and
@@ -57,6 +58,11 @@ async def _keep_forensic(state: AgentState, arm: str, path: str) -> None:
     for a re-run (measured 2026-11-01). The driver writes the record inside the
     container; this copies it to the host, one file per sample, so the post-mortem
     can read exactly what happened without a live model. Never fatal.
+
+    The name is the sample id when Inspect provides one, else a hash of the question
+    (`postmortem` computes the same hash from the log, so the record still lands on
+    the right sample — measured 2026-11-01: `state.sample_id` is empty inside an
+    `@agent`, and one file silently overwrote the previous sample's).
     """
     if not FORENSIC_DIR:
         return
@@ -64,10 +70,13 @@ async def _keep_forensic(state: AgentState, arm: str, path: str) -> None:
         text = await sandbox().read_file(path)
     except Exception:  # noqa: BLE001
         return
+    key = str(getattr(state, "sample_id", "") or "")
+    if not key:
+        key = hashlib.sha1((question or "").encode("utf-8")).hexdigest()[:12]
     try:
         os.makedirs(FORENSIC_DIR, exist_ok=True)
-        name = "%s-%s.json" % (arm, getattr(state, "sample_id", "sample"))
-        with open(os.path.join(FORENSIC_DIR, name), "w", encoding="utf-8") as fh:
+        with open(os.path.join(FORENSIC_DIR, "%s-%s.json" % (arm, key)),
+                  "w", encoding="utf-8") as fh:
             fh.write(text)
     except OSError:
         pass
@@ -97,7 +106,7 @@ def longrun_arm(timeout: int = ARM_TIMEOUT, max_steps: int = ARM_MAX_STEPS,
             # Keep enough of stderr to carry the harness's own diagnosis
             # (base url, provider yaml, server log tail) into the Inspect log.
             text = "(longrun arm failed: %s)" % (res.stderr or "")[-6000:]
-        await _keep_forensic(state, "longrun", "/tmp/lr/forensic.json")
+        await _keep_forensic(state, "longrun", "/tmp/lr/forensic.json", prompt.text)
         return _answer(state, text)
 
     return execute
@@ -121,7 +130,7 @@ def openclaw_arm(timeout: int = ARM_TIMEOUT, model: str = BRIDGE_MODEL) -> Agent
         text = (res.stdout or "").strip()
         if not res.success and not text:
             text = "(openclaw arm failed: %s)" % (res.stderr or "")[-6000:]
-        await _keep_forensic(state, "openclaw", "/tmp/oc/forensic.json")
+        await _keep_forensic(state, "openclaw", "/tmp/oc/forensic.json", prompt.text)
         return _answer(state, text)
 
     return execute

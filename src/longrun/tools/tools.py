@@ -909,12 +909,51 @@ def _search_duckduckgo(query, n):
     return res or None
 
 
+def _parse_bing_rss(xml, n):
+    """Results out of Bing's RSS form (`<item><title/><link/><description/>`).
+
+    Split out of the provider so the parser is testable without the network: the
+    feed is the only input it has.
+    """
+    res = []
+    for item in re.findall(r"<item>(.*?)</item>", xml or "", re.S)[:n]:
+        title = re.search(r"<title>(.*?)</title>", item, re.S)
+        link = re.search(r"<link>(.*?)</link>", item, re.S)
+        desc = re.search(r"<description>(.*?)</description>", item, re.S)
+        url = (link.group(1) if link else "").replace("&amp;", "&").strip()
+        if not url.startswith("http"):
+            continue
+        res.append({"title": _strip_html(title.group(1)) if title else "",
+                    "url": url,
+                    "snippet": _strip_html(desc.group(1))[:300] if desc else ""})
+    return res
+
+
+def _search_bing(query, n):
+    """Bing RSS: the keyless resort that still answers.
+
+    Measured 2026-11-01 from the DGX: BOTH DuckDuckGo endpoints answer every query
+    with a 14 kB bot page (67 `anomaly` markers, zero `result__a` anchors), so the
+    keyless path of `web.search` had been silently returning nothing — and inside the
+    GAIA sandbox, which carries no Tavily/Brave key, that is the ONLY path. Bing's
+    `&format=rss` form returns a 5 kB feed of real links from the same host; its HTML
+    page hands back `ck/a` redirect wrappers that `web.fetch` cannot follow.
+    """
+    u = ("https://www.bing.com/search?q=%s&format=rss&count=%d"
+         % (urllib.parse.quote_plus(query), max(1, n)))
+    req = urllib.request.Request(u, headers={"User-Agent": _WEB_UA})
+    with urllib.request.urlopen(req, timeout=25) as r:
+        xml = r.read(400000).decode("utf-8", "replace")
+    return _parse_bing_rss(xml, n) or None
+
+
 def _web_search(query, n, providers=None):
     """One tool, explicit ordered fall-through chain (v605).
 
-    Tavily/Brave when a key is present, else the keyless DuckDuckGo HTML page.
-    `providers` overrides the configured order (researchcfg.search_providers);
-    unknown names are ignored, a dead provider never kills the search.
+    Tavily/Brave when a key is present, then the keyless engines. `providers`
+    overrides the configured order (researchcfg.search_providers); unknown names are
+    ignored, a dead provider never kills the search, and Bing stays the LAST resort
+    so a keyless install still has one engine that answers (2026-11-01).
     """
     n = max(1, min(int(n or 5), 10))
     if not query.strip():
@@ -927,11 +966,15 @@ def _web_search(query, n, providers=None):
             providers = ["tavily", "brave", "duckduckgo"]
     fns = {"tavily": (_search_tavily, "tavily"),
            "brave": (_search_brave, "brave"),
-           "duckduckgo": (_search_duckduckgo, "duckduckgo")}
+           "duckduckgo": (_search_duckduckgo, "duckduckgo"),
+           "bing": (_search_bing, "bing")}
     order = [str(p).strip().lower() for p in (providers or [])]
     order = [p for p in order if p in fns]
     if not order:
         order = ["tavily", "brave", "duckduckgo"]
+    if "bing" not in order:
+        # Not a configured provider: the last resort, never a preference.
+        order.append("bing")
     last_engine = "no results"
     for name in order:
         fn, engine = fns[name]
@@ -942,10 +985,6 @@ def _web_search(query, n, providers=None):
         if res:
             return res, engine
         last_engine = engine
-    if order == ["duckduckgo"] or "duckduckgo" in order:
-        # DuckDuckGo already ran inside the loop; nothing more to try.
-        return [], last_engine if last_engine != "no results" else "duckduckgo"
-    # Config excluded duckduckgo and keyed providers yielded nothing.
     return [], last_engine
 
 

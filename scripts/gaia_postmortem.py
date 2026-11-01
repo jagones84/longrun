@@ -16,6 +16,7 @@ Signatures are the ones the arms actually produced on 2026-11-01:
   promise     the turn ended on a promise instead of an answer
 Usage: `--json` for the machine-readable form.
 """
+import hashlib
 import json
 import re
 import sys
@@ -102,8 +103,12 @@ def analyse(path):
         assistant = sum(1 for m in (s.messages or []) if m.role == "assistant")
         # the tool names that failed, from the harness's own observation lines
         failed_tools = sorted(set(re.findall(r"\[([\w.]+)\] exit=\d+ ok=False", body)))
+        # The arms name their record by the QUESTION hash when Inspect gives the
+        # agent no sample id (it does not): same hash here, so the two files meet.
+        q = next((t for m in (s.messages or []) if m.role == "user" for t in texts(m)), "")
         rows.append({
             "id": s.id,
+            "qhash": hashlib.sha1(q.encode("utf-8")).hexdigest()[:12],
             "score": score.get("gaia_scorer"),
             "target": (s.target if isinstance(s.target, str) else
                        getattr(s.target, "text", "") or ""),
@@ -120,13 +125,16 @@ def analyse(path):
     }
 
 
-def _find_forensic(folder, sample_id):
+def _find_forensic(folder, row):
     """The arm's own record for this sample, under either arm's prefix."""
     import os
     for arm in ("longrun", "openclaw"):
-        p = os.path.join(folder, "%s-%s.json" % (arm, sample_id))
-        if os.path.exists(p):
-            return forensic(p)
+        for key in (row.get("id"), row.get("qhash")):
+            if not key:
+                continue
+            p = os.path.join(folder, "%s-%s.json" % (arm, key))
+            if os.path.exists(p):
+                return forensic(p)
     return None
 
 
@@ -150,7 +158,7 @@ def main():
             print("     answer: %r" % r["answer"])
             if r["failed_tools"]:
                 print("     failed tools: %s" % ", ".join(r["failed_tools"]))
-            f = _find_forensic(fore, r["id"]) if fore else None
+            f = _find_forensic(fore, r) if fore else None
             if f:
                 # The harness's own account: what it ran, what broke, where it stopped.
                 print("     arm record: turns=%s tools=%s" % (
@@ -169,6 +177,10 @@ def main():
                             if str(n.get("status") or "") not in ("done", "superseded"))))
                 if "--dump" in args:
                     dump_messages(f["messages"])
+                if f["err_log"] and (not f["answer"] or "no answer" in f["answer"]):
+                    # openclaw's own account of a turn that produced nothing.
+                    print("     arm err.log (tail): %s"
+                          % " ".join(f["err_log"].split())[-700:])
         if "--json" in sys.argv:
             print(json.dumps(rep, indent=1))
     return 0

@@ -12,6 +12,10 @@ in the harness rather than in the model:
      row instead of reading the registry.
   N  a failed tool told the model to "say plainly in your answer WHAT failed",
      which turned a finished answer (`17`) into `17 Note: all network lookups…`.
+  E  a factual question could be closed with ZERO tool calls: `5d0080cb` was
+     answered from memory (`2.4`, golden `0.1777`) while the same question, when
+     the model chose to look, was solved by web.search → web.fetch.
+  S  the keyless search engine every sandboxed arm depends on returned nothing.
 
 Deterministic: no live model, no network, no server.
 Run: python3 tests/acceptance/v764_answer_discipline.py
@@ -104,6 +108,13 @@ check("P1 the prompt maps namespaces with counts and no `ns{a,b}` member list",
 check("P2 the prompt teaches list / search / schema, in that order",
       "self.tools {}" in _tctx and 'self.tools {query:' in _tctx
       and 'self.tools {tool:' in _tctx)
+# A value wrapped in a sentence is not the value (2026-11-01: "…are: X (2005),
+# Y (2009) and Z (2009)." to a "how many" question — right reasoning, unusable
+# answer). The rule lives in the system prompt because the shape of the answer
+# belongs to the request.
+check("P3 the system prompt fixes the answer SHAPE for a fact question",
+      "the answer IS the value" in A.SYSTEM_PROMPT
+      and "Explain only when an explanation was asked for" in A.SYSTEM_PROMPT)
 
 # -------- X. the harness acts on the action the model MEANT, not a quotation ----
 # Measured 2026-11-01 on GAIA `5d0080cb`: the model's message quoted the action it had
@@ -169,6 +180,32 @@ check("E5 the gate names BOTH ways out and forbids a guess",
 check("E6 the gate is a MECHANICAL check wired on all three close paths",
       _src.count("_needs_evidence(message)") == 3
       and "_evidence_used = False" in _src, _src.count("_needs_evidence(message)"))
+
+# ---- S. a keyless search must return real, followable URLs ----
+# Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with
+# a 14 kB bot page, and the GAIA sandbox has no Tavily/Brave key — so the only path
+# `web.search` had there returned nothing at all.
+from longrun.tools import tools as T                                    # noqa: E402
+
+_BING_FEED = (
+    '<?xml version="1.0" encoding="utf-8" ?><rss version="2.0"><channel>'
+    '<title>Bing: Ada Lovelace</title>'
+    '<link>http://www.bing.com:80/search?q=Ada+Lovelace</link>'
+    '<item><title>Ada Lovelace - Wikipedia</title>'
+    '<link>https://en.wikipedia.org/wiki/Ada_Lovelace</link>'
+    '<description>Augusta Ada King, Countess of Lovelace, was an English '
+    'mathematician.</description></item>'
+    '<item><title>not a result</title><link>/relative/path</link></item>'
+    '</channel></rss>')
+_hits = T._parse_bing_rss(_BING_FEED, 5)
+check("S1 the RSS parser yields a title + a real url + a snippet",
+      len(_hits) == 1 and _hits[0]["url"] == "https://en.wikipedia.org/wiki/Ada_Lovelace"
+      and "mathematician" in _hits[0]["snippet"], _hits)
+_src_tools = open(os.path.join(REPO, "src", "longrun", "tools", "tools.py"),
+                  encoding="utf-8").read()
+check("S2 bing is the LAST resort of the chain, whatever the config order",
+      'order.append("bing")' in _src_tools
+      and '"bing": (_search_bing, "bing")' in _src_tools)
 
 print("---")
 okc = sum(results)
