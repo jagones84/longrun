@@ -49,7 +49,10 @@ def longrun_arm(timeout: int = 1800, max_steps: int = 40,
                 cmd=["bash", "/opt/longrun/longrun_turn.sh", "/tmp/question.txt"],
                 env={"LR_BASE_URL": "http://localhost:%d/v1" % bridge.port,
                      "LR_MODEL": model,
-                     "LR_MAX_STEPS": str(max_steps)},
+                     "LR_MAX_STEPS": str(max_steps),
+                     # the turn budget, not a smaller default: the driver waits for
+                     # the whole turn, so its client timeout IS the budget
+                     "LR_TURN_TIMEOUT": str(max(60, timeout - 30))},
                 timeout=timeout,
             )
         text = (res.stdout or "").strip()

@@ -66,19 +66,34 @@ check("B4 the committed Dockerfile only derives from the built image (no second 
       "FROM inspect-arms:latest" in dockerfile and "COPY" not in dockerfile)
 
 # ---- C. each driver is a turn, not a chat ------------------------------------
-check("C1 the longrun driver answers on stdout and keeps usage off it",
-      "print(text.strip()" in lr_turn and "file=sys.stderr" in lr_turn)
+check("C1 the longrun driver answers on stdout and keeps diagnostics off it",
+      'print(clean or "(no answer)")' in lr_turn and "file=sys.stderr" in lr_turn)
 check("C2 the longrun driver replaces the provider list with the bridge",
       "providers.yaml" in lr_turn and "api_key_env: LR_API_KEY" in lr_turn)
 check("C3 the longrun driver runs the turn headless",
       '"headless": True' in lr_turn and "max_steps" in lr_turn)
+# Measured 2026-11-01: a hardcoded 300 s client timeout threw away a GAIA turn that was
+# still reasoning, and its answer had ALREADY been persisted by the harness.
+check("C7 the turn timeout is a budget, not a magic number",
+      'LR_TURN_TIMEOUT' in lr_turn and 'LR_TURN_TIMEOUT' in arms)
+check("C8 a failed transport still returns the reply the harness saved",
+      "def persisted_reply(" in lr_turn and '/api/sessions/%s' in lr_turn
+      and "persisted_reply(sid)" in lr_turn)
 check("C4 the openclaw driver prints the final answer, not the envelope",
       'd.get("final")' in oc_turn)
-# openclaw addresses the model as `<provider>/<id>`; a bare id is refused.
-check("C5 openclaw is told the bridge is an openai-compatible provider",
-      '"openai/$MODEL"' in oc_turn and "OPENAI_BASE_URL" in oc_turn)
-check("C6 openclaw runs embedded and isolated (no gateway inside a task container)",
-      "--isolated" in oc_turn and "--auth-env-only" in oc_turn)
+# openclaw addresses a model as `<provider>/<id>` and refuses any id its catalog does
+# not contain ("Unknown model: openai/inspect"). The run therefore carries its own
+# config: a provider speaking openai-completions whose model is named the way the
+# sandbox bridge answers. Schema taken from openclaw's own docs/providers/litellm.md.
+check("C5 openclaw is given an openai-completions provider from its own config",
+      '"api": "openai-completions"' in oc_turn and "OPENAI_BASE_URL" in oc_turn)
+check("C6 the openclaw turn is embedded and self-contained (no gateway, no ambient config)",
+      "agent exec" in oc_turn and '--config "$CFG"' in oc_turn)
+# An `openai-completions` provider APPENDS `/chat/completions` to baseUrl, so the `/v1`
+# must survive: stripping it made openclaw call `<origin>/chat/completions`, the bridge
+# answered 404 and openclaw reported "This model was not found" (measured 2026-11-01).
+check("C9 openclaw keeps the bridge's /v1 in baseUrl (a stripped /v1 is a 404)",
+      'endswith("/v1")' not in oc_turn and 'base[:-3]' not in oc_turn)
 
 # ---- D. the driver is a file, not an inline ssh line ------------------------
 import subprocess  # noqa: E402

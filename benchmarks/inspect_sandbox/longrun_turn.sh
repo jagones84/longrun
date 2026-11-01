@@ -59,45 +59,80 @@ python3 - "$QFILE" <<'PY'
 import json, os, sys, urllib.request
 q = open(sys.argv[1]).read()
 model = os.environ.get("LR_MODEL", "z-ai/glm-5.3-flash")
+# The HTTP call waits for the WHOLE turn, so its timeout must be the turn budget —
+# not a smaller number nobody configured. Measured 2026-11-01: a 300 s client timeout
+# threw away a GAIA turn that was still reasoning (its answer was already persisted).
+TURN_TIMEOUT = int(os.environ.get("LR_TURN_TIMEOUT", "1800"))
 
 def post(path, body):
     r = urllib.request.Request("http://127.0.0.1:8791" + path,
                               data=json.dumps(body).encode(),
                               headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(r, timeout=300) as x:
+    with urllib.request.urlopen(r, timeout=TURN_TIMEOUT) as x:
         return json.loads(x.read().decode())
+
+def get(path, timeout=30):
+    with urllib.request.urlopen("http://127.0.0.1:8791" + path, timeout=timeout) as x:
+        return json.loads(x.read().decode())
+
+def persisted_reply(sid):
+    """The last assistant message the harness already saved for this session.
+
+    A transport failure (timeout, dropped socket) does not unsay an answer: the turn
+    keeps running server-side and persists its reply. Returning that is the difference
+    between "the arm answered" and "the arm reported its own plumbing".
+    """
+    try:
+        sess = get("/api/sessions/%s" % sid)
+    except Exception:  # noqa: BLE001
+        return ""
+    for m in reversed(sess.get("messages") or []):
+        if str(m.get("role") or "") != "assistant":
+            continue
+        c = m.get("content")
+        if isinstance(c, dict):
+            c = c.get("content") or c.get("text") or ""
+        elif isinstance(c, list):
+            c = " ".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in c)
+        if str(c or "").strip():
+            return str(c)
+    return ""
 
 post("/api/tools", {"approvals": {"mode": "full"}, "verifier": {"enabled": False}})
 post("/api/routing", {"roles": {r: {"model": "bridge:" + model}
                                for r in ("chat", "agent", "subagent", "summarizer")}})
 sid = post("/api/sessions", {"title": "gaia"})["id"]
 post("/api/workspace", {"session": sid, "workspace": "/tmp/lr/data"})
+text = ""
 try:
     out = post("/api/chat", {"session": sid, "message": q, "headless": True,
                              "model": "bridge:" + model,
                              "max_steps": int(os.environ.get("LR_MAX_STEPS", "40"))})
+    text = out.get("reply") or out.get("message") or ""
+    if isinstance(text, dict):
+        text = text.get("content") or ""
 except Exception as exc:  # noqa: BLE001 — a failed turn must say WHY, not just 502
     print("chat failed: %r" % (exc,), file=sys.stderr)
-    # The harness's durable record: the exact provider error and the failover chain.
-    try:
-        import sqlite3
-        _db = sqlite3.connect("/tmp/lr/events.db")
-        for _kind, _data in _db.execute(
-                "SELECT kind, data FROM events WHERE kind IN "
-                "('chat.error','model.failover','cost.usage','settings.diagnostic') "
-                "ORDER BY id DESC LIMIT 8"):
-            print("[event]", _kind, (_data or "")[:700], file=sys.stderr)
-    except Exception as _db_exc:  # noqa: BLE001
-        print("[event] unreadable: %r" % (_db_exc,), file=sys.stderr)
-    try:
-        print("\n".join(open("/tmp/lr-turn.log", encoding="utf-8",
-                             errors="replace").read().splitlines()[-25:]), file=sys.stderr)
-    except OSError:
-        pass
-    raise SystemExit(1)
-text = out.get("reply") or out.get("message") or ""
-if isinstance(text, dict):
-    text = text.get("content") or ""
+    text = persisted_reply(sid)
+    print("[turn] persisted reply: %s" % ("yes" if text.strip() else "no"), file=sys.stderr)
+    if not text.strip():
+        # The harness's durable record: the exact provider error and the failover chain.
+        try:
+            import sqlite3
+            _db = sqlite3.connect("/tmp/lr/events.db")
+            for _kind, _data in _db.execute(
+                    "SELECT kind, data FROM events WHERE kind IN "
+                    "('chat.error','model.failover','cost.usage','settings.diagnostic') "
+                    "ORDER BY id DESC LIMIT 8"):
+                print("[event]", _kind, (_data or "")[:700], file=sys.stderr)
+        except Exception as _db_exc:  # noqa: BLE001
+            print("[event] unreadable: %r" % (_db_exc,), file=sys.stderr)
+        try:
+            print("\n".join(open("/tmp/lr-turn.log", encoding="utf-8",
+                                 errors="replace").read().splitlines()[-25:]), file=sys.stderr)
+        except OSError:
+            pass
+
 # The scorer compares the ANSWER: the harness's own think markup must not travel with
 # it (measured 2026-11-01: the reply began with `<think signature="reasoning-details://…">`
 # and GAIA scored it wrong although the answer was inside).
@@ -106,14 +141,9 @@ try:
     text, _think = strip_think(text)
 except Exception as _se:  # noqa: BLE001
     print("[turn] strip_think unavailable: %r" % (_se,), file=sys.stderr)
-print(text.strip() or "(no answer)")
-try:
-    c = json.loads(urllib.request.urlopen(
-        "http://127.0.0.1:8791/api/costs?session=%s" % sid, timeout=10).read())
-    t = c.get("total") or {}
-    print("[usage] in=%s out=%s" % (t.get("tokens_in"), t.get("tokens_out")), file=sys.stderr)
-except Exception:
-    pass
+clean = text.strip()
+print(clean or "(no answer)")
+raise SystemExit(0 if clean else 1)
 PY
 RC=$?
 kill "$SRV" 2>/dev/null

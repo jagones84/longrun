@@ -9,9 +9,7 @@
 set -u
 QFILE="${1:?question file}"
 mkdir -p /tmp/oc/work
-# openclaw needs a HOME it can write its catalog/state into; an exec that arrives
-# without one answers with the misleading "This model was not found" (measured
-# 2026-11-01: the same config and model resolve fine with a normal HOME).
+# openclaw needs a HOME it can write its catalog/state into.
 export HOME="${HOME:-/root}"
 mkdir -p "$HOME" 2>/dev/null || true
 export OPENAI_BASE_URL="${OC_BASE_URL:-http://localhost:13131/v1}"
@@ -26,9 +24,12 @@ MODEL="${OC_MODEL:-z-ai/glm-5.3-flash}"
 CFG=/tmp/oc/config.json
 python3 - "$CFG" <<'PY'
 import json, os, sys
+# The bridge serves `<origin>/v1/chat/completions`, and an `openai-completions`
+# provider APPENDS `/chat/completions` to baseUrl: stripping the `/v1` sent the turn
+# to `http://localhost:<port>/chat/completions` and the bridge answered 404, which
+# openclaw surfaces as the misleading "This model was not found" (measured 2026-11-01
+# from the sandbox err.log: `status=404 rawError=404 Path /chat/completions not found`).
 base = os.environ.get("OC_BASE_URL", "http://localhost:13131/v1").rstrip("/")
-if base.endswith("/v1"):
-    base = base[:-3]
 cfg = {
     "models": {"mode": "replace", "providers": {"litellm": {
         "baseUrl": base,
