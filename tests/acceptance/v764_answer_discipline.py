@@ -150,6 +150,26 @@ check("Z2 every listed description is trimmed to one line",
       all(len(v.get("description") or "") <= diag.TOOL_DESC_CHARS + 1
           for v in (_big.get("tools") or {}).values()))
 
+# ---- E. a fact is never closed on a guess (premature-answer guard) ----
+# Measured 2026-11-01 on GAIA: `5d0080cb` was answered in 2 turns from memory
+# (wrong), while the SAME question, when the model chose to look, was solved by
+# `web.search` → `web.fetch`. The capability existed; the trigger did not.
+check("E1 a factual question needs evidence",
+      A._needs_evidence("What year was the first transistor invented?"))
+check("E2 an imperative does not (the harness can see the work already)",
+      not A._needs_evidence("fix the typo in the README"))
+check("E3 a bare greeting does not",
+      not A._needs_evidence("ciao"))
+check("E4 a 'how many' request does",
+      A._needs_evidence("how many rows does the CSV have"))
+_ev = A._evidence_gate_text()
+check("E5 the gate names BOTH ways out and forbids a guess",
+      "web.search" in _ev and "general knowledge" in _ev
+      and "Never present a guess" in _ev, _ev[:160])
+check("E6 the gate is a MECHANICAL check wired on all three close paths",
+      _src.count("_needs_evidence(message)") == 3
+      and "_evidence_used = False" in _src, _src.count("_needs_evidence(message)"))
+
 print("---")
 okc = sum(results)
 print("\nv764: %d/%d PASS" % (okc, len(results)))

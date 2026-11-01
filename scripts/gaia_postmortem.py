@@ -29,8 +29,52 @@ SIGS = {
     "tool-fail": r"ok=False",
     "stuck": r"YOU ARE STUCK",
     "closure": r"Closure check \(harness",
+    "evidence": r"EVIDENCE GATE",
     "empty-args": r"missing_args|empty_args",
 }
+
+_TOOL_RE = re.compile(r'"action"\s*:\s*"tool"\s*,\s*"tool"\s*:\s*"([\w.\-]+)"')
+
+
+def forensic(path):
+    """Read one arm's own record of a trial (the container is gone; this is it).
+
+    `benchmarks/inspect_arms.py` lifts `/tmp/lr/forensic.json` (longrun: every
+    message, every durable event, the plan, the workspace listing) or
+    `/tmp/oc/forensic.json` (openclaw: the exec envelope and its error log) out of
+    the sandbox before Inspect destroys it. Without this, a lost sample can only be
+    explained by paying for a re-run.
+    """
+    try:
+        rec = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    msgs = rec.get("messages") or []
+    body = "\n".join(str(m.get("content") or "") for m in msgs)
+    kinds = {}
+    for e in rec.get("events") or []:
+        k = e.get("kind") or "?"
+        kinds[k] = kinds.get(k, 0) + 1
+    return {
+        "path": path,
+        "turns": rec.get("turns") or sum(1 for m in msgs if m.get("role") == "assistant"),
+        "tools": _TOOL_RE.findall(body),
+        "signatures": {k: len(re.findall(p, body)) for k, p in SIGS.items()},
+        "events": kinds,
+        "plan": rec.get("plan"),
+        "messages": msgs,
+        "err_log": rec.get("err_log") or "",
+        "answer": rec.get("answer") or rec.get("final") or "",
+    }
+
+
+def dump_messages(msgs, limit=8):
+    """The transcript, message by message: what the harness and the model said."""
+    for i, m in enumerate(msgs):
+        role = m.get("role")
+        text = str(m.get("content") or "")
+        head = " ".join(text.split())[:limit * 60]
+        print("      [%03d %s] %s" % (i, role, head))
 
 
 def texts(msg):
@@ -76,8 +120,23 @@ def analyse(path):
     }
 
 
+def _find_forensic(folder, sample_id):
+    """The arm's own record for this sample, under either arm's prefix."""
+    import os
+    for arm in ("longrun", "openclaw"):
+        p = os.path.join(folder, "%s-%s.json" % (arm, sample_id))
+        if os.path.exists(p):
+            return forensic(p)
+    return None
+
+
 def main():
-    paths = [a for a in sys.argv[1:] if not a.startswith("--")]
+    args = sys.argv[1:]
+    fore = None
+    if "--forensic" in args:
+        i = args.index("--forensic")
+        fore = args[i + 1] if i + 1 < len(args) else None
+    paths = [a for a in args if not a.startswith("--") and a != fore]
     if not paths:
         print(__doc__)
         return 2
@@ -91,6 +150,25 @@ def main():
             print("     answer: %r" % r["answer"])
             if r["failed_tools"]:
                 print("     failed tools: %s" % ", ".join(r["failed_tools"]))
+            f = _find_forensic(fore, r["id"]) if fore else None
+            if f:
+                # The harness's own account: what it ran, what broke, where it stopped.
+                print("     arm record: turns=%s tools=%s" % (
+                    f["turns"], json.dumps(f["tools"][:14])))
+                sig = {k: v for k, v in f["signatures"].items() if v}
+                if sig:
+                    print("     arm signatures: %s" % json.dumps(sig))
+                if f["events"]:
+                    print("     events: %s" % json.dumps(f["events"]))
+                plan = f["plan"] or {}
+                nodes = (plan.get("nodes") if isinstance(plan, dict) else None) or []
+                if nodes:
+                    print("     plan: %d node(s), %d open" % (
+                        len(nodes),
+                        sum(1 for n in nodes
+                            if str(n.get("status") or "") not in ("done", "superseded"))))
+                if "--dump" in args:
+                    dump_messages(f["messages"])
         if "--json" in sys.argv:
             print(json.dumps(rep, indent=1))
     return 0

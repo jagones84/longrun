@@ -45,6 +45,20 @@ preflight() {
   say "== 1. image"
   docker image inspect "$IMAGE" >/dev/null 2>&1 \
     || bash "$REPO/benchmarks/inspect_sandbox/build_image.sh" >/dev/null 2>&1
+  # FRESHNESS: the arm ships this code INTO the task container, so an image built
+  # before the last edit silently benchmarks the old harness (measured 2026-11-01:
+  # a smoke run graded a fix that was not in the image). Rebuild, never assume.
+  _img_epoch=$(docker image inspect "$IMAGE" --format '{{.Created}}' 2>/dev/null \
+               | xargs -r -I{} date -d {} +%s 2>/dev/null || echo 0)
+  _src_epoch=$(find "$REPO/src" "$REPO/config" "$REPO/server.py" \
+                    "$REPO/benchmarks/inspect_sandbox" -printf '%T@\n' 2>/dev/null \
+               | sort -n | tail -1 | cut -d. -f1)
+  say "   image built $(date -d "@${_img_epoch:-0}" '+%Y-%m-%d %H:%M:%S'), source touched $(date -d "@${_src_epoch:-0}" '+%Y-%m-%d %H:%M:%S')"
+  if [ "${_src_epoch:-0}" -gt "${_img_epoch:-0}" ]; then
+    say "   STALE: the image predates the source — rebuilding"
+    bash "$REPO/benchmarks/inspect_sandbox/build_image.sh" >/dev/null 2>&1 \
+      || die "rebuild failed — run build_image.sh by hand to see why"
+  fi
   docker image inspect "$IMAGE" --format '   {{.RepoTags}} {{.Size}}' || die "no $IMAGE"
   say "   drivers in image:"
   docker run --rm --entrypoint bash "$IMAGE" -lc \
@@ -105,8 +119,14 @@ PY
   fi
   log="$REPO/.agent/logs/gaia_${arm}_${n}_${tag}.log"
   [ -e "$log" ] && die "run log already exists: $log (one invocation per question)"
+  # The containers die with the trial, so each arm lifts its own record here (every
+  # message, every event, the plan): a lost sample is then readable without paying
+  # for a re-run. `scripts/gaia_postmortem.py` reads this folder.
+  export GAIA_FORENSIC_DIR="$REPO/.agent/BENCHMARKS/forensic/$tag"
+  mkdir -p "$GAIA_FORENSIC_DIR"
   say "starting $arm: n=$n model=$MODEL timeout=${ARM_TIMEOUT}s sandbox=$(basename "$SBX")"
   nohup env ARM_TIMEOUT="$ARM_TIMEOUT" ARM_MAX_STEPS="$ARM_MAX_STEPS" \
+    GAIA_FORENSIC_DIR="$GAIA_FORENSIC_DIR" \
     .venv/bin/inspect eval inspect_evals/gaia \
     -T subset=2023_level1 \
     -T "instance_ids=$ids" \

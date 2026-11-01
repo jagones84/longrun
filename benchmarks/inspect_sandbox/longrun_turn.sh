@@ -119,6 +119,58 @@ def diag(tag):
     return tag
 
 
+def dump_forensic(sid, text):
+    """Everything needed to reconstruct the turn, in one file the arm can read out.
+
+    The container is DESTROYED when the trial ends, so the session store, the plan
+    and the events DB die with it and a lost sample can only be explained by
+    re-running it (measured 2026-11-01). The answer is graded; this file is the
+    diagnosis: every message, every durable event, the plan, the workspace listing.
+    """
+    rec = {"answer": text, "session": sid}
+    try:
+        rec["plan"] = get("/api/sessions/%s/graph" % sid, timeout=20)
+    except Exception as exc:  # noqa: BLE001
+        rec["plan_error"] = repr(exc)
+    try:
+        sess = get("/api/sessions/%s" % sid, timeout=20)
+        msgs = []
+        for m in (sess.get("messages") or [])[-200:]:
+            c = m.get("content")
+            if not isinstance(c, str):
+                c = json.dumps(c, ensure_ascii=False)
+            msgs.append({"role": m.get("role"), "content": c[:6000]})
+        rec["messages"] = msgs
+        rec["turns"] = sum(1 for m in msgs if m.get("role") == "assistant")
+    except Exception as exc:  # noqa: BLE001
+        rec["messages_error"] = repr(exc)
+    try:
+        import sqlite3
+        _db = sqlite3.connect("/tmp/lr/events.db")
+        rec["events"] = [
+            {"ts": r[0], "kind": r[1], "data": str(r[2] or "")[:2000]}
+            for r in _db.execute("SELECT ts, kind, data FROM events ORDER BY id")]
+    except Exception as exc:  # noqa: BLE001
+        rec["events_error"] = repr(exc)
+    try:
+        out = []
+        for root, _dirs, files in os.walk("/tmp/lr/data"):
+            for f in files:
+                p = os.path.join(root, f)
+                try:
+                    out.append({"path": p, "size": os.path.getsize(p)})
+                except OSError:
+                    pass
+        rec["workspace"] = out[:200]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        with open("/tmp/lr/forensic.json", "w", encoding="utf-8") as fh:
+            json.dump(rec, fh, ensure_ascii=False)
+    except Exception as exc:  # noqa: BLE001
+        print("[turn] forensic dump failed: %r" % (exc,), file=sys.stderr)
+
+
 post("/api/tools", {"approvals": {"mode": "full"}, "verifier": {"enabled": False}})
 post("/api/routing", {"roles": {r: {"model": "bridge:" + model}
                                for r in ("chat", "agent", "subagent", "summarizer")}})
@@ -138,6 +190,8 @@ except Exception as exc:  # noqa: BLE001 — a failed turn must say WHY, not jus
     print("[turn] persisted reply: %s" % ("yes" if text.strip() else "no"), file=sys.stderr)
     if not text.strip():
         diag("transport failed")
+
+dump_forensic(sid, text)
 
 # The scorer compares the ANSWER: the harness's own think markup must not travel with
 # it (measured 2026-11-01: the reply began with `<think signature="reasoning-details://…">`

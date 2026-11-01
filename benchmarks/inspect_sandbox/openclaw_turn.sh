@@ -66,6 +66,28 @@ try:
 except Exception:
     d = {}
 final = (d.get("final") or "").strip()
+
+# Forensic record: the container dies with the trial, so the envelope openclaw
+# returned and its own error log are the only account of what the arm did
+# (measured 2026-11-01: a lost sample could not be explained after the fact).
+import os
+rec = {"final": final, "envelope": d if isinstance(d, dict) else {},
+       "raw_head": raw[:200000]}
+try:
+    rec["err_log"] = open("/tmp/oc/err.log", encoding="utf-8",
+                          errors="replace").read()[-40000:]
+except OSError:
+    pass
+try:
+    rec["work"] = sorted(os.listdir("/tmp/oc/work"))[:200]
+except OSError:
+    pass
+try:
+    with open("/tmp/oc/forensic.json", "w", encoding="utf-8") as fh:
+        json.dump(rec, fh, ensure_ascii=False)
+except Exception:
+    pass
+
 if not final:
     # An empty final is a HARNESS answer of nothing: say why, on stderr, so the
     # Inspect log carries the diagnosis (measured 2026-11-01: the run printed

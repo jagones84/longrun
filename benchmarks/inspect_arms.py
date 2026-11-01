@@ -44,6 +44,35 @@ def _answer(state: AgentState, text: str) -> AgentState:
     return state
 
 
+#: Where the arms leave their own record of the turn. `bench-gaia.sh` points this at
+#: an empty run folder; unset means "do not keep one" (an ad-hoc eval).
+FORENSIC_DIR = os.environ.get("GAIA_FORENSIC_DIR", "")
+
+
+async def _keep_forensic(state: AgentState, arm: str, path: str) -> None:
+    """Lift the arm's own transcript out of the container BEFORE it is destroyed.
+
+    The sandbox is torn down when the trial ends, so the session store, the plan and
+    the events DB vanish with it and a lost sample can only be explained by paying
+    for a re-run (measured 2026-11-01). The driver writes the record inside the
+    container; this copies it to the host, one file per sample, so the post-mortem
+    can read exactly what happened without a live model. Never fatal.
+    """
+    if not FORENSIC_DIR:
+        return
+    try:
+        text = await sandbox().read_file(path)
+    except Exception:  # noqa: BLE001
+        return
+    try:
+        os.makedirs(FORENSIC_DIR, exist_ok=True)
+        name = "%s-%s.json" % (arm, getattr(state, "sample_id", "sample"))
+        with open(os.path.join(FORENSIC_DIR, name), "w", encoding="utf-8") as fh:
+            fh.write(text)
+    except OSError:
+        pass
+
+
 @agent
 def longrun_arm(timeout: int = ARM_TIMEOUT, max_steps: int = ARM_MAX_STEPS,
                 model: str = BRIDGE_MODEL) -> Agent:
@@ -68,6 +97,7 @@ def longrun_arm(timeout: int = ARM_TIMEOUT, max_steps: int = ARM_MAX_STEPS,
             # Keep enough of stderr to carry the harness's own diagnosis
             # (base url, provider yaml, server log tail) into the Inspect log.
             text = "(longrun arm failed: %s)" % (res.stderr or "")[-6000:]
+        await _keep_forensic(state, "longrun", "/tmp/lr/forensic.json")
         return _answer(state, text)
 
     return execute
@@ -91,6 +121,7 @@ def openclaw_arm(timeout: int = ARM_TIMEOUT, model: str = BRIDGE_MODEL) -> Agent
         text = (res.stdout or "").strip()
         if not res.success and not text:
             text = "(openclaw arm failed: %s)" % (res.stderr or "")[-6000:]
+        await _keep_forensic(state, "openclaw", "/tmp/oc/forensic.json")
         return _answer(state, text)
 
     return execute

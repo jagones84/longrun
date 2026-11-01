@@ -2905,6 +2905,47 @@ def _verify_gate_text():
             "the concrete output you saw.")
 
 
+# Evidence gate (premature-answer guard, measured 2026-11-01 on GAIA): a turn can
+# close on a world fact it never looked up — the same question, when the model
+# chose to look, was solved by `web.search` → `web.fetch`. Unlike the closure check
+# this one is MECHANICAL: it fires on "an information request answered with zero
+# tool calls", never on the model's opinion of its own work.
+_INFORMATION_NEED = re.compile(
+    r"\?|\b(?:what|which|who|whom|whose|when|where|why|how (?:many|much|old|long|"
+    r"far|tall|large|big)|name (?:the|all)|list (?:the|all)|find (?:the|out)|"
+    r"look up|according to|search (?:for|the web)|verify|cite)\b", re.I)
+
+
+def _needs_evidence(request):
+    """True when the request asks for a fact a source can settle (never raises).
+
+    Deliberately narrow: an imperative ("fix X", "rename Y") is work the harness
+    can already see, while a question can be answered out of thin air and would
+    then be accepted with nothing behind it.
+    """
+    try:
+        text = str(request or "").strip()
+        if len(text.split()) < 3:
+            return False
+        return bool(_INFORMATION_NEED.search(text))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _evidence_gate_text():
+    """The one round a zero-tool answer to an information request earns."""
+    return ("EVIDENCE GATE — this request asks for a fact and you are closing the "
+            "turn having executed NO tool: nothing in your answer has been checked "
+            "against a source. Do ONE of these now, then answer:\n"
+            "  * verify it — `web.search` then `web.fetch` for a fact about the "
+            "world, `fs.read` / `shell.exec` for a value on disk, a domain tool when "
+            "one of them owns the answer;\n"
+            "  * or, if the answer really is general knowledge a source cannot "
+            "change, say so in ONE line and close again.\n"
+            "Never present a guess as a verified result, and never answer a "
+            "\"how many / which / when\" question with a number you have not seen.")
+
+
 def _normalize_action(act):
     """JAG-264: accept the obvious near-misses weak models keep emitting.
 
@@ -3639,6 +3680,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _finished_cleanly = False
     _selfcheck_left = _SELFCHECK_MAX
     _failed_checked = False   # one failed-call verdict per turn (never a loop)
+    _evidence_used = False    # one evidence-gate round per turn (never a loop)
     while goal_mode or iters < CHAT_TOOL_MAX_ITERS:
         # JAG-517: goal mode bypasses the iteration cap, so enforce its hard
         # wall-clock limit even when the model only emits harness todo actions.
@@ -4262,6 +4304,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
                 continue
+            if (not _evidence_used and not _total_work_steps
+                    and _needs_evidence(message) and not _is_aborted(sess["id"])):
+                # A finished fact with zero tool calls in the whole turn: nothing
+                # in it was checked. One round, then the normal stop applies.
+                _evidence_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_evidence_gate_text(), "closure-check")
+                continue
             _drv = _deliverable_review_text(sess, message, _deliv_since, _deliv_state)
             if _drv:
                 msgs.append({"role": "assistant", "content": answer})
@@ -4306,6 +4356,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _drv:
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_drv, "review")
+                    continue
+                if (not _evidence_used and not _total_work_steps
+                        and _needs_evidence(message) and not _is_aborted(sess["id"])):
+                    # Same rule as the finish path: an "answer" envelope carrying a
+                    # world fact, with zero tool calls behind it, is a guess.
+                    _evidence_used = True
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_evidence_gate_text(), "closure-check")
                     continue
                 final_answer = _txt
                 on_delta("answer", _txt)
@@ -4500,6 +4558,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _drv:
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
+                continue
+            if (not _evidence_used and not _total_work_steps
+                    and _needs_evidence(message) and not _is_aborted(sess["id"])):
+                # A prose answer to a fact request, with zero tool calls behind it.
+                _evidence_used = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_evidence_gate_text(), "closure-check")
                 continue
             if (_last_failed_err and not _last_tool_ok and not _failed_checked
                     and _selfcheck_left > 0 and not _is_aborted(sess["id"])):
