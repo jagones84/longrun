@@ -2106,12 +2106,36 @@
   #inspector section:hover .insp-grip, #inspector .insp-grip:focus-visible { opacity: 1; color: var(--txt); }
   #inspector .insp-grip:active { cursor: grabbing; }
   #inspector section.dragging { opacity: .55; background: var(--hover); }
-  /* 2026-11-01: at ~200px the Plan card used to squeeze its goal field to a few
-     characters and stack its action row one word per line. An input gets its own
-     row, the actions wrap under it, and nothing is clipped. */
-  /* the u-* utility classes are `!important` by design, so these overrides are too */
-  #inspector .card > .u-df { flex-wrap: wrap !important; }
-  #inspector .card > .u-df > .inp { flex: 1 1 100% !important; }
+  /* 2026-11-01: ONE CONTROL ROW. A field and its action share a single 28px row:
+     the field takes the remaining width but never falls under 96px (the floor that
+     still lets a 58px action sit next to it inside a 200px rail), the action keeps
+     its natural box, and the row wraps only when the panel is genuinely too narrow.
+     The previous `flex: 1 1 100%` put every field on its own line and orphaned a
+     24px button underneath (operator: "spazio bottoni mi sembra strano").
+     The u-* utility classes are `!important` by design, so these overrides are too. */
+  #inspector .card > .u-df { flex-wrap: wrap !important; align-items: center; gap: 8px !important; }
+  #inspector .card > .u-df > .inp { flex: 1 1 96px !important; min-width: 0 !important; }
+  #inspector .card > .u-df > .ghost, #inspector .card > .u-df > .lnk { flex: 0 0 auto; }
+  /* the field and its action are ONE control: same height, same radius. Before, the
+     field was 27px and the button 24.5px, so every row read as a mistake. */
+  #inspector input.inp { height: 28px; min-height: 28px; }
+  #inspector button.ghost { height: 28px; min-height: 28px; padding: 0 10px;
+    font-size: 11.5px; line-height: 1; border-radius: 8px; }
+  /* a field inside a card sits on the DEEPER ground (impeccable: the input is
+     lacquer-deep, the card is raised). Both were --bg-2, so the field had no edge. */
+  #inspector .card .inp { background: var(--bg); }
+  /* the created/modified marker of a pending edit: a mono chip, not an emoji.
+     Global (the same marker is drawn by the Inspector list and the chat chip). */
+  .edkind { font-family: var(--mono); font-size: 9px; line-height: 1;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--dim);
+    border: 1px solid var(--line-2); border-radius: 4px; padding: 2px 4px; flex: 0 0 auto; }
+  .edkind.new { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+  /* the context list classified its rows with five different COLOURED emoji, which
+     broke the single-accent rule and never aligned between rows. One quiet mono
+     label in a fixed column does the same job and reads as one list. */
+  #inspector .ctxkind { display: inline-block; min-width: 30px; font-family: var(--mono);
+    font-size: 9px; line-height: 1.5; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--dim); }
   #inspector .acts, #inspector .ctxacts { flex-wrap: wrap; gap: 6px 12px; align-items: center; }
   #inspector .acts > .remaining { flex: 1 1 100%; }
   #inspector #graphHead { white-space: normal; line-height: 1.35; }
@@ -2810,14 +2834,16 @@
           </div>
           <div class="u-df u-g8 u-aic u-mt6 u-fww">
             <label class="remaining u-df u-g6 u-aic"><input type="checkbox" id="wsDefault"> default for new sessions</label>
-            <!-- v636: icon-only (the label was longer than the row); the accessible
-                 name lives in aria-label, the tooltip keeps the explanation. -->
-            <button class="ghost" data-call="openDirPicker" data-args='["wsPath"]'
-                    aria-label="browse folders" title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">📁</button>
+            <!-- 2026-11-01: text links, not emoji. A coloured folder glyph was the
+                 only saturated pixel in an all-graphite rail (the system carries ONE
+                 accent) and emoji render differently on every OS. The accessible
+                 name and the tooltip keep the explanation. -->
+            <button class="lnk" data-call="openDirPicker" data-args='["wsPath"]'
+                    aria-label="browse folders" title="browse the folders of the harness host (Windows, Linux, ARM64 — the server lists them)">browse</button>
             <!-- JAG-514: the old extra card below only repeated this path; its one
                  action (open the editor) now lives here, next to browse. -->
-            <button class="ghost" data-call="SparkEditorToggle"
-                    aria-label="open the editor" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">🗔</button>
+            <button class="lnk" data-call="SparkEditorToggle"
+                    aria-label="open the editor" title="open/close the editor dock — the workspace tree, its keyboard search and the tabs live there">editor</button>
           </div>
         </div>
         <!-- v640: no caps title. The state is the first item of the action row, so the
@@ -2853,7 +2879,7 @@
             <span class="cb-spinner" aria-hidden="true"></span><span id="cbProgressText"></span>
           </div>
           <div class="u-df u-g6 u-mt8 u-fww cb-actions">
-            <button class="ghost" id="cbBuildBtn" data-call="cbBuild" data-args='[false]' title="re-index this workspace's code and docs">⚡ build</button>
+            <button class="ghost" id="cbBuildBtn" data-call="cbBuild" data-args='[false]' title="re-index this workspace's code and docs">build</button>
             <button class="ghost" id="cbDefaultBtn" data-call="cbUseDefaultWorkspace" hidden
                     title="this session's folder has no indexable file — index the default workspace instead">index default workspace</button>
             <button class="lnk" data-call="cbFiles" title="which files are indexed">files</button>
@@ -6788,13 +6814,13 @@ function renderCtxItems() {
     : "";
   const rows = items.length ? items.map(it => {
     const label = esc(it.label || it.path || it.url || "");
-    if (it.pending && it.path) return `<button type="button" class="ctxitem" data-open="${esc(it.path)}" title="pending attachment — send a message to add it to context">📎 <span>${label}</span><span class="cn">pending</span></button>`;
-    if (it.pending) return `<div class="ctxitem" title="pending text — send a message to add it to context">📝 <span>${label}</span><span class="cn">pending</span></div>`;
-    if (it.url) return `<div class="ctxitemwrap"><a class="ctxitem" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer" title="${esc(it.url)}">🌐 <span>${label}</span></a>` +
+    if (it.pending && it.path) return `<button type="button" class="ctxitem" data-open="${esc(it.path)}" title="pending attachment — send a message to add it to context"><span class="ctxkind">att</span> <span>${label}</span><span class="cn">pending</span></button>`;
+    if (it.pending) return `<div class="ctxitem" title="pending text — send a message to add it to context"><span class="ctxkind">text</span> <span>${label}</span><span class="cn">pending</span></div>`;
+    if (it.url) return `<div class="ctxitemwrap"><a class="ctxitem" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer" title="${esc(it.url)}"><span class="ctxkind">web</span> <span>${label}</span></a>` +
       `<button type="button" class="ctxcopy mini" data-url="${_attr(it.url)}" title="copy this URL">⧉</button></div>`;
-    if (it.path) return `<button type="button" class="ctxitem" data-open="${esc(it.path)}" title="open in the editor: ${esc(it.path)}">📄 <span>${label}</span></button>`;
-    if (it.count !== undefined) return `<div class="ctxitem" title="tool output carried in context (not a file, a web page or a skill)">🔧 <span>${label}</span> <span class="cn">×${it.count}</span></div>`;
-    return `<div class="ctxitem" title="skill used in this session">📘 <span>${label}</span></div>`;
+    if (it.path) return `<button type="button" class="ctxitem" data-open="${esc(it.path)}" title="open in the editor: ${esc(it.path)}"><span class="ctxkind">file</span> <span>${label}</span></button>`;
+    if (it.count !== undefined) return `<div class="ctxitem" title="tool output carried in context (not a file, a web page or a skill)"><span class="ctxkind">out</span> <span>${label}</span> <span class="cn">×${it.count}</span></div>`;
+    return `<div class="ctxitem" title="skill used in this session"><span class="ctxkind">skill</span> <span>${label}</span></div>`;
   }).join("") : '<div class="remaining">nothing here</div>';
   if (!nonEmpty.length) {
     box.innerHTML = head + '<div class="remaining" style="margin-top:8px">Nothing is carried in context yet. Files, web pages, skills and tool output appear here as the agent works — empty categories are hidden.</div>';
@@ -11138,7 +11164,9 @@ function renderSkills() {
     row.style.cssText = "padding:6px 8px;margin-bottom:6px;display:flex;gap:8px;align-items:center";
     row.title = "click to open " + (s.path || "SKILL.md") + " in the editor";
     row.onclick = () => openSkillInEditor(s.name);
-    const dot = document.createElement("span"); dot.textContent = s.matrix ? "🧩" : (s.auto ? "🧠" : (s.local ? "🟢" : "🏠"));
+    // 2026-11-01: the coloured provenance dot said what the badge below already
+    // says (four buckets), so it was a second truth AND the only saturated pixel
+    // in the row. The badge carries it.
     const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
     const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = s.name;
     const badge = s.matrix ? '<span class="sk-badge sk-matrix">matrix</span>'
@@ -11151,7 +11179,7 @@ function renderSkills() {
     const ins = document.createElement("button"); ins.className = "ghost"; ins.textContent = "/";
     ins.title = "use in chat";
     ins.onclick = e => { e.stopPropagation(); $("inp").value = "/" + s.name + " "; $("inp").focus(); };
-    row.append(dot, info, ins);
+    row.append(info, ins);
     if (s.local) {
       const del = document.createElement("button"); del.className = "ghost"; del.textContent = "🗑";
       del.onclick = async e => {
@@ -12954,7 +12982,14 @@ function _setCbBuildBusy(busy) {
   if (btn) {
     btn.disabled = _cbBuildBusy;
     btn.setAttribute("aria-busy", _cbBuildBusy ? "true" : "false");
-    btn.textContent = _cbBuildBusy ? "Indexing…" : "⚡ build";
+    // the idle label lives in the markup (ONE truth) — the busy pass only swaps it
+    if (_cbBuildBusy) {
+      if (!btn.dataset.idle) btn.dataset.idle = btn.textContent;
+      btn.textContent = "Indexing…";
+    } else if (btn.dataset.idle) {
+      btn.textContent = btn.dataset.idle;
+      delete btn.dataset.idle;
+    }
   }
 }
 function _applyCodebaseEvent(ev) {
@@ -13054,7 +13089,7 @@ async function cbStatus() {
         const n = Number(fr.newer_files || 0);
         freshHtml = ' \u00b7 <span class="cb-stale">\u26a0 ' +
           esc(fr.reason || (count(n) + (n === 1 ? " file is" : " files are") + " newer than the index")) +
-          " \u00b7 press \u26a1 build to re-index</span>";
+          " \u00b7 press build to re-index</span>";
       } else {
         // A warm watcher is proof enough (it just walked the tree), so no scan happened.
         const how = fr.source === "watcher"
@@ -13073,7 +13108,7 @@ async function cbStatus() {
         (s.dim ? " · " + count(Number(s.dim)) + "d" : "") +
         " · " + esc(_fmtSize((s.size_kb || 0) * 1024)) +
         (s.built_at ? " · built " + _cbAgo(s.built_at) : "") + "</div>" +
-        autoHtml + freshHtml +
+        autoHtml +
         (s.embed_error ? '<span class="cb-error">Embedding incomplete · ' + esc(s.embed_error) + "</span>" : "") +
         (files === 0 ? '<span class="cb-empty">' +
           esc(s.hint || "No indexable files found. Check this workspace and its ignore patterns.") +
@@ -13826,7 +13861,9 @@ function editsChip(files) {
     '<button class="ghost eap" style="font-size:10px" title="keep every changed file as written, clear the pending list">✓ approve all</button>' +
     '<button class="ghost erj" style="font-size:10px" title="restore every changed file to its pre-image">↩ reject all</button></div>' +
     files.filter(Boolean).map(f => '<div class="efile" data-p="' + _attr(f.path) + '" title="' + _attr(f.path) + '">' +
-        '<span class="efopen" title="open ' + _attr(f.path) + ' in the editor"><span>' + (f.action === "created" ? "🆕" : "📝") + "</span>" +
+        '<span class="efopen" title="open ' + _attr(f.path) + ' in the editor">' +
+        '<span class="edkind' + (f.action === "created" ? " new" : "") + '">' +
+        (f.action === "created" ? "new" : "edit") + "</span>" +
         '<span class="en">' + esc(_short(f.path)) + "</span></span>" +
         '<span class="efstat" title="show the diff for this file"><span class="add">+' + f.add + '</span><span class="del">−' + f.del + "</span></span></div>").join("");
   wrap.appendChild(d); $("log").appendChild(wrap); scroll();
@@ -13903,8 +13940,10 @@ function _renderEditsList(cur) {
     const row = document.createElement("div");
     row.className = "ftrow";
     row.style.cssText = "display:flex;gap:6px;align-items:center";
-    row.innerHTML = '<span class="edname" title="open in the editor" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-bottom:1px dotted transparent">' +
-      (f.action === "created" ? "🆕" : "📝") + " " + esc(f.path) + "</span>" +
+    row.innerHTML = '<span class="edkind' + (f.action === "created" ? " new" : "") + '">' +
+      (f.action === "created" ? "new" : "edit") + "</span>" +
+      '<span class="edname" title="open in the editor" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-bottom:1px dotted transparent">' +
+      esc(f.path) + "</span>" +
       // JAG-452: the +/-N badge is its own control (opens the diff); the name opens the file.
       '<span class="edstat" title="show the diff for this file" style="display:flex;gap:6px;cursor:pointer;border-radius:5px;padding:0 4px;border-bottom:1px dotted var(--line)">' +
       '<span class="add">+' + f.add + '</span><span class="del">−' + f.del + "</span></span>" +

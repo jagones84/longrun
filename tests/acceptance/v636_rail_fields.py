@@ -74,9 +74,9 @@ check("B3 the dirty marker and the handler survive",
 check("C1 the placeholder is short and host-agnostic",
       'placeholder="folder path…"' in UI
       and 'placeholder="folder path — use 📁 browse… (any folder the harness host can read)"' not in UI)
-check("C2 browse / editor are icon buttons with an accessible name",
+check("C2 browse / editor are inline links with an accessible name",
       'aria-label="browse folders"' in UI and 'aria-label="open the editor"' in UI
-      and ">📁</button>" in UI and ">🗔</button>" in UI)
+      and ">browse</button>" in UI and ">editor</button>")
 check("C3 the save keeps its config-save wiring",
       'class="ghost config-save" id="wsSave"' in UI)
 
