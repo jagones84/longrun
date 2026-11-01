@@ -188,6 +188,12 @@ const STYLE = `
 #editorDock .ed-preview .md a{color:var(--acc,#cf8a4a)}
 #editorDock .ed-foot{display:flex;gap:6px;padding:5px 8px;border-top:1px solid var(--line,#23272f)}
 #editorDock.ed-overlay{position:fixed;top:52px;right:0;bottom:0;height:auto;width:min(520px,92vw);z-index:40;box-shadow:-16px 0 40px rgba(0,0,0,.42)}
+/* 2026-11-01: layering was inverted — the floating window (z 40) sat ABOVE a full-screen
+   drawer (z 15) and above the panel arrows (z 30), so on a phone the drawer covered the
+   screen and its own close arrow was dead underneath the dock. A sheet outranks a
+   floating window. */
+body.show-left #editorDock.ed-overlay,
+body.show-right #editorDock.ed-overlay{z-index:12}
 /* JAG-453: detachable editor — DOCK (default) ⇄ FLOAT ⇄ FULL. A Windows-style
    title bar: drag it to move (float), re-attach / fullscreen / close on the right
    (close turns red on hover), and a bottom-right grip to resize. */
@@ -1147,10 +1153,15 @@ function toggle(e) {
   // tree (see show()), instead of a restoreTabs() that could leave it hidden.
   if (state.dock.hidden) show(); else close();
 }
-/* JAG-157: open the editor by default — unless the user closed it on purpose. */
+/* JAG-157: open the editor by default — unless the user closed it on purpose.
+   2026-11-01: and never on a NARROW viewport. Below 1024px the dock is a fixed
+   overlay ~92vw wide, so a phone booted with the editor floating over the chat
+   ("non vedo mai la chat") and over the side-panel arrows (z 30 < 40), which made a
+   drawer impossible to close. There it opens only on request. */
 async function ensureOpen() {
   buildDock();
   if (localStorage.getItem(LS_OPEN) === "false") return;
+  if (_vw() < 1024) return;
   if (state.dock.hidden) await restoreTabs();
 }
 /* JAG-157: a session switch changes the workspace AND the tab set — reload both. */
@@ -1162,6 +1173,9 @@ async function onSessionChange() {
   buildDock();
   if (state.tabsEl) renderTabs();
   if (localStorage.getItem(LS_OPEN) === "false") return;
+  // 2026-11-01: a narrow viewport keeps the dock as the operator left it — it must not
+  // pop as a 92vw overlay on every session switch (see ensureOpen).
+  if (_vw() < 1024 && state.dock && state.dock.hidden) return;
   await restoreTabs();
   // JAG-505: restoreTabs' reveal already loads (and expands) the tree; loading it
   // again here would wipe the expansion it just made.

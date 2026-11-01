@@ -69,7 +69,10 @@ check("C3 node single/right click select without travelling",
 # ---------------- D: the flag crosses the bridge ----------------------
 check("D1 onHighlight forwards the scroll intent",
       "this.onHighlight(sid, sc)" in ORBIT
-      and "(sid, scroll) => { try { this.org.selectNode(sid, scroll); }" in ORBIT)
+      # 2026-11-01: the callback is a block now (it also focuses the constellation), so
+      # the pin asserts the wiring and the forwarded flag, not one line of formatting.
+      and "this.agents.onHighlight = (sid, scroll) => {" in ORBIT
+      and "this.org.selectNode(sid, scroll);" in ORBIT)
 
 print("---")
 ok = sum(results)

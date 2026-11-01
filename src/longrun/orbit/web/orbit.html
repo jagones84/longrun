@@ -560,6 +560,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   main.view-cols #viewBar{display:flex}
   #viewBar[hidden]{display:none}
   #viewBar .vname{font-weight:700;font-size:12px}
+  /* 2026-11-01: says where the view lives, and turns red the moment the server copy
+     is not the one being edited (then the browser is the only copy). */
+  #viewBar .vsync{font-size:10px;letter-spacing:.04em;color:var(--dim);white-space:nowrap}
+  #viewBar .vsync.bad{color:var(--err)}
   #viewBar .sp{flex:1}
   #viewList{display:flex;flex-direction:column;gap:2px}
   #viewList:empty{display:none}
@@ -649,6 +653,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     <select class="inp mini" id="viewAddPanel" title="add a panel to this view (max 6 side by side)" style="width:auto;max-width:170px"></select>
     <button class="btn mini" id="viewAddGo">＋ add</button>
     <span class="sp"></span>
+    <span class="vsync" id="viewStore"
+          title="where this view lives: the harness writes it to orbit_views.json in its data dir (~/.longrun/data), so it survives a restart and follows you across entry points (http/https, LAN/Tailscale). This browser keeps a copy only for the first paint.">saved on the server</span>
     <button class="btn ghost mini" id="viewDelete" title="delete this view">delete view</button>
   </div>
   <div class="grid2 ab">
@@ -2053,6 +2059,19 @@ class Constellation {
     }
     if (agent) this.focus = agent; if (mode) this.mode = mode;
     await this.load(); this.setMode(this.mode); }
+  /* 2026-11-01: the selection shared by Agents / Org / this diagram. A designated
+     agent is already in the registry payload; a plain chat session is pinned through
+     the same path the Sessions panel uses (v703), so a row that is not an org agent
+     still focuses instead of silently keeping the previous one. */
+  selectSession(sid){
+    sid = String(sid || ""); if (!sid) return;
+    const a = this.agentBySid(sid);
+    if (a) { this.open(a, "agent"); return; }
+    this.ensureSession(sid).then(() => {
+      const b = this.agentBySid(sid);
+      if (b) this.open(b, "agent");
+    }).catch(() => {});
+  }
   setMode(m){ this.mode = m; $("constAgent").classList.toggle("on", m === "agent");
     $("constAll").classList.toggle("on", m === "all"); this.draw(); }
   agentBySid(sid){ return ((this.data && this.data.agents) || []).find(a => a.session === sid) || null; }
@@ -2675,7 +2694,13 @@ class OrbitApp {
     this.org = new OrgChartView((a) => { this.tac.open(a, "agent"); if (this.agents && a) this.agents.focusAgent(a.session); }, (a) => this.tac.gotoAgent(a));
     // JAG-2.9: picking a row's A-id selects the matching node in the organigram, and
     // the selection is REMEMBERED (org.selSid) so the 5s poll cannot drop it.
-    this.agents.onHighlight = (sid, scroll) => { try { this.org.selectNode(sid, scroll); } catch (_) {} };
+    // 2026-11-01: the SAME selection also focuses the constellation — the operator
+    // picked an agent in Agents/Org and the diagram kept another one ("deve esserci
+    // sincronia"). One selection, three panels: no panel owns it, the app does.
+    this.agents.onHighlight = (sid, scroll) => {
+      try { this.org.selectNode(sid, scroll); } catch (_) {}
+      try { this.tac.selectSession(sid); } catch (_) {}
+    };
     if (window.ResizeObserver) new ResizeObserver(() => { try { if (this.org.auto) this.org.fit(); } catch (_) {} }).observe($("orgtree"));
     this.jobs = new JobsView(this.api, () => this.refresh(), (aid) => this.openAgent(aid));
     this.routines = new RoutinesView(this.api, () => this.refresh());
@@ -2758,6 +2783,8 @@ class OrbitApp {
       // the stacked "All panels" board is gone — an old saved "all" (or
       // anything unknown) lands on the first custom view.
       this.applyView(saved || ("view:" + this.views[0].id));
+      // 2026-11-01: the durable copy lives on the server; adopt it when it differs.
+      this.hydrateViews();
     }
     if ($("lraAutoBtn")) $("lraAutoBtn").onclick = () => {
       // The scope line is decoration: when it cannot be computed the bar must
@@ -2891,10 +2918,14 @@ class OrbitApp {
   }
   /* v622: ref is a single panel key (alone, full height) or "view:<id>"
      (up to 3 panels side by side). The stacked "All" board is gone. */
-  loadViews(){
+  _storedViews(){
     let vs = null;
     try { vs = JSON.parse(localStorage.getItem("orbit_views_v1") || "null"); } catch (e){ vs = null; }
-    if (!Array.isArray(vs) || !vs.length) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org"]}];
+    return (Array.isArray(vs) && vs.length) ? vs : null;
+  }
+  loadViews(){
+    let vs = this._storedViews();
+    if (!vs) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org"]}];
     vs = vs.map(v => ({
       id: String((v && v.id) || ("v-" + Math.floor(Math.random() * 1e9))),
       name: String((v && v.name) || "View").slice(0, 40),
@@ -2903,8 +2934,51 @@ class OrbitApp {
     if (!vs.length) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org"]}];
     return vs;
   }
+  /* 2026-11-01: the views are SERVER state (`/api/orbit/views` → data/orbit_views.json).
+     localStorage stays the instant first paint, because it is per ORIGIN (http :8790,
+     https :8791, LAN vs Tailscale) and made a view built on one entry point look
+     "reset" on another. The server wins as soon as it answers; a browser that has views
+     but no server document yet pushes its copy up once (the migration). */
+  async hydrateViews(){
+    let doc = null;
+    try { doc = await this.api.get("/api/orbit/views"); } catch (e) { return; }
+    if (!doc || !Array.isArray(doc.views) || !doc.views.length) return;
+    const virgin = !doc.revision && doc.views.length === 1 && doc.views[0].id === "v-desk"
+      && (doc.views[0].panels || []).join(",") === "agents,jobs,org";
+    const local = this._storedViews();
+    if (virgin && local) { this.saveViews(); return; }   // first run after this change
+    const views = doc.views.map(v => ({id: String(v.id), name: String(v.name || "View").slice(0, 40),
+      panels: (v.panels || []).filter(p => this.PANELS.includes(p)).slice(0, 6)}))
+      .filter(v => v.panels.length);
+    if (!views.length) return;
+    this.views = views;
+    this.renderViewList();
+    this._markSync(true);
+    const want = String(doc.active || "");
+    const active = this.findView(want.replace("view:", "")) ? want : ("view:" + this.views[0].id);
+    this.applyView(active);
+  }
   saveViews(){
     try { localStorage.setItem("orbit_views_v1", JSON.stringify(this.views)); } catch (e){ /* private mode */ }
+    clearTimeout(this._saveT);
+    this._saveT = setTimeout(() => {
+      try {
+        this.api.post("/api/orbit/views", {views: this.views, active: this.view})
+          .then(r => this._markSync(!!(r && !r.error), r && r.error))
+          .catch(e => this._markSync(false, String(e).slice(0, 90)));
+      } catch (e) { this._markSync(false, String(e).slice(0, 90)); }
+    }, 400);
+  }
+  /* The operator asked "dove sono salvate le config utente grafiche?" — so the answer
+     is on screen and it tells the truth when the write fails (then the browser copy is
+     the ONLY copy and a restart on another entry point loses it). */
+  _markSync(ok, err){
+    this._syncOk = ok;
+    const el = $("viewStore"); if (!el) return;
+    el.classList.toggle("bad", !ok);
+    el.textContent = ok ? "saved on the server" : "not saved · browser only";
+    if (!ok) el.title = "the server refused the write: " + (err || "offline") +
+      " — this browser keeps the only copy";
   }
   findView(id){ return this.views.find(v => v.id === id); }
   activeView(){

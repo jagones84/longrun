@@ -1898,6 +1898,10 @@ class Handler(BaseHTTPRequestHandler):
         _order_response = _sidebar_order.handle("GET", path)
         if _order_response is not None:
             return self._send(*_order_response)
+        from longrun.core import deck_views as _deck_views
+        _views_response = _deck_views.handle("GET", path)
+        if _views_response is not None:
+            return self._send(*_views_response)
         if api_v02.handle(self, "GET", path, qs, None):
             return
         if _orbit_handle(self, "GET", path, qs, None):   # JAG-285: optional beta API
@@ -2252,6 +2256,11 @@ class Handler(BaseHTTPRequestHandler):
         if not check_auth(self.headers, qs):
             return self._send(401, {"error": "unauthorized"})
         path = path
+        # The Control deck's views are durable server state (see core/deck_views.py):
+        # localStorage is a per-origin mirror, not the truth.
+        if path == "/api/orbit/views":
+            from longrun.core import deck_views as _deck_views
+            return self._send(*_deck_views.handle("POST", path, self._body()))
         # Raw audio upload (phone records a wav and POSTs it directly)
         ctype = (self.headers.get("Content-Type") or "")
         if path == "/api/voice/stt" and ctype.startswith("audio/"):

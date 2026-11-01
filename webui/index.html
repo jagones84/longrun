@@ -1125,7 +1125,8 @@
     body.show-left #resize-left { display: block !important; position: fixed; top: 52px; bottom: var(--sf-bottombar, 0px);
       width: 16px; z-index: 16; background: transparent; touch-action: none; }
     body.show-left #resize-left.active { background: var(--accent); }
-    body.show-left #resize-left { display: none !important; }
+    /* 2026-11-01: a duplicate `body.show-left #resize-left { display:none !important }`
+       lived here and cancelled the grip above, so the left drawer never had one. */
     body.show-right [data-col="context"] { left: 0; right: 0;
       width: calc(100vw / var(--zoom, 1)) !important;
       max-width: calc(100vw / var(--zoom, 1)); border: 0; }
@@ -1723,6 +1724,9 @@
     touch-action: manipulation; pointer-events: auto;
     transition: opacity .12s, background .12s, border-color .12s; }
   .edge-handle:hover, .edge-handle:focus-visible { opacity: 1; background: var(--sel); border-color: var(--accent); }
+  /* 2026-11-01: the button is display:flex, so [hidden] needs its own rule — while an
+     overlay drawer is open only the arrow that can close it stays on screen. */
+  .edge-handle[hidden] { display: none !important; }
   * { scrollbar-color: var(--scroll) transparent; }
   ::-webkit-scrollbar-thumb { background: var(--scroll); background-clip: padding-box; }
   #qmode option { background: var(--bg2); color: var(--txt); }
@@ -15098,8 +15102,19 @@ function positionHandles() {
   const lOpen = _panelShown('[data-col="sessions"]');
   const rOpen = _panelShown('[data-col="context"]');
   const vw = document.documentElement.getBoundingClientRect().right;
-  const lx = lOpen ? ls.getBoundingClientRect().right : gap;
-  const rx = rOpen ? rc.getBoundingClientRect().left : vw - gap;
+  // 2026-11-01: an arrow whose CENTRE is the last pixel of the viewport cannot be
+  // tapped. A full-width phone drawer parks its own close arrow exactly there and the
+  // opposite arrow lands 13px away, so the tap went to the other panel (operator:
+  // "se collasso una si espande l'altra ... non vedo mai la chat"). Clamp both and
+  // keep only the arrow that can actually act while an overlay drawer is up.
+  const inset = 22;
+  const clamp = x => Math.min(Math.max(x, inset), vw - inset);
+  const lx = clamp(lOpen ? ls.getBoundingClientRect().right : gap);
+  const rx = clamp(rOpen ? rc.getBoundingClientRect().left : vw - gap);
+  const leftDrawer = lOpen && _overlayLeft();
+  const rightDrawer = rOpen && _overlayRight();
+  L.hidden = rightDrawer && !leftDrawer;
+  R.hidden = leftDrawer && !rightDrawer;
   L.style.left = (lx / s) + "px";
   L.textContent = lOpen ? "◀" : "▶";
   R.style.left = (rx / s) + "px";
