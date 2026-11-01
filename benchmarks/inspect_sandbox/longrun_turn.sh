@@ -234,8 +234,15 @@ if not clean:
     # told the operator nothing) and dump the durable reason on stderr.
     # Measured 2026-11-01: two GAIA samples were graded on this marker while the cause
     # (a reasoning-only model message, an aborted turn) was only in the events DB.
+    # The marker now carries the CAUSE: "empty reply" and "the client gave up while the
+    # turn was still working" are different failures, and reading the first when the
+    # second happened sent a diagnosis after the wrong defect twice (`5d0080cb`).
     diag("empty reply")
-    print("(no answer: the harness returned an empty reply)")
+    _why = "the harness returned an empty reply"
+    if "timed out" in (_err or "").lower():
+        _why = ("the turn exceeded the time budget while it was STILL WORKING "
+                "(transport: %s) — not an empty reply" % (_err or "timeout"))
+    print("(no answer: %s)" % _why)
     raise SystemExit(1)
 print(clean)
 PY
