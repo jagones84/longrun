@@ -3063,6 +3063,18 @@
                 <option value="xhigh">xhigh</option>
               </select>
             </label>
+            <label class="u-df u-g6 u-aic" title="Which provider DIALECT the reasoning parameter is sent in. They are NOT interchangeable: z.ai and qwen take a boolean enable_thinking, OpenRouter an object reasoning:{effort}, OpenAI a flat reasoning_effort.">dialect
+              <select id="reFormat" data-change="saveReasoning" class="inp u-p610 u-fs12" style="width:auto">
+                <option value="auto">auto (from the model)</option>
+                <option value="openai">openai</option>
+                <option value="openrouter">openrouter</option>
+                <option value="deepseek">deepseek</option>
+                <option value="together">together</option>
+                <option value="zai">zai</option>
+                <option value="qwen">qwen</option>
+                <option value="qwen-chat-template">qwen-chat-template</option>
+              </select>
+            </label>
           </div>
           <div class="remaining u-mt6" id="reResult"></div>
         </div>
@@ -11611,11 +11623,13 @@ async function loadReasoning() {
   const x = (d && d.reasoning) || {};
   if ($("reOn")) $("reOn").checked = !!x.enabled;
   if ($("reEffort") && x.effort) $("reEffort").value = x.effort;
+  if ($("reFormat")) $("reFormat").value = x.format || "auto";
 }
 async function saveReasoning() {
   const r = await api("POST", "/api/tools", { reasoning: {
     enabled: !!$("reOn").checked,
     effort: $("reEffort").value,
+    format: $("reFormat") ? $("reFormat").value : "auto",
   }});
   if ($("reResult")) $("reResult").textContent = r && r.error ? ("error: " + r.error)
     : (($("reOn").checked) ? ("on · " + $("reEffort").value) : "off");

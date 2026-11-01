@@ -692,8 +692,95 @@ def _reasoning_effort():
     return None
 
 
+#: The provider DIALECTS for the reasoning parameter, named exactly as openclaw names
+#: them (`MODEL_DATA_THINKING_FORMATS`), so the two harnesses speak one language:
+#:
+#:   openai            `reasoning_effort: "<level>"`
+#:   openrouter        `reasoning: {effort: "<level>"}`
+#:   deepseek          `thinking: {type: "enabled"}` + `reasoning_effort`
+#:   together          `reasoning: {enabled: true}` + `reasoning_effort`
+#:   zai               `enable_thinking: true`   (a SWITCH, not a level)
+#:   qwen              `enable_thinking: true`   (a SWITCH, not a level)
+#:   qwen-chat-template `chat_template_kwargs: {enable_thinking: true}`
+#:
+#: Longrun used to send ONLY the `openai` shape to every provider, which is why the
+#: switch behaved oddly on a z.ai model. Measured 2026-11-01 (45 real calls,
+#: `.agent/docs/research/2026-11-01_reasoning-effort.md`), mean reasoning tokens over six
+#: verifiable questions on `z-ai/glm-5.3-flash`:
+#:
+#:   no field (provider default) 1418 | openai 107 | openrouter 135 | **zai 341**
+#:
+#: and on the hardest question 7746 / 250 / 248 / **1504**. Adding an `effort` NEXT TO
+#: `enable_thinking` throws the gain away (226), so for zai the switch wins alone.
+REASONING_FORMATS = ("auto", "openai", "openrouter", "deepseek", "together",
+                     "zai", "qwen", "qwen-chat-template")
+_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
+
+
+def _reasoning_format(cfg, model_id):
+    """The dialect to use: configured, else resolved from the MODEL id."""
+    fmt = str((cfg or {}).get("format") or "auto").strip().lower()
+    if fmt in REASONING_FORMATS and fmt != "auto":
+        return fmt
+    m = str(model_id or "").lower()
+    if "z-ai/" in m or "/glm" in m or m.startswith("glm") or "zhipu" in m:
+        return "zai"
+    if "deepseek" in m:
+        return "deepseek"
+    if "qwen" in m:
+        return "qwen"
+    return "openai"
+
+
+def _reasoning_fields(model_id, cfg=None):
+    """The reasoning fields to merge into the body for `model_id` (never raises).
+
+    `cfg` is the `reasoning` block; when None it is read from the live config, which is
+    what the request path does. Passing it explicitly is what makes the mapping testable.
+    """
+    try:
+        if cfg is None:
+            # The request path: `_reasoning_effort()` stays the ONE authority on "is it on
+            # and at what level", so a single toggle keeps deciding for every dialect.
+            eff = _reasoning_effort() or ""
+            if not eff:
+                return {}
+            from longrun.tools import registry as _reg
+            r = _reg.load_config().get("reasoning") or {}
+        else:
+            r = cfg or {}
+            if not r.get("enabled"):
+                return {}
+            eff = str(r.get("effort") or "").strip().lower()
+            if eff not in _LEVELS:
+                eff = ""
+        fmt = _reasoning_format(r, model_id)
+        on = eff != "none"
+        if fmt == "openrouter":
+            return {"reasoning": {"effort": eff}} if eff and on else {}
+        if fmt == "zai":
+            return {"enable_thinking": on}
+        if fmt == "qwen":
+            return {"enable_thinking": on}
+        if fmt == "qwen-chat-template":
+            return {"chat_template_kwargs": {"enable_thinking": on}}
+        if fmt == "deepseek":
+            out = {"thinking": {"type": "enabled" if on else "disabled"}}
+            if eff and on:
+                out["reasoning_effort"] = eff
+            return out
+        if fmt == "together":
+            out = {"reasoning": {"enabled": on}}
+            if eff and on:
+                out["reasoning_effort"] = eff
+            return out
+        return {"reasoning_effort": eff} if eff and on else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _is_reasoning_rejection(err):
-    """True when a provider rejected the request BECAUSE OF `reasoning_effort`.
+    """True when a provider rejected the request BECAUSE OF a reasoning field.
 
     JAG-422: a non-thinking model may answer 400/404/422 naming the unsupported
     field. Detect that so `_router_stream` can retry once WITHOUT the field.
@@ -712,8 +799,8 @@ def _is_reasoning_rejection(err):
 
 def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=False):
     """Single place that builds the OpenAI-compatible request body (JAG-111).
-    JAG-403: `no_reasoning=True` omits `reasoning_effort` (retry path for a
-    model that rejects the field)."""
+    JAG-403: `no_reasoning=True` omits the reasoning fields (retry path for a
+    model that rejects them)."""
     # JAG-167: strip harness-only metadata (e.g. the per-message `node` used to
     # rebuild the in-chat tree) so ONLY wire-valid fields reach the provider.
     clean = []
@@ -731,9 +818,7 @@ def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=F
     if max_tokens:
         body["max_tokens"] = int(max_tokens)
     if not no_reasoning:
-        effort = _reasoning_effort()
-        if effort:
-            body["reasoning_effort"] = effort
+        body.update(_reasoning_fields(model_id))
     return body
 
 

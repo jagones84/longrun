@@ -2681,6 +2681,14 @@ def _update_policy(body):
         if "effort" in src:
             eff = str(src["effort"] or "").strip().lower()
             r["effort"] = eff if eff in ("none", "minimal", "low", "medium", "high", "xhigh") else ""
+        # The provider DIALECT of the reasoning parameter. openclaw models this as a
+        # per-model `thinkingFormat`; longrun sends ONE shape for every provider unless
+        # this is set, which is why a z.ai model ignored the effort (measured 2026-11-01:
+        # `enable_thinking` 341 mean reasoning tokens vs `reasoning_effort` 107).
+        if "format" in src:
+            from longrun.model.rllm import REASONING_FORMATS as _RF
+            f = str(src["format"] or "auto").strip().lower()
+            r["format"] = f if f in _RF else "auto"
         registry.save_config(cfg)
         registry.load_config(reload=True)
         _publish("tools.update", reasoning=dict(r))

@@ -38,6 +38,7 @@ from longrun.util.textkit import strip_think                       # noqa: E402
 # server first, the way every other acceptance test does.
 from longrun.core import server as _server                        # noqa: E402,F401
 from longrun.agent import agent as A                               # noqa: E402
+from longrun.model import rllm as R                                # noqa: E402
 from longrun.tools import registry                                 # noqa: E402
 
 registry._external_tools = lambda: {}
@@ -236,6 +237,34 @@ check("E14 a reply with no VISIBLE part after the reasoning strip is not an answ
       A._visible_reply(_THINK_ONLY) == ""
       and A._visible_reply(_THINK_ONLY + "fluffy") == "fluffy"
       and A._visible_reply("17") == "17")
+
+# ---- E15/E16. the reasoning parameter has a DIALECT per provider ----
+# Measured 2026-11-01 (45 real calls, `.agent/docs/research/2026-11-01_reasoning-effort.md`):
+# on `z-ai/glm-5.3-flash` the flat `reasoning_effort` bought 107 mean reasoning tokens
+# where the z.ai `enable_thinking` switch bought 341, and the provider default 1418. A
+# single shape for every provider is the defect; these pin the mapping and the wire shape.
+check("E15 the dialect follows the model, and an explicit format wins",
+      R._reasoning_format({}, "openrouter/z-ai/glm-5.3-flash") == "zai"
+      and R._reasoning_format({}, "openrouter/deepseek/deepseek-r1") == "deepseek"
+      and R._reasoning_format({}, "openrouter/qwen/qwen3.7-max") == "qwen"
+      and R._reasoning_format({}, "openrouter/anthropic/claude-4") == "openai"
+      and R._reasoning_format({}, "glm-4.6") == "zai"
+      and R._reasoning_format({"format": "openrouter"}, "z-ai/glm-5.3") == "openrouter")
+_ON = {"enabled": True, "effort": "medium"}
+check("E16 each dialect sends ITS OWN field and never a foreign one",
+      R._reasoning_fields("z-ai/glm-5.3-flash", _ON) == {"enable_thinking": True}
+      and R._reasoning_fields("openrouter/openai/gpt-5", _ON) ==
+      {"reasoning_effort": "medium"}
+      and R._reasoning_fields("x", {"enabled": True, "effort": "medium",
+                                    "format": "openrouter"}) ==
+      {"reasoning": {"effort": "medium"}}
+      and R._reasoning_fields("x", {"enabled": True, "effort": "medium",
+                                    "format": "qwen-chat-template"}) ==
+      {"chat_template_kwargs": {"enable_thinking": True}}
+      and R._reasoning_fields("openrouter/openai/gpt-5",
+                              {"enabled": True, "effort": "none"}) == {}
+      and R._reasoning_fields("z-ai/glm-5.3-flash",
+                              {"enabled": False, "effort": "high"}) == {})
 
 # ---- S. a keyless search must return real, followable URLs ----
 # Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with
