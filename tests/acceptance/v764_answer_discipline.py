@@ -174,9 +174,10 @@ check("E3 a bare greeting does not",
 check("E4 a 'how many' request does",
       A._needs_evidence("how many rows does the CSV have"))
 _ev = A._evidence_gate_text()
-check("E5 the gate names BOTH ways out and forbids a guess",
-      "web.search" in _ev and "general knowledge" in _ev
-      and "Never present a guess" in _ev, _ev[:160])
+check("E5 the gate names BOTH ways out, forbids a guess, and asks for no narration",
+      "web.search" in _ev and "cannot be checked" in _ev
+      and "never a sentence about where it came from" in _ev
+      and "say so in ONE line" not in _ev, _ev[:160])
 check("E6 the gate is a MECHANICAL check wired on all three close paths",
       _src.count("_needs_evidence(message)") == 3
       and "_evidence_used = False" in _src, _src.count("_needs_evidence(message)"))

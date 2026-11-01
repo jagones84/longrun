@@ -2941,17 +2941,25 @@ def _needs_evidence(request):
 
 
 def _evidence_gate_text():
-    """The one round a zero-tool answer to an information request earns."""
-    return ("EVIDENCE GATE — this request asks for a fact and you are closing the "
-            "turn having executed NO tool: nothing in your answer has been checked "
-            "against a source. Do ONE of these now, then answer:\n"
-            "  * verify it — `web.search` then `web.fetch` for a fact about the "
-            "world, `fs.read` / `shell.exec` for a value on disk, a domain tool when "
-            "one of them owns the answer;\n"
-            "  * or, if the answer really is general knowledge a source cannot "
-            "change, say so in ONE line and close again.\n"
-            "Never present a guess as a verified result, and never answer a "
-            "\"how many / which / when\" question with a number you have not seen.")
+    """The one round a zero-tool answer to an information request earns.
+
+    The wording is load-bearing: the first version told the model to "say so in one
+    line" when the answer was general knowledge, and the model shipped THAT line as
+    its answer — measured 2026-11-01 (`2d83110e`: golden `right`, longrun answered
+    "The answer comes from reversing the question text itself … no external source
+    can change this"; `dc28cf18`: golden `2`, same shape). A provenance sentence is
+    not an answer, so the gate now asks for a DECISION and never for a narration.
+    """
+    return ("EVIDENCE GATE — you are closing this turn having run NO tool, so nothing "
+            "in your answer has been checked against a source. Decide ONCE:\n"
+            "  * it can be checked → check it now with the cheapest tool that settles "
+            "it (`web.search` then `web.fetch` for a fact about the world, `fs.read` / "
+            "`shell.exec` for a value on disk, a domain tool when one of them owns it);\n"
+            "  * it cannot be checked (a definition, a logic identity, arithmetic on the "
+            "data you were given) → answer it.\n"
+            "Either way the reply is the ANSWER ITSELF: the value alone, never a "
+            "sentence about where it came from, never a description of your process. "
+            "Do not guess a number you have not seen.")
 
 
 def _reasoning_only_action(answer, think):
