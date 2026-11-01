@@ -5,15 +5,27 @@
  * tiny offline shell. The harness is LIVE-ONLY — /api (including the SSE
  * streams) is never intercepted or cached, so the app can never show stale
  * data or a frozen stream.
+ *
+ * 2026-11-01 — the cache name is a VERSION, and it must be bumped whenever the
+ * shell changes shape. `install` only runs once per worker body, so an unchanged
+ * name kept the "/" copy captured at install time alive forever: the phone PWA
+ * opened offline (Tailscale not up yet) fell back to that copy and rendered a
+ * MONTHS-OLD shell — new sections missing, controls in the old places — while
+ * /api/diagnostics answered 200 from the same page. A recovery reload fixed it,
+ * which is exactly what a version bump makes unnecessary.
  */
-const CACHE = "longrun-shell-v2";
+const CACHE = "longrun-shell-v3";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {})
+    // `cache: "reload"` — the install must store what the server serves NOW, not
+    // a heuristically fresh HTTP copy from before the deploy.
+    caches.open(CACHE).then((c) => Promise.all(
+      SHELL.map((u) => c.add(new Request(u, { cache: "reload" })))
+    )).catch(() => {})
   );
   self.skipWaiting();
 });

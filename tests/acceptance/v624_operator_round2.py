@@ -89,9 +89,14 @@ check("D2 Sessions repaints on every rename/release event",
 check("E1 both shells watch /api/build with a reload chip",
       'id="buildChip"' in ORBIT and 'id="buildChip"' in INDEX
       and '"/api/build"' in INDEX and "_watchBuild" in ORBIT)
-check("E2 SW cache v2 covers orbit and the shared engine",
-      'longrun-shell-v2' in SW and '"/orbit"' in SW
-      and 'dragsort.js' in SW)
+# 2026-11-01: the cache name is a VERSION, not a constant. It moved v2 -> v3 after
+# the phone PWA rendered a months-old offline shell: `install` runs once per worker
+# body, so an unchanged name keeps the "/" copy captured at install time forever.
+# Pin the SHAPE (a `longrun-shell-vN` name + the shell list), not one literal, so a
+# deliberate bump does not need a test edit but a silent drop still fails.
+check("E2 SW cache is versioned and covers orbit and the shared engine",
+      ('const CACHE = "longrun-shell-v' in SW) and '"/orbit"' in SW
+      and 'dragsort.js' in SW and 'cache: "reload"' in SW)
 
 # ---------------- F: model-switch invalidation ----------------------
 check("F1 model change drops stale vectors for re-embed",
