@@ -727,7 +727,7 @@ _LEVEL_BUDGET = {"minimal": 1024, "low": 4096, "medium": 12000,
 #:     `chat_template_kwargs`, and there `reasoning_effort: "none"` is the one value that
 #:     measurably changes anything (reasoning 0 chars vs ~800 default).
 REASONING_FORMATS = ("auto", "openai", "openrouter", "deepseek", "together",
-                     "zai", "qwen", "qwen-chat-template", "llamacpp")
+                     "zai", "qwen", "qwen-chat-template", "llamacpp", "anthropic")
 
 #: The level names a provider that lacks `xhigh` understands.
 _EFFORT_WORD = {"minimal": "minimal", "low": "low", "medium": "medium",
@@ -775,8 +775,15 @@ def _reasoning_format(cfg, model_id):
             return "llamacpp"
         if kind == "deepseek":
             return "deepseek"
-        if kind in ("openai", "anthropic", "gemini", "google"):
-            return "openai"
+        if kind == "anthropic":
+            # Its OpenAI-compat layer lists `reasoning_effort` as IGNORED and takes only its
+            # own `thinking` block (platform.claude.com/docs/en/api/openai-sdk, read
+            # 2026-11-01) — the flat field is a silent no-op here.
+            return "anthropic"
+        if kind in ("openai", "gemini", "google"):
+            # A LOCAL OpenAI-compatible server (vLLM) ignores the flat field for the same
+            # reason llama.cpp does: the chat TEMPLATE decides, not the sampler.
+            return "qwen-chat-template" if p.get("local") else "openai"
     m = str(model_id or "").lower()
     if _is_zai_family(m):
         return "zai"
@@ -872,6 +879,13 @@ def _reasoning_fields(model_id, cfg=None, max_tokens=None):
             # measurably stops a local model from thinking.
             kw = {"enable_thinking": on, "reasoning_effort": (word or "high") if on else "none"}
             return {"chat_template_kwargs": kw}
+        if fmt == "anthropic":
+            # The compat layer lists `reasoning_effort` as IGNORED; only its own `thinking`
+            # block moves the needle, and the budget must be >= 1024 and strictly below
+            # `max_tokens` (the same clamp `_fit_budget` already applies).
+            if not on:
+                return {"thinking": {"type": "disabled"}}
+            return {"thinking": {"type": "enabled", "budget_tokens": budget or 1024}}
         if fmt == "deepseek":
             if not on:
                 return {"thinking": {"type": "disabled"}}

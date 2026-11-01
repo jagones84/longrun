@@ -20,6 +20,7 @@ in the harness rather than in the model:
 Deterministic: no live model, no network, no server.
 Run: python3 tests/acceptance/v764_answer_discipline.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -258,6 +259,17 @@ check("E15b a local llamacpp provider gets the llamacpp dialect",
 R._provider_of = lambda m: {"id": "deepseek", "kind": "deepseek"}
 check("E15c a direct vendor endpoint keeps its own dialect",
       R._reasoning_format({}, "deepseek-v4-pro") == "deepseek")
+R._provider_of = lambda m: {"id": "anthropic", "kind": "anthropic"}
+check("E15e Anthropic's compat layer takes a THINKING block (it IGNORES "
+      "`reasoning_effort` — documented, read 2026-11-01)",
+      R._reasoning_format({}, "claude-sonnet-5") == "anthropic")
+R._provider_of = lambda m: {"id": "vllm", "kind": "openai", "local": True}
+check("E15f a LOCAL openai-compatible server (vLLM) gets the template dialect, "
+      "a CLOUD one keeps the flat field",
+      R._reasoning_format({}, "deepseek-v4-flash-0731-exl3-k2") == "qwen-chat-template")
+R._provider_of = lambda m: {"id": "openai", "kind": "openai"}
+check("E15g a cloud openai-compatible endpoint keeps the flat field",
+      R._reasoning_format({}, "gpt-5.6-sol") == "openai")
 R._provider_of = _po
 check("E15d with no provider the MODEL family decides, and an explicit format wins",
       R._reasoning_format({}, "glm-4.6") == "zai"
@@ -313,6 +325,35 @@ check("E17e OFF sends nothing; enabled-without-a-level sends nothing either",
       _F("x", {"enabled": False, "effort": "high", "format": "openai"}) == {}
       and _F("x", {"enabled": True, "effort": "", "format": "openai"}) == {}
       and _F("x", {}) == {})
+check("E17g anthropic carries a thinking block with a budget that fits max_tokens",
+      _F("claude", {"enabled": True, "effort": "high", "format": "anthropic"},
+         max_tokens=64000) == {"thinking": {"type": "enabled", "budget_tokens": 24000}}
+      and _F("claude", {"enabled": True, "effort": "high", "format": "anthropic"},
+             max_tokens=1500) == {"thinking": {"type": "enabled", "budget_tokens": 1024}}
+      and _F("claude", {"enabled": True, "effort": "none", "format": "anthropic"}) ==
+      {"thinking": {"type": "disabled"}})
+# E18 is the MATRIX: it walks the REAL config/providers.yaml, so a provider added to the
+# repo cannot silently land on a dialect its API ignores. The three known no-op shapes are
+# named: a flat `reasoning_effort` on llama.cpp / vLLM / the Anthropic compat layer.
+from longrun.model import providers as _P                                        # noqa: E402
+_matrix, _noop = [], []
+for _p in _P.providers():
+    if _p.get("embed_only") or not (_p.get("models") or []):
+        continue
+    _ref = "%s:%s" % (_p.get("id"), _p["models"][0].get("id"))
+    _kind = str(_p.get("kind") or "").strip().lower()
+    _fmt = R._reasoning_format({}, _ref)
+    _hi = R._reasoning_fields(_ref, {"enabled": True, "effort": "high"}, max_tokens=64000)
+    _off = R._reasoning_fields(_ref, {"enabled": True, "effort": "none"}, max_tokens=64000)
+    _matrix.append("%s(%s)->%s %s|%s" % (_p.get("id"), _kind, _fmt,
+                                         json.dumps(_hi, sort_keys=True)[:60],
+                                         json.dumps(_off, sort_keys=True)[:40]))
+    _local_openai = _p.get("local") and _kind in ("openai", "gemini", "google")
+    if (_kind in ("llamacpp", "llama.cpp", "anthropic") or _local_openai) \
+            and "reasoning_effort" in _hi:
+        _noop.append("%s:%s" % (_p.get("id"), _fmt))
+check("E18 every provider in the REAL config gets a field its API actually reads",
+      bool(_matrix) and not _noop, _noop or _matrix)
 
 # ---- S. a keyless search must return real, followable URLs ----
 # Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with
