@@ -69,6 +69,8 @@ SHIM = REPO / "server.py"
 PORT = 8791
 #: Where the harness lands inside the task container.
 DEST = "/opt/longrun-agent"
+#: Built once, then reused by every trial of a run (see `payload_tar`).
+PAYLOAD = Path("/tmp/longrun_tb_payload.tar")
 
 
 def _dotenv_key(name):
@@ -107,6 +109,46 @@ def _api_client_code(method, path, body=None, port=PORT, timeout=120):
         "except urllib.error.HTTPError as _e:\n"
         "    print(_e.code); print(_e.read().decode('utf-8', 'replace'))\n"
         % (path, payload, port, method, timeout))
+
+
+def _payload_sources():
+    """(path, arcname) pairs that travel into the task container."""
+    items = [(SRC, "src/longrun"), (SHIM, "server.py")]
+    for item in sorted((REPO / "config").iterdir()):
+        # Never ship the operator's MCP clients: they point at the HOST
+        # (`http://192.168.1.37:3344/mcp`), so the in-container server booted
+        # with them and logged `PMCP: connected with 26 tools` (measured
+        # 2026-10-31). The score is the task container's end state — an arm
+        # that can act outside it is not being measured.
+        if item.name.startswith("mcp_clients"):
+            continue
+        items.append((item, "config/" + item.name))
+    return items
+
+
+def payload_tar():
+    """One tar with the runtime and the shipped config, cached across trials.
+
+    Built ONCE per run on purpose. A per-trial tar is a non-atomic snapshot of the
+    working tree, so editing the repo while a sweep runs ships a torn tree: measured
+    2026-10-31 (`hard1`, fix-code-vulnerability), `httpapi.py` from one revision and
+    `server.py` from another booted into `ImportError: cannot import name
+    'heartbeat_frame' from partially initialized module` — a circular import that
+    does not exist at the commit the run was supposed to measure. The cache is
+    invalidated when any source file is newer than the tar.
+    """
+    sources = _payload_sources()
+    newest = max(p.stat().st_mtime for src, _ in sources
+                 for p in ([src] + sorted(src.rglob("*")) if src.is_dir() else [src]))
+    if PAYLOAD.is_file() and PAYLOAD.stat().st_mtime >= newest:
+        return PAYLOAD.read_bytes()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for src, arc in sources:
+            tar.add(str(src), arcname=arc)
+    data = buf.getvalue()
+    PAYLOAD.write_bytes(data)
+    return data
 
 
 class _Container:
@@ -164,21 +206,10 @@ class LongrunAgent(BaseAgent):
         the harness falls back to built-in defaults that point at the operator's
         local router (`http://127.0.0.1:8080`), which does not exist inside a task
         container — measured 2026-10-31: the first turn died with
-        `provider unreachable: http://127.0.0.1:8080/v1/chat/completions`."""
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w") as tar:
-            tar.add(str(SRC), arcname="src/longrun")
-            tar.add(str(SHIM), arcname="server.py")
-            for item in sorted((REPO / "config").iterdir()):
-                # Never ship the operator's MCP clients: they point at the HOST
-                # (`http://192.168.1.37:3344/mcp`), so the in-container server booted
-                # with them and logged `PMCP: connected with 26 tools` (measured
-                # 2026-10-31). The score is the task container's end state — an arm
-                # that can act outside it is not being measured.
-                if item.name.startswith("mcp_clients"):
-                    continue
-                tar.add(str(item), arcname="config/" + item.name)
-        data = buf.getvalue()
+        `provider unreachable: http://127.0.0.1:8080/v1/chat/completions`.
+
+        The payload itself comes from `payload_tar()`, built once per run."""
+        data = payload_tar()
         box.sh("mkdir -p %s" % DEST, check=True)
         # put_archive needs a file object; the container path is the tar root.
         box.c.put_archive(DEST, io.BytesIO(data))

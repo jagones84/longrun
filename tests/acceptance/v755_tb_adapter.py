@@ -83,6 +83,28 @@ check("C2 the shipped providers.yaml really names the OpenRouter endpoint",
 check("C3 the upload never ships the operator's MCP clients",
       'item.name.startswith("mcp_clients")' in src)
 
+# A per-trial tar is a NON-atomic snapshot of the working tree. Measured 2026-10-31
+# (`hard1`): editing the repo during a sweep shipped `httpapi.py` from one revision
+# and `server.py` from another, and that container died with
+# `ImportError: cannot import name 'heartbeat_frame' from partially initialized
+# module` — a circular import the commit under test does not have. One snapshot per
+# run removes the race.
+check("C4 the payload is built once and cached across trials",
+      "PAYLOAD.is_file()" in src and "PAYLOAD.write_bytes" in src)
+check("C5 the upload reuses that payload instead of re-tarring the tree",
+      "tarfile.open" not in src.split("def _upload")[1].split("def ")[0],
+      src.split("def _upload")[1].split("def ")[0].strip().splitlines()[:4])
+import io as _io  # noqa: E402
+import tarfile as _tarfile  # noqa: E402
+
+_names = _tarfile.open(fileobj=_io.BytesIO(TB.payload_tar())).getnames()
+check("C6 the tar carries the runtime at the names the run uses",
+      "server.py" in _names and "src/longrun/core/server.py" in _names, _names[:4])
+check("C7 the tar carries the provider config (the model is reachable because of it)",
+      "config/providers.yaml" in _names)
+check("C8 no operator MCP client travelled with it",
+      not [n for n in _names if "mcp_clients" in n])
+
 # ---- D. the suite manifest is explicit and starts with its control task --------
 manifest = os.path.join(REPO, "benchmarks/terminal_bench_tasks.txt")
 tasks = [ln.strip() for ln in open(manifest, encoding="utf-8")
