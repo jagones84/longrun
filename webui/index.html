@@ -765,7 +765,7 @@
   .toolcard .tc-name { font-weight: 600; color: var(--txt); }
   .toolcard .tc-meta { color: var(--dim); font-size: 11px; margin-left: auto; }
   .toolcard.pending { opacity: .7; }
-  /* 2026-11-01: the tool-card verdict is a PIP, not a ✅/⛔ emoji. The card already
+  /* 2026-11-01: the tool-card verdict is a PIP, not a colour emoji. The card already
      carries `ok`/`err`, so the class paints the dot — no per-update text write. */
   .toolcard .tc-ic { width: 8px; height: 8px; border-radius: 50%; background: var(--dim);
     flex: 0 0 auto; }
@@ -1355,13 +1355,19 @@
      UNIT in a right-aligned column, then the actions. The count used to be a bare
      number and the ✕ floated away from it, so nothing lined up between rows
      (operator: "vedi che schifo di disordine? applica fix qui e ovunque"). */
-  #swMain .kb-row { display: flex; gap: 8px; align-items: center; padding: 3px 8px;
-    margin-bottom: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
+  /* 2026-11-01: this rule was declared TWICE — here as `--bg2` / 9px / 3px padding and
+     again ~700 lines below in the Settings polish block as transparent / `--r-sm` /
+     5px. Same selector, same object, two truths: the second silently won and the
+     first read as a decision nobody had taken. The effective values live HERE now
+     (v653 E1 / v660 D3 pin it). */
+  #swMain .kb-row { display: flex; gap: 8px; align-items: center; padding: 5px 8px;
+    margin-bottom: 3px; border: 1px solid var(--line); border-radius: var(--r-sm);
+    background: transparent; }
   /* v660: a one-line object deserves a one-line row. 6px of padding around a 24px
      button made every row 39px tall — the list read as a form, not a list
      (operator: "no compattezza"). The controls inside a row are compact now. */
   #swMain .kb-row .ghost { padding: 1px 6px; line-height: 1.35; }
-  #swMain .kb-row:hover { border-color: var(--acc); }
+  #swMain .kb-row:hover { border-color: var(--acc); background: var(--hover); }
   /* JAG-526: the notebook that belongs to the chat on screen is ALWAYS marked
      (a `*` plus an accent edge), so opening Knowledge never requires guessing. */
   #swMain .kb-row.kb-current { border-color: var(--acc); box-shadow: inset 2px 0 0 var(--acc); }
@@ -2082,8 +2088,9 @@
     box-shadow: inset 2px 0 0 var(--acc); color: var(--txt); }
   #settingsWin .sw-main { padding: 14px 16px; }
   #settingsWin .sw-main .sw-cat h2 { font-size: 11.5px; letter-spacing: .06em; margin: 18px 0 8px; }
-  #swMain .kb-row { background: transparent; border-radius: var(--r-sm); padding: 5px 8px; }
-  #swMain .kb-row:hover { background: var(--hover); }
+  /* 2026-11-01: no second `.kb-row` / `.kb-row:hover` here — the whole rule lives at
+     its first definition. A polish block that re-declares a selector is exactly how
+     the two truths above were born. */
   .themegrid { gap: 8px; }
   .themecard { border-radius: 10px; background: var(--bg-2); padding: 8px; }
   .themecard:hover { border-color: var(--line-2); background: var(--panel); }
@@ -5081,7 +5088,9 @@ async function openSkillPicker() {
   if (!skills.length) {
     try { const d = await api("GET", "/api/skills"); skills = d.skills || []; _skillsCache = skills; } catch (e) { skills = []; }
   }
-  const items = skills.map(s => ({ icon: s.local ? "🟢" : "🏠", label: s.name,
+  // 2026-11-01: local/global is a SHAPE (filled = local, hollow = global), not a
+  // colour emoji — the same vocabulary as every other status dot in the shell.
+  const items = skills.map(s => ({ icon: s.local ? "●" : "○", label: s.name,
                                    sub: s.category || s.title || "", _name: s.name }));
   openPick("🧩 Skill", "pick one to insert  /<name>  into the message", items, (it) => {
     if (!it || !it._name) return;
@@ -5200,7 +5209,7 @@ function voiceHelp(reason) {
     rows.push("This browser has no <b>Web Speech API</b>. Use desktop <b>Chrome</b> or <b>Edge</b>.");
   }
   if (secure && SR) {
-    rows.push("When you click the mic, the browser asks for permission the first time. Grant it from the address-bar icon (🔒/⚙ → Microphone → Allow). It needs a real microphone on the machine running the browser.");
+    rows.push("When you click the mic, the browser asks for permission the first time. Grant it from the address-bar padlock icon (→ Microphone → Allow). It needs a real microphone on the machine running the browser.");
     rows.push("Press <b>Alt+X</b> to start/stop. The mic closes by itself after <b>3 s of silence</b>; the text lands in the message bar for you to review and send.");
   }
   rows.push('<span class="remaining">On a host with no microphone (e.g. the DGX server itself) voice is unavailable — open the UI on the machine that has the mic.</span>');
@@ -7069,7 +7078,7 @@ async function resetCosts() {
   if (!(await confirmDelete("reset the cost ledger of this session?\nThe calls stay spent — only the counters are cleared."))) return;
   let r = {};
   try { r = await api("POST", "/api/costs/reset", { session: sessionId }); } catch (e) { r = { error: String(e) }; }
-  if (r && r.error) { toast("⛔ " + r.error); return; }
+  if (r && r.error) { toast("✕ " + r.error); return; }
   toast("cost ledger reset");
   loadCosts();
 }
@@ -7085,7 +7094,7 @@ async function ctxPreview() {
     r = await api("POST", "/api/context/preview",
                   { session: sessionId, message: (($("ctxPvMsg") || {}).value || "").trim() });
   } catch (e) { r = { error: String(e) }; }
-  if (r && r.error) { out.textContent = "⛔ " + r.error; return; }
+  if (r && r.error) { out.textContent = "✕ " + r.error; return; }
   const c = r.compaction || {};
   out.textContent = "";
   const kv = (k, v) => {
@@ -8191,7 +8200,7 @@ function showNodeDetail(n) {
     `<div class="graphrow">` +
     `<button class="ghost" data-a="done">✓ done</button>` +
     `<button class="ghost" data-a="doing">▶ doing</button>` +
-    `<button class="ghost" data-a="blocked">⛔ blocked</button>` +
+    `<button class="ghost" data-a="blocked">✕ blocked</button>` +
     `<button class="ghost" data-a="cancel">✕ cancel</button></div>`;
   $("taskDetail").querySelectorAll("button").forEach(b =>
     b.onclick = () => graphNodeAction(n.id, b.dataset.a));
@@ -8489,7 +8498,7 @@ function renderModelMenu(q) {
       g.items.forEach(m => {
         const it = document.createElement("div");
         it.className = "mi" + (m.ref === cur ? " active" : "");
-        const dot = document.createElement("span"); dot.textContent = m.loaded ? "🟢" : (m.available ? "⚪" : "🔒");
+        const dot = document.createElement("span"); dot.textContent = m.loaded ? "●" : (m.available ? "○" : "⊘");
         const nm = document.createElement("span");
         nm.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
         nm.textContent = m.id;
@@ -8738,18 +8747,18 @@ function approvalCard(d) {
   const sum = document.createElement("div"); sum.style.cssText = "white-space:pre-wrap;word-break:break-all;font-size:12px;color:var(--dim);margin:4px 0";
   sum.textContent = d.summary || "";
   const row = document.createElement("div"); row.style.cssText = "display:flex;gap:6px;margin-top:6px";
-  const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ approve";
-  const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ deny";
+  const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✓ approve";
+  const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "✕ deny";
   const feedback = document.createElement("div"); feedback.className = "remaining";
   feedback.setAttribute("role", "status");
   // v648: a failed decision used to be an unhandled rejection — the button looked
   // dead and said nothing ("non posso approvare"). Say the reason instead.
   const fail = e => { feedback.textContent = String(e && e.message ? e.message : e); };
   ok.onclick = () => decide(aid, "approve")
-    .then(() => { ok.textContent = "✅ approved"; no.remove(); })
+    .then(() => { ok.textContent = "✓ approved"; no.remove(); })
     .catch(fail);
   no.onclick = () => decide(aid, "deny")
-    .then(() => { no.textContent = "⛔ denied"; ok.remove(); })
+    .then(() => { no.textContent = "✕ denied"; ok.remove(); })
     .catch(fail);
   row.appendChild(ok); row.appendChild(no);
   bub.appendChild(title); bub.appendChild(sum); bub.appendChild(row); bub.appendChild(feedback);
@@ -8780,8 +8789,8 @@ function planContinuing(d) {
   who("ai", `🔁 continuing on my own — ${d.open}/${d.total} steps open (round ${d.round})`);
 }
 function planStopped(d) {
-  const map = { goal_reached: "✅ goal reached", no_progress: "⚠ no progress",
-                budget: "⏱ budget exhausted", blocked: "⛔ blocked",
+  const map = { goal_reached: "✓ goal reached", no_progress: "⚠ no progress",
+                budget: "⏱ budget exhausted", blocked: "✕ blocked",
                 user_stop: "⏹ stopped by you", step_budget: "⏱ step budget",
                 open_todos: "⏸ stopped with open steps" };
   who("ai", `${map[d.reason] || d.reason} — ${d.open} open / ${d.total} · ${d.rounds} rounds · ${d.duration_s == null ? "—" : d.duration_s}s`);
@@ -8803,7 +8812,7 @@ function taskTree(nodes) {
   });
   // JAG-307: `superseded` is a CLOSED state too — without a mark it fell back to
   // "☐" and a long-closed step looked still-open.
-  const mark = { todo: "☐", doing: "◐", done: "☑", blocked: "⛔", cancelled: "⊘", superseded: "⊘" };
+  const mark = { todo: "☐", doing: "◐", done: "☑", blocked: "✕", cancelled: "⊘", superseded: "⊘" };
   const one = (n, depth) => {
     // JAG-462: `deps` is model-authored data — it MUST be escaped like every sibling
     // field (id via _attr, label/evidence via esc). It was interpolated raw, so a dep
@@ -8931,8 +8940,8 @@ function improveCard(d) {
     row.appendChild(go);
     feedback.textContent = "this notification is not a stored proposal — nothing to approve here";
   } else {
-    const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✅ accept";
-    const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "⛔ reject";
+    const ok = document.createElement("button"); ok.className = "ghost"; ok.style.color = "var(--ok)"; ok.textContent = "✓ accept";
+    const no = document.createElement("button"); no.className = "ghost"; no.style.color = "var(--err)"; no.textContent = "✕ reject";
     const settle = (p) => {
       // the store decides what is still open — not the buttons we drew
       if (!p) { ok.remove(); no.remove(); feedback.textContent = "no longer in the store — nothing to decide"; return; }
@@ -8944,10 +8953,10 @@ function improveCard(d) {
         const r = await decideImproveProposal(pid, decision);
         _impCache.t = 0;
         if (decision === "approve") {
-          ok.textContent = "✅ accepted";
+          ok.textContent = "✓ accepted";
           feedback.textContent = r && r.installed_to ? "installed at " + r.installed_to : "approved";
           no.remove();
-        } else { no.textContent = "⛔ rejected"; feedback.textContent = "rejected"; ok.remove(); }
+        } else { no.textContent = "✕ rejected"; feedback.textContent = "rejected"; ok.remove(); }
         card.dataset.settled = "1";
         loadApprovals();
         _settleProposalCards(true);
@@ -9033,7 +9042,7 @@ async function runImprovementReview() {
     clearInterval(tick); tick = null;
     if (!r || !r.ok) {
       if (msg) {
-        msg.innerHTML = '❌ <b>review failed</b> — ' + esc((r && r.error) || "no response") +
+        msg.innerHTML = '✕ <b>review failed</b> — ' + esc((r && r.error) || "no response") +
           (r && r.items && r.items.length ? " (audited " + r.items.length + " before failing)" : "");
       }
       if (typeof toast === "function") toast("backlog review failed", "err");
@@ -9044,7 +9053,7 @@ async function runImprovementReview() {
     const byVerdict = Object.keys(counts).filter(k => counts[k])
       .map(k => k + " " + counts[k]).join(" · ");
     if (msg) {
-      msg.innerHTML = "✅ <b>done</b> — " + items.length + " artifacts audited in " +
+      msg.innerHTML = "✓ <b>done</b> — " + items.length + " artifacts audited in " +
         Math.round((Date.now() - started) / 1000) + "s" +
         (r.model ? " with <code>" + esc(r.model) + "</code>" : " (no model reported)") +
         (byVerdict ? " · " + esc(byVerdict) : "") +
@@ -9053,7 +9062,7 @@ async function runImprovementReview() {
     if (typeof toast === "function") toast("backlog review complete", "ok");
     loadImprovement();
   } catch (e) {
-    if (msg) msg.innerHTML = "❌ <b>review failed</b> — " + esc(String(e));
+    if (msg) msg.innerHTML = "✕ <b>review failed</b> — " + esc(String(e));
   } finally {
     if (tick) clearInterval(tick);
     if (btn) { btn.disabled = false; btn.textContent = "🧠 review with LLM"; }
@@ -9172,8 +9181,8 @@ async function draftAct(path, action, slot) {
   if (action === "verify") {
     const v = res.verify || {};
     const why = String(v.output || res.error || (j && j.reason) || "").trim();
-    if (slot) slot.textContent = v.green ? ("✅ green · " + why.slice(0, 70))
-      : ("❌ " + (why || "not verified").slice(0, 110));
+    if (slot) slot.textContent = v.green ? ("✓ green · " + why.slice(0, 70))
+      : ("✕ " + (why || "not verified").slice(0, 110));
     return;
   }
   if (action === "abstract") {
@@ -10307,17 +10316,17 @@ function connectFeed() {
   // real state without a manual reload.
   document.addEventListener("visibilitychange", () => { if (!document.hidden) _resyncDurable(); });
   es.addEventListener("plan.update", () => { push("🗺 plan updated"); loadPlan(); });
-  es.addEventListener("tasks.update", () => push("✅ legacy tasks board updated"));
+  es.addEventListener("tasks.update", () => push("✓ legacy tasks board updated"));
   es.addEventListener("agent.start", e => { const d = JSON.parse(e.data || "{}"); push("⚡ agent: " + (d.goal || "").slice(0, 60)); });
   es.addEventListener("agent.finish", () => push("🏁 agent finished"));
   es.addEventListener("prm.feedback", e => { const d = JSON.parse(e.data || "{}"); push("📉 verify: score " + d.score + " — " + (d.feedback || "").slice(0, 90)); });
   es.addEventListener("approval.request", e => { const d = JSON.parse(e.data); loadApprovals(); const _s = d.session || d.run; if (!_s || _s === sessionId) approvalCard(d); });
-  es.addEventListener("approval.auto", e => { const d = JSON.parse(e.data); push("✅ auto-approved: " + (d.summary || "").slice(0, 50)); });
+  es.addEventListener("approval.auto", e => { const d = JSON.parse(e.data); push("✓ auto-approved: " + (d.summary || "").slice(0, 50)); });
   es.addEventListener("chat.steer", e => { const d = JSON.parse(e.data); push("🎯 steer: " + (d.text || "").slice(0, 60)); });
   es.addEventListener("tool.result", e => { const d = JSON.parse(e.data);
     const bits = [d.tool, (d.exit_code != null ? "exit=" + d.exit_code : ""), (d.backend ? "backend=" + d.backend : ""), (d.ok === false ? "FAILED" : "")].filter(Boolean);
     push("🛠 " + bits.join(" ")); });
-  es.addEventListener("tool.blocked", e => { const d = JSON.parse(e.data); push("⛔ blocked " + d.tool + ": " + (d.reason || "").slice(0, 50)); });
+  es.addEventListener("tool.blocked", e => { const d = JSON.parse(e.data); push("✕ blocked " + d.tool + ": " + (d.reason || "").slice(0, 50)); });
   // JAG-128B finalfix: the `improve` tool's publish carries NO `session`, so the
   // fan-out reaches ONLY /api/feed subscribers. The card must be wired HERE, or it
   // stays unreachable (the chat listener never sees it).
@@ -10333,7 +10342,7 @@ function connectFeed() {
     if (n) toast("self-improvement: " + n + " artifact(s) written — see Settings ▸ Improvement");
   });
   es.addEventListener("agent.paused", () => push("⏸ run paused"));
-  es.addEventListener("agent.aborted", () => push("⛔ run aborted"));
+  es.addEventListener("agent.aborted", () => push("✕ run aborted"));
   // JAG-431r4b: the duplicate agent.control listener removed — connectFeed already
   // registered one at the top; every event printed TWO feed rows (and this copy
   // printed "🎛 undefined → undefined" when action/status were absent).
@@ -11068,7 +11077,7 @@ async function loadMcpClients() {
       row.className = "card";
       row.style.cssText = "padding:6px 8px;margin-bottom:6px;display:flex;gap:8px;align-items:center";
       const dot = document.createElement("span");
-      dot.textContent = c.connected ? "🟢" : (c.enabled ? "🟠" : "⚪");
+      dot.textContent = c.connected ? "●" : (c.enabled ? "◐" : "○");
       const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
       const title = document.createElement("div"); title.style.fontWeight = "600"; title.textContent = n;
       const sub = document.createElement("div"); sub.className = "remaining"; sub.style.wordBreak = "break-all";
@@ -11377,7 +11386,7 @@ async function loadProviders() {
       head.title = "expand / collapse the model list";
       const caret = document.createElement("span"); caret.textContent = "▸";
       caret.style.cssText = "flex:0 0 auto;width:12px;text-align:center;color:var(--dim)";
-      const dot = document.createElement("span"); dot.textContent = p.available ? "🟢" : "🟠";
+      const dot = document.createElement("span"); dot.textContent = p.available ? "●" : "◐";
       const name = document.createElement("div"); name.style.cssText = "flex:1;min-width:0";
       const t = document.createElement("div"); t.style.fontWeight = "600";
       t.textContent = p.id + (p.local ? " · local" : "");
@@ -11502,7 +11511,7 @@ async function saveRuntime() {
     max_parallel_tools: numField("rtParallel", 4),
     autocontinue: !!(($("rtAuto") || {}).checked),   // JAG-171
   }});
-  who("ai", "✅ runtime updated");
+  who("ai", "✓ runtime updated");
   if ($("rtKgMax")) gateEnroll($("rtKgMax").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadVerifier() {
@@ -11522,7 +11531,7 @@ async function saveVerifier() {
     timeout_secs: numField("vfTimeout", 120),
     paths: paths,
   }});
-  who("ai", "✅ verifier updated");
+  who("ai", "✓ verifier updated");
   if ($("vfOn")) gateEnroll($("vfOn").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadBudget() {
@@ -11534,7 +11543,7 @@ async function saveBudget() {
   await api("POST", "/api/tools", { budget: {
     max_tokens_per_run: numField("bdMax", 0),
   }});
-  who("ai", "✅ run budget updated");
+  who("ai", "✓ run budget updated");
 }
 async function loadBestofn() {
   const d = await api("GET", "/api/tools");
@@ -11550,7 +11559,7 @@ async function saveBestofn() {
     n: numField("bnN", 1),
     min_score: numField("bnMin", 0),
   }});
-  who("ai", "✅ best-of-N updated");
+  who("ai", "✓ best-of-N updated");
   if ($("bnOn")) gateEnroll($("bnOn").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadDifficulty() {
@@ -11573,7 +11582,7 @@ async function saveDifficulty() {
     medium_at: numField("dfMedAt", 0.35),
     hard_at: numField("dfHardAt", 0.65),
   }});
-  who("ai", "✅ difficulty updated");
+  who("ai", "✓ difficulty updated");
   if ($("dfOn")) gateEnroll($("dfOn").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadSelfevolve() {
@@ -11592,7 +11601,7 @@ async function saveSelfevolve() {
     max_len: numField("seMaxLen", 6),
     category: $("seCat").value,
   }});
-  who("ai", "✅ selfevolve updated");
+  who("ai", "✓ selfevolve updated");
   if ($("seMinLen")) gateEnroll($("seMinLen").closest(".card"));   // JAG-496: re-base after a save
 }
 async function loadReasoning() {
@@ -11608,7 +11617,7 @@ async function saveReasoning() {
   }});
   if ($("reResult")) $("reResult").textContent = r && r.error ? ("error: " + r.error)
     : (($("reOn").checked) ? ("on · " + $("reEffort").value) : "off");
-  who("ai", "✅ thinking effort updated");
+  who("ai", "✓ thinking effort updated");
 }
 async function saveProvider() {
   const id = $("provId").value.trim();
@@ -11778,7 +11787,7 @@ async function loadKeys() {
       row.style.cssText = "padding:6px 8px;margin-bottom:6px";
       const head = document.createElement("div");
       head.style.cssText = "display:flex;gap:8px;align-items:center";
-      const dot = document.createElement("span"); dot.textContent = k.set ? "🟢" : "🟠";
+      const dot = document.createElement("span"); dot.textContent = k.set ? "●" : "◐";
       const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0";
       const t = document.createElement("div"); t.style.fontWeight = "600"; t.textContent = k.env;
       const sub = document.createElement("div"); sub.className = "remaining";
@@ -12684,7 +12693,7 @@ async function loadBlackboard() {
   if (!box) return;
   let d = {};
   try { d = await api("GET", "/api/blackboard?limit=30"); } catch (e) { d = {}; }
-  if (d && d.error) { box.innerHTML = '<div class="remaining">⛔ ' + esc(String(d.error)) + "</div>"; return; }
+  if (d && d.error) { box.innerHTML = '<div class="remaining">✕ ' + esc(String(d.error)) + "</div>"; return; }
   const es = d.entries || [], stt = d.stats || {};
   if (st) {
     const topics = Object.keys(stt.topics || {});
@@ -12725,7 +12734,7 @@ async function bbPost() {
     r = await api("POST", "/api/blackboard", { topic: (($("bbTopic") || {}).value || "general").trim(),
       content: content, tags: tags, author: "human" });
   } catch (e) { r = { error: String(e) }; }
-  if (r && r.error) { if (msg) msg.textContent = "⛔ " + r.error; return; }
+  if (r && r.error) { if (msg) msg.textContent = "✕ " + r.error; return; }
   if (inp) inp.value = "";
   // v642: a toast, not a line that stays on the panel forever.
   if (typeof toast === "function") toast("posted #" + (r.version != null ? r.version : "?") + " to " + (r.topic || "general"), "ok");
@@ -12738,7 +12747,7 @@ async function bbClearAll() {
   if (!await confirmDelete("delete every blackboard entry? versions restart at #1")) return;
   let r = {};
   try { r = await api("DELETE", "/api/blackboard"); } catch (e) { r = { error: String(e) }; }
-  if (r && r.error) { if (msg) msg.textContent = "⛔ " + r.error; return; }
+  if (r && r.error) { if (msg) msg.textContent = "✕ " + r.error; return; }
   if (typeof toast === "function") toast("blackboard cleared (" + ((r && r.removed) || 0) + ")", "ok");
   loadBlackboard();
 }
@@ -12757,7 +12766,7 @@ async function runSwarm() {
       max_steps: parseInt(($("swSteps") || {}).value, 10) || 4 });
   } catch (e) { r = { error: String(e) }; }
   finally { if (btn) btn.disabled = false; }
-  if (r && r.error) { if (msg) msg.textContent = "⛔ " + r.error; return; }
+  if (r && r.error) { if (msg) msg.textContent = "✕ " + r.error; return; }
   if (msg) msg.textContent = "done — " + (r.worker_count || 0)
     + " workers; the goal, the partial results and the synthesis are on the blackboard.";
   if (out) {
@@ -14535,7 +14544,7 @@ async function termSend() {
   _termHist.push(cmd); _termHistIdx = _termHist.length;
   _termLine("$ " + cmd, "tcmd");
   const r = await api("POST", "/api/term/exec", { session: _termSel(), cmd: cmd });
-  if (!r || r.error || r.ok === false) { _termLine("⛔ " + ((r && r.error) || "error")); return; }
+  if (!r || r.error || r.ok === false) { _termLine("✕ " + ((r && r.error) || "error")); return; }
   if (r.cwd) { const c = $("termCwd"); if (c) c.textContent = r.cwd; _isum("sTerm", _base(r.cwd), ""); }
   _termTick();
 }

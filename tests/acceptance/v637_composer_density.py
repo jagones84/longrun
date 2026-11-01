@@ -70,7 +70,11 @@ check("C2 the full ref stays in the tooltip",
 
 # ---- D. footer rhythm --------------------------------------------------------
 check("D1 one tighter padding/gap for the footer",
-      "#composer { display: flex; flex-direction: column; gap: 8px; padding: 8px 18px 10px;" in UI)
+      # 2026-11-01: the "Graphite Instrument" pass set the composer on the shared
+      # 4/8/12 scale — 10px/12px vertical, still ONE rule and still tighter than the
+      # 14px the density round removed. The old 8/10 pinned a number, not the density.
+      "#composer { display: flex; flex-direction: column; gap: 8px; padding: 10px 18px 12px;"
+      in UI)
 
 print("\nv637: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

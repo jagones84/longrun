@@ -12,6 +12,7 @@ Locks in JAG-281:
 Deterministic, no live model. Run: python3 tests/v281_terminal_models.py
 """
 import os
+import re
 import sys
 import tempfile
 import time
@@ -124,8 +125,15 @@ check("term.py uses a persistent bash + a completion sentinel",
 # --- 5) UI -------------------------------------------------------------------
 check("the model popover is anchored above its own button",
       ".model-wrap { position: relative" in ui and "bottom: calc(100% + 8px)" in ui)
+# 2026-11-01: the pin used to require the literal `--menubg: #0f1320`, which the
+# "Graphite Instrument" theme pass legitimately re-paletted (`#14181f` and eight more
+# theme families). The INTENT is "the popover cannot be translucent", i.e. every
+# `--menubg` in the file is a solid 6-digit hex — an rgba() would let the chat read
+# through the menu. Pin the shape, not one palette's value.
 check("the model popover is opaque (not translucent)",
-      "background: var(--menubg)" in ui and "--menubg: #0f1320" in ui
+      "background: var(--menubg)" in ui
+      and re.search(r"--menubg:\s*#[0-9a-fA-F]{6}\s*;", ui) is not None
+      and re.search(r"--menubg:\s*(rgba|transparent|hsla)", ui) is None
       and "position: fixed; bottom: 92px" not in ui)
 check("the duplicate Browser panel is gone (JAG-403h)",
       'data-insp="browser"' not in ui and "function browserGo" not in ui

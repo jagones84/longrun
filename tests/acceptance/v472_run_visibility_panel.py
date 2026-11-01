@@ -160,7 +160,10 @@ check("B5 one renderer reads the two live signal maps",
 check("B6 the panel's rows are LINKS to the chat session",
       'a.href = "#session-" + s.id' in HTML and 'selectSession({ id: s.id })' in HTML, "")
 check("B7 the panel lists the running and the unread sections explicitly",
-      '"⚡ running (' in HTML and 'unread (' in HTML, "")
+      # 2026-11-01: the section headers dropped their colour emoji (slice I-1/I-6:
+      # chrome carries no emoji, the row pips carry the state). The two sections and
+      # their counts are still printed as text.
+      'section("running (' in HTML and 'unread (' in HTML, "")
 check("B8 the unread set is PERSISTED (survives a reload)",
       'function _loadUnread(' in HTML and 'function _saveUnread(' in HTML
       and 'localStorage.getItem(UNREAD_KEY)' in HTML

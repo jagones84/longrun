@@ -82,8 +82,12 @@ check("C3 a control inside a LABEL gets a real floor, not the parent's width",
 # ---- D. the rows are compact and still ONE definition ------------------------
 _i = HTML.index("#swMain .kb-row {")
 ROW = HTML[_i:_i + 240]
-check("D1 the row lost 3px of padding on both sides",
-      "padding: 3px 8px;" in ROW and "margin-bottom: 3px;" in ROW
+check("D1 the row is tighter than the 6px it started from",
+      # 2026-11-01: the polish pass raised the vertical padding 3px -> 5px on the shared
+      # scale, which is what the live page has always rendered since (the second
+      # `.kb-row` declaration won). The INTENT of this pin is "tighter than 6px, and one
+      # definition that owns the value" — so it now reads the merged rule.
+      "padding: 5px 8px;" in ROW and "margin-bottom: 3px;" in ROW
       and "padding: 6px 8px;" not in ROW)
 check("D2 the controls inside a row are compact",
       "#swMain .kb-row .ghost { padding: 1px 6px; line-height: 1.35; }" in HTML)

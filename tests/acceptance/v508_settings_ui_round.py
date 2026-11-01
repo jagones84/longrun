@@ -49,14 +49,19 @@ def _fn(src, head, tail):
 # --- A: compact editor chrome ------------------------------------------------
 check("A1 the header is built as two explicit rows",
       'class="ed-hrow"' in EDITOR and EDITOR.count('class="ed-hrow"') == 2, "")
+# 2026-11-01: the "Graphite Instrument" pass re-set the editor chrome on the shared
+# spacing/type scale (`letter-spacing:.10em` for the 9px eyebrow, 4px/5px paddings).
+# The pinned VALUES drifted, the pinned INTENT did not: a 9px uppercase eyebrow and a
+# header/footer tighter than the old single wrapping row. Pin the intent, not a copy
+# of yesterday's numbers.
 check("A2 the 9px eyebrow keeps the title out of the path's width",
-      "letter-spacing:.14em;text-transform:uppercase" in EDITOR
+      "text-transform:uppercase" in EDITOR
       and "#editorDock .ed-title{font-size:9px" in EDITOR, "")
 check("A3 the tree buttons lost their word labels and kept their titles",
       'class="ed-files ghost" title="show/hide the file tree">🗂</button>' in EDITOR, "")
 check("A4 tabs and footer are tighter than before",
-      "overflow-x:auto;padding:3px 6px;border-bottom" in EDITOR
-      and "gap:6px;padding:4px 8px;border-top" in EDITOR, "")
+      "overflow-x:auto;padding:4px 6px;border-bottom" in EDITOR
+      and "gap:6px;padding:5px 8px;border-top" in EDITOR, "")
 
 # --- B: provenance in Skills -------------------------------------------------
 SK = _fn(IDX, "function renderSkills()", "async function loadSkills")

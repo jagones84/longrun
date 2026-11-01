@@ -117,8 +117,14 @@ check("C3 without sources the close is a claim", stored7.get("claim") is True, s
 # ---- D. the panel shows the difference -------------------------------------
 with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
     UI = f.read()
-check("D1 the plan row shows the source count and the claim count",
-      "_refs" in UI and "_claims" in UI and "${src}${claim}" in UI)
+check("D1 the plan row keeps ONE actionable chip and the breakdown in its title",
+      # 2026-11-01: the row carried three counters (evidence, sources, claims) and the
+      # operator read them as unexplained indices. It keeps one chip — the RISK (claims
+      # without a source) when there is one, otherwise the evidence count — and both
+      # numbers still reach the operator through the chip's title.
+      "const _evN" in UI and "const _refs" in UI and "const _claims" in UI
+      and "${_claims} of ${_evN} close(s) are CLAIMS" in UI
+      and "${_refs} with a source reference" in UI)
 check("D2 the detail view names the sources and the retired entries",
       "(claim — no source)" in UI and "(superseded)" in UI)
 

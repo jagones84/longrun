@@ -58,11 +58,11 @@ draftAct(PATH, ACTION, slot).then(() => console.log(JSON.stringify({text: slot.t
 got = act({"status": "executed", "result": {"ok": True, "synth": True,
                                             "verify": {"green": True, "output": "ok: 3 valid step(s)"}}})
 check("A1 a green verify is shown with its own output",
-      got.get("text", "").startswith("✅ green") and "3 valid step" in got.get("text", ""), got)
+      got.get("text", "").startswith("\u2713 green") and "3 valid step" in got.get("text", ""), got)
 got = act({"status": "executed", "result": {"ok": True,
                                             "verify": {"green": False, "output": "unknown tools: x"}}})
 check("A2 a red verify shows the reason, not a success",
-      got.get("text", "").startswith("❌") and "unknown tools" in got.get("text", ""), got)
+      got.get("text", "").startswith("\u2715") and "unknown tools" in got.get("text", ""), got)
 got = act({"status": "executed", "result": {"ok": True, "installed_to": "/s/skills/created/x"}}, "promote")
 check("A3 an install is reported with the real path",
       got.get("text", "").startswith("installed") and "/s/skills/created/x" in got.get("text", ""), got)
