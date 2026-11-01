@@ -9,12 +9,45 @@
 set -u
 QFILE="${1:?question file}"
 mkdir -p /tmp/oc/work
+# openclaw needs a HOME it can write its catalog/state into; an exec that arrives
+# without one answers with the misleading "This model was not found" (measured
+# 2026-11-01: the same config and model resolve fine with a normal HOME).
+export HOME="${HOME:-/root}"
+mkdir -p "$HOME" 2>/dev/null || true
 export OPENAI_BASE_URL="${OC_BASE_URL:-http://localhost:13131/v1}"
 export OPENAI_API_KEY="${OC_API_KEY:-inspect}"
 MODEL="${OC_MODEL:-z-ai/glm-5.3-flash}"
 
+# openclaw refuses a model id that its catalog does not contain ("Unknown model:
+# openai/inspect"), and `--isolated` has no catalog at all. So the run carries its own
+# config: one provider (`api: openai-completions`) whose single model is named the way
+# the sandbox bridge answers, `inspect`. Schema from openclaw's own
+# docs/providers/litellm.md (baseUrl + api + models[]).
+CFG=/tmp/oc/config.json
+python3 - "$CFG" <<'PY'
+import json, os, sys
+base = os.environ.get("OC_BASE_URL", "http://localhost:13131/v1").rstrip("/")
+if base.endswith("/v1"):
+    base = base[:-3]
+cfg = {
+    "models": {"mode": "replace", "providers": {"litellm": {
+        "baseUrl": base,
+        "apiKey": os.environ.get("OC_API_KEY", "inspect"),
+        "api": "openai-completions",
+        "models": [{"id": os.environ.get("OC_MODEL", "inspect"),
+                    "name": "Inspect sandbox bridge",
+                    "contextWindow": 200000, "maxTokens": 32000}],
+    }}},
+    "agents": {"defaults": {"model": {
+        "primary": "litellm/" + os.environ.get("OC_MODEL", "inspect")}}},
+}
+with open(sys.argv[1], "w", encoding="utf-8") as fh:
+    json.dump(cfg, fh)
+sys.stderr.write("[oc] config=%s\n" % json.dumps(cfg))
+PY
+
 /opt/oc/node /opt/oc/openclaw/openclaw.mjs agent exec \
-  --isolated --auth-env-only --model "openai/$MODEL" --cwd /tmp/oc/work \
+  --config "$CFG" --model "litellm/$MODEL" --cwd /tmp/oc/work \
   --timeout "${OC_TIMEOUT:-1200}" --json --message-file "$QFILE" \
   2> /tmp/oc/err.log \
 | python3 -c '
