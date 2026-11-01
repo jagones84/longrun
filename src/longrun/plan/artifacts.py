@@ -567,10 +567,26 @@ _ARTIFACT_WORDS = ("file", "files", "document", "report", "workbook", "spreadshe
                    "template", "invoice", "presentation", "slide", "pdf", "save the")
 
 
+#: Verbs that mean "produce it". A noun alone is not a request: "the shooting script
+#: document says…" names a document and asks for a FACT about it (measured 2026-11-01
+#: on GAIA `4b6bb5f7`: the delivery floor fired on a question-answering turn, the model
+#: argued with the floor instead of answering, and 27 turns were spent on nothing).
+_PRODUCE_VERBS = ("write", "create", "produce", "generate", "save", "export", "make",
+                  "build", "prepare", "draft", "compose", "assemble", "fill in",
+                  "fill out", "update the", "edit the", "convert", "compile", "render")
+#: An explicit target (`out/report.csv`, `notes.md`) is a deliverable on its own.
+_TARGET_PATH = re.compile(
+    r"[\w.-]+/[\w.-]+|\b[\w-]+\.(?:csv|xlsx|xls|docx|pdf|md|json|txt|tsv|parquet)\b")
+
+
 def names_artifact(request):
-    """True when the request asks for a FILE (so writing nothing is a failure)."""
+    """True when the request asks to PRODUCE a file (so writing nothing is a failure)."""
     text = " ".join(str(request or "").lower().split())
-    return any(w in text for w in _ARTIFACT_WORDS)
+    if _TARGET_PATH.search(text):
+        return True
+    if not any(w in text for w in _ARTIFACT_WORDS):
+        return False
+    return any(v in text for v in _PRODUCE_VERBS)
 
 
 def nothing_written(request):

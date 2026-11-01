@@ -283,6 +283,13 @@ check("E7 zero artifacts is SAID OUT LOUD when the request names a file",
       "written NO file" in (A.nothing_written("produce a workbook of referrals") or "")
       and A.nothing_written("how many sessions are running?") is None,
       A.nothing_written("produce a workbook of referrals"))
+# A NOUN is not a request. Measured 2026-11-01 (GAIA `4b6bb5f7`): the question said
+# "the official shooting script document …", the delivery floor fired on a
+# question-answering turn, the model answered ABOUT the floor, and 27 turns went nowhere.
+check("E7b naming a document is not asking to produce one",
+      A.nothing_written("According to the official shooting script document, what is "
+                        "the first scene heading?") is None
+      and A.nothing_written("save the report to out/report.md") is not None)
 
 # H — RECORD COVERAGE: the inputs' records must be accounted for ----------------
 # Measured 2026-10-31 with a FRESH official judge on artefacts that already existed:

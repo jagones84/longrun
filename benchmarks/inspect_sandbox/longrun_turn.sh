@@ -17,6 +17,10 @@ export LONGRUN_DB=/tmp/lr/events.db
 export LONGRUN_COSTS_DIR=/tmp/lr/costs
 export LONGRUN_THREADS_DIR=/tmp/lr/threads
 export LONGRUN_TOKENS_OFF=1
+# The per-CALL model timeout is the caller's budget, not an undocumented 300 s cap:
+# measured 2026-11-01 (`46719c30`, `ec09fa32`) the turn budget was 600 s but each
+# model call died at 300 s twice, and the arm answered nothing.
+export LONGRUN_MODEL_CALL_TIMEOUT="${LR_TURN_TIMEOUT:-1800}"
 # The provider list is read from LONGRUN_PROVIDERS (`model/providers.py:25`), NOT from
 # LONGRUN_CONFIG_DIR: without this the server boots with the shipped providers
 # (`dgx` + `openrouter`) and `bridge:<model>` resolves to nothing — measured 2026-11-01

@@ -59,7 +59,9 @@ SYSTEM_PROMPT = (
     "When the user asks for a specific fact or quantity, the answer IS the value "
     "alone (a number, a date, a name, a short phrase) with no sentence wrapped "
     "around it. Explain only when an explanation was asked for, or when the "
-    "request is open (a plan, an analysis, a document)."
+    "request is open (a plan, an analysis, a document). Answer in the UNIT AND "
+    "SCALE the request asks for: \"how many thousand hours\" wants 17, not 17000; "
+    "\"as a percentage\" wants 12.5, not 0.125."
 )
 
 # JAG-159: the PMCP gateway block is injected only when a `pmcp` MCP client is
@@ -2962,6 +2964,26 @@ def _evidence_gate_text():
             "Do not guess a number you have not seen.")
 
 
+def _model_call_timeout():
+    """Per-CALL timeout for the chat model — never an undocumented 300 s cap.
+
+    Measured 2026-11-01 (GAIA `46719c30`, `ec09fa32`): the turn budget was 600 s but
+    every model call was capped at 300 s, so a question that needs one long
+    deliberation died TWICE (`model.retry: 2`, no `cost.usage`) and the turn answered
+    nothing. `LONGRUN_MODEL_CALL_TIMEOUT` lets the caller grant a call the budget the
+    caller actually owns.
+    """
+    try:
+        return max(30, int(os.environ.get("LONGRUN_MODEL_CALL_TIMEOUT") or 300))
+    except (TypeError, ValueError):
+        return 300
+
+
+def _is_timeout_err(exc):
+    """True for a model call that ran out of time (not a provider/format error)."""
+    return isinstance(exc, TimeoutError) or "timed out" in str(exc).lower()
+
+
 def _reasoning_only_action(answer, think):
     """True when the ONLY action of the message sits inside the reasoning block.
 
@@ -3715,6 +3737,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _evidence_used = False    # one evidence-gate round per turn (never a loop)
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
     _think_action_used = False  # one round when the action hides in the reasoning
+    _timeout_retried = False   # one retry when the MODEL CALL itself times out
     while goal_mode or iters < CHAT_TOOL_MAX_ITERS:
         # JAG-517: goal mode bypasses the iteration cap, so enforce its hard
         # wall-clock limit even when the model only emits harness todo actions.
@@ -3834,12 +3857,26 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         _t_model = time.time()
         try:
             answer, think, model = server.stream_with_fallback(
-                msgs, model, "chat", _capture,
+                msgs, model, "chat", _capture, timeout=_model_call_timeout(),
                 usage=chat_usage, cancel=_abort_now)
         except Exception as _e:  # noqa: BLE001 — record the attempt, then surface it
             _record_usage(latency_ms=int((time.time() - _t_model) * 1000),
                           status="failed",
                           error="%s: %s" % (type(_e).__name__, str(_e)[:160]))
+            if not _timeout_retried and _is_timeout_err(_e) and not _is_aborted(sess["id"]):
+                # A call that timed out is not a dead turn: measured 2026-11-01, two
+                # GAIA samples were graded "no answer" after the model spent 300 s
+                # reasoning and the loop re-raised. One bounded retry with a SHORT
+                # instruction, then the normal failure path.
+                _timeout_retried = True
+                on_event("model.timeout", session=sess["id"],
+                         error=str(_e)[:200], retry=True)
+                _inject("Your previous attempt produced NOTHING — the model call hit "
+                        "the time limit (this is the harness, not your reasoning "
+                        "being wrong). Answer now in as few tokens as possible: no long "
+                        "deliberation, no re-planning. State the value you already have, "
+                        "or make ONE tool call.", "retry")
+                continue
             raise
         _record_usage(latency_ms=int((time.time() - _t_model) * 1000))
         _emit_context()  # JAG-98: live meter now uses the model's real count
@@ -3920,6 +3957,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 try:
                     _a2, _t2, _m2 = server.stream_with_fallback(
                         msgs, model, "chat", lambda ch, t: None,
+                        timeout=_model_call_timeout(),
                         usage=chat_usage, cancel=_abort_now)
                 except Exception:  # noqa: BLE001
                     break
@@ -4685,7 +4723,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             try:
                 final_answer, think, model = server.stream_with_fallback(
                     msgs, model, "chat", _cap_final, usage=chat_usage,
-                    cancel=_abort_now)
+                    timeout=_model_call_timeout(), cancel=_abort_now)
             except Exception as _e:  # noqa: BLE001 — record the attempt, then surface it
                 _record_usage(latency_ms=int((time.time() - _t_model) * 1000),
                               status="failed",

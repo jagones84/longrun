@@ -115,6 +115,11 @@ check("P2 the prompt teaches list / search / schema, in that order",
 check("P3 the system prompt fixes the answer SHAPE for a fact question",
       "the answer IS the value" in A.SYSTEM_PROMPT
       and "Explain only when an explanation was asked for" in A.SYSTEM_PROMPT)
+# Measured 2026-11-01 (`e1fc63a2`, BOTH arms): "how many thousand hours" → 17000
+# instead of 17. The scale is part of the request, so it is stated with the shape.
+check("P4 the prompt states the unit and SCALE of the answer",
+      "how many thousand hours" in A.SYSTEM_PROMPT
+      and "wants 17, not 17000" in A.SYSTEM_PROMPT)
 
 # -------- X. the harness acts on the action the model MEANT, not a quotation ----
 # Measured 2026-11-01 on GAIA `5d0080cb`: the model's message quoted the action it had
@@ -198,6 +203,17 @@ check("E8 an action hidden in the reasoning block is DETECTED",
 check("E9 a normal action in the message is not flagged",
       not A._reasoning_only_action('{"action":"tool","tool":"fs.read","args":{}}',
                                    "just thinking"))
+# Measured 2026-11-01 (`46719c30`, `ec09fa32`): the turn budget was 600 s but each model
+# call was capped at 300 s, the loop re-raised, and the arm answered nothing at all.
+check("E10 a model-call TIMEOUT is retried once, never fatal",
+      "_timeout_retried = False" in _src and 'on_event("model.timeout"' in _src
+      and "_is_timeout_err(_e)" in _src)
+os.environ["LONGRUN_MODEL_CALL_TIMEOUT"] = "600"
+check("E11 the per-call model timeout follows the caller's budget",
+      A._model_call_timeout() == 600)
+os.environ.pop("LONGRUN_MODEL_CALL_TIMEOUT", None)
+check("E12 the default per-call timeout is 300 s",
+      A._model_call_timeout() == 300)
 
 # ---- S. a keyless search must return real, followable URLs ----
 # Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with
