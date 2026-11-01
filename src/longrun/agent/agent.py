@@ -2954,6 +2954,22 @@ def _evidence_gate_text():
             "\"how many / which / when\" question with a number you have not seen.")
 
 
+def _reasoning_only_action(answer, think):
+    """True when the ONLY action of the message sits inside the reasoning block.
+
+    Measured 2026-11-01 (GAIA `8e867cd7`, longrun arm): the model wrote its tool call
+    INSIDE `<think signature="reasoning-details://…">` and a prose promise outside it.
+    `strip_think` removed the block, the harness saw no action, the plan said
+    "nothing open" and the turn closed mid-work on "Let me curl the full wikitext
+    directly" — a sentence, not an answer, and not a call either.
+    """
+    try:
+        return bool(think and _looks_like_json_action(think)
+                    and not _looks_like_json_action(answer))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _normalize_action(act):
     """JAG-264: accept the obvious near-misses weak models keep emitting.
 
@@ -3689,6 +3705,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _selfcheck_left = _SELFCHECK_MAX
     _failed_checked = False   # one failed-call verdict per turn (never a loop)
     _evidence_used = False    # one evidence-gate round per turn (never a loop)
+    _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
+    _think_action_used = False  # one round when the action hides in the reasoning
     while goal_mode or iters < CHAT_TOOL_MAX_ITERS:
         # JAG-517: goal mode bypasses the iteration cap, so enforce its hard
         # wall-clock limit even when the model only emits harness todo actions.
@@ -3833,6 +3851,33 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 on_delta("answer", final_answer)
             _kg_stop_reason = "user_stop"
             break
+        if not (answer or "").strip():
+            # An EMPTY model message is never an answer. Measured 2026-11-01 (GAIA
+            # `ec09fa32`, ONE turn, empty reply, 33k tokens): the model spent its whole
+            # message on the reasoning block, `strip_think` left nothing, and the
+            # harness persisted the empty string as the turn's reply to the user.
+            # Ask again, bounded, instead of closing on nothing.
+            _empty_streak += 1
+            if _empty_streak <= 2:
+                _inject("Your last message was EMPTY — it carried no answer text and "
+                        "no tool call (only reasoning, or it hit the output limit). "
+                        "Continue: emit the next tool call, or write the answer as "
+                        "plain text.", "retry")
+                continue
+            _kg_stop_reason = "empty_reply"
+            on_event("chat.error", session=sess["id"],
+                     error="the model returned an empty message three times")
+            break
+        if not _think_action_used and _reasoning_only_action(answer, think):
+            # The action exists but lives in the reasoning channel: the harness cannot
+            # execute a thought. Ask for it once, as a message.
+            _think_action_used = True
+            _inject("Your tool call was written INSIDE the reasoning block, where the "
+                    "harness cannot run it — only a message emits an action. Emit that "
+                    'call again as a normal message ({"action":"tool","tool":"<name>",'
+                    '"args":{…}}), or answer the question if the work is really done.',
+                    "retry")
+            continue
         if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
             _kg_stop_reason = "budget"
             break

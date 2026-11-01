@@ -50,6 +50,12 @@ def _answer(state: AgentState, text: str) -> AgentState:
 FORENSIC_DIR = os.environ.get("GAIA_FORENSIC_DIR", "")
 
 
+def _tail(text, lines=40):
+    """The LAST lines of a driver's stderr: where the error is (never the config echo)."""
+    rows = (text or "").strip().splitlines()
+    return "\n".join(rows[-lines:])
+
+
 async def _keep_forensic(state: AgentState, arm: str, path: str, question: str = "") -> None:
     """Lift the arm's own transcript out of the container BEFORE it is destroyed.
 
@@ -105,7 +111,7 @@ def longrun_arm(timeout: int = ARM_TIMEOUT, max_steps: int = ARM_MAX_STEPS,
         if not res.success and not text:
             # Keep enough of stderr to carry the harness's own diagnosis
             # (base url, provider yaml, server log tail) into the Inspect log.
-            text = "(longrun arm failed: %s)" % (res.stderr or "")[-6000:]
+            text = "(longrun arm failed: %s)" % _tail(res.stderr)
         await _keep_forensic(state, "longrun", "/tmp/lr/forensic.json", prompt.text)
         return _answer(state, text)
 
@@ -129,7 +135,7 @@ def openclaw_arm(timeout: int = ARM_TIMEOUT, model: str = BRIDGE_MODEL) -> Agent
             )
         text = (res.stdout or "").strip()
         if not res.success and not text:
-            text = "(openclaw arm failed: %s)" % (res.stderr or "")[-6000:]
+            text = "(openclaw arm failed: %s)" % _tail(res.stderr)
         await _keep_forensic(state, "openclaw", "/tmp/oc/forensic.json", prompt.text)
         return _answer(state, text)
 

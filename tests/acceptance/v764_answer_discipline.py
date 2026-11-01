@@ -180,6 +180,23 @@ check("E5 the gate names BOTH ways out and forbids a guess",
 check("E6 the gate is a MECHANICAL check wired on all three close paths",
       _src.count("_needs_evidence(message)") == 3
       and "_evidence_used = False" in _src, _src.count("_needs_evidence(message)"))
+# Measured 2026-11-01 (GAIA `ec09fa32`): ONE turn, 33k tokens, an EMPTY reply — the
+# model spent the whole message on its reasoning block and the harness persisted the
+# empty string as the answer. An empty message is never an answer.
+check("E7 an empty model message is retried (bounded), never accepted",
+      "Your last message was EMPTY" in _src and "_empty_streak <= 2" in _src)
+# Measured 2026-11-01 (GAIA `8e867cd7`): the tool call was written INSIDE the signed
+# reasoning block and the visible part was a promise, so the harness dropped the action,
+# saw "nothing open" and closed the turn mid-work.
+_hidden = ('<think signature="reasoning-details://[]">\n'
+           '{"action":"tool","tool":"shell.exec","args":{"command":"curl -s x"}}\n'
+           '</think>\nThe wikitext is truncated. Let me curl it directly.')
+_c2, _t2 = strip_think(_hidden)
+check("E8 an action hidden in the reasoning block is DETECTED",
+      A._reasoning_only_action(_c2, _t2), (_c2[:60], (_t2 or "")[:60]))
+check("E9 a normal action in the message is not flagged",
+      not A._reasoning_only_action('{"action":"tool","tool":"fs.read","args":{}}',
+                                   "just thinking"))
 
 # ---- S. a keyless search must return real, followable URLs ----
 # Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with
