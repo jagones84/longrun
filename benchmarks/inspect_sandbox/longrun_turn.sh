@@ -98,6 +98,27 @@ def persisted_reply(sid):
             return str(c)
     return ""
 
+def diag(tag):
+    """Why the turn produced no answer: the durable events, then the server log tail."""
+    print("[turn] %s: no reply" % tag, file=sys.stderr)
+    try:
+        import sqlite3
+        _db = sqlite3.connect("/tmp/lr/events.db")
+        for _kind, _data in _db.execute(
+                "SELECT kind, data FROM events WHERE kind IN "
+                "('chat.error','model.failover','cost.usage','settings.diagnostic',"
+                "'plan.no_valid_action','plan.stopped') ORDER BY id DESC LIMIT 8"):
+            print("[event]", _kind, (_data or "")[:700], file=sys.stderr)
+    except Exception as _db_exc:  # noqa: BLE001
+        print("[event] unreadable: %r" % (_db_exc,), file=sys.stderr)
+    try:
+        print("\n".join(open("/tmp/lr-turn.log", encoding="utf-8",
+                             errors="replace").read().splitlines()[-25:]), file=sys.stderr)
+    except OSError:
+        pass
+    return tag
+
+
 post("/api/tools", {"approvals": {"mode": "full"}, "verifier": {"enabled": False}})
 post("/api/routing", {"roles": {r: {"model": "bridge:" + model}
                                for r in ("chat", "agent", "subagent", "summarizer")}})
@@ -116,22 +137,7 @@ except Exception as exc:  # noqa: BLE001 — a failed turn must say WHY, not jus
     text = persisted_reply(sid)
     print("[turn] persisted reply: %s" % ("yes" if text.strip() else "no"), file=sys.stderr)
     if not text.strip():
-        # The harness's durable record: the exact provider error and the failover chain.
-        try:
-            import sqlite3
-            _db = sqlite3.connect("/tmp/lr/events.db")
-            for _kind, _data in _db.execute(
-                    "SELECT kind, data FROM events WHERE kind IN "
-                    "('chat.error','model.failover','cost.usage','settings.diagnostic') "
-                    "ORDER BY id DESC LIMIT 8"):
-                print("[event]", _kind, (_data or "")[:700], file=sys.stderr)
-        except Exception as _db_exc:  # noqa: BLE001
-            print("[event] unreadable: %r" % (_db_exc,), file=sys.stderr)
-        try:
-            print("\n".join(open("/tmp/lr-turn.log", encoding="utf-8",
-                                 errors="replace").read().splitlines()[-25:]), file=sys.stderr)
-        except OSError:
-            pass
+        diag("transport failed")
 
 # The scorer compares the ANSWER: the harness's own think markup must not travel with
 # it (measured 2026-11-01: the reply began with `<think signature="reasoning-details://…">`
@@ -142,8 +148,15 @@ try:
 except Exception as _se:  # noqa: BLE001
     print("[turn] strip_think unavailable: %r" % (_se,), file=sys.stderr)
 clean = text.strip()
-print(clean or "(no answer)")
-raise SystemExit(0 if clean else 1)
+if not clean:
+    # An empty reply is a FAILURE, not an answer: say so on stdout (a bare "(no answer)"
+    # told the operator nothing) and dump the durable reason on stderr.
+    # Measured 2026-11-01: two GAIA samples were graded on this marker while the cause
+    # (a reasoning-only model message, an aborted turn) was only in the events DB.
+    diag("empty reply")
+    print("(no answer: the harness returned an empty reply)")
+    raise SystemExit(1)
+print(clean)
 PY
 RC=$?
 kill "$SRV" 2>/dev/null
