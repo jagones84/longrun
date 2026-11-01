@@ -95,19 +95,64 @@ def _resolve_targets(refs):
     return out
 
 
+def _reject(error):
+    """One fail-closed shape for every malformed call: nothing is sent."""
+    return {"ok": False, "exit_code": 64, "error": error,
+            "sent": [], "replies": [], "errors": []}
+
+
+def _wait_secs(raw):
+    """(seconds, error). wait_secs is VALIDATED, never coerced into a crash.
+
+    Live defect this closes: wait_secs="not-a-number" raised ValueError at
+    float() and escaped as exit=1 with a traceback (chatroom.py:102).
+    """
+    if raw is None or raw == "":
+        return 0.0, ""
+    if isinstance(raw, bool):
+        return 0.0, "wait_secs must be a number >= 0 (got a boolean)"
+    if isinstance(raw, str):
+        try:
+            raw = float(raw.strip())
+        except (TypeError, ValueError):
+            return 0.0, "wait_secs must be a number >= 0 (got %r)" % (raw,)
+    if not isinstance(raw, (int, float)):
+        return 0.0, "wait_secs must be a number >= 0 (got %r)" % (raw,)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0, "wait_secs must be a number >= 0 (got %r)" % (raw,)
+    if value != value or value in (float("inf"), float("-inf")):
+        return 0.0, "wait_secs must be finite (got %r)" % (raw,)
+    if value < 0:
+        return 0.0, "wait_secs must be >= 0 (got %r)" % (raw,)
+    return value, ""
+
+
 def execute(args, run_id=None, subtool=None):
     args = args or {}
-    message = str(args.get("message") or "").strip()
+    raw_message = args.get("message")
+    if not isinstance(raw_message, str) or not raw_message.strip():
+        return _reject("message must be a non-empty string (got %s)"
+                       % (type(raw_message).__name__,))
+    message = raw_message.strip()
     refs = args.get("agents") or []
-    wait_secs = float(args.get("wait_secs") or 0)
-    sender = str(args.get("sender") or run_id or "unknown")
-    if not message:
-        return {"ok": False, "exit_code": 64, "error": "message is required",
-                "sent": [], "replies": [], "errors": []}
+    wait_secs, wait_error = _wait_secs(args.get("wait_secs"))
+    if wait_error:
+        return _reject(wait_error)
+    raw_sender = args.get("sender")
+    if raw_sender is not None and not isinstance(raw_sender, str):
+        return _reject("sender must be a string (got %s)"
+                       % (type(raw_sender).__name__,))
+    # The label is a CLAIM: the envelope sessions.send prepends still carries the
+    # real "[message from session <sid>]". `sender_source` says whether this run
+    # had to trust an explicit label or derived one from the caller.
+    sender = str(raw_sender or run_id or "unknown")
+    sender_source = ("explicit" if raw_sender else
+                     ("run_id" if run_id else "unknown"))
     targets = _resolve_targets(refs)
     if not targets:
-        return {"ok": False, "exit_code": 64, "error": "no resolvable targets in agents=%r" % (refs,),
-                "sent": [], "replies": [], "errors": []}
+        return _reject("no resolvable targets in agents=%r" % (refs,))
 
     header = "[chatroom.broadcast from %s]" % sender
     sent, errors = [], []
@@ -144,6 +189,7 @@ def execute(args, run_id=None, subtool=None):
                                 "reply": "", "state": "running_or_timeout"})
 
     return {"ok": True, "exit_code": 0, "sender": sender,
+            "sender_source": sender_source,
             "targets": len(targets), "sent": sent, "replies": replies,
             "errors": errors,
             "stdout": ("broadcast delivered to %d/%d targets (%d errors, %d replies collected)"

@@ -24,7 +24,11 @@ from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.model import ModelOutput, user_prompt
 from inspect_ai.util import sandbox
 
-DEFAULT_MODEL = "z-ai/glm-5.3-flash"
+#: The name the sandbox bridge ANSWERS to. `targets_inspect_model()` only redirects a
+#: request into the eval's model when the `model` field matches `^inspect/?`, so a bare
+#: provider id (`z-ai/glm-5.3-flash`) is passed through to a real endpoint that is not
+#: there — measured 2026-11-01 as a plain `HTTP 502 Bad Gateway` from the harness.
+BRIDGE_MODEL = "inspect"
 
 
 def _answer(state: AgentState, text: str) -> AgentState:
@@ -33,7 +37,8 @@ def _answer(state: AgentState, text: str) -> AgentState:
 
 
 @agent
-def longrun_arm(timeout: int = 1800, max_steps: int = 40, model: str = DEFAULT_MODEL) -> Agent:
+def longrun_arm(timeout: int = 1800, max_steps: int = 40,
+                model: str = BRIDGE_MODEL) -> Agent:
     """The Longrun harness, driven over its own REST API inside the sandbox."""
 
     async def execute(state: AgentState) -> AgentState:
@@ -49,14 +54,16 @@ def longrun_arm(timeout: int = 1800, max_steps: int = 40, model: str = DEFAULT_M
             )
         text = (res.stdout or "").strip()
         if not res.success and not text:
-            text = "(longrun arm failed: %s)" % (res.stderr or "")[-500:]
+            # Keep enough of stderr to carry the harness's own diagnosis
+            # (base url, provider yaml, server log tail) into the Inspect log.
+            text = "(longrun arm failed: %s)" % (res.stderr or "")[-6000:]
         return _answer(state, text)
 
     return execute
 
 
 @agent
-def openclaw_arm(timeout: int = 1800, model: str = DEFAULT_MODEL) -> Agent:
+def openclaw_arm(timeout: int = 1800, model: str = BRIDGE_MODEL) -> Agent:
     """The OpenClaw harness, one headless embedded turn inside the sandbox."""
 
     async def execute(state: AgentState) -> AgentState:
@@ -72,7 +79,7 @@ def openclaw_arm(timeout: int = 1800, model: str = DEFAULT_MODEL) -> Agent:
             )
         text = (res.stdout or "").strip()
         if not res.success and not text:
-            text = "(openclaw arm failed: %s)" % (res.stderr or "")[-500:]
+            text = "(openclaw arm failed: %s)" % (res.stderr or "")[-6000:]
         return _answer(state, text)
 
     return execute

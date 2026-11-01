@@ -33,7 +33,13 @@ mkdir -p "$CTX"
 echo "[1/4] packing payload into $CTX"
 tar -C "$(dirname "$NODE")" -cf "$CTX/node.tar" node
 tar -C "$(dirname "$OC")" -cf "$CTX/openclaw.tar" openclaw
-tar -C "$REPO" -cf "$CTX/longrun.tar" server.py src config requirements.txt
+# NEVER ship the operator's MCP clients: they point at the HOST
+# (`http://192.168.1.37:3344/mcp`), and an in-container server that connects to them
+# is an arm able to act outside the sandbox it is being scored on. Measured
+# 2026-11-01: the image built from the full `config/` logged
+# `[mcp-client] PMCP: HTTP base = http://192.168.1.37:3344/mcp` inside GAIA's sandbox.
+tar -C "$REPO" --exclude='config/mcp_clients*' \
+  -cf "$CTX/longrun.tar" server.py src config requirements.txt
 cp "$SRC/longrun_turn.sh" "$SRC/openclaw_turn.sh" "$CTX/"
 ls -lh "$CTX"
 
