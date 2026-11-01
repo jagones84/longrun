@@ -14,10 +14,26 @@ Deterministic, no live model. Run: python3 tests/v296_job_todos.py
 """
 import os
 import sys
+import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src"))
 sys.path.insert(0, os.path.join(REPO, "src"))
+
+# 2026-11-01: this test used the REAL graph store, so it was only green on a virgin
+# machine. `_scope_graph` bumps the plan ONCE per job id, so on the second run the
+# graph still carried jid=J2 from the run before: the call was a no-op and the three
+# scoping checks went red ("plan did not move"). The pins were right, the isolation
+# was missing — every acceptance test owns its temp dirs (same block as v670).
+TMP = tempfile.mkdtemp(prefix="sf-v296-")
+os.environ["LONGRUN_CONFIG_DIR"] = os.path.join(TMP, "cfg")
+os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(TMP, "sessions")
+os.environ["LONGRUN_EDITS_DIR"] = os.path.join(TMP, "edits")
+os.environ["LONGRUN_RUNS_DIR"] = os.path.join(TMP, "runs")
+os.environ["LONGRUN_DATA_DIR"] = os.path.join(TMP, "data")
+os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
+os.environ["LONGRUN_GRAPH_DIR"] = os.path.join(TMP, "graphs")
+os.environ["LONGRUN_PROJECTS_DIR"] = os.path.join(TMP, "projects")
 
 results = []
 
