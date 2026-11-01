@@ -87,6 +87,25 @@ PY' || die "the --network none control did not fail"
   say "== 4. model key"
   [ -n "${OPENROUTER_API_KEY:-}" ] || die "OPENROUTER_API_KEY missing (source ~/.hermes/.env)"
   say "   model: $MODEL  (key present, value never printed)"
+  # PRESENT is not USABLE. Measured 2026-11-01: run `final5` started with a key at its
+  # spend limit and every sample of BOTH arms answered `403 Key limit exceeded` — twelve
+  # minutes of wall clock and a 0/12 that looks like a harness regression. Ask the
+  # provider how much budget is left before the first container starts.
+  _kr=$(curl -s -m 20 -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+             https://openrouter.ai/api/v1/key 2>/dev/null \
+        | .venv/bin/python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin).get("data") or {}
+except Exception:
+    raise SystemExit(3)
+lim, rem, use = d.get("limit"), d.get("limit_remaining"), d.get("usage")
+print("%s %s %s" % (lim, rem, use))
+raise SystemExit(0 if (lim is None or (rem or 0) > 0) else 4)')
+  case "$?" in
+    0) say "   budget: limit=${_kr%% *} (unlimited when empty) — usable" ;;
+    3) say "   budget: /api/v1/key unreadable — continuing (a 403 will surface in the log)" ;;
+    *) die "the key has NO budget left ($_kr = limit remaining usage) — the run would score 0/12 on both arms. Raise the key's limit, then re-run." ;;
+  esac
 
   say "== 5. dataset"
   .venv/bin/python3 - <<PY || die "GAIA dataset unavailable"
