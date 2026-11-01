@@ -105,6 +105,32 @@ check("P2 the prompt teaches list / search / schema, in that order",
       "self.tools {}" in _tctx and 'self.tools {query:' in _tctx
       and 'self.tools {tool:' in _tctx)
 
+# -------- X. the harness acts on the action the model MEANT, not a quotation ----
+# Measured 2026-11-01 on GAIA `5d0080cb`: the model's message quoted the action it had
+# been accused of ("… not {"tool":"todo.update"} …") and put the REAL action last;
+# `extract_json` returned the quotation, so the harness rejected the correct call four
+# times in a row and the plan never closed.
+from longrun.util.textkit import extract_json, extract_action_json   # noqa: E402
+
+_quoted = ('Strange, I emitted {"tool":"todo.update"} before; now the real one:\n'
+           '{"action":"todo.update","steps":[{"id":"n1","status":"done"}]}')
+_a = extract_action_json(_quoted)
+check("X1 the LAST action-shaped object wins over a quoted one",
+      isinstance(_a, dict) and _a.get("action") == "todo.update"
+      and _a.get("steps"), _a)
+check("X2 extract_json still returns the FIRST object (the two are not the same job)",
+      (extract_json(_quoted) or {}).get("tool") == "todo.update")
+
+_act = A._normalize_action({"tool": "todo.update", "args": {"steps": [{"id": "n1"}]}})
+check("X3 a harness action inside the tool envelope is coerced, not rejected",
+      _act.get("action") == "todo.update" and _act.get("steps"), _act)
+
+_batch_note = A._batch_note if hasattr(A, "_batch_note") else None
+_src_batch = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
+                  encoding="utf-8").read()
+check("X4 a batch item that is a harness action says which rule it broke",
+      "TOP-LEVEL harness action, not a tool" in _src_batch)
+
 print("---")
 okc = sum(results)
 print("\nv764: %d/%d PASS" % (okc, len(results)))

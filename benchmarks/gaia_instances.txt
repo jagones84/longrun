@@ -1,0 +1,19 @@
+# GAIA level-1 instances used for the harness comparison, one per line.
+#
+# WHY THESE SIX. They are the FIRST six attachment-free samples of
+# `2023_level1` / `validation`, in dataset order — pinned by id so both arms see
+# exactly the same questions and the run is reproducible months later. Nothing was
+# cherry-picked: the first eleven samples of the split include five that carry a file
+# (`/shared_files/...`), and an arm that never opened the attachment would be graded
+# on a question it was not given. Level 1 = "breakable by very good LLMs with tools".
+#
+# Note on the public split: GAIA keeps its TEST answers private, so the public
+# `validation` split is the official reproducible target (official scorer, copied
+# into inspect_evals/gaia/scorer.py). The full level 1 is 53 questions (~3-4 h for
+# two arms); this slice is the part that fits a short budget.
+e1fc63a2-da7a-432f-be78-7c4a95598703
+8e867cd7-cff9-4e6c-867a-ff5ddc2550be
+ec09fa32-d03f-4bf8-84b0-1f16922c3ae4
+5d0080cb-90d7-4712-bc33-848150e917d3
+a1e91b78-d3d8-4675-bb8d-62741b4b68a6
+46719c30-f4c3-4cad-be07-d5cb21eee6bb

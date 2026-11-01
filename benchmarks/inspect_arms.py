@@ -24,11 +24,19 @@ from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.model import ModelOutput, user_prompt
 from inspect_ai.util import sandbox
 
+import os
+
 #: The name the sandbox bridge ANSWERS to. `targets_inspect_model()` only redirects a
 #: request into the eval's model when the `model` field matches `^inspect/?`, so a bare
 #: provider id (`z-ai/glm-5.3-flash`) is passed through to a real endpoint that is not
 #: there — measured 2026-11-01 as a plain `HTTP 502 Bad Gateway` from the harness.
 BRIDGE_MODEL = "inspect"
+
+#: Per-SAMPLE budget. A launcher fixes it in the environment so a whole run has a wall
+#: clock: `ARM_TIMEOUT=600 scripts/bench-gaia.sh both 6`. Read at import, because an
+#: agent's keyword defaults are evaluated once.
+ARM_TIMEOUT = int(os.environ.get("ARM_TIMEOUT", "1800"))
+ARM_MAX_STEPS = int(os.environ.get("ARM_MAX_STEPS", "40"))
 
 
 def _answer(state: AgentState, text: str) -> AgentState:
@@ -37,7 +45,7 @@ def _answer(state: AgentState, text: str) -> AgentState:
 
 
 @agent
-def longrun_arm(timeout: int = 1800, max_steps: int = 40,
+def longrun_arm(timeout: int = ARM_TIMEOUT, max_steps: int = ARM_MAX_STEPS,
                 model: str = BRIDGE_MODEL) -> Agent:
     """The Longrun harness, driven over its own REST API inside the sandbox."""
 
@@ -66,7 +74,7 @@ def longrun_arm(timeout: int = 1800, max_steps: int = 40,
 
 
 @agent
-def openclaw_arm(timeout: int = 1800, model: str = BRIDGE_MODEL) -> Agent:
+def openclaw_arm(timeout: int = ARM_TIMEOUT, model: str = BRIDGE_MODEL) -> Agent:
     """The OpenClaw harness, one headless embedded turn inside the sandbox."""
 
     async def execute(state: AgentState) -> AgentState:

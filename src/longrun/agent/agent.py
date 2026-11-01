@@ -41,7 +41,7 @@ from longrun.util.fswrite import write_json
 from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event,
                      append_message, load_plan, load_tasks, persist_inject,
                      persist_tool_card, save_plan, save_session, save_tasks)
-from longrun.util.textkit import extract_json
+from longrun.util.textkit import extract_action_json, extract_json
 from longrun.util.tracing import RunTrace, _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
 
 
@@ -2081,10 +2081,18 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
     def _one_tool(it):
         tc = _chat_tool_call(it, av02)
         if not tc:
-            return {"tool": str(it.get("tool") or it.get("action") or "?"),
-                    "ok": False,
-                    "obs": "batch item is not a valid tool call: %s"
-                           % json.dumps(it, ensure_ascii=False, default=str)[:200]}
+            _nm = str(it.get("tool") or it.get("action") or "?")
+            # A harness action (todo.write/update/replan, subagent, dispatch, finish)
+            # is TOP-LEVEL, never a batch item. Saying "not a valid tool call" made the
+            # model retry the same item (measured 2026-11-01, GAIA 5d0080cb: four
+            # identical `todo.update` items), so name the real rule.
+            if _nm in _HARNESS_ACTION_NAMES:
+                _why = ("%r is a TOP-LEVEL harness action, not a tool: emit it as "
+                        '{"action":"%s",...} on its own, outside `calls`' % (_nm, _nm))
+            else:
+                _why = ("batch item is not a valid tool call: %s"
+                        % json.dumps(it, ensure_ascii=False, default=str)[:200])
+            return {"tool": _nm, "ok": False, "obs": _why}
         tool, args = tc
         _raw_tool = tool
         tool = _card_tool_name(_raw_tool, args)   # JAG-535: one tool, one name in the card
@@ -2911,6 +2919,14 @@ def _normalize_action(act):
     if not isinstance(act, dict):
         return act
     a = act.get("action")
+    # A harness action written in the TOOL envelope (`{"tool":"todo.update","args":…}`)
+    # is the same request in the wrong shape — the model quoted it from a rejection
+    # message it had just read (measured 2026-11-01). Coerce instead of rejecting.
+    if a is None:
+        _t = act.get("tool") or act.get("tool_name")
+        if isinstance(_t, str) and _t in _HARNESS_ACTION_NAMES:
+            act = dict(act, action="tool", tool=_t)
+            a = "tool"
     # JAG-278: an OpenAI-style function call {"name":"x","arguments":{...}}.
     if not a and isinstance(act.get("name"), str) and "arguments" in act:
         _args = act.get("arguments")
@@ -3192,7 +3208,7 @@ def _extract_action(answer):
     tagged = _tagged_action(answer)
     if tagged:
         return _normalize_action(tagged)
-    act = _normalize_action(extract_json(answer))
+    act = _normalize_action(extract_action_json(answer))
     if not act:
         act = _normalize_action(_dsml_action(answer))
     return act
@@ -4898,7 +4914,7 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
             on_event("agent.iteration", i=i + 1, of=max_steps)
             answer, think = _router_stream(msgs, model, lambda ch, t: on_event("agent.think", channel=ch, text=t))
             _llm(msgs, answer + think)
-            act = _normalize_action(extract_json(answer)) or {}
+            act = _normalize_action(extract_action_json(answer)) or {}
             if not isinstance(act, dict) or not act.get("action"):
                 act = {"thought": answer[:200], "action": "note", "detail": answer[:400]}
             thought = str(act.get("thought", ""))[:400]

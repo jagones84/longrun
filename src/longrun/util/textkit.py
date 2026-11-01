@@ -90,6 +90,38 @@ def _iter_json_objects(text):
     return objs
 
 
+#: The keys that make a JSON object an ACTION rather than a data artifact.
+_ACTION_KEYS = ("action", "tool", "tool_name", "todos", "steps", "calls", "tool_calls")
+
+
+def extract_action_json(text):
+    """The JSON object the model MEANT as its action: the LAST action-shaped one.
+
+    Measured 2026-11-01 (GAIA `5d0080cb`): the model's prose/scratchpad QUOTED an
+    earlier action ("… not {"tool":"todo.update"} …") before the real action at the
+    end of the message. `extract_json` returns the FIRST object, so the harness
+    rejected a call the model had not made — and the model, seeing its correct JSON
+    refused, re-emitted the identical thing four times. An action is the message's
+    CONCLUSION, not the first JSON that happens to appear in it.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        whole = json.loads(text)
+        if isinstance(whole, dict):
+            return whole
+    except Exception:  # noqa: BLE001 — prose around the object is the normal case
+        pass
+    objs = [o for o in _iter_json_objects(text) if isinstance(o, dict)]
+    if not objs:
+        return None
+    for obj in reversed(objs):
+        if any(k in obj for k in _ACTION_KEYS):
+            return obj
+    return objs[-1]
+
+
 def extract_json(text):
     """First JSON value in `text` (prose-tolerant, multi-object safe).
 
