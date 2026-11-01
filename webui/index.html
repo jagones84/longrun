@@ -2049,6 +2049,71 @@
   @media (prefers-reduced-motion: reduce) {
     #chatHead, #nowbar { animation: none; }
   }
+
+  /* ===== 2026-11-01 — RAIL GRAMMAR ======================================
+     ONE head, ONE row, ONE disclosure marker, for BOTH rails (Sessions rail
+     and Inspector). Operator report: the Sessions header was taller than the
+     Inspector's and the two read as different products ("scegli una grafica e
+     ripetila ovunque se no è troppo asimmetrico"), and an inspector with every
+     section open was a wall ("apri tutti i menu vedi che roba").
+     Reference anatomy (commercial IDE model, not invented here):
+       * VS Code — views are collapsible, movable by drag and the layout
+         persists across sessions;
+       * Linear — three text levels (title / body / auxiliary), low-saturation
+         surface, and ONE thin status line that stays visible while collapsed.
+     So: a 36px head with an 11px letter-spaced label, a 29px section row whose
+     summary (`ihd-s`) is the collapsed state's status line, and a drag grip in
+     the row's left gutter that appears on hover only. */
+  :root { --rail-hd: 36px; --rail-row: 29px; --rail-x: 10px; }
+  aside .rail-head, #inspector .insp-tools {
+    height: var(--rail-hd); min-height: var(--rail-hd); margin: 0;
+    padding: 0 var(--rail-x) 0 12px; gap: 6px;
+    display: flex; align-items: center; }
+  aside .rail-head h2, #inspector .insp-tools h2 {
+    flex: 1 1 auto; margin: 0; padding: 0; font-size: 11px; font-weight: 600;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--dim);
+    display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .srail-tools { display: inline-flex; gap: 2px; }
+  .srail-tools button { width: 22px; height: 22px; padding: 0; font-size: 10px;
+    line-height: 1; border-radius: 5px; }
+  /* the sessions toolbar is a COMPACT strip and carries the single hairline
+     (the head has none) — one divider per rail, not two */
+  aside .rail-tools { gap: 4px; padding: 4px 12px 8px; border-bottom: 1px solid var(--line); }
+  aside .rail-tools .rail-btn { width: 24px; height: 24px; border-radius: 5px; }
+  aside .rail-tools .runs-bar { padding: 2px 7px; }
+  aside .rail-search { padding: 6px 12px; border-bottom: 1px solid var(--line); }
+  aside .rail-list { margin-top: 0; }
+  /* inspector: the head divider matches the sessions strip exactly */
+  #inspector .insp-tools { border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+  #inspector { padding: 0 0 8px; }
+  #inspector section { position: relative; border-bottom: 1px solid var(--line); }
+  #inspector section:last-of-type { border-bottom: 0; }
+  #inspector .insp-hd {
+    height: var(--rail-row); min-height: var(--rail-row); padding: 0 8px 0 20px;
+    font-size: 12px; font-weight: 500; color: var(--ink); border-radius: 6px;
+    align-items: center; flex-wrap: nowrap; overflow: hidden; }
+  #inspector .insp-hd:hover { background: var(--hover); color: var(--txt); }
+  #inspector section.insp-open > .insp-hd { color: var(--txt); font-weight: 600; }
+  #inspector .ihd-s { font-family: var(--mono); font-size: 10px; letter-spacing: 0; }
+  #inspector .insp-body { padding: 2px 8px 10px; }
+  /* the drag grip: only visible on hover/focus, so the rail stays quiet */
+  #inspector .insp-grip {
+    position: absolute; left: 3px; top: 7px; width: 14px; height: 15px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 11px; line-height: 1; cursor: grab;
+    opacity: 0; transition: opacity .12s ease; touch-action: none; }
+  #inspector section:hover .insp-grip, #inspector .insp-grip:focus-visible { opacity: .8; }
+  #inspector .insp-grip:active { cursor: grabbing; }
+  #inspector section.dragging { opacity: .55; background: var(--hover); }
+  /* 2026-11-01: at ~200px the Plan card used to squeeze its goal field to a few
+     characters and stack its action row one word per line. An input gets its own
+     row, the actions wrap under it, and nothing is clipped. */
+  /* the u-* utility classes are `!important` by design, so these overrides are too */
+  #inspector .card > .u-df { flex-wrap: wrap !important; }
+  #inspector .card > .u-df > .inp { flex: 1 1 100% !important; }
+  #inspector .acts, #inspector .ctxacts { flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  #inspector .acts > .remaining { flex: 1 1 100%; }
+  #inspector #graphHead { white-space: normal; line-height: 1.35; }
 </style>
 <script>
 /* JAG-352: apply the saved theme + text-weight before first paint (no flash). */
@@ -2263,9 +2328,9 @@
                   aria-label="expand all inspector sections">▼</button>
         </span>
       </div>
-      <section data-insp="approvals" class="insp-open">
+      <section data-insp="approvals">
         <button class="insp-hd" data-call="toggleInsp" data-args='["approvals"]'>Approvals<span id="apprCount" class="ihd-s"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <!-- v633: the header already says `none` when the queue is empty, so the
              body does not repeat the empty-queue sentence inside its own card. -->
         <div id="approvals"></div>
@@ -2275,10 +2340,10 @@
         </div>
         </div>
       </section>
-      <section data-insp="cost" class="insp-open">
+      <section data-insp="cost">
         <button class="insp-hd" data-call="toggleInsp" data-args='["cost"]'
                 title="HARNESS ONLY: this counts the calls Longrun itself made — not your whole provider API key (other apps on this machine are billed separately). Provider-reported charges are exact when supplied; otherwise cost is estimated from token usage and configured rates. DeepSeek direct calls are priced peak/off-peak by UTC (peak 01-04 and 06-10 Mon-Fri; off-peak is half). Cache reads are billed at the cache rate. Unpriced calls are excluded; vendor storage, tiers and extra fees may not be represented. Hours below are the panel's local time.">Cost · harness only<span class="ihd-s" id="sCost"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <div class="card">
           <div class="costhead">
             <span id="costTotal" class="costtot">–</span>
@@ -2300,9 +2365,9 @@
         <div id="costList" class="costlist"></div>
         </div>
       </section>
-      <section data-insp="context" class="insp-open">
+      <section data-insp="context">
         <button class="insp-hd" data-call="toggleInsp" data-args='["context"]'>Context<span class="ihd-s" id="sContext"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <div class="card">
           <div class="ctxhead">
             <span id="ctxPct" class="ctxpct">–</span>
@@ -2366,9 +2431,9 @@
         </div>
         </div>
       </section>
-      <section data-insp="rules" class="insp-open">
+      <section data-insp="rules">
         <button class="insp-hd" data-call="toggleInsp" data-args='["rules"]'>Rules<span class="ihd-s" id="sRoles"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <div class="card">
           <div id="rulesWho" class="rwho"></div>
           <div id="rulesList"></div>
@@ -2692,9 +2757,9 @@
           <div id="skillsList" class="u-mt8"></div>
         </div>
       </div>
-      <section data-insp="files" class="insp-open">
+      <section data-insp="files">
         <button class="insp-hd" data-call="toggleInsp" data-args='["files"]'>Workspace<span class="ihd-s" id="sWorkspace"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <!-- v633: the section header already reads "Workspace" and its summary carries
              the folder, so the body starts with the path field, not a second title. -->
         <div class="card" id="wsCard">
@@ -2727,9 +2792,9 @@
         </div>
         </div>
       </section>
-      <section data-insp="codebase" class="insp-open">
+      <section data-insp="codebase">
         <button class="insp-hd" data-call="toggleInsp" data-args='["codebase"]'>Codebase<span class="ihd-s" id="sCodebase"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <!-- v640: the search field is the FIRST thing in the section (operator: "il
              search deve stare sopra"); the status card below is the reference. -->
         <div class="card">
@@ -2761,10 +2826,10 @@
         </div>
         </div>
       </section>
-      <section data-insp="terminal" class="insp-open">
+      <section data-insp="terminal">
         <button class="insp-hd" data-call="toggleInsp" data-args='["terminal"]'
                 title="one persistent shell per caller: the session's own (shared with the agent) plus one per agent run and subagent, shown as tabs">Terminal<span class="ihd-s" id="sTerm"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <div class="card">
           <div id="termTabs" class="term-tabs" role="tablist" aria-label="terminals"></div>
           <div class="u-df u-aic u-g6 u-mb6">
@@ -2781,9 +2846,9 @@
         </div>
         </div>
       </section>
-      <section data-insp="feed" class="insp-open">
+      <section data-insp="feed">
         <button class="insp-hd" data-call="toggleInsp" data-args='["feed"]'>Feed<span class="ihd-s" id="sFeed"></span></button>
-        <div class="insp-body">
+        <div class="insp-body" hidden>
         <!-- JAG-536: the LIVE half of the feed — what is running RIGHT NOW, with the
              cancel / pause / resume / abort doors that had no UI at all. Read from
              the registries, never mirrored: /api/tools/running + /api/agent/runs. -->
@@ -6428,13 +6493,16 @@ async function loadRulesPanel() {
   } catch (e) { who = null; }
   const wbox = $("rulesWho");
   if (wbox) {
+    // 2026-11-01: the row's summary already names the role — repeating the same
+    // id/name here printed "A139 A139" twice on one screen.
+    const _nm = (who && who.name && who.name !== who.id) ? who.name : "";
     wbox.textContent = who
-      ? ((who.id || "") + (who.name ? " \u00b7 " + who.name : "")
+      ? ((who.id || "") + (_nm ? " \u00b7 " + _nm : "")
          + (who.role ? " \u00b7 " + who.role : ""))
       : "ad-hoc session (no agent)";
     wbox.className = "rwho" + (who ? " agent" : "");
   }
-  _isum("sRoles", who ? ((who.id || "") + (who.name ? " " + who.name : "")).trim() : "ad-hoc", who ? "ok" : "");
+  _isum("sRoles", who ? (who.role || who.name || who.id || "") : "ad-hoc", who ? "ok" : "");
   const rows = [];
   if (sessionId) rows.push(_rulesRow("role", "session role", (role && role.path) || "(no session)",
                                      (role && role.text) || "", "ROLE.md", !!(role && role.text), false));
@@ -7660,8 +7728,10 @@ function planNodes(g) {
 function renderGraph() {
   const box = $("tasks"); box.innerHTML = ""; $("taskDetail").innerHTML = "";
   if (!graph) {
+    // 2026-11-01: "run graph: —" above "no run graph yet — send a request" said
+    // the same thing twice in a 140px rail. One line, one truth.
     box.innerHTML = '<div class="remaining">no run graph yet — send a request</div>';
-    $("graphHead").textContent = "run graph: —"; $("taskCount").textContent = "";
+    $("graphHead").textContent = ""; $("taskCount").textContent = "";
     _isum("sPlan", "");
     return;
   }
@@ -12716,13 +12786,67 @@ function focusInsp(name, opts) {
   _loadInspector(key);
 }
 function restoreInspector() {
+  // 2026-11-01 (v2): the operator's stored "every section open" state WAS the
+  // wall he reported ("apri tutti i menu vedi che roba"). The new default is ONE
+  // open section; a one-time migration drops the old per-section keys so that
+  // default applies exactly once, then his choices stick again.
+  if (localStorage.getItem("sf_insp_v") !== "2") {
+    Object.keys(localStorage).forEach(k => { if (k.indexOf("sf_insp_") === 0) localStorage.removeItem(k); });
+    localStorage.setItem("sf_insp_v", "2");
+  }
   document.querySelectorAll("#inspector section").forEach(s => {
     const v = localStorage.getItem("sf_insp_" + s.dataset.insp);
     if (v === "0") { s.querySelector(".insp-body").hidden = true; s.classList.remove("insp-open"); }
     else if (v === "1") { s.querySelector(".insp-body").hidden = false; s.classList.add("insp-open"); }
   });
 }
+/* 2026-11-01: the Inspector became a list of VIEWS, like the sessions rail —
+   every section is a row you can collapse and DRAG to reorder, and the order is
+   remembered (VS Code's movable views are the reference). The grip is injected
+   here instead of being written ten times in the markup, so a new section gets
+   the same affordance for free; it only shows on hover, so the rail stays quiet. */
+const INSP_ORDER_KEY = "sf_insp_order";
+function _inspSections() {
+  return Array.prototype.slice.call(document.querySelectorAll("#inspector > section[data-insp]"));
+}
+function _applyInspOrder() {
+  const box = $("inspector");
+  if (!box) return;
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(INSP_ORDER_KEY) || "[]"); } catch (e) { ids = []; }
+  if (!Array.isArray(ids) || ids.length < 2) return;
+  const by = new Map(_inspSections().map(s => [s.dataset.insp, s]));
+  ids.forEach(id => { const s = by.get(id); if (s) box.appendChild(s); });
+}
+function _initInspectorChrome() {
+  const box = $("inspector");
+  if (!box) return;
+  _applyInspOrder();
+  _inspSections().forEach(sec => {
+    if (!sec.querySelector(".insp-grip")) {
+      const g = document.createElement("span");
+      g.className = "insp-grip";
+      g.textContent = "\u283f";
+      g.title = "drag to reorder this panel (same gesture as the session list)";
+      g.setAttribute("aria-hidden", "true");
+      sec.insertBefore(g, sec.firstChild);
+    }
+    if (sec.dataset.dragBound || !window.DragSort) return;
+    sec.dataset.dragBound = "1";
+    DragSort.bind(sec.querySelector(".insp-grip"), {
+      container: box, source: sec, id: sec.dataset.insp,
+      itemSel: "#inspector > section[data-insp]", idKey: "insp",
+      scrollEl: box,
+      onCommit: ({ id, targetId, after }) => {
+        const next = DragSort.moveItem(_inspSections().map(s => s.dataset.insp), id, targetId, after);
+        localStorage.setItem(INSP_ORDER_KEY, JSON.stringify(next));
+        _applyInspOrder();
+      }
+    });
+  });
+}
 restoreInspector();
+_initInspectorChrome();
 function openPanel(name, opts) { focusInsp(name, opts); }
 
 /* ---- JAG-400: CODEBASE index — PER WORKSPACE (like project rules) ---- */
