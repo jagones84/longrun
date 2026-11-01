@@ -62,6 +62,8 @@ model = os.environ.get("LR_MODEL", "z-ai/glm-5.3-flash")
 # The HTTP call waits for the WHOLE turn, so its timeout must be the turn budget —
 # not a smaller number nobody configured. Measured 2026-11-01: a 300 s client timeout
 # threw away a GAIA turn that was still reasoning (its answer was already persisted).
+# A client timeout that fires BEFORE the sandbox's own deadline is a silent loss: the
+# server keeps working, the arm returns "", and the scorer records "no answer".
 TURN_TIMEOUT = int(os.environ.get("LR_TURN_TIMEOUT", "1800"))
 
 def post(path, body):
@@ -119,15 +121,22 @@ def diag(tag):
     return tag
 
 
-def dump_forensic(sid, text):
+def dump_forensic(sid, text, error=""):
     """Everything needed to reconstruct the turn, in one file the arm can read out.
 
     The container is DESTROYED when the trial ends, so the session store, the plan
     and the events DB die with it and a lost sample can only be explained by
     re-running it (measured 2026-11-01). The answer is graded; this file is the
-    diagnosis: every message, every durable event, the plan, the workspace listing.
+    diagnosis: every message, every durable event, the plan, the workspace listing,
+    the transport error and the server log tail.
     """
-    rec = {"answer": text, "session": sid, "question": q[:4000]}
+    rec = {"answer": text, "session": sid, "question": q[:4000], "error": error}
+    try:
+        rec["server_log"] = "\n".join(
+            open("/tmp/lr-turn.log", encoding="utf-8", errors="replace")
+            .read().splitlines()[-60:])
+    except OSError:
+        pass
     try:
         rec["plan"] = get("/api/sessions/%s/graph" % sid, timeout=20)
     except Exception as exc:  # noqa: BLE001
@@ -177,6 +186,7 @@ post("/api/routing", {"roles": {r: {"model": "bridge:" + model}
 sid = post("/api/sessions", {"title": "gaia"})["id"]
 post("/api/workspace", {"session": sid, "workspace": "/tmp/lr/data"})
 text = ""
+_err = ""
 try:
     out = post("/api/chat", {"session": sid, "message": q, "headless": True,
                              "model": "bridge:" + model,
@@ -185,13 +195,26 @@ try:
     if isinstance(text, dict):
         text = text.get("content") or ""
 except Exception as exc:  # noqa: BLE001 — a failed turn must say WHY, not just 502
+    _err = repr(exc)
     print("chat failed: %r" % (exc,), file=sys.stderr)
     text = persisted_reply(sid)
     print("[turn] persisted reply: %s" % ("yes" if text.strip() else "no"), file=sys.stderr)
     if not text.strip():
         diag("transport failed")
+        # The turn is not over because our client gave up: the harness is still
+        # working server-side. Measured 2026-11-01 (`72e110e7`, 26 turns, 44 tool
+        # calls): the client timed out at 390 s, the arm returned "", and the scorer
+        # recorded "no answer" for work that was still in flight. Bounded wait.
+        import time as _t
+        for _i in range(15):
+            _t.sleep(3)
+            text = persisted_reply(sid)
+            if text.strip():
+                print("[turn] late reply captured %ds after the client timeout"
+                      % (3 * (_i + 1)), file=sys.stderr)
+                break
 
-dump_forensic(sid, text)
+dump_forensic(sid, text, _err)
 
 # The scorer compares the ANSWER: the harness's own think markup must not travel with
 # it (measured 2026-11-01: the reply began with `<think signature="reasoning-details://…">`

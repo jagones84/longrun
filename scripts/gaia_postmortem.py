@@ -65,6 +65,8 @@ def forensic(path):
         "plan": rec.get("plan"),
         "messages": msgs,
         "err_log": rec.get("err_log") or "",
+        "error": rec.get("error") or "",
+        "server_log": rec.get("server_log") or "",
         "answer": rec.get("answer") or rec.get("final") or "",
     }
 
@@ -181,6 +183,13 @@ def main():
                     # openclaw's own account of a turn that produced nothing.
                     print("     arm err.log (tail): %s"
                           % " ".join(f["err_log"].split())[-700:])
+                if f["error"]:
+                    # The transport error the driver caught: an empty reply with no
+                    # `cost.usage` and no `chat.error` in the events means the HTTP
+                    # call died, and this is the only place that says why.
+                    print("     transport error: %s" % f["error"][:400])
+                if f["server_log"] and "--dump" in args:
+                    print("     server log (tail):\n%s" % f["server_log"][-2500:])
         if "--json" in sys.argv:
             print(json.dumps(rep, indent=1))
     return 0

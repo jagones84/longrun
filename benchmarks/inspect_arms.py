@@ -102,10 +102,14 @@ def longrun_arm(timeout: int = ARM_TIMEOUT, max_steps: int = ARM_MAX_STEPS,
                 env={"LR_BASE_URL": "http://localhost:%d/v1" % bridge.port,
                      "LR_MODEL": model,
                      "LR_MAX_STEPS": str(max_steps),
-                     # the turn budget, not a smaller default: the driver waits for
-                     # the whole turn, so its client timeout IS the budget
-                     "LR_TURN_TIMEOUT": str(max(60, timeout - 30))},
-                timeout=timeout,
+                     # The turn budget, not a smaller default: the driver waits for
+                     # the whole turn, so its client timeout IS the budget — and it
+                     # must not fire BEFORE this exec's own deadline, or the answer is
+                     # lost while the harness is still working (2026-11-01).
+                     "LR_TURN_TIMEOUT": str(max(60, timeout))},
+                # +90 s: the driver needs room to capture a reply that lands just after
+                # its client timeout instead of reporting an empty turn.
+                timeout=timeout + 90,
             )
         text = (res.stdout or "").strip()
         if not res.success and not text:
