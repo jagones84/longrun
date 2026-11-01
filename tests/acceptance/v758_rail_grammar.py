@@ -73,9 +73,14 @@ check("C2 per-section state is still remembered after the migration",
 check("D1 a grip is injected into every inspector section (hover-only)",
       'g.className = "insp-grip"' in UI and "#inspector .insp-grip {" in UI
       and "section:hover .insp-grip" in UI)
-check("D2 the drag runs on the SAME engine as the session list",
-      "DragSort.bind(sec.querySelector(\".insp-grip\")" in UI
-      and 'itemSel: "#inspector > section[data-insp]", idKey: "insp"' in UI)
+check("D2 the reorder math is the same one the session list uses",
+      # 2026-11-01: the inspector drives its own pointer drag (a plain vertical
+      # stack — the grouped/region shape DragSort.bind models for the sessions
+      # rail never produced a drop target here), while the pure reorder math stays
+      # shared with the session list.
+      "grip.addEventListener(\"pointerdown\"" in UI
+      and "DragSort.moveItem(_inspSections().map(s => s.dataset.insp)" in UI
+      and 'const row = (under && under.closest) ? under.closest("#inspector > section[data-insp]") : null;' in UI)
 check("D3 the order is persisted and re-applied on load",
       'const INSP_ORDER_KEY = "sf_insp_order";' in UI
       and "DragSort.moveItem(_inspSections().map(s => s.dataset.insp)" in UI

@@ -2096,13 +2096,14 @@
   #inspector section.insp-open > .insp-hd { color: var(--txt); font-weight: 600; }
   #inspector .ihd-s { font-family: var(--mono); font-size: 10px; letter-spacing: 0; }
   #inspector .insp-body { padding: 2px 8px 10px; }
-  /* the drag grip: only visible on hover/focus, so the rail stays quiet */
+  /* the drag grip: visible but quiet (opacity .35) — a hover-only 14px target was
+     undiscoverable, which is exactly why the operator "could not move" the panels */
   #inspector .insp-grip {
-    position: absolute; left: 3px; top: 7px; width: 14px; height: 15px;
+    position: absolute; left: 0; top: 0; height: var(--rail-row); width: 18px;
     display: flex; align-items: center; justify-content: center;
     color: var(--muted); font-size: 11px; line-height: 1; cursor: grab;
-    opacity: 0; transition: opacity .12s ease; touch-action: none; }
-  #inspector section:hover .insp-grip, #inspector .insp-grip:focus-visible { opacity: .8; }
+    opacity: .35; transition: opacity .12s ease; touch-action: none; z-index: 2; }
+  #inspector section:hover .insp-grip, #inspector .insp-grip:focus-visible { opacity: 1; color: var(--txt); }
   #inspector .insp-grip:active { cursor: grabbing; }
   #inspector section.dragging { opacity: .55; background: var(--hover); }
   /* 2026-11-01: at ~200px the Plan card used to squeeze its goal field to a few
@@ -2114,6 +2115,41 @@
   #inspector .acts, #inspector .ctxacts { flex-wrap: wrap; gap: 6px 12px; align-items: center; }
   #inspector .acts > .remaining { flex: 1 1 100%; }
   #inspector #graphHead { white-space: normal; line-height: 1.35; }
+  /* 2026-11-01: the Plan rows were a wall of unexplained counters and always-on
+     destructive controls. The id line is quiet until you point at the row, the
+     rewind button only exists on hover/focus, and the single remaining chip is
+     the actionable one (a claims-without-source warning, else the evidence count). */
+  #inspector .task { padding: 4px 6px; gap: 6px; }
+  #inspector .task .tids { opacity: .45; font-size: 10px; }
+  #inspector .task:hover .tids, #inspector .task:focus-within .tids { opacity: 1; }
+  #inspector .task .task-rw { opacity: 0; margin-left: 4px; }
+  #inspector .task:hover .task-rw, #inspector .task:focus-within .task-rw { opacity: 1; }
+  #inspector .task .ev { font-size: 10px; color: var(--dim); }
+  #inspector .task .ev.warn { color: var(--warn); }
+  #inspector .task .dep { color: var(--muted); font-size: 10px; }
+  /* the per-call ledger is reference data, not the answer: folded by default */
+  #inspector .costmore { margin-top: 4px; }
+  #inspector .costmore > summary { cursor: pointer; color: var(--dim); font-size: 11px; }
+  #inspector .costlist { max-height: 240px; }
+  /* ===== 2026-11-01 — SETTINGS: one rhythm per category =====================
+     Settings was readable but inconsistent: full-bleed rows with no container,
+     category labels at three different weights, and a legend crammed into the
+     window head. Same grammar as the inspector now: an 11px spaced label, then a
+     bordered card, 18px between categories, and the LIVE/save legend as a chip. */
+  #settingsWin .sw-main { padding: 16px 18px 26px; }
+  #settingsWin .sw-main .sw-cat h2 {
+    margin: 20px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .09em;
+    color: var(--dim); text-transform: uppercase; }
+  #settingsWin .sw-main .sw-cat h2:first-child { margin-top: 0; }
+  #settingsWin .sw-main .card {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; }
+  #settingsWin .sw-main .card + h2 { margin-top: 20px; }
+  #settingsWin .sw-main .remaining { font-size: 10.5px; }
+  #settingsWin .sw-nav { padding: 10px; }
+  #settingsWin .sw-nav button { padding: 7px 10px; margin-bottom: 2px; font-size: 12px; }
+  #settingsWin .set-chip { font-size: 9px; letter-spacing: .08em; padding: 1px 7px; border-radius: 999px; }
+  #settingsWin .sw-head { padding: 11px 14px; gap: 8px; }
 </style>
 <script>
 /* JAG-352: apply the saved theme + text-weight before first paint (no flash). */
@@ -2362,7 +2398,12 @@
                     title="POST /api/costs/reset — clear THIS session's ledger (the calls stay spent)">reset ledger</button>
           </div>
         </div>
-        <div id="costList" class="costlist"></div>
+        <!-- 2026-11-01: the per-call ledger is reference data — folded, so the
+             section shows the total and the two actions, not 20 rows of history. -->
+        <details class="brk costmore">
+          <summary>per-call ledger</summary>
+          <div id="costList" class="costlist"></div>
+        </details>
         </div>
       </section>
       <section data-insp="context">
@@ -8023,6 +8064,16 @@ function showNodeDetail(n) {
   $("taskDetail").innerHTML =
     `<div style="color:var(--txt)">${esc(_todoid(n))}${n.jid ? " · " + esc(_nodeJob(n)) : ""} · ${esc(n.id)} · ${esc(n.status)}` +
     ((n.deps || []).length ? " · deps " + esc(n.deps.join(", ")) : "") + `</div>` +
+    // 2026-11-01: the row keeps ONE count chip; the full breakdown lives here, so
+    // removing the two extra chips lost no information.
+    (function () {
+      const items = (n.evidence || []).filter(Boolean);
+      if (!items.length) return "";
+      const refs = items.reduce((a, e) => a + (((e && e.sources) || []).length), 0);
+      const claims = items.filter(e => e && e.claim && !e.superseded).length;
+      return `<div style="color:var(--dim);margin:4px 0">evidence: ${items.length} item(s) · ${refs} source reference(s)` +
+        (claims ? ` · <span style="color:var(--warn)">${claims} claim(s) with no source</span>` : "") + `</div>`;
+    })() +
     (n.reason ? `<div style="color:var(--dim);margin:4px 0">reason: ${esc(n.reason)}</div>` : "") +
     `<div style="white-space:pre-wrap;margin:4px 0">${esc(ev)}</div>` +
     `<div class="graphrow">` +
@@ -8646,13 +8697,18 @@ function taskTree(nodes) {
     // field (id via _attr, label/evidence via esc). It was interpolated raw, so a dep
     // id containing markup rendered executable HTML inside the Plan list (stored XSS).
     const deps = (n.deps || []).length ? ` <span class="dep">⤷ ${esc(n.deps.join(", "))}</span>` : "";
-    const ev = (n.evidence || []).length ? ` <span class="ev" title="${n.evidence.length} evidence item(s) — click the row to view them and jump the chat to this step">📎 ${n.evidence.length}</span>` : "";
-    // F3: how many of those entries name a real source (path:line), and whether
-    // any close is a bare claim — the panel must show the difference, not blur it.
+    // 2026-11-01: the row carried THREE counters on the right (📎 evidence, 🔗
+    // sources, ⚠ claims) plus a permanent rewind button — the operator read them as
+    // unexplained "indici". The breakdown lives in the row's own detail now, and the
+    // row keeps ONE chip only when it says something actionable: claims without a
+    // source (a real risk) win; otherwise the evidence count; nothing when empty.
+    const _evN = (n.evidence || []).length;
     const _refs = (n.evidence || []).reduce((a, e) => a + ((e && e.sources) || []).length, 0);
     const _claims = (n.evidence || []).filter(e => e && e.claim && !e.superseded).length;
-    const src = _refs ? ` <span class="ev" title="${_refs} source reference(s) — path:line">🔗 ${_refs}</span>` : "";
-    const claim = _claims ? ` <span class="ev" title="${_claims} close(s) recorded as a CLAIM (no source)">⚠ ${_claims}</span>` : "";
+    const ev = _claims
+      ? ` <span class="ev warn" title="${_claims} of ${_evN} close(s) are CLAIMS with no source reference — click the row for the evidence">\u26a0 ${_claims}</span>`
+      : (_evN ? ` <span class="ev" title="${_evN} evidence item(s), ${_refs} with a source reference — click the row for the evidence">\u2713 ${_evN}</span>` : "");
+
     // JAG-431k: split the row into meta (status/id/JN) and main (label/deps/ev/rewind)
     // so a long wrapped label can reclaim the width (see `.task.stacked`).
     // v610: chips carry the FULL store id (J17 / J17.4) — v609 stripped the
@@ -8664,7 +8720,7 @@ function taskTree(nodes) {
     // wrapping line UNDER it, so the label keeps the full width.
     const ids = `<span class="tids"><span class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}</span>${n.jid ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.jid))}" style="color:var(--acc2);font-size:10px;cursor:pointer;text-decoration:underline dotted" title="job ${esc(_nodeJob(n))} — click for job text + open in Control Jobs">${esc(_nodeJob(n))}</span>` : ""}${n.subjob ? `<span class="jt jt-job" data-job="${_attr(_fullJ(n.subjob))}" style="color:var(--info);font-size:10px;cursor:pointer;text-decoration:underline dotted" title="subjob ${esc(_nodeSub(n))} (embodies this todo) — click for its row + open in Control Jobs">${esc(_nodeSub(n))}</span>` : ""}</span>`;
     const meta = `<span class="st ${n.status}">${n.status}</span>${ids}`;
-    const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}${src}${claim}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
+    const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
     return `<div class="task" data-id="${_attr(n.id)}" style="margin-left:${depth * 14}px">` +
       `<span class="tmeta">${meta}</span><span class="tmain">${body}</span></div>`;
   };
@@ -12831,17 +12887,53 @@ function _initInspectorChrome() {
       g.setAttribute("aria-hidden", "true");
       sec.insertBefore(g, sec.firstChild);
     }
-    if (sec.dataset.dragBound || !window.DragSort) return;
+    const grip = sec.querySelector(".insp-grip");
+    if (sec.dataset.dragBound || !grip) return;
     sec.dataset.dragBound = "1";
-    DragSort.bind(sec.querySelector(".insp-grip"), {
-      container: box, source: sec, id: sec.dataset.insp,
-      itemSel: "#inspector > section[data-insp]", idKey: "insp",
-      scrollEl: box,
-      onCommit: ({ id, targetId, after }) => {
-        const next = DragSort.moveItem(_inspSections().map(s => s.dataset.insp), id, targetId, after);
+    /* 2026-11-01: this list is a plain vertical stack, so it drives its own drag
+       instead of the grouped/region shape `DragSort.bind` models for the sessions
+       rail (a shared engine that has to be told about regions, groups and a server
+       order was the wrong contract here — and the operator reported the panels did
+       not move at all). The pure reorder MATH stays shared: DragSort.moveItem. */
+    grip.addEventListener("pointerdown", e => {
+      if (e.button !== 0 || e.target !== grip) return;
+      e.preventDefault();
+      const startY = e.clientY;
+      const me = sec.dataset.insp;
+      let live = false, targetId = null, after = false;
+      try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+      const clear = () => box.querySelectorAll(".drop-before,.drop-after")
+        .forEach(el => el.classList.remove("drop-before", "drop-after"));
+      const onMove = ev => {
+        if (!live && Math.abs(ev.clientY - startY) < 6) return;
+        live = true;
+        sec.classList.add("dragging");
+        const under = document.elementFromPoint(ev.clientX, ev.clientY);
+        const row = (under && under.closest) ? under.closest("#inspector > section[data-insp]") : null;
+        const t = (row && row !== sec) ? row : null;
+        targetId = t ? t.dataset.insp : null;
+        after = false;
+        if (t) {
+          const r = t.getBoundingClientRect();
+          after = ev.clientY >= r.top + r.height / 2;
+        }
+        clear();
+        if (t) t.classList.add(after ? "drop-after" : "drop-before");
+      };
+      const onUp = () => {
+        grip.removeEventListener("pointermove", onMove);
+        grip.removeEventListener("pointerup", onUp);
+        grip.removeEventListener("pointercancel", onUp);
+        sec.classList.remove("dragging");
+        clear();
+        if (!live || !targetId) return;
+        const next = DragSort.moveItem(_inspSections().map(s => s.dataset.insp), me, targetId, after);
         localStorage.setItem(INSP_ORDER_KEY, JSON.stringify(next));
         _applyInspOrder();
-      }
+      };
+      grip.addEventListener("pointermove", onMove);
+      grip.addEventListener("pointerup", onUp);
+      grip.addEventListener("pointercancel", onUp);
     });
   });
 }
