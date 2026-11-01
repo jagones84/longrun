@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Both harnesses as Inspect agents — the same task, the same model, two arms.
+
+Why the sandbox bridge: Inspect's `sandbox_agent_bridge()` starts a proxy INSIDE the
+task container that speaks the OpenAI API on `localhost:<port>/v1` and relays every
+request to the model the eval selected. The harness runs in that same container, so:
+
+  * the model is the eval's model, not a per-harness choice — that is what makes the
+    comparison a comparison;
+  * the harness's own tools act on the evaluated machine, not on the host;
+  * Inspect still logs tokens, limits and transcripts.
+
+The payload (longrun source, node + openclaw) is baked into the sandbox image
+(`benchmarks/inspect_sandbox/`), so a trial only starts the harness.
+
+Usage:
+    inspect eval inspect_evals/gaia --subset 2023_level1 \
+        -T sandbox=("docker","benchmarks/inspect_sandbox/Dockerfile") \
+        --solver benchmarks/inspect_arms.py@longrun_arm --model openrouter/z-ai/glm-5.3-flash
+
+    ... --solver benchmarks/inspect_arms.py@openclaw_arm
+"""
+from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
+from inspect_ai.model import ModelOutput, user_prompt
+from inspect_ai.util import sandbox
+
+DEFAULT_MODEL = "z-ai/glm-5.3-flash"
+
+
+def _answer(state: AgentState, text: str) -> AgentState:
+    state.output = ModelOutput.from_content(model="sandbox-bridge", content=text)
+    return state
+
+
+@agent
+def longrun_arm(timeout: int = 1800, max_steps: int = 40, model: str = DEFAULT_MODEL) -> Agent:
+    """The Longrun harness, driven over its own REST API inside the sandbox."""
+
+    async def execute(state: AgentState) -> AgentState:
+        prompt = user_prompt(state.messages)
+        await sandbox().write_file("/tmp/question.txt", prompt.text)
+        async with sandbox_agent_bridge(state) as bridge:
+            res = await sandbox().exec(
+                cmd=["bash", "/opt/longrun/longrun_turn.sh", "/tmp/question.txt"],
+                env={"LR_BASE_URL": "http://localhost:%d/v1" % bridge.port,
+                     "LR_MODEL": model,
+                     "LR_MAX_STEPS": str(max_steps)},
+                timeout=timeout,
+            )
+        text = (res.stdout or "").strip()
+        if not res.success and not text:
+            text = "(longrun arm failed: %s)" % (res.stderr or "")[-500:]
+        return _answer(state, text)
+
+    return execute
+
+
+@agent
+def openclaw_arm(timeout: int = 1800, model: str = DEFAULT_MODEL) -> Agent:
+    """The OpenClaw harness, one headless embedded turn inside the sandbox."""
+
+    async def execute(state: AgentState) -> AgentState:
+        prompt = user_prompt(state.messages)
+        await sandbox().write_file("/tmp/question.txt", prompt.text)
+        async with sandbox_agent_bridge(state) as bridge:
+            res = await sandbox().exec(
+                cmd=["bash", "/opt/longrun/openclaw_turn.sh", "/tmp/question.txt"],
+                env={"OC_BASE_URL": "http://localhost:%d/v1" % bridge.port,
+                     "OC_MODEL": model,
+                     "OC_TIMEOUT": str(timeout)},
+                timeout=timeout + 60,
+            )
+        text = (res.stdout or "").strip()
+        if not res.success and not text:
+            text = "(openclaw arm failed: %s)" % (res.stderr or "")[-500:]
+        return _answer(state, text)
+
+    return execute

@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""v757 — both harnesses as Inspect AI agents (the cross-benchmark arms).
+
+Why Inspect: an Inspect eval owns the task, the sandbox and the model, and
+`sandbox_agent_bridge()` exposes that model to a process INSIDE the task container
+on `localhost:<port>/v1`. The harness therefore runs in the same machine it is being
+scored on and speaks to the eval's model — same task, same model, two arms.
+
+The image is built once by `benchmarks/inspect_sandbox/build_image.sh` and both
+drivers live in it at fixed paths; this file pins the two halves of that contract
+together, because a path that disagrees between the builder and the agent is a
+silent "arm did nothing" (no output, no error).
+
+Deterministic: no docker, no model, no network, no inspect_ai import.
+"""
+import os
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SBX = os.path.join(REPO, "benchmarks", "inspect_sandbox")
+
+results = []
+
+
+def check(name, ok, detail=""):
+    results.append(bool(ok))
+    print(("PASS " if ok else "FAIL ") + name + ((" :: " + str(detail)) if detail else ""))
+
+
+def read(*parts):
+    path = os.path.join(REPO, *parts)
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+arms = read("benchmarks", "inspect_arms.py")
+build = read("benchmarks", "inspect_sandbox", "build_image.sh")
+dockerfile = read("benchmarks", "inspect_sandbox", "Dockerfile")
+lr_turn = read("benchmarks", "inspect_sandbox", "longrun_turn.sh")
+oc_turn = read("benchmarks", "inspect_sandbox", "openclaw_turn.sh")
+
+# ---- A. two arms, one mechanism ---------------------------------------------
+check("A1 the longrun arm is defined", "@agent" in arms and "def longrun_arm(" in arms)
+check("A2 the openclaw arm is defined", "def openclaw_arm(" in arms)
+# The whole point: the model is the eval's model. A per-arm model choice would make
+# any difference between the arms unassignable.
+check("A3 both arms take the model from the sandbox bridge, not their own config",
+      arms.count("sandbox_agent_bridge(state)") == 2, arms.count("sandbox_agent_bridge(state)"))
+check("A4 the bridge port is what the harness is pointed at",
+      "LR_BASE_URL" in arms and '"http://localhost:%d/v1" % bridge.port' in arms
+      and "OC_BASE_URL" in arms)
+check("A5 the answer Inspect records is the harness's final text",
+      "ModelOutput.from_content(" in arms and "state.output = " in arms)
+
+# ---- B. the paths the agent calls are the paths the image installs -----------
+for arm, driver in (("longrun", "longrun_turn.sh"), ("openclaw", "openclaw_turn.sh")):
+    target = "/opt/longrun/" + driver
+    check("B1 the %s arm calls %s" % (arm, target), target in arms)
+    check("B2 build_image.sh installs that same driver at that same path",
+          ("/opt/longrun/" + driver) in build
+          and "COPY longrun_turn.sh openclaw_turn.sh /opt/longrun/" in build)
+check("B3 the image carries both runtimes the drivers need",
+      "tar -C \"$(dirname \"$NODE\")\"" in build and "arcname" not in build
+      and "openclaw.tar" in build and "longrun.tar" in build)
+check("B4 the committed Dockerfile only derives from the built image (no second payload)",
+      "FROM inspect-arms:latest" in dockerfile and "COPY" not in dockerfile)
+
+# ---- C. each driver is a turn, not a chat ------------------------------------
+check("C1 the longrun driver answers on stdout and keeps usage off it",
+      "print(text.strip()" in lr_turn and "file=sys.stderr" in lr_turn)
+check("C2 the longrun driver replaces the provider list with the bridge",
+      "providers.yaml" in lr_turn and "api_key_env: LR_API_KEY" in lr_turn)
+check("C3 the longrun driver runs the turn headless",
+      '"headless": True' in lr_turn and "max_steps" in lr_turn)
+check("C4 the openclaw driver prints the final answer, not the envelope",
+      'd.get("final")' in oc_turn)
+# openclaw addresses the model as `<provider>/<id>`; a bare id is refused.
+check("C5 openclaw is told the bridge is an openai-compatible provider",
+      '"openai/$MODEL"' in oc_turn and "OPENAI_BASE_URL" in oc_turn)
+check("C6 openclaw runs embedded and isolated (no gateway inside a task container)",
+      "--isolated" in oc_turn and "--auth-env-only" in oc_turn)
+
+# ---- D. the driver is a file, not an inline ssh line ------------------------
+for name in ("longrun_turn.sh", "openclaw_turn.sh", "build_image.sh"):
+    path = os.path.join(SBX, name)
+    check("D1 %s exists and is committed" % name, os.path.isfile(path))
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    check("D2 %s is LF (a CRLF shell script dies with exit 127)" % name, b"\r\n" not in raw)
+
+print("%d/%d checks" % (sum(results), len(results)))
+sys.exit(0 if all(results) else 1)
