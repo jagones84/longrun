@@ -259,6 +259,80 @@ def context_summary(session_id=None, graph_key=None):
     return "\n".join(lines) if lines else "(no task list yet)"
 
 
+#: The tool NAME written where a KEY belongs: `{"action":"tool","shell.exec",
+#: "args":{…}}`. The intent is unambiguous (a bare JSON string right after
+#: `"action":"tool"` is the tool), but the text is NOT valid JSON, so `json.loads`
+#: fails. Measured live 2026-11-02 (session 777378644e9c): the model emitted this
+#: shape three replies in a row — `{"action":"tool","shell.exec","args":…}` twice
+#: and a variant — while the harness only answered "That JSON was invalid or
+#: incomplete (it did not parse)". The four-invalid-reply breaker then killed an
+#: INCOMPLETE goal with `no_valid_action`, and the operator watched three bare
+#: RETRY messages with nothing between them. Same rule as the `<arg_key>` dialect
+#: (v751) and the `<action>tool</action> + JSON` envelope (v736): READ the shape the
+#: model actually wrote instead of dying on it.
+_MISPLACED_NAME_RE = re.compile(
+    r'(\{\s*"action"\s*:\s*"tool"\s*,\s*)"([A-Za-z_][\w.\-]*)"(\s*,\s*"'
+    r'(?:args|arguments|input|parameters)"\s*:)')
+
+
+def _repair_misplaced_tool_name(text):
+    """`{"action":"tool","shell.exec","args":{…}}` -> the same call with `"tool":"…"`.
+
+    Returns the text unchanged when the malformation is absent, so a caller can
+    tell "repaired" from "nothing to repair".
+    """
+    try:
+        return _MISPLACED_NAME_RE.sub(
+            lambda m: m.group(1) + '"tool":"' + m.group(2) + '"' + m.group(3),
+            str(text or ""), count=1)
+    except Exception:  # noqa: BLE001 — a repair must never break the answer path
+        return text
+
+
+def _rejected_reply_note(answer):
+    """The retry for a reply that is neither valid JSON nor a known dialect.
+
+    It ALWAYS quotes the reply back. The old note ("That JSON was invalid or
+    incomplete (it did not parse)") named no text and no malformation, so the model
+    repeated the SAME broken shape until the breaker stopped the goal (measured
+    2026-11-02, session 777378644e9c). A retry that does not show the offending
+    reply cannot fix it.
+    """
+    snip = str(answer or "").strip().replace("\n", " ")
+    out = ["Your reply could not be executed. It was: " + (snip[:300] or "(empty)")]
+    if _repair_misplaced_tool_name(snip) != snip:
+        out.append('You wrote the tool NAME where a KEY belongs: the envelope is '
+                   '{"action":"tool","tool":"<name>","args":{...}} — a colon and the '
+                   'key "tool" before the name, never "tool","<name>".')
+    out.append('Emit either that object, a harness action (todo.write / todo.update / '
+               'todo.replan), or plain prose with no JSON at all. Never show JSON to '
+               'the user.')
+    return "\n".join(out)
+
+
+#: Consecutive unexecutable replies that end a turn. It is a real safety valve (a
+#: model stuck on one shape can loop forever), so it is kept — but it must be the
+#: LAST resort, and it must say why it fired.
+INVALID_REPLY_CAP = 4
+
+
+def _after_invalid_reply(streak, selfcheck_left, unfinished, cap=INVALID_REPLY_CAP):
+    """What to do after ONE unexecutable reply: 'retry' | 'selfcheck' | 'stop'.
+
+    ONE owner for the circuit breaker, so the three kinds of invalid reply (a stray
+    action dict, DSML markup, unparseable JSON) cannot drift. Measured live
+    2026-11-02 (session 777378644e9c): only the FIRST kind had a last-chance closure
+    round; the other two stopped an INCOMPLETE goal outright, so three unparseable
+    replies in a row ended the goal while the operator watched three bare RETRY
+    messages with no agent turn between them.
+    """
+    if int(streak or 0) < int(cap):
+        return "retry"
+    if int(selfcheck_left or 0) > 0 and unfinished:
+        return "selfcheck"
+    return "stop"
+
+
 def _goal_block(session_id):
     """The session GOAL plus the harness's last INDEPENDENT verdict (JAG-3).
 
@@ -3483,6 +3557,13 @@ def _extract_action(answer):
         return _normalize_action(tagged)
     act = _normalize_action(extract_action_json(answer))
     if not act:
+        # `{"action":"tool","shell.exec","args":{…}}` — the tool NAME where the KEY
+        # belongs. Its intent is exact, so repair it instead of burning a retry (and
+        # eventually the whole turn) on a shape the model repeats verbatim.
+        _fixed = _repair_misplaced_tool_name(answer)
+        if _fixed != answer:
+            act = _normalize_action(extract_action_json(_fixed))
+    if not act:
         act = _normalize_action(_dsml_action(answer))
     return act
 
@@ -3728,6 +3809,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # unknown action / a bare promise). Without a cap it burned the whole iteration
     # budget. Stop after a few consecutive invalid turns with a clear reason.
     _invalid_streak = 0
+    # …and the LAST rejected reply, so the stop message (and the operator) can see
+    # WHAT the model kept failing to say instead of a bare reason code.
+    _last_rejected = ""
     # JAG-189: a NEW user message must be able to supersede a stale plan. When
     # the turn OPENS with steps still open from an earlier request, do NOT force
     # the keepgoing loop back onto them — the model may simply answer the user.
@@ -4575,9 +4659,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "only, never a failure report appended to it.\n\n%s"
                         % (tool, tool, obs))
             else:
+                # ONE owner per instruction: the tool RESULT plus the permission to
+                # act or finish live here; the "keep the task list current" half is
+                # owned by the CONTINUE inject below, which also prints the open list.
+                # Saying both in every observation doubled the harness's chatter on
+                # every single tool call (operator report, 2026-11-02).
                 note = ("Observation for tool %s:\n%s\n\n"
-                        "Continue: call the next tool, or report the result. Keep your "
-                        "task list current (mark a finished step done with evidence)."
+                        "Continue: call the next tool, or report the result."
                         % (tool, obs))
             msgs.append({"role": "assistant", "content": answer})
             _inject(note, "observation")
@@ -4728,13 +4816,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # show it to the user — nudge it back to a valid tool call or prose.
             msgs.append({"role": "assistant", "content": answer})
             _invalid_streak += 1
-            if _invalid_streak >= 4:
-                if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
-                    _selfcheck_left -= 1
-                    msgs.append({"role": "assistant", "content": answer})
-                    _inject(_closure_check_prompt(message), "closure-check")
-                    continue
+            _decision = _after_invalid_reply(_invalid_streak, _selfcheck_left,
+                                            _turn_unfinished(sess, goal_mode))
+            if _decision == "selfcheck":
+                _selfcheck_left -= 1
+                _inject(_closure_check_prompt(message), "closure-check")
+                continue
+            if _decision == "stop":
                 _kg_stop_reason = "no_valid_action"
+                _last_rejected = str(answer or "").strip()[:240]
                 on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
                 break
             _inject(_invalid_action_note(act, answer), "retry")
@@ -4746,31 +4836,44 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # problem and the exact shape the harness executes.
             msgs.append({"role": "assistant", "content": answer})
             _invalid_streak += 1
-            if _invalid_streak >= 4:
+            _decision = _after_invalid_reply(_invalid_streak, _selfcheck_left,
+                                            _turn_unfinished(sess, goal_mode))
+            if _decision == "selfcheck":
+                _selfcheck_left -= 1
+                _inject(_closure_check_prompt(message), "closure-check")
+                continue
+            if _decision == "stop":
                 _kg_stop_reason = "no_valid_action"
+                _last_rejected = str(answer or "").strip()[:240]
                 on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
                 break
             _inject(
                 "Your reply used the model's native <|DSML|> tool-call markup, but it "
-                "named no tool the harness can run. Emit ONLY plain JSON: "
+                "named no tool the harness can run. It was: "
+                + str(answer or "").strip()[:240] + "\n"
+                "Emit ONLY plain JSON: "
                 '{"action":"tool","tool":"<tool name>","args":{...}} — no <|DSML|> '
                 "markup and no wrapper. Or answer the user in plain prose.", "retry")
             continue
         if _looks_like_json_action(answer):
             # JAG-64: malformed/TRUNCATED tool-call JSON (extract_json failed, so
-            # `act` is None). Never leak it into the chat — ask for a clean retry.
+            # `act` is None). Never leak it into the chat — ask for a clean retry that
+            # SHOWS what was rejected (a note that names no text gets the same broken
+            # reply again: measured 2026-11-02, session 777378644e9c).
             msgs.append({"role": "assistant", "content": answer})
             _invalid_streak += 1
-            if _invalid_streak >= 4:
+            _decision = _after_invalid_reply(_invalid_streak, _selfcheck_left,
+                                            _turn_unfinished(sess, goal_mode))
+            if _decision == "selfcheck":
+                _selfcheck_left -= 1
+                _inject(_closure_check_prompt(message), "closure-check")
+                continue
+            if _decision == "stop":
                 _kg_stop_reason = "no_valid_action"
+                _last_rejected = str(answer or "").strip()[:240]
                 on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
                 break
-            _inject(
-                "That JSON was invalid or incomplete (it did not parse). "
-                "Re-emit a VALID "
-                '{"action":"tool","tool":"<name>","args":{...}} with all '
-                "braces closed, or answer the user in plain prose. Never "
-                "show JSON to the user.", "retry")
+            _inject(_rejected_reply_note(answer), "retry")
             continue
         if _looks_like_promise(answer) and not announce_nudged:
             # JAG-74: the model promised an action ("I'll load another skill…") but
@@ -5049,10 +5152,21 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 "hitl_open": _hitl["open"]}   # JAG-295: replayable card payload
     elif _goal_incomplete:
         _reason = _kg_stop_reason or "goal_incomplete"
-        content = ("⏸ Goal incomplete: stopped with reason '%s' before the current "
-                   "plan had evidence-backed completion." % _reason)
+        # The reason CODE alone reads like a policy decision ("the harness decided to
+        # stop"), so the operator could not tell WHY a goal stopped. Name the cause and
+        # quote the reply the model kept failing to make executable.
+        if _reason == "no_valid_action":
+            content = ("⏸ Goal incomplete: the model sent %d replies in a row that were "
+                       "not an executable action (reason 'no_valid_action'), so the turn "
+                       "stopped before the plan had evidence-backed completion."
+                       % INVALID_REPLY_CAP)
+            if _last_rejected:
+                content += ("\nLast rejected reply: " + _last_rejected.replace("\n", " "))
+        else:
+            content = ("⏸ Goal incomplete: stopped with reason '%s' before the current "
+                       "plan had evidence-backed completion." % _reason)
         meta = {"model": model, "goal_incomplete": True, "reason": _reason,
-                "node": _cur_node()}
+                "node": _cur_node(), "last_rejected": _last_rejected}
     if (_looks_like_json_action(content) and not _final_is_artifact) or not content:
         # JAG-64/78b: last-resort guard — never show/persist raw tool-call JSON
         # (or an empty turn). Summarise the plan state instead of leaking JSON.
