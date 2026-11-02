@@ -86,9 +86,17 @@ check("A5 _bindRenderStream stamps every heartbeat on the handle",
       'es.addEventListener("heartbeat", () => { es._lrSeen = Date.now(); })' in UI
       and "es._lrSeen = Date.now();" in UI)
 check("A7 a recovered stream resumes from the last frame id (no duplicated text)",
-      "if (e.lastEventId) es._lrId = e.lastEventId;" in UI
+      "if (e.lastEventId) { es._lrId = e.lastEventId;" in UI
       and "function attachTurn(sid, since) {" in UI
       and '(since ? "&since=" + encodeURIComponent(since) : "")' in UI)
+# RH-10 (operator, 2026-11-03): "che è successo qui? c'è da fixare un BUG?" — the
+# RE-ATTACH path (`attachIfRunning`) passed no id, and the server replays the WHOLE
+# turn from `ev0`, so a log that already showed it painted it twice (two identical
+# chain-of-thought blocks, a doubled best-of-N notice).
+check("A7b a RE-ATTACH resumes too, instead of replaying the turn into the log",
+      "function _resumeIdFor(sid) {" in UI
+      and "if (es._lrSid) _lastFrame[es._lrSid] = { id: e.lastEventId, gen: _historySeq }; } });" in UI
+      and "attachTurn(sid, since || _resumeIdFor(sid))" in UI)
 
 
 def harness(body, live, running, api_result):

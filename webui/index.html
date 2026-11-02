@@ -967,17 +967,22 @@
      (see `.trae/rules/project_rules.md` § "WebUI graphics"): a state is an ICON, a
      sentence only when a human must read it to act. */
   .gen-bar { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+  /* RH-11 (operator, 2026-11-03): "l'autogenerate … lascia solo l'icona senza
+     riquadro bianco attorno, così è più estetica. Vale per tutte le icone
+     autogenerate." A ✨ control is FRAMELESS everywhere: the state is read from the
+     glyph and its colour, never from a box — so no border on the ✨ and none on the
+     state icon either. */
   .gen-bar .gen-spark, .gen-bar .gen-act {
-    width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 8px;
+    width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0;
+    background: transparent; border-radius: 8px;
     display: inline-flex; align-items: center; justify-content: center;
     font-size: 13px; line-height: 1; }
   .gen-bar .gen-status { display: inline-flex; align-items: center; }
-  .gen-bar .gen-act { background: transparent; border: 1px solid var(--line);
-    color: var(--dim); cursor: pointer; }
-  .gen-bar .gen-act:hover { color: var(--txt); border-color: var(--acc); }
-  .gen-bar .gen-act.warn { color: var(--warn); border-color: var(--warn); }
+  .gen-bar .gen-act { color: var(--dim); cursor: pointer; }
+  .gen-bar .gen-act:hover { color: var(--txt); }
+  .gen-bar .gen-act.warn { color: var(--warn); }
   .gen-bar .gen-act[hidden], .gen-bar .gen-status:empty { display: none; }
-  .gen-bar .gen-spark.busy { color: var(--acc); border-color: var(--acc);
+  .gen-bar .gen-spark.busy { color: var(--acc);
     cursor: progress; animation: genPulse 1.1s ease-in-out infinite; }
   @keyframes genPulse { 0%, 100% { opacity: .35 } 50% { opacity: 1 } }
   @media (prefers-reduced-motion: reduce) {
@@ -5657,11 +5662,11 @@ function send(text, display, atts) {
   let turnSession = sessionId;
   const url = "/api/chat/stream?message=" + encodeURIComponent(msg) + (turnSession ? "&session=" + turnSession : "") + mode + (currentModel() ? "&model=" + encodeURIComponent(currentModel()) : "") + (authQS() ? "&" + authQS() : "");
   const es = new EventSource(url);
-  if (turnSession) { turnSSE[turnSession] = es; setRunning(turnSession, true); }
+  if (turnSession) { es._lrSid = turnSession; turnSSE[turnSession] = es; setRunning(turnSession, true); }
   const live = () => !!turnSession && turnSession === sessionId;
   const adopt = (s) => {  // very first message with no session: the server names it
     if (turnSession || !s) return;
-    turnSession = s; turnSSE[s] = es; setRunning(s, true);
+    turnSession = s; es._lrSid = s; turnSSE[s] = es; setRunning(s, true);
     sessionId = s; localStorage.setItem("sf_session", sessionId);
     _kbSyncCurrent();   // JAG-526: a brand-new chat has its own (future) notebook
   };
@@ -5771,7 +5776,10 @@ function _bindRenderStream(es, live, adopt) {
   // 2026-11-01: every `chat.delta` frame now carries its durable `id:`. Keeping the
   // last one lets a recovered socket re-attach from HERE instead of replaying the
   // whole turn into a bubble that already shows it (duplicated text/cards).
-  es.addEventListener("chat.delta", e => { if (e.lastEventId) es._lrId = e.lastEventId; });
+  es.addEventListener("chat.delta", e => { if (e.lastEventId) { es._lrId = e.lastEventId;
+    // RH-10: remember it per session too, so a RE-ATTACH resumes here instead of
+    // replaying the whole turn into a log that already shows it.
+    if (es._lrSid) _lastFrame[es._lrSid] = { id: e.lastEventId, gen: _historySeq }; } });
   // JAG-1: the `tool.call` event carries the ARGS — pass them so the card shows
   // WHAT was launched (and with which input) the moment it starts, not only when
   // the result lands. `tool.output` then streams the output live into the same card.
@@ -10287,6 +10295,18 @@ function _wireRunsPanel() {
    chat.delta text and then resumes live until `done`, so a reload no longer looks
    like an interrupted run. It renders ONLY the streaming text — tool cards / todo
    tree / injects are rebuilt by loadHistory, so replaying them would duplicate. */
+/* RH-10 (2026-11-03): a re-attach with NO resume id replays the WHOLE turn
+   (`chat_attach_gen`: `last = since or info.ev0`), and when the log already shows
+   that turn the operator sees it twice — two identical chain-of-thought blocks,
+   a doubled `🎲 best-of-N` notice. The id of the last frame the LOG already
+   rendered is kept per session, and it is used only while the log was not rebuilt
+   since (`_historySeq`): a rebuild paints the durable transcript, so a full replay
+   is then the correct thing and the remembered id must be ignored. */
+const _lastFrame = {};
+function _resumeIdFor(sid) {
+  const r = _lastFrame[sid];
+  return (r && r.gen === _historySeq) ? r.id : "";
+}
 function attachTurn(sid, since) {
   if (!sid || turnSSE[sid]) return;
   // 2026-11-01: `since` resumes a RECOVERED socket exactly where the dead one
@@ -10296,6 +10316,7 @@ function attachTurn(sid, since) {
   const es = new EventSource("/api/chat/attach?session=" + encodeURIComponent(sid) +
     (since ? "&since=" + encodeURIComponent(since) : "") +
     (authQS() ? "&" + authQS() : ""));
+  es._lrSid = sid;   // RH-10: the frame-id memory is keyed by the session
   turnSSE[sid] = es; setRunning(sid, true);
   const live = () => sessionId === sid;
   const end = (reload) => {
@@ -10320,11 +10341,12 @@ function attachTurn(sid, since) {
   es.addEventListener("done", () => end(true));
   es.addEventListener("error", () => { end(false); setTimeout(() => attachIfRunning(sid), 1500); });
 }
-async function attachIfRunning(sid) {
+async function attachIfRunning(sid, since) {
   if (!sid || turnSSE[sid]) return;
   try {
     const out = await api("GET", "/api/chat/live");
-    if ((out.active || []).includes(sid)) attachTurn(sid);
+    // RH-10: resume where the log stopped instead of replaying the whole turn.
+    if ((out.active || []).includes(sid)) attachTurn(sid, since || _resumeIdFor(sid));
   } catch (e) {}
 }
 /* A tab can believe a turn is still running long after the server stopped: a

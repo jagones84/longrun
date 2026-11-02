@@ -239,6 +239,16 @@ check("F6 the Control deck obeys the SAME rule (one product, one rule)",
       and "gen-busy" in ORBIT and "@keyframes genPulse" in ORBIT
       and "✓ drafted" not in ORBIT and "✨…" not in ORBIT
       and 'genState(st, "ok"' in ORBIT and 'genState(st, "warn"' in ORBIT)
+# RH-11 (operator, 2026-11-03): "l'autogenerate … lascia solo l'icona senza riquadro
+# bianco attorno così è più estetica. Vale per tutte le icone autogenerate."
+_genbar = UI.split(".gen-bar .gen-spark, .gen-bar .gen-act {")[1][:300]
+check("F7 a ✨ control is FRAMELESS — the state is the glyph and its colour",
+      "border: 0" in _genbar and "border: 1px solid var(--line)" not in _genbar
+      and ".gen-bar .gen-act { color: var(--dim); cursor: pointer; }" in UI
+      and ".gen-bar .gen-act.warn { color: var(--warn); }" in UI)
+_genic = ORBIT.split(".gen-ic{")[1][:160]
+check("F8 the Control deck's ✨/state icons are frameless too (one product)",
+      "border:0" in _genic and "border:1px solid" not in _genic)
 
 # ============================================================================
 # G — the composer drafts for the CONVERSATION: the folder is a fact about the
