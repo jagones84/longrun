@@ -172,6 +172,12 @@ check("C1 the team block lists EVERY level below the orchestrator, not only dire
       mid_id in txt and leaf_id in txt, "%s/%s" % (mid_id, leaf_id))
 check("C2 it states that delegation is the job",
       "ORCHESTRATOR" in txt and "DELEGATE" in txt)
+check("C2b it tells the truth that `dispatch` reaches DIRECT reports only",
+      "DIRECT reports ONLY" in txt and "DIRECT report>" in txt)
+check("C2c it says a deeper agent is reached by telling its owner to delegate",
+      "delegate in turn" in txt and "chain of command" in txt)
+check("C2d the org list distinguishes direct (un-indented) from nested",
+      "entries WITHOUT an indent are your DIRECT reports" in txt)
 check("C3 it points at workspace.set for the whole subtree",
       "workspace.set" in txt and "subtree" in txt)
 check("C4 EVERY agent is told to point its workspace at the task",

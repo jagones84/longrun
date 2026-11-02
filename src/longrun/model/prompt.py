@@ -258,8 +258,9 @@ def _provider_role(sess, ws, ctx):
                     _lines.append("%s- %s \u2014 %s"
                                   % ("  " * (_depth.get(_x, 1) - 1), _x, _lbl))
                 out += ("\n\n## Your team (org chart \u2014 rebuilt from live state every turn)\n"
-                        "You are an ORCHESTRATOR. Every agent BELOW you, at every "
-                        "level, is:\n"
+                        "You are an ORCHESTRATOR. Everyone below is in your org; the "
+                        "entries WITHOUT an indent are your DIRECT reports, the indented "
+                        "ones report to them:\n"
                         + "\n".join(_lines)
                         + "\nThis is generated at prompt time from the SAME org chart the "
                         "UI shows: adding, renaming, re-roling or removing an agent "
@@ -270,13 +271,17 @@ def _provider_role(sess, ws, ctx):
                         "and keep for YOURSELF only decomposition, cross-cutting "
                         "decisions, synthesis and final verification. Doing the leaves' "
                         "work yourself is the failure mode this block exists to stop.\n"
-                        "To hand a self-contained subtask to a teammate, emit "
-                        '{"action":"dispatch","agent":"<A-id>","goal":"<a complete, '
-                        'self-contained instruction>"} \u2014 it runs a REAL turn in that '
-                        "teammate's own session (their role and model) and returns "
-                        "their reply. Emit ONE dispatch per independent subtask, and "
-                        "several in the SAME turn (a `batch`) when they do not depend "
-                        "on each other, so the team works in parallel.\n"
+                        "`dispatch` reaches your DIRECT reports ONLY. To reach an agent "
+                        "nested deeper, dispatch to the report that owns it and tell "
+                        "THAT report to delegate in turn \u2014 the chain of command is "
+                        "the org chart, not a shortcut. Emit "
+                        '{"action":"dispatch","agent":"<A-id of a DIRECT report>",'
+                        '"goal":"<a complete, self-contained instruction>"} \u2014 it '
+                        "runs a REAL turn in that teammate's own session (their role and "
+                        "model) and returns their reply. Emit ONE dispatch per "
+                        "independent subtask, and several in the SAME turn (a `batch`) "
+                        "when they do not depend on each other, so the team works in "
+                        "parallel.\n"
                         "WORKSPACE: each teammate runs in ITS OWN folder. Before "
                         "delegating, root the team in the folder this task actually "
                         "lives in with "
