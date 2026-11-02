@@ -539,6 +539,14 @@ TASK_POLICY = (
     "request. The user's latest request ALWAYS outranks this list: if it is unrelated, do "
     "not force the old list — rewrite it (todo.replan with a note) or leave it paused and "
     "answer the user directly.\n"
+    "- CLOSING CONTRACT — before you close a turn, check ONCE, against the user's ORIGINAL "
+    "request: (i) does your last message actually ANSWER it (or name plainly what is still "
+    "missing and why)? (ii) is every step either done with evidence or superseded with a "
+    "reason — never left open while you report the job finished? (iii) on a `/goal` turn, "
+    "is the goal itself evidence-backed complete (the harness re-verifies it INDEPENDENTLY "
+    "after the turn — a claim it cannot back leaves the goal active)? Fix what fails before "
+    "you answer. This is a check of your own last response, not more talking: either close "
+    "it or do the missing work now.\n"
 )
 
 # Generic verification policy: the harness can describe a file, it cannot read it for
@@ -2646,13 +2654,64 @@ def _is_explicit_finish(act):
         return False
 
 
-def _closure_check_prompt():
-    """The fixed harness verdict prompt: complete (finish) or keep working."""
-    return ("Closure check (harness — do not skip): is your last response the "
+def _closure_check_prompt(request=""):
+    """The fixed harness verdict prompt: complete (finish) or keep working.
+
+    `request` (JAG-504) is the operator's ORIGINAL message for this turn. When it
+    is given, the verdict is anchored to the REAL request instead of only to the
+    plan: closing every step is the agent's claim, and the turn is graded on
+    whether the answer satisfies what was ASKED. Called with no argument it keeps
+    the original wording byte-for-byte (v584 pins it).
+    """
+    base = ("Closure check (harness — do not skip): is your last response the "
             "COMPLETE and final answer with the work fully done? If YES, emit "
             "ONLY {\"action\":\"finish\",\"summary\":\"<the final result>\"} "
             "and the turn closes. If NO, keep working on the open step instead "
             "of closing.")
+    req = str(request or "").strip()
+    if not req:
+        return base
+    return ("Closure check (harness — do not skip). Closing every step is your CLAIM; "
+            "the turn is graded on the ORIGINAL request:\n%s\n\n"
+            "Does your last response actually ANSWER it (everything asked for, nothing "
+            "contradicting it)? If YES, emit ONLY "
+            "{\"action\":\"finish\",\"summary\":\"<the final result>\"} and the turn "
+            "closes. If NO, do the missing work NOW — make the next tool call in this "
+            "message, or reopen/write the step that is still needed — instead of "
+            "closing." % req[:1200])
+
+
+def _goal_closure_prompt(request, objective):
+    """The FURTHER control layer a `/goal` turn earns before it may close.
+
+    A goal turn is graded on the OBJECTIVE, not on the plan: closing every todo is
+    the agent's claim. `httpapi._goal_end` re-verifies the goal INDEPENDENTLY after
+    the turn (L1 acceptance + L2 artefacts), so without this round a goal turn
+    could close, fail that verification, and only then be re-opened by hand. This
+    gives the agent ONE chance to satisfy the objective it was given — anchored to
+    the operator's ORIGINAL request AND the goal's own objective — before the turn
+    is accepted.
+    """
+    return ("GOAL CLOSURE (harness — do not skip). You are about to close a /goal "
+            "turn. The turn is graded on the OBJECTIVE, not on your task list: the "
+            "harness re-checks the claim INDEPENDENTLY after the turn.\n"
+            "ORIGINAL REQUEST:\n%s\n\nGOAL OBJECTIVE:\n%s\n\n"
+            "Verify your LAST response against BOTH: does it actually deliver the "
+            "objective and answer the original request? If YES, emit ONLY "
+            "{\"action\":\"finish\",\"summary\":\"<the final result>\"} and the turn "
+            "closes. If NO, do the missing work NOW — the next tool call in this "
+            "message, or write/reopen the steps still needed. Never close on a claim "
+            "you cannot back with evidence."
+            % (str(request or "").strip()[:1200], str(objective or "").strip()[:1200]))
+
+
+def _goal_rec_objective(sess):
+    """The stored `/goal` objective for this session ("" when there is none)."""
+    try:
+        from longrun.plan import goal as _goal_mod
+        return str((_goal_mod.load(sess["id"]) or {}).get("objective") or "")
+    except Exception:  # noqa: BLE001 — the layer is a check, never a blocker
+        return ""
 
 
 def _failed_call_check_prompt(error):
@@ -3704,6 +3763,31 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if kind != "system":
             persist_inject(sess, kind, content, node=_cur_node(), after=_after())
 
+    def _goal_close_round():
+        """JAG-504: ONE goal-closure round before a /goal turn is accepted.
+
+        The FURTHER control layer a `/goal` turn earns: when the plan is
+        evidence-backed complete and the turn is about to close, the agent faces
+        its own last response anchored to the goal objective AND the operator's
+        original request. `httpapi._goal_end` verifies the goal independently, so
+        without this round a goal the harness would mark INCOMPLETE is only fixed
+        by the operator by hand after the turn. Fires at most once per turn.
+        Returns True when it injected (the caller must `continue`).
+        """
+        nonlocal _goal_close_used
+        if _goal_close_used or not goal_mode or _is_aborted(sess["id"]):
+            return False
+        try:
+            if not taskgraph.goal_complete(taskgraph.load(sess["id"])):
+                return False
+        except Exception:  # noqa: BLE001 — the layer is a check, never a blocker
+            return False
+        _goal_close_used = True
+        msgs.append({"role": "assistant", "content": answer})
+        _inject(_goal_closure_prompt(message, _goal_rec_objective(sess)),
+                "closure-check")
+        return True
+
     def _trim_midturn():
         """JAG-465: keep ONE long agentic turn inside the model's window.
 
@@ -3794,6 +3878,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _failed_checked = False   # one failed-call verdict per turn (never a loop)
     _evidence_used = False    # one evidence-gate round per turn (never a loop)
     _intent_used = False      # one closing-check round when the reply ends on a plan
+    _goal_close_used = False  # JAG-504: one goal-closure round per /goal turn
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
     _think_action_used = False  # one round when the action hides in the reasoning
     _timeout_retried = False   # one retry when the MODEL CALL itself times out
@@ -4446,13 +4531,20 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
                         "continue")
                 continue
+            if _goal_close_round():
+                # JAG-504: the FURTHER control layer — a /goal turn about to close
+                # on a complete plan faces ONE closure round anchored to the goal
+                # objective AND the operator's original request, so a goal the
+                # harness would verify as INCOMPLETE is fixed HERE instead of being
+                # re-opened by the operator by hand after the turn.
+                continue
             if _selfcheck_left > 0 and _finish_gated(sess, goal_mode):
                 # Done-gate: an explicit finish with open work is a claim,
                 # not proof — same bounded verdict as the other silent ends.
                 # Clean finishes still skip this and disarm the check below.
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_closure_check_prompt(), "closure-check")
+                _inject(_closure_check_prompt(message), "closure-check")
                 continue
             if (_last_failed_err and not _last_tool_ok and not _failed_checked
                     and _selfcheck_left > 0 and not _is_aborted(sess["id"])):
@@ -4509,12 +4601,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
                             "continue")
                     continue
+                if _goal_close_round():
+                    continue
                 if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
                     # Premature stop: work is still open — let the SAME agent
                     # verdict its own last response before accepting it.
                     _selfcheck_left -= 1
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_closure_check_prompt(), "closure-check")
+                    _inject(_closure_check_prompt(message), "closure-check")
                     continue
                 _drv = _deliverable_review_text(sess, message, _deliv_since,
                                                 _deliv_state)
@@ -4552,10 +4646,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _inject(_goal_recovery_nudge(sess, stale=bool(_kg_stale)),
                             "continue")
                     continue
+                if _goal_close_round():
+                    continue
                 if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
                     _selfcheck_left -= 1
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_closure_check_prompt(), "closure-check")
+                    _inject(_closure_check_prompt(message), "closure-check")
                     continue
                 _drv = _deliverable_review_text(sess, message, _deliv_since,
                                                 _deliv_state)
@@ -4575,7 +4671,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
                     _selfcheck_left -= 1
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_closure_check_prompt(), "closure-check")
+                    _inject(_closure_check_prompt(message), "closure-check")
                     continue
                 _kg_stop_reason = "no_valid_action"
                 on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
@@ -4763,6 +4859,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _floor:
                 _delivery_floor_used = True
                 _inject(_floor, "continue")
+                continue
+            if _goal_close_round():
+                # JAG-504: the FURTHER control layer — a /goal turn that reached
+                # evidence-backed completion faces ONE closure round anchored to
+                # the objective AND the original request before the stop is final.
                 continue
             _kg_stop_reason = _dec["reason"]
             on_event("plan.stopped", session=sess["id"], reason=_dec["reason"],

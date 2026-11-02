@@ -880,9 +880,10 @@
   /* G-1: the Active-goal bar renders the DURABLE goal (`GET /api/goal`), so a goal
      survives the turn, the tab and a service restart. One line, like the toolbar:
      objective (flex) · status/steps (fixed) · pause · edit · delete. */
-  #goalBar { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  #goalBar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 6px 10px;
     border: 1px solid var(--line); border-left: 2px solid var(--acc); border-radius: 10px;
-    background: color-mix(in srgb, var(--acc) 7%, transparent); font-size: 12px; }
+    background: color-mix(in srgb, var(--acc) 7%, transparent); font-size: 12px;
+    min-width: 0; max-width: 100%; overflow: hidden; }
   #goalBar[hidden] { display: none; }
   #goalBar.paused { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
   #goalBar.done { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 6%, transparent); }
@@ -904,10 +905,22 @@
     border-radius: 8px; background: var(--panel); font-size: 12px; white-space: pre-wrap;
     word-break: break-word; color: var(--txt); max-height: 240px; overflow: auto; }
   .gb-verdict { margin: 2px 0; padding: 5px 9px; border-radius: 8px; font-size: 11px;
-    border: 1px solid var(--line); color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+    border: 1px solid var(--line); color: var(--dim); white-space: pre-wrap; word-break: break-word;
+    display: flex; align-items: flex-start; gap: 6px; }
+  .gb-verdict > span { flex: 1 1 auto; min-width: 0; }
+  .gb-verdict .gb-x { flex: 0 0 auto; background: none; border: none; padding: 0 2px; margin: 0;
+    font: inherit; color: inherit; opacity: .7; cursor: pointer; line-height: 1.2; height: auto; min-height: 0; }
+  .gb-verdict .gb-x:hover { opacity: 1; }
   .gb-verdict.ok { border-left: 2px solid var(--ok); color: var(--ok); }
   .gb-verdict.bad { border-left: 2px solid var(--warn); color: var(--warn); }
-  #goalBar .gb-meta { flex: 0 0 auto; color: var(--dim); white-space: nowrap; }
+  /* JAG-1: the objective is editable IN PLACE — the field replaces the text button,
+     with save/cancel beside it; no modal window. */
+  #goalBar .gb-input { flex: 1 1 240px; min-width: 120px; height: 24px; padding: 0 8px;
+    border-radius: 7px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--txt); font: inherit; }
+  #goalBar .gb-input[hidden] { display: none; }
+  #goalBar .gb-meta { flex: 0 1 auto; min-width: 0; color: var(--dim); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
   #goalBar > button { flex: 0 0 auto; height: 24px; min-height: 24px; padding: 0 7px;
     border-radius: 8px; font-size: 12px; line-height: 1; }
   #goalBar > button:disabled { opacity: .45; cursor: default; }
@@ -2410,14 +2423,21 @@
       <div id="goalBar" hidden>
         <span class="gb-ico" aria-hidden="true">◎</span>
         <button class="gb-text gb-expand" id="goalText" data-call="goalExpand" title="show the full objective">goal</button>
+        <input class="gb-input" id="goalEditBox" type="text" hidden
+               placeholder="goal objective" aria-label="edit the goal objective">
         <span class="gb-meta" id="goalMeta"></span>
         <button class="ghost" id="goalVerify" data-call="goalVerify" title="run an INDEPENDENT verification of this goal">✓ verify</button>
+        <button class="ghost" id="goalSave" data-call="goalEditSave" title="save the objective (Enter)" hidden>save</button>
+        <button class="ghost" id="goalCancel" data-call="goalEditCancel" title="cancel (Esc)" hidden>cancel</button>
         <button class="ghost" id="goalToggle" data-call="goalToggle" title="pause or resume this goal">⏸</button>
-        <button class="ghost" id="goalEdit" data-call="goalEdit" title="edit the objective">✎</button>
+        <button class="ghost" id="goalEdit" data-call="goalEdit" title="edit the objective in place">✎</button>
         <button class="ghost" id="goalDel" data-call="goalDelete" title="delete this goal (the chat and plan stay)">✕</button>
       </div>
       <div id="goalFull" class="gb-full" hidden></div>
-      <div id="goalVerdict" class="gb-verdict" hidden></div>
+      <div id="goalVerdict" class="gb-verdict" hidden>
+        <span id="goalVerdictText"></span>
+        <button class="gb-x" data-call="goalVerdictClose" title="hide this verdict (it is re-read from the goal)">✕</button>
+      </div>
       <input type="file" id="attachInput" multiple hidden>
       <textarea id="inp" rows="1" placeholder="Message…" autofocus></textarea>
       <div id="queueBar" hidden></div>
@@ -7806,6 +7826,10 @@ function planGoal() {
 // Nothing here is stored client-side, so a reload or another tab shows the same
 // goal — and a paused goal still refuses a `/goal` turn server-side.
 let goalRec = null;
+// JAG-1: UI-only state — the verdict the operator dismissed (keyed by its own
+// timestamp, so a NEW verdict reappears) and the in-place edit mode.
+let _goalVerdictDismissed = null;
+let _goalEditing = false;
 
 function goalVisible() { return !!(sessionId && goalRec && goalRec.goal); }
 
@@ -7847,23 +7871,37 @@ function renderGoal() {
   tg.disabled = done;
   if ($("goalEdit")) $("goalEdit").disabled = done;
   if ($("goalDel")) $("goalDel").disabled = false;
-  // The independent-verification verdict (when one was taken).
+  // The independent-verification verdict (when one was taken). It has its own
+  // close: dismissing hides THIS verdict (keyed by its timestamp), and a NEW
+  // verification result shows up again on its own.
   const v = goalRec.verification;
   const vd = $("goalVerdict");
   if (vd) {
-    if (v) {
+    const dismissed = _goalVerdictDismissed && _goalVerdictDismissed.sid === sessionId
+      && _goalVerdictDismissed.at === (v || {}).at;
+    if (v && !dismissed) {
       vd.hidden = false;
       const ok = !!v.verified;
       vd.className = "gb-verdict " + (ok ? "ok" : "bad");
       const when = v.at ? new Date(v.at * 1000).toLocaleTimeString() : "";
-      vd.textContent = (ok ? "✓ verified independently" : "✕ NOT verified independently")
+      const txt = (ok ? "✓ verified independently" : "✕ NOT verified independently")
         + (when ? " · " + when : "")
         + (v.workspace ? " · " + v.workspace : "")
         + ((!ok && (v.missing || []).length) ? "\nmissing: " + v.missing.slice(0, 4).join("; ") : "");
+      const t = $("goalVerdictText");
+      if (t) t.textContent = txt; else vd.textContent = txt;
     } else {
       vd.hidden = true;
     }
   }
+}
+
+/* JAG-1: the ✕ on the verdict hides it until a NEW verdict arrives. */
+function goalVerdictClose() {
+  const v = (goalRec && goalRec.verification) || {};
+  _goalVerdictDismissed = { sid: sessionId, at: v.at || 0 };
+  const vd = $("goalVerdict");
+  if (vd) vd.hidden = true;
 }
 
 async function loadGoal(attempt) {
@@ -7915,14 +7953,52 @@ function goalVerify() {
   return goalAct("verify", { judge: true });
 }
 
+/* JAG-1: edit the objective IN PLACE — the field replaces the text button and the
+   save/cancel pair appears beside it in the SAME bar. No modal window. Enter
+   saves, Escape cancels. */
 function goalEdit() {
   if (!goalVisible()) return null;
-  const cur = String(goalRec.goal.objective || "");
-  const next = prompt("goal objective", cur);
-  if (next === null) return null;
-  const text = String(next).trim();
-  if (!text || text === cur) return null;
-  return goalAct("edit", { objective: text });
+  const box = $("goalEditBox");
+  if (!box) return null;
+  _goalEditing = true;
+  box.value = String((goalRec.goal || {}).objective || "");
+  if (!box._wired) {
+    box._wired = 1;
+    box.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); goalEditSave(); }
+      else if (e.key === "Escape") { e.preventDefault(); goalEditCancel(); }
+    });
+  }
+  box.hidden = false;
+  if ($("goalText")) $("goalText").hidden = true;
+  if ($("goalSave")) $("goalSave").hidden = false;
+  if ($("goalCancel")) $("goalCancel").hidden = false;
+  if ($("goalEdit")) $("goalEdit").hidden = true;
+  box.focus();
+  try { box.select(); } catch (e) {}
+  return null;
+}
+
+function goalEditCancel() {
+  _goalEditing = false;
+  const box = $("goalEditBox");
+  if (box) box.hidden = true;
+  if ($("goalText")) $("goalText").hidden = false;
+  if ($("goalSave")) $("goalSave").hidden = true;
+  if ($("goalCancel")) $("goalCancel").hidden = true;
+  if ($("goalEdit")) $("goalEdit").hidden = false;
+  return null;
+}
+
+function goalEditSave() {
+  if (!goalVisible()) return null;
+  const box = $("goalEditBox");
+  const cur = String((goalRec.goal || {}).objective || "");
+  const text = box ? String(box.value || "").trim() : "";
+  if (!text || text === cur) { goalEditCancel(); return null; }
+  const p = goalAct("edit", { objective: text });
+  goalEditCancel();
+  return p;
 }
 
 function goalDelete() {

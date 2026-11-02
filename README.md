@@ -499,7 +499,8 @@ See [Testing Playbook](docs/TESTING-PLAYBOOK.md) for live WebUI checks.
 
 ## License
 
-© 2025–2026 Giovanni J. Agones ([jagones84](https://github.com/jagones84)).
+© 2025–2026 **jagones84** ([@jagones84](https://github.com/jagones84) ·
+[alabard84@hotmail.com](mailto:alabard84@hotmail.com)).
 Licensed under **AGPL-3.0** — see [LICENSE](LICENSE).
 
 If Longrun is useful to you, ⭐ star the repo — it helps others find it.

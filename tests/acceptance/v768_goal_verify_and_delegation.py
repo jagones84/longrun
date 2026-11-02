@@ -239,6 +239,19 @@ check("F7 the Harness panel exposes Goal verification (acceptance + judge)",
       'id="gvAcc"' in ui and 'id="gvJudge"' in ui
       and "function loadGoalVerify" in ui and "function saveGoalVerify" in ui)
 
+# F9-F11 (JAG-504, operator report): the goal bar must not overflow a narrow chat,
+# the objective is edited IN PLACE (no modal), and the verdict block is closable.
+check("F9 the goal bar wraps instead of overflowing a narrow chat",
+      "flex-wrap: wrap" in ui and "#goalBar .gb-input" in ui
+      and "max-width: 100%" in ui)
+check("F10 the goal is edited INLINE in the bar, with no modal prompt",
+      'id="goalEditBox"' in ui and "function goalEditSave" in ui
+      and "function goalEditCancel" in ui
+      and "prompt(" not in ui[ui.find("function goalEdit()"):ui.find("function goalEditCancel")])
+check("F11 the verdict block can be closed and re-reads on a new verdict",
+      'data-call="goalVerdictClose"' in ui and "function goalVerdictClose" in ui
+      and "_goalVerdictDismissed" in ui)
+
 # The config block is owned by a documented dedicated panel (v491 contract).
 from longrun.core import settings as S                   # noqa: E402
 check("F8 goal_verify is owned by Settings ▸ Harness",
@@ -268,6 +281,45 @@ check("G4 the chat stream registers its _emit as the turn sink",
 check("G5 the shell prefers the turn sink and falls back to publish",
       "turn_sink(_sid)" in inspect.getsource(T._shell)
       and "publish(\"tool.output\"" in inspect.getsource(T._shell))
+
+# ============================================================================
+# H — the CLOSURE layer (JAG-504): answer the ORIGINAL request, close the todos,
+#     and a FURTHER control on the goal before a `/goal` turn may close.
+# ============================================================================
+from longrun.core import server as _srv                                # noqa: E402,F401
+from longrun.agent import agent as _ag                                 # noqa: E402
+
+# H1: the enforced closure verdict is anchored to the operator's ORIGINAL request.
+_req = "rename the widget and re-run its tests"
+_p = _ag._closure_check_prompt(_req)
+check("H1 the closure verdict names the ORIGINAL request",
+      _req in _p and "ORIGINAL request" in _p and "finish" in _p, _p[:80])
+# H2: with no request it keeps the original wording (v584 pins that string).
+check("H2 no-arg closure prompt is unchanged",
+      _req not in _ag._closure_check_prompt()
+      and "COMPLETE" in _ag._closure_check_prompt()
+      and "keep working" in _ag._closure_check_prompt())
+# H3: the goal-closure layer is anchored to BOTH the request and the objective.
+_gp = _ag._goal_closure_prompt(_req, "ship the widget")
+check("H3 the goal-closure layer anchors request AND objective",
+      _req in _gp and "ship the widget" in _gp and "OBJECTIVE" in _gp)
+# H4: the standing CLOSING CONTRACT is a policy bullet every model sees.
+check("H4 the closing contract is a standing task-policy rule",
+      "CLOSING CONTRACT" in _ag.TASK_POLICY
+      and "ORIGINAL" in _ag.TASK_POLICY and "superseded" in _ag.TASK_POLICY)
+# H5/H6: the goal-closure round is real, bounded once per turn, and gated on goal
+#         mode + evidence-backed completion — wired at every acceptance point.
+_src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
+            encoding="utf-8").read()
+_gr = _src[_src.find("def _goal_close_round():"):]
+_gr = _gr[:_gr.find("def _trim_midturn():")]
+check("H5 the round is once-per-turn and gated on goal mode + completion",
+      "nonlocal _goal_close_used" in _gr and "_goal_close_used = True" in _gr
+      and "not goal_mode" in _gr and "goal_complete(" in _gr)
+check("H6 it is wired at every acceptance point (>=4 call sites)",
+      _src.count("if _goal_close_round():") >= 4, _src.count("if _goal_close_round():"))
+check("H7 the goal-closure prompt is the one it injects",
+      "_goal_closure_prompt(" in _gr and "_goal_rec_objective(" in _gr)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

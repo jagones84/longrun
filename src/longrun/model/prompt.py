@@ -282,13 +282,15 @@ def _provider_role(sess, ws, ctx):
                         "independent subtask, and several in the SAME turn (a `batch`) "
                         "when they do not depend on each other, so the team works in "
                         "parallel.\n"
-                        "WORKSPACE: each teammate runs in ITS OWN folder. Before "
-                        "delegating, root the team in the folder this task actually "
-                        "lives in with "
-                        '{"tool":"workspace.set","args":{"agent":"<A-id>",'
-                        '"workspace":"<absolute path>","scope":"subtree"}} \u2014 that '
-                        "re-roots the whole chain below `agent` (approval-gated "
-                        "unless the operator is in FULL/auto mode). "
+                        "WORKSPACE: each teammate runs in ITS OWN folder. Re-root the "
+                        "team ONLY when those folders are actually wrong for this task, "
+                        "and give the PROJECT folder the task lives in "
+                        '({"tool":"workspace.set","args":{"agent":"<A-id>",'
+                        '"workspace":"<absolute path of the PROJECT>","scope":"subtree"}}, '
+                        "approval-gated unless the operator is in FULL/auto mode). NEVER "
+                        "pass your own scratch/session folder: copying it onto your "
+                        "reports collapses the whole team into one directory and destroys "
+                        "the per-agent separation — that is a defect, not delegation. "
                         "`agent.list` re-reads the chart on demand.")
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         pass
