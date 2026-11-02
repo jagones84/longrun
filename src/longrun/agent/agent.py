@@ -243,6 +243,9 @@ def context_summary(session_id=None, graph_key=None):
         todos = taskgraph.render_todos(g, compact=True)
         if todos:
             lines.append(todos)
+    goal_block = _goal_block(session_id or graph_key)
+    if goal_block:
+        lines.append(goal_block)
     # v657: EVERY user prompt re-carries the standing REFERENCE text — the project
     # rules and the session's ROLE.md. The system prompt already carries them
     # (sections `rules` and `agent-role`), but the operator wants the copies to
@@ -253,6 +256,53 @@ def context_summary(session_id=None, graph_key=None):
     if ref:
         lines.append(ref)
     return "\n".join(lines) if lines else "(no task list yet)"
+
+
+def _goal_block(session_id):
+    """The session GOAL plus the harness's last INDEPENDENT verdict (JAG-3).
+
+    The verdict is a real object — stored on the goal record
+    (`data/goals/<session>.json`, field `verification`) and re-read from the backend
+    — and the AGENT must be able to read it: the harness checks goal completion
+    independently (the acceptance command's exit code, the artefacts a closed step
+    cites really existing on disk, and an optional model judge over the objective and
+    the artefacts). It is NOT the agent's own justification, so a failed check is
+    actionable feedback rather than a badge in the UI. Injected with the task list
+    every turn, so it survives compaction like the rest of the harness state.
+    """
+    if not session_id:
+        return ""
+    try:
+        from longrun.plan import goal as goal_mod
+        st = goal_mod.status(session_id) or {}
+    except Exception:  # noqa: BLE001 — context must never break a turn
+        return ""
+    rec = st.get("goal") or {}
+    if not rec:
+        return ""
+    out = ["GOAL (the objective the operator set for this session):",
+           "- objective: %s" % str(rec.get("objective") or "")[:1500],
+           "- status: %s" % (st.get("effective_status") or rec.get("status") or "")]
+    v = st.get("verification")
+    if v:
+        when = ""
+        try:
+            import time as _time
+            when = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(float(v.get("at") or 0)))
+        except Exception:  # noqa: BLE001
+            when = ""
+        out.append(
+            "- INDEPENDENT verification by the harness (NOT your own claim) at %s: %s"
+            % (when or "?", "VERIFIED" if v.get("verified") else "NOT VERIFIED"))
+        if not v.get("verified") and v.get("missing"):
+            out.append("  what that check could NOT confirm:")
+            for m in list(v.get("missing") or [])[:6]:
+                out.append("  * %s" % str(m)[:300])
+            out.append("  Make those checks pass; do not close the goal by restating "
+                       "that the work is done.")
+    if rec.get("note"):
+        out.append("- note: %s" % str(rec.get("note"))[:300])
+    return "\n".join(out)
 
 
 def _reference_block(session_id=None, graph_key=None, max_chars=4000):

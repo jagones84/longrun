@@ -901,24 +901,47 @@
     background: none; border: none; padding: 0; margin: 0; font: inherit; color: var(--txt);
     cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: auto; min-height: 0; }
   #goalBar button.gb-text.gb-expand:hover { color: var(--acc); }
-  .gb-full { margin: 2px 0 2px 0; padding: 6px 9px; border: 1px solid var(--line);
-    border-radius: 8px; background: var(--panel); font-size: 12px; white-space: pre-wrap;
-    word-break: break-word; color: var(--txt); max-height: 240px; overflow: auto; }
-  .gb-verdict { margin: 2px 0; padding: 5px 9px; border-radius: 8px; font-size: 11px;
-    border: 1px solid var(--line); color: var(--dim); white-space: pre-wrap; word-break: break-word;
-    display: flex; align-items: flex-start; gap: 6px; }
-  .gb-verdict > span { flex: 1 1 auto; min-width: 0; }
-  .gb-verdict .gb-x { flex: 0 0 auto; background: none; border: none; padding: 0 2px; margin: 0;
-    font: inherit; color: inherit; opacity: .7; cursor: pointer; line-height: 1.2; height: auto; min-height: 0; }
+  /* JAG-2: the goal editor is a small WINDOW above the composer — a real multi-line,
+     scrollable field where the whole objective is visible. No mono-line input. */
+  .gb-editor { position: absolute; bottom: 100%; left: 22px; right: 22px; margin-bottom: 6px;
+    padding: 8px 9px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); box-shadow: 0 8px 28px rgba(0,0,0,.45); z-index: 40; }
+  .gb-editor[hidden] { display: none; }
+  .gb-editor-hd { display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; color: var(--dim); margin-bottom: 6px; }
+  .gb-editor-hd .gb-x { background: none; border: none; padding: 0 2px; margin: 0; font: inherit;
+    color: inherit; opacity: .7; cursor: pointer; height: auto; min-height: 0; }
+  .gb-editor-hd .gb-x:hover { opacity: 1; }
+  #goalEditBox { display: block; width: 100%; box-sizing: border-box;
+    min-height: 96px; max-height: 260px; overflow: auto; resize: vertical;
+    padding: 8px 9px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--txt); font: inherit; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-word; }
+  .gb-editor-ft { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .gb-editor-ft .gb-editor-hint { margin-right: auto; color: var(--dim); font-size: 11px; }
+  .gb-editor-ft .gb-primary { border-color: var(--acc); color: var(--acc); }
+  /* JAG-1/2: the independent VERDICT. It is a real object — stored on the goal record,
+     re-read from the backend, and readable by the agent — and it can be hidden and
+     re-shown. `[hidden]` needs its own rule: the block sets its own layout, and an
+     author `display` beats the UA `[hidden]` rule (the ✕ used to do nothing). */
+  .gb-verdict { position: relative; margin: 2px 0; padding: 6px 28px 6px 9px;
+    border: 1px solid var(--line); border-radius: 8px; font-size: 11px;
+    color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+  .gb-verdict[hidden] { display: none; }
+  .gb-verdict .gb-vh { display: block; font-weight: 600; margin-bottom: 2px; }
+  .gb-verdict .gb-x { position: absolute; top: 4px; right: 6px; background: none; border: none;
+    padding: 0 2px; margin: 0; font: inherit; color: inherit; opacity: .7; cursor: pointer;
+    line-height: 1.2; height: auto; min-height: 0; }
   .gb-verdict .gb-x:hover { opacity: 1; }
   .gb-verdict.ok { border-left: 2px solid var(--ok); color: var(--ok); }
   .gb-verdict.bad { border-left: 2px solid var(--warn); color: var(--warn); }
-  /* JAG-1: the objective is editable IN PLACE — the field replaces the text button,
-     with save/cancel beside it; no modal window. */
-  #goalBar .gb-input { flex: 1 1 240px; min-width: 120px; height: 24px; padding: 0 8px;
-    border-radius: 7px; border: 1px solid var(--line); background: var(--panel);
-    color: var(--txt); font: inherit; }
-  #goalBar .gb-input[hidden] { display: none; }
+  .gb-chip { align-self: flex-start; margin: 2px 0; padding: 2px 9px; border-radius: 999px;
+    border: 1px dashed var(--line); background: none; color: var(--dim);
+    font-size: 11px; cursor: pointer; }
+  .gb-chip[hidden] { display: none; }
+  .gb-chip:hover { color: var(--txt); border-color: var(--acc); }
+  .gb-chip.bad { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+  .gb-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
   #goalBar .gb-meta { flex: 0 1 auto; min-width: 0; color: var(--dim); white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
   #goalBar > button { flex: 0 0 auto; height: 24px; min-height: 24px; padding: 0 7px;
@@ -2422,22 +2445,34 @@
       <div id="cmdChips" hidden style="flex-wrap:wrap;gap:6px;padding:0 2px 6px 2px"></div>
       <div id="goalBar" hidden>
         <span class="gb-ico" aria-hidden="true">◎</span>
-        <button class="gb-text gb-expand" id="goalText" data-call="goalExpand" title="show the full objective">goal</button>
-        <input class="gb-input" id="goalEditBox" type="text" hidden
-               placeholder="goal objective" aria-label="edit the goal objective">
+        <button class="gb-text gb-expand" id="goalText" data-call="goalEdit"
+                title="read or edit the whole objective">goal</button>
         <span class="gb-meta" id="goalMeta"></span>
-        <button class="ghost" id="goalVerify" data-call="goalVerify" title="run an INDEPENDENT verification of this goal">✓ verify</button>
-        <button class="ghost" id="goalSave" data-call="goalEditSave" title="save the objective (Enter)" hidden>save</button>
-        <button class="ghost" id="goalCancel" data-call="goalEditCancel" title="cancel (Esc)" hidden>cancel</button>
+        <button class="ghost" id="goalVerify" data-call="goalVerify"
+                title="run an INDEPENDENT verification of this goal (the harness's own check, never the agent's claim)">✓ verify</button>
         <button class="ghost" id="goalToggle" data-call="goalToggle" title="pause or resume this goal">⏸</button>
-        <button class="ghost" id="goalEdit" data-call="goalEdit" title="edit the objective in place">✎</button>
+        <button class="ghost" id="goalEdit" data-call="goalEdit" title="read or edit the objective">✎</button>
         <button class="ghost" id="goalDel" data-call="goalDelete" title="delete this goal (the chat and plan stay)">✕</button>
       </div>
-      <div id="goalFull" class="gb-full" hidden></div>
-      <div id="goalVerdict" class="gb-verdict" hidden>
-        <span id="goalVerdictText"></span>
-        <button class="gb-x" data-call="goalVerdictClose" title="hide this verdict (it is re-read from the goal)">✕</button>
+      <div id="goalEditPanel" class="gb-editor" hidden>
+        <div class="gb-editor-hd">
+          <span>Edit the goal objective</span>
+          <button class="gb-x" data-call="goalEditCancel" title="close without saving (Esc)">✕</button>
+        </div>
+        <textarea id="goalEditBox" rows="6" placeholder="goal objective"
+                  aria-label="edit the goal objective"></textarea>
+        <div class="gb-editor-ft">
+          <span class="gb-editor-hint">Ctrl+Enter saves · Esc cancels</span>
+          <button class="ghost" data-call="goalEditCancel">cancel</button>
+          <button class="ghost gb-primary" data-call="goalEditSave">save</button>
+        </div>
       </div>
+      <div id="goalVerdict" class="gb-verdict" hidden>
+        <span class="gb-vh" id="goalVerdictHead"></span>
+        <span id="goalVerdictText"></span>
+        <button class="gb-x" data-call="goalVerdictClose" title="hide this block (re-open it with the chip below)">✕</button>
+      </div>
+      <button id="goalVerdictChip" class="gb-chip" data-call="goalVerdictShow" hidden></button>
       <input type="file" id="attachInput" multiple hidden>
       <textarea id="inp" rows="1" placeholder="Message…" autofocus></textarea>
       <div id="queueBar" hidden></div>
@@ -7827,9 +7862,8 @@ function planGoal() {
 // goal — and a paused goal still refuses a `/goal` turn server-side.
 let goalRec = null;
 // JAG-1: UI-only state — the verdict the operator dismissed (keyed by its own
-// timestamp, so a NEW verdict reappears) and the in-place edit mode.
+// timestamp, so a NEW verdict reappears).
 let _goalVerdictDismissed = null;
-let _goalEditing = false;
 
 function goalVisible() { return !!(sessionId && goalRec && goalRec.goal); }
 
@@ -7839,8 +7873,9 @@ function renderGoal() {
   const g = goalVisible() ? goalRec.goal : null;
   if (!g) {
     bar.hidden = true;
-    if ($("goalFull")) $("goalFull").hidden = true;
     if ($("goalVerdict")) $("goalVerdict").hidden = true;
+    if ($("goalVerdictChip")) $("goalVerdictChip").hidden = true;
+    goalEditCancel();   // a session without a goal must never keep the editor open
     return;
   }
   const p = goalRec.progress || {};
@@ -7856,8 +7891,7 @@ function renderGoal() {
   const t = $("goalText");
   const full = String(g.objective || "(no objective)");
   t.textContent = full;
-  t.title = "show the full objective";
-  if ($("goalFull")) $("goalFull").textContent = full;
+  t.title = "read or edit the whole objective";
   const bits = [st];
   if (p.steps) bits.push((p.done || 0) + "/" + p.steps + " steps");
   if (p.open) bits.push(p.open + " open");
@@ -7871,37 +7905,61 @@ function renderGoal() {
   tg.disabled = done;
   if ($("goalEdit")) $("goalEdit").disabled = done;
   if ($("goalDel")) $("goalDel").disabled = false;
-  // The independent-verification verdict (when one was taken). It has its own
-  // close: dismissing hides THIS verdict (keyed by its timestamp), and a NEW
-  // verification result shows up again on its own.
-  const v = goalRec.verification;
-  const vd = $("goalVerdict");
-  if (vd) {
-    const dismissed = _goalVerdictDismissed && _goalVerdictDismissed.sid === sessionId
-      && _goalVerdictDismissed.at === (v || {}).at;
-    if (v && !dismissed) {
-      vd.hidden = false;
-      const ok = !!v.verified;
-      vd.className = "gb-verdict " + (ok ? "ok" : "bad");
-      const when = v.at ? new Date(v.at * 1000).toLocaleTimeString() : "";
-      const txt = (ok ? "✓ verified independently" : "✕ NOT verified independently")
-        + (when ? " · " + when : "")
-        + (v.workspace ? " · " + v.workspace : "")
-        + ((!ok && (v.missing || []).length) ? "\nmissing: " + v.missing.slice(0, 4).join("; ") : "");
-      const t = $("goalVerdictText");
-      if (t) t.textContent = txt; else vd.textContent = txt;
-    } else {
-      vd.hidden = true;
-    }
-  }
+  renderGoalVerdict();
 }
 
-/* JAG-1: the ✕ on the verdict hides it until a NEW verdict arrives. */
+/* JAG-1/2: the verdict is the HARNESS's INDEPENDENT check — the acceptance command's
+   exit code, the artefacts a closed step cites really existing on disk, plus an
+   optional model judge over the objective and the artefacts. It is NOT the agent's
+   own justification; it is stored on the goal record and re-read from the backend, so
+   it can be hidden and re-shown (the chip is the re-open door). A NEW verification
+   replaces it, and a reopened plan invalidates a previous pass server-side. */
+function renderGoalVerdict() {
+  const vd = $("goalVerdict"), chip = $("goalVerdictChip");
+  if (!vd && !chip) return;
+  const v = goalRec && goalRec.verification;
+  if (!v) {
+    if (vd) vd.hidden = true;
+    if (chip) chip.hidden = true;
+    return;
+  }
+  const ok = !!v.verified;
+  const when = v.at ? new Date(v.at * 1000).toLocaleTimeString() : "";
+  const short = (ok ? "verified" : "NOT verified") + (when ? " · " + when : "");
+  const dismissed = !!(_goalVerdictDismissed && _goalVerdictDismissed.sid === sessionId
+    && _goalVerdictDismissed.at === (v.at || 0));
+  if (chip) {
+    chip.classList.toggle("ok", ok);
+    chip.classList.toggle("bad", !ok);
+    chip.textContent = "⚑ goal verification: " + short + " · show";
+    chip.hidden = !dismissed;
+  }
+  if (!vd) return;
+  if (dismissed) { vd.hidden = true; return; }
+  vd.hidden = false;
+  vd.className = "gb-verdict " + (ok ? "ok" : "bad");
+  const head = $("goalVerdictHead");
+  if (head) head.textContent = "Goal verification — the harness's independent check "
+    + (ok ? "(passed)" : "(failed · this is NOT the agent's claim)");
+  const txt = (ok ? "✓ " : "✕ ") + short
+    + (v.workspace ? " · " + v.workspace : "")
+    + ((!ok && (v.missing || []).length) ? "\nmissing: " + v.missing.slice(0, 4).join("; ") : "");
+  const t = $("goalVerdictText");
+  if (t) t.textContent = txt; else vd.textContent = txt;
+}
+
+/* JAG-1/2: the ✕ hides the verdict block; the CHIP re-opens it. The dismissal is
+   keyed by the verdict's own timestamp, so a NEW verification result appears on its
+   own. Neither action touches the stored object — it is re-read from the backend. */
 function goalVerdictClose() {
   const v = (goalRec && goalRec.verification) || {};
   _goalVerdictDismissed = { sid: sessionId, at: v.at || 0 };
-  const vd = $("goalVerdict");
-  if (vd) vd.hidden = true;
+  renderGoalVerdict();
+}
+
+function goalVerdictShow() {
+  _goalVerdictDismissed = null;
+  renderGoalVerdict();
 }
 
 async function loadGoal(attempt) {
@@ -7939,13 +7997,6 @@ function goalToggle() {
   return goalAct(st === "paused" ? "resume" : "pause");
 }
 
-/* JAG-1: show/hide the FULL objective (it was ellipsized with no way to read it). */
-function goalExpand() {
-  const f = $("goalFull");
-  if (!f || !goalVisible()) return;
-  f.hidden = !f.hidden;
-}
-
 /* JAG-1: run an INDEPENDENT verification of the goal on demand. `judge` also asks a
    model to judge the objective against the artefacts (slower, costs one call). */
 function goalVerify() {
@@ -7953,40 +8004,30 @@ function goalVerify() {
   return goalAct("verify", { judge: true });
 }
 
-/* JAG-1: edit the objective IN PLACE — the field replaces the text button and the
-   save/cancel pair appears beside it in the SAME bar. No modal window. Enter
-   saves, Escape cancels. */
+/* JAG-2: open the objective in a small WINDOW above the composer — a real multi-line,
+   scrollable field where the WHOLE objective is visible and editable. Opened from the
+   objective text itself and from the ✎ button; Ctrl+Enter saves, Esc cancels. */
 function goalEdit() {
   if (!goalVisible()) return null;
-  const box = $("goalEditBox");
-  if (!box) return null;
-  _goalEditing = true;
+  const panel = $("goalEditPanel"), box = $("goalEditBox");
+  if (!panel || !box) return null;
   box.value = String((goalRec.goal || {}).objective || "");
   if (!box._wired) {
     box._wired = 1;
     box.addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); goalEditSave(); }
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); goalEditSave(); }
       else if (e.key === "Escape") { e.preventDefault(); goalEditCancel(); }
     });
   }
-  box.hidden = false;
-  if ($("goalText")) $("goalText").hidden = true;
-  if ($("goalSave")) $("goalSave").hidden = false;
-  if ($("goalCancel")) $("goalCancel").hidden = false;
-  if ($("goalEdit")) $("goalEdit").hidden = true;
+  panel.hidden = false;
   box.focus();
-  try { box.select(); } catch (e) {}
+  try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) {}
   return null;
 }
 
 function goalEditCancel() {
-  _goalEditing = false;
-  const box = $("goalEditBox");
-  if (box) box.hidden = true;
-  if ($("goalText")) $("goalText").hidden = false;
-  if ($("goalSave")) $("goalSave").hidden = true;
-  if ($("goalCancel")) $("goalCancel").hidden = true;
-  if ($("goalEdit")) $("goalEdit").hidden = false;
+  const panel = $("goalEditPanel");
+  if (panel) panel.hidden = true;
   return null;
 }
 

@@ -226,8 +226,10 @@ check("F1 the tool card shows its INPUT as soon as it starts",
       'toolCard(d.tool, d.args, d.ts)' in ui)
 check("F2 tool.output streams into the card", "liveToolOutput" in ui
       and 'addEventListener("tool.output"' in ui)
-check("F3 the goal objective is expandable",
-      'id="goalFull"' in ui and "function goalExpand" in ui)
+check("F3 the objective is read/edited in a real editor window (no duplicate block)",
+      'id="goalEditPanel"' in ui and 'id="goalEditBox"' in ui
+      and "<textarea" in ui[ui.find('id="goalEditPanel"'):ui.find('id="goalEditPanel"') + 700]
+      and 'id="goalFull"' not in ui and "function goalExpand" not in ui)
 check("F4 the goal bar offers an independent verify",
       'id="goalVerify"' in ui and "function goalVerify" in ui)
 check("F5 the bar renders the EFFECTIVE status (reopened is not done)",
@@ -239,18 +241,22 @@ check("F7 the Harness panel exposes Goal verification (acceptance + judge)",
       'id="gvAcc"' in ui and 'id="gvJudge"' in ui
       and "function loadGoalVerify" in ui and "function saveGoalVerify" in ui)
 
-# F9-F11 (JAG-504, operator report): the goal bar must not overflow a narrow chat,
-# the objective is edited IN PLACE (no modal), and the verdict block is closable.
+# F9-F11 (JAG-504/JAG-2, operator report): the bar must not overflow a narrow chat,
+# the objective opens a real multi-line editor WINDOW, and the verdict is closable AND
+# re-openable.
 check("F9 the goal bar wraps instead of overflowing a narrow chat",
-      "flex-wrap: wrap" in ui and "#goalBar .gb-input" in ui
-      and "max-width: 100%" in ui)
-check("F10 the goal is edited INLINE in the bar, with no modal prompt",
-      'id="goalEditBox"' in ui and "function goalEditSave" in ui
-      and "function goalEditCancel" in ui
+      "flex-wrap: wrap" in ui and "max-width: 100%" in ui
+      and ".gb-editor" in ui and ".gb-editor[hidden]" in ui)
+check("F10 the editor is a scrollable multi-line window (no modal prompt)",
+      "min-height: 96px" in ui and "overflow: auto" in ui and "resize: vertical" in ui
+      and "function goalEditSave" in ui and "function goalEditCancel" in ui
       and "prompt(" not in ui[ui.find("function goalEdit()"):ui.find("function goalEditCancel")])
-check("F11 the verdict block can be closed and re-reads on a new verdict",
+check("F11 the verdict can be hidden AND re-shown, and the CSS honours `hidden`",
       'data-call="goalVerdictClose"' in ui and "function goalVerdictClose" in ui
-      and "_goalVerdictDismissed" in ui)
+      and "function goalVerdictShow" in ui and 'id="goalVerdictChip"' in ui
+      and ".gb-verdict[hidden]" in ui and ".gb-chip[hidden]" in ui)
+check("F11b the verdict block says WHOSE check it is (not the agent's claim)",
+      "the harness's independent check" in ui and "NOT the agent's claim" in ui)
 
 # The config block is owned by a documented dedicated panel (v491 contract).
 from longrun.core import settings as S                   # noqa: E402
@@ -320,6 +326,26 @@ check("H6 it is wired at every acceptance point (>=4 call sites)",
       _src.count("if _goal_close_round():") >= 4, _src.count("if _goal_close_round():"))
 check("H7 the goal-closure prompt is the one it injects",
       "_goal_closure_prompt(" in _gr and "_goal_rec_objective(" in _gr)
+
+# H8/H9 (JAG-3): the verdict is a REAL object the AGENT can read — injected into the
+# per-turn harness state, not only rendered in the bar. Deterministic: L1 is switched
+# off so no sandbox command runs; L2 (artefacts on disk) is what fails here.
+_saved_vc = G.verify_config
+G.verify_config = lambda: {"acceptance": False, "judge": False, "judge_model": ""}
+G.complete(sid, "force a verdict")
+G.verify(sid)                       # stores the verdict on the goal record
+G.verify_config = _saved_vc
+_blk = _ag._goal_block(sid)
+check("H8a the goal + its independent verdict reach the agent's context",
+      "GOAL (" in _blk and "objective:" in _blk and "INDEPENDENT verification" in _blk,
+      _blk[:120])
+check("H8b the injected text says the check is the harness's, not the agent's claim",
+      "NOT your own claim" in _blk and "NOT VERIFIED" in _blk, _blk[-160:])
+check("H8c what the check could NOT confirm is listed, with the instruction to fix it",
+      "could NOT confirm" in _blk and "do not close the goal by restating" in _blk)
+check("H8d a session with no goal injects nothing", _ag._goal_block("") == "")
+check("H9 context_summary injects the goal block with the task list",
+      "goal_block = _goal_block(" in _src)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
