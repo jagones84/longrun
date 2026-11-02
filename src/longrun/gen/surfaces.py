@@ -241,7 +241,9 @@ _GENERATE_PROMPTS = {
         "goal. Write one message that moves the work forward — ask for the missing "
         "decision, or restate the next step concretely. Keep it short (1-3 sentences), "
         "specific to what is actually open, and never invent facts that are not in the "
-        "context." + _BARE
+        "context. If the context has NO conversation yet (no recent turns), write a "
+        "short OPENING message that asks the operator what they want to work on — "
+        "never assume or name a project, folder or repository." + _BARE
     ),
     "goal.objective": (
         "You write the OBJECTIVE of a durable goal for this session — the outcome to "

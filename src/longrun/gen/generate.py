@@ -57,8 +57,19 @@ def _tail(sid, n=8):
         return []
 
 
-def _session_ctx(sid):
-    """What most surfaces need: the workspace, the recent turns, the plan and the goal."""
+def _session_ctx(sid, own_workspace_only=False):
+    """What most surfaces need: the workspace, the recent turns, the plan and the goal.
+
+    `own_workspace_only` is for the composer (`chat.prompt`). That surface drafts a
+    message for THIS conversation, so the folder is a fact about the chat ONLY when
+    the session OWNS one; the global default is not. It used to be substituted here
+    (`rules.resolve_workspace` falls back to `get_workspace()`), and because that
+    default is the operator's setting it can be the harness's OWN repo: with an empty
+    chat the workspace was then the only fact in the context, so the ✨ drafted
+    "explore the repository at <harness repo>" in a conversation about something else
+    (live, 2026-11-03). A chat with no folder and no turns now has a genuinely empty
+    context, and the surface prompt asks the operator instead of inventing a project.
+    """
     out = {"session": sid}
     try:
         from longrun.memory import stores, rules
@@ -67,7 +78,8 @@ def _session_ctx(sid):
         out["model"] = sess.get("model") or ""
         ws = None
         try:
-            ws = rules.resolve_workspace(sess)
+            ws = (rules.check_dir(sess.get("workspace")) if own_workspace_only
+                  else rules.resolve_workspace(sess))
         except Exception:  # noqa: BLE001
             ws = sess.get("workspace")
         if ws:
@@ -224,7 +236,10 @@ def _object_only(extra):
 
 
 _GATHER = {
-    "chat.prompt": lambda e: _session_ctx((e or {}).get("session")),
+    # The composer drafts a message for the CONVERSATION: the folder counts only when
+    # the session owns one (never the global default — see `_session_ctx`).
+    "chat.prompt": lambda e: _session_ctx((e or {}).get("session"),
+                                          own_workspace_only=True),
     "goal.objective": lambda e: _session_ctx((e or {}).get("session")),
     "plan.input": lambda e: _session_ctx((e or {}).get("session")),
     "session.title": lambda e: _session_ctx((e or {}).get("session")),

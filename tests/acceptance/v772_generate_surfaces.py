@@ -240,6 +240,40 @@ check("F6 the Control deck obeys the SAME rule (one product, one rule)",
       and "✓ drafted" not in ORBIT and "✨…" not in ORBIT
       and 'genState(st, "ok"' in ORBIT and 'genState(st, "warn"' in ORBIT)
 
+# ============================================================================
+# G — the composer drafts for the CONVERSATION: the folder is a fact about the
+#     chat only when the SESSION owns one. Live 2026-11-03: an empty chat
+#     inherited the global default (on the operator's host that is the harness's
+#     OWN repo) and the ✨ drafted "explore the repository at <harness repo>" in a
+#     conversation about something else. Operator: "perché l'autogenerate parla
+#     di orbit che non c'entra un cazzo di nulla con la chat?"
+# ============================================================================
+from longrun.memory import rules as RULES                  # noqa: E402
+_nof = stores.get_or_create_session(None, "v772-empty-chat")["id"]
+_s = stores.load_session(_nof)
+_s.pop("workspace", None)
+stores.save_session(_s)
+_def = RULES.get_workspace()
+check("G1 an empty chat does NOT inherit the global default folder",
+      bool(_def) and os.path.isdir(_def)
+      and "workspace" not in GEN.context_for(CHAT, {"session": _nof}),
+      "default=%r ctx=%s" % (_def, GEN.context_for(CHAT, {"session": _nof})))
+check("G2 the change is SCOPED to the composer (the default still reaches the others)",
+      GEN.context_for(S.SURFACES["goal.objective"], {"session": _nof}).get("workspace") == _def)
+_s2 = stores.load_session(_nof)
+_s2["workspace"] = TMP
+stores.save_session(_s2)
+check("G3 a chat that OWNS a folder still carries it in the composer context",
+      GEN.context_for(CHAT, {"session": _nof}).get("workspace") == TMP)
+check("G4 an empty conversation is HANDLED, not invented: the prompt asks the operator",
+      "NO conversation yet" in S.SURFACES["chat.prompt"].system
+      and "OPENING message" in S.SURFACES["chat.prompt"].system
+      and "never assume" in S.SURFACES["chat.prompt"].system)
+check("G5 only the composer passes own_workspace_only (one owner for the rule)",
+      "own_workspace_only=True" in open(os.path.join(
+          REPO, "src", "longrun", "gen", "generate.py"), encoding="utf-8").read()
+      and GEN._GATHER["chat.prompt"]({"session": _nof}).get("workspace") == TMP)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
