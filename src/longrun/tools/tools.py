@@ -237,8 +237,17 @@ def _shell(args, run_id):
     _trust = _session_trust(sid)
     sh = None if _trust == "locked" else _shell_terminal(sid, cwd or os.getcwd())
     if sh is not None:
+        # JAG-1: stream each output line to the UI as it arrives, so a running
+        # `shell` card shows what the command prints instead of a blank
+        # "running…" until the whole call returns.
+        def _stream(line, _sid=sid):
+            try:
+                from longrun.core.events import publish
+                publish("tool.output", session=_sid, tool="shell", text=line)
+            except Exception:  # noqa: BLE001 — a live sink must never fail the tool
+                pass
         r = sh.run_capture(command, timeout=args.get("timeout_secs"),
-                           origin="agent", cwd=cwd)
+                           origin="agent", cwd=cwd, on_output=_stream)
         res = {"ok": bool(r.get("ok")),
                "exit_code": (int(r["exit_code"]) if r.get("exit_code") is not None else 1),
                "stdout": r.get("stdout") or "", "stderr": "",

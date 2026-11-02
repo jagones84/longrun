@@ -886,11 +886,27 @@
   #goalBar[hidden] { display: none; }
   #goalBar.paused { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
   #goalBar.done { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 6%, transparent); }
+  /* JAG-1: a goal stored `completed` whose plan reopened is NOT done — it gets a
+     warning border so it can never read as finished. */
+  #goalBar.reopened { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 6%, transparent); }
+  #goalBar.reopened .gb-ico { color: var(--warn); }
   #goalBar .gb-ico { flex: 0 0 auto; color: var(--acc); }
   #goalBar.paused .gb-ico { color: var(--warn); }
   #goalBar.done .gb-ico { color: var(--ok); }
   #goalBar .gb-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; color: var(--txt); }
+  /* JAG-1: the objective is a BUTTON now — clicking it opens the full text below. */
+  #goalBar button.gb-text.gb-expand { flex: 1 1 auto; min-width: 0; text-align: left;
+    background: none; border: none; padding: 0; margin: 0; font: inherit; color: var(--txt);
+    cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: auto; min-height: 0; }
+  #goalBar button.gb-text.gb-expand:hover { color: var(--acc); }
+  .gb-full { margin: 2px 0 2px 0; padding: 6px 9px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--panel); font-size: 12px; white-space: pre-wrap;
+    word-break: break-word; color: var(--txt); max-height: 240px; overflow: auto; }
+  .gb-verdict { margin: 2px 0; padding: 5px 9px; border-radius: 8px; font-size: 11px;
+    border: 1px solid var(--line); color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+  .gb-verdict.ok { border-left: 2px solid var(--ok); color: var(--ok); }
+  .gb-verdict.bad { border-left: 2px solid var(--warn); color: var(--warn); }
   #goalBar .gb-meta { flex: 0 0 auto; color: var(--dim); white-space: nowrap; }
   #goalBar > button { flex: 0 0 auto; height: 24px; min-height: 24px; padding: 0 7px;
     border-radius: 8px; font-size: 12px; line-height: 1; }
@@ -2393,12 +2409,15 @@
       <div id="cmdChips" hidden style="flex-wrap:wrap;gap:6px;padding:0 2px 6px 2px"></div>
       <div id="goalBar" hidden>
         <span class="gb-ico" aria-hidden="true">◎</span>
-        <span class="gb-text" id="goalText"></span>
+        <button class="gb-text gb-expand" id="goalText" data-call="goalExpand" title="show the full objective">goal</button>
         <span class="gb-meta" id="goalMeta"></span>
+        <button class="ghost" id="goalVerify" data-call="goalVerify" title="run an INDEPENDENT verification of this goal">✓ verify</button>
         <button class="ghost" id="goalToggle" data-call="goalToggle" title="pause or resume this goal">⏸</button>
         <button class="ghost" id="goalEdit" data-call="goalEdit" title="edit the objective">✎</button>
         <button class="ghost" id="goalDel" data-call="goalDelete" title="delete this goal (the chat and plan stay)">✕</button>
       </div>
+      <div id="goalFull" class="gb-full" hidden></div>
+      <div id="goalVerdict" class="gb-verdict" hidden></div>
       <input type="file" id="attachInput" multiple hidden>
       <textarea id="inp" rows="1" placeholder="Message…" autofocus></textarea>
       <div id="queueBar" hidden></div>
@@ -2619,7 +2638,7 @@
           <div class="hcard-hd" title="After the changes it runs a verification command (e.g. the tests) and applies them only if it passes: if it fails, it reverts."><span class="dot"></span><b>Verifier</b><span class="hc-sub">apply only if green</span>
             <button class="ghost config-save" data-call="saveVerifier" disabled title="no changes to save">save verifier</button></div>
           <div class="hrow">
-            <label title="Enable the check before applying the agent's changes.">enabled <input id="vfOn" type="checkbox"></label>
+            <label title="Enable the check before applying the agent's changes.">enabled <input id="vfOn" type="checkbox" checked></label>
             <label title="Command run to verify (e.g. python3 -m pytest -q).">verify command <input id="vfCmd" type="text" placeholder="python3 -m pytest -q"></label>
             <label title="Maximum seconds to wait for the verify command.">timeout (s) <input id="vfTimeout" type="number" min="0" value="120"></label>
             <label title="Limit the verification to these paths, comma-separated (empty = the whole workspace).">checked paths <input id="vfPaths" type="text" placeholder="optional"></label>
@@ -2636,9 +2655,18 @@
           <div class="hcard-hd" title="Generates N independent answers and keeps the best one: more reliable, but slower and more expensive."><span class="dot"></span><b>Best-of-N</b><span class="hc-sub">more answers, the best one</span>
             <button class="ghost config-save" data-call="saveBestofn" disabled title="no changes to save">save best-of-N</button></div>
           <div class="hrow">
-            <label title="Enable sampling of multiple answers.">enabled <input id="bnOn" type="checkbox"></label>
+            <label title="Enable sampling of multiple answers.">enabled <input id="bnOn" type="checkbox" checked></label>
             <label title="How many answers to generate (1 = no best-of-N).">number of answers N <input id="bnN" type="number" min="1" max="16" value="1"></label>
             <label title="Minimum score (0..1) an answer must have to be accepted.">minimum score <input id="bnMin" type="number" step="0.05" value="0"></label>
+          </div>
+        </div>
+        <div class="card hcard" style="--hc:#34d399">
+          <div class="hcard-hd" title="A GOAL is not the todo list. Closing every todo is the agent's CLAIM; the harness checks it INDEPENDENTLY and only then marks the goal done. Acceptance runs the verifier command in the goal's workspace; artefacts requires every source a done step cites to exist on disk; Judge additionally asks a model to judge the objective against the artefacts alone (one extra call — do NOT trust the worker's claims)."><span class="dot"></span><b>Goal verification</b><span class="hc-sub">independent, not the todo list</span>
+            <button class="ghost config-save" data-call="saveGoalVerify" disabled title="no changes to save">save goal verification</button></div>
+          <div class="hrow">
+            <label title="Run verifier.command in the goal's workspace when the plan looks complete (deterministic authority).">acceptance <input id="gvAcc" type="checkbox" checked></label>
+            <label title="Also ask a model to judge the objective against the artefacts (independent second opinion; costs one call).">judge <input id="gvJudge" type="checkbox"></label>
+            <label title="Model ref for the judge (empty = the subagent role chain).">judge model <input id="gvModel" type="text" placeholder="subagent role chain"></label>
           </div>
         </div>
         <div class="card hcard" style="--hc:#a78bfa">
@@ -4275,6 +4303,30 @@ function updateToolCard(data) {
   if (outEl) outEl.textContent = body ? ("output: " + String(body)) : "";
   scroll();
 }
+/* JAG-1: a running tool streams its output into its own card as it arrives.
+   The collapsed header shows the LAST line (so activity and content are visible
+   without expanding), and the body accumulates the text; the authoritative final
+   payload still replaces it on `tool.result`. */
+function liveToolOutput(data) {
+  const tool = (data && data.tool) || "tool";
+  const text = String(data && data.text != null ? data.text : "");
+  if (!text) return;
+  const cards = Array.from($("log").querySelectorAll(".toolcard.pending"));
+  const card = cards.reverse().find(c => c.dataset.tool === tool);
+  if (!card) return;
+  const outEl = card.querySelector(".tc-out");
+  if (outEl) {
+    if (!card.dataset.streaming) { card.dataset.streaming = "1"; outEl.textContent = "output: "; }
+    outEl.textContent += text;
+    if (outEl.textContent.length > 24000) {
+      outEl.textContent = "output: " + outEl.textContent.slice(-24000);
+    }
+  }
+  const last = text.replace(/\s+$/, "").split("\n").filter(Boolean).pop() || "";
+  const meta = card.querySelector(".tc-meta");
+  if (meta && last) { meta.textContent = "running… " + last.slice(0, 80); meta.title = last; }
+  scroll();
+}
 function _tidyThink() {
   document.querySelectorAll("#log details.think").forEach(det => {
     const t = (det.querySelector(".t") || {}).textContent || "";
@@ -5510,8 +5562,12 @@ function _bindRenderStream(es, live, adopt) {
   // last one lets a recovered socket re-attach from HERE instead of replaying the
   // whole turn into a bubble that already shows it (duplicated text/cards).
   es.addEventListener("chat.delta", e => { if (e.lastEventId) es._lrId = e.lastEventId; });
-  es.addEventListener("tool.call", e => { if (live()) toolCard(JSON.parse(e.data).tool); });
+  // JAG-1: the `tool.call` event carries the ARGS — pass them so the card shows
+  // WHAT was launched (and with which input) the moment it starts, not only when
+  // the result lands. `tool.output` then streams the output live into the same card.
+  es.addEventListener("tool.call", e => { const d = JSON.parse(e.data); if (live()) toolCard(d.tool, d.args, d.ts); });
   es.addEventListener("tool.result", e => { if (live()) updateToolCard(JSON.parse(e.data)); });
+  es.addEventListener("tool.output", e => { if (live()) liveToolOutput(JSON.parse(e.data)); });
   /* v648: approval.request and improve.proposal are NOT bound here. connectFeed
      already subscribes to both on the always-on feed stream, so handling them in
      the per-turn stream too rendered EVERY approval and EVERY proposal twice (the
@@ -7757,24 +7813,57 @@ function renderGoal() {
   const bar = $("goalBar");
   if (!bar) return;
   const g = goalVisible() ? goalRec.goal : null;
-  if (!g) { bar.hidden = true; return; }
+  if (!g) {
+    bar.hidden = true;
+    if ($("goalFull")) $("goalFull").hidden = true;
+    if ($("goalVerdict")) $("goalVerdict").hidden = true;
+    return;
+  }
   const p = goalRec.progress || {};
+  // JAG-1: the EFFECTIVE status is the truth — a goal stored `completed` whose
+  // plan reopened reports `reopened`, so the bar never says "done" over open steps.
+  const st = String(goalRec.effective_status || g.status || "");
+  const paused = st === "paused";
+  const done = st === "completed";
   bar.hidden = false;
-  bar.classList.toggle("paused", g.status === "paused");
-  bar.classList.toggle("done", g.status === "completed");
+  bar.classList.toggle("paused", paused);
+  bar.classList.toggle("done", done);
+  bar.classList.toggle("reopened", st === "reopened");
   const t = $("goalText");
-  t.textContent = String(g.objective || "(no objective)");
-  t.title = t.textContent;
-  const bits = [String(g.status || "")];
+  const full = String(g.objective || "(no objective)");
+  t.textContent = full;
+  t.title = "show the full objective";
+  if ($("goalFull")) $("goalFull").textContent = full;
+  const bits = [st];
   if (p.steps) bits.push((p.done || 0) + "/" + p.steps + " steps");
+  if (p.open) bits.push(p.open + " open");
   bits.push((g.turns || 1) + " turn" + ((g.turns || 1) === 1 ? "" : "s"));
   $("goalMeta").textContent = bits.join(" · ");
   const tg = $("goalToggle");
-  tg.textContent = g.status === "paused" ? "▶" : "⏸";
-  tg.title = g.status === "paused" ? "resume this goal" : "pause this goal";
-  tg.disabled = g.status === "completed";
-  $("goalEdit").disabled = g.status === "completed";
-  $("goalDel").disabled = false;
+  tg.textContent = paused ? "▶" : "⏸";
+  tg.title = paused ? "resume this goal" : "pause this goal";
+  // JAG-1: a REOPENED goal is resumable (it is not really done), so the toggle is
+  // never disabled for it — only a genuinely completed goal has nothing to pause.
+  tg.disabled = done;
+  if ($("goalEdit")) $("goalEdit").disabled = done;
+  if ($("goalDel")) $("goalDel").disabled = false;
+  // The independent-verification verdict (when one was taken).
+  const v = goalRec.verification;
+  const vd = $("goalVerdict");
+  if (vd) {
+    if (v) {
+      vd.hidden = false;
+      const ok = !!v.verified;
+      vd.className = "gb-verdict " + (ok ? "ok" : "bad");
+      const when = v.at ? new Date(v.at * 1000).toLocaleTimeString() : "";
+      vd.textContent = (ok ? "✓ verified independently" : "✕ NOT verified independently")
+        + (when ? " · " + when : "")
+        + (v.workspace ? " · " + v.workspace : "")
+        + ((!ok && (v.missing || []).length) ? "\nmissing: " + v.missing.slice(0, 4).join("; ") : "");
+    } else {
+      vd.hidden = true;
+    }
+  }
 }
 
 async function loadGoal(attempt) {
@@ -7808,7 +7897,22 @@ async function goalAct(action, extra) {
 
 function goalToggle() {
   if (!goalVisible()) return null;
-  return goalAct(goalRec.goal.status === "paused" ? "resume" : "pause");
+  const st = String(goalRec.effective_status || (goalRec.goal || {}).status || "");
+  return goalAct(st === "paused" ? "resume" : "pause");
+}
+
+/* JAG-1: show/hide the FULL objective (it was ellipsized with no way to read it). */
+function goalExpand() {
+  const f = $("goalFull");
+  if (!f || !goalVisible()) return;
+  f.hidden = !f.hidden;
+}
+
+/* JAG-1: run an INDEPENDENT verification of the goal on demand. `judge` also asks a
+   model to judge the objective against the artefacts (slower, costs one call). */
+function goalVerify() {
+  if (!goalVisible()) return null;
+  return goalAct("verify", { judge: true });
 }
 
 function goalEdit() {
@@ -9977,7 +10081,7 @@ const _FEED_REFRESH = {
   "skills.remove": () => loadSkills(),
   "memory.forget": () => loadMemories(),
   "memory.purge": () => loadMemories(),
-  "tools.update": () => loadRuntime(),
+  "tools.update": () => { loadRuntime(); loadVerifier(); loadBestofn(); loadGoalVerify(); loadDifficulty(); },
   "edits.recorded": () => loadEdits(),
   "edits.undone": () => loadEdits(),
   "edits.approved": () => loadEdits(),
@@ -11579,6 +11683,21 @@ async function saveBestofn() {
   who("ai", "✓ best-of-N updated");
   if ($("bnOn")) gateEnroll($("bnOn").closest(".card"));   // JAG-496: re-base after a save
 }
+async function loadGoalVerify() {
+  const d = await api("GET", "/api/tools");
+  const x = (d && d.goal_verify) || {};
+  if ($("gvAcc")) $("gvAcc").checked = x.acceptance !== false;
+  if ($("gvJudge")) $("gvJudge").checked = !!x.judge;
+  if ($("gvModel")) $("gvModel").value = x.judge_model || "";
+}
+async function saveGoalVerify() {
+  await api("POST", "/api/tools", { goal_verify: {
+    acceptance: !!($("gvAcc") || {}).checked,
+    judge: !!($("gvJudge") || {}).checked,
+    judge_model: ($("gvModel") || {}).value || "",
+  }});
+  who("ai", "✓ goal verification updated");
+}
 async function loadDifficulty() {
   const d = await api("GET", "/api/tools");
   const x = (d && d.difficulty) || {};
@@ -12317,7 +12436,7 @@ function settingsCategory(name) {
   else if (name === "skills") { loadSkills(); }
   else if (name === "rules") { loadRules(); }
   else if (name === "harness") {
-    loadRuntime(); loadVerifier(); loadBudget(); loadBestofn(); loadDifficulty(); loadSelfevolve(); loadReasoning();
+    loadRuntime(); loadVerifier(); loadBudget(); loadBestofn(); loadGoalVerify(); loadDifficulty(); loadSelfevolve(); loadReasoning();
   }
   else if (name === "hooks") { loadHooksLive(); }
   else if (name === "config") {

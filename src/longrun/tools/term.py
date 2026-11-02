@@ -100,6 +100,10 @@ class Shell:
         self.first_seq = 0
         self._lock = threading.Lock()
         self._done = threading.Event()
+        # JAG-1 (live tool output): an optional per-line callback, set only while a
+        # tool call is capturing — it lets the harness stream the command's output
+        # to the UI BEFORE the call returns instead of only at the end.
+        self._on_output = None
         self.argv = _shell_argv()
         self.kind = _kind(self.argv)
         self.proc = subprocess.Popen(
@@ -145,6 +149,12 @@ class Shell:
                     self._done.set()
                 else:
                     self._emit("out", text=s)
+                    cb = self._on_output
+                    if cb is not None:
+                        try:
+                            cb(s)
+                        except Exception:  # noqa: BLE001 — a live sink must never
+                            pass           # break the command it is streaming
         except Exception:  # noqa: BLE001
             pass
 
@@ -212,11 +222,16 @@ class Shell:
         self.last = time.time()
         return {"ok": True}
 
-    def run_capture(self, cmd, timeout=None, origin="agent", cwd=None):
+    def run_capture(self, cmd, timeout=None, origin="agent", cwd=None, on_output=None):
         """Run one command and WAIT for it, returning its output + exit code.
 
         Used by the agent's `shell` tool. The command and its output stay in the
         shared buffer, so the human sees exactly what the agent ran.
+
+        `on_output` (JAG-1): an optional callback invoked with EACH output line as
+        it arrives, so the caller can stream it live (the UI shows a running tool's
+        output while it runs, not only when it finishes). It is detached again
+        before returning, so the next command cannot inherit a dead sink.
         """
         cmd = str(cmd or "")
         if "\x00" in cmd:
@@ -232,6 +247,7 @@ class Shell:
         err = self._claim()
         if err:
             return {"ok": False, "exit_code": 1, "stdout": "", "error": err}
+        self._on_output = on_output
         with self._lock:
             start = self.seq
         t0 = time.time()
@@ -239,10 +255,12 @@ class Shell:
         try:
             self._write(cmd)
         except Exception as e:  # noqa: BLE001
+            self._on_output = None
             self.busy = False
             return {"ok": False, "exit_code": 1, "stdout": "", "error": str(e)}
         self.last = time.time()
         finished = self._done.wait(timeout)
+        self._on_output = None
         with self._lock:
             evs = [e for e in self.events if e["seq"] > start]
         code = None

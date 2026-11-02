@@ -63,14 +63,28 @@ runtime:
 # ---- verifier "apply-only-if-green" (JAG-131) -------------------------------
 # Quando attivo, dopo OGNI fs.write/fs.edit l'harness esegue `command` nella
 # sandbox: se NON passa, la modifica viene annullata (rollback) e il modello
-# riceve l'errore. Default DISATTIVO (command vuoto) per non sorprendere.
-# Esempio per un repo Python:  command: "python3 -m pytest -q"
+# riceve l'errore.
+# JAG-1 (operator, 2026-11-02): ON by default — the Harness panel shows it ticked
+# and the goal verifier reuses the same command. With an EMPTY command it is a
+# no-op, so enabling it changes nothing until a command is set; set one (e.g. the
+# project tests) to make every edit prove itself.
 verifier:
-  enabled: false
+  enabled: true
   command: ""               # comando di verifica (vuoto = nessuna verifica)
   timeout_secs: 120         # timeout del check
   paths: []                 # se non vuoto, verifica solo i path che contengono uno di questi
   closeout: false           # F1: verify ONCE at closeout when the step changed the environment
+
+# ---- goal verification (JAG-1) ----------------------------------------------
+# A GOAL is not the todo list: closing every todo is the agent's CLAIM. The
+# harness decides that claim INDEPENDENTLY and only then marks the goal done.
+# L1 (acceptance) runs the `verifier.command` in the goal's workspace; L2
+# (artefacts) requires every source a done step cites to exist on disk; L3
+# (judge) asks a cheap model to judge the objective against the artefacts alone.
+goal_verify:
+  acceptance: true          # L1: run verifier.command when the plan looks complete
+  judge: false              # L3: also ask a model to pass/fail the objective
+  judge_model: ""           # empty = the subagent role chain
 
 # ---- run budget (R3) ---------------------------------------------------------
 # Hard ceiling on cumulative prompt+completion tokens for ONE run tree (the run
@@ -82,9 +96,11 @@ budget:
 # ---- best-of-N + rank (JAG-132) ---------------------------------------------
 # Test-time compute: per uno step non banale campiona N candidati e sceglie il
 # migliore con il ranker deterministico (prm.rank_text), invece del primo.
-# n: 1 = disattivato (comportamento attuale, nessun overhead).
+# JAG-1 (operator, 2026-11-02): ON by default (the Harness panel shows it ticked).
+# `n: 1` keeps it a no-op until N is raised — or let `difficulty` scale N per task
+# (easy_n/medium_n/hard_n below).
 bestofn:
-  enabled: false
+  enabled: true
   n: 1
   min_score: 0.0            # se il migliore resta sotto questa soglia -> nessuna scelta
 
@@ -300,11 +316,14 @@ tools:
   # workspace re-rooting: an orchestrator links a folder to itself or to its
   # whole org subtree (all levels). The agent record and the session's runtime
   # workspace are written together; a caller may only target itself or a
-  # subordinate (the harness supervisor may target anyone). Auto: it moves a
-  # pointer, never deletes content.
+  # subordinate (the harness supervisor may target anyone).
+  # JAG-1: the harness PROMPTS agents to set their workspace per task, so the
+  # default is `required` — the operator approves the folder (FULL/auto mode is
+  # the standing opt-out). Change to `auto` to let agents re-root themselves and
+  # their team unattended.
   workspace:
     enabled: true
-    approval: auto
+    approval: required
 
   # thread ledger (JAG-431j): THIS session's chat GROUPS in chronological order (task +
   # free), so the agent can recall a whole long run after many compactions, and TITLE

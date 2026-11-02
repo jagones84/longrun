@@ -1462,8 +1462,33 @@ def _goal_action(body):
     action = str((body or {}).get("action") or "").strip().lower()
     if not sid:
         return 400, {"ok": False, "error": "session required"}
+    # A `completed` goal whose plan reopened is not really done: settle it to the
+    # effective status before acting, so pause/resume act on the real state.
+    if action != "delete":
+        try:
+            goal.settle(sid)
+        except Exception:  # noqa: BLE001 — settling must not block the action
+            pass
     if action == "start":
         rec = goal.start(sid, (body or {}).get("objective"))
+    elif action == "verify":
+        if not goal.load(sid):
+            return 404, {"ok": False, "error": "no goal for this session"}
+        rec = goal.load(sid)
+        verdict = goal.verify(sid, model=(body or {}).get("model"),
+                              judge=(body or {}).get("judge"))
+        out = goal.status(sid)
+        out["ok"] = True
+        out["goal"] = goal.load(sid)
+        out["verified"] = bool(verdict.get("verified"))
+        out["verdict"] = verdict
+        if verdict.get("verified") and out["goal"] and out["goal"].get("status") != "completed":
+            out["goal"] = goal.complete(sid, "verified by operator request")
+            out = goal.status(sid)
+            out["ok"] = True
+            out["verified"] = bool(verdict.get("verified"))
+            out["verdict"] = verdict
+        return 200, out
     elif action == "pause":
         rec = goal.pause(sid, (body or {}).get("note") or "")
         if rec is None:
@@ -1528,6 +1553,7 @@ def handle(handler, method, path, qs, body):
                                      "verifier": registry.load_config().get("verifier") or {},
                                      "budget": registry.load_config().get("budget") or {},
                                      "bestofn": registry.load_config().get("bestofn") or {},
+                                     "goal_verify": registry.load_config().get("goal_verify") or {},
                                      "difficulty": registry.load_config().get("difficulty") or {},
                                      "selfevolve": registry.load_config().get("selfevolve") or {},
                                      "reasoning": registry.load_config().get("reasoning") or {},
@@ -2659,6 +2685,20 @@ def _update_policy(body):
         registry.load_config(reload=True)
         _publish("tools.update", bestofn=dict(b))
         return {"ok": True, "tools": registry.catalog(), "bestofn": dict(b)}
+    # JAG-1: independent GOAL verification (acceptance / judge / judge_model).
+    if isinstance(body.get("goal_verify"), dict):
+        gv = cfg.setdefault("goal_verify", {})
+        src = body["goal_verify"]
+        if "acceptance" in src:
+            gv["acceptance"] = bool(src["acceptance"])
+        if "judge" in src:
+            gv["judge"] = bool(src["judge"])
+        if "judge_model" in src:
+            gv["judge_model"] = str(src["judge_model"] or "").strip()
+        registry.save_config(cfg)
+        registry.load_config(reload=True)
+        _publish("tools.update", goal_verify=dict(gv))
+        return {"ok": True, "tools": registry.catalog(), "goal_verify": dict(gv)}
     # JAG-134: difficulty / budget adattivo (enabled / easy_n / medium_n / hard_n / soglie)
     if isinstance(body.get("difficulty"), dict):
         d = cfg.setdefault("difficulty", {})

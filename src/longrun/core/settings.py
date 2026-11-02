@@ -246,6 +246,8 @@ DEDICATED = {
         "difficulty": "Settings ▸ Harness",
         "selfevolve": "Settings ▸ Harness",
         "loop_detection": "Settings ▸ Harness",
+        # JAG-1: independent GOAL verification (acceptance + judge) — Harness panel.
+        "goal_verify": "Settings ▸ Harness",
         "reasoning": "Settings ▸ Models",
         "tools": "Settings ▸ Tools & approvals",
         "version": "internal",

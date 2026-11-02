@@ -237,11 +237,13 @@ def _goal_begin(sess, goal_mode, message):
 
 
 def _goal_end(sess, goal_mode):
-    """Close a goal turn: a plan that is COMPLETE with evidence closes the goal.
+    """Close a goal turn: the goal completes only when an INDEPENDENT check passes.
 
-    Only the plan decides completion (`taskgraph.goal_complete`), so the bar can
-    never report "done" for an opinion. An aborted or unfinished turn leaves the
-    goal active, which is what makes resume meaningful.
+    The plan being complete is the agent's CLAIM. `goal.verify` recomputes the
+    truth from the environment (artefacts present + the configured acceptance
+    command), so a plan that is closed but unverifiable leaves the goal ACTIVE
+    with a `note` naming what is missing. An aborted/unfinished turn also leaves
+    the goal active, which is what makes resume meaningful.
     """
     if not goal_mode:
         return None
@@ -250,9 +252,18 @@ def _goal_end(sess, goal_mode):
         rec = goal_mod.load(sess.get("id"))
         if not rec or rec.get("status") != "active":
             return rec
-        if goal_mod.progress(sess.get("id")).get("complete"):
-            rec = goal_mod.complete(sess.get("id"), "plan complete with evidence")
-            publish("goal.updated", session=sess.get("id"), goal=rec)
+        if not goal_mod.progress(sess.get("id")).get("complete"):
+            return rec
+        verdict = goal_mod.verify(sess.get("id"))
+        if verdict.get("verified"):
+            rec = goal_mod.complete(sess.get("id"),
+                                    "verified: plan complete + independent check passed")
+        else:
+            rec["note"] = ("unverified: " + "; ".join(
+                str(m) for m in (verdict.get("missing") or [])[:3]))[:400]
+            goal_mod.save(rec)
+        publish("goal.updated", session=sess.get("id"), goal=rec,
+                verification=verdict)
         return rec
     except Exception:  # noqa: BLE001 — never turn a finished chat into an error
         return None
@@ -494,7 +505,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
 # nothing is duplicated.
 _ATTACH_KINDS = (
     "chat.run", "chat.delta", "chat.done", "chat.user",
-    "harness.inject", "tool.call", "tool.result", "approval.request",
+    "harness.inject", "tool.call", "tool.result", "tool.output", "approval.request",
     "graph.node.added", "graph.node.updated",
     "plan.incomplete", "plan.continuing", "plan.stopped", "hitl.request",
     "verify.run", "run.metrics", "bestofn.chosen", "improve.proposal", "cost.usage",

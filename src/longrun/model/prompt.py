@@ -223,40 +223,81 @@ def _provider_role(sess, ws, ctx):
         out += ("Hold this role and these behaviour rules for everything you do "
                 "here.\n")
     out += ("\n" + text) if text else "\n(No extra role text is set for this agent yet.)"
-    # JAG-450: an ORCHESTRATOR (an agent with DIRECT REPORTS) must SEE its team and
-    # know it can distribute work to it. Before this the master literally did not
-    # know it had teammates, so it ran the whole job alone and never used the org
-    # chart. The roster + the `dispatch` action make the team usable from chat.
+    # JAG-450/JAG-1: an ORCHESTRATOR (an agent with reports) must SEE its WHOLE
+    # team and be told, hard, to distribute work. Before JAG-450 the master did
+    # not know it had teammates; the first version listed only DIRECT reports,
+    # which still let a mid-level manager do the leaves' work itself when the
+    # leaves reported one level down. This block lists EVERY level below, states
+    # that delegation is the job, and points at `workspace.set` so the team is
+    # rooted in the folder the task actually lives in.
     try:
         from longrun.agent import agents as _ag
         _rec = (_ag.REGISTRY.get(sid) if sid else None) or {}
         _aid = _rec.get("id")
         if _aid:
-            _team = _ag.REGISTRY.team_of(_aid)
-            _reports = [x for x in _ag.REGISTRY.list().get("agents", [])
-                        if x.get("id") in _team and x.get("id") != _aid]
-            if _reports:
+            _all = _ag.REGISTRY.list().get("agents", [])
+            _by_id = {x.get("id"): x for x in _all}
+            _sub = _ag.REGISTRY.subtree(_aid)     # EVERY level below, cycle-safe
+            _desc = [x for x in _sub if x != _aid]
+            if _desc:
+                # Indent by org depth so a nested manager reads as a nested manager.
+                _depth, _cur, _seen = {}, _aid, set()
+                for _x in _desc:
+                    _d, _walk, _guard = 1, _x, 0
+                    while _guard < 64:
+                        _p = (_by_id.get(_walk) or {}).get("reports_to")
+                        if not _p or _p == _aid or _p in _seen:
+                            break
+                        _d += 1; _walk = _p; _guard += 1
+                    _depth[_x] = _d
                 _lines = []
-                for _r in _reports:
-                    _lbl = _r.get("name") or _r.get("id")
+                for _x in _desc:
+                    _r = _by_id.get(_x) or {}
+                    _lbl = _r.get("name") or _x
                     _lbl += (" (%s)" % _r["role"]) if _r.get("role") else " (no role set)"
-                    _lines.append("- %s \u2014 %s" % (_r.get("id"), _lbl))
+                    _lines.append("%s- %s \u2014 %s"
+                                  % ("  " * (_depth.get(_x, 1) - 1), _x, _lbl))
                 out += ("\n\n## Your team (org chart \u2014 rebuilt from live state every turn)\n"
-                        "You are an ORCHESTRATOR. Your direct reports are:\n"
+                        "You are an ORCHESTRATOR. Every agent BELOW you, at every "
+                        "level, is:\n"
                         + "\n".join(_lines)
-                        + "\nThis list is generated at prompt time from the SAME org "
-                        "chart the UI shows, so adding, renaming, re-roling or "
-                        "removing an agent appears here by itself: never keep your own copy of it, "
-                        "and never assume a teammate is missing because this block is short.\n"
-                        "DISTRIBUTE work: to hand a self-contained subtask to a "
-                        'teammate, emit {"action":"dispatch","agent":"<A-id>",'
-                        '"goal":"<the subtask>"} — it runs a REAL turn in that '
+                        + "\nThis is generated at prompt time from the SAME org chart the "
+                        "UI shows: adding, renaming, re-roling or removing an agent "
+                        "appears here by itself. Never keep your own copy and never "
+                        "assume a teammate is missing because this block is short.\n"
+                        "DELEGATE \u2014 it is your job, not an option. For any task with "
+                        "independent parts, hand each part to the teammate who owns it "
+                        "and keep for YOURSELF only decomposition, cross-cutting "
+                        "decisions, synthesis and final verification. Doing the leaves' "
+                        "work yourself is the failure mode this block exists to stop.\n"
+                        "To hand a self-contained subtask to a teammate, emit "
+                        '{"action":"dispatch","agent":"<A-id>","goal":"<a complete, '
+                        'self-contained instruction>"} \u2014 it runs a REAL turn in that '
                         "teammate's own session (their role and model) and returns "
-                        "their reply. Prefer dispatching parallelisable work to your "
-                        "team over doing everything yourself. `agent.list` re-reads "
-                        "the chart on demand (read-only, no grant required).")
+                        "their reply. Emit ONE dispatch per independent subtask, and "
+                        "several in the SAME turn (a `batch`) when they do not depend "
+                        "on each other, so the team works in parallel.\n"
+                        "WORKSPACE: each teammate runs in ITS OWN folder. Before "
+                        "delegating, root the team in the folder this task actually "
+                        "lives in with "
+                        '{"tool":"workspace.set","args":{"agent":"<A-id>",'
+                        '"workspace":"<absolute path>","scope":"subtree"}} \u2014 that '
+                        "re-roots the whole chain below `agent` (approval-gated "
+                        "unless the operator is in FULL/auto mode). "
+                        "`agent.list` re-reads the chart on demand.")
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         pass
+    # JAG-1: EVERY agent runs in a session workspace; tell it to point that folder
+    # at the task, so an agent seeded on the repo default does not read and write
+    # in the wrong place. Proposal-shaped: approval-gated unless the operator has
+    # switched the harness to FULL/auto.
+    out += ("\n\n## Your workspace (point it at the task)\n"
+            "Your tools run in your SESSION WORKSPACE folder. If it is not the folder "
+            "this task actually lives in, SET IT before you start: call `workspace.set` "
+            "with the absolute folder the task belongs to (omit `agent` to target "
+            "yourself). This is a proposal to the operator \u2014 it is approval-gated "
+            "unless the harness runs in FULL/auto mode. Never write outside the folder "
+            "you were given, and never assume another agent's folder is yours.")
     return out
 
 

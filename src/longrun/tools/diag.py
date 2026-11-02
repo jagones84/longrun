@@ -197,6 +197,24 @@ def _gate_of(content):
     return "other"
 
 
+def _is_answer(body):
+    """True when an assistant turn is a REPLY the operator could read.
+
+    A turn that carries the model's native tool-call markup (DSML / Hermes /
+    `arg_key` template / a JSON action) is MACHINE text, never a chat reply —
+    `agent._looks_like_json_action` is the one owner of that judgement, so the
+    repeat detector asks it instead of re-deriving the shapes. Measured
+    2026-11-02 on session `777378644e9c`: 7 flagged "repeated answers" were really
+    6 DISTINCT tool calls whose markup shared the first 160 characters — the
+    detector cried wolf on the very loop it exists to catch.
+    """
+    try:
+        from longrun.agent.agent import _looks_like_json_action
+        return not _looks_like_json_action(body)
+    except Exception:  # noqa: BLE001 — a missing predicate must not kill the trace
+        return True
+
+
 def harness_trace(session, limit=40) -> dict:
     """What the HARNESS did in this session — the half a transcript hides.
 
@@ -225,6 +243,7 @@ def harness_trace(session, limit=40) -> dict:
     roles = {"user": 0, "assistant": 0, "other": 0}
     gates, events, repeats = {}, [], []
     inject_chars = 0
+    chars_by_kind = {}
     prev_assistant = None
     failed_tools = 0
     for i, m in enumerate(msgs):
@@ -233,11 +252,14 @@ def harness_trace(session, limit=40) -> dict:
         role = str(m.get("role") or "other")
         body = str(m.get("content") or "")
         roles[role if role in roles else "other"] += 1
-        if role == "assistant":
-            head = body.strip()[:160]
-            if prev_assistant is not None and head and head == prev_assistant:
-                repeats.append({"i": i, "text": head})
-            prev_assistant = head
+        # Only a real REPLY can be "the same reply twice": machine tool-call
+        # markup is never a chat reply, and comparing the WHOLE normalised body
+        # (not a 160-char prefix) is what makes two distinct calls distinct.
+        if role == "assistant" and _is_answer(body):
+            cur = " ".join(body.split())
+            if prev_assistant is not None and cur and cur == prev_assistant:
+                repeats.append({"i": i, "text": cur[:160]})
+            prev_assistant = cur
     # ONE source for the gates: the injection ledger, when it exists.
     ledger = sess.get("injects") or []
     if ledger:
@@ -248,6 +270,7 @@ def harness_trace(session, limit=40) -> dict:
             text = str(rec.get("text") or "")
             gates[gate] = gates.get(gate, 0) + 1
             inject_chars += len(text)
+            chars_by_kind[gate] = chars_by_kind.get(gate, 0) + len(text)
             # A tool result reaches the model AS an observation inject, so a failure is
             # counted here — the assistant messages never carry it.
             if "ok=False" in text or '"ok": false' in text:
@@ -265,6 +288,7 @@ def harness_trace(session, limit=40) -> dict:
             gate = _gate_of(body)
             gates[gate] = gates.get(gate, 0) + 1
             inject_chars += len(body)
+            chars_by_kind[gate] = chars_by_kind.get(gate, 0) + len(body)
             if "ok=False" in body or '"ok": false' in body:
                 failed_tools += 1
             if len(events) < limit:
@@ -275,17 +299,26 @@ def harness_trace(session, limit=40) -> dict:
                         and m.get("role") == "assistant"
                         and ("ok=False" in str(m.get("content") or "")
                              or '"ok": false' in str(m.get("content") or "")))
+    # `observation` carries the model's OWN tool results back to it — necessary
+    # context, not harness talk. Counting it inside "what the harness spent" made
+    # a healthy session look like 678 kB of overhead (measured 2026-11-02: 88% of
+    # the total was observations), so the harness's own words are reported apart.
+    harness_chars = sum(v for k, v in chars_by_kind.items() if k != "observation")
     return {
         "ok": True, "session": session, "messages": len(msgs), "roles": roles,
         "gate_source": "injects" if ledger else "messages",
         "harness_turns": sum(gates.values()), "inject_chars": inject_chars,
+        "harness_chars": harness_chars,
+        "inject_chars_by_kind": dict(sorted(chars_by_kind.items(), key=lambda kv: -kv[1])),
         "gates": dict(sorted(gates.items(), key=lambda kv: -kv[1])),
         "repeated_answers": repeats, "events": events,
         "tool_calls_reported_failed": failed_tools,
         "reading": ("`repeated_answers` is the loop signature: the same reply twice means "
-                    "a gate kept the turn alive after the work was done. "
-                    "`inject_chars` is what the harness spent of the context by talking "
-                    "to the model about its own bookkeeping."),
+                    "a gate kept the turn alive after the work was done (machine "
+                    "tool-call markup is never a reply, so it never counts). "
+                    "`harness_chars` is what the harness spent of the context talking "
+                    "about its own bookkeeping; `inject_chars_by_kind` shows the split, "
+                    "and `observation` (the model's own tool results) is not harness talk."),
     }
 
 
