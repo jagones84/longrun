@@ -256,8 +256,9 @@ check("F11 the verdict is a compact badge whose detail opens on demand",
       and "function goalVerdictClose" in ui and "_goalVerdictOpen" in ui
       and ".gb-badge[hidden]" in ui and ".gb-verdict[hidden]" in ui
       and 'id="goalVerdictChip"' not in ui)
-check("F11b the verdict block says WHOSE check it is (not the agent's claim)",
-      "harness's independent check" in ui and "NOT the agent's claim" in ui)
+check("F11b the verdict names WHOSE check it is in the badge tooltip, not as a body heading",
+      "the harness's independent check" in ui and "not the agent's claim" in ui
+      and 'id="goalVerdictHead"' not in ui and ".gb-vh" not in ui)
 check("F11c the goal row stays one line: no turn counter, actionable counts only",
       "p.struck" in ui and '" dropped"' in ui and "g.turns || 1" not in ui
       and 'class="ghost gb-act"' in ui)
@@ -445,6 +446,39 @@ _dec = KG.decide(open_nodes=2, rounds=1, stale=0,
                  goal_complete=False)
 check("I5 a goal turn cannot stop on open steps (the loop insists)",
       _dec["continue"] is True, _dec)
+
+# I6: a step marked done with NO evidence is neither open nor proven. The old verdict
+#     said "0/N steps still open", which contradicts itself; the gap is the evidence.
+_sid6 = mk_session("unproven")
+write_graph(_sid6, [{"id": "n1", "label": "n1", "status": "done", "plan": 1,
+                     "evidence": []}])
+_pr6 = G.progress(_sid6)
+check("I6a a done step without evidence is counted as unproven, not as open",
+      _pr6["open"] == 0 and _pr6["unproven"] == 1 and _pr6["complete"] is False, _pr6)
+_saved_vc6 = G.verify_config
+G.verify_config = lambda: {"acceptance": False, "judge": False, "judge_model": ""}
+_v6 = G.verify(_sid6)
+G.verify_config = _saved_vc6
+check("I6b the verdict names the missing EVIDENCE (never '0 steps still open')",
+      any("carry no evidence" in m for m in _v6["missing"])
+      and not any("steps still open" in m for m in _v6["missing"]), _v6["missing"][:2])
+
+# I7: a verdict OLDER than the plan is stale — its counts are about another plan.
+_sid7 = mk_session("stale-verdict")
+write_graph(_sid7, [node("n1", "done", ["out.txt"]), node("n2", "todo")])
+G.start(_sid7, "ship it")
+G.verify_config = lambda: {"acceptance": False, "judge": False, "judge_model": ""}
+G.verify(_sid7)
+G.verify_config = _saved_vc6
+check("I7a a fresh verdict is not stale", not (G.status(_sid7)["verification"] or {}).get("stale"))
+import time as _time                                                 # noqa: E402
+_future = _time.time() + 30
+os.utime(TG._path(_sid7), (_future, _future))
+_st7 = G.status(_sid7)
+check("I7b a verdict older than the plan reports stale (and says to re-verify)",
+      _st7["verification"].get("stale") is True
+      and any("re-verify" in m for m in _st7["verification"]["missing"]),
+      _st7["verification"].get("missing", [])[-1:])
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

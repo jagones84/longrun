@@ -229,6 +229,15 @@ def _purge_session_artifacts(sid):
         subagent_mod.purge_parent(sid)
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from longrun.plan import goal as goal_mod
+        # G-1: the durable goal record (`data/goals/<sid>.json`). Added after this
+        # cascade was written, so it was the one per-session file a delete left
+        # behind: the file stayed on disk AND `GET /api/goal?session=<sid>` kept
+        # answering for a session that no longer existed.
+        bases.append(goal_mod.path(sid))
+    except Exception:  # noqa: BLE001
+        pass
     removed = []
     for base in bases:
         for f in glob.glob(glob.escape(base) + "*"):

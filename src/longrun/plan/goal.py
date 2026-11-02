@@ -206,9 +206,14 @@ def progress(session_id):
     tell the goal was actually finished except for the struck ones.
 
     `steps` = done + open (the actionable set), `struck` = cancelled + superseded
-    (kept for display only), `total` = every node of the current plan.
+    (kept for display only), `total` = every node of the current plan, and
+    `unproven` = steps marked `done` that carry NO evidence. A `done` node without
+    evidence is not work the harness can count (see `taskgraph.goal_complete`), so
+    `open == 0 and unproven > 0` is the state that used to be reported as
+    "0/N steps still open" — a contradiction the operator would read as a bug.
     """
-    out = {"steps": 0, "open": 0, "done": 0, "struck": 0, "total": 0, "complete": False}
+    out = {"steps": 0, "open": 0, "done": 0, "struck": 0, "unproven": 0,
+           "total": 0, "complete": False}
     try:
         from longrun.plan import taskgraph
         graph = taskgraph.load(session_id)
@@ -220,6 +225,9 @@ def progress(session_id):
                               if n.get("status") in taskgraph.OPEN_STATUSES)
             out["struck"] = sum(1 for n in nodes
                                 if n.get("status") in ("cancelled", "superseded"))
+            out["unproven"] = sum(1 for n in nodes
+                                  if n.get("status") == "done"
+                                  and not taskgraph._has_evidence(n))
             out["steps"] = out["done"] + out["open"]
             out["complete"] = bool(taskgraph.goal_complete(graph))
     except Exception:  # noqa: BLE001 — progress is a read-out, never a blocker
@@ -391,9 +399,17 @@ def verify(session_id, model=None, persist=True, judge=None):
     if not plan["complete"]:
         if not plan["steps"]:
             missing.append("no plan exists for this goal — nothing was executed")
-        else:
+        elif plan["open"]:
             missing.append("the plan is not complete: %d/%d steps still open"
                            % (plan["open"], plan["steps"]))
+        elif plan.get("unproven"):
+            # `open == 0` but not complete: the steps say done and cite nothing. The
+            # old message read "0/N steps still open", which contradicts itself and
+            # hides the real gap (no evidence, so nothing can be checked).
+            missing.append("the plan is not complete: %d/%d steps are marked done but "
+                           "carry no evidence" % (plan["unproven"], plan["steps"]))
+        else:
+            missing.append("the plan is not complete: it has no evidence-backed done step")
     art_ok, art_missing = _check_artifacts(session_id, ws)
     if art_missing:
         checks.append({"layer": "artefacts", "ok": False, "missing": art_missing[:10]})
@@ -461,12 +477,31 @@ def settle(session_id):
     return rec
 
 
+def _plan_changed_after(session_id, stamp):
+    """Was the plan written AFTER `stamp`? (a verdict older than the plan is stale)
+
+    Cheap and model-free: the graph file's mtime. The verdict is stored, so without
+    this the panel could show a check that counted `6/19 steps open` against a plan
+    that now has 4 open of 26 — numbers that are simply not about the same plan.
+    """
+    try:
+        from longrun.plan import taskgraph
+        p = taskgraph._path(session_id)
+        return os.path.exists(p) and os.path.getmtime(p) > float(stamp) + 1
+    except Exception:  # noqa: BLE001 — staleness is a hint, never a blocker
+        return False
+
+
 def status(session_id):
     """What the Active-goal bar renders: the record plus live plan progress.
 
     A completed goal whose plan has since REOPENED reports `reopened` (and a
     recorded verification that no longer holds reports `verified: false`), so the
     bar never shows "done" over open steps.
+
+    A verdict OLDER than the plan is marked `stale` and says so: its counts belong to
+    the plan of that moment, not to the one on screen (2026-11-02, operator report:
+    "the number of steps is misleading"). Only a new `verify()` clears it.
     """
     rec = load(session_id)
     plan = progress(session_id)
@@ -478,6 +513,10 @@ def status(session_id):
         ver = dict(ver, verified=False,
                    missing=(ver.get("missing") or [])
                    + ["the plan reopened: %d/%d steps open" % (plan["open"], plan["steps"])])
+    if ver and ver.get("at") and _plan_changed_after(session_id, ver["at"]):
+        ver = dict(ver, stale=True,
+                   missing=(ver.get("missing") or [])
+                   + ["the plan changed after this check — its counts are stale, re-verify"])
     return {"session": session_id, "goal": rec, "progress": plan,
             "effective_status": eff, "verification": ver}
 

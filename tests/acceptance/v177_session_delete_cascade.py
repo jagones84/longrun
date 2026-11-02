@@ -34,6 +34,7 @@ print("[compile] server.py OK")
 
 from longrun.core import server  # noqa: E402
 from longrun.plan import taskgraph  # noqa: E402
+from longrun.plan import goal as goal_mod  # noqa: E402
 from longrun.model import runmetrics  # noqa: E402
 from longrun.tools import edits  # noqa: E402
 
@@ -43,6 +44,7 @@ def make_artifacts(sid):
     taskgraph.ensure(sid, session_id=sid)
     runmetrics.start(sid)
     edits._save(sid, [{"path": "/tmp/x", "ts": 1, "kind": "write"}])
+    goal_mod.start(sid, "the durable goal of this session")   # G-1: data/goals/<sid>.json
     open(os.path.join(tmp, "sessions", sid + ".json.bak-test"), "w").write("{}")
     open(os.path.join(tmp, "graphs", sid + ".json.reset-1"), "w").write("{}")
 
@@ -55,6 +57,7 @@ def paths(sid):
         taskgraph._path(sid) + ".reset-1",
         runmetrics._path(sid),
         edits._key_file(sid),
+        goal_mod.path(sid),      # G-1: a deleted session must not leave its goal behind
     ]
 
 
@@ -75,7 +78,7 @@ assert not left, "JAG-179 leak: %s survived the delete" % left
 
 # a NEIGHBOURING session must be untouched
 survivors = [os.path.basename(p) for p in paths(other) if os.path.isfile(p)]
-assert len(survivors) == 6, "delete touched another session: %r" % survivors
+assert len(survivors) == 7, "delete touched another session: %r" % survivors
 
 # wiring: the HTTP DELETE handler must call the cascade helper
 src = open(os.path.join(REPO, "src", "longrun", "core/server.py"), encoding="utf-8").read()

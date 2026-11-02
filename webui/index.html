@@ -945,12 +945,11 @@
   .gb-menu[hidden] { display: none; }
   .gb-menu button { text-align: left; height: 24px; min-height: 24px; padding: 0 10px;
     white-space: nowrap; }
-  .gb-verdict { position: relative; margin: 2px 0; padding: 5px 26px 5px 9px;
+  .gb-verdict { position: relative; margin: 2px 0; padding: 4px 22px 4px 8px;
     border: 1px solid var(--line); border-radius: 8px; font-size: 11px;
     color: var(--dim); white-space: pre-wrap; word-break: break-word;
     max-height: 140px; overflow: auto; }
   .gb-verdict[hidden] { display: none; }
-  .gb-verdict .gb-vh { color: var(--txt); opacity: .85; margin-bottom: 2px; }
   .gb-verdict .gb-x { position: absolute; top: 3px; right: 6px; background: none; border: none;
     padding: 0 2px; margin: 0; font: inherit; color: inherit; opacity: .7; cursor: pointer;
     line-height: 1.2; height: auto; min-height: 0; }
@@ -2493,7 +2492,6 @@
       </div>
       <div id="goalVerdict" class="gb-verdict" hidden>
         <button class="gb-x" data-call="goalVerdictClose" title="collapse to the badge" aria-label="collapse">✕</button>
-        <div class="gb-vh" id="goalVerdictHead"></div>
         <div id="goalVerdictText"></div>
       </div>
       <input type="file" id="attachInput" multiple hidden>
@@ -7967,9 +7965,9 @@ function renderGoalVerdict() {
   if (!_goalVerdictOpen) { vd.hidden = true; return; }
   vd.hidden = false;
   vd.className = "gb-verdict " + (ok ? "ok" : "bad");
-  const head = $("goalVerdictHead");
-  if (head) head.textContent = "The harness's independent check — "
-    + (ok ? "passed" : "failed (this is NOT the agent's claim)");
+  // JAG-2b (operator: "leva la frase The harness's independent check — failed, togli
+  // spazio"): the body carries ONLY the verdict, no heading. WHOSE check it is lives
+  // in the badge's tooltip (`badge.title`), which costs no vertical space.
   const txt = (ok ? "✓ verified" : "✕ not verified") + (when ? " · " + when : "")
     + (v.workspace ? " · " + v.workspace : "")
     + ((!ok && (v.missing || []).length) ? "\nmissing: " + v.missing.slice(0, 4).join("; ") : "");
