@@ -294,7 +294,8 @@ def facts(path):
     return out
 
 
-def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=()):
+def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=(),
+              own_paths=None, opaque=True):
     """Documents written under `workspace` at/after `since`, oldest first.
 
     `since` is the turn's start: inputs staged before the turn carry an older
@@ -304,6 +305,24 @@ def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=()):
     wrote about the turn is not a deliverable of the turn — measured 2026-10-30:
     a chat whose workspace held `LONGRUN_*` state dirs had its own harness note
     read back as an artifact.
+
+    ATTRIBUTION (`own_paths` / `opaque`) — mtime alone cannot say WHO wrote a
+    file, and in a shared folder that is not a detail. Measured 2026-11-02 on
+    session `b7329cccf94c` (workspace = this repo root, an orchestrator):
+      * a plain question with ZERO tool calls was told "READ-BACK of what you
+        WROTE this turn: src/longrun/orbit/web/orbit.html" — a file ANOTHER agent
+        wrote 9 s earlier;
+      * a later turn whose own write was `trash/report-scrapling.md` (fs.write)
+        was also told it had written `README.md`, written by another process.
+    So a caller that KNOWS what its turn did can narrow the answer:
+      * `own_paths`  — the absolute paths THIS turn's file tools named ({} means
+        "it named none"); None (default) means "the caller does not know" and
+        nothing is filtered, which is the pre-2026-11-02 behaviour;
+      * `opaque`     — True when the turn ran a `shell` (its target is inside a
+        string the harness must not interpret, so it could have written
+        ANYTHING); an opaque turn is never filtered.
+    Only a turn that ran no shell AND named no path can therefore have its
+    fresh files filtered out — and such a turn cannot have written a file at all.
     """
     root = str(workspace or "").strip()
     if not root or not os.path.isdir(root):
@@ -325,6 +344,16 @@ def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=()):
             if _mtime(full) + 1.0 < float(since or 0.0):
                 continue
             found.append(full)
+    if own_paths is not None and not opaque:
+        # A relative path is resolved against the workspace (that is the only root
+        # the caller can mean), so a caller cannot silently filter everything out.
+        keep = set()
+        for p in own_paths:
+            p = os.path.expanduser(str(p or "").strip())
+            if p:
+                keep.add(os.path.abspath(p if os.path.isabs(p)
+                                         else os.path.join(root, p)))
+        found = [f for f in found if os.path.abspath(f) in keep]
     found.sort(key=_mtime)
     entries = []
     for full in found[-int(limit):]:
@@ -420,7 +449,8 @@ def _stem(tok):
     return (m.group(0) if m else "")[:6]
 
 
-def coverage(workspace, since=0.0, limit=MAX_FILES, exclude=()):
+def coverage(workspace, since=0.0, limit=MAX_FILES, exclude=(),
+             own_paths=None, opaque=True):
     """Identifiers the INPUTS hold that the deliverables never mention.
 
     The read-back described what was WRITTEN and which input was NAMED; it never
@@ -444,7 +474,8 @@ def coverage(workspace, since=0.0, limit=MAX_FILES, exclude=()):
         given = inputs(workspace, since=since, exclude=exclude)
         if not given:
             return []
-        entries = inventory(workspace, since=since, limit=limit, exclude=exclude)
+        entries = inventory(workspace, since=since, limit=limit, exclude=exclude,
+                            own_paths=own_paths, opaque=opaque)
         if not entries:
             return []
         parts, used = [], 0
@@ -692,7 +723,8 @@ def _request_gaps(request, entries):
     return out
 
 
-def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
+def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=(),
+         own_paths=None, opaque=True):
     """Mechanical reasons a delivery is INCOMPLETE — facts, never prose.
 
     Used to decide whether a turn EARNED one more read-back cycle: a sheet whose
@@ -702,7 +734,8 @@ def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
     trigger a cycle by accident.
     """
     out = []
-    entries = inventory(workspace, since=since, limit=limit, exclude=exclude)
+    entries = inventory(workspace, since=since, limit=limit, exclude=exclude,
+                        own_paths=own_paths, opaque=opaque)
     for entry in entries:
         facts = entry.get("facts") or {}
         if facts.get("error") or facts.get("empty") or facts.get("size") == 0:
@@ -722,20 +755,25 @@ def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
     # A record set the inputs hold and the delivery never mentions is incomplete
     # for the same reason an empty sheet is: the reader was handed the source and
     # asked for the records in it. Bounded by `coverage()`'s own caps.
-    for item in coverage(workspace, since=since, limit=limit, exclude=exclude):
+    for item in coverage(workspace, since=since, limit=limit, exclude=exclude,
+                         own_paths=own_paths, opaque=opaque):
         out.append("%s: incomplete record family (%s)"
                    % (item["path"], _coverage_bits(item)))
     return out
 
 
-def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
+def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=(),
+           own_paths=None, opaque=True):
     """The read-back observation, or None when this turn wrote no document.
 
     The wording is deliberately a CHECKLIST, not a grade: the agent must be able to
     point at each requirement in the read-back, and the last line says what to do
-    when it cannot.
+    when it cannot. `own_paths` / `opaque` are the ATTRIBUTION facts of the turn
+    (see `inventory`): without them the list is "everything fresh in the
+    workspace", which in a folder two writers share is not what the turn did.
     """
-    entries = inventory(workspace, since=since, limit=limit, exclude=exclude)
+    entries = inventory(workspace, since=since, limit=limit, exclude=exclude,
+                        own_paths=own_paths, opaque=opaque)
     if not entries:
         return None
     lines = ["READ-BACK of what you WROTE this turn (harness: mechanical file "
@@ -780,7 +818,8 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=()):
         # records are, and "I analysed it" cannot be seen by a reader. Every rubric
         # this harness lost on 2026-10-31 was of this shape ("state X for THIS
         # record"), never "write a nicer report".
-        for item in coverage(workspace, since=since, limit=limit, exclude=exclude):
+        for item in coverage(workspace, since=since, limit=limit, exclude=exclude,
+                             own_paths=own_paths, opaque=opaque):
             lines += ["  * RECORDS NOT ACCOUNTED FOR — " + _coverage_line(item)
                       + ". Name each one in the deliverable (a row, a line, a cell) "
                         "or say explicitly why it is out of scope; a summary that "

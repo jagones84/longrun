@@ -2237,17 +2237,36 @@ def _map_tools(items, cap, fn):
 _MUTATING_TOOLS = taskgraph.MUTATING_TOOLS
 
 
-def _note_chat_mutation(sess, tool, args=None):
+def _note_chat_mutation(sess, tool, args=None, state=None):
     """Mark the current step as `mutated` after a mutating tool succeeded.
 
     I-7: the file the call touched is recorded beside the tool name, so a job
     whose members ran concurrently can be told which path two of them wrote.
+
+    RG (2026-11-02): it also records the TURN's attribution facts in `state` —
+    whether anything at all could have written a file, whether a `shell` ran (its
+    target is inside a string, so it is unattributable), and the exact paths the
+    file tools named. The read-back uses them so it can no longer report somebody
+    else's file as "what YOU WROTE this turn".
 
     Never raises: bookkeeping for the closeout gate must not break a turn. No
     plan (no current node) means there is nothing to close, so nothing to mark.
     """
     if tool not in _MUTATING_TOOLS:
         return
+    if state is not None:
+        try:
+            state["wrote"] = True
+            if str(tool) not in taskgraph.PATH_TOOLS:
+                # `shell`/`shell.exec`: the harness must not interpret the command
+                # string, so anything in the workspace could be its output.
+                state["opaque"] = True
+            for p in taskgraph.touched_paths(tool, args):
+                ws = _chat_workspace(sess) or ""
+                full = p if os.path.isabs(p) else os.path.join(ws, p)
+                state.setdefault("paths", set()).add(os.path.abspath(full))
+        except Exception:  # noqa: BLE001 — attribution is bookkeeping, never a gate
+            pass
     try:
         taskgraph.note_mutation_current(taskgraph.load(sess["id"]) or {}, tool,
                                         paths=taskgraph.touched_paths(tool, args))
@@ -2255,7 +2274,8 @@ def _note_chat_mutation(sess, tool, args=None):
         pass
 
 
-def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=None):
+def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=None,
+                      state=None):
     """Run the calls of a `batch` action (JAG-533).
 
     TOOL items share a thread pool sized by `runtime.max_parallel_tools`.
@@ -2303,7 +2323,7 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         sub = res.get("result") or {}
         ok = status == "executed" and sub.get("ok") is not False
         if ok:
-            _note_chat_mutation(sess, tool, args)   # F1: the step is no longer text-only
+            _note_chat_mutation(sess, tool, args, state=state)   # F1: the step is no longer text-only
         obs = res.get("observation") or res.get("error") or str(status)
         # JAG-88 parity: the single-call path renders up to CHAT_OBS_FULL and then
         # offloads; a batch used to cut EVERY observation at 4000 chars with no
@@ -3011,7 +3031,7 @@ def _other_session_roots(sess):
     return sorted(set(out))
 
 
-def _stop_floor_text(sess, since, floor_used, reason, open_count):
+def _stop_floor_text(sess, since, floor_used, reason, open_count, state=None):
     """The one named round a hard stop earns when NOTHING was written.
 
     A work loop that exhausts its rounds with steps open and an empty workspace
@@ -3031,8 +3051,14 @@ def _stop_floor_text(sess, since, floor_used, reason, open_count):
         return None
     try:
         from longrun.plan import artifacts as _art
+        # RG: the same attribution as the read-back — "nothing was written" must not
+        # be answered by a file ANOTHER writer put in this shared workspace (that
+        # would silently skip the floor), and a file this turn wrote must not be
+        # invisible here either.
         if _art.inventory(_chat_workspace(sess), since=since,
-                          exclude=_harness_state_roots() + _other_session_roots(sess)):
+                          exclude=_harness_state_roots() + _other_session_roots(sess),
+                          own_paths=(state or {}).get("paths"),
+                          opaque=bool((state or {}).get("opaque", True))):
             return None
     except Exception:  # noqa: BLE001 — the floor must never break a stop
         return None
@@ -3063,11 +3089,17 @@ def _deliverable_review_text(sess, request, since, state):
     """
     if int(state.get("left") or 0) <= 0:
         return None
+    # RG: the turn's OWN attribution — the paths its file tools named, and whether a
+    # `shell` ran (which could have written anything). Read from the state dict, and
+    # `paths` absent (a direct caller that does not track it) means NO filtering.
+    _own = state.get("paths")
+    _opaque = bool(state.get("opaque", True))
     had_files = False
     try:
         from longrun.plan import artifacts as _art
         text = _art.review(_chat_workspace(sess), request, since=since,
-                           exclude=_harness_state_roots() + _other_session_roots(sess))
+                           exclude=_harness_state_roots() + _other_session_roots(sess),
+                           own_paths=_own, opaque=_opaque)
         had_files = bool(text)
         if text:
             # Steps closed on the model's word alone are claims, not proof; the
@@ -3116,7 +3148,8 @@ def _deliverable_review_text(sess, request, since, state):
     try:
         from longrun.plan import artifacts as _art2
         if _art2.gaps(_chat_workspace(sess), request=request, since=since,
-                      exclude=_harness_state_roots() + _other_session_roots(sess)):
+                      exclude=_harness_state_roots() + _other_session_roots(sess),
+                      own_paths=_own, opaque=_opaque):
             state["left"] = max(int(state["left"]), 1)
     except Exception:  # noqa: BLE001 — never break a turn over an audit
         pass
@@ -3835,7 +3868,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # WROTE are described back to it — sheets, empty ranges, `charts=0`, page
     # counts. A status check cannot see a blank sheet; this can.
     _deliv_since = time.time()
-    _deliv_state = {"left": 1}
+    _deliv_state = {"left": 1, "wrote": False, "opaque": False, "paths": set()}
     _verify_gate_used = False   # one round when the turn closes without opening its output
     _delivery_floor_used = False  # one extra round when a stop leaves nothing written
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
@@ -4118,7 +4151,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # DELIVERY FLOOR: one extra round, ONCE, when a hard stop leaves
                 # open steps and an empty workspace (see `_stop_floor_text`).
                 _floor = _stop_floor_text(sess, _deliv_since, _delivery_floor_used,
-                                          _dec["reason"], len(_open))
+                                          _dec["reason"], len(_open),
+                                          state=_deliv_state)
                 if _floor:
                     _delivery_floor_used = True
                     _kg_rounds += 1
@@ -4521,7 +4555,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _think_buf["t"] += _th + "\n"
                     on_delta("think", _th + "\n")
                 obs = _apply_chat_batch(sess, act, on_event, api_v02,
-                                        node=_cur_node(), after=_after(), hist=msgs)
+                                        node=_cur_node(), after=_after(), hist=msgs,
+                                        state=_deliv_state)
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                         "observation")
@@ -4631,7 +4666,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # F1: a step that changed the environment can no longer be closed
                 # on a text claim when closeout verification is on.
                 if ok:
-                    _note_chat_mutation(sess, tool, args)
+                    _note_chat_mutation(sess, tool, args, state=_deliv_state)
                 # JAG-96: persist the card so cold-start UIs rebuild the transcript.
                 persist_tool_card(sess, tool, ok, args=args,
                                   result=sub.get("stdout") or obs or "",
@@ -5071,7 +5106,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # read-back above is skipped once `_deliv_state` is spent, which is
             # exactly the state a long turn reaches (measured 2026-10-31).
             _floor = _stop_floor_text(sess, _deliv_since, _delivery_floor_used,
-                                      _dec["reason"], len(_open))
+                                      _dec["reason"], len(_open),
+                                      state=_deliv_state)
             if _floor:
                 _delivery_floor_used = True
                 _inject(_floor, "continue")
