@@ -214,23 +214,55 @@ def _goal_objective(message):
     return (stripped or text.strip())[:8000]
 
 
-def _goal_begin(sess, goal_mode, message):
-    """Durable-goal gate for a `/goal` turn (G-1).
+def _goal_mode_of(sess, requested):
+    """Does THIS turn run under a goal? (one owner for the three chat doors)
+
+    A durable goal is the AUTHORITY, not a per-request flag: while the session has an
+    ACTIVE goal, every turn of that session runs in goal mode — the loop keeps working
+    until the plan is evidence-backed complete and verified, instead of stopping with
+    open steps the moment the operator sends an ordinary message. Measured
+    2026-11-02 on session `777378644e9c`: one `/goal` turn ever ran (`turns: 1`) while
+    the goal stayed `active`; every later message ran as a NORMAL turn, hit
+    `user_pivot`, and stopped with 2-5 steps open — the bar said "active" and nothing
+    was pursuing it.
+
+    `requested` (`mode=goal`, i.e. `/goal`) still STARTS or CONTINUES a goal. A PAUSED
+    or COMPLETED goal never hijacks an ordinary message: pausing is the operator's
+    way to say "not now", and a completed goal needs a new objective to restart.
+    """
+    if requested:
+        return True
+    try:
+        from longrun.plan import goal as goal_mod
+        rec = goal_mod.load(sess.get("id"))
+        return bool(rec and rec.get("status") == "active")
+    except Exception:  # noqa: BLE001 — the store must never break a chat turn
+        return False
+
+
+def _goal_begin(sess, goal_mode, message, requested=None):
+    """Durable-goal gate for a goal turn (G-1).
 
     Longrun's `/goal` used to exist only for the duration of one HTTP request.
     Now a PAUSED goal refuses the turn before any spend, and an active one counts
     the turn; a non-goal turn is untouched. The store must never break a chat
     turn, so a failure here is a pass-through, not an exception.
+
+    `requested` (defaults to `goal_mode`) is True only when the operator typed
+    `/goal`. The objective is replaced ONLY then: an ordinary message inside an active
+    goal must not overwrite the goal it is already serving.
     """
     if not goal_mode:
         return True, None
+    if requested is None:
+        requested = goal_mode
     try:
         from longrun.plan import goal as goal_mod
         ok, reason = goal_mod.can_start(sess.get("id"))
         if not ok:
             publish("goal.refused", session=sess.get("id"), reason=reason)
             return False, {"error": reason, "goal": goal_mod.status(sess.get("id"))}
-        rec = goal_mod.start(sess.get("id"), _goal_objective(message))
+        rec = goal_mod.start(sess.get("id"), _goal_objective(message) if requested else "")
         publish("goal.updated", session=sess.get("id"), goal=rec)
         return True, {"goal": goal_mod.status(sess.get("id"))}
     except Exception:  # noqa: BLE001 — the goal object is auxiliary to the turn
@@ -238,13 +270,19 @@ def _goal_begin(sess, goal_mode, message):
 
 
 def _goal_end(sess, goal_mode):
-    """Close a goal turn: the goal completes only when an INDEPENDENT check passes.
+    """Close a goal turn: record a FRESH independent verdict; complete only if it passes.
 
     The plan being complete is the agent's CLAIM. `goal.verify` recomputes the
     truth from the environment (artefacts present + the configured acceptance
     command), so a plan that is closed but unverifiable leaves the goal ACTIVE
     with a `note` naming what is missing. An aborted/unfinished turn also leaves
     the goal active, which is what makes resume meaningful.
+
+    v2 (2026-11-02): the verdict is recomputed on EVERY goal turn end, not only when
+    the plan is complete. Before this an unfinished goal kept whatever verdict the
+    operator had last clicked (or none at all), so the bar showed a stale state and
+    `agent._goal_block` fed the next turn nothing to act on. L1/L2 are free; L3 only
+    runs when `goal_verify.judge` is enabled.
     """
     if not goal_mode:
         return None
@@ -253,9 +291,11 @@ def _goal_end(sess, goal_mode):
         rec = goal_mod.load(sess.get("id"))
         if not rec or rec.get("status") != "active":
             return rec
-        if not goal_mod.progress(sess.get("id")).get("complete"):
-            return rec
         verdict = goal_mod.verify(sess.get("id"))
+        # `verify()` persists the verdict on the record itself: RE-READ it before
+        # touching `note`, or this write clobbers the verdict with a stale copy (the
+        # lost-update the acceptance test caught on 2026-11-02).
+        rec = goal_mod.load(sess.get("id")) or rec
         if verdict.get("verified"):
             rec = goal_mod.complete(sess.get("id"),
                                     "verified: plan complete + independent check passed")
@@ -2197,12 +2237,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "session was deleted"})
             # JAG-201: prepare + append the user turn INSIDE the worker's turn lock
             # (chat_stream_gen), not here — two concurrent turns must not overwrite.
-            _goal_mode = qs.get("mode") == "goal"
-            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
+            _goal_requested = qs.get("mode") == "goal"
+            _goal_mode = _goal_mode_of(sess, _goal_requested)
+            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message,
+                                                  requested=_goal_requested)
             if not _goal_ok:
                 return self._send(409, _goal_payload)
             return sse_response(self, chat_stream_gen(
-                sess, message, qs.get("model"), None, autonomous=_goal_mode,
+                sess, message, qs.get("model"), None, autonomous=_goal_requested,
                 goal_mode=_goal_mode,
                 goal_started=(time.time() if _goal_mode else None),
                 max_steps=qs.get("max_steps"),
@@ -2363,8 +2405,10 @@ class Handler(BaseHTTPRequestHandler):
             sess = _open_session(body.get("session"))   # JAG-455: refuse a deleted id
             if sess is None:
                 return self._send(404, {"error": "session was deleted"})
-            _goal_mode = (body.get("mode") or qs.get("mode")) == "goal"
-            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
+            _goal_requested = (body.get("mode") or qs.get("mode")) == "goal"
+            _goal_mode = _goal_mode_of(sess, _goal_requested)
+            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message,
+                                                  requested=_goal_requested)
             if not _goal_ok:
                 return self._send(409, _goal_payload)
             # JAG-526: a client with nobody watching (a script, a benchmark,
@@ -2435,7 +2479,7 @@ class Handler(BaseHTTPRequestHandler):
                                         _goal_mode and _goal_started is not None
                                         and time.time() - _goal_started >= _goal_wall_secs)))
                     reply, model = chat_once(sess, message, _tm, trace=trace,
-                                             autonomous=_goal_mode, goal_mode=_goal_mode,
+                                             autonomous=_goal_requested, goal_mode=_goal_mode,
                                              goal_started=_goal_started,
                                              max_steps=body.get("max_steps"),
                                              headless=_headless)
@@ -2526,14 +2570,16 @@ class Handler(BaseHTTPRequestHandler):
             if sess is None:                    # JAG-455: refuse a deleted id
                 return self._send(404, {"error": "session was deleted"})
             # JAG-201: prepare + append inside the worker's turn lock (see GET path).
-            _goal_mode = (body.get("mode") or qs.get("mode")) == "goal"
-            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message)
+            _goal_requested = (body.get("mode") or qs.get("mode")) == "goal"
+            _goal_mode = _goal_mode_of(sess, _goal_requested)
+            _goal_ok, _goal_payload = _goal_begin(sess, _goal_mode, message,
+                                                  requested=_goal_requested)
             if not _goal_ok:
                 return self._send(409, _goal_payload)
             _headless = bool(body.get("headless") or qs.get("headless"))   # JAG-526
             return sse_response(self, chat_stream_gen(
                 sess, message, body.get("model") or qs.get("model"), None,
-                autonomous=_goal_mode, goal_mode=_goal_mode,
+                autonomous=_goal_requested, goal_mode=_goal_mode,
                 goal_started=(time.time() if _goal_mode else None),
                 max_steps=body.get("max_steps") or qs.get("max_steps"),
                 headless=_headless))

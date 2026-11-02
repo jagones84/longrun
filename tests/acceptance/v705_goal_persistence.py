@@ -146,11 +146,17 @@ check("C7 a NON-goal turn never touches the goal object",
       H._goal_end(SESS, False) is None and goal.load(SID)["status"] == "completed")
 taskgraph.save(dict(graph, nodes=[{"id": "n2", "label": "verify", "status": "todo",
                                    "plan": 1}]))
+_turns_before = goal.load(SID)["turns"]
 fresh = goal.start(SID, "Do the next round.")
-check("C8 an unfinished plan leaves the goal open (start over a completed goal is new)",
-      fresh["status"] == "active" and fresh["turns"] == 1
+# 2026-11-02: this used to pin "start over a completed goal is NEW (turns == 1)", but
+# the deliberate contract since G-1/JAG-1 is that a COMPLETED goal whose plan REOPENED
+# is the SAME goal continuing — that is what makes `reopened` meaningful (pinned by
+# v768 B6). Two tests asserted opposite truths; the stale one is corrected here.
+check("C8 an unfinished plan keeps the goal ACTIVE and continues it (turns++)",
+      fresh["status"] == "active" and fresh["turns"] == _turns_before + 1
       and goal.progress(SID)["complete"] is False
-      and (H._goal_end(SESS, True) or {}).get("status") == "active")
+      and (H._goal_end(SESS, True) or {}).get("status") == "active",
+      {"turns": fresh["turns"], "before": _turns_before})
 
 # ------------------------------------------------------- D: route + wiring ---
 api_src = open(os.path.join(REPO, "src", "longrun", "core", "api_v02.py"),
@@ -161,9 +167,12 @@ check("D1 GET and POST /api/goal are registered",
       api_src.count('if path == "/api/goal"') == 2
       and "_goal_action(body or {})" in api_src
       and "goal.status(qs.get(\"session\") or \"\")" in api_src)
-check("D2 every chat entry point runs the gate",
-      http_src.count("_goal_begin(sess, _goal_mode, message)") == 3,
-      http_src.count("_goal_begin(sess, _goal_mode, message)"))
+check("D2 every chat entry point runs the goal gate (and says whether /goal asked)",
+      http_src.count("_goal_begin(sess, _goal_mode, message,") == 3
+      and http_src.count("requested=_goal_requested") == 3
+      and http_src.count("_goal_mode = _goal_mode_of(sess, _goal_requested)") == 3,
+      (http_src.count("_goal_begin(sess, _goal_mode, message,"),
+       http_src.count("_goal_mode = _goal_mode_of(sess, _goal_requested)")))
 check("D3 each gated path answers 409 instead of starting a refused stream",
       http_src.count('if not _goal_ok:') == 3
       and http_src.count('return self._send(409, _goal_payload)') == 3)

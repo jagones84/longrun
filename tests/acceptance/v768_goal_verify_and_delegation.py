@@ -251,12 +251,16 @@ check("F10 the editor is a scrollable multi-line window (no modal prompt)",
       "min-height: 96px" in ui and "overflow: auto" in ui and "resize: vertical" in ui
       and "function goalEditSave" in ui and "function goalEditCancel" in ui
       and "prompt(" not in ui[ui.find("function goalEdit()"):ui.find("function goalEditCancel")])
-check("F11 the verdict can be hidden AND re-shown, and the CSS honours `hidden`",
-      'data-call="goalVerdictClose"' in ui and "function goalVerdictClose" in ui
-      and "function goalVerdictShow" in ui and 'id="goalVerdictChip"' in ui
-      and ".gb-verdict[hidden]" in ui and ".gb-chip[hidden]" in ui)
+check("F11 the verdict is a compact badge whose detail opens on demand",
+      'id="goalVerdictBadge"' in ui and "function goalVerdictToggle" in ui
+      and "function goalVerdictClose" in ui and "_goalVerdictOpen" in ui
+      and ".gb-badge[hidden]" in ui and ".gb-verdict[hidden]" in ui
+      and 'id="goalVerdictChip"' not in ui)
 check("F11b the verdict block says WHOSE check it is (not the agent's claim)",
-      "the harness's independent check" in ui and "NOT the agent's claim" in ui)
+      "harness's independent check" in ui and "NOT the agent's claim" in ui)
+check("F11c the goal row stays one line: no turn counter, actionable counts only",
+      "p.struck" in ui and '" dropped"' in ui and "g.turns || 1" not in ui
+      and 'class="ghost gb-act"' in ui)
 
 # The config block is owned by a documented dedicated panel (v491 contract).
 from longrun.core import settings as S                   # noqa: E402
@@ -346,6 +350,90 @@ check("H8c what the check could NOT confirm is listed, with the instruction to f
 check("H8d a session with no goal injects nothing", _ag._goal_block("") == "")
 check("H9 context_summary injects the goal block with the task list",
       "goal_block = _goal_block(" in _src)
+
+# ============================================================================
+# I — the goal IS the loop's contract (JAG-10, operator report): the counts are the
+#     actionable ones, a durable ACTIVE goal owns EVERY turn of its session, and the
+#     verdict is re-computed at EVERY goal turn end (never a stale badge).
+# ============================================================================
+from longrun.core import httpapi as H                              # noqa: E402
+
+# I1: cancelled/superseded steps are not work the goal still owes.
+_sid2 = mk_session("counts")
+write_graph(_sid2, [node("n1", "done", ["out.txt"]),
+                    node("n2", "done", ["out.txt"]),
+                    {"id": "n3", "label": "n3", "status": "superseded", "plan": 1,
+                     "reason": "no longer needed"},
+                    {"id": "n4", "label": "n4", "status": "cancelled", "plan": 1},
+                    node("n5", "todo")])
+_pr = G.progress(_sid2)
+check("I1a the denominator counts only ACTIONABLE steps (2 done + 1 open = 3)",
+      _pr["steps"] == 3 and _pr["done"] == 2 and _pr["open"] == 1, _pr)
+check("I1b struck (cancelled+superseded) steps are reported apart, not as open",
+      _pr["struck"] == 2 and _pr["total"] == 5, _pr)
+write_graph(_sid2, [node("n1", "done", ["out.txt"]),
+                    {"id": "n2", "label": "n2", "status": "superseded",
+                     "plan": 1, "reason": "not needed"}])
+_pr2 = G.progress(_sid2)
+check("I1c a plan whose only remaining work was superseded is COMPLETE",
+      _pr2["steps"] == 1 and _pr2["open"] == 0 and _pr2["complete"] is True, _pr2)
+
+# I2: the durable goal is the AUTHORITY — an ordinary message inside an ACTIVE goal is
+#     a goal turn; a PAUSED or COMPLETED goal never hijacks the chat.
+_sid3 = mk_session("durable")
+G.start(_sid3, "finish the widget")
+check("I2a an ACTIVE goal makes every turn a goal turn (no /goal flag needed)",
+      H._goal_mode_of({"id": _sid3}, False) is True)
+check("I2b a requested /goal is a goal turn even with no record",
+      H._goal_mode_of({"id": mk_session("none")}, True) is True)
+check("I2c a session without a goal runs a normal turn",
+      H._goal_mode_of({"id": mk_session("plain")}, False) is False)
+G.pause(_sid3)
+check("I2d a PAUSED goal does not hijack an ordinary message",
+      H._goal_mode_of({"id": _sid3}, False) is False)
+G.resume(_sid3)
+G.complete(_sid3, "done")
+check("I2e a COMPLETED goal does not hijack an ordinary message",
+      H._goal_mode_of({"id": _sid3}, False) is False)
+
+# I3: an ordinary message inside an active goal must NOT replace its objective.
+_sid4 = mk_session("objective-kept")
+G.start(_sid4, "the real objective")
+H._goal_begin({"id": _sid4}, True, "just a normal follow-up question",
+              requested=False)
+check("I3 an ordinary message keeps the goal's objective",
+      (G.load(_sid4) or {}).get("objective") == "the real objective",
+      (G.load(_sid4) or {}).get("objective"))
+
+# I4: the verdict is re-computed at EVERY goal turn end, not only on a complete plan.
+_sid5 = mk_session("verdict-always")
+ws5 = os.path.join(TMP, "wsI5")
+os.makedirs(ws5, exist_ok=True)
+_s5 = stores.load_session(_sid5)
+_s5["workspace"] = ws5
+stores.save_session(_s5)
+write_graph(_sid5, [node("n1", "done", ["out.txt"]), node("n2", "todo")])
+G.start(_sid5, "ship it")
+_one = {"id": _sid5, "workspace": ws5}
+_saved_vc2 = G.verify_config
+G.verify_config = lambda: {"acceptance": False, "judge": False, "judge_model": ""}
+H._goal_end(_one, True)
+G.verify_config = _saved_vc2
+_rec5 = G.load(_sid5) or {}
+check("I4 a goal turn with an OPEN plan still records a fresh verdict",
+      bool(_rec5.get("verification"))
+      and _rec5["verification"].get("verified") is False
+      and _rec5.get("status") == "active", _rec5.get("verification"))
+check("I4b the unverified goal keeps a note naming the first gap",
+      "unverified" in str(_rec5.get("note") or ""), _rec5.get("note"))
+
+# I5: the loop's own decision — an active goal with open steps CONTINUES.
+from longrun.plan import keepgoing as KG                            # noqa: E402
+_dec = KG.decide(open_nodes=2, rounds=1, stale=0,
+                 started=__import__("time").time(), goal_mode=True,
+                 goal_complete=False)
+check("I5 a goal turn cannot stop on open steps (the loop insists)",
+      _dec["continue"] is True, _dec)
 
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

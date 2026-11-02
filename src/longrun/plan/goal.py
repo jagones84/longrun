@@ -196,16 +196,31 @@ def delete(session_id):
 
 
 def progress(session_id):
-    """Steps done/open from the PLAN — computed, never copied into the record."""
-    out = {"steps": 0, "open": 0, "done": 0, "complete": False}
+    """Steps done/open from the PLAN — computed, never copied into the record.
+
+    Only ACTIONABLE steps count (2026-11-02, operator report): a step that was
+    cancelled or superseded is not work the goal is still accountable for, so it
+    must not sit in the denominator nor be reported as "open". The bar used to read
+    `13/19 steps · 6 open` for a plan where 4 steps had been deliberately
+    superseded — the operator read that as "13 of 19 done, 6 to go" and could not
+    tell the goal was actually finished except for the struck ones.
+
+    `steps` = done + open (the actionable set), `struck` = cancelled + superseded
+    (kept for display only), `total` = every node of the current plan.
+    """
+    out = {"steps": 0, "open": 0, "done": 0, "struck": 0, "total": 0, "complete": False}
     try:
         from longrun.plan import taskgraph
         graph = taskgraph.load(session_id)
         if isinstance(graph, dict):
             nodes = taskgraph.plan_nodes(graph)
-            out["steps"] = len(nodes)
+            out["total"] = len(nodes)
             out["done"] = sum(1 for n in nodes if n.get("status") == "done")
-            out["open"] = out["steps"] - out["done"]
+            out["open"] = sum(1 for n in nodes
+                              if n.get("status") in taskgraph.OPEN_STATUSES)
+            out["struck"] = sum(1 for n in nodes
+                                if n.get("status") in ("cancelled", "superseded"))
+            out["steps"] = out["done"] + out["open"]
             out["complete"] = bool(taskgraph.goal_complete(graph))
     except Exception:  # noqa: BLE001 — progress is a read-out, never a blocker
         pass

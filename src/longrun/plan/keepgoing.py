@@ -100,7 +100,16 @@ def decide(open_nodes, rounds, stale, started, now=None, aborted=False, blocked=
     if now - float(started) >= float(c["max_wall_secs"]):
         out = {"continue": False, "reason": "budget"}
     elif goal_mode:
-        if int(stale) >= int(c["no_progress_rounds"]):
+        # 2026-11-02: a goal is pursued past the ordinary round/no-progress stops, but
+        # NOT forever. Measured on a live goal turn: the model repeated the same
+        # `self.tools` call for minutes while the only bound was the 1 h wall clock.
+        # TWO recovery attempts (2 × no_progress_rounds of consecutive stale rounds) is
+        # the budget: after that the turn ends with `no_progress`, the goal stays
+        # ACTIVE and the independent verdict records what is missing — the operator
+        # resumes with a nudge instead of paying for a spin.
+        if int(stale) >= int(c["no_progress_rounds"]) * 2:
+            out = {"continue": False, "reason": "no_progress"}
+        elif int(stale) >= int(c["no_progress_rounds"]):
             out = {"continue": True, "reason": "goal_recovery"}
         elif int(rounds) >= int(c["keepgoing_max"]):
             out = {"continue": True, "reason": "goal_continue"}

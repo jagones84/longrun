@@ -58,6 +58,16 @@ check("goal mode recovers instead of stopping on no progress",
       _stalled["continue"] is True and _stalled["reason"] == "goal_recovery",
       _stalled)
 
+# 2026-11-02: recovery is BOUNDED. A model that repeats the same call through two
+# recovery rounds ends the turn instead of spinning until the 1 h wall clock (measured
+# live on a goal turn that repeated `self.tools` for minutes). The goal stays active.
+_hopeless = keepgoing.decide(
+    open_nodes=1, rounds=0, stale=4, started=0, now=1,
+    goal_mode=True, goal_complete=False, override=_LIMITS)
+check("goal mode stops after the recovery budget is spent (no_progress)",
+      _hopeless["continue"] is False and _hopeless["reason"] == "no_progress",
+      _hopeless)
+
 _empty = keepgoing.decide(
     open_nodes=0, rounds=0, stale=0, started=0, now=1,
     goal_mode=True, goal_complete=False, override=_LIMITS)
@@ -164,6 +174,14 @@ _script = [
     ('{"action":"todo.update","steps":[{"index":0,"status":"done",'
      '"evidence":"verified by the deterministic test"}]}', "", "fixture"),
     ("Goal complete: the requested result is verified.", "", "fixture"),
+    # 2026-11-02: the closing order this fixture now documents (measured with an
+    # instrumented replay, not guessed): the EVIDENCE GATE fires first — the turn is
+    # closing with zero tool calls, and the request says "verify" — so the agent answers
+    # once more; THEN the /goal closure round (JAG-504) fires because the plan is
+    # complete. Two bounded rounds, never a loop.
+    ("Goal complete: the requested result is verified.", "", "fixture"),
+    ('{"action":"finish","summary":"Goal complete: the requested result is verified."}',
+     "", "fixture"),
 ]
 _calls = {"count": 0}
 _original_stream = server.stream_with_fallback
@@ -189,7 +207,7 @@ finally:
 _graph = taskgraph.load(_sid)
 _nodes = taskgraph.plan_nodes(_graph)
 check("the goal loop asks for work after an unplanned final answer",
-      _calls["count"] == 6, _calls)
+      _calls["count"] == 8, _calls)
 check("the goal loop reaches the final answer only after todo evidence",
       len(_nodes) == 1 and _nodes[0].get("status") == "done"
       and bool(_nodes[0].get("evidence"))
