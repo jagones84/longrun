@@ -177,7 +177,8 @@ check("D3 the ✨ button posts /api/generate and fills the field",
 check("D4 a draft is undoable and announces the change to the app (input event)",
       "function _genApply(field, text, apply, st)" in UI
       and 'new Event("input", { bubbles: true })' in UI
-      and "undo.textContent" in UI)
+      # RH-5: the undo is an ICON now (`↶`), rendered by the ONE state helper.
+      and '_genState(st, "undo"' in UI)
 _rg = UI[UI.find("async function runGenerate("):UI.find("function genBar(")]
 check("D5 the ✨ path posts ONLY to /api/generate (it never saves the field)",
       'api("POST", "/api/generate"' in _rg
@@ -211,6 +212,33 @@ check("E1 the automate prompt data is defined ONCE in the python source",
       and BLOB.count('("rules", "teamorg", "agents", "teams", "orbit")') == 1)
 check("E2 the allowlist literal is not duplicated in the UI",
       len(re.findall(r'AUTOMATE_ALLOWED_SECTIONS', UI)) == 0)
+
+# ============================================================================
+# F — RH-5 (operator, 2026-11-03): the ✨ state is an ICON, never a sentence
+#     "drafted undo? … occupa troppo spazio metti icona semplifica la grafica …
+#      metti animazione icona quando sta lavorando l automatic edit."
+# ============================================================================
+check("F1 the state slot renders ICONS through one helper, never a sentence",
+      "function _genState(st, kind, opts)" in UI
+      and '"✓ drafted"' not in UI and "gen-undo" not in UI
+      and '_genState(st, "undo"' in UI and '_genState(st, "warn"' in UI)
+check("F2 the ✨ pulses while the draft is in flight, and its TEXT never changes",
+      'btn.classList.add("busy")' in UI and "btn.classList.remove(\"busy\")" in UI
+      and "aria-busy" in UI and "animation: genPulse" in UI
+      and 'btn.textContent = "✨"' in UI and '"✨…"' not in UI)
+check("F3 the pulse is off under prefers-reduced-motion",
+      "@keyframes genPulse" in UI
+      and "prefers-reduced-motion: reduce" in UI.split("@keyframes genPulse")[1][:400])
+check("F4 an error is an icon whose tooltip carries the reason (click = the detail)",
+      '_genState(st, "warn", { title: why, onclick: () => toast(why, "err") })' in UI)
+check("F5 the empty slot collapses, so an idle surface reserves NO width",
+      ".gen-bar .gen-status:empty" in UI
+      and ".gen-bar .gen-spark, .gen-bar .gen-act {" in UI)
+check("F6 the Control deck obeys the SAME rule (one product, one rule)",
+      "function genState(host, kind, why)" in ORBIT
+      and "gen-busy" in ORBIT and "@keyframes genPulse" in ORBIT
+      and "✓ drafted" not in ORBIT and "✨…" not in ORBIT
+      and 'genState(st, "ok"' in ORBIT and 'genState(st, "warn"' in ORBIT)
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d/%d checks passed" % (sum(results), len(results)))
