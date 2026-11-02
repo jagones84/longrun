@@ -9228,15 +9228,23 @@ function planContinuing(d) {
   who("ai", `🔁 continuing on my own — ${d.open}/${d.total} steps open (round ${d.round})`);
 }
 function planStopped(d) {
-  const map = { goal_reached: "✓ goal reached", no_progress: "⚠ no progress",
-                budget: "⏱ budget exhausted", blocked: "✕ blocked",
-                user_stop: "⏹ stopped by you", step_budget: "⏱ step budget",
-                open_todos: "⏸ stopped with open steps" };
-  who("ai", `${map[d.reason] || d.reason} — ${d.open} open / ${d.total} · ${d.rounds} rounds · ${d.duration_s == null ? "—" : d.duration_s}s`);
+  who("ai", `${stopLabel(d.reason)} — ${d.open} open / ${d.total} · ${d.rounds} rounds · ${d.duration_s == null ? "—" : d.duration_s}s`);
+}
+/* RH-6 (operator, 2026-11-03): "perché parla di goal reached se non ho mai assegnato
+   goal in chat? dicesse un'altra frase". `goal_reached` is the loop's INTERNAL token
+   for "the task list has nothing left to do" — `keepgoing.decide` returns it in a
+   plain chat too — so it must never name a goal the operator never set. */
+const STOP_LABEL = { goal_reached: "✓ goal reached", no_progress: "⚠ no progress",
+                     budget: "⏱ budget exhausted", blocked: "✕ blocked",
+                     user_stop: "⏹ stopped by you", step_budget: "⏱ step budget",
+                     open_todos: "⏸ stopped with open steps" };
+function stopLabel(reason) {
+  if (reason === "goal_reached" && !goalVisible()) return "✓ work complete";
+  return STOP_LABEL[reason] || reason;
 }
 function runFooter(m) {
   if (!m) return;
-  who("ai", `⏱ run: ${m.stop_reason || m.outcome} · ${m.iterations} rounds · ${m.steps} step · ${m.tokens} tok · ${m.duration_s}s`);
+  who("ai", `⏱ run: ${stopLabel(m.stop_reason || m.outcome)} · ${m.iterations} rounds · ${m.steps} step · ${m.tokens} tok · ${m.duration_s}s`);
 }
 function taskTree(nodes) {
   // checklist annidata: i figli (parent) sono indentati sotto il padre (stile TRAE).

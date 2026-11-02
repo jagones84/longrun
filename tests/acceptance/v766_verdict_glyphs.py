@@ -64,6 +64,8 @@ PAIRS = [
     ('("\u2713 green \u00b7 "', "a green verify prints the check"),
     ('"\u2715 " + (why || "not verified")', "a red verify prints the cross"),
     ('goal_reached: "\u2713 goal reached"', "the plan-stop map is text"),
+    ('if (reason === "goal_reached" && !goalVisible()) return "\u2713 work complete"',
+     "a plain chat never claims a goal the operator did not set"),
     ('blocked: "\u2715 blocked"', "a blocked stop is a cross"),
     ('blocked: "\u2715", cancelled: "\u2298"', "the task tree marks are text"),
 ]
