@@ -687,7 +687,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <button class="btn primary" id="agNewBtn" aria-expanded="false">＋ new agent</button>
         <button class="btn" id="tmNewBtn" aria-expanded="false">＋ new team</button>
         <span class="stack">
-          <button class="btn" id="lraAutoBtn" aria-expanded="false" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">⚡ automate (Teamorg)</button>
+          <button class="btn" id="lraAutoBtn" aria-expanded="false" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">✨ automate (Teamorg)</button>
           <label class="chk" for="lraAutoEmpty" title="checked: only the agents whose ROLE.md is EMPTY are written. Unchecked: longrunAgent MAY rewrite the prompt of every agent in scope.">
             <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
           </label>
@@ -715,6 +715,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <span class="lbl">new team</span>
         <input class="inp" id="tmNewName" placeholder="new team — name…" style="width:180px;flex:none">
         <input class="inp" id="tmNewDesc" placeholder="what is this team for? (also steers the icon)" style="width:260px;flex:none">
+        <button type="button" class="btn ghost" data-genfield="team.description" data-gen-target="#tmNewDesc" data-genstatus="team.description" title="draft this team description with AI — the harness knows the name, the existing teams and who would be in it">✨</button>
         <select class="inp" id="tmNewIcon" title="icon + colour from the palette — 'auto' lets longrunAgent pick the one that matches the name and the description" style="width:180px;flex:none"></select>
         <button class="btn" id="tmNew">create team</button>
         <button class="btn ghost" id="tmAddCancel" type="button">cancel</button>
@@ -742,6 +743,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
           <select class="inp" id="rtAgent"><option value="">agent…</option></select>
           <input class="inp" id="rtEvery" type="number" min="30" value="300" title="every N seconds" style="max-width:100px">
           <button class="btn" id="rtCreate">＋ add</button>
+          <button type="button" class="btn ghost" data-genfield="routine.goal" data-gen-target="#rtGoal" data-genstatus="routine.goal" title="draft this routine goal with AI — the harness knows the pool of agents a cadence goal can be given to">✨</button>
+          <span class="small muted" data-genstatus="routine.goal"></span>
         </div>
       </div>
       <div class="scroll" id="routines" style="max-height:22vh"></div>
@@ -755,6 +758,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <div class="row" style="gap:6px;margin-top:6px">
           <select class="inp" id="jobTo"><option value="">assign to…</option></select>
           <button class="btn primary" id="jobCreate">＋ create job</button>
+          <button type="button" class="btn ghost" data-genfield="job.goal" data-gen-target="#jobGoal" data-genstatus="job.goal" title="draft this job goal with AI — the harness knows who the coordinator is and which team would execute it">✨</button>
+          <span class="small muted" data-genstatus="job.goal"></span>
         </div>
         <div class="small muted" style="margin-top:6px">team = assignee + org reports · double-click opens the coordinator</div>
       </div>
@@ -1088,6 +1093,8 @@ class AgentsView {
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the Sessions tab (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
       '<textarea class="inp" name="agent-prompt" aria-label="agent prompt (ROLE.md)" data-p="role" placeholder="Role: API designer&#10;- answer only with the endpoint list and JSON schema">' + roleText + '</textarea>' +
       '<div class="row" style="margin-top:6px;gap:6px"><button class="btn primary" data-save="' + esc(a.session) + '">save prompt</button>' +
+      '<button class="btn ghost" data-genrole="' + esc(a.session) + '" title="draft this ROLE.md with AI — the harness knows this agent\u2019s name, team, model and reporting line">✨ generate</button>' +
+      '<span class="small muted" data-genrole-st=""></span>' +
       '<button class="btn ghost" data-close="1">close</button></div></td></tr>' : "";
     // JAG-484 (agents table): the same explicit "go to chat session" button the
     // jobs list has — one click opens the agent's chat. Plain sessions have no
@@ -1237,6 +1244,24 @@ class AgentsView {
       if (!r || !r.ok){ alert((r && r.error) || "save failed"); return; }
       this.open = null; this.openText = null;
       if (this.onChanged) this.onChanged();
+    }; });
+    // K-5: the ✨ of this agent's ROLE.md. Same server surface as the Sessions tab
+    // (`agent.role`) and the same non-destructive contract: it DRAFTS into the
+    // textarea, the operator still presses "save prompt".
+    body.querySelectorAll("[data-genrole]").forEach(b => { b.onclick = async () => {
+      const tr = b.closest("tr"), ta = tr.querySelector('textarea[data-p="role"]');
+      const st = tr.querySelector("[data-genrole-st]");
+      const sid = b.dataset.genrole;
+      b.disabled = true; const was = b.textContent; b.textContent = "✨…";
+      if (st) st.textContent = "";
+      let r = {};
+      try { r = await this.api.post("/api/generate", { surface: "agent.role", session: sid,
+                                                        current: ta ? ta.value : "", context: { agent: sid } }); }
+      catch (e){ r = { error: String(e) }; }
+      b.disabled = false; b.textContent = was;
+      if (!r || !r.ok){ if (st) st.textContent = "✗ " + ((r && r.error) || "failed"); return; }
+      if (ta) ta.value = r.text;
+      if (st) st.textContent = "✓ drafted — save prompt to keep it";
     }; });
     body.querySelectorAll("[data-clear]").forEach(b => { b.onclick = async () => {
       const sid = b.dataset.clear;
@@ -2747,6 +2772,38 @@ class OrbitApp {
     $("tmNewBtn").onclick = () => addBar("tmAddBar", "tmNewBtn", "tmNewName");
     $("agAddCancel").onclick = () => addBar("agAddBar", "agNewBtn");
     $("tmAddCancel").onclick = () => addBar("tmAddBar", "tmNewBtn");
+    // K-5 (2026-11-02): ONE delegated ✨ handler for the deck's static editable fields
+    // (team description, routine goal, job goal). The button carries its surface id;
+    // the SERVER owns the prompt and the model, and the DRAFT is never saved here —
+    // the operator still presses create. `genExtra` sends the live object identity so
+    // the draft is written for THIS team/agent, not for a generic one.
+    const genExtra = (sid) => {
+      if (sid === "routine.goal") return { agent: ($("rtAgent") || {}).value || "" };
+      if (sid === "job.goal") {
+        const sel = $("jobTo"), o = sel && sel.selectedOptions && sel.selectedOptions[0];
+        return { name: (o && o.textContent) || "", job: "new" };
+      }
+      if (sid === "team.description") return { name: ($("tmNewName") || {}).value || "" };
+      return {};
+    };
+    document.addEventListener("click", async (ev) => {
+      const b = ev.target && ev.target.closest ? ev.target.closest("[data-genfield]") : null;
+      if (!b) return;
+      ev.preventDefault();
+      const sid = b.dataset.genfield;
+      const ta = document.querySelector(b.dataset.genTarget);
+      const st = document.querySelector('[data-genstatus="' + sid + '"]');
+      b.disabled = true; const was = b.textContent; b.textContent = "✨…";
+      if (st) st.textContent = "";
+      let r = {};
+      try { r = await this.api.post("/api/generate", { surface: sid, session: "",
+        current: ta ? (ta.value || "") : "", context: genExtra(sid) }); }
+      catch (e) { r = { error: String(e) }; }
+      b.disabled = false; b.textContent = was;
+      if (!r || !r.ok) { if (st) st.textContent = "✗ " + ((r && r.error) || "failed"); return; }
+      if (ta) ta.value = r.text;
+      if (st) st.textContent = "✓ drafted — create to keep it";
+    });
     // v622: the rail owns single panes AND named custom views (up to 3
     // panels side by side). Same `applyView` truth, persisted views —
     // the rail buttons + view list just call it; applyView repaints

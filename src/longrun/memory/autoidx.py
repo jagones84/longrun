@@ -120,6 +120,39 @@ def start(ws):
         return True
 
 
+def start_for_sessions(sessions=None):
+    """Arm the indexer for EVERY workspace the known sessions use. Returns how many
+    workers were newly started.
+
+    A workspace must be watched because it is IN USE, not only because it is the
+    DEFAULT one. Only the default (at boot) and a workspace set through the API got
+    a worker, so a session-scoped workspace never had one: live 2026-11-02, 48
+    sessions on one folder showed "no watcher for this workspace" with 92 files
+    newer than the index, and the panel could only offer a manual rebuild. The walk
+    is the same incremental build and `start` is idempotent, so re-arming on every
+    boot costs one directory scan per workspace and nothing else.
+    """
+    rows = sessions
+    if rows is None:
+        try:
+            from longrun.memory import stores
+            rows = stores.list_sessions()
+        except Exception:  # noqa: BLE001 — boot must never fail on the indexer
+            return 0
+    started, seen = 0, set()
+    for s in rows or []:
+        ws = (s or {}).get("workspace") if isinstance(s, dict) else None
+        if not ws or ws in seen:
+            continue
+        seen.add(ws)
+        try:
+            if start(ws):
+                started += 1
+        except Exception:  # noqa: BLE001 — one bad workspace must not stop the rest
+            continue
+    return started
+
+
 def stop(ws):
     """Stop the indexer for one workspace (no-op when it was never started)."""
     try:

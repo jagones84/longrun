@@ -76,6 +76,13 @@ class SessionRegistry:
             sess["model"] = model
             sess["updated"] = round(time.time(), 3)
             srv.save_session(sess)
+            # Orbit is an owner of this field too: record the choice so a running
+            # turn cannot write its stale copy back over it.
+            try:
+                from longrun.memory import stores as _stores
+                _stores.live_fields_changed(sess.get("id"), model=model)
+            except Exception:  # noqa: BLE001 — the write already happened
+                pass
         return {
             "ok": True,
             "session": sess.get("id"),

@@ -3057,6 +3057,10 @@ def main():
         from longrun.memory import autoidx as _autoidx
         from longrun.memory import rules as _rules
         _autoidx.start(_rules.get_workspace())
+        # …and for every workspace the known sessions USE, not just the default:
+        # a session-scoped workspace never got a worker, so its panel showed
+        # "no watcher for this workspace" until a manual rebuild (2026-11-02).
+        _autoidx.start_for_sessions()
     except Exception:  # noqa: BLE001 — indexing is best-effort
         pass
     print("Longrun v%s on http://%s:%d  (router: %s)" % (

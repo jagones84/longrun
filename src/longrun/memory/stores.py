@@ -153,6 +153,10 @@ def save_session(sess):
     with _deleted_lock:
         if sid in _DELETED_SESSIONS:
             return  # JAG-222: the session was deleted — never resurrect it
+    # A field the operator changed WHILE this dict was being written (the turn's
+    # stale copy) must not come back: re-apply the live value the owner endpoint
+    # recorded. No-op for a session nobody changed live.
+    adopt_live_choices(sess)
     # JAG-431p: carry each TITLED free group's title/summary onto the message that
     # STARTS it, so the WebUI labels groups by data that rides the transcript (and
     # therefore survives compaction) instead of by an ordinal. Best-effort.
@@ -555,9 +559,53 @@ def _set_session_model(sid, model):
     # single place that must TELL the UI — a model set by Orbit, the composer or the
     # CLI used to leave the other surface showing the previous one until F5. Only a
     # REAL change is announced, so the startup reconcile stays silent.
+    # …and the single place that must DEFEND the choice against a longer-lived turn
+    # that would write its stale copy over it.
+    live_fields_changed(sid, model=ref)
     if str(_prev or "") != ref:
         publish("session.updated", session=sid, model=ref)
     return ref
+
+
+# Fields an OPERATOR can change from the WebUI WHILE a turn is running, and the
+# value its OWN endpoint last wrote in this process. A turn loads the session at its
+# START and writes the WHOLE dict at its end (and again on every tool card), so a
+# stale in-memory copy reverted a live choice — live 2026-11-02: the model picked
+# mid-run came back as the previous one because the tool-card write of the running
+# turn won. `_LIVE` is the tombstone-style defence (see `_DELETED_SESSIONS`): the
+# owners record the value here, and `save_session` re-applies it, so no writer can
+# resurrect an older one. Process-local, dropped on restart.
+LIVE_OPERATOR_FIELDS = ("model", "workspace")
+
+_LIVE = {}                  # sid -> {field: value}
+_LIVE_LOCK = threading.Lock()
+
+
+def live_fields_changed(sid, **fields):
+    """Record the value an OWNER endpoint just wrote for a live field."""
+    if not _valid_sid(sid):
+        return
+    with _LIVE_LOCK:
+        slot = _LIVE.setdefault(sid, {})
+        for k, v in fields.items():
+            if k in LIVE_OPERATOR_FIELDS:
+                slot[k] = v
+
+
+def adopt_live_choices(sess):
+    """Re-apply the operator's live choices to `sess` before it is written.
+
+    Never raises and never invents a field: a session with no live change is
+    returned untouched.
+    """
+    sid = (sess or {}).get("id")
+    if not _valid_sid(sid):
+        return sess
+    with _LIVE_LOCK:
+        live = dict(_LIVE.get(sid) or {})
+    for k, v in live.items():
+        sess[k] = v
+    return sess
 
 
 def reconcile_agent_models():

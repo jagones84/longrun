@@ -956,6 +956,16 @@
   .gb-verdict .gb-x:hover { opacity: 1; }
   .gb-verdict.ok { border-left: 2px solid var(--ok); color: var(--ok); }
   .gb-verdict.bad { border-left: 2px solid var(--warn); color: var(--warn); }
+  /* K-4/K-5: the ✨ control. One small button, inline with the field it writes, plus a
+     status slot that only appears while a draft is running or after it lands (with a
+     one-click `undo`). It must not add a row of its own: `flex: 0 0 auto`, 24px, same
+     height as every other ghost control in a bar. */
+  .gen-bar { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+  .gen-bar .gen-spark { height: 24px; min-height: 24px; padding: 0 7px; border-radius: 8px;
+    font-size: 13px; line-height: 1; }
+  .gen-bar .gen-status { font-size: 11px; white-space: nowrap; }
+  .gen-bar .gen-undo { height: 20px; min-height: 20px; padding: 0 6px; font-size: 11px;
+    margin-left: 2px; }
   #goalBar .gb-meta { flex: 0 1 auto; min-width: 0; color: var(--dim); white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
   #goalBar > button { flex: 0 0 auto; height: 24px; min-height: 24px; padding: 0 7px;
@@ -4827,14 +4837,39 @@ function renderQueue() {
       const a = document.createElement("span"); a.className = "qatt";
       a.textContent = mk.text; a.title = mk.title; chip.appendChild(a);
     }
+    const ed = document.createElement("button"); ed.className = "ghost"; ed.textContent = "✎";
+    ed.title = "edit this queued message — it returns to the message box (with its attachments), no second editor";
+    ed.onclick = () => editQueued(i);
     const st = document.createElement("button"); st.className = "ghost"; st.textContent = "⇢";
     st.title = "steer into the running turn now";
     st.onclick = () => steerQueued(i);
     const x = document.createElement("button"); x.className = "ghost"; x.textContent = "×";
     x.title = "remove from queue";
     x.onclick = () => { q.splice(i, 1); renderQueue(); };
-    chip.appendChild(st); chip.appendChild(x); bar.appendChild(chip);
+    chip.appendChild(ed); chip.appendChild(st); chip.appendChild(x); bar.appendChild(chip);
   });
+}
+/* The ✎ of a queue chip: the message goes BACK into the composer instead of
+   opening a second editor (that is what "editable like the goal" means here), and
+   its attachment snapshot returns with it so the re-sent message still carries
+   them. The item leaves the queue: it is now the message being written again. */
+function editQueued(i) {
+  const q = _q();
+  if (i < 0 || i >= q.length) return renderQueue();
+  const it = _qNorm(q.splice(i, 1)[0]);
+  renderQueue();
+  const inp = $("inp");
+  if (inp) {
+    inp.value = it.text || "";
+    if (inp.style) inp.style.height = "";
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    inp.focus();
+  }
+  if (it.atts && it.atts.length) {
+    const have = new Set(_attachments.map(a => (a && a.value) || ""));
+    it.atts.forEach(a => { if (a && !have.has(a.value || "")) { _attachments.push(a); have.add(a.value || ""); } });
+    _renderAttach(); _renderPendingCtxItems();
+  }
 }
 function steerQueued(i) {
   const q = _q(); const it = _qNorm(q.splice(i, 1)[0]);
@@ -6828,6 +6863,13 @@ async function loadRulesPanel() {
     rows.push(_rulesRefRow("project", "project rules", d.project));
   }
   box.innerHTML = rows.join("");
+  // K-5: the ✨ of THIS session's ROLE.md — bound to the field above, so one click
+  // drafts the brief with the agent's real identity/team/reporting line as context.
+  const _roleTa = $("rule_role");
+  if (_roleTa && _roleTa.parentElement) {
+    mountSparkle(_roleTa.parentElement, "agent.role",
+                 { field: _roleTa, context: () => ({ agent: sessionId, session: sessionId }) });
+  }
 }
 /* JAG-2.8: read-only reference row for global/project Global_rules.md / Project_rules.md — shows the
    path, char count, and a preview of the text. Edit in Settings > Rules. */
@@ -7579,14 +7621,17 @@ function _setSectionEl(sec) {
   });
   _syncSectionDirty(card, sec);
   card.querySelector("[data-save]").onclick = () => saveSettingsSection(card, sec);
-  // v641: the Automate toggle belongs on the SAME row as save (it used to be a
-  // second full-width button under it).
-  const auto = makeAutomateWidget(sec.id || "settings", () => ({
-    file: sec.file, section_id: sec.id, values: _setSectionValues(card, sec)
-  }));
-  const acts = card.querySelector(".set-acts");
-  if (acts && auto) { auto.style.marginTop = "0"; acts.appendChild(auto); }
-  else if (auto) card.appendChild(auto);
+  // v641: the ✨ control belongs on the SAME row as save (it used to be a second
+  // full-width button under it). K-5: the registry decides whether this section gets
+  // one at all — a section with no generate surface simply has none.
+  const _sid = SETTINGS_GEN[sec.id];
+  if (_sid) {
+    const _ta = card.querySelector("textarea");
+    if (_ta) {
+      mountSparkle(card.querySelector(".set-acts") || card, _sid,
+                   { field: _ta, context: () => ({ file: sec.file, section_id: sec.id }) });
+    }
+  }
   return card;
 }
 /* v654: Routing is a TABLE — role · model · pattern · fallbacks — one row per
@@ -12235,11 +12280,13 @@ async function loadRules() {
     $("rulesProjectText").value = p.text || "";
     gateEnroll($("rulesGlobalCard"));     // JAG-496: Global_rules.md / Project_rules.md Save buttons follow the shared dirty-gate
     gateEnroll($("rulesProjectCard"));
-    [["rulesGlobalCard", "global"], ["rulesProjectCard", "project"]].forEach(([cid, scope]) => {
-      const c = $(cid);
-      if (c && !c.querySelector(".lra-auto-bar")) {
-        c.appendChild(makeAutomateWidget("rules", () => ({ scope })));
-      }
+    // K-5: each rules textarea gets its OWN ✨ (the registry surface `rules.global` /
+    // `rules.project`), bound to THAT field, so one click drafts the paragraph and the
+    // operator saves what they keep. One control per card, as before.
+    [["rulesGlobalCard", "rulesGlobalText", "rules.global"],
+     ["rulesProjectCard", "rulesProjectText", "rules.project"]].forEach(([cid, tid, sid]) => {
+      const c = $(cid), ta = $(tid);
+      if (c && ta) mountSparkle(c, sid, { field: ta });
     });
     // v641: "G " glued to a path rendered as the fake drive `G:/home/…` in the
     // panel. The scope is a LABEL, the path stays a path.
@@ -12605,7 +12652,8 @@ function settingsCategory(name) {
   document.querySelectorAll("#swNav button").forEach(b => b.classList.toggle("active", b.dataset.cat === name));
   document.querySelectorAll("#swMain .sw-cat").forEach(c => { c.hidden = c.dataset.cat !== name; });
   localStorage.setItem("sf_settings_cat", name);
-  mountCategoryAutomate(name);   // JAG-535: one ⚡ Automate control per editable panel
+  // K-5: no category-level mount — each section's ✨ is mounted by the renderer that
+  // owns its field (one control per field, never a second identical button).
   if (name === "mcp") { loadMcpClients(); if (typeof renderMcpCatalog === "function") renderMcpCatalog(); }
   else if (name === "skills") { loadSkills(); }
   else if (name === "rules") { loadRules(); }
@@ -12884,14 +12932,112 @@ async function saveLongrunAgentModel() {
     : (m === "@chat" ? "saved: longrunAgent follows the active session model"
                      : ("saved: longrun_agent = " + m));
 }
-/* 2026-10-23: longrunAgent automation is restricted to surfaces the operator
-   already edits by hand and that cannot change runtime safety config. Rules and
-   Teamorg (agent/team prompts) stay; Models, Subagents, Tools, Sandbox, MCP,
-   Config files, Index and Knowledge rewrite config and are NOT mounted. The
-   server refuses them too, so hiding the button is not the only guard. */
-const AUTOMATE_ALLOWED_SECTIONS = new Set(["rules", "teamorg"]);
+/* K-4/K-5 (2026-11-02): ONE ✨ control for every editable text surface, driven by the
+   BACKEND registry (`GET /api/generate/surfaces`). The browser keeps NO list of its
+   own — before this it held a second, narrower copy of the section allowlist and the
+   two could drift — and the server owns BOTH the per-surface system prompt and the
+   model (a session-scoped surface runs on that session's own model, with the chat's
+   real context; a chat prompt is drafted by the chat's own LLM).
+
+   Two kinds, ONE affordance:
+     generate — one completion returns the TEXT of the field; the operator reviews it
+                and saves (nothing is written for them);
+     automate — the VEO turn that CHANGES the substrate (Rules, Agents & Teams); it
+                needs an instruction, so the ✨ reveals a one-line hint field.
+   2026-10-23: automation stays restricted to surfaces the operator already edits by
+   hand and that cannot change runtime safety config; the server refuses the rest. */
+let _genSurfaces = null;
+async function loadGenSurfaces(force) {
+  if (_genSurfaces && !force) return _genSurfaces;
+  let d = {};
+  try { d = await api("GET", "/api/generate/surfaces"); } catch (e) { d = {}; }
+  _genSurfaces = {};
+  ((d && d.surfaces) || []).forEach(s => { if (s && s.id) _genSurfaces[s.id] = s; });
+  return _genSurfaces;
+}
+/* The registry entry for a surface, or null when the server does not own that id.
+   `null` is what keeps a control from being mounted for an unknown surface. */
+function genSurface(id) { return (_genSurfaces || {})[String(id == null ? "" : id)] || null; }
 function _automateAllowed(section) {
-  return AUTOMATE_ALLOWED_SECTIONS.has(String(section || "").trim());
+  const s = genSurface(section);
+  return !!s && s.kind === "automate";
+}
+function _generateAllowed(section) {
+  const s = genSurface(section);
+  return !!s && s.kind === "generate";
+}
+/* Put a drafted text into the field and make it undoable in ONE click — the operator
+   keeps the last word, so an unwanted draft costs nothing. */
+function _genApply(field, text, apply, st) {
+  if (!field) return;
+  const prev = field.value;
+  field.value = (apply === "append" && String(prev || "").trim())
+    ? (String(prev).replace(/\s+$/, "") + "\n" + text) : text;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  if (!st) return;
+  st.textContent = "✓ drafted";
+  const undo = document.createElement("button");
+  undo.type = "button"; undo.className = "ghost gen-undo"; undo.textContent = "undo";
+  undo.onclick = () => {
+    field.value = prev;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    st.textContent = ""; undo.remove();
+  };
+  st.append(undo);
+}
+async function runGenerate(surfaceId, field, btn, st, extra) {
+  const s = genSurface(surfaceId);
+  if (!s) { if (st) st.textContent = "✗ unknown surface"; return null; }
+  const label = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "✨…"; }
+  if (st) st.textContent = "";
+  let r = {};
+  try {
+    r = await api("POST", "/api/generate", {
+      surface: surfaceId, session: sessionId || "",
+      current: field ? field.value : "",
+      context: (typeof extra === "function" ? extra() : (extra || {})),
+    });
+  } catch (e) { r = { error: String(e) }; }
+  if (btn) { btn.disabled = false; btn.textContent = label || "✨"; }
+  if (!r || !r.ok) { if (st) st.textContent = "✗ " + ((r && r.error) || "failed"); return null; }
+  _genApply(field, r.text, s.apply, st);
+  return r.text;
+}
+/* The ✨ for a GENERATE surface: a field to fill plus an optional context getter. */
+function genBar(surfaceId, opts) {
+  opts = opts || {};
+  const bar = document.createElement("span");
+  bar.className = "gen-bar";
+  bar.dataset.genSurface = surfaceId;
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "ghost gen-spark";
+  btn.textContent = "✨";
+  btn.title = "write this field with AI — the harness knows this section's context";
+  const st = document.createElement("span");
+  st.className = "remaining gen-status"; st.setAttribute("role", "status");
+  bar.append(btn, st);
+  const field = () => (typeof opts.field === "function" ? opts.field() : opts.field) || null;
+  btn.onclick = () => runGenerate(surfaceId, field(), btn, st, opts.context);
+  return bar;
+}
+/* One entry point for every surface: the registry decides WHICH control it gets. */
+async function mountSparkle(host, surfaceId, opts) {
+  await loadGenSurfaces();
+  const s = genSurface(surfaceId);
+  if (!s) return null;
+  const target = typeof host === "string" ? document.querySelector(host) : host;
+  if (!target) return null;
+  if (target.querySelector('[data-gen-surface="' + surfaceId + '"]')) return null;
+  const el = (s.kind === "automate")
+    ? makeAutomateWidget(surfaceId, (opts || {}).context)
+    : genBar(surfaceId, opts || {});
+  if (el) el.dataset.genSurface = surfaceId;
+  const before = (opts && opts.before)
+    ? (typeof opts.before === "string" ? target.querySelector(opts.before) : opts.before)
+    : null;
+  if (before) target.insertBefore(el, before); else target.appendChild(el);
+  return el;
 }
 function makeAutomateWidget(section, getContext) {
   const bar = document.createElement("div");
@@ -12903,7 +13049,7 @@ function makeAutomateWidget(section, getContext) {
   bar.dataset.automateSection = section;
   bar.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap";
   bar.innerHTML =
-    '<button type="button" class="ghost lra-auto-toggle" title="Automate this section with longrunAgent (VEO — stateless system automation)">⚡ Automate</button>' +
+    '<button type="button" class="ghost lra-auto-toggle" title="Automate this section with longrunAgent (VEO — stateless system automation)">✨ Automate</button>' +
     '<input type="text" class="inp lra-auto-inp" placeholder="Ask longrunAgent to configure this section…" hidden style="flex:1;min-width:200px;padding:5px 8px;font-size:12px">' +
     '<button type="button" class="ghost lra-auto-run" hidden>Run</button>' +
     '<span class="remaining lra-auto-status" role="status" aria-live="polite"></span>';
@@ -12953,49 +13099,33 @@ function makeAutomateWidget(section, getContext) {
   inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); trigger(); } });
   return bar;
 }
-/* JAG-535: auto-generate ONE "⚡ Automate" control per manually editable WebUI
-   section. Every panel loader can call this idempotently: the bar is mounted on
-   its host only once, and it always posts to longrunAgent (the VEO), never to a
-   bespoke endpoint. `settingsCategory()` drives the mapping below, so a new
-   Settings category only has to be added to AUTOMATE_CATS to get its control. */
-function mountSectionAutomate(hostSel, section, getContext) {
-  const host = typeof hostSel === "string" ? document.querySelector(hostSel) : hostSel;
-  if (!host) return null;
-  const sel = '.lra-auto-bar[data-automate-section="' + section + '"]';
-  const existing = host.querySelector(sel);
-  if (existing) return existing;
-  const bar = makeAutomateWidget(section, getContext);
-  host.appendChild(bar);
-  return bar;
-}
-/* Settings category → longrunAgent automation section. Categories that are
-   read-only, purely cosmetic (appearance), operator-only (keys), or that would
-   edit src/longrun (improvement) are deliberately ABSENT. */
-const AUTOMATE_CATS = {
-  models: { section: "models", ctx: () => ({ providers: (_provCache || []).length }) },
-  subagents: { section: "subagents", ctx: () => ({ depth: ($("subDepth") || {}).value }) },
-  tools: { section: "tools", ctx: () => ({ config_file: "config/tools.yaml" }) },
-  sandbox: { section: "harness", ctx: () => ({ config_file: "config/tools.yaml" }) },
-  harness: { section: "harness", ctx: () => ({ config_file: "config/tools.yaml" }) },
-  mcp: { section: "mcp", ctx: () => ({ config_file: "config/mcp_clients.local.json" }) },
-  skills: { section: "skills", ctx: () => ({ installed: (_skillsCache || []).length }) },
-  knowledge: { section: "knowledge", ctx: () => ({ notebook: (typeof kbState === "object" && kbState && kbState.notebook) || "" }) },
-  rules: { section: "rules", ctx: () => ({ scope: "global" }) },
-  config: { section: "config", ctx: () => ({ panel: "Config files" }) },
-};
-/* The Rules panel mounts its OWN Automate control per card — one for
-   Global_rules.md, one for Project_rules.md, each with its real scope. A
-   category-level control would be a THIRD button on the same panel, and two of
-   the three sent the same `scope: global`: the panel owns it, the category does
-   not. Declared here so the ownership is readable instead of resting on the
-   order `settingsCategory()` happens to mount things in. */
-const AUTOMATE_CAT_SKIP = new Set(["rules"]);
-function mountCategoryAutomate(name) {
-  if (AUTOMATE_CAT_SKIP.has(name)) return;
-  const spec = AUTOMATE_CATS[name];
-  if (!spec) return;
-  if (!_automateAllowed(spec.section)) return;
-  mountSectionAutomate('#swMain .sw-cat[data-cat="' + name + '"]', spec.section, spec.ctx);
+/* K-5: Settings section id → the generate surface owned by its text field. Only the
+   sections whose editable text IS a prompt appear here; the rest of a section's fields
+   are config values an agent must not invent. The Rules panel mounts its own two
+   (`rules.global` / `rules.project`, one per card) because it owns those fields. */
+const SETTINGS_GEN = { compaction: "compaction.instruction" };
+/* K-5: the ✨ of the controls that live in the STATIC markup — each bound to its OWN
+   field, each mounted once, and only if the backend registry has that surface. The
+   dynamic fields (rules cards, session ROLE.md, subagent briefs) mount themselves
+   where they are rendered. */
+async function mountStaticSparkles() {
+  await loadGenSurfaces();
+  const pairs = [
+    // [surface, the field to fill, the row to host the ✨, insert before which child]
+    ["chat.prompt", "#inp", "#composerBar .cb-right", "#micBtn"],
+    ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint"],
+    ["plan.input", "#planInp", null, null],
+    ["memory.content", "#memContent", null, null],
+    ["blackboard.topic", "#bbContent", null, null],
+    ["kb.notebook", "#kbNewName", null, null],
+  ];
+  for (const [sid, fsel, hsel, bsel] of pairs) {
+    const f = document.querySelector(fsel);
+    if (!f) continue;
+    const host = hsel ? document.querySelector(hsel) : f.parentElement;
+    if (!host) continue;
+    mountSparkle(host, sid, { field: f, before: bsel || null });
+  }
 }
 /* JAG-536 W4: Settings > Orchestration — the blackboard and the swarm runner.
    Nothing here is cached: entries and stats come straight from `/api/blackboard`,
@@ -13205,6 +13335,9 @@ function subRenderRoles() {
       subSaveSoon();
     };
     row.appendChild(hd); row.appendChild(ta);
+    // K-5: the ✨ of THIS role's brief — the context names the role and the other
+    // roles, so a draft never overlaps a sibling's job.
+    mountSparkle(row, "subagent.brief", { field: ta, context: () => ({ role: name }) });
     const scope = (_subRoles[name] && typeof _subRoles[name] === "object")
       ? (_subRoles[name].tools || []) : [];
     const sc = document.createElement("div"); sc.className = "remaining";
@@ -15179,7 +15312,10 @@ window.addEventListener("message", (e) => {
   }
   setTimeout(() => { try { _focusPlanNode(d.node); } catch (err) {} }, switched ? 500 : 60);
 });
-window.addEventListener("DOMContentLoaded", () => { if (location.hash === "#control") showControl(); });
+window.addEventListener("DOMContentLoaded", () => {
+  if (location.hash === "#control") showControl();
+  mountStaticSparkles();
+});
 // JAG-431r4: honour a hash CHANGE too (a deep link after load, back/forward, or a
 // manual URL edit). Without this, navigating from #control to #sessions left the
 // Control deck up — the two views never swapped.

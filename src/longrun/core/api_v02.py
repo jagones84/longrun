@@ -1702,6 +1702,12 @@ def handle(handler, method, path, qs, body):
             from longrun.plan import goal as _goal
             return _r(handler, 200, _goal.status(qs.get("session") or ""))
 
+        if path == "/api/generate/surfaces":
+            # K-3: the ✨ control's registry. The frontend renders ITS list, so no
+            # button exists that the backend does not know (never a second truth).
+            from longrun.gen import surfaces as _gs
+            return _r(handler, 200, {"surfaces": _gs.registry()})
+
         if path == "/api/blackboard":
             _lazy('swarm')
             eid = qs.get("id")
@@ -2447,6 +2453,20 @@ def handle(handler, method, path, qs, body):
             )
             code = 200 if res.get("ok") else (403 if res.get("permission_denied") else 400)
             return _r(handler, code, res)
+        if path == "/api/generate":
+            # K-3: one non-agentic completion that returns the TEXT of one WebUI field.
+            # It writes nothing — the operator reviews the draft and saves.
+            from longrun.gen import generate as _gen
+            b = body or {}
+            res = _gen.generate(
+                surface=b.get("surface"),
+                session=b.get("session") or b.get("sid"),
+                current=b.get("current") or "",
+                hint=b.get("hint") or "",
+                extra=b.get("context") or b.get("extra"),
+                model=b.get("model"),
+            )
+            return _r(handler, 200 if res.get("ok") else 400, res)
 
         return False
 
@@ -3560,10 +3580,22 @@ def edits_approve(body) -> dict:
 
 
 def _session_ws(session_id):
-    """Resolve the workspace for a session id (or the global default when none)."""
+    """Resolve the workspace for a session id (or the global default when none).
+
+    Also ARMS the background indexer for that workspace: the panel asks about the
+    workspace a session is on, which is exactly the one that must be kept warm. A
+    workspace created after boot (a fresh agent folder) would otherwise have no
+    worker until a restart. `start` is idempotent and a no-op pass is one walk.
+    """
     _lazy('rules')
     sess = _srv().load_session(session_id) if session_id else None
-    return _RULES.resolve_workspace(sess), sess
+    ws = _RULES.resolve_workspace(sess)
+    try:
+        from longrun.memory import autoidx as _autoidx
+        _autoidx.start(ws)
+    except Exception:  # noqa: BLE001 — indexing is best-effort
+        pass
+    return ws, sess
 
 
 def _codebase_hint(ws, res):
@@ -3774,6 +3806,13 @@ def workspace_set(body):
                 return {"ok": False, "error": "no such session: %s" % sid}
             sess["workspace"] = real
             _srv().save_session(sess)
+            # The workspace of THIS session changed live: defend it against a copy
+            # the running turn loaded before this write.
+            try:
+                from longrun.memory import stores as _stores
+                _stores.live_fields_changed(sid, workspace=real)
+            except Exception:  # noqa: BLE001 — the write already happened
+                pass
         try:
             _RULES.remember_workspace(real)  # JAG-126: next new session defaults here
         except Exception:  # noqa: BLE001 — convenience only

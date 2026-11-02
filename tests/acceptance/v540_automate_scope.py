@@ -34,34 +34,38 @@ with open(os.path.join(ROOT, "src", "longrun", "orbit", "web", "orbit.html"),
           encoding="utf-8") as f:
     ORBIT = f.read()
 
-check("A1 the UI allowlist is exactly Rules + Teamorg",
-      'const AUTOMATE_ALLOWED_SECTIONS = new Set(["rules", "teamorg"]);' in UI
-      and "function _automateAllowed(section)" in UI)
-check("A2 the widget refuses to build an active bar for other sections",
+check("A1 the UI keeps NO local allowlist — the ✨ renders the BACKEND registry",
+      "const AUTOMATE_ALLOWED_SECTIONS = new Set" not in UI
+      and "async function loadGenSurfaces(" in UI
+      and '"/api/generate/surfaces"' in UI
+      and "function genSurface(id)" in UI)
+check("A2 the widget still refuses a section the registry does not call automate",
       "function makeAutomateWidget(section, getContext)" in UI
       and "if (!_automateAllowed(section)) {" in UI
       and "bar.hidden = true;   // code stays" in UI)
-check("A3 Settings only mounts a category whose section is allowed",
-      "if (!_automateAllowed(spec.section)) return;" in UI)
-check("A4 the Codebase inspector still has no agent Automate bar",
-      'mountSectionAutomate(\'section[data-insp="codebase"]\'' not in UI)
-check("A5 the mapping table stays in the codebase (nothing deleted)",
-      "const AUTOMATE_CATS = {" in UI
-      and all(("  " + k + ": { section:") in UI
-              for k in ("models", "subagents", "tools", "mcp", "skills",
-                        "knowledge", "rules", "config")))
-check("A6 Orbit keeps the Teamorg bar, which is an allowed surface",
-      'id="lraAutoBtn"' in ORBIT and "teamorg" in LRA.SECTION_PROMPTS)
-check("A7 the server allowlist mirrors the UI",
+check("A3 ONE entry point mounts a control, and only for a surface the server owns",
+      "async function mountSparkle(host, surfaceId, opts)" in UI
+      and "await loadGenSurfaces();" in UI
+      and "const s = genSurface(surfaceId);\n  if (!s) return null;" in UI)
+check("A4 the Codebase inspector still has no agent control",
+      'mountSectionAutomate(\'section[data-insp="codebase"]\'' not in UI
+      and 'mountSparkle(\'section[data-insp="codebase"]\'' not in UI)
+check("A5 the Settings mapping keeps the codebase and is now a TEXT-FIELD map",
+      "const SETTINGS_GEN = {" in UI and "async function mountStaticSparkles()" in UI
+      and '["chat.prompt", "#inp"' in UI and '["goal.objective", "#goalEditBox"' in UI)
+check("A6 Orbit keeps the Teamorg control, now with the ✨ glyph",
+      'id="lraAutoBtn"' in ORBIT and "✨ automate (Teamorg)" in ORBIT
+      and "teamorg" in LRA.SECTION_PROMPTS)
+check("A7 the server allowlist is unchanged (the operator's safety rule)",
       LRA.AUTOMATE_ALLOWED_SECTIONS == ("rules", "teamorg", "agents", "teams", "orbit"))
-# The Rules panel mounts ONE widget per card (global + project, each with its real
-# scope). The category-level mount ran FIRST and added a third button whose ctx
-# said scope=global — two of the three sent the same scope.
-check("A8 the Rules panel owns its widgets; the category does not add a third",
-      'const AUTOMATE_CAT_SKIP = new Set(["rules"]);' in UI
-      and "if (AUTOMATE_CAT_SKIP.has(name)) return;" in UI
-      and '[["rulesGlobalCard", "global"], ["rulesProjectCard", "project"]]' in UI
-      and 'c.appendChild(makeAutomateWidget("rules", () => ({ scope })))' in UI)
+# The Rules panel mounts ONE control per card (global + project), each bound to ITS OWN
+# textarea and its OWN generate surface. A category-level control ran FIRST and added a
+# third button whose ctx said scope=global — two of the three sent the same scope.
+check("A8 the Rules panel owns its two controls, bound to their own fields",
+      '["rulesGlobalCard", "rulesGlobalText", "rules.global"]' in UI
+      and '["rulesProjectCard", "rulesProjectText", "rules.project"]' in UI
+      and "mountSparkle(c, sid, { field: ta });" in UI
+      and "const AUTOMATE_CAT_SKIP" not in UI)
 check("A9 an automate run refreshes the surface it edited (both paths)",
       "loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); loadRules();" in UI
       and "loadSettingsForms();\n        loadRulesPanel();\n        loadRules();" in UI)

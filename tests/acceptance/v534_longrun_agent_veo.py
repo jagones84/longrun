@@ -427,15 +427,17 @@ check("E8b every automate section injects a NON-empty substrate snapshot from a 
       set(LRA.SECTION_PROMPTS).issubset(set(LRA.AUTOMATE_INSPECT_SECTIONS))
       and set(LRA.AUTOMATE_INSPECT_SECTIONS.values()).issubset(set(INS_SECTIONS + ["all", "agents", "teams", "models", "compaction", "settings", "rules"])),
       sorted(set(LRA.SECTION_PROMPTS) - set(LRA.AUTOMATE_INSPECT_SECTIONS)))
-check("E9 the WebUI auto-generates one Automate control per editable Settings panel",
-      "function mountSectionAutomate(" in HTML
-      and "function mountCategoryAutomate(" in HTML
-      and "const AUTOMATE_CATS = {" in HTML
-      and "mountCategoryAutomate(name)" in HTML
-      and 'mountSectionAutomate(\'section[data-insp="codebase"]\', "index"' not in HTML
-      and all(("  " + k + ": { section:") in HTML
-              for k in ("models", "subagents", "tools", "mcp", "skills",
-                        "knowledge", "rules", "config")))
+# E9 (2026-11-02): the WebUI no longer HOLDS the allowlist. Every Automate/Generate
+# control is mounted from the ONE backend registry (`GET /api/generate/surfaces`), so
+# the browser cannot drift from the server's section list. A local `AUTOMATE_CATS`
+# copy would be the second truth this moved away from.
+check("E9 the WebUI derives every control from the backend registry (no local allowlist)",
+      "async function loadGenSurfaces(" in HTML
+      and '"/api/generate/surfaces"' in HTML
+      and "function mountSparkle(" in HTML
+      and "const AUTOMATE_CATS = {" not in HTML
+      and "function mountCategoryAutomate(" not in HTML
+      and "function mountSectionAutomate(" not in HTML)
 
 # --- F: the agent's OWN namespace is declared in its system prompt -----------
 # The VEO must not have to guess which `longrunAgent.*` subtools it owns: the
