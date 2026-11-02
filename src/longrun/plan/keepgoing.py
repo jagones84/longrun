@@ -72,6 +72,16 @@ def decide(open_nodes, rounds, stale, started, now=None, aborted=False, blocked=
     backed completion, a blocker, cancellation, or the wall-clock safety cap ends
     them. A Matrix policy hook may add its own stop, but cannot label an
     incomplete goal as reached.
+
+    Queue vs steer under an ACTIVE goal (asked 2026-11-02; the arbitration is
+    DELIBERATE, not incidental — Kiro CLI, OpenClaw and Codex arbitrate the same
+    way): a STEER belongs to the turn that is already running and lands inside it
+    (`agent.drain_steer`), so here `steer=True` beats a budget / no-progress stop
+    but never an evidence-backed `goal_complete`. A QUEUED message instead opens a
+    NEW turn when the current one ends; because a durable ACTIVE goal owns every
+    turn of its session (`httpapi._goal_mode_of`), that new turn is ALSO a goal
+    turn and does not replace the objective (`httpapi._goal_begin` only replaces it
+    for an explicit `/goal`). To re-aim a running goal, steer it, do not queue it.
     """
     c = cfg(override)
     now = time.time() if now is None else float(now)
