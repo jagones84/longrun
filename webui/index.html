@@ -5134,7 +5134,7 @@ function togglePlus() {
     '<div class="sep"></div>' +
     '<div class="mh">insert</div>' +
     '<div class="mi" data-a="commands">⌘ Commands<span class="k">/</span></div>' +
-    '<div class="mi" data-a="skills">🧩 Skill…<span class="k">/skill</span></div>';
+    '<div class="mi" data-a="skills">🧩 Skills…<span class="k">/skills</span></div>';
   m.hidden = false;
   m.querySelectorAll(".mi").forEach(it => it.onclick =
     () => { _plusAction(it.dataset.a); m.hidden = true; });
@@ -5526,6 +5526,38 @@ function _bindAttachmentChips(root) {
   });
 }
 
+/* SL-3: ONE registry for the `/` commands — the menu, the composer chips and the
+   send-time interception all read THIS table, so a command can never work in one
+   place and be a no-op in another. `run` = a UI action (it RUNS, the token is not a
+   message); `insert` = what the token becomes when picked; `aliases` = the frontier
+   alias pattern (Claude Code's `/desktop` with alias `/app`); `hint` is the ONE
+   description, rendered in the menu AND in the chip tooltip.
+   It lives next to the composer on purpose: it is declared before `send()`, so no
+   boot-order (temporal dead zone) can make the interception miss it. */
+const SLASH_COMMANDS = [
+  { id: "goal", icon: "◎", insert: "/goal ",
+    hint: "run until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop" },
+  { id: "skills", aliases: ["skill"], icon: "🧩", insert: "",
+    hint: "open the skill picker — the chosen /<name> lands in the message",
+    run: () => openSkillPicker() },
+  { id: "compact", icon: "🗜", insert: "",
+    hint: "compact this session's context now",
+    run: () => compactNow() },
+];
+const SLASH_BY_ID = (() => {
+  const m = {};
+  SLASH_COMMANDS.forEach(c => { m[c.id] = c; (c.aliases || []).forEach(a => { m[a] = c; }); });
+  return m;
+})();
+/* SL-2: the commands a query matches, in declared order. An EMPTY query matches them
+   all — that is the "submenu opener" the operator asked for: a bare "/" opens the
+   COMMAND menu (the frontier pattern: Claude Code's /agents, /config open their own
+   interface), it does not dump the skill catalogue. */
+function _slashCmdHits(q) {
+  if (!q) return SLASH_COMMANDS.slice();
+  return SLASH_COMMANDS.filter(c => c.id.startsWith(q)
+    || (c.aliases || []).some(a => a.startsWith(q)));
+}
 /* JAG-431r4b: function send(text, display) also accepts an optional `atts`
    snapshot so a QUEUED message flushed later still carries its attachment
    note/chips. */
@@ -5541,6 +5573,21 @@ function send(text, display, atts) {
   if (_unindexed) {
     toast("Remove the attachment that failed Knowledge indexing before sending.", "err");
     return;
+  }
+  // SL-5: a message that IS one UI command (`/skills`, `/compact`, `/skill`) RUNS it
+  // here instead of shipping the token to the model as prose — the frontier
+  // behaviour (`/clear`, `/compact`) and the reason clicking SEND while the `/` menu
+  // is open can never turn a UI command into a message. A real skill with that name
+  // still wins, exactly as the server resolves it.
+  const _solo = raw.match(/^\/([A-Za-z0-9_.\-]+)$/);
+  if (_solo) {
+    const _tok = _solo[1].toLowerCase();
+    const _c = SLASH_BY_ID[_tok];
+    const _ownSkill = (_skillsCache || []).some(s => String(s.name || "").toLowerCase() === _tok);
+    if (_c && _c.run && !_ownSkill) {
+      inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+      _c.run(); return;
+    }
   }
   // JAG-278: attachments are prepended for the MODEL (read them first) and shown
   // to the user as a 📎 note; the chips are consumed once the message is sent.
@@ -11627,6 +11674,10 @@ function _skillSearchScore(skill, query) {
   const desc = String(skill.description || "").toLowerCase();
   const extra = (String(skill.category || "") + " " + String(skill.path || "")).toLowerCase();
   if (!query) return 1;
+  // SL-4: exact > prefix > contains — the three-level rank the frontier slash
+  // panels use (a query that IS the name must never sort below a longer name that
+  // merely starts with it).
+  if (name === query) return 5;
   if (name.startsWith(query)) return 4;
   if (name.includes(query)) return 3;
   if (title.includes(query)) return 2;
@@ -12395,12 +12446,8 @@ function _afterWorkspaceChange() {
   if (window.SparkEditor && window.SparkEditor.reloadTree) window.SparkEditor.reloadTree();
   try { cbStatus(); } catch (e) {}
 }
-/* JAG-127: slash menu shows COMMANDS first (/goal, /skills, /compact) then skills. */
-const SLASH_COMMANDS = [
-  { cmd: "goal", hint: "run until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop" },
-  { cmd: "skills", hint: "open the Skills panel" },
-  { cmd: "compact", hint: "compact this session's context now" },
-];
+/* SL-3: the `/` command registry lives with the COMPOSER (see above `send()`): the
+   menu, the composer chips and the send-time interception all read that ONE table. */
 let _slashItems = [], _slashHi = 0;   // JAG-398: keyboard-navigable slash menu
 function _paintSlashHi() {
   _slashItems.forEach((it, i) => it.el.classList.toggle("hl", i === _slashHi));
@@ -12434,20 +12481,22 @@ function skillsAutocomplete() {
     _slashItems = []; _slashHi = 0;
   };
   const q = raw.toLowerCase();
-  const cmds = SLASH_COMMANDS.filter(c => c.cmd.startsWith(q));
+  const cmds = _slashCmdHits(q);
   // JAG-465: the picker only ever offered the first EIGHT skills whose NAME started
   // with the query, so with 174 installed skills most of them were unreachable from
   // `/` (the operator counted 30 shown out of 174). Search the WHOLE catalogue — by
   // name, title and description — rank prefix matches first, and cap only the RENDER
   // (the popup scrolls) while reporting how many matched.
+  // SL-2: with NO query the catalogue is NOT dumped — "/" alone opens the COMMAND
+  // menu (the submenu opener); skills appear the moment the query filters them.
   const _skills = _skillsCache || [];
-  const _matched = _rankSkills(_skills, q);
+  const _matched = q ? _rankSkills(_skills, q) : [];
   const _SLASH_CAP = 60;
   const hits = _matched.slice(0, _SLASH_CAP).map(x => x.s);
   const _more = Math.max(0, _matched.length - hits.length);
   if (!cmds.length && !hits.length) { box.hidden = true; return; }
   box.innerHTML = "";
-  const addRow = (label, hint, onPick) => {
+  const addRow = (label, hint, onPick, onComplete) => {
     const li = document.createElement("div");
     li.className = "slashrow";
     li.style.cssText = "padding:6px 10px;cursor:pointer;font-size:12px";
@@ -12455,17 +12504,23 @@ function skillsAutocomplete() {
     li.onclick = onPick;
     li.onmouseenter = () => { _slashHi = _slashItems.findIndex(x => x.el === li); _paintSlashHi(); };
     box.appendChild(li);
-    _slashItems.push({ el: li, pick: onPick });
+    _slashItems.push({ el: li, pick: onPick, complete: onComplete || onPick });
   };
   if (cmds.length) {
     const h = document.createElement("div");
     h.className = "remaining"; h.style.cssText = "padding:4px 10px;font-size:10px;text-transform:uppercase";
     h.textContent = "commands"; box.appendChild(h);
-    cmds.forEach(c => addRow("/" + c.cmd, c.hint, () => {
-      if (c.cmd === "skills") { _apply(""); openPanel("skills"); }
-      else if (c.cmd === "compact") { _apply(""); compactNow(); }
-      else { _apply("/goal "); }
-    }));
+    // SL-1: a UI command RUNS — it is not a message. `/skills` opens the real skill
+    // picker; it used to call openPanel("skills"), which resolved to a
+    // `#inspector section[data-insp="skills"]` that DOES NOT EXIST: a silent no-op,
+    // which is exactly why the operator reported "/skill does nothing".
+    // SL-4: Tab completes the token (`/<id> `) without running the command.
+    // NOTE: `insert` is `""` for a command that CONSUMES its token (`/skills` opens a
+    // picker — the token must vanish), so it can never be tested with `||`: an empty
+    // insert is a real value, not a missing one.
+    cmds.forEach(c => addRow("/" + c.id, c.hint,
+      () => { _apply(c.insert === undefined ? "/" + c.id + " " : c.insert); if (c.run) c.run(); },
+      () => _apply("/" + c.id + " ")));
   }
   if (hits.length) {
     const h = document.createElement("div");
@@ -15920,16 +15975,21 @@ function _renderCmdChips() {
       + '<span style="font-size:13px">' + icon + '</span><b>' + esc(label) + '</b></span>');
   };
   let m;
+  const _goalCmd = SLASH_BY_ID.goal;
   const leadGoal = /^\s*\/goal\b/i.test(v);
-  if (leadGoal) push("◎", "goal", "run mode — runs until evidence-backed completion", true);
+  if (leadGoal) push(_goalCmd.icon, _goalCmd.id, _goalCmd.hint, true);
   const re = /(^|\s)\/([A-Za-z0-9_.\-]+)/g;
   while ((m = re.exec(v))) {
     const t = m[2].toLowerCase();
     if (t === "goal" || seen[t]) continue;
     seen[t] = 1;
+    // SL-3: the chip and the menu read ONE table, so the tooltip can no longer claim
+    // something the command does not do. A REAL skill still wins over a UI command
+    // for the same token — exactly what the server does (`_apply_skill_slash`
+    // resolves `/<name>` for every token but `goal`), so the chip cannot lie.
+    const _cmd = SLASH_BY_ID[t];
     if (names[t]) push("📖", names[t], "skill reference", true);
-    else if (t === "skills") push("🧩", "skills", "opens the Skills panel (pick from the / menu)", false);
-    else if (t === "compact") push("🗜", "compact", "compacts now (pick from the / menu)", false);
+    else if (_cmd) push(_cmd.icon, _cmd.id, _cmd.hint, false);
     else push("/", m[2], "unknown command — sent as plain text", false);
   }
   box.innerHTML = chips.join("");
@@ -15950,6 +16010,10 @@ $("inp").addEventListener("keydown", e => {
   if (menu && !menu.hidden && _slashItems.length) {
     if (e.key === "ArrowDown") { e.preventDefault(); _slashHi = Math.min(_slashHi + 1, _slashItems.length - 1); _paintSlashHi(); return; }
     if (e.key === "ArrowUp") { e.preventDefault(); _slashHi = Math.max(_slashHi - 1, 0); _paintSlashHi(); return; }
+    // SL-4: Tab COMPLETES the highlighted row into the composer without running it
+    // (the shell convention; Claude Code expands its candidate list on Tab) — Enter
+    // is still the one that runs/picks.
+    if (e.key === "Tab") { e.preventDefault(); const it = _slashItems[_slashHi]; if (it && it.complete) it.complete(); return; }
     // While the menu is open it OWNS Enter (with or without Ctrl/Cmd): it picks the
     // highlighted command. The send listener returns early in exactly this state, so
     // the keystroke can never both pick and send. Shift+Enter still inserts a newline.
