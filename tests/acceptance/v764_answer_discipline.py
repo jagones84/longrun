@@ -93,6 +93,14 @@ check("R5 a non-dict rejection never raises and still teaches",
 _miss = A._tool_near_misses("fs.raed")
 check("R6 a MISSPELLED tool name resolves to its real neighbours",
       any(n.startswith("fs.") for n in _miss), _miss)
+# Live 2026-11-02: `{"action":"tool","shell":"x"}` — the tool NAME was used as a KEY.
+_toolkey = A._invalid_action_note({"action": "tool", "shell": "x"})
+check("R7 a tool action with no name says WHERE the name and the args go",
+      '"action":"tool" names no tool' in _toolkey and '"args"' in _toolkey
+      and "neither the tool name nor an argument" in _toolkey, _toolkey[:240])
+check("R8 a well-formed tool action does not get that lecture",
+      'names no tool' not in A._invalid_action_note(
+          {"action": "tool", "tool": "shell.exec", "args": {"command": "ls"}}))
 
 # ------------------ N. the final answer never carries the diagnostics ----
 _src = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()

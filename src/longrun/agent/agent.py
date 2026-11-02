@@ -936,6 +936,16 @@ def _invalid_action_note(act, answer=""):
             near = _tool_near_misses(raw)
             if near:
                 lines.append("Did you mean: %s ?" % ", ".join(near))
+    # Measured live 2026-11-02 (session 777378644e9c): the model emitted
+    # `{"action":"tool","shell":"x"}` twice inside one turn — it put the tool name in a
+    # KEY and expected the value to be the argument. A generic rejection costs a whole
+    # model round-trip per attempt, so name that exact mistake.
+    if isinstance(act, dict) and str(act.get("action") or "") == "tool" \
+            and not (act.get("tool") or act.get("tool_name") or act.get("name")):
+        lines.append(
+            '"action":"tool" names no tool: the NAME goes in "tool" and every input in '
+            '"args" — e.g. {"action":"tool","tool":"shell.exec","args":{"command":"…"}}. '
+            'A top-level key like "shell" is neither the tool name nor an argument.')
     lines.append(
         "Do not guess a name or an argument — read the registry: "
         '`self.tools {query:"<words>"}` lists the tools matching those words with '
