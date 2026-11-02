@@ -239,11 +239,19 @@ def _shell(args, run_id):
     if sh is not None:
         # JAG-1: stream each output line to the UI as it arrives, so a running
         # `shell` card shows what the command prints instead of a blank
-        # "running…" until the whole call returns.
+        # "running…" until the whole call returns. The active turn's own render
+        # sink (registered by the chat stream) PUBLISHES and puts the frame on
+        # the page's own-turn stream; with no live turn (a sync POST / MCP call)
+        # `publish` alone still feeds the durable log, the global feed and any
+        # re-attach stream. Exactly one publish either way.
         def _stream(line, _sid=sid):
             try:
-                from longrun.core.events import publish
-                publish("tool.output", session=_sid, tool="shell", text=line)
+                from longrun.core.events import publish, turn_sink
+                sink = turn_sink(_sid)
+                if sink:
+                    sink("tool.output", session=_sid, tool="shell", text=line)
+                else:
+                    publish("tool.output", session=_sid, tool="shell", text=line)
             except Exception:  # noqa: BLE001 — a live sink must never fail the tool
                 pass
         r = sh.run_capture(command, timeout=args.get("timeout_secs"),

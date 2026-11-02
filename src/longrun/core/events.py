@@ -331,6 +331,32 @@ def turn_end(sid, tok=None):
     publish("chat.done", session=sid)
 
 
+def set_turn_sink(sid, fn):
+    """Attach the ACTIVE turn's render sink (its `on_event`) to the session.
+
+    A tool that prints WHILE it runs — today only `shell` — must reach the
+    browser's OWN-turn stream (`/api/chat/stream`), not just the durable feed and
+    the re-attach stream: otherwise the card stays blank until `tool.result`
+    arrives at the end (exactly the operator's "write the field live, not only at
+    the end"). The streaming path registers its `_emit` here; `turn_end` (or the
+    stream's own teardown) drops the whole record and the sink with it.
+    """
+    if not sid:
+        return
+    with _ACTIVE_CHAT_LOCK:
+        cur = _ACTIVE_CHAT.get(sid)
+        if cur is not None:
+            cur["sink"] = fn
+
+
+def turn_sink(sid):
+    """The active turn's render sink for `sid`, or None (no streaming turn)."""
+    if not sid:
+        return None
+    with _ACTIVE_CHAT_LOCK:
+        return (_ACTIVE_CHAT.get(sid) or {}).get("sink")
+
+
 def events_since(last_id, limit=None):
     """Replay events after last_id: memory cache first, SQLite as source of truth.
     An empty in-memory buffer must NOT short-circuit replay — the store is durable.

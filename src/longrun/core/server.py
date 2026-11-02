@@ -46,7 +46,8 @@ from longrun.core.events import (DB_PATH, EVENTS_KEEP, MAX_FEED_EVENTS, PRUNE_BA
                      PRUNE_INTERVAL_S, _ACTIVE_CHAT, _ACTIVE_CHAT_LOCK, _TURN_LOCKS,
                      _TURN_LOCKS_GUARD, _db_lock, _feed, _sse_lock, _sse_queues, db,
                      events_since, feed_seq, prune_events, publish, query_events,
-                     _start_event_pruning, _turn_lock, turn_begin, turn_end)
+                     _start_event_pruning, _turn_lock, set_turn_sink, turn_begin,
+                     turn_end, turn_sink)
 from longrun.model.keys import ENV_FILE, KNOWN_ENV_KEYS, keys_status, reveal_key, set_key
 from longrun.core.sse import (CHAT_THINK_FLUSH_S, CHAT_THINK_LIVE_CAP, ThinkCoalescer,
                   heartbeat_frame, sse_response, sse_pump, sse_tail)

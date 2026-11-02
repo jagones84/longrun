@@ -53,7 +53,8 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      publish, push_abort, push_steer, query_events,
                      reconcile_agent_models, reconcile_orphan_turns, router_models,
                      runs_summary, save_session, save_tasks, self_knowledge,
-                     selfcheck_payload, session_mark, sse_pump, sse_response, sse_tail,
+                     selfcheck_payload, session_mark, set_turn_sink, sse_pump,
+                     sse_response, sse_tail,
                      start_run_graph, state_block, stream_with_fallback, system_prompt,
                      turn_begin, turn_end, voice_status, voice_stt, voice_tts)
 from longrun.orbit.api import WEB as ORBIT_WEB
@@ -347,6 +348,12 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             eid = (ev or {}).get("id")
             q.put(("id: %d\n" % eid if eid else "") + "event: %s\ndata: %s\n\n" % (
                 kind, json.dumps(d, ensure_ascii=False)))
+
+        # JAG-1: a tool that prints WHILE it runs (shell) reaches the browser
+        # through THIS stream — the one the page renders its own turn from — not
+        # only the durable feed. Registering the sink here is what makes the card
+        # fill live instead of staying blank until `tool.result`.
+        set_turn_sink(sess["id"], _emit)
 
         try:
             # JAG-201: the transcript read-modify-write happens INSIDE the lock —

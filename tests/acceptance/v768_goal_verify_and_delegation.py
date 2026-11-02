@@ -229,5 +229,30 @@ from longrun.core import settings as S                   # noqa: E402
 check("F8 goal_verify is owned by Settings ▸ Harness",
       (S.DEDICATED.get("tools.yaml") or {}).get("goal_verify") == "Settings ▸ Harness")
 
+# ============================================================================
+# G — the OWN-turn stream carries the tool output (the gap the first pass missed)
+# ============================================================================
+# The page renders its OWN turn from `/api/chat/stream`; `/api/chat/attach` only
+# serves a refresh. Wiring `tool.output` into the attach kinds alone left the card
+# blank until `tool.result`. The active turn now registers its `_emit` as the
+# session's render sink, and the shell prints into it line by line.
+from longrun.core import events as EV                    # noqa: E402
+_tok = EV.turn_begin("v768-sink")
+_seen = []
+EV.set_turn_sink("v768-sink", lambda kind, **d: _seen.append((kind, d)))
+check("G1 the active turn's sink is retrievable", EV.turn_sink("v768-sink") is not None)
+_sres = T.execute("shell", {"command": "printf V768SENTINEL"}, run_id="v768-sink")
+check("G2 a running shell streams its output into the turn sink",
+      any(k == "tool.output" and "V768SENTINEL" in str(d.get("text")) for k, d in _seen),
+      _seen[:2])
+EV.turn_end("v768-sink", _tok)
+check("G3 the sink is dropped when the turn ends", EV.turn_sink("v768-sink") is None)
+_http = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8").read()
+check("G4 the chat stream registers its _emit as the turn sink",
+      'set_turn_sink(sess["id"], _emit)' in _http)
+check("G5 the shell prefers the turn sink and falls back to publish",
+      "turn_sink(_sid)" in inspect.getsource(T._shell)
+      and "publish(\"tool.output\"" in inspect.getsource(T._shell))
+
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
