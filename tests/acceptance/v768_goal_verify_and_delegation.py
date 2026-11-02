@@ -196,6 +196,15 @@ check("D1 workspace.set requires approval by default",
       ws_tool.get("enabled") is True and ws_tool.get("approval") == "required", ws_tool)
 check("D2 the verifier is enabled by default", bool((cfg.get("verifier") or {}).get("enabled")))
 check("D3 best-of-N is enabled by default", bool((cfg.get("bestofn") or {}).get("enabled")))
+# The block must be REACHABLE: `_merge_into` walks a fixed section list, so a new
+# block the list does not name is silently dropped — tools.yaml would hold it,
+# `load_config()` would not, and `section_config(...)` would fall back to defaults
+# (a saved Goal-verification setting could never take effect).
+check("D4 the goal_verify block in tools.yaml is really merged, not dropped",
+      bool(cfg.get("goal_verify")), cfg.get("goal_verify"))
+check("D5 goal.verify_config() reflects the YAML block",
+      G.verify_config().get("acceptance") is True
+      and G.verify_config().get("judge") is False, G.verify_config())
 
 # ============================================================================
 # E — live tool output plumbing

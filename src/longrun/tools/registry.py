@@ -40,6 +40,7 @@ DEFAULT_CONFIG = {
     "approvals": {"timeout_secs": 300},
     "runtime": {},
     "verifier": {},
+    "goal_verify": {},
     "budget": {},
     "bestofn": {},
     "difficulty": {},
@@ -1218,8 +1219,9 @@ def _merge_into(cfg, data):
     """Deep-merge a raw config dict into `cfg` (tools merge per-tool, key by key)."""
     if not isinstance(data, dict):
         return
-    for key in ("sandbox", "approvals", "runtime", "verifier", "bestofn",
-                "difficulty", "selfevolve", "reasoning", "loop_detection", "budget"):
+    for key in ("sandbox", "approvals", "runtime", "verifier", "goal_verify",
+                "bestofn", "difficulty", "selfevolve", "reasoning",
+                "loop_detection", "budget"):
         if isinstance(data.get(key), dict):
             cfg[key].update(data[key])
     for tname, tentry in (data.get("tools") or {}).items():
