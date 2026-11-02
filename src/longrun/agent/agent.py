@@ -317,20 +317,60 @@ INVALID_REPLY_CAP = 4
 
 
 def _after_invalid_reply(streak, selfcheck_left, unfinished, cap=INVALID_REPLY_CAP):
-    """What to do after ONE unexecutable reply: 'retry' | 'selfcheck' | 'stop'.
+    """What to do after ONE unexecutable reply: 'retry' | 'selfcheck' | 'prose'.
 
-    ONE owner for the circuit breaker, so the three kinds of invalid reply (a stray
-    action dict, DSML markup, unparseable JSON) cannot drift. Measured live
-    2026-11-02 (session 777378644e9c): only the FIRST kind had a last-chance closure
-    round; the other two stopped an INCOMPLETE goal outright, so three unparseable
-    replies in a row ended the goal while the operator watched three bare RETRY
-    messages with no agent turn between them.
+    ONE owner for the reaction, so the three kinds of invalid reply (a stray action
+    dict, DSML markup, unparseable JSON) cannot drift.
+
+    A tool-use mistake must NEVER end the turn (operator rule, 2026-11-02: "non deve
+    farlo l'harness, deve impedirglielo rimandandogli un prompt"). So the cap does not
+    stop: it SWITCHES STRATEGY. Below `cap` the model gets the precise retry; on an
+    unfinished turn it may spend one bounded self-check round; after that the harness
+    demands PLAIN PROSE, which the loop accepts as the answer — so the turn still ends
+    with the model speaking instead of a harness verdict. A model that never complies
+    is bounded by the plan budget (`keepgoing`: no_progress / budget), not by a
+    reply counter, and the goal stays open and resumable.
+
+    History: this used to return 'stop' and set `_kg_stop_reason = "no_valid_action"`,
+    which killed an INCOMPLETE goal after four bad replies while the operator saw three
+    bare RETRY messages and no agent turn (session 777378644e9c, 21:54).
     """
     if int(streak or 0) < int(cap):
         return "retry"
     if int(selfcheck_left or 0) > 0 and unfinished:
         return "selfcheck"
-    return "stop"
+    return "prose"
+
+
+def _phase(on_event, sid, phase, **kw):
+    """Publish the turn's CURRENT phase: what the harness is waiting for.
+
+    A long model wait is indistinguishable from a hung turn from the outside: a local
+    38 GB model can spend minutes being loaded/swapped by the router while the GPU sits
+    idle, and the operator — who can see that — read the running dot as a lie
+    (2026-11-02: "perche' l'icona di running rimane attiva se non sta girando il
+    modello?"). The WebUI renders this as "waiting for the model <ref> — 42s".
+    """
+    try:
+        on_event("chat.phase", session=sid, at=round(time.time(), 3), phase=phase, **kw)
+    except Exception:  # noqa: BLE001 — a status event must never break a turn
+        pass
+
+
+def _prose_recovery_note(answer, tries=1):
+    """The strategy switch: stop trying to call a tool, SAY what happened.
+
+    `tries` is printed so the model can see it is not the first attempt (an identical
+    note gets an identical broken reply).
+    """
+    snip = str(answer or "").strip().replace("\n", " ")
+    return ("Your last %d replies could not be executed, so stop trying to call a tool "
+            "for a moment and reply in PLAIN PROSE (no JSON, no markup): say what you "
+            "were trying to do and what is blocking you. The last reply was: %s\n"
+            "If you DO know the call, emit exactly one of "
+            '{"action":"tool","tool":"<name>","args":{...}} — and if you are unsure of '
+            'the tool NAME, read it first with `self.tools {query:"<words>"}` or '
+            '`self.tools {}`.' % (int(tries), snip[:240] or "(empty)"))
 
 
 def _goal_block(session_id):
@@ -4144,6 +4184,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _c.append((ch, t))
 
         _t_model = time.time()
+        _phase(on_event, sess["id"], "model", model=model)
         try:
             answer, think, model = server.stream_with_fallback(
                 msgs, model, "chat", _capture, timeout=_model_call_timeout(),
@@ -4167,6 +4208,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "or make ONE tool call.", "retry")
                 continue
             raise
+        finally:
+            _phase(on_event, sess["id"], "idle")
         _record_usage(latency_ms=int((time.time() - _t_model) * 1000))
         _emit_context()  # JAG-98: live meter now uses the model's real count
         if _is_aborted(sess["id"]):
@@ -4243,6 +4286,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
                     _kg_stop_reason = "budget"
                     break
+                _phase(on_event, sess["id"], "model", model=model, bestofn=True)
                 try:
                     _a2, _t2, _m2 = server.stream_with_fallback(
                         msgs, model, "chat", lambda ch, t: None,
@@ -4250,6 +4294,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         usage=chat_usage, cancel=_abort_now)
                 except Exception:  # noqa: BLE001
                     break
+                finally:
+                    _phase(on_event, sess["id"], "idle")
                 _cands.append(_a2)
                 # JAG-431r4b: price THIS sample's usage and emit it.
                 try:
@@ -4822,11 +4868,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 _inject(_closure_check_prompt(message), "closure-check")
                 continue
-            if _decision == "stop":
-                _kg_stop_reason = "no_valid_action"
+            if _decision == "prose":
                 _last_rejected = str(answer or "").strip()[:240]
-                on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
-                break
+                on_event("plan.invalid_reply_recovery", session=sess["id"],
+                         streak=_invalid_streak, mode="prose")
+                _inject(_prose_recovery_note(answer,
+                                             _invalid_streak - INVALID_REPLY_CAP + 1), "retry")
+                continue
             _inject(_invalid_action_note(act, answer), "retry")
             continue
         if _looks_like_dsml(answer):
@@ -4842,11 +4890,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 _inject(_closure_check_prompt(message), "closure-check")
                 continue
-            if _decision == "stop":
-                _kg_stop_reason = "no_valid_action"
+            if _decision == "prose":
                 _last_rejected = str(answer or "").strip()[:240]
-                on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
-                break
+                on_event("plan.invalid_reply_recovery", session=sess["id"],
+                         streak=_invalid_streak, mode="prose")
+                _inject(_prose_recovery_note(answer,
+                                             _invalid_streak - INVALID_REPLY_CAP + 1), "retry")
+                continue
             _inject(
                 "Your reply used the model's native <|DSML|> tool-call markup, but it "
                 "named no tool the harness can run. It was: "
@@ -4868,11 +4918,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 _inject(_closure_check_prompt(message), "closure-check")
                 continue
-            if _decision == "stop":
-                _kg_stop_reason = "no_valid_action"
+            if _decision == "prose":
                 _last_rejected = str(answer or "").strip()[:240]
-                on_event("plan.no_valid_action", session=sess["id"], streak=_invalid_streak)
-                break
+                on_event("plan.invalid_reply_recovery", session=sess["id"],
+                         streak=_invalid_streak, mode="prose")
+                _inject(_prose_recovery_note(answer,
+                                             _invalid_streak - INVALID_REPLY_CAP + 1), "retry")
+                continue
             _inject(_rejected_reply_note(answer), "retry")
             continue
         if _looks_like_promise(answer) and not announce_nudged:
@@ -5064,6 +5116,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _c.append((ch, t))
 
             _t_model = time.time()
+            _phase(on_event, sess["id"], "model", model=model)
             try:
                 final_answer, think, model = server.stream_with_fallback(
                     msgs, model, "chat", _cap_final, usage=chat_usage,
@@ -5073,6 +5126,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                               status="failed",
                               error="%s: %s" % (type(_e).__name__, str(_e)[:160]))
                 raise
+            finally:
+                _phase(on_event, sess["id"], "idle")
             _record_usage(latency_ms=int((time.time() - _t_model) * 1000))
             if ((final_answer or "").strip() and not _looks_like_json_action(final_answer)
                     and not _looks_like_promise(final_answer)):
@@ -5160,11 +5215,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                        "not an executable action (reason 'no_valid_action'), so the turn "
                        "stopped before the plan had evidence-backed completion."
                        % INVALID_REPLY_CAP)
-            if _last_rejected:
-                content += ("\nLast rejected reply: " + _last_rejected.replace("\n", " "))
         else:
             content = ("⏸ Goal incomplete: stopped with reason '%s' before the current "
                        "plan had evidence-backed completion." % _reason)
+        if _last_rejected:
+            content += ("\nLast rejected reply: " + _last_rejected.replace("\n", " "))
         meta = {"model": model, "goal_incomplete": True, "reason": _reason,
                 "node": _cur_node(), "last_rejected": _last_rejected}
     if (_looks_like_json_action(content) and not _final_is_artifact) or not content:

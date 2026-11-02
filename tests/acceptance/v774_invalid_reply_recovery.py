@@ -49,6 +49,7 @@ from longrun.core import server                       # noqa: E402,F401 — impo
 from longrun.agent import agent as A                  # noqa: E402
 
 SRC = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
+HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 results = []
 
 
@@ -113,21 +114,29 @@ check("B4 the J-16 action note keeps its published contract (v764)",
 check("C1 the cap is the documented 4 and one owner decides", A.INVALID_REPLY_CAP == 4)
 check("C2 below the cap it retries", A._after_invalid_reply(1, 0, False) == "retry"
       and A._after_invalid_reply(3, 0, False) == "retry")
-check("C3 at the cap with no mercy left it stops", A._after_invalid_reply(4, 0, False) == "stop")
-check("C4 at the cap on an UNFINISHED goal it spends the last closure round",
+check("C3 at the cap it SWITCHES STRATEGY — a tool-use mistake never ends the turn",
+      A._after_invalid_reply(4, 0, False) == "prose"
+      and A._after_invalid_reply(9, 0, False) == "prose")
+check("C4 at the cap on an UNFINISHED goal it spends the last closure round first",
       A._after_invalid_reply(4, 1, True) == "selfcheck")
 check("C5 all THREE kinds of invalid reply go through the one owner",
       SRC.count("_decision = _after_invalid_reply(") == 3
       and SRC.count('if _decision == "selfcheck":') == 3
-      and SRC.count('if _decision == "stop":') == 3)
+      and SRC.count('if _decision == "prose":') == 3)
 _selfcheck_blocks = SRC.split('if _decision == "selfcheck":')[1:]
 check("C6 no branch appends the rejected reply TWICE (the old double transcript entry)",
       len(_selfcheck_blocks) == 3
       and all("msgs.append" not in b.split("continue")[0] for b in _selfcheck_blocks),
       [b.split("continue")[0][:60] for b in _selfcheck_blocks])
-check("C7 the unparseable branch no longer stops outright",
-      SRC.count('_kg_stop_reason = "no_valid_action"') == 3
+check("C7 the harness no longer STOPS the turn on a tool mistake",
+      all(l.strip() != '_kg_stop_reason = "no_valid_action"' for l in SRC.splitlines())
+      and 'on_event("plan.invalid_reply_recovery"' in SRC
       and SRC.count('_last_rejected = str(answer or "").strip()[:240]') == 3)
+check("C8 the strategy switch shows the count and the rejected reply, and names names",
+      A._prose_recovery_note('{"action":"tool","shell.exec","args":{}}', 3).count("3") >= 1
+      and "shell.exec" in A._prose_recovery_note("x shell.exec", 2)
+      and "PLAIN PROSE" in A._prose_recovery_note("x", 1)
+      and "self.tools" in A._prose_recovery_note("x", 1))
 
 # ============================================================================
 # D — the operator can read WHY it stopped, and WHAT was rejected
@@ -135,7 +144,7 @@ check("C7 the unparseable branch no longer stops outright",
 check("D1 the unparseable retry is the quoting note",
       "_inject(_rejected_reply_note(answer), \"retry\")" in SRC)
 check("D2 the DSML retry quotes the reply too", '"named no tool the harness can run. It was: "' in SRC)
-check("D3 the goal-incomplete message names the model's failure, not a bare reason code",
+check("D3 a stop that does happen still names the cause and quotes the reply",
       "not an executable action" in SRC and "Last rejected reply: " in SRC)
 check("D4 the reason is carried on the message meta for replay",
       '"last_rejected": _last_rejected' in SRC)
@@ -149,6 +158,31 @@ check("E2 the task-list half is no longer repeated in every observation",
       "task list current (mark a finished step done with evidence)" not in SRC)
 check("E3 the CONTINUE inject still owns the open list + the discipline",
       "CONTINUE — %d task(s) are still OPEN" in SRC)
+
+# ============================================================================
+# F — the running state says WHAT it is waiting for (an idle GPU is not a hang)
+# ============================================================================
+_evs = []
+A._phase(lambda kind, **d: _evs.append((kind, d)), "sid1", "model", model="local:big")
+check("F1 the harness publishes its phase with the model it is waiting for",
+      _evs and _evs[0][0] == "chat.phase" and _evs[0][1].get("phase") == "model"
+      and _evs[0][1].get("model") == "local:big" and _evs[0][1].get("at"), _evs)
+check("F2 a broken event sink cannot break the turn",
+      A._phase(lambda kind, **d: (_ for _ in ()).throw(RuntimeError("x")), "s", "model") is None)
+check("F3 every model call is bracketed by the phase (3 sites, one helper)",
+      SRC.count('_phase(on_event, sess["id"], "model"') == 3
+      and SRC.count('_phase(on_event, sess["id"], "idle")') == 3)
+check("F4 the composer carries the phase line with its own styles",
+      '<div id="turnPhase" hidden></div>' in HTML
+      and "#turnPhase .tp-dot" in HTML and "@keyframes tpPulse" in HTML)
+check("F5 the UI draws it from the event and clears it when the tokens arrive",
+      'es.addEventListener("chat.phase"' in HTML
+      and "turnPhaseShow(d.session, d.model" in HTML
+      and "turnPhaseClear(d.session)" in HTML)
+check("F6 a finished turn cannot leave the phase on screen",
+      "delete runningSessions[sid]; turnPhaseClear(sid);" in HTML)
+check("F7 the phase is LIVE-only: a replayed feed event never claims a stale wait",
+      "chat.phase" not in HTML.split("function _feedReplay(")[1].split("function _resyncDurable(")[0])
 
 print()
 print("%d/%d checks passed" % (sum(results), len(results)))

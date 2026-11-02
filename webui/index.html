@@ -1091,6 +1091,17 @@
   /* JAG-127b: queued/steer messages typed while a turn is still running */
   #queueBar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px 0; }
   #queueBar[hidden] { display: none; }
+  /* 2026-11-02: WHAT the running turn is waiting for. A long model wait — a 38 GB
+     local model being loaded/swapped by the router takes minutes, with the GPU idle —
+     was invisible: the UI said "running" and nothing else, so it read as a stuck
+     indicator (operator report). This line comes from the server's own phase event. */
+  #turnPhase { display: flex; align-items: center; gap: 6px; padding: 6px 4px 0;
+    font-size: 11px; color: var(--dim); }
+  #turnPhase[hidden] { display: none; }
+  #turnPhase .tp-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--warn); animation: tpPulse 1.4s ease-in-out infinite; }
+  #turnPhase .tp-el { color: var(--txt); font-variant-numeric: tabular-nums; }
+  @keyframes tpPulse { 0%, 100% { opacity: .3 } 50% { opacity: 1 } }
   .qchip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
     background: var(--sel); border: 1px solid var(--line); border-radius: 999px;
     padding: 3px 6px 3px 10px; font-size: 11px; color: var(--txt); }
@@ -2506,6 +2517,7 @@
       </div>
       <input type="file" id="attachInput" multiple hidden>
       <textarea id="inp" rows="1" placeholder="Message…" autofocus></textarea>
+      <div id="turnPhase" hidden></div>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
         <div class="cb-left">
@@ -5648,6 +5660,12 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); adopt(d.session);
     setRunning(d.session, true); if (!live()) return; setRun(d.run_id);
     _activeScope = null; _activeNodeId = null; _nowLast = ""; _sysInjectEl = null; _updateNowBar(); });
+  // 2026-11-02: the turn's own phase — the server says what it is waiting for, so the
+  // running state is never an unexplained dot. Live-only on purpose: the FEED replays
+  // old events, and a replayed "waiting for the model" would be a stale claim.
+  es.addEventListener("chat.phase", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    if (d.phase === "model") turnPhaseShow(d.session, d.model, d.at ? d.at * 1000 : 0);
+    else turnPhaseClear(d.session); });
   // JAG-465: a turn triggered by ANOTHER agent (a `dispatch` from a coordinator) is
   // announced by `chat.user`; the receiver's own chat must show the ASSIGNMENT as it
   // starts, not only after a reload. The bubble is attributed to the sender and
@@ -5666,6 +5684,7 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("harness.inject", e => { if (live()) harnessInject(JSON.parse(e.data)); });
   es.addEventListener("cost.usage", e => { if (live()) costLive(JSON.parse(e.data).call); });
   es.addEventListener("chat.delta", e => { const d = JSON.parse(e.data); adopt(d.session);
+    turnPhaseClear(d.session);      // tokens are arriving: it is NOT waiting any more
     if (!live()) return;
     if (d.channel === "think") { pushThink(d.text); } else { appendAnswer(d.text); }
     scroll(); });
@@ -9940,7 +9959,8 @@ let doneSessions = _loadUnread();  // JAG-218/479: finished while you were on an
                                   // panel survive a reload until the session is opened
 function setRunning(sid, on) {
   if (!sid) return;
-  if (on) { runningSessions[sid] = true; clearDone(sid); } else delete runningSessions[sid];
+  if (on) { runningSessions[sid] = true; clearDone(sid); }
+  else { delete runningSessions[sid]; turnPhaseClear(sid); }
   // JAG-414: update every row of this session (v652 draws it once, but the
   // selector stays so a future grouping change cannot leave a stale copy).
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
@@ -9956,6 +9976,36 @@ function setRunning(sid, on) {
    decides what happens to it) and becomes the red ■ when the box is empty. There is
    no second stop control: with a draft typed, Esc (caret in the composer) stops the
    turn — the operator saw the old left chip as a duplicate button. */
+/* 2026-11-02: WHAT the running turn is waiting for. The server publishes `chat.phase`
+   (`model` before it calls the provider, `idle` after) precisely because a long wait
+   is otherwise indistinguishable from a stuck turn: a local 38 GB model can spend
+   minutes loading/swapping in the router with the GPU idle, and the operator — who
+   can see the GPU — read the running dot as a lie. The elapsed time is drawn from the
+   event's own timestamp, so a reload cannot invent one. */
+let _tpSince = 0, _tpModel = "", _tpTimer = null;
+function _tpPaint() {
+  const el = $("turnPhase"); if (!el || el.hidden) return;
+  const s = Math.max(0, Math.round((Date.now() - _tpSince) / 1000));
+  const txt = s < 60 ? (s + "s") : (Math.floor(s / 60) + "m" + (s % 60) + "s");
+  const e = el.querySelector(".tp-el"); if (e) e.textContent = txt;
+}
+function turnPhaseShow(sid, model, atMs) {
+  const el = $("turnPhase"); if (!el) return;
+  if (sid && sid !== sessionId) return;      // another session's turn is its row's business
+  _tpSince = atMs || Date.now(); _tpModel = String(model || "");
+  el.hidden = false;
+  el.innerHTML = '<span class="tp-dot"></span>'
+    + '<span>waiting for the model' + (_tpModel ? " " + _modelShort(_tpModel) : "") + "</span>"
+    + '<span class="tp-el"></span>'
+    + '<span>— the harness is between you and the provider</span>';
+  _tpPaint();
+  if (!_tpTimer) _tpTimer = setInterval(_tpPaint, 1000);
+}
+function turnPhaseClear(sid) {
+  if (sid && sid !== sessionId) return;
+  const el = $("turnPhase"); if (el) { el.hidden = true; el.innerHTML = ""; }
+  if (_tpTimer) { clearInterval(_tpTimer); _tpTimer = null; }
+}
 function composerBusy() { return !!(sessionId && runningSessions[sessionId]); }
 function composerDraft() {
   const el = $("inp");
