@@ -365,6 +365,34 @@ _LEGACY_SCHEMAS = {
         "required": [],
         "subject": "session",
     },
+    "workspace": {
+        "description": ("Set the working FOLDER of an agent and, with scope=subtree, "
+                        "of every agent BELOW it in the org chart — every level, so an "
+                        "intermediate orchestrator's reports are re-rooted too. The "
+                        "change lands on BOTH the agent record and its session, which "
+                        "means the next turn and every tool really run in the new "
+                        "folder. A caller may only re-root itself or a subordinate "
+                        "(the harness supervisor may target anyone). Omit `agent` to "
+                        "target the calling session."),
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["set"], "default": "set"},
+            "agent": {"type": "string",
+                      "description": ("target agent ID ('A3'), session ID, or agent "
+                                      "name (default: this session)")},
+            "workspace": {"type": "string",
+                          "description": ("folder path (absolute, or ~-relative); "
+                                          "created when missing")},
+            "scope": {"type": "string", "enum": ["self", "subtree"], "default": "self",
+                      "description": ("self = this agent only; subtree = the agent AND "
+                                      "every report below it, at every level")},
+            "create": {"type": "boolean", "default": True,
+                       "description": ("create the folder when it does not exist "
+                                       "(false = require an existing folder)")},
+        },
+        "required": ["workspace"],
+        "subject": "workspace",
+    },
     "chapters": {
         "description": ("THIS session's THREAD — every chat GROUP in order (task = a "
                         "todo node; free = 'Free.N' chat with no todo behind it). "
@@ -710,6 +738,7 @@ _SUBTOOL_FIELDS = {
         "send": ["session", "to", "message", "text", "idempotency_key"],
         "wait": ["message_id", "timeout_secs"],
     },
+    "workspace": {"set": ["agent", "workspace", "scope", "create"]},
     "chapters": {
         "list": ["session"], "untitled": ["session", "limit"],
         "read": ["session", "id"], "title": ["session", "id", "title", "summary"],
@@ -771,6 +800,7 @@ _SUBTOOL_REQUIRED = {
     "knowledge.create_notebook": ["name"], "knowledge.discover": ["query"],
     "sessions.read": ["session"],
     "sessions.wait": ["message_id"],
+    "workspace.set": ["workspace"],
     "chapters.read": ["id"], "chapters.title": ["id", "title"],
     "memory.store": ["content"], "memory.recall": ["query"],
     "memory.set_core": ["content"],
@@ -815,6 +845,13 @@ _SUBTOOL_ANY_OF = {
 }
 
 _SUBTOOL_GUIDANCE = {
+    "workspace.set": (
+        "Re-root an agent (scope=self, default) or its WHOLE org subtree "
+        "(scope=subtree: the agent plus every report at every level). The agent "
+        "record and the session's runtime folder are written together, so the "
+        "next turn really runs in the new folder. Omit `agent` to target the "
+        "calling session; a caller may only re-root itself or a subordinate."
+    ),
     "self.tools": (
         "Discover enabled tools. Set `query` to filter names/descriptions, or "
         "`tool` to return one exact tool schema; provide one of those fields."

@@ -214,6 +214,23 @@ def _trace_escalation(tool, args, st):
         return None, None
 
 
+def _workspace_is_object_field(tool):
+    """True when `workspace` names ANOTHER folder (an object field), not a cwd.
+
+    `agent.create|update`, `session.create` and `workspace.set` take a
+    `workspace` that is the TARGET folder of the object they change. Injecting
+    the CALLER's session workspace into them (JAG-163) silently re-rooted the
+    object: an `agent.update {agent, model}` also moved that agent's folder to
+    the caller's, and an agent created without an explicit workspace was born in
+    the caller's folder instead of its dedicated one.
+    """
+    try:
+        schema = (registry.tool_spec(str(tool)) or {}).get("schema") or {}
+    except Exception:  # noqa: BLE001 — an unknown tool keeps the old injection
+        return False
+    return schema.get("_origin") == "exclusive" or str(tool).startswith("workspace.")
+
+
 def tool_action(st, tool, args, on_event, workspace=None, hist=None):
     """Gate then execute one tool action inside a run.
 
@@ -227,7 +244,8 @@ def tool_action(st, tool, args, on_event, workspace=None, hist=None):
     # JAG-163: the session workspace IS the tool's working directory. Without
     # this, `shell` fell back to the per-run scratch dir (data/sandbox/<run>) and
     # the agent explored an empty folder, never the project it was asked about.
-    if workspace and "workspace" not in args:
+    # A tool whose `workspace` is the object's TARGET folder is never injected.
+    if workspace and "workspace" not in args and not _workspace_is_object_field(tool):
         args["workspace"] = workspace
     spec = registry.tool_spec(tool)
     if spec is None:
@@ -409,7 +427,8 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
         return {"status": "blocked", "reason": "tool %r is disabled (allowlist)" % tool}
     args = normalize_tool_args(tool, dict(args or {}))
     # JAG-163: run the tool INSIDE the session workspace (see tool_action above).
-    if workspace and "workspace" not in args:
+    # A tool whose `workspace` is the object's TARGET folder is never injected.
+    if workspace and "workspace" not in args and not _workspace_is_object_field(tool):
         args["workspace"] = workspace
     # I-1: an explicit scope wins; otherwise the SESSION's org role decides, so a
     # delegated turn (job assignment / cross-session dispatch) cannot use a tool

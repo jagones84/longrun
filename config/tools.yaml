@@ -297,6 +297,15 @@ tools:
     enabled: true
     approval: auto
 
+  # workspace re-rooting: an orchestrator links a folder to itself or to its
+  # whole org subtree (all levels). The agent record and the session's runtime
+  # workspace are written together; a caller may only target itself or a
+  # subordinate (the harness supervisor may target anyone). Auto: it moves a
+  # pointer, never deletes content.
+  workspace:
+    enabled: true
+    approval: auto
+
   # thread ledger (JAG-431j): THIS session's chat GROUPS in chronological order (task +
   # free), so the agent can recall a whole long run after many compactions, and TITLE
   # the free groups from their real content. The ledger is written by the harness

@@ -192,6 +192,15 @@ class AgentRegistry:
         """
         return [a["id"] for a, _ in self._subtree(ref, depth)]
 
+    def subtree(self, ref):
+        """Every agent at or below `ref` — ALL org levels, cycle-safe.
+
+        `team_of(depth=1)` is capped by the caller; a re-rooting operation needs
+        the whole descendancy (an intermediate orchestrator's reports included).
+        [] when the agent is unknown.
+        """
+        return [a["id"] for a, _ in self._subtree(ref, 10 ** 6)]
+
     def team_tree(self, ref, depth=1):
         """v629: {agent_id: parent_agent_id} for the subtree under `ref`.
 
@@ -404,6 +413,53 @@ class AgentRegistry:
         except Exception:  # noqa: BLE001 — the sync must never fail the call
             pass
         return {"ok": True, "agent": a}
+
+    def set_workspace(self, ref, path):
+        """Set an agent's workspace in BOTH stores — record + session.
+
+        The session's `workspace` is the RUNTIME authority
+        (`rules.resolve_workspace`), so a record-only write shows the new folder in
+        the org table while every tool keeps running in the old one. Mirrors
+        `set_model`: one identity, two stores, one writer.
+        """
+        p = str(path or "").strip()
+        if not p:
+            return {"ok": False, "error": "workspace path required"}
+        with _LOCK:
+            d = _load()
+            a = self._find(d, ref)
+            if not a:
+                return {"ok": False, "error": "agent not found: %s" % ref}
+            previous = a.get("workspace")
+            a["workspace"] = p
+            a.setdefault("name", a["id"])
+            _save(d)
+            rec = dict(a)
+        sid = rec.get("session")
+        session_previous = None
+        try:
+            from longrun.memory import stores
+            sess = stores.load_session(sid) if sid else None
+            if sess is not None:
+                session_previous = sess.get("workspace")
+                if session_previous != p:
+                    sess["workspace"] = p
+                    stores.save_session(sess)
+        except Exception:  # noqa: BLE001 — the registry write already succeeded
+            pass
+        try:
+            from longrun.core import server as srv
+            srv.publish("agent.updated", session=sid, agent=dict(rec))
+        except Exception:  # noqa: BLE001 — publish must never fail a write
+            pass
+        if sid:
+            try:
+                from longrun.core.events import publish
+                publish("workspace.update", session=sid, workspace=p, ok=True)
+            except Exception:  # noqa: BLE001
+                pass
+        return {"ok": True, "agent": rec, "session": sid, "workspace": p,
+                "previous": previous, "session_previous": session_previous}
 
     @staticmethod
     def _resolve(d, ref):

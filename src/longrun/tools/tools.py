@@ -2598,6 +2598,146 @@ def _exclusive_tool(tool, args, run_id=None):
     return res
 
 
+def _agent_record(ref):
+    """Resolve a session id, an agent id ('A3') or an agent name to its record."""
+    from longrun.agent import agents as agents_mod
+    raw = str(ref or "").strip()
+    if not raw:
+        return None
+    reg = agents_mod.REGISTRY
+    rec = reg.resolve(raw)                    # session id or A-id
+    if rec:
+        return rec
+    low = raw.lower()
+    for a in reg.list()["agents"]:
+        if str(a.get("name") or "").strip().lower() == low:
+            return a
+    return None
+
+
+def _workspace(args, run_id):
+    """`workspace.set` — re-root ONE agent or its WHOLE org subtree.
+
+    Authority model: the harness supervisor (or a session granted
+    `allow_longrun_agent`) may target any agent; every other caller may only
+    re-root itself or an agent BELOW it in the `reports_to` chain, so a teammate
+    can never hijack a peer's folder. The write goes through the single writer
+    `AgentRegistry.set_workspace`, which keeps the org record and the session
+    (`rules.resolve_workspace`) in lockstep.
+    """
+    from longrun.agent import agents as agents_mod
+    from longrun.memory import stores
+
+    def _err(msg):
+        return {"ok": False, "tool": "workspace.set", "exit_code": 2, "error": msg}
+
+    raw = str(args.get("workspace") or "").strip()
+    if not raw:
+        return _err("workspace path required")
+    scope = str(args.get("scope") or "self").strip().lower()
+    if scope not in ("self", "subtree"):
+        return _err("scope must be 'self' or 'subtree'")
+    create = args.get("create")
+    create = True if create is None else bool(create)
+
+    reg = agents_mod.REGISTRY
+    caller = str(run_id or "").strip()
+    target_ref = str(args.get("agent") or "").strip()
+    target = _agent_record(target_ref) if target_ref else _agent_record(caller)
+    if target_ref and target is None:
+        return _err("agent not found: %s" % target_ref)
+
+    try:
+        from longrun.agent import longrun_agent as lra
+        privileged = lra.session_has_access(caller)
+    except Exception:  # noqa: BLE001 — a gate failure must not grant access
+        privileged = False
+    caller_rec = _agent_record(caller)
+    if not privileged:
+        if caller_rec is None:
+            return _err("session %r is not an agent: it can only re-root itself, "
+                        "and no agent record exists for it" % caller)
+        if target is None:
+            target = caller_rec
+        if (caller_rec["id"] != target["id"]
+                and caller_rec["id"] not in reg.chain_of_command(target["id"])):
+            return _err("agent %s is not above %s in the org chart — only itself "
+                        "or a subordinate can be re-rooted"
+                        % (caller_rec["id"], target["id"]))
+
+    # Authorized: only now may the request touch the filesystem, so a refused
+    # call can never leave a folder behind.
+    path = os.path.abspath(os.path.expanduser(raw))
+    if os.path.dirname(path) == path:
+        return _err("refusing the filesystem root as a workspace: %s" % path)
+    if os.path.exists(path) and not os.path.isdir(path):
+        return _err("not a folder: %s" % path)
+    if not os.path.isdir(path):
+        if not create:
+            return _err("no such folder: %s" % path)
+        try:
+            os.makedirs(path, exist_ok=True)
+        except OSError as exc:
+            return _err("cannot create folder %s: %s" % (path, exc))
+
+    records = [target] if target else []
+    if scope == "subtree" and target and target.get("id"):
+        records = [reg.resolve(aid) for aid in reg.subtree(target["id"])]
+    if not records:
+        # A bare session with no agent record: pin the folder on the session,
+        # which is exactly what `rules.resolve_workspace` reads at turn time.
+        if not caller:
+            return _err("no agent or session to re-root")
+        rec = {"id": None, "session": caller, "name": None,
+               "workspace": None}
+        records = [rec]
+
+    changed = []
+    for rec in records:
+        if not rec:
+            continue
+        sid = str(rec.get("session") or "")
+        if rec.get("id"):
+            res = reg.set_workspace(rec["id"], path)
+            if not res.get("ok"):
+                return dict(res, tool="workspace.set", exit_code=2)
+            previous = res.get("previous")
+        else:
+            previous = None
+            sess = stores.load_session(sid) if sid else None
+            if sess is None:
+                continue
+            previous = sess.get("workspace")
+            if previous != path:
+                sess["workspace"] = path
+                stores.save_session(sess)
+            try:
+                from longrun.core.events import publish
+                publish("workspace.update", session=sid, workspace=path, ok=True)
+            except Exception:  # noqa: BLE001 — an event must never block a write
+                pass
+        changed.append({"agent": rec.get("id"), "name": rec.get("name"),
+                        "session": sid, "previous": previous,
+                        "workspace": path})
+
+    try:
+        from longrun.memory import autoidx
+        autoidx.start(path)             # same background index a folder gets in the UI
+    except Exception:  # noqa: BLE001 — indexing is best effort
+        pass
+    return {
+        "ok": True,
+        "tool": "workspace.set",
+        "exit_code": 0,
+        "workspace": path,
+        "scope": scope,
+        "agents": changed,
+        "count": len(changed),
+        "stdout": "workspace set for %d agent(s) [scope=%s]: %s"
+                  % (len(changed), scope, path),
+    }
+
+
 _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "fs.read": _fs_read, "fs.write": _fs_write, "fs.edit": _fs_edit,
              "diff": _diff,
@@ -2609,6 +2749,7 @@ _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "improve": _improve,
              "reconcile": _reconcile, "reconcile.run": _reconcile,
              "sessions": _sessions, "index": _index,
+             "workspace": _workspace, "workspace.set": _workspace,
              "knowledge": _knowledge, "chapters": _chapters, "context": _context,
              # JAG-426: baseline tools every standard harness ships
              "python": _python, "python.run": _python,

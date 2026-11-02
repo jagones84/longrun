@@ -1201,9 +1201,21 @@ def _agent_update(args):
             "error": "nothing to update — pass at least one of "
                      "name/role/reports_to/model/workspace/daily_budget",
         }
+    # A workspace is a two-store value: the org record AND the session (the
+    # runtime authority `rules.resolve_workspace`). `designate` only writes the
+    # record, so hand this one field to the single two-store writer instead —
+    # otherwise the table showed the new folder while every tool kept running in
+    # the old one. A subtree re-root is `workspace.set`.
+    ws_new = kw.pop("workspace", None)
     res = agents_mod.REGISTRY.designate(sid, **kw)
     if not res.get("ok"):
         return res
+    if ws_new:
+        ws_res = agents_mod.REGISTRY.set_workspace(res["agent"]["id"], ws_new)
+        if not ws_res.get("ok"):
+            return ws_res
+        kw["workspace"] = ws_new
+        res["agent"] = ws_res["agent"]
     if "model" in kw:
         try:
             stores._set_session_model(sid, kw["model"])
