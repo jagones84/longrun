@@ -15,7 +15,10 @@ Contract:
      actually reaches the operator;
   D) inspector views are draggable to reorder on the shared DragSort engine and
      the order persists;
-  E) the pins the old tests rely on survive (head/toolbar markup, ▲▼ controls).
+  E) the pins the old tests rely on survive (head/toolbar markup, ▲▼ controls);
+  F) RH-1/RH-2 (2026-11-02) — the inspector has the SAME anatomy as the sessions
+     rail: a FIXED head and one scrolling `.insp-list` below it, both heads on the
+     same surface with the one hairline directly under the title.
 
 Deterministic: source contracts only. No browser, no server, no model.
 """
@@ -78,9 +81,11 @@ check("D2 the reorder math is the same one the session list uses",
       # stack — the grouped/region shape DragSort.bind models for the sessions
       # rail never produced a drop target here), while the pure reorder math stays
       # shared with the session list.
+      # RH-1: the sections now sit inside `#inspector .insp-list`, so both the hit
+      # test and the selector are DESCENDANT (a `>` child selector no longer matches).
       "grip.addEventListener(\"pointerdown\"" in UI
       and "DragSort.moveItem(_inspSections().map(s => s.dataset.insp)" in UI
-      and 'const row = (under && under.closest) ? under.closest("#inspector > section[data-insp]") : null;' in UI)
+      and 'const row = (under && under.closest) ? under.closest("#inspector section[data-insp]") : null;' in UI)
 check("D3 the order is persisted and re-applied on load",
       'const INSP_ORDER_KEY = "sf_insp_order";' in UI
       and "DragSort.moveItem(_inspSections().map(s => s.dataset.insp)" in UI
@@ -96,6 +101,25 @@ check("E2 the inspector bulk controls survive",
       and '$("inspCollapseAll").onclick = () => _setAllInspector(false);' in UI)
 check("E3 the pinned flex declaration of .insp-hd is untouched",
       "#inspector .insp-hd { display: flex; align-items: center; flex-wrap: wrap;" in UI)
+
+# ---- F: the head is FIXED in both rails (one anatomy, one divider) -----------
+# RH-1/RH-2, operator verbatim: *"la barra inspector cosiccome la barra sessions nel lh
+# panel deve essere fissa in alto no scrollable. uniforma anche lo stile tra i due"*.
+check("F1 the inspector is a flex column and is NOT the scroller any more",
+      "#inspector { display: flex; flex-direction: column; flex: 1 1 auto;" in UI
+      and "min-height: 0; overflow: hidden; padding: 0; }" in UI
+      and "#inspector { padding: 0; }" in UI)
+check("F2 the ONE scrolling list of the inspector is `.insp-list`",
+      "#inspector .insp-list { flex: 1 1 auto; min-height: 0;" in UI
+      and "overflow-y: auto; overflow-x: hidden; padding: 0 0 8px; }" in UI)
+check("F3 the markup wraps the sections in exactly one `.insp-list`",
+      UI.count('<div class="insp-list">') == 1
+      and "<!-- /insp-list (RH-1) -->" in UI
+      and UI.index('<div class="insp-list">') > UI.index('class="insp-tools"')
+      and UI.index('<div class="insp-list">') < UI.index('<section data-insp="approvals">'))
+check("F4 both heads are the SAME surface and carry the ONE divider",
+      "background: var(--panel); border-bottom: 1px solid var(--line);" in UI
+      and "aside .rail-tools { gap: 4px; padding: 4px 12px 8px; border-bottom: 0; }" in UI)
 
 print("\n---\nv758: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

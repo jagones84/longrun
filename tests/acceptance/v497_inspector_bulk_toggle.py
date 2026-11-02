@@ -58,7 +58,9 @@ check("B both controls call the shared all-sections handler",
       and '$("inspExpandAll").onclick = () => _setAllInspector(true);' in HTML)
 check("C bulk toggle updates every inspector accordion and persists its state",
       bool(bulk)
-      and 'querySelectorAll("#inspector > section[data-insp]")' in bulk.group(1)
+      # RH-1: the sections live inside `#inspector .insp-list` (the scrolling list
+      # under the fixed head), so the selector is a descendant, not a child.
+      and 'querySelectorAll("#inspector section[data-insp]")' in bulk.group(1)
       and "body.hidden = !open" in bulk.group(1)
       and 'localStorage.setItem("sf_insp_" + section.dataset.insp' in bulk.group(1))
 check("D expanding all loads only sections that were previously collapsed",
