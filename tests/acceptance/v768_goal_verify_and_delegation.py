@@ -395,6 +395,17 @@ G.resume(_sid3)
 G.complete(_sid3, "done")
 check("I2e a COMPLETED goal does not hijack an ordinary message",
       H._goal_mode_of({"id": _sid3}, False) is False)
+# I2f: the stored `completed` is a CLAIM — the plan is the truth. A completed goal
+#      whose plan reopened is work in progress again, so it owns the turn.
+write_graph(_sid3, [node("n1", "done", ["out.txt"]), node("n2", "todo")])
+check("I2f a COMPLETED goal whose plan REOPENED owns the turn again",
+      H._goal_mode_of({"id": _sid3}, False) is True,
+      (G.load(_sid3) or {}).get("status"))
+_sid3b = mk_session("completed-no-plan")
+G.start(_sid3b, "done and gone")
+G.complete(_sid3b, "done")
+check("I2g a completed goal with NO plan (nothing to pursue) stays a normal turn",
+      H._goal_mode_of({"id": _sid3b}, False) is False)
 
 # I3: an ordinary message inside an active goal must NOT replace its objective.
 _sid4 = mk_session("objective-kept")

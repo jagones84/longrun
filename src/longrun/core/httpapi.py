@@ -228,14 +228,24 @@ def _goal_mode_of(sess, requested):
 
     `requested` (`mode=goal`, i.e. `/goal`) still STARTS or CONTINUES a goal. A PAUSED
     or COMPLETED goal never hijacks an ordinary message: pausing is the operator's
-    way to say "not now", and a completed goal needs a new objective to restart.
+    way to say "not now", and a completed goal needs a new objective to restart —
+    EXCEPT when the plan reopened (a step moved back to open): that goal is work in
+    progress again, and it would be the same defect in a quieter form to let the
+    session drift into normal turns while the bar shows work left.
+
+    The truth comes from `goal.status()` (the effective-status owner), never from a
+    second copy of the rule here. An empty/absent plan is NOT a reopened goal: there
+    is no step to pursue.
     """
     if requested:
         return True
     try:
         from longrun.plan import goal as goal_mod
-        rec = goal_mod.load(sess.get("id"))
-        return bool(rec and rec.get("status") == "active")
+        st = goal_mod.status(sess.get("id")) or {}
+        eff = st.get("effective_status")
+        if eff == "active":
+            return True
+        return eff == "reopened" and bool((st.get("progress") or {}).get("open"))
     except Exception:  # noqa: BLE001 — the store must never break a chat turn
         return False
 
