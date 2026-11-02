@@ -198,6 +198,15 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
                                                usage, guard, cancel,
                                                no_reasoning=no_reasoning,
                                                max_tokens=max_tokens)
+                # A COMPLETELY blank reply (no answer AND no reasoning) is a
+                # provider defect, not an answer: the agent loop nudged the same
+                # model twice and then killed the turn ("the model returned an
+                # empty message three times", 6× on 2026-11-02 — three lost
+                # turns). Walk the chain instead. A reasoning-only reply is NOT
+                # blank (`think` is non-empty) and keeps its own recovery path.
+                if (not str(answer or "").strip() and not str(think or "").strip()
+                        and i + 1 < len(chain)):
+                    break  # next candidate
                 if i > 0:
                     publish("model.fallback", role=role, from_model=chain[0],
                             to_model=alias)
