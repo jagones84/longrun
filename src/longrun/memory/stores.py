@@ -868,6 +868,18 @@ def persist_inject(sess, kind, text, node=None, after=None):
     try:
         if isinstance(node, dict):
             node = node.get("id")
+        # RH-9 (operator, 2026-11-03): "perché rimette il system prompt nella stessa
+        # sessione? tra due messaggi vicini?" — a repeated no-op round injects the
+        # SAME text again, and the WebUI drew two identical `[harness]` bubbles between
+        # two adjacent messages (session 777378644e9c: two `nudge` records, `after=3`
+        # and `after=5`, both "Task list saved (0 new step(s)) …"). One event must be
+        # ONE object: an inject identical to the previous one in kind AND text is the
+        # same event, so it is not recorded twice. `injects` is the UI record (never
+        # sent to the model), so this changes nothing the model sees.
+        _prev = sess.get("injects") or []
+        if _prev and str(_prev[-1].get("text") or "") == str(text or "") \
+                and str(_prev[-1].get("kind") or "") == str(kind or "inject"):
+            return _prev[-1]
         rec = {"kind": str(kind or "inject"), "text": str(text or "")[:8000],
                "node": node,
                "after": (len(sess.get("messages", [])) if after is None else int(after)),

@@ -147,6 +147,25 @@ check("4d the compacted head is wrapped in a 'compacted history' group, not left
 check("4e the head group neither consumes a Free.N ordinal nor is renamed by the ledger",
       ui.count('details.fgroup:not(.head)') >= 2)
 
+# ---- 5. RH-9 (operator, 2026-11-03): one event is ONE inject ------------------
+# "perché rimette il system prompt nella stessa sessione? tra due messaggi vicini?" —
+# a repeated no-op round re-injected the SAME text and the WebUI drew two identical
+# `[harness]` bubbles between two adjacent messages (live session 777378644e9c: two
+# `nudge` records, after=3 and after=5, both "Task list saved (0 new step(s)) …").
+_f = stores.get_or_create_session(None, "v485-rh9")
+_fs = stores.load_session(_f["id"])
+_a = stores.persist_inject(_fs, "nudge", "same text", after=1)
+_b = stores.persist_inject(_fs, "nudge", "same text", after=2)
+check("5a an inject identical to the PREVIOUS one is the same object, not a second",
+      len(_fs["injects"]) == 1 and _a is _fs["injects"][-1] and _b is _a,
+      len(_fs["injects"]))
+stores.persist_inject(_fs, "observation", "same text", after=2)
+check("5b the SAME text under a DIFFERENT kind is still its own record",
+      len(_fs["injects"]) == 2)
+stores.persist_inject(_fs, "nudge", "same text", after=3)
+check("5c after something else happened, the nudge is recorded again",
+      len(_fs["injects"]) == 3)
+
 print("---")
 okc = sum(results)
 print("\nv485: %d/%d PASS" % (okc, len(results)))
