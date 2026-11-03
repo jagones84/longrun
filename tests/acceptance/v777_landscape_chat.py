@@ -31,7 +31,11 @@ def check(name, ok, detail=""):
 # The block itself: it must be the ONLY owner of this behaviour, gated on landscape.
 _BLK = UI[UI.find("@media (orientation: landscape) and (max-height: 500px)"):]
 _BLK = _BLK[:_BLK.find("\n  }") + 4] if "\n  }" in _BLK else _BLK
-_REST = UI.replace(_BLK, "")
+# RH-21: the tabs left the bottom edge for their OWN block (the same landscape, plus
+# the phone width), so a check that says "not in the base layout" must strip both.
+_RAILB = UI[UI.find("@media (orientation: landscape) and (max-height: 500px) and (max-width: 900px)"):]
+_RAILB = _RAILB[:_RAILB.find("\n  }") + 4] if "\n  }" in _RAILB else _RAILB
+_REST = UI.replace(_BLK, "").replace(_RAILB, "")
 check("A0 the landscape block exists and is gated on orientation + height",
       "@media (orientation: landscape) and (max-height: 500px)" in UI and len(_BLK) > 800,
       len(_BLK))
@@ -55,9 +59,9 @@ check("A4 everything below the rail starts at its right edge",
       and "#controlView { top: 0; left: 44px; }" in _BLK
       and "body.show-left #aside {" in _BLK and "top: 0; left: 44px;" in _BLK
       and "body.show-right [data-col=\"context\"] { top: 0; }" in _BLK)
-check("A5 the tab bar keeps the five icons and drops the five words",
-      "#tabbar { height: 44px; min-height: 44px; }" in _BLK
-      and "#tabbar button > span { display: none; }" in _BLK)
+check("A5 the BOTTOM tab bar is no longer part of this block (RH-21 moved it to a rail)",
+      "#tabbar { height: 44px; min-height: 44px; }" not in _BLK
+      and "#tabbar button > span { display: none; }" not in _BLK)
 check("A6 the two floating edge handles are hidden (the rail and the tabs do their job)",
       ".edge-handle { display: none !important; }" in _BLK)
 check("A7 the composer and the transcript get the reclaimed pixels",
@@ -73,6 +77,32 @@ check("A8 the desktop/portrait layout is untouched",
       "#topbar { position: sticky; top: 0; z-index: 25; }" in _REST
       and "#tabbar button > span { display: none; }" not in _REST
       and "#app { margin-left: 44px; }" not in _REST)
+
+# --- B: RH-21 — the five tabs are a RIGHT rail, so the bottom edge is free ----------
+# Operator: *"nella visione orizzontale ruotata mobile i tasti chat sessions etcetera
+# staranno in barra laterale a destra così non occupano spazio sotto"*.
+check("B0 the rail has its OWN block (landscape + phone width) and it exists once",
+      len(_RAILB) > 400
+      and UI.count("and (max-width: 900px) {") >= 1)
+check("B1 the tabs are a fixed 44px RIGHT rail, same anatomy as the left one",
+      "#tabbar {\n      position: fixed; right: 0; top: 0; bottom: 0; left: auto;" in _RAILB
+      and "width: 44px; height: auto; min-height: 0;" in _RAILB
+      and "flex-direction: column; align-items: center; justify-content: flex-start;" in _RAILB
+      and "border-left: 1px solid var(--line);" in _RAILB)
+check("B2 every tab keeps its ICON and stays 32-36px (no word, no second row)",
+      "#tabbar button { flex: 0 0 auto; width: 36px; min-height: 36px; height: 36px;" in _RAILB
+      and "#tabbar button > span { display: none; }" in _RAILB)
+check("B3 the active tab is marked by the SAME accent, never by a box",
+      "#tabbar button.active { color: var(--acc);" in _RAILB
+      and "color-mix(in srgb, var(--acc) 16%, transparent)" in _RAILB)
+check("B4 nothing runs UNDER the rail (app + control deck stop at its inner edge)",
+      "#app { margin-right: 44px; }" in _RAILB
+      and "#controlView { right: 44px; }" in _RAILB
+      and "calc(100vw / var(--zoom, 1) - 88px)" in _BLK)
+check("B5 the rail stays reachable above the drawers (z 26 > the 15/18 of a drawer)",
+      "z-index: 26;" in _RAILB)
+check("B6 '--sf-bottombar' is 0 for a RAIL (it is not bottom chrome any more)",
+      'tbs.position !== "fixed"' in UI and "tb.offsetHeight : 0" in UI)
 
 print("\n---\nv777: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

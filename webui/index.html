@@ -2433,8 +2433,8 @@
     #app { margin-left: 44px; }
     #controlView { top: 0; left: 44px; }
     body.show-left #aside {
-      top: 0; left: 44px; width: calc(100vw / var(--zoom, 1) - 44px) !important;
-      max-width: calc(100vw / var(--zoom, 1) - 44px); }
+      top: 0; left: 44px; width: calc(100vw / var(--zoom, 1) - 88px) !important;
+      max-width: calc(100vw / var(--zoom, 1) - 88px); }
     body.show-right [data-col="context"] { top: 0; }
     body.show-left #resize-left, body.show-right #resize-right { top: 0; }
     /* the two floating edge handles are the desktop way to show/hide a panel; on a
@@ -2446,10 +2446,8 @@
     #chatHead { height: 26px; min-height: 26px; padding: 0 8px; }
     #chatHead .ch-id { display: none; }
 
-    /* the tab bar keeps the five icons, drops the five words */
-    #tabbar { height: 44px; min-height: 44px; }
-    #tabbar button { padding: 2px 0; gap: 0; }
-    #tabbar button > span { display: none; }
+    /* the tab bar is no longer BOTTOM chrome in this layout: it became a RIGHT rail
+       (see the rule right below this block) — the words stay gone, the icons stay. */
 
     /* the composer: same controls, tighter rows */
     #composer { padding-top: 4px; padding-bottom: 4px; gap: 4px; }
@@ -2457,6 +2455,34 @@
     #inp { min-height: 32px; padding: 7px 11px; }
     #composerBar { height: 32px; min-height: 32px; }
     #log { padding: 10px 12px; }
+  }
+
+  /* RH-21 (operator, 2026-11-03): *"nella visione orizzontale ruotata mobile i tasti
+     chat sessions etcetera staranno in barra laterale a destra così non occupano
+     spazio sotto"*. The five tabs leave the bottom edge and become a 44 px rail on the
+     RIGHT — the mirror of the left rail the top bar already turned into — so the
+     transcript keeps the 44 px the bottom bar used to eat. Same anatomy as the left
+     rail (one divider, one icon size, one active marker), per the twin-surfaces rule. */
+  @media (orientation: landscape) and (max-height: 500px) and (max-width: 900px) {
+    #tabbar {
+      position: fixed; right: 0; top: 0; bottom: 0; left: auto;
+      width: 44px; height: auto; min-height: 0; margin: 0;
+      padding: 6px 0 calc(6px + env(safe-area-inset-bottom));
+      flex-direction: column; align-items: center; justify-content: flex-start;
+      gap: 4px; border-top: 0; border-left: 1px solid var(--line);
+      background: var(--menubg); z-index: 26; }
+    #tabbar button { flex: 0 0 auto; width: 36px; min-height: 36px; height: 36px;
+      padding: 0; gap: 0; border-radius: 8px; }
+    #tabbar button > span { display: none; }
+    #tabbar button svg { width: 17px; height: 17px; }
+    #tabbar button.active { color: var(--acc);
+      background: color-mix(in srgb, var(--acc) 16%, transparent); }
+    /* nothing may run UNDER the rail: the app area ends at its inner edge, and the
+       context panel keeps being the full-screen overlay it already is on a phone
+       (z 15 < 26, so the rail stays reachable above it — same contract as the old
+       bottom bar). */
+    #app { margin-right: 44px; }
+    #controlView { right: 44px; }
   }
 </style>
 <script>
@@ -15777,7 +15803,12 @@ function positionDrawerResizers() {
   // ABOVE the mobile tab bar instead of under it — the nav must stay reachable, not
   // hidden behind the drawer. On desktop the tab bar is display:none, so this is 0.
   const tb = document.getElementById("tabbar");
-  const bh = (tb && getComputedStyle(tb).display !== "none") ? tb.offsetHeight : 0;
+  // RH-21: "bottom chrome" means a bar IN THE FLOW at the bottom edge. In phone
+  // landscape the same element is a fixed RIGHT rail, so its `offsetHeight` is the
+  // whole viewport — publishing that would end every drawer 390 px above the bottom.
+  // The discriminator is `position`, not the height: a rail owns the side, not the bottom.
+  const tbs = tb ? getComputedStyle(tb) : null;
+  const bh = (tbs && tbs.display !== "none" && tbs.position !== "fixed") ? tb.offsetHeight : 0;
   document.documentElement.style.setProperty("--sf-bottombar", bh + "px");
   const spec = [
     { el: $("resize-left"), sel: '[data-col="sessions"]', side: "left" },
