@@ -82,11 +82,15 @@ check("1k the session notebook of the live chat is always marked",
       "kb-current" in HTML and "* current" in HTML
       and "function _kbSyncCurrent(" in HTML
       and "_kbSyncCurrent();" in _sel, "")
-check("1d #toolsBar starts hidden (shown only with an open session)",
+# RH-27 (operator, 2026-11-03): the rail is no longer session-gated as a WHOLE — only
+# its MID cluster is. Its FOOT (settings + the ✨ AI draft) must stay reachable with no
+# session: settings configures a fresh install, and the ✨ writes the empty-chat opener.
+check("1d #toolsBar keeps its initial hidden attr (JS reveals it on load)",
       re.search(r'id="toolsBar"[^>]*hidden', HTML) is not None, "")
-check("1e visibility is driven by _updateTreeTools()",
+check("1e visibility is driven by _updateTreeTools() (mid gated, rail not)",
       "function _updateTreeTools(" in HTML
-      and re.search(r't\.hidden\s*=\s*!sessionId', HTML) is not None, "")
+      and re.search(r'mid\.hidden\s*=\s*!sessionId', HTML) is not None
+      and re.search(r't\.hidden\s*=\s*false', HTML) is not None, "")
 
 # --- 2: the functions --------------------------------------------------------
 check("2a revealActiveSession() is defined", "function revealActiveSession(" in HTML, "")

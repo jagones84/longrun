@@ -706,10 +706,30 @@
      right inspector, vertically centered. A proper panel that will grow over time
      (more tools + an important graphic element). Holds the chat-group controls that
      used to float at the bottom-right of the log. */
-  #toolsBar { display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 6px; flex: 0 0 46px; width: 46px; min-width: 46px; padding: 10px 0;
+  #toolsBar { display: flex; flex-direction: column; align-items: center;
+    flex: 0 0 46px; width: 46px; min-width: 46px;
+    /* RH-27 (operator, 2026-11-03): the FOOT must stop ABOVE the mobile tab bar, not at
+       the page's very bottom, so the gear and the ✨ land LEVEL WITH THE SEND BUTTON.
+       `--sf-bottombar` is the bottom-chrome height the drawers already use (JAG-381);
+       it is 0 on desktop, where the composer is already the page's bottom edge. */
+    padding: 10px 0 calc(10px + var(--sf-bottombar, 0px));
     background: var(--panel); border-left: 1px solid var(--line); border-right: 1px solid var(--line);
     z-index: 5; }
+  /* RH-27 (operator, 2026-11-03): the rail has TWO levels. `.tb-mid` keeps the tool
+     cluster vertically centred (its old position); `.tb-foot` is pinned to the rail's
+     bottom so settings and the ✨ AI draft land LEVEL WITH THE SEND BUTTON, separated
+     from the tools by a hairline — "stessa altezza del send button, separato dagli
+     altri oggetti della sidebar". */
+  #toolsBar .tb-mid { flex: 1 1 auto; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px; width: 100%; }
+  #toolsBar .tb-foot { flex: 0 0 auto; display: flex; flex-direction: column;
+    align-items: center; gap: 6px; width: 100%; padding-top: 8px;
+    border-top: 1px solid var(--line); }
+  /* RH-27: the ✨ in the rail stacks over its state icon instead of sitting beside it. */
+  #toolsBar .gen-bar { flex-direction: column; }
+  /* RH-27: a `display: flex` rule outranks the UA `[hidden]`, so the session-scoped
+     mid cluster needs its own explicit hide when there is no session. */
+  #toolsBar .tb-mid[hidden] { display: none; }
   #toolsBar[hidden] { display: none; }
   #toolsBar button { width: 30px; height: 30px; padding: 0; font-size: 14px; line-height: 1;
     display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
@@ -1275,7 +1295,10 @@
     .resizer { display: none; }
     body.show-right [data-col="context"] { display: flex !important; position: fixed; right: 46px; top: 52px; bottom: var(--sf-bottombar, 0px); width: min(var(--drawer-w-right, 300px), calc(100vw - 46px)) !important; transform: none; z-index: 15; box-shadow: -12px 0 30px rgba(0,0,0,.42); }
     body.show-right #toolsBar:not([hidden]) { display: flex; position: fixed; right: 0; top: 52px;
-      bottom: var(--sf-bottombar, 0px); z-index: 17; }
+      bottom: var(--sf-bottombar, 0px); z-index: 17;
+      /* RH-27: this FIXED drawer is already offset by `bottom`, so drop the in-flow
+         padding that lifts the foot above the tab bar (else it counts twice). */
+      padding-bottom: 10px; }
     body.show-right #toolsBar[hidden] { display: none; }
     /* JAG-368: a fixed DRAWER gets a draggable grip on its INNER edge (left, for the
        right drawer) so the inspector can be widened on a phone too. Positioned in JS. */
@@ -2101,10 +2124,10 @@
   #topbar .topTabs { margin-right: 4px; }
   #topbar .pill.sbox { background: transparent; border-color: transparent; padding: 4px 8px; }
   #topbar .pill.sbox:hover { background: var(--hover); border-color: var(--line); }
-  #topbar #settingsBtn, #topbar #palette-open {
+  #topbar #palette-open {
     height: 30px; min-height: 30px; padding: 0 10px; border-radius: var(--r-sm);
     background: transparent; border-color: transparent; color: var(--dim); font-size: 12px; }
-  #topbar #settingsBtn:hover, #topbar #palette-open:hover {
+  #topbar #palette-open:hover {
     color: var(--txt); background: var(--hover); border-color: var(--line); }
   #topbar #buildChip { height: 30px; min-height: 30px; border-color: var(--acc); color: var(--acc); }
   .sessbadge { background: var(--hover); border-color: var(--line); }
@@ -2424,7 +2447,7 @@
     #topbar .sessbadge, #topbar .u-f1 { display: none; }
     #topbar #sbxPill { padding: 0; width: 30px; height: 26px; justify-content: center; }
     #topbar #sbxPill #sbxTxt { display: none; }
-    #topbar #settingsBtn, #topbar #palette-open, #topbar #buildChip {
+    #topbar #palette-open, #topbar #buildChip {
       width: 32px; height: 28px; min-height: 28px; padding: 0; }
     #topbar #buildChip { font-size: 0; }
     #topbar #buildChip::before { content: "⇪"; font-size: 13px; }
@@ -2534,14 +2557,11 @@
   <!-- JAG-424: the sandbox pill moved OUT of the ☰ menu onto the banner line. -->
   <span class="pill sbox" id="sbxPill" title="sandbox backend"><span class="sdot" id="sbxDot"></span><span
       id="sbxTxt">…</span></span>
-  <!-- 2026-11-01: both topbar actions are 32px monochrome SVG buttons with the same box.
-       They used to be TEXT ("⚙" and "⌘K"): U+2699 renders as a colour emoji on Android
-       and "⌘K" is a keyboard hint, not a control — the operator read the pair as
-       "not standard, not well placed". The shortcut stays in the tooltip. -->
-  <button class="ghost" id="settingsBtn" title="settings" aria-label="settings" data-call="toggleSettings">
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-  </button>
+  <!-- RH-27 (operator, 2026-11-03): the settings gear LEFT the topbar — it now lives
+       in the chat tool rail (#toolsBar), pinned level with the send button, found the
+       same way on desktop and on a phone. Only the search stays up here. -->
+  <!-- 2026-11-01: the search is a 32px monochrome SVG button. It used to be the TEXT
+       "⌘K", which is a keyboard hint, not a control. The shortcut stays in the tooltip. -->
   <button class="ghost diag-badge" id="settingsDiagBadge" data-call="openSettings"
           data-args='["diagnostics"]' aria-label="settings diagnostics" title="configuration diagnostics" hidden></button>
   <!-- JAG-533: the command palette is a DIRECT button — the top-right "☰" app
@@ -2727,6 +2747,7 @@
     <!-- 2026-11-01: the rail carries monochrome SVG icons, one 17px mark per 30px box.
          It shipped with four COLOUR EMOJI (a book, a target, a brain, a tag) and two
          box-drawing glyphs, so the column read as a sticker sheet, not one instrument. -->
+    <div class="tb-mid">
     <button class="ghost" id="kbSessionBtn" data-call="openSessionNotebook"
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
             aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>
@@ -2740,6 +2761,18 @@
     <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M8.2 12h7.6"/></svg></button>
     <button class="ghost" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3 21 21"/><path d="M10.7 6.3A9.8 9.8 0 0 1 21.4 12a14 14 0 0 1-2.3 3"/><path d="M6.4 8A14 14 0 0 0 2.6 12 9.8 9.8 0 0 0 15.1 16.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.2A1.2 1.2 0 0 1 4 3h7.8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.4Z"/><circle cx="7.6" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
+    </div>
+    <!-- RH-27 (operator, 2026-11-03): the rail's FOOT pins the two composer-level
+         controls — settings and the ✨ AI draft — level with the send button. The gear
+         used to sit in the topbar and the ✨ in the composer row, where it ate the
+         horizontal space the message box needed. The ✨ is mounted here by
+         `mountStaticSparkles()` (the `chat.prompt` surface). -->
+    <div class="tb-foot">
+    <button class="ghost" id="settingsBtn" title="settings" aria-label="settings" data-call="toggleSettings">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+    </div>
   </aside>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
   <aside id="rail" data-col="context">
@@ -4206,7 +4239,13 @@ function collapseThoughts() {
    exist). Lives between the chat and the right inspector. */
 function _updateTreeTools() {
   const t = $("toolsBar"); if (!t) return;
-  t.hidden = !sessionId;
+  // RH-27 (operator, 2026-11-03): only the rail's MID cluster is session-scoped. Its
+  // FOOT — settings and the ✨ AI draft — must stay reachable with NO session: settings
+  // is how a fresh install gets configured, and the ✨ writes the OPENING message of an
+  // empty chat. So the rail itself is never hidden; the session tools inside it are.
+  const mid = t.querySelector(".tb-mid");
+  if (mid) mid.hidden = !sessionId;
+  t.hidden = false;
   const hasTodos = _allGroups().length > 0;
   t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !hasTodos; });
 }
@@ -13455,7 +13494,10 @@ async function mountStaticSparkles() {
   await loadGenSurfaces();
   const pairs = [
     // [surface, the field to fill, the row to host the ✨, insert before which child]
-    ["chat.prompt", "#inp", "#composerBar .cb-right", "#micBtn"],
+    // RH-27 (operator, 2026-11-03): the chat ✨ moved OUT of the composer row into the
+    // tool rail's FOOT, level with the send button — it ate the horizontal space the
+    // message box needed. The gear shares that foot (see #toolsBar .tb-foot).
+    ["chat.prompt", "#inp", "#toolsBar .tb-foot", null],
     ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint"],
     ["plan.input", "#planInp", null, null],
     ["memory.content", "#memContent", null, null],

@@ -52,8 +52,11 @@ check("A1 five tabs, each an icon plus a label",
       and TABBAR.count("<span>") == 5)
 check("A2 no colour emoji left in the tab bar",
       not re.search("[💬🗂✅📊📡]", TABBAR), "")
+# RH-21 (ccf0b0e, 2026-11-03) gave the tab button a SECOND declaration: the landscape
+# rail override (36px, icon only). The icon-over-label truth is still declared ONCE —
+# the base/mobile rule — so the count is 2 and the FIRST one carries the 48px column shape.
 check("A3 the tab button is declared ONCE (icon over label, 48px target)",
-      ui.count("#tabbar button {") == 1
+      ui.count("#tabbar button {") == 2
       and "flex-direction: column" in ui.split("#tabbar button {")[1].split("}")[0]
       and "min-height: 48px" in ui.split("#tabbar button {")[1].split("}")[0])
 check("A4 the active tab is the single accent, not a second frame",
@@ -63,14 +66,16 @@ check("A5 the bar keeps the theme token for its own background",
       "background: var(--menubg)" in ui[ui.index("#tabbar {"):ui.index("#tabbar button {")])
 
 # ---- B. the chat tool rail ----------------------------------------------------
-check("B1 every rail control is an SVG (7 of them)",
-      TOOLSBAR.count("<button") == 7 and TOOLSBAR.count("<svg") == 7)
+# RH-27 (operator, 2026-11-03): 8, not 7 — the settings gear moved into the rail's
+# foot (level with the send button), so the static rail markup carries one more SVG.
+check("B1 every rail control is an SVG (8 of them)",
+      TOOLSBAR.count("<button") == 8 and TOOLSBAR.count("<svg") == 8)
 check("B2 no colour emoji and no box-drawing glyph left in the rail",
       not re.search("[📖🎯🧠🏷⊞⊟↻]", TOOLSBAR), "")
 check("B3 the painted diagonal bar is gone (the icon carries the meaning)",
       "#toolsBar button.slashed" not in ui and 'class="ghost slashed"' not in ui)
 check("B4 each rail control keeps its accessible name",
-      len(re.findall(r"<button[^>]*>", TOOLSBAR)) == 7
+      len(re.findall(r"<button[^>]*>", TOOLSBAR)) == 8
       and all("aria-label=" in b and "title=" in b
               for b in re.findall(r"<button[^>]*>", TOOLSBAR)))
 
