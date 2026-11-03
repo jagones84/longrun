@@ -75,7 +75,7 @@ def _stream_returning(payloads):
         if payload == "GARBAGE":
             return ("not json at all — sorry", "", "fake/chat")
         picked = ids[:payload] if isinstance(payload, int) else ids
-        arr = [{"id": gid, "title": "request to do %s" % gid,
+        arr = [{"id": gid, "title": "do %s" % gid,
                 "summary": "about %s" % gid} for gid in picked]
         return ("```json\n" + json.dumps(arr) + "\n```", "", "fake/chat")
 
@@ -98,11 +98,19 @@ check("1b a single button press names EVERY group (0 remain)",
 check("1c the model named only 3 of 5 on the first call -> the subroutine looped again",
       state["calls"] == 2 and res.get("rounds") == 2, (state["calls"], res.get("rounds")))
 check("1d every free group got a title + summary from the model",
-      all((g.get("title") or "").startswith("request to do g")
+      all((g.get("title") or "").startswith("do g")
           and (g.get("summary") or "").startswith("about g") for g in free),
       [(g.get("title"), g.get("summary")) for g in free])
 check("1e the reply used the session's CHAT model (not a separate summarizer role)",
       res.get("model") == "fake/chat", res.get("model"))
+# RH-25: the label is the ASK, never "request to <ask>" — the prefix cost rail width
+# and said nothing the title did not already say. A model that still writes it is
+# normalised at the ONE write choke point (`set_title`).
+_gid = free[0]["id"]
+th.set_title(sid1, _gid, "request to  swap the embeddings model", summary="s")
+check("1f a title that still carries the legacy 'request to ' prefix is normalised on write",
+      (th.get(sid1, _gid) or {}).get("title") == "swap the embeddings model",
+      (th.get(sid1, _gid) or {}).get("title"))
 
 # ---- 2. one batch when the model names them all at once -----------------------
 sid2 = "v469-batch"
@@ -122,8 +130,9 @@ httpapi.stream_with_fallback = fake
 res = httpapi.autoname_untitled(sid3)
 check("3a an unusable model reply falls back so the button still names everything",
       res.get("remaining") == 0 and len(th.untitled_free(sid3)) == 0, res)
-check("3b the fallback titles come from the group's own request (JAG-451)",
-      all((g.get("title") or "").startswith("request to ")
+check("3b the fallback titles come from the group's own request (JAG-451) and carry no prefix",
+      all((g.get("title") or "").startswith("thing number")
+          and not (g.get("title") or "").lower().startswith("request to")
           for g in th.outline(sid3) if g["kind"] == "free"),
       [g.get("title") for g in th.outline(sid3) if g["kind"] == "free"])
 
@@ -172,6 +181,26 @@ check("6b the request match does not need the counts to be identical",
       "if (!lg && same" in _at, "")
 check("6c a ledger group is never stamped onto two rendered groups",
       "used[lg.id] = true" in _at and "used[c.g.id]" in _at, "")
+
+# ---- 7. a ledger written BEFORE RH-25 is normalised on READ (not just rendered) --
+# Cleaning only the rendered value would leave the ledger and the UI spelling one
+# title two ways, so the stored title is normalised instead — once, then persisted.
+_mig = "v469-legacy-prefix"
+_grow(_mig, 1)
+th.outline(_mig)                                   # materialise the ledger
+_p = th.path_for(_mig)
+with open(_p, encoding="utf-8") as f:
+    _doc = json.load(f)
+_doc["groups"][0]["title"] = "request to audit the longrun codebase"
+with open(_p, "w", encoding="utf-8") as f:
+    json.dump(_doc, f)
+check("7a a stored legacy 'request to …' title is stripped when the ledger is read",
+      (th.outline(_mig)[0].get("title") or "") == "audit the longrun codebase",
+      th.outline(_mig)[0].get("title"))
+with open(_p, encoding="utf-8") as f:
+    _after = f.read()
+check("7b the cleanup is PERSISTED (one truth: the ledger spells it clean too)",
+      "request to" not in _after, _after[:120])
 
 print("---")
 okc = sum(results)

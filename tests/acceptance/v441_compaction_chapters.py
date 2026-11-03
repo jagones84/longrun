@@ -67,13 +67,14 @@ free = [x for x in th.outline(sid) if x["kind"] == "free"]
 check("1a the session grew two free threads + one task",
       len(free) == 2 and any(x["kind"] == "task" for x in th.outline(sid)),
       [x["kind"] for x in th.outline(sid)])
+# RH-25: a title written WITH the legacy "request to " prefix is normalised on write.
 th.set_title(sid, free[0]["id"], "request to ask about widgets", summary="asked about widgets; answered")
 th.set_title(sid, free[1]["id"], "request to ask about gadgets", summary="asked about gadgets; answered")
 stores.save_session(sess)          # choke point -> chapters onto the start messages
 
 before = stores.load_session(sid)
-check("1b both titles+summaries are in the durable ledger",
-      all((x.get("title") or "").startswith("request to ask about")
+check("1b both titles+summaries are in the durable ledger (RH-25: no 'request to ' prefix)",
+      all((x.get("title") or "").startswith("ask about")
           for x in th.outline(sid) if x["kind"] == "free"),
       [x.get("title") for x in th.outline(sid) if x["kind"] == "free"])
 check("1c both chapters were written to the transcript BEFORE any compaction",
@@ -109,7 +110,7 @@ check("2c the auto event reports what it compacted",
 check("3a the ledger still holds EVERY group (compaction-proof)", len(th.outline(sid)) == groups_before,
       (groups_before, len(th.outline(sid))))
 check("3b every free group still has its title+summary after compaction",
-      all((x.get("title") or "").startswith("request to ask about") and x.get("summary")
+      all((x.get("title") or "").startswith("ask about") and x.get("summary")
           for x in th.outline(sid) if x["kind"] == "free"),
       [(x.get("title"), x.get("summary")) for x in th.outline(sid) if x["kind"] == "free"])
 check("3c a task's evidence (its justification) survives too",
@@ -117,18 +118,18 @@ check("3c a task's evidence (its justification) survives too",
           for n in (taskgraph.load(sid) or {}).get("nodes", [])))
 kept = _chapters(after)
 check("3d the RETAINED free thread still carries its chapter (rides the transcript)",
-      any((c.get("title") or "") == "request to ask about gadgets" for c in kept), kept)
+      any((c.get("title") or "") == "ask about gadgets" for c in kept), kept)
 
 # ---- 4. the agent's recall AFTER the compaction -------------------------------
 r = T.execute("chapters", {"session": sid, "action": "list"}, run_id=sid)
 out = r.get("stdout") or ""
 check("4a chapters list still returns the free groups' titles+summaries",
-      "request to ask about widgets" in out and "request to ask about gadgets" in out, out[:0])
+      "ask about widgets" in out and "ask about gadgets" in out, out[:0])
 check("4b chapters list still returns the task's justification",
       "why: \u201cdid it, verified" in out, out[:0])
 r = T.execute("chapters", {"session": sid, "action": "read", "id": free[0]["id"]}, run_id=sid)
 check("4c chapters read still returns a compacted-away group's title+summary",
-      "title: request to ask about widgets" in (r.get("stdout") or "")
+      "title: ask about widgets" in (r.get("stdout") or "")
       and "summary: asked about widgets" in (r.get("stdout") or ""), (r.get("stdout") or "")[:60])
 
 print("---")

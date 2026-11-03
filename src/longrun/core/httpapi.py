@@ -1392,12 +1392,12 @@ _NAME_INSTRUCTION = (
     "You are labelling the CHAPTERS of a coding-assistant chat. Each item below is a "
     "FREE group: a user request and the answer that followed. For EVERY item, produce a "
     "short TITLE and a one-line SUMMARY.\n"
-    "TITLE: start with \"request to \" then the user's ask in at most 7 more English "
-    "words (e.g. \"request to swap the embeddings model\").\n"
+    "TITLE: the user's ask in at most 8 English words — the ask ITSELF, with no "
+    "\"request to\" prefix (e.g. \"swap the embeddings model\").\n"
     "SUMMARY: one line — what was asked and what was done.\n"
     "Use ONLY the item's own request/context; never invent facts you were not given.\n"
     "Reply with ONLY a JSON array (no prose, no code fence), one object per id:\n"
-    '[{"id":"g51","title":"request to …","summary":"…"}]\n\n'
+    '[{"id":"g51","title":"swap the embeddings model","summary":"…"}]\n\n'
     "ITEMS:\n")
 
 

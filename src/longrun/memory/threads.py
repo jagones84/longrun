@@ -95,6 +95,36 @@ def _cap(doc):
         doc["groups"] = groups[-MAX_GROUPS:]
 
 
+# The auto-namer used to prefix every free-group title with "request to " (JAG-431m,
+# JAG-451). The prefix said nothing the title did not already say and cost rail width,
+# so a title is now the ask ITSELF. ONE rule, applied at every title boundary: on the
+# way in (the model's habit, `set_title`), on derivation (`autotitle_untitled`) and on
+# the way out (a ledger written before this change is normalised, not just rendered
+# clean — otherwise the ledger and the UI would spell one title two ways).
+_LEGACY_PREFIX = re.compile(r"^\s*request\s+to\s*:?\s*", re.I)
+
+
+def _clean_title(text):
+    """A free-group title without the legacy "request to " prefix."""
+    return _LEGACY_PREFIX.sub("", str(text or "")).strip()
+
+
+def _strip_legacy_titles(doc):
+    """Erase the legacy prefix from every STORED title of a ledger, once."""
+    n = 0
+    for g in (doc.get("groups") or []):
+        t = g.get("title")
+        if not t:
+            continue
+        clean = _clean_title(t)
+        if clean != t:
+            g["title"] = clean
+            n += 1
+    if n:
+        _save(doc)
+    return n
+
+
 # ------------------------------------------------------------------ grouping --
 
 
@@ -134,7 +164,7 @@ def _feed(doc, node, role, text, idx):
     if idx is not None:
         g["to"] = idx
     # A free thread is usually STARTED by a user turn: remember that request text and
-    # its message index (the rewind anchor + the "request to …" title source).
+    # its message index (the rewind anchor + the free-group title source).
     if is_user and g.get("kind") == "free" and not g.get("req"):
         g["req"] = str(text or "").strip().replace("\n", " ")[:200]
         g["req_from"] = idx
@@ -222,6 +252,7 @@ def _doc_for(sid, sess=None):
     """
     doc = _load(sid)
     if doc is not None and doc.get("v") == VERSION:
+        _strip_legacy_titles(doc)
         return doc
     if sess is None:
         try:
@@ -234,6 +265,7 @@ def _doc_for(sid, sess=None):
     old = doc
     doc = _backfill(sess)
     _carry_meta(old, doc)
+    _strip_legacy_titles(doc)
     _save(doc)
     return doc
 
@@ -293,7 +325,7 @@ def set_title(sid, gid, title, summary=None):
     was about" note — stored in the durable ledger, so the agent can recollect it after
     any number of compactions. Returns (ok, group|error).
     """
-    title = str(title or "").strip()[:200]
+    title = _clean_title(title)[:200]
     summ = None if summary is None else str(summary).strip()[:600]
     with LOCK:
         doc = _doc_for(sid)
@@ -322,7 +354,7 @@ def _norm(s):
     return re.sub(r"\s+", " ", str(s or "")).strip()
 
 
-# Words that carry no meaning for a "request to …" label.
+# Words that carry no meaning for a free-group label.
 _STOP = {"the", "a", "an", "please", "can", "you", "could", "would", "i", "me",
          "my", "to", "of", "and", "or", "for", "is", "are", "it", "this", "that",
          "with", "in", "on", "at", "do", "does", "make", "let", "us", "we"}
@@ -407,9 +439,9 @@ def autotitle_untitled(sid, only_missing=True):
             src = _norm(g.get("req") or g.get("digest") or "")
             if not src:
                 continue
-            ask = _short_ask(src)
+            ask = _clean_title(_short_ask(src))
             if ask and not g.get("title"):
-                g["title"] = "request to %s" % ask[:160]
+                g["title"] = ask[:160]
             if not g.get("summary"):
                 g["summary"] = src[:240]
             n += 1
@@ -477,7 +509,7 @@ def sync_chapters(sess):
     for g in (doc.get("groups") or []):
         if g.get("kind") != "free":
             continue
-        title, summary = g.get("title"), g.get("summary")
+        title, summary = _clean_title(g.get("title")), g.get("summary")
         if not (title or summary):
             continue
         i = _anchor_index(msgs, g)
@@ -595,6 +627,6 @@ def render(sid, limit=200):
     lines.append("Every group carries its justification (a task's evidence / a free "
                  "group's summary). Use action=read id=<gN> for the full record. A free "
                  "group marked [UNTITLED] has no name yet: title it with action=title "
-                 "id=<gN> title=\"request to <short ask>\" summary=\"<what/why, one line>\" "
+                 "id=<gN> title=\"<short ask>\" summary=\"<what/why, one line>\" "
                  "\u2014 one action=title call per [UNTITLED] group, until none remain.")
     return "\n".join(lines)

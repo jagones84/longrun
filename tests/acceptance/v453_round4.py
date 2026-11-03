@@ -103,9 +103,12 @@ out = T.execute("chapters", {"session": sid, "action": "list"}, run_id=sid).get(
 check("B2 untitled free groups are flagged [UNTITLED] in list",
       out.count("free [UNTITLED]") == 2, out[:140])
 T.execute("chapters", {"session": sid, "action": "title", "id": groups[0]["id"],
-                       "title": "request to first"}, run_id=sid)
+                       "title": "request to first"}, run_id=sid)   # RH-25: prefix is stripped
 out = T.execute("chapters", {"session": sid, "action": "list"}, run_id=sid).get("stdout", "")
 check("B3 after titling one, exactly one [UNTITLED] remains", out.count("free [UNTITLED]") == 1)
+check("B3b a title written through the tool drops the legacy 'request to ' prefix (RH-25)",
+      (th.get(sid, groups[0]["id"]) or {}).get("title") == "first",
+      (th.get(sid, groups[0]["id"]) or {}).get("title"))
 desc = (registry.TOOL_SCHEMAS.get("chapters") or {}).get("description", "")
 check("B4 the chapters schema teaches the [UNTITLED] marker", "[UNTITLED]" in desc)
 
@@ -150,8 +153,9 @@ check("D3 two free groups start untitled", len(untitled) == 2, len(untitled))
 n_named = th.autotitle_untitled(sid4)
 check("D4 autotitle_untitled names every untitled free group", n_named == 2, n_named)
 titles = [g.get("title") or "" for g in th.outline(sid4) if g["kind"] == "free"]
-check("D5 the derived title reads 'request to …'", all(t.startswith("request to ") for t in titles),
-      titles)
+check("D5 the derived title is the ask ITSELF — no 'request to ' prefix (RH-25)",
+      len(titles) == 2 and all(t and not t.lower().startswith("request to") for t in titles)
+      and "audit" in titles[0] and "summarise" in titles[1], titles)
 check("D6 it is idempotent (a second pass names nothing new)",
       th.autotitle_untitled(sid4) == 0)
 check("D7 a model-set title is never overwritten",

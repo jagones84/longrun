@@ -195,9 +195,11 @@ check("6e GET /api/threads is routed", '"/api/threads"' in http and "threads_mod
 
 # ---- 7. naming style + per-free-thread rewind (JAG-431m) ---------------------
 _desc = (registry.TOOL_SCHEMAS.get("chapters") or {}).get("description", "")
-check("7a the tool teaches the 'request to …' title style", "request to <short ask>" in _desc, _desc[-60:])
-check("7b the naming subroutine asks for 'request to …' titles (now server-side)",
-      "You are labelling the CHAPTERS" in http and "request to " in http)
+check("7a the tool teaches the bare-short-ask title style (RH-25: no 'request to' prefix)",
+      'title it "<short ask>"' in _desc and 'no "request to" prefix' in _desc, _desc[-90:])
+check("7b the naming subroutine asks for a bare short ask (RH-25)",
+      "You are labelling the CHAPTERS" in http
+      and "the ask ITSELF, with no" in http, http[-90:])
 check("7c free groups carry a rewind control",
       'class="fgroup-rw"' in idx and "function rewindFreeGroup(" in idx)
 check("7d the free rewind reuses the per-turn rewind API",
@@ -230,12 +232,12 @@ stores.append_message(s3, "assistant", "done")
 g3 = th.outline(sid3)[0]
 T.execute("chapters", {"session": sid3, "action": "title", "id": g3["id"],
                        "title": "request to chapter me", "summary": "asked to be chaptered"},
-          run_id=sid3)
+          run_id=sid3)   # RH-25: the legacy prefix is normalised away on write
 stores.save_session(s3)          # the single choke point mirrors the ledger -> transcript
 s3b = stores.load_session(sid3)
 ch = (s3b["messages"][0] or {}).get("chapter") or {}
-check("9a a titled free group's chapter lands on its START message",
-      ch.get("title") == "request to chapter me" and ch.get("gid") == g3["id"], ch)
+check("9a a titled free group's chapter lands on its START message (RH-25: prefix stripped)",
+      ch.get("title") == "chapter me" and ch.get("gid") == g3["id"], ch)
 check("9b the chapter carries the summary (the free-tier justification)",
       (ch.get("summary") or "").startswith("asked to be chaptered"), ch)
 check("9c the chapter carries the rewind anchor", ch.get("req_from") == 0, ch)

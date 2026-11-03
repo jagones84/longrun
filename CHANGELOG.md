@@ -15,6 +15,13 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **The 🏷 button spelled every free-group title `request to …`.** The prefix was
+  produced in three places (the model-naming prompt, the deterministic fallback and
+  the `chapters` tool schema) and **persisted** in the durable thread ledger, so it
+  survived compaction and every reload. One rule (`threads._clean_title`) now strips
+  it on write, on derivation and on the chapter mirrored onto a group's start
+  message; a ledger written before the change is normalised on read and saved, so the
+  ledger and the UI cannot spell one title two ways (RH-25).
 - **MCP servers reported `npx` as "not installed on this host" while it was
   installed.** `~/.local/bin` is where a per-user Node install puts `npx`/`node`,
   and the systemd USER service inherits a PATH without it, so `shutil.which("npx")`
