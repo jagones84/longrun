@@ -4956,15 +4956,16 @@ function hitlCard(d) {
 // frame. A fast reasoning model emits dozens of `chat.delta`/`agent.think` chunks
 // per second; `textContent +=` on each forced a layout per chunk and the page
 // LOOKED frozen while the server was healthy. Buffer the text and flush on rAF.
-const COT_LIVE_MAX = 40000;
+// RH-26 (2026-11-03): the live block keeps the WHOLE thought. It used to trim to
+// the last 40000 chars, so a long monologue showed "…" and a body that started
+// mid-sentence (the head was silently gone) while the persisted block was complete
+// — one turn spelled two ways, and the operator could not read all of it.
 let _thinkPending = "", _thinkRAF = 0;
 function _writeThink() {
   if (!_thinkPending) return;
   const chunk = _thinkPending; _thinkPending = "";
   const el = ensureThink();
-  let t = el.textContent + chunk;
-  if (t.length > COT_LIVE_MAX) t = "…" + t.slice(-COT_LIVE_MAX);
-  el.textContent = t;
+  el.textContent += chunk;
 }
 function flushThink() {
   if (_thinkRAF) { cancelAnimationFrame(_thinkRAF); _thinkRAF = 0; }

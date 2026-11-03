@@ -18,10 +18,15 @@ import time
 # is dozens of `chat.delta` events/s going to BOTH the SSE stream AND the durable
 # feed — the WebUI render queue falls behind and the page LOOKS frozen while the
 # server is perfectly healthy. Coalesce consecutive think chunks into one delta
-# emitted at most every CHAT_THINK_FLUSH_S, and cap the LIVE think text so a runaway
-# monologue cannot flood the client. The full text is still kept on the tool card.
+# emitted at most every CHAT_THINK_FLUSH_S.
+# RH-26 (2026-11-03): there is NO live cap by default. The old 20 000-char limit made
+# the stream stop mid-thought and append "… (live thinking truncated)", while the
+# transcript kept the full reasoning — so the live block and the stored block spelled
+# one turn two ways, and the operator could not read the whole thought live. The cap
+# stays available as an explicit opt-in (`LONGRUN_THINK_LIVE_CAP>0`) for a host that
+# really needs to bound a runaway monologue; 0 means "the whole thought".
 CHAT_THINK_FLUSH_S = float(os.environ.get("LONGRUN_THINK_FLUSH_S", "0.08"))
-CHAT_THINK_LIVE_CAP = int(os.environ.get("LONGRUN_THINK_LIVE_CAP", "20000"))
+CHAT_THINK_LIVE_CAP = int(os.environ.get("LONGRUN_THINK_LIVE_CAP", "0"))
 
 
 def sse_close(handler):
@@ -168,6 +173,8 @@ class ThinkCoalescer:
     so a fast reasoning model cannot flood the SSE stream / durable feed with
     dozens of events per second. Any non-think channel flushes the pending CoT
     first, preserving ordering. `flush()` is called at turn end for the tail.
+    `cap <= 0` (the default, RH-26) means the WHOLE thought is streamed, like the
+    transcript that persists it.
     """
 
     def __init__(self, emit, flush_s=None, cap=None, clock=time.time):
@@ -189,7 +196,7 @@ class ThinkCoalescer:
             return
         self._total += len(text)
         self._buf += text
-        if self._total >= self._cap:
+        if self._cap > 0 and self._total >= self._cap:
             self._capped = True
             self._buf += "\n… (live thinking truncated)"
         if self._capped or (self._clock() - self._t0) >= self._flush_s:

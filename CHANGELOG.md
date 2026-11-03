@@ -15,6 +15,13 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **A chain-of-thought was truncated on screen while the stored one was complete.**
+  The live stream stopped after 20 000 chars and appended `… (live thinking
+  truncated)`, and the page then trimmed that text to its last 40 000 chars — so a
+  long monologue began mid-sentence and lost its tail, while the transcript held the
+  whole reasoning. The live CoT now streams the whole thought (`LONGRUN_THINK_LIVE_CAP`
+  defaults to 0 = no cap, >0 stays an explicit opt-in) and the page appends without
+  trimming; the 80 ms coalescing that protects the render queue is untouched (RH-26).
 - **The 🏷 button spelled every free-group title `request to …`.** The prefix was
   produced in three places (the model-naming prompt, the deterministic fallback and
   the `chapters` tool schema) and **persisted** in the durable thread ledger, so it

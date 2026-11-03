@@ -96,6 +96,11 @@ check("C4 one control collapses every CoT (one-way: nothing re-opens it)",
       "details.think" in thead and "d.open = false" in thead, "")
 check("C5 the control is in the chat sidebar",
       'data-call="collapseThoughts"' in HTML, "")
+# RH-26: a live CoT keeps the WHOLE thought. It used to drop the head beyond 40000
+# chars, so a long monologue started mid-sentence while the persisted block was full.
+_wt = _fn(HTML, "function _writeThink() {")
+check("C6 the LIVE chain-of-thought is not trimmed (the whole thought is kept)",
+      "COT_LIVE_MAX" not in HTML and "slice(-" not in _wt, _wt[-120:])
 
 # ----------------------------------------------------- 3: slash anywhere -----
 # The whole function (it has nested blocks, so slice to the next top-level "}").

@@ -120,7 +120,7 @@ check("no cotDrawer/cotFeed plumbing remains",
 check("the live CoT is written inline into the chat block",
       "function ensureThink()" in html
       and "const el = ensureThink();" in html
-      and "el.textContent = t;" in html)
+      and "el.textContent += chunk;" in html)   # RH-26: appended whole, never trimmed
 
 print("---")
 passed = sum(results)

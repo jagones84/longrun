@@ -130,7 +130,10 @@ class Clock:
 
 
 check("think flush interval is positive", s.CHAT_THINK_FLUSH_S > 0, str(s.CHAT_THINK_FLUSH_S))
-check("think live cap is positive", s.CHAT_THINK_LIVE_CAP > 0, str(s.CHAT_THINK_LIVE_CAP))
+# RH-26: the live CoT is NOT capped by default — the whole thought reaches the page,
+# exactly like the transcript that persists it. A cap is an explicit opt-in.
+check("think live cap is 0 by default (= whole thought, no truncation)",
+      s.CHAT_THINK_LIVE_CAP == 0, str(s.CHAT_THINK_LIVE_CAP))
 
 clk = Clock()
 out = []
@@ -169,6 +172,17 @@ c3.feed("think", "hello")
 c3.feed("answer", "world")
 check("a non-think channel flushes CoT first, preserving order",
       out3 == [("think", "hello"), ("answer", "world")], str(out3))
+
+# RH-26: cap=0 (the default) streams the WHOLE thought — no marker, no dropped head.
+out4 = []
+c4 = s.ThinkCoalescer(lambda ch, t: out4.append((ch, t)), flush_s=0.0, cap=0, clock=Clock())
+_big = "x" * 60000
+c4.feed("think", _big)
+c4.feed("think", " END")
+c4.flush()
+_joined = "".join(t for _, t in out4)
+check("cap=0 emits the whole 60k-char thought and never marks it truncated",
+      _joined == _big + " END" and "truncated" not in _joined, str(len(_joined)))
 
 print("---")
 passed = sum(results)
