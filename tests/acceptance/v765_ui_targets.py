@@ -105,6 +105,19 @@ check("C1 the copy hover still uses the accent",
 check("C2 the rail rewind buttons keep their class names (behaviour pins)",
       'class="tc-rw"' in ui and 'class="task-rw"' in ui and 'class="fgroup-rw"' in ui)
 
+# ---- C2b. RH-13 (operator, 2026-11-03): a box fits its message ---------------
+# "perché tutto sto spazio per il messaggio? le dimensioni finestra si adattino al
+# messaggio! (con un massimo ovviamente)". Measured live before the change: a
+# 3-character message ("hey") was painted in an 872px-wide bubble, because the
+# bubble is a BLOCK. The yellow goal verdict was stretched the same way.
+_bub = rule(".msg .bubble")
+check("C2b the chat bubble hugs its text and stops at the log width",
+      "width: fit-content" in _bub and "max-width: 100%" in _bub, _bub[-120:])
+_ver = rule(".gb-verdict")
+check("C2c the yellow goal verdict does the same (it is a message too)",
+      "width: fit-content" in _ver and "max-width: 100%" in _ver
+      and "max-height: 140px" in _ver, _ver[-140:])
+
 # ---- D. the audit's own sanity: the rail has no text below 10.5px ------------
 # Line-scoped: a selector never spans lines here, and the JS bundle mentions
 # `.sessions` in strings, so an unanchored regex would match code.

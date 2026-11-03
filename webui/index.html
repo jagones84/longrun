@@ -739,7 +739,14 @@
     text-transform: uppercase; }
   .msg.user .who { color: var(--acc); }
   .msg .bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
-    white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.55; }
+    white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.55;
+    /* RH-13 (operator, 2026-11-03): "perché tutto sto spazio per il messaggio? le
+       dimensioni finestra si adattino al messaggio! (con un massimo ovviamente)".
+       A BLOCK bubble stretched to the whole log — a 3-character message got an
+       872px box — so the box never matched what it holds. It now hugs its text and
+       stops at the log width; a long paragraph, table or code block still reaches
+       the full width through `max-width`. */
+    width: fit-content; max-width: 100%; }
   .msg.user .bubble { border-color: color-mix(in srgb, var(--acc) 30%, var(--line));
     background: color-mix(in srgb, var(--acc) 5%, var(--panel)); }
   details.think { margin-bottom: 8px; }
@@ -948,6 +955,9 @@
   .gb-verdict { position: relative; margin: 2px 0; padding: 4px 22px 4px 8px;
     border: 1px solid var(--line); border-radius: 8px; font-size: 11px;
     color: var(--dim); white-space: pre-wrap; word-break: break-word;
+    /* RH-13: the yellow verdict is a MESSAGE too — it hugs its text instead of
+       spanning the whole composer, and it still stops at the composer's width. */
+    width: fit-content; max-width: 100%;
     max-height: 140px; overflow: auto; }
   .gb-verdict[hidden] { display: none; }
   .gb-verdict .gb-x { position: absolute; top: 3px; right: 6px; background: none; border: none;
