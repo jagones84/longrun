@@ -2720,7 +2720,6 @@
           <div class="more-wrap">
             <button class="ghost" id="moreBtn" title="more actions" aria-haspopup="true" aria-expanded="false">⋯</button>
             <div id="moreMenu" class="card" hidden>
-              <button class="ghost mi" id="dockBtn" data-call="SparkEditorToggle" title="open/close the editor (next to the chat)">🗔 editor</button>
               <button class="ghost mi" data-call="compactNow" title="summarize this session now to free up context">🗜 compact</button>
               <button class="ghost mi" data-call="clearSession" title="reset this session: wipe chat history + task list">↺ reset session</button>
               <button class="ghost mi" data-call="newSession" title="start a new session">＋ new session</button>
@@ -2748,6 +2747,14 @@
          It shipped with four COLOUR EMOJI (a book, a target, a brain, a tag) and two
          box-drawing glyphs, so the column read as a sticker sheet, not one instrument. -->
     <div class="tb-mid">
+    <!-- 2026-11-03 (operator): "open editor shall be in the sidebar (icon)". The dock
+         was reachable only from the composer's ⋯ menu and Settings ▸ Workspace — two
+         clicks away from the surface it opens next to. It is a session-scoped tool like
+         the rest of this cluster, so it wears the same anatomy: 30x30 ghost button,
+         17px SVG at stroke 1.8, title + aria-label, no label text. -->
+    <button class="ghost" id="dockBtn" data-call="SparkEditorToggle"
+            title="open or close the editor — the workspace tree, its file tabs and the code view"
+            aria-label="open the editor"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5Z"/><path d="M14.5 3v4.5H19"/><path d="m10.4 12.6-1.9 1.9 1.9 1.9"/><path d="m13.6 12.6 1.9 1.9-1.9 1.9"/></svg></button>
     <button class="ghost" id="kbSessionBtn" data-call="openSessionNotebook"
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
             aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>

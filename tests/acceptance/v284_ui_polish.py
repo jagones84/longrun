@@ -73,8 +73,16 @@ check("an empty context shows a helpful hint instead of blank chips",
 # --- 3) composer: secondary actions behind a "⋯" overflow menu ----------------
 check("the composer has a ⋯ overflow button + menu",
       'id="moreMenu"' in ui and 'id="moreBtn"' in ui and 'class="more-wrap"' in ui)
-check("the editor/compact/new-session actions moved into the menu",
-      ui.index('id="moreMenu"') < ui.index('id="dockBtn"'))
+check("compact/new-session stay in the ⋯ menu; the editor moved to the rail",
+      # 2026-11-03 (operator): "open editor button shall be in the sidebar (icon)". The
+      # dock sat behind the ⋯ menu — two clicks from the surface it opens next to, and
+      # the only row there that opens a PANEL instead of acting on the session. It now
+      # lives once, in #toolsBar (v779 pins the anatomy); the menu keeps the two
+      # session actions.
+      'data-call="compactNow"' in ui and 'data-call="newSession"' in ui
+      and ui.index('id="moreMenu"') < ui.index('data-call="compactNow"')
+      and ui.count('id="dockBtn"') == 1
+      and ui.index('id="toolsBar"') < ui.index('id="dockBtn"'))
 check("the more-menu is wired (toggle + outside click)",
       "function SparkEditorToggle" in ui and "function toggleMore" in ui
       and '$("moreBtn").onclick' in ui)
