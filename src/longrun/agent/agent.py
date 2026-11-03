@@ -2160,11 +2160,18 @@ def _dispatch_wait():
     LLM calls + tools + approvals). Never hang the caller turn behind it:
     after this bound the dispatch returns "still running" and the worker
     keeps running to completion in its own session.
+
+    The bound is a CONFIG value, not a Python constant: `runtime.dispatch_wait_secs`
+    in config/tools.yaml (Settings > Config). `LONGRUN_DISPATCH_WAIT` still
+    overrides it for tests or a one-off run; `30` is the hard floor.
     """
     try:
-        return max(30, int(os.environ.get("LONGRUN_DISPATCH_WAIT") or 300))
+        _env = int(os.environ.get("LONGRUN_DISPATCH_WAIT") or 0)
     except (TypeError, ValueError):
-        return 300
+        _env = 0
+    if _env:
+        return max(30, _env)
+    return max(30, _runtime_int("dispatch_wait_secs", 3600))
 
 
 def _split_batch_items(items):

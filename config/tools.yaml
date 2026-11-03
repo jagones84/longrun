@@ -59,6 +59,14 @@ runtime:
   # several INDEPENDENT calls in one turn instead of one per turn. The matching
   # cap for parallel SUBAGENTS is `max_parallel` in config/subagents.yaml.
   max_parallel_tools: 4
+  # JAG-450 / P2: how many seconds a `dispatch` waits for the teammate's turn
+  # before it stops waiting and reports "still running" (the teammate keeps
+  # running in its own session). A teammate turn is its OWN chain of model calls
+  # + tools + approvals, so a short bound made an orchestrator give up before its
+  # report answered (live 2026-11-03: session A54's dispatch to A49 returned
+  # "still working" at 300s while A49 was still going). 3600 = one hour.
+  # `LONGRUN_DISPATCH_WAIT` still overrides it (tests / one-off run); 30 is the floor.
+  dispatch_wait_secs: 3600
 
 # ---- thinking / reasoning budget (RH-15) ------------------------------------
 # EVERY thinking limit lives here: this block is the source of truth, the WebUI

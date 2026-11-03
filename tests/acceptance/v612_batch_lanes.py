@@ -74,7 +74,11 @@ os.environ["LONGRUN_DISPATCH_WAIT"] = "5"
 check("T14 dispatch wait never hangs the caller (floor 30s)",
       A._dispatch_wait() == 30, "")
 del os.environ["LONGRUN_DISPATCH_WAIT"]
-check("T15 dispatch wait default 300s", A._dispatch_wait() == 300, "")
+# The bound is CONFIG-driven now (`runtime.dispatch_wait_secs`), not a Python
+# constant: assert the helper honours the config value and is generous (> 300s).
+check("T15 dispatch wait default is config-driven (runtime.dispatch_wait_secs)",
+      A._dispatch_wait() == A._runtime_int("dispatch_wait_secs", 3600)
+      and A._dispatch_wait() > 300, A._dispatch_wait())
 
 SRC = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
 check("T16 batch execution builds ONE SJ from the sub lane only",
