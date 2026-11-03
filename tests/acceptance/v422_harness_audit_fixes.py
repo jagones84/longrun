@@ -137,6 +137,25 @@ check("E2 the worker anchors it AFTER the authoritative `since`",
 check("E3 the sync path keeps its own anchor",
       http.count("_rewind.mark(") >= 2)
 
+# ---- F. the turn lock survives a failing cleanup (audit 2026-11-03) -----------
+# The worker's `finally` flushed the coalesced CoT and THEN released the turn lock.
+# `ThinkCoalescer.flush` does not guard its `_emit`, and `_emit` publishes to the
+# event store, so a full/locked store raised and the release was skipped: the
+# session's lock stayed held by a DEAD worker and every later turn blocked forever
+# on `acquire()`, with `q.put(None)` never sent (the client hung on a finished turn).
+with open(os.path.join(REPO, "src", "longrun", "core", "sse.py"), encoding="utf-8") as f:
+    sse_src = f.read()
+check("F1 the coalescer really can raise where the flush is called",
+      "def flush(self):" in sse_src and 'self._emit("think", text)' in sse_src)
+_fin = http.index("_coalesce.flush()  # JAG-265")
+_block = http[_fin - 700:_fin + 1400]
+check("F2 the CoT flush is wrapped in its own try",
+      "try:\n                _coalesce.flush()  # JAG-265" in _block)
+check("F3 the release is in the SAME unconditional finally as the queue close",
+      '_turn_lock(sess["id"]).release()  # JAG-201' in _block
+      and _block.index('finally:\n                done["flag"] = True')
+      > _block.index("try:\n                _coalesce.flush()  # JAG-265"))
+
 print("---")
 okc = sum(results)
 print("\nv422: %d/%d PASS" % (okc, len(results)))

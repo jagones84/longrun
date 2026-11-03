@@ -529,16 +529,27 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                  "session": sess["id"], "stored": True},
                 ensure_ascii=False))
         finally:
-            _coalesce.flush()  # JAG-265: emit any coalesced CoT tail before closing
-            _goal_end(sess, goal_mode)   # G-1: complete only on real plan evidence
-            done["flag"] = True
-            q.put(None)
-            # JAG-181: the turn is over — no longer "attachable".
-            # JAG-299: only clear OUR registration; a newer turn may have replaced it.
-            with _ACTIVE_CHAT_LOCK:
-                if (_ACTIVE_CHAT.get(sess["id"]) or {}).get("tok") is _turn_tok:
-                    _ACTIVE_CHAT.pop(sess["id"], None)
-            _turn_lock(sess["id"]).release()  # JAG-201: allow the next turn
+            # RH-12 (audit 2026-11-03): the release below must NOT depend on the
+            # cleanup above succeeding. `_coalesce.flush()` re-emits the last CoT
+            # chunk through `publish`, which writes to the event store; a full or
+            # locked store raises, and with the old order that exception skipped
+            # `_turn_lock(...).release()` — the session's lock then stayed held by a
+            # DEAD worker, so every later turn for that session blocked forever on
+            # `acquire()`, AND `q.put(None)` never ran (the client's stream hung on a
+            # turn that was already over). `ThinkCoalescer.flush` does not guard its
+            # `_emit` (core/sse.py), so the failure is reachable.
+            try:
+                _coalesce.flush()  # JAG-265: emit any coalesced CoT tail before closing
+                _goal_end(sess, goal_mode)   # G-1: complete only on real plan evidence
+            finally:
+                done["flag"] = True
+                q.put(None)
+                # JAG-181: the turn is over — no longer "attachable".
+                # JAG-299: only clear OUR registration; a newer turn may have replaced it.
+                with _ACTIVE_CHAT_LOCK:
+                    if (_ACTIVE_CHAT.get(sess["id"]) or {}).get("tok") is _turn_tok:
+                        _ACTIVE_CHAT.pop(sess["id"], None)
+                _turn_lock(sess["id"]).release()  # JAG-201: allow the next turn
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
