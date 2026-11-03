@@ -738,6 +738,18 @@
   #toolsBar button:hover { color: var(--accent); border-color: var(--acc); }
   #toolsBar button svg { display: block; }
   #toolsBar button[hidden] { display: none; }
+  /* 2026-11-03: a rail control may carry a live COUNT (files this session changed,
+     decisions waiting for you). A count is a STATE, so it is a corner chip on the
+     control that owns it — 14px, one line, hidden at zero, and the number is also in
+     the button's accessible name. A slot with nothing to say is collapsed. */
+  #toolsBar button { position: relative; }
+  #toolsBar .tb-badge { position: absolute; top: -5px; right: -5px; min-width: 14px;
+    height: 14px; padding: 0 3px; box-sizing: border-box; border-radius: 999px;
+    background: var(--accent); color: var(--bg);
+    font-family: var(--mono, ui-monospace, monospace); font-size: 9.5px; line-height: 14px;
+    font-weight: 700; text-align: center; box-shadow: 0 0 0 2px var(--panel);
+    pointer-events: none; }
+  #toolsBar .tb-badge[hidden] { display: none; }
   .msg.dotflash .bubble { box-shadow: 0 0 0 2px var(--acc); transition: box-shadow .25s; }
   /* JAG-428: flash the session row the topbar's "reveal" button centered. */
   .sess.dotflash { box-shadow: 0 0 0 2px var(--acc); border-radius: 10px; transition: box-shadow .25s; }
@@ -2755,6 +2767,16 @@
     <button class="ghost" id="dockBtn" data-call="SparkEditorToggle"
             title="open or close the editor — the workspace tree, its file tabs and the code view"
             aria-label="open the editor"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5Z"/><path d="M14.5 3v4.5H19"/><path d="m10.4 12.6-1.9 1.9 1.9 1.9"/><path d="m13.6 12.6 1.9 1.9-1.9 1.9"/></svg></button>
+    <!-- 2026-11-03: the two PENDING STATES the operator otherwise hunts for. Both read
+         a real endpoint (see `_setRailBadge` / `openChanges` / `openApprovals`). -->
+    <button class="ghost" id="editsBtn" data-call="openChanges"
+            data-label="review the files this session changed"
+            title="files the agent changed in this session — review, diff, approve or reject"
+            aria-label="review the files this session changed"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5Z"/><path d="M14.5 3v4.5H19"/><path d="M8.4 12.2h4.4M10.6 10v4.4"/><path d="M8.4 17.2h4.4"/></svg><span class="tb-badge" id="editsBtnBadge" aria-hidden="true" hidden></span></button>
+    <button class="ghost" id="apprBtn" data-call="openApprovals"
+            data-label="review the decisions waiting for you"
+            title="decisions waiting for you — a run does not continue until you answer"
+            aria-label="review the decisions waiting for you"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="m8.3 12.3 2.5 2.5 4.9-5.1"/></svg><span class="tb-badge" id="apprBtnBadge" aria-hidden="true" hidden></span></button>
     <button class="ghost" id="kbSessionBtn" data-call="openSessionNotebook"
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
             aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>
@@ -4255,6 +4277,46 @@ function _updateTreeTools() {
   t.hidden = false;
   const hasTodos = _allGroups().length > 0;
   t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !hasTodos; });
+}
+/* 2026-11-03 (operator): the rail shows the two PENDING STATES that otherwise require
+   hunting through panels. `_setRailBadge` is the one place a rail count is painted:
+   chip value + the number inside the control's accessible name (a screen reader must
+   hear "3 pending", not "button"). Zero collapses the chip — never an empty slot. */
+function _setRailBadge(btnId, n) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  const chip = btn.querySelector(".tb-badge");
+  const base = btn.dataset.label || btn.getAttribute("aria-label") || "";
+  if (chip) { chip.textContent = n > 99 ? "99+" : String(n || 0); chip.hidden = !n; }
+  btn.setAttribute("aria-label", n ? base + " (" + n + " pending)" : base);
+}
+/* Open one inspector section ON SCREEN — the drawer rules live in CSS, so the class is
+   what makes it visible on a narrow viewport; on desktop the panel is only collapsed. */
+function _railOpenInsp(name) {
+  if (_vw() <= 1100) {
+    if (!document.body.classList.contains("show-right")) _toggleMobileDrawer("right");
+  } else if (document.body.classList.contains("collapsed-right")) {
+    document.body.classList.remove("collapsed-right");
+  }
+  const sec = document.querySelector('#inspector section[data-insp="' + name + '"]');
+  if (!sec) return null;
+  const body = sec.querySelector(".insp-body");
+  if (body && body.hidden) toggleInsp(name);
+  sec.scrollIntoView({ block: "nearest" });
+  return sec;
+}
+function openChanges() {
+  // 2026-11-03: the section KEY is `files` (its header word is "Workspace") — the
+  // first draft opened `data-insp="workspace"`, which does not exist, so the list
+  // was fetched and never shown.
+  _railOpenInsp("files");
+  loadEdits();
+  const box = $("editsList");
+  if (box) box.scrollIntoView({ block: "nearest" });
+}
+function openApprovals() {
+  _railOpenInsp("approvals");
+  loadApprovals();
 }
 let cursorEl = null;
 
@@ -7055,6 +7117,10 @@ async function loadHistory() {
   }
   // JAG-127: baseline the edit journal so the next turn reports only its own diff.
   try { _editsBase = await api("GET", "/api/edits?session=" + encodeURIComponent(_historySid)); } catch (e) { _editsBase = null; }
+  // 2026-11-03: the same answer feeds the rail chip — the baseline fetch is the ONE
+  // moment the session's change count is already in hand, so the chip cannot say
+  // "nothing changed" on a session that has pending files.
+  _setRailBadge("editsBtn", ((_editsBase && _editsBase.files) || []).length);
   if (_stale()) return;
   // JAG-431p: apply the ledger titles to any rendered group whose start message carries
   // no chapter (mixed/old data). Guarded internally: skipped when the rendered and
@@ -9300,6 +9366,7 @@ async function loadApprovals() {
   const box = $("approvals"); box.innerHTML = "";
   const pend = out.approvals || [];
   _isum("apprCount", pend.length ? (pend.length + " pending") : "none", pend.length ? "warn" : "");
+  _setRailBadge("apprBtn", pend.length);
   if (!pend.length) { box.innerHTML = ""; return; }   // v633: the header summary says `none`
   pend.forEach(a => {
     const d = document.createElement("div"); d.className = "card";
@@ -14963,6 +15030,7 @@ async function loadEdits() {
 function _renderEditsList(cur) {
   const box = $("editsList"); if (!box) return;
   const files = (cur && cur.files) || [];
+  _setRailBadge("editsBtn", files.length);
   $("editsStat").innerHTML = files.length ? (files.length + " file" + (files.length > 1 ? "s" : "") + " · " + _editLine(files)) : "no changes";
   if (!files.length) { box.innerHTML = '<div class="remaining">no changes recorded in this session</div>'; return; }
   box.innerHTML = "";

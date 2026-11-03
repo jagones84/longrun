@@ -68,16 +68,16 @@ check("A5 the bar keeps the theme token for its own background",
 # ---- B. the chat tool rail ----------------------------------------------------
 # RH-27 (operator, 2026-11-03): 8, not 7 — the settings gear moved into the rail's
 # foot (level with the send button), so the static rail markup carries one more SVG.
-# 2026-11-03 (later): 9 — the editor toggle joined the mid cluster (v779), wearing
-# exactly this anatomy.
-check("B1 every rail control is an SVG (9 of them)",
-      TOOLSBAR.count("<button") == 9 and TOOLSBAR.count("<svg") == 9)
+# 2026-11-03 (later): 11 — the editor toggle (v779) plus the two pending-state controls
+# (v780: changes / approvals), all wearing exactly this anatomy.
+check("B1 every rail control is an SVG (11 of them)",
+      TOOLSBAR.count("<button") == 11 and TOOLSBAR.count("<svg") == 11)
 check("B2 no colour emoji and no box-drawing glyph left in the rail",
       not re.search("[📖🎯🧠🏷⊞⊟↻]", TOOLSBAR), "")
 check("B3 the painted diagonal bar is gone (the icon carries the meaning)",
       "#toolsBar button.slashed" not in ui and 'class="ghost slashed"' not in ui)
 check("B4 each rail control keeps its accessible name",
-      len(re.findall(r"<button[^>]*>", TOOLSBAR)) == 9
+      len(re.findall(r"<button[^>]*>", TOOLSBAR)) == 11
       and all("aria-label=" in b and "title=" in b
               for b in re.findall(r"<button[^>]*>", TOOLSBAR)))
 
