@@ -55,7 +55,11 @@ check("a None cap is omitted (router decides)", "max_tokens" not in off)
 s = read("src", "longrun", "model/rllm.py")
 check("the default is 16384 and env-overridable",
       'os.environ.get("LONGRUN_MAX_TOKENS", "16384")' in s)
-check("the chat call passes the cap", "MAX_TOKENS or None" in s)
+# RH-15: the chat call passes the cap through `_max_tokens()`, which prefers
+# `reasoning.max_tokens` from config/tools.yaml and falls back to this constant — the
+# cap stopped being a constant that a config could not raise.
+check("the chat call passes the cap", "_max_tokens() or None" in s
+      and "def _max_tokens()" in s and "MAX_TOKENS" in s)
 
 print("---")
 passed = sum(results)

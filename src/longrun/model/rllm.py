@@ -705,6 +705,70 @@ _LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
 _LEVEL_BUDGET = {"minimal": 1024, "low": 4096, "medium": 12000,
                  "high": 24000, "xhigh": 32000}
 
+#: RH-15: the dict above is only the CODE DEFAULT. Every thinking LIMIT is
+#: overridable from `config/tools.yaml` → `reasoning:`, through the same
+#: DEFAULTS <- file <- overlay chain as every other block in that file, so raising
+#: a ceiling never means editing Python:
+#:   budgets: {minimal: …, low: …, medium: …, high: …, xhigh: …}
+#:   budget_floor / budget_ceiling / budget_reserve
+#:   max_tokens: the answer+thinking envelope of ONE completion
+#: (A level with no entry in either table degrades to the effort NAME, which is
+#: what a provider that takes no number accepts anyway.)
+_BUDGET_DEFAULTS = {"floor": 1024, "ceiling": 32000, "reserve": 1024}
+
+
+def _reasoning_cfg():
+    """The live `reasoning` block from the merged config (never raises)."""
+    try:
+        from longrun.tools import registry as _reg
+        return _reg.load_config().get("reasoning") or {}
+    except Exception:  # noqa: BLE001 — a missing config is just the defaults
+        return {}
+
+
+def _level_budget(cfg, eff):
+    """Thinking TOKENS for a level: the config's table first, the code default second."""
+    table = (cfg or {}).get("budgets")
+    if not isinstance(table, dict):
+        table = {}
+    try:
+        v = table.get(eff)
+        if v is None:
+            v = _LEVEL_BUDGET.get(eff)
+        return int(v or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _budget_limits(cfg):
+    """(floor, ceiling, reserve) for the thinking budget, from the config."""
+    c = cfg or {}
+
+    def _num(key, default):
+        try:
+            return int(c.get(key) or default)
+        except Exception:  # noqa: BLE001
+            return default
+
+    return (_num("budget_floor", _BUDGET_DEFAULTS["floor"]),
+            _num("budget_ceiling", _BUDGET_DEFAULTS["ceiling"]),
+            _num("budget_reserve", _BUDGET_DEFAULTS["reserve"]))
+
+
+def _max_tokens():
+    """The completion envelope: `reasoning.max_tokens`, else the env/default cap.
+
+    A thinking budget is clamped strictly BELOW this, so a small envelope silently
+    caps the thinking; that is why it is a config value and not a constant.
+    """
+    try:
+        v = _reasoning_cfg().get("max_tokens")
+        if v:
+            return int(v)
+    except Exception:  # noqa: BLE001
+        pass
+    return MAX_TOKENS
+
 #: The provider DIALECTS for the reasoning parameter, named exactly as openclaw names
 #: them (`MODEL_DATA_THINKING_FORMATS`), so the two harnesses speak one language. Each
 #: line cites the vendor documentation it comes from (read 2026-11-01):
@@ -794,23 +858,27 @@ def _reasoning_format(cfg, model_id):
     return "openai"
 
 
-def _fit_budget(tokens, max_tokens=None):
+def _fit_budget(tokens, max_tokens=None, floor=1024, ceiling=32000, reserve=1024):
     """The thinking budget that fits inside the answer budget; 0 when nothing fits.
 
     OpenRouter/Anthropic reject a reasoning budget that is not strictly BELOW
     `max_tokens`, cap the value at 32000 and floor it at 1024 — a caller that returns 0
     must fall back to an effort name instead of sending an impossible number.
+
+    RH-15: floor / ceiling / reserve are the DEFAULTS; the request path passes the
+    values from `config/tools.yaml` (`reasoning.budget_*`), so the clamp is tunable.
     """
     t = int(tokens or 0)
     if t <= 0:
         return 0
-    t = min(t, 32000)
+    floor = max(1, int(floor or 1024))
+    t = min(t, int(ceiling or 32000))
     if max_tokens:
-        room = int(max_tokens) - 1024
-        if room < 1024:
+        room = int(max_tokens) - int(reserve or 1024)
+        if room < floor:
             return 0
         t = min(t, room)
-    return max(1024, t)
+    return max(floor, t)
 
 
 def _reasoning_fields(model_id, cfg=None, max_tokens=None):
@@ -839,7 +907,12 @@ def _reasoning_fields(model_id, cfg=None, max_tokens=None):
                 return {}   # no level chosen: leave the provider's own default alone
         fmt = _reasoning_format(r, model_id)
         on = eff != "none"
-        budget = _fit_budget(_LEVEL_BUDGET.get(eff) or 0, max_tokens)
+        # RH-15: the level→tokens table and the clamp are CONFIG values
+        # (`reasoning.budgets` / `reasoning.budget_*`), with the code dict as the
+        # default when a caller passes a bare {enabled, effort, format}.
+        _floor, _ceiling, _reserve = _budget_limits(r)
+        budget = _fit_budget(_level_budget(r, eff), max_tokens,
+                             _floor, _ceiling, _reserve)
         word = _EFFORT_WORD.get(eff, "")
         if fmt == "openrouter":
             # One of `effort` / `max_tokens`, never both (HTTP 400 otherwise). Measured on
@@ -995,7 +1068,7 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
     if not _reachable(url):
         raise urllib.error.URLError("provider unreachable: %s" % url)
     body = json.dumps(_completion_body(model_id, messages, True,
-                                       max_tokens or MAX_TOKENS or None,
+                                       max_tokens or _max_tokens() or None,
                                        no_reasoning=no_reasoning)).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers)
     answer, think = [], []
@@ -1090,7 +1163,7 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
             return "".join(answer), "".join(think)
         # non-streaming fallback
         body = json.dumps(_completion_body(model_id, messages, False,
-                                           MAX_TOKENS or None,
+                                           _max_tokens() or None,
                                            no_reasoning=no_reasoning)).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers=headers)
         with _open_with_retry(req, timeout, model=model) as resp:

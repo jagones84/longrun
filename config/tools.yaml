@@ -60,6 +60,36 @@ runtime:
   # cap for parallel SUBAGENTS is `max_parallel` in config/subagents.yaml.
   max_parallel_tools: 4
 
+# ---- thinking / reasoning budget (RH-15) ------------------------------------
+# EVERY thinking limit lives here: this block is the source of truth, the WebUI
+# writes only its diffs into the sparse overlay (Settings > Models > Thinking
+# effort), and the code holds the same numbers as a fallback. Nothing about the
+# model's thinking is a constant in Python any more.
+#
+# The chain is DEFAULTS (rllm.py) <- this file <- data/tools.overlay.yaml.
+reasoning:
+  enabled: false            # OPT-IN. With false nothing is sent, and the provider
+                            # default applies — which is the DEEPEST shape measured
+                            # (2026-11-01: nothing 1419 reasoning tokens vs `high` 107)
+  effort: ""                # none|minimal|low|medium|high|xhigh; "" = leave alone
+  format: auto              # provider dialect; auto reads it from the provider kind
+  # The answer+thinking ENVELOPE of one completion. A thinking budget is clamped
+  # strictly below it, so a small envelope SILENTLY caps the thinking: at 16384 the
+  # `high` level (24000) was really sent as 15360. 32768 lets `high`/`xhigh` through.
+  max_tokens: 32768
+  # Thinking tokens, for the providers that take a NUMBER instead of a level name.
+  # 32000 is the highest a provider accepts (OpenRouter rejects more), so `high`
+  # and `xhigh` both sit at that ceiling on purpose.
+  budgets:
+    minimal: 2048
+    low: 8192
+    medium: 16384
+    high: 24000
+    xhigh: 32000
+  budget_floor: 1024        # the lowest a provider accepts (Anthropic)
+  budget_ceiling: 32000     # the highest a provider accepts (OpenRouter cap)
+  budget_reserve: 1024      # answer room kept strictly below `max_tokens`
+
 # ---- verifier "apply-only-if-green" (JAG-131) -------------------------------
 # Quando attivo, dopo OGNI fs.write/fs.edit l'harness esegue `command` nella
 # sandbox: se NON passa, la modifica viene annullata (rollback) e il modello

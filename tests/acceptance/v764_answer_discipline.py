@@ -363,6 +363,31 @@ for _p in _P.providers():
 check("E18 every provider in the REAL config gets a field its API actually reads",
       bool(_matrix) and not _noop, _noop or _matrix)
 
+# ---- E19: every thinking LIMIT is a config value (RH-15) ---------------------
+# Operator: *"mica ci sono limiti di pensiero? … se proprio devono esserci siano alti e
+# non hardcoded messi in un config file"*. The level table and the clamp live in
+# `config/tools.yaml` → `reasoning:`; the dict in rllm.py is only the fallback for a
+# caller that passes a bare {enabled, effort, format}, and the envelope was silently
+# clipping `high` (24000 asked, 15360 sent, with max_tokens 16384).
+_rc = (registry.load_config(reload=True).get("reasoning") or {})
+check("E19 config/tools.yaml owns the thinking limits (none of them is a constant)",
+      isinstance(_rc.get("budgets"), dict) and _rc["budgets"].get("high") == 24000
+      and _rc["budgets"].get("xhigh") == 32000
+      and _rc.get("max_tokens") == 32768
+      and _rc.get("budget_ceiling") == 32000
+      and _rc.get("budget_floor") == 1024
+      and _rc.get("budget_reserve") == 1024,
+      json.dumps(_rc, sort_keys=True)[:200])
+check("E19b the level table and the clamp are READ from the config",
+      R._level_budget({"budgets": {"high": 99999, "minimal": 7}}, "high") == 99999
+      and R._level_budget({"budgets": {"minimal": 7}}, "high") == 24000   # code fallback
+      and R._level_budget(None, "xhigh") == 32000
+      and R._fit_budget(99999, 64000, floor=2048, ceiling=40000, reserve=4096) == 40000
+      and R._fit_budget(99999, 8000, floor=2048, ceiling=40000, reserve=4096) == 3904
+      and R._fit_budget(99999, 5000, floor=2048, ceiling=40000, reserve=4096) == 0
+      # the envelope itself comes from `reasoning.max_tokens`
+      and R._max_tokens() == 32768)
+
 # ---- S. a keyless search must return real, followable URLs ----
 # Measured 2026-11-01: DuckDuckGo's html and lite endpoints answer every query with
 # a 14 kB bot page, and the GAIA sandbox has no Tavily/Brave key — so the only path
