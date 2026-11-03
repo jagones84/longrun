@@ -2390,6 +2390,74 @@
   #settingsWin .sw-nav button { padding: 7px 10px; margin-bottom: 2px; font-size: 12px; }
   #settingsWin .set-chip { font-size: 9px; letter-spacing: .08em; padding: 1px 7px; border-radius: 999px; }
   #settingsWin .sw-head { padding: 11px 14px; gap: 8px; }
+
+  /* ---- RH-19: PHONE IN LANDSCAPE — the room goes to the CHAT ----------------
+     Measured on a real landscape viewport (844x390, zoom .9) BEFORE this block:
+     topbar 52 + chatHead 43 + composer 152 + tabbar 68 = 315 of 390 px, so the
+     transcript had 96 px — 25% of the screen. The operator: *"in landscape the chat
+     is too covered; the top bar loses space first and should go, use icons instead
+     of names, put them in a side bar on the left if needed"*.
+
+     The top bar becomes a 44 px LEFT RAIL (icons only, the same controls), the
+     bottom tab bar keeps its icons and drops the words, the session header loses
+     only its duplicated id, and the composer tightens. Nothing is deleted: every
+     control keeps a name in aria-label and a tooltip. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    /* the bar leaves the flow: it is a vertical rail on the left edge */
+    #topbar {
+      position: fixed; left: 0; top: 0; bottom: 0; right: auto;
+      width: 44px; height: auto; min-height: 0;
+      flex-direction: column; align-items: center; justify-content: flex-start;
+      padding: 6px 0; gap: 4px; z-index: 26;
+      overflow: hidden;
+    }
+    #topbar .logo { font-size: 0; padding: 0; margin: 0; }
+    #topbar .logo svg { width: 20px; height: 20px; vertical-align: 0; }
+    #topbar #topTabs { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+    #topbar #topTabs .ttab {
+      width: 34px; height: 30px; min-height: 30px; padding: 0; font-size: 0;
+      display: flex; align-items: center; justify-content: center;
+      border: 0; border-left: 2px solid transparent; }
+    #topbar #topTabs .ttab::before { content: attr(data-ic); font-size: 15px; line-height: 1; }
+    #topbar #topTabs .ttab.active { border-left-color: var(--acc); }
+    /* the session name is NOT read here: chatHead owns it (one name, one place) */
+    #topbar .sessbadge, #topbar .u-f1 { display: none; }
+    #topbar #sbxPill { padding: 0; width: 30px; height: 26px; justify-content: center; }
+    #topbar #sbxPill #sbxTxt { display: none; }
+    #topbar #settingsBtn, #topbar #palette-open, #topbar #buildChip {
+      width: 32px; height: 28px; min-height: 28px; padding: 0; }
+    #topbar #buildChip { font-size: 0; }
+    #topbar #buildChip::before { content: "⇪"; font-size: 13px; }
+
+    /* everything that was below the bar now starts at the left rail */
+    #app { margin-left: 44px; }
+    #controlView { top: 0; left: 44px; }
+    body.show-left #aside {
+      top: 0; left: 44px; width: calc(100vw / var(--zoom, 1) - 44px) !important;
+      max-width: calc(100vw / var(--zoom, 1) - 44px); }
+    body.show-right [data-col="context"] { top: 0; }
+    body.show-left #resize-left, body.show-right #resize-right { top: 0; }
+    /* the two floating edge handles are the desktop way to show/hide a panel; on a
+       phone the tab bar (sessions / context) already does it, and in landscape the
+       left one would float ON TOP of the new rail. */
+    .edge-handle { display: none !important; }
+
+    /* the session header keeps the title, drops the duplicated hash and the height */
+    #chatHead { height: 26px; min-height: 26px; padding: 0 8px; }
+    #chatHead .ch-id { display: none; }
+
+    /* the tab bar keeps the five icons, drops the five words */
+    #tabbar { height: 44px; min-height: 44px; }
+    #tabbar button { padding: 2px 0; gap: 0; }
+    #tabbar button > span { display: none; }
+
+    /* the composer: same controls, tighter rows */
+    #composer { padding-top: 4px; padding-bottom: 4px; gap: 4px; }
+    #goalBar { height: 26px; min-height: 26px; }
+    #inp { min-height: 32px; padding: 7px 11px; }
+    #composerBar { height: 32px; min-height: 32px; }
+    #log { padding: 10px 12px; }
+  }
 </style>
 <script>
 /* JAG-352: apply the saved theme + text-weight before first paint (no flash). */
@@ -2424,8 +2492,10 @@
 <header id="topbar">
   <h1 class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</h1>
   <nav id="topTabs" class="topTabs" aria-label="top-level sections">
-    <a class="ttab active" id="tabSessions" href="#sessions" data-call="showSessions" aria-current="page">Sessions</a>
-    <a class="ttab" id="tabControl" href="#control" data-call="showControl">Control</a>
+    <a class="ttab active" id="tabSessions" href="#sessions" data-call="showSessions" data-ic="▤"
+       aria-label="sessions" title="sessions" aria-current="page">Sessions</a>
+    <a class="ttab" id="tabControl" href="#control" data-call="showControl" data-ic="◫"
+       aria-label="control deck" title="control deck">Control</a>
   </nav>
   <span class="sessbadge" id="sessBadge" hidden></span>
   <span class="u-f1"></span>
@@ -3392,6 +3462,10 @@
         <div class="u-df u-g6 u-mt6 u-aic">
           <input id="subNewRole" class="inp u-f1 u-p610 u-fs12" placeholder="new role name…">
           <button class="ghost" data-call="subAddRole">+ add role</button>
+          <!-- RH-18: ONE ✨ designs the whole role (name + brief) knowing every existing
+               role and its prompt, so a new role fills a real gap instead of duplicating
+               one. It writes the name into the field above and adds the role below. -->
+          <span id="subDraftHost"></span>
         </div>
         <div class="card u-mt6" id="subRolesBox"><div class="remaining">loading…</div></div>
         <div class="remaining u-mt8" id="subResult">changes are saved automatically</div>
@@ -13199,7 +13273,7 @@ function _genApply(field, text, apply, st) {
     },
   });
 }
-async function runGenerate(surfaceId, field, btn, st, extra) {
+async function runGenerate(surfaceId, field, btn, st, extra, opts) {
   const s = genSurface(surfaceId);
   const _fail = (why) => {
     _genState(st, "warn", { title: why, onclick: () => toast(why, "err") });
@@ -13219,6 +13293,9 @@ async function runGenerate(surfaceId, field, btn, st, extra) {
   } catch (e) { r = { error: String(e) }; }
   if (btn) { btn.disabled = false; btn.classList.remove("busy"); btn.removeAttribute("aria-busy"); }
   if (!r || !r.ok) { _fail("AI draft failed — " + ((r && r.error) || "unknown error")); return null; }
+  // RH-18: a `json` surface fills SEVERAL fields, so the caller owns the reply and no
+  // single field is overwritten. Every other surface keeps the unchanged path.
+  if (opts && typeof opts.onText === "function") { opts.onText(r.text, st); return r.text; }
   _genApply(field, r.text, s.apply, st);
   return r.text;
 }
@@ -13231,12 +13308,12 @@ function genBar(surfaceId, opts) {
   const btn = document.createElement("button");
   btn.type = "button"; btn.className = "ghost gen-spark";
   btn.textContent = "✨";
-  btn.title = "write this field with AI — the harness knows this section's context";
+  btn.title = opts.title || "write this field with AI — the harness knows this section's context";
   const st = document.createElement("span");
   st.className = "gen-status"; st.setAttribute("role", "status"); st.setAttribute("aria-live", "polite");
   bar.append(btn, st);
   const field = () => (typeof opts.field === "function" ? opts.field() : opts.field) || null;
-  btn.onclick = () => runGenerate(surfaceId, field(), btn, st, opts.context);
+  btn.onclick = () => runGenerate(surfaceId, field(), btn, st, opts.context, opts);
   return bar;
 }
 /* One entry point for every surface: the registry decides WHICH control it gets. */
@@ -13526,9 +13603,51 @@ async function loadSubagents() {
     " config: " + d.config_path;
   _subRoles = d.roles || {};
   subRenderRoles();
+  // RH-18: the panel's own ✨ — one draft designs name + brief from the existing roles.
+  if ($("subDraftHost")) {
+    mountSparkle($("subDraftHost"), "subagent.new", {
+      onText: subDraftAgent,
+      title: "design a NEW subagent role with AI — it reads every existing role and its prompt, then fills the name and the brief",
+    });
+  }
 }
 let _subRoles = {};
 let _subFallbacks = [];
+/* RH-18: ONE ✨ designs a whole subagent role — name AND brief — from the roles that
+   already exist. The reply is one JSON object (`apply: "json"`), so this handler owns
+   it: it never overwrites an existing role, it puts the name in the field above and it
+   saves through the same auto-save path the rest of the panel uses. */
+function subDraftAgent(text, st) {
+  let o = null;
+  try { o = JSON.parse(String(text || "").trim()); } catch (e) { o = null; }
+  if (!o || typeof o !== "object") {
+    // A model that wrapped the JSON in prose or a fence: recover the two fields.
+    const t = String(text || "");
+    const nm = t.match(/"name"\s*:\s*"([^"]+)"/) || t.match(/name\s*:\s*([a-z0-9][a-z0-9-]{1,23})/i);
+    const br = t.match(/"brief"\s*:\s*"([\s\S]*?)"\s*[,}]/) || t.match(/brief\s*:\s*([\s\S]+)/i);
+    o = { name: nm && nm[1], brief: br && br[1] };
+  }
+  const name = String((o && o.name) || "").trim().toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+  const brief = String((o && o.brief) || "").replace(/\\n/g, "\n").trim();
+  if (name.length < 2 || !brief) {
+    const why = "the AI draft carried no usable name/brief";
+    if (st) _genState(st, "warn", { title: why, onclick: () => toast(why, "err") });
+    return;
+  }
+  if (_subRoles[name]) {
+    // Never overwrite someone else's role: a duplicate name is a silent data loss.
+    const why = 'role "' + name + '" already exists — draft again for a different one';
+    if (st) _genState(st, "warn", { title: why, onclick: () => toast(why, "err") });
+    return;
+  }
+  _subRoles[name] = brief;
+  if ($("subNewRole")) $("subNewRole").value = name;
+  subRenderRoles();
+  subSaveSoon();
+  if ($("subResult")) $("subResult").textContent = "✓ drafted role: " + name;
+  toast("✓ drafted subagent: " + name);
+}
 function subRoleBrief(v) { return typeof v === "string" ? v : ((v && (v.brief || v.text)) || ""); }
 function subRenderRoles() {
   const box = $("subRolesBox"); if (!box) return;

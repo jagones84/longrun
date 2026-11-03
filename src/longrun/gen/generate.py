@@ -146,14 +146,31 @@ def _agent(extra):
     return out
 
 
+def _role_brief(v):
+    """The brief of one configured role, whatever shape it was stored in.
+
+    RH-18: a role is `{brief, tools}` OR a plain string (both are legal, the panel
+    writes the object form). The old `(v or {}).get("brief")` raised on the string
+    form and the whole `roles` map was then dropped by the caller's except — so a
+    single string role silently removed EVERY neighbour from the context.
+    """
+    if isinstance(v, dict):
+        return v.get("brief") or v.get("text") or ""
+    return v if isinstance(v, str) else ""
+
+
 def _subagent(extra):
     out = {"role": (extra or {}).get("role") or ""}
     try:
         from longrun.agent import subagent as sub
         cfg = sub.load_cfg() or {}
         roles = cfg.get("roles") or {}
-        out["roles"] = {k: _clip((v or {}).get("brief"), 300)
-                        for k, v in list(roles.items())[:20]}
+        # RH-18: a NEW role must not duplicate an existing one, so the neighbours'
+        # BRIEFS are context, not just their names. 12 roles x 500 chars stays inside
+        # MAX_CONTEXT_CHARS even when a config grows.
+        pairs = list(roles.items())[:12]
+        out["existing_names"] = [str(k) for k, _ in pairs]
+        out["roles"] = {str(k): _clip(_role_brief(v), 500) for k, v in pairs}
     except Exception:  # noqa: BLE001
         pass
     return out
@@ -248,6 +265,7 @@ _GATHER = {
     "rules.project": _rules,
     "agent.role": _agent,
     "subagent.brief": _subagent,
+    "subagent.new": _subagent,
     "compaction.instruction": _compaction,
     "team.description": _team,
     "kb.notebook": _kb,

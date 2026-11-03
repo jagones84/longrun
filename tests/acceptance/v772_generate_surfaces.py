@@ -284,6 +284,41 @@ check("G5 only the composer passes own_workspace_only (one owner for the rule)",
           REPO, "src", "longrun", "gen", "generate.py"), encoding="utf-8").read()
       and GEN._GATHER["chat.prompt"]({"session": _nof}).get("workspace") == TMP)
 
+# ============================================================================
+# H — RH-18 (operator, 2026-11-03): ONE ✨ designs a whole NEW subagent role.
+#     "nella scheda settings subagents non c'è un autogeneration per creare un nuovo
+#      subagent (ovviamente deve conoscere i già presenti e che prompt hanno).
+#      Devi dividere tutto, nome e prompt etcetera."
+# ============================================================================
+_NEW = S.SURFACES.get("subagent.new")
+check("H1 there is a `subagent.new` GENERATE surface and it returns JSON, not one field",
+      _NEW is not None and _NEW.kind == S.GENERATE and _NEW.apply == "json"
+      and _NEW.ctx == "subagent.new")
+check("H2 its prompt asks for the NAME and the BRIEF in one JSON object",
+      _NEW is not None and '"name"' in _NEW.system and '"brief"' in _NEW.system
+      and "JSON" in _NEW.system and "must differ from all of them" in _NEW.system)
+_NCTX = GEN.context_for(_NEW) if _NEW else {}
+check("H3 the generator KNOWS the existing roles AND their prompts",
+      isinstance(_NCTX.get("roles"), dict) and len(_NCTX.get("roles") or {}) >= 1
+      and all(len(v) > 10 for v in (_NCTX.get("roles") or {}).values())
+      and isinstance(_NCTX.get("existing_names"), list)
+      and sorted(_NCTX["existing_names"]) == sorted(_NCTX.get("roles") or {}))
+check("H4 a role stored as a plain STRING does not erase the whole neighbours map",
+      GEN._role_brief("just a brief") == "just a brief"
+      and GEN._role_brief({"brief": "b", "tools": ["fs.read"]}) == "b"
+      and GEN._role_brief(None) == "")
+check("H5 the panel mounts it and never overwrites an existing role",
+      'mountSparkle($("subDraftHost"), "subagent.new"' in UI
+      and "function subDraftAgent(text, st)" in UI
+      and "_subRoles[name] = brief;" in UI
+      and "already exists — draft again for a different one" in UI)
+check("H6 it writes the name into the visible field and saves the brief",
+      'if ($("subNewRole")) $("subNewRole").value = name;' in UI
+      and "subRenderRoles();" in UI and "subSaveSoon();" in UI)
+check("H7 the multi-field reply never goes through the single-field writer",
+      "if (opts && typeof opts.onText === \"function\")" in UI
+      and "opts.onText(r.text, st)" in UI)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

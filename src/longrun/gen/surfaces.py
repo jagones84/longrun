@@ -281,6 +281,18 @@ _GENERATE_PROMPTS = {
         "the standard it must meet. The context names the role, its model and the "
         "other roles. Keep it under 60 words, imperative, and non-overlapping." + _BARE
     ),
+    "subagent.new": (
+        "You design ONE NEW subagent role for this harness. The context lists every "
+        "role that ALREADY exists with its brief: the new role must fill a gap those "
+        "roles do not cover, and its name must differ from all of them. Consider what "
+        "work this operator actually delegates (the existing briefs are the evidence) "
+        "and write the role they are still missing. Reply with ONE JSON object and "
+        "nothing else — no preamble, no fence:\n"
+        '{"name": "<slug>", "brief": "<under 60 words, imperative, self-contained>"}\n'
+        "`name` is a slug: lowercase letters, digits and single hyphens, 2-24 chars. "
+        "`brief` says what work the role receives and the standard it must meet; it "
+        "must not restate another role's brief. Never invent a model or a tool list."
+    ),
     "compaction.instruction": (
         "You write the instruction of the context COMPACTOR: what a summary of a long "
         "chat must preserve so the work can continue. The context shows the current "
@@ -329,6 +341,10 @@ _GENERATE_PROMPTS = {
 # A rule is ADDED to a file, never swapped in: these two surfaces append to the field
 # so a draft can never silently delete the rules already written next to it.
 _APPEND = ("rules.global", "rules.project")
+#: RH-18: the reply is ONE JSON object that fills SEVERAL fields, not text for one
+#: field. The client reads this from `GET /api/generate/surfaces` and parses it; a
+#: surface listed here must say so in its own prompt.
+_JSON = ("subagent.new",)
 
 
 def _build():
@@ -354,7 +370,8 @@ def _build():
         out[sid] = Surface(
             id=sid, kind=GENERATE, label=sid.replace(".", " · "), system=prompt,
             ctx=sid, role=SESSION_ROLE if scoped else DEFAULT_ROLE,
-            session_scoped=scoped, apply=("append" if sid in _APPEND else "replace"),
+            session_scoped=scoped, apply=("append" if sid in _APPEND else
+                                          "json" if sid in _JSON else "replace"),
         )
     return out
 
