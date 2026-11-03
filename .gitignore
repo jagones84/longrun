@@ -54,6 +54,12 @@ config/providers.local.yaml
 # per-machine local state (never the tracked base config/compaction.yaml).
 config/compaction.local.yaml
 
+# RH-28: the bootstrap config.json is per-machine runtime state, never a shipped
+# default — `remember_workspace()` keeps the LAST folder opened on THIS machine
+# (paths.config_file()). Tracking it would push one operator's workspace path to
+# every checkout; the app recreates it on demand.
+config/config.json
+
 .superpowers/
 
 # JAG-311: the e2e WebUI test project (Node). It consumes the sibling cloned

@@ -27,6 +27,14 @@ for _k in ("DATA_DIR", "CONFIG_DIR", "SESSIONS_DIR", "ROLES_DIR", "DB", "COSTS_D
     os.environ["LONGRUN_" + _k] = val
 # the machine's real config (roles.generate) is what the model policy reads
 os.environ["LONGRUN_CONFIG_DIR"] = os.path.join(REPO, "config")
+# RH-28: that dir is REAL, so a write must not survive the run — `remember_workspace()`
+# persists config.json there (stores.py), which leaked a dead /tmp workspace path into
+# the checkout. Snapshot it and put it back byte-for-byte at the end.
+_CFGJSON = os.path.join(os.environ["LONGRUN_CONFIG_DIR"], "config.json")
+_CFGJSON_BEFORE = None
+if os.path.exists(_CFGJSON):
+    with open(_CFGJSON, "rb") as _f:
+        _CFGJSON_BEFORE = _f.read()
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.gen import generate as GEN                    # noqa: E402
@@ -319,6 +327,12 @@ check("H7 the multi-field reply never goes through the single-field writer",
       "if (opts && typeof opts.onText === \"function\")" in UI
       and "opts.onText(r.text, st)" in UI)
 
+if _CFGJSON_BEFORE is None:
+    if os.path.exists(_CFGJSON):
+        os.remove(_CFGJSON)
+else:
+    with open(_CFGJSON, "wb") as _f:
+        _f.write(_CFGJSON_BEFORE)
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n%d/%d checks passed" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

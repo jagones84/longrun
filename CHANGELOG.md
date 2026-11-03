@@ -19,10 +19,16 @@ All notable changes to Longrun are documented here. The format follows
   rail, level with the send button (operator request, 2026-11-03).** The ✨ ate the
   composer's horizontal space and the settings gear sat in the topbar. Both now live in
   a two-level vertical rail between the chat and the inspector: its `.tb-mid` block
-  keeps the session tools (hidden without a session) and its `.tb-foot` pins settings
-  plus the ✨ level with the send button, above the mobile tab bar (`--sf-bottombar`).
-  The rail is no longer hidden when there is no session, so Settings stays reachable on
-  a fresh install and the ✨ can write an empty chat's opening message (RH-27).
+  keeps the session tools (hidden without a session) and its `.tb-foot` pins the ✨
+  ABOVE the settings gear (both level with the send button, above the mobile tab bar
+  `--sf-bottombar`). The rail is no longer hidden when there is no session, so Settings
+  stays reachable on a fresh install and the ✨ can write an empty chat's opening
+  message (RH-27, order set by RH-28).
+- **A probe's `config.json` leaked a dead `/tmp` workspace path into the checkout.**
+  `v772_generate_surfaces` points `LONGRUN_CONFIG_DIR` at the real `config/` to read
+  `roles.generate`, and the session store then persisted `last_workspace` there. The
+  test now snapshots and restores that file, and `config/config.json` is gitignored as
+  per-machine runtime state — it was never tracked (RH-28).
 - **A chain-of-thought was truncated on screen while the stored one was complete.**
   The live stream stopped after 20 000 chars and appended `… (live thinking
   truncated)`, and the page then trimmed that text to its last 40 000 chars — so a

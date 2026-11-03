@@ -13496,8 +13496,9 @@ async function mountStaticSparkles() {
     // [surface, the field to fill, the row to host the ✨, insert before which child]
     // RH-27 (operator, 2026-11-03): the chat ✨ moved OUT of the composer row into the
     // tool rail's FOOT, level with the send button — it ate the horizontal space the
-    // message box needed. The gear shares that foot (see #toolsBar .tb-foot).
-    ["chat.prompt", "#inp", "#toolsBar .tb-foot", null],
+    // message box needed. The gear shares that foot (see #toolsBar .tb-foot) and sits
+    // BELOW the ✨ (operator follow-up), so the ✨ is inserted BEFORE #settingsBtn.
+    ["chat.prompt", "#inp", "#toolsBar .tb-foot", "#settingsBtn"],
     ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint"],
     ["plan.input", "#planInp", null, null],
     ["memory.content", "#memContent", null, null],
