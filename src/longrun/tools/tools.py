@@ -1314,6 +1314,7 @@ def _self(args, run_id):
     # below is the whole replacement for that copy.
     if not full:
         info["hint"] = "paths, config, docs and the extension recipe: self.info (also in the system prompt)"
+        info["repo_path"] = REPO
     if action not in ("info", ""):
         from longrun.tools import diag as diag_mod
         if action in ("diagnose", "health"):

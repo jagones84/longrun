@@ -54,7 +54,7 @@ end = UI.index('<div class="sw-cat"', start + 10)
 PANEL = UI[start:end]
 
 cards = re.findall(r'<div class="card hcard"[^>]*>(.*?)\n        </div>', PANEL, re.S)
-check("A1 six harness cards", len(cards) == 6, len(cards))
+check("A1 seven harness cards", len(cards) == 7, len(cards))
 
 # ---- A. one header row per card ---------------------------------------------
 hdrs = re.findall(r'<div class="hcard-hd"[^>]*>(.*?)</div>', PANEL, re.S)
@@ -69,16 +69,17 @@ check("A4 every header carries the title and the subtitle",
 check("B1 no card keeps a visible explanation paragraph",
       "remaining u-m006" not in PANEL)
 titles = re.findall(r'<div class="hcard-hd" title="([^"]{25,})"', PANEL)
-check("B2 all six explanations survive as header tooltips", len(titles) == 6, len(titles))
+check("B2 all seven explanations survive as header tooltips", len(titles) == 7, len(titles))
 for phrase in ("continue on its own", "verification command", "independent answers",
+               "marks the goal done",
                "how hard the task is", "recurring patterns",
                "cumulative prompt+completion tokens"):
     check("B3 tooltip keeps the words: " + phrase, any(phrase in t for t in titles))
 
 # ---- C. one save per card, same targets -------------------------------------
-check("C1 exactly one save button per card", len(re.findall(r'class="ghost config-save"', PANEL)) == 6)
+check("C1 exactly one save button per card", len(re.findall(r'class="ghost config-save"', PANEL)) == 7)
 for target in ("saveRuntime", "saveVerifier", "saveBudget", "saveBestofn",
-               "saveDifficulty", "saveSelfevolve"):
+               "saveGoalVerify", "saveDifficulty", "saveSelfevolve"):
     check("C2 the target survives: " + target, ('data-call="%s"' % target) in PANEL)
 check("C3 the save is not stacked under the fields any more",
       not re.search(r'</div>\s*<button class="ghost config-save"', PANEL))
@@ -101,11 +102,12 @@ check("F3 the header pushes its actions to the right",
 
 # ---- E. every field still there (no function lost) ----------------------------
 for fid in ("rtKgMax", "rtNoProg", "rtWall", "rtDepth", "rtParallel", "rtAuto",
-            "vfOn", "vfCmd", "vfTimeout", "vfPaths",
-            "bdMax",
-            "bnOn", "bnN", "bnMin",
-            "dfOn", "dfEasy", "dfMed", "dfHard", "dfMedAt", "dfHardAt",
-            "seMinLen", "seMinCount", "seMaxLen", "seCat"):
+           "vfOn", "vfCmd", "vfTimeout", "vfPaths",
+           "bdMax",
+           "bnOn", "bnN", "bnMin",
+           "gvAcc", "gvJudge", "gvModel",
+           "dfOn", "dfEasy", "dfMed", "dfHard", "dfMedAt", "dfHardAt",
+           "seMinLen", "seMinCount", "seMaxLen", "seCat"):
     check("E1 field still present: " + fid, ('id="%s"' % fid) in PANEL)
 
 print("\nv643: %d/%d PASS" % (sum(results), len(results)))

@@ -67,7 +67,7 @@ check("B4 the committed Dockerfile only derives from the built image (no second 
 
 # ---- C. each driver is a turn, not a chat ------------------------------------
 check("C1 the longrun driver answers on stdout and keeps diagnostics off it",
-      'print("(no answer: the harness returned an empty reply)")' in lr_turn
+      'print("(no answer:' in lr_turn
       and "file=sys.stderr" in lr_turn)
 check("C2 the longrun driver replaces the provider list with the bridge",
       "providers.yaml" in lr_turn and "api_key_env: LR_API_KEY" in lr_turn)

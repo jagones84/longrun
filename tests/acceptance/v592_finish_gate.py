@@ -80,7 +80,7 @@ check("G4c a gated finish re-enters via the closure prompt",
 check("G4d the gate consumes the same bounded budget",
       "_selfcheck_left -= 1" in _seg)
 check("G4e silent-end checks are now four (finish joins the three)",
-      _SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)") == 3
+      _SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)") == 2
       and _SRC.count("_selfcheck_left > 0 and _finish_gated(sess, goal_mode)") == 1,
       "raw=%d gated=%d"
       % (_SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)"),

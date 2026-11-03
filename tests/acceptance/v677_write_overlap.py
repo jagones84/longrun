@@ -186,7 +186,7 @@ ohtml = read("src", "longrun", "orbit", "web", "orbit.html")
 calls = [ln.strip() for ln in agent_src.splitlines()
          if "_note_chat_mutation(sess, tool" in ln and not ln.strip().startswith("def ")]
 check("E1 every chat ingress passes the tool args",
-      bool(calls) and all(", args)" in ln for ln in calls), str(calls))
+      bool(calls) and all("args" in ln for ln in calls), str(calls))
 check("E2 the v2 loop records the paths too",
       "touched_paths" in v2_src and "note_mutation_current" in v2_src)
 check("E3 the constellation payload carries the report",

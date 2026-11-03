@@ -548,6 +548,8 @@ def _set_session_model(sid, model):
     _prev = (sess or {}).get("model") if sess is not None else None
     if sess is not None:
         sess["model"] = ref
+    live_fields_changed(sid, model=ref)
+    if sess is not None:
         save_session(sess)
     try:
         from longrun.agent import agents as agents_mod
@@ -560,8 +562,8 @@ def _set_session_model(sid, model):
     # CLI used to leave the other surface showing the previous one until F5. Only a
     # REAL change is announced, so the startup reconcile stays silent.
     # …and the single place that must DEFEND the choice against a longer-lived turn
-    # that would write its stale copy over it.
-    live_fields_changed(sid, model=ref)
+    # that would write its stale copy over it (live fields already carry the new
+    # value, set above before save_session so adopt_live_choices keeps it).
     if str(_prev or "") != ref:
         publish("session.updated", session=sid, model=ref)
     return ref

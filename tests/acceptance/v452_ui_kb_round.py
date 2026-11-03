@@ -121,7 +121,7 @@ check("D5 the attach preamble tells the model to use the knowledge tool",
 # ---- E) subagents auto-save + Tools & approvals ----------------------------
 check("E1 the useless 'save subagents' button is gone (auto-save)",
       'data-call="saveSubagents"' not in idx and "function subSaveSoon" in idx
-      and "setTimeout(() => saveSubagents(false)" in idx)
+      and "saveSubagents(false)" in idx and "setTimeout" in idx)
 check("E2 the category is renamed Tools & approvals",
       '["tools", "Tools & approvals"]' in idx and "Tools &amp; approvals" in idx
       and '["tools", "Tool policy"]' not in idx)

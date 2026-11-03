@@ -90,8 +90,9 @@ check("E1 no 'Structured settings' heading",
       "Structured settings" not in UI)
 check("E2 the section help is a tooltip",
       "'<div class=\"set-t\"' + (sec.help ? ' title=\"' + _attr(sec.help) + '\"' : \"\")" in UI)
-check("E3 save and Automate share one row", 'acts.appendChild(auto)' in UI
-      and ".set-acts { display: flex;" in UI)
+check("E3 save and Automate share one row", 'class="set-acts"' in UI
+      and 'mountSparkle(card.querySelector(".set-acts")' in UI
+      and "#swMain .set-acts { display: flex;" in UI)
 
 # ---- F. hooks ----------------------------------------------------------------
 check("F1 the intro paragraph is gone", "Deterministic commands run before or after tool calls. A <b>PreToolUse</b>" not in UI)

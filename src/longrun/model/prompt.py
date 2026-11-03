@@ -239,6 +239,9 @@ def _provider_role(sess, ws, ctx):
             _by_id = {x.get("id"): x for x in _all}
             _sub = _ag.REGISTRY.subtree(_aid)     # EVERY level below, cycle-safe
             _desc = [x for x in _sub if x != _aid]
+            _direct = [x for x in (_ag.REGISTRY.team_of(_aid) or []) if x != _aid]
+            if not _desc and _direct:
+                _desc = list(_direct)
             if _desc:
                 # Indent by org depth so a nested manager reads as a nested manager.
                 _depth, _cur, _seen = {}, _aid, set()
@@ -264,7 +267,7 @@ def _provider_role(sess, ws, ctx):
                         + "\n".join(_lines)
                         + "\nThis is generated at prompt time from the SAME org chart the "
                         "UI shows: adding, renaming, re-roling or removing an agent "
-                        "appears here by itself. Never keep your own copy and never "
+                        "appears here by itself. never keep your own copy and never "
                         "assume a teammate is missing because this block is short.\n"
                         "DELEGATE \u2014 it is your job, not an option. For any task with "
                         "independent parts, hand each part to the teammate who owns it "

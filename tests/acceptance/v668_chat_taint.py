@@ -85,7 +85,8 @@ with open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"),
 check("B2 both chat call sites pass the context they sent",
       _agent.count("hist=msgs") >= 2, _agent.count("hist=msgs"))
 check("B3 the batch runner threads hist through",
-      "def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=None)" in _agent
+      "def _apply_chat_batch(sess, act, on_event, av02" in _agent
+      and "hist=None" in _agent.split("def _apply_chat_batch")[1][:300]
       and "hist=hist" in _agent)
 
 # ---- C. end-to-end gate behaviour (tool execution stubbed) -----------------

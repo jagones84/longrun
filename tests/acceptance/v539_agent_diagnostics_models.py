@@ -38,10 +38,10 @@ def check(name, ok, detail=""):
 with open(os.path.join(ROOT, "webui", "index.html"), encoding="utf-8") as f:
     ui = f.read()
 
-check("A1 Codebase inspector no longer renders the generic Automate bar",
-      'mountSectionAutomate(\'section[data-insp="codebase"]\'' not in ui
-      and "function mountSectionAutomate" in ui
-      and "mountCategoryAutomate(name)" in ui)
+check("A1 Codebase inspector has no generic Automate bar (surfaces are kind-gated)",
+      "function genSurface(id)" in ui and "_automateAllowed(" in ui
+      and 's.kind === "automate"' in ui
+      and "mountSectionAutomate" not in ui and "mountCategoryAutomate" not in ui)
 check("A2 the model picker rejects unknown refs and persists an available fallback",
       "function _modelKnown(ref)" in ui
       and "function _ensureAvailableModel()" in ui

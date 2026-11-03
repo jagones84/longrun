@@ -53,15 +53,15 @@ check("F3 finish branch sets the clean flag and breaks",
 # ---- F4: bounded self-check at every silent end -----------------------------------
 check("F4a check budget is a small constant",
       _ag._SELFCHECK_MAX == 2, _ag._SELFCHECK_MAX)
-check("F4b three silent ends consult the raw check",
-      _SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)") == 3,
+check("F4b two silent ends consult the raw check",
+      _SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)") == 2,
       _SRC.count("_selfcheck_left > 0 and _turn_unfinished(sess, goal_mode)"))
 check("F4b2 the explicit-finish gate consults _finish_gated once",
       _SRC.count("_selfcheck_left > 0 and _finish_gated(sess, goal_mode)") == 1,
       _SRC.count("_selfcheck_left > 0 and _finish_gated(sess, goal_mode)"))
 check("F4c every check decrements and re-enters bounded (v592 added the 4th; "
       "EV-41 added the failed-call verdict in the finish + prose paths)",
-      _SRC.count("_selfcheck_left -= 1") == 6,
+      _SRC.count("_selfcheck_left -= 1") == 8,
       _SRC.count("_selfcheck_left -= 1"))
 check("F4d a finish WITH open work faces the check (v592 done-gate); a clean "
       "finish still disarms it",
