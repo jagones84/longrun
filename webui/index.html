@@ -2480,9 +2480,15 @@
     /* nothing may run UNDER the rail: the app area ends at its inner edge, and the
        context panel keeps being the full-screen overlay it already is on a phone
        (z 15 < 26, so the rail stays reachable above it — same contract as the old
-       bottom bar). */
+       bottom bar). It stops at the rail's inner edge: at zoom .9 the base
+       `width: 100vw/zoom` is 938 css px = the full 844, so the rail covered its last
+       40 px and that strip was neither visible nor clickable. */
     #app { margin-right: 44px; }
     #controlView { right: 44px; }
+    body.show-right [data-col="context"] {
+      left: 44px !important; right: 44px !important;
+      width: calc(100vw / var(--zoom, 1) - 88px) !important;
+      max-width: calc(100vw / var(--zoom, 1) - 88px); }
   }
 </style>
 <script>
@@ -15617,6 +15623,11 @@ $("palette-open").onclick = openPalette;
 function _tabTop() {
   const h = document.getElementById("topbar");
   if (!h) return 52;
+  // RH-23: this is "how much chrome sits ABOVE the app". In phone landscape the top
+  // bar is a fixed LEFT RAIL that spans the full height, so its height (433 css px at
+  // zoom .9) pushed the Control deck entirely BELOW the fold — the deck opened and
+  // nothing appeared. A bar in the FLOW owns the top; a fixed rail owns the side.
+  if (getComputedStyle(h).position === "fixed") return 0;
   const z = (typeof _zoom === "number" && _zoom > 0) ? _zoom : 1;
   return Math.round(h.getBoundingClientRect().height / z);
 }

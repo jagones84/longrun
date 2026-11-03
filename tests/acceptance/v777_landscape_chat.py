@@ -104,5 +104,23 @@ check("B5 the rail stays reachable above the drawers (z 26 > the 15/18 of a draw
 check("B6 '--sf-bottombar' is 0 for a RAIL (it is not bottom chrome any more)",
       'tbs.position !== "fixed"' in UI and "tb.offsetHeight : 0" in UI)
 
+# --- C: RH-23 — the two rails must not break the pages that live between them ------
+# Operator: *"session e control pages non funzionano non posso passare da una pagina
+# all'altra nel formato layout orizzontale. Poi il rh panel … straborda … e non è
+# cliccabile del tutto"*. Two real defects, both measured:
+#  - `_tabTop()` returned the top bar's HEIGHT, which for a full-height rail is 433 css
+#    px: the Control deck opened with `top: 433px` UNDER the fold (rect y390 h0);
+#  - the right drawer kept `left: 0` + `width: 100vw/zoom` (938 css px at zoom .9): its
+#    first 40 px sat under the LEFT rail and its last 40 px under the RIGHT one, so both
+#    strips were unreadable and unclickable.
+check("C1 the Control deck's top offset is 0 when the top bar is a RAIL, not its height",
+      'if (getComputedStyle(h).position === "fixed") return 0;' in UI
+      and "function _tabTop()" in UI)
+check("C2 the right drawer lives BETWEEN the rails (left 44, right 44, -88)",
+      "left: 44px !important; right: 44px !important;" in _RAILB
+      and "width: calc(100vw / var(--zoom, 1) - 88px) !important;" in _RAILB)
+check("C3 the portrait/tablet drawer is still the full-screen overlay",
+      'body.show-right [data-col="context"] { left: 0; right: 0;' in _REST)
+
 print("\n---\nv777: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
