@@ -3246,7 +3246,7 @@
         <div class="card">
           <div class="u-df u-g12 u-aic u-fww">
             <label class="u-df u-g6 u-aic u-ptr" title="Send the reasoning_effort field at all.">enabled <input id="reOn" type="checkbox" data-change="saveReasoning"></label>
-            <label class="u-df u-g6 u-aic" title="Depth of reasoning requested from the model.">effort
+            <label class="u-df u-g6 u-aic" title="Depth of reasoning requested from the model. The level is ABSOLUTE: if the model's own default is already `high`, choosing high adds nothing and only `max` raises it (measured 2026-11-03: deepseek-v4.1 median reasoning tokens 640 with no field, 910 at high, 1055 at max; gemini-2.5-flash 0 at default, ~4400 at high).">effort
               <select id="reEffort" data-change="saveReasoning" class="inp u-p610 u-fs12" style="width:auto">
                 <option value="none">none</option>
                 <option value="minimal">minimal</option>
