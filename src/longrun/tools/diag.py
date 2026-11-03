@@ -399,12 +399,23 @@ def tools_report(tool=None, query=None) -> dict:
         (external if "__" in name else native).append(name)
         if t.get("enabled", True):
             enabled.append(name)
-    index = {t["name"]: {"enabled": t.get("enabled", True),
-                         "origin": t.get("origin"),
-                         "approval": t.get("approval"),
-                         "description": (t.get("description") or "").strip()}
-             for t in cat if t.get("name")}
+    index = {}
+    for t in cat:
+        if not t.get("name"):
+            continue
+        entry = {"enabled": t.get("enabled", True),
+                 "origin": t.get("origin"),
+                 "approval": t.get("approval"),
+                 "description": (t.get("description") or "").strip()}
+        # The REQUIRED names on the index line: without them the only way to learn
+        # that `grep.search` wants `pattern` was a second call the model skipped,
+        # so it guessed a neighbour's vocabulary (live 2026-11-03).
+        required = list((t.get("inputSchema") or {}).get("required") or [])
+        if required:
+            entry["required"] = required
+        index[t["name"]] = entry
     capped = False
+    total = len(index)
     if tool:
         want = str(tool).strip()
         entry = index.get(want)
@@ -505,8 +516,13 @@ def tools_report(tool=None, query=None) -> dict:
     if query:
         out["query"] = query
     if capped:
-        out["capped"] = ("showing the %d best matches — narrow the words, or ask for "
-                         "one tool by name" % TOOL_QUERY_LIMIT)
+        if query:
+            out["capped"] = ("showing the %d best matches — narrow the words, or ask "
+                             "for one tool by name" % TOOL_QUERY_LIMIT)
+        else:
+            out["capped"] = ("showing %d of %d tools (alphabetical) — search the rest "
+                             "with self {action:'tools', query:'<words>'} or ask for one "
+                             "tool by name" % (len(index), total))
     out["hint"] = ("read a schema with self {action:'tools', tool:'<name>'} "
                    "BEFORE calling a tool you have not used in this session")
     if query and not native and not external:

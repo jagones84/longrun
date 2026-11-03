@@ -7,14 +7,16 @@ from longrun.tools import registry
 TOOL_SCHEMAS = {
     "grep.search": {
         "description": (
-            "Search files under a workspace directory for a regular expression pattern. "
-            "Returns matching file paths, line numbers, and line contents."
+            "Search files under a workspace directory for a REGULAR EXPRESSION and "
+            "return matching file paths, line numbers and line contents. The regex "
+            "goes in `pattern` (not a natural-language `query`); `context` adds the "
+            "lines around each hit (ripgrep style)."
         ),
         "type": "object",
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": "Regular expression pattern to search for.",
+                "description": "Regular expression to search for (e.g. 'TODO|FIXME', 'def main\\(').",
             },
             "path": {
                 "type": "string",
@@ -28,6 +30,12 @@ TOOL_SCHEMAS = {
                 "type": "boolean",
                 "description": "Case-insensitive matching (default false).",
                 "default": False,
+            },
+            "context": {
+                "type": "integer",
+                "description": ("Lines of context before and after each match (0-5, "
+                                "default 0). Context lines are printed as 'file-line-text'."),
+                "default": 0,
             },
             "limit": {
                 "type": "integer",
@@ -48,7 +56,7 @@ _SKIP_DIRS = frozenset({
 
 def execute(args, run_id=None, subtool=None):
     args = args or {}
-    raw_pat = str(args.get("pattern") or args.get("query") or "")
+    raw_pat = str(args.get("pattern") or "")
     if not raw_pat:
         return {"ok": False, "error": "missing required argument: pattern"}
 
@@ -72,7 +80,9 @@ def execute(args, run_id=None, subtool=None):
 
     file_glob = str(args.get("glob") or "").strip()
     limit = max(1, min(int(args.get("limit") or 100), 500))
+    context = max(0, min(int(args.get("context") or 0), 5))
     matches = []
+    out_lines = []
     files_scanned = 0
     truncated = False
 
@@ -89,19 +99,37 @@ def execute(args, run_id=None, subtool=None):
                 if "\x00" in sample:
                     return
                 f.seek(0)
-                files_scanned += 1
-                rel = os.path.relpath(fpath, target) if os.path.isdir(target) else os.path.basename(fpath)
-                for lineno, line in enumerate(f, 1):
-                    if rx.search(line):
-                        matches.append({
-                            "file": rel,
-                            "line": lineno,
-                            "text": line.rstrip("\r\n")[:300],
-                        })
-                        if len(matches) >= limit:
-                            truncated = True
-                            return
+                text_lines = f.read().splitlines()
         except OSError:
+            return
+        files_scanned += 1
+        rel = os.path.relpath(fpath, target) if os.path.isdir(target) else os.path.basename(fpath)
+        hits = [n for n, line in enumerate(text_lines, 1) if rx.search(line)]
+        if not hits:
+            return
+        room = limit - len(matches)
+        if len(hits) > room:
+            hits = hits[:max(0, room)]
+            truncated = True
+        for lineno in hits:
+            matches.append({
+                "file": rel,
+                "line": lineno,
+                "text": text_lines[lineno - 1][:300],
+            })
+        # ripgrep convention: `file:line:text` for a hit, `file-line-text` for context.
+        printed = set()
+        for lineno in hits:
+            lo = max(1, lineno - context)
+            hi = min(len(text_lines), lineno + context)
+            for n in range(lo, hi + 1):
+                if n in printed:
+                    continue
+                printed.add(n)
+                sep = ":" if n == lineno else "-"
+                out_lines.append("%s%s%d%s%s"
+                                 % (rel, sep, n, sep, text_lines[n - 1][:300]))
+        if truncated:
             return
 
     if os.path.isfile(target):
@@ -116,7 +144,6 @@ def execute(args, run_id=None, subtool=None):
             if truncated:
                 break
 
-    lines = ["%s:%d:%s" % (m["file"], m["line"], m["text"]) for m in matches]
     return {
         "ok": True,
         "pattern": raw_pat,
@@ -125,5 +152,5 @@ def execute(args, run_id=None, subtool=None):
         "count": len(matches),
         "truncated": truncated,
         "matches": matches,
-        "stdout": "\n".join(lines) if lines else "(no matches)",
+        "stdout": "\n".join(out_lines) if out_lines else "(no matches)",
     }

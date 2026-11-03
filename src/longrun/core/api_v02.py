@@ -544,13 +544,16 @@ def tool_context():
         '- `self.tools {query:"<words>"}` → every tool whose NAME or one-line '
         "DESCRIPTION matches those words, best match first. Use your task's own "
         "words (\"read a file\", \"run a command\", \"search the web\").",
-        "- `self.tools {}` → the whole index: every enabled tool, one line each.",
+        '- `self.tools {}` → a compact index (name, required args, one-line '
+        "description), alphabetical and capped when the registry is large; the "
+        "reply says how many were hidden. Use a query to reach the rest.",
         '- `self.tools {tool:"<name>"}` → that tool\'s FULL input contract: every '
         "property, its type, its default, which ones are REQUIRED, and a valid "
         "example call. Read it BEFORE the first call of a tool you have not used in "
         "this session — the schema is authoritative, your memory is not.",
-        "The index is the ONLY allowlist: a tool that is not in it (or is disabled) "
-        "cannot be called. Never invent a name and never guess an argument.",
+        "The REGISTRY is the only allowlist: a name that is not a registered tool "
+        "(or is disabled) cannot be called. Never invent a name and never guess an "
+        "argument:",
         "`args` is ALWAYS one JSON object — never positional, never "
         "`key=value`, never a JSON string:",
         "Put tool fields directly inside that object; never nest another "

@@ -2918,6 +2918,12 @@ _ARG_ALIASES = {
     "new_string": "replace", "new_str": "replace", "new_text": "replace",
     "replacement": "replace", "replace_with": "replace", "content": "replace",
     "q": "query", "query_string": "query", "keywords": "query",
+    # 2026-11-03 live: `grep.search` was called with `query` and `context`. Every
+    # other searching tool here names its term `query` (web/memory/knowledge), and
+    # the old grep handler even read `query` as a fallback — but the declared
+    # argument is `pattern`, so the validator billed a round for a synonym the
+    # tool itself half-accepted. One vocabulary, repaired at the gate.
+    "query": "pattern",
     "file": "path", "filename": "path", "filepath": "path", "file_path": "path",
     "glob": "pattern", "wildcard": "pattern",
     "text": "content", "body": "content", "data": "content",
