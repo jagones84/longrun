@@ -13219,12 +13219,21 @@ async function saveLongrunAgentModel() {
    2026-10-23: automation stays restricted to surfaces the operator already edits by
    hand and that cannot change runtime safety config; the server refuses the rest. */
 let _genSurfaces = null;
+/* RH-20: an EMPTY catalog is a FAILURE, never a fact. `api()` does not throw — a 401
+   or a 404 comes back as `{error: …}` (see api()), so the old code cached an empty
+   map for the whole life of the tab and every ✨ silently disappeared with it.
+   Live 2026-11-03: the phone showed the Subagents panel with no draft control while
+   the server served the markup, because the catalog had been fetched once while the
+   token was not yet usable. Now a failed/empty answer is NOT cached: the next mount
+   retries, and the panel heals itself without a reload. */
 async function loadGenSurfaces(force) {
   if (_genSurfaces && !force) return _genSurfaces;
-  let d = {};
-  try { d = await api("GET", "/api/generate/surfaces"); } catch (e) { d = {}; }
+  let d = null;
+  try { d = await api("GET", "/api/generate/surfaces"); } catch (e) { d = null; }
+  const rows = ((d && d.surfaces) || []).filter(s => s && s.id);
+  if (!rows.length) return _genSurfaces || {};
   _genSurfaces = {};
-  ((d && d.surfaces) || []).forEach(s => { if (s && s.id) _genSurfaces[s.id] = s; });
+  rows.forEach(s => { _genSurfaces[s.id] = s; });
   return _genSurfaces;
 }
 /* The registry entry for a surface, or null when the server does not own that id.

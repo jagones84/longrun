@@ -94,8 +94,11 @@ check("D3 the assign picker stays open for a multi-select",
       and "keepOpen" in orbit)
 check("D4 an empty team says HOW to fill it instead of a blank panel",
       "no agents in this team yet" in orbit)
-check("D5 the panel states the roster in full (sessions without an agent id)",
-      'id="agHint"' in orbit and "without an agent id" in orbit)
+check("D5 the panel states the roster in full (sessions not in the org chart)",
+      # RH-20: the sentence used to read "without an agent id". That became FALSE once
+      # every session was born with its A<n> (stores.ensure_agent) and the deck started
+      # showing it: the gap is ORG MEMBERSHIP, not an id. The pin now states the fact.
+      'id="agHint"' in orbit and "not in the org chart" in orbit)
 
 # --- E: a PLAIN session is listed and assignable (live complaint, 2026-10-22) --
 # Operator: "in agents no teams ... non ci sono delle sessioni del sessions page ...

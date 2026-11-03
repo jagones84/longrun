@@ -1108,9 +1108,18 @@ class AgentsView {
       roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.name || x.id) + ' · ' + esc(x.id) + '</option>').join("");
     // JAG-2.4: a plain session has no agent id yet — show a dash that says so.
     // JAG-2.9: the id is a button: clicking it selects the agent (row + org node).
-    const idCell = a.id
-      ? '<button class="aidbtn" data-org="1" title="select this agent in the table and the organigram">' + esc(a.id) + '</button>'
-      : '<span class="muted" data-org="1" style="cursor:pointer" title="plain session — not designated as an agent yet; click to select it, or edit the row to designate it">—</span>';
+    // RH-20: every session IS an agent (stores.ensure_agent), so the roster carries
+    // its `A<n>` even when the record is only an identity (kind="session") and the
+    // org chart therefore excludes it. Showing "—" for a session that HAS a number
+    // was the deck's own blind spot: `tree()` filters identity records out, and the
+    // row threw away `sessions[].agent`. The dash now means "no id at all".
+    const aid = a.id || a.agent || null;
+    const idCell = aid
+      ? '<button class="aidbtn" data-org="1" title="' + (a.id
+          ? "select this agent in the table and the organigram"
+          : "the session's own agent id — it is not part of the org chart until you give it a name and a team") +
+        '">' + esc(aid) + '</button>'
+      : '<span class="muted" data-org="1" style="cursor:pointer" title="no agent record for this session">—</span>';
     const open = this.open === a.session;
     const run = this.running.has(a.session) ? '<span class="dotr" title="running"></span>' : "";
     // JAG-2.8: a VOID prompt (no ROLE.md) is a real state, not a cosmetic one — such
@@ -1131,12 +1140,13 @@ class AgentsView {
     // A-id (nothing to resolve), so only designated rows get the button. The
     // navigation itself is the deck's SHARED onOpenAgent callback (JAG-335/484:
     // no duplicated open logic — the button only carries the id).
-    const goBtn = a.id
-      ? '<button class="btn ghost mini" data-go="' + esc(a.id) + '" title="open ' + esc(a.id) + '\u2019s session in the Sessions tab" aria-label="open ' + esc(a.id) + '\u2019s session">↗</button>'
+    // RH-20: an identity-only record still HAS its A<n>, so it gets the button too.
+    const goBtn = aid
+      ? '<button class="btn ghost mini" data-go="' + esc(aid) + '" title="open ' + esc(aid) + '\u2019s session in the Sessions tab" aria-label="open ' + esc(aid) + '\u2019s session">↗</button>'
       : '';
     // I-9: provenance for a prompt an AUTOMATION wrote. Without it a ROLE.md
     // longrunAgent produced is indistinguishable from one the operator typed.
-    const w = (a.id && this.written) ? this.written[a.id] : null;
+    const w = (aid && this.written) ? this.written[aid] : null;
     let when = "";
     if (w){ try { when = new Date((w.at || 0) * 1000).toLocaleString(); } catch (_) { when = ""; } }
     const aiBadge = w
@@ -3383,7 +3393,9 @@ class OrbitApp {
     this.refresh();
   }
   openAgent(aid){
-    const a = (this.lastAgents || []).find(x => x.id === aid);
+    // RH-20: an identity-only row carries its A<n> in `agent`, not in `id` — resolve
+    // both, so the ↗ button works for every session the table lists.
+    const a = (this.lastAgents || []).find(x => x.id === aid || x.agent === aid);
     if (a) this.tac.gotoAgent(a);
   }
   /* JAG-2.9: select ONE session everywhere it is visible — the AGENTS row (persistent
@@ -3434,7 +3446,7 @@ class OrbitApp {
     sessRows.forEach(s => { promptChars[s.id] = s.prompt_chars; });
     designated.forEach(a => { a.prompt_chars = promptChars[a.session]; });
     const extras = sessRows.filter(s => !dsids.has(s.id))
-      .map(s => ({session: s.id, id: null, undesignated: true, n: 1e9,
+      .map(s => ({session: s.id, id: null, agent: s.agent || null, undesignated: true, n: 1e9,
                   name: s.title || ("session " + String(s.id).slice(0, 6)),
                   role: "", model: s.model || "", teams: [], reports_to: null,
                   prompt_chars: s.prompt_chars, updated: s.updated || 0}));
@@ -3463,16 +3475,17 @@ class OrbitApp {
       acc.concat((p.models || []).map(m => { const ref = m.ref || (p.id + ":" + m.id);
         return {ref: ref, label: ref}; })), []) : [];
     // JAG-2.4: state the roster in full. The panel mirrors the Sessions page, so the
-    // hint reports the ONE real gap left: chats with no agent id yet (they are rows).
+    // hint reports the ONE real gap left: chats that are not part of the ORG CHART yet
+    // (they are rows, and they DO carry their own A-id — see the ID column).
     // JAG-2.8: and the SECOND real gap — rows whose prompt (ROLE.md) is VOID.
     if (sess && tree){
       const voidN = pool.filter(a => a.prompt_chars === 0).length;
       $("agHint").textContent = pool.length + " sessions · " + extras.length +
-        " without an agent id (assign or edit a row to designate it)" +
+        " not in the org chart (give one a name or a team to designate it)" +
         (voidN ? " · " + voidN + " with an EMPTY prompt" : "");
       $("agHint").title = extras.length
         ? "Every session is listed here, like in the Sessions page.\n" +
-          "Not designated yet: " + extras.slice(0, 12).map(a => a.name).join(" · ")
+          "Not in the org chart yet: " + extras.slice(0, 12).map(a => a.name).join(" · ")
         : "Every session is a designated agent.";
       if (voidN) $("agHint").title += "\n" +
         "EMPTY prompt (runs on the bare system prompt, marked *): " +

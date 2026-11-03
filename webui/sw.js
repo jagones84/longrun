@@ -13,8 +13,11 @@
  * MONTHS-OLD shell — new sections missing, controls in the old places — while
  * /api/diagnostics answered 200 from the same page. A recovery reload fixed it,
  * which is exactly what a version bump makes unnecessary.
+ * 2026-11-03 (RH-20) — bumped to v4: the Subagents draft control and the landscape
+ * rail changed the shell's shape, and an unchanged name would have kept a phone PWA
+ * on the v3 copy captured at its own install. BUMP THIS WHENEVER THE SHELL CHANGES.
  */
-const CACHE = "longrun-shell-v3";
+const CACHE = "longrun-shell-v4";
 const SHELL = ["/", "/orbit", "/assets/dragsort.js", "/assets/icon-192.png",
                "/assets/icon-512.png", "/assets/apple-touch-icon.png",
                "/assets/icon-maskable-512.png"];
