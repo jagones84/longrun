@@ -317,7 +317,9 @@ check("G1 a parameter closed with the bare marker still carries its value",
 check("G2 the decoded steps are a LIST, never a JSON string",
       isinstance((a._extract_action(MALFORMED_CLOSE) or {}).get("steps"), list),
       str(type((a._extract_action(MALFORMED_CLOSE) or {}).get("steps"))))
-# Two invokes in one block: the first must not swallow the second's parameters.
+# Two invokes in one block: the first must not swallow the second's parameters,
+# and the second must not be dropped (v782: multi-invoke is a batch now — the
+# old "first only" expectation was the silent-drop bug of 2026-11-03).
 TWO_INVOKES = (OPEN + " calls>\n"
                + OPEN + ' invoke name="todo.update">\n'
                + OPEN + ' parameter name="steps">[{"id": "n1", "status": "doing"}]' + CLOSE + ">\n"
@@ -325,9 +327,13 @@ TWO_INVOKES = (OPEN + " calls>\n"
                + OPEN + ' invoke name="fs.read">\n'
                + OPEN + ' parameter name="path">/tmp/a</' + D + " parameter>\n"
                + CLOSE + " invoke>\n" + CLOSE + " calls>")
-check("G3 the first invoke does not absorb the next one's parameters",
-      a._extract_action(TWO_INVOKES) == {"action": "todo.update",
-                                         "steps": [{"id": "n1", "status": "doing"}]},
+check("G3 two invokes parse to a batch with no parameter bleed",
+      a._extract_action(TWO_INVOKES) == {
+          "action": "batch",
+          "calls": [{"action": "todo.update",
+                     "steps": [{"id": "n1", "status": "doing"}]},
+                    {"action": "tool", "tool": "fs.read",
+                     "args": {"path": "/tmp/a"}}]},
       str(a._extract_action(TWO_INVOKES)))
 
 print("---")

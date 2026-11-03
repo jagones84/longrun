@@ -3424,69 +3424,14 @@ def _normalize_action(act):
     return act
 
 
-def _dsml_action(text):
-    """JAG-369/JAG-501: convert the model's native DSML tool-call markup into the
-    harness action. Returns the FIRST invocation as
-    ``{"action":"tool","tool":<name>,"args":{...}}``, or ``None`` when `text` is
-    not DSML or carries no parseable invocation. A parameter marked
-    ``string="false"`` (a number / array / object) is decoded from JSON when it
-    parses, otherwise kept verbatim.
+def _dsml_one_invoke(attrs, body):
+    """Parse ONE DSML `<invoke>` block into a harness action, or None.
 
-    JAG-501: the live markup closes its tags in TWO shapes — ``</|DSML| invoke>``
-    and a bare ``</|DSML|>`` — and the model sometimes wraps the whole call in a
-    meta envelope (``invoke name="tool"`` with ``tool`` + ``args`` parameters,
-    copying the JSON protocol's own example). Both are accepted here; otherwise
-    the call was dropped as "invalid JSON" and the turn ended mid-work.
-
-    JAG-526: the Tool Tests session showed a THIRD live shape — extra attributes
-    on the invoke (``<invoke name="tool" string="true">``), the real tool name as
-    the element TEXT (``>shell.exec<``) and a mismatched ``</|DSML| parameter>``
-    close. The old regex required ``name="X">`` immediately, so nine such calls
-    were dropped and every retry reported "That JSON was invalid" (a JSON error
-    for text that contained no action JSON at all).
-
-    JAG-534: every tag now tolerates +/- bars, any case and a MISSING marker
-    (``<parameter name="code">`` inside a marked block), and the wrapper names a
-    model invents (``permission``, ``action``, ``tool_call``) are unwrapped to the
-    real action inside: harness action in ``action``, tool in ``tool``, tool as
-    the element text, or a raw JSON action as the element body.
+    Split out of `_dsml_action` so a multi-invoke message can parse every
+    block the same way instead of keeping only the first. `attrs` is the
+    invoke tag's attribute string, `body` the invoke's own content (already
+    cut at the next invoke / the explicit `</invoke>` close).
     """
-    if not _looks_like_dsml(text):
-        return None
-    m = re.search(_DSML_TAG + r"(?:invoke|invocation)\b([^>]*)>", text, re.S | re.I)
-    if m:
-        attrs = m.group(1)
-        tail = text[m.end():]
-        # The body ends at the invoke's OWN close tag. The first `</…>` after the
-        # invoke is NOT necessarily that tag: this model closes a PARAMETER with the
-        # bare marker (`</|DSML|>`, no `parameter` word), which the old regex
-        # accepted as the invoke close — it truncated the body before the parameters
-        # were even seen, so `todo.update` reached the harness with `steps: []` and
-        # answered "plan updated" six times without applying anything (measured in
-        # session b7329cccf94c, 2026-11-01). Cut at the NEXT invoke first, then look
-        # for an explicit `</…invoke>` inside that block.
-        nxt = re.search(_DSML_TAG + r"(?:invoke|invocation)\b", tail, re.I)
-        block = tail[:nxt.start()] if nxt else tail
-        # Only a REAL `</…invoke>` ends the body. A bare `</|DSML|>` cannot, because
-        # that is also how this dialect closes a parameter.
-        endm = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*(?:invoke|invocation)\s*>",
-                         block, re.I)
-        body = block[:endm.start()] if endm else block
-        nm = re.search(r'\bname\s*=\s*"([^"]*)"', attrs)
-        name = nm.group(1).strip() if nm else ""
-    else:
-        # JAG-534: no <invoke> at all. Either the call IS the JSON after the
-        # marker (`<｜DSML｜ calls>[{"action":"todo.update",…}]`) or the
-        # parameters hang directly off `<calls>`.
-        attrs, body, name = "", text, ""
-        parsed = extract_json(text)
-        candidates = [parsed] if isinstance(parsed, dict) else (
-            parsed if isinstance(parsed, list) else [])
-        for cand in candidates:
-            if isinstance(cand, dict) and (cand.get("action") or cand.get("tool")):
-                return _normalize_action(_dsml_coerce(cand))
-        if not re.search(_DSML_TAG + r"parameter\b", text, re.I):
-            return None
     args = {}
     for pm in re.finditer(_DSML_TAG + r'parameter\s+name\s*=\s*"([^"]+)"([^>]*)>(.*?)'
                           r"</\s*(?:" + _DSML_MARK + r")?\s*(?:parameter)?\s*>",
@@ -3512,6 +3457,8 @@ def _dsml_action(text):
     # both the arguments and (in `<calls><parameter name="args">{…}`) the only
     # clue to which tool the model meant.
     args = _dsml_unwrap_args(args)
+    nm = re.search(r'\bname\s*=\s*"([^"]*)"', attrs)
+    name = nm.group(1).strip() if nm else ""
     # JAG-526/JAG-534: the real name sits in a parameter, in the element TEXT, or
     # the whole call is a harness action wrapped in an invented envelope.
     if name.lower() in _DSML_WRAPPERS:
@@ -3544,6 +3491,88 @@ def _dsml_action(text):
     if not name:
         return None
     return {"action": "tool", "tool": name, "args": _dsml_coerce(args) or {}}
+
+
+def _dsml_action(text):
+    """JAG-369/JAG-501: convert the model's native DSML tool-call markup into the
+    harness action. Returns the FIRST invocation as
+    ``{"action":"tool","tool":<name>,"args":{...}}``, or ``None`` when `text` is
+    not DSML or carries no parseable invocation. A parameter marked
+    ``string="false"`` (a number / array / object) is decoded from JSON when it
+    parses, otherwise kept verbatim.
+
+    JAG-501: the live markup closes its tags in TWO shapes — ``</|DSML| invoke>``
+    and a bare ``</|DSML|>`` — and the model sometimes wraps the whole call in a
+    meta envelope (``invoke name="tool"`` with ``tool`` + ``args`` parameters,
+    copying the JSON protocol's own example). Both are accepted here; otherwise
+    the call was dropped as "invalid JSON" and the turn ended mid-work.
+
+    JAG-526: the Tool Tests session showed a THIRD live shape — extra attributes
+    on the invoke (``<invoke name="tool" string="true">``), the real tool name as
+    the element TEXT (``>shell.exec<``) and a mismatched ``</|DSML| parameter>``
+    close. The old regex required ``name="X">`` immediately, so nine such calls
+    were dropped and every retry reported "That JSON was invalid" (a JSON error
+    for text that contained no action JSON at all).
+
+    JAG-534: every tag now tolerates +/- bars, any case and a MISSING marker
+    (``<parameter name="code">`` inside a marked block), and the wrapper names a
+    model invents (``permission``, ``action``, ``tool_call``) are unwrapped to the
+    real action inside: harness action in ``action``, tool in ``tool``, tool as
+    the element text, or a raw JSON action as the element body.
+
+    MULTI-INVOKE (live 2026-11-03, session b7329cccf94c msg 190): the model
+    emitted TWO invokes in one message (``shell.exec`` + ``dispatch``) and the
+    old code parsed only the FIRST — the dispatch never ran, no error, exit 0,
+    marker absent from the teammate's session. Every invoke block now parses
+    through `_dsml_one_invoke`; two or more usable invokes return
+    ``{"action":"batch","calls":[...]}`` so the loop runs each in its own lane.
+    """
+    if not _looks_like_dsml(text):
+        return None
+    opens = list(re.finditer(_DSML_TAG + r"(?:invoke|invocation)\b([^>]*)>",
+                             text, re.S | re.I))
+    if opens:
+        # The body ends at the invoke's OWN close tag. The first `</…>` after the
+        # invoke is NOT necessarily that tag: this model closes a PARAMETER with the
+        # bare marker (`</|DSML|>`, no `parameter` word), which the old regex
+        # accepted as the invoke close — it truncated the body before the parameters
+        # were even seen, so `todo.update` reached the harness with `steps: []` and
+        # answered "plan updated" six times without applying anything (measured in
+        # session b7329cccf94c, 2026-11-01). Cut at the NEXT invoke first, then look
+        # for an explicit `</…invoke>` inside that block.
+        acts = []
+        for _i, _m in enumerate(opens):
+            _attrs = _m.group(1)
+            _tail = text[_m.end():]
+            _nxt = opens[_i + 1].start() - _m.end() if _i + 1 < len(opens) else None
+            _block = _tail[:_nxt] if _nxt is not None else _tail
+            # Only a REAL `</…invoke>` ends the body. A bare `</|DSML|>` cannot, because
+            # that is also how this dialect closes a parameter.
+            _endm = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*(?:invoke|invocation)\s*>",
+                              _block, re.I)
+            _body = _block[:_endm.start()] if _endm else _block
+            _one = _dsml_one_invoke(_attrs, _body)
+            if isinstance(_one, dict) and (_one.get("action") or _one.get("tool")):
+                acts.append(_normalize_action(_one))
+        if len(acts) > 1:
+            return {"action": "batch", "calls": acts}
+        if len(acts) == 1:
+            return acts[0]
+        return None
+    else:
+        # JAG-534: no <invoke> at all. Either the call IS the JSON after the
+        # marker (`<｜DSML｜ calls>[{"action":"todo.update",…}]`) or the
+        # parameters hang directly off `<calls>`.
+        attrs, body, name = "", text, ""
+        parsed = extract_json(text)
+        candidates = [parsed] if isinstance(parsed, dict) else (
+            parsed if isinstance(parsed, list) else [])
+        for cand in candidates:
+            if isinstance(cand, dict) and (cand.get("action") or cand.get("tool")):
+                return _normalize_action(_dsml_coerce(cand))
+        if not re.search(_DSML_TAG + r"parameter\b", text, re.I):
+            return None
+    return _dsml_one_invoke(attrs, body)
 
 
 def _tool_markup_action(text):
