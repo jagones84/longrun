@@ -3146,17 +3146,25 @@ def _deliverable_review_text(sess, request, since, state):
         # bookkeeping and never counts as work. `_review_action_owed` catches that.
         state["review_sent"] = True
         state["after_review"] = False
-    # ONE more cycle when the delivery is mechanically incomplete. Measured
+    # ONE more cycle when the delivery is mechanically incomplete — granted at
+    # most ONCE per turn. Measured
     # 2026-10-31 on JobBench with the same model in four arms: longrun closed at
     # 140-197 s / 17-42 calls while openclaw spent 390-527 s, and every rubric it
     # lost needed a second pass over data it already had (a shared insurance ID
     # across three rows, a tier assigned from one field). The gate stays a GATE:
     # a clean delivery earns nothing, and `left` caps the total at two read-backs.
+    # BUG (measured 2026-11-04, session 48c6e90156c5 / agent A52): `max(left, 1)`
+    # re-armed the budget on EVERY cycle as long as `gaps()` stayed non-empty, so a
+    # delivery the model never fixed looped on the read-back forever (~15 injects
+    # over 5 minutes) instead of closing — and the dispatched teammate's reply
+    # never reached the orchestrator. The one-shot flag makes the cap real.
     try:
         from longrun.plan import artifacts as _art2
-        if _art2.gaps(_chat_workspace(sess), request=request, since=since,
-                      exclude=_harness_state_roots() + _other_session_roots(sess),
-                      own_paths=_own, opaque=_opaque):
+        if (not state.get("gap_cycle_used")
+                and _art2.gaps(_chat_workspace(sess), request=request, since=since,
+                               exclude=_harness_state_roots() + _other_session_roots(sess),
+                               own_paths=_own, opaque=_opaque)):
+            state["gap_cycle_used"] = True
             state["left"] = max(int(state["left"]), 1)
     except Exception:  # noqa: BLE001 — never break a turn over an audit
         pass
