@@ -287,13 +287,20 @@ check("E15d with no provider the MODEL family decides, and an explicit format wi
       and R._reasoning_format({"format": "openrouter"}, "glm-4.6") == "openrouter")
 _LV = R._LEVEL_BUDGET                                                        # noqa: E305
 check("E16 a level is a FLOOR, not a cap: `high` asks for most of the budget",
-      _LV["high"] == 24000 and _LV["xhigh"] == 32000 and _LV["minimal"] == 1024)
+      _LV["high"] == 24000 and _LV["xhigh"] == 32000 and _LV["minimal"] == 1024
+      # RH-16: `max` is a level of its own — it was unreachable before, which is how
+      # "send nothing" looked deeper than any level.
+      and _LV["max"] == 32000 and "max" in R._LEVELS)
 _F = R._reasoning_fields                                                    # noqa: E305
 check("E17 each dialect sends ITS OWN field and never a foreign one",
       _F("x", {"enabled": True, "effort": "high", "format": "openai"}) ==
       {"reasoning_effort": "high"}
+      # RH-16: xhigh is a documented level of its own (OpenRouter: same allocation as
+      # max, ~95%); translating it to `high` was a silent downgrade.
       and _F("x", {"enabled": True, "effort": "xhigh", "format": "openai"}) ==
-      {"reasoning_effort": "high"}
+      {"reasoning_effort": "xhigh"}
+      and _F("x", {"enabled": True, "effort": "max", "format": "openai"}) ==
+      {"reasoning_effort": "max"}
       and _F("x", {"enabled": True, "effort": "none", "format": "openai"}) ==
       {"reasoning_effort": "none"}
       and _F("x", {"enabled": True, "effort": "high", "format": "superpowers"}) ==
@@ -303,19 +310,21 @@ check("E17b z.ai `high` becomes its documented MAX (default is already max)",
       {"thinking": {"type": "enabled"}, "reasoning_effort": "max"}
       and _F("glm-5.3", {"enabled": True, "effort": "none", "format": "zai"}) ==
       {"thinking": {"type": "disabled"}})
-check("E17c OpenRouter gets a NUMBER and never effort+max_tokens together",
+check("E17c OpenRouter ALWAYS sends a level, never a token number (RH-16)",
       _F("x", {"enabled": True, "effort": "high", "format": "openrouter"},
-         max_tokens=64000) == {"reasoning": {"max_tokens": 24000}}
+         max_tokens=64000) == {"reasoning": {"effort": "high"}}
+      and _F("x", {"enabled": True, "effort": "max", "format": "openrouter"},
+             max_tokens=64000) == {"reasoning": {"effort": "max"}}
       and _F("x", {"enabled": True, "effort": "high", "format": "openrouter"},
-             max_tokens=8000) == {"reasoning": {"max_tokens": 6976}}
-      and _F("x", {"enabled": True, "effort": "high", "format": "openrouter"},
-             max_tokens=1500) == {"reasoning": {"effort": "high"}}
+             max_tokens=8000) == {"reasoning": {"effort": "high"}}
       and _F("x", {"enabled": True, "effort": "none", "format": "openrouter"}) ==
       {"reasoning": {"enabled": False}})
 check("E17f a GLM through OpenRouter asks for `max` — the only shape measured to RAISE "
       "it — and never for a disable it would reject",
       _F("z-ai/glm-5.3-flash", {"enabled": True, "effort": "high",
                                 "format": "openrouter"}) == {"reasoning": {"effort": "max"}}
+      and _F("z-ai/glm-5.3-flash", {"enabled": True, "effort": "max",
+                                    "format": "openrouter"}) == {"reasoning": {"effort": "max"}}
       and _F("z-ai/glm-5.3-flash", {"enabled": True, "effort": "low",
                                     "format": "openrouter"}) == {"reasoning": {"effort": "low"}}
       and _F("z-ai/glm-5.3-flash", {"enabled": True, "effort": "none",
@@ -373,6 +382,7 @@ _rc = (registry.load_config(reload=True).get("reasoning") or {})
 check("E19 config/tools.yaml owns the thinking limits (none of them is a constant)",
       isinstance(_rc.get("budgets"), dict) and _rc["budgets"].get("high") == 24000
       and _rc["budgets"].get("xhigh") == 32000
+      and _rc["budgets"].get("max") == 32000
       and _rc.get("max_tokens") == 32768
       and _rc.get("budget_ceiling") == 32000
       and _rc.get("budget_floor") == 1024

@@ -2759,7 +2759,8 @@ def _update_policy(body):
             r["enabled"] = bool(src["enabled"])
         if "effort" in src:
             eff = str(src["effort"] or "").strip().lower()
-            r["effort"] = eff if eff in ("none", "minimal", "low", "medium", "high", "xhigh") else ""
+            r["effort"] = eff if eff in ("none", "minimal", "low", "medium", "high",
+                                         "xhigh", "max") else ""
         # The provider DIALECT of the reasoning parameter. openclaw models this as a
         # per-model `thinkingFormat`; longrun sends ONE shape for every provider unless
         # this is set, which is why a z.ai model ignored the effort (measured 2026-11-01:

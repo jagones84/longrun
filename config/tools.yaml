@@ -68,10 +68,12 @@ runtime:
 #
 # The chain is DEFAULTS (rllm.py) <- this file <- data/tools.overlay.yaml.
 reasoning:
-  enabled: false            # OPT-IN. With false nothing is sent, and the provider
-                            # default applies — which is the DEEPEST shape measured
-                            # (2026-11-01: nothing 1419 reasoning tokens vs `high` 107)
-  effort: ""                # none|minimal|low|medium|high|xhigh; "" = leave alone
+  enabled: false            # OPT-IN. With false nothing is sent, so the PROVIDER default
+                            # applies. That default is NOT the deepest shape (measured
+                            # 2026-11-03 with curl: z-ai/glm-5.3-flash 422-618 reasoning
+                            # tokens with no field vs 2510-4855 with `effort: max`, and
+                            # gemini-2.5-flash thinks 0 tokens). `max` is the top.
+  effort: ""                # none|minimal|low|medium|high|xhigh|max; "" = leave alone
   format: auto              # provider dialect; auto reads it from the provider kind
   # The answer+thinking ENVELOPE of one completion. A thinking budget is clamped
   # strictly below it, so a small envelope SILENTLY caps the thinking: at 16384 the
@@ -86,6 +88,7 @@ reasoning:
     medium: 16384
     high: 24000
     xhigh: 32000
+    max: 32000
   budget_floor: 1024        # the lowest a provider accepts (Anthropic)
   budget_ceiling: 32000     # the highest a provider accepts (OpenRouter cap)
   budget_reserve: 1024      # answer room kept strictly below `max_tokens`

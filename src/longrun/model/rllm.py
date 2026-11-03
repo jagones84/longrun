@@ -679,13 +679,17 @@ def _reasoning_effort():
     OPT-IN via the Thinking-effort setting (data/tools.overlay.yaml): when it is
     disabled or unset this returns None, so the request body stays byte-identical
     to before and plain/local models that reject the field are never affected.
+
+    RH-16: "off" means the PROVIDER's default, and that default is not the deepest
+    shape — measured 2026-11-03, `z-ai/glm-5.3-flash` thought 422-618 tokens with no
+    field against 2510-4855 with `effort: max`. Use `max`/`xhigh` for depth.
     """
     try:
         from longrun.tools import registry as _reg
         r = _reg.load_config().get("reasoning") or {}
         if r.get("enabled"):
             eff = str(r.get("effort") or "").strip().lower()
-            if eff in ("none", "minimal", "low", "medium", "high", "xhigh"):
+            if eff in _LEVELS:
                 return eff
     except Exception:  # noqa: BLE001
         pass
@@ -694,7 +698,10 @@ def _reasoning_effort():
 
 #: The reasoning LEVELS, lowest first. An EMPTY effort means "leave the provider alone"
 #: (the shipped default); `none` is an EXPLICIT request to stop thinking.
-_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
+#: RH-16: `max` is a level of its own — OpenRouter and z.ai both accept it, and it is
+#: the DEEPEST shape measured (see `_LEVEL_BUDGET`). Without it the top of the scale was
+#: unreachable, which is how "send nothing" came to look deeper than any level.
+_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
 #: What a level asks for, in thinking TOKENS, for the providers that take a NUMBER
 #: instead of a level name. The numbers are far apart on purpose: Anthropic's floor is
@@ -703,7 +710,7 @@ _LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
 #: `reasoning_effort: high` gave a z.ai model 107 reasoning tokens against 1419 for the
 #: provider default, i.e. the "level" was silently CAPPING the thinking).
 _LEVEL_BUDGET = {"minimal": 1024, "low": 4096, "medium": 12000,
-                 "high": 24000, "xhigh": 32000}
+                 "high": 24000, "xhigh": 32000, "max": 32000}
 
 #: RH-15: the dict above is only the CODE DEFAULT. Every thinking LIMIT is
 #: overridable from `config/tools.yaml` → `reasoning:`, through the same
@@ -793,13 +800,17 @@ def _max_tokens():
 REASONING_FORMATS = ("auto", "openai", "openrouter", "deepseek", "together",
                      "zai", "qwen", "qwen-chat-template", "llamacpp", "anthropic")
 
-#: The level names a provider that lacks `xhigh` understands.
+#: The level names a provider understands, unchanged. RH-16: `xhigh` used to be sent
+#: as `high`, but OpenRouter documents xhigh as its own level ("same allocation as max,
+#: ~95% of max_tokens"), so translating it down was a silent downgrade on every
+#: provider that DOES accept it. A name is only replaced when the provider's scale has
+#: no such level — that is `_ZAI_EFFORT`, below.
 _EFFORT_WORD = {"minimal": "minimal", "low": "low", "medium": "medium",
-                "high": "high", "xhigh": "high"}
+                "high": "high", "xhigh": "xhigh", "max": "max"}
 #: z.ai's own scale: max (default, deepest) / high / low. Anything at or above `high`
 #: must become `max`, or the setting would think LESS than the default it replaces.
 _ZAI_EFFORT = {"minimal": "low", "low": "low", "medium": "high",
-               "high": "max", "xhigh": "max"}
+               "high": "max", "xhigh": "max", "max": "max"}
 
 
 def _is_zai_family(model_id):
@@ -915,25 +926,32 @@ def _reasoning_fields(model_id, cfg=None, max_tokens=None):
                              _floor, _ceiling, _reserve)
         word = _EFFORT_WORD.get(eff, "")
         if fmt == "openrouter":
-            # One of `effort` / `max_tokens`, never both (HTTP 400 otherwise). Measured on
-            # `z-ai/glm-5.3-flash` through OpenRouter, reasoning tokens: nothing 487 |
-            # effort:xhigh 309 | max_tokens 24000 155 | **effort:max 1244** — so for the
-            # GLM family only the literal `max` raises the depth above the default, and
-            # every other shape lowers it. On a model whose default is thinking-OFF the
-            # number wins: gemini-2.5-flash 0 tokens by default, 4305 with max_tokens
-            # 24000. Both rows were taken live on 2026-11-01.
+            # RH-16 (measured with curl on 2026-11-03, question `7^2026 mod 1000`,
+            # max_tokens 32000, reasoning tokens from `usage`):
+            #   z-ai/glm-5.3-flash   no field 422-618 | effort:high 392-533
+            #                        effort:max 2510-4855 | reasoning.max_tokens=24000 149-315
+            #   google/gemini-2.5-flash  no field **0** | effort:max 6122 | max_tokens 3119
+            #   deepseek/deepseek-v4.1-flash  effort:max 3043 | max_tokens 3644
+            # Two facts follow. (1) Sending a level does NOT cap the thinking — the old
+            # reading compared `high` (a level BELOW z.ai's `max` default) with "send
+            # nothing"; `effort: max` is 5-10x the no-field reply. (2) `reasoning.
+            # max_tokens` is the WEAKER shape on a model that does not declare
+            # `supports_max_tokens` (GLM: 315 against 4855), because OpenRouter then
+            # converts the number into an EFFORT through its percentages
+            # (openrouter.ai/docs/guides/best-practices/reasoning-tokens). So this
+            # dialect always sends `effort`, and never a token number, whatever the
+            # model: a model that only takes a budget gets it derived from the level.
             if not on:
                 # A thinking-ONLY model answers 400 ("Reasoning is mandatory for this
                 # endpoint and cannot be disabled") — sending nothing is the only request
                 # it accepts, and a 400 + retry would cost a round every turn.
                 return {} if _is_zai_family(model_id) else {"reasoning": {"enabled": False}}
             if _is_zai_family(model_id):
-                deep = "max" if eff in ("high", "xhigh") else (
-                    "high" if eff == "medium" else "low")
-                return {"reasoning": {"effort": deep}}
-            if budget:
-                return {"reasoning": {"max_tokens": budget}}
-            return {"reasoning": {"effort": word or "high"}}
+                # The GLM scale is max/high/low (the models endpoint: `supported_efforts:
+                # ["max","high","low"], default_effort: "max"`), so the short names above
+                # it collapse onto max.
+                return {"reasoning": {"effort": _ZAI_EFFORT.get(eff, "max")}}
+            return {"reasoning": {"effort": word or eff or "max"}}
         if fmt == "zai":
             if not on:
                 return {"thinking": {"type": "disabled"}}
@@ -968,7 +986,7 @@ def _reasoning_fields(model_id, cfg=None, max_tokens=None):
             if on:
                 out["reasoning_effort"] = word or "high"
             return out
-        return {"reasoning_effort": "none" if not on else (word or "high")}
+        return {"reasoning_effort": "none" if not on else (word or eff or "high")}
     except Exception:  # noqa: BLE001
         return {}
 
