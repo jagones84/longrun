@@ -291,6 +291,20 @@ check("G5 only the composer passes own_workspace_only (one owner for the rule)",
       "own_workspace_only=True" in open(os.path.join(
           REPO, "src", "longrun", "gen", "generate.py"), encoding="utf-8").read()
       and GEN._GATHER["chat.prompt"]({"session": _nof}).get("workspace") == TMP)
+# RH-29 (operator, 2026-11-03): a FILLED composer is OPTIMIZED, never overwritten by a
+# brand-new message, and the ✨'s name says which job it will do.
+check("G6 a FILLED composer is OPTIMIZED, never answered or replaced by a new message",
+      "OPTIMIZE the operator's draft" in S.SURFACES["chat.prompt"].system
+      and "REPLACES it" in S.SURFACES["chat.prompt"].system
+      and "no new features, names, paths or numbers" in S.SURFACES["chat.prompt"].system)
+_rows = {m.group(1): m.group(0)
+         for m in re.finditer(r'\["([a-z.]+)", "[^"]+"[^\]]*\]', UI)}
+check("G7 the ✨'s NAME follows the field's state, and only the composer optimizes",
+      "opts.filledTitle" in UI and "_syncName()" in UI
+      and "optimize what I typed" in (_rows.get("chat.prompt") or "")
+      and not any("optimize" in (_rows.get(k) or "") for k in
+                  ("goal.objective", "plan.input", "memory.content",
+                   "blackboard.topic", "kb.notebook")))
 
 # ============================================================================
 # H — RH-18 (operator, 2026-11-03): ONE ✨ designs a whole NEW subagent role.

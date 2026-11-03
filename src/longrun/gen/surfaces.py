@@ -236,14 +236,26 @@ _BARE = ("\nReply with ONLY the text for the field: no preamble, no explanation,
 
 _GENERATE_PROMPTS = {
     "chat.prompt": (
-        "You write the NEXT message the operator is about to send in THIS chat. The "
-        "context is the real conversation: its recent turns, its task list and its "
-        "goal. Write one message that moves the work forward — ask for the missing "
-        "decision, or restate the next step concretely. Keep it short (1-3 sentences), "
-        "specific to what is actually open, and never invent facts that are not in the "
-        "context. If the context has NO conversation yet (no recent turns), write a "
-        "short OPENING message that asks the operator what they want to work on — "
-        "never assume or name a project, folder or repository." + _BARE
+        "You write the text of THIS chat's composer. The CURRENT CONTENT OF THE FIELD "
+        "decides the job, and you never mix the two."
+        " EMPTY field and NO conversation yet: write a short OPENING message that asks "
+        "the operator what they want to work on — never assume or name a project, "
+        "folder or repository."
+        " EMPTY field but the conversation has turns: write the NEXT message that moves "
+        "the work forward — ask for the missing decision, or restate the next step "
+        "concretely. Keep it short (1-3 sentences) and specific to what is actually open."
+        " FILLED field: OPTIMIZE the operator's draft. That text is what the operator "
+        "wants to say, so keep its intent, its language and every fact it states. Rewrite "
+        "it as the COMPLETE, implementation-ready instruction behind it: fix spelling, "
+        "grammar and ambiguity, then spell out the requirements the draft already "
+        "implies — the concrete changes to make, the behaviour that must keep working, "
+        "and how the result is proven done. A one-clause draft usually hides several "
+        "requirements: name them all, in 2-5 sentences or a short numbered list. "
+        "Overlap with the draft is intended (the rewrite REPLACES it, never appends only "
+        "the missing parts). Add nothing the draft or the context does not support — no "
+        "new features, names, paths or numbers."
+        " Never answer the draft, never explain what you changed, never invent facts "
+        "that are not in the context." + _BARE
     ),
     "goal.objective": (
         "You write the OBJECTIVE of a durable goal for this session — the outcome to "

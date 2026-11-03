@@ -7,6 +7,14 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **The chat ✨ optimizes the draft you already typed (operator request, 2026-11-03).**
+  With text in the composer the same ✨ used to draft a brand-new message and discard it.
+  Now the field's state decides the job: EMPTY → the opening/next message as before;
+  FILLED → the draft is rewritten into the complete, implementation-ready instruction it
+  implies (spelling, grammar, ambiguity fixed; the changes, the behaviour to preserve and
+  the way it is proven done spelled out), replacing it with one-click undo and inventing
+  nothing the draft does not support. The button's name follows the state, so it is never
+  a ✨ that silently throws the draft away (RH-29).
 - **Enter sends the message in the composer (operator request, 2026-10-26).** It
   used to insert a newline and demand `Ctrl+Enter`. `Shift+Enter` (and
   `Ctrl/Cmd+Enter`) now insert a newline; the key still does NOT send while an IME
