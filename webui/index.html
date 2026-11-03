@@ -10621,14 +10621,20 @@ const _FEED_REFRESH = {
     if (Number(ev && ev.revision || 0) > _sidebarOrder.revision) loadSessions();
   },
   "roles.update": () => { loadRulesPanel(); loadSessions(); },
-  "longrun_agent.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); loadRules(); },
+  // RH-22: these two used to schedule ONLY the diagnostics refresh. The Subagents
+  // panel is a view of `config/subagents.yaml`, and the backend can write that file
+  // without the panel (A1's `webui.configure target='subagents'`, the CLI, the Orbit
+  // deck). Without a reload here the panel kept a copy the server no longer had —
+  // exactly the "the frontend must follow the backend" contract.
+  "settings.changed": ev => { scheduleDiagnosticsRefresh(); subagentsSyncFromBackend(ev); },
+  "config.saved": ev => { scheduleDiagnosticsRefresh(); subagentsSyncFromBackend(ev); },
+  "longrun_agent.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); loadRules(); subagentsSyncFromBackend({}); },
   "home.move": () => loadHome()
 };
 function _feedReplay(ev) {
   const kind = ev && ev.kind, d = ev || {};
   if (!kind) return;
-  if (["config.saved", "providers.update", "rules.update", "settings.changed",
-       "settings.diagnostic"].includes(kind)) {
+  if (["providers.update", "rules.update", "settings.diagnostic"].includes(kind)) {
     scheduleDiagnosticsRefresh();
     return;
   }
@@ -10796,7 +10802,7 @@ function connectFeed() {
     if (_feedWatch) { clearInterval(_feedWatch); _feedWatch = 0; }
     es.close(); setTimeout(connectFeed, 5000);
   });
-  ["config.saved", "providers.update", "rules.update", "settings.changed",
+  ["providers.update", "rules.update",
    "settings.diagnostic"].forEach(kind =>
     es.addEventListener(kind, scheduleDiagnosticsRefresh));
   // JAG-532: subscribe to EVERY kind in the refresh table. The feed sends named SSE
@@ -13727,7 +13733,27 @@ function subAddRole() {
   i.value = ""; subRenderRoles(); subSaveSoon();
 }
 let _subSaveTimer = null;
-function subSaveSoon() { clearTimeout(_subSaveTimer); _subSaveTimer = setTimeout(() => saveSubagents(false), 700); }
+function subSaveSoon() {
+  clearTimeout(_subSaveTimer);
+  // RH-22: clear the id when it FIRES, so "a save is pending" is a real question for
+  // the backend-sync guard below (a fired timer keeps its id otherwise).
+  _subSaveTimer = setTimeout(() => { _subSaveTimer = 0; saveSubagents(false); }, 700);
+}
+/* RH-22: follow a BACKEND write of the subagent policy. `config/subagents.yaml` has
+   writers that never touch this panel (A1's `webui.configure target='subagents'`, the
+   CLI, the Orbit deck); when one of them publishes `settings.changed` / `config.saved`
+   the panel must re-read it. It refreshes only when it is the VISIBLE panel and nobody
+   is in it, so a debounced auto-save and a half-typed brief are never stolen. */
+function subagentsSyncFromBackend(ev) {
+  const f = String((ev && (ev.file || ev.name)) || "");
+  if (f && f !== "subagents.yaml") return;
+  const panel = document.querySelector('.sw-cat[data-cat="subagents"]');
+  if (!panel || panel.hidden) return;
+  if (_subSaveTimer) return;                        // a save of ours is in flight
+  const ae = document.activeElement;
+  if (ae && panel.contains(ae)) return;             // the operator is editing it
+  loadSubagents();
+}
 async function saveSubagents(reload = true) {
   const primary = $("subModel") ? $("subModel").value : "";
   const body = {

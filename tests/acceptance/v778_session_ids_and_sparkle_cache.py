@@ -19,6 +19,10 @@ Two separate defects, both measured live on 2026-11-03:
    away the `agent` field `/api/orbit/sessions` already carries.
 
 Deterministic: source contracts only. No browser, no server, no model.
+
+RH-22 (section D) adds the other half of the same contract: a backend write of
+`config/subagents.yaml` — A1's `webui.configure target='subagents'`, the CLI, the Orbit
+deck — must reach the panel, which is only a VIEW of that file.
 """
 import os
 import sys
@@ -82,6 +86,25 @@ check("C7 the ↗ opener and the AI badge follow the same id",
       "const goBtn = aid" in DECK and "(aid && this.written)" in DECK)
 check("C8 the shared opener resolves an identity-only row",
       "x.id === aid || x.agent === aid" in DECK)
+
+# --------------------------------- D. a BACKEND write must reach the panel (RH-22) ---
+# Operator: *"io volevo agissero a livello di backend creando oggetti … e poi come
+# conseguenza il frontend si aggiornasse sincronizzandosi col backend"*. The panel is a
+# VIEW of `config/subagents.yaml`, which A1 (`webui.configure target='subagents'`), the
+# CLI and the Orbit deck can write without ever touching this tab.
+check("D1 'settings.changed' / 'config.saved' go through the ONE feed table",
+      '"settings.changed": ev => { scheduleDiagnosticsRefresh(); subagentsSyncFromBackend(ev); },' in UI
+      and '"config.saved": ev => { scheduleDiagnosticsRefresh(); subagentsSyncFromBackend(ev); },' in UI)
+check("D2 the sync is guarded: its own file, visible panel, no pending save, nobody typing",
+      'if (f && f !== "subagents.yaml") return;' in UI
+      and "if (_subSaveTimer) return;" in UI
+      and "if (ae && panel.contains(ae)) return;" in UI
+      and "loadSubagents();" in UI)
+check("D3 the debounce id is cleared when it FIRES, so the guard can tell",
+      "_subSaveTimer = setTimeout(() => { _subSaveTimer = 0; saveSubagents(false); }, 700);" in UI)
+check("D4 those kinds are not subscribed twice (one table, not two)",
+      UI.count("es.addEventListener(kind, scheduleDiagnosticsRefresh)") == 1
+      and '"config.saved", "providers.update"' not in UI)
 
 print("\n---\nv778: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
