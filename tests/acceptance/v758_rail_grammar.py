@@ -16,9 +16,11 @@ Contract:
   D) inspector views are draggable to reorder on the shared DragSort engine and
      the order persists;
   E) the pins the old tests rely on survive (head/toolbar markup, ▲▼ controls);
-  F) RH-1/RH-2 (2026-11-02) — the inspector has the SAME anatomy as the sessions
-     rail: a FIXED head and one scrolling `.insp-list` below it, both heads on the
-     same surface with the one hairline directly under the title.
+  F) RH-1/RH-2/RH-14 (2026-11-02/03) — the inspector has the SAME anatomy as the
+     sessions rail: a FIXED head on the same surface with the one hairline directly
+     under the title. RH-14 moved the scroll OUT of `.insp-list` and onto the PANEL
+     itself (`[data-col="context"]`), so the scrollbar runs the whole panel height
+     on its right edge, and pinned the head with `position: sticky`.
 
 Deterministic: source contracts only. No browser, no server, no model.
 """
@@ -105,13 +107,27 @@ check("E3 the pinned flex declaration of .insp-hd is untouched",
 # ---- F: the head is FIXED in both rails (one anatomy, one divider) -----------
 # RH-1/RH-2, operator verbatim: *"la barra inspector cosiccome la barra sessions nel lh
 # panel deve essere fissa in alto no scrollable. uniforma anche lo stile tra i due"*.
-check("F1 the inspector is a flex column and is NOT the scroller any more",
-      "#inspector { display: flex; flex-direction: column; flex: 1 1 auto;" in UI
-      and "min-height: 0; overflow: hidden; padding: 0; }" in UI
+# RH-14, operator verbatim: *"la scrollbar non dà tutto il rh panel andava rimossa
+# solo inspector doveva rimanere in cima come header che non si muoveva al muovere
+# della scrollbar"*. The scrollbar must span the WHOLE panel, so the panel itself is
+# the scroller and the head is pinned inside it (sticky) instead of being a sibling
+# of a nested scroller.
+check("F1 the inspector is a flex column and is NOT a scroller any more",
+      "#inspector { display: flex; flex-direction: column; flex: 0 0 auto;" in UI
+      and "min-height: 0; overflow: visible; padding: 0; }" in UI
       and "#inspector { padding: 0; }" in UI)
-check("F2 the ONE scrolling list of the inspector is `.insp-list`",
-      "#inspector .insp-list { flex: 1 1 auto; min-height: 0;" in UI
-      and "overflow-y: auto; overflow-x: hidden; padding: 0 0 8px; }" in UI)
+check("F2 the CONTEXT panel is the ONE scroller, with the head pinned inside it",
+      '[data-col="context"]  { flex: 0 0 238px; width: 238px; min-width: 150px; '
+      'border-left: 1px solid var(--line); border-right: 0; overflow-y: auto; '
+      'overflow-x: hidden; min-height: 0; }' in UI
+      and "#inspector .insp-tools { position: sticky; top: 0; z-index: 3; }" in UI
+      # the head's flow position == the scrollport top, so it is pinned from the
+      # first pixel: no 14px travel and no section can show above it.
+      and "#rail { padding-top: 0; }" in UI)
+check("F2b `.insp-list` is a plain content-height wrapper, not a second scroller",
+      "#inspector .insp-list { flex: 0 0 auto; min-height: 0;" in UI
+      and "overflow: visible; padding: 0 0 8px; }" in UI
+      and "overflow-y: auto; overflow-x: hidden; padding: 0 0 8px; }" not in UI)
 check("F3 the markup wraps the sections in exactly one `.insp-list`",
       UI.count('<div class="insp-list">') == 1
       and "<!-- /insp-list (RH-1) -->" in UI

@@ -1209,7 +1209,9 @@
      centre column to a sliver. The chat floor is the flexbox hard limit. */
   [data-col="sessions"] { flex: 0 0 220px; width: 220px; min-width: 150px; border-right: 1px solid var(--line); overflow-y: auto; }
   [data-col="chat"]     { flex: 1 1 0%; min-width: 420px; display: flex; flex-direction: column; min-height: 0; }
-  [data-col="context"]  { flex: 0 0 238px; width: 238px; min-width: 150px; border-left: 1px solid var(--line); border-right: 0; overflow: hidden; min-height: 0; }
+  /* RH-14: the CONTEXT panel is the ONE scroller (its scrollbar runs the panel's
+     full height on the right edge, see #inspector below). */
+  [data-col="context"]  { flex: 0 0 238px; width: 238px; min-width: 150px; border-left: 1px solid var(--line); border-right: 0; overflow-y: auto; overflow-x: hidden; min-height: 0; }
   /* JAG-367: on a phone the desktop 420px chat floor forced the page wider than the
      screen (real Pixel 8: visual viewport 363px, layout forced to 420px) and
      body{overflow-x:hidden} CLIPPED the right edge (send button + last tab cut).
@@ -1374,14 +1376,20 @@
   a.weblink { color: var(--info); }
   a.imglink { color: var(--acc2); }
   /* JAG-150: inspector (collapsible sections, replaces the rail tabs) */
-  /* RH-1: the inspector now has the SAME anatomy as the sessions rail — a fixed
-     36px head and ONE scrolling list below it. Before, #inspector was itself the
-     scroller, so the "INSPECTOR" bar scrolled away with the sections (the operator
-     asked for it fixed, "come la barra sessions"). */
-  #inspector { display: flex; flex-direction: column; flex: 1 1 auto;
-    min-height: 0; overflow: hidden; padding: 0; }
-  #inspector .insp-list { flex: 1 1 auto; min-height: 0;
-    overflow-y: auto; overflow-x: hidden; padding: 0 0 8px; }
+  /* RH-14 (operator, 2026-11-03, verbatim): *"la scrollbar non dà tutto il rh panel
+     andava rimossa solo inspector doveva rimanere in cima come header che non si
+     muoveva al muovere della scrollbar"*. RH-1 had moved the scroll INSIDE
+     `.insp-list`, so the scrollbar was confined to a small box under the head and
+     inset 12px from the panel's edge — that is what the operator rejected. Now the
+     PANEL is the scroller (`[data-col="context"]`, above) and the head is
+     `position: sticky`, so the scrollbar spans the whole panel while the head
+     stays pinned at the top. `#inspector` and `.insp-list` must therefore NOT
+     scroll (`overflow: visible`) and must be content-sized (`flex: 0 0 auto`) so
+     the panel really overflows. */
+  #inspector { display: flex; flex-direction: column; flex: 0 0 auto;
+    min-height: 0; overflow: visible; padding: 0; }
+  #inspector .insp-list { flex: 0 0 auto; min-height: 0;
+    overflow: visible; padding: 0 0 8px; }
   #inspector .insp-tools { display: flex; align-items: center; margin: 0 8px 4px; }
   #inspector .insp-tools h2 { margin: 6px 0 4px; }
   #inspector section { border-bottom: 1px solid var(--line-2); }
@@ -2277,8 +2285,19 @@
   aside .rail-tools .runs-bar { padding: 2px 7px; }
   aside .rail-search { padding: 6px 12px; border-bottom: 1px solid var(--line); }
   aside .rail-list { margin-top: 0; }
-  /* RH-1: #inspector is not the scroller any more (its .insp-list is), so it must
-     not add padding around the fixed head. Wins over the earlier `padding: 8px`. */
+  /* RH-14: the head lives INSIDE the (now) scrolling panel, so it is pinned with
+     `position: sticky` — it stays at the top instead of scrolling away with the
+     sections. `--panel` on it is already its own background, so the sections slide
+     under it without bleeding through. */
+  #inspector .insp-tools { position: sticky; top: 0; z-index: 3; }
+  /* RH-14: no top padding on the context panel: the head's flow position is then
+     exactly the scrollport's top edge, so it is pinned from the first pixel — it
+     does not travel (and no section can show above it). The left/right padding
+     stays, so the content inset is unchanged; the SCROLLBAR (drawn on the panel's
+     padding box) now runs the panel's full height on its right edge. */
+  #rail { padding-top: 0; }
+  /* RH-14: #inspector adds no padding of its own — the panel (`aside`) owns it, so
+     the sticky head can reach the panel's top edge. Wins over `padding: 8px`. */
   #inspector { padding: 0; }
   #inspector section { position: relative; border-bottom: 1px solid var(--line); }
   #inspector section:last-of-type { border-bottom: 0; }
