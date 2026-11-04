@@ -373,6 +373,66 @@ def invalid_reply_cap(cfg=None):
     return INVALID_REPLY_CAP
 
 
+#: I-2: how many times the SAME `(kind, text)` may reach the model in one turn.
+#: Kept as the fallback for `inject_identical_cap()`, like its sibling constant.
+INJECT_IDENTICAL_CAP = 1
+
+
+def inject_repeat_decision(kind, text, seen, cap=INJECT_IDENTICAL_CAP):
+    """I-2 (2026-11-04): is this injection a byte-identical repeat? (mutates `seen`)
+
+    THE ONE FORM OF A BUDGET THAT CANNOT LOSE INFORMATION. Everything measured on
+    2026-11-01 was 189 harness turns and 151 kB of injections in one session, but
+    only a REPEAT of the exact same `(kind, text)` costs context without telling
+    the model anything new — it already holds those bytes. So that is all this
+    bounds. A different text, a different kind, the first occurrence and every
+    tool observation (its payload is data the model must see) all pass.
+
+    `0` or a negative `cap` disables the bound — deliberately WITHOUT the floor
+    `invalid_reply_cap()` has, because this knob is not a safety valve: turning it
+    off restores the old behaviour exactly. A `seen` that is not a dict, and a cap
+    that does not parse, both fail OPEN (return False), so a caller bug can only
+    ever inject MORE, never less.
+    """
+    try:
+        limit = int(cap)
+    except (TypeError, ValueError):
+        limit = INJECT_IDENTICAL_CAP
+    if limit < 1 or not isinstance(seen, dict):
+        return False
+    if str(kind) == "observation":
+        return False
+    key = (str(kind), str(text))
+    already = int(seen.get(key, 0) or 0)
+    if already >= limit:
+        return True
+    seen[key] = already + 1
+    return False
+
+
+def inject_identical_cap(cfg=None):
+    """I-2: the same resolution chain as `invalid_reply_cap`, WITHOUT a floor.
+
+    explicit `runtime` block -> `LONGRUN_INJECT_IDENTICAL_CAP` (tests / one-off
+    run) -> `config/tools.yaml` -> `DEFAULTS` -> the constant. A `0` or a negative
+    value is returned AS WRITTEN: it means "no bound", which is the documented
+    switch-off for this knob.
+    """
+    try:
+        if isinstance(cfg, dict) and cfg.get("inject_identical_cap") is not None:
+            return int(cfg["inject_identical_cap"])
+        env = os.environ.get("LONGRUN_INJECT_IDENTICAL_CAP")
+        if env not in (None, ""):
+            return int(env)
+        from longrun.plan import keepgoing as _kgcfg
+        got = (_kgcfg.cfg() or {}).get("inject_identical_cap")
+        if got is not None:
+            return int(got)
+    except Exception:  # noqa: BLE001 — a config read must never break a turn
+        pass
+    return INJECT_IDENTICAL_CAP
+
+
 def _phase(on_event, sid, phase, **kw):
     """Publish the turn's CURRENT phase: what the harness is waiting for.
 
@@ -3994,6 +4054,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         _kg_wall_secs = float(_kg.DEFAULTS["max_wall_secs"])
     # I-1: the invalid-reply threshold is read from the SAME runtime block (one owner).
     _invalid_cap = invalid_reply_cap(_runtime_cfg)
+    # I-2: the bound on the harness's OWN repeated injections, same owner.
+    _inject_cap = inject_identical_cap(_runtime_cfg)
 
     def _diff_signals(_msg, _used, _stale=0):
         try:
@@ -4042,6 +4104,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         """
         return len(sess.get("messages", [])) + (len(msgs) - _turn_base)
 
+    # I-2: what this turn has already injected, keyed by (kind, text). PER TURN on
+    # purpose: a nudge that is a repeat within one turn carries no new information,
+    # while the same nudge on the NEXT turn is a fresh push after the model has
+    # replied and must go through.
+    _inject_seen = {}
+
     def _inject(content, kind):
         """JAG-166: add a synthetic message to the LLM context AND surface it.
 
@@ -4049,6 +4117,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         'continue' it feeds back is ALSO emitted as `harness.inject`, so the chat
         can show exactly what was injected — nothing is hidden.
         """
+        # I-2: a byte-identical REPEAT of the same (kind, text) tells the model
+        # nothing new (it already holds those bytes), so it is not re-charged to
+        # the context. It is still EMITTED (`repeat: true`) — the operator sees
+        # everything the harness did — and it is not persisted, so the feed does
+        # not grow a duplicate card either. Nothing else is ever suppressed.
+        if inject_repeat_decision(kind, content, _inject_seen, _inject_cap):
+            on_event("harness.inject", session=sess["id"], inject_kind=kind,
+                     text=content, repeat=True)
+            return
         msgs.append(harness_wrap(content))  # JAG-266: tag harness turns
         # NOTE: the payload key must NOT be `kind` — the SSE emitters take the
         # event name as a positional `kind`, so a `kind` kwarg collides.

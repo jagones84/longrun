@@ -27,6 +27,14 @@ DEFAULTS = {
     # recovery measured on 2026-11-02 (session 777378644e9c) was not tunable.
     # `agent.invalid_reply_cap()` reads it; the constant stays as the fallback.
     "invalid_reply_cap": 4,
+    # I-2 (2026-11-04): how many times the SAME (kind, text) injection may reach
+    # the model in ONE turn. A byte-identical repeat carries no new information —
+    # the model already has those exact bytes — so this is the one form of a
+    # context budget that cannot lose anything the harness wanted to say. `1` =
+    # the first copy only; `0` or negative DISABLES the bound (the knob has no
+    # floor: unlike `invalid_reply_cap` it is not a safety valve). A tool
+    # `observation` is never suppressed — its payload is data the model must see.
+    "inject_identical_cap": 1,
 }
 
 

@@ -73,6 +73,14 @@ runtime:
   # resumable and the plan budget bounds a model that never complies. Values below
   # 1 floor at 1. `LONGRUN_INVALID_REPLY_CAP` still overrides it (tests).
   invalid_reply_cap: 4
+  # I-2: how many times the harness may inject the SAME (kind, text) into ONE turn.
+  # A byte-identical repeat tells the model nothing it does not already have, so
+  # this bounds the harness's own bookkeeping (measured 2026-11-01: 189 harness
+  # turns, 151 kB of injections in a single session) WITHOUT hiding anything the
+  # harness wanted to say: every different text, every different kind and every
+  # tool `observation` still reaches the model. A suppressed repeat still shows on
+  # the feed with `repeat: true`. 0 or negative disables the bound.
+  inject_identical_cap: 1
 
 # ---- thinking / reasoning budget (RH-15) ------------------------------------
 # EVERY thinking limit lives here: this block is the source of truth, the WebUI
