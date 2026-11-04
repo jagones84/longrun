@@ -501,12 +501,13 @@ _LEGACY_SCHEMAS = {
         "properties": {
             "action": {"type": "string",
                        "enum": ["propose", "mine", "evolve", "verify", "promote",
-                                "forge", "abstract", "review"],
+                                "forge", "abstract", "review", "scan"],
                        "default": "propose"},
             "scope": {"type": "string",
-                      "enum": ["skill", "project", "global", "mine", "review"],
+                      "enum": ["skill", "project", "global", "mine", "review", "scan"],
                       "description": ("what the proposal targets: skill | project | "
-                                      "global | mine (distilled lessons) | review")},
+                                      "global | mine (distilled lessons) | review | "
+                                      "scan (propose routines from your own sessions)")},
             "content": {"type": "string",
                         "description": "the proposed rule/skill text (action=propose)"},
             "path": {"type": "string",
@@ -523,6 +524,9 @@ _LEGACY_SCHEMAS = {
             "model": {"type": "string",
                       "description": "review: model ref (default: routing role "
                                      "'reviewer', then the general default)"},
+            "agent": {"type": "string",
+                      "description": ("scan: agent id that would own a proposed "
+                                      "routine (default: the first designated agent)")},
         },
         "required": ["action", "scope"],
     },

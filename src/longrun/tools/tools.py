@@ -1678,6 +1678,28 @@ def _improve(args, run_id=None):
                             "why", "rewritten")}
                           for it in (rep.get("items") or [])],
                 "stdout": "\n".join(rows) or "(nothing to review)"}
+    if scope == "scan" or action == "scan":
+        # E-5 (2026-11-04): read the operator's own sessions and PROPOSE routines.
+        # They are created DISABLED — a scan never enables an automation.
+        from longrun.orchestrate import scan as scan_mod
+        try:
+            limit = int(args.get("limit") or scan_mod.SESSION_MAX)
+        except (TypeError, ValueError):
+            limit = scan_mod.SESSION_MAX
+        got = scan_mod.scan_sessions(
+            model=str(args.get("model") or "").strip() or None,
+            agent=str(args.get("agent") or "").strip() or None,
+            limit=max(1, min(limit, 200)))
+        rows = ["%-4s every %-7s %s" % (r.get("id"), r.get("every_seconds"),
+                                        str(r.get("goal") or "")[:110])
+                for r in (got.get("created") or [])]
+        return {"ok": bool(got.get("ok")), "scanned": got.get("scanned"),
+                "sessions": got.get("sessions"), "created": got.get("created") or [],
+                "skipped": got.get("skipped") or [], "reason": got.get("reason"),
+                "answer_preview": got.get("answer_preview"),
+                "stdout": ("\n".join(rows) if rows
+                           else "(no routine proposed: %s)"
+                                % (got.get("reason") or "nothing repeated enough"))}
     if scope == "mine":
         from longrun.util import selfevolve
         # v662: the proposal store has ONE home (`improve.PROPOSAL_DIR`); this line
