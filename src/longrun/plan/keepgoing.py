@@ -21,6 +21,12 @@ DEFAULTS = {
     # stopping; when False, at the first stop attempt with open steps it hands
     # control to the human right away (HUMAN IN THE LOOP).
     "autocontinue": True,
+    # I-1 (2026-11-04): how many unexecutable replies in a row the harness retries
+    # before it SWITCHES STRATEGY (self-check, then plain prose) instead of ending
+    # the turn. It used to be the hardcoded `agent.INVALID_REPLY_CAP`, so the
+    # recovery measured on 2026-11-02 (session 777378644e9c) was not tunable.
+    # `agent.invalid_reply_cap()` reads it; the constant stays as the fallback.
+    "invalid_reply_cap": 4,
 }
 
 

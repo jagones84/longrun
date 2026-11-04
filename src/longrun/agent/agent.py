@@ -342,6 +342,37 @@ def _after_invalid_reply(streak, selfcheck_left, unfinished, cap=INVALID_REPLY_C
     return "prose"
 
 
+def invalid_reply_cap(cfg=None):
+    """I-1 (2026-11-04): the invalid-reply threshold, resolved from CONFIG.
+
+    Priority: the turn's `runtime` block (`cfg`) -> `LONGRUN_INVALID_REPLY_CAP`
+    (tests / one-off run, same shape as `LONGRUN_DISPATCH_WAIT`) -> the
+    `runtime.invalid_reply_cap` of `config/tools.yaml` -> `DEFAULTS` -> the
+    `INVALID_REPLY_CAP` constant, which is now only the fallback.
+
+    It FLOORS at 1: the cap is the point where the harness stops retrying and
+    SWITCHES STRATEGY (`_after_invalid_reply`) rather than the point where it
+    gives up, so a 0 or a negative value would remove the retry entirely — that
+    is not a knob an operator should be able to set by accident.
+    """
+    def _at_least_one(value):
+        num = int(value)
+        return num if num > 0 else 1
+    try:
+        if isinstance(cfg, dict) and cfg.get("invalid_reply_cap") is not None:
+            return _at_least_one(cfg["invalid_reply_cap"])
+        env = os.environ.get("LONGRUN_INVALID_REPLY_CAP")
+        if env not in (None, ""):
+            return _at_least_one(env)
+        from longrun.plan import keepgoing as _kgcfg
+        got = (_kgcfg.cfg() or {}).get("invalid_reply_cap")
+        if got is not None:
+            return _at_least_one(got)
+    except Exception:  # noqa: BLE001 — a config read must never break a turn
+        pass
+    return INVALID_REPLY_CAP
+
+
 def _phase(on_event, sid, phase, **kw):
     """Publish the turn's CURRENT phase: what the harness is waiting for.
 
@@ -3959,7 +3990,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             "max_wall_secs", _kg.DEFAULTS["max_wall_secs"]))
     except Exception:  # noqa: BLE001
         _diff, _kg_base = None, None
+        _runtime_cfg = {}
         _kg_wall_secs = float(_kg.DEFAULTS["max_wall_secs"])
+    # I-1: the invalid-reply threshold is read from the SAME runtime block (one owner).
+    _invalid_cap = invalid_reply_cap(_runtime_cfg)
 
     def _diff_signals(_msg, _used, _stale=0):
         try:
@@ -4949,7 +4983,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             msgs.append({"role": "assistant", "content": answer})
             _invalid_streak += 1
             _decision = _after_invalid_reply(_invalid_streak, _selfcheck_left,
-                                            _turn_unfinished(sess, goal_mode))
+                                            _turn_unfinished(sess, goal_mode),
+                                            cap=_invalid_cap)
             if _decision == "selfcheck":
                 _selfcheck_left -= 1
                 _inject(_closure_check_prompt(message), "closure-check")
@@ -4959,7 +4994,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 on_event("plan.invalid_reply_recovery", session=sess["id"],
                          streak=_invalid_streak, mode="prose")
                 _inject(_prose_recovery_note(answer,
-                                             _invalid_streak - INVALID_REPLY_CAP + 1), "retry")
+                                             _invalid_streak - _invalid_cap + 1), "retry")
                 continue
             _inject(_invalid_action_note(act, answer), "retry")
             continue
@@ -4971,7 +5006,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             msgs.append({"role": "assistant", "content": answer})
             _invalid_streak += 1
             _decision = _after_invalid_reply(_invalid_streak, _selfcheck_left,
-                                            _turn_unfinished(sess, goal_mode))
+                                            _turn_unfinished(sess, goal_mode),
+                                            cap=_invalid_cap)
             if _decision == "selfcheck":
                 _selfcheck_left -= 1
                 _inject(_closure_check_prompt(message), "closure-check")
@@ -4981,7 +5017,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 on_event("plan.invalid_reply_recovery", session=sess["id"],
                          streak=_invalid_streak, mode="prose")
                 _inject(_prose_recovery_note(answer,
-                                             _invalid_streak - INVALID_REPLY_CAP + 1), "retry")
+                                             _invalid_streak - _invalid_cap + 1), "retry")
                 continue
             _inject(
                 "Your reply used the model's native <|DSML|> tool-call markup, but it "
@@ -4999,7 +5035,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             msgs.append({"role": "assistant", "content": answer})
             _invalid_streak += 1
             _decision = _after_invalid_reply(_invalid_streak, _selfcheck_left,
-                                            _turn_unfinished(sess, goal_mode))
+                                            _turn_unfinished(sess, goal_mode),
+                                            cap=_invalid_cap)
             if _decision == "selfcheck":
                 _selfcheck_left -= 1
                 _inject(_closure_check_prompt(message), "closure-check")
@@ -5009,7 +5046,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 on_event("plan.invalid_reply_recovery", session=sess["id"],
                          streak=_invalid_streak, mode="prose")
                 _inject(_prose_recovery_note(answer,
-                                             _invalid_streak - INVALID_REPLY_CAP + 1), "retry")
+                                             _invalid_streak - _invalid_cap + 1), "retry")
                 continue
             _inject(_rejected_reply_note(answer), "retry")
             continue
@@ -5301,7 +5338,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             content = ("⏸ Goal incomplete: the model sent %d replies in a row that were "
                        "not an executable action (reason 'no_valid_action'), so the turn "
                        "stopped before the plan had evidence-backed completion."
-                       % INVALID_REPLY_CAP)
+                       % _invalid_cap)
         else:
             content = ("⏸ Goal incomplete: stopped with reason '%s' before the current "
                        "plan had evidence-backed completion." % _reason)

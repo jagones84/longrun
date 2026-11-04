@@ -67,6 +67,12 @@ runtime:
   # "still working" at 300s while A49 was still going). 3600 = one hour.
   # `LONGRUN_DISPATCH_WAIT` still overrides it (tests / one-off run); 30 is the floor.
   dispatch_wait_secs: 3600
+  # I-1: how many unexecutable replies in a row the harness RETRIES before it
+  # switches strategy (one bounded self-check round, then plain prose) instead of
+  # ending the turn. It is a safety valve, not a stop: the goal stays open and
+  # resumable and the plan budget bounds a model that never complies. Values below
+  # 1 floor at 1. `LONGRUN_INVALID_REPLY_CAP` still overrides it (tests).
+  invalid_reply_cap: 4
 
 # ---- thinking / reasoning budget (RH-15) ------------------------------------
 # EVERY thinking limit lives here: this block is the source of truth, the WebUI
