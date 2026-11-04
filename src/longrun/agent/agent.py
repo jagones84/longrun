@@ -947,6 +947,10 @@ def _next_stale(prev_stale, prev_hash, cur_hash, worked):
 _DSML_MARK = r"[|｜]{1,3}\s*DSML\s*[|｜]{1,3}"
 # `<｜DSML｜ invoke …>` / `<invoke …>` / `<parameter …>`
 _DSML_TAG = r"<\s*(?:" + _DSML_MARK + r")?\s*"
+# The same, but ALSO admitting a tag spelled as a CLOSE: the live shape
+# (2026-11-04) where closing one parameter and opening the next are the SAME
+# tag, so that close carries the next parameter's `name=` attribute.
+_DSML_ANY_TAG = r"</?\s*(?:" + _DSML_MARK + r")?\s*"
 # The names a model invents for the wrapper itself (never a real tool).
 _DSML_WRAPPERS = ("", "tool", "tools", "action", "call", "calls", "tool_call",
                   "tool_calls", "toolcall", "function", "function_call", "invoke",
@@ -3532,12 +3536,26 @@ def _dsml_one_invoke(attrs, body):
     cut at the next invoke / the explicit `</invoke>` close).
     """
     args = {}
-    for pm in re.finditer(_DSML_TAG + r'parameter\s+name\s*=\s*"([^"]+)"([^>]*)>(.*?)'
-                          r"</\s*(?:" + _DSML_MARK + r")?\s*(?:parameter)?\s*>",
-                          body, re.S | re.I):
-        key = pm.group(1).strip()
-        val = pm.group(3)
-        if 'string="false"' in pm.group(2):
+    # A parameter VALUE ends at the NEXT parameter tag, whatever its shape —
+    # including the MERGED close+open measured live on 2026-11-04 (session
+    # b7329cccf94c): the close of `path` and the open of `content` were ONE tag,
+    # so the value of `path` ran on to the next BARE marker close and the harness
+    # CALLED fs.write with a 495-char path full of markup and newlines, and no
+    # `content` at all. A value also stops at a bare marker close (the G1 dialect).
+    _ptags = list(re.finditer(_DSML_ANY_TAG + r"parameter\b([^>]*)>", body, re.I))
+    for _i, _pt in enumerate(_ptags):
+        _attr = _pt.group(1)
+        # `parameter name="x"` (normal) or `parameter="x"` (the model dropped
+        # `name=`). A bare close carries no name — it only TERMINATES a value.
+        _nm = re.search(r'(?:name\s*=\s*|^\s*=\s*)"([^"]*)"', _attr)
+        if not _nm or not _nm.group(1).strip():
+            continue
+        key = _nm.group(1).strip()
+        _seg = body[_pt.end():(_ptags[_i + 1].start() if _i + 1 < len(_ptags)
+                                else len(body))]
+        _bare = re.search(r"</\s*(?:" + _DSML_MARK + r")?\s*>", _seg, re.I)
+        val = _seg[:_bare.start()] if _bare else _seg
+        if 'string="false"' in _attr:
             try:
                 val = json.loads(val)
             except Exception:  # noqa: BLE001
