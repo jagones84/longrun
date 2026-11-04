@@ -34,6 +34,12 @@ eval/results/
 # of the repo; official scripts live at the repo root or under scripts/).
 trash/
 
+# Agent-produced audit/test deliverables (`reports/…`) are the output of ONE run,
+# exactly like `trash/` — never a shipped artifact. `88f774c` tracked four such
+# files by accident; v787 removed them from the index and they stay on disk only
+# as long as a run needs them.
+reports/
+
 # JAG-108: user-added external MCP clients are persisted here (commands, headers
 # and tokens must never reach the tracked repo).
 config/mcp_clients.local.yaml
