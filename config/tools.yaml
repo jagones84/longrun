@@ -182,6 +182,20 @@ selfevolve:
   # `forge_per_run` bounds one evolve pass so it cannot flood src/Matrix.
   forge_on_evolve: true
   forge_per_run: 1
+  # --- evolution gate (2026-11-04) -------------------------------------------
+  # verify_repeats: each case is executed N times; a case passes on a strict
+  # majority. 1 = today's behaviour. ParetoSaddler (2611.02079) needs 3.
+  verify_repeats: 1
+  # max_cost_ratio: an automatic promotion whose markdown is more than N x the
+  # installed median is refused (the prompt pays for it on every turn). The
+  # operator can still release it.
+  max_cost_ratio: 2.0
+  # smoke_set: also re-check the INSTALLED artifacts' case tables before a
+  # promotion (composition safety). Off by default: it runs every stored case.
+  smoke_set: false
+  # retire_after_days: a forged Matrix tool never used within this window is
+  # removable (`selfevolve.retire_unused`).
+  retire_after_days: 14
 
 # ---- loop detection by tool TYPE frequency (M5, upgrade plan) ---------------
 # The v2 identical-action trap misses a model calling one tool type dozens of

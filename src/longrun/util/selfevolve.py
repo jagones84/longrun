@@ -373,6 +373,104 @@ def forged_usage(path=None, repo_root=None):
             "unused": len([r for r in out if r["verdict"] == "unused"])}
 
 
+def retire_unused(days=14, path=None, repo_root=None, dry_run=False,
+                  usage=None, remove=None, now=None):
+    """Remove the forged tools nobody called after `days` (arXiv 2610.34938).
+
+    `forged_usage` is the read-only fact; this is the ACTION the study says a
+    harness needs ("revise or remove changes that do not help"). The bar is
+    deliberately conservative: verdict `unused`, `last_used == 0`, and older than
+    `days`. A tool that was ever called is never touched. Removal goes through
+    Matrix's own remover (the same path a failed forge takes), so nothing is
+    deleted outside its owner.
+
+    `usage` / `remove` / `now` are injectable so a test never needs a Matrix
+    layout; production defaults are the real functions.
+    """
+    rep = (usage or forged_usage)(path=path, repo_root=repo_root)
+    if not rep.get("ok"):
+        return rep
+    cutoff = float(now if now is not None else time.time()) - max(0, int(days or 0)) * 86400
+    victims = [t for t in (rep.get("tools") or [])
+               if t.get("verdict") == "unused"
+               and not t.get("last_used")
+               and float(t.get("created") or 0) <= cutoff]
+    if remove is None:
+        from longrun.core import matrix as mtx
+
+        def remove(ns):
+            return mtx.remove("tool", ns, repo_root=repo_root)
+
+    removed = []
+    for t in victims:
+        ns = str(t.get("namespace") or "")
+        if dry_run:
+            removed.append({"namespace": ns, "dry_run": True})
+            continue
+        try:
+            res = remove(ns) or {}
+        except Exception as e:  # noqa: BLE001 — one stuck removal must not stop the rest
+            res = {"ok": False, "error": str(e)}
+        removed.append({"namespace": ns, "ok": bool(res.get("ok")),
+                        "error": res.get("error")})
+    return {"ok": True, "eligible": len(victims), "removed": removed}
+
+
+def _error_class(text):
+    """Normalize an error line into a stable CLASS (paths and numbers abstract).
+
+    "no such file: /a" and "no such file: /b" are the same failure; only the
+    argument differs. Without this every occurrence is its own class and the
+    ranking says nothing.
+    """
+    s = " ".join(str(text or "").split())[:140]
+    s = re.sub(r"/[^\s,;:]+", "<path>", s)
+    s = re.sub(r"\b\d+\b", "<n>", s)
+    return s[:80] or "(no error text)"
+
+
+def failure_candidates(path=None, limit=10, min_count=1):
+    """Rank failure CLASSES from the durable run records (AHE 2604.25850).
+
+    `mine()` only sees habits: a tool sequence repeated `min_count` times. A
+    failure that happens ONCE is invisible to it, which is exactly the case the
+    observability-driven literature edits from. This reads the harness run
+    records (`harness/record.py` steps already carry `tool`, `ok`, `error`) and
+    groups failed steps by (tool, normalized error head), so the next draft can
+    target a real failure instead of a coincidence.
+
+    Data only: turning a class into a draft is still a model/operator decision.
+    """
+    from longrun.harness import record as rec_mod
+    root = os.path.join(path or rec_mod.dir_path(), "runs")
+    try:
+        names = sorted(os.listdir(root))[:1000]
+    except OSError:
+        return {"ok": True, "classes": [], "runs": 0}
+    buckets = {}
+    runs = 0
+    for fn in names:
+        if not fn.endswith(".json"):
+            continue
+        rec = _read_json(os.path.join(root, fn))
+        if not isinstance(rec, dict):
+            continue
+        runs += 1
+        for step in rec.get("steps") or []:
+            if not isinstance(step, dict) or step.get("ok") is not False:
+                continue
+            tool = str(step.get("tool") or "?")
+            head = _error_class(step.get("error"))
+            row = buckets.setdefault((tool, head), {"count": 0, "runs": set()})
+            row["count"] += 1
+            row["runs"].add(fn[:-5])
+    rows = [{"tool": t, "error": e, "count": v["count"], "runs": len(v["runs"])}
+            for (t, e), v in buckets.items()]
+    rows.sort(key=lambda r: (-r["count"], r["tool"], r["error"]))
+    rows = [r for r in rows if r["count"] >= max(1, int(min_count or 1))]
+    return {"ok": True, "classes": rows[:max(1, int(limit or 10))], "runs": runs}
+
+
 def mine_history(out_dir, c=None, path=None, note=""):
     """Mine the recorded history and write the drafts. Returns the paths."""
     return scan(history(path), out_dir, c, note=note)
@@ -621,52 +719,107 @@ def _case_command(case):
     return "python3 check.py" if not case or str(case) == "default" else str(case)
 
 
-def evaluate_cases(proposal_dir, cases, runner=None, c=None):
-    """Run each case and return {case_id: pass} (the case TABLE, not a score).
+def evaluate_cases(proposal_dir, cases, runner=None, c=None, repeats=1):
+    """Run each case `repeats` times and return {case_id: {"passes", "runs"}}.
 
-    A single deterministic check cannot show that nothing else regressed: the
-    corpus's acceptance result is per-item, not aggregate. `runner(dir, command)
-    -> (green, output)` is injectable so tests never touch the sandbox; the
-    default runs the command inside the proposal folder.
+    A single deterministic check cannot show that nothing else regressed, and a
+    single EXECUTION cannot show that the result is stable: ParetoSaddler's
+    ablation (2611.02079) reports 81.35% at 3 executions per task against 75.71%
+    at 1. `runner(dir, command) -> (green, output)` is injectable so tests never
+    touch the sandbox; the default runs the command inside the proposal folder.
     """
+    try:
+        repeats = max(1, int(repeats or 1))
+    except (TypeError, ValueError):
+        repeats = 1
     out = {}
     for case in (cases or ["default"]):
         cid = str(case)
         command = _case_command(cid)
-        if runner is not None:
-            try:
-                green, msg = runner(proposal_dir, command)
-            except Exception as e:  # noqa: BLE001 — a case is data, not a crash
-                green, msg = False, "runner error: %s" % e
-        else:
-            green, msg = _run_check(proposal_dir, command, c or cfg())
-        out[cid] = bool(green)
+        passes = 0
+        for _ in range(repeats):
+            if runner is not None:
+                try:
+                    green, msg = runner(proposal_dir, command)
+                except Exception as e:  # noqa: BLE001 — a case is data, not a crash
+                    green, msg = False, "runner error: %s" % e
+            else:
+                green, msg = _run_check(proposal_dir, command, c or cfg())
+            passes += 1 if green else 0
+        out[cid] = {"passes": passes, "runs": repeats}
     return out
 
 
-def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None):
+def _skill_cost(proposal_dir):
+    """Prompt-payload cost of an artifact: markdown bytes / 4 (no model call).
+
+    The skill's own text is what enters the system prompt on every turn, so it
+    is the cost a candidate adds. `proposal.json` and logs are EXCLUDED — they
+    change between verifies and are not part of the prompt.
+    """
+    total = 0
+    for base, _dirs, files in os.walk(str(proposal_dir or "")):
+        for fn in files:
+            if not fn.lower().endswith(".md"):
+                continue
+            try:
+                total += os.path.getsize(os.path.join(base, fn))
+            except OSError:
+                pass
+    return {"tokens": max(1, total // 4), "bytes": total}
+
+
+def _installed_cost_median(category="created", skills_dir=None):
+    """Median prompt cost of the installed auto artifacts (0 with < 3 samples)."""
+    root = os.path.join(skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
+                        or os.path.join(REPO, "skills"), str(category or "created"))
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        return 0
+    costs = []
+    for name in names:
+        cost = _skill_cost(os.path.join(root, name))
+        if cost["bytes"]:
+            costs.append(cost["tokens"])
+    if len(costs) < 3:
+        return 0
+    costs.sort()
+    return costs[len(costs) // 2]
+
+
+def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None,
+           repeats=None):
     """Run the proposal's check(s) and update proposal.json (verified/rejected).
 
     `cases` is an optional list of commands (the literal `"default"` means
-    `python3 check.py`); every case must pass. `baseline` is the case map of the
-    artifact this one replaces, stored WITH the result so `promote()` can refuse
-    a regression instead of averaging it away.
+    `python3 check.py`); every case must pass a STRICT MAJORITY of `repeats`
+    executions (default from config `verify_repeats`, 1 = today's behaviour).
+    `baseline` is the case map of the artifact this one replaces, stored WITH
+    the result so `promote()` can refuse a regression instead of averaging it
+    away. The report also carries the artifact's prompt cost (`cost_tokens`) and
+    the per-case execution counts (`case_runs`).
 
     `runner(dir, command) -> (green, output)` injectable in tests (pure).
-    Returns the report {"ran","green","command","cases","baseline","duration_ms","output"}.
     """
     c = c or cfg()
     prop = _read_json(os.path.join(proposal_dir, "proposal.json")) or {}
     cases = [str(x) for x in (cases or ["default"])]
+    if repeats is None:
+        try:
+            repeats = int(c.get("verify_repeats") or 1)
+        except (TypeError, ValueError):
+            repeats = 1
     command = _case_command(cases[0])
     t0 = time.time()
-    case_map = evaluate_cases(proposal_dir, cases, runner=runner, c=c)
+    counts = evaluate_cases(proposal_dir, cases, runner=runner, c=c, repeats=repeats)
+    case_map = {k: (v["passes"] * 2 > v["runs"]) for k, v in counts.items()}
     green = all(case_map.values())
-    out = ", ".join("%s=%s" % (k, "pass" if v else "FAIL")
-                    for k, v in case_map.items())
+    out = ", ".join("%s=%d/%d" % (k, v["passes"], v["runs"]) for k, v in counts.items())
     report = {"ran": True, "green": bool(green), "command": command,
-              "cases": case_map,
+              "cases": case_map, "case_runs": counts,
               "baseline": {str(k): bool(v) for k, v in (baseline or {}).items()},
+              "cost_tokens": _skill_cost(proposal_dir),
               "duration_ms": int((time.time() - t0) * 1000),
               "output": str(out)[-1200:]}
     prop["status"] = "verified" if green else "rejected"
@@ -680,6 +833,65 @@ def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None):
     prop["verify"] = report
     _write_json(os.path.join(proposal_dir, "proposal.json"), prop)
     return report
+
+
+def attribute(proposal_dir, runner=None, c=None):
+    """Per-case delta of a promotion (Harness-Delta, 2610.22466).
+
+    Built from the maps already stored by `verify`: which case the artifact
+    FIXED, which it BROKE, and its prompt cost. With a runner, the installed
+    copy is re-checked once (`installed_confirmed`) so an install that rewrote
+    the artifact cannot pass silently.
+    """
+    prop = _read_json(os.path.join(proposal_dir, "proposal.json")) or {}
+    v = prop.get("verify") if isinstance(prop.get("verify"), dict) else {}
+    cases = v.get("cases") if isinstance(v.get("cases"), dict) else {}
+    base = v.get("baseline") if isinstance(v.get("baseline"), dict) else {}
+    flips = {}
+    for key in sorted(set(cases) | set(base)):
+        if key not in cases or key not in base:
+            continue
+        if bool(base[key]) != bool(cases[key]):
+            flips[key] = "pass->fail" if base[key] else "fail->pass"
+    out = {"case_flips": flips,
+           "gained": len([1 for v2 in flips.values() if v2 == "fail->pass"]),
+           "lost": len([1 for v2 in flips.values() if v2 == "pass->fail"]),
+           "cost_tokens": v.get("cost_tokens")}
+    if runner is not None and cases:
+        counts = evaluate_cases(proposal_dir, sorted(cases), runner=runner, c=c)
+        out["installed_confirmed"] = all(
+            (counts[k]["passes"] * 2 > counts[k]["runs"]) == bool(cases[k])
+            for k in counts)
+    prop["attribution"] = out
+    _write_json(os.path.join(proposal_dir, "proposal.json"), prop)
+    return out
+
+
+def smoke_installed(skills_dir=None, runner=None, c=None, category="created",
+                    limit=50):
+    """Re-check every installed auto artifact against its OWN case table.
+
+    Compositional Safety (2609.33123): edits that are safe alone can compose
+    into unsafe behaviour, so the set is what needs a smoke test. Only artifacts
+    that stored a case table are checked; a red entry blocks a promotion.
+    """
+    root = os.path.join(skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
+                        or os.path.join(REPO, "skills"), str(category or "created"))
+    try:
+        names = sorted(os.listdir(root))[:max(1, int(limit or 50))]
+    except OSError:
+        return {}
+    out = {}
+    for name in names:
+        d = os.path.join(root, name)
+        prop = _read_json(os.path.join(d, "proposal.json")) or {}
+        v = prop.get("verify") if isinstance(prop.get("verify"), dict) else {}
+        cases = sorted((v.get("cases") or {}).keys())
+        if not cases:
+            continue
+        counts = evaluate_cases(d, cases, runner=runner, c=c)
+        out[name] = {k: (v2["passes"] * 2 > v2["runs"]) for k, v2 in counts.items()}
+    return out
 
 
 def _pattern_of(prop):
@@ -711,7 +923,8 @@ def _archived_skill_md(name, pattern, purpose, rel, origin, evidence=None):
     return "\n".join(lines)
 
 
-def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
+def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
+            reason="", runner=None):
     """Archive a VERIFIED proposal into skills/<category>/<name>/ (write-gate).
 
     Rejects if the status is not `verified`. Does not overwrite. Returns
@@ -721,9 +934,18 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
     sandbox check still has to be green, but the sealed held-out suite is not
     required — a person looking at the draft IS the independent judge, which is
     what the RDD gate protects against (the machine certifying itself). The
-    release is stamped on the proposal so the provenance stays visible.
+    release is stamped on the proposal (who, when, why, which evidence) so a
+    later audit can identify it; a release with no reason at all is refused.
+
+    `runner` (optional) re-checks the installed copy once (`attribute`), so an
+    install that rewrote the artifact cannot pass silently.
     """
     c = c or cfg()
+    _rel_reason = str(reason or purpose or "").strip()
+    if human and not _rel_reason:
+        return {"ok": False,
+                "error": "operator release needs a reason — pass `reason` (or the "
+                         "proposal's purpose) so the release is attributable"}
     prop_path = os.path.join(proposal_dir, "proposal.json")
     prop = _read_json(prop_path) or {}
     if prop.get("status") != "verified":
@@ -775,6 +997,22 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
                          "while LONGRUN_EVOLVE_CASES=1" % len(_cases)}
     else:
         evidence = "single-case" if len(_cases) < 2 else "cases-no-baseline"
+    # COST GATE (HarnessPro 2610.26770, Harmony 2610.15150): quality and cost are
+    # one objective. The skill's own markdown is what enters the prompt on every
+    # turn, so a candidate that is an OUTLIER against the installed set may not
+    # be promoted automatically — the operator can still release it.
+    _cost = int((_verify.get("cost_tokens") or {}).get("tokens") or 0)
+    _median = _installed_cost_median(str(c.get("category") or "created"), skills_dir)
+    try:
+        _ratio = float(c.get("max_cost_ratio") or 2.0)
+    except (TypeError, ValueError):
+        _ratio = 2.0
+    if _median and _cost > _median * _ratio and not human:
+        return {"ok": False, "cost_tokens": _cost, "median_tokens": _median,
+                "error": "cost gate: %d prompt tokens against a %d-token median "
+                         "across installed artifacts (> x%.1f) — release it as the "
+                         "operator if it is worth the prompt budget"
+                         % (_cost, _median, _ratio)}
     # RDD point 2: sealed held-out gate (fail-closed). The local verifier
     # (check.py) is NOT enough: promotion requires the external judge suite.
     from longrun.plan import heldout
@@ -815,14 +1053,33 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
                     "error": "skills/created quota reached (%d) — prune before promoting" % AUTO_SKILL_CAP}
     if os.path.exists(target):
         return {"ok": False, "error": "target already exists: %s" % target}
+    # COMPOSED-SET SMOKE (Compositional Safety 2609.33123): `verify` checks the
+    # candidate ALONE; this re-checks the artifacts already installed, because
+    # edits that are safe alone can compose into unsafe behaviour. Opt-in
+    # (`smoke_set`) or automatic when a runner is injected — it runs every stored
+    # case of every artifact, so it is not free.
+    if c.get("smoke_set") or runner is not None:
+        try:
+            suite = smoke_installed(root, runner=runner, c=c, category=category)
+        except Exception:  # noqa: BLE001 — a smoke must never break a release
+            suite = {}
+        _red = {n: [k for k, ok in rows.items() if not ok]
+                for n, rows in suite.items() if not all(rows.values())}
+        if _red:
+            return {"ok": False, "smoke": _red,
+                    "error": "composed-set smoke red: %s — fix or retire the named "
+                             "artifact before promoting" % ", ".join(sorted(_red))}
     from longrun.memory import skills as skills_mod
     got = skills_mod.install_skill_dir(proposal_dir, target)
     if not got.get("ok"):
         return got
     prop["status"] = "archived"
     prop["evidence"] = evidence
+    prop["cost_tokens"] = _cost
     if human:
         prop["released_by"] = "operator"
+        prop["released_ts"] = round(time.time(), 3)
+        prop["released_reason"] = _rel_reason[:300]
     _under_repo = os.path.abspath(target).startswith(os.path.abspath(REPO) + os.sep)
     prop["archived_to"] = (os.path.relpath(target, REPO) if _under_repo else target)
     _write_json(prop_path, prop)
@@ -837,8 +1094,13 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
         skills_mod.list_skills(reload=True)
     except OSError:
         pass
+    # ATTRIBUTION (Harness-Delta 2610.22466): store which case this artifact
+    # fixed/broke, at what prompt cost; with a runner, confirm the INSTALLED copy
+    # behaves like the verified draft.
+    attr = attribute(target, runner=runner, c=c)
     return {"ok": True, "name": name, "path": target,
-            "rel": prop["archived_to"], "evidence": evidence}
+            "rel": prop["archived_to"], "evidence": evidence,
+            "cost_tokens": _cost, "attribution": attr}
 
 
 MATRIX_FORGE_NS = "learned"
