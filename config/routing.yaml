@@ -31,6 +31,17 @@ roles:
     fallbacks:
     - openrouter:meta/muse-spark-1.3-contributor
     - deepseek:deepseek-flash
+  # E-1 (2026-11-04): the SELF-IMPROVEMENT reviewer must not be the model that
+  # produced the artifact — `improve.review` and the self-evolve abstraction both
+  # call `single_shot(role="reviewer")`. Before this role existed the call fell
+  # through to `default_model()`, i.e. the producer, so every "review" was the
+  # producing model agreeing with itself. Keep this a DIFFERENT family from
+  # `chat`/`agent`; `v796` fails if it matches any producing role or the
+  # providers default.
+  reviewer:
+    model: openrouter:deepseek/deepseek-v4-flash-0731
+    fallbacks:
+    - openrouter:meta/muse-spark-1.3-contributor
 default_fallbacks: []
 # I-2: remember a 429 (quota) per model for `retry_not_before_s` and put that
 # model LAST in the candidate chain until the window expires. Process-local, no

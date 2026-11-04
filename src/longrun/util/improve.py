@@ -257,8 +257,16 @@ def single_shot(messages, model=None, role="reviewer", timeout=180, max_tokens=4
     Both model-driven judgements in this module call it (the backlog reviewer and,
     since EV-22, the self-evolve abstraction), so role/model policy, the no-op
     delta sink and the timeout live in one place instead of being copy-pasted.
+
+    E-1 (2026-11-04): `roles.<role>.model` is read HERE and passed as the primary.
+    Without it the configured `reviewer` pin was only a failover candidate —
+    `stream_with_fallback` takes its primary from `routing.pick()`, which reads
+    `pattern` and never `model` — so the review silently ran on the model that
+    produced the artifact. A review by the producer is not a second opinion.
     """
     from longrun.core import server
+    from longrun.model import routing
+    model = model or routing.role_model(role)
     answer, _think, used = server.stream_with_fallback(
         messages, model, role, lambda *_a: None, timeout=timeout,
         max_tokens=max_tokens)
