@@ -62,6 +62,36 @@ def _path(kind):
     return p
 
 
+def _ws_key(workspace):
+    """Normalise a workspace path for comparison ("" = no filter).
+
+    `realpath` so a symlinked or `/ws/a/` spelling of the same folder matches,
+    and a trailing separator never makes two spellings of one workspace differ.
+    Never raises: a bad value degrades to "no filter", i.e. it can only ever show
+    MORE, never hide a lesson.
+    """
+    if not workspace:
+        return ""
+    try:
+        return os.path.normpath(os.path.realpath(str(workspace))).rstrip(os.sep)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _visible(rec, ws):
+    """M1 (2026-11-04): is this record visible in workspace `ws`?
+
+    No filter (`ws == ""`) -> everything, so every existing call path keeps its
+    behaviour. A record with NO `workspace` is GLOBAL — written before scoping
+    existed, or deliberately by the operator — and therefore stays visible
+    EVERYWHERE: this change can hide nothing that was already there.
+    """
+    if not ws:
+        return True
+    rws = _ws_key(rec.get("workspace"))
+    return (not rws) or rws == ws
+
+
 # ------------------------------------------------------------- core block ----
 # JAG-127f: an always-visible, agent-editable "core memory" block (the Letta /
 # MemGPT pattern): durable facts the model rewrites itself, injected into every
@@ -127,9 +157,12 @@ def _render_md(rec):
     # JAG-447: `origin` is the provenance/segregation key (user | agent |
     # reflect | mining | harness); rendered so recall and the WebUI can tell
     # auto-generated knowledge from what the user actually said.
+    # M1 (2026-11-04): `workspace` scopes a lesson to the project it was learned
+    # in. Rendered here or it would not survive the round-trip: `store()` keeps
+    # free `**meta`, but only the keys in this tuple are written to the file.
     for key in ("mid", "ts", "kind", "session", "run_id", "source", "origin",
-                "expires_ts", "target", "tags", "model", "tool", "score",
-                "superseded_by"):
+                "workspace", "expires_ts", "target", "tags", "model", "tool",
+                "score", "superseded_by"):
         val = rec.get(key)
         if val is not None:
             lines.append("%s: %s" % (key, val))
@@ -162,18 +195,24 @@ def _render_md(rec):
 
 # ------------------------------------------------------------------ query ----
 
-def query(term=None, kind=None, limit=20):
+def query(term=None, kind=None, limit=20, workspace=None):
     """Search memory by keyword (substring/regex) and/or kind.
 
     Returns up to `limit` records sorted by recency (newest first).
+    M1: `workspace` keeps a lesson written for one project out of another. It is
+    the ONE place the filter is implemented — `search_keyword` reaches it, so the
+    whole keyword family inherits it.
     """
     out = []
     kinds = [kind] if kind else list(MEMORY_FIELDS.keys()) + ["other"]
+    ws = _ws_key(workspace)
     for k in kinds:
         p = _path(k)
         if not os.path.isfile(p):
             continue
         for rec in _parse_md_file(p):
+            if not _visible(rec, ws):
+                continue
             if term and not _match(rec.get("content", ""), term):
                 continue
             out.append(rec)
@@ -417,7 +456,7 @@ def _embed_batch(texts, vocab=None):
         return None
 
 
-def semantic_query(query_text, kind=None, limit=10, min_score=0.15):
+def semantic_query(query_text, kind=None, limit=10, min_score=0.15, workspace=None):
     """Semantic similarity search over the vector index.
 
     Returns [(score, record)] sorted by descending score.
@@ -426,11 +465,12 @@ def semantic_query(query_text, kind=None, limit=10, min_score=0.15):
         _rebuild_index()
     if not _vector_db:
         # fallback to keyword query
-        return [(1.0, r) for r in query(query_text, kind, limit)]
+        return [(1.0, r) for r in query(query_text, kind, limit, workspace)]
     try:
         import numpy as np
     except ImportError:
-        return [(1.0, r) for r in query(query_text, kind, limit)]
+        return [(1.0, r) for r in query(query_text, kind, limit, workspace)]
+    ws = _ws_key(workspace)
     results = []
     for k, db in _vector_db.items():
         if kind and k != kind:
@@ -443,7 +483,9 @@ def semantic_query(query_text, kind=None, limit=10, min_score=0.15):
             continue
         scores = np.dot(db["vectors"], vec[0])
         for i, score in enumerate(scores):
-            if score >= min_score:
+            # M1: the index holds the parsed records, so the scope filter works
+            # on the vector path exactly as it does on the keyword path.
+            if score >= min_score and _visible(db["records"][i], ws):
                 results.append((float(score), db["records"][i]))
     results.sort(key=lambda x: x[0], reverse=True)
     return results[:limit]
@@ -456,11 +498,11 @@ def write(kind, content, **meta):
     return store(kind, content, **meta)
 
 
-def search(query_text, kind=None, limit=10, semantic=False):
+def search(query_text, kind=None, limit=10, semantic=False, workspace=None):
     """Search memory: keyword ranking, or semantic."""
     if semantic:
-        return semantic_query(query_text, kind, limit)
-    return search_keyword(query_text, kind, limit)
+        return semantic_query(query_text, kind, limit, workspace=workspace)
+    return search_keyword(query_text, kind, limit, workspace)
 
 
 def _tokens(text):
@@ -469,7 +511,7 @@ def _tokens(text):
         [w for w in re.split(r"\W+", str(text or "").lower()) if len(w) > 2]))
 
 
-def search_keyword(query_text, kind=None, limit=10):
+def search_keyword(query_text, kind=None, limit=10, workspace=None):
     """Rank records by how many query words they contain — recall is never blind.
 
     v647: the keyword path reused `query()`, which is an AND-of-words filter: a
@@ -485,7 +527,7 @@ def search_keyword(query_text, kind=None, limit=10):
     words = _tokens(query_text)
     phrase = str(query_text or "").strip().lower()
     scored = []
-    for rec in query("", kind, 100000):
+    for rec in query("", kind, 100000, workspace):
         low = str(rec.get("content") or "").lower()
         hits = sum(1 for w in words if w in low)
         if not hits:
@@ -736,7 +778,8 @@ def governed_query(kind=None, limit=6, halflife=None, threshold=0.85,
     return _augment(kind, base, limit)
 
 
-def recall_governed(text, kind=None, limit=6, semantic=False, include_invalid=False):
+def recall_governed(text, kind=None, limit=6, semantic=False, include_invalid=False,
+                    workspace=None):
     """A TEXT recall with the SAME governance as `governed_query` (v659).
 
     Returns `[(score, record), ...]`. The `memory.recall` tool used `search()`
@@ -747,7 +790,7 @@ def recall_governed(text, kind=None, limit=6, semantic=False, include_invalid=Fa
     A record the hook ADDED has no search score; it comes back as `None` so the
     caller states that instead of inventing a number.
     """
-    hits = search(text, kind, limit, semantic)
+    hits = search(text, kind, limit, semantic, workspace)
     if not include_invalid:
         bad = invalid_targets()
         now = time.time()

@@ -2575,8 +2575,12 @@ def maybe_reflect(sess, message, answer, used_tools, model=None):
         lesson = (lesson or "").strip().strip('"').strip()
         if len(lesson) < 6 or len(lesson) > 400:
             return None
+        # M1 (2026-11-04): the distilled lesson carries the workspace it was
+        # learned in, so it is not injected into a DIFFERENT project's prompt.
+        # A session with no workspace writes a global note, as before.
         memory.store("agent.note", lesson, session=sess["id"], source="reflect",
-                     origin="reflect")  # JAG-447: provenance for segregation
+                     origin="reflect",  # JAG-447: provenance for segregation
+                     workspace=(sess or {}).get("workspace") or "")
         _REFLECT_LATEST[sess["id"]] = now
         return lesson
     except Exception:  # noqa: BLE001 — reflection must never break a turn
@@ -2861,7 +2865,8 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     try:
         from longrun.model import context_engine
         msgs, ctx_stats = context_engine.build(
-            sys, transcript, eff_message, budget_tokens=context_budget(model))
+            sys, transcript, eff_message, budget_tokens=context_budget(model),
+            workspace=(sess or {}).get("workspace"))
         msgs = _inject_vision_blocks(msgs, model)
     except Exception:  # noqa: BLE001 — never block a turn on the context engine
         msgs = [{"role": "system", "content": sys}]

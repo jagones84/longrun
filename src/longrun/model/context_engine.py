@@ -297,13 +297,17 @@ def compact(messages, budget_tokens, keep_recent=DEFAULT_KEEP_RECENT, summarizer
     return msgs, stats
 
 
-def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True):
-    """Pull relevant memories for context injection (score >= 0.15)."""
+def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True, workspace=None):
+    """Pull relevant memories for context injection (score >= 0.15).
+
+    M1: `workspace` keeps a lesson learned in one project out of the prompt of
+    another. `None` injects every record, i.e. the pre-M1 behaviour.
+    """
     try:
         from longrun.memory import memory
         if not query_text:
             return []
-        hits = memory.search(query_text, None, top_k, semantic)
+        hits = memory.search(query_text, None, top_k, semantic, workspace)
         out = [{"score": round(s, 3), "kind": r.get("kind"),
                 "ts": r.get("ts"), "content": (r.get("content") or "")[:300]}
                for s, r in hits]
@@ -311,7 +315,7 @@ def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True):
         # last rebuild are invisible to it, so merge a keyword pass too.
         if semantic:
             seen = {(h["kind"], h["ts"]) for h in out}
-            for s, r in memory.search(query_text, None, top_k, False):
+            for s, r in memory.search(query_text, None, top_k, False, workspace):
                 key = (r.get("kind"), r.get("ts"))
                 if key not in seen:
                     out.append({"score": round(s, 3), "kind": r.get("kind"),
@@ -323,7 +327,7 @@ def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True):
 
 
 def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
-          keep_recent=DEFAULT_KEEP_RECENT, retrieve_memory=True):
+          keep_recent=DEFAULT_KEEP_RECENT, retrieve_memory=True, workspace=None):
     """Full pipeline: compaction + retrieval. Returns (msgs, stats).
 
     `msgs` is ready to send: [system(s)...] + compacted transcript + [user message].
@@ -338,7 +342,7 @@ def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
     msgs, cstats = compact(messages, room, keep_recent)
     stats.update({"compaction": cstats})
     if retrieve_memory and query:
-        hits = retrieve(query)
+        hits = retrieve(query, workspace=workspace)
         stats["retrieved_memories"] = len(hits)
         if hits:
             mem_block = "Relevant memories from previous sessions:\n" + "\n".join(
@@ -370,7 +374,8 @@ def preview(session, message=None, budget_tokens=DEFAULT_BUDGET, keep_recent=DEF
                         budget_tokens, keep_recent, retrieve_memory=False)
     stats["system_prompt_tokens"] = count_tokens(sysp)
     # retrieval is reported separately so the check can observe memory hits
-    hits = retrieve(message or (sess["messages"][-1]["content"] if sess["messages"] else ""))
+    hits = retrieve(message or (sess["messages"][-1]["content"] if sess["messages"] else ""),
+                    workspace=sess.get("workspace"))
     stats["retrieval_hits"] = len(hits)
     stats["retrieval_samples"] = [h["content"][:120] for h in hits[:3]]
     stats["session_id"] = sess["id"]
