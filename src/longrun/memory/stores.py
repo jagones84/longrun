@@ -17,7 +17,8 @@ from longrun.core.events import (_ACTIVE_CHAT, _ACTIVE_CHAT_LOCK, _TURN_LOCKS,
                      _TURN_LOCKS_GUARD, _turn_lock, publish)
 from longrun.util.fswrite import read_json, write_json, write_text
 from longrun.util.paths import DATA_DIR, SESSIONS_DIR, REPO_ROOT as REPO, _JOBSEQ_FILE
-from longrun.util.steering import STEER_INBOX, _steer_lock, clear_abort, push_abort
+from longrun.util.steering import (STEER_INBOX, _steer_lock, clear_abort,
+                                   forget_steers, live_steers, push_abort)
 from longrun.util.tracing import _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
 
 
@@ -157,6 +158,9 @@ def save_session(sess):
     # stale copy) must not come back: re-apply the live value the owner endpoint
     # recorded. No-op for a session nobody changed live.
     adopt_live_choices(sess)
+    # JAG-796: a mid-run steer is a REAL user message; whichever writer saves
+    # first must carry it, or the operator's own words vanish from the chat.
+    adopt_live_steers(sess)
     # JAG-431p: carry each TITLED free group's title/summary onto the message that
     # STARTS it, so the WebUI labels groups by data that rides the transcript (and
     # therefore survives compaction) instead of by an ordinal. Best-effort.
@@ -265,6 +269,7 @@ def _forget_session_runtime(sid):
     _REAL_CACHED_TOKENS.pop(sid, None)
     with _steer_lock:
         STEER_INBOX.pop(sid, None)
+    forget_steers(sid)   # JAG-796: the durable steer log would otherwise leak too
     # JAG-431r4: ALWAYS drop the in-memory registration. The DELETE path pushes an
     # abort FIRST (JAG-222), so a live worker still stops — but leaving _ACTIVE_CHAT
     # behind when `active` was true leaked the entry (the exact JAG-302 runtime leak
@@ -607,6 +612,45 @@ def adopt_live_choices(sess):
         live = dict(_LIVE.get(sid) or {})
     for k, v in live.items():
         sess[k] = v
+    return sess
+
+
+def adopt_live_steers(sess):
+    """Fold any mid-run steer into `sess` before it is written (JAG-796).
+
+    A steer typed while a turn was running lived ONLY in the in-memory inbox and
+    in that turn's own context, so it reached the transcript — marked `internal`,
+    which the WebUI never renders — only when the turn ended. A turn blocked
+    inside a dispatch (or interrupted) meant the operator's own message was
+    invisible in the chat and gone on a reload.
+
+    Same contract as `adopt_live_choices`: the recorded steers are re-applied on
+    EVERY write, keyed by their own id, so whichever writer saves first carries
+    them as REAL user messages and a stale in-memory copy of the session cannot
+    drop them afterwards.
+    """
+    sid = (sess or {}).get("id")
+    if not _valid_sid(sid):
+        return sess
+    recs = live_steers(sid)
+    if not recs:
+        return sess
+    have = {str(m.get("steer_id") or "") for m in (sess.get("messages") or [])
+            if isinstance(m, dict) and m.get("steer")}
+    for it in recs:
+        text = str(it.get("text") or "").strip()
+        if not text or str(it.get("id") or "") in have:
+            continue
+        try:
+            threads_mod.record(sess, node=None, role="user", text=text,
+                               idx=len(sess.get("messages", [])))
+        except Exception:  # noqa: BLE001 — a ledger hiccup must never block the write
+            pass
+        sess.setdefault("messages", []).append(
+            {"role": "user", "content": text,
+             "ts": it.get("ts") or round(time.time(), 3),
+             "steer": True, "steer_id": it.get("id")})
+        have.add(str(it.get("id")))
     return sess
 
 

@@ -59,6 +59,9 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      turn_begin, turn_end, voice_status, voice_stt, voice_tts)
 from longrun.orbit.api import WEB as ORBIT_WEB
 from longrun.model.keys import set_key as _set_key
+# JAG-796: the durable side of a mid-run steer (the real user message that must
+# reach the transcript even while the running turn is blocked).
+from longrun.util.steering import new_steer_id as _new_steer_id
 
 
 # ------------------------------------------------------------------ HTTP ----
@@ -2539,9 +2542,21 @@ class Handler(BaseHTTPRequestHandler):
             text = body.get("message") or qs.get("message", "")
             if not sid or not text:
                 return self._send(400, {"error": "session and message required"})
-            depth = push_steer(sid, text)
-            publish("chat.steer", session=sid, text=text, queued=depth)
-            return self._send(200, {"ok": True, "queued": depth})
+            # JAG-796: a steer is the operator's OWN MESSAGE, not a hidden nudge.
+            # It used to reach the transcript only when (and if) the running turn
+            # drained it — so a turn blocked inside a dispatch hid it for up to an
+            # hour and a reload lost it entirely. Record it durably and save NOW
+            # (a real user message, never `internal`), then announce it. The id is
+            # minted here and handed to `push_steer` so it is recorded ONCE.
+            steer_id = _new_steer_id()
+            depth = push_steer(sid, text, steer_id=steer_id)
+            _sess = _open_session(sid)
+            if _sess is None:
+                return self._send(404, {"error": "session was deleted"})
+            save_session(_sess)
+            publish("chat.steer", session=sid, text=text, queued=depth, id=steer_id)
+            publish("chat.user", session=sid, text=text, steer=True, id=steer_id)
+            return self._send(200, {"ok": True, "queued": depth, "id": steer_id})
         if path == "/api/chat/abort":
             # JAG-129A: stops the in-flight turn (the agent must not continue).
             # JAG-431q: `all` aborts EVERY registered running turn — the UI's Stop is a

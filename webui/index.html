@@ -7024,7 +7024,12 @@ async function loadHistory() {
         // old attachment can still be opened (image in the viewer, other files in the
         // editor). It used to just strip the preamble, leaving the attachment dead.
         const _sp = _splitAttBlock(m.content);
-        const _un = who("user", _sp.rest, m.ts, m.sender, m.subjob, m.chapter, m.sender_session);
+        // JAG-796: a mid-run steer is a REAL message the operator typed. It used
+        // to be stored `internal` — which this renderer SKIPS — so the operator's
+        // own words vanished from the chat. It is now a normal user message and
+        // is labelled so it is clear it was delivered INTO the running turn.
+        const _txt = m.steer ? "🎯 steer: " + _sp.rest : _sp.rest;
+        const _un = who("user", _txt, m.ts, m.sender, m.subjob, m.chapter, m.sender_session);
         if (_sp.atts.length) {
           const _ub = _un && _un.querySelector(".bubble");
           if (_ub) { _ub.insertAdjacentHTML("beforeend", _attachmentChips(_sp.atts)); _bindAttachmentChips(_ub); }

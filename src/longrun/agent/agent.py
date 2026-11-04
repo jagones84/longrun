@@ -2083,7 +2083,20 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
 
             _t = threading.Thread(target=_drain, daemon=True)
             _t.start()
-            _t.join(_dispatch_wait())
+            # JAG-796: never sit on a pending STEER. A teammate turn can outlast
+            # any patience and the "still running" outcome below already covers
+            # it, so waiting stops as soon as the operator steers THIS turn: the
+            # message is acted on now instead of being hidden behind up to
+            # `dispatch_wait_secs` of silence (measured live: 151 s of nothing on
+            # a steer typed during a dispatch, then the turn stayed blocked for
+            # another 7 minutes).
+            _wait = _dispatch_wait()
+            _waited = 0.0
+            while _waited < _wait:
+                _t.join(min(2.0, _wait - _waited))
+                _waited += 2.0
+                if _ddone.is_set() or has_steer(sess["id"]):
+                    break
             if not _ddone.is_set():
                 # P2: the teammate turn is still running — never hang this
                 # turn behind it. The worker keeps running in its own session
@@ -2093,7 +2106,7 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
                           "keeps running in session %s and its reply will land "
                           "there. Inspect it with sessions.read (session %s) "
                           "and continue; do NOT re-dispatch the same goal."
-                          % (member.get("id"), _dispatch_wait(), sid2, sid2))
+                          % (member.get("id"), int(_waited), sid2, sid2))
                 on_event("tool.result", session=sess["id"], tool="dispatch",
                          ok=True, exit_code=0, backend="harness",
                          args={"agent": member.get("id"), "goal": goal,
@@ -4387,8 +4400,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             continue
         # JAG-127b: inject any steering message typed while this turn was running.
         for _s in drain_steer(sess["id"]):
-            msgs.append({"role": "user", "content":
-                         "[user steering — take this into account now] " + _s})
+            msgs.append({"role": "user", "_steer_ctx": True, "content":
+                         "[user steering — take it into account now] " + _s})
             on_event("chat.steer", session=sess["id"], text=_s, applied=True)
         collected = []
 
@@ -5226,8 +5239,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _close_todo_rounds += 1
                 _kg_prev = _cur
                 for _s in drain_steer(sess["id"]):
-                    msgs.append({"role": "user", "content":
-                                 "[user steering — take this into account now] " + _s})
+                    msgs.append({"role": "user", "_steer_ctx": True, "content":
+                                 "[user steering — take it into account now] " + _s})
                     on_event("chat.steer", session=sess["id"], text=_s, applied=True)
                 on_event("plan.continuing", session=sess["id"], round=_kg_rounds,
                          open=len(_open), total=len(_nodes), difficulty=_diff_level)
@@ -5471,8 +5484,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # `context_engine` still counts them and `_completion_body` filters the
     # marker out before the provider call.
     try:
+        # JAG-796: the MODEL-facing steer copy carries the "[user steering — …]"
+        # prefix and must NOT be persisted here: the operator's real message was
+        # already written (and is rendered) by `stores.adopt_live_steers`, so
+        # folding this copy too showed the same steer twice.
         _extra = [dict(_m, internal=True) for _m in msgs[_turn_base:]
-                  if isinstance(_m, dict) and _m.get("role") in ("user", "assistant")]
+                  if isinstance(_m, dict) and _m.get("role") in ("user", "assistant")
+                  and not _m.get("_steer_ctx")]
         if _extra:
             sess.setdefault("messages", []).extend(_extra)
             save_session(sess)
