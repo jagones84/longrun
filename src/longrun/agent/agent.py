@@ -1850,7 +1850,7 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None):
                  inline=True)
         spawned = _sub.spawn(goal, parent_run_id=sess["id"], max_steps=max_steps,
                              model=model, depth=_sub.depth_of(sess["id"]) + 1,
-                             role=role) or {}
+                             role=role, session=sess["id"]) or {}
         sid = spawned.get("subagent_id")
         if not sid:
             err = spawned.get("error") or "spawn failed"
@@ -4068,6 +4068,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             from longrun.model import context_engine as _ce
 
             def _used():
+                # JAG-465-fix: the router's REAL prompt_tokens is what decides
+                # the trim; the chars/4 sum stays only as the cold-session
+                # fallback. Sizing a budget with a proxy while the true number
+                # already sits in `_REAL_PROMPT_TOKENS` was a second truth.
+                _real = _REAL_PROMPT_TOKENS.get(sess["id"])
+                if isinstance(_real, (int, float)) and _real > 0:
+                    return int(_real)
                 return sum(_ce.count_tokens(m.get("content")) for m in msgs)
 
             _limit = int(_budget * (float(_rllm.AUTOCOMPACT_PCT) / 100.0))

@@ -743,12 +743,16 @@ def _action_tool_names(act, action):
     return [str(action or "note")]
 
 
-def _account_call(st, usage):
+def _account_call(st, usage, session=None):
     """Add one model call's tokens to the run (M6). Returns tokens added.
 
     Counts inclusive prompt+completion (cached input still occupies context).
     Missing/empty/counterless usage adds 0 — never a chars/4 fiction; the Cost
     panel prices that case as unknown (`usd None`) via costs.record.
+
+    `session`, when the caller knows it, sends the SAME usage to the price
+    ledger, so a headless/subagent run is priced and its cache hits are kept
+    instead of being read and discarded.
     """
     try:
         from longrun.model import costs
@@ -761,6 +765,12 @@ def _account_call(st, usage):
             st.tokens_spent += spent
         except Exception:  # noqa: BLE001
             pass
+        if session:
+            try:
+                costs.record(session, getattr(st, "model", None), usage,
+                             run=getattr(st, "id", None))
+            except Exception:  # noqa: BLE001 — pricing must never break a run
+                pass
         return spent
     return 0
 
@@ -834,11 +844,16 @@ def _budget_exceeded(st, token_budget):
 
 
 def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_id=None,
-                 workspace=None, fallbacks=None, token_budget=None):
+                 workspace=None, fallbacks=None, token_budget=None, session=None):
     """Sense-think-act loop with real tools behind the approval gate + HITL.
 
     M6: `token_budget` caps cumulative prompt+completion tokens for the run
     tree (own calls + subagent descendants); `None` disables the check.
+
+    `session` (optional): the chat session this run bills its model calls to.
+    Without it the run still counts tokens, but its calls never reach the price
+    ledger — which is why a subagent's spend used to be invisible in the Cost
+    panel.
     """
     srv = _srv()
     if on_event is None:
@@ -965,7 +980,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                                 msgs, cand, lambda ch, t: on_event("agent.think",
                                                                    channel=ch, text=t),
                                 usage=_call_usage)
-                            _account_call(st, _call_usage)
+                            _account_call(st, _call_usage, session=session)
                             if cand != model:
                                 on_event("model.fallback", run=st.id, from_model=model,
                                          to_model=cand)
@@ -1266,7 +1281,8 @@ def agent_stream_gen_v2(goal, max_steps, model, run_id, script=None, workspace=N
     def worker():
         try:
             agent_run_v2(goal, max_steps, model, on_event, script=script, run_id=run_id,
-                         workspace=workspace)
+                         workspace=workspace,
+                         session=(session_obj.get("id") if isinstance(session_obj, dict) else None))
         except Exception as e:  # noqa: BLE001
             q.put("event: error\ndata: %s\n\n" % json.dumps({"error": str(e)}))
         finally:

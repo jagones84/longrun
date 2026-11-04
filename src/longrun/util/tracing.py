@@ -179,11 +179,15 @@ class RunTrace:
     otel_tracing.py); otherwise a lightweight local span list is kept.
     """
 
-    def __init__(self, kind, goal=None, model=None):
+    def __init__(self, kind, goal=None, model=None, session=None):
         self.id = uuid.uuid4().hex[:12]
         self.kind = kind
         self.goal = (goal or "")[:300]
         self.model = model
+        # The session whose cost ledger prices this run. When known, `finish()`
+        # takes the run's USD from that ledger (`costs.for_run`) instead of
+        # re-pricing a chars/4 estimate — one truth, cache-aware.
+        self.session = session
         self.ts = round(time.time(), 3)
         self.tokens_in = 0
         self.tokens_out = 0
@@ -239,8 +243,20 @@ class RunTrace:
 
     def finish(self, status="done"):
         self.status = status
-        price = MODEL_PRICES.get(self.model or "", [0.0, 0.0])
-        cost = (self.tokens_in / 1e6) * price[0] + (self.tokens_out / 1e6) * price[1]
+        # One cost truth: when this run knows its session, the USD is the sum the
+        # provider-priced ledger already holds for this run id (cache-aware).
+        # The chars/4 estimate stays only as the fallback for run kinds that are
+        # not tied to a session (plan/agent), where no ledger rows exist.
+        cost = None
+        if self.session:
+            try:
+                from longrun.model import costs as _costs
+                cost = _costs.for_run(self.session, self.id).get("usd")
+            except Exception:  # noqa: BLE001 — accounting must never break a run
+                cost = None
+        if cost is None and not self.session:
+            price = MODEL_PRICES.get(self.model or "", [0.0, 0.0])
+            cost = (self.tokens_in / 1e6) * price[0] + (self.tokens_out / 1e6) * price[1]
         spans = self.spans
         if self.otel and self._otel_root is not None:
             try:

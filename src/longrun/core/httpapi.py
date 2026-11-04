@@ -439,7 +439,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             # `model.loading` and load it *before* the first token instead of
             # letting the client stall silently on the router's autoload.
             target = model or routing.pick("chat") or default_model()
-            trace = RunTrace("chat", goal=message[:120], model=target)
+            trace = RunTrace("chat", goal=message[:120], model=target, session=sess["id"])
             trace.span("chat.stream", session=sess["id"])
             q.put("event: chat.run\ndata: %s\n\n" % json.dumps(
                 {"run_id": trace.id, "session": sess["id"]}))
@@ -2470,7 +2470,8 @@ class Handler(BaseHTTPRequestHandler):
                 _turn_tok = turn_begin(sess["id"])
                 trace = None
                 try:
-                    trace = RunTrace("chat", goal=message[:120], model=body.get("model"))
+                    trace = RunTrace("chat", goal=message[:120], model=body.get("model"),
+                                     session=sess["id"])
                     trace.span("chat.once", session=sess["id"])
                     # v0.6 first action: model-generated write_todos → per-run graph.
                     # JAG-76: key the graph by the SESSION (same key as

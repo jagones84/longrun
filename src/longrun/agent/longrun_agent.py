@@ -2364,6 +2364,7 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
             max_steps=max(1, min(int(max_steps or 6), 12)),
             model=resolved_model,
             run_id=st.id,
+            session=LONGRUN_AGENT_SESSION_ID,
         )
     finally:
         # The ledger is written BEFORE the reset: the stateless wipe is exactly

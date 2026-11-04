@@ -17,11 +17,15 @@ switched on from `config/tools.yaml`:
       timeout_secs: 120
       paths: ["longrun/src"]      # optional: only paths containing these
 """
+import collections
+import json
 import os
 import time
 
 DEFAULTS = {
     "enabled": False,
+    # "auto" = resolve the project's own test command from its markers (see
+    # `resolve_command`). Any other non-empty string is used verbatim.
     "command": "",
     "timeout_secs": 120,
     "paths": [],
@@ -31,6 +35,22 @@ DEFAULTS = {
 }
 
 TARGET_TOOLS = ("fs.write", "fs.edit")
+
+# Markers, in precedence order. The FIRST hit decides, so a repo that has both
+# pytest and npm is verified by pytest (the harness itself is Python-first).
+PYTEST_MARKERS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini", "tests")
+PYTEST_COMMAND = "python3 -m pytest -q"
+
+# Bounded closeout memo: per (workspace, node) we remember the last verdict and
+# the mutation stamp it was taken on. A second `done` with NO new mutation must
+# not re-run an expensive suite — the model is re-claiming, not repairing.
+_CLOSEOUT_MEMO = collections.OrderedDict()
+_CLOSEOUT_MEMO_MAX = 512
+
+
+def reset_closeout_memo():
+    """Drop the bounded closeout memory (tests, and a workspace reset)."""
+    _CLOSEOUT_MEMO.clear()
 
 
 def cfg(override=None):
@@ -136,12 +156,63 @@ def syntax_gate(tool, path, snap, res):
         return res, {"ran": False}
 
 
-def run_check(workspace=None, c=None, run_id=None):
-    """Runs the verification command in the sandbox. Returns (green, output)."""
+def resolve_command(workspace=None, c=None, auto_when_empty=False):
+    """The verification command for THIS workspace, or "" when none applies.
+
+    A literal `verifier.command` always wins. The value `"auto"` asks the
+    project itself, first hit wins: pytest markers -> a `package.json` `test`
+    script -> a Makefile `test:` target. Stat-only, per call, so a new marker is
+    picked up without a restart and no resolved command is cached into a config
+    file (one truth: the project tree).
+
+    `auto_when_empty` is the CLOSEOUT path: an operator who enabled closeout
+    without naming a command still gets the project's own suite, once per step.
+    Per-edit verification never auto-resolves — running a full suite after every
+    write is the expensive behaviour this harness must not inflict by surprise.
+    """
     c = c or cfg()
     cmd = str(c.get("command") or "").strip()
+    if cmd and cmd != "auto":
+        return cmd
+    if not cmd and not auto_when_empty:
+        return ""
+    if not workspace:
+        return ""
+    ws = str(workspace)
+    for marker in PYTEST_MARKERS:
+        if os.path.exists(os.path.join(ws, marker)):
+            return PYTEST_COMMAND
+    pkg = os.path.join(ws, "package.json")
+    if os.path.isfile(pkg):
+        try:
+            with open(pkg, encoding="utf-8") as f:
+                scripts = (json.load(f) or {}).get("scripts") or {}
+        except (OSError, ValueError):
+            scripts = {}
+        if str(scripts.get("test") or "").strip():
+            return "npm test"
+    makefile = os.path.join(ws, "Makefile")
+    if os.path.isfile(makefile):
+        try:
+            with open(makefile, encoding="utf-8", errors="replace") as f:
+                if any(line.startswith("test:") for line in f):
+                    return "make test"
+        except OSError:
+            pass
+    return ""
+
+
+def run_check(workspace=None, c=None, run_id=None):
+    """Runs the verification command in the sandbox. Returns (green, output).
+
+    An UNRESOLVABLE command is a skip, not a failure: `apply-only-if-green` must
+    never roll an edit back because the project ships no test suite.
+    """
+    c = c or cfg()
+    cmd = resolve_command(workspace, c)
     if not cmd:
-        return True, ""
+        raw = str(c.get("command") or "").strip()
+        return True, ("skipped: no test command detected for %s" % workspace) if raw else ""
     try:
         from longrun.tools import sandbox
         res = sandbox.run(cmd, run_id=run_id, timeout=c.get("timeout_secs"),
@@ -171,15 +242,40 @@ def closeout_gate(node, workspace=None, run_id=None, c=None, check=None):
                              if e.get("observed")])
     if not c.get("closeout") or not node.get("mutated") or observed_already:
         return True, {"ran": False}, False
-    if not str(c.get("command") or "").strip():
+    cmd = resolve_command(workspace, c)
+    if not cmd:
         return False, {"ran": False, "green": False,
-                       "error": "closeout verification is on but verifier.command "
-                                "is empty"}, False
+                       "error": "closeout verification is on but no test command "
+                                "could be resolved (verifier.command=%r)"
+                                % (c.get("command") or "")}, False
+    # BOUNDED REPAIR: one external pass/fail plus ONE repair round. The first
+    # red is handed to the model with the output; a second `done` that changed
+    # nothing since that failure is a re-claim, not a repair — refuse it WITHOUT
+    # paying for the suite again.
+    memo_key = (str(workspace or ""), str(node.get("id") or ""))
+    prev = _CLOSEOUT_MEMO.get(memo_key) or {}
+    stamp = node.get("mutated")
+    if prev.get("green") is False and prev.get("mutated") == stamp:
+        return False, {"ran": False, "green": False, "command": cmd,
+                       "skipped": "unchanged_since_failure",
+                       "attempts": prev.get("attempts", 1),
+                       "error": "no change since the last failed check — fix "
+                                "something before claiming the step is done"}, False
     t0 = time.time()
-    green, out = (check or run_check)(workspace=workspace, c=c, run_id=run_id)
-    report = {"ran": True, "green": bool(green), "command": c.get("command"),
+    # Hand the RESOLVED command down: closeout may auto-detect it, while
+    # `run_check` itself never auto-resolves (per-edit stays opt-in).
+    c2 = dict(c)
+    c2["command"] = cmd
+    green, out = (check or run_check)(workspace=workspace, c=c2, run_id=run_id)
+    report = {"ran": True, "green": bool(green), "command": cmd,
+              "attempts": int(prev.get("attempts", 0)) + 1,
               "duration_ms": int((time.time() - t0) * 1000),
               "output": str(out or "")[-1200:]}
+    _CLOSEOUT_MEMO[memo_key] = {"green": bool(green), "mutated": stamp,
+                                "attempts": report["attempts"],
+                                "ts": round(time.time(), 3)}
+    while len(_CLOSEOUT_MEMO) > _CLOSEOUT_MEMO_MAX:
+        _CLOSEOUT_MEMO.popitem(last=False)
     return bool(green), report, bool(green)
 
 
@@ -192,9 +288,12 @@ def verify(tool, path, snap, res, workspace=None, run_id=None, c=None):
     c = c or cfg()
     if not should_verify(tool, path, c):
         return res, {"ran": False}
+    cmd = resolve_command(workspace, c)
+    if not cmd:
+        return res, {"ran": False, "skipped": "no-command"}
     t0 = time.time()
     green, out = run_check(workspace=workspace, c=c, run_id=run_id)
-    report = {"ran": True, "green": bool(green), "command": c.get("command"),
+    report = {"ran": True, "green": bool(green), "command": cmd,
               "duration_ms": int((time.time() - t0) * 1000)}
     if green:
         return res, report

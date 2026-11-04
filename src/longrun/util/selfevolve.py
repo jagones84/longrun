@@ -616,24 +616,57 @@ def _run_check(proposal_dir, command, c):
     return res.get("exit_code") == 0, out
 
 
-def verify(proposal_dir, runner=None, c=None):
-    """Run `check.py` in the sandbox and update proposal.json (verified/rejected).
+def _case_command(case):
+    """The shell command for one case: `default` = the proposal's own check.py."""
+    return "python3 check.py" if not case or str(case) == "default" else str(case)
+
+
+def evaluate_cases(proposal_dir, cases, runner=None, c=None):
+    """Run each case and return {case_id: pass} (the case TABLE, not a score).
+
+    A single deterministic check cannot show that nothing else regressed: the
+    corpus's acceptance result is per-item, not aggregate. `runner(dir, command)
+    -> (green, output)` is injectable so tests never touch the sandbox; the
+    default runs the command inside the proposal folder.
+    """
+    out = {}
+    for case in (cases or ["default"]):
+        cid = str(case)
+        command = _case_command(cid)
+        if runner is not None:
+            try:
+                green, msg = runner(proposal_dir, command)
+            except Exception as e:  # noqa: BLE001 — a case is data, not a crash
+                green, msg = False, "runner error: %s" % e
+        else:
+            green, msg = _run_check(proposal_dir, command, c or cfg())
+        out[cid] = bool(green)
+    return out
+
+
+def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None):
+    """Run the proposal's check(s) and update proposal.json (verified/rejected).
+
+    `cases` is an optional list of commands (the literal `"default"` means
+    `python3 check.py`); every case must pass. `baseline` is the case map of the
+    artifact this one replaces, stored WITH the result so `promote()` can refuse
+    a regression instead of averaging it away.
 
     `runner(dir, command) -> (green, output)` injectable in tests (pure).
-    Returns the report {"ran","green","command","duration_ms","output"}.
+    Returns the report {"ran","green","command","cases","baseline","duration_ms","output"}.
     """
     c = c or cfg()
     prop = _read_json(os.path.join(proposal_dir, "proposal.json")) or {}
-    command = "python3 check.py"
+    cases = [str(x) for x in (cases or ["default"])]
+    command = _case_command(cases[0])
     t0 = time.time()
-    if runner is not None:
-        try:
-            green, out = runner(proposal_dir, command)
-        except Exception as e:  # noqa: BLE001
-            green, out = False, "runner error: %s" % e
-    else:
-        green, out = _run_check(proposal_dir, command, c)
+    case_map = evaluate_cases(proposal_dir, cases, runner=runner, c=c)
+    green = all(case_map.values())
+    out = ", ".join("%s=%s" % (k, "pass" if v else "FAIL")
+                    for k, v in case_map.items())
     report = {"ran": True, "green": bool(green), "command": command,
+              "cases": case_map,
+              "baseline": {str(k): bool(v) for k, v in (baseline or {}).items()},
               "duration_ms": int((time.time() - t0) * 1000),
               "output": str(out)[-1200:]}
     prop["status"] = "verified" if green else "rejected"
@@ -655,7 +688,7 @@ def _pattern_of(prop):
     return [str(x) for x in pat] if isinstance(pat, list) else []
 
 
-def _archived_skill_md(name, pattern, purpose, rel, origin):
+def _archived_skill_md(name, pattern, purpose, rel, origin, evidence=None):
     """The SKILL.md an INSTALLED skill carries (one owner of the archived text).
 
     v717: promotion copied the DRAFT verbatim, so the installed skill still said
@@ -672,8 +705,9 @@ def _archived_skill_md(name, pattern, purpose, rel, origin):
         lines += ["%d. `%s`" % (i + 1, t) for i, t in enumerate(pattern)]
         lines += [""]
     lines += ["## Status", "",
-              "ARCHIVED — verified green and installed at `%s` (origin: %s)."
-              % (rel, origin or "auto"), ""]
+              "ARCHIVED — verified green and installed at `%s` (origin: %s%s)."
+              % (rel, origin or "auto",
+                 ", evidence: %s" % evidence if evidence else ""), ""]
     return "\n".join(lines)
 
 
@@ -718,6 +752,29 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
         return {"ok": False, "streak": _streak, "bar": _bar,
                 "error": "patience: proposal needs %d consecutive green verifies "
                          "(streak=%d) — run verify again" % (_bar, _streak)}
+    # CASE-TABLE GATE (SAGE direction): one green check is not evidence that the
+    # artifact did not break something that used to work. With a baseline, refuse
+    # any dropped case and require at least one gained; without one, say so
+    # instead of dressing a single case up as a statistical result.
+    _verify = prop.get("verify") if isinstance(prop.get("verify"), dict) else {}
+    _cases = _verify.get("cases") if isinstance(_verify.get("cases"), dict) else {}
+    _base = _verify.get("baseline") if isinstance(_verify.get("baseline"), dict) else {}
+    if _base:
+        _regressed = sorted(k for k, ok in _base.items() if ok and not _cases.get(k))
+        if _regressed:
+            return {"ok": False, "regressions": _regressed,
+                    "error": "case gate: %s regressed — a promotion may not break a "
+                             "case that used to pass" % ", ".join(_regressed)}
+        if sum(1 for v in _cases.values() if v) <= sum(1 for v in _base.values() if v):
+            return {"ok": False,
+                    "error": "case gate: no case improved over the baseline"}
+        evidence = "cases"
+    elif os.environ.get("LONGRUN_EVOLVE_CASES") == "1" and len(_cases) < 2:
+        return {"ok": False,
+                "error": "case gate: %d case(s) verified — at least 2 are required "
+                         "while LONGRUN_EVOLVE_CASES=1" % len(_cases)}
+    else:
+        evidence = "single-case" if len(_cases) < 2 else "cases-no-baseline"
     # RDD point 2: sealed held-out gate (fail-closed). The local verifier
     # (check.py) is NOT enough: promotion requires the external judge suite.
     from longrun.plan import heldout
@@ -763,6 +820,7 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
     if not got.get("ok"):
         return got
     prop["status"] = "archived"
+    prop["evidence"] = evidence
     if human:
         prop["released_by"] = "operator"
     _under_repo = os.path.abspath(target).startswith(os.path.abspath(REPO) + os.sep)
@@ -774,12 +832,13 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose=""):
     try:
         with open(os.path.join(target, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(_archived_skill_md(name, _pattern_of(prop), purpose,
-                                       prop["archived_to"], prop.get("origin")))
+                                       prop["archived_to"], prop.get("origin"),
+                                       evidence=evidence))
         skills_mod.list_skills(reload=True)
     except OSError:
         pass
     return {"ok": True, "name": name, "path": target,
-            "rel": prop["archived_to"]}
+            "rel": prop["archived_to"], "evidence": evidence}
 
 
 MATRIX_FORGE_NS = "learned"

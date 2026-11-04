@@ -228,15 +228,35 @@ def _deliverables(files, workspace):
     return out
 
 
-def _tokens(key):
-    """Tokens reported for the run, or None (metrics are optional)."""
+def _usage(session_id, run_id):
+    """Tokens AND priced cost of one run, from the two ledgers that own them.
+
+    `runmetrics` is keyed by SESSION (`agent.py` starts it with `sess["id"]`), so
+    a run-bound build used to ask for the run id and get None. It is asked by
+    session here, with the run id only as a first try for older callers.
+    The money/cache half comes from the per-call cost ledger, filtered by the
+    `run` tag every chat call already carries (`costs.for_run`) — one truth,
+    no second pricing path.
+    """
+    tokens = None
     try:
         from longrun.model import runmetrics
-        got = runmetrics.get(key) or {}
+        got = (runmetrics.get(run_id) if run_id else None) \
+            or runmetrics.get(session_id) or {}
         val = got.get("tokens")
-        return int(val) if isinstance(val, (int, float)) else None
-    except Exception:  # noqa: BLE001 — a record must never fail on metrics
-        return None
+        tokens = int(val) if isinstance(val, (int, float)) else None
+    except Exception:  # noqa: BLE001 — metrics are optional
+        tokens = None
+    money = {"usd": None, "cached": None, "cache_write": None, "calls": None}
+    try:
+        from longrun.model import costs
+        spent = costs.for_run(session_id, run_id) if session_id else {}
+        if spent.get("calls"):
+            money = {"usd": spent.get("usd"), "cached": spent.get("cached"),
+                     "cache_write": spent.get("cache_write"), "calls": spent.get("calls")}
+    except Exception:  # noqa: BLE001 — a record must never fail on cost
+        pass
+    return {"tokens": tokens, **money}
 
 
 # ------------------------------------------------------------------ build ---
@@ -256,16 +276,18 @@ def build(session_id, run_id=None, session=None):
     key = run_id or session_id
     return _assemble(key, session_id, _goal(sess), sess.get("created"),
                      sess.get("model"), sess.get("workspace"),
-                     sess.get("tool_cards") or [], _harness(run_id), _tokens(key))
+                     sess.get("tool_cards") or [], _harness(run_id),
+                     _usage(session_id, run_id))
 
 
-def _assemble(run_id, session_id, goal, created, model, workspace, cards, harness, tokens):
+def _assemble(run_id, session_id, goal, created, model, workspace, cards, harness, usage):
     """The one record shape both entry points return (one truth, two sources)."""
     workspace = str(workspace or "")
     steps = _steps(cards)
     files = _written(cards, workspace)
     stamps = [s["ts"] for s in steps if isinstance(s.get("ts"), (int, float))]
     span = round(max(stamps) - min(stamps), 3) if len(stamps) >= 2 else 0.0
+    usage = usage or {}
     return {
         "schema": SCHEMA,
         "run_id": run_id,
@@ -280,7 +302,12 @@ def _assemble(run_id, session_id, goal, created, model, workspace, cards, harnes
                      "goal_source": "first_user_message", "model_source": "session_current",
                      "deliverables_source": "live_workspace"},
         "harness": harness,
-        "budget": {"steps": len(steps), "seconds": span, "tokens": tokens},
+        "budget": {"steps": len(steps), "seconds": span,
+                   "tokens": usage.get("tokens"),
+                   "usd": usage.get("usd"),
+                   "cached": usage.get("cached"),
+                   "cache_write": usage.get("cache_write"),
+                   "calls": usage.get("calls")},
         "steps": steps,
         "files_touched": files,
         "deliverables": _deliverables(files, workspace),

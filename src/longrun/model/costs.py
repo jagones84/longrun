@@ -563,6 +563,39 @@ def summary(session, tail=60):
     return s
 
 
+def for_run(session, run_id):
+    """ONE run's share of a session ledger — the run record's cost truth.
+
+    Every chat call is tagged with the turn's run id (`record(..., run=...)`),
+    so this is the only place that can say what a turn cost and how much of its
+    input came from the provider's prefix cache. Rows with an unknown price are
+    counted (`unknown`) and left out of `usd`; a run with no priced row reports
+    `usd: None`, never 0 (a fake zero reads as "free").
+
+    `run_id` empty/None sums the whole session (the unbound legacy path).
+    """
+    led = _load(session) if session else []
+    if run_id is not None:
+        led = [c for c in led if c.get("run") == run_id]
+    tin = tout = cached = cache_write = 0
+    usd = 0.0
+    priced = unknown = 0
+    for c in led:
+        tin += c.get("prompt") or 0
+        tout += c.get("completion") or 0
+        cached += c.get("cached") or 0
+        cache_write += c.get("cache_write") or 0
+        if c.get("usd") is None:
+            unknown += 1
+        else:
+            priced += 1
+            usd += float(c["usd"])
+    return {"calls": len(led), "tokens_in": tin, "tokens_out": tout,
+            "cached": cached, "cache_write": cache_write,
+            "usd": round(usd, 6) if priced else None,
+            "priced_calls": priced, "unknown_calls": unknown}
+
+
 def reset(session):
     """Drop the ledger for one session (the UI 'clear' action)."""
     with _lock:

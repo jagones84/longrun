@@ -111,7 +111,12 @@ reasoning:
 # project tests) to make every edit prove itself.
 verifier:
   enabled: true
-  command: ""               # comando di verifica (vuoto = nessuna verifica)
+  # "" = no per-edit verification. "auto" resolves the project's OWN test command
+  # from its markers (pytest -> package.json `test` -> Makefile `test:`); a literal
+  # command overrides. With no marker the check is SKIPPED, never a failed edit.
+  # Per-edit verification is expensive: prefer `closeout: true`, which resolves
+  # "auto" by itself and pays for the suite once per closed step.
+  command: ""
   timeout_secs: 120         # timeout del check
   paths: []                 # se non vuoto, verifica solo i path che contengono uno di questi
   closeout: false           # F1: verify ONCE at closeout when the step changed the environment

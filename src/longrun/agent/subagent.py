@@ -279,7 +279,7 @@ def depth_allowed(depth, max_depth=None):
 
 
 def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, depth=0,
-          role=None, output_schema=None, acceptance_criteria=None):
+          role=None, output_schema=None, acceptance_criteria=None, session=None):
     """Spawn a subagent run and return its id.
 
     The subagent runs asynchronously in a background thread. Call
@@ -409,7 +409,7 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
         try:
             result = api_v02.agent_run_v2(
                 goal, max_steps, model, on_event=on_event, run_id=st.id,
-                fallbacks=fallbacks)
+                fallbacks=fallbacks, session=session)
             entry["result"] = result
             status_txt = result.get("status")
             steps_n = len(result.get("trace", []))
