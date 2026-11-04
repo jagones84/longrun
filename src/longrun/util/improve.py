@@ -10,7 +10,9 @@ import os
 import re
 import json
 import uuid
+import hashlib
 
+from longrun.util import tracing
 from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR
 # JAG-447: derive from the env-overridable DATA_DIR, so tests run against a
@@ -87,16 +89,47 @@ def _trim_ledger():
         pass
 
 
+def _digest_map(mapping):
+    """One short hash over a {filename: digest} map, order-independent."""
+    text = "\n".join("%s=%s" % (k, mapping[k]) for k in sorted(mapping or {}))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def harness_stamp(config_dir=None):
+    """Which harness produced a record: revision + config/overlay digests (E-2).
+
+    E-2 (2026-11-04): a lesson, a proposal and a review carried only
+    `id/ts/kind/origin`, so stale advice could not be told apart from current
+    advice and a decision could not be tied to the code that made it. The digests
+    already exist for traced runs — `tracing.build_manifest` is the ONE
+    implementation, not a second one — this makes them small enough to stamp on
+    every row. Never raises: attribution must not lose the audit record.
+    """
+    try:
+        m = tracing.build_manifest("improvement", config_dir=config_dir)
+        return {"revision": m.get("revision"),
+                "config": _digest_map(m.get("config")),
+                "overlay": m.get("overlay")}
+    except Exception:  # noqa: BLE001 — a broken stamp must never drop the writer
+        return {}
+
+
 def ledger_add(kind, **fields):
     """Append one improvement event to the audit ledger. Returns the entry.
 
     `origin` defaults to 'harness' (the loop itself); pass 'reflect'/'mining'/
-    'agent'/'user' to say WHERE the artifact came from.
+    'agent'/'user' to say WHERE the artifact came from. Every row carries the
+    harness that produced it unless the caller supplies its own `harness=`.
     """
     origin = str(fields.pop("origin", "harness") or "harness")
     entry = {"id": uuid.uuid4().hex[:10], "ts": round(time.time(), 3),
              "kind": str(kind or "event"), "origin": origin}
     entry.update(fields)
+    # E-2: an empty stamp (tracing unavailable) writes NO key, so a row never
+    # claims an attribution it does not have.
+    _stamp = harness_stamp()
+    if _stamp:
+        entry.setdefault("harness", _stamp)
     try:
         os.makedirs(os.path.dirname(LEDGER_PATH), exist_ok=True)
         with open(LEDGER_PATH, "a", encoding="utf-8") as f:
@@ -325,6 +358,7 @@ def review(limit=24, model=None, batch=6):
     """
     items = _artifact_items(limit)
     report = {"ok": True, "ts": time.time(), "model": "", "items": [],
+              "harness": harness_stamp(),
               "counts": {v: 0 for v in REVIEW_VERDICTS}, "unrated": 0}
     if not items:
         report["note"] = "no improvement artifacts to review"
