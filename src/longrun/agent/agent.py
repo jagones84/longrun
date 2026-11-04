@@ -2560,12 +2560,50 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
 # spamming the store.
 _REFLECT_LATEST = {}
 _REFLECT_COOLDOWN = 90.0
+# E-4 (2026-11-04): the distiller used to see the goal and the final answer only,
+# so its lesson described the wording of an answer and could not see that a tool
+# failed three times. The turn's tool cards already carry ok/error/exit_code; these
+# bounds keep the extra block small enough for a 140-character lesson.
+EVIDENCE_MAX = 12
+EVIDENCE_CHARS = 140
 
 
-def maybe_reflect(sess, message, answer, used_tools, model=None):
+def _tool_evidence(cards):
+    """Compact `tool OK` / `tool FAILED …` lines from persisted tool cards (E-4).
+
+    Bounded in count and length, tolerant of junk, never raises: this feeds a
+    prompt, so a malformed card must cost its line, not the turn.
+    """
+    out = []
+    try:
+        for c in (cards or [])[:EVIDENCE_MAX]:
+            if not isinstance(c, dict):
+                continue
+            tool = str(c.get("tool") or "").strip()
+            if not tool:
+                continue
+            if c.get("ok"):
+                out.append(tool + " OK")
+                continue
+            line = tool + " FAILED"
+            code = c.get("exit_code")
+            if code not in (None, ""):
+                line += " (exit=%s)" % code
+            err = " ".join(str(c.get("error") or "").split())
+            if err:
+                line += ": " + err[:80]
+            out.append(line)
+    except Exception:  # noqa: BLE001 — evidence is an optimisation, never a risk
+        return []
+    return [x[:EVIDENCE_CHARS] for x in out]
+
+
+def maybe_reflect(sess, message, answer, used_tools, model=None, evidence=None):
     """Distill one short reusable lesson after a tool-using turn.
 
-    Returns the stored lesson string, or None when skipped/failed.
+    `evidence` (E-4) is `_tool_evidence()` of THIS turn's cards. When it is empty
+    the prompt is byte-identical to the pre-E-4 one, so a turn with no cards
+    behaves exactly as before. Returns the stored lesson string, or None.
     """
     if not used_tools:
         return None
@@ -2574,12 +2612,15 @@ def maybe_reflect(sess, message, answer, used_tools, model=None):
         return None
     try:
         from longrun.memory import memory
+        body = "Goal: %s\nOutcome: %s" % (str(message)[:500], str(answer)[:800])
+        lines = [str(x) for x in (evidence or []) if str(x).strip()]
+        if lines:
+            body += "\nTool evidence:\n" + "\n".join(lines)
         msgs = [{"role": "system", "content":
                  "You are the self-improvement module. Read the exchange and write "
                  "ONE short reusable lesson (a durable rule, a fix, a gotcha) for "
                  "future sessions. Max 140 characters. No preamble, no quotes, no markdown."},
-                {"role": "user", "content":
-                 "Goal: %s\nOutcome: %s" % (str(message)[:500], str(answer)[:800])}]
+                {"role": "user", "content": body}]
         # JAG-431r4: `_router_stream` returns a 2-tuple (answer, think) — the old
         # 3-value unpack always raised ValueError, which the `except` swallowed, so
         # post-turn reflection (JAG-93) was silently dead. Unpack 2.
@@ -2631,7 +2672,8 @@ def _turn_importance(used_tools=0, errored=False, corrected=False, steps=0):
     return score
 
 
-def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta):
+def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta,
+                      evidence=None):
     """JAG-447: the EFFECTIVE end-of-turn self-improvement loop.
 
     Replaces the old cosmetic ``improve.nudge`` (which the model never saw and
@@ -2660,7 +2702,7 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
         k_skills = improve_mod.approval_kind("skills")
         # 2. distill a lesson (maybe_reflect is cooldown-guarded, never raises)
         if used_tools and importance >= improve_mod.IMPORTANCE_THRESHOLD and k_mem != "denied":
-            lesson = maybe_reflect(sess, message, answer, True, model)
+            lesson = maybe_reflect(sess, message, answer, True, model, evidence=evidence)
             if lesson:
                 wrote.append({"kind": "memory", "origin": "reflect",
                               "summary": lesson,
@@ -4016,6 +4058,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # turn's total. Track the running total in `_total_work_steps`.
     _total_work_steps = 0
     used_tools = []
+    # E-4 (2026-11-04): card boundary of THIS turn. Cards persist on the session
+    # (`stores.persist_tool_card`), so the boundary is what lets the end-of-turn
+    # distiller read this turn's outcomes instead of the whole session history.
+    _cards_base = len(sess.get("tool_cards") or [])
     # JAG-129A: completion loop state (see keepgoing.decide).
     from longrun.plan import keepgoing as _kg
     # JAG-431q: the stale-abort clear now happens at TURN START in the caller (httpapi/
@@ -5523,7 +5569,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # + high-signal skill mining + audit ledger). Replaces the old decorative
     # JAG-128B nudge, which the model never saw and which offered the user nothing
     # to act on. Never blocking: any exception is swallowed inside the pass.
-    _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta)
+    _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta,
+                      evidence=_tool_evidence(
+                          (sess.get("tool_cards") or [])[_cards_base:]))
     # JAG-129A: safety net — if the turn ends with open steps (e.g. after
     # an abort), it still publishes the end-of-turn metrics. `plan.incomplete`
     # coexists with `plan.stopped` emitted by the loop.
