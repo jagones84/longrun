@@ -148,7 +148,7 @@ def cmd_chat(args):
         return
     out = req("POST", "/api/chat", {"message": args.message, "session": args.session,
                                     "model": args.model})
-    if "error" in out:
+    if out.get("error"):
         print("error:", out["error"], file=sys.stderr)
         sys.exit(1)
     if out.get("reasoning"):
@@ -198,7 +198,7 @@ def cmd_plan(args):
                                        s.get("title", ""), "(" + s.get("id", "") + ")"))
     elif args.action == "generate":
         out = req("POST", "/api/plan/generate", {"goal": args.goal})
-        if "error" in out:
+        if out.get("error"):
             print("error:", out["error"], file=sys.stderr)
             sys.exit(1)
         for s in out.get("plan", {}).get("steps", []):
@@ -679,7 +679,7 @@ def cmd_sessions(args):
         print(json.dumps(req("DELETE", "/api/sessions/" + args.value), indent=2))
     elif args.action == "history":
         out = req("GET", "/api/history?session=" + _q(args.value))
-        if "error" in out:
+        if out.get("error"):
             print("error:", out["error"], file=sys.stderr)
             sys.exit(1)
         for m in out.get("messages", []):
