@@ -34,8 +34,28 @@ DEFAULTS = {
     "port": 18080,
     "context_length": 32768,
     "snapshot_max_mb": 256,
-    "repeats": 1,
+    # E-3 (2026-11-04): one rollout cannot support a claim — `compose.reflect`
+    # needs >= 2 agreeing repeats before it may say `repeated_matched_runs`, and
+    # with the old default of 1 every experiment was labelled `confounded`.
+    # Doubles probe spend on purpose; `LONGRUN_HARNESS_REPEATS=1` opts out.
+    "repeats": 2,
 }
+
+MAX_REPEATS = 3
+
+
+def repeats_of(c):
+    """Effective matched-run repeats: the configured default, clamped to [1, 3].
+
+    E-3: the executor used to read `c.get("repeats") or 1`, a SECOND default that
+    silently overrode the shipped one. One reader, one clamp, never raises.
+    """
+    raw = (c or {}).get("repeats")
+    try:
+        n = int(raw if raw is not None else DEFAULTS["repeats"])
+    except (TypeError, ValueError):
+        n = int(DEFAULTS["repeats"])
+    return max(1, min(MAX_REPEATS, n))
 
 
 def _reason(why):
@@ -215,7 +235,7 @@ def run_group(base, candidates, c=None, combine=False):
         if not snapshot_mod.verify(built["path"])["ok"]:
             return {"status": "refused", "reason": "snapshot failed verification"}
         references = []
-        repeats = max(1, min(3, int(c.get("repeats") or 1)))
+        repeats = repeats_of(c)
         for number in range(1, repeats + 1):
             got = _execute(built["path"], built["digest"], c,
                            "reference-%d" % number, [])
