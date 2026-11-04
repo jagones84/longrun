@@ -61,9 +61,15 @@ check("T5 SJ payload carries no team-job keys (segregated layers)",
 # chars, ~85% of it the static paths/config/recipe block that the SYSTEM PROMPT already
 # carries (`agent.self_summary`). A diagnostic branch now ships only its own payload plus
 # one pointer line; `action:"info"` keeps the full report.
-check("T5b a dynamic self action does not repeat the static block the prompt already has",
-      not ({"repo_path", "config", "docs", "install_skill", "skills_dir", "namespaces",
+# c554072 (2026-11-03) restored ONE scalar to the non-full branch — `repo_path` — because
+# v414 5b/5d and v539 B5 pin it there: a diagnostic call still has to say WHERE the repo
+# is, and the ~40-char path never pays for the S4 fix. The HEAVY block stays out, so this
+# pin now asserts the path IS present and the block is NOT (it used to forbid both, which
+# is what left it red after c554072).
+check("T5b a dynamic self action ships its own payload + the repo path, not the heavy block",
+      not ({"config", "docs", "install_skill", "skills_dir", "namespaces",
             "mcp"} & set(r.keys()))
+      and r.get("repo_path") == REPO
       and "self.info" in (r.get("hint") or ""), sorted(r.keys()))
 check("T5c action=info still carries the full report (the ONE copy)",
       {"repo_path", "config", "docs", "service", "skills", "namespaces", "mcp"}
