@@ -72,6 +72,10 @@ _LEGACY_SCHEMAS = {
                         "it, its cwd/env carry over between calls, and you can read what "
                         "they typed. Under docker/bwrap/nsjail it runs isolated instead. "
                         "Returns exit code + captured stdout/stderr. "
+                        "A LONG command (build, install, training, server) must be "
+                        "started with background=true: the call returns a job id at "
+                        "once and the turn is NOT blocked — poll it with "
+                        "action='status' (job) and stop it with action='stop'. "
                         "action=read returns the last `lines` of the terminal session "
                         "(including the operator's own commands); action=reset kills it. "
                         "For anything longer than one line prefer a FILE over an inline "
@@ -82,12 +86,20 @@ _LEGACY_SCHEMAS = {
         "type": "object",
         "properties": {
             "action": {"type": "string",
-                       "enum": ["run", "read", "reset"],
+                       "enum": ["run", "read", "reset", "status", "stop"],
                        "default": "run",
                        "description": ("run (default) = execute `command`; read = the "
-                                       "recent terminal session; reset = fresh shell")},
+                                       "recent terminal session; reset = fresh shell; "
+                                       "status/stop = a background job (with `job`)")},
             "command": {"type": "string",
                         "description": "shell command to execute (action=run)"},
+            "background": {"type": "boolean",
+                           "description": ("run: start the command DETACHED and return "
+                                           "a job id immediately instead of waiting for "
+                                           "it — use it for anything that may take "
+                                           "minutes")},
+            "job": {"type": "string",
+                    "description": "status/stop: the job id returned when it started"},
             "lines": {"type": "integer",
                       "description": "action=read: how many trailing lines (default 80)"},
             "timeout_secs": {"type": "integer", "description": "optional timeout override"},
@@ -108,7 +120,7 @@ _LEGACY_SCHEMAS = {
         # validator name it when it is missing. The actions that execute nothing
         # (read/reset) waive it, declared below instead of hidden in code.
         "required": ["command"],
-        "required_waived_by": {"action": ["read", "reset"]},
+        "required_waived_by": {"action": ["read", "reset", "status", "stop"]},
         "subject": "command",
     },
     "fs.read": {
@@ -1677,6 +1689,12 @@ def _subject(tool, args):
         # leading `VAR=value` assignments so the auto-approve patterns (and the
         # hard-deny list) match the REAL command. A pointless approval gate here
         # cost a 30s wait and made a simple "what day is it" turn look stuck.
+        # 2026-11-05: the background actions (status/stop/read/reset) carry NO
+        # command; their subject is the action itself, so the policy can approve
+        # a poll and stop without a card on every check.
+        _act = str(args.get("action") or "").strip().lower()
+        if _act and _act != "run" and not args.get("command"):
+            return _act
         return _ENV_ASSIGN_RE.sub("", str(args.get("command", "")))
     if key == "action" and not args.get("action") and spec.get("_subtool"):
         return str(spec.get("_subtool"))

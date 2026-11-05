@@ -11341,6 +11341,40 @@ function renderTools(el, d) {
          </div>`;
        }).join("")}
      </div>`;
+  // 2026-11-05 (operator: "hard denial can be changed by the user in the settings
+  // permission page"): ONE place that lists every HARD BLOCK — a `deny` regex is
+  // matched against the call's subject and refuses it BEFORE any approval exists,
+  // so the global FULL mode can never lift it — plus every tool that is OFF with
+  // the reason. Both edit through POST /api/tools, the same endpoint the ⚙
+  // advanced editor uses: no second truth about the policy.
+  const _dr = [];
+  tools.forEach((t, i) => (t.deny || []).forEach((rule, j) =>
+    _dr.push({ i, j, name: String(t.name || "?"), rule: String(rule) })));
+  const _off = tools.map((t, i) => ({ i, t })).filter(x => x.t.enabled === false);
+  const permsCard =
+    `<div class="card" id="permsCard" style="margin-bottom:10px">
+       <div class="set-t" title="A deny rule is matched against the call's subject (the command, the path, the URL). A match is refused BEFORE any approval exists, so FULL mode cannot lift it. Remove a rule to make that command possible again.">🛡 Permissions · hard blocks</div>
+       <div class="remaining" style="margin:4px 0 8px">Refused before approval — FULL mode never lifts a deny rule.</div>
+       ${_dr.length ? _dr.map(r =>
+         `<div class="u-df u-g6" style="align-items:center;margin:4px 0">
+            <span style="min-width:150px;font-size:12px">${esc(r.name)}</span>
+            <code style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis">${esc(r.rule)}</code>
+            <button class="ghost" data-rmdeny="${r.i}:${r.j}" aria-label="remove rule" title="remove this hard block">✕</button>
+          </div>`).join("")
+         : '<div class="remaining">no hard blocks</div>'}
+       <div class="u-df u-g6" style="align-items:center;margin-top:8px">
+         <select id="permTool" class="inp" style="max-width:220px" aria-label="tool">
+           ${tools.map((t, i) => `<option value="${i}">${esc(String(t.name || "?"))}</option>`).join("")}
+         </select>
+         <input id="permRule" class="inp" style="flex:1" placeholder="regex, e.g. ^shutdown" aria-label="new rule">
+         <button class="ghost" id="permAdd" title="add this hard block">+ block</button>
+       </div>
+       <div class="remaining" id="permMsg" role="status" aria-live="polite"></div>
+       <details class="u-mt8"><summary class="remaining">${_off.length} tool(s) OFF (opt-in)</summary>
+         <div class="remaining" style="margin:6px 0">An external MCP tool is opt-in: it stays OFF until it is listed in the policy. Enabling it here writes the same setting.</div>
+         ${_off.map(x => `<button class="ghost" data-permon="${x.i}" title="enable ${esc(String(x.t.name || "?"))}">⏻ ${esc(String(x.t.name || "?"))}</button>`).join(" ")}
+       </details>
+     </div>`;
   // JAG-488: the sandbox block was read-only (the topbar pill) — no way to switch
   // the backend, the image or the limits from the WebUI. Now it is editable here.
   const sbc = (d && d.sandbox_config) || {};
@@ -11513,7 +11547,7 @@ function renderTools(el, d) {
         "</b> (" + count + ")</summary>" + inner + "</details>";
   }).join("");
   const _onN = tools.filter(t => t.enabled !== false).length;
-  el.innerHTML = policyCard + kindsCard + (tools.length
+  el.innerHTML = policyCard + kindsCard + permsCard + (tools.length
     ? '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
         '<span class="remaining" style="flex:1">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b>' +
           (globalAuto ? ' · <b style="color:var(--err)">global FULL: every tool is auto (never ask)</b>' : '') +
@@ -11539,6 +11573,38 @@ function renderTools(el, d) {
   el.querySelectorAll("button[data-tool]").forEach(b =>
     b.onclick = () => api("POST", "/api/tools", { tool: b.dataset.tool, enabled: b.dataset.on !== "true" })
       .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2)));
+  // 2026-11-05: the Permissions card edits the SAME `deny` list the ⚙ advanced
+  // editor edits, one rule at a time. Removing a rule is the operator's way out of
+  // a hard block (FULL mode cannot do it); adding one is the way to make a command
+  // impossible again without touching the YAML.
+  el.querySelectorAll("button[data-rmdeny]").forEach(b =>
+    b.onclick = async () => {
+      const parts = String(b.dataset.rmdeny).split(":");
+      const t = tools[Number(parts[0])] || {};
+      const next = (t.deny || []).filter((_, j) => j !== Number(parts[1]));
+      const r = await api("POST", "/api/tools", { tool: t.name, deny: next });
+      const m = el.querySelector("#permMsg");
+      if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+      renderTools(el, await api("GET", "/api/tools"));
+    });
+  el.querySelectorAll("button[data-permon]").forEach(b =>
+    b.onclick = async () => {
+      const t = tools[Number(b.dataset.permon)] || {};
+      await api("POST", "/api/tools", { tool: t.name, enabled: true });
+      renderTools(el, await api("GET", "/api/tools"));
+    });
+  const permAdd = el.querySelector("#permAdd");
+  if (permAdd) permAdd.onclick = async () => {
+    const sel = el.querySelector("#permTool"), inp = el.querySelector("#permRule");
+    const t = tools[Number(sel && sel.value)] || {};
+    const rule = String((inp && inp.value) || "").trim();
+    const m = el.querySelector("#permMsg");
+    if (!rule) { if (m) m.textContent = "write the regex first"; return; }
+    if ((t.deny || []).indexOf(rule) >= 0) { if (m) m.textContent = "already blocked"; return; }
+    const r = await api("POST", "/api/tools", { tool: t.name, deny: (t.deny || []).concat([rule]) });
+    if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    renderTools(el, await api("GET", "/api/tools"));
+  };
   // JAG-536: the matrix-only uninstall door.
   el.querySelectorAll("button[data-mtxrm]").forEach(b =>
     b.onclick = () => uninstallMatrixTool(b.dataset.mtxrm, el));

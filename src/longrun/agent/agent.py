@@ -2217,6 +2217,40 @@ def _human_ask_args(act):
     return None
 
 
+def _is_human_item(it):
+    """True when a batch item IS a `human.ask` call, however it is spelled."""
+    if not isinstance(it, dict):
+        return False
+    return str(it.get("tool") or it.get("action") or "").strip() in HUMAN_TOOLS
+
+
+def _batch_without_human(act):
+    """The same batch action without its `human.ask` items, or None.
+
+    HITL-BATCH (2026-11-05): the card was opened BEFORE the batch ran, so every
+    sibling call in the same batch was silently dropped — measured on session
+    `longrunAgent` msg 138 (`python.run` + `http.fetch` + `web.search` +
+    `human.ask {"question":"placeholder"}`: three calls never executed). The
+    independent calls now run first and the card comes after them; the work is
+    never paid for and thrown away.
+    """
+    if not isinstance(act, dict):
+        return None
+    if str(act.get("action") or "").strip().lower() != "batch":
+        return None
+    for key in ("calls", "tool_calls", "batch", "parallel"):
+        items = act.get(key)
+        if not isinstance(items, list):
+            continue
+        rest = [it for it in items if not _is_human_item(it)]
+        if len(rest) == len(items) or not rest:
+            return None
+        out = dict(act)
+        out[key] = rest
+        return out
+    return None
+
+
 def _is_dispatch_item(it):
     """True when a batch item addresses a teammate, however it is spelled.
 
@@ -4726,11 +4760,27 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             # here; the reply the operator sees is the question, not the model's
             # prose (which may still be a half-written summary).
             _q = str(_ask.get("question") or "").strip()
-            if not _q:
+            # HITL-BATCH (2026-11-05): a human.ask item inside a batch used to
+            # end the turn BEFORE the batch ran, so the independent calls of the
+            # same batch were lost. Run them first, then decide (card or nudge).
+            _rest = _batch_without_human(act)
+            if _rest is not None:
+                try:
+                    _obs_rest = _apply_chat_batch(sess, _rest, on_event, api_v02,
+                                                  node=_cur_node(), after=_after(),
+                                                  hist=msgs, state=_deliv_state)
+                    if _obs_rest:
+                        _inject(_obs_rest, "observation")
+                except Exception:  # noqa: BLE001 — the card must never be lost
+                    pass
+            from longrun.tools import tools as _tmod_hitl
+            _bad = _tmod_hitl.human_question_problem(_q)
+            if _bad:
                 msgs.append({"role": "assistant", "content": answer})
-                _inject("human.ask needs `question`: state, in one sentence, the "
-                        "single decision you need from the operator. Nothing was "
-                        "sent.", "nudge")
+                _inject("human.ask was NOT sent: %s. State, in one sentence, the "
+                        "single decision you need from the operator — a real "
+                        "question, not a placeholder — and call it again."
+                        % _bad, "nudge")
                 continue
             if autonomous and not goal_mode:
                 # JAG-295 parity: a JOB/routine has nobody attached, so parking it

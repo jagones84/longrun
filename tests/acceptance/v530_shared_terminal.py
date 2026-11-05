@@ -109,9 +109,11 @@ props = registry.TOOL_SCHEMAS["shell"]["properties"]
 check("G1 the shell schema exposes action + lines",
       "action" in props and "lines" in props, sorted(props))
 check("G2 `command` is required for action=run and waived for read/reset",
+      # 2026-11-05 (v804): `status`/`stop` are background-job controls — they
+      # carry a `job`, never a command, so they waive it like read/reset do.
       registry.TOOL_SCHEMAS["shell"]["required"] == ["command"]
       and registry.TOOL_SCHEMAS["shell"].get("required_waived_by") == {
-          "action": ["read", "reset"]},
+          "action": ["read", "reset", "status", "stop"]},
       registry.TOOL_SCHEMAS["shell"].get("required"))
 check("G3 action=run without a command is refused at runtime",
       T._shell({"action": "run"}, "v530x").get("ok") is False)

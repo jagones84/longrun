@@ -193,6 +193,13 @@ def _shell(args, run_id):
     action = str(args.get("action") or "run").strip().lower()
     sid = str(run_id or "")
 
+    # 2026-11-05: background job controls. `status` polls, `stop` terminates the
+    # process group; neither executes a command, so neither is a second door
+    # around the policy (they only touch a job this process started).
+    if action in ("status", "stop", "poll", "kill"):
+        from longrun.tools import bgjobs
+        return bgjobs.action(action, args.get("job"))
+
     if action in ("read", "tail", "history"):
         from longrun.tools import term
         sh = term.peek(sid)
@@ -230,6 +237,26 @@ def _shell(args, run_id):
     if not ok_cmd:
         return {"ok": False, "exit_code": 126, "error": err_cmd,
                 "backend": "host", "sandboxed": False}
+    # 2026-11-05 (operator: "Yes shell may be backgrounded … when the command is
+    # unfinished the agent shall know"): a long command returns a job handle at
+    # once instead of parking the turn for up to `timeout_secs`. Host execution
+    # only — a detached host process under docker/bwrap/nsjail would escape the
+    # isolation, so it is refused rather than silently run outside.
+    if bool(args.get("background")):
+        from longrun.tools import bgjobs
+        try:
+            _backend = sandbox.probe().get("backend") or "none"
+        except Exception:  # noqa: BLE001 — a broken probe is not a reason to lie
+            _backend = "none"
+        if _backend != "none":
+            return {"ok": False, "error": (
+                "background mode runs on the HOST, which would escape the %s "
+                "sandbox — run this command in the foreground" % _backend)}
+        if _session_trust(sid) == "locked":
+            return {"ok": False, "error": (
+                "background mode is host execution; this session is LOCKED to the "
+                "sandbox")}
+        return bgjobs.start(command, cwd=cwd or os.getcwd())
     # JAG-2.9: run in the session's persistent terminal when the command would hit
     # the host anyway — the panel and the agent then share ONE shell.
     # P3 trust: a `locked` session must never touch the host terminal, even
@@ -377,6 +404,32 @@ def _process(args, run_id):
             "stdout": "\n".join(lines) or "(no match)", "backend": "host", "sandboxed": False}
 
 
+_PLACEHOLDER_QUESTIONS = frozenset((
+    "placeholder", "todo", "tbd", "n/a", "na", "none", "test", "testing",
+    "question", "ask", "x", "-", "...", "?", "??",
+))
+
+
+def human_question_problem(question):
+    """Why a `human.ask` question cannot become a card, or "" when it can.
+
+    HITL-BATCH (2026-11-05): measured on session `longrunAgent` msg 138, a model
+    emitted a batch whose last item was `human.ask {"question":"placeholder"}`;
+    the harness opened a card with that word as the question and dropped the
+    other three calls. A placeholder is not a decision, so it must be refused
+    (one nudge) instead of parking the operator in front of nonsense. Only an
+    EXACT placeholder token is refused — a short real question ("Continue?")
+    is legitimate and must pass.
+    """
+    low = " ".join(str(question or "").strip().lower().split())
+    core = low.strip(" ?!.,:;")
+    if not core:
+        return "the question is empty"
+    if core in _PLACEHOLDER_QUESTIONS or low in _PLACEHOLDER_QUESTIONS:
+        return "the question is a placeholder (%r), not a decision" % core
+    return ""
+
+
 def _human(args, run_id):
     """`human.ask` — the agent's ONE way to ask the operator for a decision.
 
@@ -391,6 +444,11 @@ def _human(args, run_id):
         return {"ok": False,
                 "error": "question required: say in one sentence what you need "
                          "the operator to decide"}
+    _bad = human_question_problem(question)
+    if _bad:
+        return {"ok": False,
+                "error": "%s — state the single decision you need from the "
+                         "operator, e.g. 'Apply the migration now?'" % _bad}
     steps = [str(s).strip() for s in ((args or {}).get("steps") or [])
              if str(s).strip()]
     options = [str(o).strip() for o in ((args or {}).get("options") or [])
@@ -3411,6 +3469,12 @@ def observation(res, max_chars=1600):
     head = ("[%s] exit=%s ok=%s backend=%s sandboxed=%s"
             % (res.get("tool"), res.get("exit_code"), res.get("ok"),
                res.get("backend"), res.get("sandboxed")))
+    if res.get("background") and res.get("running"):
+        # 2026-11-05: a background START has no exit code — the command has not
+        # finished. `exit=0` here would read as "it succeeded", which is exactly
+        # the confusion the operator reported; say what is true instead.
+        head = ("[%s] job %s STARTED — still running, no exit code yet"
+                % (res.get("tool"), res.get("job")))
     if not res.get("ok") and res.get("error"):
         bits = [head, "ERROR: " + _truncate(str(res["error"]).strip(), max_chars)]
         if res.get("warning"):

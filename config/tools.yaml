@@ -251,6 +251,11 @@ tools:
       - "^grep(\\s|$)"
       - "^env$"
       - "^which(\\s|$)"
+      # 2026-11-05: a background job's own controls carry no command, so their
+      # subject IS the action (registry._subject). Polling a job must never wait
+      # for a human; stopping one only kills a process the agent started.
+      - "^status$"
+      - "^stop$"
     # hard blocks — never executed, even with approval
     deny:
       - "rm\\s+-rf\\s+/(\\s|$)"
@@ -537,6 +542,15 @@ tools:
     enabled: true
     approval: auto
   pmcp__gateway.invoke:
+    enabled: true
+    approval: required
+
+  # 2026-11-05 (operator: "why those tools are cabled off?"): external MCP tools
+  # are OPT-IN (JAG-80) — a discovered tool that is not named here has
+  # `enabled: false`, which is why `time__get_time_ago` showed up as disabled in
+  # Settings → Tools with no explanation. It is a read-only clock helper; list it
+  # explicitly so the three time tools are all on.
+  time__get_time_ago:
     enabled: true
     approval: required
 
