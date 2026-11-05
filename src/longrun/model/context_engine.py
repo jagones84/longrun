@@ -308,7 +308,7 @@ def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True, workspace=None):
         if not query_text:
             return []
         hits = memory.search(query_text, None, top_k, semantic, workspace)
-        out = [{"score": round(s, 3), "kind": r.get("kind"),
+        out = [{"score": round(s, 3), "kind": r.get("kind"), "mid": r.get("mid"),
                 "ts": r.get("ts"), "content": (r.get("content") or "")[:300]}
                for s, r in hits]
         # The vector index is rebuilt periodically; records written since the
@@ -319,11 +319,41 @@ def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True, workspace=None):
                 key = (r.get("kind"), r.get("ts"))
                 if key not in seen:
                     out.append({"score": round(s, 3), "kind": r.get("kind"),
-                                "ts": r.get("ts"), "content": (r.get("content") or "")[:300]})
+                                "mid": r.get("mid"), "ts": r.get("ts"),
+                                "content": (r.get("content") or "")[:300]})
         out.sort(key=lambda h: h["score"], reverse=True)
         return out[:top_k]
     except Exception:
         return []
+
+
+def _norm_words(text):
+    """Lowercased alphanumeric words of length >= 4 (the distinctive ones)."""
+    return {w for w in re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower()).split()
+            if len(w) >= 4}
+
+
+def usage_signal(reply, memories, min_overlap=0.6):
+    """Which injected memories the reply actually USED (B-6 / v818).
+
+    A memory counts as used when the reply repeats enough of its distinctive
+    words (>= `min_overlap` of them) — a heuristic, labelled as one, because the
+    point is to HAVE a signal at all, not to prove attribution. Recall is not use:
+    the strongest memory system recalled 0.621 vs full context's 0.570 yet used
+    0.247 vs 0.431 (2026-11-05), so a count of hits says nothing about the answer.
+    """
+    rt = _norm_words(reply)
+    injected, used = 0, []
+    for m in memories or []:
+        mid = (m or {}).get("mid")
+        if not mid:
+            continue
+        injected += 1
+        ct = _norm_words(m.get("content"))
+        if len(ct) >= 3 and rt and (len(ct & rt) / float(len(ct))) >= min_overlap:
+            used.append(mid)
+    return {"injected": injected, "used": len(used), "unused": injected - len(used),
+            "used_ids": used}
 
 
 def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
@@ -344,6 +374,14 @@ def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
     if retrieve_memory and query:
         hits = retrieve(query, workspace=workspace)
         stats["retrieved_memories"] = len(hits)
+        # B-6 (v818): record WHICH memories went in, so a turn can later say which
+        # of them were used. Recall is not use: the strongest memory system beats
+        # full context on recall (0.621 vs 0.570) and trails badly on use (0.247
+        # vs 0.431), with 21-27% of recalled memories going unused (2026-11-05).
+        stats["memory_ids"] = [h.get("mid") for h in hits if h.get("mid")]
+        stats["memories"] = [{"mid": h.get("mid"), "kind": h.get("kind"),
+                              "score": h.get("score"), "content": h.get("content")}
+                             for h in hits if h.get("mid")]
         if hits:
             mem_block = "Relevant memories from previous sessions:\n" + "\n".join(
                 "- (%s, score %.2f) %s" % (h["kind"], h["score"], h["content"])
@@ -377,6 +415,7 @@ def preview(session, message=None, budget_tokens=DEFAULT_BUDGET, keep_recent=DEF
     hits = retrieve(message or (sess["messages"][-1]["content"] if sess["messages"] else ""),
                     workspace=sess.get("workspace"))
     stats["retrieval_hits"] = len(hits)
+    stats["retrieval_ids"] = [h.get("mid") for h in hits if h.get("mid")]
     stats["retrieval_samples"] = [h["content"][:120] for h in hits[:3]]
     stats["session_id"] = sess["id"]
     stats["transcript_messages"] = len(sess.get("messages", []))

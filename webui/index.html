@@ -7395,7 +7395,7 @@ async function loadCtx() {
 /* JAG-267: Context-panel breakdown — skills / rules / web / files / other for the
  * CURRENT session only. Derived server-side from what is still in context, so it
  * resets by itself after compaction; the client never mixes two sessions. */
-let _ctxItems = null, _ctxCat = null, _ctxTokens = null, _ctxMeta = null, _ctxBreakdown = null;
+let _ctxItems = null, _ctxCat = null, _ctxTokens = null, _ctxMeta = null, _ctxBreakdown = null, _ctxMemUse = null;
 function _pendingCtxItems() {
   return _attachments.map(a => {
     const value = String(a.value || "");
@@ -7410,7 +7410,7 @@ function _renderPendingCtxItems() {
 async function loadCtxItems() {
   const box = $("ctxCats"); if (!box) return;
   if (!sessionId) {
-    _ctxItems = null; _ctxCat = null; _ctxTokens = null; _ctxMeta = null; _ctxBreakdown = null;
+    _ctxItems = null; _ctxCat = null; _ctxTokens = null; _ctxMeta = null; _ctxBreakdown = null; _ctxMemUse = null;
     renderCtxItems(); return;
   }
   const sid = sessionId;
@@ -7424,6 +7424,7 @@ async function loadCtxItems() {
   _ctxItems = ok ? (r.categories || {}) : null;
   _ctxTokens = ok ? (r.tokens || {}) : null;
   _ctxBreakdown = ok ? (r.breakdown || []) : null;
+  _ctxMemUse = ok ? (r.memory_use || null) : null;
   _ctxMeta = ok && r.budget_tokens
     ? { pct: r.pct, used: r.used_tokens, budget: r.budget_tokens,
         cached: r.cached_tokens || 0, cache: r.cache_hit_pct || 0 }
@@ -7479,9 +7480,14 @@ function renderCtxItems() {
   const cacheSpan = (_ctxMeta && _ctxMeta.cache)
     ? `<span title="prompt tokens served from the provider's prefix (KV) cache on the last call">cache <b>${_ctxMeta.cache}%</b> <span class="cn">${_fmtTok(_ctxMeta.cached)}</span></span>`
     : "";
-  const head = _ctxMeta
-    ? `<div class="ctxmeter"><span>context <b>${_ctxMeta.pct}%</b></span>${cacheSpan}` +
-      `<span>${_fmtTok(_ctxMeta.used)} / ${_fmtTok(_ctxMeta.budget)} tok</span></div>`
+  // B-6 (v818): memories injected on the last turn vs how many the answer reused.
+  // A state that must be READ to act, so a value with a title — never a bare glyph.
+  const memSpan = (_ctxMemUse && _ctxMemUse.injected)
+    ? `<span title="memories injected into the last turn's context, and how many the answer actually reused (${_ctxMemUse.unused} unused)">memory <b>${_ctxMemUse.used}/${_ctxMemUse.injected}</b> <span class="cn">used</span></span>`
+    : "";
+  const head = (_ctxMeta || memSpan)
+    ? `<div class="ctxmeter">${_ctxMeta ? `<span>context <b>${_ctxMeta.pct}%</b></span>${cacheSpan}` +
+      `<span>${_fmtTok(_ctxMeta.used)} / ${_fmtTok(_ctxMeta.budget)} tok</span>` : ""}${memSpan}</div>`
     : "";
   const bd = _ctxBreakdown || [];
   let bdHtml = "";

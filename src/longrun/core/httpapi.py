@@ -1018,11 +1018,24 @@ def context_items(session_id=None):
 
     cats = {"skills": _dedupe(skills)[:40], "rules": _dedupe(rules_items)[:40],
             "web": _dedupe(web)[:40], "files": _dedupe(files)[:60], "other": other[:40]}
+    # B-6 (v818): the last turn's memory injected/used counts, read from the durable
+    # event log, so the Context panel can say "injected but not used" — recall is not
+    # use, and a hit count cannot tell the two apart.
+    mem_use = None
+    try:
+        from longrun.core import events as _events
+        _rows = _events.query_events(session=session_id, kind="memory.use", limit=1)
+        _payload = (_rows[0].get("data") if _rows else None) or {}
+        if isinstance(_payload, dict) and _payload.get("injected"):
+            mem_use = {k: _payload.get(k) for k in
+                       ("injected", "used", "unused", "used_ids")}
+    except Exception:  # noqa: BLE001 — the panel must never break
+        pass
     return {"session": session_id, "available": True, "categories": cats,
             "counts": {k: len(v) for k, v in cats.items()},
             "total": sum(len(v) for v in cats.values()),
             "tokens": tok, "tokens_total": sum(tok.values()),
-            "breakdown": breakdown,
+            "breakdown": breakdown, "memory_use": mem_use,
             "budget_tokens": budget, "used_tokens": used, "pct": pct,
             "cached_tokens": cached, "cache_hit_pct": cache_hit_pct}
 

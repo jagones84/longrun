@@ -5665,6 +5665,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         publish("graph.error", kind="transcript.persist", error=str(_exc))
     reply = append_message(sess, "assistant", content, reasoning=think.strip() or None,
                            meta=meta)
+    # B-6 (v818): did the answer USE the memories the context engine injected?
+    # Observability only — it never changes what was injected, and it is the only
+    # signal that can tune the memory ranking by evidence instead of guesswork.
+    try:
+        from longrun.model import context_engine as _ce
+        _muse = _ce.usage_signal(content, (ctx_stats or {}).get("memories") or [])
+        if _muse.get("injected"):
+            publish("memory.use", session=sess["id"], **_muse)
+    except Exception:  # noqa: BLE001 — a measurement must never break a turn
+        pass
     try:
         runmetrics.finish(sess["id"], outcome=("user_abort" if _is_aborted(sess["id"]) else "done"),
                           stop_reason=_kg_stop_reason, iterations=_kg_rounds,
