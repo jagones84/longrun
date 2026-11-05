@@ -115,11 +115,12 @@ check("C2 exclusive rows say grant-required, never FULL-auto",
       "grant still required" in HTML
       and 'const isExcl = String(t.origin || "") === "exclusive"' in HTML)
 
-# ---------------- D: system-delta is display-only ----------------------
+# ---------------- D: the prompt card is display-only ----------------------
 check("D1 the prompt still goes to the model every turn (dedup is display)",
       "display rule, not a context change" in AGENT_SRC
-      and 'inject_kind="system-delta"' in AGENT_SRC
-      and "the model always receives the current prompt" in AGENT_SRC)
+      and 'inject_kind="system"' in AGENT_SRC
+      and "text=_sys_txt, role=\"system\"" in AGENT_SRC
+      and "system-delta" not in AGENT_SRC)
 
 print("---")
 ok = sum(results)

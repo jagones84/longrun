@@ -581,7 +581,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
 # nothing is duplicated.
 _ATTACH_KINDS = (
     "chat.run", "chat.delta", "chat.done", "chat.user",
-    "harness.inject", "tool.call", "tool.result", "tool.output", "approval.request",
+    "harness.inject", "harness.drop", "tool.call", "tool.result", "tool.output", "approval.request",
     "graph.node.added", "graph.node.updated",
     "plan.incomplete", "plan.continuing", "plan.stopped", "hitl.request",
     "verify.run", "run.metrics", "bestofn.chosen", "improve.proposal", "cost.usage",

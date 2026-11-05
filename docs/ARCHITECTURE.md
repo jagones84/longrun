@@ -104,6 +104,14 @@ the plan owns the steps and their evidence, so completion is read from
 the tab and a service restart. Every step is published
 to the event bus and persisted, so a reload rebuilds the transcript and task graph.
 
+**The `harness → LLM` chat label is the wire** (2026-11-05). One chip exists per
+message actually appended to the outgoing list, its body is that message verbatim
+(role + `[harness] ` prefix), and a suppressed repeat is only a counter on the
+message it repeats. Nothing the model never received is shown under that label, a
+message withdrawn by the mid-turn trim takes its chip with it (`harness.drop` +
+`stores.drop_inject`), and `sess["injects"]` records exactly the sends (no merge),
+so live, reload and wire agree.
+
 ## Components (`src/longrun/`, organised in subpackages)
 
 | Subpackage | Modules |

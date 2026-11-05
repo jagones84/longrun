@@ -912,28 +912,22 @@ def persist_tool_card(sess, tool, ok, args=None, result="", error="",
 def persist_inject(sess, kind, text, node=None, after=None):
     """JAG-167: persist a harness→LLM injection so the chat can rebuild it on reload.
 
-    Mirrors `persist_tool_card`: stored in `sess["injects"]` (never sent to the
-    model), with `after` (message boundary) + `node` (the todo node it belongs to)
-    + `ts`, so `loadHistory` re-nests it under the right node. JAG-192: `after`
-    is passed explicitly by the chat loop (see persist_tool_card) and `node` is
-    coerced to its id.
+    Mirrors `persist_tool_card`: stored in `sess["injects"]` (never re-sent as its
+    own message), with `after` (message boundary) + `node` (the todo node it
+    belongs to) + `ts`, so `loadHistory` re-nests it under the right node. JAG-192:
+    `after` is passed explicitly by the chat loop (see persist_tool_card) and
+    `node` is coerced to its id.
+
+    2026-11-05 (operator: "what i see in UI in the chat under harness label shall
+    be EXACTLY what the LLM receives not else"): NO dedup here. Every record is
+    one message the model actually received, so a second identical send must be
+    recorded a second time — dropping it made the reloaded chat disagree with the
+    wire. `text` is the WRAPPED content (`[harness] …`), i.e. the exact bytes.
     """
     try:
         if isinstance(node, dict):
             node = node.get("id")
-        # RH-9 (operator, 2026-11-03): "perché rimette il system prompt nella stessa
-        # sessione? tra due messaggi vicini?" — a repeated no-op round injects the
-        # SAME text again, and the WebUI drew two identical `[harness]` bubbles between
-        # two adjacent messages (session 777378644e9c: two `nudge` records, `after=3`
-        # and `after=5`, both "Task list saved (0 new step(s)) …"). One event must be
-        # ONE object: an inject identical to the previous one in kind AND text is the
-        # same event, so it is not recorded twice. `injects` is the UI record (never
-        # sent to the model), so this changes nothing the model sees.
-        _prev = sess.get("injects") or []
-        if _prev and str(_prev[-1].get("text") or "") == str(text or "") \
-                and str(_prev[-1].get("kind") or "") == str(kind or "inject"):
-            return _prev[-1]
-        rec = {"kind": str(kind or "inject"), "text": str(text or "")[:8000],
+        rec = {"kind": str(kind or "inject"), "text": str(text or ""),
                "node": node,
                "after": (len(sess.get("messages", [])) if after is None else int(after)),
                "ts": round(time.time(), 3)}
@@ -943,6 +937,25 @@ def persist_inject(sess, kind, text, node=None, after=None):
         return rec
     except Exception:  # noqa: BLE001 — persisting an inject must never break a turn
         return None
+
+
+def drop_inject(sess, text):
+    """Withdraw the LAST inject record whose text is `text` (2026-11-05).
+
+    Used by the mid-turn trim: the harness dropped that message before the next
+    model call, so the model never received it and the chip must not survive in
+    the rebuilt chat. Returns the removed record, or None.
+    """
+    try:
+        recs = sess.get("injects") or []
+        for i in range(len(recs) - 1, -1, -1):
+            if str(recs[i].get("text") or "") == str(text or ""):
+                gone = recs.pop(i)
+                save_session(sess)
+                return gone
+    except Exception:  # noqa: BLE001
+        return None
+    return None
 
 
 # JAG-113: the live tool card must show input + output (truncated), like the

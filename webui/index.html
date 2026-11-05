@@ -920,6 +920,10 @@
     border-left: 1px solid var(--line-2); padding: 6px 0 6px 10px; margin-top: 4px; max-height: 260px; overflow: auto; }
   .hinj .hkind { font-size: 9px; text-transform: uppercase; letter-spacing: .1em; color: var(--acc); border: 1px solid var(--line);
     border-radius: 5px; padding: 0 5px; margin-left: 6px; }
+  /* 2026-11-05: the wire role the model received + the count of identical
+     messages the harness did NOT re-send (no chip exists for those). */
+  .hinj .hrole { font-size: 9px; letter-spacing: .08em; color: var(--dim); margin-left: 6px; }
+  .hinj .hsupp { font-size: 9px; color: var(--warn); margin-left: 6px; }
   /* JAG-171: HUMAN IN THE LOOP card. */
   .hitl { display: flex; flex-direction: column; gap: 6px; }
   .hitl-title { font-size: 12.5px; font-weight: 600; color: var(--warn); }
@@ -5088,38 +5092,49 @@ function _repaintChatNodes() {
     (_chatSections[n.id] || []).forEach(det => _paintNode(n, det));
   });
 }
+/* 2026-11-05 (operator: "what i see in UI in the chat under harness label shall be
+   EXACTLY what the LLM receives not else"): ONE chip == ONE message the provider
+   got. `d.text` is the wire `content` verbatim (`[harness] …`) and `d.role` the
+   wire role — the chip never summarises, never merges and never invents.
+   `d.repeat` is NOT a message: the same bytes were already sent, so it becomes a
+   counter on the message it repeats instead of a block of its own. */
 function harnessInject(d) {
   if (!d) return;
   const kind = d.inject_kind || "inject";
   const text = d.text || "";
-  const key = kind + "\u0000" + text;
-  // JAG-174: collapse a run of IDENTICAL harness messages (the harness can repeat
-  // the same nudge many times) — one block with a ×N counter instead of a wall.
-  if (kind !== "system") {
-    const prev = _scope().lastElementChild;
-    if (prev && prev.classList && prev.classList.contains("hinj") && prev.dataset.k === key) {
-      prev.dataset.n = String((+prev.dataset.n || 1) + 1);
-      const c = prev.querySelector("summary .hcount");
-      if (c) c.textContent = " ×" + prev.dataset.n;
-      scroll(); return;
+  if (d.repeat) {
+    const prev = $("log") ? $("log").querySelectorAll(".hinj") : [];
+    const last = prev.length ? prev[prev.length - 1] : null;
+    const c = last && last.querySelector("summary .hsupp");
+    if (c) {
+      last.dataset.supp = String((+last.dataset.supp || 0) + 1);
+      c.textContent = "· " + last.dataset.supp + " identical not re-sent";
     }
+    return;
   }
   const det = document.createElement("details");
   det.className = "hinj";
-  det.dataset.k = key; det.dataset.n = "1";
-  det.innerHTML = '<summary>🔌 harness &rarr; LLM<span class="hkind"></span><span class="hcount"></span>' + (d.ts === null ? "" : _tsSpan(d.ts)) + '</summary><pre class="hbody"></pre>';
+  det.dataset.k = kind + "\u0000" + text;
+  det.innerHTML = '<summary>🔌 harness &rarr; LLM<span class="hkind"></span><span class="hrole"></span><span class="hsupp"></span>' + (d.ts === null ? "" : _tsSpan(d.ts)) + '</summary><pre class="hbody"></pre>';
   det.querySelector(".hkind").textContent = kind;
-  det.querySelector(".hbody").textContent = text;
+  det.querySelector(".hrole").textContent = "· " + (d.role || (kind === "system" || kind === "compacted history" ? "system" : "user"));
+  det.querySelector(".hbody").textContent = text;   // verbatim wire content
   // JAG-431r7: render EVERY harness injection CHRONOLOGICALLY via _logAppend, so it
   // lands inside the current turn's group (Free.N / task section) in stream order.
-  // The 'system' echo used to be appended to the root #log, which dropped it AFTER
-  // the turn's Free.N group — i.e. below the answer — so a finished turn looked like
-  // it "ended on a harness message" until a manual reload. Keep ONE system echo per
-  // turn (dedup by removing the previous), but place it where it belongs in the turn.
-  if (kind === "system" && _sysInjectEl) _sysInjectEl.remove();
   _logAppend(det);
   if (kind === "system") _sysInjectEl = det;
   scroll();
+}
+/* 2026-11-05: the harness DROPPED this message before the model call (mid-turn
+   trim) — it was never received, so its chip is removed live. The persisted
+   record is withdrawn server-side, so a reload agrees with the wire too. */
+function harnessDrop(d) {
+  if (!d || !d.text || !$("log")) return;
+  const blocks = [...$("log").querySelectorAll(".hinj")];
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i].querySelector(".hbody");
+    if (b && b.textContent === d.text) { blocks[i].remove(); scroll(); return; }
+  }
 }
 /* JAG-170: a persisted chain-of-thought block (the reasoning that preceded a
    tool call) so the COTs BETWEEN tools survive a reload, exactly like live. */
@@ -6124,6 +6139,7 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("graph.node.added", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
   es.addEventListener("graph.node.updated", e => { if (live()) applyGraphEvent(JSON.parse(e.data)); });
   es.addEventListener("harness.inject", e => { if (live()) harnessInject(JSON.parse(e.data)); });
+  es.addEventListener("harness.drop", e => { if (live()) harnessDrop(JSON.parse(e.data)); });
   es.addEventListener("cost.usage", e => { if (live()) costLive(JSON.parse(e.data).call); });
   es.addEventListener("chat.delta", e => { const d = JSON.parse(e.data); adopt(d.session);
     turnPhaseClear(d.session);      // tokens are arriving: it is NOT waiting any more

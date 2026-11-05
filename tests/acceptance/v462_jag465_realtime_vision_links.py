@@ -135,14 +135,13 @@ check("A7 the live roster id is matched case-insensitively",
           "src", "longrun", "model", "rllm.py"))
 
 # ------------------------------------------------------- B: system card ------
-check("B1 the full SYSTEM card is published only the FIRST time for a session",
-      "_prev = _LAST_SYS_INJECT.get(sess[\"id\"])" in AGENT
-      and "if _prev is None:" in AGENT)
-check("B2 later changes publish a compact delta instead of the whole prompt",
-      'inject_kind="system-delta"' in AGENT
-      and "system prompt updated for this turn" in AGENT)
+check("B1 the full SYSTEM card is published once, and again only when the prompt CHANGES",
+      "_LAST_SYS_INJECT.get(sess[\"id\"]) != _h" in AGENT)
+check("B2 a change re-publishes the prompt VERBATIM, never a summary of it",
+      'inject_kind="system"' in AGENT and "role=\"system\"" in AGENT
+      and "system-delta" not in AGENT)
 check("B3 the system prompt is still sent to the model every turn (display rule only)",
-      "msgs[0].get(\"content\")" in AGENT and "text=_sys_txt)" in AGENT)
+      "msgs[0].get(\"content\")" in AGENT and "text=_sys_txt" in AGENT)
 
 # ------------------------------------------------- C: dispatch + links -------
 check("C1 chat_stream_gen accepts and persists the ORIGINATING session",

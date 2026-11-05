@@ -39,7 +39,7 @@ from longrun.model import rllm as _rllm
 from longrun.util.steering import _is_aborted, drain_steer, has_steer
 from longrun.util.fswrite import write_json
 from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event,
-                     append_message, load_plan, load_tasks,
+                     append_message, drop_inject, load_plan, load_tasks,
                      persist_inject, persist_tool_card, save_plan, save_session,
                      save_tasks)
 from longrun.util.textkit import extract_action_json, extract_json
@@ -3931,44 +3931,6 @@ def _extract_action(answer):
     return act
 
 
-def _harness_start_note(sess):
-    """JAG-332: ONE durable "session started" harness marker, written on the first turn.
-
-    The full system prompt is emitted every turn but TRANSIENTLY (kind 'system', not
-    persisted), so after a reload the operator sees NO harness message at the start of a
-    session and cannot tell that the harness passed a real prompt. This writes a single
-    durable marker per session stating what the harness LOADED (workspace, rules, skills
-    index, tool registry, prompt size) — the wiring the model is actually given.
-    """
-    sid = (sess or {}).get("id")
-    if not sid:
-        return
-    if any(r.get("kind") == "harness-start" for r in (sess.get("injects") or [])):
-        return
-    try:
-        from longrun.model import prompt as prompt_mod
-        from longrun.memory import rules as rules_mod
-        ws = rules_mod.resolve_workspace(sess)
-        secs = prompt_mod.section_texts(sess, ws=ws, tool_ctx=None)
-        text = ("session started \u2014 harness wiring\n"
-                "- workspace: %s\n"
-                "- rules loaded (Global_rules.md / Project_rules.md): %d chars\n"
-                "- skills index: %d chars \u2014 search a skill with skills{action:'search'}\n"
-                "- tool registry: %d chars\n"
-                "- system prompt: %d chars (re-sent with each request; the provider reuses "
-                "its KV-cache, so it is recomputed only after compaction/reset)"
-                % (ws or "-", len(secs.get("rules") or ""), len(secs.get("skills") or ""),
-                   len(secs.get("tools") or ""),
-                   len(prompt_mod.render_sections(sess, ws=ws, tool_ctx=None))))
-    except Exception:  # noqa: BLE001 — the marker must never break a turn
-        text = "session started"
-    try:
-        persist_inject(sess, "harness-start", text)
-        publish("harness.inject", session=sid, inject_kind="harness-start", text=text)
-    except Exception:  # noqa: BLE001
-        pass
-
-
 def _turn_flags(autonomous=False, goal_mode=False, plan_only=False, headless=False):
     """`(wrap_goal, autonomous)` for one turn — the ONE place the two questions
     `autonomous` used to answer together are separated (JAG-526).
@@ -3999,10 +3961,6 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     can ever end as an orphan `user` turn. Raises only when the router call
     itself fails — callers then persist the error turn (`ensure_reply_persisted`).
     """
-    # JAG-332: on the FIRST turn of a session, leave a durable harness marker so the
-    # operator can SEE the wiring (the full prompt card is transient, per turn).
-    if len(sess.get("messages") or []) <= 1:
-        _harness_start_note(sess)
     if on_delta is None:
         on_delta = lambda channel, text: publish(
             "chat.delta", session=sess["id"], channel=channel, text=text)
@@ -4272,9 +4230,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     def _inject(content, kind, persist=True):
         """JAG-166: add a synthetic message to the LLM context AND surface it.
 
-        The harness is the model's secretary: every nudge, observation and
-        'continue' it feeds back is ALSO emitted as `harness.inject`, so the chat
-        can show exactly what was injected — nothing is hidden.
+        THE ONE CONTRACT OF THE `harness → LLM` LABEL (2026-11-05, operator:
+        "what i see in UI in the chat under harness label shall be EXACTLY what
+        the LLM receives not else"): a chip exists ONLY for a message actually
+        appended to the outgoing list, and its body is that message VERBATIM —
+        role `user` + the `[harness] ` prefix, the same bytes the provider gets.
+        Anything the model never receives (a suppressed repeat, a session-start
+        summary, a prompt-delta notice, a message withdrawn by the mid-turn trim)
+        is NOT shown under this label, because the operator debugs the wire here.
 
         `persist=False` is for a notice the caller ALREADY wrote into the
         transcript (a background job that finished while no turn was running):
@@ -4282,22 +4245,42 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         """
         # I-2: a byte-identical REPEAT of the same (kind, text) tells the model
         # nothing new (it already holds those bytes), so it is not re-charged to
-        # the context. It is still EMITTED (`repeat: true`) — the operator sees
-        # everything the harness did — and it is not persisted, so the feed does
-        # not grow a duplicate card either. Nothing else is ever suppressed.
+        # the context. It is still ANNOUNCED (`repeat: true`) so nothing is
+        # hidden, but it is a COUNTER on the previous message, never a message of
+        # its own: no bytes were sent, so no chip may claim otherwise.
         if inject_repeat_decision(kind, content, _inject_seen, _inject_cap):
             on_event("harness.inject", session=sess["id"], inject_kind=kind,
                      text=content, repeat=True)
             return
         msgs.append(harness_wrap(content))  # JAG-266: tag harness turns
+        wire = msgs[-1]
         # NOTE: the payload key must NOT be `kind` — the SSE emitters take the
         # event name as a positional `kind`, so a `kind` kwarg collides.
-        on_event("harness.inject", session=sess["id"], inject_kind=kind, text=content)
+        # `text` is the WRAPPED content: the chip is the wire message.
+        on_event("harness.inject", session=sess["id"], inject_kind=kind,
+                 text=wire["content"], role=wire["role"])
         # JAG-167: persist the injection so a reload rebuilds the in-chat tree.
         # The 'system' prompt is re-published every turn and is transient by
         # design → it is NOT persisted (avoids N identical copies in history).
         if kind != "system" and persist:
-            persist_inject(sess, kind, content, node=_cur_node(), after=_after())
+            persist_inject(sess, kind, wire["content"], node=_cur_node(),
+                           after=_after())
+
+    def _withdraw(content):
+        """The harness dropped a message before the next model call (JAG-465 trim).
+
+        It was never received, so the chip (live) and its persisted record
+        (reload) go with it — the label must never outlive the wire message.
+        """
+        text = str(content or "")
+        try:
+            on_event("harness.drop", session=sess["id"], text=text)
+        except Exception:  # noqa: BLE001 — a notice must never break a turn
+            pass
+        try:
+            drop_inject(sess, text)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _goal_close_round():
         """JAG-504: ONE goal-closure round before a /goal turn is accepted.
@@ -4356,6 +4339,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 return 0
             _keep = 6                     # never trim the recent working set
             _dropped = 0
+            _dropped_wire = []
             while len(msgs) - _turn_base > _keep and _used() > _limit:
                 _idx = None
                 for _i, _m in enumerate(msgs[_turn_base:]):
@@ -4370,8 +4354,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         break
                 if _idx is None:
                     break
+                _gone = msgs[_idx]
                 del msgs[_idx]
                 _dropped += 1
+                if str((_gone or {}).get("content") or "").startswith(HARNESS_MARK):
+                    _dropped_wire.append(_gone.get("content"))
+            # 2026-11-05: a dropped harness message is NEVER received by the model,
+            # so its chip cannot survive — withdraw it live and on reload.
+            for _w in _dropped_wire:
+                _withdraw(_w)
             # P1 (N9): the trim is capped by the _keep window — if even after
             # dropping everything trimmable the context is still over the
             # trigger, leave a DURABLE reason in the transcript (a plain
@@ -4387,29 +4378,20 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         except Exception:  # noqa: BLE001 — trimming must never break a turn
             return 0
 
-    # JAG-166/JAG-465: publish the assembled system prompt ONCE per session (the
-    # operator must be able to read the real prompt the model received). Every
-    # FURTHER turn only emits a compact delta note when the prompt actually changed
-    # — re-publishing the whole prompt on every user message flooded the chat with
-    # an identical wall of text and buried the actual work. The prompt itself is
-    # still sent to the model on every request (the API is stateless): this is a
-    # display rule, not a context change.
+    # JAG-166/JAG-465: publish the assembled system prompt ONCE per session and
+    # again only when it CHANGES — re-publishing the whole prompt on every user
+    # message flooded the chat with an identical wall of text. The prompt itself is
+    # sent to the model on every request (the API is stateless): this is a display rule, not a context change.
+    # 2026-11-05: the chip carries the prompt VERBATIM (never a "prompt updated"
+    # summary — the label must show only what is sent).
     try:
         if msgs and msgs[0].get("role") == "system":
             _sys_txt = msgs[0].get("content") or ""
             _h = hash(_sys_txt)
-            _prev = _LAST_SYS_INJECT.get(sess["id"])
-            if _prev is None:
+            if _LAST_SYS_INJECT.get(sess["id"]) != _h:
                 _LAST_SYS_INJECT[sess["id"]] = _h
                 on_event("harness.inject", session=sess["id"], inject_kind="system",
-                         text=_sys_txt)
-            elif _prev != _h:
-                _LAST_SYS_INJECT[sess["id"]] = _h
-                on_event("harness.inject", session=sess["id"], inject_kind="system-delta",
-                         text=("[system prompt updated for this turn — %d chars "
-                               "(the full text was shown at the start of this chat); "
-                               "the model always receives the current prompt]"
-                               % len(_sys_txt)))
+                         text=_sys_txt, role="system")
     except Exception:  # noqa: BLE001 — must never break the turn
         pass
     # JAG-170: buffer the live reasoning so each persisted tool card carries the
