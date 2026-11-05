@@ -130,6 +130,15 @@ context:
   plan_tool_steps: 3
   subagent_wait_secs: 180
 
+# ---- shell pool (2026-11-05) ------------------------------------------------
+# The persistent terminal the agent and the RH Terminal panel share. Not a
+# context budget, but the same rule applies: no literal in `tools/term.py`.
+# Chain: LONGRUN_SHELL_* env -> this block -> the DEFAULTS in `context_limits.py`.
+shell:
+  max_shells: 8             # oldest idle shell is reaped beyond this
+  idle_timeout_secs: 3600   # a shell idle this long is reaped
+  backlog: 2000             # events kept per shell (cursor catch-up)
+
 # ---- thinking / reasoning budget (RH-15) ------------------------------------
 # EVERY thinking limit lives here: this block is the source of truth, the WebUI
 # writes only its diffs into the sparse overlay (Settings > Models > Thinking

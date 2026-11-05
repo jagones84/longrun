@@ -50,6 +50,8 @@ DEFAULT_CONFIG = {
     # MUST be listed here and in `_merge_into` below, or `load_config()` silently
     # drops the block and the resolver falls back to its DEFAULTS forever.
     "context": {},
+    # 2026-11-05: the persistent-terminal pool (`tools/term.py`). Same rule.
+    "shell": {},
     # M5: sliding-window frequency guard for the v2 agent loop (warn/hard per
     # tool type over the last `window` calls; `per_tool` overrides one type).
     "loop_detection": {
@@ -1249,7 +1251,7 @@ def _merge_into(cfg, data):
         return
     for key in ("sandbox", "approvals", "runtime", "verifier", "goal_verify",
                 "bestofn", "difficulty", "selfevolve", "reasoning",
-                "loop_detection", "budget", "context"):
+                "loop_detection", "budget", "context", "shell"):
         if isinstance(data.get(key), dict):
             cfg[key].update(data[key])
     for tname, tentry in (data.get("tools") or {}).items():

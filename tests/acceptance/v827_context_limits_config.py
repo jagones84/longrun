@@ -69,7 +69,9 @@ def _src(*parts):
 
 # The shipped YAML block — read as a human edits it, not through the resolver.
 with open(os.path.join(REPO, "config", "tools.yaml"), encoding="utf-8") as _f:
-    _yaml_ctx = ((yaml.safe_load(_f) or {}).get("context") or {})
+    _yaml_raw = yaml.safe_load(_f) or {}
+_yaml_ctx = _yaml_raw.get("context") or {}
+_yaml_shell = _yaml_raw.get("shell") or {}
 
 # ---------------------------------------------------------------- completeness
 check("A1 config/tools.yaml declares a `context:` block", bool(_yaml_ctx), sorted(_yaml_ctx)[:3])
@@ -95,6 +97,27 @@ check("A5 each limit resolves to the loaded config value", not _drift, _drift)
 
 _bad_types = {k: v for k, v in (CL.cfg() or {}).items() if not isinstance(v, int)}
 check("A5b the effective block is all ints", not _bad_types, _bad_types)
+
+# ------------------------------------------------------- the shell-pool block
+check("A5c config/tools.yaml declares a `shell:` block", bool(_yaml_shell), sorted(_yaml_shell))
+_missing_shell = sorted(k for k in CL.SHELL_DEFAULTS if k not in _yaml_shell)
+check("A5d every shell default has a config row", not _missing_shell, _missing_shell)
+_unknown_shell = sorted(k for k in _yaml_shell if k not in CL.SHELL_DEFAULTS)
+check("A5e the resolver knows every shell key", not _unknown_shell, _unknown_shell)
+_loaded_shell = registry.load_config().get("shell") or {}
+check("A5f the loader carries the shell block (no whitelist drop)",
+      not [k for k in _yaml_shell if k not in _loaded_shell],
+      sorted(k for k in _yaml_shell if k not in _loaded_shell))
+_shell_drift = {k: (CL.shell(k), _loaded_shell.get(k)) for k in CL.SHELL_DEFAULTS
+                if _loaded_shell.get(k) is None or CL.shell(k) != int(_loaded_shell[k])}
+check("A5g each shell limit resolves to the loaded config value", not _shell_drift, _shell_drift)
+check("A5h tools/term.py binds the shell limits",
+      int(T.MAX_SHELLS) == CL.shell("max_shells")
+      and int(T.IDLE_TIMEOUT) == CL.shell("idle_timeout_secs")
+      and int(T.BACKLOG) == CL.shell("backlog"),
+      (T.MAX_SHELLS, T.IDLE_TIMEOUT, T.BACKLOG))
+check("A5i the shell block is wired into Settings",
+      (S.DEDICATED.get("tools.yaml") or {}).get("shell") == "Settings ▸ Harness")
 
 # ---------------------------------------------------------------- the consumers
 BOUND = {
@@ -158,7 +181,8 @@ _OWNERS = (("src", "longrun", "agent", "agent.py"), ("src", "longrun", "model", 
            ("src", "longrun", "memory", "rules.py"), ("src", "longrun", "tools", "term.py"),
            ("src", "longrun", "tools", "tools.py"), ("src", "longrun", "tools", "sandbox.py"),
            ("src", "longrun", "agent", "acceptance.py"))
-_leaks = {p[-1]: [e for e in CL.ENV.values() if e in _src(*p)] for p in _OWNERS}
+_leaks = {p[-1]: [e for e in list(CL.ENV.values()) + list(CL.SHELL_ENV.values())
+                  if e in _src(*p)] for p in _OWNERS}
 _leaks = {k: v for k, v in _leaks.items() if v}
 check("A15 only context_limits.py reads LONGRUN_* context env vars", not _leaks, _leaks)
 
@@ -175,7 +199,8 @@ _literals = {
                  r"CHAT_TOOL_OBS_LIMIT = int\("],
     "prompt.py": [r"max_chars=2600", r"_MEM_PROMPT_MAX = \d+", r"_MEM_ITEM_CHARS = \d+"],
     "rules.py": [r"LONGRUN_RULES_MAX"],
-    "term.py": [r"CAPTURE_MAX = \d"],
+    "term.py": [r"CAPTURE_MAX = \d", r"^MAX_SHELLS = \d", r"^IDLE_TIMEOUT = \d",
+                r"^BACKLOG = \d"],
     "sandbox.py": [r"LONGRUN_SANDBOX_MAX_OUTPUT"],
 }
 _found = {}
@@ -187,7 +212,7 @@ for fname, pats in _literals.items():
             if os.path.isfile(fp):
                 src = _src("src", "longrun", sub, fname)
                 break
-    hits = [p for p in pats if src and re.search(p, src)]
+    hits = [p for p in pats if src and re.search(p, src, re.M)]
     if hits:
         _found[fname] = hits
 check("A17 no migrated literal or env read survives in the consumers", not _found, _found)

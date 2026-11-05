@@ -290,6 +290,8 @@ DEDICATED = {
         # reference/role caps, prompt indexes, shell capture, fs.read default…)
         # — the operator ruled none of them may be a Python literal.
         "context": "Settings ▸ Harness",
+        # 2026-11-05: the persistent-terminal pool (max shells, idle reap, backlog).
+        "shell": "Settings ▸ Harness",
         "verifier": "Settings ▸ Harness",
         "budget": "Settings ▸ Harness",
         "bestofn": "Settings ▸ Harness",

@@ -42,9 +42,10 @@ import time
 
 from longrun.model import context_limits as ctx_limits
 
-MAX_SHELLS = 8          # oldest idle shell is reaped beyond this
-IDLE_TIMEOUT = 3600.0   # a shell idle for 1h is reaped
-BACKLOG = 2000          # events kept per shell (for cursor catch-up)
+# 2026-11-05: the pool's own limits are config too (`config/tools.yaml` -> `shell:`).
+MAX_SHELLS = ctx_limits.shell("max_shells")
+IDLE_TIMEOUT = float(ctx_limits.shell("idle_timeout_secs"))
+BACKLOG = ctx_limits.shell("backlog")
 # 2026-11-05: chars of stdout returned to the agent — config, not a literal.
 CAPTURE_MAX = ctx_limits.get("shell_capture_max")
 _MARK = "__SF_DONE__"

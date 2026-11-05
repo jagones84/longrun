@@ -117,7 +117,8 @@ reaches the model — the 6000-char verbatim observation limit, the 200 000 rend
 ceiling, the 1500/600 offload preview, the per-turn reference caps, the prompt
 skills/memory indexes, the rules block cap, the shell capture and `fs.read` default,
 the sandbox output ceiling, the acceptance bounds and the step/iteration/wait budgets
-— lives in `config/tools.yaml` → `context:` and is read through ONE resolver
+— lives in `config/tools.yaml` → `context:` and the persistent-terminal pool
+(max shells, idle reap, backlog) in → `shell:`; both are read through ONE resolver
 (`model/context_limits.py`): explicit override → `LONGRUN_*` env var → config →
 `DEFAULTS` (fallback only). Consumers bind it at import, so an edit needs a restart;
 `v827` fails if a key loses its config row, if the loader drops the block, or if a

@@ -66,45 +66,78 @@ ENV = {
 #: so a typo in the YAML cannot switch a budget off and flood the context.
 _ZERO_OK = frozenset({"acceptance_missing_items", "acceptance_missing_chars"})
 
+#: The persistent-terminal pool (`config/tools.yaml` -> `shell:`). It is NOT a
+#: context budget, but it follows the same contract (config-first, no literal in
+#: `tools/term.py`) and it is resolved by this ONE chain instead of a second copy.
+SHELL_DEFAULTS = {
+    "max_shells": 8,             # oldest idle shell is reaped beyond this
+    "idle_timeout_secs": 3600,   # a shell idle this long is reaped
+    "backlog": 2000,             # events kept per shell (cursor catch-up)
+}
+SHELL_ENV = {
+    "max_shells": "LONGRUN_SHELL_MAX",
+    "idle_timeout_secs": "LONGRUN_SHELL_IDLE_SECS",
+    "backlog": "LONGRUN_SHELL_BACKLOG",
+}
+
 
 def cfg(override=None):
     """The effective `context:` block: DEFAULTS <- tools.yaml -> `override`."""
-    from longrun.tools.registry import section_config
-    try:
-        return section_config("context", DEFAULTS, override)
-    except Exception:  # noqa: BLE001 — a config read must never break a turn
-        return dict(DEFAULTS)
+    return _section("context", DEFAULTS, override)
+
+
+def shell_cfg(override=None):
+    """The effective `shell:` block: SHELL_DEFAULTS <- tools.yaml -> `override`."""
+    return _section("shell", SHELL_DEFAULTS, override)
 
 
 def get(name, override=None):
-    """One limit as an int, resolved config-first (see the module docstring).
+    """One context limit as an int, resolved config-first (see the module docstring).
 
     An unknown name raises `KeyError`: a typo must fail loudly at import, not
     silently return a different budget.
     """
-    if name not in DEFAULTS:
-        raise KeyError("unknown context limit: %r" % (name,))
+    return _resolve("context", DEFAULTS, ENV, name, override)
+
+
+def shell(name, override=None):
+    """One shell-pool limit, same chain (`max_shells`/`idle_timeout_secs`/`backlog`)."""
+    return _resolve("shell", SHELL_DEFAULTS, SHELL_ENV, name, override)
+
+
+def _section(section, defaults, override=None):
+    from longrun.tools.registry import section_config
+    try:
+        return section_config(section, defaults, override)
+    except Exception:  # noqa: BLE001 — a config read must never break a turn
+        return dict(defaults)
+
+
+def _resolve(section, defaults, envmap, name, override=None):
+    """The ONE resolution chain: explicit override -> env -> config -> default."""
+    if name not in defaults:
+        raise KeyError("unknown %s limit: %r" % (section, name))
     over = (override or {}).get(name)
     if over is not None:
-        return _coerce(name, over)
-    env = ENV.get(name)
+        return _coerce(defaults, name, over)
+    env = envmap.get(name)
     if env:
         raw = os.environ.get(env)
         if raw not in (None, ""):
-            return _coerce(name, raw)
+            return _coerce(defaults, name, raw)
     try:
-        got = (cfg() or {}).get(name)
+        got = (_section(section, defaults) or {}).get(name)
     except Exception:  # noqa: BLE001
         got = None
-    return _coerce(name, DEFAULTS[name] if got is None else got)
+    return _coerce(defaults, name, defaults[name] if got is None else got)
 
 
-def _coerce(name, value):
+def _coerce(defaults, name, value):
     """A positive int (or >= 0 for the `_ZERO_OK` keys); bad input -> the default."""
     try:
         num = int(value)
     except (TypeError, ValueError):
-        num = int(DEFAULTS[name])
+        num = int(defaults[name])
     if name not in _ZERO_OK and num < 1:
         num = 1
     return num
