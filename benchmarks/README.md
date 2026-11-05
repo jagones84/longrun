@@ -116,7 +116,11 @@ arm is its own CLI sweep (`harness2 ... --bench jb`) — recorded as an asymmetr
 every report. Artifacts live under `.agent/BENCHMARKS/` (never in this repo).
 
 A run that delivered nothing is a rubric-weighted **zero**; a judge that could not
-run is `None`, never `0`.
+run is `None`, never `0`. **Grading policy (v814):** a task that never ran — cut at
+the budget, or finished with nothing to grade — counts as a failure in the
+`all-task ratio` column, so two suites' headline numbers mean the same thing. The
+`mean ratio` column keeps the older "over the tasks that finished" reading; both
+are printed, side by side, so neither can be read alone.
 
 ## Polyglot (Exercism) — deterministic harness comparison, no judge (2026-10-31)
 

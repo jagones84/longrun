@@ -954,7 +954,16 @@ def report(out, rows, parity):
                          # an arm with no completed task has no mean, and printing
                          # 0.000 would state the opposite.
                          "mean_ratio": round(a["ratio_sum"] / a["ratio_n"], 4)
-                         if a["ratio_n"] else None}
+                         if a["ratio_n"] else None,
+                         # B-2 (v814): the SAME ratio over EVERY task, with a task
+                         # that never ran (cut at the budget, or finished with
+                         # nothing to grade) counted as a failure. `mean_ratio`
+                         # answers "how well did this arm do when it finished";
+                         # `mean_ratio_all` answers "what did it deliver per task
+                         # attempted" — the number a peer suite's pass@1 is
+                         # comparable with. Both are printed; neither is hidden.
+                         "mean_ratio_all": round(a["ratio_sum"] / a["tasks"], 4)
+                         if a["tasks"] else None}
     payload = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "parity": parity,
                "arms": summary, "rows": rows}
     _write(Path(out) / "compare.json", payload)
@@ -987,15 +996,16 @@ def report(out, rows, parity):
                         _score_cell, sc.get("max", "-"), _ratio_cell,
                         _secs(r.get("duration_s")),
                         str(note)[:60].replace("|", "/")))
-    lines += ["", "| arm | tasks | delivered | scored | timeouts | no output | mean ratio | time | tokens | usd |",
-              "|---|---|---|---|---|---|---|---|---|---|"]
+    lines += ["", "| arm | tasks | delivered | scored | timeouts | no output | mean ratio | all-task ratio | time | tokens | usd |",
+              "|---|---|---|---|---|---|---|---|---|---|---|"]
     for name in sorted(summary, key=_arm_rank):
         s = summary[name]
         _mean = ("%.4f" % s["mean_ratio"]) if s["mean_ratio"] is not None else "n/a"
-        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+        _mean_all = ("%.4f" % s["mean_ratio_all"]) if s["mean_ratio_all"] is not None else "n/a"
+        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
                      % (name, s["tasks"], s["delivered"], s["scored"],
                         s.get("timeouts") or 0, s.get("no_output") or 0, _mean,
-                        _secs(s["time_s"]),
+                        _mean_all, _secs(s["time_s"]),
                         s["tokens"] if s["tokens"] is not None else "-",
                         ("$%.4f" % s["usd"]) if s["usd"] is not None else "-"))
     ranked = [(n, s["mean_ratio"]) for n, s in summary.items() if s["mean_ratio"] is not None]
