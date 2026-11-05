@@ -8969,7 +8969,14 @@ function showNodeDetail(n) {
     `<button class="ghost" data-a="doing">▶ doing</button>` +
     `<button class="ghost" data-a="blocked">✕ blocked</button>` +
     `<button class="ghost" data-a="superseded" title="abandon this step and record WHY it is no longer needed">\u2298 superseded</button>` +
-    `<button class="ghost" data-a="cancel">✕ cancel</button></div>` +
+    `<button class="ghost" data-a="cancel">✕ cancel</button>` +
+    // v810: a step left in an OLD plan is invisible to the model (it only reads the
+    // current plan), so it can never be closed by it — carrying it back is the one
+    // move that makes the step real work again, with its id and evidence intact.
+    ((n.plan != null && graph && n.plan !== (graph.plan == null ? 1 : graph.plan))
+      ? `<button class="ghost" data-a="carry" title="move this step from older plan ${esc(String(n.plan))} into the current plan ${esc(String(graph.plan))}">→ current plan</button>`
+      : "") +
+    `</div>` +
     `<div class="remaining">done needs evidence · superseded needs a why · cancel closes silently · blocked waits</div>`;
   $("taskDetail").querySelectorAll("button").forEach(b =>
     b.onclick = () => graphNodeAction(n.id, b.dataset.a));
@@ -9060,6 +9067,10 @@ async function graphNodeAction(id, a) {
     if (why === null) return;
     body.action = "update"; body.status = "blocked";
     if (why.trim()) body.reason = why.trim();
+  } else if (a === "carry") {
+    // v810: re-tag the step as CURRENT work (id and evidence untouched); the
+    // panel re-render moves it out of the OLD PLAN group.
+    body.action = "carry";
   } else { body.action = "update"; body.status = a; }
   const rid = listRunId();
   if (!rid) { who("ai", "no task list to update"); return; }

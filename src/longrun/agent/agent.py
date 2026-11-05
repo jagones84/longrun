@@ -653,6 +653,11 @@ def graph_post(run_id, body):
                                          label=body.get("label"), deps=body.get("deps"),
                                          reason=body.get("reason"),
                                          evidence=body.get("evidence"), source=source), None, 200
+        if action == "carry":
+            # v810: bring a step stranded in an OLD plan back into the current one
+            # (same node id, deps into the abandoned plan pruned). Without this the
+            # only human moves were "delete the plan" or "close it blind".
+            return taskgraph.carry_node(g, body.get("id")), None, 200
         if action == "replan":
             added = taskgraph.replan_from_model(g, body.get("note") or body.get("goal"),
                                                 body.get("model"))

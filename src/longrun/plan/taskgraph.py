@@ -304,6 +304,41 @@ def drop_old_plans(key):
             "removed": removed, "node_count": node_count}
 
 
+def carry_node(graph, node_id):
+    """v810: move a step from an OLD plan into the CURRENT one.
+
+    A plan is only a SCOPE: `render_todos` feeds the current plan to the model and
+    the panel focuses on it, so an open step left behind in history is invisible
+    to the model and can never be closed — it just sits there forever. Carrying
+    re-tags the SAME node (its id must survive: the transcript's cards resolve by
+    id) and prunes the deps that pointed into the abandoned plan, with the same
+    rule `drop_plan` uses so no surviving step waits on an invisible one.
+
+    Idempotent: carrying a current-plan node is a no-op. Unknown id raises
+    ``KeyError`` (the HTTP layer maps it to 404 like every other node action).
+    """
+    with GRAPH_LOCK:
+        n = find(graph, node_id)
+        if n is None:
+            raise KeyError("node %r not found" % node_id)
+        cur = int(graph.get("plan", 1) or 1)
+        old = int(n.get("plan", 1) or 1)
+        if old == cur:
+            return n
+        n["plan"] = cur
+        deps = n.get("deps") or []
+        if deps:
+            by_id = {x.get("id"): x for x in graph.get("nodes") or []}
+            n["deps"] = [d for d in deps
+                         if d == n["id"]
+                         or int((by_id.get(d) or {}).get("plan", 1) or 1) == cur]
+        n["updated"] = round(time.time(), 3)
+        save(graph)
+    _publish("graph.node.updated", run=graph["run_id"], session=graph.get("session_id"),
+             node=n, changes=["plan"], carried_from=old, plan=cur)
+    return n
+
+
 def plan_nodes(graph):
     """Nodes of the CURRENT plan (all nodes when none is tagged / plan 1)."""
     if not graph:
