@@ -61,8 +61,15 @@ _attempts: list = []
 
 
 def _fake_stream(messages, model, on_delta, timeout=300, usage=None, guard=None,
-                 cancel=None, no_reasoning=False, max_tokens=None):
-    """Cloud primary fails; the fake LOCAL alias would 'answer' — it must never be tried."""
+                 cancel=None, no_reasoning=False, max_tokens=None,
+                 temperature=None, seed=None):
+    """Cloud primary fails; the fake LOCAL alias would 'answer' — it must never be tried.
+
+    The trailing `temperature`/`seed` mirror the real `_router_stream` signature
+    (B-5/v817 added them); without them the stub raised TypeError at CALL time,
+    before its first statement, so `_attempts` stayed empty and the assertion could
+    no longer see which models were tried (found 2026-11-05).
+    """
     _attempts.append(model)
     if model == "openrouter:cloud-sum":
         raise RuntimeError("cloud summarizer unavailable")

@@ -46,7 +46,10 @@ CALLS = []
 
 
 def stub_stream(messages, alias, on_delta, timeout, usage, guard, cancel,
-                no_reasoning=False, max_tokens=None):
+                no_reasoning=False, max_tokens=None,
+                temperature=None, seed=None):
+    # `temperature`/`seed` mirror the real `_router_stream` signature (B-5/v817);
+    # without them the stub raised TypeError at CALL time (found 2026-11-05).
     CALLS.append(alias)
     r = REPLIES.get(alias, ("ok:%s" % alias, ""))
     if isinstance(r, Exception):

@@ -93,12 +93,18 @@ check("B6 _whyOf falls back to the loaded graph for slim live nodes",
 
 # ---- C. project rules ----------------------------------------------------------
 check("C1 gap analysis is a MANDATORY rule",
-      "Gap analysis before any implementation" in RULES
+      # 2026-11-05: the operator rewrote the rules doc (it is gitignored, so only the
+      # live file matters) — the section reads "Golden rule — gap analysis before any
+      # implementation (MANDATORY)". The pin asserts the CONCEPT, not the old wording.
+      "gap analysis before any implementation" in RULES
+      and "(MANDATORY)" in RULES
       and "ALREADY done" in RULES and "genuinely MISSING" in RULES)
 check("C2 branch policy: Experimental works, master is the backup",
+      # same: the current sentence is "Never fast-forward/merge into it unless the
+      # operator explicitly asks".
       "`Experimental-Refactor` is the working branch" in RULES
       and "`master` is the BACKUP branch" in RULES
-      and "Never fast-forward or merge into `master`" in RULES)
+      and "Never fast-forward/merge into it" in RULES)
 
 # ---- D. interactive descendants own their click -------------------------------
 check("D1 DragSort ignores pointerdown on a button/link inside a drag handle",

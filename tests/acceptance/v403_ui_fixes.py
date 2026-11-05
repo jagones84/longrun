@@ -126,7 +126,11 @@ _calls = []
 
 
 def _fake_router(messages, model, on_delta, timeout=300, usage=None, guard=None,
-                 cancel=None, no_reasoning=False, max_tokens=None):
+                 cancel=None, no_reasoning=False, max_tokens=None,
+                 temperature=None, seed=None):
+    # `temperature`/`seed` mirror the real `_router_stream` signature (B-5/v817);
+    # without them the stub raised TypeError at CALL time and the whole test died
+    # (found 2026-11-05).
     _calls.append(no_reasoning)
     if not no_reasoning:
         raise RuntimeError("400: reasoning_effort not supported by this model")
