@@ -107,7 +107,10 @@ m = re.search(r"const SETTINGS_CATS = \[(.*?)\n\];", idx, re.S)
 cats = re.findall(r'\[\s*"([a-z]+)"\s*,', m.group(1)) if m else []
 # v641: Diagnostics moved to the TOP of the nav (operator: "diagnostics mettilo
 # on top"); every other relative position is unchanged.
-want = ["diagnostics", "appearance", "keys", "models", "subagents", "orchestrate", "tools", "sandbox", "mcp",
+# 2026-11-05: Permissions got its OWN page, between Tools & approvals and Sandbox
+# (operator: the security rules do not belong in the tools list).
+want = ["diagnostics", "appearance", "keys", "models", "subagents", "orchestrate", "tools",
+        "permissions", "sandbox", "mcp",
         "skills", "rules", "knowledge", "compaction", "improvement", "hooks",
         "harness", "config"]
 check("B1 SETTINGS_CATS is parseable", bool(cats), "found %r" % (cats,))
@@ -129,8 +132,10 @@ def _cat_block(name):
     return idx[start:nxt if nxt > start else len(idx)]
 
 
-check("B4b Sandbox has its own Settings panel immediately below Tools & approvals",
-      "sandbox" in cats and cats.index("sandbox") == cats.index("tools") + 1
+check("B4b Sandbox has its own Settings panel right after Tools & approvals (Permissions in between)",
+      "sandbox" in cats
+      and cats.index("permissions") == cats.index("tools") + 1
+      and cats.index("sandbox") == cats.index("permissions") + 1
       and 'data-cat="sandbox"' in idx
       and 'id="sandboxPanel"' in _cat_block("sandbox")
       and 'id="sbxBackend"' not in _cat_block("tools")

@@ -86,11 +86,14 @@ tools._shell_terminal = lambda sid, cwd: None
 # --- A: the schema advertises cwd --------------------------------------------
 _props = registry.TOOL_SCHEMAS["shell"]["properties"]
 check("A1 the shell schema advertises cwd", "cwd" in _props, str(sorted(_props)))
-check("A2 `command` is declared required for action=run and waived for read|reset",
+check("A2 `command` is declared required for action=run and waived for the actions that carry none",
       "command" in _props
       and registry.TOOL_SCHEMAS["shell"]["required"] == ["command"]
+      # 2026-11-05: `status`/`stop` joined `read`/`reset` — the background actions
+      # carry no command by construction (`_subject` returns the action itself), so
+      # requiring one would refuse a poll/stop that has nothing to run.
       and registry.TOOL_SCHEMAS["shell"].get("required_waived_by") == {
-          "action": ["read", "reset"]},
+          "action": ["read", "reset", "status", "stop"]},
       str(registry.TOOL_SCHEMAS["shell"].get("required")))
 check("A2b action=run with no command is still refused at runtime",
       tools._shell({"action": "run"}, "r0").get("ok") is False)

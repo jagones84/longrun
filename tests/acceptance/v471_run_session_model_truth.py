@@ -104,9 +104,14 @@ def post_stream(body):
 
 # --- stubbed run worker: records the model it was handed ---------------------
 def _scripted_run(goal, max_steps=6, model=None, on_event=None, script=None,
-                  run_id=None, workspace=None, fallbacks=None):
+                  run_id=None, workspace=None, fallbacks=None, token_budget=None,
+                  session=None):
+    # `token_budget`/`session` belong to the REAL signature (`agent_run_v2`,
+    # api_v02.py:851): the streaming path passes `session=` so the run bills its
+    # calls and shows its model. A stub without them raises TypeError while BINDING
+    # the arguments, so the model was recorded as None instead of the pinned one.
     CALLS.append({"goal": goal, "max_steps": max_steps, "model": model,
-                  "run_id": run_id})
+                  "run_id": run_id, "session": session})
     on_event("agent.start", run=run_id, goal=goal, max_steps=max_steps)
     st = API.run_get(run_id)
     if st is not None:

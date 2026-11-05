@@ -66,8 +66,11 @@ check("B2 turn-start path: the durable note names context_overflow_after_compact
       "context_overflow_after_compaction" in HTTPAPI
       and "context.overflow_after_compact" in HTTPAPI)
 check("B3 mid-turn path: _trim_midturn emits the durable note when still over",
+      # The function body, not a fixed 2500-char window: the note sits at the END of
+      # the trim loop (after the JAG-465-fix and P1 comments grew it), so a character
+      # budget made this pin red while the behaviour was present.
       "context_overflow_after_compaction"
-      in AGENT.split("def _trim_midturn", 1)[1][:2500])
+      in AGENT.split("def _trim_midturn", 1)[1].split("\n    def ", 1)[0])
 check("B4 both notes are pure observability (never abort)",
       "must never break a turn" in HTTPAPI.split("context_overflow_after_compaction")[0]
       or "never break a turn" in AGENT)

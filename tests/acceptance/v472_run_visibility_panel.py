@@ -76,8 +76,13 @@ CALLS = []
 
 
 def _blocking_run(goal, max_steps=6, model=None, on_event=None, script=None,
-                  run_id=None, workspace=None, fallbacks=None):
-    CALLS.append({"goal": goal, "run_id": run_id})
+                  run_id=None, workspace=None, fallbacks=None, token_budget=None,
+                  session=None):
+    # The streaming path passes `session=` (JAG-476) and `agent_run_v2` really takes
+    # it (api_v02.py:851). A stub without it raises TypeError while BINDING the
+    # arguments — before the body runs — so the run produced no summary and A6 saw
+    # "(run produced no summary)" instead of the agent's reply.
+    CALLS.append({"goal": goal, "run_id": run_id, "session": session})
     on_event("agent.start", run=run_id, goal=goal, max_steps=max_steps)
     if len(CALLS) == 1:                     # only the FIRST run is held open
         started.set()

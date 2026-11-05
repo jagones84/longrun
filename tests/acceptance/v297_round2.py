@@ -33,12 +33,19 @@ def read(*parts):
 
 
 # ---------------------------------------------------------------- server.py
-s = read("src", "longrun", "core/server.py") + read("src", "longrun", "core/httpapi.py")
-check("turn registration carries a unique token", '"tok": _turn_tok' in s)
+# The turn bracket lives in `core/events.py` (turn_begin/turn_end): the streaming,
+# the synchronous and the in-process MCP paths all end a turn there, so the active
+# registry moved with it. Read all three modules — the INVARIANT is what matters
+# ("only the owning turn clears"), not which file happens to hold the line.
+s = (read("src", "longrun", "core/server.py")
+     + read("src", "longrun", "core/httpapi.py")
+     + read("src", "longrun", "core/events.py"))
+check("turn registration carries a unique token",
+      '"tok": _turn_tok' in s or '"tok": tok' in s)
 check("only the owning turn clears its registration",
-      'if (_ACTIVE_CHAT.get(sess["id"]) or {}).get("tok") is _turn_tok:' in s)
+      'if tok is None or (cur or {}).get("tok") is tok:' in s)
 check("exactly one _ACTIVE_CHAT pop remains (the guarded one)",
-      s.count("_ACTIVE_CHAT.pop(sess[\"id\"], None)") == 1)
+      s.count("_ACTIVE_CHAT.pop(") == 1)
 
 # -------------------------------------------------------------- console.html
 c = read("webui", "console.html")

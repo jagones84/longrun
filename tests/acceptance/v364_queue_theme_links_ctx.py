@@ -156,10 +156,16 @@ check("E4 on a phone the chat column drops its desktop 420px floor (no right-edg
       '[data-col="chat"] { min-width: 0; }' in HTML
       and 'min-width: 420px; display: flex; flex-direction: column' in HTML, "")
 # JAG-3xx: on a phone the settings' fixed 190px nav column left no room and could not be
-# reduced — it is now a horizontal TOP tab strip inside a full-screen window.
-check("E5 on a phone the settings nav is a top tab strip (no fixed left column)",
+# reduced. 2026-11-05: the tab strip became a compact SELECT (`.sw-nav-sel`) with the
+# buttons hidden — fewer pixels, same reach. The invariant is unchanged: no fixed left
+# column on a phone, and the window fills the screen.
+check("E5 on a phone the settings nav is a top strip (no fixed left column)",
       "@media (max-width: 640px)" in HTML
-      and "#settingsWin .sw-nav { flex: 0 0 auto; display: flex" in HTML, "")
+      and "#settingsWin { left: 0 !important;" in HTML
+      and "#settingsWin .sw-nav { flex: 0 0 auto; display: block" in HTML
+      and "#settingsWin .sw-nav button { display: none; }" in HTML
+      and "#settingsWin .sw-nav-sel { display: block" in HTML
+      and 'class="inp sw-nav-sel"' in HTML, "")
 # JAG-3xx: the settings window drag/resize must work by touch, so it uses pointer events.
 check("E6 the settings window is movable/resizable by touch (pointer events)",
       'handle.addEventListener("pointerdown", e => {' in HTML

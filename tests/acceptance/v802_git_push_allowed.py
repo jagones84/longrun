@@ -73,8 +73,20 @@ check("B3 the token name is still hard-denied", _d4 == "denied", _r4)
 
 # ---- C: the schema sentence matches the policy ---------------------------
 YAML = _read("config", "tools.yaml")
-check("C1 no ^push deny ENTRY survives in config/tools.yaml",
-      '- "^push' not in YAML)
+# 2026-11-05: the first version of this pin searched the raw text for `- "^push`,
+# which ALSO matches the legitimate `always_ask` entry — push must ASK, it must not
+# be DENIED. Parse the file and ask the two lists separately.
+try:
+    import yaml as _yaml
+    _DOC = _yaml.safe_load(YAML) or {}
+except Exception:  # noqa: BLE001 — an unparseable file fails the checks below
+    _DOC = {}
+_GIT = ((_DOC.get("tools") or {}).get("git") or {})
+check("C1 no ^push rule survives in the git DENY list",
+      not any("^push" in str(p) for p in (_GIT.get("deny") or [])), _GIT.get("deny"))
+check("C1b push is still an always-ask (it asks, it is not silently allowed)",
+      any("^push" in str(p) for p in (_GIT.get("always_ask") or [])),
+      _GIT.get("always_ask"))
 REG_SRC = _read("src", "longrun", "tools", "registry.py")
 check("C2 the git description no longer claims push is denied",
       "push is denied" not in REG_SRC

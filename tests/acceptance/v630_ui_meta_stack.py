@@ -77,7 +77,10 @@ check("B1 the plan row groups every id in ONE .tids line",
       'const ids = `<span class="tids">' in UI
       and '`;\n    const meta = `<span class="st' in UI)
 check("B2 the status badge is the FIRST child of .tmeta (ids come after it)",
-      'const meta = `<span class="st ${n.status}">${n.status}</span>${ids}`;' in UI)
+      # The badge later gained a `title` (the "why this state" tooltip), so the pin
+      # asserts the ORDER, not the exact attribute list: badge first, `${ids}` after.
+      'const meta = `<span class="st ${n.status}"' in UI
+      and '>${n.status}</span>${ids}`;' in UI)
 tmeta_css = block(".task .tmeta")
 check("B3 .task .tmeta is a column (ids under the badge)",
       "flex-direction: column" in tmeta_css and "align-items: flex-start" in tmeta_css,

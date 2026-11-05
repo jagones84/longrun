@@ -209,7 +209,8 @@ case("C10 the sourced close retires the earlier claim and keeps one current entr
 # ------------------------------------------- C11-C12: closeout on that step --
 _ok, _rep, _obs_flag = VF.closeout_gate(target, c={"closeout": True, "command": ""})
 case("C11 closeout is fail-closed: on with no command refuses the close (F1)", [],
-     _ok is False and _rep.get("ran") is False and "empty" in str(_rep.get("error")),
+     _ok is False and _rep.get("ran") is False
+     and "no test command" in str(_rep.get("error")),
      _rep)
 _ok2, _rep2, _obs2 = VF.closeout_gate(
     target, c={"closeout": True, "command": "true"},
