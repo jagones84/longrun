@@ -255,9 +255,25 @@ class LongrunAdapter:
         st, obj = self._req("POST", "/api/chat", body, timeout=timeout or self.timeout)
         dur = round(time.time() - t0, 3)
         ok = st == 200 and not obj.get("error")
+        # B-1 (v813): the session ledger is the ONLY truth for what this task cost.
+        # Read it here, while the session still exists, so every consumer of
+        # `HarnessResult` gets the real numbers for free. Before this, `tokens`
+        # stayed at its 0 default (`protocol.py`) and the polyglot suite + the
+        # generic runner reported the longrun arm as free next to a peer that
+        # logs per-step cost — a silent zero, not a measurement.
+        tokens = 0
+        cost_usd = 0.0
+        try:
+            led = self.usage(ref.session) or {}
+            tokens = int(led.get("tokens_in") or 0) + int(led.get("tokens_out") or 0)
+            if led.get("total_usd") is not None:
+                cost_usd = float(led["total_usd"])
+        except Exception:  # noqa: BLE001 — accounting must never fail a task
+            pass
         return HarnessResult(
             ok=ok, output=obj.get("reply") or "", run_id=obj.get("run_id") or "",
-            duration_s=dur, error="" if ok else str(obj.get("error"))[:400],
+            duration_s=dur, tokens=tokens, cost_usd=cost_usd,
+            error="" if ok else str(obj.get("error"))[:400],
             provenance=self.provenance())
 
     def usage(self, session):
