@@ -645,8 +645,13 @@ def graph_post(run_id, body):
             return taskgraph.complete_node(g, body.get("id"), body.get("label"),
                                            evidence=body.get("evidence"), source=source), None, 200
         if action == "update":
+            # v809: `reason` must ride along. `update_node` REFUSES `superseded`
+            # without a why (taskgraph.py:699-711), so an operator closing a step
+            # as "no longer needed" could never do it through the API: the action
+            # was accepted, the reason missing, and the call answered 400.
             return taskgraph.update_node(g, body.get("id"), status=body.get("status"),
                                          label=body.get("label"), deps=body.get("deps"),
+                                         reason=body.get("reason"),
                                          evidence=body.get("evidence"), source=source), None, 200
         if action == "replan":
             added = taskgraph.replan_from_model(g, body.get("note") or body.get("goal"),
