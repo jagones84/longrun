@@ -2672,6 +2672,39 @@ def _turn_importance(used_tools=0, errored=False, corrected=False, steps=0):
     return score
 
 
+def _gate_observation(tool, res):
+    """(observation, card_error) for a call that did NOT execute (F-1, 2026-11-04).
+
+    Live incident: agent A1 asked the shell to shut the Windows PC down. The global
+    `deny` list refused it — correctly — but the observation was built from
+    `observation -> error -> status`, and a block carries its reason in `reason`, so
+    the model read the single word "blocked" and the card was saved with an empty
+    error. Nothing appears in the approvals panel for a hard rule (there is no
+    decision to take), which is exactly why the reason must be visible HERE.
+
+    Returned strings are byte-identical to the previous inline wording for the
+    pending/expired/denied cases, so nothing but the blocked case changes.
+    """
+    status = str((res or {}).get("status") or "")
+    rec = (res or {}).get("approval") or {}
+    reason = str((res or {}).get("reason") or "").strip()
+    if status == "blocked":
+        return (("Action '%s' BLOCKED by the harness policy: %s. It was NOT executed. "
+                 "A hard rule has no approval to grant, so repeating the same call "
+                 "cannot work — change the command or the policy."
+                 % (tool, reason or "no reason given")),
+                reason or ("blocked: %s" % tool))
+    if status in ("pending", "expired"):
+        return (("Action '%s' NOT executed: approval %s (id %s). The card is "
+                 "in the chat: the user can approve it and retry, or tell me "
+                 "to proceed. Do NOT repeat the same call now; continue "
+                 "with something else or explain to the user what is needed."
+                 % (tool, status, rec.get("id", "?"))), "")
+    if status == "denied":
+        return ("Action '%s' DENIED by the user." % tool, "")
+    return "", ""
+
+
 def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta,
                       evidence=None):
     """JAG-447: the EFFECTIVE end-of-turn self-improvement loop.
@@ -4861,24 +4894,24 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                          workspace=_chat_workspace(sess),
                                          obs_max=CHAT_OBS_FULL, hist=msgs)
                 status = res.get("status")
-                obs = res.get("observation") or res.get("error") or res.get("status") or ""
+                obs = (res.get("observation") or res.get("error") or res.get("reason")
+                       or res.get("status") or "")
                 # JAG-431r4b: a GATE outcome (pending/expired/denied) means the tool
                 # NEVER ran — labelling it "failed" froze its (tool,args) hash and
                 # fed _fail_streak, so when the user approved the card and the model
                 # re-issued the SAME call verbatim, the JAG-183 guard BLOCKED it with
                 # "It was NOT executed… already FAILED". Gate outcomes are neutral.
                 _gate_only = status in ("pending", "expired", "denied")
-                if status in ("pending", "expired"):
-                    rec = res.get("approval") or {}
-                    obs = ("Action '%s' NOT executed: approval %s (id %s). The card is "
-                           "in the chat: the user can approve it and retry, or tell me "
-                           "to proceed. Do NOT repeat the same call now; continue "
-                           "with something else or explain to the user what is needed."
-                           % (tool, status, rec.get("id", "?")))
-                elif status == "denied":
-                    obs = "Action '%s' DENIED by the user." % tool
+                # F-1 (2026-11-04): a BLOCKED call carries its reason in `reason`,
+                # and a hard rule creates no approval — the sentence below is the
+                # only place the model and the operator can learn WHY.
+                _gobs, _gerr = _gate_observation(tool, res)
+                if _gobs:
+                    obs = _gobs
                 _exec_ok = status == "executed"
                 sub = res.get("result") or {}
+                if _gerr and not (sub.get("error") or sub.get("stderr")):
+                    sub = dict(sub, error=_gerr)
                 _compact_action = (
                     tool == "context.compact"
                     or (tool == "context" and args.get("action") == "compact"))

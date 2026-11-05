@@ -424,7 +424,8 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
         return {"status": "error", "error": "unknown tool %r" % tool}
     if not spec["enabled"]:
         _publish("tool.blocked", run=run_id, tool=tool, reason="not enabled")
-        return {"status": "blocked", "reason": "tool %r is disabled (allowlist)" % tool}
+        return {"status": "blocked", "reason": "tool %r is disabled (allowlist)" % tool,
+                "error": "tool %r is disabled (allowlist)" % tool}
     args = normalize_tool_args(tool, dict(args or {}))
     # JAG-163: run the tool INSIDE the session workspace (see tool_action above).
     # A tool whose `workspace` is the object's TARGET folder is never injected.
@@ -439,7 +440,11 @@ def gated_call(tool, args, run_id=None, wait=True, by="api", timeout=None, works
                                          allow=allow, scope_name=scope_name)
     if decision in ("disabled", "denied"):
         _publish("tool.blocked", run=run_id, tool=tool, args=args, reason=reason)
-        return {"status": "blocked", "reason": reason}
+        # F-1 (2026-11-04): the reason travels in BOTH fields. A hard denial creates
+        # no approval record, so this string is the only thing the operator and the
+        # model can act on — a consumer that reads only `error` used to see nothing
+        # and print the bare word "blocked".
+        return {"status": "blocked", "reason": reason, "error": reason}
     rec = approvals.create(tool, args, run_id=run_id,
                            decision="auto_approved" if decision == "auto" else "pending",
                            reason=reason)

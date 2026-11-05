@@ -2,5 +2,5 @@
 # The fix in flight (operator rule: TARGETED by default).
 set -u
 cd "$(dirname "$0")/.." || exit 1
-export LONGRUN_BATTERY_TESTS="v800_session_scan v287_routines_budget v620_id_counter_retract v799_reflect_evidence v798_probe_repeats v797_improvement_stamp v796_reviewer_role v446_improvement v507_namespaced_subtools v354_ui_links_pins"
+export LONGRUN_BATTERY_TESTS="v801_blocked_reason v507_namespaced_subtools v590_interrupt_classify v350_session_inspect v791_invalid_reply_cap_config v792_inject_identical_cap v800_session_scan v799_reflect_evidence v354_ui_links_pins"
 exec bash tests/battery.sh
