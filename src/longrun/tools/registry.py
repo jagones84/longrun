@@ -1332,7 +1332,16 @@ def _diff_overlay(cfg, base_data):
     for tname, tentry in (cfg.get("tools") or {}).items():
         if not isinstance(tentry, dict):
             continue
-        e = eff_tools.get(tname) or {}
+        e = eff_tools.get(tname)
+        if not isinstance(e, dict) and "." in tname and "__" not in tname:
+            # `config/tools.yaml` keys the NAMESPACE (`shell`, `git`); a sub-tool
+            # (`shell.exec`) INHERITS it. Diffing a sub-tool against `{}` (the file
+            # has no exact key) froze the whole inherited entry — its deny list
+            # included — into the overlay, so a later change to the namespace never
+            # reached the sub-tool (`v822`: `grep .env` denied for `shell` but not
+            # for `shell.exec`). The base for a sub-tool is its namespace entry, the
+            # same precedence `tool_spec` / `shipped_tool` already use.
+            e = eff_tools.get(tname.split(".", 1)[0])
         if not isinstance(e, dict):
             e = {}
         d = {k: v for k, v in tentry.items() if e.get(k) != v}
