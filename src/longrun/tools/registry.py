@@ -46,6 +46,10 @@ DEFAULT_CONFIG = {
     "difficulty": {},
     "selfevolve": {},
     "reasoning": {},
+    # 2026-11-05: every context budget (`model/context_limits.py` reads it). It
+    # MUST be listed here and in `_merge_into` below, or `load_config()` silently
+    # drops the block and the resolver falls back to its DEFAULTS forever.
+    "context": {},
     # M5: sliding-window frequency guard for the v2 agent loop (warn/hard per
     # tool type over the last `window` calls; `per_tool` overrides one type).
     "loop_detection": {
@@ -135,8 +139,9 @@ _LEGACY_SCHEMAS = {
                                       "description": "first line to return (1-based; omit for the start of the file)"},
                        "end_line": {"type": "integer",
                                     "description": "last line to return (1-based, inclusive; omit for end of file)"},
-                       "max_bytes": {"type": "integer", "default": 65536,
-                                     "description": "cap on returned bytes (default 65536)"}},
+                       "max_bytes": {"type": "integer",
+                                     "description": ("cap on returned bytes (default: context.fs_read_max_bytes "
+                                                     "in config/tools.yaml)")}},
         "required": ["path"],
         "subject": "path",
     },
@@ -1244,7 +1249,7 @@ def _merge_into(cfg, data):
         return
     for key in ("sandbox", "approvals", "runtime", "verifier", "goal_verify",
                 "bestofn", "difficulty", "selfevolve", "reasoning",
-                "loop_detection", "budget"):
+                "loop_detection", "budget", "context"):
         if isinstance(data.get(key), dict):
             cfg[key].update(data[key])
     for tname, tentry in (data.get("tools") or {}).items():

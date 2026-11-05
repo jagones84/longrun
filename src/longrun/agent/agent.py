@@ -24,6 +24,7 @@ import uuid
 from longrun.core import api_v02
 from longrun.util import osutil
 from longrun.model import routing
+from longrun.model import context_limits as ctx_limits
 from longrun.plan import taskgraph
 from longrun.plan import verify as plan_verify
 from longrun.core import server
@@ -502,8 +503,10 @@ def _goal_block(session_id):
             % (when or "?", "VERIFIED" if v.get("verified") else "NOT VERIFIED"))
         if not v.get("verified") and v.get("missing"):
             out.append("  what that check could NOT confirm:")
-            for m in list(v.get("missing") or [])[:6]:
-                out.append("  * %s" % str(m)[:300])
+            _miss_cap = ctx_limits.get("acceptance_missing_items")
+            _miss_chars = ctx_limits.get("acceptance_missing_chars")
+            for m in list(v.get("missing") or [])[:_miss_cap]:
+                out.append("  * %s" % str(m)[:_miss_chars])
             out.append("  Make those checks pass; do not close the goal by restating "
                        "that the work is done.")
     if rec.get("note"):
@@ -511,7 +514,7 @@ def _goal_block(session_id):
     return "\n".join(out)
 
 
-def _reference_block(session_id=None, graph_key=None, max_chars=4000):
+def _reference_block(session_id=None, graph_key=None, max_chars=None):
     """Reference text appended to every user turn: project rules + ROLE.md.
 
     v657 — both are ALREADY loaded in the system prompt (the `rules` and
@@ -520,8 +523,10 @@ def _reference_block(session_id=None, graph_key=None, max_chars=4000):
     provider-side trimming. The key is the SESSION id (roles are keyed per
     session); the rules come from the rules registry (global + project).
     Both are capped: this block is reference, not a second full copy.
+    The two caps live in `config/tools.yaml` -> `context:` (2026-11-05).
     """
     parts = []
+    max_chars = int(max_chars) if max_chars is not None else ctx_limits.get("reference_max_chars")
     try:
         from longrun.memory import rules as rules_mod
         # v657: the reference must mirror the system prompt's rules section —
@@ -557,8 +562,9 @@ def _reference_block(session_id=None, graph_key=None, max_chars=4000):
         _sess = session_id or graph_key
         role = (roles_mod.read(_sess) or "").strip() if _sess else ""
         if role:
-            if len(role) > 1200:
-                role = role[:1200] + "\n… [role truncated — full text in the system prompt]"
+            _role_cap = ctx_limits.get("reference_role_max_chars")
+            if len(role) > _role_cap:
+                role = role[:_role_cap] + "\n… [role truncated — full text in the system prompt]"
             parts.append("Reference — this agent's ROLE.md (already loaded in "
                          "the system prompt):\n" + role)
     except Exception:  # noqa: BLE001
@@ -682,21 +688,25 @@ def graph_post(run_id, body):
     return None, {"error": "unknown action %r" % action}, 400
 
 
-CHAT_TOOL_MAX_STEPS = int(os.environ.get("LONGRUN_CHAT_TOOL_STEPS", "8"))
+# 2026-11-05 (operator: "all in config files ... no hardcoding"): every budget
+# below is read from `config/tools.yaml` -> `context:` through the ONE resolver
+# (`model/context_limits.py`), which keeps the LONGRUN_* env override for tests
+# and a DEFAULT only as a fallback. Nothing here is a literal any more.
+CHAT_TOOL_MAX_STEPS = ctx_limits.get("chat_tool_steps")
 # JAG-84: hard cap on TOTAL loop iterations (bookkeeping + retries included), so
 # that making plan/todo actions "free" can never spin the loop forever.
 # JAG-164: the iters cap must NOT preempt the continuation loop — with the tool
 # budget now refilled per keepgoing round (<= keepgoing_max rounds, default 8)
 # the real governors are keepgoing.decide + the wall-clock budget; this is only a
 # runaway backstop.
-CHAT_TOOL_MAX_ITERS = int(os.environ.get("LONGRUN_CHAT_TOOL_ITERS", "64"))
+CHAT_TOOL_MAX_ITERS = ctx_limits.get("chat_tool_iters")
 # JAG-344: a PLAN-ONLY turn (the job coordinator's decomposition turn). The master
 # MAY inspect the workspace and record its own todo plan, but it MUST NOT execute
 # the teammates' work: left with the full budget + the keepgoing continuation loop,
 # a capable master completed the WHOLE job itself in its planning turn (it wrote the
 # deliverable files and "verified" them), bypassing the team. A plan turn is capped
 # to a few real tool steps and NEVER continues past them (see `plan_only` below).
-PLAN_ONLY_MAX_STEPS = int(os.environ.get("LONGRUN_PLAN_TOOL_STEPS", "3"))
+PLAN_ONLY_MAX_STEPS = ctx_limits.get("plan_tool_steps")
 # JAG-344: the tools a PLAN-ONLY turn may still call — INSPECTION only. Everything
 # else (shell, fs.write, fs.edit, subagent, improve, …) is refused, so the master can
 # read the workspace and consult a skill to inform its plan but CANNOT execute the
@@ -710,17 +720,17 @@ _LAST_SYS_INJECT = {}
 # JAG-88 (harness layer L2 — context budgeting): observations above this many
 # chars are offloaded to a file instead of being flooded into the context (and
 # instead of the old silent 4000-char truncation that LOST the rest).
-CHAT_TOOL_OBS_LIMIT = int(os.environ.get("LONGRUN_TOOL_OBS_LIMIT", "6000"))
+CHAT_TOOL_OBS_LIMIT = ctx_limits.get("tool_obs_limit")
 # JAG-189: how long the chat loop waits for a delegated subagent before giving up
 # (the child runs its own bounded agent loop; a chat turn must not hang forever).
-SUBAGENT_WAIT = int(os.environ.get("LONGRUN_SUBAGENT_WAIT", "180"))
+SUBAGENT_WAIT = ctx_limits.get("subagent_wait_secs")
 # JAG-181: the chat loop feeds the FULL tool output to the harness budgeter
 # (_offload_observation), which writes it to a file and shows the model a head+tail
 # preview. If the tool layer truncated first (tools.observation default 1600) the
 # tail was lost forever and the model saw a dead "...[truncated N chars]" marker.
 # So the chat path renders observations up to this ceiling, then the harness offload
 # bounds the model context while NOTHING is discarded (the file keeps it all).
-CHAT_OBS_FULL = int(os.environ.get("LONGRUN_OFFLOAD_MAX", "200000"))
+CHAT_OBS_FULL = ctx_limits.get("render_max")
 CHAT_TOOL_PROMPT = (
     "\n\n## Tools\nYou are a tool-using agent, not a plain chatbot: you chat with "
     "the user AND you can act. When a request needs a tool (run a command, read or "
@@ -1424,8 +1434,8 @@ def _goal_recovery_nudge(sess: dict, stale: bool = False) -> str:
 
 # JAG-88: per-session counter for offloaded observation files (001_, 002_, ...).
 _OFFLOAD_SEQ = {}
-_OFFLOAD_HEAD = 1500
-_OFFLOAD_TAIL = 600
+_OFFLOAD_HEAD = ctx_limits.get("offload_head")
+_OFFLOAD_TAIL = ctx_limits.get("offload_tail")
 
 
 def _clean_offload(text):

@@ -22,8 +22,12 @@ callers attach the verdict the way M1 attaches `schema_valid`.
 
 import os
 
-MAX_PREDICATES = 20
-MAX_PREDICATE_LEN = 200
+from longrun.model import context_limits as ctx_limits
+
+# 2026-11-05: predicates are an automation contract, so their bounds are CONFIG
+# (`context.acceptance_*`), never literals.
+MAX_PREDICATES = ctx_limits.get("acceptance_max_predicates")
+MAX_PREDICATE_LEN = ctx_limits.get("acceptance_max_predicate_len")
 
 _WRITE_TOOLS = frozenset({"fs.write", "fs.edit"})
 

@@ -35,6 +35,7 @@ import uuid
 
 from longrun.util import osutil
 from longrun.tools import registry
+from longrun.model import context_limits as ctx_limits
 
 _probe_lock = threading.Lock()
 _probe_cache = None
@@ -48,8 +49,7 @@ _WHOLE_RESERVATIONS = {}
 # JAG-413: cap the bytes read back from a sandboxed command so a process that
 # spews gigabytes cannot exhaust the server's memory (output goes to temp files,
 # not pipes, and we only pull MAX_OUTPUT_BYTES per stream).
-MAX_OUTPUT_BYTES = int(os.environ.get("LONGRUN_SANDBOX_MAX_OUTPUT",
-                                      str(2 * 1024 * 1024)))
+MAX_OUTPUT_BYTES = ctx_limits.get("sandbox_max_output_bytes")
 
 # JAG-2.7: the only backend values this module understands. Anything else is a
 # typo (or a future backend the harness does not know yet) and must NEVER be

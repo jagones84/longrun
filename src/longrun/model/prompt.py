@@ -15,6 +15,7 @@ import glob
 import os
 
 from longrun.util import paths
+from longrun.model import context_limits as ctx_limits
 
 GLOBAL_DDIR = os.path.join(paths.config_dir(), "prompt.d")
 
@@ -454,7 +455,7 @@ def _provider_skills(sess, ws, ctx):
         # (~2/3 of the library invisible) and burned ~2k tokens of prompt for a
         # list the model cannot fully use. The `skills` tool now SEARCHES
         # (action:search) and lists on demand, so the always-on index stays small.
-        return skills.skills_context(max_chars=2600)
+        return skills.skills_context(max_chars=ctx_limits.get("skills_prompt_max_chars"))
     except Exception:  # noqa: BLE001
         return ""
 
@@ -464,8 +465,8 @@ def _provider_skills(sess, ws, ctx):
 # memory can never balloon the system prompt (the model recalls more on demand
 # with the `memory` tool). This keeps the segregation below while staying within
 # the same prompt budget as before.
-_MEM_PROMPT_MAX = 1200
-_MEM_ITEM_CHARS = 120
+_MEM_PROMPT_MAX = ctx_limits.get("memory_prompt_max_chars")
+_MEM_ITEM_CHARS = ctx_limits.get("memory_item_chars")
 
 
 def _provider_memory(sess, ws, ctx):

@@ -40,10 +40,13 @@ import subprocess
 import threading
 import time
 
+from longrun.model import context_limits as ctx_limits
+
 MAX_SHELLS = 8          # oldest idle shell is reaped beyond this
 IDLE_TIMEOUT = 3600.0   # a shell idle for 1h is reaped
 BACKLOG = 2000          # events kept per shell (for cursor catch-up)
-CAPTURE_MAX = 200_000   # chars of stdout returned to the agent
+# 2026-11-05: chars of stdout returned to the agent — config, not a literal.
+CAPTURE_MAX = ctx_limits.get("shell_capture_max")
 _MARK = "__SF_DONE__"
 _PS_MARKER = ('$c = $(if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } elseif ($?) { 0 } else { 1 }); '
               '$global:LASTEXITCODE = $null; Write-Output ("' + _MARK + '" + $c + [char]30)')

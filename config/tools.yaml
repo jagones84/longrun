@@ -82,6 +82,54 @@ runtime:
   # the feed with `repeat: true`. 0 or negative disables the bound.
   inject_identical_cap: 1
 
+# ---- context limits (2026-11-05) --------------------------------------------
+# EVERY budget that decides how much of the harness's own text reaches the model
+# lives here — the operator ruled that no such number may be a literal in Python.
+# The same resolution chain as `runtime`: an explicit override -> a LONGRUN_* env
+# var (tests / one-off run) -> this block -> the DEFAULTS in
+# `model/context_limits.py`. Consumers read it at import, so an edit needs the
+# usual service restart (Settings ▸ Harness shows the whole block).
+context:
+  # One tool observation is pasted VERBATIM up to this many chars; above it the
+  # full text goes to data/offload/<session>/ and the model receives a reference
+  # (size, path, head+tail preview) it can fs.read in full.
+  tool_obs_limit: 6000
+  # Ceiling the chat path renders at all before the offload/reference decision.
+  render_max: 200000
+  # The head+tail preview shown for an offloaded observation.
+  offload_head: 1500
+  offload_tail: 600
+  # Per-turn reference copy of the standing rules / the session's ROLE.md (both
+  # are ALSO in the system prompt in full — this is the copy that survives
+  # compaction, so it is capped).
+  reference_max_chars: 4000
+  reference_role_max_chars: 1200
+  # Skills index and memory index lines inside the system prompt.
+  skills_prompt_max_chars: 2600
+  memory_prompt_max_chars: 1200
+  memory_item_chars: 120
+  # System-prompt rules block (global + project + AGENTS.md).
+  rules_prompt_max_bytes: 32768
+  # A shell command's captured stdout returned to the agent (hard cut).
+  shell_capture_max: 200000
+  # fs.read returns this many bytes when the model does not pass `max_bytes`;
+  # a line range (start_line/end_line) scans up to 4 MiB of the file.
+  fs_read_max_bytes: 65536
+  # Bytes pulled back from one sandboxed stream (gigabyte spew guard).
+  sandbox_max_output_bytes: 2097152
+  # Acceptance predicates (automation checks) and how many of the "missing"
+  # ones the model is shown, with how much of each.
+  acceptance_max_predicates: 20
+  acceptance_max_predicate_len: 200
+  acceptance_missing_items: 6
+  acceptance_missing_chars: 300
+  # A chat turn's real tool calls, its total model iterations, and the narrower
+  # budget of a PLAN-ONLY turn; plus how long a delegated subagent is awaited.
+  chat_tool_steps: 8
+  chat_tool_iters: 64
+  plan_tool_steps: 3
+  subagent_wait_secs: 180
+
 # ---- thinking / reasoning budget (RH-15) ------------------------------------
 # EVERY thinking limit lives here: this block is the source of truth, the WebUI
 # writes only its diffs into the sparse overlay (Settings > Models > Thinking

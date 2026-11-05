@@ -116,7 +116,12 @@ check("B2 context_summary appends the reference to every turn",
       "ref = _reference_block(" in src)
 check("B3 the reference names rules + ROLE.md and its caps",
       "Reference — standing rules" in src and "ROLE.md" in src
-      and "max_chars=4000" in src)
+      # 2026-11-05: the caps are CONFIG values now (`context.reference_max_chars`,
+      # `context.reference_role_max_chars`) — the literal signature is gone on
+      # purpose (operator: "all in config files ... no hardcoding"). B9 below still
+      # proves the cap is APPLIED; v827 pins that the number comes from the YAML.
+      and 'ctx_limits.get("reference_max_chars")' in src
+      and 'ctx_limits.get("reference_role_max_chars")' in src)
 
 # Runtime: write rules + a role, call the block for a real (tmp) session.
 ws = os.path.join(TMP, "ws")

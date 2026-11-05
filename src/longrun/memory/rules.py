@@ -24,7 +24,10 @@ import re
 from longrun.util import paths
 from longrun.util.fswrite import write_json
 from longrun.util.paths import REPO_ROOT as REPO
-MAX_BYTES = int(os.environ.get("LONGRUN_RULES_MAX", str(32 * 1024)))
+# 2026-11-05: the system-prompt rules cap is a CONFIG value (operator: "all in
+# config files ... no hardcoding"); `context.rules_prompt_max_bytes` owns it.
+from longrun.model import context_limits as ctx_limits
+MAX_BYTES = ctx_limits.get("rules_prompt_max_bytes")
 
 
 def _config_dir():

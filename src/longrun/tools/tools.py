@@ -26,6 +26,7 @@ from longrun.util import paths as _paths
 from longrun.util import provenance
 from longrun.tools import registry
 from longrun.tools import sandbox
+from longrun.model import context_limits as ctx_limits
 
 REPO = registry.REPO
 
@@ -564,7 +565,10 @@ def _fs_read(args, run_id):
         return {"ok": False, "error": err}
     if not os.path.isfile(path):
         return {"ok": False, "error": "no such file: %s" % path}
-    max_bytes = int(args.get("max_bytes", 65536))
+    _raw_max = args.get("max_bytes")
+    # 2026-11-05: the default is a CONFIG value (operator: "no hardcoding").
+    max_bytes = (int(_raw_max) if _raw_max not in (None, "")
+                 else ctx_limits.get("fs_read_max_bytes"))
     start_line = args.get("start_line")
     end_line = args.get("end_line")
     want_range = start_line is not None or end_line is not None

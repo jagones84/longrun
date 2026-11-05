@@ -286,6 +286,10 @@ DEDICATED = {
         "sandbox": "Settings ▸ Tools & approvals",
         "approvals": "Settings ▸ Tools & approvals",
         "runtime": "Settings ▸ Harness",
+        # 2026-11-05: every context budget (offload threshold, preview size,
+        # reference/role caps, prompt indexes, shell capture, fs.read default…)
+        # — the operator ruled none of them may be a Python literal.
+        "context": "Settings ▸ Harness",
         "verifier": "Settings ▸ Harness",
         "budget": "Settings ▸ Harness",
         "bestofn": "Settings ▸ Harness",
