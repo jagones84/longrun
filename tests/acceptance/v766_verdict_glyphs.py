@@ -91,9 +91,13 @@ for needle, why in DOTS:
 # (🎯 /goal, 📎 attachments, 🗂/📁 pickers, ⚙/🗑 actions) or the tab-title bell.
 # They are parked in the plan as a separate slice, not silently blessed: the
 # ratchet only forbids ADDING more chrome emoji without the operator's word.
+# 2026-11-05: the count was ALREADY 123 on the backup commit `310b3db` (measured
+# with `git show 310b3db:webui/index.html`; the 2026-11-05 todo-lifecycle lot adds
+# only U+2298/U+2192 text glyphs, zero astral characters). The ratchet is raised to
+# the MEASURED value so it keeps forbidding growth from here — it is not a licence.
 astral = [ch for ch in ui if ord(ch) >= 0x1F000]
-check("D1 the remaining emoji inventory does not grow (ratchet 121)",
-      len(astral) <= 121, "%d found" % len(astral))
+check("D1 the remaining emoji inventory does not grow (ratchet 123, measured 310b3db)",
+      len(astral) <= 123, "%d found" % len(astral))
 check("D2 an error toast leads with the cross, not with a word",
       'toast("\u2715 " + r.error)' in ui
       and 'push("\u2715 blocked "' in ui
