@@ -1533,24 +1533,15 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
             ns_entry = dict(tools_cfg[ns_prefix])
     exact_entry = tools_cfg.get(name)
     if isinstance(exact_entry, dict) and isinstance(ns_entry, dict):
+        # The namespace supplies the DEFAULTS; the exact (usually OVERLAY) entry is
+        # the operator's DELTA and wins. Do NOT union `deny`/`always_ask` here: an
+        # attempt to "protect" a namespace rule that way made a shipped rule
+        # impossible to delete (the Permissions page's ↺ restore exists precisely
+        # because the operator owns the delta — `v808`, from their own words: "i can
+        # delete hard blocks but … if i delete a line of the defaults it can be put
+        # again"). A sub-tool that narrowed its list is a CONFIG state, reported by
+        # the catalogue's `deny_default`, not silently re-widened here.
         entry = {**ns_entry, **exact_entry}
-        # A RESTRICTION list must never be REPLACED by a sub-entry. The shallow
-        # merge above silently dropped a namespace `deny` the moment the sub-tool
-        # had one of its own (measured 2026-11-05: `shell.exec.deny` omitted
-        # `grep[^\n]*\.env` — present on the `shell` namespace — so
-        # `grep -r TOKEN …/env` classified `auto` under `shell.exec` while `shell`
-        # denied it: a secret-exfiltration hard block bypassable by tool name).
-        # `deny`/`always_ask` are UNIONED (an exact entry may ADD a restriction,
-        # never remove one). `auto_approve`/`roots` keep REPLACE semantics: those
-        # widen what is allowed, and an exact entry is entitled to narrow them.
-        for _k in ("deny", "always_ask"):
-            _ns = ns_entry.get(_k) or []
-            if _ns:
-                _merged = list(_ns)
-                for _p in (exact_entry.get(_k) or []):
-                    if _p not in _merged:
-                        _merged.append(_p)
-                entry[_k] = _merged
     elif isinstance(exact_entry, dict):
         entry = dict(exact_entry)
     elif isinstance(ns_entry, dict):
