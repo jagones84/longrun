@@ -45,6 +45,7 @@ HOOKS_OVERLAY = os.path.join(paths.DATA_DIR, "hooks.overlay.yaml")
 DECISIONS_OVERLAY = os.path.join(paths.DATA_DIR, "decisions.overlay.yaml")
 TRACE_OVERLAY = os.path.join(paths.DATA_DIR, "trace_policy.overlay.yaml")
 JOBS_OVERLAY = os.path.join(paths.DATA_DIR, "jobs.overlay.yaml")
+RERANK_OVERLAY = os.path.join(paths.DATA_DIR, "rerank.overlay.yaml")
 
 
 def _f(path, label, type_="text", **kw):
@@ -109,6 +110,41 @@ SECTIONS = [
                help="Whisper model size used for the transcript."),
             _f("embed_batch", "embedding batch size", "int", min=1, max=512,
                help="Chunks sent to the embedding model per request."),
+        ],
+    },
+    {
+        # 2026-11-05: the retrieval re-ranker is a MODEL choice (which
+        # cross-encoder, how many candidates, the relevance floor), so it belongs
+        # to the Models panel exactly like embedding.yaml — never the generic
+        # Config form.
+        "file": "rerank.yaml", "id": "rerank", "panel": "models",
+        "title": "Retrieval re-ranker",
+        "help": ("A cross-encoder scores every retrieved passage TOGETHER with the "
+                 "query, so the passages that ANSWER it rise to the top of what "
+                 "enters the prompt. It reorders candidates that BM25+vector search "
+                 "already found — it never invents one — and it costs one small "
+                 "model call per retrieval. Off = rank fusion only."),
+        "fields": [
+            _f("enabled", "rerank retrieval hits", "bool"),
+            _f("model", "re-ranker model ref", "text", wide=True,
+               placeholder="openrouter:voyageai/rerank-2.5-lite",
+               help="<provider>:<model> of a RERANK model (providers.yaml "
+                    "`rerank: true`). A chat model here resolves to nothing and the "
+                    "stage is skipped."),
+            _f("candidates", "candidates sent to the re-ranker", "int",
+               min=2, max=200,
+               help="Bounds the token bill: hits beyond this keep their fusion "
+                    "order and follow the re-ranked ones."),
+            _f("top_n", "passages kept", "int", min=1, max=100,
+               help="The rest are dropped — the cross-encoder saw and ranked them."),
+            _f("min_score", "minimum relevance (0 = keep all)", "float",
+               min=0, max=1,
+               help="Raise it to let a weak result set come back EMPTY rather than "
+                    "merely poor."),
+            _f("timeout_secs", "timeout (seconds)", "int", min=1, max=60,
+               help="A slow re-ranker must not hold a turn hostage: on timeout the "
+                    "retrieval keeps its own order."),
+            _f("doc_chars", "per-passage character cap", "int", min=100, max=20000),
         ],
     },
     {
@@ -449,6 +485,11 @@ def _effective(name):
     if name == "mcp_clients.yaml":
         from longrun.interop import mcp_client
         return mcp_client.load_doc()
+    if name == "rerank.yaml":
+        # The retrieval re-ranker owns its merge (file <- sparse overlay), so the
+        # form shows what the harness actually uses, not just the shipped file.
+        from longrun.model import rerank
+        return rerank.cfg(reload=True)
     raise ValueError("no structured form for %s" % name)
 
 
@@ -525,6 +566,11 @@ def _save(name, clean):
             mcp_client.reload()
         except Exception:  # noqa: BLE001 — the file is already written
             pass
+    elif name == "rerank.yaml":
+        # Sparse overlay: config/rerank.yaml keeps its documentation comments.
+        _write_overlay(RERANK_OVERLAY, clean)
+        from longrun.model import rerank
+        rerank.cfg(reload=True)
     else:
         raise ValueError("no writer for %s" % name)
     return _effective(name)

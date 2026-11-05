@@ -970,7 +970,9 @@ def pick_cheap_remote_model():
         for p in cat:
             if p.get("local"):
                 continue
-            for m in (p.get("models") or []):
+            # `rerank: true` models are cross-encoders, not chat targets: a
+            # fallback list must never propose one.
+            for m in providers.chat_models(p):
                 ref = m.get("ref") or ("%s:%s" % (p.get("id"), m.get("id")))
                 cloud_refs.append(ref)
                 if p.get("available") is not False:

@@ -1,0 +1,46 @@
+# Retrieval re-ranker — the SECOND stage after BM25+vector rank fusion.
+#
+# Hybrid retrieval fuses a lexical list with a semantic one by reciprocal rank:
+# it says "these candidates are plausible", never "this passage answers the
+# question". A cross-encoder scores (query, passage) TOGETHER, so the passages
+# that answer the question rise to the top of what enters the model's context.
+# It only REORDERS what retrieval already found (it cannot invent a document).
+#
+# Where it acts (one implementation, two consumers — `model/rerank.py`):
+#   * knowledge base / codebase index search (`memory.knowledge.search`);
+#   * memories recalled for prompt injection (`model.context_engine.retrieve`).
+#
+# Cost: one model call per retrieval, on EVERY search — that is why it ships OFF.
+# The model must be a RERANK model declared in `providers.yaml` with
+# `rerank: true` (Settings ▸ Models lists the catalogue); a chat model here
+# resolves to nothing and the stage fail-opens (retrieval keeps its own order).
+#
+# Measured on this account 2026-11-05 (3-document probe, exact `usage.cost`):
+#   openrouter:voyageai/rerank-2.5-lite   $0.00000056   <- cheapest
+#   openrouter:cohere/rerank-5-fast       $0.00000080
+#   openrouter:voyageai/rerank-2.5        $0.00000140
+#   openrouter:cohere/rerank-5-pro        $0.00000195
+#   openrouter:cohere/rerank-4-fast       $0.00200000  (billed per SEARCH)
+# ~30 candidates x ~1200 chars is the usual request; at $0.02/1M tokens a full
+# knowledge search therefore costs a few millionths of a dollar.
+
+enabled: true
+model: openrouter:voyageai/rerank-2.5-lite
+
+# How many fused hits are sent to the cross-encoder (bounds the token bill; the
+# hits beyond this cap keep their fusion order and follow the re-ranked ones).
+candidates: 30
+
+# How many passages survive. The rest are dropped: the cross-encoder saw them.
+top_n: 8
+
+# Relevance floor. 0.0 keeps everything the re-ranker returned; raise it (e.g.
+# 0.25) to let a weak result set come back EMPTY instead of merely poor.
+min_score: 0.0
+
+# A retrieval happens inside a turn, so a slow re-ranker must give up fast: the
+# measured call is ~280 ms; past 4 s the search keeps its own order (fail-open).
+timeout_secs: 4
+
+# Per-passage character cap sent to the model.
+doc_chars: 1200

@@ -399,12 +399,13 @@ def default_ref():
     pool = providers()
     for want_cloud in (True, False):
         for p in pool:
-            if not p.get("models") or p.get("embed_only"):
+            chat = chat_models(p)
+            if not chat or p.get("embed_only"):
                 continue
             if want_cloud and p.get("local"):
                 continue
             if available(p):
-                return "%s:%s" % (p["id"], p["models"][0]["id"])
+                return "%s:%s" % (p["id"], chat[0]["id"])
     return None
 
 
@@ -472,6 +473,40 @@ def endpoint(ref):
     p, mid = hit
     base = (p.get("base_url") or "").rstrip("/")
     return base + "/chat/completions", headers(p), mid
+
+
+def is_rerank_model(entry):
+    """A model entry flagged `rerank: true` is a CROSS-ENCODER, not a chat target.
+
+    Added 2026-11-05 with the retrieval re-ranker: it lives in the same
+    `providers.yaml` list as the chat models (one catalogue, no second file) but
+    must never be offered to a chat picker, chosen as a default, or used as a
+    fallback — it answers `/rerank`, not `/chat/completions`.
+    """
+    return bool(isinstance(entry, dict) and entry.get("rerank"))
+
+
+def chat_models(provider):
+    """The provider's models that can answer a CHAT completion."""
+    return [m for m in ((provider or {}).get("models") or []) if not is_rerank_model(m)]
+
+
+def rerank_endpoint(ref):
+    """(url, headers, model_id) for a RERANK call on `ref`, or None.
+
+    Same resolution as `endpoint()`, so a rerank ref is `<provider>:<model>`
+    exactly like every other model ref; only the path differs.
+    """
+    hit = resolve(ref)
+    if not hit:
+        return None
+    p, mid = hit
+    entry = next((m for m in (p.get("models") or [])
+                  if isinstance(m, dict) and m.get("id") == mid), None)
+    if entry is None or not is_rerank_model(entry):
+        return None
+    base = (p.get("base_url") or "").rstrip("/")
+    return base + "/rerank", headers(p), mid
 
 
 def ref_of(provider, model_id):
@@ -853,7 +888,9 @@ def catalog(loaded_aliases=None):
         avail = available(p)
         models = []
         known = set()
-        for m in p["models"]:
+        for m in chat_models(p):
+            # A `rerank: true` entry is a cross-encoder (retrieval second stage),
+            # never a chat model: listing it here would offer it to the picker.
             cl = _to_int(m.get("context_length"))
             if p.get("local"):
                 # JAG-259: show the server's real window when we have it.
@@ -891,5 +928,5 @@ def catalog(loaded_aliases=None):
             "models": models,
         })
     return {"providers": out, "default": default_ref(),
-            "count": sum(len(p["models"]) for p in out)}
+            "count": sum(len(p["models"]) for p in out)}   # chat models only
 

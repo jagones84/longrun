@@ -53,7 +53,7 @@ def provider_models():
             if not pid:
                 continue
             pname = p.get("name") or pid
-            for m in (p.get("models") or []):
+            for m in providers.chat_models(p):
                 mid = m.get("id") if isinstance(m, dict) else m
                 if not mid:
                     continue

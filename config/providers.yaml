@@ -93,6 +93,23 @@ providers:
       # convenient router aliases
       - {id: "openrouter/auto"}
       - {id: "openrouter/auto-beta"}
+      # ---- RERANKERS (retrieval second stage — NOT chat models) --------------
+      # `rerank: true` marks a cross-encoder: it answers POST /rerank, so it is
+      # never offered to a chat picker, a default or a fallback
+      # (`providers.chat_models` filters it). Cost measured LIVE on this account
+      # 2026-11-05 with a 3-document probe (not estimated):
+      #   voyageai/rerank-2.5-lite  $0.00000056  (28 tok, $0.02 / 1M)  <- cheapest
+      #   cohere/rerank-5-fast      $0.00000080  (40 tok, $0.02 / 1M)
+      #   voyageai/rerank-2.5       $0.00000140  (28 tok, $0.05 / 1M)
+      #   cohere/rerank-5-pro       $0.00000195  (39 tok, $0.05 / 1M)
+      #   cohere/rerank-v3.5        $0.00100000  (per search unit)
+      #   cohere/rerank-4-fast      $0.00200000  (per search unit)
+      #   cohere/rerank-4-pro       $0.00250000  (per search unit)
+      # The one in use is chosen in config/rerank.yaml (Settings ▸ Models).
+      - {id: "voyageai/rerank-2.5-lite", rerank: true}
+      - {id: "cohere/rerank-5-fast", rerank: true}
+      - {id: "voyageai/rerank-2.5", rerank: true}
+      - {id: "cohere/rerank-5-pro", rerank: true}
 
   # ---- DeepSeek, original API (requested) -----------------------------------
   - id: deepseek

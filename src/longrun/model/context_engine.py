@@ -322,7 +322,17 @@ def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True, workspace=None):
                                 "mid": r.get("mid"), "ts": r.get("ts"),
                                 "content": (r.get("content") or "")[:300]})
         out.sort(key=lambda h: h["score"], reverse=True)
-        return out[:top_k]
+        out = out[:max(top_k * 3, top_k)]   # a candidate pool for the re-ranker
+        # SECOND STAGE: the same cross-encoder the knowledge base uses (one
+        # implementation). Recall here is not use, and rank fusion cannot tell a
+        # memory that answers the turn from one that merely shares words — so the
+        # best `top_k` are chosen by reading them against the query. Fail-open:
+        # disabled, unreachable or slow leaves the fused order untouched.
+        from longrun.model import rerank as _rerank
+        got = _rerank.apply(query_text, out,
+                            text_of=lambda h: h.get("content") or "",
+                            top_n=top_k)
+        return got["items"][:top_k]
     except Exception:
         return []
 
@@ -389,11 +399,27 @@ def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
         # vs 0.431), with 21-27% of recalled memories going unused (2026-11-05).
         stats["memory_ids"] = [h.get("mid") for h in hits if h.get("mid")]
         stats["memories"] = [{"mid": h.get("mid"), "kind": h.get("kind"),
-                              "score": h.get("score"), "content": h.get("content")}
+                              "score": h.get("score"),
+                              "relevance": h.get("relevance"),
+                              "content": h.get("content")}
                              for h in hits if h.get("mid")]
+        # "I see what is real": when the cross-encoder reordered the memories, say
+        # so and name the model — otherwise the injected order looks like fusion.
+        _rr_hits = [h for h in hits if h.get("relevance") is not None]
+        stats["rerank"] = {"applied": bool(_rr_hits),
+                           "count": len(_rr_hits)}
+        if _rr_hits:
+            try:
+                from longrun.model import rerank as _rr_mod
+                stats["rerank"]["model"] = _rr_mod.cfg().get("model")
+            except Exception:  # noqa: BLE001 — stats must never break a prompt
+                pass
         if hits:
             mem_block = "Relevant memories from previous sessions:\n" + "\n".join(
-                "- (%s, score %.2f) %s" % (h["kind"], h["score"], h["content"])
+                # Show the score that actually ordered the list: the cross-encoder
+                # relevance when it ran, the retrieval score otherwise.
+                "- (%s, score %.2f) %s"
+                % (h["kind"], h.get("relevance", h["score"]), h["content"])
                 for h in hits)
             msgs = [{"role": "system", "content": mem_block}] + msgs
     msgs = [{"role": "system", "content": system_prompt}] + msgs
@@ -426,6 +452,7 @@ def preview(session, message=None, budget_tokens=DEFAULT_BUDGET, keep_recent=DEF
     stats["retrieval_hits"] = len(hits)
     stats["retrieval_ids"] = [h.get("mid") for h in hits if h.get("mid")]
     stats["retrieval_samples"] = [h["content"][:120] for h in hits[:3]]
+    stats["rerank_applied"] = sum(1 for h in hits if h.get("relevance") is not None)
     stats["session_id"] = sess["id"]
     stats["transcript_messages"] = len(sess.get("messages", []))
     return stats

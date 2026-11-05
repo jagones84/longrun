@@ -1047,15 +1047,33 @@ def search(query, notebook=None, k=8, kind=None, embed_model=None, session=None,
             cand = _vec.vecs_for(db, [r["id"] for r in rows])
             if cand and _vec.fuse_rrf(rows, cand, qv):
                 out["mode"] = "hybrid"
+        # SECOND STAGE (2026-11-05): a cross-encoder scores each candidate
+        # TOGETHER with the query, so a chunk that answers the question outranks
+        # one that merely shares words with it. Rank fusion cannot tell the two
+        # apart. One implementation (`model.rerank`), fail-open by contract: a
+        # disabled/absent/broken re-ranker leaves the fused order exactly as it is.
+        from longrun.model import rerank as _rerank
+        _rr = _rerank.apply(query, rows,
+                            text_of=lambda r: r.get("text") or r.get("snip") or "",
+                            top_n=k)
+        rows = _rr["items"]
+        if (_rr.get("info") or {}).get("applied"):
+            out["mode"] = out["mode"] + "+rerank"
+            out["rerank"] = _rr["info"]
         for r in rows[:k]:
             score = r.get("rrf")
             result = {
                 "notebook": r["notebook"], "source": r["source"], "ref": r["ref"],
                 "title": r["title"], "path": r["path"], "name": r["name"], "kind": r["kind"],
                 "lang": r["lang"], "start": r["start"], "end": r["end"],
+                # `score` stays the RANK-FUSION score (its historical meaning);
+                # the cross-encoder's own number rides separately as `relevance`
+                # so one key never means two things.
                 "score": round(score, 6) if score is not None else round(-(r["rank"] or 0), 6),
                 "snippet": r.get("snip") or (r["text"] or "")[:200],
             }
+            if r.get("relevance") is not None:
+                result["relevance"] = r["relevance"]
             if include_text:
                 result["text"] = r["text"] or ""
             out["results"].append(result)

@@ -470,6 +470,22 @@ def validate_provider_config(config: dict, env: Mapping[str, str],
                 "Add a provider key in Settings → Keys or configure a local model in Settings → Models."
                 + key_hint,
                 "Models", action="models"))
+    # 2026-11-05: the retrieval re-ranker is a MODEL reference too. If it is on and
+    # the ref does not resolve (a chat model, a typo, a missing provider), every
+    # search silently falls back to rank fusion — say so instead of letting the
+    # operator believe the second stage is running.
+    try:
+        from longrun.model import rerank
+        rr = rerank.describe()
+        if rr.get("enabled") and not rr.get("resolved"):
+            issues.append(_issue(
+                "config.rerank_unresolved", "warning",
+                "The retrieval re-ranker is on but its model does not resolve",
+                "Searches fall back to rank fusion. Pick a RERANK model in Settings → Models "
+                "(an entry flagged `rerank: true` in providers.yaml).",
+                "rerank.yaml", action="models"))
+    except Exception:  # noqa: BLE001 — one broken check must not hide the rest
+        pass
     return issues
 
 
