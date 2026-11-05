@@ -845,7 +845,8 @@ def context_items(session_id=None):
     if not sess:
         return {"session": session_id, "available": False, "categories": empty,
                 "counts": {}, "total": 0, "tokens": zero, "tokens_total": 0,
-                "breakdown": [], "budget_tokens": 0, "used_tokens": 0, "pct": 0.0}
+                "breakdown": [], "memory_use": None,
+                "budget_tokens": 0, "used_tokens": 0, "pct": 0.0}
     msgs = sess.get("messages", [])
     blob = "\n".join(str(m.get("content")) for m in msgs
                      if isinstance(m.get("content"), str))

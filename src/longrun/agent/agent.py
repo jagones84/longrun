@@ -5549,7 +5549,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     on_delta(ch, t)
     answer = final_answer or answer
     if trace:
-        trace.span("llm.chat", model=model, context=ctx_stats)
+        # B-6: `ctx_stats["memories"]` carries the injected memory BODIES (used by
+        # the end-of-turn usage check). They are already in the prompt, so copying
+        # them into every run's spans JSON would be a second copy in the runs DB.
+        _span_ctx = ({k: v for k, v in ctx_stats.items() if k != "memories"}
+                     if ctx_stats else None)
+        trace.span("llm.chat", model=model, context=_span_ctx)
         trace.llm_call(msgs, answer + think)
     # JAG-449: HARDEN "never end on open todos". The keepgoing stop block used to
     # raise the human gate here; EV-39 moved the card to the `human.ask` tool, so

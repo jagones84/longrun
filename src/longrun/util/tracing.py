@@ -251,15 +251,19 @@ class RunTrace:
         # the run streams (the only number available before the provider answers),
         # but the ledger holds the provider's REAL counts for the same run id — so
         # `runs.tokens_in/out` and `GET /api/costs` can no longer disagree, and no
-        # consumer sums two different totals into a double. A run whose ledger has
-        # no matching rows (`calls == 0`) keeps the estimate, never a zero.
+        # consumer sums two different totals into a double.
+        # The override needs the ledger to actually CARRY tokens: `calls` counts a
+        # FAILED attempt too, and a failed row is written with 0 tokens
+        # (`costs.record`), so keying on `calls` alone overwrote a real estimate
+        # with a zero (found in independent review 2026-11-05). A run with no
+        # matching row — or only tokenless rows — keeps the estimate, never a zero.
         cost = None
         if self.session:
             try:
                 from longrun.model import costs as _costs
                 led = _costs.for_run(self.session, self.id)
                 cost = led.get("usd")
-                if led.get("calls"):
+                if led.get("calls") and (led.get("tokens_in") or led.get("tokens_out")):
                     self.tokens_in = int(led.get("tokens_in") or 0)
                     self.tokens_out = int(led.get("tokens_out") or 0)
             except Exception:  # noqa: BLE001 — accounting must never break a run

@@ -55,6 +55,15 @@ check("A5 harness: anything left over is the loop",
 check("B1 a clean run has no cause", cc("done") is None, cc("done"))
 check("B2 a user abort is not a failure", cc("user_abort") is None, cc("user_abort"))
 
+# ------------- B3-B6. a CLEAN tool turn ends with the KEEPER's own stop reason ---
+# Keying the residual bucket on "the stop reason is unknown" labelled every
+# tool-using success a harness failure (found in independent review 2026-11-05).
+for _stop in ("goal_reached", "plan_only", "no_progress", "blocked", "need_input"):
+    check("B3 a clean turn with stop_reason=%s is not a failure" % _stop,
+          cc("done", _stop) is None, cc("done", _stop))
+check("B4 a real failure with no other signal is the harness",
+      cc("error", "error") == "harness", cc("error", "error"))
+
 # --------------------------------------------------- C. stored on the record ----
 runmetrics.start("S1", model="m")
 rec = runmetrics.finish("S1", outcome="error", stop_reason="error",

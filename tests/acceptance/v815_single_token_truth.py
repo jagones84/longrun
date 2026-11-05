@@ -70,6 +70,18 @@ check("C1 an unmatched ledger keeps the estimate, not zero",
       rec3["tokens_in"] == 1000 and rec3["tokens_out"] == 100,
       (rec3["tokens_in"], rec3["tokens_out"]))
 
+# ------------------------- D. a TOKENLESS ledger row must not zero it (review) -
+# `calls` counts a FAILED attempt too, and a failed row is written with 0 tokens,
+# so keying the override on `calls` alone replaced a real estimate with a zero.
+tr4 = tracing.RunTrace("chat", model="m", session="S4")
+tr4.llm_call([{"role": "user", "content": USER}], ASSIST)
+costs.record("S4", "m", {}, run=tr4.id, status="failed", error="provider down")
+tr4.finish()
+rec4 = tracing.get_run_trace(tr4.id)
+check("D1 a tokenless (failed) row keeps the estimate, never a zero",
+      rec4["tokens_in"] == 1000 and rec4["tokens_out"] == 100,
+      (rec4["tokens_in"], rec4["tokens_out"]))
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

@@ -61,7 +61,12 @@ def classify_cause(outcome="done", stop_reason=None, error=None, code=None):
             disp = None
         if disp in ("quota", "transient", "fatal"):
             return "provider"
-    if out != "done" or stop not in ("", "done", "completed"):
+    # The residual bucket is the HARNESS — but only when the turn actually FAILED.
+    # A CLEAN turn ends with `outcome="done"` and one of the keeper's own reasons
+    # (`goal_reached`, `plan_only`, `no_progress`, `blocked`, `need_input`…), so
+    # keying on "the stop reason is unknown" labelled every tool-using success a
+    # harness failure (found in independent review 2026-11-05).
+    if out not in ("", "done", "completed", "ok", "success"):
         return "harness"
     return None
 
