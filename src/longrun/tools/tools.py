@@ -558,6 +558,109 @@ def _line_view(text, start_line=None, end_line=None, scan_capped=False):
                               or (requested_end is not None and requested_end > last))}
 
 
+# ---- read stamps: an edit never lands on a stale view (2026-11-06) -----------
+# Claude Code's Edit refuses a file that changed on disk after the Read the edit
+# was based on — the one guard a bare search/replace cannot give you. `fs.read`
+# records (mtime_ns, size) here; `fs.edit`/`fs.write` compare before acting.
+# No stamp means the file was never read in this process: "cannot know" -> allow,
+# so scripted callers are not forced through a read they do not need.
+_READ_STAMPS = {}
+_READ_STAMPS_LOCK = threading.Lock()
+_READ_STAMPS_KEEP = 4096
+
+
+def _file_stamp(path):
+    """(mtime_ns, size) of `path`, or None when it cannot be stat'ed."""
+    try:
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def _remember_read(path):
+    """Remember what the model is looking at, for the stale-edit guard."""
+    st = _file_stamp(path)
+    if st is None:
+        return
+    with _READ_STAMPS_LOCK:
+        _READ_STAMPS[path] = st
+        if len(_READ_STAMPS) > _READ_STAMPS_KEEP:
+            for _k in list(_READ_STAMPS)[: _READ_STAMPS_KEEP // 2]:
+                _READ_STAMPS.pop(_k, None)
+
+
+def _stale_refusal(path, args):
+    """The refusal dict when the file moved since `fs.read`, else None."""
+    if args.get("force") or not ctx_limits.limitb("fs_edit_stale_guard"):
+        return None
+    with _READ_STAMPS_LOCK:
+        seen = _READ_STAMPS.get(path)
+    now = _file_stamp(path)
+    if seen is None or now is None or seen == now:
+        return None
+    return {"ok": False, "stale": True, "path": path,
+            "error": ("%s changed on disk after your last fs.read (mtime or size "
+                      "differs): re-read it so the edit matches the current text, "
+                      "or pass force=true to edit the version you already have."
+                      % path)}
+
+
+def _edit_rows(args):
+    """Normalise `search`/`replace` and `edits: [...]` into (rows, error).
+
+    One shape for both call styles: a row is (search, replace, replace_all). The
+    batch form is applied in order, and NOTHING is written unless every row fits.
+    """
+    rows = []
+    if args.get("search") is not None or args.get("replace") is not None:
+        rows.append((str(args.get("search", "")), str(args.get("replace", "")),
+                     bool(args.get("replace_all"))))
+    raw = args.get("edits")
+    if raw not in (None, ""):
+        if not isinstance(raw, list):
+            return [], "edits must be a list of {search, replace, replace_all} objects"
+        for i, row in enumerate(raw):
+            if not isinstance(row, dict):
+                return [], "edits[%d] must be an object with search/replace" % i
+            rows.append((str(row.get("search", "")), str(row.get("replace", "")),
+                         bool(row.get("replace_all"))))
+    return rows, ""
+
+
+def _edit_window(content, start_line, end_line):
+    """Split `content` into (head, body, tail, first, last) around a line window."""
+    lines = content.splitlines(keepends=True)
+    total = len(lines)
+    try:
+        first = max(1, int(start_line)) if start_line not in (None, "") else 1
+        last = min(total, int(end_line)) if end_line not in (None, "") else total
+    except (TypeError, ValueError):
+        return None
+    if last < first:
+        return None
+    return ("".join(lines[: first - 1]), "".join(lines[first - 1: last]),
+            "".join(lines[last:]), first, last)
+
+
+def _apply_edits(body, rows):
+    """Apply rows in order to `body`; (new_body, counts, None) or (None, error, index)."""
+    counts = []
+    for i, (search, replace, all_) in enumerate(rows):
+        if not search:
+            return None, "edit %d: empty search string" % (i + 1), i
+        count = body.count(search)
+        if count == 0:
+            return None, "edit %d: search text not found" % (i + 1), i
+        if count > 1 and not all_:
+            return None, ("edit %d: search text matches %d times; pass replace_all=true "
+                          "or use a more specific search" % (i + 1, count)), i
+        take = count if all_ else 1
+        body = body.replace(search, replace, take)
+        counts.append(take)
+    return body, counts, None
+
+
 def _fs_read(args, run_id):
     roots = registry.tool_spec("fs.read")["roots"]
     path, err = registry.resolve_path(str(args.get("path", "")), roots,
@@ -609,6 +712,7 @@ def _fs_read(args, run_id):
                     "exit_code": 1}
         shaped = _window(text)
         shaped.update({"bytes": len(shaped["content"])})
+        _remember_read(path)
         return {"ok": True, "path": path, "engine": res.get("engine"),
                 "quality": res.get("quality"), "backend": "host", "sandboxed": False,
                 "exit_code": 0, **shaped}
@@ -618,10 +722,12 @@ def _fs_read(args, run_id):
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             text = f.read(FS_LINE_SCAN_MAX_BYTES)
         shaped = _window(text, scan_capped=size > FS_LINE_SCAN_MAX_BYTES)
+        _remember_read(path)
         return {"ok": True, "path": path, "backend": "host", "sandboxed": False,
                 "exit_code": 0, **shaped}
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read(max_bytes)
+    _remember_read(path)
     return {"ok": True, "path": path, "content": content, "bytes": len(content),
             "truncated": len(content) >= max_bytes,
             "backend": "host", "sandboxed": False, "exit_code": 0}
@@ -689,6 +795,12 @@ def _fs_write(args, run_id):
     content = str(args.get("content", ""))
     append = bool(args.get("append"))
     existed = os.path.isfile(path)
+    if existed and not append:
+        # Same stale-view guard as fs.edit: an overwrite based on a read that the
+        # disk has since moved past would silently drop whatever landed in between.
+        stale = _stale_refusal(path, args)
+        if stale is not None:
+            return stale
     before = ""
     if existed:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -734,10 +846,21 @@ def _fs_edit(args, run_id):
         return {"ok": False, "exit_code": 126, "error": err_mw, "path": path}
     if not os.path.isfile(path):
         return {"ok": False, "error": "no such file: %s" % path}
-    search = str(args.get("search", ""))
-    replace = str(args.get("replace", ""))
-    if not search:
-        return {"ok": False, "error": "empty search string"}
+    stale = _stale_refusal(path, args)
+    if stale is not None:
+        return stale
+    rows, row_err = _edit_rows(args)
+    if row_err:
+        return {"ok": False, "path": path, "error": row_err}
+    if not rows:
+        return {"ok": False, "path": path,
+                "error": "nothing to edit: pass search+replace, or edits=[{search, replace}]"}
+    cap = ctx_limits.limit("fs_edit_max_edits")
+    if len(rows) > cap:
+        return {"ok": False, "path": path,
+                "error": ("%d edits in one call, cap is %d "
+                          "(config/tools.yaml -> limits: fs_edit_max_edits): split the "
+                          "batch" % (len(rows), cap))}
     with open(path, "r", encoding="utf-8") as f:
         try:
             content = f.read()
@@ -752,15 +875,31 @@ def _fs_edit(args, run_id):
                               "corrupt it: use python.run for a byte-level change, or "
                               "fs.write with the full text if re-encoding is intended."
                               % path)}
-    count = content.count(search)
-    if count == 0:
-        return {"ok": False, "error": "search text not found in %s" % path}
-    if count > 1 and not args.get("replace_all"):
-        return {"ok": False, "error": ("search text matches %d times in %s; "
-                                        "pass replace_all=true or use a more "
-                                        "specific search") % (count, path)}
-    n = count if args.get("replace_all") else 1
-    new = content.replace(search, replace, n)
+    # An optional line window: the search text is matched ONLY inside lines
+    # start_line..end_line of the current file, so a huge file can be patched
+    # without the model having to hold (or restate) the whole text.
+    windowed = args.get("start_line") not in (None, "") or args.get("end_line") not in (None, "")
+    if windowed:
+        split = _edit_window(content, args.get("start_line"), args.get("end_line"))
+        if split is None:
+            return {"ok": False, "path": path,
+                    "error": ("bad window: start_line=%r end_line=%r (1-based, "
+                              "start <= end)" % (args.get("start_line"),
+                                                 args.get("end_line")))}
+        head, body, tail, first, last = split
+    else:
+        head, body, tail, first, last = "", content, "", 1, content.count("\n") + 1
+    new_body, counts, _bad = _apply_edits(body, rows)
+    if new_body is None:
+        where = (" (inside lines %d-%d)" % (first, last)) if windowed else ""
+        return {"ok": False, "path": path, "error": "%s%s" % (counts, where)}
+    new = head + new_body + tail
+    total = sum(counts)
+    if args.get("dry_run"):
+        return {"ok": True, "dry_run": True, "path": path, "edits": len(counts),
+                "replacements": total, "per_edit": counts, "window": [first, last],
+                "bytes_before": len(content), "bytes_after": len(new),
+                "backend": "host", "sandboxed": False, "exit_code": 0}
     # 2026-11-05: ATOMIC write (unique temp + os.replace), and the file keeps its
     # mode — the old direct write truncated the target first, so a crash mid-write
     # left a half file, and os.replace alone would reset 0755 scripts to 0644.
@@ -777,9 +916,10 @@ def _fs_edit(args, run_id):
         except OSError:
             pass
     _journal(run_id, path, content, new, "modified")
-    res = {"ok": True, "path": path, "replacements": n, "bytes_before": len(content),
-           "bytes_after": len(new), "backend": "host", "sandboxed": False,
-           "exit_code": 0}
+    res = {"ok": True, "path": path, "replacements": total, "per_edit": counts,
+           "edits": len(counts), "window": [first, last],
+           "bytes_before": len(content), "bytes_after": len(new),
+           "backend": "host", "sandboxed": False, "exit_code": 0}
     return _verify_edit("fs.edit", path, {"exists": True, "content": content},
                         res, args, run_id)
 
@@ -1433,7 +1573,15 @@ def _self(args, run_id):
     if action not in ("info", ""):
         from longrun.tools import diag as diag_mod
         if action in ("diagnose", "health"):
-            info["diagnose"] = diag_mod.health()
+            # 2026-11-06: ONE health report — live components, host, model path and
+            # the settings checks. `llm_probe=False`: the agent asks for state, not
+            # for a paid completion; the router reachability probe still runs.
+            try:
+                from longrun.core import health as _health
+                info["diagnose"] = _health.collect(probe=True, llm_probe=False)
+            except Exception as exc:  # noqa: BLE001 — diagnosis must degrade
+                info["diagnose"] = diag_mod.health()
+                info["diagnose"]["error"] = str(exc)
         elif action in ("logs", "log", "history"):
             info["logs"] = diag_mod.log_tail(session=(args or {}).get("session") or run_id,
                                              limit=(args or {}).get("limit") or 100,

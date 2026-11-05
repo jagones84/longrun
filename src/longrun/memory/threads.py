@@ -29,11 +29,13 @@ import time
 
 from longrun.util.fswrite import read_json, write_json
 from longrun.util.paths import THREADS_DIR
+from longrun.model import context_limits as ctx_limits
 
-# Keep the durable ledger bounded: a per-group digest cap and a global group cap.
-MAX_DIGEST = int(os.environ.get("LONGRUN_THREAD_DIGEST", "1500"))
-MAX_LINE = 240
-MAX_GROUPS = int(os.environ.get("LONGRUN_THREAD_GROUPS", "2000"))
+# Keep the durable ledger bounded: a per-group digest cap, a line cap and a global
+# group cap. 2026-11-05: all three are `config/tools.yaml` -> `limits:` (no literals).
+MAX_DIGEST = ctx_limits.limit("thread_digest_max")
+MAX_LINE = ctx_limits.limit("thread_line_max")
+MAX_GROUPS = ctx_limits.limit("thread_groups_max")
 
 LOCK = threading.RLock()
 

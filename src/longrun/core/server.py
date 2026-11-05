@@ -33,6 +33,7 @@ from longrun.util import osutil
 from longrun.model import otel_tracing  # v0.4: OpenTelemetry spans + fallback local spans
 from longrun.tools import registry
 from longrun.model import routing  # v0.3: role-based model selection + fallback chain
+from longrun.model import context_limits as ctx_limits  # 2026-11-05: config limits
 from longrun.tools import sandbox
 from longrun.plan import taskgraph  # v0.6: per-run LLM task graph (write_todos, live, interactive)
 
@@ -118,10 +119,11 @@ ASSET_CTYPES = {
 # JAG-372: MAX_FEED_EVENTS moved to events.py (imported above).
 # JAG-208 (v208): cap the request body we buffer (memory-DoS guard). Larger
 # bodies are drained, not allocated; the endpoint then sees an empty body.
-MAX_BODY_BYTES = int(os.environ.get("LONGRUN_MAX_BODY", str(8 * 1024 * 1024)))
+# 2026-11-05: `config/tools.yaml` -> `limits:` (operator: "no hardcoding").
+MAX_BODY_BYTES = ctx_limits.limit("http_max_body_bytes")
 # JAG-295-fix: /api/feed must never replay the whole durable log (it can hold
 # millions of rows). A live tail only needs the newest window.
-FEED_REPLAY_MAX = int(os.environ.get("LONGRUN_FEED_REPLAY", "300"))
+FEED_REPLAY_MAX = ctx_limits.limit("feed_replay_max")
 STORE_LOCK = threading.RLock()
 
 VERSION = "1.0.0"
@@ -134,7 +136,7 @@ VERSION = "1.0.0"
 #                        `rllm.py`, imported above).
 #   CHAT_STREAM_IDLE:    max silence on a chat SSE stream before the server
 #                        finishes the stream itself (error + done) and closes.
-CHAT_STREAM_IDLE = float(os.environ.get("LONGRUN_CHAT_STREAM_IDLE", 900.0))
+CHAT_STREAM_IDLE = ctx_limits.limitf("chat_stream_idle_secs")
 # JAG-370: the think-coalescing constants + ThinkCoalescer moved to `sse.py`
 # (imported above, so `server.CHAT_THINK_FLUSH_S` and friends still resolve).
 

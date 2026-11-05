@@ -20,19 +20,22 @@ import urllib.error
 import urllib.request
 
 from longrun.model import routing
+from longrun.model import context_limits as ctx_limits
 from longrun.core.events import publish
 from longrun.util.textkit import strip_think
 
 # Router endpoint + resilience config (v0.5.1). Moved here from server.py and
 # re-exported so `server.ROUTER_BASE` / `server.ROUTER_RETRIES` still resolve.
+# 2026-11-05: the numbers are `config/tools.yaml` -> `limits:` (operator: "no
+# hardcoding"); only the ENDPOINT stays an env var (a location, not a limit).
 ROUTER_ENV = "LONGRUN_ROUTER"
 ROUTER_BASE = os.environ.get(ROUTER_ENV, "http://127.0.0.1:8080")
-ROUTER_RETRIES = int(os.environ.get("LONGRUN_ROUTER_RETRIES", 5))
-ROUTER_BACKOFF = float(os.environ.get("LONGRUN_ROUTER_BACKOFF", 0.75))
-ROUTER_BACKOFF_MAX = float(os.environ.get("LONGRUN_ROUTER_BACKOFF_MAX", 8.0))
-MODEL_LOAD_TIMEOUT = int(os.environ.get("LONGRUN_MODEL_LOAD_TIMEOUT", 900))
+ROUTER_RETRIES = ctx_limits.limit("router_retries")
+ROUTER_BACKOFF = ctx_limits.limitf("router_backoff")
+ROUTER_BACKOFF_MAX = ctx_limits.limitf("router_backoff_max")
+MODEL_LOAD_TIMEOUT = ctx_limits.limit("model_load_timeout_secs")
 # ROUTER_IDLE_TIMEOUT: max silence tolerated from the router mid-stream (JAG-48).
-ROUTER_IDLE_TIMEOUT = float(os.environ.get("LONGRUN_ROUTER_IDLE_TIMEOUT", 120.0))
+ROUTER_IDLE_TIMEOUT = ctx_limits.limitf("router_idle_timeout_secs")
 
 
 # ---------------------------------------------------------------- router ----
@@ -94,7 +97,7 @@ def router_models():
         return []
 
 
-CONTEXT_RESERVE = int(os.environ.get("LONGRUN_CONTEXT_RESERVE", "4096"))
+CONTEXT_RESERVE = ctx_limits.limit("context_reserve")
 # JAG-431r: the auto-compaction policy now lives in `config/compaction.yaml`,
 # not in scattered env vars / module constants. The loader re-reads the file
 # on mtime change, so tuning the policy does NOT require a service restart
@@ -194,7 +197,7 @@ def refresh_compaction_policy():
 # JAG-102: the MANUAL "compact now" action must always reduce. It targets this
 # fraction of the transcript's CURRENT size — using the full model budget made
 # the button a no-op for any session under 100% (so it "did nothing").
-COMPACT_FORCE_RATIO = float(os.environ.get("LONGRUN_COMPACT_FORCE_RATIO", "0.5"))
+COMPACT_FORCE_RATIO = ctx_limits.limitf("compact_force_ratio")
 # JAG-110/JAG-526: the manual "compact now" action always FORCES a shrink, but
 # it keeps the SAME `keep_recent` window the Context panel exposes (KEEP_RECENT).
 # It used to keep a hidden 2 messages, which collapsed a 326-message session to 3
@@ -203,7 +206,7 @@ COMPACT_FORCE_RATIO = float(os.environ.get("LONGRUN_COMPACT_FORCE_RATIO", "0.5")
 # dominated by ONE huge paste; sending it whole to the summarizer would overflow
 # the summarizer's own window and fail. Keep the head + tail (the summarizer only
 # needs the gist), so the call always fits and the summary is still faithful.
-SUMMARIZER_MAX_CHARS = int(os.environ.get("LONGRUN_SUMMARIZER_MAX_CHARS", "60000"))
+SUMMARIZER_MAX_CHARS = ctx_limits.limit("summarizer_max_chars")
 
 
 def model_context_window(alias=None):
@@ -222,17 +225,14 @@ def model_context_window(alias=None):
 def context_budget(alias=None):
     """Token budget for compaction.
 
-    JAG-66: NOT a hardcoded 6000. An explicit `LONGRUN_CONTEXT_BUDGET` still
-    wins (for tests), otherwise we use the model's real context window minus a
-    reserve for the reply, so the harness actually exploits 131k/256k instead of
-    compacting every trivial conversation.
+    JAG-66: NOT a hardcoded 6000. An explicit `limits: context_budget` (or its
+    env override, resolved by `context_limits`) still wins — for tests and for a
+    host that wants a flat budget — otherwise we use the model's real context
+    window minus a reserve for the reply, so the harness actually exploits
+    131k/256k instead of compacting every trivial conversation.
     """
-    env = os.environ.get("LONGRUN_CONTEXT_BUDGET")
-    if env:
-        try:
-            return int(env)
-        except ValueError:
-            pass
+    if ctx_limits.limit_set("context_budget"):
+        return ctx_limits.limit("context_budget")
     from longrun.model import context_engine
     # JAG-71: a provider model may declare its window (remote models have no
     # router meta); the live router roster is the fallback for local aliases.
@@ -628,11 +628,13 @@ def _chat_endpoint(model):
 # pinned at 4096, think_chars 12k, answer cut mid-table). Send a generous, still
 # bounded, cap by default so the model can finish; override with the env var
 # (0 = omit and let the router decide, the old behaviour).
-MAX_TOKENS = int(os.environ.get("LONGRUN_MAX_TOKENS", "16384"))
-REPEAT_GUARD = os.environ.get("LONGRUN_REPEAT_GUARD", "1") not in ("0", "false", "False")
-_REPEAT_MIN_PERIOD = int(os.environ.get("LONGRUN_REPEAT_MIN_PERIOD", "20"))
-_REPEAT_MAX_PERIOD = int(os.environ.get("LONGRUN_REPEAT_MAX_PERIOD", "240"))
-_REPEAT_LIMIT = int(os.environ.get("LONGRUN_REPEAT_LIMIT", "4"))
+# 2026-11-05: config, not literals (`config/tools.yaml` -> `limits:`); `0` in
+# `max_tokens` still means "omit it and let the router decide".
+MAX_TOKENS = ctx_limits.limit("max_tokens")
+REPEAT_GUARD = ctx_limits.limitb("repeat_guard_enabled")
+_REPEAT_MIN_PERIOD = ctx_limits.limit("repeat_min_period")
+_REPEAT_MAX_PERIOD = ctx_limits.limit("repeat_max_period")
+_REPEAT_LIMIT = ctx_limits.limit("repeat_limit")
 
 
 class _RepetitionGuard:
@@ -1045,7 +1047,7 @@ def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=F
 # on — measured 140s for one chat turn, which looked exactly like a hang. A short
 # TCP connect probe turns that into an immediate, clean failure so failover is
 # near-instant (the chain's next model answers right away).
-CONNECT_TIMEOUT = float(os.environ.get("LONGRUN_CONNECT_TIMEOUT", "3.0"))
+CONNECT_TIMEOUT = ctx_limits.limitf("connect_timeout_secs")
 
 
 def _reachable(url, timeout=None):

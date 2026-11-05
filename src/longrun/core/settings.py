@@ -292,6 +292,13 @@ DEDICATED = {
         "context": "Settings ▸ Harness",
         # 2026-11-05: the persistent-terminal pool (max shells, idle reap, backlog).
         "shell": "Settings ▸ Harness",
+        # 2026-11-06: webhook intake limits — the Webhooks panel shows them and
+        # the inlets themselves live in `<data home>/webhooks.json` (not config/).
+        "webhooks": "Settings ▸ Webhooks",
+        # 2026-11-05: router/LLM I/O, model context, repeat guard, HTTP/SSE,
+        # retention, stores, skills/jobs/teams — the values that used to be
+        # `int(os.environ.get(..., <literal>))` in Python.
+        "limits": "Settings ▸ Harness",
         "verifier": "Settings ▸ Harness",
         "budget": "Settings ▸ Harness",
         "bestofn": "Settings ▸ Harness",
@@ -334,7 +341,8 @@ PANEL_LABELS = {
     "appearance": "Appearance", "keys": "Keys", "models": "Models",
     "subagents": "Subagents", "tools": "Tools & approvals", "sandbox": "Sandbox",
     "mcp": "MCP", "skills": "Skills", "rules": "Rules", "knowledge": "Knowledge",
-    "compaction": "Compaction", "hooks": "Hooks", "harness": "Harness",
+    "compaction": "Compaction", "hooks": "Hooks", "webhooks": "Webhooks",
+    "harness": "Harness",
     "config": "Config files", "improvement": "Improvements",
     "diagnostics": "Diagnostics", "info": "Info",
 }

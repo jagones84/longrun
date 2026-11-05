@@ -124,6 +124,24 @@ the sandbox output ceiling, the acceptance bounds and the step/iteration/wait bu
 `v827` fails if a key loses its config row, if the loader drops the block, or if a
 consumer drifts from it.
 
+**Every other limit is config too** (2026-11-06). The third block, `config/tools.yaml`
+→ `limits:`, holds the values that used to be `int(os.environ.get("LONGRUN_…", <literal>))`
+in `src/`: router retries/backoff/timeouts, answer and compaction budgets, the repeat
+guard, HTTP body/feed/stream, event retention, thread digests, the CORE memory cap,
+skill archive caps, graph orphan age, job retries, team slots, the held-out gate, TLS
+and the edit-tool bounds (`fs_edit_max_edits`, `fs_edit_stale_guard`). Same resolver,
+same precedence, same restart contract; `v827` pins completeness, loader whitelist,
+binding and the absence of any surviving literal.
+
+**`fs.edit` is a patch tool, not a rewrite** (2026-11-06). It replaces EXACT text and
+refuses a missing or ambiguous match; `edits: [{search, replace}]` applies a batch
+all-or-nothing, `start_line`/`end_line` confine the match to a line window of the
+current file (so a huge file is patched without restating it), `dry_run` validates
+without writing, and the Claude-Code stale guard refuses an edit or an overwrite on a
+file whose mtime/size moved after `fs.read` (`force=true` overrides). The write itself
+is atomic (`util/fswrite.write_text`) and keeps the file mode; a non-UTF-8 target is
+refused rather than silently re-encoded. `v828` pins all of it.
+
 
 ## Components (`src/longrun/`, organised in subpackages)
 

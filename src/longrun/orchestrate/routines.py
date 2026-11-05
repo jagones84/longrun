@@ -243,12 +243,22 @@ class RoutineRegistry:
             sid = a.get("session")
             if sid:
                 _run_agent(sid, r["goal"], model=r.get("model"))
-        except Exception:  # noqa: BLE001
-            pass
+            _report(True)
+        except Exception as exc:  # noqa: BLE001 — a routine must not kill the tick
+            _report(False, "routine %s: %s" % (r.get("id"), exc))
 
 
 REGISTRY = RoutineRegistry()
 _SCHED = {"thread": None}
+
+
+def _report(ok, error=""):
+    """Tell the health board how the scheduler/routine path is doing (2026-11-06)."""
+    try:
+        from longrun.core import health
+        health.BOARD.report("routines", ok, error)
+    except Exception:  # noqa: BLE001 — health is additive, never fatal
+        pass
 
 
 def start_scheduler(interval=DEFAULT_TICK):
@@ -260,8 +270,9 @@ def start_scheduler(interval=DEFAULT_TICK):
         while True:
             try:
                 REGISTRY.tick()
-            except Exception:  # noqa: BLE001
-                pass
+                _report(True)
+            except Exception as exc:  # noqa: BLE001 — the heartbeat never dies
+                _report(False, "tick: %s" % exc)
             time.sleep(max(5, int(interval)))
 
     t = threading.Thread(target=loop, daemon=True, name="routines")

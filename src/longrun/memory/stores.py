@@ -20,6 +20,7 @@ from longrun.util.paths import DATA_DIR, SESSIONS_DIR, REPO_ROOT as REPO, _JOBSE
 from longrun.util.steering import (STEER_INBOX, _steer_lock, clear_abort,
                                    forget_steers, live_steers, push_abort)
 from longrun.util.tracing import _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
+from longrun.model import context_limits as ctx_limits
 
 
 # ---------------------------------------------------------------- stores ----
@@ -960,7 +961,7 @@ def drop_inject(sess, text):
 
 # JAG-113: the live tool card must show input + output (truncated), like the
 # persisted one rebuilt on reload — the live SSE event used to carry neither.
-TOOL_EVENT_MAX = int(os.environ.get("LONGRUN_TOOL_EVENT_MAX", "2000"))
+TOOL_EVENT_MAX = ctx_limits.limit("tool_event_max")
 
 
 def _trunc(text, n=None):

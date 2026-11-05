@@ -34,6 +34,15 @@ from longrun.util import paths
 from longrun.plan import taskgraph  # per-run task graph (child gets its own todo list)
 from longrun.tools import tools as toolmod
 
+def _report_subagents(ok, error=""):
+    """Tell the health board how the subagent runner is doing (2026-11-06)."""
+    try:
+        from longrun.core import health
+        health.BOARD.report("subagents", ok, error)
+    except Exception:  # noqa: BLE001 — health is additive, never fatal
+        pass
+
+
 # JAG-451: subagents are configured — NOT hardcoded. `config/subagents.yaml` holds
 # the parallel cap + the named role briefs; the model lives in config/routing.yaml
 # (roles.subagent). Both are surfaced/edited by Settings ▸ Subagents.
@@ -413,10 +422,12 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
             entry["result"] = result
             status_txt = result.get("status")
             steps_n = len(result.get("trace", []))
+            _report_subagents(True)
         except Exception as e:  # noqa: BLE001 — the parent must see the failure
             entry["result"] = {"ok": False, "status": "error", "error": str(e),
                                "summary": "subagent crashed: %s" % e, "trace": []}
             status_txt, steps_n = "error", 0
+            _report_subagents(False, "subagent %s: %s" % (sid, e))
         finally:
             # F1: the per-run budget counts LIVE subagents, not total spawns —
             # free the slot when the child ends even if nobody collects it.

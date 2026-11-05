@@ -25,6 +25,7 @@ import uuid
 from longrun.util.dag import blockers_state as _dag_blockers_state
 from longrun.util.dag import waves  # noqa: F401 — shared DAG helper (was local, JAG-533)
 from longrun.util import paths
+from longrun.model import context_limits as ctx_limits
 from longrun.util.fswrite import read_registry, retract_seq, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
@@ -117,6 +118,15 @@ def _norm_jid(jid):
 def _srv():
     from longrun.core import server
     return server
+
+
+def _report_jobs(ok, error=""):
+    """Tell the health board how the job runner is doing (2026-11-06)."""
+    try:
+        from longrun.core import health
+        health.BOARD.report("jobs", ok, error)
+    except Exception:  # noqa: BLE001 — health is additive, never fatal
+        pass
 
 
 def handoff_state(receipt, target_len, subjob):
@@ -447,11 +457,8 @@ def open_steps(sid):
 
 
 def job_retries():
-    """JAG-337: extra attempts per subjob (LONGRUN_JOB_RETRIES, default 1)."""
-    try:
-        return max(0, int(os.environ.get("LONGRUN_JOB_RETRIES", "1")))
-    except (TypeError, ValueError):
-        return 1
+    """JAG-337: extra attempts per subjob (`limits.job_retries`, default 1)."""
+    return ctx_limits.limit("job_retries")
 
 
 class JobRegistry:
@@ -1080,11 +1087,13 @@ class JobRegistry:
                 {"status": "partial" if _f else "done", "failed_subjobs":
                  [a for a, _, _ in _f], "ended": round(time.time(), 3)}))
             self.wake()   # JAG-292: release jobs that were blocked on this one
+            _report_jobs(True)
         except Exception as _e:  # noqa: BLE001
             _err = str(_e)
             self._update(jid, lambda j, _err=_err: j.update(
                 {"status": "error", "error": _err, "ended": round(time.time(), 3)}))
             self.wake()   # a failed blocker must still sweep its dependents
+            _report_jobs(False, "job %s: %s" % (jid, _err))
 
     @staticmethod
     def _delegation_msg(jid, coord_label, sub, goal, mine):
@@ -1232,7 +1241,7 @@ class JobRegistry:
 
         Paperclip rule: never sit silently on blocked work. A worker that does not finish
         (declares `STATUS: BLOCKED`/`FAILED`, or leaves OPEN steps) is RETRIED up to
-        `LONGRUN_JOB_RETRIES` extra times; if it still cannot finish, the subjob is
+        `limits: job_retries` extra times; if it still cannot finish, the subjob is
         marked `failed` (NEVER `done`) and the handoff is RECORDED IN BOTH CHATS.
         """
         self._update(jid, lambda j: j["runs"].__setitem__(

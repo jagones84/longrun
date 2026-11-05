@@ -31,13 +31,14 @@ import time
 from longrun.util import paths
 from longrun.util.fswrite import read_json, write_json
 from longrun.util.paths import REPO_ROOT as REPO
+from longrun.model import context_limits as ctx_limits
 GRAPH_DIR = os.path.join(os.environ.get("LONGRUN_GRAPH_DIR", paths.DATA_DIR),
                          "graphs")
 
 GRAPH_LOCK = threading.RLock()
 #: v812: how long a graph with NO owner is kept before the startup sweep moves it
 #: to `data/trash`. 14 days is long enough that a restarted run is never touched.
-GRAPH_ORPHAN_DAYS = float(os.environ.get("LONGRUN_GRAPH_ORPHAN_DAYS", "14"))
+GRAPH_ORPHAN_DAYS = ctx_limits.limitf("graph_orphan_days")
 # JAG-266: `superseded` is a CLOSED state (not open) meaning "deliberately abandoned",
 # carrying a `reason` on the node — the model may close a leftover step this way instead
 # of being forced to finish work the user no longer wants.

@@ -20,6 +20,7 @@ import time
 from longrun.util import paths
 from longrun.util.fswrite import read_registry, retract_seq, write_json
 from longrun.util.paths import REPO_ROOT as REPO
+from longrun.model import context_limits as ctx_limits
 
 _LOCK = threading.RLock()
 TEAMS_FILE = os.environ.get("LONGRUN_TEAMS_FILE") or os.path.join(
@@ -105,10 +106,8 @@ MEMBER_MODEL = os.environ.get("LONGRUN_TEAM_MEMBER_MODEL") or _CFG_MEMBER or ""
 
 
 def local_slots():
-    try:
-        return max(0, int(os.environ.get("LONGRUN_TEAM_LOCAL_SLOTS", "1")))
-    except (TypeError, ValueError):
-        return 1
+    """How many local slots the team holds (`limits.team_local_slots`, 0 = none)."""
+    return ctx_limits.limit("team_local_slots")
 
 
 def _providers():

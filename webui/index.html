@@ -3029,6 +3029,28 @@
         <div class="card" id="hooksLive"><div class="remaining">loading…</div></div>
         <div class="setFormsHost"></div>
       </div>
+      <div class="sw-cat" data-cat="webhooks" hidden>
+        <!-- 2026-11-06: an INLET. An external service posts to /api/webhook/<id>;
+             the hook's own secret authenticates it and the event becomes ONE job.
+             The payload reaches the agent as DATA (fenced), never as instructions. -->
+        <h2 title="External events become one-agent jobs. Each inlet has its own secret; observe mode records what it would do without starting a job.">Webhooks · external events</h2>
+        <div class="card" id="whLive"><div class="remaining">loading…</div></div>
+        <div class="card">
+          <div class="hcard-hd" title="One inlet = one URL + one secret + one agent + one goal."><span class="dot"></span><b>New inlet</b><span class="hc-sub">id · agent · goal</span></div>
+          <div class="hrow">
+            <label title="URL segment: /api/webhook/&lt;id&gt;. Lowercase letters, digits, - and _.">id <input id="whId" placeholder="github-issues" spellcheck="false" autocomplete="off"></label>
+            <label title="Who receives the work: an org agent id (A12) or a session id.">agent <input id="whAgent" placeholder="A12 or session id" spellcheck="false" autocomplete="off"></label>
+            <label title="run = start a job; observe = record what it WOULD do, start nothing.">mode <select id="whMode"><option value="run">run</option><option value="observe">observe</option></select></label>
+            <label title="Where the event name lives: a dotted path in the JSON body, or header:X-GitHub-Event.">event field <input id="whField" value="event" spellcheck="false" autocomplete="off"></label>
+            <label title="Comma-separated substrings matched against the event name. Empty = every event.">only events containing <input id="whMatch" placeholder="issues, pull_request" autocomplete="off"></label>
+          </div>
+          <label class="u-mt8 u-db" title="What the agent must do with an event of this inlet.">goal
+            <textarea id="whGoal" rows="3" placeholder="What should the agent do with this event?"></textarea></label>
+          <button class="ghost u-mt8" data-call="saveWebhook" title="create or update this inlet">save inlet</button>
+          <div id="whSecret" class="u-mt8"></div>
+        </div>
+        <div id="whDeliveries" class="u-mt8"></div>
+      </div>
       <div class="sw-cat" data-cat="harness" hidden>
         <h2>Harness · agent behaviour</h2>
         <div class="card hcard" style="--hc:#22d3ee">
@@ -3128,10 +3150,14 @@
         </div>
       </div>
       <div class="sw-cat" data-cat="diagnostics" hidden>
-        <h2 title="Local checks only — no LLM, no remote credentials.">Settings diagnostics</h2>
+        <h2 title="Live components first, then the local settings checks.">Health &amp; diagnostics</h2>
+        <!-- 2026-11-06: the LIVE half. One report (`GET /api/health`) lists every
+             subsystem with its own counter, the host probes and the model path; the
+             cards below it are the settings checks that already existed. -->
+        <div class="card" id="healthCard"><div class="remaining">checking components…</div></div>
         <div class="card">
           <div class="remaining" id="diagSummary" role="status" aria-live="polite">loading…</div>
-          <button class="ghost u-mt8" data-call="loadDiagnostics" title="rerun settings checks">↻ run checks</button>
+          <button class="ghost u-mt8" data-call="runHealthChecks" title="rerun the live health report and the settings checks">↻ run checks</button>
         </div>
         <div id="diagIssues" class="u-mt8"></div>
       </div>
@@ -13250,6 +13276,9 @@ const SETTINGS_CATS = [
   ["compaction", "Compaction"],
   ["improvement", "Improvements"],
   ["hooks", "Hooks"],
+  // 2026-11-06: an inlet is the other half of Hooks — an outside EVENT vs a
+  // deterministic command. Next to it so the two are never confused.
+  ["webhooks", "Webhooks"],
   ["harness", "Harness"], ["config", "Config files"], ["info", "\u24D8 Info"],
 ];
 /* JAG-352: theme + text-weight. Persisted per device; theme is applied pre-paint
@@ -13461,6 +13490,200 @@ async function loadDiagnostics() {
     });
   }
 }
+/* 2026-11-06 — HEALTH: one live report (`GET /api/health`) above the settings checks.
+   Every row is a REAL component with its own counter; nothing here is a mirror. */
+const HEALTH_TONE = { ok: "var(--ok)", warn: "var(--warn)", error: "var(--err)", unknown: "var(--dim)" };
+function _healthDot(status) {
+  return '<span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+    + 'vertical-align:middle;margin-right:5px;background:' + (HEALTH_TONE[status] || "var(--dim)") + '"></span>';
+}
+async function runHealthChecks() {
+  await Promise.all([loadHealth(), loadDiagnostics()]);
+}
+async function loadHealth() {
+  const box = $("healthCard");
+  if (!box) return;
+  box.innerHTML = '<div class="remaining">checking components…</div>';
+  try {
+    renderHealth(box, await api("GET", "/api/health"));
+  } catch (e) {
+    box.innerHTML = '<div class="remaining">health unavailable: ' + esc(String(e)) + "</div>";
+  }
+}
+function renderHealth(box, h) {
+  if (!h || typeof h !== "object") {
+    box.innerHTML = '<div class="remaining">health returned no report</div>';
+    return;
+  }
+  const status = String(h.status || "unknown");
+  const sum = h.summary || {};
+  const parts = Array.isArray(h.parts) ? h.parts : [];
+  const probes = Array.isArray(h.probes) ? h.probes : [];
+  const partRows = parts.length ? parts.map(p => {
+    const fails = Number(p.failures) || 0;
+    return '<div class="remaining">' + _healthDot(p.status) + esc(String(p.part || "")) +
+      " · " + esc(String(p.status || "unknown")) +
+      (fails ? " · " + fails + " failure(s) in a row" : "") +
+      (p.last_error ? " · " + esc(String(p.last_error).slice(0, 140)) : "") + "</div>";
+  }).join("") : '<div class="remaining">no component has reported yet</div>';
+  const probeRows = probes.map(p =>
+    '<div class="remaining">' + _healthDot(p.ok ? "ok" : (p.severity === "error" ? "error" : "warn")) +
+    esc(String(p.name || "")) + " · " + esc(String(p.detail || "")) +
+    " · " + (Number(p.ms) || 0) + " ms</div>").join("");
+  const llm = (h.llm && typeof h.llm === "object") ? h.llm : null;
+  box.innerHTML =
+    '<div class="u-df u-aic u-g8 u-fww"><b>' + _healthDot(status) + esc(status.toUpperCase()) + "</b>" +
+    '<span class="remaining u-f1">' + (Number(sum.error) || 0) + " error · " +
+    (Number(sum.warn) || 0) + " warn · " + (Number(sum.unknown) || 0) + " unknown · " +
+    (Number(h.uptime_secs) || 0) + " s uptime</span>" +
+    '<button class="ghost" data-call="runHealthChecks" title="rerun the live report">↻</button></div>' +
+    '<div class="u-mt8" style="font-size:11px">' + partRows + "</div>" +
+    (probeRows ? '<div class="u-mt8" style="font-size:11px">' + probeRows + "</div>" : "") +
+    (llm ? '<div class="remaining u-mt6">model path: ' + esc(String(llm.status || "unknown")) +
+      (llm.llm_latency_ms ? " · " + llm.llm_latency_ms + " ms" : "") + "</div>" : "") +
+    '<div class="remaining u-mt6" title="GET /api/health?probe=0 for a cheap read; ?llm=0 to skip the completion">' +
+    "host + settings detail: GET /api/health · " + (Number(h.check_seconds) || 0) + " s</div>";
+}
+
+/* 2026-11-06 — WEBHOOK inlets. An external event becomes ONE job for ONE agent.
+   The secret is shown once (create/rotate); afterwards only its last 4 chars. */
+let _whCache = {};
+function _whArgs(id) { return "[" + JSON.stringify(String(id || "")) + "]"; }
+async function loadWebhooks() {
+  const box = $("whLive");
+  if (!box) return;
+  box.innerHTML = '<div class="remaining">loading…</div>';
+  try {
+    const d = await api("GET", "/api/webhooks");
+    const hooks = (d && d.hooks) || [];
+    _whCache = {};
+    hooks.forEach(h => { _whCache[h.id] = h; });
+    const lim = (d && d.limits) || {};
+    const rows = hooks.map(h =>
+      '<div class="u-df u-aic u-g8 u-fww u-mt6" style="font-size:12px">' +
+      _healthDot(h.enabled ? "ok" : "unknown") + "<b>" + esc(h.id) + "</b>" +
+      '<span class="remaining">' + esc(h.agent || "—") + " · " + esc(h.mode) + " · " +
+      (h.enabled ? "enabled" : "paused") + " · received " + (Number(h.received) || 0) +
+      " · jobs " + (Number(h.accepted) || 0) +
+      (h.last_status ? " · last " + esc(h.last_status) : "") + "</span>" +
+      '<span class="u-f1"></span>' +
+      '<button class="ghost" data-call="webhookEdit" data-args=\'' + _whArgs(h.id) + '\' title="load this inlet into the form">edit</button>' +
+      '<button class="ghost" data-call="webhookToggle" data-args=\'' + _whArgs(h.id) + '\' title="pause or enable this inlet">' + (h.enabled ? "pause" : "enable") + "</button>" +
+      '<button class="ghost" data-call="webhookRotate" data-args=\'' + _whArgs(h.id) + '\' title="generate a new secret; the old one stops working">rotate</button>' +
+      '<button class="ghost" data-call="webhookDeliveries" data-args=\'' + _whArgs(h.id) + '\' title="last deliveries">log</button>' +
+      '<button class="ghost" data-call="webhookDelete" data-args=\'' + _whArgs(h.id) + '\' title="delete this inlet">✕</button>' +
+      "</div>").join("");
+    box.innerHTML =
+      '<div class="u-df u-aic u-g8 u-fww"><b>' + hooks.length + " inlet(s)</b>" +
+      '<span class="remaining u-f1">' + (Number(lim.max_body_kb) || "?") + " KB body · " +
+      (Number(lim.max_per_minute) || "?") + "/min · dedupe " +
+      (Number(lim.dedupe_window_secs) || "?") + " s</span>" +
+      '<button class="ghost" data-call="loadWebhooks" title="re-read the inlets">↻</button></div>' +
+      (rows || '<div class="remaining u-mt6">no inlet yet — an external event cannot start work until one exists</div>');
+  } catch (e) {
+    box.innerHTML = '<div class="remaining">error: ' + esc(String(e)) + "</div>";
+  }
+}
+function webhookEdit(id) {
+  const h = _whCache[id];
+  if (!h) return;
+  if ($("whId")) $("whId").value = h.id || "";
+  if ($("whAgent")) $("whAgent").value = h.agent || "";
+  if ($("whGoal")) $("whGoal").value = h.goal || "";
+  if ($("whMode")) $("whMode").value = h.mode || "run";
+  if ($("whField")) $("whField").value = h.event_field || "event";
+  if ($("whMatch")) $("whMatch").value = (h.match_any || []).join(", ");
+  if ($("whSecret")) $("whSecret").innerHTML = h.secret_set
+    ? '<div class="remaining">secret ends with …' + esc(h.secret_tail || "") +
+      " — rotate to see a new one</div>" : "";
+  who("ai", "✓ inlet " + id + " loaded into the form");
+}
+async function saveWebhook() {
+  const body = {
+    id: (($("whId") || {}).value || "").trim().toLowerCase(),
+    agent: (($("whAgent") || {}).value || "").trim(),
+    goal: (($("whGoal") || {}).value || "").trim(),
+    mode: (($("whMode") || {}).value || "run"),
+    event_field: (($("whField") || {}).value || "event").trim(),
+    match_any: (($("whMatch") || {}).value || "").split(",").map(s => s.trim()).filter(Boolean),
+  };
+  if (!body.id || !body.agent || !body.goal) {
+    who("user", "id, agent and goal are required");
+    return;
+  }
+  const res = await api("POST", "/api/webhooks", body);
+  if (!res || res.ok !== true) {
+    who("user", "save refused: " + String((res && res.error) || "unknown error"));
+    return;
+  }
+  if (res.secret) {
+    _showWebhookSecret(res);
+  } else {
+    who("ai", "✓ inlet saved");
+  }
+  loadWebhooks();
+}
+function _showWebhookSecret(res) {
+  const box = $("whSecret");
+  if (!box) return;
+  const url = location.origin + (res.url || ("/api/webhook/" + (res.hook || {}).id));
+  box.innerHTML =
+    '<div class="remaining">Copy these NOW — the secret is not shown again.</div>' +
+    '<div class="u-mt4" style="font-family:ui-monospace,monospace;font-size:11px;word-break:break-all">' +
+    esc(url) + "</div>" +
+    '<div class="u-mt4" style="font-family:ui-monospace,monospace;font-size:11px;word-break:break-all">' +
+    esc(res.secret) + "</div>" +
+    '<button class="ghost u-mt6" data-call="copyWebhookSecret" data-args=\'' + _whArgs(res.secret) +
+    '\' title="copy the secret">copy secret</button>';
+}
+function copyWebhookSecret(secret) {
+  try {
+    navigator.clipboard.writeText(String(secret || ""));
+    who("ai", "✓ secret copied");
+  } catch (e) {
+    who("user", "copy failed — select the text and copy it");
+  }
+}
+async function webhookToggle(id) {
+  const h = _whCache[id];
+  if (!h) return;
+  const res = await api("POST", "/api/webhooks", {
+    id: h.id, agent: h.agent, goal: h.goal, mode: h.mode,
+    event_field: h.event_field, match_any: h.match_any, enabled: !h.enabled,
+  });
+  if (!res || res.ok !== true) who("user", "refused: " + String((res && res.error) || "?"));
+  loadWebhooks();
+}
+async function webhookRotate(id) {
+  if (!confirm("Rotate the secret of " + id + "? The old secret stops working.")) return;
+  const res = await api("POST", "/api/webhooks/" + encodeURIComponent(id) + "/rotate");
+  if (res && res.ok === true) _showWebhookSecret(res);
+  else who("user", "rotate refused: " + String((res && res.error) || "?"));
+  loadWebhooks();
+}
+async function webhookDelete(id) {
+  if (!confirm("Delete inlet " + id + " and its deliveries?")) return;
+  const res = await api("DELETE", "/api/webhooks/" + encodeURIComponent(id));
+  if (res && res.ok === true) who("ai", "✓ inlet deleted");
+  else who("user", "delete refused: " + String((res && res.error) || "?"));
+  loadWebhooks();
+}
+async function webhookDeliveries(id) {
+  const box = $("whDeliveries");
+  if (!box) return;
+  box.innerHTML = '<div class="remaining">loading deliveries…</div>';
+  const d = await api("GET", "/api/webhooks/" + encodeURIComponent(id) + "/deliveries?limit=20");
+  if (!d || d.ok !== true) {
+    box.innerHTML = '<div class="remaining">error: ' + esc(String((d && d.error) || "unavailable")) + "</div>";
+    return;
+  }
+  const rows = (d.deliveries || []).map(r =>
+    '<div class="remaining">' + new Date((r.ts || 0) * 1000).toLocaleString() + " · " +
+    esc(r.status || "") + " · " + esc(r.event || "") +
+    (r.job ? " · " + esc(r.job) : "") + (r.reason ? " · " + esc(r.reason) : "") + "</div>").join("");
+  box.innerHTML = '<div class="card"><b>Deliveries · ' + esc(id) + "</b>" +
+    (rows || '<div class="remaining u-mt6">none yet</div>') + "</div>";
+}
 function settingsWin() { return $("settingsWin"); }
 /* JAG-2.5: the label of a Settings category, from the ONE list that declares them. */
 function panelLabel(cat) {
@@ -13525,7 +13748,8 @@ function settingsCategory(name) {
     if (typeof loadRerankModel === "function") loadRerankModel();   // 2026-11-05: re-ranker picker
     gateEnroll($("provCard"));   // JAG-496: an untouched provider form cannot be saved
   }
-  else if (name === "diagnostics") { loadDiagnostics(); }
+  else if (name === "diagnostics") { runHealthChecks(); }
+  else if (name === "webhooks") { loadWebhooks(); }
   else if (name === "knowledge") { kbStatus(); kbLoadNotebooks(); kbLoadSessions(); kbLoadSources(); researchModelLs(); kbResearchMode(); }
   else if (name === "appearance") {
     renderThemeGrid();

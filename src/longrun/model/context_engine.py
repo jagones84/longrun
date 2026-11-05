@@ -20,13 +20,16 @@ evidence (message counts, estimated tokens in/out, retrieved memory hits).
 import os
 import re
 
+from longrun.model import context_limits as ctx_limits
+
 # JAG-261: fallback budget when NOTHING is known about the model (no alias, no
 # live window). The fleet runs 256k-window models, so assuming 256k avoids the
 # old 32768 fallback that compacted far too early. A real window (JAG-259) still
 # wins whenever it is available.
-DEFAULT_BUDGET = int(os.environ.get("LONGRUN_CONTEXT_BUDGET", "262144"))
-DEFAULT_KEEP_RECENT = int(os.environ.get("LONGRUN_CONTEXT_KEEP_RECENT", "8"))
-RETRIEVAL_TOP_K = int(os.environ.get("LONGRUN_CONTEXT_RETRIEVAL_K", "3"))
+# 2026-11-05: all three are `config/tools.yaml` -> `limits:` (no literals).
+DEFAULT_BUDGET = ctx_limits.limit("context_budget")
+DEFAULT_KEEP_RECENT = ctx_limits.limit("context_keep_recent")
+RETRIEVAL_TOP_K = ctx_limits.limit("context_retrieval_k")
 
 # M7: stable summary-block labels. The LLM path stamps SUMMARY_PREFIX; the local
 # extractive fallback keeps its legacy EXTRACTIVE_PREFIX (older transcripts and

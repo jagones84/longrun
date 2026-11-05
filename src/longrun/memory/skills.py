@@ -23,6 +23,7 @@ import zipfile
 
 from longrun.util import paths
 from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR as APP_DATA_DIR
+from longrun.model import context_limits as ctx_limits
 SKILLS_DIR = os.environ.get("LONGRUN_SKILLS_DIR") or os.path.join(REPO, "skills")
 
 LOCAL_CATEGORY = "local"
@@ -108,15 +109,15 @@ def _local_dir():
 
 
 def _max_zip():
-    return int(os.environ.get("LONGRUN_SKILL_MAX_ZIP", str(20 * 1024 * 1024)))
+    return ctx_limits.limit("skill_max_zip_bytes")
 
 
 def _max_unzip():
-    return int(os.environ.get("LONGRUN_SKILL_MAX_UNZIP", str(60 * 1024 * 1024)))
+    return ctx_limits.limit("skill_max_unzip_bytes")
 
 
 def _max_files():
-    return int(os.environ.get("LONGRUN_SKILL_MAX_FILES", "500"))
+    return ctx_limits.limit("skill_max_files")
 
 
 def _safe_name(name):

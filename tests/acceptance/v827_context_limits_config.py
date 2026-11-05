@@ -2,21 +2,25 @@
 """v827 — every context budget is a CONFIG value, never a Python literal (2026-11-05).
 
 Operator, verbatim: *"nonono please all in config files. all in config files i told
-idiot! no hardocoding!!"*. Before this test the budgets that decide how much text
-reaches the model were literals in the modules that used them (`agent.py`
-6000/200000/1500/600/4000/1200, `prompt.py` 2600/1200/120, `rules.py` 32 KB,
-`term.py` 200000, `tools.py` 65536, `sandbox.py` 2 MB, `acceptance.py` 20/200) or a
-LONGRUN_* env var with a literal default.
+idiot! no hardocoding!!"* — and again later *"1) I TOLD NO HARDCODED NO HARDOCDED!"*
+when the `limits:` block was still pending. Before this test the budgets that
+decide how much text reaches the model were literals in the modules that used them
+(`agent.py` 6000/200000/1500/600/4000/1200, `prompt.py` 2600/1200/120, `rules.py`
+32 KB, `term.py` 200000/8/3600/2000, `tools.py` 65536, `sandbox.py` 2 MB,
+`acceptance.py` 20/200) or a `LONGRUN_*` env var with a literal default
+(`rllm.py` retries/backoff/timeouts, `server.py` body/feed/stream, `events.py`
+retention, `sse.py` think flush, `skills.py`/`threads.py`/`stores.py`/`memory.py`/
+`taskgraph.py`/`jobs.py`/`teams.py`/`heldout.py`).
 
-The contract pinned here:
+The contract pinned here, for all THREE blocks (`context:`, `shell:`, `limits:`):
 
-  * `config/tools.yaml` -> `context:` is the ONLY source of truth, and it is
-    COMPLETE (every resolver key has a row, and no row is unknown);
+  * `config/tools.yaml` is the ONLY source of truth, and each block is COMPLETE
+    (every resolver key has a row, and no row is unknown);
   * the value each module binds at import equals the config value (no drift);
   * the env var still wins (tests / one-off runs), a typo cannot switch a budget
     off (floor 1), and an unknown name fails loudly;
   * no consumer module still reads its own env var or hardcodes its number;
-  * the block is wired into Settings (same panel as `runtime`).
+  * each block is wired into Settings ▸ Harness.
 
 Deterministic and offline: no server, no model, no network.
 Run: python3 tests/acceptance/v827_context_limits_config.py
@@ -119,6 +123,109 @@ check("A5h tools/term.py binds the shell limits",
 check("A5i the shell block is wired into Settings",
       (S.DEDICATED.get("tools.yaml") or {}).get("shell") == "Settings ▸ Harness")
 
+# -------------------------------------------------------- the `limits:` block
+# Every value that used to be `int(os.environ.get("LONGRUN_…", <literal>))` in
+# `src/` (router retries, timeouts, retention, skill caps, job retries…).
+_yaml_lim = _yaml_raw.get("limits") or {}
+check("A5j config/tools.yaml declares a `limits:` block", bool(_yaml_lim), sorted(_yaml_lim)[:3])
+_missing_lim = sorted(k for k in CL.LIMITS_DEFAULTS if k not in _yaml_lim)
+check("A5k every limits default has a config row", not _missing_lim, _missing_lim)
+_unknown_lim = sorted(k for k in _yaml_lim if k not in CL.LIMITS_DEFAULTS)
+check("A5l the resolver knows every limits key", not _unknown_lim, _unknown_lim)
+_loaded_lim = registry.load_config().get("limits") or {}
+check("A5m the loader carries the limits block (no whitelist drop)",
+      not [k for k in _yaml_lim if k not in _loaded_lim],
+      sorted(k for k in _yaml_lim if k not in _loaded_lim))
+_lim_drift = {}
+for _k, _dflt in CL.LIMITS_DEFAULTS.items():
+    _got = _loaded_lim.get(_k)
+    if _got is None:
+        _lim_drift[_k] = (None, _dflt)
+    elif isinstance(_dflt, bool):
+        if CL.limitb(_k) != bool(_got):
+            _lim_drift[_k] = (CL.limitb(_k), _got)
+    elif isinstance(_dflt, float):
+        if CL.limitf(_k) != float(_got):
+            _lim_drift[_k] = (CL.limitf(_k), _got)
+    elif CL.limit(_k) != int(_got):
+        _lim_drift[_k] = (CL.limit(_k), _got)
+check("A5n each limits value resolves to the loaded config value", not _lim_drift, _lim_drift)
+
+# ---------------------------------------------------- the limits consumers bind
+from longrun.model import rllm as RL  # noqa: E402
+from longrun.model import context_engine as CE  # noqa: E402
+from longrun.core import events as EV  # noqa: E402
+from longrun.core import sse as SSE  # noqa: E402
+from longrun.memory import stores as ST  # noqa: E402
+from longrun.memory import threads as TH  # noqa: E402
+from longrun.memory import memory as MEM  # noqa: E402
+from longrun.memory import skills as SK  # noqa: E402
+from longrun.plan import taskgraph as TG  # noqa: E402
+from longrun.plan import heldout as HO  # noqa: E402
+
+_lim_bound = {
+    "router_retries": ("rllm", RL.ROUTER_RETRIES, "limit"),
+    "model_load_timeout_secs": ("rllm", RL.MODEL_LOAD_TIMEOUT, "limit"),
+    "context_reserve": ("rllm", RL.CONTEXT_RESERVE, "limit"),
+    "summarizer_max_chars": ("rllm", RL.SUMMARIZER_MAX_CHARS, "limit"),
+    "max_tokens": ("rllm", RL.MAX_TOKENS, "limit"),
+    "repeat_min_period": ("rllm", RL._REPEAT_MIN_PERIOD, "limit"),
+    "repeat_max_period": ("rllm", RL._REPEAT_MAX_PERIOD, "limit"),
+    "repeat_limit": ("rllm", RL._REPEAT_LIMIT, "limit"),
+    "router_backoff": ("rllm", RL.ROUTER_BACKOFF, "limitf"),
+    "router_backoff_max": ("rllm", RL.ROUTER_BACKOFF_MAX, "limitf"),
+    "router_idle_timeout_secs": ("rllm", RL.ROUTER_IDLE_TIMEOUT, "limitf"),
+    "compact_force_ratio": ("rllm", RL.COMPACT_FORCE_RATIO, "limitf"),
+    "connect_timeout_secs": ("rllm", RL.CONNECT_TIMEOUT, "limitf"),
+    "context_budget": ("context_engine", CE.DEFAULT_BUDGET, "limit"),
+    "context_keep_recent": ("context_engine", CE.DEFAULT_KEEP_RECENT, "limit"),
+    "context_retrieval_k": ("context_engine", CE.RETRIEVAL_TOP_K, "limit"),
+    "http_max_body_bytes": ("server", _srv.MAX_BODY_BYTES, "limit"),
+    "feed_replay_max": ("server", _srv.FEED_REPLAY_MAX, "limit"),
+    "chat_stream_idle_secs": ("server", _srv.CHAT_STREAM_IDLE, "limitf"),
+    "feed_events_max": ("events", EV.MAX_FEED_EVENTS, "limit"),
+    "events_keep": ("events", EV.EVENTS_KEEP, "limit"),
+    "prune_batch": ("events", EV.PRUNE_BATCH, "limit"),
+    "events_prune_secs": ("events", EV.PRUNE_INTERVAL_S, "limitf"),
+    "think_flush_secs": ("sse", SSE.CHAT_THINK_FLUSH_S, "limitf"),
+    "think_live_cap": ("sse", SSE.CHAT_THINK_LIVE_CAP, "limit"),
+    "tool_event_max": ("stores", ST.TOOL_EVENT_MAX, "limit"),
+    "thread_digest_max": ("threads", TH.MAX_DIGEST, "limit"),
+    "thread_line_max": ("threads", TH.MAX_LINE, "limit"),
+    "thread_groups_max": ("threads", TH.MAX_GROUPS, "limit"),
+    "memory_core_max": ("memory", MEM.CORE_MAX, "limit"),
+    "graph_orphan_days": ("taskgraph", TG.GRAPH_ORPHAN_DAYS, "limitf"),
+}
+_lim_bind_drift = {k: (src, val, getattr(CL, acc)(k))
+                   for k, (src, val, acc) in _lim_bound.items()
+                   if float(val) != float(getattr(CL, acc)(k))}
+check("A5o every module binds its limits value (no drift)", not _lim_bind_drift, _lim_bind_drift)
+check("A5p the lazily-read limits agree with the resolver",
+      SK._max_zip() == CL.limit("skill_max_zip_bytes")
+      and SK._max_unzip() == CL.limit("skill_max_unzip_bytes")
+      and SK._max_files() == CL.limit("skill_max_files")
+      and HO.require_enabled() == CL.limitb("require_heldout")
+      and __import__("longrun.orchestrate.jobs", fromlist=["x"]).job_retries()
+      == CL.limit("job_retries")
+      and __import__("longrun.orchestrate.teams", fromlist=["x"]).local_slots()
+      == CL.limit("team_local_slots"))
+check("A5q the limits block is wired into Settings",
+      (S.DEDICATED.get("tools.yaml") or {}).get("limits") == "Settings ▸ Harness")
+# `limit_set` is how a module asks "did the operator pin this?" without reading
+# the env var itself (`rllm.context_budget` is the one consumer).
+check("A5r an untouched row is not reported as pinned", not CL.limit_set("context_budget"))
+_old_budget = os.environ.get("LONGRUN_CONTEXT_BUDGET")
+os.environ["LONGRUN_CONTEXT_BUDGET"] = "70000"
+try:
+    check("A5s a pinned budget wins over the model window (single reader)",
+          CL.limit_set("context_budget") and RL.context_budget() == 70000,
+          (CL.limit_set("context_budget"), RL.context_budget()))
+finally:
+    if _old_budget is None:
+        os.environ.pop("LONGRUN_CONTEXT_BUDGET", None)
+    else:
+        os.environ["LONGRUN_CONTEXT_BUDGET"] = _old_budget
+
 # ---------------------------------------------------------------- the consumers
 BOUND = {
     "chat_tool_steps": ("agent", A.CHAT_TOOL_MAX_STEPS),
@@ -180,11 +287,22 @@ check("A14 an unknown limit name fails loudly", _raised)
 _OWNERS = (("src", "longrun", "agent", "agent.py"), ("src", "longrun", "model", "prompt.py"),
            ("src", "longrun", "memory", "rules.py"), ("src", "longrun", "tools", "term.py"),
            ("src", "longrun", "tools", "tools.py"), ("src", "longrun", "tools", "sandbox.py"),
-           ("src", "longrun", "agent", "acceptance.py"))
-_leaks = {p[-1]: [e for e in list(CL.ENV.values()) + list(CL.SHELL_ENV.values())
+           ("src", "longrun", "agent", "acceptance.py"),
+           # `limits:` consumers — none of them may read its own env var.
+           ("src", "longrun", "model", "rllm.py"),
+           ("src", "longrun", "model", "context_engine.py"),
+           ("src", "longrun", "core", "server.py"), ("src", "longrun", "core", "events.py"),
+           ("src", "longrun", "core", "sse.py"), ("src", "longrun", "core", "httpapi.py"),
+           ("src", "longrun", "memory", "stores.py"), ("src", "longrun", "memory", "threads.py"),
+           ("src", "longrun", "memory", "memory.py"), ("src", "longrun", "memory", "skills.py"),
+           ("src", "longrun", "plan", "taskgraph.py"), ("src", "longrun", "plan", "heldout.py"),
+           ("src", "longrun", "orchestrate", "jobs.py"),
+           ("src", "longrun", "orchestrate", "teams.py"))
+_leaks = {p[-1]: [e for e in (list(CL.ENV.values()) + list(CL.SHELL_ENV.values())
+                              + list(CL.LIMITS_ENV.values()))
                   if e in _src(*p)] for p in _OWNERS}
 _leaks = {k: v for k, v in _leaks.items() if v}
-check("A15 only context_limits.py reads LONGRUN_* context env vars", not _leaks, _leaks)
+check("A15 only context_limits.py reads LONGRUN_* limit env vars", not _leaks, _leaks)
 
 # ------------------------------------------------------------------- Settings
 check("A16 the block is wired into the Harness settings panel",
@@ -216,6 +334,33 @@ for fname, pats in _literals.items():
     if hits:
         _found[fname] = hits
 check("A17 no migrated literal or env read survives in the consumers", not _found, _found)
+
+# ------------------------------------ no migrated `limits:` literal survives
+_LIM_PATTERNS = (r"^MAX_LINE = \d", r"^MAX_DIGEST = \d", r"^MAX_GROUPS = \d",
+                 r"^ROUTER_RETRIES = \d", r"^ROUTER_BACKOFF = \d",
+                 r"^ROUTER_BACKOFF_MAX = \d", r"^MODEL_LOAD_TIMEOUT = \d",
+                 r"^ROUTER_IDLE_TIMEOUT = \d", r"^CONTEXT_RESERVE = \d",
+                 r"^COMPACT_FORCE_RATIO = \d", r"^SUMMARIZER_MAX_CHARS = \d",
+                 r"^MAX_TOKENS = \d", r"^CONNECT_TIMEOUT = \d",
+                 r"^DEFAULT_BUDGET = \d", r"^DEFAULT_KEEP_RECENT = \d",
+                 r"^RETRIEVAL_TOP_K = \d", r"^MAX_BODY_BYTES = \d",
+                 r"^FEED_REPLAY_MAX = \d", r"^CHAT_STREAM_IDLE = \d",
+                 r"^MAX_FEED_EVENTS = \d", r"^EVENTS_KEEP = \d",
+                 r"^PRUNE_INTERVAL_S = \d", r"^PRUNE_BATCH = \d",
+                 r"^CHAT_THINK_FLUSH_S = \d", r"^CHAT_THINK_LIVE_CAP = \d",
+                 r"^TOOL_EVENT_MAX = \d", r"^CORE_MAX = \d",
+                 r"^GRAPH_ORPHAN_DAYS = \d", r"^REPEAT_GUARD = True")
+_LIM_FILES = (("model", "rllm.py"), ("model", "context_engine.py"),
+              ("core", "server.py"), ("core", "events.py"), ("core", "sse.py"),
+              ("memory", "stores.py"), ("memory", "threads.py"), ("memory", "memory.py"),
+              ("memory", "skills.py"), ("plan", "taskgraph.py"), ("plan", "heldout.py"),
+              ("orchestrate", "jobs.py"), ("orchestrate", "teams.py"))
+_lit_hits = {}
+for _sub, _fname in _LIM_FILES:
+    _hits = [p for p in _LIM_PATTERNS if re.search(p, _src("src", "longrun", _sub, _fname), re.M)]
+    if _hits:
+        _lit_hits[_fname] = _hits
+check("A18 no migrated limits value is still a Python literal", not _lit_hits, _lit_hits)
 
 print("%d/%d PASS" % (sum(RESULTS), len(RESULTS)))
 sys.exit(0 if all(RESULTS) else 1)

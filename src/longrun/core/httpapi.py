@@ -28,6 +28,7 @@ from longrun.util.provenance import QUOTED_LABEL_NOTE, escape_role_labels
 from longrun.tools import approvals
 from longrun.tools import registry
 from longrun.model import routing
+from longrun.model import context_limits as ctx_limits
 from longrun.tools import sandbox
 from longrun.plan import taskgraph
 from longrun.core import server as _sf_server  # only for the AUTH_TOKEN mirror in main()
@@ -2058,6 +2059,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, _mtx_api.status())
         if path == "/api/self":
             return self._send(200, self_knowledge())
+        if path == "/api/health":
+            # 2026-11-06: ONE health report — live components, host, model path and
+            # the settings checks. `?probe=0` skips the network probes (cheap read).
+            from longrun.core import health as _health
+            _probe = qs.get("probe", "1").lower() not in ("0", "false", "no")
+            _llm = qs.get("llm", "1").lower() not in ("0", "false", "no")
+            return self._send(200, _health.collect(
+                probe=_probe, host=getattr(self.server, "host", "127.0.0.1"),
+                port=getattr(self.server, "port", 8790), session=qs.get("session"),
+                model=qs.get("model"), llm_probe=_llm))
         if path == "/api/context":
             # JAG-258: measure against the SAME model the turn uses (explicit >
             # session model > default), never the arbitrarily-loaded router model.
@@ -2361,6 +2372,23 @@ class Handler(BaseHTTPRequestHandler):
             addr = self.client_address[0] if self.client_address else ""
             res = configure_first_run_token(body.get("token"), addr)
             return self._send(200 if res.get("ok") else 400, res)
+        # 2026-11-06: webhook INTAKE. An external service cannot carry the Longrun
+        # token, so this route authenticates with the HOOK's own secret (HMAC-SHA256
+        # or bearer) inside `webhooks.receive`. The raw bytes are read before any
+        # JSON parsing because the signature covers the exact body.
+        if path.startswith("/api/webhook/"):
+            from longrun.core import webhooks as _webhooks
+            from longrun.model import context_limits as _cl
+            hook_id = path[len("/api/webhook/"):].split("/")[0]
+            cap = _cl.webhook("max_body_kb") * 1024
+            n = self._content_length() or 0
+            if n > cap:
+                return self._send(413, {"ok": False, "error": "body too large"})
+            raw = _read_bounded_body(self.rfile, n, cap) if n else b""
+            if raw is None:
+                return self._send(413, {"ok": False, "error": "body too large"})
+            code, payload = _webhooks.receive(hook_id, self.headers, raw)
+            return self._send(code, payload)
         if not check_auth(self.headers, qs):
             return self._send(401, {"error": "unauthorized"})
         path = path
@@ -3031,7 +3059,7 @@ def main():
                     help="allow a non-loopback --host without a token "
                          "(operator accepts the open-LAN risk; default: refuse)")
     # JAG-416: an HTTPS listener makes the origin a SECURE CONTEXT so voice input
-    # works; on by default (set LONGRUN_TLS=0 to disable).
+    # works; on by default (`config/tools.yaml` -> `limits: tls_enabled`).
     ap.add_argument("--tls", action="store_true", help="also serve HTTPS (secure context → voice)")
     ap.add_argument("--tls-cert", default=None, help="TLS cert path (self-signed generated if missing)")
     ap.add_argument("--tls-key", default=None, help="TLS key path")
@@ -3131,6 +3159,8 @@ def main():
             print("Open on your phone: http://%s:%d/%s" % (ip, args.port, tok),
                   flush=True)
     # JAG-416: optionally bring up HTTPS (secure context → voice input works).
-    if args.tls or os.environ.get("LONGRUN_TLS", "1") != "0":
+    # 2026-11-05: the default is `config/tools.yaml` -> `limits: tls_enabled`
+    # (its env override is resolved inside context_limits.limitb).
+    if args.tls or ctx_limits.limitb("tls_enabled"):
         _start_tls(args)
     server.serve_forever()

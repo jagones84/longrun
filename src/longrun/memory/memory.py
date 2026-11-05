@@ -27,6 +27,7 @@ import uuid
 
 from longrun.tools import registry
 from longrun.util import paths
+from longrun.model import context_limits as ctx_limits
 
 REPO = registry.REPO
 # JAG-533: persistent memory is user state -> the data home, never the checkout.
@@ -105,7 +106,7 @@ def _visible(rec, ws):
 # system prompt. Unlike the similarity-retrieved notes above, this is stable and
 # the agent owns it (memory{action:'core'|'set_core'}).
 CORE_PATH = os.path.join(DATA_DIR, "core.md")
-CORE_MAX = int(os.environ.get("LONGRUN_CORE_MAX", "4000"))
+CORE_MAX = ctx_limits.limit("memory_core_max")
 
 
 def core_read():

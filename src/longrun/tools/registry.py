@@ -52,6 +52,11 @@ DEFAULT_CONFIG = {
     "context": {},
     # 2026-11-05: the persistent-terminal pool (`tools/term.py`). Same rule.
     "shell": {},
+    # 2026-11-05: router/model/HTTP/store limits (`model/context_limits.py`).
+    # Same rule: an unlisted block is silently dropped by `_merge_into`.
+    "limits": {},
+    # 2026-11-06: webhook intake knobs (`core/webhooks.py`). Same rule again.
+    "webhooks": {},
     # M5: sliding-window frequency guard for the v2 agent loop (warn/hard per
     # tool type over the last `window` calls; `per_tool` overrides one type).
     "loop_detection": {
@@ -154,22 +159,50 @@ _LEGACY_SCHEMAS = {
                        "content": {"type": "string",
                                    "description": "full text to write (the whole file, not a patch)"},
                        "append": {"type": "boolean", "default": False,
-                                  "description": "append instead of overwriting (default: overwrite)"}},
+                                  "description": "append instead of overwriting (default: overwrite)"},
+                       "force": {"type": "boolean", "default": False,
+                                 "description": "overwrite even if the file changed since fs.read"}},
         "required": ["path", "content"],
         "subject": "path",
     },
     "fs.edit": {
-        "description": ("Surgical file edit: replace a search string with a replacement "
-                        "(default: first occurrence; replace_all=true for every "
-                        "occurrence). Fails if the search string is not found or is "
-                        "ambiguous (multiple matches with replace_all=false)."),
+        "description": ("Surgical file edit: replace EXACT text, never a fuzzy match.\n"
+                        "One change: search + replace (replace_all=true for every "
+                        "occurrence; without it a twice-matching search is refused).\n"
+                        "Many changes: edits=[{search, replace, replace_all}] applied in "
+                        "order, ALL-OR-NOTHING (nothing is written if one row does not "
+                        "fit). Optional start_line/end_line restrict the match to that "
+                        "1-based line window, so a huge file can be patched without "
+                        "restating the whole text. A file that changed on disk after "
+                        "your last fs.read is refused: re-read it, or pass force=true. "
+                        "dry_run=true validates and reports the counts without writing. "
+                        "The write is atomic and keeps the file mode."),
         "type": "object",
         "properties": {"path": {"type": "string", "description": _P_PATH},
-                       "search": {"type": "string", "description": "exact text to find"},
+                       "search": {"type": "string",
+                                  "description": "exact text to find (single-change form)"},
                        "replace": {"type": "string", "description": "replacement text"},
                        "replace_all": {"type": "boolean", "default": False,
-                                       "description": "replace every occurrence (default: only if unambiguous)"}},
-        "required": ["path", "search", "replace"],
+                                       "description": "replace every occurrence (default: only if unambiguous)"},
+                       "edits": {"type": "array",
+                                 "description": "batch form: [{search, replace, replace_all}] applied in order",
+                                 "items": {"type": "object",
+                                           "properties": {
+                                               "search": {"type": "string"},
+                                               "replace": {"type": "string"},
+                                               "replace_all": {"type": "boolean",
+                                                               "default": False}},
+                                           "required": ["search", "replace"]}},
+                       "start_line": {"type": "integer",
+                                      "description": "first line (1-based) the search may match in"},
+                       "end_line": {"type": "integer",
+                                    "description": "last line the search may match in"},
+                       "dry_run": {"type": "boolean", "default": False,
+                                   "description": "validate and report, write nothing"},
+                       "force": {"type": "boolean", "default": False,
+                                 "description": "edit even if the file changed since fs.read"}},
+        "required": ["path"],
+        "anyOf": [{"required": ["search", "replace"]}, {"required": ["edits"]}],
         "subject": "path",
     },
     "git": {
@@ -1251,7 +1284,8 @@ def _merge_into(cfg, data):
         return
     for key in ("sandbox", "approvals", "runtime", "verifier", "goal_verify",
                 "bestofn", "difficulty", "selfevolve", "reasoning",
-                "loop_detection", "budget", "context", "shell"):
+                "loop_detection", "budget", "context", "shell", "limits",
+                "webhooks"):
         if isinstance(data.get(key), dict):
             cfg[key].update(data[key])
     for tname, tentry in (data.get("tools") or {}).items():

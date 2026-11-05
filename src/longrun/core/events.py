@@ -16,10 +16,12 @@ import time
 from collections import deque
 
 from longrun.util.paths import REPO_ROOT as REPO, DATA_DIR as _PATH_DATA_DIR
+from longrun.model import context_limits as ctx_limits  # 2026-11-05: config limits
 
 # JAG-533: the durable event log is user state -> the data home, never the checkout.
 DATA_DIR = _PATH_DATA_DIR
-MAX_FEED_EVENTS = 800
+# 2026-11-05: retention + replay sizes are `config/tools.yaml` -> `limits:`.
+MAX_FEED_EVENTS = ctx_limits.limit("feed_events_max")
 
 # --------------------------------------------------------------- sqlite ----
 
@@ -29,9 +31,9 @@ _db = None
 # JAG-300: the durable event log is a REPLAY buffer, not an archive — it must not
 # grow without bound (it had reached 1.12M rows / 159 MB, ~95% streaming deltas).
 # Keep only the newest EVENTS_KEEP rows; prune in bounded batches (see prune_events).
-EVENTS_KEEP = int(os.environ.get("LONGRUN_EVENTS_KEEP", "200000"))
-PRUNE_INTERVAL_S = float(os.environ.get("LONGRUN_EVENTS_PRUNE_S", "900"))
-PRUNE_BATCH = 50000
+EVENTS_KEEP = ctx_limits.limit("events_keep")
+PRUNE_INTERVAL_S = ctx_limits.limitf("events_prune_secs")
+PRUNE_BATCH = ctx_limits.limit("prune_batch")
 
 
 _EVENTS_DDL = """CREATE TABLE IF NOT EXISTS events (

@@ -130,6 +130,62 @@ context:
   plan_tool_steps: 3
   subagent_wait_secs: 180
 
+# ---- limits (2026-11-05) ----------------------------------------------------
+# Every value that used to be `int(os.environ.get("LONGRUN_…", <literal>))` in
+# `src/`. None of them is a literal in Python any more; the LONGRUN_* env var
+# still overrides a row (tests / one-off runs) and the DEFAULTS in
+# `model/context_limits.py` are only the fallback for a broken config file.
+# Settings ▸ Harness shows the block. Restart after editing (read at import).
+limits:
+  # --- router / LLM I/O -------------------------------------------------------
+  router_retries: 5               # how many times one completion is retried
+  router_backoff: 0.75            # first backoff, seconds
+  router_backoff_max: 8.0         # backoff ceiling, seconds
+  model_load_timeout_secs: 900    # how long a cold model load may take
+  router_idle_timeout_secs: 120.0 # max silence tolerated mid-stream
+  connect_timeout_secs: 3.0       # TCP connect timeout
+  # --- model context + answer budget -----------------------------------------
+  max_tokens: 16384               # answer budget sent to the provider
+  context_reserve: 4096           # tokens kept free below the window
+  compact_force_ratio: 0.5        # force compaction when free space drops below
+  summarizer_max_chars: 60000     # transcript chars handed to the summarizer
+  context_budget: 262144          # fallback window when the model's is unknown
+  context_keep_recent: 8          # turns kept verbatim by compaction
+  context_retrieval_k: 3          # memory records retrieved per turn
+  # --- repetition guard -------------------------------------------------------
+  repeat_guard_enabled: true
+  repeat_min_period: 20           # smallest repeated period detected (tokens)
+  repeat_max_period: 240          # largest repeated period detected (tokens)
+  repeat_limit: 4                 # repeats tolerated before the stream is stopped
+  # --- HTTP server + SSE ------------------------------------------------------
+  http_max_body_bytes: 8388608    # request body ceiling (8 MiB)
+  feed_replay_max: 300            # events replayed to a re-attached page
+  chat_stream_idle_secs: 900.0    # idle chat stream is closed after this
+  think_flush_secs: 0.08          # live-thinking flush interval
+  think_live_cap: 0               # 0 = no cap on live thinking
+  # --- retention / stores -----------------------------------------------------
+  events_keep: 200000             # event-log rows kept
+  events_prune_secs: 900.0        # prune interval
+  feed_events_max: 800            # events one /api/feed response may carry
+  prune_batch: 50000              # rows deleted per prune transaction
+  tool_event_max: 2000            # tool events kept per session
+  thread_digest_max: 1500         # chars of a thread digest
+  thread_line_max: 240            # chars of one line inside a digest
+  thread_groups_max: 2000         # thread groups kept
+  memory_core_max: 4000           # chars of the CORE memory block
+  # --- editing ----------------------------------------------------------------
+  fs_edit_max_edits: 50           # rows one fs.edit batch may carry
+  fs_edit_stale_guard: true       # refuse an edit on a file changed since fs.read
+  # --- skills / graph / jobs / teams / held-out gate --------------------------
+  skill_max_zip_bytes: 20971520
+  skill_max_unzip_bytes: 62914560
+  skill_max_files: 500
+  graph_orphan_days: 14.0
+  job_retries: 1                  # 0 = never retry a job
+  team_local_slots: 1             # 0 = no local slot held for the team
+  require_heldout: true           # refuse a run without a held-out check
+  tls_enabled: true               # serve over TLS unless LONGRUN_TLS=0
+
 # ---- shell pool (2026-11-05) ------------------------------------------------
 # The persistent terminal the agent and the RH Terminal panel share. Not a
 # context budget, but the same rule applies: no literal in `tools/term.py`.
@@ -138,6 +194,18 @@ shell:
   max_shells: 8             # oldest idle shell is reaped beyond this
   idle_timeout_secs: 3600   # a shell idle this long is reaped
   backlog: 2000             # events kept per shell (cursor catch-up)
+
+# ---- webhook intake (2026-11-06) --------------------------------------------
+# External events (GitHub, CI, a script) become one-agent JOBS. The store with the
+# hooks and their secrets lives OUTSIDE the repo: `<data home>/webhooks.json`.
+# Chain: env -> this block -> the DEFAULTS in `context_limits.py` (read at import).
+webhooks:
+  max_hooks: 20                # refuse a new hook beyond this
+  max_body_kb: 256             # a larger delivery is refused with 413
+  deliveries_keep: 50          # deliveries kept per hook (ring)
+  dedupe_window_secs: 600      # the same delivery id inside this window is a duplicate
+  max_per_minute: 6            # deliveries accepted per hook per rolling minute
+  payload_chars: 6000          # how much of the payload reaches the agent
 
 # ---- thinking / reasoning budget (RH-15) ------------------------------------
 # EVERY thinking limit lives here: this block is the source of truth, the WebUI

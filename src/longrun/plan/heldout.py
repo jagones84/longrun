@@ -13,6 +13,7 @@ import shlex
 import time
 
 from longrun.util import paths
+from longrun.model import context_limits as ctx_limits
 
 # JAG-534: the sealed judge lives in the DATA HOME (outside any workspace and
 # outside the checkout), so a home move carries it and nothing can resolve it
@@ -27,8 +28,8 @@ def dir():
 
 
 def require_enabled():
-    """The gate is mandatory by default; LONGRUN_REQUIRE_HELDOUT=0 turns it off."""
-    return os.environ.get("LONGRUN_REQUIRE_HELDOUT", "1").strip() not in ("0", "false", "no")
+    """The gate is mandatory by default; `limits.require_heldout: false` turns it off."""
+    return ctx_limits.limitb("require_heldout")
 
 
 def manifest_path():

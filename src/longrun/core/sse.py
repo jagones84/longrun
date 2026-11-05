@@ -14,6 +14,8 @@ import queue
 import socket
 import time
 
+from longrun.model import context_limits as ctx_limits  # 2026-11-05: config limits
+
 # JAG-265: chain-of-thought (`think`) deltas stream per-token. On a fast model that
 # is dozens of `chat.delta` events/s going to BOTH the SSE stream AND the durable
 # feed — the WebUI render queue falls behind and the page LOOKS frozen while the
@@ -23,10 +25,10 @@ import time
 # the stream stop mid-thought and append "… (live thinking truncated)", while the
 # transcript kept the full reasoning — so the live block and the stored block spelled
 # one turn two ways, and the operator could not read the whole thought live. The cap
-# stays available as an explicit opt-in (`LONGRUN_THINK_LIVE_CAP>0`) for a host that
-# really needs to bound a runaway monologue; 0 means "the whole thought".
-CHAT_THINK_FLUSH_S = float(os.environ.get("LONGRUN_THINK_FLUSH_S", "0.08"))
-CHAT_THINK_LIVE_CAP = int(os.environ.get("LONGRUN_THINK_LIVE_CAP", "0"))
+# stays available as an explicit opt-in (`limits: think_live_cap` > 0) for a host
+# that really needs to bound a runaway monologue; 0 means "the whole thought".
+CHAT_THINK_FLUSH_S = ctx_limits.limitf("think_flush_secs")
+CHAT_THINK_LIVE_CAP = ctx_limits.limit("think_live_cap")
 
 
 def sse_close(handler):

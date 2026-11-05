@@ -1593,6 +1593,17 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200, {"hooks": hooks.load(reload=qs.get("reload") == "1"),
                                      "events": list(hooks.EVENTS),
                                      "config": hooks.CONFIG})
+        # 2026-11-06: webhook INLETS (external event -> one-agent job). The intake
+        # itself is `POST /api/webhook/<id>` (per-hook secret, handled in httpapi
+        # before the Longrun token check); these routes are the authenticated CRUD.
+        if path == "/api/webhooks":
+            from longrun.core import webhooks as _wh
+            return _r(handler, 200, _wh.list_hooks())
+        if path.startswith("/api/webhooks/") and path.endswith("/deliveries"):
+            from longrun.core import webhooks as _wh
+            hid = path[len("/api/webhooks/"):-len("/deliveries")].strip("/")
+            res = _wh.deliveries(hid, qs.get("limit") or 20)
+            return _r(handler, 200 if res.get("ok") else 404, res)
         # JAG-488: the WHOLE config/ YAML store is editable from the WebUI.
         if path == "/api/config/files":
             from longrun.core import configfiles
@@ -1922,6 +1933,24 @@ def handle(handler, method, path, qs, body):
 
     if method == "POST":
         # v0.2 core POST routes
+        # 2026-11-06: create/update one webhook inlet (the secret is generated
+        # server-side and returned ONCE — see core/webhooks.py).
+        if path == "/api/webhooks":
+            from longrun.core import webhooks as _wh
+            res = _wh.save_hook(body or {})
+            return _r(handler, 200 if res.get("ok") else 400, res)
+        if path.startswith("/api/webhooks/") and path.endswith("/rotate"):
+            from longrun.core import webhooks as _wh
+            hid = path[len("/api/webhooks/"):-len("/rotate")].strip("/")
+            hook = _wh.get_hook(hid)
+            if not hook:
+                return _r(handler, 404, {"ok": False, "error": "hook not found"})
+            res = _wh.save_hook({"id": hid, "agent": hook.get("agent"),
+                                 "goal": hook.get("goal"), "mode": hook.get("mode"),
+                                 "enabled": hook.get("enabled"),
+                                 "event_field": hook.get("event_field"),
+                                 "match_any": hook.get("match_any"), "rotate": True})
+            return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/goal":
             # G-1: pause / resume / edit / delete / start the durable goal.
             return _r(handler, *_goal_action(body or {}))
@@ -2499,6 +2528,12 @@ def handle(handler, method, path, qs, body):
         return False
 
     if method == "DELETE":
+        # 2026-11-06: delete one webhook inlet (its deliveries go with it).
+        if path.startswith("/api/webhooks/"):
+            from longrun.core import webhooks as _wh
+            hid = path[len("/api/webhooks/"):].strip("/")
+            res = _wh.delete_hook(hid)
+            return _r(handler, 200 if res.get("ok") else 404, res)
         # v652: `costlog.clear()` existed with no route (a dead object: only the
         # acceptance test called it), so the embedding cost ledger could never be
         # reset even though the panel shows it.
