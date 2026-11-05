@@ -113,7 +113,7 @@ to the event bus and persisted, so a reload rebuilds the transcript and task gra
 | `orchestrate/` | `jobs.py`, `orchestration.py`, `teams.py`, `routines.py`, `roles.py` |
 | `plan/` | `taskgraph.py`, `keepgoing.py`, `goal.py`, `difficulty.py`, `bestofn.py`, `prm.py`, `heldout.py`, `verify.py` |
 | `tools/` | `tools.py`, `registry.py`, `approvals.py`, `sandbox.py`, `hooks.py`, `edits.py`, `term.py`, `bgjobs.py` (detached shell jobs: start/status/stop), `diag.py`, `matrix_guard.py` |
-| `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py`, `embed.py`, `compaction_config.py`, `structured.py`, `vision.py`, `decision.py` |
+| `model/` | `providers.py`, `routing.py`, `context_engine.py`, `prompt.py`, `runmetrics.py`, `otel_tracing.py`, `rllm.py`, `keys.py`, `costs.py`, `embed.py`, `compaction_config.py`, `structured.py`, `vision.py`, `decision.py`, `rerank.py` |
 | `memory/` | `memory.py`, `skills.py`, `rules.py`, `checkpoints.py`, `stores.py`, `knowledge.py`, `codeindex.py`, `vectors.py`, `embedcfg.py`, `indexcfg.py`, `chunk.py`, `costlog.py`, `docio.py`, `autoidx.py`, `rewind.py`, `threads.py`, `sqlkit.py` |
 | `interop/` | `mcp.py`, `mcp_client.py`, `mcp_server.py`, `acp.py` |
 | `util/` | `osutil.py`, `paths.py`, `textkit.py`, `steering.py`, `tracing.py`, `voice.py`, `evals.py`, `meta.py`, `selfevolve.py`, `improve.py`, `dag.py`, `dataio.py`, `fswrite.py` |
@@ -288,6 +288,26 @@ Optional knobs (all owned by `harness/whole.py:DEFAULTS`): `LONGRUN_HARNESS_REPE
 `LONGRUN_GATEWAY_MAX_TOKENS`, `LONGRUN_GATEWAY_MAX_SECONDS`. `GET
 /api/harness/cycle` reports the real readiness and the reason it is not ready; the
 Improvement panel renders that same answer.
+
+## Retrieval, and its second stage
+
+Two stores answer "what do we already know": the per-workspace **code index** and the global
+**knowledge/notebooks** index (`memory/knowledge.py`, `memory/codeindex.py`, `memory/vectors.py`),
+both FTS (BM25) + vector fused by reciprocal rank. Memories recalled for prompt injection come from
+the same shape (`model/context_engine.retrieve`).
+
+Rank fusion answers "these candidates are plausible", never "this passage answers the question", so
+`model/rerank.py` adds an OPTIONAL cross-encoder stage: it scores `(query, passage)` TOGETHER and
+reorders (and optionally trims by `min_score`) what retrieval already found — it never invents a
+document. One implementation, two consumers (`memory.knowledge.search` and
+`context_engine.retrieve`); `score` keeps its rank-fusion meaning and the cross-encoder number rides
+as `relevance`.
+
+Re-rankers are ordinary entries in `config/providers.yaml` flagged `rerank: true`;
+`providers.is_rerank_model`/`chat_models` keep them out of every chat surface, and
+`providers.rerank_endpoint` resolves a ref to `POST <base>/rerank`. Settings live in
+`config/rerank.yaml` (Settings ▸ Models) with a sparse `data/rerank.overlay.yaml`. The stage is
+**fail-open**: disabled, unreachable, slow, non-200 or empty leaves the caller's order untouched.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 
