@@ -549,9 +549,13 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                 q.put(None)
                 # JAG-181: the turn is over — no longer "attachable".
                 # JAG-299: only clear OUR registration; a newer turn may have replaced it.
-                with _ACTIVE_CHAT_LOCK:
-                    if (_ACTIVE_CHAT.get(sess["id"]) or {}).get("tok") is _turn_tok:
-                        _ACTIVE_CHAT.pop(sess["id"], None)
+                # v811: ONE choke point — `turn_end` owns the release AND the `doing`
+                # correction (no step may claim to run when no turn does). It is the
+                # same release semantics this block had, so the manual pop is gone.
+                # `publish_done=False`: this path already ships its own terminal
+                # frame, and a second `chat.done` on the feed would close the
+                # re-attach stream of a LATER turn early.
+                turn_end(sess["id"], _turn_tok, publish_done=False)
                 _turn_lock(sess["id"]).release()  # JAG-201: allow the next turn
 
     t = threading.Thread(target=worker, daemon=True)

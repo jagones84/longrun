@@ -322,13 +322,42 @@ def turn_begin(sid):
     return tok
 
 
-def turn_end(sid, tok=None):
-    """Release a `turn_begin` bracket and clear the session's running signal."""
+def turn_end(sid, tok=None, publish_done=True):
+    """Release a `turn_begin` bracket, clear the running signal, and close the claim.
+
+    v811: a `doing` todo is a claim that the step is being worked RIGHT NOW, so it
+    cannot outlive the turn that was working it. This is the ONE place every turn
+    ends (stream, sync and in-process MCP), which is why the correction lives here
+    instead of in each loop: when the released turn really was the last one, every
+    `doing` node of the session's plan goes back to `todo`. A newer turn that
+    replaced this registration is untouched — it owns the steps it is working.
+
+    `publish_done=False` exists for the streaming path, which ships its OWN terminal
+    frame: emitting a second `chat.done` on the feed would close a re-attach stream
+    of a later turn early.
+    """
+    released = False
     with _ACTIVE_CHAT_LOCK:
         cur = _ACTIVE_CHAT.get(sid)
         if tok is None or (cur or {}).get("tok") is tok:
             _ACTIVE_CHAT.pop(sid, None)
-    publish("chat.done", session=sid)
+            released = True
+        still_running = sid in _ACTIVE_CHAT
+    if released and not still_running:
+        _release_doing_todos(sid)
+    if publish_done:
+        publish("chat.done", session=sid)
+
+
+def _release_doing_todos(sid):
+    """v811: nothing is `doing` when nothing is running (never breaks a turn)."""
+    try:
+        from longrun.plan import taskgraph
+        g = taskgraph.load(sid)
+        if g and g.get("nodes"):
+            taskgraph.release_doing(g)
+    except Exception:  # noqa: BLE001 — the feed/log must never fail a turn end
+        pass
 
 
 def set_turn_sink(sid, fn):

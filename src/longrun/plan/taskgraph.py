@@ -968,6 +968,29 @@ def supersede_open(graph, keep_labels):
     return cancelled
 
 
+def release_doing(graph, source="harness:turn-end"):
+    """v811: no step stays `doing` once the turn that was working it ENDED.
+
+    `doing` is a claim about the PRESENT ("this is being worked on right now"), but
+    only the model ever moved a node out of it: a turn that stopped, was aborted, or
+    simply forgot left the claim standing — 13 zombie `doing` nodes in the live data
+    on 2026-11-04. The harness closes its own bracket: when the session's turn is
+    over, every `doing` node goes back to `todo` (the work is open, not running), so
+    the next turn re-marks the one it actually works on.
+
+    Evidence, plan and deps are untouched — this is a state correction, not a close.
+    """
+    demoted = []
+    for n in list((graph or {}).get("nodes") or []):
+        if n.get("status") != "doing":
+            continue
+        try:
+            demoted.append(update_node(graph, n["id"], status="todo", source=source)["id"])
+        except (KeyError, ValueError):
+            continue
+    return demoted
+
+
 def enforce_single_doing(graph, keep_id=None):
     """JAG-177: at most ONE node may be `doing` (the standard rule). Demote the
     extras to `todo`. Returns the ids that were demoted."""
