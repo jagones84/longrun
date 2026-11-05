@@ -247,11 +247,21 @@ class RunTrace:
         # provider-priced ledger already holds for this run id (cache-aware).
         # The chars/4 estimate stays only as the fallback for run kinds that are
         # not tied to a session (plan/agent), where no ledger rows exist.
+        # B-3 (v815): the TOKENS follow the same rule. `llm_call` counts chars/4 as
+        # the run streams (the only number available before the provider answers),
+        # but the ledger holds the provider's REAL counts for the same run id — so
+        # `runs.tokens_in/out` and `GET /api/costs` can no longer disagree, and no
+        # consumer sums two different totals into a double. A run whose ledger has
+        # no matching rows (`calls == 0`) keeps the estimate, never a zero.
         cost = None
         if self.session:
             try:
                 from longrun.model import costs as _costs
-                cost = _costs.for_run(self.session, self.id).get("usd")
+                led = _costs.for_run(self.session, self.id)
+                cost = led.get("usd")
+                if led.get("calls"):
+                    self.tokens_in = int(led.get("tokens_in") or 0)
+                    self.tokens_out = int(led.get("tokens_out") or 0)
             except Exception:  # noqa: BLE001 — accounting must never break a run
                 cost = None
         if cost is None and not self.session:
@@ -270,7 +280,12 @@ class RunTrace:
         with _db_lock:
             db().execute(
                 "UPDATE runs SET tokens_in=?, tokens_out=?, cost_usd=?, status=?, model=?, spans=? WHERE id=?",
-                (self.tokens_in, self.tokens_out, round(cost, 6), status,
+                # B-3: an unknown price is NULL — never a crash and never a fake 0.
+                # `for_run` reports `usd: None` for a run with no priced row, and
+                # `round(None)` raised TypeError, so every session run whose model
+                # had no price entry lost its runs row entirely.
+                (self.tokens_in, self.tokens_out,
+                 (round(cost, 6) if cost is not None else None), status,
                  self.model, json.dumps(spans, ensure_ascii=False), self.id))
             db().commit()
 
