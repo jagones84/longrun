@@ -1581,6 +1581,10 @@ def handle(handler, method, path, qs, body):
                                      "difficulty": registry.load_config().get("difficulty") or {},
                                      "selfevolve": registry.load_config().get("selfevolve") or {},
                                      "reasoning": registry.load_config().get("reasoning") or {},
+                                     # V-2 (v820): how often each configured deny/
+                                     # always-ask rule fires, and which never have —
+                                     # the evidence for retiring a dead guardrail.
+                                     "rule_firings": registry.policy_report(),
                                      "approvals": approvals.stats()})
         if path == "/api/tools/running":
             return _r(handler, 200, {"running": sandbox.running()})

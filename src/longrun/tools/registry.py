@@ -1593,6 +1593,69 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
 
 _RATE_BUCKETS = {}
 
+# V-2 (v820): how often each CONFIGURED policy rule actually fires. The Cursor
+# talk keeps a "shims registry" — every deterministic guardrail logged on use, so
+# one that has stopped firing can be found and retired. Longrun published nothing
+# when a deny/always-ask rule matched, so an obsolete rule was indistinguishable
+# from a load-bearing one. Counters are keyed `<tool>:<kind>:<pattern>` and are the
+# only evidence that lets `policy_report()` name a rule that NEVER fired.
+_HIT_LOCK = threading.Lock()
+_HIT_PATH = os.environ.get("LONGRUN_POLICY_HITS",
+                           os.path.join(APP_DATA_DIR, "policy_hits.json"))
+_HITS = None
+
+
+def _hits():
+    global _HITS
+    if _HITS is None:
+        try:
+            with open(_HIT_PATH, encoding="utf-8") as f:
+                _HITS = json.load(f) or {}
+        except Exception:  # noqa: BLE001 — a missing/corrupt ledger is just empty
+            _HITS = {}
+    return _HITS
+
+
+def note_rule_hit(tool, kind, pattern):
+    """Count ONE firing of a configured `deny` / `always_ask` rule (V-2/v820)."""
+    key = "%s:%s:%s" % (tool, kind, pattern)
+    with _HIT_LOCK:
+        rec = _hits().get(key) or {"n": 0}
+        ts = round(time.time(), 3)
+        rec["n"] = int(rec.get("n") or 0) + 1
+        rec["first_ts"] = rec.get("first_ts") or ts
+        rec["last_ts"] = ts
+        _hits()[key] = rec
+        snapshot = dict(_hits())
+    try:
+        from longrun.util.fswrite import write_json
+        write_json(_HIT_PATH, snapshot)
+    except Exception:  # noqa: BLE001 — accounting must never block a tool call
+        pass
+    return key
+
+
+def policy_report():
+    """Which configured guardrails FIRE, and which never have (V-2/v820).
+
+    `never_fired` is derived from the CONFIG, not from the absence of a counter, so
+    a rule nobody has ever hit is NAMED rather than merely missing. Retire an
+    obsolete rule instead of leaving a dead gate in the Permissions page.
+    """
+    hits = dict(_hits())
+    configured = []
+    try:
+        for name, entry in (load_config().get("tools") or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            for kind in ("deny", "always_ask"):
+                for pat in (entry.get(kind) or []):
+                    configured.append("%s:%s:%s" % (name, kind, pat))
+    except Exception:  # noqa: BLE001
+        pass
+    return {"firings": hits, "never_fired": sorted(r for r in configured if r not in hits),
+            "configured_rules": len(configured), "fired_rules": len(hits)}
+
 
 def rate_consume(tool, max_calls, window_secs, now=None):
     """Paperclip-grade rate probe (P1/N3): "ok" or a "limited: ..." reason.
@@ -1965,6 +2028,7 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     subject = _subject(tool, args)
     hit = _match(spec["deny"], subject)
     if hit:
+        note_rule_hit(tool, "deny", hit)
         return "denied", "matches hard-deny pattern %r" % hit
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
@@ -2014,6 +2078,7 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     # other 180 tools. It is NOT a hard deny: approving the card still runs it.
     hit_ask = _match(spec["always_ask"], subject)
     if hit_ask:
+        note_rule_hit(tool, "always_ask", hit_ask)
         return "required", "matches always-ask pattern %r (FULL does not skip it)" % hit_ask
     # JAG-127c/388: global approval switch, set from the Config panel (persisted
     # in the overlay). `full` = never ask for anything (hard-deny/disabled still
