@@ -8,8 +8,8 @@ grave"*). Session `longrunAgent` (agent A1) tried to shut the Windows PC down:
     result: "blocked"   error: ""   backend: "harness"   approval: None
 
 `registry.classify` DOES return a precise reason (`matches hard-deny pattern
-'\\b(shutdown|reboot|poweroff)\\b'`), and `api_v02.gated_call` returns it in
-`.reason`. The agent loop built the observation from
+'LONGRUN_TOKEN'`), and `api_v02.gated_call` returns it in `.reason`. The agent loop
+built the observation from
 `observation -> error -> status`, so the reason was DROPPED and the model — and the
 operator — got the single word "blocked". The card carried an empty `error`.
 Retrying was the only thing the model could do, and it did, four times.
@@ -52,10 +52,12 @@ def check(name, ok, detail=""):
 
 
 # ------------------------------------------- A. gated_call keeps the reason -----
-_blk = api_v02.gated_call("shell", {"command": "echo shutdown /s /t 5"})
+# The subject must be a command that is STILL hard-denied and HARMLESS if the guard
+# ever failed: `echo LONGRUN_TOKEN` matches the secret pattern and only prints a word.
+_blk = api_v02.gated_call("shell", {"command": "echo LONGRUN_TOKEN"})
 check("A1 a deny-listed command is blocked", _blk.get("status") == "blocked", _blk.get("status"))
 check("A2 the reason names the hard-deny pattern",
-      "hard-deny" in str(_blk.get("reason")) and "shutdown" in str(_blk.get("reason")),
+      "hard-deny" in str(_blk.get("reason")) and "LONGRUN_TOKEN" in str(_blk.get("reason")),
       _blk.get("reason"))
 check("A3 the reason is ALSO in `error` (consumers that read only error are correct)",
       _blk.get("error") == _blk.get("reason"), (_blk.get("error"), _blk.get("reason")))

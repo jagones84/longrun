@@ -46,7 +46,7 @@ decision.CONFIG_PATH = os.path.join(TMP, "missing.yaml")   # absent file -> defa
 check("1a with no config the layer is null (disabled)",
       decision.get().name == "null" and decision.load_config().get("enabled") is False)
 check("1b null mode never blocks anything",
-      decision.pre_tool("shell", {"command": "shutdown now"}).get("ok") is True)
+      decision.pre_tool("shell", {"command": "echo LONGRUN_TOKEN"}).get("ok") is True)
 check("1c speculative is OFF by default",
       decision.speculative({"speculative": {}}).get("enabled") in (False, None))
 
@@ -54,7 +54,7 @@ check("1c speculative is OFF by default",
 _set_mode("heuristic")
 d = decision.get()
 check("2a heuristic mode is selected", d.name == "heuristic")
-v = decision.pre_tool("shell", {"command": "shutdown now"})
+v = decision.pre_tool("shell", {"command": "echo LONGRUN_TOKEN"})
 check("2b a hard-denied command is rejected with a reason",
       v.get("ok") is False and "deny" in (v.get("reason") or ""), v)
 check("2c a safe command is allowed",
@@ -81,7 +81,7 @@ check("5b a null-mode route hint is empty",
       decision.NullDecision().route(decision.StepCtx()).model == "")
 
 # ---- 6. the guard is wired INTO tool execution ------------------------------
-res = T.execute("shell", {"command": "shutdown now"}, run_id="v420")
+res = T.execute("shell", {"command": "echo LONGRUN_TOKEN"}, run_id="v420")
 check("6a execute() blocks it at the decision layer (not the approval gate)",
       res.get("ok") is False and res.get("decision_blocked") is True, res.get("error"))
 _set_mode("null")

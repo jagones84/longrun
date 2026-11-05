@@ -257,7 +257,12 @@ tools:
       - "\\bmkfs(\\s|$)"
       - "\\bdd\\s+if=/dev/(zero|random)"
       - ":\\s*\\(\\s*\\)\\s*\\{"
-      - "\\b(shutdown|reboot|poweroff)\\b"
+      # 2026-11-04 (operator: "remove that command from hard denial i need to
+      # shutdown the machines"): `\b(shutdown|reboot|poweroff)\b` was REMOVED. A
+      # hard deny is absolute — approvals.mode=full never lifts it — so the
+      # requirement could not be met any other way. Powering off is now an ordinary
+      # command; re-add the pattern here to make it impossible again (the agent
+      # would then only see "BLOCKED" with the rule named).
       - ">\\s*/dev/(sd|nvme|mmcblk)"
       - "LONGRUN_TOKEN"
       - "grep[^\\n]*\\.env"
