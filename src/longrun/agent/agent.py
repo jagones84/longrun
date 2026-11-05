@@ -4782,14 +4782,19 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "question, not a placeholder — and call it again."
                         % _bad, "nudge")
                 continue
-            if autonomous and not goal_mode:
+            if (autonomous and not goal_mode) or (bool(sess.get("system")) and not goal_mode):
                 # JAG-295 parity: a JOB/routine has nobody attached, so parking it
                 # for a human would hang the run. The agent must decide itself.
+                # 2026-11-05 (operator: "the human in the loop page appeared in A1
+                # session … I don't want that"): the same is true for the SYSTEM
+                # agent (longrunAgent / A1) — it is the automation turn other
+                # agents and the WebUI dispatch into, and a card there parks a
+                # workflow with nobody guaranteed to answer it.
                 msgs.append({"role": "assistant", "content": answer})
                 _inject("HUMAN IN THE LOOP is unavailable here: nobody is attached "
-                        "to this turn (a job or routine). Decide with what you "
-                        "have — mark the step 'done' with the evidence, or "
-                        "'superseded' with a reason — and finish.", "nudge")
+                        "to this turn (a job, a routine, or the system agent). Decide "
+                        "with what you have — mark the step 'done' with the evidence, "
+                        "or 'superseded' with a reason — and finish.", "nudge")
                 continue
             _steps = [{"id": "", "label": str(x).strip()}
                       for x in (_ask.get("steps") or []) if str(x).strip()][:8]

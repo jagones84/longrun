@@ -321,6 +321,12 @@ tools:
       - "^describe(\\s|$)"
       - "^ls-files(\\s|$)"
       - "^tag(\\s|$)"
+    # 2026-11-05 (operator: "Git push in full does not ask for approval"): a
+    # matcher here reaches a human even when approvals.mode is FULL — approving the
+    # card still runs the command, so this is a brake, not a block. Managed from
+    # Settings > Permissions (the "always ask" list).
+    always_ask:
+      - "^push(\\s|$)"
     # 2026-11-05 (operator: "Yes agent may push"): `^push(\s|$)` was REMOVED from
     # this deny list. Push is now an ordinary mutating subcommand, so it follows the
     # tool's `approval` policy (the shipped default is `required`; an overlay that

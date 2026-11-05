@@ -1485,6 +1485,9 @@
     border: 1px solid transparent; color: var(--dim); border-radius: 8px; padding: 7px 10px; margin-bottom: 3px;
     font-size: 12px; cursor: pointer; }
   #settingsWin .sw-nav button.active { color: var(--txt); border-color: var(--accent); background: var(--sel); }
+  /* 2026-11-05: on a phone the 19-item nav is a SELECT, not a strip that scrolls
+     sideways — the media query below swaps them (one control, never two rows). */
+  #settingsWin .sw-nav-sel { display: none; }
   .diag-badge { padding: 4px 8px; font-size: 10px; white-space: nowrap; }
   .diag-badge.error { color: var(--err); border-color: var(--err); }
   .diag-badge.warning { color: var(--warn); border-color: var(--warn); }
@@ -1502,13 +1505,51 @@
      and it could NOT be reduced (there was no handle). Turn the nav into a compact TOP
      tab strip and let the window fill the screen, so there is no "left width" to fight. */
   @media (max-width: 640px) {
-    #settingsWin { left: 0 !important; top: 52px !important; width: 100vw !important;
-      height: calc(100dvh - 52px) !important; border-radius: 0 !important; }
+    #settingsWin { left: 0 !important; top: 52px !important; width: 100% !important; max-width: 100vw !important;
+      height: calc(100dvh - 52px) !important; border-radius: 0 !important; box-sizing: border-box; }
     #settingsWin .sw-body { flex-direction: column; }
-    #settingsWin .sw-nav { flex: 0 0 auto; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
-      border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; }
-    #settingsWin .sw-nav button { width: auto; margin: 0; white-space: nowrap; }
-    #settingsWin .sw-main { padding: 12px; }
+    #settingsWin .sw-nav { flex: 0 0 auto; display: block; border-right: 0;
+      border-bottom: 1px solid var(--line); padding: 6px 8px; }
+    #settingsWin .sw-nav button { display: none; }
+    #settingsWin .sw-nav-sel { display: block; width: 100%; }
+    #settingsWin .sw-main { padding: 12px; overflow-x: hidden; }
+    .tools-head { gap: 6px; }
+    .tools-head-note { flex-basis: 100%; }
+  }
+  /* 2026-11-05 — Settings ▸ Permissions (its own page, apart from Tools & approvals). */
+  .tools-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+  .tools-head-note { flex: 1 1 220px; min-width: 0; }
+  .perm-card { margin-bottom: 10px; }
+  .perm-legend { margin: 4px 0 8px; }
+  .perm-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; min-width: 0; }
+  .perm-name { flex: 0 0 auto; width: 150px; font-size: 12px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .perm-rule { flex: 1 1 0; min-width: 0; font-size: 11px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .perm-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .perm-add select, .perm-add input { flex: 1 1 140px; min-width: 0; }
+  .perm-off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  /* 2026-11-05: a tool row is name + actions. On a desktop the actions sit at the
+     right edge; on a phone they take their own line instead of pushing the row
+     past the viewport (measured: 80 buttons overflowed 390px). */
+  .tool-row { padding: 6px 8px; margin-bottom: 6px; display: flex; align-items: center;
+    gap: 8px; flex-wrap: wrap; }
+  .tool-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .tool-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  /* 2026-11-05 (operator: "the layout doesn't adapt to mobile"): a flex row with a
+     fixed-width label cannot fit 390px — the rule text was clipped and the page grew
+     a horizontal scrollbar. On a phone each rule takes its own line and the add-rule
+     controls stack instead of fighting for width. Declared AFTER the base rules so
+     it actually wins. */
+  @media (max-width: 640px) {
+    .perm-row { flex-wrap: wrap; align-items: flex-start; }
+    .perm-name { width: auto; flex: 1 1 60%; }
+    .perm-rule { flex: 1 1 100%; order: 3; white-space: normal; word-break: break-all; }
+    .perm-row .ghost { align-self: flex-start; }
+    .perm-add > * { flex: 1 1 100%; }
+    .tool-actions { margin-left: 0; flex: 1 1 100%; }
+    .tool-name { flex: 1 1 auto; }
   }
   #settingsWin .sw-main { flex: 1; min-width: 0; overflow-y: auto; padding: 10px 12px; }
   /* v639: Settings uses the rail's button size and padding rhythm — the window is a
@@ -3054,6 +3095,14 @@
       <div class="sw-cat" data-cat="tools" hidden>
         <h2>Tools &amp; approvals · what the agent can do, and when it must ask</h2>
         <div class="card" id="configPanel"><div class="remaining">loading…</div></div>
+      </div>
+      <!-- 2026-11-05 (operator: "Build permission page out of the tools e approval"):
+           the hard blocks and the always-ask rules left this panel — they answer a
+           different question (what may EVER run) from approvals (what is waiting for
+           you right now, in the right-hand panel). -->
+      <div class="sw-cat" data-cat="permissions" hidden>
+        <h2>Permissions · what may ever run</h2>
+        <div id="permsPanel"><div class="remaining">loading…</div></div>
       </div>
       <div class="sw-cat" data-cat="sandbox" hidden>
         <h2>Sandbox · shell and Python isolation</h2>
@@ -11341,40 +11390,11 @@ function renderTools(el, d) {
          </div>`;
        }).join("")}
      </div>`;
-  // 2026-11-05 (operator: "hard denial can be changed by the user in the settings
-  // permission page"): ONE place that lists every HARD BLOCK — a `deny` regex is
-  // matched against the call's subject and refuses it BEFORE any approval exists,
-  // so the global FULL mode can never lift it — plus every tool that is OFF with
-  // the reason. Both edit through POST /api/tools, the same endpoint the ⚙
-  // advanced editor uses: no second truth about the policy.
-  const _dr = [];
-  tools.forEach((t, i) => (t.deny || []).forEach((rule, j) =>
-    _dr.push({ i, j, name: String(t.name || "?"), rule: String(rule) })));
-  const _off = tools.map((t, i) => ({ i, t })).filter(x => x.t.enabled === false);
-  const permsCard =
-    `<div class="card" id="permsCard" style="margin-bottom:10px">
-       <div class="set-t" title="A deny rule is matched against the call's subject (the command, the path, the URL). A match is refused BEFORE any approval exists, so FULL mode cannot lift it. Remove a rule to make that command possible again.">🛡 Permissions · hard blocks</div>
-       <div class="remaining" style="margin:4px 0 8px">Refused before approval — FULL mode never lifts a deny rule.</div>
-       ${_dr.length ? _dr.map(r =>
-         `<div class="u-df u-g6" style="align-items:center;margin:4px 0">
-            <span style="min-width:150px;font-size:12px">${esc(r.name)}</span>
-            <code style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis">${esc(r.rule)}</code>
-            <button class="ghost" data-rmdeny="${r.i}:${r.j}" aria-label="remove rule" title="remove this hard block">✕</button>
-          </div>`).join("")
-         : '<div class="remaining">no hard blocks</div>'}
-       <div class="u-df u-g6" style="align-items:center;margin-top:8px">
-         <select id="permTool" class="inp" style="max-width:220px" aria-label="tool">
-           ${tools.map((t, i) => `<option value="${i}">${esc(String(t.name || "?"))}</option>`).join("")}
-         </select>
-         <input id="permRule" class="inp" style="flex:1" placeholder="regex, e.g. ^shutdown" aria-label="new rule">
-         <button class="ghost" id="permAdd" title="add this hard block">+ block</button>
-       </div>
-       <div class="remaining" id="permMsg" role="status" aria-live="polite"></div>
-       <details class="u-mt8"><summary class="remaining">${_off.length} tool(s) OFF (opt-in)</summary>
-         <div class="remaining" style="margin:6px 0">An external MCP tool is opt-in: it stays OFF until it is listed in the policy. Enabling it here writes the same setting.</div>
-         ${_off.map(x => `<button class="ghost" data-permon="${x.i}" title="enable ${esc(String(x.t.name || "?"))}">⏻ ${esc(String(x.t.name || "?"))}</button>`).join(" ")}
-       </details>
-     </div>`;
+  // 2026-11-05 (operator: "Build permission page out of the tools e approval"):
+  // the permissions editor is its OWN Settings category now (`renderPermissions`):
+  // Permissions = what may EVER run; Approvals (the right-hand panel) = the
+  // decisions that are waiting for you. Keeping them in one card made the two
+  // read as the same thing — they are not.
   // JAG-488: the sandbox block was read-only (the topbar pill) — no way to switch
   // the backend, the image or the limits from the WebUI. Now it is editable here.
   const sbc = (d && d.sandbox_config) || {};
@@ -11470,13 +11490,15 @@ function renderTools(el, d) {
       : (isExcl
         ? '<span class="remaining" style="color:var(--warn)" title="even on FULL this tool answers permission-denied (exit 126) without the per-session Teamorg grant — toggle it in the session menu">grant still required</span>'
         : "");
-    return `<div class="card" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">` +
-      `<span style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
-      `<span style="font-weight:600">${nm}</span>${originBadge(t)}` + eff +
-      `<button class="ghost" style="margin-left:auto;font-size:10px;color:${apColor}" data-ap="${nmRaw}" data-cur="${ap}" title="stored per-tool policy — click to cycle">${esc(ap)} ⟳</button>` +
-      `<button class="ghost" style="font-size:10px" data-adv="${nmRaw}" title="roots · deny · allow_hosts · auto_approve">⚙</button>` +
-      `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button>` +
-      (isMatrix ? `<button class="ghost" style="font-size:10px;color:var(--err)" data-mtxrm="${nmRaw}" title="uninstall this Matrix tool: delete its source file, drop its policy entries and hot-reload. The built-in set is never removable.">uninstall</button>` : "") +
+    return `<div class="card tool-row">` +
+      `<span class="tool-on" style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
+      `<span class="tool-name" title="${nmRaw}">${nm}</span>${originBadge(t)}${eff}` +
+      `<span class="tool-actions">` +
+        `<button class="ghost" style="font-size:10px;color:${apColor}" data-ap="${nmRaw}" data-cur="${ap}" title="stored per-tool policy — click to cycle">${esc(ap)} ⟳</button>` +
+        `<button class="ghost" style="font-size:10px" data-adv="${nmRaw}" title="roots · deny · allow_hosts · auto_approve">⚙</button>` +
+        `<button class="ghost" style="font-size:10px" data-tool="${nmRaw}" data-on="${on}">${on ? "disable" : "enable"}</button>` +
+        (isMatrix ? `<button class="ghost" style="font-size:10px;color:var(--err)" data-mtxrm="${nmRaw}" title="uninstall this Matrix tool: delete its source file, drop its policy entries and hot-reload. The built-in set is never removable.">uninstall</button>` : "") +
+      `</span>` +
       `</div>` +
       (t.description ? `<div class="remaining" style="margin:-4px 0 8px 22px">${esc(t.description)}</div>` : "");
   };
@@ -11510,7 +11532,7 @@ function renderTools(el, d) {
     // hidden behind a collapsed "▸ cost" row ("non li vedo nel pannello tool").
     const open = _open[g] !== undefined ? !!_open[g] : (_originKey(g) === "matrix");
     return `<div class="card" data-group="${gid}" style="padding:6px 8px;margin-bottom:6px">` +
-      `<div class="tg-head" style="display:flex;align-items:center;gap:8px;cursor:pointer">` +
+      `<div class="tg-head" style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap">` +
         `<span class="tg-caret" style="width:10px;color:var(--dim)">${open ? "▾" : "▸"}</span>` +
         `<span style="font-weight:600">${esc(g)}</span>` +
         `<span class="remaining">${gOn}/${list.length} enabled</span>` +
@@ -11547,12 +11569,13 @@ function renderTools(el, d) {
         "</b> (" + count + ")</summary>" + inner + "</details>";
   }).join("");
   const _onN = tools.filter(t => t.enabled !== false).length;
-  el.innerHTML = policyCard + kindsCard + permsCard + (tools.length
-    ? '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">' +
-        '<span class="remaining" style="flex:1">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b>' +
+  el.innerHTML = policyCard + kindsCard + (tools.length
+    ? '<div class="tools-head">' +
+        '<span class="remaining tools-head-note">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b>' +
           (globalAuto ? ' · <b style="color:var(--err)">global FULL: every tool is auto (never ask)</b>' : '') +
         "</span>" +
         '<span class="remaining">' + _onN + "/" + tools.length + " enabled</span>" +
+        '<button class="ghost" data-goperms title="hard blocks, always-ask rules and the tools that are OFF live in their own page">🛡 permissions</button>' +
         '<button class="ghost" data-bulk="enable" title="enable EVERY tool (native + external MCP) in one request">enable all</button>' +
         '<button class="ghost" data-bulk="disable" title="disable every tool (native + external MCP)">disable all</button>' +
       "</div>" +
@@ -11573,38 +11596,9 @@ function renderTools(el, d) {
   el.querySelectorAll("button[data-tool]").forEach(b =>
     b.onclick = () => api("POST", "/api/tools", { tool: b.dataset.tool, enabled: b.dataset.on !== "true" })
       .then(() => api("GET", "/api/tools")).then(d2 => renderTools(el, d2)));
-  // 2026-11-05: the Permissions card edits the SAME `deny` list the ⚙ advanced
-  // editor edits, one rule at a time. Removing a rule is the operator's way out of
-  // a hard block (FULL mode cannot do it); adding one is the way to make a command
-  // impossible again without touching the YAML.
-  el.querySelectorAll("button[data-rmdeny]").forEach(b =>
-    b.onclick = async () => {
-      const parts = String(b.dataset.rmdeny).split(":");
-      const t = tools[Number(parts[0])] || {};
-      const next = (t.deny || []).filter((_, j) => j !== Number(parts[1]));
-      const r = await api("POST", "/api/tools", { tool: t.name, deny: next });
-      const m = el.querySelector("#permMsg");
-      if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
-      renderTools(el, await api("GET", "/api/tools"));
-    });
-  el.querySelectorAll("button[data-permon]").forEach(b =>
-    b.onclick = async () => {
-      const t = tools[Number(b.dataset.permon)] || {};
-      await api("POST", "/api/tools", { tool: t.name, enabled: true });
-      renderTools(el, await api("GET", "/api/tools"));
-    });
-  const permAdd = el.querySelector("#permAdd");
-  if (permAdd) permAdd.onclick = async () => {
-    const sel = el.querySelector("#permTool"), inp = el.querySelector("#permRule");
-    const t = tools[Number(sel && sel.value)] || {};
-    const rule = String((inp && inp.value) || "").trim();
-    const m = el.querySelector("#permMsg");
-    if (!rule) { if (m) m.textContent = "write the regex first"; return; }
-    if ((t.deny || []).indexOf(rule) >= 0) { if (m) m.textContent = "already blocked"; return; }
-    const r = await api("POST", "/api/tools", { tool: t.name, deny: (t.deny || []).concat([rule]) });
-    if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
-    renderTools(el, await api("GET", "/api/tools"));
-  };
+  // 2026-11-05: hard blocks, always-ask rules and OFF tools are their own page.
+  el.querySelectorAll("button[data-goperms]").forEach(b =>
+    b.onclick = () => settingsCategory("permissions"));
   // JAG-536: the matrix-only uninstall door.
   el.querySelectorAll("button[data-mtxrm]").forEach(b =>
     b.onclick = () => uninstallMatrixTool(b.dataset.mtxrm, el));
@@ -11738,6 +11732,104 @@ function _toolAdvanced(el, name, tools) {
     if (msg) msg.textContent = "saved";
     if (typeof toast === "function") toast(name + ": policy saved", "ok");
     renderTools(el, await api("GET", "/api/tools"));
+  };
+}
+
+/* 2026-11-05 (operator: "Build permission page out of the tools e approval. Search
+   diff of line between permission and approvals") — ONE page for the rules that
+   decide what may EVER run, kept apart from Tools & approvals (which decides WHEN
+   a human is asked) and from the right-hand Approvals panel (the cards waiting for
+   you right now):
+
+     · Hard blocks — matched against the call's subject and refused BEFORE any
+       approval exists; approval mode FULL never lifts them.
+     · Always ask — matched subjects that reach a human even in FULL (e.g. git push).
+     · OFF tools — opt-in external tools that exist but are not enabled.
+
+   Every control writes POST /api/tools, the same endpoint the ⚙ advanced editor
+   uses: one truth about the policy, three views of it. */
+function renderPermissions(el, d) {
+  const tools = (d && d.tools) || d || [];
+  if (!Array.isArray(tools)) { json_pre(el, d); return; }
+  const pol = (d && d.policy) || {};
+  const mode = String(pol.mode || "normal");
+  const collect = key => {
+    const out = [];
+    tools.forEach((t, i) => (t[key] || []).forEach((rule, j) =>
+      out.push({ i, j, key, name: String(t.name || "?"), rule: String(rule) })));
+    return out;
+  };
+  const list = (items, key, empty) => items.length ? items.map(r =>
+    `<div class="perm-row">
+       <span class="perm-name" title="${esc(r.name)}">${esc(r.name)}</span>
+       <code class="perm-rule" title="${esc(r.rule)}">${esc(r.rule)}</code>
+       <button class="ghost" data-permrm="${key}:${r.i}:${r.j}" aria-label="remove rule" title="remove this rule">✕</button>
+     </div>`).join("") : `<div class="remaining">${empty}</div>`;
+  const off = tools.map((t, i) => ({ i, t })).filter(x => x.t.enabled === false);
+  el.innerHTML =
+    `<div class="card perm-card">
+       <div class="set-t">🛡 Permissions · what may run at all</div>
+       <div class="remaining perm-legend">Permissions are checked <b>before</b> approvals. A hard block never
+         runs; an always-ask rule reaches you even with approval mode <b>${esc(mode)}</b>. The decisions waiting
+         for you right now are in the Approvals panel, not here.</div>
+     </div>
+     <h2>Hard blocks · refused, never executed</h2>
+     <div class="card perm-card">${list(collect("deny"), "deny", "no hard blocks")}</div>
+     <h2>Always ask · reaches you even in FULL</h2>
+     <div class="card perm-card">${list(collect("always_ask"), "always_ask", "no always-ask rule")}</div>
+     <h2>Add a rule</h2>
+     <div class="card perm-card">
+       <div class="perm-add">
+         <select id="permKind" class="inp" aria-label="rule type">
+           <option value="deny">hard block — never runs</option>
+           <option value="always_ask">always ask — even in FULL</option>
+         </select>
+         <select id="permTool" class="inp" aria-label="tool">
+           ${tools.map((t, i) => `<option value="${i}">${esc(String(t.name || "?"))}</option>`).join("")}
+         </select>
+         <input id="permRule" class="inp" placeholder="regex, e.g. ^push" aria-label="rule">
+         <button class="ghost" id="permAdd" aria-label="add rule" title="add this rule">+ add</button>
+       </div>
+       <div class="remaining" id="permMsg" role="status" aria-live="polite"></div>
+     </div>
+     <details class="card perm-card"><summary class="remaining">${off.length} tool(s) OFF (opt-in)</summary>
+       <div class="remaining perm-legend">An external MCP tool is opt-in: it stays OFF until it is listed in the
+         policy. Enabling it here writes the same setting as Tools &amp; approvals.</div>
+       <div class="perm-off">${off.map(x =>
+         `<button class="ghost" data-permon="${x.i}" title="enable ${esc(String(x.t.name || "?"))}">⏻ ${esc(String(x.t.name || "?"))}</button>`).join(" ")
+         || '<span class="remaining">every tool is ON</span>'}</div>
+     </details>`;
+  const reload = async () => renderPermissions(el, await api("GET", "/api/tools"));
+  el.querySelectorAll("button[data-permrm]").forEach(b => b.onclick = async () => {
+    const parts = String(b.dataset.permrm).split(":");
+    const key = parts[0], t = tools[Number(parts[1])] || {};
+    const body = { tool: t.name };
+    body[key] = (t[key] || []).filter((_, j) => j !== Number(parts[2]));
+    const r = await api("POST", "/api/tools", body);
+    const m = el.querySelector("#permMsg");
+    if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    reload();
+  });
+  el.querySelectorAll("button[data-permon]").forEach(b => b.onclick = async () => {
+    const t = tools[Number(b.dataset.permon)] || {};
+    await api("POST", "/api/tools", { tool: t.name, enabled: true });
+    reload();
+  });
+  const add = el.querySelector("#permAdd");
+  if (add) add.onclick = async () => {
+    const kind = String((el.querySelector("#permKind") || {}).value || "deny");
+    const sel = el.querySelector("#permTool"), inp = el.querySelector("#permRule");
+    const t = tools[Number(sel && sel.value)] || {};
+    const rule = String((inp && inp.value) || "").trim();
+    const m = el.querySelector("#permMsg");
+    if (!rule) { if (m) m.textContent = "write the regex first"; return; }
+    const cur = t[kind] || [];
+    if (cur.indexOf(rule) >= 0) { if (m) m.textContent = "already there"; return; }
+    const body = { tool: t.name };
+    body[kind] = cur.concat([rule]);
+    const r = await api("POST", "/api/tools", body);
+    if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    reload();
   };
 }
 
@@ -12915,7 +13007,8 @@ const SETTINGS_CATS = [
   // v641: Diagnostics sits FIRST (operator: "diagnostics mettilo on top") — it is
   // the panel that tells you whether anything below can work at all.
   ["diagnostics", "Diagnostics"], ["appearance", "Appearance"], ["keys", "Keys"], ["models", "Models"],
-  ["subagents", "Subagents"], ["orchestrate", "Swarm & blackboard"], ["tools", "Tools & approvals"], ["sandbox", "Sandbox"],
+  ["subagents", "Subagents"], ["orchestrate", "Swarm & blackboard"], ["tools", "Tools & approvals"],
+  ["permissions", "Permissions"], ["sandbox", "Sandbox"],
   ["mcp", "MCP"],
   ["skills", "Skills"], ["rules", "Rules"], ["knowledge", "Knowledge"],
   ["compaction", "Compaction"],
@@ -13145,6 +13238,8 @@ function gotoSubagents() { settingsCategory("subagents"); }
 function gotoOrchestrate() { settingsCategory("orchestrate"); }
 function settingsCategory(name) {
   document.querySelectorAll("#swNav button").forEach(b => b.classList.toggle("active", b.dataset.cat === name));
+  const _navSel = $("swNavSel");
+  if (_navSel && _navSel.value !== name) _navSel.value = name;
   document.querySelectorAll("#swMain .sw-cat").forEach(c => { c.hidden = c.dataset.cat !== name; });
   localStorage.setItem("sf_settings_cat", name);
   // K-5: no category-level mount — each section's ✨ is mounted by the renderer that
@@ -13165,6 +13260,10 @@ function settingsCategory(name) {
       json_pre($("configPanel"), { error: String(e) });
       json_pre($("sandboxPanel"), { error: String(e) });
     });
+  }
+  else if (name === "permissions") {
+    api("GET", "/api/tools").then(d => renderPermissions($("permsPanel"), d))
+      .catch(e => json_pre($("permsPanel"), { error: String(e) }));
   }
   else if (name === "improvement") {
     // v641: the memory manager moved into this panel (it is what the loop writes).
@@ -13241,8 +13340,16 @@ function _markApplyModes() {
 }
 function buildSettingsWin() {
   if (document.querySelector("#swNav button")) return;
-  $("swNav").innerHTML = SETTINGS_CATS.map(([k, label]) =>
-    `<button data-cat="${k}" onclick="settingsCategory('${k}')">${label}</button>`).join("");
+  // 2026-11-05: TWO presentations of ONE list — buttons on a desktop, a select on a
+  // phone (19 items do not fit, and a sideways-scrolling strip hides half of them).
+  $("swNav").innerHTML =
+    '<select class="inp sw-nav-sel" id="swNavSel" aria-label="settings section">' +
+      SETTINGS_CATS.map(([k, label]) => `<option value="${k}">${label}</option>`).join("") +
+    "</select>" +
+    SETTINGS_CATS.map(([k, label]) =>
+      `<button data-cat="${k}" onclick="settingsCategory('${k}')">${label}</button>`).join("");
+  const _sel = $("swNavSel");
+  if (_sel) _sel.onchange = () => settingsCategory(_sel.value);
   const w = settingsWin();
   _applySettingsGeom(w);
   dragify(w.querySelector(".sw-head"), w, "sf_settings_pos");

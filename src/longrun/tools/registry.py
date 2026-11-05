@@ -1538,6 +1538,7 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
         "approval": entry.get("approval", "required"),
         "auto_approve": list(entry.get("auto_approve") or []),
         "deny": list(entry.get("deny") or []),
+        "always_ask": list(entry.get("always_ask") or []),
         "allow_hosts": list(entry.get("allow_hosts") or []),
         "roots": list(entry.get("roots") or ["."]),
         "rate_limit": entry.get("rate_limit"),
@@ -1664,6 +1665,7 @@ def catalog():
             "approval": spec["approval"],
             "auto_approve": spec["auto_approve"],
             "deny": spec["deny"],
+            "always_ask": spec["always_ask"],
             "allow_hosts": spec["allow_hosts"],
             "roots": spec["roots"],
             "description": (spec["schema"] or {}).get("description", ""),
@@ -1953,6 +1955,14 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
                 "in Settings > Tools & approvals (even FULL mode does not authorize it)"
             )
         return "auto", "allow_matrix_promote checkbox is enabled"
+    # 2026-11-05 (operator: "Git push in full does not ask for approval"): an
+    # `always_ask` rule is a MATCHED subject that must reach a human even when the
+    # global approvals.mode is FULL. It is checked before that fast path below, so
+    # the operator can protect one action (git push) without giving up FULL for the
+    # other 180 tools. It is NOT a hard deny: approving the card still runs it.
+    hit_ask = _match(spec["always_ask"], subject)
+    if hit_ask:
+        return "required", "matches always-ask pattern %r (FULL does not skip it)" % hit_ask
     # JAG-127c/388: global approval switch, set from the Config panel (persisted
     # in the overlay). `full` = never ask for anything (hard-deny/disabled still
     # win). It is now the ONLY thing that relaxes the workspace boundary below.

@@ -2624,7 +2624,7 @@ def _apply_tool_fields(entry, body):
         entry["approval"] = ap
     # JAG-491: the per-tool ADVANCED fields (the same lists the shipped YAML
     # documents) are editable as objects too. Each is a list of strings.
-    for key in ("auto_approve", "roots", "deny", "allow_hosts"):
+    for key in ("auto_approve", "roots", "deny", "allow_hosts", "always_ask"):
         if key in body:
             vals = body[key]
             if not isinstance(vals, list):

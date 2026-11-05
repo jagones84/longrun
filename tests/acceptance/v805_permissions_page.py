@@ -73,17 +73,22 @@ registry.load_config(reload=True)
 _d5, _r5 = registry.classify("shell", {"command": "ls"})
 check("B2 re-enabling takes effect", _d5 != "disabled", (_d5, _r5))
 
-# ---- C: the UI has ONE Permissions card ---------------------------------
-check("C1 the card exists in Settings → Tools", "🛡 Permissions · hard blocks" in UI)
-check("C2 it renders into the tools panel", "policyCard + kindsCard + permsCard" in UI)
-check("C3 every rule can be removed", 'data-rmdeny=' in UI)
+# ---- C: the UI has ONE Permissions page ---------------------------------
+# 2026-11-05 (v806): the card moved out of Tools & approvals into its own Settings
+# category; the guarantees stay: one place, every rule removable, rules addable,
+# OFF tools switchable, all through POST /api/tools.
+check("C1 the page exists as its own Settings category",
+    "🛡 Permissions · what may run at all" in UI)
+check("C2 it renders into its own panel", 'id="permsPanel"' in UI
+      and 'data-cat="permissions"' in UI)
+check("C3 every rule can be removed", 'data-permrm=' in UI)
 check("C4 a rule can be added", 'id="permAdd"' in UI and "concat([rule])" in UI)
 check("C5 an OFF tool can be switched on", 'data-permon=' in UI)
 check("C6 it writes through POST /api/tools (no second endpoint)",
-      'api("POST", "/api/tools", { tool: t.name, deny: next })' in UI
+      'api("POST", "/api/tools", body)' in UI
       and 'api("POST", "/api/tools", { tool: t.name, enabled: true })' in UI)
-check("C7 removing a rule is explained as the way out of a hard block",
-      "FULL mode never lifts a deny rule" in UI)
+check("C7 the distinction from approvals is stated",
+      "checked <b>before</b> approvals" in UI)
 
 # ---- D: the disabled tools explain themselves ---------------------------
 check("D1 the opt-in rule is stated where the OFF tools are listed",
