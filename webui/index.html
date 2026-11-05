@@ -8085,15 +8085,8 @@ function _setSectionEl(sec, merged) {
   card.dataset.file = sec.file; card.dataset.sid = sec.id;
   const files = (sec.files && sec.files.length) ? sec.files : ["config/" + sec.file];
   // v643: the actions sit in the header row (right-aligned), not on a second row.
-  // A merged form has no header at all — the card above is the header — so its one
-  // save sits in a footer row, right-aligned like every other action in the panel.
-  card.innerHTML = merged
-    ? '<div class="hrow" data-fields></div>' +
-      '<div class="set-acts set-foot">' +
-      '<button class="ghost config-save" data-save disabled>save ' + esc(sec.id) + "</button>" +
-      '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
-      "</div>"
-    : '<div class="set-hd">' +
+  if (!merged) {
+    card.innerHTML = '<div class="set-hd">' +
       '<div class="set-t"' + (sec.help ? ' title="' + _attr(sec.help) + '"' : "") + '>' +
       esc(sec.title) +
       ' <span class="remaining" data-config-files>· ' + _settingsFileLinks(files) + '</span></div>' +
@@ -8103,6 +8096,16 @@ function _setSectionEl(sec, merged) {
       '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
       "</div></div>" +
       '<div class="hrow" data-fields></div>';
+  } else {
+    // MERGED (2026-11-05): the card above is the header — it already names the stage,
+    // links no file and carries no second save chip — so this adds the fields and ONE
+    // save, in a footer row.
+    card.innerHTML = '<div class="hrow" data-fields></div>' +
+      '<div class="set-acts set-foot">' +
+      '<button class="ghost config-save" data-save disabled>save ' + esc(sec.id) + "</button>" +
+      '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
+      "</div>";
+  }
   const box = card.querySelector("[data-fields]");
   if (sec.id === "routing") _setRoutingFields(box, sec);
   else (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));

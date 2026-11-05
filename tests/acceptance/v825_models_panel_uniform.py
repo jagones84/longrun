@@ -117,14 +117,19 @@ check("D4 the test is a REAL probe with the same verdict shape as its siblings",
 check("D5 the model row of the config card is a POINTER, not a second input",
       "if (f.owned) {" in HTML and 'setAttribute("data-owned", "1")' in HTML
       and 'hasAttribute("data-owned")' in HTML)
+# The merged branch of the ONE section renderer: everything after `} else {`.
+_sec_fn = HTML[HTML.index("function _setSectionEl(sec"):HTML.index("function _setFieldEl")]
+_merged_branch = _sec_fn[_sec_fn.index("} else {"):]
 check("D6 the knobs are ONE sheet: no second header, no second save chip, no repeated value",
       # 2026-11-05: the form used to render its own card ("Re-ranker · tuning ·
       # config/rerank.yaml" + a SAVE chip + a read-only copy of the model ref) under
       # the picker that already said all three. A merged form is a divider + fields
       # + ONE save; the value the picker owns is never repeated.
       'card.className = merged ? "set-merged" : "card"' in HTML
-      and '? \'<div class="hrow" data-fields></div>\'' in HTML
-      and '"set-acts set-foot"' in HTML
+      and 'if (!merged) {' in HTML
+      and "set-acts set-foot" in _merged_branch
+      and 'class="set-hd"' not in _merged_branch
+      and 'class="set-chip save"' not in _merged_branch
       and "_refreshRerankPointer" not in HTML
       and "#swMain .set-merged .set-owned { display: none; }" in HTML)
 check("D7 the picker is loaded when the Models panel opens",
