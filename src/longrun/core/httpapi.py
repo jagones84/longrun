@@ -522,7 +522,8 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
             try:
                 from longrun.model import runmetrics
                 runmetrics.finish(sess["id"], outcome="error", stop_reason="error",
-                                  model=target)
+                                  model=target, error=issue.get("message"),
+                                  code=issue.get("code"))
                 publish("run.metrics", session=sess["id"],
                         metrics=runmetrics.get(sess["id"]))
             except Exception:  # noqa: BLE001

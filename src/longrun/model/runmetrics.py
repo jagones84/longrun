@@ -22,6 +22,50 @@ def _path(key):
     return os.path.join(RUNS_DIR, safe_id(key) + ".json")
 
 
+# B-4 (v816): the FOUR buckets the benchmark procedure names before any code is
+# touched. A stop reason that is one of these is enough on its own; anything else
+# falls through to the error text.
+_BUDGET_STOPS = ("budget", "wall", "tokens", "max_steps", "timeout")
+_MODEL_STOPS = ("empty_reply", "invalid_reply", "no_action", "unparsable")
+
+
+def classify_cause(outcome="done", stop_reason=None, error=None, code=None):
+    """The ONE cause of a failed run: `provider` | `budget` | `model` | `harness`.
+
+    `None` for a clean run. A 5xx/quota is the PROVIDER, a wall-clock/token stop
+    is the BUDGET, a reply the loop could not use is the MODEL, and whatever is
+    left is the HARNESS — the loop lost the work, which is the only bucket that is
+    a harness bug. Reuses the classifiers that already exist (`diagnostics` codes,
+    `rllm.classify_retry`) instead of a third spelling of the same rules
+    ("Failure Attribution Standard", 2026-11-05: an attribution with no recorded
+    counterfactual carries no attribution).
+    """
+    stop = str(stop_reason or "").strip().lower()
+    out = str(outcome or "done").strip().lower()
+    if out == "user_abort":
+        return None
+    if stop in _BUDGET_STOPS:
+        return "budget"
+    if stop in _MODEL_STOPS:
+        return "model"
+    if str(code or "").startswith("provider."):
+        return "provider"
+    text = str(error or "").lower()
+    if "empty message" in text or "invalid reply" in text or "no valid action" in text:
+        return "model"
+    if text:
+        try:
+            from longrun.model import rllm
+            disp = rllm.classify_retry(text).get("disposition")
+        except Exception:  # noqa: BLE001 — classification must never raise
+            disp = None
+        if disp in ("quota", "transient", "fatal"):
+            return "provider"
+    if out != "done" or stop not in ("", "done", "completed"):
+        return "harness"
+    return None
+
+
 def start(key, model=None):
     rec = {"key": key, "model": model, "started": round(time.time(), 3),
            "ended": None, "duration_s": None, "iterations": 0, "steps": 0,
@@ -36,7 +80,8 @@ def start(key, model=None):
 
 
 def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=0,
-           prompt_tokens=0, completion_tokens=0, model=None, difficulty=None):
+           prompt_tokens=0, completion_tokens=0, model=None, difficulty=None,
+           error=None, code=None):
     rec = get(key)
     if not rec:
         rec = start(key)
@@ -45,7 +90,9 @@ def finish(key, outcome="done", stop_reason=None, iterations=0, steps=0, tokens=
                 "tokens": int(tokens),
                 "prompt_tokens": int(prompt_tokens),
                 "completion_tokens": int(completion_tokens),
-                "outcome": outcome, "stop_reason": stop_reason})
+                "outcome": outcome, "stop_reason": stop_reason,
+                # B-4: one classified cause, always present (None = a clean run).
+                "failure_cause": classify_cause(outcome, stop_reason, error, code)})
     if model:
         rec["model"] = model
     if difficulty is not None:
