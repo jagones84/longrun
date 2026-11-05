@@ -34,10 +34,15 @@ check("A3 setWorkspace still gives feedback (toast) and reloads",
 
 # ------------------------------------------------------------------ B) models order
 _sec = HTML[HTML.index('data-cat="models"'):HTML.index('data-cat="knowledge"')]
+# 2026-11-05: the re-ranker joined the panel as a normal live MODEL picker (it
+# used to be a bare text input inside the generic config form, appended at the
+# very end of the panel), and the model pickers come before the providers. The
+# standalone "Add / edit provider" and "Available models" HEADINGS are gone: the
+# editor is a section of the Providers card and the fallback line lives in it.
 _order = ["Thinking effort", "Compaction model", "Embedding · knowledge index",
-          "Add / edit provider", "Providers", "Available models"]
+          "Re-ranker model", ">Providers</h2>"]
 _pos = [_sec.find(h) for h in _order]
-check("B1 the Models section is ordered: thinking, compaction, embedding, add-provider, providers, models",
+check("B1 the Models section is ordered: thinking, compaction, embedding, re-ranker, providers",
       all(p >= 0 for p in _pos) and _pos == sorted(_pos), str(_pos))
 check("B2 Thinking effort is the FIRST block",
       # v654: the heading carries the `live` chip that says the picker writes at
@@ -52,8 +57,12 @@ check("B4 the old separate embedding HEADING sections are gone",
       "<h2>Embedding models · personal</h2>" not in HTML and "<h2>Embedding costs</h2>" not in HTML)
 check("B5 add + costs are now collapsible <details> (less clutter)",
       "＋ add a model to the catalogue</summary>" in _sec and ">Embedding costs</summary>" in _sec)
-check("B6 the provider block keeps its add-then-list shape",
-      _sec.find('id="provId"') < _sec.find('id="provList"') < _sec.find('id="modelsList"'))
+check("B6 the provider editor sits ABOVE the list it edits, in the same section",
+      # 2026-11-05: `provCard` moved inside the Providers card and the fallback
+      # line moved above the list, so the old provId < provList < modelsList
+      # order no longer describes the panel.
+      _sec.find('id="provId"') < _sec.find('id="provList"')
+      and _sec.find('id="modelsList"') < _sec.find('id="provList"'))
 check("B7 the embedding picker + cost ids survive (v401 contract)",
       # v654: `emActive` is gone (it repeated the selected option); the probe
       # line `emTestOut` is the surviving status element.

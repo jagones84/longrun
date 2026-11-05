@@ -118,33 +118,43 @@ SECTIONS = [
         # to the Models panel exactly like embedding.yaml — never the generic
         # Config form.
         "file": "rerank.yaml", "id": "rerank", "panel": "models",
-        "title": "Retrieval re-ranker",
+        "title": "Re-ranker · tuning",
         "help": ("A cross-encoder scores every retrieved passage TOGETHER with the "
                  "query, so the passages that ANSWER it rise to the top of what "
                  "enters the prompt. It reorders candidates that BM25+vector search "
                  "already found — it never invents one — and it costs one small "
-                 "model call per retrieval. Off = rank fusion only."),
+                 "model call per retrieval. Off = rank fusion only. The MODEL itself "
+                 "is a live picker above (Settings ▸ Models ▸ Re-ranker model); the "
+                 "values here are the stage's knobs."),
         "fields": [
             _f("enabled", "rerank retrieval hits", "bool"),
-            _f("model", "re-ranker model ref", "text", wide=True,
+            # 2026-11-05: the model is a MODEL CHOICE, so it is written by the live
+            # picker above like every other picker on this panel. Here it is a
+            # read-only pointer — ONE writer per value (the Routing card's
+            # summarizer/longrun_agent cells do exactly the same).
+            _f("model", "re-ranker model", "text", wide=True, owned=True,
                placeholder="openrouter:voyageai/rerank-2.5-lite",
-               help="<provider>:<model> of a RERANK model (providers.yaml "
-                    "`rerank: true`). A chat model here resolves to nothing and the "
-                    "stage is skipped."),
-            _f("candidates", "candidates sent to the re-ranker", "int",
+               help="Set with the Re-ranker model picker above — live, one writer. "
+                    "A chat model here resolves to nothing and the stage is skipped."),
+            # Labels are short because these knobs share a two-column sheet with the
+            # live picker above; the sentence that explains each one stays in `help`.
+            _f("candidates", "candidates sent", "int",
                min=2, max=200,
-               help="Bounds the token bill: hits beyond this keep their fusion "
-                    "order and follow the re-ranked ones."),
+               help="How many fused hits reach the cross-encoder — it bounds the "
+                    "token bill: hits beyond it keep their fusion order and follow "
+                    "the re-ranked ones."),
             _f("top_n", "passages kept", "int", min=1, max=100,
-               help="The rest are dropped — the cross-encoder saw and ranked them."),
-            _f("min_score", "minimum relevance (0 = keep all)", "float",
+               help="How many survive. The rest are dropped — the cross-encoder saw "
+                    "and ranked them."),
+            _f("min_score", "min relevance", "float",
                min=0, max=1,
-               help="Raise it to let a weak result set come back EMPTY rather than "
-                    "merely poor."),
-            _f("timeout_secs", "timeout (seconds)", "int", min=1, max=60,
+               help="0 = keep every returned passage. Raise it to let a weak result "
+                    "set come back EMPTY rather than merely poor."),
+            _f("timeout_secs", "timeout (s)", "int", min=1, max=60,
                help="A slow re-ranker must not hold a turn hostage: on timeout the "
                     "retrieval keeps its own order."),
-            _f("doc_chars", "per-passage character cap", "int", min=100, max=20000),
+            _f("doc_chars", "chars per passage", "int", min=100, max=20000,
+               help="Per-passage character cap sent to the model."),
         ],
     },
     {
@@ -568,7 +578,13 @@ def _save(name, clean):
             pass
     elif name == "rerank.yaml":
         # Sparse overlay: config/rerank.yaml keeps its documentation comments.
-        _write_overlay(RERANK_OVERLAY, clean)
+        # 2026-11-05: a save may carry ONE key (the live model picker writes only
+        # `model`), so the overlay is MERGED, never replaced — replacing it would
+        # silently drop the keys the writer does not own (`top_n`, `candidates`…).
+        prev = dataio.read_yaml(RERANK_OVERLAY) or {}
+        merged = dict(prev)
+        merged.update(clean)
+        _write_overlay(RERANK_OVERLAY, merged)
         from longrun.model import rerank
         rerank.cfg(reload=True)
     else:

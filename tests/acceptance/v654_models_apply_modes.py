@@ -47,7 +47,10 @@ def _fn(src, name, next_name):
 
 
 MODELS = UI[UI.index('data-cat="models"'):UI.index('data-cat="subagents"')]
-SECTION = _fn(UI, "function _setSectionEl(sec)", "function _setFieldEl")
+# 2026-11-05: the slice is keyed on the function NAME, not its parameter list —
+# `_setSectionEl` gained a second argument (a merged form) and the pin's intent is
+# the body, not the signature.
+SECTION = _fn(UI, "function _setSectionEl(sec", "function _setFieldEl")
 ROUTING = _fn(UI, "function _setRoutingFields(box, sec)", "function _setFieldEl")
 README = _fn(UI, "function _setReadField(root, f)", "async function saveSettingsSection")
 SAVE_PROV = _fn(UI, "async function saveProvider()", "function _saveProviderDraft")

@@ -266,6 +266,23 @@
   aside h2 { font-size: 12px; letter-spacing: .02em; color: var(--txt); margin: 0; font-weight: 600;
     text-transform: none; display: flex; align-items: center; gap: 6px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
+  /* 2026-11-05: the provider list is a SHEET inside one card, not a card per row.
+     Each row is a divider-separated line, so 8 providers read as ONE list instead
+     of 8 nested boxes. */
+  #provList .prov-row { padding: 7px 2px; border-top: 1px solid var(--line); }
+  #provList .prov-row:first-child { border-top: 0; }
+  #provList .prov-models { padding: 2px 0 4px 20px; }
+  #provList .prov-models .remaining { margin-top: 3px; }
+  /* The provider editor is a SECTION of the providers card, not a card of its own
+     (a card inside a card drew a second border around the form). */
+  #provCard { border: 1px dashed var(--line-2); border-radius: var(--radius); padding: 8px 10px; margin: 8px 0 0; }
+  #provCard[open] { padding-bottom: 10px; }
+  .prov-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .prov-head .prov-sum { flex: 1 1 auto; min-width: 0; }
+  /* A field owned by another control (the re-ranker model, written by its live
+     picker) renders as a quiet read-only line, never as a second input. */
+  .set-owned { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
+  .set-owned code { color: var(--txt); font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
   .step, .task { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 8px; margin-bottom: 4px; font-size: 12.5px; }
   .step:hover, .task:hover { background: var(--hover); cursor: pointer; }
   .step.done { color: var(--dim); text-decoration: line-through; }
@@ -1699,6 +1716,23 @@
   #swMain .self-row > .remaining { flex: 0 0 58px; font-size: 11px; }
   #swMain .self-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  /* 2026-11-05: a MERGED form shares the card of a live picker (Settings ▸ Models ▸
+     Re-ranker): separated by ONE divider, its controls sized alike, and one save on
+     the right. The value the picker owns is not repeated here. */
+  #swMain .set-merged { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+  /* two columns: the five knobs read as a sheet instead of five stacked rows; a
+     checkbox (the on/off of the whole stage) takes the full width. */
+  #swMain .set-merged .hrow {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px;
+  }
+  #swMain .set-merged .hrow > div { flex: none; min-width: 0; }
+  #swMain .set-merged .hrow > div:has(input[type="checkbox"]) { grid-column: 1 / -1; }
+  #swMain .set-merged .hrow input[type="number"] { width: 96px; }
+  #swMain .set-merged .set-owned { display: none; }
+  #swMain .set-merged .set-foot {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 8px; margin-top: 10px;
+  }
   #settingsWin .sw-main, #inspector .insp-body {
     font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
     font-size: 13px; line-height: 1.5;
@@ -3547,38 +3581,62 @@
           </details>
           <button class="ghost u-mt8" data-call="openSettings" data-args='["knowledge"]' title="manage sources, build, search the global knowledge index">open Knowledge settings →</button>
         </div>
-        <h2>Add / edit provider</h2>
-        <details class="card" id="provCard">
-          <summary class="remaining u-ptr">＋ add or edit a provider</summary>
-          <input id="provId" class="inp u-w100 u-p610 u-fs12" placeholder="id (e.g. openrouter) *">
-          <input id="provName" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="name">
-          <select id="provKind" class="inp u-w100 u-p610 u-fs12 u-mt6">
-            <option value="openai">openai-compatible</option>
-            <option value="llamacpp">llama.cpp</option>
-            <option value="openrouter">openrouter</option>
-            <option value="deepseek">deepseek</option>
-            <option value="anthropic">anthropic</option>
-            <option value="custom">custom</option>
-          </select>
-          <input id="provUrl" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="base_url (https://…/v1)">
-          <input id="provKeyEnv" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="api_key_env = VAR name (not the key)">
-          <input id="provModels" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="models (comma-separated; id or id:context_length)">
-          <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="provLocal"> local (no key)</label>
-          <button class="ghost config-save u-mt8" data-call="saveProvider" disabled title="no changes to save">save provider</button>
-          <div id="provResult" class="remaining u-mt6" role="status" aria-live="polite"></div>
-          <div id="provAuthRecovery" class="remaining u-mt8" role="alert" hidden>
-            <div id="provAuthMessage">Provider was not saved. Longrun rejected this browser token. Enter the active server token in Settings → Keys, save it, then return to Models and save this provider again.</div>
-            <button class="ghost u-mt6" data-call="openSettings" data-args='["keys"]'>open Keys →</button>
-          </div>
-        </details>
-        <h2>Providers</h2>
+        <!-- 2026-11-05: the re-ranker is the SECOND stage of the retrieval the
+             embedding model feeds, so it is a normal live MODEL picker here, next
+             to it. It used to be a bare text input inside the generic config form,
+             rendered at the very END of the panel. -->
+        <h2 title="A cross-encoder scores every retrieved passage TOGETHER with the query, so the passages that ANSWER it rise to the top of what enters the prompt. It reorders candidates BM25+vector search already found — it never invents one — and it costs one small model call per retrieval. Only `rerank: true` entries are offered (config/providers.yaml): a chat model cannot answer /rerank. Empty = rank fusion only.">Re-ranker model <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
-          <div class="remaining" id="provSummary">loading…</div>
-          <div class="u-mt8"><button class="ghost" data-call="reloadProviders" title="re-read the provider list and the model catalog from config and the live router">↻ reload providers</button></div>
+          <div class="u-df u-g6 u-aic u-fww">
+            <select id="rerankModel" data-change="saveRerankModel" class="inp u-w100 u-p610 u-fs12"></select>
+            <button class="ghost" data-call="rerankTest" title="one REAL rerank call (2 documents) on this model — OK with the latency, or the reason it failed">test</button>
+          </div>
+          <div class="remaining u-mt6" id="rerankResult"></div>
+          <!-- the stage's own knobs (candidates, floor, timeout…) render INSIDE this
+               card, right under the picker, from the ONE schema the backend declares.
+               `data-merged` says the card already names the stage, so the form adds no
+               second title, no second file link and no second save chip: ONE sheet. -->
+          <div class="setFormsHost" data-for="rerank" data-merged="1"></div>
+        </div>
+        <h2 title="Where the models come from. A provider is one base_url + one key (or none, when it is local); the models under it are the ones config/providers.yaml declares.">Providers</h2>
+        <div class="card">
+          <div class="prov-head">
+            <div class="remaining prov-sum" id="provSummary">loading…</div>
+            <button class="ghost" data-call="reloadProviders" title="re-read the provider list and the model catalog from config and the live router">↻ reload providers</button>
+          </div>
+          <!-- 2026-11-05: this is what the retired "Available models" section held
+               (the fallback chain); the model COUNT it repeated is already in the
+               provider summary above it. -->
+          <div class="remaining u-mt4" id="modelsList">loading…</div>
+          <!-- The provider editor lives INSIDE the providers section, above the list
+               it edits: a row's ✎ loads that provider in here (it was a separate
+               "Add / edit provider" section, which read as if the list below could
+               not be edited at all). -->
+          <details id="provCard">
+            <summary class="remaining u-ptr">＋ add or edit a provider</summary>
+            <input id="provId" class="inp u-w100 u-p610 u-fs12" placeholder="id (e.g. openrouter) *">
+            <input id="provName" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="name">
+            <select id="provKind" class="inp u-w100 u-p610 u-fs12 u-mt6">
+              <option value="openai">openai-compatible</option>
+              <option value="llamacpp">llama.cpp</option>
+              <option value="openrouter">openrouter</option>
+              <option value="deepseek">deepseek</option>
+              <option value="anthropic">anthropic</option>
+              <option value="custom">custom</option>
+            </select>
+            <input id="provUrl" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="base_url (https://…/v1)">
+            <input id="provKeyEnv" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="api_key_env = VAR name (not the key)">
+            <input id="provModels" class="inp u-w100 u-p610 u-fs12 u-mt6" placeholder="models (comma-separated; id or id:context_length)">
+            <label class="remaining u-df u-g6 u-aic u-mt6"><input type="checkbox" id="provLocal"> local (no key)</label>
+            <button class="ghost config-save u-mt8" data-call="saveProvider" disabled title="no changes to save">save provider</button>
+            <div id="provResult" class="remaining u-mt6" role="status" aria-live="polite"></div>
+            <div id="provAuthRecovery" class="remaining u-mt8" role="alert" hidden>
+              <div id="provAuthMessage">Provider was not saved. Longrun rejected this browser token. Enter the active server token in Settings → Keys, save it, then return to Models and save this provider again.</div>
+              <button class="ghost u-mt6" data-call="openSettings" data-args='["keys"]'>open Keys →</button>
+            </div>
+          </details>
           <div id="provList" class="u-mt8"></div>
         </div>
-        <h2>Available models</h2>
-        <div class="card" id="modelsList"><div class="remaining">loading…</div></div>
       </div>
       <div class="sw-cat" data-cat="subagents" hidden>
         <!-- v646: the panel opened with a prose card, then a "one source of truth"
@@ -7922,12 +7980,18 @@ async function saveConfigFile() {
    knowledge); this resolves the container inside that panel, creating it on
    first use. A section with no declared panel — or an unknown one — falls back
    to the Config backup. */
-function _settingsSectionHost(panel) {
+function _settingsSectionHost(panel, id) {
   const box = $("setForms");
   if (!panel) return box;
   const cat = document.querySelector('#swMain .sw-cat[data-cat="' + panel + '"]');
   if (!cat) return box;
-  let host = cat.querySelector(".setFormsHost");
+  // 2026-11-05: a panel may declare MORE than one home. An explicit
+  // `.setFormsHost[data-for="<section id>"]` owns that section; every other
+  // section of the panel falls back to the un-tagged host. This is how the
+  // re-ranker form renders right under its live picker while Routing stays at
+  // the end of the panel — same renderer, two places, no duplicated schema.
+  let host = (id && cat.querySelector('.setFormsHost[data-for="' + id + '"]')) ||
+             cat.querySelector(".setFormsHost:not([data-for])");
   if (!host) {
     host = document.createElement("div");
     host.className = "setFormsHost";
@@ -7966,8 +8030,8 @@ async function loadSettingsForms() {
   document.querySelectorAll("#swMain .setFormsHost").forEach(h => { h.innerHTML = ""; });
   let here = 0;
   (d.sections || []).forEach(sec => {
-    const host = _settingsSectionHost(sec.panel) || box;
-    host.appendChild(_setSectionEl(sec));
+    const host = _settingsSectionHost(sec.panel, sec.id) || box;
+    host.appendChild(_setSectionEl(sec, host.hasAttribute("data-merged")));
     if (host === box) here += 1;
   });
   if (!here) {
@@ -7986,7 +8050,14 @@ async function loadSettingsForms() {
 }
 function _setSectionValues(card, sec) {
   const values = {};
-  (sec.fields || []).forEach(f => { values[f.path] = _setReadField(card, f); });
+  (sec.fields || []).forEach(f => {
+    // 2026-11-05: a field flagged `owned` is written by ANOTHER control of the same
+    // panel (the live re-ranker picker). It is deliberately left OUT of this form's
+    // payload: a save here can then never revert the value the picker wrote.
+    const el = card.querySelector('[data-path="' + f.path + '"]');
+    if (el && el.hasAttribute("data-owned")) return;
+    values[f.path] = _setReadField(card, f);
+  });
   return values;
 }
 function _syncSectionDirty(card, sec) {
@@ -8004,22 +8075,34 @@ function _settingsFileLinks(files) {
     '<a href="#" class="filelink" data-config-file="' + esc(path) +
     '" title="open ' + esc(path) + ' in the editor">' + esc(path) + "</a>").join(" · ");
 }
-function _setSectionEl(sec) {
+function _setSectionEl(sec, merged) {
   const card = document.createElement("div");
-  card.className = "card"; card.style.marginBottom = "10px";
+  // 2026-11-05: MERGED — the section shares the card of a live picker that already
+  // names it (`data-merged` on its host). A card inside a card was the defect this
+  // panel kept showing; a merged form is a SHEET, so it gets the plain class.
+  card.className = merged ? "set-merged" : "card";
+  if (!merged) card.style.marginBottom = "10px";
   card.dataset.file = sec.file; card.dataset.sid = sec.id;
   const files = (sec.files && sec.files.length) ? sec.files : ["config/" + sec.file];
   // v643: the actions sit in the header row (right-aligned), not on a second row.
-  card.innerHTML = '<div class="set-hd">' +
-    '<div class="set-t"' + (sec.help ? ' title="' + _attr(sec.help) + '"' : "") + '>' +
-    esc(sec.title) +
-    ' <span class="remaining" data-config-files>· ' + _settingsFileLinks(files) + '</span></div>' +
-    '<div class="set-acts">' +
+  // A merged form has no header at all — the card above is the header — so its one
+  // save sits in a footer row, right-aligned like every other action in the panel.
+  card.innerHTML = merged
+    ? '<div class="hrow" data-fields></div>' +
+      '<div class="set-acts set-foot">' +
+      '<button class="ghost config-save" data-save disabled>save ' + esc(sec.id) + "</button>" +
+      '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
+      "</div>"
+    : '<div class="set-hd">' +
+      '<div class="set-t"' + (sec.help ? ' title="' + _attr(sec.help) + '"' : "") + '>' +
+      esc(sec.title) +
+      ' <span class="remaining" data-config-files>· ' + _settingsFileLinks(files) + '</span></div>' +
+      '<div class="set-acts">' +
       '<span class="set-chip save" title="writes ' + _attr(sec.file) + ' only when you press this button">save</span>' +
       '<button class="ghost config-save" data-save disabled>save ' + esc(sec.id) + "</button>" +
       '<span data-msg class="remaining" role="status" aria-live="polite"></span>' +
-    "</div></div>" +
-    '<div class="hrow" data-fields></div>';
+      "</div></div>" +
+      '<div class="hrow" data-fields></div>';
   const box = card.querySelector("[data-fields]");
   if (sec.id === "routing") _setRoutingFields(box, sec);
   else (sec.fields || []).forEach(f => box.appendChild(_setFieldEl(f, (sec.values || {})[f.path])));
@@ -8164,6 +8247,20 @@ function _setFieldEl(f, val) {
   if (f.wide) wrap.style.flex = "1 1 100%";
   const tip = f.help ? ' title="' + esc(f.help) + '"' : "";
   const dp = ' data-path="' + esc(f.path) + '"';
+  if (f.owned) {
+    // 2026-11-05: a value written by ANOTHER control of the panel — the live
+    // re-ranker picker writes `rerank.yaml model` — renders as a pointer, never
+    // as a second input, and stays out of this form's save payload (see
+    // _setSectionValues). ONE writer per value.
+    wrap.style.flex = "1 1 100%";
+    wrap.className = "set-owned";
+    wrap.setAttribute("data-path", f.path);
+    wrap.setAttribute("data-owned", "1");
+    wrap.title = f.help || "written by another control on this panel";
+    wrap.innerHTML = esc(f.label) + ' · <code>' +
+      esc(val == null || val === "" ? "(none)" : String(val)) + "</code>";
+    return wrap;
+  }
   if (f.type === "rows") {
     wrap.style.flex = "1 1 100%";
     const head = document.createElement("div");
@@ -12415,8 +12512,7 @@ async function loadProviders() {
     const box = $("provList"); box.innerHTML = "";
     _provCache.forEach(p => {
       const row = document.createElement("div");
-      row.className = "card";
-      row.style.cssText = "padding:6px 8px;margin-bottom:6px";
+      row.className = "prov-row";
       const head = document.createElement("div");
       head.style.cssText = "display:flex;gap:8px;align-items:center;cursor:pointer";
       head.title = "expand / collapse the model list";
@@ -12437,9 +12533,12 @@ async function loadProviders() {
         $("provResult").textContent = p.id + " · " + (await _provTestText(p.id));
       };
       const edit = document.createElement("button"); edit.className = "ghost"; edit.textContent = "✎";
-      edit.title = "load into form";
+      edit.title = "edit this provider — loads it into the form above the list";
+      edit.setAttribute("aria-label", "edit provider " + p.id);
       edit.onclick = () => editProvider(p);
       const del = document.createElement("button"); del.className = "ghost"; del.textContent = "🗑";
+      del.title = "remove this provider from config/providers.yaml";
+      del.setAttribute("aria-label", "remove provider " + p.id);
       del.onclick = async () => {
         if (!(await confirmDelete("remove provider '" + p.id + "'?"))) return;
         const r = await api("DELETE", "/api/providers?id=" + encodeURIComponent(p.id));
@@ -12449,6 +12548,7 @@ async function loadProviders() {
       head.append(caret, dot, name, test, edit, del);
       // JAG-398: providers start COLLAPSED — click the row to reveal its models.
       const modelsBox = document.createElement("div");
+      modelsBox.className = "prov-models";
       modelsBox.hidden = true;
       (p.models || []).forEach(m => {
         const ml = document.createElement("div");
@@ -12494,6 +12594,10 @@ function editProvider(p) {
   $("provLocal").checked = !!p.local;
   $("provModels").value = (p.models || []).map(m => m.id + (m.context_length ? (":" + m.context_length) : "")).join(", ");
   $("provResult").textContent = "editing '" + p.id + "' — press save provider";
+  // 2026-11-05: the editor is COLLAPSED inside the providers card, so editing a
+  // row must reveal it — otherwise the click looked like it did nothing.
+  const card = $("provCard");
+  if (card) { card.open = true; card.scrollIntoView({ block: "nearest" }); }
   gateEnroll($("provCard"));   // JAG-496: baseline = the provider just loaded
 }
 /* JAG-512: what is ACTUALLY loaded right now (GET /api/hooks) — the form below only
@@ -13399,6 +13503,7 @@ function settingsCategory(name) {
     if (typeof loadProviders === "function") loadProviders();
     if (typeof emRefresh === "function") { emRefresh(); emCosts(); }
     if (typeof researchModelLs === "function") researchModelLs();   // v609: Models card
+    if (typeof loadRerankModel === "function") loadRerankModel();   // 2026-11-05: re-ranker picker
     gateEnroll($("provCard"));   // JAG-496: an untouched provider form cannot be saved
   }
   else if (name === "diagnostics") { loadDiagnostics(); }
@@ -13621,10 +13726,14 @@ async function loadRouting() {
     }
     // JAG-505: the duplicate subagent picker is gone — Settings ▸ Subagents owns it.
     const fb = ((d.config || {}).default_fallbacks || []);
+    // 2026-11-05: this element used to be its own "Available models" section whose
+    // only content was this sentence. The model COUNT it repeated already lives in
+    // the provider summary right above it, so what is left here is the fallback
+    // chain alone — the one fact the summary cannot carry.
     const box = $("modelsList");
-    if (box) box.innerHTML = '<div class="remaining">models available: <b>' + models.length + '</b>' +
-      (fb.length ? (' · fallback (you configured): <b>' + fb.slice(0, 6).join(" › ") + '</b>')
-                 : ' · no fallback chain (the selected model is used as-is)') + '</div>';
+    if (box) box.innerHTML = fb.length
+      ? ('<div class="remaining">fallback chain: <b>' + fb.slice(0, 6).join(" › ") + '</b></div>')
+      : '<div class="remaining">no fallback chain — the selected model is used as-is</div>';
   } catch (e) { if ($("compactionResult")) $("compactionResult").textContent = "error: " + e; }
 }
 async function saveCompactionModel() {
@@ -14655,6 +14764,81 @@ async function emTest() {
     out.textContent = r.ok ? _probeVerdict(true, r.dim + "d · " + r.model)
       : _probeVerdict(false, "", r.error || "no endpoint");
   } catch (e) { out.textContent = "error: " + e; }
+}
+/* ---- 2026-11-05: the RETRIEVAL re-ranker. Same family as the embedding picker
+   above it, so it reads and writes the same way: a live picker, one test, one
+   verdict line. Only `rerank: true` refs are offered (GET /api/providers ▸
+   rerank_models) — a chat model cannot answer /rerank, and the chat catalogue
+   excludes these on purpose. ---- */
+async function loadRerankModel() {
+  const sel = $("rerankModel");
+  if (!sel) return;
+  try {
+    const d = await api("GET", "/api/providers");
+    const rows = (d && d.rerank_models) || [];
+    let cur = "";
+    try {
+      const s = await api("GET", "/api/settings");
+      const sec = ((s && s.sections) || []).find(x => x.id === "rerank");
+      cur = ((sec && sec.values) || {}).model || "";
+    } catch (e) { /* the roster still renders; the selection falls back to the value */ }
+    const groups = {};
+    rows.forEach(m => {
+      const g = groups[m.provider] = groups[m.provider] || { name: m.name || m.provider, items: [] };
+      g.items.push(m);
+    });
+    const opts = Object.keys(groups).map(pid => {
+      const g = groups[pid];
+      return '<optgroup label="' + _attr(g.name) + '">' + g.items.map(m =>
+        '<option value="' + _attr(m.ref) + '"' + (m.ref === cur ? " selected" : "") + '>' +
+        esc(m.id) + (m.available ? "" : " · no key") + "</option>").join("") + "</optgroup>";
+    }).join("");
+    sel.innerHTML = '<option value="">(none — rank fusion only)</option>' + opts;
+    sel.value = cur;
+    if (cur && sel.value !== cur) {
+      // configured but no longer declared in providers.yaml: keep it selectable so
+      // the form shows what the harness is REALLY using instead of silently
+      // snapping the picker to a different model.
+      const o = document.createElement("option");
+      o.value = cur;
+      o.textContent = cur + " · not declared in providers.yaml";
+      sel.appendChild(o);
+      sel.value = cur;
+    }
+  } catch (e) { /* the picker must never break the panel */ }
+}
+async function saveRerankModel() {
+  const sel = $("rerankModel");
+  const out = $("rerankResult");
+  if (!sel) return;
+  const v = sel.value;
+  try {
+    const r = await api("POST", "/api/settings", { file: "rerank.yaml", values: { model: v } });
+    if (!r || !r.ok) {
+      if (out) out.textContent = "not saved — " + ((r && r.error) || "?");
+      return;
+    }
+    if (out) out.textContent = v ? ("saved: re-ranker = " + v) : "saved: re-ranking off";
+    if (typeof toast === "function") toast("re-ranker: " + (v || "off"), "ok");
+  } catch (e) { if (out) out.textContent = "error: " + e; }
+}
+async function rerankTest() {
+  const sel = $("rerankModel");
+  const out = $("rerankResult");
+  if (!sel || !out) return;
+  const ref = sel.value;
+  if (!ref) { out.textContent = "no re-ranker selected"; return; }
+  const b = document.querySelector('[data-call="rerankTest"]');
+  if (b) b.disabled = true;
+  out.textContent = _modelShort(ref) + " · testing…";
+  try {
+    const t = await api("POST", "/api/models/test", { ref });
+    out.textContent = (t && t.ok)
+      ? _probeVerdict(true, ((t.latency_ms || 0) / 1000).toFixed(1) + "s · " +
+          (t.ranked_first ? "ranked the query's answer first" : "answered, order not checked"))
+      : _probeVerdict(false, "", (t && t.error) || "no answer");
+  } catch (e) { out.textContent = "error: " + e; }
+  if (b) b.disabled = false;
 }
 async function emCosts() {
   try {

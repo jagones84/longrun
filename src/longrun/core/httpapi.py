@@ -737,6 +737,11 @@ def providers_catalog():
         return {"providers": [], "error": str(e)}
     loaded = {m["alias"] for m in router_models() if m.get("loaded")}
     cat = providers.catalog(loaded_aliases=loaded)
+    # 2026-11-05: the re-ranker picker (Settings ▸ Models) is the ONE surface that
+    # offers a cross-encoder. `catalog()` excludes them BY DESIGN — this key does
+    # not put them back into any chat picker, it only lets the settings form fill
+    # its dropdown from the same providers.yaml.
+    cat["rerank_models"] = providers.rerank_models()
     cat["router_models"] = router_models()  # backward compat for the old client
     return cat
 

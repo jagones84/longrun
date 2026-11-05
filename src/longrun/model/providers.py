@@ -491,6 +491,26 @@ def chat_models(provider):
     return [m for m in ((provider or {}).get("models") or []) if not is_rerank_model(m)]
 
 
+def rerank_models():
+    """Every `rerank: true` entry, as `{ref, id, provider, name, available}`.
+
+    The chat catalogue deliberately EXCLUDES these (`catalog()` reads
+    `chat_models()`: a cross-encoder answers `/rerank`, not `/chat/completions`),
+    so the ONE surface that must offer them — the re-ranker picker in
+    Settings ▸ Models — asks for them here instead of trying to spot them inside
+    a chat roster. One derivation (`is_rerank_model`), two views.
+    """
+    out = []
+    for p in providers():
+        for m in (p.get("models") or []):
+            if not is_rerank_model(m):
+                continue
+            out.append({"ref": ref_of(p, m.get("id")), "id": m.get("id"),
+                        "provider": p.get("id"), "name": p.get("name") or p.get("id"),
+                        "available": available(p)})
+    return out
+
+
 def rerank_endpoint(ref):
     """(url, headers, model_id) for a RERANK call on `ref`, or None.
 
@@ -608,6 +628,12 @@ def probe_model(ref, timeout=25):
     if ref == "@chat":
         return {"ok": False, "ref": ref,
                 "error": "@chat follows the active session model — pick a fixed ref to test it"}
+    # 2026-11-05: a `rerank: true` entry answers /rerank, not /chat/completions.
+    # The probe keeps the SAME contract (one real call; latency, or the reason it
+    # failed) by scoring two documents, so the re-ranker picker gets the same
+    # "test" button every other model picker has.
+    if rerank_endpoint(ref) is not None:
+        return _probe_rerank(ref, timeout=timeout)
     hit = endpoint(ref)
     if hit is None:
         return {"ok": False, "ref": ref,
@@ -635,8 +661,30 @@ def probe_model(ref, timeout=25):
             "latency_ms": int((time.monotonic() - t0) * 1000)}
 
 
-# ------------------------------------------------- remote model metadata ------
+def _probe_rerank(ref, timeout=25):
+    """One REAL `/rerank` call on a cross-encoder — the re-ranker test button.
 
+    Same verdict shape as `probe_model` (`ok` + `latency_ms`, or `error`), plus
+    `ranked_first`: the query is "capital of France" and the FIRST document is its
+    answer, so the probe also proves the ranking is sane, not only that the
+    endpoint answered. Never raises.
+    """
+    from longrun.model import rerank as rerank_mod
+    docs = ["Paris is the capital of France.", "The capital of Germany is Berlin."]
+    try:
+        res = rerank_mod.rerank("capital of France", docs, model=ref, timeout=timeout)
+    except Exception as e:  # noqa: BLE001 — a probe reports, never raises
+        return {"ok": False, "ref": ref, "model": ref, "error": _probe_reason(None, str(e))}
+    if not res.get("ok"):
+        err = str(res.get("error") or "no answer")
+        # `HTTP 401 {...}` and friends already read like a reason; keep them verbatim.
+        return {"ok": False, "ref": ref, "model": res.get("model") or ref, "error": err}
+    best = (res.get("results") or [{}])[0]
+    return {"ok": True, "ref": ref, "model": res.get("model") or ref, "status": 200,
+            "latency_ms": res.get("ms"), "ranked_first": best.get("index") == 0}
+
+
+# ------------------------------------------------- remote model metadata ------
 _OPENROUTER_CTX = {"ts": None, "map": None, "lock": threading.Lock()}
 _OPENROUTER_MODAL = {}   # model_id -> [input modalities] from the live vendor list
 _OPENROUTER_FAIL_TS = [0.0]   # last failed fetch (avoid retrying on every turn)

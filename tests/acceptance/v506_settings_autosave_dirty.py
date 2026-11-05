@@ -27,7 +27,9 @@ def _function_body(source: str, name: str, next_name: str) -> str:
 
 tools = _function_body(UI, "function renderTools(el, d)", "function _toolAdvanced")
 approval_save = _function_body(UI, "function scheduleApprovalSave", "function renderTools(el, d)")
-section = _function_body(UI, "function _setSectionEl(sec)", "function _setFieldEl")
+# 2026-11-05: keyed on the name, not the parameter list (`_setSectionEl` gained a
+# `merged` argument for a form that shares the card of a live picker).
+section = _function_body(UI, "function _setSectionEl(sec", "function _setFieldEl")
 dirty = _function_body(UI, "function _syncSectionDirty", "function _setFieldEl")
 section_save = _function_body(UI, "async function saveSettingsSection", "async function compactNow")
 config_load = _function_body(UI, "async function loadConfigFile", "async function saveConfigFile")
