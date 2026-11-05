@@ -1534,6 +1534,23 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     exact_entry = tools_cfg.get(name)
     if isinstance(exact_entry, dict) and isinstance(ns_entry, dict):
         entry = {**ns_entry, **exact_entry}
+        # A RESTRICTION list must never be REPLACED by a sub-entry. The shallow
+        # merge above silently dropped a namespace `deny` the moment the sub-tool
+        # had one of its own (measured 2026-11-05: `shell.exec.deny` omitted
+        # `grep[^\n]*\.env` — present on the `shell` namespace — so
+        # `grep -r TOKEN …/env` classified `auto` under `shell.exec` while `shell`
+        # denied it: a secret-exfiltration hard block bypassable by tool name).
+        # `deny`/`always_ask` are UNIONED (an exact entry may ADD a restriction,
+        # never remove one). `auto_approve`/`roots` keep REPLACE semantics: those
+        # widen what is allowed, and an exact entry is entitled to narrow them.
+        for _k in ("deny", "always_ask"):
+            _ns = ns_entry.get(_k) or []
+            if _ns:
+                _merged = list(_ns)
+                for _p in (exact_entry.get(_k) or []):
+                    if _p not in _merged:
+                        _merged.append(_p)
+                entry[_k] = _merged
     elif isinstance(exact_entry, dict):
         entry = dict(exact_entry)
     elif isinstance(ns_entry, dict):
@@ -1645,12 +1662,21 @@ def policy_report():
     hits = dict(_hits())
     configured = []
     try:
-        for name, entry in (load_config().get("tools") or {}).items():
-            if not isinstance(entry, dict):
+        # Key by the CANONICAL tool name — the same name `note_rule_hit` records —
+        # so a rule inherited from a namespace entry (`shell:`) is matched against
+        # the calls that actually enforce it (`shell.exec`). Iterating the RAW
+        # config keys instead left every namespace rule in `never_fired` for ever
+        # while its counter sat under a different key (found in independent review
+        # 2026-11-05).
+        for name in (t.get("name") for t in catalog()):
+            spec = tool_spec(name)
+            if not spec:
                 continue
             for kind in ("deny", "always_ask"):
-                for pat in (entry.get(kind) or []):
-                    configured.append("%s:%s:%s" % (name, kind, pat))
+                for pat in (spec.get(kind) or []):
+                    key = "%s:%s:%s" % (name, kind, pat)
+                    if key not in configured:
+                        configured.append(key)
     except Exception:  # noqa: BLE001
         pass
     return {"firings": hits, "never_fired": sorted(r for r in configured if r not in hits),

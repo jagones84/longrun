@@ -38,29 +38,32 @@ def check(name, ok, detail=""):
     print(("PASS " if ok else "FAIL ") + name + ((" :: " + str(detail)) if detail else ""))
 
 
-CFG = {"tools": {"faketool": {"enabled": True, "approval": "auto",
-                              "deny": ["rm -rf"], "always_ask": ["deploy"]}},
+CFG = {"tools": {"shell.exec": {"enabled": True, "approval": "auto",
+                                "deny": ["rm -rf"], "always_ask": ["deploy"]}},
        "approvals": {"mode": "normal"}}
-registry.load_config = lambda reload=False: CFG       # a canned policy, no config write
+# `policy_report` keys rules by the CANONICAL catalog name (the name `classify` sees),
+# so the fake config must use a real tool name — `faketool` is not in the catalog and
+# would report zero configured rules (that IS the fix: no raw config key is a rule).
+registry.load_config = lambda reload=False: CFG
 
 # ------------------------------------------------- A. a deny rule fires once ----
-decision, why = registry.classify("faketool", {"command": "rm -rf /tmp/x"})
+decision, why = registry.classify("shell.exec", {"command": "rm -rf /tmp/x"})
 check("A1 the deny rule denies", decision == "denied", (decision, why))
 rep = registry.policy_report()
 check("A2 the deny rule is counted once",
-      (rep["firings"].get("faketool:deny:rm -rf") or {}).get("n") == 1, rep["firings"])
+      (rep["firings"].get("shell.exec:deny:rm -rf") or {}).get("n") == 1, rep["firings"])
 check("A3 the untouched always-ask rule is named as never fired",
-      "faketool:always_ask:deploy" in rep["never_fired"], rep["never_fired"])
+      "shell.exec:always_ask:deploy" in rep["never_fired"], rep["never_fired"])
 
 # ------------------------------------------------ B. the second rule fires -----
-decision2, why2 = registry.classify("faketool", {"command": "deploy to prod"})
+decision2, why2 = registry.classify("shell.exec", {"command": "deploy to prod"})
 check("B1 the always-ask rule requires approval", decision2 == "required", (decision2, why2))
 rep2 = registry.policy_report()
 check("B2 nothing is left unfired", rep2["never_fired"] == [], rep2["never_fired"])
 check("B3 the counts agree with the config",
       rep2["configured_rules"] == 2 and rep2["fired_rules"] == 2, rep2)
 check("B4 the deny counter is still there",
-      (rep2["firings"].get("faketool:deny:rm -rf") or {}).get("n") == 1, rep2["firings"])
+      (rep2["firings"].get("shell.exec:deny:rm -rf") or {}).get("n") == 1, rep2["firings"])
 
 # ------------------------------------------------------------- C. persistence ---
 check("C1 the ledger is on disk", os.path.isfile(registry._HIT_PATH), registry._HIT_PATH)
