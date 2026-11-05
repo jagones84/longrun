@@ -157,6 +157,20 @@ check("lifecycle descriptions name the real next actions",
       and "test" in (scaffold_schema.get("description") or ""))
 check("the Matrix prompt documents uninstall",
       "matrix.remove" in matrix.MATRIX_SYSTEM_PROMPT)
+# 2026-11-05: the prompt used to claim 13 "hook subpackages", listing `tools` and
+# `webui` — a `src/Matrix/tools/hooks.py` is never reached by `matrix.call_hook`,
+# so a Matrix agent was told to hook a seam that cannot fire.
+_hooked = set(matrix.HOOK_SUBPACKAGES)
+check("the Matrix prompt names EVERY hook subpackage and claims no other",
+      all("`%s`" % _s in matrix.MATRIX_SYSTEM_PROMPT for _s in _hooked)
+      and ("%d hook subpackages" % len(_hooked)) in matrix.MATRIX_SYSTEM_PROMPT
+      and "never hooks" in matrix.MATRIX_SYSTEM_PROMPT,
+      sorted(_hooked))
+_seams = matrix.SEAMS_SPEC
+check("the seams catalogue agrees: `hooks` keys ARE the hook subpackages",
+      {k for k, v in _seams.items() if "hooks" in v} == _hooked
+      and {k for k, v in _seams.items() if "contract" in v} == {"tools", "webui", "skill", "rule"},
+      sorted(set(_seams) - _hooked))
 
 # ------------------------------------------------- unified approvals ----
 tool_rec = approvals.create("shell.exec", {"command": "printf v522"})

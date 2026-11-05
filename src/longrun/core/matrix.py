@@ -85,14 +85,14 @@ MATRIX_SYSTEM_PROMPT = (
     "- **NUCLEUS (Immutable):** `src/longrun/**`, `webui/**`, `config/**`, `tests/**`, `Global_rules.md` / `Project_rules.md` "
     "are hard-protected (`NUCLEUS_PROTECTED`). Import Nucleus functions freely; never edit them.\n"
     "- **MATRIX — code in `src/Matrix/`, runtime in the matrix dir shown by `matrix.status.matrix_dot` "
-    "(default `~/.longrun/matrix`; `.Matrix/` is only its legacy name):** all 13 subpackages (`agent`, `core`, `integrations`, "
-    "`interop`, `memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `tools`, `util`, `webui`) "
-    "are live-hooked via `src/Matrix/<subpkg>/hooks.py` (fail-open `matrix.call_hook`).\n"
+    "(default `~/.longrun/matrix`; `.Matrix/` is only its legacy name):** the %d hook subpackages (%s) "
+    "are live-hooked via `src/Matrix/<subpkg>/hooks.py` (fail-open `matrix.call_hook`); `tools`, `webui`, "
+    "`skill` and `rule` are separate artifact surfaces, never hooks — `matrix.seams` gives every contract.\n"
     "- **Creating Matrix Tools (strict `<namespace>.<subtool>` syntax):** write `src/Matrix/tools/<namespace>.py` "
     "defining `TOOL_SCHEMAS = {'<namespace>.<subtool>': {'description': '...', 'type': 'object', 'properties': {...}, 'required': []}}` "
     "and `def execute(args, run_id=None, subtool=None) -> dict:` (or call `matrix.scaffold` with `kind='tool', name='<namespace>.<subtool>'`). "
     "NEVER create plain un-namespaced tool names; every tool MUST be `<namespace>.<subtool>`.\n"
-    "- **Creating Hooks, Modules, Skills, Rules, WebUI:** call `matrix.seams` to inspect all 13 hook signatures, "
+    "- **Creating Hooks, Modules, Skills, Rules, WebUI:** call `matrix.seams` to inspect every hook signature, "
     "or `matrix.scaffold` (`kind` in `tool|hook|module|skill|rule|webui`, `name=...`) to generate a compliant skeleton "
     "(e.g. `src/Matrix/plan/hooks.py`, `src/Matrix/util/<mod>.py`, `<matrix dir>/skills/<name>/SKILL.md`, `<matrix dir>/rules/<NN>-<name>.md`, `src/Matrix/webui/plugins.js`).\n"
     "- **Lifecycle & Promotion:** test in `<matrix dir>/trash/` via `matrix.test` (`target='<kind>:<name>'`), "
@@ -101,7 +101,7 @@ MATRIX_SYSTEM_PROMPT = (
     "bytecode, imported module, discovery cache, policy overlay entries and verification record, "
     "then hot-reloads. "
     "Use `matrix.checkpoint_save` (slots 1..3), `matrix.git_commit` (max 20), `matrix.hotload`, `matrix.enable`/`matrix.disable`."
-)
+) % (len(HOOK_SUBPACKAGES), ", ".join("`%s`" % _s for _s in HOOK_SUBPACKAGES))
 
 
 def _roots(repo_root=None):
@@ -2082,7 +2082,12 @@ SEAMS_SPEC = {
 
 
 def seams_catalog():
-    """Return the exact specification of all 13 Matrix -> Nucleus live seams and artifact contracts."""
+    """Return the exact specification of every Matrix -> Nucleus seam and artifact contract.
+
+    Keys carrying `hooks` are exactly `HOOK_SUBPACKAGES` (the subpackages
+    `call_hook` reaches); `tools`, `webui`, `skill` and `rule` carry a `contract`
+    instead, because they are artifact surfaces rather than Python hooks.
+    """
     return {"ok": True, "seams": SEAMS_SPEC, "stdout": json.dumps(SEAMS_SPEC, indent=2)}
 
 
