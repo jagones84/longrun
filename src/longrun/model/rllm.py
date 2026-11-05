@@ -1009,10 +1009,13 @@ def _is_reasoning_rejection(err):
     return "reasoning" in body or "effort" in body
 
 
-def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=False):
+def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=False,
+                     temperature=None, seed=None):
     """Single place that builds the OpenAI-compatible request body (JAG-111).
     JAG-403: `no_reasoning=True` omits the reasoning fields (retry path for a
-    model that rejects them)."""
+    model that rejects them).
+    B-5: `temperature`/`seed` override the fixed 0.7 for THIS call only, so a
+    best-of-N fan-out can ask for candidates that actually differ."""
     # JAG-167: strip harness-only metadata (e.g. the per-message `node` used to
     # rebuild the in-chat tree) so ONLY wire-valid fields reach the provider.
     clean = []
@@ -1024,7 +1027,9 @@ def _completion_body(model_id, messages, stream, max_tokens=None, no_reasoning=F
             cm["name"] = m["name"]
         clean.append(cm)
     body = {"model": model_id, "messages": clean, "stream": bool(stream),
-            "temperature": 0.7}
+            "temperature": 0.7 if temperature is None else float(temperature)}
+    if seed is not None:
+        body["seed"] = int(seed)
     if stream:
         body["stream_options"] = {"include_usage": True}
     if max_tokens:
@@ -1061,7 +1066,8 @@ def _reachable(url, timeout=None):
 
 
 def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=None,
-                   cancel=None, no_reasoning=False, max_tokens=None):
+                   cancel=None, no_reasoning=False, max_tokens=None,
+                   temperature=None, seed=None):
     """POST /chat/completions with stream=true; feed deltas to on_delta.
 
     on_delta(channel, text) with channel in {think, answer}. Returns the
@@ -1087,7 +1093,9 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
         raise urllib.error.URLError("provider unreachable: %s" % url)
     body = json.dumps(_completion_body(model_id, messages, True,
                                        max_tokens or _max_tokens() or None,
-                                       no_reasoning=no_reasoning)).encode("utf-8")
+                                       no_reasoning=no_reasoning,
+                                       temperature=temperature,
+                                       seed=seed)).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers)
     answer, think = [], []
     rg = _RepetitionGuard() if (guard if guard is not None else REPEAT_GUARD) else None
@@ -1171,7 +1179,8 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
         # that do NOT pass through stream_with_fallback's own retry loop.
         if not no_reasoning and _reasoning_effort() and _is_reasoning_rejection(e):
             return _router_stream(messages, model, on_delta, timeout, usage, guard,
-                                  cancel, no_reasoning=True)
+                                  cancel, no_reasoning=True, temperature=temperature,
+                                  seed=seed)
         # JAG-197: an abort must never enter the blocking non-streaming fallback.
         # That fallback re-issues the WHOLE generation, ignores Stop, and can hold
         # the run — and a single-slot router — hostage for the full timeout.
@@ -1182,7 +1191,9 @@ def _router_stream(messages, model, on_delta, timeout=300, usage=None, guard=Non
         # non-streaming fallback
         body = json.dumps(_completion_body(model_id, messages, False,
                                            _max_tokens() or None,
-                                           no_reasoning=no_reasoning)).encode("utf-8")
+                                           no_reasoning=no_reasoning,
+                                           temperature=temperature,
+                                           seed=seed)).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers=headers)
         with _open_with_retry(req, timeout, model=model) as resp:
             # The non-streaming fallback: a 429 here is the SAME closed window, so

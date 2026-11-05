@@ -4655,16 +4655,21 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                            "total_cost", "cost_details",
                            "prompt_cache_hit_tokens", "prompt_cache_miss_tokens",
                            "cache_read_input_tokens", "cache_creation_input_tokens")
-            for _ in range(_bN - 1):
+            for _si in range(1, _bN):
                 if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
                     _kg_stop_reason = "budget"
                     break
                 _phase(on_event, sess["id"], "model", model=model, bestofn=True)
+                # B-5 (v817): ask the extra candidate for a DIFFERENT sample — same
+                # messages at the same temperature returned the same answer, so the
+                # fan-out paid 3-6x tokens to re-rank one candidate.
+                _btemp, _bseed = _bn.sample_params(_si)
                 try:
                     _a2, _t2, _m2 = server.stream_with_fallback(
                         msgs, model, "chat", lambda ch, t: None,
                         timeout=_model_call_timeout(),
-                        usage=chat_usage, cancel=_abort_now)
+                        usage=chat_usage, cancel=_abort_now,
+                        temperature=_btemp, seed=_bseed)
                 except Exception:  # noqa: BLE001
                     break
                 finally:

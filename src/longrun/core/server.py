@@ -155,7 +155,8 @@ CHAT_STREAM_IDLE = float(os.environ.get("LONGRUN_CHAT_STREAM_IDLE", 900.0))
 
 
 def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=None,
-                         guard=None, cancel=None, max_tokens=None):
+                         guard=None, cancel=None, max_tokens=None,
+                         temperature=None, seed=None):
     """v0.3 multi-model routing with fallback.
 
     Tries `model` (or the role-selected one) first; on a router failure walks
@@ -197,7 +198,8 @@ def stream_with_fallback(messages, model, role, on_delta, timeout=300, usage=Non
                 answer, think = _router_stream(messages, alias, on_delta, timeout,
                                                usage, guard, cancel,
                                                no_reasoning=no_reasoning,
-                                               max_tokens=max_tokens)
+                                               max_tokens=max_tokens,
+                                               temperature=temperature, seed=seed)
                 # A COMPLETELY blank reply (no answer AND no reasoning) is a
                 # provider defect, not an answer: the agent loop nudged the same
                 # model twice and then killed the turn ("the model returned an

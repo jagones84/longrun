@@ -26,6 +26,18 @@ DEFAULTS = {
     "adaptive": True,   # JAG-134: the task difficulty can raise N
 }
 
+# B-5 (v817): a second sample is only worth its tokens if it CAN differ from the
+# first. Re-sending the same messages at the same temperature returns the same
+# answer, so the fan-out spent 3-6x tokens to re-rank one candidate. Extra samples
+# are asked warm and seeded; the RANKER stays deterministic (never a majority vote
+# — samples from one model are correlated, so a vote adds nothing).
+SAMPLE_TEMPERATURE = 1.0
+
+
+def sample_params(index):
+    """`(temperature, seed)` for extra candidate #`index` (1-based)."""
+    return SAMPLE_TEMPERATURE, 1000 + int(index)
+
 
 def cfg(override=None):
     """Effective config: DEFAULTS <- config/tools.yaml (bestofn) -> override."""
