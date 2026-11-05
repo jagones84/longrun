@@ -1494,8 +1494,11 @@ def _offload_observation(sess, tool, text):
         "Observation for tool %s: output is LARGE (%d chars, %d lines) and was "
         "saved to a file so it does not flood your context.\n"
         "FULL OUTPUT FILE: %s\n"
-        "Read more of it with {\"action\":\"tool\",\"tool\":\"fs.read\","
-        "\"args\":{\"path\":\"%s\",\"max_bytes\":262144}} (or grep it with the shell tool).\n"
+        "Read it back in WINDOWS so each reply stays inside the observation limit: "
+        "{\"action\":\"tool\",\"tool\":\"fs.read\",\"args\":{\"path\":\"%s\","
+        "\"start_line\":1,\"end_line\":400}}, then continue from the first line you "
+        "have not seen (one huge fs.read would only be offloaded again; the shell is "
+        "scoped to the session workspace and this file is outside it).\n"
         "Preview — first %d chars:\n%s\n"
         % (tool, n, lines, path, path, min(_OFFLOAD_HEAD, n), head))
     if n > _OFFLOAD_HEAD + _OFFLOAD_TAIL:
@@ -4915,8 +4918,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                                         node=_cur_node(), after=_after(), hist=msgs,
                                         state=_deliv_state)
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(obs + "\n\nContinue: call the next tool, or report the result.",
-                        "observation")
+                # 2026-11-05: the batch builder ALREADY ends the text with its own
+                # Continue line ("… delegate, or report the result"). Appending the
+                # generic one here sent two different instructions in one message.
+                _inject(obs, "observation")
                 continue
         tc = _chat_tool_call(act, api_v02) if tool_ctx else None
         if tc:

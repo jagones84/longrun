@@ -27,6 +27,7 @@ from longrun.util import provenance
 from longrun.tools import registry
 from longrun.tools import sandbox
 from longrun.model import context_limits as ctx_limits
+from longrun.util.fswrite import write_text
 
 REPO = registry.REPO
 
@@ -692,8 +693,26 @@ def _fs_write(args, run_id):
     if existed:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             before = f.read()
-    with open(path, "a" if append else "w", encoding="utf-8") as f:
-        f.write(content)
+    # 2026-11-05: an overwrite is ATOMIC (unique temp + os.replace) so a crash
+    # mid-write cannot leave a half file, and the target keeps its mode. `append`
+    # stays a plain append by definition (it cannot truncate what it adds to).
+    if append:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(content)
+    else:
+        _mode = None
+        if existed:
+            try:
+                import stat as _stat
+                _mode = _stat.S_IMODE(os.stat(path).st_mode)
+            except OSError:
+                _mode = None
+        write_text(path, content)
+        if _mode is not None:
+            try:
+                os.chmod(path, _mode)
+            except OSError:
+                pass
     after = (before + content) if append else content
     _journal(run_id, path, before, after, "modified" if existed else "created")
     res = {"ok": True, "path": path, "bytes": len(content), "append": append,
@@ -719,8 +738,20 @@ def _fs_edit(args, run_id):
     replace = str(args.get("replace", ""))
     if not search:
         return {"ok": False, "error": "empty search string"}
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read()
+    with open(path, "r", encoding="utf-8") as f:
+        try:
+            content = f.read()
+        except UnicodeDecodeError:
+            # 2026-11-05: decoding with errors="replace" substituted U+FFFD for
+            # every undecodable byte and the edit wrote that back — a silent
+            # corruption of any latin-1/binary file. Editing text is the contract,
+            # so refuse and name the two honest routes instead.
+            return {"ok": False, "path": path,
+                    "error": ("%s is not valid UTF-8 (binary or a legacy encoding). "
+                              "fs.edit rewrites the whole file, so editing it would "
+                              "corrupt it: use python.run for a byte-level change, or "
+                              "fs.write with the full text if re-encoding is intended."
+                              % path)}
     count = content.count(search)
     if count == 0:
         return {"ok": False, "error": "search text not found in %s" % path}
@@ -730,8 +761,21 @@ def _fs_edit(args, run_id):
                                         "specific search") % (count, path)}
     n = count if args.get("replace_all") else 1
     new = content.replace(search, replace, n)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(new)
+    # 2026-11-05: ATOMIC write (unique temp + os.replace), and the file keeps its
+    # mode — the old direct write truncated the target first, so a crash mid-write
+    # left a half file, and os.replace alone would reset 0755 scripts to 0644.
+    _mode = None
+    try:
+        import stat as _stat
+        _mode = _stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        _mode = None
+    write_text(path, new)
+    if _mode is not None:
+        try:
+            os.chmod(path, _mode)
+        except OSError:
+            pass
     _journal(run_id, path, content, new, "modified")
     res = {"ok": True, "path": path, "replacements": n, "bytes_before": len(content),
            "bytes_after": len(new), "backend": "host", "sandboxed": False,
