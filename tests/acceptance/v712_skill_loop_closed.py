@@ -83,10 +83,20 @@ from longrun.util import selfevolve as SE  # noqa: E402
 
 _old_verify, _old_promote = SE.verify, SE.promote
 SE.verify = lambda d, runner=None, c=None: {"green": True, "output": "ok"}
-SE.promote = lambda d, skills_dir=None, c=None, human=False, purpose="": {
-    "ok": True, "name": "fs.read-fs.edit-shell",
-    "rel": "skills/created/fs.read-fs.edit-shell", "human": human,
-    "purpose": purpose}
+_CALL = {}
+
+
+def _fake_promote(d, skills_dir=None, c=None, human=False, purpose="",
+                  reason="", runner=None, supersede=False):
+    # The stub must accept the REAL signature: Python raises TypeError while
+    # BINDING the arguments, before the body runs, so an out-of-date stub turns a
+    # green path into a silent crash (v823 added `supersede`).
+    _CALL.update(human=human, purpose=purpose, supersede=supersede)
+    return {"ok": True, "name": "fs.read-fs.edit-shell",
+            "rel": "skills/created/fs.read-fs.edit-shell"}
+
+
+SE.promote = _fake_promote
 try:
     pid = (T._improve({"action": "propose", "scope": "skill", "path": draft,
                        "content": "install me"}, run_id="v712").get("proposal") or {}).get("id")
@@ -96,6 +106,8 @@ finally:
 check("C1 approving a bound skill proposal is a REAL install",
       got.get("ok") is True
       and (got.get("installed_to") or "").endswith("fs.read-fs.edit-shell"), got)
+check("C2 the operator approval asks for the SUPERSEDE (a collision replaces)",
+      _CALL.get("supersede") is True and _CALL.get("human") is True, _CALL)
 
 print("\n---\nv712: %d/%d PASS" % (sum(results), len(results)))
 shutil.rmtree(TMP, ignore_errors=True)
