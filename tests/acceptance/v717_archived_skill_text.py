@@ -61,7 +61,11 @@ check("A6 it no longer tells the agent to promote itself",
 d2 = SE.draft(["fs.read", "web.fetch", "fs.write"], 2, OUT)
 SE.ensure_check(d2)
 SE.verify(d2, runner=lambda _d, _c: (True, "ok"))
-got2 = SE.promote(d2, human=True)
+# A HUMAN release requires a reason at all (see promote()'s docstring: "a release
+# with no reason at all is refused"), so give it one — the point of this section is
+# that the archived SKILL.md does not INVENT a purpose when none was stated, and
+# `reason` is not the purpose.
+got2 = SE.promote(d2, human=True, reason="operator installed it without a purpose")
 md2 = open(os.path.join(got2["path"], "SKILL.md"), encoding="utf-8").read() if got2.get("ok") else ""
 check("B1 a purpose-less promotion says it has none",
       "no stated purpose" in md2, md2[:200])
