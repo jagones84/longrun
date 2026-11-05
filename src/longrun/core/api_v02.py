@@ -2609,11 +2609,18 @@ def update_policy(body):
         return {"ok": False, "error": "invalid settings value: %s" % e}
 
 
-def _apply_tool_fields(entry, body):
+def _apply_tool_fields(entry, body, name=None):
     """The per-tool policy fields, applied to ONE config entry.
 
     Shared by the single-tool path and the GROUP path (JAG-498) so the two can
     never drift. Returns an error string, or None on success.
+
+    D-12 (operator, 2026-11-05: *"i can delete hard blocks but never set them again
+    to defaults! if i delete a line of the defaults it can be put again, not lost
+    forever"*): `{"tool": X, "reset": ["deny"]}` puts ONE field back to the value
+    SHIPPED in `config/tools.yaml`. `save_config` stores only the delta, so the
+    restored field simply stops being overridden — the default is back, and
+    nothing is copied into a second file.
     """
     if "enabled" in body:
         entry["enabled"] = bool(body["enabled"])
@@ -2630,6 +2637,25 @@ def _apply_tool_fields(entry, body):
             if not isinstance(vals, list):
                 return "%s must be a list" % key
             entry[key] = [str(x)[:500] for x in vals if str(x).strip()]
+    # D-12: restore ONE field to its shipped value (`reset`) — see the docstring.
+    reset = body.get("reset")
+    if reset is not None:
+        if not isinstance(reset, list):
+            return "reset must be a list of field names"
+        ship = registry.shipped_tools()
+        direct = ship.get(str(name)) if isinstance(ship.get(str(name)), dict) else None
+        for key in reset:
+            k = str(key)
+            if k not in ("auto_approve", "roots", "deny", "allow_hosts", "always_ask",
+                         "approval", "enabled"):
+                return "reset: unknown field %r" % k
+            if direct is not None and k in direct:
+                entry[k] = copy.deepcopy(direct[k])
+            else:
+                # The shipped file keys the NAMESPACE (`shell`, not `shell.exec`), so
+                # dropping the override is the restore: `tool_spec` reads the
+                # namespace entry, and the overlay stops carrying the key at all.
+                entry.pop(k, None)
     return None
 
 
@@ -2882,7 +2908,7 @@ def _update_policy(body):
             return {"ok": False, "error": "tools list is empty"}
         for _nm in group:
             entry = cfg.setdefault("tools", {}).setdefault(_nm, {})
-            err = _apply_tool_fields(entry, body)
+            err = _apply_tool_fields(entry, body, _nm)
             if err:
                 return {"ok": False, "error": "%s: %s" % (_nm, err)}
         registry.save_config(cfg)
@@ -2894,7 +2920,7 @@ def _update_policy(body):
     if not name:
         return {"error": "tool required", "tools": registry.catalog()}
     entry = cfg.setdefault("tools", {}).setdefault(name, {})
-    err = _apply_tool_fields(entry, body)
+    err = _apply_tool_fields(entry, body, name)
     if err:
         return {"ok": False, "error": err}
     registry.save_config(cfg)

@@ -1529,6 +1529,11 @@
   .perm-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .perm-add select, .perm-add input { flex: 1 1 140px; min-width: 0; }
   .perm-off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  /* D-12: a shipped rule the operator removed is recoverable — listed under the
+     list it belongs to, collapsed, with one ↺ per rule and one for all of them. */
+  .perm-miss { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .perm-miss summary { cursor: pointer; }
+  .perm-miss .perm-rule { opacity: .65; }
   /* 2026-11-05: a tool row is name + actions. On a desktop the actions sit at the
      right edge; on a phone they take their own line instead of pushing the row
      past the viewport (measured: 80 buttons overflowed 390px). */
@@ -11759,12 +11764,45 @@ function renderPermissions(el, d) {
       out.push({ i, j, key, name: String(t.name || "?"), rule: String(rule) })));
     return out;
   };
+  // D-12 (operator, 2026-11-05: "i can delete hard blocks but never set them again
+  // to defaults! if i delete a line of the defaults it can be put again, not lost
+  // forever"): a shipped rule the operator removed is still known — the catalogue
+  // sends `deny_default` / `always_ask_default` from config/tools.yaml — so it is
+  // listed as recoverable instead of vanishing.
+  const missing = key => {
+    const out = [];
+    tools.forEach((t, i) => {
+      const cur = t[key] || [];
+      (t[key + "_default"] || []).forEach(rule => {
+        if (cur.indexOf(String(rule)) < 0) {
+          out.push({ i, key, name: String(t.name || "?"), rule: String(rule) });
+        }
+      });
+    });
+    return out;
+  };
   const list = (items, key, empty) => items.length ? items.map(r =>
     `<div class="perm-row">
        <span class="perm-name" title="${esc(r.name)}">${esc(r.name)}</span>
        <code class="perm-rule" title="${esc(r.rule)}">${esc(r.rule)}</code>
        <button class="ghost" data-permrm="${key}:${r.i}:${r.j}" aria-label="remove rule" title="remove this rule">✕</button>
      </div>`).join("") : `<div class="remaining">${empty}</div>`;
+  const recover = (items, key) => !items.length ? "" :
+    `<details class="perm-miss">
+       <summary class="remaining">${items.length} shipped default(s) removed — put them back</summary>
+       ${items.map(r =>
+         `<div class="perm-row">
+            <span class="perm-name" title="${esc(r.name)}">${esc(r.name)}</span>
+            <code class="perm-rule" title="${esc(r.rule)}">${esc(r.rule)}</code>
+            <button class="ghost" data-permrest="${r.i}:${key}" data-rule="${esc(r.rule)}"
+              aria-label="restore this default" title="put this shipped rule back">↺</button>
+          </div>`).join("")}
+       <div class="perm-row">
+         <span class="remaining">all of them at once:</span>
+         <button class="ghost" data-permreset="${key}" aria-label="restore shipped defaults"
+           title="restore the shipped list of every tool above">↺ all</button>
+       </div>
+     </details>`;
   const off = tools.map((t, i) => ({ i, t })).filter(x => x.t.enabled === false);
   el.innerHTML =
     `<div class="card perm-card">
@@ -11774,9 +11812,9 @@ function renderPermissions(el, d) {
          for you right now are in the Approvals panel, not here.</div>
      </div>
      <h2>Hard blocks · refused, never executed</h2>
-     <div class="card perm-card">${list(collect("deny"), "deny", "no hard blocks")}</div>
+     <div class="card perm-card">${list(collect("deny"), "deny", "no hard blocks")}${recover(missing("deny"), "deny")}</div>
      <h2>Always ask · reaches you even in FULL</h2>
-     <div class="card perm-card">${list(collect("always_ask"), "always_ask", "no always-ask rule")}</div>
+     <div class="card perm-card">${list(collect("always_ask"), "always_ask", "no always-ask rule")}${recover(missing("always_ask"), "always_ask")}</div>
      <h2>Add a rule</h2>
      <div class="card perm-card">
        <div class="perm-add">
@@ -11808,6 +11846,27 @@ function renderPermissions(el, d) {
     const r = await api("POST", "/api/tools", body);
     const m = el.querySelector("#permMsg");
     if (!r || !r.ok) { if (m) m.textContent = "not saved — " + ((r && r.error) || "?"); return; }
+    reload();
+  });
+  el.querySelectorAll("button[data-permrest]").forEach(b => b.onclick = async () => {
+    const parts = String(b.dataset.permrest).split(":");
+    const t = tools[Number(parts[0])] || {}, key = parts[1];
+    const body = { tool: t.name };
+    body[key] = (t[key] || []).concat([String(b.dataset.rule)]);
+    const r = await api("POST", "/api/tools", body);
+    const m = el.querySelector("#permMsg");
+    if (!r || !r.ok) { if (m) m.textContent = "not restored — " + ((r && r.error) || "?"); return; }
+    reload();
+  });
+  el.querySelectorAll("button[data-permreset]").forEach(b => b.onclick = async () => {
+    const key = String(b.dataset.permreset || "deny");
+    const byTool = {};
+    missing(key).forEach(r => { byTool[r.i] = 1; });
+    const m = el.querySelector("#permMsg");
+    for (const i of Object.keys(byTool)) {
+      const r = await api("POST", "/api/tools", { tool: (tools[Number(i)] || {}).name, reset: [key] });
+      if (!r || !r.ok) { if (m) m.textContent = "not restored — " + ((r && r.error) || "?"); return; }
+    }
     reload();
   });
   el.querySelectorAll("button[data-permon]").forEach(b => b.onclick = async () => {

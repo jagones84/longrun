@@ -1349,6 +1349,49 @@ def _diff_overlay(cfg, base_data):
     return out
 
 
+def shipped_tools():
+    """The `tools:` block exactly as SHIPPED in `config/tools.yaml` (no overlay).
+
+    D-12 (operator, 2026-11-05: *"i can delete hard blocks but never set them again
+    to defaults! if i delete a line of the defaults it can be put again, not lost
+    forever"*). The overlay only ever holds a DELTA vs this file, so the shipped
+    value is what "default" means — this function is the ONE answer to it, used by
+    the catalogue (so Settings can show a removed default) and by the reset in
+    `POST /api/tools`.
+    """
+    try:
+        raw, _src = _load_raw()
+    except Exception:  # noqa: BLE001 — an unreadable file means "no defaults"
+        return {}
+    got = raw.get("tools") or {}
+    return got if isinstance(got, dict) else {}
+
+
+def shipped_tool(name, ship=None):
+    """The SHIPPED entry for a tool name, resolved like `tool_spec` does.
+
+    `config/tools.yaml` keys the namespace (`shell`, `git`) while the catalogue
+    emits `shell.exec` / `git.run`, so the same precedence applies here: exact
+    key, then the namespace prefix, then a case-insensitive match (an MCP client
+    named `PMCP` must not be a stranger). Returns a dict or None.
+    `ship` is a pre-read `shipped_tools()` map so a catalogue loop reads the file once.
+    """
+    ship = shipped_tools() if ship is None else ship
+    nm = str(name or "")
+    got = ship.get(nm)
+    if isinstance(got, dict):
+        return got
+    if "." in nm and "__" not in nm:
+        got = ship.get(nm.split(".", 1)[0])
+        if isinstance(got, dict):
+            return got
+    low = nm.lower()
+    for key, val in ship.items():
+        if str(key).lower() == low and isinstance(val, dict):
+            return val
+    return None
+
+
 def _write_overlay(overlay):
     """Atomically write the sparse overlay (never touches config/tools.yaml)."""
     from longrun.util.fswrite import write_json, write_text
@@ -1649,6 +1692,7 @@ def catalog():
     ext = _external_tools()
     mtx = _matrix_tools()
     prom = _promoted_tools()
+    ship = shipped_tools()   # D-12: what Settings needs to offer "restore default"
     cfg_names = {k for k in (load_config()["tools"] or {}) if ("." in k or "__" in k)}
     names = sorted(cfg_names | set(TOOL_SCHEMAS.keys()) | set(prom) | set(mtx) | set(ext))
     out = []
@@ -1658,7 +1702,7 @@ def catalog():
         spec = tool_spec(name, ext)
         if not spec:
             continue
-        out.append({
+        row = {
             "name": name,
             "origin": spec.get("origin", "nucleus"),
             "enabled": spec["enabled"],
@@ -1671,7 +1715,15 @@ def catalog():
             "description": (spec["schema"] or {}).get("description", ""),
             "inputSchema": {k: v for k, v in (spec["schema"] or {}).items()
                             if k in ("type", "properties", "required", "anyOf")},
-        })
+        }
+        # D-12: the shipped policy lists, so the Permissions page can show a rule
+        # the operator removed and put it back. Only non-empty ones are sent.
+        _ship = shipped_tool(name, ship) or {}
+        for _k in ("deny", "always_ask"):
+            _vals = _ship.get(_k)
+            if isinstance(_vals, list) and _vals:
+                row[_k + "_default"] = [str(x) for x in _vals]
+        out.append(row)
     return out
 
 
