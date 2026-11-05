@@ -9,7 +9,7 @@ deliberate and load-bearing, so please respect it.
   Python standard library. New behaviour must not add a `pip` requirement to the core.
   The single exception is **PyYAML** (pure-Python), used only to read the shipped
   `config/*.yaml`; JSON configs work without it.
-- **Keep it cross-platform.** Platform-specific code lives in `src/longrun/osutil.py`.
+- **Keep it cross-platform.** Platform-specific code lives in `src/longrun/util/osutil.py`.
   No POSIX assumption may leak into the core — Longrun runs on Linux x86_64,
   Linux arm64/aarch64 (NVIDIA DGX Spark) and Windows x64 from the same code.
 - **No secrets in the repo.** Keys live in a local `.env` / `~/.hermes/.env` (gitignored).
@@ -19,9 +19,10 @@ deliberate and load-bearing, so please respect it.
 
 ## Set up
 
-Install and run instructions live in
-[README → Install & run](README.md#install--run) (clone, `cp .env.template .env`,
-`./run.sh` on Linux or `.\run.ps1` on Windows). Then verify your checkout:
+Install and run instructions live in the [README](README.md) quick-start sections
+(clone, then `./run.sh` on Linux or `.\run.ps1` on Windows — the launcher installs
+PyYAML; secrets are entered in the WebUI and written to the gitignored `.env`). Then
+verify your checkout:
 
 ```bash
 bash tests/battery.sh          # FAST gate; reports the current pass count
@@ -29,7 +30,8 @@ bash tests/battery.sh          # FAST gate; reports the current pass count
 
 ## The loop
 
-1. **Branch.** Short-lived, descriptive: `feature/…`, `fix/…`, `docs/…`, `refactor/…`.
+1. **Branch.** Short-lived, descriptive: `feature/…`, `fix/…`, `docs/…`, `refactor/…`, cut from
+   the working branch (see [Branches and releases](#branches-and-releases)).
 2. **Change one thing.** Keep PRs focused; ~100–300 lines is a good size.
 3. **Test.** Add or update a test under `tests/acceptance/v<NNN>_<topic>.py` (the battery
    auto-discovers `tests/acceptance/v*.py`). Tests must be deterministic — no wall-clock
@@ -58,6 +60,20 @@ pytest tests/properties/   # Hypothesis property tests
 - A test is `vNNN_topic.py`: it does `sys.path.insert(0, REPO/src)`, imports `longrun`,
   defines `check(name, ok, detail="")`, prints `PASS`/`FAIL` and exits non-zero on any `FAIL`.
 
+## Branches and releases
+
+- **`Experimental-Refactor` is the working branch.** Every change lands here and is pushed.
+  A short-lived branch is cut from it, and merged back into it.
+- **`master` is the backup branch.** It is NOT the integration branch and it is normally
+  BEHIND the working branch: aligning it is a deliberate, recorded act, never a side effect of
+  a normal change. Do not reset, rebase or force-push it.
+- **A release is a tag on the working branch** (`vX.Y.Z`). The same commit adds the release
+  section to [`CHANGELOG.md`](CHANGELOG.md), so a tag never ships without notes; work that is
+  not released yet lives under `## [Unreleased]`.
+- **The battery count lives in two places** — the README badge and the `battery N/N` line
+  under [Tests](README.md#tests). A new test file bumps both in the commit that adds it;
+  `v354` fails otherwise.
+
 ## House style
 
 - English only in code, comments, docstrings, log messages, UI strings and commits.
@@ -74,7 +90,7 @@ pytest tests/properties/   # Hypothesis property tests
 
 | Path | What |
 |---|---|
-| `src/longrun/` | the harness package, organised in subpackages (`core/`, `agent/`, `orchestrate/`, `plan/`, `tools/`, `model/`, `memory/`, `interop/`, `util/`) |
+| `src/longrun/` | the harness package, organised in 14 subpackages (`core/`, `agent/`, `orchestrate/`, `plan/`, `tools/`, `model/`, `memory/`, `interop/`, `util/`, `integrations/`, `orbit/`, `research/`, `harness/`, `gen/`) |
 | `src/longrun/orbit/` | the Orbit command deck (`/orbit`) |
 | `webui/` | the main single-file WebUI |
 | `tests/acceptance/` | the deterministic gate (auto-discovered) |

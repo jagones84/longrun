@@ -6,6 +6,33 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Retrieval has a second stage: a cross-encoder re-ranker (V-7, `v824`).** Hybrid search
+  fuses a lexical and a semantic list — it says the candidates are *plausible*, never that
+  one of them answers the question. A re-ranker scores `(query, passage)` TOGETHER and
+  reorders what retrieval already found; it can never invent a document. One
+  implementation (`model/rerank.py`), two consumers: Knowledge/codebase search and the
+  memories injected into the prompt. It is declared exactly like a chat model — a
+  `rerank: true` entry in `config/providers.yaml` — but can never be picked AS one, and its
+  own settings live in `config/rerank.yaml` (**Settings → Models**). It ships ON with
+  `voyageai/rerank-2.5-lite`, the cheapest model measured on this account, and it **fails
+  open**: disabled, a model error, a timeout or an empty answer leaves the fused order
+  untouched.
+- **A user preference and an open question are first-class memory (V-1, `v819`).** Two new
+  kinds — `user.preference` (always in the prompt, under the "user facts" trust label) and
+  `question.open` (its own prompt bucket, closed by the ordinary memory lifecycle) — so a
+  preference no longer has to be re-stated every session and an unanswered question
+  survives the turn that raised it.
+- **The tool policy reports which guardrails still fire (V-2, `v820`).** Every matched
+  `deny` / `always_ask` rule is counted (first/last hit, persisted), and
+  `GET /api/tools` returns the firings plus the rules that NEVER fired — so an obsolete
+  gate can be retired instead of guessed at.
+- **A skill promotion may replace the skill it supersedes (V-5, `v823`).**
+  `selfevolve.promote(..., supersede=True)` retires the installed skill to
+  `<skills>/_retired/` (moved, never deleted), stages the candidate outside the library and
+  swaps it in, recording the replacement in an append-only ledger and on the new
+  proposal. Improvement can finally land on a name that already exists.
+
 ### Changed
 - **The chat ✨ optimizes the draft you already typed (operator request, 2026-11-03).**
   With text in the composer the same ✨ used to draft a brand-new message and discard it.
@@ -23,6 +50,12 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **A sub-tool froze the guardrails it inherited (V-3, `v822`).** The permissions panel
+  wrote a sub-tool's whole effective entry — its inherited `deny` list included — into the
+  local overlay, so a later change to the shipped namespace list never reached it:
+  measured live, `shell.exec` kept 8 of the 9 shipped `shell` rules and a secrets guard was
+  off. The panel now diffs a sub-tool against its NAMESPACE entry, the same precedence the
+  tool spec uses.
 - **Settings and the ✨ AI draft moved out of the topbar and the composer into the chat
   rail, level with the send button (operator request, 2026-11-03).** The ✨ ate the
   composer's horizontal space and the settings gear sat in the topbar. Both now live in
@@ -2548,6 +2581,63 @@ All notable changes to Longrun are documented here. The format follows
   input). This closes a real coverage gap: `extract_json` previously had no runnable
   test — its only guard was `tests/properties/test_pure_logic.py`, which needs an
   uninstalled `hypothesis` and never ran. Battery: 104 → 105.
+
+## [1.1.0] — 2026-10-23
+
+The second tagged release: 296 commits, **99 features and 100 fixes**, battery 105 → 248
+acceptance tests. It turns the harness from "one strong agent plus a team" into a
+self-extending, fully editable one.
+
+### Added
+- **Matrix — self-evolution, live (`src/Matrix` + its runtime dir).** A second, agent-editable
+  zone beside the protected Nucleus: `src/Matrix/<subpkg>/hooks.py` is loaded fail-open on the
+  next call, `matrix.enable`/`disable`/`status` toggle it without a restart, and
+  `promote_to_nucleus` moves a proven artifact into the core through verification,
+  checkpoint and commit gates.
+- **longrunAgent (the VEO)** — a permanent stateless system-automation agent that drives the
+  WebUI substrate itself (model picker, editing sections, session grant), plus the Teamorg
+  view; its tools become one tool per object per verb and it can never be unpinned.
+- **Session Jobs (`sj`)** — dependency-ordered subagents inside ONE session, with their own
+  ledger directory and no-progress children failing their dependents.
+- **Parallel batch dispatch** — several teammates in one `{"action": "batch", ...}` call run
+  CONCURRENTLY, plus a direct command-palette button.
+- **`sessions.wait`** — a peer waits for the matching job's reply or failure instead of
+  polling a transcript.
+- **Two search stores, split by scope** — a per-workspace CODEBASE index and a GLOBAL
+  KNOWLEDGE base (notebooks), both stdlib: FTS5/bm25 with AST chunking and optional
+  embeddings; document ingestion for PDF/Office/OCR (docling backend) and image sources.
+- **Embeddings and research with real costs** — a multi-model embedding catalogue, USD cost
+  tracking, and a deep-research agent whose prompt/model are chosen in Settings.
+- **Rewind** — per-checkpoint and per-todo rewind from the WebUI, with the task graph
+  restored to the matching anchor.
+- **Rewritten WebUI shell** — Session / Control tabs, a one-row composer, the Orbit deck
+  embedded as an in-page view, six themes, a run-grouped cost panel, a mobile header, an
+  installable PWA manifest, and keyboard search in every file browser.
+- **Every config knob editable** — object editors for `config/*.yaml` (providers, prompts,
+  roles, tools, compaction, embeddings) with a sparse overlay, so a save never rewrites the
+  shipped comments.
+- **Paperclip adapter** — Longrun as an executable arm for the Paperclip control plane.
+- **Shell cwd policy as two root-scoped approval tiers**, documented in the UI.
+
+### Changed
+- **User data left the checkout.** One configurable data home (`~/.longrun`, or
+  `%LOCALAPPDATA%\Longrun`) holds sessions, events, indexes, costs and the Matrix runtime;
+  per-workspace project state moved out of the user's projects too, with a rescue path for
+  every older layout.
+- **Tools became discoverable** instead of being dumped in the prompt, and the Tools &
+  approvals panel is grouped by namespace.
+- **Compaction** summarises the WHOLE old transcript (map-reduce) instead of head+tail, and a
+  role may follow the chat model dynamically.
+
+### Fixed
+- **A no-progress child subjob is a failed dependency, not a done one.**
+- **Compaction policy and skill search stay coherent**; peer waits are correlated and Nucleus
+  writes serialised.
+- **The sandbox never runs on the host under an unknown backend name**, and the Nucleus guard
+  is deny-only (the auto-revert is gone).
+
+### Quality
+- **Battery 105 → 248 deterministic acceptance tests**, all green at the tag.
 
 ## [1.0.0] — 2026-10-07
 

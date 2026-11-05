@@ -110,12 +110,14 @@ See [Architecture](docs/ARCHITECTURE.md) for system behavior and
 Longrun can extend *itself* without a fork and without a restart. It splits into
 two zones:
 
-- **Nucleus** — `src/longrun/`: the protected core (13 subpackages). Stable, reviewed, and hard to break.
-- **Matrix** — `src/Matrix/` (Python) plus `.Matrix/` (trash, docs, rules, skills, checkpoints, git).
+- **Nucleus** — `src/longrun/`: the protected core (14 subpackages). Stable, reviewed, and hard to break.
+- **Matrix** — `src/Matrix/` (Python) plus its runtime directory under the
+  [data home](#where-your-data-lives-not-in-the-repository) (`matrix/`; `matrix.status.matrix_dot`
+  reports it, and the in-repo `.Matrix/` is only the legacy name).
   A live, agent-editable zone. Drop a file and it takes effect on the next call — no rebuild.
 
-Every Nucleus seam exposes a **fail-open** hook point: `agent`, `core`, `integrations`, `interop`,
-`memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `tools`, `util`, `webui`.
+Eleven Nucleus seams expose a **fail-open** hook point: `agent`, `core`, `integrations`, `interop`,
+`memory`, `model`, `orbit`, `orchestrate`, `plan`, `research`, `util`.
 Matrix code is loaded in an isolated `try/except`; a broken Matrix file is reported and skipped
 rather than crashing the harness.
 
@@ -400,7 +402,6 @@ WebUI uses, stdlib only, no install. Full reference: [CLI reference](docs/CLI.md
 
 ```bash
 cd /home/jagones/Repositories/longrun
-export LONGRUN_TOKEN=<your-token>   # set it in the WebUI first-run panel
 python3 forge.py status             # server, router, versions
 python3 forge.py sessions ls        # your sessions
 python3 forge.py chat "ping" --stream
@@ -413,7 +414,9 @@ python3 forge.py --help             # every command (30+ subcommands)
 Data commands print JSON (or aligned tables for `ls`); streaming commands
 (`chat --stream`, `agent`, `feed`, `blackboard watch`) print live until
 `Ctrl-C`. Exit `0` on success, `1` on `{"error": ...}`, `2` on malformed JSON
-args.
+args. No token export is needed: the bearer token saved in the WebUI first-run
+panel is read from the gitignored `.env`; set `LONGRUN_TOKEN` in the environment
+only to override it.
 
 ---
 
@@ -454,7 +457,14 @@ can move the data root for tests and custom setups.
 
 Manage notebooks and sources in **Settings → Knowledge**. Build or search the active
 workspace index in the right-rail **Codebase** panel. Both stores support keyword
-search; vector search is optional. See [CLI reference](docs/CLI.md) for commands.
+search; vector search is optional. A **re-ranker** then reorders what retrieval found:
+a cross-encoder scores each `(query, passage)` pair together and keeps the best few, so
+the passages that answer the question rise to the top. It is declared exactly like a
+chat model — `rerank: true` in `config/providers.yaml`, never selectable as a chat
+model — and configured in **Settings → Models** (`config/rerank.yaml`). It ships on
+with `voyageai/rerank-2.5-lite`, the cheapest model measured on OpenRouter, and it
+**fails open**: a model error, a timeout or an empty answer leaves the fused order
+untouched. See [CLI reference](docs/CLI.md) for commands.
 
 The Compaction form owns the global policy and summarizer settings. Manual and
 automatic compaction use the same policy; large transcripts are summarized in parts.
