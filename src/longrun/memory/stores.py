@@ -194,6 +194,13 @@ def _purge_session_artifacts(sid):
     bases = [os.path.join(SESSIONS_DIR, sid + ".json")]
     try:
         bases.append(taskgraph._path(sid))
+        # v812: a RUN keys its graph by the run id (and records the session inside),
+        # so `<sid>.json` is not the only file this session owns. Without this the
+        # run graphs outlived their chat: 198 of 248 graph files had no session and
+        # 589 nodes lived only there.
+        for _p in taskgraph.files_for_session(sid):
+            if _p not in bases:
+                bases.append(_p)
     except Exception:  # noqa: BLE001
         pass
     try:

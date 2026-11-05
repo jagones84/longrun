@@ -35,6 +35,9 @@ GRAPH_DIR = os.path.join(os.environ.get("LONGRUN_GRAPH_DIR", paths.DATA_DIR),
                          "graphs")
 
 GRAPH_LOCK = threading.RLock()
+#: v812: how long a graph with NO owner is kept before the startup sweep moves it
+#: to `data/trash`. 14 days is long enough that a restarted run is never touched.
+GRAPH_ORPHAN_DAYS = float(os.environ.get("LONGRUN_GRAPH_ORPHAN_DAYS", "14"))
 # JAG-266: `superseded` is a CLOSED state (not open) meaning "deliberately abandoned",
 # carrying a `reason` on the node — the model may close a leftover step this way instead
 # of being forced to finish work the user no longer wants.
@@ -337,6 +340,104 @@ def carry_node(graph, node_id):
     _publish("graph.node.updated", run=graph["run_id"], session=graph.get("session_id"),
              node=n, changes=["plan"], carried_from=old, plan=cur)
     return n
+
+
+def _key_of(filename):
+    """`<key>.json` and `<key>.json.reset-<ts>` both belong to `<key>` (v812)."""
+    return str(filename or "").split(".json", 1)[0]
+
+
+def files_for_session(sid):
+    """Every graph FILE whose stored owner is `sid` — not only `<sid>.json` (v812).
+
+    A chat/agent turn keys its graph by the SESSION, but a run keys it by the run id
+    and records the session in `session_id`. Deleting the session therefore left the
+    run graphs behind: measured 2026-11-04, 198 of 248 graph files had no session and
+    589 nodes lived only there. This is the lookup the delete cascade needs.
+    """
+    sid = str(sid or "")
+    if not sid:
+        return []
+    out = []
+    try:
+        names = os.listdir(GRAPH_DIR)
+    except OSError:
+        return []
+    for fn in names:
+        if ".json" not in fn:
+            continue
+        p = os.path.join(GRAPH_DIR, fn)
+        try:
+            g = read_json(p, None)
+        except Exception:  # noqa: BLE001 — an unreadable file is not an owner match
+            continue
+        if isinstance(g, dict) and str(g.get("session_id") or "") == sid:
+            out.append(p)
+    return out
+
+
+def sweep_orphans(known_sessions=None, older_than_days=None):
+    """v812: move graphs NOBODY owns into `data/trash` (recoverable, bounded).
+
+    A graph is an artifact OF an owner: a session (chat / agent) or a run. When the
+    owner is gone the file is unreachable — the panel binds to a session and
+    `/api/runs/<id>/graph` is a post-mortem read of a run that no longer exists — so
+    it piles up forever. Only files older than `older_than_days` move, so a graph a
+    live run wrote seconds before a restart is never touched, and the move is a
+    rename into the same trash the session delete already uses (30-day recovery).
+
+    Returns ``{"moved": [names], "kept": n}``; never raises.
+    """
+    try:
+        days = float(GRAPH_ORPHAN_DAYS if older_than_days is None else older_than_days)
+    except (TypeError, ValueError):
+        days = GRAPH_ORPHAN_DAYS
+    if known_sessions is None:
+        try:
+            known_sessions = {f[:-5] for f in os.listdir(paths.SESSIONS_DIR)
+                              if f.endswith(".json")}
+        except OSError:
+            return {"moved": [], "kept": 0}
+    known = {str(x) for x in known_sessions}
+    cutoff = time.time() - max(0.0, days) * 86400.0
+    # the SAME trash `memory.stores._trash_move` uses (bounded: 200 files / 30 days)
+    trash = os.path.join(paths.DATA_DIR, "trash")
+    moved, kept = [], 0
+    try:
+        names = sorted(os.listdir(GRAPH_DIR))
+    except OSError:
+        return {"moved": [], "kept": kept}
+    for fn in names:
+        if ".json" not in fn:
+            continue
+        key = _key_of(fn)
+        p = os.path.join(GRAPH_DIR, fn)
+        if key in known:
+            kept += 1
+            continue
+        try:
+            g = read_json(p, None)
+        except Exception:  # noqa: BLE001
+            g = None
+        sid = str((g or {}).get("session_id") or "") if isinstance(g, dict) else ""
+        if sid and sid in known:
+            kept += 1          # a run/subagent graph of a LIVE session
+            continue
+        try:
+            if os.path.getmtime(p) > cutoff:
+                kept += 1
+                continue
+            os.makedirs(trash, exist_ok=True)
+            dest = os.path.join(trash, fn)
+            if os.path.exists(dest):
+                dest = os.path.join(trash, "%d-%s" % (int(time.time()), fn))
+            os.replace(p, dest)
+            moved.append(fn)
+        except OSError:
+            kept += 1
+    if moved:
+        _publish("graph.swept", moved=len(moved), names=moved[:20])
+    return {"moved": moved, "kept": kept}
 
 
 def plan_nodes(graph):

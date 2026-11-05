@@ -3077,6 +3077,14 @@ def main():
     except Exception:  # noqa: BLE001 — pruning is best-effort
         pass
     try:
+        from longrun.plan import taskgraph as _tg_boot
+        # v812: a graph is an artifact of an owner (session or run). Graphs whose
+        # owner is gone are unreachable, so they must not pile up in data/ forever;
+        # only files older than the grace window move, into the recoverable trash.
+        _tg_boot.sweep_orphans()
+    except Exception:  # noqa: BLE001 — the sweep is best-effort
+        pass
+    try:
         from longrun.orchestrate import routines
         routines.start_scheduler()  # JAG-287 D: agents wake on a cadence
     except Exception:  # noqa: BLE001 — the heartbeat scheduler is optional
