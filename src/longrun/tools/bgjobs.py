@@ -44,12 +44,13 @@ def _path(job):
 
 def _prune():
     """Drop the OLDEST finished jobs beyond MAX_JOBS (logs are left on disk)."""
-    done = [(j["ended"], job) for job, j in _JOBS.items() if j["ended"]]
+    done = [(j["ended"], job) for job, j in _JOBS.items()
+            if j["ended"] and j.get("announced")]
     for _ts, job in sorted(done)[:max(0, len(done) - MAX_JOBS)]:
         _JOBS.pop(job, None)
 
 
-def start(command, cwd=None, label=None):
+def start(command, cwd=None, label=None, session=None):
     """Run `command` detached and return its handle immediately."""
     cmd = str(command or "")
     if not cmd.strip():
@@ -87,13 +88,21 @@ def start(command, cwd=None, label=None):
                 pass
         _JOBS[job] = {"job": job, "proc": proc, "cmd": cmd, "cwd": cwd or os.getcwd(),
                       "label": str(label or "")[:120], "log": log,
+                      "session": str(session or ""), "announced": False,
+                      "persisted": False,
                       "started": time.time(), "ended": None, "exit_code": None}
         _prune()
+        try:
+            threading.Thread(target=_watch, args=(job,), daemon=True,
+                             name="bgjob-" + job).start()
+        except Exception:  # noqa: BLE001 — the job still runs; only the notice is lost
+            pass
     return {"ok": True, "background": True, "running": True, "job": job,
             "pid": proc.pid, "log": log, "cwd": cwd or os.getcwd(), "command": cmd,
-            "hint": ("running in the background — the turn is NOT blocked. Check it "
-                     "with shell {action:'status', job:'%s'} and read the tail; "
-                     "stop it with {action:'stop'}." % job)}
+            "hint": ("running in the background — the turn is NOT blocked. It will "
+                     "announce itself when it finishes; you can also check it with "
+                     "shell {action:'status', job:'%s'} and stop it with "
+                     "{action:'stop'}." % job)}
 
 
 def _exit_of(job, rec):
@@ -103,6 +112,113 @@ def _exit_of(job, rec):
         rec["ended"] = time.time()
         rec["exit_code"] = int(code)
     return code
+
+
+def _watch(job):
+    """Wait for the detached process, then let the job announce itself.
+
+    Operator (2026-11-05): *"Yes. [a finished job should announce itself]"*. A
+    modern IDE tells you the build ended; asking the agent to poll is what made
+    the turn look stuck. Nobody has to remember the handle: the watcher reports
+    the exit code, and the chat loop hands the SAME notice to the model on its
+    next round (see `announce`).
+    """
+    with _LOCK:
+        rec = _JOBS.get(job)
+    if not rec:
+        return
+    try:
+        rec["proc"].wait()
+    except Exception:  # noqa: BLE001 — a vanished child still counts as finished
+        pass
+    _finish(job, rec)
+
+
+def _finish(job, rec):
+    """Close the record once, then announce it: live event + transcript copy."""
+    _exit_of(job, rec)
+    notice = _notice(job, rec)
+    sid = str(rec.get("session") or "")
+    if sid and not _turn_active(sid):
+        # No turn is running, so nobody will pick the notice up in a round: write
+        # it into the transcript itself. When a turn IS running the chat loop does
+        # it through `_inject`, so this must stay inside the `not active` branch
+        # (two copies of one event would be a second truth).
+        rec["persisted"] = _persist(sid, describe([notice]))
+    if not sid:
+        # Nothing to announce to (a raw POST /api/tools/call): let `_prune` recycle it.
+        rec["announced"] = True
+    try:
+        from longrun.core.events import publish
+        publish("bgjob.finished", session=sid, job=job,
+                exit_code=rec.get("exit_code"), command=rec["cmd"])
+    except Exception:  # noqa: BLE001 — the feed is not worth a crash
+        pass
+    return notice
+
+
+def _turn_active(sid):
+    try:
+        from longrun.core.events import turn_active
+        return bool(turn_active(sid))
+    except Exception:  # noqa: BLE001 — events.db trouble must not hide the notice
+        return False
+
+
+def _persist(sid, text):
+    """Append the notice to the session transcript (idle sessions only)."""
+    try:
+        from longrun.memory import stores
+        sess = stores.load_session(sid)
+        if not sess:
+            return False
+        return bool(stores.persist_inject(sess, "observation", text))
+    except Exception:  # noqa: BLE001 — a lost notice must never fail the job
+        return False
+
+
+def _notice(job, rec):
+    """One plain record of what the job did — the single shape both callers use."""
+    ended = rec.get("ended") or time.time()
+    return {"job": job, "command": rec["cmd"], "cwd": rec["cwd"],
+            "exit_code": rec.get("exit_code"),
+            "elapsed_s": round(ended - rec["started"], 1),
+            "log": rec["log"], "tail": _tail(rec["log"]),
+            "persisted": bool(rec.get("persisted"))}
+
+
+def describe(notices):
+    """The notice text: what ran, how it ended, and the tail of its output."""
+    out = []
+    for n in notices:
+        code = n.get("exit_code")
+        state = ("still RUNNING (no exit code)" if code is None else "exit=%d" % int(code))
+        out.append("[shell.exec] job %s FINISHED %s after %.1fs — %s\n%s"
+                   % (n.get("job"), state, float(n.get("elapsed_s") or 0.0),
+                      n.get("command"), (n.get("tail") or "").rstrip()))
+    return "\n\n".join(out)
+
+
+def announce(session):
+    """Finished jobs this session has not been told about yet — consumed on read.
+
+    The chat loop calls this once per round: a background job that ended while
+    the turn was alive reaches the model as an observation instead of waiting for
+    a `status` poll. `persisted` says the transcript already holds the copy (the
+    watcher wrote it because no turn was running), so the loop must not write a
+    second one.
+    """
+    sid = str(session or "")
+    if not sid:
+        return []
+    out = []
+    with _LOCK:
+        for job, rec in _JOBS.items():
+            if rec.get("session") != sid or not rec.get("ended") or rec.get("announced"):
+                continue
+            rec["announced"] = True
+            out.append(_notice(job, rec))
+    return out
 
 
 def status(job):

@@ -4259,12 +4259,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # replied and must go through.
     _inject_seen = {}
 
-    def _inject(content, kind):
+    def _inject(content, kind, persist=True):
         """JAG-166: add a synthetic message to the LLM context AND surface it.
 
         The harness is the model's secretary: every nudge, observation and
         'continue' it feeds back is ALSO emitted as `harness.inject`, so the chat
         can show exactly what was injected — nothing is hidden.
+
+        `persist=False` is for a notice the caller ALREADY wrote into the
+        transcript (a background job that finished while no turn was running):
+        the model still gets it, the UI keeps one copy instead of two.
         """
         # I-2: a byte-identical REPEAT of the same (kind, text) tells the model
         # nothing new (it already holds those bytes), so it is not re-charged to
@@ -4282,7 +4286,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # JAG-167: persist the injection so a reload rebuilds the in-chat tree.
         # The 'system' prompt is re-published every turn and is transient by
         # design → it is NOT persisted (avoids N identical copies in history).
-        if kind != "system":
+        if kind != "system" and persist:
             persist_inject(sess, kind, content, node=_cur_node(), after=_after())
 
     def _goal_close_round():
@@ -4516,6 +4520,20 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             msgs.append({"role": "user", "_steer_ctx": True, "content":
                          "[user steering — take it into account now] " + _s})
             on_event("chat.steer", session=sess["id"], text=_s, applied=True)
+        # D-10 (operator, 2026-11-05: "Yes. [a finished job should announce
+        # itself]"): a detached job that ended while this turn was alive reaches
+        # the model HERE, as an observation — no `status` poll, no forgotten
+        # handle. `persisted` marks the copy the watcher already wrote into the
+        # transcript (no turn was running then), so the UI keeps one copy.
+        try:
+            from longrun.tools import bgjobs as _bgj
+            for _bj in _bgj.announce(sess["id"]):
+                _inject(_bgj.describe([_bj]) +
+                        "\n\nContinue: use this result — call the next tool, or "
+                        "report what the job produced.",
+                        "observation", persist=not _bj.get("persisted"))
+        except Exception:  # noqa: BLE001 — a notice must never break a turn
+            pass
         collected = []
 
         def _capture(ch, t, _c=collected):

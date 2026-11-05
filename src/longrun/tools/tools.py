@@ -256,7 +256,7 @@ def _shell(args, run_id):
             return {"ok": False, "error": (
                 "background mode is host execution; this session is LOCKED to the "
                 "sandbox")}
-        return bgjobs.start(command, cwd=cwd or os.getcwd())
+        return bgjobs.start(command, cwd=cwd or os.getcwd(), session=sid)
     # JAG-2.9: run in the session's persistent terminal when the command would hit
     # the host anyway — the panel and the agent then share ONE shell.
     # P3 trust: a `locked` session must never touch the host terminal, even
@@ -417,9 +417,14 @@ def human_question_problem(question):
     emitted a batch whose last item was `human.ask {"question":"placeholder"}`;
     the harness opened a card with that word as the question and dropped the
     other three calls. A placeholder is not a decision, so it must be refused
-    (one nudge) instead of parking the operator in front of nonsense. Only an
-    EXACT placeholder token is refused — a short real question ("Continue?")
-    is legitimate and must pass.
+    (one nudge) instead of parking the operator in front of nonsense.
+
+    STRICT (operator, 2026-11-05: *"i don't want automatic human in the loop or
+    agent calling humans if not strictly necessary, e.g. for a data need or a
+    straight need"*): a card costs the operator a context switch, so it is only
+    earned by a real question — a `?`, and at least three words saying what is
+    being decided. "Continue?" decides nothing and is refused; "Which branch
+    should the release cut from?" passes.
     """
     low = " ".join(str(question or "").strip().lower().split())
     core = low.strip(" ?!.,:;")
@@ -427,6 +432,10 @@ def human_question_problem(question):
         return "the question is empty"
     if core in _PLACEHOLDER_QUESTIONS or low in _PLACEHOLDER_QUESTIONS:
         return "the question is a placeholder (%r), not a decision" % core
+    if "?" not in str(question or ""):
+        return "it is not phrased as a question (no '?')"
+    if len(core.split()) < 3:
+        return "the question is too short to be a decision (%r)" % core
     return ""
 
 

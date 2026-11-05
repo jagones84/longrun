@@ -51,14 +51,19 @@ def check(name, ok, detail=""):
 
 
 # ---- A: the question validator -------------------------------------------
+# STRICT (operator, 2026-11-05): a card costs a context switch, so only a real
+# question earns one — a '?' AND three words saying what is being decided.
 for bad in ("placeholder", "placeholder?", "  PLACEHOLDER  ", "todo", "tbd",
-            "n/a", "?", "...", ""):
+            "n/a", "?", "...", "", "Continue?", "Which region?", "why?",
+            "Apply the migration now"):
     check("A1 refused: %r" % bad, bool(T.human_question_problem(bad)), bad)
-for good in ("Apply the migration now?", "Continue?", "Ship it or park it?",
-             "Which region first?"):
+for good in ("Apply the migration now?", "Ship it or park it?",
+             "Which region first?", "Which branch should the release cut from?"):
     check("A2 accepted: %r" % good, T.human_question_problem(good) == "", good)
 check("A3 the message names the offending token",
       "placeholder" in T.human_question_problem("placeholder"))
+check("A4 a missing '?' is named", "no '?'" in T.human_question_problem("Apply it now"))
+check("A5 a too-short ask is named", "too short" in T.human_question_problem("Continue?"))
 
 # ---- B: the batch keeps its other calls ----------------------------------
 BATCH = {"action": "batch", "calls": [
@@ -105,7 +110,7 @@ check("D1 the loop calls the tool's validator (no second copy)",
 check("D2 the tool refuses a placeholder itself",
       T._human({"question": "placeholder"}, None).get("ok") is False)
 check("D3 the tool still accepts a real question",
-      T._human({"question": "Deploy now?"}, None).get("ok") is True)
+      T._human({"question": "Deploy the release now?"}, None).get("ok") is True)
 TOOLS_SRC = open(os.path.join(REPO, "src", "longrun", "tools", "tools.py"),
                  encoding="utf-8").read()
 check("D4 the placeholder list is declared exactly once",
