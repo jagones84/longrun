@@ -464,16 +464,20 @@ def _provider_skills(sess, ws, ctx):
 # memory can never balloon the system prompt (the model recalls more on demand
 # with the `memory` tool). This keeps the segregation below while staying within
 # the same prompt budget as before.
-_MEM_PROMPT_MAX = 800
+_MEM_PROMPT_MAX = 1200
 _MEM_ITEM_CHARS = 120
 
 
 def _provider_memory(sess, ws, ctx):
-    """JAG-447: memory is injected in TWO segregated, clearly-labelled buckets —
-    durable USER facts (``memory.store``) and SELF-distilled lessons
-    (``agent.note``) — so neither the model nor a human reading the context can
-    confuse what the user said with what the harness inferred on its own. The
-    whole section is hard-bounded (``_MEM_PROMPT_MAX``).
+    """JAG-447: memory is injected in segregated, clearly-labelled buckets —
+    durable USER facts and preferences (``memory.store`` / ``user.preference``) and
+    SELF-distilled lessons (``agent.note``) — so neither the model nor a human
+    reading the context can confuse what the user said with what the harness
+    inferred on its own. V-1 (v819) adds OPEN QUESTIONS (``question.open``), which
+    the Oracle memory talk calls out as the episodic kind worth keeping: what the
+    user asked that nobody has answered yet. The whole section is hard-bounded
+    (``_MEM_PROMPT_MAX``), and the CORE block comes FIRST so the truncation tail
+    can never be the always-visible one.
     """
     parts = []
     try:
@@ -488,18 +492,23 @@ def _provider_memory(sess, ws, ctx):
                                        if len(c) > _MEM_ITEM_CHARS else c))
             return out
 
-        facts = _items("memory.store", 3)
-        lessons = _items("agent.note", 5)
+        core = memory.core_read().strip()
+        if core:
+            parts.append("## Core memory (always visible \u2014 edit with "
+                         "memory{action:'set_core'})\n" + core)
+        facts = _items("memory.store", 3) + _items("user.preference", 2)
+        lessons = _items("agent.note", 4)
+        questions = _items("question.open", 3)
         if facts:
             parts.append("## Memory \u2014 user facts (told by the user; trust these)\n"
                          + "\n".join(facts))
         if lessons:
             parts.append("## Memory \u2014 self-distilled lessons (your own past "
                          "reflections; verify before relying)\n" + "\n".join(lessons))
-        core = memory.core_read().strip()
-        if core:
-            parts.append("## Core memory (always visible \u2014 edit with "
-                         "memory{action:'set_core'})\n" + core)
+        if questions:
+            parts.append("## Memory \u2014 open questions (asked but not yet answered; "
+                         "close one with memory{action:'invalidate', target:<id>})\n"
+                         + "\n".join(questions))
     except Exception:  # noqa: BLE001
         pass
     block = "\n\n".join(parts)

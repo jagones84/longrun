@@ -1453,6 +1453,11 @@ def _memory(args, run_id):
     """Agent memory (JAG-73): store a durable note, or recall/search memories.
 
     action=store   {content, kind?, source?, ttl_secs?} → append-only record
+                   kind: `memory.store` (a user fact), `user.preference` (how the
+                   user wants the work done), `question.open` (asked, not yet
+                   answered) or `agent.note` (a lesson) — the first three are
+                   surfaced in EVERY prompt; `tool.result`/`plan.update`/`task.done`
+                   are telemetry and are recalled on demand.
     action=recall  {query, kind?, limit?, include_invalid?} → search
     action=recent  {kind?, limit?}             → newest first
     action=core    {}                          → read the always-visible CORE block

@@ -52,6 +52,13 @@ MEMORY_FIELDS = {
     # LAST-ENTRY-WINS per target in `invalid_targets()`.
     "memory.invalidate": "memory_invalidations.md",
     "memory.restore": "memory_invalidations.md",
+    # V-1 (v819): two kinds the Oracle memory talk names explicitly — a durable
+    # USER PREFERENCE (how this operator wants the work done) and an OPEN QUESTION
+    # (something the user asked that nobody has answered yet). Both are surfaced in
+    # every prompt, unlike the telemetry kinds above; an open question is closed by
+    # the ordinary lifecycle (`memory.invalidate`).
+    "user.preference": "user_preferences.md",
+    "question.open": "open_questions.md",
 }
 
 
