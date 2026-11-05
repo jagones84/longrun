@@ -47,6 +47,25 @@ Team  TN      a symbol + a roster (owns its members)
 Membership is owned by the **team** (`teams.py`); `agents.py` only reads it, so the two
 stores can never drift. Todo ids are `AX.nY` — the `T` namespace belongs to teams.
 
+### Todo lifecycle (the checklist item)
+
+```
+todo ──▶ doing ──▶ done        done needs EVIDENCE (a claim is kept but marked)
+  │        │
+  │        └──▶ todo           a turn ended: nothing is "running" any more (v811)
+  ├──▶ blocked                 still open; carries what it waits for
+  ├──▶ cancelled               closed, no reason required (a silent close)
+  └──▶ superseded              closed, and WHY is required (a vague "still open" is refused)
+```
+
+At most ONE step is `doing` at a time. A **plan** is not an object, it is a SCOPE: a
+number per session, tagged on every node, so the transcript's cards keep resolving
+their ids forever. The model reads the CURRENT plan only (`render_todos`), which is
+why a step left in history is invisible to it — `carry` moves such a step forward
+(same id, deps into the abandoned plan pruned), `drop-plan` / `drop-old-plans` delete
+history for real, and the current plan is never droppable. The panel derives a plan's
+state from its nodes (`n done` / `n open`): it is never stored twice.
+
 ## A team job, end to end
 
 1. `POST /api/jobs {goal, assignee}` — the assignee is the coordinator; its team is the
@@ -272,16 +291,30 @@ Improvement panel renders that same answer.
 
 ## Data stores (the data home — `~/.longrun/data`, never the checkout)
 
-`sessions/` (transcripts) · `graphs/` (per-session task graphs) · `runs/` (traces +
-token/cost) · `edits/` (diff journal) · `memory/` · `checkpoints/` · `offload/` (oversized
-observations spilled to files) · `codebase/` (per-workspace FTS+vector index) ·
-`knowledge/` + `embedding/` (global notebook index + its cost log) · `costs/` (per-session
-model-call ledger) · `prices.json` · `tls/` (auto self-signed cert for HTTPS) ·
-`agents.json` · `teams.json` · `jobs.json` · `events.db` (durable SSE feed) ·
-`projects/` (per-workspace Project_rules.md, rules/, prompt.d/). Writes are
-atomic (`tmp` + `os.replace`). The root is resolved by `util/paths.py`
-(`LONGRUN_DATA_HOME` → `data_home` in `~/.longrun/config/config.json` → platform
-default) and can be moved from Settings ▸ Info.
+`sessions/` (transcripts) · `graphs/` (task graphs — one per session AND one per run,
+each recording its owner) · `runs/` (traces + token/cost) · `edits/` (diff journal) ·
+`memory/` · `checkpoints/` · `offload/` (oversized observations spilled to files) ·
+`codebase/` (per-workspace FTS+vector index) · `knowledge/` + `embedding/` (global
+notebook index + its cost log) · `costs/` (per-session model-call ledger) · `prices.json` ·
+`tls/` (auto self-signed cert for HTTPS) · `agents.json` · `teams.json` · `jobs.json` ·
+`events.db` (durable SSE feed) · `projects/` (per-workspace Project_rules.md, rules/,
+prompt.d/). Writes are atomic (`tmp` + `os.replace`). The root is resolved by
+`util/paths.py` (`LONGRUN_DATA_HOME` → `data_home` in `~/.longrun/config/config.json`
+→ platform default) and can be moved from Settings ▸ Info.
+
+Lifecycle and retention — every store has an owner and an end:
+
+| Object | Ends by | What is kept |
+|---|---|---|
+| Session | `DELETE /api/sessions/<id>` → tombstone + cascade of every per-session file | files move to `trash/` (recoverable) |
+| Run | finish / abort | its metrics live and die with the session |
+| Graph | the owner's delete, or the startup orphan sweep | owner-less graphs older than 14 days move to `trash/` |
+| Goal | delete (the record is removed, so a stale client cannot resume it) | per session |
+| Job / subjob | manual `job rm` | `jobs.json` has NO automatic retention |
+| Approval | decided, or expired by `approvals.timeout_secs` | newest 500 rows only |
+| Checkpoint | manual delete / prune | 100 snapshots + 30 turn anchors per session |
+| Memory record | invalidate / supersede / expire → tombstone (last entry wins), restore | `purge_invalidated` removes the dead ones |
+| Event | `prune_events` | newest 200 000 rows, every 15 minutes |
 
 ## Safety model
 
