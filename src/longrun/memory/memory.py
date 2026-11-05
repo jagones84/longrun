@@ -856,9 +856,14 @@ def provenance(limit=3000):
         s = str(r.get("source") or r.get("origin") or "unattributed")
         by_source[s] = by_source.get(s, 0) + 1
     auto = sum(v for k, v in by_kind.items() if k in AUTO_KINDS)
-    user = by_kind.get("memory.store", 0)
+    # V-1 (v819): a PREFERENCE is deliberately authored knowledge like a fact, so it
+    # counts as USER; an OPEN QUESTION is neither telemetry nor a stated fact, so it
+    # lands in `other`. Before this, a preference counted in NEITHER bucket and the
+    # report silently under-reported (found in independent review 2026-11-05).
+    user = by_kind.get("memory.store", 0) + by_kind.get("user.preference", 0)
     return {"by_kind": by_kind, "by_source": by_source,
-            "auto": auto, "user": user, "total": len(recs)}
+            "auto": auto, "user": user, "other": max(0, len(recs) - auto - user),
+            "total": len(recs)}
 
 
 def stats():

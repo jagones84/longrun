@@ -58,11 +58,17 @@ check("B2 a user abort is not a failure", cc("user_abort") is None, cc("user_abo
 # ------------- B3-B6. a CLEAN tool turn ends with the KEEPER's own stop reason ---
 # Keying the residual bucket on "the stop reason is unknown" labelled every
 # tool-using success a harness failure (found in independent review 2026-11-05).
-for _stop in ("goal_reached", "plan_only", "no_progress", "blocked", "need_input"):
+for _stop in ("goal_reached", "plan_only", "blocked", "need_input"):
     check("B3 a clean turn with stop_reason=%s is not a failure" % _stop,
           cc("done", _stop) is None, cc("done", _stop))
 check("B4 a real failure with no other signal is the harness",
       cc("error", "error") == "harness", cc("error", "error"))
+
+# ------------- B5. the loop's own "I got nowhere" stop is a HARNESS failure ------
+# Every agent turn ends with outcome="done", so the residual bucket could not see
+# it and `no_progress` was reported as a CLEAN run (found in review 2026-11-05).
+check("B5 a stuck turn (no_progress) is the harness, not a clean run",
+      cc("done", "no_progress") == "harness", cc("done", "no_progress"))
 
 # --------------------------------------------------- C. stored on the record ----
 runmetrics.start("S1", model="m")

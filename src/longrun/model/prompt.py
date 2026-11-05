@@ -511,10 +511,15 @@ def _provider_memory(sess, ws, ctx):
                          + "\n".join(questions))
     except Exception:  # noqa: BLE001
         pass
-    block = "\n\n".join(parts)
-    if len(block) > _MEM_PROMPT_MAX:
-        block = block[:_MEM_PROMPT_MAX] + "\n… [memory index truncated — use the `memory` tool to recall more]"
-    return block
+    # The CORE block is the ALWAYS-VISIBLE one, so the cap bounds only the
+    # variable part: truncating the joined string could cut the core itself once
+    # it was larger than the cap (found in independent review 2026-11-05).
+    core_part = parts[0] if (parts and parts[0].startswith("## Core memory")) else ""
+    variable = "\n\n".join(parts[1:] if core_part else parts)
+    if len(variable) > _MEM_PROMPT_MAX:
+        variable = (variable[:_MEM_PROMPT_MAX]
+                    + "\n… [memory index truncated — use the `memory` tool to recall more]")
+    return (core_part + "\n\n" + variable) if (core_part and variable) else (core_part or variable)
 
 
 _PROVIDERS = {

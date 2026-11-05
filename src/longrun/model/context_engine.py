@@ -327,10 +327,19 @@ def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True, workspace=None):
         return []
 
 
+# Words too common to be evidence that a memory was USED — `min_overlap` counted
+# them, so a memory made of generic words matched any reply (found in independent
+# review 2026-11-05).
+_STOPWORDS = frozenset(
+    "this that with from your have will what when then they them their there here into "
+    "over under about after before should could would must need want also more most less "
+    "than very just only same some such make made does done been being".split())
+
+
 def _norm_words(text):
-    """Lowercased alphanumeric words of length >= 4 (the distinctive ones)."""
+    """Lowercased alphanumeric words of length >= 4 that are not generic filler."""
     return {w for w in re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower()).split()
-            if len(w) >= 4}
+            if len(w) >= 4 and w not in _STOPWORDS}
 
 
 def usage_signal(reply, memories, min_overlap=0.6):

@@ -47,6 +47,7 @@ rows = [
     row("t1", "longrun", score=8),                 # graded 0.8
     row("t2", "longrun", timed_out=True),          # cut at the budget
     row("t3", "longrun", no_output=True),          # finished, nothing to grade
+    row("t4", "longrun", score=2, mx=4, timed_out=True),   # CUT but already graded 0.5
     row("t1", "harness2", score=10),               # graded 1.0
     row("t2", "harness2", score=5),                # graded 0.5
 ]
@@ -57,10 +58,12 @@ summary = json.load(open(os.path.join(out, "compare.json"), encoding="utf-8"))["
 lr = summary["longrun"]
 h2 = summary["harness2"]
 
-check("A1 the cut task is counted as a timeout", lr["timeouts"] == 1, lr)
+check("A1 the cut task is counted as a timeout", lr["timeouts"] == 2, lr)
 check("A2 the no-output task is counted as no_output", lr["no_output"] == 1, lr)
-check("A3 the all-task ratio counts them as failures",
-      abs(lr["mean_ratio_all"] - round(0.8 / 3, 4)) < 1e-9, lr["mean_ratio_all"])
+check("A3 the all-task ratio counts the ungraded ones as failures",
+      abs(lr["mean_ratio_all"] - round(1.3 / 4, 4)) < 1e-9, lr["mean_ratio_all"])
+check("A5 a CUT task that was already graded keeps its partial grade",
+      abs(lr["mean_ratio_all"] - 0.325) < 1e-9, lr["mean_ratio_all"])
 check("A4 the finished-only mean is unchanged",
       abs(lr["mean_ratio"] - 0.8) < 1e-9, lr["mean_ratio"])
 check("B1 nothing was cut for harness2 so the two means agree",

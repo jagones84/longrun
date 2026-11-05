@@ -86,6 +86,22 @@ tools_src = open(os.path.join(REPO, "src", "longrun", "tools", "tools.py"),
 check("E1 the memory tool documents the kinds",
       "user.preference" in tools_src and "question.open" in tools_src)
 
+# ------------------------------------------------- F. the CORE is never cut ------
+# The cap used to be applied to the JOINED block, so a core larger than the cap was
+# truncated along with everything else (found in independent review 2026-11-05).
+BIG = "K" * 1500
+memory.core_write(BIG)
+blk3 = prompt._provider_memory(None, None, None)
+check("F1 a CORE block larger than the cap is never cut", BIG in blk3, len(blk3))
+check("F2 and it is still the FIRST part of the section",
+      blk3.startswith("## Core memory"), blk3[:40])
+
+# ------------------------------------- G. the segregation buckets still add up ---
+prov = memory.provenance()
+check("G1 a preference counts as USER knowledge", prov["user"] == 2, prov)
+check("G2 auto + user + other == total (nothing silently uncounted)",
+      prov["auto"] + prov["user"] + prov["other"] == prov["total"], prov)
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

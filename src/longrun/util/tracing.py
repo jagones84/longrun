@@ -263,9 +263,15 @@ class RunTrace:
                 from longrun.model import costs as _costs
                 led = _costs.for_run(self.session, self.id)
                 cost = led.get("usd")
-                if led.get("calls") and (led.get("tokens_in") or led.get("tokens_out")):
-                    self.tokens_in = int(led.get("tokens_in") or 0)
-                    self.tokens_out = int(led.get("tokens_out") or 0)
+                if led.get("calls"):
+                    # Per FIELD: a provider that reported only one side must not
+                    # turn the other side into a false 0 — when the ledger is
+                    # silent about a counter, the chars/4 estimate is closer to the
+                    # truth than zero is (mirror of the defect found in review).
+                    if led.get("tokens_in"):
+                        self.tokens_in = int(led["tokens_in"])
+                    if led.get("tokens_out"):
+                        self.tokens_out = int(led["tokens_out"])
             except Exception:  # noqa: BLE001 — accounting must never break a run
                 cost = None
         if cost is None and not self.session:

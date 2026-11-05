@@ -82,6 +82,16 @@ check("D1 a tokenless (failed) row keeps the estimate, never a zero",
       rec4["tokens_in"] == 1000 and rec4["tokens_out"] == 100,
       (rec4["tokens_in"], rec4["tokens_out"]))
 
+# ------------- E. a provider that reported only ONE side must not zero the other --
+tr5 = tracing.RunTrace("chat", model="m", session="S5")
+tr5.llm_call([{"role": "user", "content": USER}], ASSIST)
+costs.record("S5", "m", {"completion_tokens": 42}, run=tr5.id)
+tr5.finish()
+rec5 = tracing.get_run_trace(tr5.id)
+check("E1 only the reported side comes from the ledger; the other keeps the estimate",
+      rec5["tokens_in"] == 1000 and rec5["tokens_out"] == 42,
+      (rec5["tokens_in"], rec5["tokens_out"]))
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

@@ -914,6 +914,7 @@ def report(out, rows, parity):
         a = arms.setdefault(r["arm"], {"tasks": 0, "delivered": 0, "scored": 0,
                                        "timeouts": 0, "empty": 0,
                                        "ratio_sum": 0.0, "ratio_n": 0,
+                                       "ratio_sum_all": 0.0,
                                        "tokens": None, "usd": None, "time_s": 0.0})
         a["tasks"] += 1
         a["delivered"] += 1 if r.get("delivered") else 0
@@ -930,6 +931,11 @@ def report(out, rows, parity):
         elif _empty(r):
             a["empty"] += 1
         rt = _ratio(r)
+        if rt is not None:
+            # B-2: the ALL-TASK ratio keeps the partial grade a CUT task still
+            # earned; a task with no grade at all contributes 0. The finished-only
+            # `ratio_sum` below still ignores a cut/empty row entirely.
+            a["ratio_sum_all"] += rt
         if rt is not None and not _cut(r) and not _empty(r):
             a["scored"] += 1
             a["ratio_sum"] += rt
@@ -962,7 +968,7 @@ def report(out, rows, parity):
                          # `mean_ratio_all` answers "what did it deliver per task
                          # attempted" — the number a peer suite's pass@1 is
                          # comparable with. Both are printed; neither is hidden.
-                         "mean_ratio_all": round(a["ratio_sum"] / a["tasks"], 4)
+                         "mean_ratio_all": round(a["ratio_sum_all"] / a["tasks"], 4)
                          if a["tasks"] else None}
     payload = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "parity": parity,
                "arms": summary, "rows": rows}

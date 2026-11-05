@@ -27,6 +27,12 @@ def _path(key):
 # falls through to the error text.
 _BUDGET_STOPS = ("budget", "wall", "tokens", "max_steps", "timeout")
 _MODEL_STOPS = ("empty_reply", "invalid_reply", "no_action", "unparsable")
+# The loop's own "I got nowhere" stops: the model did not fail and no budget was
+# reached, so this is the harness losing the work — the only bucket that is a bug.
+# Checked explicitly because EVERY agent turn ends with `outcome="done"`, so the
+# residual could not see them (found in independent review 2026-11-05:
+# `no_progress` was reported as a clean run).
+_HARNESS_STOPS = ("no_progress", "stalled", "stale", "loop")
 
 
 def classify_cause(outcome="done", stop_reason=None, error=None, code=None):
@@ -48,6 +54,8 @@ def classify_cause(outcome="done", stop_reason=None, error=None, code=None):
         return "budget"
     if stop in _MODEL_STOPS:
         return "model"
+    if stop in _HARNESS_STOPS:
+        return "harness"
     if str(code or "").startswith("provider."):
         return "provider"
     text = str(error or "").lower()

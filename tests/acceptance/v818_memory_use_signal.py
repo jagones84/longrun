@@ -64,6 +64,12 @@ check("C4 a record with no id is not counted",
 check("C5 nothing injected is not an error",
       ce.usage_signal("x", []) == {"injected": 0, "used": 0, "unused": 0, "used_ids": []})
 
+# ------------- C6. generic filler is not evidence of use (found in review) -------
+FILLER = {"mid": "F1", "content": "this will that from your have when then they them"}
+_filler = ce.usage_signal("this will that from your have when then they them", [dict(FILLER)])
+check("C6 a memory made only of generic words is not reported as used",
+      _filler["injected"] == 1 and _filler["used"] == 0, _filler)
+
 # ---------------------------------------------------------------- D. wiring ---
 http = open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8").read()
 check("D1 the panel data carries memory_use", '"memory_use": mem_use' in http)
