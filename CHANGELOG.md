@@ -34,6 +34,14 @@ All notable changes to Longrun are documented here. The format follows
   proposal. Improvement can finally land on a name that already exists.
 
 ### Changed
+- **Settings ▸ Models is ONE sheet per model stage (2026-11-05, `v825`).** The re-ranker had a live
+  picker at the top of the panel and its knobs in a second card of their own — a SAVE chip, a second
+  save button and a read-only copy of the model the picker already showed — so one stage read as
+  three surfaces. The knobs now live INSIDE the picker's card (a divider, the fields, one save), the
+  five numbers share a two-column grid of equal width, the on/off of the stage spans the row, and
+  each short label carries its explanation as the tooltip. The provider editor is a section of the
+  Providers card rather than a section above it, and its rows are a divided sheet instead of a card
+  inside a card.
 - **The chat ✨ optimizes the draft you already typed (operator request, 2026-11-03).**
   With text in the composer the same ✨ used to draft a brand-new message and discard it.
   Now the field's state decides the job: EMPTY → the opening/next message as before;
