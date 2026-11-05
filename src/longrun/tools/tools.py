@@ -1828,7 +1828,7 @@ def _improve(args, run_id=None):
             if not ready.get("ok"):
                 return {"ok": False,
                         "error": ready.get("error") or "draft is not verifiable"}
-            res = selfevolve.promote(path)
+            res = selfevolve.promote(path, supersede=bool(args.get("supersede")))
             if res.get("ok"):
                 _pub("improve.archived", name=res.get("name"), rel=res.get("rel"))
             return res

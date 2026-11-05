@@ -531,6 +531,12 @@ _LEGACY_SCHEMAS = {
                                      "(default: learned_<slug of the sequence>)")},
             "reason": {"type": "string",
                        "description": "why this proposal exists (action=propose)"},
+            "supersede": {"type": "boolean",
+                          "description": ("promote: replace an installed skill of the "
+                                          "same name — the old one is retired to "
+                                          "skills/_retired/ (never deleted) and the "
+                                          "replacement is recorded. Default false: a "
+                                          "promote that collides is refused")},
             "limit": {"type": "integer",
                       "description": "review: how many artifacts to audit (max 60)"},
             "model": {"type": "string",
@@ -775,7 +781,7 @@ _SUBTOOL_FIELDS = {
     "improve": {
         "propose": ["scope", "content", "reason", "path"],
         "mine": ["reason"], "evolve": [],
-        "verify": ["path"], "promote": ["path"],
+        "verify": ["path"], "promote": ["path", "supersede"],
         # `name` is the Matrix namespace and `content` states the tool's purpose —
         # both are real arguments of action=forge, so the canonical schema declares
         # them (a narrowed field list must never hide an argument the tool reads).

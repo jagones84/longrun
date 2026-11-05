@@ -923,12 +923,66 @@ def _archived_skill_md(name, pattern, purpose, rel, origin, evidence=None):
     return "\n".join(lines)
 
 
+def _retired_root(root):
+    """Where a superseded skill goes: `<skills>/_retired`.
+
+    Deliberately two directory levels ABOVE the `skills/<category>/<name>/SKILL.md`
+    shape `list_skills` scans, so a retired folder is preserved for audit and a
+    manual restore but never surfaces as an active skill again (`_retired/<cat>`
+    holds no `SKILL.md`, so the loader skips it).
+    """
+    return os.path.join(root, "_retired")
+
+
+def _retire_skill(target, root, category, name, by="", reason=""):
+    """Move an installed skill ASIDE so a promotion can take its name (v823).
+
+    Never deletes: the folder keeps its `SKILL.md` and `proposal.json` under
+    `<root>/_retired/<category>/<name>-<stamp>/`, and one append-only line in
+    `<root>/_retired/ledger.jsonl` records who replaced what, when, at which
+    content digest (`prev_sha256`) and why. Returns {ok, retired_to, prev_sha256}.
+    """
+    import hashlib
+    import shutil
+    dest_dir = os.path.join(_retired_root(root), category)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        dest = os.path.join(dest_dir, "%s-%s" % (name, stamp))
+        n = 1
+        while os.path.exists(dest):
+            dest = os.path.join(dest_dir, "%s-%s-%d" % (name, stamp, n))
+            n += 1
+        prev_sha = ""
+        try:
+            with open(os.path.join(target, "SKILL.md"), "rb") as f:
+                prev_sha = hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            pass
+        shutil.move(target, dest)
+        rel = os.path.relpath(dest, root)
+        line = {"ts": round(time.time(), 3),
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "name": name, "category": category, "retired_to": rel,
+                "by": by or "?", "reason": (reason or "")[:300],
+                "prev_sha256": prev_sha}
+        with open(os.path.join(_retired_root(root), "ledger.jsonl"), "a",
+                  encoding="utf-8") as f:
+            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+        return {"ok": True, "retired_to": rel, "prev_sha256": prev_sha}
+    except OSError as e:
+        return {"ok": False, "error": str(e)}
+
+
 def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
-            reason="", runner=None):
+            reason="", runner=None, supersede=False):
     """Archive a VERIFIED proposal into skills/<category>/<name>/ (write-gate).
 
-    Rejects if the status is not `verified`. Does not overwrite. Returns
-    {"ok",...} or {"ok": False, "error": ...}.
+    Rejects if the status is not `verified`. Does not overwrite — UNLESS
+    `supersede` is set, in which case an installed skill of the same name is
+    RETIRED (moved to `<skills>/_retired/`, recorded in the ledger and on the new
+    proposal) and the promotion takes its place. Returns {"ok",...} or
+    {"ok": False, "error": ...}.
 
     `human=True` is the OPERATOR path (an approved proposal in the WebUI): the
     sandbox check still has to be green, but the sealed held-out suite is not
@@ -1051,7 +1105,9 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
         if len(existing) >= AUTO_SKILL_CAP:
             return {"ok": False,
                     "error": "skills/created quota reached (%d) — prune before promoting" % AUTO_SKILL_CAP}
-    if os.path.exists(target):
+    superseded = None
+    _collides = os.path.exists(target)
+    if _collides and not supersede:
         return {"ok": False, "error": "target already exists: %s" % target}
     # COMPOSED-SET SMOKE (Compositional Safety 2609.33123): `verify` checks the
     # candidate ALONE; this re-checks the artifacts already installed, because
@@ -1069,10 +1125,41 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
             return {"ok": False, "smoke": _red,
                     "error": "composed-set smoke red: %s — fix or retire the named "
                              "artifact before promoting" % ", ".join(sorted(_red))}
+    # The video's lifecycle (v823): an improvement that collides with the installed
+    # name RETIRES the version it replaces instead of being refused. Staged OUTSIDE
+    # the library and swapped in, so no failure after the retire can leave the
+    # installed skill missing. Never deleted: the folder and one ledger line record
+    # the replacement, and the default stays a refusal (nothing is clobbered
+    # silently).
+    import shutil
+    import tempfile
     from longrun.memory import skills as skills_mod
-    got = skills_mod.install_skill_dir(proposal_dir, target)
-    if not got.get("ok"):
-        return got
+    _stage = tempfile.mkdtemp(prefix="promote-stage-")
+    try:
+        _staged = os.path.join(_stage, name)
+        got = skills_mod.install_skill_dir(proposal_dir, _staged)
+        if not got.get("ok"):
+            return got
+        if _collides:
+            superseded = _retire_skill(target, root, category, name,
+                                       by=("operator" if human else "auto"),
+                                       reason=_rel_reason or purpose)
+            if not superseded.get("ok"):
+                return {"ok": False, "error": "cannot retire the existing skill: %s"
+                        % superseded.get("error")}
+        try:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.move(_staged, target)
+        except OSError as e:
+            # The swap failed: put the retired skill back — nothing is lost.
+            if superseded:
+                try:
+                    shutil.move(os.path.join(root, superseded["retired_to"]), target)
+                except OSError:
+                    pass
+            return {"ok": False, "error": "install failed: %s" % e}
+    finally:
+        shutil.rmtree(_stage, ignore_errors=True)
     prop["status"] = "archived"
     prop["evidence"] = evidence
     prop["cost_tokens"] = _cost
@@ -1082,6 +1169,11 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
         prop["released_reason"] = _rel_reason[:300]
     _under_repo = os.path.abspath(target).startswith(os.path.abspath(REPO) + os.sep)
     prop["archived_to"] = (os.path.relpath(target, REPO) if _under_repo else target)
+    if superseded:
+        # One record on the NEW proposal, so the artifact names what it replaced.
+        prop["supersedes"] = {"name": name, "retired_to": superseded["retired_to"],
+                              "prev_sha256": superseded["prev_sha256"],
+                              "by": "operator" if human else "auto"}
     _write_json(prop_path, prop)
     _write_json(os.path.join(target, "proposal.json"), prop)
     # v717: the archived SKILL.md states the purpose and the REAL state (the draft
@@ -1098,9 +1190,12 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     # fixed/broke, at what prompt cost; with a runner, confirm the INSTALLED copy
     # behaves like the verified draft.
     attr = attribute(target, runner=runner, c=c)
-    return {"ok": True, "name": name, "path": target,
-            "rel": prop["archived_to"], "evidence": evidence,
-            "cost_tokens": _cost, "attribution": attr}
+    out = {"ok": True, "name": name, "path": target,
+           "rel": prop["archived_to"], "evidence": evidence,
+           "cost_tokens": _cost, "attribution": attr}
+    if superseded:
+        out["superseded"] = superseded
+    return out
 
 
 MATRIX_FORGE_NS = "learned"
