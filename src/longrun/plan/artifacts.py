@@ -747,11 +747,42 @@ _TARGET_PATH = re.compile(
     r"pptx?|py|sh|ya?ml)\b")
 
 
+#: Phrases that say the answer belongs in the REPLY, not on disk. Only the plain
+#: negations of production: a negation that names a destination ("do not write to
+#: /tmp") is about that place and is excluded by `_NEGATION_DEST` below.
+_NO_ARTIFACT = ("do not write", "don't write", "do not create", "don't create",
+                "do not save", "don't save", "do not produce", "don't produce",
+                "do not generate", "don't generate", "must not write",
+                "must not create", "belongs in the chat", "answer in chat only",
+                "reply in chat only")
+_NEGATION_DEST = re.compile(r"\b(?:to|into|inside|under)\s+[\w./~-]+")
+
+
+def _artifact_negated(text):
+    """True when the request explicitly forbids producing a file."""
+    for phrase in _NO_ARTIFACT:
+        i = text.find(phrase)
+        while i >= 0:
+            tail = text[i + len(phrase): i + len(phrase) + 60]
+            if not _NEGATION_DEST.search(tail):
+                return True
+            i = text.find(phrase, i + 1)
+    return False
+
+
 def names_artifact(request):
     """True when the request asks to PRODUCE a file (so writing nothing is a failure)."""
     text = " ".join(str(request or "").lower().split())
     if _TARGET_PATH.search(text):
         return True
+    # 2026-11-06: "do not write any file: the answer belongs in the chat" matched
+    # `write` (a produce verb) + `file` (an artifact word), so the read-back
+    # demanded a deliverable the user had just FORBIDDEN. The model spent its
+    # closing round arguing with the harness (session bfce1004dd85). A negated
+    # instruction is not a request for a file — but only when the negation is not
+    # about a DESTINATION ("do not write to /tmp" still leaves the deliverable).
+    if _artifact_negated(text):
+        return False
     if not any(w in text for w in _ARTIFACT_WORDS):
         return False
     return any(v in text for v in _PRODUCE_VERBS)
