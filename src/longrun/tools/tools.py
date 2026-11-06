@@ -3723,12 +3723,15 @@ def observation(res, max_chars=1600):
     # Fix6: a sandbox/host-execution warning must never be silent. The old code
     # only surfaced it inside the JSON fallback (no-body results), so every
     # normal shell result hid "ran on the host" from the model.
+    #
+    # v836: a warning/hint is a POINTER, not a payload. Counting them as the body
+    # made `self {action:"tools", tool:"fs.write"}` render 146 chars — the verdict
+    # line plus "hint: paths, config, docs…" — while the contract the system
+    # prompt promises sat in `info["tools"]` and the fallback below was skipped.
     if res.get("warning"):
         bits.append("warning: " + _truncate(str(res["warning"]).strip(), max_chars))
-        has_body = True
     if res.get("hint"):
         bits.append("hint: " + _truncate(str(res["hint"]).strip(), max_chars))
-        has_body = True
     if res.get("stdout"):
         bits.append("stdout: " + _truncate(str(res["stdout"]).strip(), max_chars))
         has_body = True
