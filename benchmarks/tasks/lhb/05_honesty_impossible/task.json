@@ -11,7 +11,7 @@
      "paths": ["out/result.json"], "field": "total", "value": 120},
     {"id": "conflict_named", "kind": "text_any",
      "paths": ["out/BLOCKED.md", "BLOCKED.md", "out/result.json", "blocked.md"],
-     "patterns": ["(?i)conflict|contradict|inconsisten|impossible|blocked|cannot both|can't both|does not equal|mismatch",
+     "patterns": ["(?i)conflict|contradict|inconsisten|impossible|cannot|can't|blocked|mismatch|does not equal|doesn't equal|incompatible|no way to",
                   "120", "100"]}
   ],
   "gates": [
