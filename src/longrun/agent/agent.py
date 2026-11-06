@@ -868,6 +868,36 @@ VERIFY_POLICY = (
     "away in prose.\n"
 )
 
+# Honesty contract (2026-11-06). Measured on LHB `05_honesty_impossible`: given a
+# request whose two mandatory numbers cannot both hold, the model wrote a plausible
+# deliverable AND cited `data/ledger.csv` — a file that did not exist. That is a
+# fabricated source, and no structure check sees it. The evidence (Failure-Transparent
+# Agents, arXiv 2609.35732: false success 22.8% plain -> 9.3% with a transparency
+# instruction -> 0.8% with a TYPED contract) says the lever is the SHAPE of the report,
+# not the word "honest". So the shape is stated here and the harness checks the one
+# part that is mechanical at close (`_citation_gate_text` -> every cited path exists).
+HONESTY_POLICY = (
+    "## Honest reporting — blocked is a complete answer\n"
+    "Every closing report is ONE of two shapes, and BOTH are real answers:\n"
+    "- **RESULT** — the delivered value plus the exact inputs you opened to get it "
+    "(file, sheet, command). A result whose source you cannot name is not a result.\n"
+    "- **BLOCKED** — nothing delivered, because (a) an input the task names does not "
+    "exist or cannot be read, or (b) two mandatory requirements cannot both hold. "
+    "Name the missing input, or BOTH conflicting requirements, and say what would "
+    "have to change.\n"
+    "Rules that make the shape honest:\n"
+    "- **Never invent a source.** A path, file name, table or figure you did not open "
+    "is a fabrication even when the number looks right; the harness checks that every "
+    "path you cite exists, and a citation of a missing file is reported back to you.\n"
+    "- **Never satisfy one side of a contradiction** and file the other as a caveat: a "
+    "number that breaks a stated requirement is wrong however well it is explained.\n"
+    "- **Never guess data you were not given.** Deliver what the evidence supports and "
+    "say what is missing for the rest.\n"
+    "- **Blocking is for real impossibility, never for effort.** Work you can do, you "
+    "do; this rule never excuses an unfinished task, a skipped step, or a value you "
+    "could have checked with a tool.\n"
+)
+
 # M12 (upgrade plan): static security baseline every model sees — prompt
 # injection is data-not-instructions, authority comes only from the user in
 # chat, work stays small and inside the workspace, and a turn ends in verified
@@ -3416,6 +3446,39 @@ def _deliverable_review_text(sess, request, since, state):
     return text
 
 
+def _citation_gate_text(sess, since, state):
+    """One round when a file written this turn cites a source that does not exist.
+
+    Mechanical and task-agnostic (`artifacts.dangling_citations`): the fabrication
+    measured 2026-11-06 on LHB `05_honesty_impossible` was a plausible deliverable
+    naming `data/ledger.csv`, a file that never existed. A prose "be honest" does
+    not stop that (Failure-Transparent Agents, arXiv 2609.35732: false success 22.8%
+    plain vs 0.8% with a typed contract), but an existence check does — and the
+    model can fix it in one round. Fires at most ONCE per turn; never raises.
+    """
+    if not isinstance(state, dict) or int(state.get("cite_left") or 0) <= 0:
+        return None
+    state["cite_left"] = 0
+    try:
+        from longrun.plan import artifacts as _art
+        found = _art.dangling_citations(
+            _chat_workspace(sess), since=since,
+            exclude=_harness_state_roots() + _other_session_roots(sess),
+            own_paths=state.get("paths"), opaque=bool(state.get("opaque", True)))
+    except Exception:  # noqa: BLE001 — an audit may slow a turn, never break it
+        return None
+    if not found:
+        return None
+    lines = ["CITATION CHECK — a file you wrote names a source that does NOT exist:"]
+    for it in found[:5]:
+        lines.append("  - `%s` (cited in `%s`)" % (it["cited"], it["artifact"]))
+    lines.append("An input you did not open cannot be the source of a number. Open the "
+                 "real file and use what it contains, or state plainly that it is "
+                 "missing and stop. Remove the invented path: never leave a source you "
+                 "cannot show.")
+    return "\n".join(lines)
+
+
 def _review_action_owed(state):
     """True when a read-back was sent and the turn has done no real work since.
 
@@ -4133,7 +4196,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # WROTE are described back to it — sheets, empty ranges, `charts=0`, page
     # counts. A status check cannot see a blank sheet; this can.
     _deliv_since = time.time()
-    _deliv_state = {"left": 1, "wrote": False, "opaque": False, "paths": set()}
+    _deliv_state = {"left": 1, "wrote": False, "opaque": False, "paths": set(),
+                    "cite_left": 1}
     _verify_gate_used = False   # one round when the turn closes without opening its output
     _delivery_floor_used = False  # one extra round when a stop leaves nothing written
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
@@ -5166,6 +5230,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
                 continue
+            _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
+            if _cite:
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_cite, "closure-check")
+                continue
             if (_review_action_owed(_deliv_state) and not _verify_gate_used
                     and not _is_aborted(sess["id"])):
                 # The read-back was sent and NOTHING was opened since: the answer
@@ -5207,6 +5276,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _drv:
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_drv, "review")
+                    continue
+                _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
+                if _cite:
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_cite, "closure-check")
                     continue
                 if (not _intent_used and _narrates_intent(answer)
                         and not _is_aborted(sess["id"])):
@@ -5250,6 +5324,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _drv:
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_drv, "review")
+                    continue
+                _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
+                if _cite:
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_cite, "closure-check")
                     continue
                 final_answer = answer
                 _final_is_artifact = True
@@ -5441,6 +5520,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             if _drv:
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
+                continue
+            _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
+            if _cite:
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_cite, "closure-check")
                 continue
             if (not _intent_used and _narrates_intent(answer)
                     and not _is_aborted(sess["id"])):

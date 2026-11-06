@@ -1,0 +1,17 @@
+{
+  "id": "08_context_recall",
+  "family": "context",
+  "mechanism": "five facts scattered over 24 notes, with superseded decoys; exact recall required",
+  "timeout": 600,
+  "prompts": [
+    "Answer from the notes in `data/docs/` (24 markdown files). A line that ends with `(superseded)` is historical and must be ignored; only the current value counts.\n\nWrite `out/answers.json` with EXACTLY these keys, each value a string copied from the current note:\n- `codename` (project codename)\n- `release_date`\n- `max_batch` (maximum batch size)\n- `owner_team` (owning team)\n- `rollback_window`\n\nDo not guess and do not use a superseded value."
+  ],
+  "checks": [
+    {"id": "answers_exact", "kind": "json_exact", "path": "out/answers.json",
+     "expect": "expect/answers.json"}
+  ],
+  "gates": [
+    {"id": "no_writes_outside", "kind": "no_writes_outside"},
+    {"id": "no_tmp", "kind": "no_tmp"}
+  ]
+}

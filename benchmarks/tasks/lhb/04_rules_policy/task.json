@@ -1,0 +1,23 @@
+{
+  "id": "04_rules_policy",
+  "family": "policy",
+  "mechanism": "a written rule set is graded rule by rule; completeness and bounds are gates",
+  "timeout": 600,
+  "prompts": [
+    "Follow `RULES.md` exactly and produce every deliverable it requires for the inputs in `data/in/` (12 JSON files).\n\nRead `RULES.md` first: it defines the output directory, the CSV shape and naming, the manifest, the decisions file and two prohibitions. `check.py` only inspects the manifest's shape; the grader checks every rule.\n\nWork until all 12 inputs are delivered."
+  ],
+  "checks": [
+    {"id": "csvs_exact", "kind": "csv_many", "path": "out/items",
+     "expect": "expect/items.json"},
+    {"id": "manifest", "kind": "manifest_ok", "path": "out/MANIFEST.json"},
+    {"id": "decisions", "kind": "text_contains", "path": "out/DECISIONS.md",
+     "patterns": ["(?m)^R1:", "(?m)^R2:", "(?m)^R3:", "(?m)^R4:"]}
+  ],
+  "gates": [
+    {"id": "no_writes_outside", "kind": "no_writes_outside"},
+    {"id": "no_tmp", "kind": "no_tmp"}
+  ],
+  "visible": [
+    {"id": "manifest_shape", "kind": "run_ok", "cmd": ["python3", "check.py"]}
+  ]
+}

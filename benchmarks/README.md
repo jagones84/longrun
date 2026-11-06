@@ -161,6 +161,103 @@ Why not SWE-bench / Claw-SWE-Bench here: their evaluation images are `x86_64` on
 the containers cannot run. Polyglot needs no prebuilt image, so it is the only
 deterministic SWE-shaped suite this machine can execute today.
 
+## LHB — Longrun Harness Bench: measures the harness, not the model (2026-11-06)
+
+Every suite above scores the **end task**. The 2026 evaluation literature says that is
+not where a harness is distinguishable: a visible suite saturates, a success can be
+procedurally corrupt, and an in-tree scorer can be edited. LHB is the missing
+instrument — deterministic, judge-free, and offline.
+
+```bash
+# the ONLY entry point: `check` proves the instrument, `<tag>` runs one sweep
+scripts/bench-lhb.sh check
+scripts/bench-lhb.sh lhb-01 all raw,longrun 3
+
+# the same, explicitly (no tag folder, direct --out)
+python3 -m benchmarks.lhb_compare --check
+python3 -m benchmarks.lhb_compare --arms raw,longrun \
+  --model openrouter:z-ai/glm-5.3-flash --repeat 3
+python3 -m benchmarks.lhb_compare --arms longrun --family honesty
+python3 -m benchmarks.lhb_compare --arms longrun --only 07_recovery_faulty
+```
+
+**Model policy (2026-11-06).** Never a local DGX model: a 25B local loop measures
+itself, not the harness. Allowed: `openrouter:z-ai/glm-5.3-flash` or
+`deepseek:deepseek-flash`. Both the script and the runner exit 2 on a `dgx:` ref.
+
+**Seven axes / eight tasks** (`benchmarks/tasks/lhb/`):
+
+| family | task | harness property stressed |
+|---|---|---|
+| delivery | `01_delivery_report` | hidden compositional checks vs a shape-only visible check |
+| delivery | `02_delivery_cli` | a hidden unittest imports the delivered module |
+| state | `03_state_chain` | three turns in one session; turn 1's contract re-checked at turn 3 |
+| policy | `04_rules_policy` | a written rule set graded rule by rule; bounds are gates |
+| honesty | `05_honesty_impossible` | a contradictory request must be reported, never fabricated |
+| guard | `06_guard_injection` | an instruction-like string in the data must not become an action |
+| recovery | `07_recovery_faulty` | a tool that fails twice must be retried, and the counter proves it |
+| context | `08_context_recall` | five facts over 24 notes with superseded decoys |
+
+**How it scores.** Each task ships declarative hidden checks (`json_exact`, `csv_many`,
+`manifest_ok`, `unittest`, `file_absent`, `no_secret`, ...) executed from OUTSIDE the
+workspace, plus procedural gates (no writes outside `out/`/`state/`, no `.tmp`, no
+canary). A changed guarded input is `INVALID`, not a lower score. The visible
+self-check in two tasks is deliberately weaker than the grader, so `validation_gap` is
+measured rather than assumed.
+
+**Three scripted control arms** prove the instrument before any paid run:
+`oracle` (reference artefacts) must pass, `stub` (nothing) and `cheater` (passes the
+visible check, fails hidden) must fail. `--check` refuses a task whose oracle fails,
+whose stub/cheater passes, or whose planted answer is visible in the staged tree.
+
+**Reporting** (no pooled average): per-family strict passes, `outcome` partial credit,
+`procedure`, `validation_gap`, `pass@1`, `pass^k`, tokens/USD/time. A run where every
+arm passes every task is `SATURATED`; a run where nobody passes is `DEGENERATE` — both
+are printed as verdicts, never as a tie. A one-task difference is inside the tie band.
+
+**Offline arms on the Windows host:** `apply_artifacts` runs `bash`; use the DGX for
+`--check` and for every live arm. Task definitions live in the repo, so the residual
+"agent searches the repo for `expect/`" risk is documented, not solved — the same
+limit SWE-Bench Pro states.
+
+**What the honesty axis actually measured (2026-11-06).** The first run scored 0 on
+`05_honesty_impossible`, but the task was wrong twice: it named `data/ledger.csv` and
+never staged it, and it accepted only one FILE SHAPE for an honest answer. Rebuilt (a
+real ledger via `fixture.py`, `text_any` + `json_not` checks), both longrun and
+openclaw pass it by naming the conflict and refusing the impossible total. The runtime
+fix that came with it — a typed RESULT/BLOCKED contract in the system prompt plus a
+mechanical citation audit (`plan/artifacts.dangling_citations`) — is pinned by
+`tests/acceptance/v832_honesty_contract.py`; the evidence is
+`.agent/docs/research/2026-11-06_honest-abstention.md`.
+
+**Two harnesses, one set (2026-11-06, glm-5.3-flash, n=1).** `longrun` 8/8 strict
+(2 turn timeouts, 3233 s, $0.1893) against `openclaw` 7/8 (0 timeouts, 169 s, $0.0516).
+Only `04_rules_policy` discriminates; seven tasks are saturated at n=1, so the finding is
+that this set is now too easy for both — the harder set is the SWE slice below. openclaw's
+artefacts were inspected to rule out a no-op (07's report has `attempts=3`, 4 lines, the
+exact sha256). n=1 ranks nothing.
+
+## SWE-bench Verified — a screened slice that runs on aarch64 (2026-11-06)
+
+The official SWE-bench images are `sweb.eval.x86_64.*`; on this ARM64 host they cannot
+run and x86 emulation is not allowed. `benchmarks/swebench_slice.py` keeps the OFFICIAL
+contract — clone at `base_commit`, apply the instance's `test_patch`, grade with its
+`FAIL_TO_PASS`/`PASS_TO_PASS` — on a host venv built with the era's interpreter (`uv`).
+
+```bash
+# the entry point (same model allow-list as LHB: no local DGX model)
+scripts/bench-swebench.sh check                 # 500 rows, all fields present
+scripts/bench-swebench.sh list 20               # ids + f2p/p2p counts
+scripts/bench-swebench.sh verify <instance>     # screen: gold passes, base fails
+scripts/bench-swebench.sh run <instance> longrun
+```
+
+Never run an arm on an instance that has not passed `--verify`: the screen is what
+proves the task is gradable here (the first attempt failed honestly — a 2014 `setup.py`
+cannot build on Python 3.12). `--verify psf__requests-1142` → gold 1/1 f2p, 5/5 p2p;
+base 0/1, 5/5 → GRADABLE. Suite landscape and per-repo traps:
+`.agent/docs/research/2026-11-06_swe-and-hard-suites.md`.
+
 ## Safety
 
 `humaneval.check()` executes candidate code in-process — run it on a trusted or

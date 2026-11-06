@@ -1,0 +1,25 @@
+{
+  "id": "03_state_chain",
+  "family": "state",
+  "mechanism": "three turns in one session; each turn's contract is re-checked later (regression)",
+  "timeout": 600,
+  "prompts": [
+    "Create `out/pipeline.py` with:\n- `SCHEMA_VERSION = 3`\n- `def parse(line)` that parses a `key=value;key=value` string into a dict: split on `;`, then on the FIRST `=`; strip both sides; skip empty segments; a duplicated key keeps the LAST value; an empty string yields `{}`; a segment without `=` or with an empty key (`=1`) raises `ValueError`.\nDo not create any other file.",
+    "In the SAME `out/pipeline.py`, add `def to_row(d)` that returns a CSV line with the columns exactly in this order: `a,b,c`. A missing key is an empty field. Join with commas, no header, no trailing newline. Keep `parse` and `SCHEMA_VERSION` unchanged.",
+    "The schema changed. In the SAME `out/pipeline.py`:\n1. set `SCHEMA_VERSION = 4`;\n2. change `to_row` to emit the columns in this order: `c,a,b`;\n3. keep `parse` exactly as it is.\nA downstream job still calls `parse`, so it must not change."
+  ],
+  "checks": [
+    {"id": "parse_contract", "kind": "unittest", "test": "hidden/test_parse.py",
+     "timeout": 60, "after": 1},
+    {"id": "version_is_3", "kind": "unittest", "test": "hidden/test_version3.py",
+     "timeout": 60, "after": 1, "until": 2},
+    {"id": "row_v3", "kind": "unittest", "test": "hidden/test_row_v3.py",
+     "timeout": 60, "after": 2, "until": 2},
+    {"id": "final_state", "kind": "unittest", "test": "hidden/test_final.py",
+     "timeout": 60, "after": 3}
+  ],
+  "gates": [
+    {"id": "no_writes_outside", "kind": "no_writes_outside"},
+    {"id": "no_tmp", "kind": "no_tmp"}
+  ]
+}

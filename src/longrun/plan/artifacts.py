@@ -411,6 +411,127 @@ def inputs(workspace, since=0.0, limit=12, exclude=()):
     return sorted(found)[:int(limit)]
 
 
+#: A path a written file CITES as its source. Narrow on purpose: a token carrying a
+#: file extension. Prose ("the ledger", "the export") is not a citation; a path is.
+_CITE_EXTS = ("csv", "tsv", "json", "jsonl", "xlsx", "xlsm", "md", "txt", "py",
+              "yaml", "yml", "xml", "pdf", "log", "db", "sqlite", "parquet")
+_CITE_RE = re.compile(
+    r"(?<![\w:.-])("
+    r"(?:/[\w][\w.-]*)+/[\w][\w.-]*\.(?:%(e)s)"    # absolute
+    r"|(?:[\w][\w.-]*/)*[\w][\w.-]*\.(?:%(e)s)"   # relative
+    r")\b" % {"e": "|".join(_CITE_EXTS)})
+#: Only a citation PRESENTED AS A SOURCE counts. A path merely mentioned ("write
+#: `out/result.json`") is an instruction or a plan, not a claim about where a figure
+#: came from, and flagging it would punish the honest BLOCKED report this gate exists
+#: to make possible. The marker must sit on the same line, close to the path.
+_SOURCE_MARK = re.compile(
+    r"(?i)\b(?:source|sources|source[_ -]?file|from|input|inputs|based on|"
+    r"according to|read from|derived from|extracted from)\b"
+    r"|[\"'](?:source|inputs?|from)[\"']\s*:")
+SOURCE_WINDOW = 80
+#: A citation the same line marks as ABSENT is a correct report, not a fabrication:
+#: "the input `data/ledger.csv` is missing" is exactly the honest BLOCKED answer this
+#: audit exists to make possible, so it must never be reported back as a bad cite.
+_ABSENT_MARK = re.compile(
+    r"(?i)\b(?:missing|not found|not exist|does not exist|no such file|absent|"
+    r"unavailable|cannot|could not|unreadable|blocked)\b")
+#: Text formats the citation audit reads. `deliverable_text` covers the documents;
+#: these are the machine formats `inventory` deliberately ignores (a `.json` result
+#: is a deliverable in practice, even though it is not a "document").
+_CITE_TEXT_EXTS = (".json", ".jsonl", ".py", ".yaml", ".yml", ".xml", ".log",
+                   ".tsv", ".sql", ".sh", ".js", ".ts", ".toml", ".ini")
+MAX_CITE_BYTES = 2 * 1024 * 1024
+
+
+def _cite_text(path, limit=MAX_TEXT_CHARS):
+    """Searchable text of ANY written file (documents via `deliverable_text`)."""
+    try:
+        if Path(path).suffix.lower() in _CITE_TEXT_EXTS:
+            if os.path.getsize(path) > MAX_CITE_BYTES:
+                return ""
+            return Path(path).read_text(encoding="utf-8", errors="replace")[:limit]
+    except OSError:
+        return ""
+    return deliverable_text(path, limit)
+
+
+def dangling_citations(workspace, since=0.0, limit=MAX_FILES, exclude=(),
+                       own_paths=None, opaque=True):
+    """Sources a file written this turn cites that do NOT exist (never raises).
+
+    The fabrication signature measured 2026-11-06 on the harness bench (LHB
+    `05_honesty_impossible`): asked for a total its ledger cannot support, the model
+    wrote a deliverable whose `"source"` was `data/ledger.csv` — a file that was
+    never in the workspace. The number was plausible and the SOURCE was invented,
+    which no structure check can see; existence of a cited path is mechanical.
+
+    Matching is generous in the agent's favour: a citation resolves when the path
+    (relative to the workspace, or absolute) exists, OR when a file with that
+    basename exists anywhere under the workspace — the audit names an absent source,
+    never a wrong spelling. `own_paths` / `opaque` are the turn's attribution facts
+    (see `inventory`); without them the audit reads every fresh file.
+    """
+    root = str(workspace or "").strip()
+    if not root or not os.path.isdir(root):
+        return []
+    skip = {os.path.abspath(os.path.expanduser(str(p))) for p in (exclude or ()) if p}
+    if os.path.abspath(root) in skip:
+        return []
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames
+                       if d not in SKIP_DIRS
+                       and os.path.abspath(os.path.join(dirpath, d)) not in skip]
+        for name in filenames:
+            if name.startswith("."):
+                continue
+            full = os.path.join(dirpath, name)
+            if os.path.abspath(full) in skip:
+                continue
+            if _mtime(full) + 1.0 < float(since or 0.0):
+                continue
+            files.append(full)
+    if own_paths is not None and not opaque:
+        keep = set()
+        for p in own_paths:
+            p = os.path.expanduser(str(p or "").strip())
+            if p:
+                keep.add(os.path.abspath(p if os.path.isabs(p)
+                                         else os.path.join(root, p)))
+        files = [f for f in files if os.path.abspath(f) in keep]
+    files.sort(key=_mtime)
+    present = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        present.update(filenames)
+    found = []
+    for full in files[-int(limit):]:
+        text = _cite_text(full)
+        if not text:
+            continue
+        try:
+            rel = os.path.relpath(full, root)
+        except ValueError:
+            rel = full
+        for match in _CITE_RE.finditer(text):
+            tok = match.group(1).strip("`'\"()[],;:")
+            line_start = text.rfind("\n", 0, match.start()) + 1
+            line_end = text.find("\n", match.end())
+            line = text[line_start:(line_end if line_end >= 0 else len(text))]
+            if _ABSENT_MARK.search(line):
+                continue  # the line already says this input is missing: honest
+            window = text[line_start:match.start()][-SOURCE_WINDOW:]
+            if not _SOURCE_MARK.search(window):
+                continue
+            cand = tok if os.path.isabs(tok) else os.path.join(root, tok)
+            if os.path.exists(cand) or os.path.basename(tok) in present:
+                continue
+            item = {"artifact": rel, "cited": tok}
+            if item not in found:
+                found.append(item)
+    return found
+
+
 #: An identifier a RECORD carries: `AP10260`, `CHK-1402`, `EFT-2210`,
 #: `REF-2026-0207`, `IC-2025-0115-013`, `AET-5567201`, `M84.451A`, `STA27`.
 #: Every token must also contain a DIGIT — checked in `coverage()`, not in the

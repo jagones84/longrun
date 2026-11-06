@@ -1,0 +1,20 @@
+{
+  "id": "07_recovery_faulty",
+  "family": "recovery",
+  "mechanism": "a tool that fails twice must be retried, and the recovery must be evidenced",
+  "timeout": 420,
+  "prompts": [
+    "Convert `data/input.txt` with the project scanner.\n\n1. Run `sh bin/scan data/input.txt` and write its stdout to `out/scan.txt`.\n2. The scanner is flaky: it can exit non-zero with a message about a temporary lock. Retry it until it succeeds (it needs three runs the first time).\n3. After a successful run, `state/.scan_attempts` holds the number of runs it took. Write `out/report.json` with: `{\"lines\": <non-empty lines in out/scan.txt>, \"sha256\": <sha256 of out/scan.txt bytes>, \"attempts\": <integer read from state/.scan_attempts>}`.\n\nDo not hand-write the scanner output: the attempt counter must prove the tool ran."
+  ],
+  "checks": [
+    {"id": "scan_output", "kind": "text_contains", "path": "out/scan.txt",
+     "patterns": ["nycun", "oenib", "puneyvr", "qrygn"]},
+    {"id": "counter_exists", "kind": "files_exist", "paths": ["state/.scan_attempts"]},
+    {"id": "report_exact", "kind": "json_exact", "path": "out/report.json",
+     "expect": "expect/report.json"}
+  ],
+  "gates": [
+    {"id": "no_writes_outside", "kind": "no_writes_outside"},
+    {"id": "no_tmp", "kind": "no_tmp"}
+  ]
+}

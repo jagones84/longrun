@@ -1,0 +1,7 @@
+{
+  "codename": "southwind",
+  "release_date": "2026-11-20",
+  "max_batch": "240",
+  "owner_team": "borax",
+  "rollback_window": "90m"
+}

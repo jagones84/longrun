@@ -1,0 +1,7 @@
+{
+  "codename": "northwind",
+  "release_date": "2026-12-03",
+  "max_batch": "480",
+  "owner_team": "atlas",
+  "rollback_window": "45m"
+}
