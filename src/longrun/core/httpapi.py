@@ -14,6 +14,8 @@ import json
 import os
 import queue
 import re
+import select
+import socket
 import ssl
 import subprocess
 import threading
@@ -68,6 +70,42 @@ from longrun.util.steering import new_steer_id as _new_steer_id
 # ------------------------------------------------------------------ HTTP ----
 
 AUTH_TOKEN = None
+
+
+def client_gone(conn) -> bool:
+    """True when the peer of `conn` has closed the connection (EOF).
+
+    A synchronous `/api/chat` has exactly ONE reader: the request that opened it.
+    `select` + a one-byte `MSG_PEEK` answers "is it still there?" without
+    consuming anything, so it is safe on a keep-alive socket that already holds
+    the next request.
+    """
+    try:
+        ready, _, _ = select.select([conn], [], [], 0)
+        if not ready:
+            return False
+        return conn.recv(1, socket.MSG_PEEK) == b""
+    except (OSError, ValueError):
+        return True
+
+
+def watch_client(conn, sess_id, stop, poll=2.0):
+    """Abort `sess_id`'s turn as soon as the client that asked for it is gone.
+
+    Measured 2026-11-06 (polyglot `python/forth`, session `b3a6b29e897c`): the
+    benchmark's 600 s client timeout closed the socket while the turn kept
+    calling the model for another 3+ minutes — paid work whose answer could never
+    be delivered. `stop` is set by the turn's own `finally`, so the watcher never
+    outlives it. Never raises: a watcher must not be able to kill a turn.
+    """
+    try:
+        while not stop.wait(poll):
+            if client_gone(conn):
+                push_abort(sess_id)
+                abort_session_processes(sess_id)
+                return
+    except Exception:  # noqa: BLE001 — bookkeeping, never a gate
+        return
 
 
 def _read_bounded_body(stream: BinaryIO, length: int, limit: int) -> bytes | None:
@@ -2523,8 +2561,19 @@ class Handler(BaseHTTPRequestHandler):
                 # sync path runs a REAL model turn but used to show NO running signal
                 # (a phantom run). turn_end runs in the finally below, on any outcome.
                 _turn_tok = turn_begin(sess["id"])
+                # v835: the READER of this turn is this request. If it goes away
+                # (client timeout, closed tab) abort instead of finishing an
+                # answer nobody can receive.
+                _stop_watch = threading.Event()
                 trace = None
                 try:
+                    try:
+                        threading.Thread(
+                            target=watch_client,
+                            args=(self.connection, sess["id"], _stop_watch),
+                            daemon=True, name="chat-client-watch").start()
+                    except Exception:  # noqa: BLE001 — a watcher is never a gate
+                        pass
                     trace = RunTrace("chat", goal=message[:120], model=body.get("model"),
                                      session=sess["id"])
                     trace.span("chat.once", session=sess["id"])
@@ -2575,6 +2624,7 @@ class Handler(BaseHTTPRequestHandler):
                                             "run_id": getattr(trace, "id", None),
                                             "stored_error": True})
                 finally:
+                    _stop_watch.set()                  # v835: the watcher dies with the turn
                     turn_end(sess["id"], _turn_tok)   # JAG-325: clear the running signal
                     _goal_end(sess, _goal_mode)       # G-1: complete only on real evidence
                 # JAG-431r4b: the sync path still called finish_run_graph() here, which
