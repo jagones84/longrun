@@ -35,6 +35,16 @@ from pathlib import Path
 DELIVERABLE_EXTS = (".xlsx", ".xlsm", ".csv", ".pdf", ".docx", ".pptx",
                     ".md", ".txt", ".html", ".htm")
 
+#: Everything the READ-BACK treats as "what this turn produced". Broader than
+#: `DELIVERABLE_EXTS` on purpose: a machine-readable answer (`.json`, `.yaml`,
+#: `.xml`) or a script IS the deliverable in a data/API/code task, and measured
+#: 2026-11-06 (LHB `01_delivery_report`, session `db9b508142b7`) the doc-only list
+#: made the harness tell the model "you have written NO file" while `out/report.json`
+#: sat on disk — a false statement that cost four wasted rounds and a retracted
+#: memory entry. `inputs()` keeps its own list: a `.py` in a repo is not an input.
+WRITTEN_EXTS = DELIVERABLE_EXTS + (".json", ".jsonl", ".py", ".yaml", ".yml",
+                                   ".xml", ".sql", ".tsv", ".sh", ".ipynb")
+
 #: Directories that are inputs, caches or tooling — never "what I wrote".
 #: Tool/cache directories only. An INPUT folder is deliberately NOT skipped: the
 #: mtime rule already separates "given to the turn" from "written by it", and a
@@ -295,7 +305,7 @@ def facts(path):
 
 
 def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=(),
-              own_paths=None, opaque=True):
+              own_paths=None, opaque=True, exts=DELIVERABLE_EXTS):
     """Documents written under `workspace` at/after `since`, oldest first.
 
     `since` is the turn's start: inputs staged before the turn carry an older
@@ -336,7 +346,7 @@ def inventory(workspace, since=0.0, limit=MAX_FILES, exclude=(),
                        if d not in SKIP_DIRS
                        and os.path.abspath(os.path.join(dirpath, d)) not in skip]
         for name in filenames:
-            if not name.lower().endswith(DELIVERABLE_EXTS) or name.startswith("."):
+            if not name.lower().endswith(tuple(exts)) or name.startswith("."):
                 continue
             full = os.path.join(dirpath, name)
             if os.path.abspath(full) in skip:
@@ -747,10 +757,24 @@ def names_artifact(request):
     return any(v in text for v in _PRODUCE_VERBS)
 
 
-def nothing_written(request):
-    """The read-back for a turn that wrote NOTHING while the request named a file."""
+def nothing_written(request, workspace="", since=0.0, exclude=()):
+    """The read-back for a turn that wrote NOTHING while the request named a file.
+
+    `workspace` is optional because the sentence is a FACT about disk: when the caller
+    can pass it, any fresh file of ANY audited type suppresses the claim, so the
+    harness can never say "no file" while one exists (measured 2026-11-06: a JSON
+    deliverable was invisible to the doc-only list, and the false sentence cost four
+    rounds).
+    """
     if not names_artifact(request):
         return None
+    if workspace:
+        try:
+            if inventory(workspace, since=since, limit=1, exclude=exclude,
+                         own_paths=None, opaque=True, exts=WRITTEN_EXTS):
+                return None
+        except OSError:
+            pass
     return ("READ-BACK (harness: mechanical file inspection): you have written NO "
             "file for this request — the workspace has no new document at all. "
             "The request names a deliverable file, so a prose answer is not the "
@@ -856,7 +880,7 @@ def gaps(workspace, request="", since=0.0, limit=MAX_FILES, exclude=(),
     """
     out = []
     entries = inventory(workspace, since=since, limit=limit, exclude=exclude,
-                        own_paths=own_paths, opaque=opaque)
+                        own_paths=own_paths, opaque=opaque, exts=WRITTEN_EXTS)
     for entry in entries:
         facts = entry.get("facts") or {}
         if facts.get("error") or facts.get("empty") or facts.get("size") == 0:
@@ -894,7 +918,7 @@ def review(workspace, request="", since=0.0, limit=MAX_FILES, exclude=(),
     workspace", which in a folder two writers share is not what the turn did.
     """
     entries = inventory(workspace, since=since, limit=limit, exclude=exclude,
-                        own_paths=own_paths, opaque=opaque)
+                        own_paths=own_paths, opaque=opaque, exts=WRITTEN_EXTS)
     if not entries:
         return None
     lines = ["READ-BACK of what you WROTE this turn (harness: mechanical file "

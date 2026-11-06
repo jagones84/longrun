@@ -3405,7 +3405,9 @@ def _deliverable_review_text(sess, request, since, state):
         # a word. One shot, then silent.
         try:
             from longrun.plan import artifacts as _art0
-            text = _art0.nothing_written(request)
+            text = _art0.nothing_written(
+                request, workspace=_chat_workspace(sess), since=since,
+                exclude=_harness_state_roots() + _other_session_roots(sess))
         except Exception:  # noqa: BLE001
             text = None
         if not text:
