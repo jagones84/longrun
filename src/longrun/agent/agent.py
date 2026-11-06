@@ -4692,16 +4692,33 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if goal_mode and time.time() - _kg_started >= _kg_wall_secs:
             _kg_stop_reason = "budget"
             break
-        # JAG-132/134: adaptive best-of-N. Only when the first sample is NOT usable
-        # (malformed tool-call JSON) are more samples spent and the
-        # best picked with the deterministic ranker (prm.rank_text). N grows with the
-        # estimated task difficulty (compute-optimal). n=1 -> zero overhead.
+        # JAG-132/134: adaptive best-of-N. More candidates are spent on a step and
+        # the best is picked with the deterministic ranker (prm.rank_text). N grows
+        # with the estimated task difficulty (compute-optimal). n=1 -> zero overhead.
+        #
+        # v838 (measured 2026-11-06): the ranker scores TEXT quality, so it cannot
+        # tell one ACTION's correctness from another's — two parseable actions both
+        # score 0.9 and the tiebreak is `min(len/4000, 0.2)`, i.e. the longer string
+        # wins. Spending a second full-context sample on every action step was 34.5%
+        # of the token bill over three days (124M of 359M; 78% in the worst session)
+        # and bought a verbosity preference. Extra candidates now go where the ranker
+        # CAN discriminate — a prose answer — unless `bestofn.on_actions: true`
+        # restores the old gate.
+        _bn_actions = False
         try:
             from longrun.plan import bestofn as _bn
-            _bN = _bn.n_of(signals=_diff_signals(message, used_tools, _kg_stale))
+            _bn_cfg = _bn.cfg()
+            _bn_actions = bool(_bn_cfg.get("on_actions"))
+            _bN = _bn.n_of(c=_bn_cfg,
+                           signals=_diff_signals(message, used_tools, _kg_stale))
         except Exception:  # noqa: BLE001
             _bN = 1
-        if _bN > 1 and _looks_like_json_action(answer):
+        try:
+            _sample_this = _bn.spend_extra(_bN, _looks_like_json_action(answer),
+                                           _bn_cfg)
+        except Exception:  # noqa: BLE001 — the policy is never a gate on the turn
+            _sample_this = _bN > 1 and _looks_like_json_action(answer)
+        if _bN > 1 and _sample_this:
             _cands = [answer]
             # JAG-431r4b: each extra best-of-N sample refills `chat_usage` in
             # stream_with_fallback, and `_record_usage()` is only called once for
@@ -4725,6 +4742,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # messages at the same temperature returned the same answer, so the
                 # fan-out paid 3-6x tokens to re-rank one candidate.
                 _btemp, _bseed = _bn.sample_params(_si)
+                _t2_start = time.time()
                 try:
                     _a2, _t2, _m2 = server.stream_with_fallback(
                         msgs, model, "chat", lambda ch, t: None,
@@ -4737,15 +4755,20 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     _phase(on_event, sess["id"], "idle")
                 _cands.append(_a2)
                 # JAG-431r4b: price THIS sample's usage and emit it.
+                # v838: the extra sample now carries its own latency and a persisted
+                # `tag`, so the cost of test-time compute is auditable from the
+                # ledger instead of being inferred from a zero-latency row.
                 try:
                     _sample = {k: chat_usage[k] for k in _USAGE_KEYS
                                if chat_usage.get(k) not in (None, {}, 0)}
                     if _sample.get("prompt_tokens") or _sample.get("completion_tokens"):
                         from longrun.model import costs as _costs
-                        _call = _costs.record(sess["id"], _m2 or model, _sample,
-                                              getattr(trace, "id", None))
+                        _call = _costs.record(
+                            sess["id"], _m2 or model, _sample,
+                            getattr(trace, "id", None),
+                            latency_ms=int((time.time() - _t2_start) * 1000),
+                            tag="bestofn")
                         if _call:
-                            _call["tag"] = "bestofn"
                             on_event("cost.usage", session=sess["id"], call=_call)
                 except Exception:  # noqa: BLE001
                     pass

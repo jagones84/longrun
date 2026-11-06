@@ -24,6 +24,12 @@ DEFAULTS = {
     "n": 1,
     "min_score": 0.0,
     "adaptive": True,   # JAG-134: the task difficulty can raise N
+    # v838 (2026-11-06): `rank_text` scores TEXT, so it cannot judge an ACTION —
+    # two parseable actions both score 0.9 and the length bonus decides. Spending
+    # a second full-context sample on every action step measured 34.5% of the token
+    # bill over three days (124M of 359M tokens), so by default the extra candidates
+    # go to prose answers only. `true` restores the 2026-11-06 gate (sample actions).
+    "on_actions": False,
 }
 
 # B-5 (v817): a second sample is only worth its tokens if it CAN differ from the
@@ -65,6 +71,22 @@ def n_of(c=None, signals=None):
         except Exception:  # noqa: BLE001
             pass
     return max(1, min(n, 16))
+
+
+def spend_extra(n, is_action, c=None):
+    """True when a second candidate is worth its tokens for THIS step.
+
+    v838: `rank_text` scores text quality, so it cannot discriminate between two
+    parseable actions (both get 0.9, then the length bonus decides) — the extra
+    sample bought verbosity, at the price of a full-context call per step. Extra
+    candidates are therefore spent on prose answers only, where the ranker's
+    announcement/substance signals mean something; `bestofn.on_actions: true`
+    restores the previous gate.
+    """
+    if int(n or 1) <= 1:
+        return False
+    c = c or cfg()
+    return bool(is_action) if c.get("on_actions") else not bool(is_action)
 
 
 def choose(candidates, scorer=None, c=None):

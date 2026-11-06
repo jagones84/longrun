@@ -484,7 +484,7 @@ def _summarise(led):
 
 
 def record(session, model, usage, run=None, status="completed", error=None,
-           latency_ms=None):
+           latency_ms=None, tag=None):
     """Price ONE LLM attempt from its real `usage` and append it to the ledger.
 
     The provider's OWN charge wins when it reports one (``src: "provider"``,
@@ -536,6 +536,11 @@ def record(session, model, usage, run=None, status="completed", error=None,
             pass
     if failed and error:
         rec["error"] = str(error)[:200]
+    if tag:
+        # v838: WHY this call was made, when it is not the ordinary turn step
+        # (`bestofn` = an extra candidate sampled for the ranker). Without it the
+        # cost of test-time compute had to be inferred from a zero-latency row.
+        rec["tag"] = str(tag)[:24]
     if _is_deepseek_direct(model) and not failed:
         # Truthful provenance for the estimate: which half of the day was billed.
         rec["off_peak"] = not deepseek_is_peak(ts)

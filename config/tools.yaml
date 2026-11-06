@@ -288,6 +288,12 @@ bestofn:
   enabled: true
   n: 1
   min_score: 0.0            # se il migliore resta sotto questa soglia -> nessuna scelta
+  # v838 (measured 2026-11-06): the ranker (`prm.rank_text`) scores TEXT, so two
+  # parseable ACTIONS both score 0.9 and the length bonus picks the longer one.
+  # Sampling an action step measured 34.5% of the token bill over three days
+  # (124M of 359M tokens; 78% in the worst session) — extra candidates now go to
+  # prose answers only. `true` restores the previous gate.
+  on_actions: false
 
 # ---- difficulty / budget adattivo (JAG-134) ---------------------------------
 # Compute-optimal test-time compute: stima la difficolta' del task (deterministica,
