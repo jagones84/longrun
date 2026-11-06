@@ -1872,10 +1872,15 @@ def _diff(args, run_id):
         label_a, label_b = "a", "b"
     else:
         roots = registry.tool_spec("fs.read")["roots"]
-        pa, err = registry.resolve_path(str(args.get("a", "")), roots)
+        # v834: the two files belong to the SESSION, so a relative path resolves
+        # against its workspace exactly as `fs.read` does — without `base` a diff
+        # compared the harness checkout's files instead (same defect as grep).
+        pa, err = registry.resolve_path(str(args.get("a", "")), roots,
+                                        base=args.get("workspace"))
         if err:
             return {"ok": False, "error": err, "backend": "host", "sandboxed": False}
-        pb, err = registry.resolve_path(str(args.get("b", "")), roots)
+        pb, err = registry.resolve_path(str(args.get("b", "")), roots,
+                                        base=args.get("workspace"))
         if err:
             return {"ok": False, "error": err, "backend": "host", "sandboxed": False}
         if not os.path.isfile(pa):

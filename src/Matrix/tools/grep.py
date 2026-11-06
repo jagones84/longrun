@@ -72,7 +72,12 @@ def execute(args, run_id=None, subtool=None):
     roots = list(spec.get("roots") or [ws])
     if ws and ws not in roots:
         roots.append(ws)
-    target, err = registry.resolve_path(str(raw_target), roots)
+    # v834: a RELATIVE `path` means "relative to the session workspace", exactly
+    # as `fs.read`/`fs.write` resolve it (JAG-191). Without `base=ws` this fell
+    # back to the harness checkout, so a session whose workspace is another
+    # repository answered "path does not exist" for a directory that is right
+    # there — measured 2026-11-06 on the SWE slice (two search rounds lost).
+    target, err = registry.resolve_path(str(raw_target), roots, base=ws)
     if err:
         return {"ok": False, "error": err}
     if not os.path.exists(target):
