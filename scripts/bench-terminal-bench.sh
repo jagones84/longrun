@@ -18,6 +18,18 @@ cd "$REPO" || exit 1
 TB_HOME="${TB_HOME:-/home/jagones/Repositories/terminal-bench}"
 TB="$TB_HOME/.venv/bin/tb"
 
+# Model policy (project rule 2026-11-06): NEVER a local DGX model in a benchmark —
+# a local 25B run measures the model's loop, not the harness. Same allow-list as
+# bench-lhb.sh / bench-swebench.sh.
+MODEL="${MODEL:-openrouter:z-ai/glm-5.3-flash}"
+case "$MODEL" in
+  openrouter:z-ai/glm-5.3-flash|deepseek:deepseek-flash*) : ;;
+  *)
+    echo "refusing MODEL=$MODEL — allowed: openrouter:z-ai/glm-5.3-flash, deepseek:deepseek-flash" >&2
+    exit 2
+    ;;
+esac
+
 case "${ARM:-longrun}" in
   longrun)  AGENT="benchmarks.terminal_bench_agent:LongrunAgent" ;;
   openclaw) AGENT="benchmarks.terminal_bench_openclaw:OpenClawAgent" ;;

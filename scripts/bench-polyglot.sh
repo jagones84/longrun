@@ -26,6 +26,17 @@ TAG="${1:?usage: bench-polyglot.sh <tag> [limit] [arms] [language]}"
 LIMIT="${2:-10}"
 ARMS="${3:-longrun,openclaw}"
 LANG="${4:-python}"
+# Model policy (project rule 2026-11-06): NEVER a local DGX model in a benchmark —
+# a local 25B run measures the model's loop, not the harness. Same allow-list as
+# bench-lhb.sh / bench-swebench.sh.
+MODEL="${MODEL:-openrouter:z-ai/glm-5.3-flash}"
+case "$MODEL" in
+  openrouter:z-ai/glm-5.3-flash|deepseek:deepseek-flash*) : ;;
+  *)
+    echo "refusing MODEL=$MODEL — allowed: openrouter:z-ai/glm-5.3-flash, deepseek:deepseek-flash" >&2
+    exit 2
+    ;;
+esac
 ORDER="${ORDER:-hardest}"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 OUT=".agent/BENCHMARKS/runs/${STAMP}_polyglot_${TAG}"
@@ -42,7 +53,7 @@ echo "$OUT" > .agent/trash/last_polyglot_run.txt
   echo "=== polyglot ${TAG} START $(date -Is) git=$(git rev-parse --short HEAD) arms=${ARMS} limit=${LIMIT} order=${ORDER} lang=${LANG}"
   python3 -u -m benchmarks.polyglot_compare \
     --language "$LANG" --limit "$LIMIT" --order "$ORDER" --arms "$ARMS" \
-    --model "${MODEL:-openrouter:z-ai/glm-5.3-flash}" \
+    --model "${MODEL}" \
     --timeout "${TASK_TIMEOUT:-600}" --max-steps "${MAX_STEPS:-40}" \
     --keep-sessions --tag "$TAG" --out "$OUT"
   echo "=== polyglot ${TAG} DONE $(date -Is)"
