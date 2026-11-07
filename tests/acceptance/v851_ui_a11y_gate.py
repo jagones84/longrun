@@ -229,5 +229,14 @@ check("F2 the two overlay viewers are named landmarks",
           for cid in ("diffView", "imgView")),
       " | ".join(_el(cid)[:60] for cid in ("diffView", "imgView")))
 
+# F3: a `role="button"` is a promise of keyboard operability. Either it is a real
+# <button>, or it carries tabindex (the handlers follow it). The attachment chip's
+# small ✕ was a span with a click handler only — unreachable by Tab/Enter.
+_ROLE_BUTTONS = re.findall(r"<(?!button)\w+[^>]*\brole=\"button\"[^>]*>", html)
+check("F3 every role=button is keyboard-reachable, and the chip's ✕ is a real button",
+      all("tabindex" in t for t in _ROLE_BUTTONS)
+      and bool(re.search(r'<button[^>]*class="x"[^>]*data-i=', html)),
+      "%d role=button tag(s)" % len(_ROLE_BUTTONS))
+
 print("\nv851: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

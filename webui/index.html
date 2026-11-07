@@ -171,7 +171,11 @@
   #attachRow[hidden] { display: none; }
   .attchip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--txt);
     background: var(--hover); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
-  .attchip .x { cursor: pointer; color: var(--dim); font-weight: 700; }
+  /* axe 2026-11-07: a real <button>, so Enter/Space and Tab reach it; the chip is
+     the surface, so the button carries no chrome of its own. */
+  .attchip .x { cursor: pointer; color: var(--dim); font-weight: 700; border: 0;
+    background: none; padding: 0; font: inherit; line-height: 1; }
+  .attchip .x:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
   .attchip .x:hover { color: var(--err); }
   /* JAG-283: clickable attachment chips inside a chat bubble (open a file in the
      editor, an image in the image window, etc.). */
@@ -5396,7 +5400,7 @@ function _renderAttach() {
   row.innerHTML = _attachments.map((a, i) =>
     '<span class="attchip" title="' + _attr(a.ingestError || a.value) + '">' +
     (a.ingestError ? "⚠ " : (a.kind === "text" ? "📝" : "📎")) +
-    " " + esc(a.label) + ' <span class="x" data-i="' + i + '" role="button" aria-label="remove attachment">✕</span></span>').join("");
+    " " + esc(a.label) + ' <button type="button" class="x" data-i="' + i + '" aria-label="remove attachment">✕</button></span>').join("");
   row.querySelectorAll(".x").forEach(x => x.onclick =
     () => { _attachments.splice(+x.dataset.i, 1); _renderAttach(); _renderPendingCtxItems(); });
 }

@@ -106,6 +106,28 @@ async () => await api("GET", "/api/chat/live")   // {active:[sid,...]}
 contain the cards you just saw? (`todo.write` / `todo.update` / `subagent` cards
 must be there, not only `shell`.) This catches "shown live, never persisted".
 
+**F. Accessibility, live (axe-core, never shipped)** — `v851_ui_a11y_gate` is the
+deterministic half; this is the part a text battery cannot see. Run it in the
+authenticated tab, save the JSON next to the plan:
+```js
+async () => {
+  if (!window.axe) {
+    const src = await (await fetch('https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js')).text();
+    new Function(src)();                      // cdnjs 404s on 4.14.0 — jsdelivr works
+  }
+  const r = await axe.run(document, {runOnly: {type: 'tag',
+    values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']}});
+  return {passes: r.passes.length,
+          violations: r.violations.map(v => ({id: v.id, impact: v.impact,
+            nodes: v.nodes.length, targets: v.nodes.slice(0, 3).map(n => n.target.join(' '))})),
+          incomplete: r.incomplete.map(v => ({id: v.id, nodes: v.nodes.length}))};
+}
+```
+> Expect **zero violations**. `incomplete` is "axe could not decide" (gradients,
+> dynamic text) — report it, never count it as a pass. Open a real session with
+> tool cards and the diff/image viewers first: `nested-interactive` and `region`
+> live ONLY in rendered state (2026-11-07).
+
 ---
 
 ## 4. High-risk scenarios — what to try, what to watch

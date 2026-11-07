@@ -15,7 +15,8 @@ All notable changes to Longrun are documented here. The format follows
   CONTAINED the diff/open buttons (`nested-interactive`) and the diff/image viewers sitting outside
   every landmark (`region`). All are fixed: `--dim` is `#a4b0c0` (4.67:1 on a selected row),
   timestamps composite at 0.9 (4.58:1 in the worst theme), the tool-card disclosure is a native
-  `<button>` (so the action buttons are its siblings), and the viewers are named regions. 49 of 114
+  `<button>` (so the action buttons are its siblings), the composer's attachment ✕ is a real button
+  instead of a mouse-only span, and the viewers are named regions. 49 of 114
   static form controls had no accessible name — a tag regex said 130 and then 93, because it cannot
   see `<label>text <input></label>`; `v851_ui_a11y_gate` is the deterministic half (names, icon
   buttons, the four daily surfaces, and the contrast arithmetic for all 8 themes). Evidence:
