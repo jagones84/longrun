@@ -335,7 +335,19 @@ def retrieve(query_text, top_k=RETRIEVAL_TOP_K, semantic=True, workspace=None):
         got = _rerank.apply(query_text, out,
                             text_of=lambda h: h.get("content") or "",
                             top_n=top_k)
-        return got["items"][:top_k]
+        items = got["items"]
+        # MEMOIR-lite (v841): the reply's use of an injected memory is already
+        # measured at the end of every turn (`usage_signal`, published as
+        # `memory.use`); until now nothing consumed it. A bounded multiplier now
+        # lets a memory that keeps HELPING outrank one that only shares words,
+        # and lets one that is retrieved but never used decay. Fail-open: the
+        # relevance order stands when the ledger is missing or unreadable.
+        try:
+            from longrun.memory import attribution as _attr
+            items = _attr.rerank(items)
+        except Exception:  # noqa: BLE001 — ranking must never break a turn
+            pass
+        return items[:top_k]
     except Exception:
         return []
 

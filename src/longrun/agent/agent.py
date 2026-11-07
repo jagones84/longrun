@@ -5784,6 +5784,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         _muse = _ce.usage_signal(content, (ctx_stats or {}).get("memories") or [])
         if _muse.get("injected"):
             publish("memory.use", session=sess["id"], **_muse)
+            # MEMOIR-lite (v841): that signal stops being observability-only. The
+            # memories involved get their retrieval weight revised (bounded, no
+            # model call), so a memory that keeps helping outranks one that only
+            # shares words — and one that is retrieved but never used decays.
+            try:
+                from longrun.memory import attribution as _attrb
+                _attrb.note((ctx_stats or {}).get("memory_ids") or [],
+                            _muse.get("used_ids") or [])
+            except Exception:  # noqa: BLE001 — attribution must never break a turn
+                pass
     except Exception:  # noqa: BLE001 — a measurement must never break a turn
         pass
     try:
