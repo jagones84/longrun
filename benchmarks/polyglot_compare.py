@@ -173,13 +173,20 @@ def _saturated(rows, arms):
     high scores means the benchmark is bad — are there tests where models do NOT
     get 10/10?". A run where all arms are perfect is reported as SATURATED instead
     of being sold as a tie.
+
+    2026-11-06: it said SATURATED for a run where the only arm solved 9 of 10 —
+    a single-arm run has no disagreeing pair, so every task counted as a "tie".
+    Saturation is about SOLVING everything, not about agreement: one arm has to
+    pass every task, several arms have to agree, and a task nobody solves is not
+    evidence that the set is easy.
     """
     per_task = _per_task(rows)
     full = [t for t, d in per_task.items() if len(d) == len(arms)]
-    ties = _ties(rows, arms)
     if not full or not arms:
         return False, 0, 0
-    return (len(ties) == len(full)), len(full) - len(ties), len(full)
+    perfect = all(all(d.get(a) for a in arms) for t, d in per_task.items()
+                  if t in full)
+    return perfect, len(full) - len(_ties(rows, arms)), len(full)
 
 
 def _report(out, rows, parity):
@@ -205,12 +212,19 @@ def _report(out, rows, parity):
                         (rec["resolved"] / rec["n"]) if rec["n"] else 0.0,
                         rec["invalid"], rec["duration_s"], rec["tokens"]))
     flat, discriminating, scored = _saturated(rows, arms)
-    verdict = ("**SATURATED — every arm solved every task.** This set cannot rank "
-               "the harnesses: take `--order hardest`, a bigger `--limit`, or the "
-               "full track (`--limit 33`)."
-               if flat else
-               "Discriminating tasks: **%d/%d** (tasks where the arms disagree)."
-               % (discriminating, scored))
+    if len(arms) < 2:
+        # A single arm cannot "rank": report the score and say so, instead of
+        # printing a discrimination figure that is 0 by construction.
+        solved = sum(1 for r in rows if r.get("resolved"))
+        verdict = ("Single arm — **%d/%d** tasks solved. A score, not a comparison."
+                   % (solved, len(rows)))
+    else:
+        verdict = ("**SATURATED — every arm solved every task.** This set cannot rank "
+                   "the harnesses: take `--order hardest`, a bigger `--limit`, or the "
+                   "full track (`--limit 33`)."
+                   if flat else
+                   "Discriminating tasks: **%d/%d** (tasks where the arms disagree)."
+                   % (discriminating, scored))
     md = ("# Polyglot (Exercism, Python track) — harnesses on the same tasks\n\n"
           "Scored by each exercise's own `pytest` suite: deterministic, no judge.\n\n"
           "model `%s` · dataset `%s` @ `%s` · tasks %d · order `%s` · arms %s\n\n"
@@ -228,14 +242,6 @@ def _report(out, rows, parity):
         print("WARNING: saturated set — every arm solved every task; this run "
               "cannot rank harnesses.")
     return flat
-
-
-def _ties(rows, arms):
-    per_task = {}
-    for r in rows:
-        per_task.setdefault(r["task"], {})[r["arm"]] = bool(r.get("resolved"))
-    return [t for t, d in per_task.items()
-            if len(d) == len(arms) and len({d.get(a) for a in arms}) == 1]
 
 
 def _task_table(rows, parity):
