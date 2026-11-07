@@ -197,9 +197,14 @@ SKILLS_POLICY = (
 
 
 def self_summary():
-    """Compact self-knowledge block injected into the system prompt (v0.5)."""
+    """Compact self-knowledge block injected into the system prompt (v0.5).
+
+    2026-11-07: the version is READ (`server.VERSION` -> `longrun.__version__`),
+    never typed. This line said "Longrun v0.6" while `/api/self` answered 1.0.0,
+    so every agent carried a false self-image (found live in A54's context).
+    """
     return (
-        "Self-knowledge: you are Longrun v0.6, a local agent harness installed "
+        "Self-knowledge: you are Longrun v%s, a local agent harness installed "
         "at the repo path %s on this DGX Spark. Data dir: %s. Tool policy: "
         "config/tools.yaml; model routing: config/routing.yaml; external MCP "
         "servers: config/mcp_clients.yaml (add a stdio command or HTTP url entry, "
@@ -210,7 +215,7 @@ def self_summary():
         "native tools are all namespaced `<namespace>.<subtool>` in "
         "registry.TOOL_SCHEMAS + tools.py. Full self report: GET /api/self or "
         "`self.info` (the `self` tool)."
-    ) % (REPO, DATA_DIR, osutil.service_hint())
+    ) % (server.VERSION, REPO, DATA_DIR, osutil.service_hint())
 
 
 def self_knowledge():

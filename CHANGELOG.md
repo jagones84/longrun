@@ -88,6 +88,13 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **One version string, so an agent cannot carry a false self-image (`v852`).** The self-knowledge
+  block injected into every system prompt said *"you are Longrun v0.6"* while `/api/self` answered
+  `1.0.0` — found live in A54's context, then traced to a hand-typed literal in `agent.py` and a
+  second one in `server.py`. The package root (`longrun.__version__`) now owns the version,
+  `server.VERSION` reads it, and `self_summary()` formats it with a placeholder instead of text;
+  `v852_self_knowledge_version` pins all three surfaces (package, `server.VERSION`, prompt, `/api/self`)
+  to the same value and fails if any literal `v0.x` reappears.
 - **A sub-tool froze the guardrails it inherited (V-3, `v822`).** The permissions panel
   wrote a sub-tool's whole effective entry — its inherited `deny` list included — into the
   local overlay, so a later change to the shipped namespace list never reached it:

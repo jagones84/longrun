@@ -27,6 +27,7 @@ import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from longrun import __version__ as _pkg_version  # ONE version: package root
 from longrun.core import api_v02  # v0.2 surface: tool registry, approvals, HITL control, MCP
 from longrun.tools import approvals
 from longrun.util import osutil
@@ -126,7 +127,8 @@ MAX_BODY_BYTES = ctx_limits.limit("http_max_body_bytes")
 FEED_REPLAY_MAX = ctx_limits.limit("feed_replay_max")
 STORE_LOCK = threading.RLock()
 
-VERSION = "1.0.0"
+# One truth: the package root owns the version, the API/self reports read this.
+VERSION = _pkg_version
 # JAG-377: ROUTER_RETRIES / ROUTER_BACKOFF / ROUTER_BACKOFF_MAX / MODEL_LOAD_TIMEOUT
 # moved to `rllm.py` (imported above).
 
