@@ -207,7 +207,10 @@ _LEGACY_SCHEMAS = {
         "subject": "path",
     },
     "git": {
-        "description": "Run a git subcommand in a repository (read-only ones are auto-approved; push follows the tool's approval policy).",
+        "description": ("Run a git subcommand in a repository (read-only ones are auto-approved; "
+                        "push follows the tool's approval policy). The subcommand is the ONE "
+                        "required field `args`, a plain string: "
+                        '{"tool":"git.run","args":{"args":"status --short"}}.'),
         "type": "object",
         "properties": {"args": {"type": "string", "description": "e.g. 'status --short'"},
                        "cwd": {"type": "string", "description": "optional repo path (default: longrun repo)"}},

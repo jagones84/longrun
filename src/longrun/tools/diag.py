@@ -597,7 +597,15 @@ def _example_args(props, required, any_of=None) -> dict:
 
 
 def _example(value) -> object:
-    """A short plausible value for a schema property, for the discovery example."""
+    """A short plausible value for a schema property, for the discovery example.
+
+    A description that already SPELLS a value (`e.g. 'status --short'`) IS the
+    example. The old code cut every description at its first ".", so such a
+    property became the literal `<e>` — the example handed to the model (by
+    `self.tools` and by every usage error) was a value it could only copy
+    wrongly. Measured 2026-11-07 on `git.run`, whose args description starts
+    with "e.g.".
+    """
     if not isinstance(value, dict):
         return "?"
     if value.get("enum"):
@@ -613,4 +621,11 @@ def _example(value) -> object:
         return []
     if kind == "object":
         return {}
-    return "<%s>" % (value.get("description", "value").split(".")[0][:40] or "value")
+    desc = str(value.get("description") or "").strip()
+    for lead in ("e.g. ", "eg. ", "e.g.", "for example ", "example: "):
+        if desc.lower().startswith(lead):
+            sample = desc[len(lead):].strip().strip("`\"'")
+            if sample:
+                return sample[:40]
+            break
+    return "<%s>" % (desc.split(".")[0][:40] or "value")
