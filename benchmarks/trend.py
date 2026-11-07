@@ -110,6 +110,11 @@ def samples(root):
                 tout = sum(int(c.get("completion") or 0) for c in calls)
                 cached = sum(int(c.get("cached") or 0) for c in calls)
                 dup = sum(1 for c in calls if _is_dup(c))
+                # The per-call rows are the bill: sum them instead of trusting a
+                # driver that never stored a total (a run with priced calls but no
+                # `usage.total_usd` used to print "?").
+                priced = [float(c["usd"]) for c in calls if c.get("usd") is not None]
+                usd = round(sum(priced), 6) if priced else None
             else:
                 src = "recorded" if rec else "no-ledger"
                 calls_n = int(rec.get("calls") or 0)
@@ -117,13 +122,13 @@ def samples(root):
                 tout = int(rec.get("tokens_out") or 0)
                 cached = int(rec.get("cached") or 0)
                 dup = int(rec.get("dup_calls") or 0)
+                usd = rec.get("total_usd", row.get("cost_usd"))
             out.append({
                 "when": when, "run": name, "arm": _arm_of(row, rel),
                 "task": _task_of(row, rel), "status": _status(row),
                 "wall_s": float(row.get("duration_s") or 0),
                 "calls": calls_n, "tin": tin, "tout": tout, "cached": cached,
-                "dup": dup, "usd": rec.get("total_usd", row.get("cost_usd")),
-                "src": src,
+                "dup": dup, "usd": usd, "src": src,
             })
     out.sort(key=lambda r: (r["when"] or dt.datetime.min, r["run"], r["task"]))
     return out

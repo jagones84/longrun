@@ -105,9 +105,10 @@ with open(os.path.join(run_dir, "result.json"), "w", encoding="utf-8") as fh:
                "duration_s": 10.0, "session": "S9",
                "usage": {"tokens_in": 1, "tokens_out": 1, "calls": 1}}, fh)
 with open(os.path.join(tmp, "data", "costs", "S9.json"), "w", encoding="utf-8") as fh:
-    json.dump([{"prompt": 500, "completion": 50, "cached": 400, "latency_ms": 700},
+    json.dump([{"prompt": 500, "completion": 50, "cached": 400, "latency_ms": 700,
+                "usd": 0.01},
                {"prompt": 500, "completion": 50, "cached": 400, "latency_ms": 0,
-                "tag": "bestofn"}], fh)
+                "usd": 0.02, "tag": "bestofn"}], fh)
 os.makedirs(os.path.join(run_root, "2026-11-07_020202_swe_old"))
 with open(os.path.join(run_root, "2026-11-07_020202_swe_old", "result.json"),
           "w", encoding="utf-8") as fh:
@@ -127,6 +128,9 @@ check("E1 a sampled run is read from its ledger, not from its score",
 check("E2 the duplicate sample is counted", rows["demo__demo-1"]["dup"] == 1)
 check("E3 a sample with no pointer is 'no-ledger', never 0 spent",
       rows["demo__demo-2"]["src"] == "no-ledger", rows["demo__demo-2"])
+check("E3b the bill is summed from the per-call rows, not from a stored total",
+      abs(float(rows["demo__demo-1"]["usd"] or 0) - 0.03) < 1e-9,
+      rows["demo__demo-1"]["usd"])
 check("E4 the CLI answers for the stored tree",
       trend.main(["--root", run_root]) == 0)
 
