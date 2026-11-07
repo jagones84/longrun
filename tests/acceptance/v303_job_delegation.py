@@ -92,6 +92,30 @@ check("_best_reply delegates to the shared extractor",
 check("the dispatch tool delegates to the shared extractor",
       "_stores.turn_reply(turn)" in read("src", "longrun", "agent/agent.py"))
 
+# D5: a closure-gate round after the finish must not mask the declared result.
+FINISHED = [
+    {"role": "assistant", "content": '{"action":"finish","summary":"the real result"}'},
+    {"role": "assistant", "content": "stray gate prose after the finish"},
+]
+check("turn_reply reports the finish summary, not a later gate message",
+      _stores.turn_reply(FINISHED) == "the real result", _stores.turn_reply(FINISHED))
+check("longest mode also reports the finish summary",
+      _stores.turn_reply(FINISHED, longest=True) == "the real result")
+check("longest mode still keeps a longer deliverable before the finish",
+      _stores.turn_reply([
+          {"role": "assistant", "content": "# Deliverable\n" + ("content " * 60)},
+          {"role": "assistant", "content": '{"action":"finish","summary":"done"}'},
+      ], longest=True).startswith("# Deliverable"))
+check("an ACTION after the finish means the turn kept working",
+      _stores.turn_reply([
+          {"role": "assistant", "content": '{"action":"finish","summary":"early"}'},
+          {"role": "assistant", "content": '{"action":"tool","tool":"fs.read","args":{}}'},
+          {"role": "assistant", "content": "done after more work"},
+      ]) == "done after more work")
+check("a bare finish (no summary) is not a reply",
+      _stores.turn_reply([{"role": "assistant", "content": '{"action":"finish"}'}]) ==
+      '{"action":"finish"}')
+
 # --- _close_open_todos: the coordinator's plan is closed after the team ran ----
 SID = "v303close"
 g = tg.ensure(SID, session_id=SID, goal="x")

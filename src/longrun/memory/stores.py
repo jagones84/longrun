@@ -1006,6 +1006,40 @@ def has_reply_since(sess, since):
     return any(m.get("role") == "assistant" for m in sess.get("messages", [])[since:])
 
 
+#: The keys an explicit `{"action":"finish", ...}` carries its verdict in. The
+#: canonical one is `summary`; the rest are the weak-model synonyms the turn loop
+#: accepts (`agent._is_explicit_finish`), so both readers agree on ONE list.
+FINISH_SUMMARY_KEYS = ("summary", "text", "content", "answer", "message", "result")
+
+
+def finish_summary(content):
+    """The verdict of an explicit finish envelope in `content`, or "".
+
+    D5: the loop may run closure-gate rounds AFTER a finish was emitted, so the
+    LAST assistant message of a turn is not always the reply (measured live:
+    A52's dispatch returned an unrelated code snippet that followed the finish).
+    A finish envelope is the model's declared end of the turn.
+    """
+    from longrun.util.textkit import extract_action_json
+    act = extract_action_json(str(content or ""))
+    if not isinstance(act, dict):
+        return ""
+    if str(act.get("action") or "").strip().lower() != "finish":
+        return ""
+    for k in FINISH_SUMMARY_KEYS:
+        v = act.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _starts_work(content):
+    """True when an assistant message is an ACTION (the turn kept working)."""
+    from longrun.util.textkit import extract_action_json
+    act = extract_action_json(str(content or ""))
+    return isinstance(act, dict) and bool(act.get("action") or act.get("tool"))
+
+
 def turn_reply(messages, longest=False):
     """The prose reply of a TURN (`messages` already sliced to that turn).
 
@@ -1015,19 +1049,34 @@ def turn_reply(messages, longest=False):
     ("report the RESULT you already have") AFTER the real deliverable, so the
     last message is not always the work. `reasoning` is a separate field, so it
     never wins by accident. Empty string when the turn produced no reply.
+
+    D5: when the turn closed on an explicit finish, the FINISH summary is the
+    reply — a closure-gate round after it must not mask the result, so messages
+    after the finish are dropped and the envelope itself counts as its summary.
+    An ACTION after the finish means the turn kept working (e.g. goal-mode
+    recovery), so that finish is no longer the end and the normal selection
+    applies. `longest=True` still prefers a longer deliverable written before
+    the finish.
     """
-    best = ""
-    for m in messages or []:
-        if not isinstance(m, dict) or m.get("role") != "assistant":
-            continue
-        c = str(m.get("content") or "").strip()
-        if not c:
-            continue
-        if not longest:
-            best = c
-        elif len(c) > len(best):
-            best = c
-    return best
+    msgs = [m for m in (messages or [])
+            if isinstance(m, dict) and m.get("role") == "assistant"]
+    finish_i, fin = -1, ""
+    for i, m in enumerate(msgs):
+        f = finish_summary(m.get("content"))
+        if f:
+            finish_i, fin = i, f
+    if finish_i >= 0 and any(_starts_work(m.get("content"))
+                             for m in msgs[finish_i + 1:]):
+        finish_i, fin = -1, ""
+    if finish_i >= 0:
+        contents = [str(m.get("content") or "").strip()
+                    for m in msgs[:finish_i]] + [fin]
+    else:
+        contents = [str(m.get("content") or "").strip() for m in msgs]
+    contents = [c for c in contents if c]
+    if not contents:
+        return ""
+    return max(contents, key=len) if longest else contents[-1]
 
 
 def ensure_reply_persisted(sess, since, error=None, model=None):

@@ -39,7 +39,8 @@ from longrun.model.rllm import model_supports_vision
 from longrun.model import rllm as _rllm
 from longrun.util.steering import _is_aborted, drain_steer, has_steer
 from longrun.util.fswrite import write_json
-from longrun.memory.stores import (_chat_workspace, _store_path, _tool_event,
+from longrun.memory.stores import (FINISH_SUMMARY_KEYS as _FINISH_SUMMARY_KEYS,
+                     _chat_workspace, _store_path, _tool_event,
                      append_message, drop_inject, load_plan, load_tasks,
                      persist_inject, persist_tool_card, save_plan, save_session,
                      save_tasks)
@@ -3200,7 +3201,8 @@ def _term_action(act):
 # can never regress into a loop: it fires at most _SELFCHECK_MAX times per turn
 # and never after a finish.
 _SELFCHECK_MAX = 2
-_FINISH_SUMMARY_KEYS = ("summary", "text", "content", "answer", "message", "result")
+# `_FINISH_SUMMARY_KEYS` is imported from `memory.stores`: the same list is read by
+# `turn_reply` (D5), so the loop and the reply extractor can never disagree.
 
 
 def _is_explicit_finish(act):
