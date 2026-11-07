@@ -133,9 +133,12 @@ names the enabled tools never called in the window and the index characters they
 skills from the shared attribution ledger and probes reachability from plain-language
 tasks with the same ranker the tool uses (`GET /api/skills`); `approvals.stats()` now
 also carries the accept rate, the median time-to-decision and the per-tool
-rubber-stamping. `benchmarks/ablation.py` turns the last step into an experiment: two
-arms of ONE command that differ by exactly one file-backed layer (`rules`, `skills`,
-`hooks`), executed by `run()` and compared by `compare()` over the two output trees.
+rubber-stamping. The Settings panels render those blocks from the same payloads — `Rules` shows the
+doctor card only when it has findings, `Tools` a `🧾 N unused` button that expands to the names,
+`Skills` a never-opened suffix — so the operator sees what the model sees. `benchmarks/ablation.py`
+turns the last step into an experiment: two arms of ONE command that differ by exactly one file-backed
+layer (`rules`, `skills`, `hooks`), executed by `run()` and compared by `compare()` over the two output
+trees.
 
 **Every other limit is config too** (2026-11-06). The third block, `config/tools.yaml`
 → `limits:`, holds the values that used to be `int(os.environ.get("LONGRUN_…", <literal>))`

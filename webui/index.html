@@ -3502,6 +3502,13 @@
           <button class="ghost u-mt8" data-call="openRule" data-args='["project"]' title="open the file in the dock (markdown, with colors)">🗔 open in the editor</button>
           <div id="rulesResult" class="remaining u-mt6"></div>
         </div>
+        <!-- HA-1 (lot H): the rules doctor rides the SAME /api/rules payload the two
+             editors above already fetch. The card stays COLLAPSED while the corpus is
+             clean, so a quiet doctor costs no space (graphics rule 1). -->
+        <div class="card" id="rulesDoctorCard" hidden>
+          <div class="set-t" title="contradictions, stale paths, duplicates and over-budget scopes — read-only advice, nothing is edited">Rules doctor</div>
+          <div id="rulesDoctor" class="remaining"></div>
+        </div>
         <h2>Uploaded files</h2>
         <div class="card"><div id="rulesFiles" class="remaining"></div></div>
         <!-- v641: the memory manager moved to Settings ▸ Improvements, next to the
@@ -11770,18 +11777,43 @@ function renderTools(el, d) {
         "</b> (" + count + ")</summary>" + inner + "</details>";
   }).join("");
   const _onN = tools.filter(t => t.enabled !== false).length;
+  // HA-5 (lot H): the footprint rides this SAME /api/tools payload. It is a button,
+  // not a row: the names + the characters they cost appear only when clicked.
+  const _fp = (d && d.footprint) || null;
+  const _fpN = _fp ? (_fp.never_used || []).length : 0;
+  const _fpBtn = _fpN
+    ? '<button class="ghost" data-footprint aria-controls="toolsFootprint" aria-expanded="false" title="enabled tools never called in the last ' +
+      esc(String(_fp.days)) + " days (" + esc(String(_fp.runs)) + " runs) — they cost " +
+      esc(String(_fp.never_used_index_chars)) + ' characters of the model-facing index on every turn">' +
+      _fpN + " unused</button>"
+    : "";
   el.innerHTML = policyCard + kindsCard + (tools.length
     ? '<div class="tools-head">' +
         '<span class="remaining tools-head-note">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b>' +
           (globalAuto ? ' · <b style="color:var(--err)">global FULL: every tool is auto (never ask)</b>' : '') +
         "</span>" +
         '<span class="remaining">' + _onN + "/" + tools.length + " enabled</span>" +
+        _fpBtn +
         '<button class="ghost" data-goperms title="hard blocks, always-ask rules and the tools that are OFF live in their own page">🛡 permissions</button>' +
         '<button class="ghost" data-bulk="enable" title="enable EVERY tool (native + external MCP) in one request">enable all</button>' +
         '<button class="ghost" data-bulk="disable" title="disable every tool (native + external MCP)">disable all</button>' +
       "</div>" +
+      '<div id="toolsFootprint" class="card" hidden></div>' +
       '<div id="toolAdv"></div>' + tree
     : '<div class="remaining">no tools</div>');
+  const _fpEl = el.querySelector("button[data-footprint]");
+  if (_fpEl) _fpEl.onclick = () => {
+    const box = el.querySelector("#toolsFootprint");
+    if (!box) return;
+    if (!box.hidden) { box.hidden = true; _fpEl.setAttribute("aria-expanded", "false"); return; }
+    const names = (_fp && _fp.never_used) || [];
+    box.innerHTML = '<div class="remaining"><b>' + names.length +
+      "</b> enabled and never called in " + esc(String(_fp.days)) + " days · <b>" +
+      esc(String(_fp.never_used_index_chars)) + "</b> characters of the index on every turn</div>" +
+      '<div class="remaining" style="word-break:break-word">' + names.map(esc).join(" · ") + "</div>";
+    box.hidden = false;
+    _fpEl.setAttribute("aria-expanded", "true");
+  };
   el.querySelectorAll("button[data-pol]").forEach(b =>
     b.onclick = () => scheduleApprovalSave(el, b.dataset.val));
   el.querySelectorAll("button[data-ap]").forEach(b =>
@@ -12388,6 +12420,9 @@ async function applyMcpJson() {
 
 /* ---- JAG-109: skills panel + '/' autocomplete (engine = /api/skills) ---- */
 let _skillsCache = [];
+/* HA-2 (lot H): the reachability block from the SAME /api/skills payload. Kept
+   beside the cache so a re-render (filter typing) does not refetch. */
+let _skillsDiscovery = null;
 function _skillSearchScore(skill, query) {
   const name = String(skill.name || "").toLowerCase();
   const title = String(skill.title || "").toLowerCase();
@@ -12428,6 +12463,19 @@ function renderSkills() {
     ? "<b>" + matches.length + "</b> of " + _skillsCache.length + " skills match “" + esc(query) + "”"
     : _skillsCache.length + " skills · <b>" + auto.length + "</b> self-generated · " +
       matrix.length + " matrix · " + local.length + " uploaded · " + core.length + " registered";
+  // HA-2 (lot H): one suffix, only when something is wrong: a skill whose
+  // description never surfaces it is invisible while idle. Names on click.
+  if (_skillsDiscovery) {
+    const _no = (_skillsDiscovery.never_opened || []).length;
+    const _nd = (_skillsDiscovery.missing_description || []).length;
+    if (_no || _nd) {
+      summary.innerHTML += ' · <span style="cursor:help" title="' +
+        esc(_no + " skill(s) never opened (shared attribution ledger)" +
+            (_nd ? "; " + _nd + " without a description, so nothing can rank them" : "") +
+            " — read-only advice, nothing is disabled") + '">never opened ' + _no +
+        (_nd ? " · no description " + _nd : "") + "</span>";
+    }
+  }
   box.innerHTML = "";
   if (query && !matches.length) {
     box.innerHTML = '<div class="remaining">No skills match “' + esc(query) + '”.</div>';
@@ -12503,6 +12551,7 @@ async function loadSkills() {
   try {
     const d = await api("GET", "/api/skills");
     _skillsCache = d.skills || [];
+    _skillsDiscovery = d.discovery || null;   // HA-2: same payload, no second call
     const search = $("skillsFilter");
     if (search) search.oninput = renderSkills;
     renderSkills();
@@ -13138,6 +13187,27 @@ async function loadRules() {
     const _rf = (scope, f) => '<div class="remaining"><b>' + scope + '</b> <code>' + esc(f) + "</code></div>";
     const rows = (g.files || []).map(f => _rf("G", f)).concat((p.files || []).map(f => _rf("P", f)));
     $("rulesFiles").innerHTML = rows.length ? rows.join("") : "no rule files";
+    // HA-1 (lot H): the doctor travels in this SAME payload (`audit`). A clean corpus
+    // renders NOTHING (the card is hidden), so advice never costs space until it exists.
+    const _a = d.audit || {};
+    const _dc = $("rulesDoctorCard"), _db = $("rulesDoctor");
+    if (_dc && _db) {
+      const _n = Number(_a.total || 0);
+      _dc.hidden = !_n;
+      if (_n) {
+        const _cnt = _a.counts || {};
+        const _head = "<b>" + _n + (_n === 1 ? " finding" : " findings") + "</b> · " +
+          Object.keys(_cnt).filter(k => _cnt[k])
+            .map(k => esc(k.replace(/_/g, " ")) + " " + _cnt[k]).join(" · ");
+        const _frows = (_a.findings || []).map(f =>
+          "<div>" + esc((f.severity || "") + " · " + (f.scope || "") + " · " +
+            (f.file || "") + (f.line ? ":" + f.line : "") + " — " + (f.message || "")) + "</div>");
+        _db.innerHTML = _head + (_frows.length
+          ? '<details class="u-mt4"><summary class="remaining">show ' + _frows.length + "</summary>" +
+            _frows.join("") + "</details>"
+          : "");
+      }
+    }
   } catch (e) { if (typeof toast === "function") toast("rules load error: " + e, "err"); }
 }
 async function saveRules(scope) {
