@@ -371,6 +371,12 @@
     line-height: 1.22; }
   .sess:hover { background: var(--hover); }
   .sess.active { border-color: color-mix(in srgb, var(--acc) 55%, transparent); background: var(--sel); }
+  /* v863: a BACKGROUND naming job for THIS chat (bookkeeping, not a turn). Same
+     11px box as the other row markers so rows stay aligned; a dotted ring keeps it
+     distinguishable from the live-turn spinner (which wins when both apply). */
+  .sess.naming { border-color: var(--acc); }
+  .sess.naming::before { content: ""; width: 11px; height: 11px; flex-shrink: 0;
+    box-sizing: border-box; border-radius: 50%; border: 2px dotted var(--acc); }
   /* JAG-168: a session busy with a chat turn keeps running in the background. */
   .sess.running { border-color: var(--ok); }
   /* JAG-218: a live turn shows a spinning CIRCULAR ring on the rail row. */
@@ -6046,14 +6052,23 @@ function send(text, display, atts) {
   const _attBlock = _attachBlock();
   const _attSnap = (Array.isArray(atts) && atts.length) ? atts.slice() : _attachments.slice();
   const _attNote = _attSnap.length ? "  📎 " + _attSnap.map(a => a.label).join(", ") : "";
-  const _rawMsg = _attBlock ? _attBlock + "\n\n" + raw : raw;
+  // v863: a message that STARTS with `/` is a COMMAND (`/goal`, `/research`, a
+  // skill name). The composer used to put the attachment block FIRST, so the
+  // server (`_apply_skill_slash` requires a leading `/`) never resolved it and the
+  // command reached the model as plain text. A command keeps position 0.
+  const _isCmd = raw.startsWith("/");
+  const _rawMsg = _attBlock ? (_isCmd ? raw + "\n\n" + _attBlock
+                                      : _attBlock + "\n\n" + raw) : raw;
   _attachments = []; _renderAttach(); _renderPendingCtxItems();
   // JAG-127b: a turn is already streaming → never open a second SSE (that is
   // what silently fought the running one). Queue it (flushed on `done`), or the
   // user can press ⇢ on the chip to steer the live turn.
   if (turnSSE[sessionId]) {
     // JAG-127b/c: the #qmode picker next to "send" decides queue vs steer.
-    if ((localStorage.getItem("sf_qmode") || "queue") === "steer") {
+    // v863: a STEER injects raw text into the running turn, where nothing resolves
+    // a leading `/` — a command sent while a turn ran arrived as a plain string.
+    // Commands are therefore always QUEUED: the next turn applies them.
+    if (!_isCmd && (localStorage.getItem("sf_qmode") || "queue") === "steer") {
       who("user", "🎯 steer: " + raw + _attNote);
       api("POST", "/api/chat/steer", { session: sessionId, message: _rawMsg }).catch(() => {});
     } else {
@@ -10587,6 +10602,18 @@ async function loadImprovement() {
 let turnSSE = {};                // sessionId -> EventSource of a running chat turn
 let _streamedDone = {};          // JAG-500: sessionId -> true once THIS tab streamed its turn to the end
 let runningSessions = {};        // sessionId -> true while its chat turn streams
+/* v863: sessionId -> true while a BACKGROUND model job (the label naming) runs for
+   it.
+   The rail used to show nothing until `threads.named`, so a chat that was naming
+   looked idle and two of them could not be told apart. Per SESSION on purpose: the
+   status of a chat must follow that chat, never "something is running somewhere". */
+let namingSessions = Object.create(null);
+function setNaming(sid, on) {
+  if (!sid) return;
+  if (on) namingSessions[sid] = true; else delete namingSessions[sid];
+  document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
+    row => row.classList.toggle("naming", !!on));
+}
 /* JAG-479: reading state is genuinely the CLIENT's (the server cannot know which
    browser looked at a chat), so it lives in localStorage and is pruned against the
    real session list on every refresh — a deleted session never leaves a ghost row. */
@@ -11354,7 +11381,10 @@ function connectFeed() {
     loadThreadTitles(d.session || sessionId).then(applyThreadTitles); });
   // The background 🏷 run closes here: totals (or the honest "the model summarised
   // nothing" — a copy of the prompt is never stored).
+  es.addEventListener("threads.naming", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    setNaming(d.session || sessionId, true); });
   es.addEventListener("threads.named", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    setNaming(d.session || sessionId, false);
     if (d.session && sessionId && d.session !== sessionId) return;
     loadThreadTitles(d.session || sessionId).then(applyThreadTitles);
     if (d.error) { toast("🏷 naming failed: " + d.error, "err"); return; }

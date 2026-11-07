@@ -1694,6 +1694,10 @@ def autoname_async(session, model=None):
             with _NAMING_LOCK:
                 _NAMING_IN_FLIGHT.discard(sid)
 
+    # v863: a START event with the session, so the rail can show WHICH chat is
+    # naming (the run used to be invisible until it closed, and the operator could
+    # not tell a busy session from an idle one). `threads.named` still closes it.
+    publish("threads.naming", session=sid, started=True)
     threading.Thread(target=_run, name="autoname:%s" % sid, daemon=True).start()
     return {"ok": True, "started": True, "session": sid}
 
