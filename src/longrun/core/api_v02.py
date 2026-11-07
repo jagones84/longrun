@@ -1708,8 +1708,12 @@ def handle(handler, method, path, qs, body):
         if path == "/api/skills":
             from longrun.memory import skills as skills_mod
             items = skills_mod.list_skills()
+            # HA-2 (lot H): the reachability probe is a capability, so it must be
+            # reachable: `?probe=<task>` (up to 5, `|`-separated) asks the SAME
+            # ranker the tool uses whether each task surfaces a skill at all.
+            _probes = [p.strip() for p in str(qs.get("probe") or "").split("|") if p.strip()][:5]
             try:
-                disc = skills_mod.discovery()
+                disc = skills_mod.discovery(samples=_probes or None)
             except Exception:  # noqa: BLE001 — a report must never break the list
                 disc = {"skills": len(items), "opened": {}, "never_opened": [],
                         "missing_description": [], "probes": []}

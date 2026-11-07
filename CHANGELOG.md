@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The harness audits its own scaffolding (lot H, `v844`…`v850`).** Six read-only reports now say
+  whether the rules, the skills, the tools and the permission gate still earn their place:
+  `rules.audit()` finds contradictions, stale paths, duplicates and over-budget scopes with
+  `file:line` (`GET /api/rules`); a third correction on the SAME point produces one line of advice
+  (add ONE rule, or start clean) instead of silently resetting the chat; `approvals.stats()` gains the
+  accept rate, the median time-to-decision and the rubber-stamped tools; `registry.footprint()` names
+  the enabled tools never called in the window and the characters of model-facing index they cost
+  (`GET /api/tools`); `skills.discovery()` names the never-opened skills from the shared attribution
+  ledger and probes their reachability from a plain-language task (`GET /api/skills`); and
+  `benchmarks/ablation.py` runs two arms of ONE command differing by exactly one file-backed layer
+  (`rules` / `skills` / `hooks`) and compares the two result trees. The three blocks are rendered in
+  Settings from the same payloads (live 2026-11-07: `183/183 enabled · 85 unused`, ~30k characters of
+  index). Nothing is auto-deleted, auto-disabled or auto-written — every report is advice.
 - **Retrieval has a second stage: a cross-encoder re-ranker (V-7, `v824`).** Hybrid search
   fuses a lexical and a semantic list — it says the candidates are *plausible*, never that
   one of them answers the question. A re-ranker scores `(query, passage)` TOGETHER and

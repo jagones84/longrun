@@ -87,6 +87,8 @@ check("E2 /api/tools still carries the footprint",
       '"footprint": registry.footprint()' in API, "")
 check("E3 /api/skills still carries the discovery block",
       '"discovery": disc' in API, "")
+check("E5 the reachability probe is reachable, not dead code",
+      'qs.get("probe")' in API and "discovery(samples=" in API, "")
 RULES = _read("src", "longrun", "memory", "rules.py")
 REG = _read("src", "longrun", "tools", "registry.py")
 SKL = _read("src", "longrun", "memory", "skills.py")
