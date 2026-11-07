@@ -3220,6 +3220,120 @@ def _safe_fs_path(path, roots=None):
     return p
 
 
+#: How many filesystem entries one link fallback may scan (same bound as `/api/fs/find`).
+FS_LINK_SCAN_MAX = 20000
+
+
+def _link_roots(qs=None) -> list[str]:
+    """Roots the link fallback searches, most-likely first.
+
+    The model names a file from the directory IT worked in, which is not always
+    the session workspace (A12, live 2026-11-07: workspace `Repositories/TESTS/Jago`,
+    file at `Repositories/longrun/envs/osmani-.../notes/PROPOSAL-longrun-changes.md`,
+    link written as `notes/PROPOSAL-longrun-changes.md`). The repo the harness runs
+    from, the session workspace and that workspace's ancestors cover it; the HOME
+    folder itself is never scanned, because a bounded walk there would spend its
+    whole budget before reaching the file.
+    """
+    import os as _os
+    roots = []
+    home = _os.path.realpath(_os.path.expanduser("~"))
+
+    def add(p):
+        if not p:
+            return
+        p = _os.path.realpath(_os.path.expanduser(str(p)))
+        if p != home and p not in roots:
+            roots.append(p)
+
+    try:
+        from longrun.util.paths import REPO_ROOT as _repo_root
+        add(_repo_root)
+    except Exception:  # noqa: BLE001 — a lookup hint must never be fatal
+        pass
+    try:
+        add(_ws_root(qs))
+    except Exception:  # noqa: BLE001 — a lookup hint must never be fatal
+        pass
+    for root in list(roots):
+        d = _os.path.dirname(root)
+        for _ in range(8):
+            if not d or d == _os.path.dirname(d) or _os.path.realpath(d) == home:
+                break
+            add(d)
+            d = _os.path.dirname(d)
+    return roots[:5]
+
+
+def _find_by_tail(rel, qs=None) -> str:
+    """The absolute path of a file whose path ENDS WITH `rel`, else "".
+
+    Bounded (FS_LINK_SCAN_MAX per root) and read-only; a link with fewer than two
+    components (`VERIFICATION.md`) is ambiguous by nature and is not guessed. The
+    newest match wins, so a regenerated artefact beats a stale copy.
+    """
+    import os as _os
+    parts = [p for p in str(rel or "").replace("\\", "/").split("/") if p not in ("", ".")]
+    if len(parts) < 2 or ".." in parts:
+        return ""
+    want = "/" + "/".join(parts)
+    for root in _link_roots(qs):
+        if not _os.path.isdir(root):
+            continue
+        queue, scanned, best, best_ts = [root], 0, "", 0.0
+        while queue and scanned < FS_LINK_SCAN_MAX:
+            cur = queue.pop(0)
+            try:
+                entries = list(_os.scandir(cur))
+            except OSError:
+                continue
+            for e in entries:
+                scanned += 1
+                if scanned >= FS_LINK_SCAN_MAX:
+                    break
+                try:
+                    is_dir = e.is_dir(follow_symlinks=False)
+                except OSError:
+                    continue
+                name = e.name.lower()
+                if is_dir:
+                    if name not in FS_TREE_SKIP:
+                        queue.append(e.path)
+                    continue
+                if not e.path.replace("\\", "/").endswith(want):
+                    continue
+                try:
+                    ts = e.stat().st_mtime
+                except OSError:
+                    ts = 0.0
+                if ts > best_ts or (ts == best_ts and (not best or len(e.path) < len(best))):
+                    best, best_ts = e.path, ts
+        if best:
+            return best
+    return ""
+
+
+def _link_path(path, qs=None) -> str:
+    """Resolve a chat/editor LINK: the plain resolution, then a bounded search.
+
+    `/api/fs/read`, `/api/fs/sheet` and `/api/fs/raw` all go through here, so a
+    link the operator can click opens the file the agent actually wrote even when
+    the session workspace and the agent's working directory disagree. A path that
+    still does not exist keeps the old answer (`_resolve_fs_arg`'s candidate), so
+    the caller's own "not a file" message stays the one thing the operator sees.
+    """
+    import os as _os
+    p = _resolve_fs_arg(path, qs)
+    if p and _os.path.isfile(p):
+        return p
+    raw = str(path or "").strip()
+    if raw and not _os.path.isabs(_os.path.expanduser(raw)) and "://" not in raw:
+        found = _find_by_tail(raw, qs)
+        if found:
+            return found
+    return p
+
+
 FS_TREE_SKIP = {"node_modules", "__pycache__", ".git", ".hg", ".svn", ".venv",
                 "venv", "dist", "build", "target", ".mypy_cache", ".pytest_cache",
                 ".ruff_cache", ".ipynb_checkpoints"}
@@ -3355,7 +3469,7 @@ def fs_read(qs=None) -> dict:
     """
     import os as _os
     q = qs or {}
-    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _fs_allowed_roots(q))
+    p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
     if not p:
         return {"error": "path outside allowed roots"}
     if not _os.path.isfile(p):
@@ -3407,7 +3521,7 @@ def fs_sheet(qs=None) -> dict:
     """
     import os as _os
     q = qs or {}
-    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _fs_allowed_roots(q))
+    p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
     if not p:
         return {"error": "path outside allowed roots"}
     if not _os.path.isfile(p):
@@ -3472,7 +3586,7 @@ def _fs_raw(handler, qs=None):
     # admitted a bigger attachment and then refused to preview it.
     from longrun.util import paths as _paths
     q = qs or {}
-    p = _safe_fs_path(_resolve_fs_arg(q.get("path"), q), _fs_allowed_roots(q))
+    p = _safe_fs_path(_link_path(q.get("path"), q), _fs_allowed_roots(q))
     if not p or not _os.path.isfile(p):
         return _r(handler, 404, {"error": "not found"})
     if _os.path.getsize(p) > _paths.attach_max_bytes():

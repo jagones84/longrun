@@ -476,6 +476,14 @@ class AgentRegistry:
                 if session_previous != p:
                     sess["workspace"] = p
                     stores.save_session(sess)
+                    # A turn that is RUNNING holds a session dict it loaded before
+                    # this write; its end-of-turn save would put the OLD workspace
+                    # back and every tool would keep running in the previous folder
+                    # while the org table shows the new one (measured 2026-11-07:
+                    # A12's record said `Repositories/longrun`, its session said
+                    # `Repositories/TESTS/Jago`, and its links pointed nowhere).
+                    # `live_fields_changed` re-applies the value on every write.
+                    stores.live_fields_changed(sid, workspace=p)
         except Exception:  # noqa: BLE001 — the registry write already succeeded
             pass
         try:

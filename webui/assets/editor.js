@@ -1013,7 +1013,14 @@ async function open(path, opts) {
   let d;
   try { d = await jget("/api/fs/read?path=" + encodeURIComponent(path) + sessionQS()); }
   catch (e) { show(); setStatus("error: " + e); return; }
-  if (!d || d.error) { show(); setStatus(d && d.error ? d.error : "read error"); return; }
+  if (!d || d.error) {
+    // A link the operator CLICKED must never die silently: the dock status line
+    // is easy to miss, so the reason (and the path that was tried) is a toast.
+    const msg = (d && d.error) ? d.error : "read error";
+    show(); setStatus(msg);
+    if (typeof window.toast === "function") window.toast("cannot open " + path + " — " + msg, "err");
+    return;
+  }
   const viewer = (d.binary && viewerFor(d.path) === "code") ? "binary" : viewerFor(d.path);
   const tab = {
     path: d.path, viewer,

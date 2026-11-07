@@ -744,7 +744,11 @@ CHAT_TOOL_PROMPT = (
     'JSON and nothing else: {"action":"tool","tool":"<name>","args":{...}}. '
     "After the tool runs you receive its observation and MUST continue: call another "
     "tool or answer the user in plain text. Never show JSON to the user; the final "
-    "message must be plain prose. To plan a multi-step request, FIRST emit ONLY "
+    "message must be plain prose. When that message names a file you read or wrote, "
+    "give a path the UI can OPEN: relative to your workspace (`notes/PLAN.md`) or "
+    "absolute (`/home/me/notes/PLAN.md`) — never a `file://` URL, and never a path "
+    "relative to some other folder, or the operator clicks a dead link. "
+    "To plan a multi-step request, FIRST emit ONLY "
     '{"action":"todo.write","todos":[{"label":"<imperative step>","deps":[],"parent":null}]} '
     "(2-8 steps you author yourself; this list is PERSISTENT — it is saved and "
     "re-shown to you on every turn, and only you or the user may clear it), then "
