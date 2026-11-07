@@ -19,7 +19,9 @@ All notable changes to Longrun are documented here. The format follows
   instead of a mouse-only span, and the viewers are named regions. 49 of 114
   static form controls had no accessible name — a tag regex said 130 and then 93, because it cannot
   see `<label>text <input></label>`; `v851_ui_a11y_gate` is the deterministic half (names, icon
-  buttons, the four daily surfaces, and the contrast arithmetic for all 8 themes). Evidence:
+  buttons, the four daily surfaces, and the contrast arithmetic for all 8 themes) and it audits BOTH
+  surfaces: the Control deck had 12 of its 13 static controls named by a `title` or a placeholder
+  only, and a `role="button"` must never be reachable by mouse alone. Evidence:
   `.agent/docs/research/2026-11-07_webui-a11y/axe.json` (violations 5 → 0; `incomplete` is reported,
   never counted as a pass).
 - **The harness audits its own scaffolding (lot H, `v844`…`v850`).** Six read-only reports now say

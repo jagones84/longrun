@@ -665,7 +665,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   <div id="viewBar" hidden>
     <span class="vname" id="viewName">—</span>
     <button class="btn ghost mini" id="viewRename" title="rename this view">rename</button>
-    <select class="inp mini" id="viewAddPanel" title="add a panel to this view (max 6 side by side)" style="width:auto;max-width:170px"></select>
+    <select class="inp mini" id="viewAddPanel" aria-label="panel to add to this view" title="add a panel to this view (max 6 side by side)" style="width:auto;max-width:170px"></select>
     <button class="btn mini" id="viewAddGo">＋ add</button>
     <span class="sp"></span>
     <span class="vsync" id="viewStore"
@@ -713,7 +713,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
         <span class="lbl">longrunAgent · Teamorg</span>
-        <input class="inp" id="lraAutoInp" placeholder="e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
+        <input class="inp" id="lraAutoInp" aria-label="Teamorg automation goal" placeholder="e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
         <button class="btn primary" id="lraAutoRun">run Teamorg</button>
         <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
         <span class="small muted" id="lraAutoScope" title="the team filter in the filter panel decides the scope: ALL teams or No team included"></span>
@@ -721,17 +721,17 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <div id="lraRep" style="flex-basis:100%;display:none"></div>
       </div>
       <div class="toolbar addbar" id="agAddBar" hidden>
-        <input class="inp" id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none">
-        <input class="inp" id="agNewRole" placeholder="role (optional)" style="width:170px;flex:none">
+        <input class="inp" id="agNewName" aria-label="new agent name" placeholder="new agent — name…" style="width:240px;flex:none">
+        <input class="inp" id="agNewRole" aria-label="new agent role" placeholder="role (optional)" style="width:170px;flex:none">
         <button class="btn primary" id="agNew">create agent</button>
         <button class="btn ghost" id="agAddCancel" type="button">cancel</button>
       </div>
       <div class="toolbar addbar" id="tmAddBar" hidden>
         <span class="lbl">new team</span>
-        <input class="inp" id="tmNewName" placeholder="new team — name…" style="width:180px;flex:none">
-        <input class="inp" id="tmNewDesc" placeholder="what is this team for? (also steers the icon)" style="width:260px;flex:none">
+        <input class="inp" id="tmNewName" aria-label="new team name" placeholder="new team — name…" style="width:180px;flex:none">
+        <input class="inp" id="tmNewDesc" aria-label="new team description" placeholder="what is this team for? (also steers the icon)" style="width:260px;flex:none">
         <button type="button" class="btn ghost" data-genfield="team.description" data-gen-target="#tmNewDesc" data-genstatus="team.description" title="draft this team description with AI — the harness knows the name, the existing teams and who would be in it">✨</button>
-        <select class="inp" id="tmNewIcon" title="icon + colour from the palette — 'auto' lets longrunAgent pick the one that matches the name and the description" style="width:180px;flex:none"></select>
+        <select class="inp" id="tmNewIcon" aria-label="new team icon" title="icon + colour from the palette — 'auto' lets longrunAgent pick the one that matches the name and the description" style="width:180px;flex:none"></select>
         <button class="btn" id="tmNew">create team</button>
         <button class="btn ghost" id="tmAddCancel" type="button">cancel</button>
       </div>
@@ -753,10 +753,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     <section class="panel" data-panel="routines">
       <h2>Routines <span class="n" id="routineCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="rtGoal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px;max-height:110px;resize:vertical"></textarea>
+        <textarea class="inp" id="rtGoal" aria-label="routine goal" placeholder="routine goal — the agent re-runs it on a cadence…" style="min-height:46px;max-height:110px;resize:vertical"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
-          <select class="inp" id="rtAgent"><option value="">agent…</option></select>
-          <input class="inp" id="rtEvery" type="number" min="30" value="300" title="every N seconds" style="max-width:100px">
+          <select class="inp" id="rtAgent" aria-label="routine agent"><option value="">agent…</option></select>
+          <input class="inp" id="rtEvery" aria-label="routine interval in seconds" type="number" min="30" value="300" title="every N seconds" style="max-width:100px">
           <button class="btn" id="rtCreate">＋ add</button>
           <button type="button" class="btn ghost" data-genfield="routine.goal" data-gen-target="#rtGoal" data-genstatus="routine.goal" title="draft this routine goal with AI — the harness knows the pool of agents a cadence goal can be given to">✨</button>
           <span class="small muted" data-genstatus="routine.goal"></span>
@@ -769,9 +769,9 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     <section class="panel" data-panel="jobs">
       <h2>Jobs <span class="n" id="jobsCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="jobGoal" placeholder="job goal — the coordinator decomposes it and its team executes…" style="min-height:52px;max-height:120px;resize:vertical"></textarea>
+        <textarea class="inp" id="jobGoal" aria-label="job goal" placeholder="job goal — the coordinator decomposes it and its team executes…" style="min-height:52px;max-height:120px;resize:vertical"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
-          <select class="inp" id="jobTo"><option value="">assign to…</option></select>
+          <select class="inp" id="jobTo" aria-label="job assignee"><option value="">assign to…</option></select>
           <button class="btn primary" id="jobCreate">＋ create job</button>
           <button type="button" class="btn ghost" data-genfield="job.goal" data-gen-target="#jobGoal" data-genstatus="job.goal" title="draft this job goal with AI — the harness knows who the coordinator is and which team would execute it">✨</button>
           <span class="small muted" data-genstatus="job.goal"></span>

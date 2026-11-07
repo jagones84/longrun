@@ -13,6 +13,7 @@ Stdlib-only, deterministic, no browser, no model. Covers the three points:
      EXISTING stores/endpoints (no third synced data entry).
 """
 import os
+import re
 import sys
 import tempfile
 
@@ -92,7 +93,10 @@ check("B2 the table declares explicit proportional column widths",
       and all(("table.at col.c-%s{width:" % _c) in ORBIT
               for _c in ("id", "name", "role", "model", "rep", "teams", "file", "act")))
 check("B3 the new-agent inputs are no longer full-width",
-      'id="agNewName" placeholder="new agent — name…" style="width:240px;flex:none"' in ORBIT)
+      # v851 (accessibility) put an aria-label on the same tag, so pin the ELEMENT's
+      # contract (its placeholder + its fixed width), not one attribute order.
+      bool(re.search(r'<input\b[^>]*\bid="agNewName"[^>]*\bplaceholder="new agent — name…"'
+                     r'[^>]*\bstyle="width:240px;flex:none"', ORBIT)))
 
 # ------------------------------------------------------------------ C) org chart
 check("C1 single-click still previews the constellation (+ JAG-451 focuses the agent)",

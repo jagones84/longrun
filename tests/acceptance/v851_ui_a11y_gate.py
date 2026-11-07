@@ -87,14 +87,15 @@ audit.feed(html)
 static = [c for c in audit.controls if c[2].get("type") != "hidden"]
 
 
-def why_unnamed(tag, a, frame):
+def why_unnamed(tag, a, frame, scope=None):
     """None when the control has a name, else the reason it does not."""
+    scope = scope or audit
     if (a.get("aria-label") or "").strip():
         return None
     if (a.get("aria-labelledby") or "").strip():
         return None
     # B: `title` alone is not a label — axe rule `label-title-only`.
-    if a.get("id") and a["id"] in audit.for_ids:
+    if a.get("id") and a["id"] in scope.for_ids:
         return None
     if frame is not None and frame[1].strip():
         return None
@@ -237,6 +238,27 @@ check("F3 every role=button is keyboard-reachable, and the chip's ✕ is a real 
       all("tabindex" in t for t in _ROLE_BUTTONS)
       and bool(re.search(r'<button[^>]*class="x"[^>]*data-i=', html)),
       "%d role=button tag(s)" % len(_ROLE_BUTTONS))
+
+# ---- G: the Control deck is the SAME product, so it is the same contract ----
+# Measured 2026-11-07: 12 of its 13 static controls were named by `title` or a
+# placeholder only (a title is not a name); its JS-built table inputs were already
+# named. Placeholders are a hint, never an accessible name.
+DECK = open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"),
+            encoding="utf-8").read()
+deck_audit = Audit()
+deck_audit.feed(DECK)
+deck_static = [c for c in deck_audit.controls if c[2].get("type") != "hidden"]
+deck_bad = []
+for line, tag, a, frame in deck_static:
+    why = why_unnamed(tag, a, frame, scope=deck_audit)
+    if why:
+        deck_bad.append("line %d %s" % (line, why))
+deck_anon = ["id=" + (b[0].get("id") or "-") for b in deck_audit.buttons
+             if not b[1].strip() and not (b[0].get("aria-label") or b[0].get("title"))]
+check("G1 the Control deck names every static control (%d controls)" % len(deck_static),
+      not deck_bad, "; ".join(deck_bad[:6]))
+check("G2 the Control deck has no anonymous icon button (%d)" % len(deck_audit.buttons),
+      not deck_anon, ", ".join(deck_anon[:6]))
 
 print("\nv851: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)
