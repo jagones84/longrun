@@ -11777,12 +11777,13 @@ function renderTools(el, d) {
         "</b> (" + count + ")</summary>" + inner + "</details>";
   }).join("");
   const _onN = tools.filter(t => t.enabled !== false).length;
-  // HA-5 (lot H): the footprint rides this SAME /api/tools payload. It is a button,
-  // not a row: the names + the characters they cost appear only when clicked.
+  // HA-5 (lot H): the footprint rides this SAME /api/tools payload. It is an inline
+  // LINK inside the enabled counter, not a fifth button: the bar must not grow a row
+  // on a phone (graphics rule 5); the names cost nothing until clicked.
   const _fp = (d && d.footprint) || null;
   const _fpN = _fp ? (_fp.never_used || []).length : 0;
   const _fpBtn = _fpN
-    ? '<button class="ghost" data-footprint aria-controls="toolsFootprint" aria-expanded="false" title="enabled tools never called in the last ' +
+    ? ' · <button class="lnk" data-footprint aria-controls="toolsFootprint" aria-expanded="false" title="enabled tools never called in the last ' +
       esc(String(_fp.days)) + " days (" + esc(String(_fp.runs)) + " runs) — they cost " +
       esc(String(_fp.never_used_index_chars)) + ' characters of the model-facing index on every turn">' +
       _fpN + " unused</button>"
@@ -11792,8 +11793,7 @@ function renderTools(el, d) {
         '<span class="remaining tools-head-note">Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b>' +
           (globalAuto ? ' · <b style="color:var(--err)">global FULL: every tool is auto (never ask)</b>' : '') +
         "</span>" +
-        '<span class="remaining">' + _onN + "/" + tools.length + " enabled</span>" +
-        _fpBtn +
+        '<span class="remaining">' + _onN + "/" + tools.length + " enabled" + _fpBtn + "</span>" +
         '<button class="ghost" data-goperms title="hard blocks, always-ask rules and the tools that are OFF live in their own page">🛡 permissions</button>' +
         '<button class="ghost" data-bulk="enable" title="enable EVERY tool (native + external MCP) in one request">enable all</button>' +
         '<button class="ghost" data-bulk="disable" title="disable every tool (native + external MCP)">disable all</button>' +
