@@ -4009,6 +4009,23 @@ def _extract_action(answer):
     return act
 
 
+def _step_is_action(answer):
+    """Will this step EXECUTE something? — the loop's own question.
+
+    v843 (measured 2026-11-07): the best-of-N spend gate asked it with
+    `_looks_like_json_action`, which requires the message to START with `{`/`[`.
+    The loop asks it with `_extract_action`, which finds the call anywhere. So
+    "I'll patch it now." followed by an action object was an ACTION to the loop and
+    PROSE to the gate, and every such step bought a second full-context sample
+    ranked by length: 11 of 22 calls on a SWE-bench instance (50%), against 46%
+    before the v838 policy that was supposed to remove them.
+    """
+    try:
+        return _extract_action(answer) is not None
+    except Exception:  # noqa: BLE001 — a classifier must never break the turn
+        return _looks_like_json_action(answer)
+
+
 def _turn_flags(autonomous=False, goal_mode=False, plan_only=False, headless=False):
     """`(wrap_goal, autonomous)` for one turn — the ONE place the two questions
     `autonomous` used to answer together are separated (JAG-526).
@@ -4714,10 +4731,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         except Exception:  # noqa: BLE001
             _bN = 1
         try:
-            _sample_this = _bn.spend_extra(_bN, _looks_like_json_action(answer),
-                                           _bn_cfg)
+            _sample_this = _bn.spend_extra(_bN, _step_is_action(answer), _bn_cfg)
         except Exception:  # noqa: BLE001 — the policy is never a gate on the turn
-            _sample_this = _bN > 1 and _looks_like_json_action(answer)
+            _sample_this = _bN > 1 and _step_is_action(answer)
         if _bN > 1 and _sample_this:
             _cands = [answer]
             # JAG-431r4b: each extra best-of-N sample refills `chat_usage` in
