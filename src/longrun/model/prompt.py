@@ -162,15 +162,24 @@ def section_texts(sess=None, ws=None, tool_ctx=None):
     return out
 
 
-def render_sections(sess=None, ws=None, tool_ctx=None):
-    """Assemble the final prompt: for each section, default + global + project."""
-    texts = section_texts(sess, ws, tool_ctx)
+def join_sections(texts):
+    """The ONE join rule: section order, empty sections dropped, blank line between.
+
+    Split out of `render_sections` (2026-11-07) so a caller that already HAS the
+    per-section texts — the Context panel needs them for its token breakdown — can
+    produce the exact same prompt without rendering every section a second time.
+    """
     parts_out = []
     for sec in sorted(SECTIONS, key=lambda s: s["order"]):
         text = texts.get(sec["id"])
         if text:
             parts_out.append(text)
     return "\n\n".join(parts_out)
+
+
+def render_sections(sess=None, ws=None, tool_ctx=None):
+    """Assemble the final prompt: for each section, default + global + project."""
+    return join_sections(section_texts(sess, ws, tool_ctx))
 
 
 def _provider_self_summary(sess, ws, ctx):

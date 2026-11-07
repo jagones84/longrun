@@ -9,6 +9,7 @@ Loads `config/tools.yaml` (falling back to `config/tools.json`) and answers:
 Stdlib + PyYAML. No tool is executed here — see tools.py / sandbox.py.
 """
 
+import copy
 import json
 import os
 import re
@@ -1262,13 +1263,41 @@ def subtool_gate(tool, args):
 
 # ---------------------------------------------------------------- loading ----
 
+# 2026-11-07: one parse per FILE VERSION, not one per caller. The parse is a pure
+# function of the bytes, and `catalog()` asks for it on every system-prompt render
+# (`catalog -> shipped_tools -> _load_raw`), measured 13.7 ms per call and paid TWICE
+# per prompt (the `tools` section and the `longrun-agent` subtool list), i.e. ~27 ms
+# of a 42 ms prompt build. The signature is (path, mtime_ns, size): an edit changes
+# it, so the memo can never serve a stale config. The stored object is never handed
+# out — callers merge it into their own structures and a shared dict would be
+# corrupted by one mutation — a deepcopy costs 0.10 ms against a 13.7 ms parse.
+_raw_memo = None   # ((path, mtime_ns, size), raw, source)
+
+
+def _raw_signature():
+    """Identity of the config file actually in use (YAML wins over JSON)."""
+    for path in (CONFIG_YAML, CONFIG_JSON):
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        return (path, st.st_mtime_ns, st.st_size)
+    return None
+
+
 def _load_raw():
+    global _raw_memo
+    sig = _raw_signature()
+    if sig is not None and _raw_memo is not None and _raw_memo[0] == sig:
+        return copy.deepcopy(_raw_memo[1]), _raw_memo[2]
     if os.path.exists(CONFIG_YAML):
         try:
             import yaml  # PyYAML
             with open(CONFIG_YAML, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             if isinstance(data, dict):
+                if sig is not None:
+                    _raw_memo = (sig, copy.deepcopy(data), "yaml")
                 return data, "yaml"
         except ImportError:
             raise RuntimeError("PyYAML not installed but config/tools.yaml exists")
@@ -1276,7 +1305,10 @@ def _load_raw():
             raise RuntimeError("cannot parse config/tools.yaml: %s" % e)
     if os.path.exists(CONFIG_JSON):
         with open(CONFIG_JSON, "r", encoding="utf-8") as f:
-            return json.load(f), "json"
+            data = json.load(f)
+        if sig is not None:
+            _raw_memo = (sig, copy.deepcopy(data), "json")
+        return data, "json"
     return {}, "defaults"
 
 

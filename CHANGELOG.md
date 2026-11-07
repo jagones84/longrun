@@ -64,6 +64,22 @@ All notable changes to Longrun are documented here. The format follows
   proposal. Improvement can finally land on a name that already exists.
 
 ### Changed
+- **A session switch no longer rebuilds the world (`v853`-`v856`, 2026-11-07).** The operator
+  reported that switching session or expanding a team took seconds. Three defects were paying for
+  it, each measured before it was touched: `memory.dedupe` compared every record against every
+  SURVIVOR and re-tokenised them at each comparison (3695 ms to scan 498 records and drop none —
+  it now stops at the requested survivors and caches each survivor's token set); the context METER
+  built the prompt with retrieval on, paying the cross-encoder re-ranker (a paid HTTP call, 390 ms)
+  twice per switch for a field no client reads; and `registry.catalog()` re-read and re-parsed
+  `config/tools.yaml` (13.7 ms) on every prompt render, twice per render, because the tool section
+  and the longrunAgent subtool list both ask for it — the parse is now memoised by the file's own
+  `(path, mtime, size)` and handed out as a copy. The Context panel also renders the prompt sections
+  ONCE instead of twice, handing the meter what it just computed. Measured on the live server:
+  `/api/context` 5303 → 23 ms, `/api/context/items` 1402 → 35 ms, `/api/status` 34 → 6 ms, and in
+  the browser a full switch ~550 → ~300 ms with a team expand at 70 ms. No capability changed: the
+  dedupe contract, the meter's arithmetic and a real turn's single retrieval are pinned by
+  `v853`/`v854`, the config memo by `v855` (an edit is always re-parsed, a mutation cannot poison it)
+  and the single render by `v856`.
 - **Settings ▸ Models is ONE sheet per model stage (2026-11-05, `v825`).** The re-ranker had a live
   picker at the top of the panel and its knobs in a second card of their own — a SAVE chip, a second
   save button and a read-only copy of the model the picker already showed — so one stage read as

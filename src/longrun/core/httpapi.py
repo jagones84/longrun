@@ -793,19 +793,28 @@ def _tool_context():
         return ""
 
 
-def _system_prompt(sess, tool_ctx=None):
+def _system_prompt(sess, tool_ctx=None, sections=None):
     """Single source of truth for the chat system prompt (JAG-70).
 
     JAG-128A: now delegates to the section registry (prompt.render_sections). It remains
     the ONLY source for the sent prompt and for the context indicator.
+
+    `sections` (2026-11-07): a caller that has ALREADY rendered the per-section texts
+    hands them in, and the prompt is their join — the same string, without a second
+    render of every section (a render is 42 ms; the Context panel needed it twice).
     """
+    try:
+        from longrun.model import prompt as prompt_mod
+        if sections is not None:
+            return prompt_mod.join_sections(sections)
+    except Exception:  # noqa: BLE001 — the prompt must never break the chat
+        return system_prompt()
     try:
         from longrun.memory import rules as rules_mod
         ws = rules_mod.resolve_workspace(sess)
     except Exception:  # noqa: BLE001
         ws = None
     try:
-        from longrun.model import prompt as prompt_mod
         return prompt_mod.render_sections(sess, ws=ws, tool_ctx=tool_ctx)
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         return system_prompt()
@@ -1012,10 +1021,13 @@ def context_items(session_id=None):
     tok["plan"] = context_engine.count_tokens(state_block(session_id=session_id))
 
     _obs = re.compile(r"^(?:\[harness\]\s+)?Observation for tool\s+([A-Za-z0-9_.\-]+)\s*:")
+    _tx_tokens = 0                      # the transcript total, accumulated in this loop
     for m in msgs:
         c = m.get("content")
         c = c if isinstance(c, str) else ("" if c is None else str(c))
         n = context_engine.count_tokens(c)
+        _tx_tokens += n                 # SAME function the meter would run over the
+                                        # same messages — handed to it below instead
         if not n:
             continue
         mo = _obs.match(c)
@@ -1039,7 +1051,14 @@ def context_items(session_id=None):
     cached = 0
     cache_hit_pct = 0.0
     try:
-        _u = context_usage(session_id)
+        # 2026-11-07: hand the meter what this function has ALREADY computed — the
+        # rendered sections (used for the breakdown above) and the transcript token
+        # total (accumulated in the same walk). It used to re-render all 42 ms of
+        # sections and re-walk every message for numbers that are identical. An empty
+        # `_secs` means the render FAILED: pass nothing, so the meter still renders
+        # (and falls back) instead of counting an empty prompt.
+        _u = context_usage(session_id, sections=(_secs or None),
+                           transcript_tokens=_tx_tokens)
         budget = context_budget(resolve_ctx_model(sess))
         used = int(_u.get("tokens_used") or 0)
         cached = int(_u.get("cached_tokens") or 0)
@@ -1111,12 +1130,19 @@ def set_compaction_policy(body):
     return compaction_policy()
 
 
-def context_usage(session_id=None, message=None, model=None):
+def context_usage(session_id=None, message=None, model=None,
+                  sections=None, transcript_tokens=None):
     """Effective prompt tokens vs budget for the next turn (JAG-70).
 
     Counts what is REALLY sent: the system prompt (tool registry + skills +
     persistent task list), the compacted transcript and the pending user
     message. Returns the raw parts too, so the UI can explain the number.
+
+    `sections` / `transcript_tokens` (2026-11-07) are OPTIONAL precomputed parts for
+    a caller that just computed them anyway (the Context panel: it renders the
+    sections for its breakdown and walks the transcript for the per-category tokens).
+    Passing them changes no number — the same two functions produce the same values —
+    it removes the second render and the second walk.
     """
     from longrun.model import context_engine
     from longrun.model import compaction_config as _ccfg
@@ -1135,7 +1161,7 @@ def context_usage(session_id=None, message=None, model=None):
                 "pct": 0.0, "over_threshold": False, "over_budget": False,
                 "display": context_display(available=False,
                                            reason="session not found")}
-    sysp = _system_prompt(sess)
+    sysp = _system_prompt(sess, sections=sections)
     # JAG-276: the live task list is injected into the user turn (see assemble_turn).
     # Mirror that here so the meter counts what is REALLY sent.
     aug_message = (message or "") + "\n\n" + state_block(session_id=session_id)
@@ -1152,8 +1178,9 @@ def context_usage(session_id=None, message=None, model=None):
         budget_tokens=budget, retrieve_memory=False)
     compacted = int(stats.get("final_tokens") or 0)
     sysp_tokens = context_engine.count_tokens(sysp)
-    transcript = sum(context_engine.count_tokens(m.get("content", ""))
-                     for m in sess.get("messages", []))
+    transcript = (int(transcript_tokens) if transcript_tokens is not None
+                  else sum(context_engine.count_tokens(m.get("content", ""))
+                           for m in sess.get("messages", [])))
     # JAG-214: the meter must show what you are CARRYING (system prompt + the full
     # stored transcript + the pending message), NOT the post-compaction build size.
     # That size can never exceed the threshold, so the auto-compact trigger could
