@@ -4697,7 +4697,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         nonlocal _review_known
         if kind == "review":
             _review_known = str(content or "")
-        elif kind == "closure-check":
+        elif kind in ("closure-check", "forced-close-verify"):
             content = _with_known_gaps(content, _review_known)
         # I-2: a byte-identical REPEAT of the same (kind, text) tells the model
         # nothing new (it already holds those bytes), so it is not re-charged to
@@ -5632,14 +5632,14 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _failed_checked = True
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
+                _inject(_failed_call_check_prompt(_last_failed_err), "failed-call")
                 continue
             if (not _intent_used and _narrates_intent(answer)
                     and not _is_aborted(sess["id"])):
                 # A close that ENDS on "I need to…" is a status update, not an answer.
                 _intent_used = True
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_intent_gate_text(), "closure-check")
+                _inject(_intent_gate_text(), "intent-gate")
                 continue
             if (not _evidence_used and not _total_work_steps
                     and _needs_evidence(message) and not _is_aborted(sess["id"])):
@@ -5647,7 +5647,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # in it was checked. One round, then the normal stop applies.
                 _evidence_used = True
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_evidence_gate_text(), "closure-check")
+                _inject(_evidence_gate_text(), "evidence-gate")
                 continue
             _drv = _deliverable_review_text(sess, message, _deliv_since, _deliv_state)
             if _drv:
@@ -5657,7 +5657,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
             if _cite:
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_cite, "closure-check")
+                _inject(_cite, "citation-check")
                 continue
             if (_review_action_owed(_deliv_state) and not _verify_gate_used
                     and not _is_aborted(sess["id"])):
@@ -5665,7 +5665,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # would be a claim. One round, then the normal stop applies.
                 _verify_gate_used = True
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_verify_gate_text(), "closure-check")
+                _inject(_verify_gate_text(), "verify-gate")
                 continue
             if (not _request_verified and _total_work_steps
                     and not _is_aborted(sess["id"])):
@@ -5715,13 +5715,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
                 if _cite:
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_cite, "closure-check")
+                    _inject(_cite, "citation-check")
                     continue
                 if (not _intent_used and _narrates_intent(answer)
                         and not _is_aborted(sess["id"])):
                     _intent_used = True
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_intent_gate_text(), "closure-check")
+                    _inject(_intent_gate_text(), "intent-gate")
                     continue
                 if (not _evidence_used and not _total_work_steps
                         and _needs_evidence(message) and not _is_aborted(sess["id"])):
@@ -5729,7 +5729,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     # world fact, with zero tool calls behind it, is a guess.
                     _evidence_used = True
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_evidence_gate_text(), "closure-check")
+                    _inject(_evidence_gate_text(), "evidence-gate")
                     continue
                 if (not _request_verified and _total_work_steps
                         and not _is_aborted(sess["id"])):
@@ -5771,7 +5771,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
                 if _cite:
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_cite, "closure-check")
+                    _inject(_cite, "citation-check")
                     continue
                 if (not _request_verified and _total_work_steps
                         and not _is_aborted(sess["id"])):
@@ -5974,21 +5974,21 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _cite = _citation_gate_text(sess, _deliv_since, _deliv_state)
             if _cite:
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_cite, "closure-check")
+                _inject(_cite, "citation-check")
                 continue
             if (not _intent_used and _narrates_intent(answer)
                     and not _is_aborted(sess["id"])):
                 # The reply ends on what it is about to do — say so, once.
                 _intent_used = True
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_intent_gate_text(), "closure-check")
+                _inject(_intent_gate_text(), "intent-gate")
                 continue
             if (not _evidence_used and not _total_work_steps
                     and _needs_evidence(message) and not _is_aborted(sess["id"])):
                 # A prose answer to a fact request, with zero tool calls behind it.
                 _evidence_used = True
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_evidence_gate_text(), "closure-check")
+                _inject(_evidence_gate_text(), "evidence-gate")
                 continue
             if (_last_failed_err and not _last_tool_ok and not _failed_checked
                     and _selfcheck_left > 0 and not _is_aborted(sess["id"])):
@@ -5998,7 +5998,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _failed_checked = True
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
-                _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
+                _inject(_failed_call_check_prompt(_last_failed_err), "failed-call")
                 continue
             if (not _request_verified and _total_work_steps
                     and not _is_aborted(sess["id"])):
@@ -6054,7 +6054,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         if (_total_work_steps and not _request_verified
                 and not _is_aborted(sess["id"]) and _request_thread_text):
             _request_verified = True
-            _inject(_forced_close_verify_text(_request_thread_text), "closure-check")
+            _inject(_forced_close_verify_text(_request_thread_text), "forced-close-verify")
         _inject(
             "Answer the user now in plain text. Do not emit JSON, and do NOT "
             "announce future work: report the RESULT you already have (what "

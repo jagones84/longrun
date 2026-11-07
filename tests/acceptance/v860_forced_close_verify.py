@@ -100,11 +100,12 @@ def script_work_then_answer(n):
 
 ev = run_turn("v860-work", script_work_then_answer)
 injects = kinds_of(ev, "harness.inject")
-cc = [d for d in injects if d.get("inject_kind") == "closure-check"]
+cc = [d for d in injects if d.get("inject_kind") == "forced-close-verify"]
 fin = [d for d in injects if d.get("inject_kind") == "final"]
 check("A0 the turn really did work (a tool ran)",
       len(kinds_of(ev, "tool.call")) >= 1, "tools=%d" % len(kinds_of(ev, "tool.call")))
-check("A1 the forced close carries a closure-check", bool(cc), "n=%d" % len(cc))
+check("A1 the forced close carries its OWN verdict (not a plain closure-check)", bool(cc),
+      "n=%d" % len(cc))
 check("A2 the verdict quotes the operator's ORIGINAL request",
       bool(cc) and REQUEST in (cc[0].get("text") or ""),
       (cc[0].get("text") or "")[:120] if cc else "no inject")
@@ -112,10 +113,10 @@ check("A3 the forced-final instruction still exists", bool(fin), "n=%d" % len(fi
 if cc and fin:
     order = [d.get("inject_kind") for d in injects]
     check("B1 the verdict lands BEFORE the answer instruction",
-          order.index("closure-check") < len(order) - 1 - order[::-1].index("final"),
+          order.index("forced-close-verify") < len(order) - 1 - order[::-1].index("final"),
           order)
     check("B2 both travel in the same model call (one round, no extra latency)",
-          order.count("closure-check") == 1 and order[-1] == "final", order[-3:])
+          order.count("forced-close-verify") == 1 and order[-1] == "final", order[-3:])
 else:
     check("B1 the verdict lands BEFORE the answer instruction", False, "missing inject")
     check("B2 both travel in the same model call (one round, no extra latency)", False, "missing inject")
