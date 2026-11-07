@@ -810,8 +810,11 @@ TASK_POLICY = (
     "- A step must describe work that is STILL TO DO. Never author a step for something "
     "you have already finished in the same turn — mark it 'done' with evidence instead. "
     "Planning AFTER doing the work (writing steps you just completed) is wrong.\n"
-    "- If the list is empty and the request needs more than one action, author it first "
-    "with todo.write, then follow it. NEVER report the job finished while steps are still "
+    "- If the list is empty and the request needs THREE OR MORE steps, author it "
+    "first with todo.write, then follow it. One or two obvious actions (write one "
+    "file and check it, run one command) need NO list: do the work, check it, "
+    "answer — a list there is pure bookkeeping and costs extra rounds. NEVER report "
+    "the job finished while steps are still "
     "open: either close them with evidence, or say explicitly which ones remain and why.\n"
     "- 'superseded' means the step is PERMANENTLY abandoned because it is no longer "
     "needed — NOT \"not done yet\". If the work is still wanted but not now, LEAVE IT OPEN "
@@ -2519,6 +2522,76 @@ def _note_chat_mutation(sess, tool, args=None, state=None):
         pass
 
 
+_READ_TOOLS = ("fs.read", "fs.view", "fs.cat")
+#: First word of a shell segment that only LOOKS at bytes. A `shell.exec` write is
+#: opaque to the harness (`state["paths"]` stays empty), so a read-only command is
+#: the only way a shell-using turn can prove it opened what it wrote.
+_SHELL_READ_VERBS = ("cat", "head", "tail", "od", "xxd", "less", "more",
+                     "cmp", "diff", "jq")
+#: Anything that could WRITE inside a shell segment disqualifies it.
+_SHELL_WRITE_HINTS = (">", "tee ", "rm ", "mv ", "cp ", "ln ", "chmod ", "chown ",
+                      "sed -i", "truncate ", "dd ")
+
+
+def _shell_looks_read_only(command):
+    """True when NO segment of `command` can write and at least one only reads.
+
+    Deliberately narrow: a redirect anywhere disqualifies the whole command, and a
+    segment counts as a read only when its FIRST word is a read-only verb. This is
+    used for ONE question ("did the model look at what it wrote?"), never for
+    attributing a file to a turn.
+    """
+    text = str(command or "")
+    if not text.strip() or any(h in text for h in _SHELL_WRITE_HINTS):
+        return False
+    for seg in re.split(r"&&|\|\||[;|\n]", text):
+        words = seg.strip().split()
+        if words and os.path.basename(words[0]) in _SHELL_READ_VERBS:
+            return True
+    return False
+
+
+def _note_chat_verification(tool, args, sess, state):
+    """Record that the turn re-OPENED an artifact it wrote (`own_verified`).
+
+    The read-back gate exists because a close that never looked at its own output
+    is a claim. When the model DID look — `fs.read` of a path this same turn wrote,
+    or a read-only shell command after a shell write — that premise is already met;
+    asking again bought four extra model round-trips on a one-file task (measured
+    2026-11-07, ladder r1: read-back → answer → verify gate → re-read → answer).
+    Never raises.
+    """
+    try:
+        if state is None or not state.get("wrote"):
+            return
+        name = str(tool)
+        if name in ("shell.exec", "shell", "terminal"):
+            if _shell_looks_read_only((args or {}).get("command")):
+                state["own_verified"] = True
+            return
+        if name not in _READ_TOOLS:
+            return
+        rel = (args or {}).get("path")
+        if not rel:
+            return
+        ws = _chat_workspace(sess) or ""
+        full = os.path.abspath(rel if os.path.isabs(rel) else os.path.join(ws, rel))
+        if full in (state.get("paths") or set()):
+            state["own_verified"] = True
+            return
+        # A WRITE done through `shell.exec` leaves `paths` empty (`opaque`), so the
+        # only attribution available is time: a file this turn modified, opened by
+        # fs.read, IS what the turn produced (measured 2026-11-07: ladder r1 used
+        # `printf > out/hello.txt` then `fs.read out/hello.txt` and the read-back
+        # still fired).
+        if state.get("opaque") and os.path.isfile(full):
+            since = float(state.get("since") or 0.0)
+            if since and os.path.getmtime(full) >= since - 1.0:
+                state["own_verified"] = True
+    except Exception:  # noqa: BLE001 — bookkeeping for a gate, never a gate itself
+        pass
+
+
 def _claim_step(sess, on_event=None):
     """v857: the harness itself owns the `doing` claim for the step it works.
 
@@ -2616,6 +2689,11 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         ok = status == "executed" and sub.get("ok") is not False
         if ok:
             _note_chat_mutation(sess, tool, args, state=state)   # F1: the step is no longer text-only
+            # A batch is the COMMON path for "read the two files I just wrote": without
+            # this the read-back could not see that the turn had already opened its
+            # own output (measured 2026-11-07, one-task run: two fs.read inside a batch,
+            # read-back + verify gate still fired).
+            _note_chat_verification(tool, args, sess, state)
         obs = res.get("observation") or res.get("error") or str(status)
         # JAG-88 parity: the single-call path renders up to CHAT_OBS_FULL and then
         # offloads; a batch used to cut EVERY observation at 4000 chars with no
@@ -3741,6 +3819,15 @@ def _deliverable_review_text(sess, request, since, state):
     except Exception:  # noqa: BLE001 — the delegated block must still be shown
         text = ""
     delegated = _delegated_review_text(state)
+    if state.get("own_verified") and not delegated:
+        # 2026-11-07: the model already re-opened the artifact it wrote, in this
+        # turn, AFTER writing it — the gate's premise is met, and asking again
+        # bought four round-trips on a one-file task (ladder r1: read-back →
+        # answer → verify gate → re-read → answer). A turn that closes without
+        # opening its own output still gets the read-back; a DELEGATED delivery
+        # still does too, because the caller never opened the child's file.
+        state["left"] = 0
+        return None
     if not text:
         # A turn that wrote NOTHING is not "nothing to say" when the request asked
         # for a file: measured 2026-10-31 (JobBench `5757c9eb681c`) the model's
@@ -4563,7 +4650,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # counts. A status check cannot see a blank sheet; this can.
     _deliv_since = time.time()
     _deliv_state = {"left": 1, "wrote": False, "opaque": False, "paths": set(),
-                    "cite_left": 1}
+                    "cite_left": 1, "since": _deliv_since}
     _verify_gate_used = False   # one round when the turn closes without opening its output
     _delivery_floor_used = False  # one extra round when a stop leaves nothing written
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
@@ -5517,6 +5604,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # on a text claim when closeout verification is on.
                 if ok:
                     _note_chat_mutation(sess, tool, args, state=_deliv_state)
+                    _note_chat_verification(tool, args, sess, _deliv_state)
                 # JAG-96: persist the card so cold-start UIs rebuild the transcript.
                 persist_tool_card(sess, tool, ok, args=args,
                                   result=sub.get("stdout") or obs or "",

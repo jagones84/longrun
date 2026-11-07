@@ -285,7 +285,7 @@ budget:
 # `n: 1` keeps it a no-op until N is raised — or let `difficulty` scale N per task
 # (easy_n/medium_n/hard_n below).
 bestofn:
-  enabled: true
+  enabled: false
   n: 1
   min_score: 0.0            # se il migliore resta sotto questa soglia -> nessuna scelta
   # v838 (measured 2026-11-06): the ranker (`prm.rank_text`) scores TEXT, so two

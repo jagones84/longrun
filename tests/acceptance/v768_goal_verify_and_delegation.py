@@ -195,7 +195,13 @@ ws_tool = (cfg.get("tools") or {}).get("workspace") or {}
 check("D1 workspace.set requires approval by default",
       ws_tool.get("enabled") is True and ws_tool.get("approval") == "required", ws_tool)
 check("D2 the verifier is enabled by default", bool((cfg.get("verifier") or {}).get("enabled")))
-check("D3 best-of-N is enabled by default", bool((cfg.get("bestofn") or {}).get("enabled")))
+# 2026-11-07 (operator decision): best-of-N is OFF by default. Measured on the
+# harness ladder: the extra prose sample cost 2 full-context calls per turn (~14%
+# of all calls) for a ranker that scores TEXT, not the delivered artefact. The
+# block must still be MERGED and reachable (D4) so the setting can be turned back
+# on from config/tools.yaml — this pin guards the default, not the feature.
+check("D3 best-of-N is OFF by default (block still merged, D4)",
+      (cfg.get("bestofn") or {}).get("enabled") is False, cfg.get("bestofn"))
 # The block must be REACHABLE: `_merge_into` walks a fixed section list, so a new
 # block the list does not name is silently dropped — tools.yaml would hold it,
 # `load_config()` would not, and `section_config(...)` would fall back to defaults

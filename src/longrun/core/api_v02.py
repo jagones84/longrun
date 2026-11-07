@@ -523,7 +523,9 @@ def tool_context():
       * the protocol (args is one JSON object, never positional/`key=value`),
       * HOW to list / search / read a schema (`self.tools`),
       * WHICH namespaces exist and how many tools each holds — enough to aim a
-        search, never a catalogue.
+        search, never a catalogue,
+      * plus (2026-11-07) the REQUIRED args of the five core tools, because a
+        lookup for `fs.write`'s arguments was a round-trip on almost every task.
     """
     counts = {}
     gw_collapsed = 0
@@ -556,6 +558,15 @@ def tool_context():
         "property, its type, its default, which ones are REQUIRED, and a valid "
         "example call. Read it BEFORE the first call of a tool you have not used in "
         "this session — the schema is authoritative, your memory is not.",
+        # 2026-11-07: the FIVE core tools are stable enough to spell out here, and
+        # not doing so cost a lookup round-trip on almost every task (ladder r1:
+        # `self.tools {query:"write file"}` before a two-byte fs.write; LHB: 14 such
+        # calls over 8 tasks). This is a signature line, NOT the registry dump
+        # JAG-513b removed: the long tail is still searched, never listed.
+        "Core tools — always enabled; their REQUIRED args, so no lookup is needed: "
+        '`fs.read {path}` · `fs.write {path, content}` · '
+        '`fs.edit {path, search, replace}` · `shell.exec {command}` · '
+        "`python.run {code}` · `self.tools {query|tool}`.",
         "The REGISTRY is the only allowlist: a name that is not a registered tool "
         "(or is disabled) cannot be called. Never invent a name and never guess an "
         "argument:",
