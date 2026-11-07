@@ -330,6 +330,29 @@ def _refuse_local_model(model):
     return ""
 
 
+def ledger_usage(res):
+    """One sample's billing record, from the ledger the adapter already read.
+
+    `HarnessResult.tokens` is a single total, so a stored run could not say how
+    many calls it took, how much of the prompt was a provider cache hit, or how
+    many of those calls were duplicate best-of-N samples — the three numbers that
+    tell "the harness got better" from "the model got luckier". Rows tagged
+    `bestofn` were counted as duplicates; before v838 they were the only rows with
+    no latency, so both spellings are honoured.
+    """
+    led = getattr(res, "usage", None) or {}
+    rows = led.get("recent") or []
+    return {
+        "tokens_in": int(led.get("tokens_in") or 0),
+        "tokens_out": int(led.get("tokens_out") or 0),
+        "cached": int(led.get("cached") or 0),
+        "calls": int(led.get("calls") or 0),
+        "dup_calls": sum(1 for c in rows
+                         if c.get("tag") == "bestofn" or not c.get("latency_ms")),
+        "total_usd": getattr(res, "cost_usd", 0.0),
+    }
+
+
 def run_arm(row, out, arm, model, timeout):
     """One agent turn on the staged repo, then the official grading on its diff."""
     iid = row["instance_id"]
@@ -343,19 +366,27 @@ def run_arm(row, out, arm, model, timeout):
               "delete test files. When you are done, stop; the harness grades the "
               "working tree." % (repo_dir, row.get("problem_statement")))
     t0 = time.time()
+    # v842: the sample must leave a pointer to its own record, or a stored run can
+    # only be read as one aggregate number. `session` is the ledger id (longrun) /
+    # the gateway session key (openclaw); `usage` is that ledger's summary taken
+    # while the session still exists.
+    sid = ""
+    usage = {}
     from benchmarks.jobbench_compare import (openclaw_command, _openclaw_env,
                                              _openclaw_usage, _openrouter_key)
     if arm == "openclaw":
         rmodel = model.replace(":", "/", 1)
         env = _openclaw_env(_openrouter_key())
-        cmd = openclaw_command(repo_dir, rmodel, prompt, timeout,
-                               session_key="swe:%s:%s" % (iid, int(t0)))
+        sid = "swe:%s:%s" % (iid, int(t0))
+        cmd = openclaw_command(repo_dir, rmodel, prompt, timeout, session_key=sid)
         try:
             proc = subprocess.run(cmd, cwd=os.path.expanduser("~"), env=env,
                                   text=True, capture_output=True, timeout=timeout + 60)
             usage, _reply = _openclaw_usage(proc.stdout or "")
         except subprocess.TimeoutExpired:
-            usage = {"tokens_in": 0, "tokens_out": 0, "total_usd": 0.0}
+            # A killed turn was not a free turn: record no token numbers rather
+            # than three zeros that read as "spent nothing".
+            usage = {"error": "timeout after %ss" % timeout}
     else:
         from benchmarks.longrun_adapter import LongrunAdapter
         ad = LongrunAdapter(model=model, timeout=timeout, keep_sessions=True,
@@ -364,8 +395,8 @@ def run_arm(row, out, arm, model, timeout):
         try:
             ref = ad.create_agent({"id": iid, "workspace": str(repo_dir)})
             res = ad.send_task(ref, prompt, timeout=timeout)
-            usage = {"tokens_in": res.tokens, "tokens_out": 0,
-                     "total_usd": res.cost_usd}
+            sid = res.session
+            usage = ledger_usage(res)
             if not res.ok:
                 usage["error"] = res.error
         finally:
@@ -395,6 +426,7 @@ def run_arm(row, out, arm, model, timeout):
               "p2p_pass": sum(1 for v in p2p_res.values() if v),
               "p2p_total": len(p2p_res), "diff_bytes": len(diff),
               "duration_s": round(time.time() - t0, 1), "usage": usage,
+              "session": sid,
               "git_dirty_before": bool(before.strip())}
     (out / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps({k: result[k] for k in ("instance", "arm", "strict",

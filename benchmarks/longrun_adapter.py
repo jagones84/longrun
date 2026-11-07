@@ -263,20 +263,25 @@ class LongrunAdapter:
         # logs per-step cost — a silent zero, not a measurement.
         tokens = 0
         cost_usd = 0.0
+        ledger = {}
         try:
-            led = self.usage(ref.session) or {}
-            tokens = int(led.get("tokens_in") or 0) + int(led.get("tokens_out") or 0)
-            if led.get("total_usd") is not None:
-                cost_usd = float(led["total_usd"])
+            # v842: `tail` is every call of the turn, not the UI's last 60 — the
+            # duplicate best-of-N samples are counted from these rows, and a
+            # 60-step SWE turn would silently truncate the tail of the ledger.
+            ledger = self.usage(ref.session, tail=100000) or {}
+            tokens = int(ledger.get("tokens_in") or 0) + int(ledger.get("tokens_out") or 0)
+            if ledger.get("total_usd") is not None:
+                cost_usd = float(ledger["total_usd"])
         except Exception:  # noqa: BLE001 — accounting must never fail a task
-            pass
+            ledger = {}
         return HarnessResult(
             ok=ok, output=obj.get("reply") or "", run_id=obj.get("run_id") or "",
             duration_s=dur, tokens=tokens, cost_usd=cost_usd,
             error="" if ok else str(obj.get("error"))[:400],
-            provenance=self.provenance())
+            provenance=self.provenance(),
+            session=ref.session, usage=ledger)
 
-    def usage(self, session):
+    def usage(self, session, tail=60):
         """This session's token/cost totals from the live ledger (`GET /api/costs`).
 
         Read it BEFORE deleting the session: the ledger is
@@ -284,7 +289,8 @@ class LongrunAdapter:
         benchmark that skipped this compared score-only against a harness whose
         trajectory logs per-step cost.
         """
-        st, obj = self._req("GET", "/api/costs?session=%s" % urllib.parse.quote(session),
+        st, obj = self._req("GET", "/api/costs?session=%s&tail=%d"
+                            % (urllib.parse.quote(session), int(tail or 60)),
                             timeout=15)
         return obj if st == 200 and isinstance(obj, dict) else {}
 

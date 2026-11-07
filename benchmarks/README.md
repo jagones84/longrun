@@ -258,6 +258,24 @@ cannot build on Python 3.12). `--verify psf__requests-1142` → gold 1/1 f2p, 5/
 base 0/1, 5/5 → GRADABLE. Suite landscape and per-repo traps:
 `.agent/docs/research/2026-11-06_swe-and-hard-suites.md`.
 
+## Trend — a stored run read as its own bill (v842)
+
+A score cannot say whether the harness improved: a pass can cost 3x the calls, and the
+same tokens can hide a different number of duplicate best-of-N samples. Every sample now
+writes `session` (the ledger id) plus the ledger summary into `result.json`, and
+`trend.py` joins every stored sample back to `data/costs/<session>.json`:
+
+```bash
+python3 -m benchmarks.trend                       # every sample, oldest first
+python3 -m benchmarks.trend --arm longrun --since 2026-11-06T22:26   # before/after
+python3 -m benchmarks.trend --root .agent/BENCHMARKS/runs --arm openclaw
+```
+
+Per sample: calls, prompt/completion tokens, cache share, duplicate samples, USD and the
+source of the numbers — `ledger` (per-call rows read), `recorded` (what the driver stored
+at run time) or `no-ledger`. A sample with no ledger is reported as such, never as a free
+run; the cache share is printed blank rather than `0.0%` when there are no per-call rows.
+
 ## Safety
 
 `humaneval.check()` executes candidate code in-process — run it on a trusted or

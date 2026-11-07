@@ -42,6 +42,13 @@ class HarnessResult:
     duration_s: float = 0.0
     error: str = ""
     provenance: Dict[str, Any] = field(default_factory=dict)
+    # v842: WHERE the sample left its record. Without the id a stored result can
+    # only be described by its aggregate score — the per-call ledger (calls,
+    # cache hits, duplicate best-of-N samples) was unreachable, so no run could be
+    # compared with the next one. `usage` is that ledger's summary, read while the
+    # session still exists (benchmarks/trend.py joins the two).
+    session: str = ""
+    usage: Dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
