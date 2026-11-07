@@ -458,7 +458,17 @@ def preview(session, message=None, budget_tokens=DEFAULT_BUDGET, keep_recent=DEF
         sysp = server._system_prompt(sess)
     except Exception:  # noqa: BLE001 — a dry-run must never raise
         sysp = server.SYSTEM_PROMPT
-    msgs, stats = build(sysp, sess.get("messages", []), message,
+    # SL-6: the dry-run must measure the SAME text `assemble_turn` sends — a
+    # `/<skill>` token injects its SKILL.md into the real turn, so measuring the
+    # raw token made the preview report a prompt that is never sent.
+    eff_message = message
+    if message:
+        try:
+            from longrun.agent.agent import _apply_skill_slash
+            eff_message = _apply_skill_slash(message)
+        except Exception:  # noqa: BLE001 — a dry-run must never raise
+            eff_message = message
+    msgs, stats = build(sysp, sess.get("messages", []), eff_message,
                         budget_tokens, keep_recent, retrieve_memory=False)
     stats["system_prompt_tokens"] = count_tokens(sysp)
     # retrieval is reported separately so the check can observe memory hits

@@ -115,8 +115,8 @@ check("the old prompt()-based path attach is gone", 'prompt("file path to attach
 check("a searchable picker modal exists", 'id="pickModal"' in ui and "function openPick" in ui)
 check("workspace files open a picker (not the editor)",
       "function openFsPicker" in ui and "/api/fs/list?" in ui)
-check("skills open a picker that inserts /<name>",
-      "function openSkillPicker" in ui and '"/api/skills"' in ui)
+check("skills open the ONE slash menu that inserts /<name> (SL-6: no modal)",
+      "function openSkillMenu" in ui and '"/api/skills"' in ui)
 check("paste-text uses a modal, not prompt()", 'id="textModal"' in ui
       and "function openTextModal" in ui and 'prompt("paste the text' not in ui)
 check("the + menu offers Attach files / Workspace / Paste / Commands / Skill",

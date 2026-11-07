@@ -3034,39 +3034,70 @@ def _improvement_pass(sess, message, answer, used_tools, work_steps, model, meta
         pass
 
 
+#: SL-6: `/<name>` is resolved ANYWHERE in the message, not only at position 0.
+#: The composer's skill menu INSERTS the token into the text ("pick one to insert
+#: /<name> into the message"), so the leading-only rule silently dropped the skill
+#: the operator had just picked (live: "… with the /scientist-world , then propose"
+#: reached the model as plain prose). A UI command is not a skill and stays as
+#: written; an unknown token is prose and is never touched.
+_SKILL_SLASH_RE = re.compile(r"(^|\s)/([A-Za-z0-9_.\-]+)")
+_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact"}
+
+
 def _apply_skill_slash(message):
-    """JAG-109: `/name rest` → injects the SKILL.md into the turn's prompt.
+    """JAG-109: `/<name>` → injects each REAL skill's SKILL.md into the prompt.
 
     It does not modify the saved history (stays `/name rest`); the injection is
-    transient and applies only to this turn. `/goal` is untouched.
+    transient and applies only to this turn. Every resolved token is consumed
+    inside the user text while its activation block is prepended, so a skill named
+    mid-message works exactly like a leading one.
     """
-    if not message or not message.startswith("/"):
-        return message
-    token, _, rest = message[1:].partition(" ")
-    token = token.strip().lower()
-    if not token or token == "goal":
+    if not message or "/" not in message:
         return message
     try:
         from longrun.memory import skills as skills_mod
-        sk = skills_mod.get_skill(token)
     except Exception:  # noqa: BLE001 — the injection must never break a turn
         return message
-    if not sk:
+    found, seen = [], set()
+
+    def _resolve(m):
+        token = m.group(2)
+        if token.lower() in _UI_SLASH_TOKENS:
+            return m.group(0)              # a UI command, not a skill
+        try:
+            sk = skills_mod.get_skill(token)   # case-insensitive (SL-6)
+        except Exception:  # noqa: BLE001
+            return m.group(0)
+        if not sk:
+            return m.group(0)              # unknown token = prose
+        key = str(sk.get("name") or token).lower()
+        if key not in seen:
+            seen.add(key)
+            found.append(sk)
+        # consume the token AND the whitespace that introduced it; a line break
+        # is kept so the message's own shape survives.
+        return "\n" if m.group(1) == "\n" else ""
+
+    rest = _SKILL_SLASH_RE.sub(_resolve, message)
+    if not found:
         return message
-    body = (sk.get("content") or "")[:20000]
-    rel = sk.get("path") or ""
-    skill_dir = (os.path.dirname(os.path.abspath(os.path.join(REPO, rel)))
-                 if rel else "")
-    hint = ""
-    if skill_dir:
-        hint = (
-            "SKILL_DIR (absolute path of this skill \u2014 use it as the skill ROOT; "
-            "replace ${CLAUDE_SKILL_DIR} / ${SKILL_DIR} / $SKILL_DIR with it, and "
-            "resolve every relative path in the instructions below against it). "
-            "DO NOT search the filesystem for the script: it is right here.\n"
-            "SKILL_DIR: %s\n\n" % skill_dir)
-    return ("SKILL ACTIVATION \u2014 '%s' (follow these instructions for this turn)\n\n"
-            "%s%s\n\n---\nUSER: %s" % (token, hint, body, rest.strip()))
+    blocks = []
+    for sk in found:
+        body = (sk.get("content") or "")[:20000]
+        rel = sk.get("path") or ""
+        skill_dir = (os.path.dirname(os.path.abspath(os.path.join(REPO, rel)))
+                     if rel else "")
+        hint = ""
+        if skill_dir:
+            hint = (
+                "SKILL_DIR (absolute path of this skill \u2014 use it as the skill ROOT; "
+                "replace ${CLAUDE_SKILL_DIR} / ${SKILL_DIR} / $SKILL_DIR with it, and "
+                "resolve every relative path in the instructions below against it). "
+                "DO NOT search the filesystem for the script: it is right here.\n"
+                "SKILL_DIR: %s\n\n" % skill_dir)
+        blocks.append("SKILL ACTIVATION \u2014 '%s' (follow these instructions for this turn)\n\n"
+                      "%s%s" % (sk.get("name") or "skill", hint, body))
+    return "\n\n".join(blocks) + "\n\n---\nUSER: %s" % rest.strip()
 
 
 # JAG-417: image attachments. The composer serializes an image attachment as a

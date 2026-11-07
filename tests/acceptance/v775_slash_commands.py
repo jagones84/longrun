@@ -24,6 +24,9 @@ Contract:
      a REAL skill with that name still wins (the server's own rule);
   F) the lies are gone: no second dispatch chain, no chip tooltip describing an
      action the command does not perform.
+  G) SL-6: the skill catalogue is the SAME inline menu (no modal), and the server
+     resolves a `/<name>` token ANYWHERE in the message, case-insensitively, so the
+     skill the operator picked actually reaches the model.
 
 Deterministic: source contracts only. No browser, no server, no model.
 """
@@ -44,7 +47,7 @@ def check(name, ok, detail=""):
 check("A1 the registry is declared once, keyed by id, with the three commands",
       "const SLASH_COMMANDS = [" in UI
       and '{ id: "goal", icon: "◎", insert: "/goal ",' in UI
-      and '{ id: "skills", aliases: ["skill"], icon: "🧩", insert: "",' in UI
+      and '{ id: "skills", aliases: ["skill"], icon: "🧩", insert: "/",' in UI
       and '{ id: "compact", icon: "🗜", insert: "",' in UI)
 check("A2 an id/alias index is built from that ONE table",
       "const SLASH_BY_ID = (() => {" in UI
@@ -53,8 +56,8 @@ check("A3 the registry sits BEFORE send() (no boot-order/temporal-dead-zone miss
       UI.index("const SLASH_COMMANDS = [") < UI.index("function send(text, display, atts) {"))
 
 # ---- B: /skills RUNS ---------------------------------------------------------
-check("B1 /skills carries a real action: the skill picker",
-      "run: () => openSkillPicker() }," in UI and "async function openSkillPicker()" in UI)
+check("B1 /skills carries a real action: the ONE inline skill menu",
+      "run: () => openSkillMenu() }," in UI and "function openSkillMenu()" in UI)
 check("B2 /compact carries a real action too", "run: () => compactNow() }," in UI)
 check("B3 the old no-op target is gone from the CODE (a comment may name it)",
       all('openPanel("skills")' not in ln.split("//")[0] for ln in UI.splitlines()),
@@ -73,7 +76,10 @@ check("C1 an EMPTY query matches every command (the submenu opener)",
       "function _slashCmdHits(q) {" in UI
       and "if (!q) return SLASH_COMMANDS.slice();" in UI)
 check("C2 with no query the SKILL catalogue is not ranked at all",
-      "const _matched = q ? _rankSkills(_skills, q) : [];" in UI)
+      "const _matched = q ? _rankSkills(_skills, q)" in UI
+      and ": (_slashSkillsOnly ? _skills.map(s => ({ s })) : []);" in UI)
+check("C2b the catalogue is shown only when a command opened it in skills mode",
+      "const cmds = _slashSkillsOnly ? [] : _slashCmdHits(q);" in UI)
 check("C3 a non-empty query still searches the WHOLE catalogue (JAG-465 kept)",
       "const _SLASH_CAP = 60;" in UI and "const hits = _matched.slice(0, _SLASH_CAP).map(x => x.s);" in UI)
 
@@ -103,6 +109,37 @@ check("F2 the false chip tooltip is gone",
       "opens the Skills panel (pick from the / menu)" not in UI)
 check("F3 the + menu prints the canonical spelling",
       '🧩 Skills…<span class="k">/skills</span>' in UI)
+
+# ---- G: SL-6 — the skill reaches the agent, and one menu -------------------
+# The catalogue used to open `openPick(...)`: a MODAL, i.e. a second surface for a
+# choice every other command makes in the inline menu (operator: "different artwork
+# when pass from the msg box"). And the server resolved `/<name>` only at position
+# 0, while the menu INSERTS the token into the text — so a picked skill mid-message
+# reached the model as plain prose (live session 7c447d13fd61: "… with the
+# /scientist-world , then propose").
+AGENT = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
+SKILLS = open(os.path.join(REPO, "src", "longrun", "memory", "skills.py"), encoding="utf-8").read()
+CTX = open(os.path.join(REPO, "src", "longrun", "model", "context_engine.py"), encoding="utf-8").read()
+check("G1 the skills command opens the SAME inline menu, no modal",
+      "function openSkillMenu()" in UI and "openSkillPicker" not in UI
+      and "openPick(\"🧩 Skill\"" not in UI)
+check("G2 /skills seeds the slash token and switches the menu to skills mode",
+      'id: "skills", aliases: ["skill"], icon: "🧩", insert: "/",' in UI
+      and "_slashSkillsOnly = true;" in UI)
+check("G3 skills mode lists the catalogue with no query (the submenu opener)",
+      "const cmds = _slashSkillsOnly ? [] : _slashCmdHits(q);" in UI
+      and ": (_slashSkillsOnly ? _skills.map(s => ({ s })) : []);" in UI)
+check("G4 the server resolves /<name> ANYWHERE in the message, not only at 0",
+      "_SKILL_SLASH_RE = re.compile(" in AGENT
+      and "rest = _SKILL_SLASH_RE.sub(_resolve, message)" in AGENT
+      and "if not message or \"/\" not in message:" in AGENT)
+check("G5 a UI command is never mistaken for a skill",
+      '_UI_SLASH_TOKENS = {"goal", "skills", "skill", "compact"}' in AGENT)
+check("G6 the skill lookup is case-insensitive",
+      'wanted = str(name or "").strip().lower()' in SKILLS
+      and 'if str(s["name"]).lower() == wanted:' in SKILLS)
+check("G7 the context preview measures the SAME text the turn sends",
+      "_apply_skill_slash(message)" in CTX)
 
 print("\n---\nv775: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

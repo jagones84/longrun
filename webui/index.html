@@ -5666,7 +5666,7 @@ function _plusAction(a) {
     try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
     inp.focus(); inp.dispatchEvent(new Event("input"));
   } else if (a === "skills") {
-    openSkillPicker();
+    openSkillMenu();
   }
 }
 $("plusBtn").onclick = (e) => { e.stopPropagation(); togglePlus(); };
@@ -5804,24 +5804,31 @@ async function openFsPicker(path) {
   }, { kind: "any", base: (d && d.path) || "" });
 }
 
-/* Skill picker — list the skills so one can be attached to the message. */
-async function openSkillPicker() {
-  let skills = _skillsCache;
-  if (!skills.length) {
-    try { const d = await api("GET", "/api/skills"); skills = d.skills || []; _skillsCache = skills; } catch (e) { skills = []; }
+/* SL-6: the skill catalogue is the SAME inline `/` menu every other command uses.
+   It used to open `openPick(...)` — a separate modal window, i.e. two surfaces for
+   one choice (and the operator reported it: "different artwork"). `/skills` now
+   leaves a bare `/` token in the composer and opens THIS menu in skills mode, so
+   the anatomy, the keys (↑/↓/Tab/Enter/Esc) and the insertion are one object. */
+let _slashSkillsOnly = false;
+function openSkillMenu() {
+  const inp = $("inp"); if (!inp) return;
+  const v = inp.value || "";
+  const caret = (inp.selectionStart == null) ? v.length : inp.selectionStart;
+  // The command's own token was already replaced by "/" (its `insert`); a direct
+  // call (the + menu) has none, so seed one where the caret is. Either way the ONE
+  // token scanner in skillsAutocomplete() must find where the choice will be written.
+  if (!/(^|\s)\/$/.test(v.slice(0, caret))) {
+    // after a word the token needs its leading space, or the JAG-513 scanner
+    // (which only accepts a "/" at the start or after whitespace) sees no token.
+    const before = v.slice(0, caret);
+    const sep = (!caret || /\s$/.test(before)) ? "" : " ";
+    inp.value = before + sep + "/" + v.slice(caret);
+    try { inp.setSelectionRange(caret + sep.length + 1, caret + sep.length + 1); } catch (_) {}
   }
-  // 2026-11-01: local/global is a SHAPE (filled = local, hollow = global), not a
-  // colour emoji — the same vocabulary as every other status dot in the shell.
-  const items = skills.map(s => ({ icon: s.local ? "●" : "○", label: s.name,
-                                   sub: s.category || s.title || "", _name: s.name }));
-  openPick("🧩 Skill", "pick one to insert  /<name>  into the message", items, (it) => {
-    if (!it || !it._name) return;
-    const inp = $("inp");
-    inp.value = (inp.value.replace(/\s*$/, " ") + "/" + it._name + " ").replace(/^\s+/, "");
-    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (_) {}
-    inp.focus(); inp.dispatchEvent(new Event("input"));
-    toast("skill /" + it._name + " inserted", "ok");
-  });
+  _slashSkillsOnly = true;
+  inp.focus();
+  skillsAutocomplete();
+  _renderCmdChips();
 }
 
 /* Paste-text modal. */
@@ -6050,9 +6057,9 @@ function _bindAttachmentChips(root) {
 const SLASH_COMMANDS = [
   { id: "goal", icon: "◎", insert: "/goal ",
     hint: "run until evidence-backed completion; pauses on blocker, error, Stop, or a configured safety/policy stop" },
-  { id: "skills", aliases: ["skill"], icon: "🧩", insert: "",
-    hint: "open the skill picker — the chosen /<name> lands in the message",
-    run: () => openSkillPicker() },
+  { id: "skills", aliases: ["skill"], icon: "🧩", insert: "/",
+    hint: "list the skills in this menu — the choice lands as /<name> in the message",
+    run: () => openSkillMenu() },
   { id: "compact", icon: "🗜", insert: "",
     hint: "compact this session's context now",
     run: () => compactNow() },
@@ -13408,7 +13415,7 @@ function skillsAutocomplete() {
                        upto.startsWith("/") ? 0 : -1);
   const tokenStart = hit < 0 ? -1 : (upto.charAt(hit) === "/" ? hit : hit + 1);
   const raw = tokenStart < 0 ? "" : upto.slice(tokenStart + 1);
-  if (tokenStart < 0 || /[\s]/.test(raw)) { box.hidden = true; return; }
+  if (tokenStart < 0 || /[\s]/.test(raw)) { box.hidden = true; _slashSkillsOnly = false; return; }
   // Replacing the TOKEN (not the whole input) keeps the rest of the message.
   const _apply = (text) => {
     const before = v.slice(0, tokenStart), after = v.slice(caret);
@@ -13416,10 +13423,16 @@ function skillsAutocomplete() {
     const pos = (before + text).length;
     try { inp.setSelectionRange(pos, pos); } catch (_) {}
     box.hidden = true; inp.focus();
-    _slashItems = []; _slashHi = 0;
+    _slashItems = []; _slashHi = 0; _slashSkillsOnly = false;
+    // the value changed WITHOUT an input event, so the composer chips would keep
+    // showing the token that was just replaced (a stale "/sk" pill).
+    _renderCmdChips(); refreshSendBtn();
   };
   const q = raw.toLowerCase();
-  const cmds = _slashCmdHits(q);
+  // SL-6: `/skills` opens the SAME menu restricted to the catalogue (the "submenu
+  // opener"), so with no query yet the skills ARE listed — that is what the command
+  // promises; a plain "/" still opens the COMMAND menu only (SL-2).
+  const cmds = _slashSkillsOnly ? [] : _slashCmdHits(q);
   // JAG-465: the picker only ever offered the first EIGHT skills whose NAME started
   // with the query, so with 174 installed skills most of them were unreachable from
   // `/` (the operator counted 30 shown out of 174). Search the WHOLE catalogue — by
@@ -13428,11 +13441,12 @@ function skillsAutocomplete() {
   // SL-2: with NO query the catalogue is NOT dumped — "/" alone opens the COMMAND
   // menu (the submenu opener); skills appear the moment the query filters them.
   const _skills = _skillsCache || [];
-  const _matched = q ? _rankSkills(_skills, q) : [];
+  const _matched = q ? _rankSkills(_skills, q)
+                     : (_slashSkillsOnly ? _skills.map(s => ({ s })) : []);
   const _SLASH_CAP = 60;
   const hits = _matched.slice(0, _SLASH_CAP).map(x => x.s);
   const _more = Math.max(0, _matched.length - hits.length);
-  if (!cmds.length && !hits.length) { box.hidden = true; return; }
+  if (!cmds.length && !hits.length) { box.hidden = true; _slashSkillsOnly = false; return; }
   box.innerHTML = "";
   const addRow = (label, hint, onPick, onComplete) => {
     const li = document.createElement("div");
@@ -17418,7 +17432,7 @@ $("inp").addEventListener("keydown", e => {
     // the keystroke can never both pick and send. Shift+Enter still inserts a newline.
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const it = _slashItems[_slashHi]; if (it) it.pick(); return; }
   }
-  if (e.key === "Escape" && menu) menu.hidden = true;
+  if (e.key === "Escape" && menu) { menu.hidden = true; _slashSkillsOnly = false; }
 });
 /* JAG-415: the composer textarea auto-grows with its content up to 160px, then
    scrolls. Reset to auto first so it can also SHRINK when text is deleted. */

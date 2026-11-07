@@ -470,9 +470,18 @@ def remove(name):
 
 
 def get_skill(name):
-    """Full SKILL.md content for a skill (matched by directory name)."""
+    """Full SKILL.md content for a skill (matched by directory name).
+
+    SL-6: the match is CASE-INSENSITIVE — the composer writes `/DirStat_Skill`
+    from the installed name while `/apply_skill_slash` lowercases the token, and
+    an exact comparison made that (and any other mixed-case) skill unreachable
+    (`get_skill("dirstat_skill")` was None while the name existed).
+    """
+    wanted = str(name or "").strip().lower()
+    if not wanted:
+        return None
     for s in list_skills():
-        if s["name"] == name:
+        if str(s["name"]).lower() == wanted:
             p = s.get("abspath") or os.path.join(REPO, s["path"])
             with open(p, "r",
                       encoding="utf-8", errors="replace") as f:
