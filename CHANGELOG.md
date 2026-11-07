@@ -7,6 +7,20 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The UI is measured for accessibility, not assumed (`v851`).** axe-core 4.14.0, injected into the
+  running page, found five violations: the haze theme's muted text at 4.16:1 on a selected row,
+  `#runsBar` whose accessible name did not contain its visible text, a title-only `#qmode`, two
+  landmarks with the same name, and a scrollable session list that could not take focus. A second
+  live pass found two that exist only in a real transcript — a `role="button"` tool-card head that
+  CONTAINED the diff/open buttons (`nested-interactive`) and the diff/image viewers sitting outside
+  every landmark (`region`). All are fixed: `--dim` is `#a4b0c0` (4.67:1 on a selected row),
+  timestamps composite at 0.9 (4.58:1 in the worst theme), the tool-card disclosure is a native
+  `<button>` (so the action buttons are its siblings), and the viewers are named regions. 49 of 114
+  static form controls had no accessible name — a tag regex said 130 and then 93, because it cannot
+  see `<label>text <input></label>`; `v851_ui_a11y_gate` is the deterministic half (names, icon
+  buttons, the four daily surfaces, and the contrast arithmetic for all 8 themes). Evidence:
+  `.agent/docs/research/2026-11-07_webui-a11y/axe.json` (violations 5 → 0; `incomplete` is reported,
+  never counted as a pass).
 - **The harness audits its own scaffolding (lot H, `v844`…`v850`).** Six read-only reports now say
   whether the rules, the skills, the tools and the permission gate still earn their place:
   `rules.audit()` finds contradictions, stale paths, duplicates and over-budget scopes with

@@ -16,6 +16,7 @@ Contract:
 Run: python tests/acceptance/v631_rail_toolbar.py
 """
 import os
+import re
 import sys
 import tempfile
 
@@ -78,9 +79,14 @@ check("A6 the running/finished chip is still there (with its counts)",
 # Control AGENTS table). It now opens that panel instead of toggling the checkbox
 # directly; #hide-empty stays the rail's effective hide-empty value and the
 # pressed state still reads as a filled funnel.
+# v851 (accessibility): the same input gained an aria-label, so the pin matches the
+# ELEMENT and asserts it is a hidden checkbox — a naming pass is not a lost control.
+_HIDE_EMPTY = re.search(r'<input\b[^>]*\bid="hide-empty"[^>]*>', UI)
+_HIDE_EMPTY_TAG = _HIDE_EMPTY.group(0) if _HIDE_EMPTY else ""
 check("A7 the funnel is the shared filter+sort control (state visible)",
       'id="hideEmptyBtn" aria-pressed="false"' in UI
-      and '<input type="checkbox" id="hide-empty" hidden>' in UI
+      and 'type="checkbox"' in _HIDE_EMPTY_TAG
+      and re.search(r"(?:^|\s)hidden(?:\s|/?>|$)", _HIDE_EMPTY_TAG)
       and 'aria-pressed="true"] svg path { fill: currentColor; }' in UI
       and 'FilterSort.mount({' in UI
       and 'cb.checked = !!st.hideEmpty;' in UI)

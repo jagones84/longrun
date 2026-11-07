@@ -22,6 +22,7 @@ Contract:
 Run: python tests/acceptance/v752_filtersort.py
 """
 import os
+import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -69,8 +70,13 @@ check("A5 one mount per page (no second copy of the control)",
 check("B1 the rail icon opens the shared panel (id + pressed state kept)",
       'id="hideEmptyBtn" aria-pressed="false"' in UI
       and 'key: "sessions", button: btn' in UI)
+# v851 (accessibility): the same input gained an aria-label; pin the ELEMENT and
+# assert it is a hidden checkbox instead of one exact attribute order.
+_HIDE_EMPTY = re.search(r'<input\b[^>]*\bid="hide-empty"[^>]*>', UI)
+_HIDE_EMPTY_TAG = _HIDE_EMPTY.group(0) if _HIDE_EMPTY else ""
 check("B2 the rail keeps #hide-empty as its effective hide-empty value",
-      '<input type="checkbox" id="hide-empty" hidden>' in UI
+      'type="checkbox"' in _HIDE_EMPTY_TAG
+      and re.search(r"(?:^|\s)hidden(?:\s|/?>|$)", _HIDE_EMPTY_TAG)
       and 'cb.checked = !!st.hideEmpty;' in UI
       and "const hideEmpty = $(\"hide-empty\") ? $(\"hide-empty\").checked : false;" in UI)
 check("B3 the rail applies team scope and running-only from the shared state",

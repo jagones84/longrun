@@ -236,6 +236,7 @@ function buildDock() {
 
   const dock = document.createElement("aside");
   dock.id = "editorDock";
+  dock.setAttribute("aria-label", "editor");
   dock.hidden = true;
   dock.innerHTML = `
     <div class="ed-resize"></div>
