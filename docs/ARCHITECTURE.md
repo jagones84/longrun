@@ -135,7 +135,7 @@ tasks with the same ranker the tool uses (`GET /api/skills`); `approvals.stats()
 also carries the accept rate, the median time-to-decision and the per-tool
 rubber-stamping. `benchmarks/ablation.py` turns the last step into an experiment: two
 arms of ONE command that differ by exactly one file-backed layer (`rules`, `skills`,
-`hooks`), plus a `compare()` over the two stored run trees.
+`hooks`), executed by `run()` and compared by `compare()` over the two output trees.
 
 **Every other limit is config too** (2026-11-06). The third block, `config/tools.yaml`
 → `limits:`, holds the values that used to be `int(os.environ.get("LONGRUN_…", <literal>))`
