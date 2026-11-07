@@ -36,9 +36,6 @@
      * without this the <select> dropdown rendered with a WHITE background. */
     color-scheme: dark;
   }
-  /* the queue/steer picker next to "send" — dark popup, no white flash */
-  #qmode { color-scheme: inherit; }
-  #qmode option { background: var(--menubg); color: var(--txt); }
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
   /* 2026-10-31: browser surfaces belong to the design system — thin graphite
      scrollbars, copper selection/caret, one focus ring, tabular numerals. */
@@ -744,6 +741,9 @@
        it is 0 on desktop, where the composer is already the page's bottom edge. */
     padding: 10px 0 calc(10px + var(--sf-bottombar, 0px));
     background: var(--panel); border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+    /* the generic `aside` rule clips, but the rail's ⋯ popover opens OUTSIDE its 44px
+       column (to the left); the tool cluster scrolls on its own (`#toolsBar .tb-mid`) */
+    overflow: visible;
     z-index: 5; }
   /* RH-27 (operator, 2026-11-03): the rail has TWO levels. `.tb-mid` keeps the tool
      cluster vertically centred (its old position); `.tb-foot` is pinned to the rail's
@@ -751,9 +751,22 @@
      from the tools by a hairline — "stessa altezza del send button, separato dagli
      altri oggetti della sidebar". */
   #toolsBar .tb-mid { flex: 1 1 auto; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 6px; width: 100%; }
+    align-items: center; justify-content: safe center; gap: 6px; width: 100%;
+    min-height: 0; overflow-y: auto; }
+  /* 2026-11-07 (operator): "se vuoi organizzar e la sidebar in sezioni fai pure". The
+     rail's controls are two kinds, so they are two SECTIONS with a hairline between:
+     the session's objects (editor, changes, approvals, notebook) above, the VIEW
+     controls (reload, reveal, expand/collapse, thoughts, title) below. One column
+     only — a rail never grows a second row. */
+  #toolsBar .tb-sec { display: flex; flex-direction: column; align-items: center;
+    gap: 6px; width: 100%; }
+  #toolsBar .tb-sec + .tb-sec { margin-top: 8px; padding-top: 10px;
+    border-top: 1px solid var(--line); }
   #toolsBar .tb-foot { flex: 0 0 auto; display: flex; flex-direction: column;
     align-items: center; gap: 6px; width: 100%; padding-top: 8px;
+    /* the ✨ + ⋯ stay at the rail's BOTTOM even when the session cluster is empty
+       (`[hidden]` removes the flexible tier, so the foot would otherwise ride up) */
+    margin-top: auto;
     border-top: 1px solid var(--line); }
   /* RH-27: the ✨ in the rail stacks over its state icon instead of sitting beside it. */
   #toolsBar .gen-bar { flex-direction: column; }
@@ -1082,17 +1095,23 @@
   #composerBar .cb-left, #composerBar .cb-right { display: flex; align-items: center;
     gap: 6px; flex-wrap: wrap; min-width: 0; }
   #composerBar .cb-right { margin-left: auto; justify-content: flex-end; gap: 4px; }
-  /* one uniform control height: the bar reads as a single toolbar, not mismatched pills */
-  #composerBar .cb-left > button, #composerBar .cb-left > select,
-  #composerBar .cb-right > button, #composerBar .cb-right .model-wrap > button,
-  #composerBar .more-wrap > button {
+  /* one uniform control height: the bar reads as a single toolbar, not mismatched pills.
+     2026-11-07 (operator): the queue/steer <select> is an ICON button with a popup —
+     the native picker needed ~60px to say one word ("il menu queue steer fallo a icona
+     così occupa meno spazio poi cliccando sopra esce menu queue e steer"). */
+  #composerBar .cb-left > button, #composerBar .qmode-wrap > button,
+  #composerBar .cb-right > button, #composerBar .cb-right .model-wrap > button {
     height: 34px; min-height: 34px; padding: 0 11px; border-radius: 10px;
     font-size: 12px; font-weight: 500; line-height: 1; display: inline-flex;
     align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
-  #composerBar .cb-left > button, #composerBar .cb-right > button,
-  #composerBar .more-wrap > button { flex: 0 0 auto; }
-  #composerBar .cb-left > select { flex: 0 0 auto; padding: 0 6px; background: transparent;
-    color: var(--txt); border: 1px solid var(--line); font-weight: 400; }
+  #composerBar .cb-left > button, #composerBar .qmode-wrap > button,
+  #composerBar .cb-right > button { flex: 0 0 auto; }
+  #composerBar .qmode-wrap { position: relative; display: flex; flex: 0 0 auto; }
+  #composerBar .qmode-wrap > button { padding: 0 9px; }
+  #composerBar .qmode-wrap svg { display: block; }
+  /* the `hidden` attribute is HTML-only: an SVG child needs its own rule, or BOTH
+     mode glyphs stay laid out and the icon button doubles in width */
+  #composerBar .qmode-wrap svg[hidden] { display: none; }
   /* JAG-424 / JAG-427: the bar stays ONE row — every control is auto-narrow, the model
      button is the only flexible one and shrinks toward a glyph before anything wraps. */
   #composerBar .cb-left, #composerBar .cb-right { flex-wrap: nowrap; }
@@ -1102,14 +1121,13 @@
   #composerBar .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* JAG-403j: the composer toolbar reads as ONE flat strip — the per-control frames
      (boxed ".ghost" borders) looked noisy. Only "send" keeps its button shape. */
-  #composerBar .cb-left > button, #composerBar .cb-right > button,
-  #composerBar .cb-right .model-wrap > button, #composerBar .more-wrap > button {
+  #composerBar .cb-left > button, #composerBar .qmode-wrap > button,
+  #composerBar .cb-right > button, #composerBar .cb-right .model-wrap > button {
     background: transparent; border: 0; box-shadow: none; color: var(--dim); }
-  #composerBar .cb-left > button:hover, #composerBar .cb-right > button:hover,
-  #composerBar .cb-right .model-wrap > button:hover, #composerBar .more-wrap > button:hover {
+  #composerBar .cb-left > button:hover, #composerBar .qmode-wrap > button:hover,
+  #composerBar .cb-right > button:hover,
+  #composerBar .cb-right .model-wrap > button:hover {
     color: var(--txt); background: rgba(127,127,127,.14); }
-  #composerBar .cb-left > select { border: 0; background: transparent; color: var(--dim); }
-  #composerBar .cb-left > select:hover { color: var(--txt); }
   /* JAG-416: send is a green CIRCULAR icon button (↑), Trae-style — icon only. */
   #composerBar #sendBtn { flex: 0 0 auto; width: 34px; height: 34px; min-width: 34px; padding: 0;
     border-radius: 50%; background: var(--ok); color: #05130b; font-size: 17px; font-weight: 800;
@@ -1149,24 +1167,33 @@
   @media (max-width: 1040px) {
     #composerBar .cb-right .model-wrap > button { max-width: 92px; min-width: 54px; }
     #composerBar .cb-left, #composerBar .cb-right { gap: 2px; }
-    #composerBar .cb-left > select { padding: 0 4px; }
   }
-  /* JAG-284: secondary actions live behind a "⋯" overflow menu so the toolbar stays
-     a single tidy row; the menu opens upward, right-aligned. */
-  #composerBar .more-wrap { position: relative; display: flex; flex: 0 0 auto; }
-  #moreMenu { position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 178px;
-    padding: 4px; z-index: 40; background: var(--menubg); }
-  /* JAG-396: no see-through menus — the slash popup uses .card, force it opaque. */
-  #slashMenu { background: var(--menubg); }
+  /* 2026-11-07 (operator): the ⋯ and its menu LEFT the composer for the tool rail's
+     FOOT — the row's horizontal space belongs to the message box, and the rail already
+     holds the composer-level controls (the ✨ sits directly above it). In a 44px rail a
+     popover opens to the LEFT of its own button. The queue/steer popup stays in the
+     composer and opens UP, like every other composer menu. */
+  #toolsBar .more-wrap { position: relative; display: flex; }
+  #moreMenu, #qmodeMenu { position: absolute; min-width: 178px; padding: 4px; z-index: 60;
+    background: var(--menubg); }
+  #moreMenu { right: calc(100% + 10px); bottom: 0; }
+  #qmodeMenu { left: 0; bottom: calc(100% + 8px); min-width: 132px; }
+  /* JAG-396: no see-through menus — these popups use .card, force them opaque. */
+  #slashMenu, #qmodeMenu { background: var(--menubg); }
   /* JAG-465: the picker now lists up to 60 catalogue matches — let the popup scroll. */
   #slashMenu { max-height: 46vh; overflow-y: auto; }
   .msg .xlink { margin-left: auto; }
   .msg .xlink + .copy { margin-left: 6px; }
   #slashMenu .slashrow.hl { background: var(--hl); outline: 1px solid var(--acc); }
-  #moreMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%; height: auto;
-    min-height: 0; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
-    background: transparent; color: var(--txt); font-size: 12px; font-weight: 500; }
-  #moreMenu .mi:hover { background: var(--hover); }
+  #moreMenu .mi, #qmodeMenu .mi { display: flex; align-items: center; gap: 8px; width: 100%;
+    height: auto; min-height: 0; text-align: left; padding: 8px 10px; border: 0;
+    border-radius: 8px; background: transparent; color: var(--txt); font-size: 12px;
+    font-weight: 500; justify-content: flex-start; white-space: nowrap; }
+  #moreMenu .mi svg, #qmodeMenu .mi svg { flex: 0 0 auto; color: var(--dim); }
+  #moreMenu .mi:hover, #qmodeMenu .mi:hover { background: var(--hover); }
+  /* the chosen delivery mode is a STATE, so it is a glyph, not a second colour */
+  #qmodeMenu .mi::after { content: ""; margin-left: auto; color: var(--acc); }
+  #qmodeMenu .mi[aria-checked="true"]::after { content: "✓"; }
   /* JAG-416: top-level section tabs (Session / Control) — the primary navigation.
      A quiet tab strip: the active section is marked by a copper rule, not a pill. */
   .topTabs { display: inline-flex; align-items: stretch; gap: 2px; padding: 0;
@@ -2055,7 +2082,6 @@
   .edge-handle[hidden] { display: none !important; }
   * { scrollbar-color: var(--scroll) transparent; }
   ::-webkit-scrollbar-thumb { background: var(--scroll); background-clip: padding-box; }
-  #qmode option { background: var(--bg2); color: var(--txt); }
   .model-btn { border-color: var(--menuline); background: var(--chipbg); }
   .model-btn:hover { background: var(--sel); }
   #modelMenu { background: var(--menubg); border-color: var(--menuline); }
@@ -2314,14 +2340,13 @@
   #composer #inp { background: transparent; border: 0; padding: 6px 6px 4px;
     min-height: 40px; }
   #composer #inp:focus { box-shadow: none; border: 0; }
-  #composerBar .cb-left > button, #composerBar .cb-right > button,
-  #composerBar .cb-right .model-wrap > button, #composerBar .more-wrap > button {
+  #composerBar .cb-left > button, #composerBar .qmode-wrap > button,
+  #composerBar .cb-right > button, #composerBar .cb-right .model-wrap > button {
     height: 32px; min-height: 32px; border-radius: var(--r-sm); }
   #composerBar #sendBtn { width: 34px; height: 34px; min-width: 34px;
     background: var(--acc); color: #1b1206; }
   #composerBar #sendBtn.stop { background: var(--err); color: #fff; border-radius: var(--r-sm); }
   #composerBar .cb-right > #micBtn { width: 36px; height: 36px; min-width: 36px; }
-  #composerBar .cb-left > select#qmode { height: 32px; color: var(--dim); font-size: 11.5px; }
   #attachRow { padding: 4px 4px 0; }
   .attchip, .chatatt { background: var(--hover); border-color: var(--line); }
   #goalBar { border-radius: var(--r-sm); }
@@ -2345,7 +2370,7 @@
   .lnk { color: var(--acc); }
 
   /* --- menus, dialogs, settings ---------------------------------------- */
-  #plusMenu, #moreMenu, #modelMenu, .smodal, #newSessDlg, #rwDlg, #dirPicker,
+  #plusMenu, #moreMenu, #qmodeMenu, #modelMenu, .smodal, #newSessDlg, #rwDlg, #dirPicker,
   #diffView, #imgView, #mcpJsonWin .mj-card {
     background: var(--menubg); border: 1px solid var(--line-2);
     border-radius: 12px; box-shadow: var(--shadow-2); }
@@ -2366,7 +2391,7 @@
   .themecard:hover { border-color: var(--line-2); background: var(--panel); }
   .themecard.active { border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
   .smback, #nsBackdrop, #rwBackdrop, #dirBackdrop, #diffBackdrop, #imgBackdrop,
-  #palette, #qmode option { background: rgba(0,0,0,.6); }
+  #palette { background: rgba(0,0,0,.6); }
   #sfToast .sf-toast, .sf-toast, .done-toast { border-radius: 10px;
     border-color: var(--line-2); box-shadow: var(--shadow-2); }
   .edge-handle { border-color: var(--line-2); background: var(--panel2);
@@ -2690,6 +2715,13 @@
        /api/build fingerprint moves — show an in-place reload chip instead of
        looking stale (same watcher as the Control deck). -->
   <button class="ghost" id="buildChip" title="the server app changed — reload to run the new build" hidden>⇪ update</button>
+  <!-- 2026-11-07 (operator): "il gear di settings mettilo in ALTO nella GUI" — the
+       gear returns to the topbar (RH-27 had moved it to the rail's foot), at the far
+       right like a desktop IDE keeps it. -->
+  <button class="ghost" id="settingsBtn" title="settings" aria-label="settings" data-call="toggleSettings">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+  </button>
 </header>
 <div id="controlView" aria-hidden="true"><iframe id="controlFrame" title="Control deck"></iframe></div>
 <button class="edge-handle" id="handle-left" type="button"
@@ -2823,23 +2855,29 @@
       <div id="composerBar">
         <div class="cb-left">
           <button class="ghost" id="plusBtn" title="attach a file · commands · skills">＋</button>
-          <select id="qmode" aria-label="queue or steer a message during a running turn" title="while a turn is running: queue (run it after this turn) or steer (inject it into the run now) — a STEER re-aims a running goal, a QUEUED message becomes the next turn of that goal">
-            <option value="queue">queue</option>
-            <option value="steer">steer</option>
-          </select>
+          <!-- 2026-11-07 (operator): the queue/steer picker is ONE icon button with a
+               two-item popup — the native <select> spent ~60px of the row to say one
+               word, and the row's horizontal space belongs to the message box. The
+               glyph IS the current mode (queue = a list that waits, steer = an aim),
+               so the state needs no sentence. -->
+          <div class="qmode-wrap">
+            <button class="ghost" id="qmodeBtn" aria-haspopup="menu" aria-expanded="false"
+                    aria-label="delivery mode: queue" title="delivery mode: QUEUE — a message typed while a turn runs waits and becomes the next turn">
+              <svg id="qmodeIcoQueue" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6h8M3.5 11h8M3.5 16h5"/><path d="M17 9.5v8"/><path d="m13.8 14.3 3.2 3.2 3.2-3.2"/></svg>
+              <svg id="qmodeIcoSteer" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2"/><path d="M12 2.4v3M12 18.6v3M2.4 12h3M18.6 12h3"/></svg>
+            </button>
+            <div id="qmodeMenu" class="card" role="menu" aria-label="delivery mode" hidden>
+              <button class="ghost mi" role="menuitemradio" aria-checked="true" data-qmode="queue"
+                      title="queue: the message waits and runs as the next turn of this goal">queue</button>
+              <button class="ghost mi" role="menuitemradio" aria-checked="false" data-qmode="steer"
+                      title="steer: inject the message into the RUNNING turn now">steer</button>
+            </div>
+          </div>
         </div>
         <div class="cb-right">
           <div class="model-wrap">
           <button class="ghost model-btn" id="model-btn" title="choose the LLM for this chat"><span class="mname">model</span> <span class="mc">▾</span></button>
           <div id="modelMenu" hidden></div>
-          </div>
-          <div class="more-wrap">
-            <button class="ghost" id="moreBtn" title="more actions" aria-haspopup="true" aria-expanded="false">⋯</button>
-            <div id="moreMenu" class="card" hidden>
-              <button class="ghost mi" data-call="compactNow" title="summarize this session now to free up context">🗜 compact</button>
-              <button class="ghost mi" data-call="clearSession" title="reset this session: wipe chat history + task list">↺ reset session</button>
-              <button class="ghost mi" data-call="newSession" title="start a new session">＋ new session</button>
-            </div>
           </div>
           <button class="ghost" id="micBtn" title="voice input (Alt+X) — browser speech-to-text (Chrome/Edge; needs a microphone + permission); stops after 3s of silence" aria-label="voice input"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14.5a3.2 3.2 0 0 0 3.2-3.2V6.2a3.2 3.2 0 0 0-6.4 0v5.1A3.2 3.2 0 0 0 12 14.5Z"/><path d="M6.4 11.2a5.6 5.6 0 0 0 11.2 0"/><path d="M12 16.8V20"/></svg></button>
           <button id="sendBtn" data-call="sendOrStop" title="send (Enter — Shift+Enter for a newline)" aria-label="send">↑</button>
@@ -2863,6 +2901,9 @@
          It shipped with four COLOUR EMOJI (a book, a target, a brain, a tag) and two
          box-drawing glyphs, so the column read as a sticker sheet, not one instrument. -->
     <div class="tb-mid">
+    <!-- 2026-11-07 (operator): section 1 — the session's OBJECTS (what this session
+         produced or is waiting for). -->
+    <div class="tb-sec">
     <!-- 2026-11-03 (operator): "open editor shall be in the sidebar (icon)". The dock
          was reachable only from the composer's ⋯ menu and Settings ▸ Workspace — two
          clicks away from the surface it opens next to. It is a session-scoped tool like
@@ -2884,6 +2925,10 @@
     <button class="ghost" id="kbSessionBtn" data-call="openSessionNotebook"
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
             aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>
+    </div>
+    <!-- 2026-11-07 (operator): section 2 — the VIEW controls (how the transcript is
+         read), separated from the objects by one hairline. -->
+    <div class="tb-sec">
     <button class="ghost" type="button" id="chatReloadBtn"
             title="refresh this chat and rebuild its transcript in chronological order"
             aria-label="refresh this chat"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.4V9h-4.6"/></svg></button>
@@ -2895,16 +2940,28 @@
     <button class="ghost" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3 21 21"/><path d="M10.7 6.3A9.8 9.8 0 0 1 21.4 12a14 14 0 0 1-2.3 3"/><path d="M6.4 8A14 14 0 0 0 2.6 12 9.8 9.8 0 0 0 15.1 16.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.2A1.2 1.2 0 0 1 4 3h7.8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.4Z"/><circle cx="7.6" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
     </div>
-    <!-- RH-27 (operator, 2026-11-03): the rail's FOOT pins the two composer-level
-         controls — settings and the ✨ AI draft — level with the send button. The gear
-         used to sit in the topbar and the ✨ in the composer row, where it ate the
-         horizontal space the message box needed. The ✨ is mounted here by
-         `mountStaticSparkles()` (the `chat.prompt` surface). -->
+    </div>
+    <!-- RH-27 (operator, 2026-11-03): the rail's FOOT pins the composer-level controls
+         level with the send button.
+
+         2026-11-07 (operator): "i tre puntini devono stare in basso nella sidebar, il
+         autogenerate portalo sempre nella sidebar appena sopra". The ⋯ and its menu
+         moved here FROM the composer — the row's width belongs to the message box — and
+         the ✨ is mounted directly ABOVE it by `mountStaticSparkles()`. The settings gear
+         left the foot for the topbar ("il gear di settings mettilo in ALTO nella GUI"). -->
     <div class="tb-foot">
-    <button class="ghost" id="settingsBtn" title="settings" aria-label="settings" data-call="toggleSettings">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-    </button>
+      <div class="more-wrap">
+        <button class="ghost" id="moreBtn" title="more actions: compact · reset · new session"
+                aria-haspopup="true" aria-expanded="false" aria-label="more actions"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><circle cx="5.2" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.8" cy="12" r="1.6"/></svg></button>
+        <div id="moreMenu" class="card" hidden>
+          <button class="ghost mi" data-call="compactNow" aria-label="compact"
+                  title="summarize this session now to free up context"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4v6H4"/><path d="M14 20v-6h6"/><path d="m10 10-6-6M14 14l6 6"/></svg>compact</button>
+          <button class="ghost mi" data-call="clearSession" aria-label="reset session"
+                  title="reset this session: wipe chat history + task list"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.6-5.9"/><path d="M4 4.4V9h4.6"/></svg>reset session</button>
+          <button class="ghost mi" data-call="newSession" aria-label="new session"
+                  title="start a new session"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>new session</button>
+        </div>
+      </div>
     </div>
   </aside>
   <div class="resizer" id="resize-right" title="drag to resize"></div>
@@ -5399,7 +5456,7 @@ function _syncAttachmentBusyUI() {
     inp.placeholder = busy ? "Indexing attachments into this session's Knowledge…"
                            : inp.dataset.readyPlaceholder;
   }
-  ["plusBtn", "attachInput", "micBtn", "qmode"].forEach(id => {
+  ["plusBtn", "attachInput", "micBtn", "qmodeBtn"].forEach(id => {
     const el = $(id); if (el) el.disabled = busy;
   });
   refreshSendBtn();
@@ -14382,9 +14439,12 @@ async function mountStaticSparkles() {
     //  the name when the field ALREADY holds text (RH-29: optimize the draft)]
     // RH-27 (operator, 2026-11-03): the chat ✨ moved OUT of the composer row into the
     // tool rail's FOOT, level with the send button — it ate the horizontal space the
-    // message box needed. The gear shares that foot (see #toolsBar .tb-foot) and sits
-    // BELOW the ✨ (operator follow-up), so the ✨ is inserted BEFORE #settingsBtn.
-    ["chat.prompt", "#inp", "#toolsBar .tb-foot", "#settingsBtn",
+    // message box needed.
+    // 2026-11-07 (operator): "il autogenerate portalo sempre nella sidebar appena
+    // sopra" [i tre puntini] — the ✨ is inserted BEFORE the ⋯ wrapper, so the ⋯ stays
+    // the last control of the rail's foot. The anchor is the wrapper itself: the ✨'s
+    // host and its `before` target must be PARENT and CHILD, or insertBefore throws.
+    ["chat.prompt", "#inp", "#toolsBar .tb-foot", ".more-wrap",
      "optimize what I typed — same intent, clearer and more complete"],
     ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint", ""],
     ["plan.input", "#planInp", null, null, ""],
@@ -17189,9 +17249,49 @@ $("railCollapseAll").onclick = () => _setAllGroups(true);
 $("railExpandAll").onclick = () => _setAllGroups(false);
 $("inspCollapseAll").onclick = () => _setAllInspector(false);
 $("inspExpandAll").onclick = () => _setAllInspector(true);
-{ const _qm = $("qmode");
-  if (_qm) { _qm.value = localStorage.getItem("sf_qmode") || "queue";
-    _qm.onchange = () => localStorage.setItem("sf_qmode", _qm.value); } }
+/* 2026-11-07 (operator): the queue/steer mode is ONE icon button with a two-item
+   popup — the native <select> spent ~60px of the composer row to say one word. The
+   glyph IS the current mode (queue = a list that waits, steer = an aim), the popup is
+   the choice, and `sf_qmode` stays the ONE stored value every send path reads. */
+function _qmode() { return localStorage.getItem("sf_qmode") || "queue"; }
+function _qmodePaint() {
+  const m = _qmode(), b = $("qmodeBtn"); if (!b) return;
+  const steer = m === "steer";
+  b.setAttribute("aria-label", "delivery mode: " + m + " — click to choose queue or steer");
+  b.title = steer
+    ? "delivery mode: STEER — a message typed while a turn runs is injected into it now"
+    : "delivery mode: QUEUE — a message typed while a turn runs waits and becomes the next turn";
+  const q = $("qmodeIcoQueue"), s = $("qmodeIcoSteer");
+  if (q) q.hidden = steer;
+  if (s) s.hidden = !steer;
+  const menu = $("qmodeMenu");
+  if (menu) menu.querySelectorAll("[data-qmode]").forEach(el =>
+    el.setAttribute("aria-checked", String(el.dataset.qmode === m)));
+}
+function _qmodeToggle(open) {
+  const m = $("qmodeMenu"), b = $("qmodeBtn"); if (!m || !b) return;
+  const show = (open === undefined) ? m.hidden : !!open;
+  m.hidden = !show;
+  b.setAttribute("aria-expanded", String(show));
+  if (show) { const on = m.querySelector('[aria-checked="true"]'); if (on) on.focus(); }
+}
+{ const _b = $("qmodeBtn"), _m = $("qmodeMenu");
+  if (_b && _m) {
+    _b.onclick = (e) => { e.stopPropagation(); _qmodeToggle(); };
+    _m.addEventListener("click", (e) => {
+      const it = e.target.closest && e.target.closest("[data-qmode]");
+      if (!it) return;
+      localStorage.setItem("sf_qmode", it.dataset.qmode);
+      _qmodePaint(); _qmodeToggle(false); _b.focus();
+    });
+    _m.onkeydown = (e) => { if (e.key === "Escape") { e.stopPropagation(); _qmodeToggle(false); _b.focus(); } };
+    document.addEventListener("click", (e) => {
+      if (_m.hidden || !e.target.closest) return;
+      if (e.target.closest("#qmodeMenu") || e.target.closest("#qmodeBtn")) return;
+      _qmodeToggle(false);
+    });
+    _qmodePaint();
+  } }
 /* JAG-283: gradual app zoom. The browser's native Ctrl+± steps are coarse
    (100 → 110 → 125 …), so Ctrl+± / Ctrl+0 and Ctrl+wheel are intercepted and the
    page is scaled in 5% steps instead, and the level is remembered. */

@@ -7,8 +7,8 @@ select with glyph prefixes, a model button showing a doubled provider
 
 Contract:
   A) The placeholder is one word; the shortcut stays in the send button tooltip.
-  B) `#qmode` options are `queue` / `steer` (values and the localStorage wiring
-     unchanged — only the glyph prefix left).
+  B) the queue/steer mode is ONE icon button with a two-item popup (the native
+     <select> and its glyph prefixes are gone; `sf_qmode` is still the single value).
   C) `_modelShort` shows the LAST segment of a `provider:id` or `provider/model`
      ref; the full ref is reachable in the button tooltip.
   D) One tighter padding/gap for the whole footer.
@@ -53,14 +53,16 @@ check("A2 the shortcut is still documented on the send button",
       # v680: Enter sends; Shift+Enter (or Ctrl/Cmd+Enter) inserts a newline.
       'title="send (Enter — Shift+Enter for a newline)"' in UI)
 
-# ---- B. queue mode picker -----------------------------------------------------
-check("B1 the options carry no glyph prefix",
-      '<option value="queue">queue</option>' in UI
-      and '<option value="steer">steer</option>' in UI
-      and "＋ queue</option>" not in UI)
-check("B2 the value wiring is untouched",
+# ---- B: queue mode picker -----------------------------------------------------
+check("B1 the mode picker is an icon button + a two-item popup (no native select)",
+      # 2026-11-07 (operator): "il menu queue steer fallo a icona così occupa meno
+      # spazio poi cliccando sopra esce menu queue e steer" — v867 pins the anatomy.
+      'id="qmodeBtn"' in UI and 'id="qmodeMenu"' in UI
+      and 'data-qmode="queue"' in UI and 'data-qmode="steer"' in UI
+      and '<select id="qmode"' not in UI)
+check("B2 the value wiring is untouched (`sf_qmode` stays the one stored value)",
       'localStorage.getItem("sf_qmode") || "queue"' in UI
-      and '_qm.onchange = () => localStorage.setItem("sf_qmode", _qm.value);' in UI)
+      and 'localStorage.setItem("sf_qmode", it.dataset.qmode);' in UI)
 
 # ---- C. model label ----------------------------------------------------------
 check("C1 the model label shows the last segment of either ref shape",

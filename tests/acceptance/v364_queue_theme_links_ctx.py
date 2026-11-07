@@ -74,8 +74,12 @@ check("B4 no hardcoded status TEXT colour survives",
 check("B5 the code surfaces resolve through tokens",
       ".bubble.md-content code { background: var(--chipbg)" in HTML
       and ".bubble.md-content pre { background: var(--bg-3)" in HTML, "")
-check("B6 the queue dropdown options use tokens",
-      "#qmode option { background: var(--menubg); color: var(--txt); }" in HTML, "")
+check("B6 the queue-mode popup uses tokens",
+      # 2026-11-07 (operator): the native `#qmode` <select> is now the icon button +
+      # `#qmodeMenu` popup — same rule, one menu instead of native options.
+      "#moreMenu .mi, #qmodeMenu .mi { display: flex" in HTML
+      and "#moreMenu, #qmodeMenu { position: absolute; min-width: 178px; padding: 4px; z-index: 60;"
+      in HTML, "")
 check("B7 the ghost/copy hover borders follow the accent",
       "button.ghost:hover { color: var(--txt); border-color: var(--acc); }" in HTML
       and ".msg .copy:hover { color: var(--txt); border-color: var(--acc); }" in HTML, "")

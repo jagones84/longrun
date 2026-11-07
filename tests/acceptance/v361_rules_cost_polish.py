@@ -83,7 +83,10 @@ check("C2 the polish guards hold",
       "#nowbar[hidden] { display: none; }" in HTML and "a.ghost {" in HTML
       and "button:disabled {" in HTML and "#dotrail button:focus-visible" in HTML, "")
 check("C3 the undefined border token and the forced-dark popup are gone",
-      "var(--line2)" not in HTML and "#qmode { color-scheme: inherit; }" in HTML, "")
+      # 2026-11-07 (operator): the composer's native <select> (the "forced-dark popup"
+      # above) became an icon button + `#qmodeMenu`, which carries its own opaque token.
+      "var(--line2)" not in HTML
+      and "#slashMenu, #qmodeMenu { background: var(--menubg); }" in HTML, "")
 check("C4 chat dots exclude delegated user turns",
       '.msg.user:not(.deleg)' in HTML and "only operator-authored prompts get dots" in HTML, "")
 _dot_rail = HTML.split("function buildDotRail()")[1].split("function _dotRailCur()")[0]

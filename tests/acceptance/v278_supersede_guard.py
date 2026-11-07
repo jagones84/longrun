@@ -112,7 +112,11 @@ check("the composer has a + attach menu",
       'id="plusMenu"' in ui and "function togglePlus" in ui)
 check("attachments render as chips + are built into a block",
       'id="attachRow"' in ui and "function _attachBlock" in ui)
-check("attachments are prepended to the sent message", "msg = _attBlock" in ui)
+# v863b (31a35b0) made the block a ternary so a leading `/` command stays first; the
+# intent of this pin is unchanged (the attachment block is PREPENDED, never appended).
+check("attachments are prepended to the sent message (and never before a command)",
+      'msg = msg.startsWith("/") ? msg + "\\n\\n" + _attBlock' in ui
+      and ': _attBlock + "\\n\\n" + msg;' in ui)
 check("voice input uses the Web Speech API (no server dependency)",
       "webkitSpeechRecognition" in ui and "function micToggle" in ui)
 

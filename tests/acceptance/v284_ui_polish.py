@@ -55,8 +55,10 @@ check("clicking a donut slice highlights its bar (seg + bar share a data-i key)"
 check("floating menus are opaque (sessions / attach / overflow / slash)",
       '.sess-menu { position: absolute; z-index: 50; background: var(--menubg);' in ui
       and 'background: var(--menubg); border: 1px solid var(--line); border-radius: 12px;' in ui
-      and 'padding: 4px; z-index: 40; background: var(--menubg); }' in ui
-      and '#slashMenu { background: var(--menubg); }' in ui)
+      # 2026-11-07 (operator): the ⋯ menu moved to the rail and now shares its rule with
+      # the queue/steer popup; z-index 60 keeps it above the composer it opens over.
+      and 'padding: 4px; z-index: 60;' in ui
+      and '#slashMenu, #qmodeMenu { background: var(--menubg); }' in ui)
 check("the compact action is an inline text action under the stats",
       'id="compactBtn" class="lnk"' in ui and ".ctxacts {" in ui)
 check("the composer keeps the model picker visible and shrinkable (never collapses it)",
@@ -71,8 +73,12 @@ check("an empty context shows a helpful hint instead of blank chips",
       "Nothing is carried in context yet" in ui and "empty categories are hidden" in ui)
 
 # --- 3) composer: secondary actions behind a "⋯" overflow menu ----------------
-check("the composer has a ⋯ overflow button + menu",
-      'id="moreMenu"' in ui and 'id="moreBtn"' in ui and 'class="more-wrap"' in ui)
+check("the ⋯ overflow button + menu exist, owned by the rail",
+      # 2026-11-07 (operator): "i tre puntin imettili nella sidebar … devono stare in
+      # basso": the ⋯ left the composer row (its width belongs to the message box) for
+      # the tool rail's foot. v867 pins the position and the ✨ above it.
+      'id="moreMenu"' in ui and 'id="moreBtn"' in ui and 'class="more-wrap"' in ui
+      and ui.index('id="toolsBar"') < ui.index('id="moreBtn"'))
 check("compact/new-session stay in the ⋯ menu; the editor moved to the rail",
       # 2026-11-03 (operator): "open editor button shall be in the sidebar (icon)". The
       # dock sat behind the ⋯ menu — two clicks from the surface it opens next to, and
@@ -86,8 +92,9 @@ check("compact/new-session stay in the ⋯ menu; the editor moved to the rail",
 check("the more-menu is wired (toggle + outside click)",
       "function SparkEditorToggle" in ui and "function toggleMore" in ui
       and '$("moreBtn").onclick' in ui)
-check("the more-menu opens upward, right-aligned",
-      "#moreMenu { position: absolute; right: 0; bottom: calc(100% + 8px)" in ui)
+check("the rail's more-menu opens to the LEFT of its 44px column",
+      "2026-11-07 (operator): the ⋯ and its menu LEFT the composer" in ui
+      and "#moreMenu { right: calc(100% + 10px); bottom: 0; }" in ui)
 check("the mic sits next to SEND (right cluster, bigger than the toolbar)",
       # EV-43: the operator moved the 🎙 out of the left tool strip and next to
       # send — it is the control aimed at without looking, so it is 40px.
