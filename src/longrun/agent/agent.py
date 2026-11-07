@@ -3355,6 +3355,28 @@ def _closure_check_prompt(request=""):
             "closing." % req[:1200])
 
 
+def _forced_close_verify_text(request):
+    """The verdict a FORCED close owes when the turn already did real work.
+
+    Measured 2026-11-07 on the durable event log (3 days, 62 turns): 12 of the 40
+    turns that wrote or delegated closed with NO verify-class message at all. The
+    hole was this path — the loop ran out of valid actions and the harness forced
+    a prose answer OUTSIDE the loop, where no gate runs. It deliberately does not
+    offer the `finish` action (the loop is over, an envelope here would be
+    delivered verbatim as the answer): it asks for the CHECK, and the forced-final
+    instruction right after it asks for the reply.
+    """
+    req = str(request or "").strip()
+    if not req:
+        return ""
+    return ("Closure check (harness — do not skip). This turn did real work, so the "
+            "answer you are about to give is graded against the ORIGINAL request:\n%s"
+            "\n\nCheck every item that was asked for against what you actually did, "
+            "and name plainly anything that is missing or unfinished. Never report a "
+            "step as done when you did not see the result. Answer in plain prose."
+            % req[:1200])
+
+
 def _goal_closure_prompt(request, objective):
     """The FURTHER control layer a `/goal` turn earns before it may close.
 
@@ -5929,6 +5951,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         # (the JSON guard below only protected the PERSISTED text, not the stream).
         # JAG-84: a forced "final" that is only an ANNOUNCEMENT ("I'm proceeding with…") is
         # not an answer — retry (bounded) asking for the RESULT, not a promise.
+        # v860: this close happens OUTSIDE the loop (the model never produced a
+        # valid action), so no gate above can reach it — and measured 2026-11-07 it
+        # was the only close with no verify-class message at all. The verdict costs
+        # ZERO extra rounds: `_inject` only appends to `msgs`, and the forced call
+        # below sends both messages in the same request.
+        if (_total_work_steps and not _request_verified
+                and not _is_aborted(sess["id"]) and _request_thread_text):
+            _request_verified = True
+            _inject(_forced_close_verify_text(_request_thread_text), "closure-check")
         _inject(
             "Answer the user now in plain text. Do not emit JSON, and do NOT "
             "announce future work: report the RESULT you already have (what "
