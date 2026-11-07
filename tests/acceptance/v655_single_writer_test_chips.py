@@ -96,7 +96,10 @@ check("B5 the probe proves the MODEL answers and reports the latency",
 check("C1 one builder, one handler — no duplicated wiring",
       "function _llmTestBtn(getRef, out)" in BTN
       and UI.count("function _llmTestBtn(") == 1
-      and UI.count('api("POST", "/api/models/test"') == 1)
+      # 2026-11-07: the re-ranker panel has its own probe call (`rerankTest`), a
+      # different surface. The pin is about THIS builder holding one POST, not
+      # about the endpoint being called once in the whole file.
+      and BTN.count('api("POST", "/api/models/test"') == 1)
 check("C2 the button is mounted beside compaction, longrunAgent and research",
       '["compactionModel", "longrunAgentModel", "researchModelSettings"]' in INIT
       and 'btn.dataset.llmTest = id' in INIT)

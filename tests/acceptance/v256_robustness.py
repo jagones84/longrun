@@ -66,9 +66,13 @@ with open(os.path.join(REPO, "src", "longrun", "agent/agent.py"), encoding="utf-
     sv += f.read()
 with open(os.path.join(REPO, "src", "longrun", "tools/tools.py"), encoding="utf-8") as f:
     tv = f.read()
+# 2026-11-07: the guard is written INLINE (no `_prev` local) — the old shape this
+# pin looked for was refactored away, the behaviour did not change: the prompt is
+# published only when its hash differs from the last one shown for this session.
 check("JAG-256 system-prompt inject de-duplicated per session",
-      "_LAST_SYS_INJECT" in sv and '_prev = _LAST_SYS_INJECT.get(sess["id"])' in sv
-      and "elif _prev != _h:" in sv)
+      "_LAST_SYS_INJECT" in sv and '_LAST_SYS_INJECT.get(sess["id"]) != _h' in sv
+      and '_LAST_SYS_INJECT[sess["id"]] = _h' in sv
+      and 'inject_kind="system"' in sv)
 check("JAG-256 tool dispatch is wrapped in try/except",
       "a tool must never crash the harness" in tv)
 

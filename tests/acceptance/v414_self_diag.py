@@ -81,10 +81,16 @@ check("4 log_tail bounded + no raise", lt.get("ok") is True and len(lt.get("line
 info = T.execute("self", {"action": "info"})
 check("5a action=info keeps the static self-knowledge (back-compat)",
       info.get("ok") is True and info.get("repo_path") == REPO)
+# 2026-11-07: `diagnose.ok` is a LIVE verdict, so it is False in a bare process
+# where the scheduler thread was never started (the scheduler probe reports
+# "not started"). What this pin protects is that the SNAPSHOT is attached: the
+# summary, the probe list and the repo path, whatever the ambient state answers.
 diag_res = T.execute("self", {"action": "diagnose"})
+_diag = diag_res.get("diagnose") or {}
 check("5b action=diagnose attaches a health snapshot",
-      diag_res.get("diagnose", {}).get("ok") is True
-      and diag_res.get("repo_path") == REPO)
+      isinstance(_diag.get("summary"), dict)
+      and "scheduler" in [p.get("name") for p in (_diag.get("probes") or [])]
+      and diag_res.get("repo_path") == REPO, _diag.get("status"))
 t_res = T.execute("self", {"action": "tools"})
 check("5c action=tools attaches the tool policy",
       t_res.get("tools", {}).get("ok") is True)

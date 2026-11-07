@@ -98,8 +98,11 @@ GONE = [
 ]
 check("B1 every self-explanatory paragraph is gone", all(g not in UI and g not in ORBIT for g in GONE),
       [g for g in GONE if g in UI or g in ORBIT])
+# 2026-11-07: the diagnostics card now names BOTH halves — the live report and the
+# local settings checks — instead of the old "Local checks only" wording.
 check("B2 the non-obvious facts survive in SHORT form",
-      "Local checks only" in UI and "data/config-backups/" in UI
+      "Live components first, then the local settings checks" in UI
+      and "data/config-backups/" in UI
       and "team = assignee + org reports" in ORBIT)
 check("B3 the hook exit-code rule is kept (it is NOT self-evident)",
       # v641: the rule moved from a 4-line paragraph to the Hooks title tooltip.

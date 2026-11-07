@@ -129,8 +129,10 @@ check("E3 its run is done", _run2.get("state") == "done", str(_run2))
 # ---- F: wiring in the source ---------------------------------------------
 jsrc = open(os.path.join(REPO, "src", "longrun", "orchestrate/jobs.py"), encoding="utf-8").read()
 check("F1 jobs.py parses STATUS", "def parse_status(" in jsrc and "_STATUS_RE" in jsrc)
+# 2026-11-07: retries moved from `LONGRUN_JOB_RETRIES` to `limits.job_retries` in
+# config/tools.yaml (one config single source); `_log_escalation` is unchanged.
 check("F2 jobs.py retries + escalates", "def _log_escalation(" in jsrc
-      and "LONGRUN_JOB_RETRIES" in jsrc)
+      and "def job_retries(" in jsrc and 'ctx_limits.limit("job_retries")' in jsrc)
 check("F3 the synthesis flags unfinished subjobs", "UNFINISHED SUBJOBS" in jsrc)
 check("F4 the job records failed_subjobs / partial",
       "failed_subjobs" in jsrc and '"partial"' in jsrc)

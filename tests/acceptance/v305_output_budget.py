@@ -53,8 +53,13 @@ check("a None cap is omitted (router decides)", "max_tokens" not in off)
 
 # ------------------------------------------------------------------ source locks
 s = read("src", "longrun", "model/rllm.py")
-check("the default is 16384 and env-overridable",
-      'os.environ.get("LONGRUN_MAX_TOKENS", "16384")' in s)
+# 2026-11-07: the default left the env literal for the config single source
+# (`config/tools.yaml` -> limits.max_tokens, read through `context_limits.limit`);
+# the behaviour this pin protects — a generous, operator-overridable default — is
+# unchanged, so the pin follows the new home instead of the old spelling.
+check("the default is 16384 and config-overridable",
+      'MAX_TOKENS = ctx_limits.limit("max_tokens")' in s
+      and "max_tokens: 16384" in read("config", "tools.yaml"))
 # RH-15: the chat call passes the cap through `_max_tokens()`, which prefers
 # `reasoning.max_tokens` from config/tools.yaml and falls back to this constant — the
 # cap stopped being a constant that a config could not raise.

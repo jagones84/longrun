@@ -77,8 +77,13 @@ if files:
           "[chapters]" not in raw and raw.startswith("THREAD (this session)"), raw[:50])
 check("A6 the offload reference names the file path", "FULL OUTPUT FILE:" in ref
       and "offload/v453-offload" in ref)
-check("A7 the offload reference passes a large max_bytes (reads the whole file)",
-      '"max_bytes":262144' in ref, "")
+# 2026-11-07: the reference now tells the model to read back in WINDOWS
+# (start_line/end_line) instead of asking for one huge max_bytes — a 262144-byte
+# read would be offloaded again, which the message itself explains.
+check("A7 the offload reference tells the model how to read the whole file",
+      '"max_bytes":262144' not in ref
+      and '"start_line":1,"end_line":400' in ref
+      and "one huge fs.read would only be offloaded again" in ref, "")
 
 # a LARGE read (well past the 1600 default) still reaches the model at the chat
 # loop's real observation budget (CHAT_OBS_FULL = LONGRUN_OFFLOAD_MAX, 200000).

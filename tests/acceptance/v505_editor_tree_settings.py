@@ -109,18 +109,22 @@ cats = re.findall(r'\[\s*"([a-z]+)"\s*,', m.group(1)) if m else []
 # on top"); every other relative position is unchanged.
 # 2026-11-05: Permissions got its OWN page, between Tools & approvals and Sandbox
 # (operator: the security rules do not belong in the tools list).
+# 2026-11-07: Webhooks (inbound event receivers) landed as its own category and
+# sits with Hooks — the outbound half — immediately above Harness.
 want = ["diagnostics", "appearance", "keys", "models", "subagents", "orchestrate", "tools",
         "permissions", "sandbox", "mcp",
-        "skills", "rules", "knowledge", "compaction", "improvement", "hooks",
+        "skills", "rules", "knowledge", "compaction", "improvement", "hooks", "webhooks",
         "harness", "config"]
 check("B1 SETTINGS_CATS is parseable", bool(cats), "found %r" % (cats,))
 check("B2 categories follow the operator's order",
       cats[:len(want)] == want, "got %r" % (cats,))
 check("B3 Info stays last", bool(cats) and cats[-1] == "info", "got %r" % (cats,))
 check("B4 no category is listed twice", len(cats) == len(set(cats)), "got %r" % (cats,))
-check("B4a Hooks is a dedicated panel immediately above Harness",
+check("B4a Hooks and Webhooks are dedicated panels immediately above Harness",
       'data-cat="hooks"' in idx and "hooks" in cats and
-      "harness" in cats and cats.index("hooks") + 1 == cats.index("harness")
+      "webhooks" in cats and "harness" in cats and
+      cats.index("hooks") + 1 == cats.index("webhooks") and
+      cats.index("webhooks") + 1 == cats.index("harness")
       and '"file": "hooks.yaml", "id": "hooks", "panel": "hooks"' in
       _read("src", "longrun", "core", "settings.py"))
 # no duplicate subagent picker inside Models; the single one lives in Subagents

@@ -414,9 +414,12 @@ check("6d the WebUI renders session notebooks from the API `sessions` field",
 # JAG-431r7: the transient system-prompt echo must be laid out CHRONOLOGICALLY
 # (inside the turn's group), never appended to the root log (which dropped it
 # below the answer, so a finished turn looked like it ended on a harness message).
+# 2026-11-07: the "remove the previous echo" line moved to `harnessDrop` (a new
+# harness can DROP a message mid-turn); the echo itself is still appended through
+# `_logAppend`, i.e. chronologically inside the turn, never at the root log.
 check("7 the harness system-echo renders chronologically (not appended to the root log)",
       '_logAppend(det);' in HTML
-      and 'if (kind === "system" && _sysInjectEl) _sysInjectEl.remove();' in HTML
+      and 'if (kind === "system") _sysInjectEl = det;' in HTML
       and '$("log").appendChild(det); _sysInjectEl = det;' not in HTML)
 
 print("---")
