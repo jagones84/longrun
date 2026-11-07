@@ -186,7 +186,70 @@ def stats():
     for r in items:
         if r["status"] in out:
             out[r["status"]] += 1
+    # HA-4 (lot H): the counters above say HOW MANY; they cannot say whether the
+    # gate is still being read. The extra keys are additive — old readers keep
+    # the five counters they already had.
+    out.update(_fatigue(items))
     return out
+
+
+#: HA-4 (lot H): the talk's measured habit — people accept ~93% of permission
+#: requests and stop reading them. A tool needs this many HUMAN decisions before a
+#: high accept rate means anything (below it, one approval is noise), and the rate
+#: is the line the report draws.
+RUBBER_STAMP_MIN = 10
+RUBBER_STAMP_RATE = 0.9
+
+
+def _fatigue(records):
+    """Accept rate, median time-to-decision, per-tool split, rubber-stamped tools.
+
+    Reads only what the gate already stores (`ts`, `decided_ts`, `tool`,
+    `status`): no new write path, no second ledger. `None` means "not measurable
+    yet" (no decision), never zero — a missing measurement is not a free pass.
+    """
+    decided = [r for r in records
+               if r.get("status") in ("approved", "denied")]
+    approved = sum(1 for r in decided if r.get("status") == "approved")
+    waits = []
+    for r in decided:
+        try:
+            waits.append(max(0.0, float(r["decided_ts"]) - float(r["ts"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    waits.sort()
+
+    def _median(values):
+        if not values:
+            return None
+        mid = len(values) // 2
+        if len(values) % 2:
+            return round(values[mid], 3)
+        return round((values[mid - 1] + values[mid]) / 2.0, 3)
+
+    by_tool = {}
+    for r in decided:
+        name = str(r.get("tool") or "?")
+        row = by_tool.setdefault(name, {"tool": name, "decisions": 0,
+                                        "approved": 0, "denied": 0})
+        row["decisions"] += 1
+        row["approved" if r.get("status") == "approved" else "denied"] += 1
+    tools = []
+    for row in by_tool.values():
+        row["accept_rate"] = round(row["approved"] / float(row["decisions"]), 3)
+        tools.append(row)
+    tools.sort(key=lambda x: (-x["decisions"], x["tool"]))
+    rubber = [t for t in tools
+              if t["decisions"] >= RUBBER_STAMP_MIN
+              and t["accept_rate"] >= RUBBER_STAMP_RATE]
+    return {
+        "decisions": len(decided),
+        "accept_rate": round(approved / float(len(decided)), 3) if decided else None,
+        "median_decision_secs": _median(waits),
+        "by_tool": tools,
+        "rubber_stamped": [{"tool": t["tool"], "decisions": t["decisions"],
+                            "accept_rate": t["accept_rate"]} for t in rubber],
+    }
 
 
 def _improvement_view(proposal):

@@ -124,6 +124,19 @@ the sandbox output ceiling, the acceptance bounds and the step/iteration/wait bu
 `v827` fails if a key loses its config row, if the loader drops the block, or if a
 consumer drifts from it.
 
+**Four read-only audit surfaces say whether the harness's own scaffolding still earns
+its place** (lot H, 2026-11-07). None of them writes anything or adds a second ledger:
+`memory.rules.audit()` reports contradictions, stale paths, duplicates and an
+over-budget scope, naming file + line (`GET /api/rules`); `tools.registry.footprint()`
+names the enabled tools never called in the window and the index characters they cost
+(`GET /api/tools` + the MCP adapter); `skills.discovery()` names the never-opened
+skills from the shared attribution ledger and probes reachability from plain-language
+tasks with the same ranker the tool uses (`GET /api/skills`); `approvals.stats()` now
+also carries the accept rate, the median time-to-decision and the per-tool
+rubber-stamping. `benchmarks/ablation.py` turns the last step into an experiment: two
+arms of ONE command that differ by exactly one file-backed layer (`rules`, `skills`,
+`hooks`), plus a `compare()` over the two stored run trees.
+
 **Every other limit is config too** (2026-11-06). The third block, `config/tools.yaml`
 → `limits:`, holds the values that used to be `int(os.environ.get("LONGRUN_…", <literal>))`
 in `src/`: router retries/backoff/timeouts, answer and compaction budgets, the repeat

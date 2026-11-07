@@ -1367,6 +1367,9 @@ def _skills(args, run_id):
             return {"ok": False, "error": "skill %r not found; available: %s"
                     % (name, avail), "stdout": "", "stderr": ""}
         content = got.pop("content")
+        # HA-2 (lot H): an OPEN is the one signal a skill has; it goes to the
+        # shared attribution ledger, so "never opened" is measurable later.
+        skills_mod.note_opened(name)
         return {"ok": True, "exit_code": 0, "stdout": content, "stderr": "",
                 "skill": got, "backend": "host", "sandboxed": False}
     if action in ("search", "find"):

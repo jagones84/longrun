@@ -1730,6 +1730,57 @@ def policy_report():
             "configured_rules": len(configured), "fired_rules": len(hits)}
 
 
+def footprint(days=30, now=None):
+    """Enabled tools that never ran in the window, and what they cost (HA-5).
+
+    Every enabled connector puts its tool names and descriptions in the
+    model-facing index on EVERY turn, whether used or not — the talk behind lot H
+    names "too many tools" as the most common failure. This joins the enabled list
+    (this module) with the run history the harness already records
+    (`util.selfevolve.history_rows`, one row per finished turn) and names the tools
+    that were never called inside the window.
+
+    Read-only advice: nothing is disabled. The window is explicit in the answer,
+    because an unused tool after one day is not evidence.
+    """
+    import time as _time
+    from longrun.util import selfevolve
+
+    span = int(days)
+    horizon = float(now if now is not None else _time.time()) - span * 86400
+    used, runs = set(), 0
+    for row in selfevolve.history_rows():
+        try:
+            ts = float(row.get("ts") or 0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if ts < horizon:
+            continue
+        runs += 1
+        for name in row.get("tools") or []:
+            used.add(str(name))
+    enabled = []
+    for t in catalog():
+        name = t.get("name")
+        if name and t.get("enabled", True):
+            enabled.append(name)
+    never = sorted(n for n in enabled if n not in used)
+    index_chars = 0
+    for t in catalog():
+        if not t.get("name") or not t.get("enabled", True):
+            continue
+        if t["name"] in never:
+            index_chars += len(t["name"]) + len(str(t.get("description") or ""))
+    return {
+        "days": span,
+        "runs": runs,
+        "enabled": len(enabled),
+        "used": sorted(n for n in enabled if n in used),
+        "never_used": never,
+        "never_used_index_chars": index_chars,
+    }
+
+
 def rate_consume(tool, max_calls, window_secs, now=None):
     """Paperclip-grade rate probe (P1/N3): "ok" or a "limited: ..." reason.
 

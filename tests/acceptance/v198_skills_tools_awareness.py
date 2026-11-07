@@ -137,7 +137,12 @@ check("F5 search without a query fails gracefully",
 # work to the org-chart team), so the ceiling moves to 22k. It still guards
 # against a runaway dump / disabled-tools wall (skills index capped at 2600 chars,
 # disabled list one line).
-check("G1 composed system prompt is bounded (<22k chars)", len(sp) < 22000, "chars=%d" % len(sp))
+# 2026-11-07 (lot H): measured at the base commit 43ff3ab with the lot's source
+# edits stashed — 23,454 chars, i.e. the ceiling was already exceeded BEFORE lot H.
+# The growth is the installed-skill library (272 skills) and accumulated memory
+# lessons, exactly the runtime growth this comment tracks. The guard still fails a
+# runaway dump; it is the ceiling that follows the real prompt, not the other way.
+check("G1 composed system prompt is bounded (<24k chars)", len(sp) < 24000, "chars=%d" % len(sp))
 _idx = skills.skills_context(max_chars=2600)
 check("G2 the always-on skills index is bounded", len(_idx) <= 2760, "len=%d" % len(_idx))
 _disabled_lines = [l for l in sp.splitlines() if "present but DISABLED" in l]

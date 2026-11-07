@@ -388,7 +388,151 @@ def status(ws=None):
         "workspace": c["workspace"],
         "config_dir": _config_dir(),
         "global": _scope("global", global_rules_path(), c["global"]["files"]),
-        "project": _scope("project", c["project"]["path"], c["project"]["files"]),
+        "project": _scope("project", project_rules_path(ws), c["project"]["files"]),
         "total_chars": c["total_chars"],
+    }
+
+
+# ---------------------------------------------------------------- audit -------
+#: Words that only ever carry emphasis (they inflate a line without changing it),
+#: so the duplicate/contradiction comparison ignores them.
+_AUDIT_STOP = {
+    "the", "and", "for", "with", "you", "are", "not", "this", "that", "its",
+    "from", "into", "your", "our", "all", "any", "must", "should", "always",
+    "please", "when", "then", "than", "have", "has", "had", "will", "can",
+    "che", "gli", "dei", "delle", "della", "per", "con", "una", "uno", "sono",
+    "sempre", "tutti", "tutte", "deve", "puo", "anche", "come", "questo",
+}
+#: A negation marker makes two otherwise identical rules contradict each other.
+_AUDIT_NEG = {"never", "not", "no", "non", "mai", "without", "senza", "dont", "avoid"}
+#: Only paths with a known file extension are checked: a bare `/` token is a
+#: command or a number far too often, and a false "stale file" costs more than a
+#: missed one.
+_AUDIT_PATH = re.compile(
+    r"(?<![A-Za-z0-9_./~-])(?:~|/)[A-Za-z0-9_./~-]+\.(?:md|py|json|yaml|yml|sh|txt)\b")
+_AUDIT_BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+
+
+def _audit_tokens(line):
+    """Content words of one rule line, negation markers separated out."""
+    words = re.findall(r"[a-z0-9_]{3,}", str(line or "").lower())
+    neg = {w for w in words if w in _AUDIT_NEG}
+    content = {w for w in words if w not in _AUDIT_NEG and w not in _AUDIT_STOP}
+    return content, bool(neg)
+
+
+def _audit_lines(files, scope):
+    """(scope, file, lineno, raw) for every non-empty content line of a scope."""
+    out = []
+    for path in files or []:
+        text = _read(path)
+        for i, raw in enumerate(text.splitlines(), 1):
+            if raw.strip():
+                out.append((scope, path, i, raw.strip()))
+    return out
+
+
+def _audit_norm(raw):
+    """A line's identity for duplicate detection: lowercased, bullet-free, spaced."""
+    line = _AUDIT_BULLET.sub("", str(raw or ""))
+    return " ".join(line.lower().split()).rstrip(".").strip()
+
+
+def audit(ws=None, max_bytes=None):
+    """Read-only audit of the assembled rules corpus (HA-1, lot H).
+
+    Finds what the byte cap cannot see: two rules that contradict each other, a
+    rule pointing at a path that no longer exists, the same line pasted into more
+    than one scope, and a scope over its context budget. It never edits anything —
+    every finding names the file and line so the operator can delete it.
+
+    Deterministic, no model, no network. Conservative on purpose: a negation is
+    compared on the SAME content words (so "always use X" vs "never use X" is a
+    contradiction, while two different `never` rules are not), and only paths with
+    a known extension are checked.
+    """
+    cap = int(max_bytes or MAX_BYTES)
+    c = collect(ws)
+    rows = _audit_lines(c["global"]["files"], "global") + \
+        _audit_lines(c["project"]["files"], "project")
+    findings = []
+
+    def _add(code, severity, scope, path, line, message, evidence, **extra):
+        item = {"code": code, "severity": severity, "scope": scope,
+                "file": path, "line": line, "message": message,
+                "evidence": evidence}
+        item.update(extra)
+        findings.append(item)
+
+    # (a) contradictions: identical content words, exactly one side negated.
+    parsed = [(scope, path, ln, raw) + _audit_tokens(_audit_norm(raw))
+              for scope, path, ln, raw in rows]
+    seen_pairs = set()
+    for i in range(len(parsed)):
+        s_a, f_a, l_a, raw_a, content_a, neg_a = parsed[i]
+        if len(content_a) < 3:
+            continue
+        for j in range(i + 1, len(parsed)):
+            s_b, f_b, l_b, raw_b, content_b, neg_b = parsed[j]
+            if content_a != content_b or neg_a == neg_b or len(content_b) < 3:
+                continue
+            key = tuple(sorted([(f_a, l_a), (f_b, l_b)]))
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+            _add("rules.contradiction", "error", s_b, f_b, l_b,
+                 "Two rules say the same thing and one of them is negated — the "
+                 "model may follow either one.",
+                 "%s :: %s" % (raw_a, raw_b))
+
+    # (b) stale paths: a rule that names a file which does not exist.
+    for scope, path, ln, raw in rows:
+        for cand in _AUDIT_PATH.findall(raw):
+            real = os.path.expanduser(cand)
+            if os.path.isabs(real) and not os.path.exists(real):
+                _add("rules.stale_path", "warning", scope, path, ln,
+                     "This rule points at a path that does not exist.", cand)
+
+    # (c) duplicates: the same normalized line in more than one place.
+    where = {}
+    for scope, path, ln, raw in rows:
+        norm = _audit_norm(raw)
+        if len(norm) < 25:
+            continue
+        where.setdefault(norm, []).append((scope, path, ln, raw))
+    for norm, places in where.items():
+        scopes = sorted({p[0] for p in places})
+        if len(places) < 2 or (len(scopes) < 2 and len({p[1] for p in places}) < 2):
+            continue
+        scope, path, ln, raw = places[0]
+        _add("rules.duplicate", "warning", scope, path, ln,
+             "The same rule appears %d times (%s) — keep one copy."
+             % (len(places), ", ".join(scopes)),
+             raw, scopes=scopes)
+
+    # (d) over budget: the prompt cap is per scope, and the audit says by how much.
+    for scope, key in (("global", "global"), ("project", "project")):
+        chars = len(c[key]["text"])
+        if chars > cap:
+            _add("rules.over_budget", "warning", scope, c[key]["path"], 0,
+                 "This scope exceeds the rules prompt budget and is TRUNCATED "
+                 "before the model sees it.", "%d chars > %d" % (chars, cap),
+                 chars=chars, max_bytes=cap)
+
+    findings.sort(key=lambda f: (f["code"], f["file"] or "", f["line"]))
+    counts = {}
+    for f in findings:
+        counts[f["code"]] = counts.get(f["code"], 0) + 1
+    return {
+        "workspace": c["workspace"],
+        "max_bytes": cap,
+        "findings": findings,
+        "counts": {
+            "contradiction": counts.get("rules.contradiction", 0),
+            "stale_path": counts.get("rules.stale_path", 0),
+            "duplicate": counts.get("rules.duplicate", 0),
+            "over_budget": counts.get("rules.over_budget", 0),
+        },
+        "total": len(findings),
     }
 

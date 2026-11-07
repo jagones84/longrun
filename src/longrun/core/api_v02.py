@@ -1423,7 +1423,7 @@ class LocalApi:
 
     def tools(self):
         return {"tools": registry.catalog(), "sandbox": sandbox.probe(),
-                "approvals": approvals.stats()}
+                "approvals": approvals.stats(), "footprint": registry.footprint()}
 
     def approvals(self, a):
         a = a or {}
@@ -1586,6 +1586,9 @@ def handle(handler, method, path, qs, body):
                                      # always-ask rule fires, and which never have —
                                      # the evidence for retiring a dead guardrail.
                                      "rule_firings": registry.policy_report(),
+                                     # HA-5 (lot H): enabled tools never called in
+                                     # the window, plus the index they cost.
+                                     "footprint": registry.footprint(),
                                      "approvals": approvals.stats()})
         if path == "/api/tools/running":
             return _r(handler, 200, {"running": sandbox.running()})
@@ -1705,8 +1708,14 @@ def handle(handler, method, path, qs, body):
         if path == "/api/skills":
             from longrun.memory import skills as skills_mod
             items = skills_mod.list_skills()
+            try:
+                disc = skills_mod.discovery()
+            except Exception:  # noqa: BLE001 — a report must never break the list
+                disc = {"skills": len(items), "opened": {}, "never_opened": [],
+                        "missing_description": [], "probes": []}
             return _r(handler, 200, {"skills": items, "count": len(items),
-                                     "local_dir": skills_mod._local_dir()})
+                                     "local_dir": skills_mod._local_dir(),
+                                     "discovery": disc})
         if path.startswith("/api/skills/"):
             from longrun.memory import skills as skills_mod
             nm = path[len("/api/skills/"):]
@@ -3853,10 +3862,19 @@ def index_config_get():
 
 
 def rules_status(qs=None):
-    """GET /api/rules — workspace + global/project rules state for a session."""
+    """GET /api/rules — workspace + global/project rules state for a session.
+
+    HA-1 (lot H): the same response carries the read-only `audit` (contradictions,
+    stale paths, duplicates, over-budget scope), so the WebUI needs no second
+    endpoint and no second implementation of the rules.
+    """
     sid = (qs or {}).get("session")
     ws, sess = _session_ws(sid)
     st = _RULES.status(ws=ws)
+    try:
+        st["audit"] = _RULES.audit(ws=ws)
+    except Exception:  # noqa: BLE001 — an audit must never break the rules panel
+        st["audit"] = {"findings": [], "counts": {}, "total": 0}
     st["session"] = sid
     st["source"] = "session" if (sess and sess.get("workspace")) else "default"
     return st

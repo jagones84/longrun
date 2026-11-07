@@ -480,6 +480,60 @@ def get_skill(name):
     return None
 
 
+#: HA-2 (lot H): namespace of a skill in the shared usage ledger. The ledger is
+#: `memory/attribution.py` (already used for "retrieved vs used" memories); a skill
+#: has one signal — it was OPENED — so opening records both counters. One ledger,
+#: no second store.
+SKILL_ATTRIBUTION_PREFIX = "skill:"
+
+
+def note_opened(name):
+    """Record that a skill was opened; False when it cannot be attributed."""
+    nm = str(name or "").strip()
+    if not nm:
+        return False
+    try:
+        from longrun.memory import attribution
+        mid = SKILL_ATTRIBUTION_PREFIX + nm
+        attribution.note([mid], [mid])
+        return True
+    except Exception:  # noqa: BLE001 — a ledger must never break a skill read
+        return False
+
+
+def discovery(samples=None, limit=5):
+    """What the model can actually REACH in the skill library (HA-2, lot H).
+
+    The one thing that decides whether a written procedure is used is its
+    description: while a skill is idle, the description is all the model sees.
+    This reports, without a model call: which skills were never OPENED (the shared
+    attribution ledger), which have no description at all (same criterion as
+    `audit_skills`), and — when `samples` (plain-language tasks) are given —
+    whether the library surfaces a skill for each, and which, using the SAME
+    ranker the tool uses. Library hygiene (duplicates, oversized bodies) stays in
+    `audit_skills`; this answers the different question "is it reachable".
+    """
+    from longrun.memory import attribution
+    sk = list_skills()
+    opened = {}
+    for mid, rec in attribution.table(SKILL_ATTRIBUTION_PREFIX).items():
+        name = str(mid)[len(SKILL_ATTRIBUTION_PREFIX):]
+        opened[name] = int((rec or {}).get("uses") or 0)
+    probes = []
+    for task in (samples or []):
+        hits = [h.get("name") for h in search_skills(task, limit=limit)]
+        probes.append({"task": task, "hits": hits, "found": bool(hits)})
+    return {
+        "skills": len(sk),
+        "opened": opened,
+        "never_opened": sorted(s["name"] for s in sk
+                               if s["name"] and not opened.get(s["name"])),
+        "missing_description": sorted(s["name"] for s in sk
+                                      if not (s.get("description") or "").strip()),
+        "probes": probes,
+    }
+
+
 def skills_context(max_chars=2200):
     """The skills block injected into the agent system prompt.
 

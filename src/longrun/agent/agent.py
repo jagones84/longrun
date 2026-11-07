@@ -2743,6 +2743,90 @@ def _is_correction(message):
     return bool(_CORRECTION_RE.search(str(message or "")[:240]))
 
 
+#: HA-6 (lot H): the correction number at which the harness says something. Three
+#: is where the talk says a fourth helps little — the chat now carries two wrong
+#: attempts the model keeps re-reading.
+CORRECTION_REPEAT = 3
+#: Words that carry no target ("wrong", "again", "please"), so two corrections of
+#: the SAME thing match even when the wording changes.
+_CORRECTION_STOP = {
+    "the", "and", "for", "with", "you", "are", "not", "this", "that", "its",
+    "from", "into", "your", "again", "still", "same", "wrong", "right", "use",
+    "please", "non", "che", "gli", "una", "uno", "sono", "ancora", "sbagliato",
+}
+
+
+def _correction_tokens(text):
+    """The content words of a correction — what it is ABOUT, not how it is phrased."""
+    import re as _re
+    words = _re.findall(r"[a-zA-Z0-9_]{3,}", str(text or "").lower())
+    return {w for w in words if w not in _CORRECTION_STOP}
+
+
+def _correction_similar(a, b):
+    """Containment similarity of two correction targets, in 0..1.
+
+    Containment (not Jaccard) on purpose: a third correction usually ADDS words
+    ("still", "again", a file name) while keeping the target, and Jaccard would
+    drop it below any sane threshold. Two shared content words are required, so a
+    generic "no, that's wrong" never merges two unrelated targets.
+    """
+    if not a or not b:
+        return 0.0
+    inter = len(set(a) & set(b))
+    if inter < 2:
+        return 0.0
+    return inter / float(min(len(a), len(b)))
+
+
+def _note_correction(sess, message, cap=5):
+    """Count this correction against the previous ones; (nth, target tokens).
+
+    Mutates `sess["corrections"]` (bounded list) so the count survives the turn
+    (`save_session`) and the pattern is visible after a reload. Returns (0, set())
+    for a message that is not a correction. Deterministic, no model call.
+    """
+    if not _is_correction(message):
+        return 0, set()
+    tokens = _correction_tokens(message)
+    if not tokens:
+        return 0, set()
+    rows = sess.get("corrections")
+    if not isinstance(rows, list):
+        rows = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        prev = set(row.get("tokens") or [])
+        if _correction_similar(tokens, prev) >= 0.6:
+            row["count"] = int(row.get("count") or 1) + 1
+            # Keep the union: the target grows as the operator adds detail.
+            row["tokens"] = sorted(tokens | prev)
+            sess["corrections"] = rows
+            return int(row["count"]), sorted(tokens | prev)
+    rows.append({"tokens": sorted(tokens), "count": 1})
+    sess["corrections"] = rows[-cap:]
+    return 1, sorted(tokens)
+
+
+def _third_correction_note(target):
+    """HA-6: what to say at the third correction on the same point.
+
+    Advice, never an action: the harness does not reset the session and does not
+    write the rule — both are the operator's call, and a silent reset would throw
+    away the work.
+    """
+    what = ", ".join([t for t in (target or []) if t][:6]) or "the same point"
+    return (
+        "[harness] correction repeat %d/%d on the same point (%s). "
+        "A fourth correction in this chat mostly re-reads the two wrong attempts. "
+        "Two cheaper moves: (1) if this is something it always gets wrong, add ONE "
+        "line to the rules file (global or project) so it survives this session; "
+        "(2) start a clean session with a single message written better, carrying "
+        "what you just learned. Nothing was reset — this is advice."
+        % (CORRECTION_REPEAT, CORRECTION_REPEAT, what))
+
+
 def _turn_importance(used_tools=0, errored=False, corrected=False, steps=0):
     """Deterministic 0..~20 importance score for a finished turn (JAG-447)."""
     try:
@@ -4503,6 +4587,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
     _think_action_used = False  # one round when the action hides in the reasoning
     _timeout_retried = False   # one retry when the MODEL CALL itself times out
+    # HA-6 (lot H): the third correction on the SAME point becomes advice — one
+    # line of rules, or a clean session — instead of a fourth re-read of two wrong
+    # attempts. Fires once per session, never resets anything.
+    _corr_nth, _corr_target = _note_correction(sess, message)
+    if _corr_nth == CORRECTION_REPEAT and not sess.get("corrections_notified"):
+        sess["corrections_notified"] = True
+        _inject(_third_correction_note(_corr_target), "correction")
     while goal_mode or iters < CHAT_TOOL_MAX_ITERS:
         # JAG-517: goal mode bypasses the iteration cap, so enforce its hard
         # wall-clock limit even when the model only emits harness todo actions.

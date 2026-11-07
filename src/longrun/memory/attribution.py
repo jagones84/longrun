@@ -99,6 +99,17 @@ def stats(mid):
     return dict(rec) if isinstance(rec, dict) else {}
 
 
+def table(prefix=""):
+    """Every record whose id starts with `prefix`, in ONE read (HA-2).
+
+    `stats()` above reads the file per id; a caller that needs the whole ledger
+    (the skills discovery report) must not load it once per skill. Read-only.
+    """
+    want = str(prefix or "")
+    return {k: dict(v) for k, v in _load().items()
+            if isinstance(v, dict) and str(k).startswith(want)}
+
+
 def boost(mid, data=None):
     """Retrieval multiplier in [FLOOR, CEIL]; exactly 1.0 with no evidence.
 
