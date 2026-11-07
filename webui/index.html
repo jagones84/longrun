@@ -2494,6 +2494,13 @@
   /* the field and its action are ONE control: same height, same radius. Before, the
      field was 27px and the button 24.5px, so every row read as a mistake. */
   #inspector input.inp { height: 28px; min-height: 28px; }
+  /* 2026-11-07: the Plan field is a MULTI-LINE box that grows with what is typed
+     (operator: "doesn't expand where a lot of text is inside") — it shares the row
+     height until the text needs more, then scrolls at 132px. The goal objective
+     editor grows the same way, capped against the panel's height. */
+  #planInp { resize: none; min-height: 28px; max-height: 132px; overflow-y: hidden;
+    padding: 6px 10px; line-height: 1.4; }
+  #goalEditBox { resize: none; max-height: 42vh; overflow-y: auto; }
   #inspector button.ghost { height: 28px; min-height: 28px; padding: 0 10px;
     font-size: 11.5px; line-height: 1; border-radius: 8px; }
   /* a field inside a card sits on the DEEPER ground (impeccable: the input is
@@ -3068,8 +3075,8 @@
                + adds it as a graph node, ↻ replans. Two stacked inputs with their own
                buttons were eating a third of the panel. -->
           <div class="u-df u-g6 u-aic">
-            <input aria-label="goal or plan node" id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal or node…"
-                   data-key="Enter" data-key-fn="planGoal">
+            <textarea aria-label="goal or plan node" id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal or node…" rows="1"
+                   data-key="Enter" data-key-fn="planGoal"></textarea>
             <button class="ghost" data-call="planGoal" title="run this text as the session goal (same as /goal)">▶</button>
             <button class="ghost" data-call="addTask" title="add this text as a graph node">+</button>
             <button class="ghost" data-call="replanGraph" title="incremental re-plan">↻</button>
@@ -6533,14 +6540,14 @@ async function openSessMenu(row, s, ag) {
       loadSessions();
       return;
     }
-    if (a === "rename") { const v = prompt("Rename session", s.title || s.id); if (v) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: v }); loadSessions(); } }
+    if (a === "rename") { const v = await uiAsk({ title: "Rename session", value: s.title || s.id, okLabel: "rename" }); if (v && String(v).trim()) { await api("POST", "/api/sessions/" + s.id + "/rename", { title: String(v).trim() }); loadSessions(); } }
     if (a === "role") { let rp = null, rt = ""; try { const r = await api("GET", "/api/roles?session=" + encodeURIComponent(s.id)); rp = r && r.path; rt = (r && r.text) || ""; } catch (e) {} if (!rp || !rt) { toast("no role file yet \u2014 send a message first"); return; } closeSessMenu(); openInEditor(rp, { mode: "code" }); return; }
     if (a === "rewind") { closeSessMenu(); openRewindDlg(s.id); return; }
     if (a === "clear") { if (await confirmDelete("clear this session?")) { await api("POST", "/api/sessions/" + s.id + "/clear", {}); _forgetChatScrollState(s.id); if (s.id === sessionId) { $("log").innerHTML = ""; loadHistory(); loadPlan(); } loadSessions(); } }
     if (a === "del") {
       // EV-30: every session has an agent record, but only a TEAM agent (one with
       // reports / a role, kind != "session") is guarded — a plain chat deletes as before.
-      if (ag && ag.kind !== "session") { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { alert("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first."); return; } }
+      if (ag && ag.kind !== "session") { const rep = (ag.reports && ag.reports.length) ? (" It manages " + ag.reports.join(", ") + ".") : ""; if (!(await confirmDelete("\u26A0 " + (ag.name || ag.id) + " is an ORG AGENT." + rep + " Delete it for real?"))) return; const rel = await api("DELETE", "/api/agents/" + s.id); if (rel && rel.ok === false) { toast("Cannot remove this agent: " + (rel.error || "blocked") + " \u2014 reassign its reports first.", "err"); return; } }
       else if (!(await confirmDelete("delete session " + (s.title || s.id) + "?"))) return;
       await api("DELETE", "/api/sessions/" + s.id);
       // JAG-462: drop EVERY browser-side per-session cache for the deleted id. Only
@@ -8101,8 +8108,8 @@ async function loadConfigFile(forceDiscard) {
   } catch (e) { if (msg) msg.textContent = String(e); }
 }
 async function reloadConfigFile() {
-  if (_cfgFileHasDraft() &&
-      !window.confirm("Discard unsaved changes to " + _cfgFileLoadedName + "?")) return;
+  if (_cfgFileHasDraft() && !(await uiConfirm("Discard unsaved changes?",
+      "Reloading drops the draft of " + _cfgFileLoadedName + ".", { okLabel: "discard", danger: true }))) return;
   await loadConfigFile(true);
 }
 async function saveConfigFile() {
@@ -8547,7 +8554,7 @@ async function saveSettingsSection(card, sec) {
   }
 }
 async function compactNow() {
-  if (!sessionId) { alert("no active session"); return; }
+  if (!sessionId) { toast("no active session", "warn"); return; }
   const btn = $("compactBtn");
   if (btn) { btn.textContent = "compacting…"; btn.classList.add("busy"); }
   let r = {};
@@ -8556,7 +8563,7 @@ async function compactNow() {
   // JAG-461: Stop aborts a running compaction server-side -> the transcript is
   // UNCHANGED. Say so instead of pretending a compaction happened.
   if (r && r.aborted) { toast("compaction aborted — context unchanged", "warn"); return; }
-  if (r && r.error) { alert(r.error); return; }
+  if (r && r.error) { toast(r.error, "err"); return; }
   if (!r || !r.compacted) { toast("nothing to compact in this session", "warn"); return; }
   const kind = r.summary === "llm" ? ("llm:" + (r.summarizer || "?"))
     : (r.summary === "extractive" ? "local fallback (summarizer model unavailable)"
@@ -8597,7 +8604,7 @@ function dedupePlan(steps) {
    (autonomous plan + run). No second agent loop, no manual "plan only". */
 function planGoal() {
   const goal = $("planInp").value.trim(); if (!goal) return;
-  $("planInp").value = "";
+  $("planInp").value = ""; _growPlan();
   send("/goal " + goal);
 }
 /* ---- G-1: the Active-goal bar (durable `/goal`) ---- */
@@ -8799,6 +8806,7 @@ function goalEdit() {
     });
   }
   panel.hidden = false;
+  _growGoalEdit();
   box.focus();
   try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) {}
   return null;
@@ -8821,10 +8829,11 @@ function goalEditSave() {
   return p;
 }
 
-function goalDelete() {
+async function goalDelete() {
   goalMenuClose();
   if (!goalVisible()) return null;
-  if (!confirm("Delete this goal? The chat and the plan stay.")) return null;
+  if (!(await uiConfirm("Delete this goal?", "The chat and the plan stay — only the goal object goes.",
+                        { okLabel: "delete", danger: true }))) return null;
   return goalAct("delete");
 }
 /* ---- run task graph (v0.6: LLM-generated, live, interactive) ---- */
@@ -9310,26 +9319,32 @@ async function graphNodeAction(id, a) {
   let body = { id };
   if (a === "cancel") { body.action = "cancel"; }
   else if (a === "done") {
-    const ev = prompt("evidence for '" + id + "' (command + output + number):",
-                      "cmd=... output=... exit=0");
-    if (ev === null || !ev.trim()) return;
-    body.action = "update"; body.status = "done"; body.evidence = ev;
+    const ev = await uiAsk({
+      title: "Evidence for " + id,
+      hint: "What proves this step is done? A command plus its output plus the number you checked.",
+      value: "cmd=... output=... exit=0", okLabel: "mark done" });
+    if (ev === null || !String(ev).trim()) return;
+    body.action = "update"; body.status = "done"; body.evidence = String(ev);
   } else if (a === "superseded") {
     // v809: the step is being ABANDONED, so the why is the payload — the server
     // refuses a reasonless (or "still open") supersede. `cancel` is the silent
     // close; keeping them apart is what makes the lifecycle readable.
-    const why = prompt("why is '" + id + "' no longer needed? (required)", "");
+    const why = await uiAsk({
+      title: "Why is " + id + " no longer needed?",
+      hint: "Required — a superseded step carries its reason.", okLabel: "supersede" });
     if (why === null) return;                       // cancelled the dialog
-    if (!why.trim()) {
+    if (!String(why).trim()) {
       who("ai", "a superseded step needs a why — use cancel to close it without one");
       return;
     }
-    body.action = "update"; body.status = "superseded"; body.reason = why.trim();
+    body.action = "update"; body.status = "superseded"; body.reason = String(why).trim();
   } else if (a === "blocked") {
-    const why = prompt("what is blocking '" + id + "'? (optional)", "");
+    const why = await uiAsk({
+      title: "What is blocking " + id + "?",
+      hint: "Optional — the reason travels with the step.", okLabel: "block" });
     if (why === null) return;
     body.action = "update"; body.status = "blocked";
-    if (why.trim()) body.reason = why.trim();
+    if (String(why).trim()) body.reason = String(why).trim();
   } else if (a === "carry") {
     // v810: re-tag the step as CURRENT work (id and evidence untouched); the
     // panel re-render moves it out of the OLD PLAN group.
@@ -9348,7 +9363,7 @@ async function addTask() {
   // legacy /api/tasks board, so the "+" looked broken on a fresh session.)
   const rid = listRunId() || sessionId;
   if (!rid) { who("ai", "no session selected"); return; }
-  $("planInp").value = "";
+  $("planInp").value = ""; _growPlan();
   const r = await api("POST", "/api/runs/" + encodeURIComponent(rid) + "/graph/nodes", { action: "add", label: v });
   if (r && r.error) { who("ai", "⚠ graph: " + r.error); return; }
   if (!curRunId) setRun(rid);
@@ -9358,9 +9373,11 @@ async function addTask() {
 async function replanGraph() {
   const rid = listRunId();
   if (!rid) { who("ai", "no run graph to re-plan yet"); return; }
-  const note = prompt("re-plan: what changed / what is still missing?", "");
+  const note = await uiAsk({
+    title: "Re-plan", hint: "What changed / what is still missing?",
+    multiline: true, rows: 3, okLabel: "re-plan" });
   if (note === null) return;                       // cancelled
-  const r = await api("POST", "/api/runs/" + rid + "/graph/nodes", { action: "replan", note: note || "" });
+  const r = await api("POST", "/api/runs/" + rid + "/graph/nodes", { action: "replan", note: String(note) || "" });
   if (r && r.error) { who("ai", "⚠ replan: " + r.error); return; }
   const add = r.added || [], labels = r.added_labels || [];
   // JAG-274: the announcement comes FIRST (chronological, forced top-level), then the
@@ -9702,21 +9719,22 @@ async function homeMove() {
   const inp = $("homePath");
   const path = (inp && inp.value || "").trim();
   if (!path) return;
-  if (!confirm("Move ALL Longrun data to:\n" + path +
-               "\n\nThe current data is copied, verified, then the old copy is removed. " +
-               "Keep the window open: the progress bar shows the copy.")) return;
+  if (!(await uiConfirm("Move ALL Longrun data?",
+      "To: " + path + "\n\nThe current data is copied, verified, then the old copy is removed. " +
+      "Keep the window open: the progress bar shows the copy.",
+      { okLabel: "move", danger: true }))) return;
   let r;
   try { r = await api("POST", "/api/home/move", { path: path }); }
-  catch (e) { alert("move failed: " + e); return; }
-  if (!r || r.ok === false) { alert("move refused: " + ((r && r.error) || "unknown")); return; }
+  catch (e) { toast("move failed: " + e, "err"); return; }
+  if (!r || r.ok === false) { toast("move refused: " + ((r && r.error) || "unknown"), "err"); return; }
   applyHomeProgress({ phase: "scanning", pct: 0 });
 }
 async function homeRestart() {
   try {
     const r = await api("POST", "/api/home/restart", {});
-    if (!r.ok) { alert(r.error || "restart unavailable"); return; }
+    if (!r.ok) { toast(r.error || "restart unavailable", "err"); return; }
     setTimeout(() => location.reload(), 3000);
-  } catch (e) { alert("restart failed: " + e); }
+  } catch (e) { toast("restart failed: " + e, "err"); }
 }
 
 /* ---- approvals (v0.2: HITL gate) ----
@@ -11563,6 +11581,92 @@ function closeAside() { _closeDrawers(); _setTabbarActive("chat"); }
  * needed this. Elements are built with the DOM API so a session title is never
  * injected as HTML. */
 let _skipDeleteConfirm = false;
+/* 2026-11-07: EVERY dialog is the app's own. A native `prompt()`/`confirm()` draws the
+   browser's box — its own title bar, its own OK/Annulla, none of the theme — and the
+   operator reported it on the task-evidence flow. ONE anatomy for ask + confirm: the
+   SAME `.smback` + `.smodal` the file/skill picker already uses, so there is no second
+   surface to keep in sync. Resolves a string (field), `true`/`false` (decision) or
+   `null` (cancelled with a field). */
+let _uiDlgBusy = false;
+function uiDialog(opts) {
+  opts = opts || {};
+  return new Promise(resolve => {
+    if (_uiDlgBusy) { resolve(opts.input === false ? false : null); return; }
+    _uiDlgBusy = true;
+    const back = document.createElement("div");
+    back.className = "smback";
+    const box = document.createElement("div");
+    box.className = "smodal uidlg";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-labelledby", "uidlgTitle");
+    const hd = document.createElement("div");
+    hd.className = "pick-hd";
+    const title = document.createElement("b");
+    title.id = "uidlgTitle";
+    title.textContent = opts.title || (opts.input === false ? "Confirm" : "Enter a value");
+    hd.append(title);
+    box.append(hd);
+    if (opts.hint) {
+      const hint = document.createElement("div");
+      hint.className = "remaining";
+      hint.style.whiteSpace = "pre-wrap";
+      hint.textContent = opts.hint;
+      box.append(hint);
+    }
+    let field = null;
+    if (opts.input !== false) {
+      field = document.createElement(opts.multiline ? "textarea" : "input");
+      field.className = "inp";
+      field.setAttribute("aria-label", opts.title || "value");
+      if (opts.multiline) { field.rows = opts.rows || 4; field.style.resize = "vertical"; }
+      if (opts.placeholder) field.placeholder = opts.placeholder;
+      field.value = opts.value == null ? "" : String(opts.value);
+      box.append(field);
+    }
+    const ft = document.createElement("div");
+    ft.className = "pick-hd";
+    ft.style.justifyContent = "flex-end";
+    const no = document.createElement("button");
+    no.type = "button"; no.className = "ghost"; no.textContent = opts.cancelLabel || "cancel";
+    const yes = document.createElement("button");
+    yes.type = "button"; yes.className = "ghost"; yes.textContent = opts.okLabel || "ok";
+    if (opts.danger) yes.style.cssText = "border-color:var(--err);color:var(--err)";
+    ft.append(no, yes);
+    box.append(ft);
+    document.body.append(back, box);
+    let closed = false;
+    const close = ok => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener("keydown", onKey, true);
+      _uiDlgBusy = false;
+      back.remove(); box.remove();
+      if (!ok) { resolve(field ? null : false); return; }
+      resolve(field ? field.value : true);
+    };
+    const onKey = e => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(false); return; }
+      if (e.key !== "Enter") return;
+      // a multi-line field keeps Enter for a newline; Ctrl/Cmd+Enter submits.
+      if (field && field.tagName === "TEXTAREA" && !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault(); e.stopPropagation(); close(true);
+    };
+    yes.onclick = () => close(true);
+    no.onclick = () => close(false);
+    back.onclick = () => close(false);
+    document.addEventListener("keydown", onKey, true);
+    setTimeout(() => {
+      const f = field || yes;
+      try { f.focus(); if (field && field.select) field.select(); } catch (e) {}
+    }, 0);
+  });
+}
+function uiAsk(opts) { return uiDialog(Object.assign({ input: true }, opts || {})); }
+function uiConfirm(title, hint, opts) {
+  return uiDialog(Object.assign({ title, hint, input: false, okLabel: "ok" }, opts || {}));
+}
+
 function confirmDelete(message, force) {
   if (_skipDeleteConfirm && !force) return Promise.resolve(true);
   return new Promise(resolve => {
@@ -12065,12 +12169,14 @@ function renderTools(el, d) {
   const apMtxEn = el.querySelector("#apMatrixEnabled");
   if (apMtxEn) apMtxEn.onchange = () => scheduleApprovalSave(el);
   const apNucUnlock = el.querySelector("#apNucleusUnlock");
-  if (apNucUnlock) apNucUnlock.onchange = () => {
-    if (apNucUnlock.checked && !confirm(
-      "DANGEROUS\n\nThis unlocks writes into the immutable Nucleus "
-      + "(src/longrun, webui, config, deploy, tests, docs, .longrun, Global_rules.md / Project_rules.md, AGENTS.md).\n"
+  if (apNucUnlock) apNucUnlock.onchange = async () => {
+    if (apNucUnlock.checked && !(await uiConfirm(
+      "Unlock writes into the Nucleus?",
+      "This unlocks src/longrun, webui, config, deploy, tests, docs, .longrun, "
+      + "Global_rules.md / Project_rules.md, AGENTS.md.\n"
       + "The shell write-target gate, fs.write / fs.edit and the tamper-restore all stand down, "
-      + "so the agent can rewrite the harness itself mid-run.\n\nEnable it?")) {
+      + "so the agent can rewrite the harness itself mid-run.",
+      { okLabel: "enable", danger: true }))) {
       apNucUnlock.checked = false;
       return;
     }
@@ -13880,14 +13986,16 @@ async function webhookToggle(id) {
   loadWebhooks();
 }
 async function webhookRotate(id) {
-  if (!confirm("Rotate the secret of " + id + "? The old secret stops working.")) return;
+  if (!(await uiConfirm("Rotate the secret of " + id + "?", "The old secret stops working.",
+                        { okLabel: "rotate" }))) return;
   const res = await api("POST", "/api/webhooks/" + encodeURIComponent(id) + "/rotate");
   if (res && res.ok === true) _showWebhookSecret(res);
   else who("user", "rotate refused: " + String((res && res.error) || "?"));
   loadWebhooks();
 }
 async function webhookDelete(id) {
-  if (!confirm("Delete inlet " + id + " and its deliveries?")) return;
+  if (!(await uiConfirm("Delete inlet " + id + "?", "Its deliveries go with it.",
+                        { okLabel: "delete", danger: true }))) return;
   const res = await api("DELETE", "/api/webhooks/" + encodeURIComponent(id));
   if (res && res.ok === true) who("ai", "✓ inlet deleted");
   else who("user", "delete refused: " + String((res && res.error) || "?"));
@@ -14460,8 +14568,10 @@ async function mountStaticSparkles() {
     // host and its `before` target must be PARENT and CHILD, or insertBefore throws.
     ["chat.prompt", "#inp", "#toolsBar .tb-foot", ".more-wrap",
      "optimize what I typed — same intent, clearer and more complete"],
-    ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint", ""],
-    ["plan.input", "#planInp", null, null, ""],
+    ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint",
+     "reorganize this objective — same intent, one checkable outcome"],
+    ["plan.input", "#planInp", null, null,
+     "reorganize this step — same intent, one concrete checkable action"],
     ["memory.content", "#memContent", null, null, ""],
     ["blackboard.topic", "#bbContent", null, null, ""],
     ["kb.notebook", "#kbNewName", null, null, ""],
@@ -17435,15 +17545,25 @@ $("inp").addEventListener("keydown", e => {
   if (e.key === "Escape" && menu) { menu.hidden = true; _slashSkillsOnly = false; }
 });
 /* JAG-415: the composer textarea auto-grows with its content up to 160px, then
-   scrolls. Reset to auto first so it can also SHRINK when text is deleted. */
-function _growInp() {
-  const el = $("inp"); if (!el) return;
-  const max = 160;
+   scrolls. Reset to auto first so it can also SHRINK when text is deleted.
+   2026-11-07: ONE grower for every auto-growing field (composer, Plan step, goal
+   objective) — a second copy is how they drift apart. */
+function _growField(el, max) {
+  if (!el) return;
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, max) + "px";
   el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
 }
+function _growInp() { _growField($("inp"), 160); }
 $("inp").addEventListener("input", _growInp);
+/* the Plan field and the goal objective editor grow the same way (the Plan box used
+   to be a one-line <input>, so a long step was invisible past the first words). */
+function _growPlan() { _growField($("planInp"), 132); }
+function _growGoalEdit() { _growField($("goalEditBox"), Math.round(window.innerHeight * 0.42)); }
+["planInp", "goalEditBox"].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener("input", id === "planInp" ? _growPlan : _growGoalEdit);
+});
 /* JAG-431r8: paste an image (or any file) from the clipboard straight into the
    composer as an attachment — a copied screenshot now "just works" via Ctrl/Cmd+V
    exactly like the file picker (JAG-279). Plain-text paste is left to the browser:
@@ -17621,6 +17741,9 @@ function _bindInlineActions() {
     const el = closest(e.target, "[data-key-fn]");
     if (!el || !e.key) return;
     if (e.key.toLowerCase() !== (el.dataset.key || "enter").toLowerCase()) return;
+    // 2026-11-07: in a MULTI-LINE field (the Plan step is a textarea now) Shift+Enter
+    // is a line break, not the action — the same rule the composer has.
+    if (el.tagName === "TEXTAREA" && e.shiftKey) return;
     e.preventDefault();
     invoke(el.dataset.keyFn, el, []);
   });

@@ -341,6 +341,41 @@ check("H7 the multi-field reply never goes through the single-field writer",
       "if (opts && typeof opts.onText === \"function\")" in UI
       and "opts.onText(r.text, st)" in UI)
 
+# ============================================================================
+# I — 2026-11-07 (operator, RH panel): the Plan/Goal box must GROW with the text,
+#     and its ✨ must REORGANIZE what is already there — "see what the icon does
+#     for the chat, same for the plan/goal but with a different intent".
+# ============================================================================
+check("I1 the Plan field is a multi-line box, not a one-line input",
+      '<textarea aria-label="goal or plan node" id="planInp"' in UI
+      and '<input aria-label="goal or plan node" id="planInp"' not in UI)
+check("I2 it grows with its content through the ONE grower (composer + goal too)",
+      "function _growField(el, max)" in UI
+      and "function _growPlan() { _growField($(\"planInp\"), 132); }" in UI
+      and "function _growGoalEdit()" in UI
+      and '["planInp", "goalEditBox"].forEach(' in UI)
+check("I3 Shift+Enter is a line break in a data-key TEXTAREA (Enter still runs)",
+      'if (el.tagName === "TEXTAREA" && e.shiftKey) return;' in UI)
+check("I4 the ✨ on the plan/goal names the REORGANIZE job when the field has text",
+      "reorganize this step" in (_rows.get("plan.input") or "")
+      and "reorganize this objective" in (_rows.get("goal.objective") or ""))
+check("I5 the server prompts carry the FILLED branch for both surfaces",
+      "CURRENT CONTENT OF THE FIELD decides the job" in S.SURFACES["plan.input"].system
+      and "REORGANIZE that text into ONE step" in S.SURFACES["plan.input"].system
+      and "REPLACES" in S.SURFACES["plan.input"].system
+      and "REORGANIZE that text" in S.SURFACES["goal.objective"].system
+      and "REPLACES" in S.SURFACES["goal.objective"].system)
+# the browser's own dialogs are gone from the app flows: ONE themed dialog. The
+# bootstrap token prompt is the only exception (it runs before the app exists).
+check("I6 every dialog is the app's own (no native prompt/confirm/alert in the flows)",
+      "function uiDialog(opts)" in UI and "function uiAsk(opts)" in UI
+      and "function uiConfirm(title, hint, opts)" in UI
+      and all(("prompt(" not in ln) for ln in UI.splitlines()
+              if "TOKEN = prompt(" not in ln and not ln.strip().startswith("//")
+              and not ln.strip().startswith("*") and "`prompt()`" not in ln)
+      and all(("alert(" not in ln) for ln in UI.splitlines()
+              if not ln.strip().startswith("//")))
+
 if _CFGJSON_BEFORE is None:
     if os.path.exists(_CFGJSON):
         os.remove(_CFGJSON)

@@ -259,16 +259,29 @@ _GENERATE_PROMPTS = {
     ),
     "goal.objective": (
         "You write the OBJECTIVE of a durable goal for this session — the outcome to "
-        "reach, in the operator's words. Use the chat's context (recent turns, the "
-        "task list, the workspace) to make it concrete and checkable. It must state a "
-        "RESULT, not a process, and each clause must be verifiable by looking at the "
-        "workspace. One paragraph, at most two." + _BARE
+        "reach, in the operator's words. The CURRENT CONTENT OF THE FIELD decides the job."
+        " EMPTY field: use the chat's context (recent turns, the task list, the workspace) "
+        "to state a concrete, checkable RESULT — an outcome, not a process."
+        " FILLED field: REORGANIZE that text — same intent, different order. Keep its "
+        "language and every fact it states, fix spelling and ambiguity, put the outcome "
+        "first and the constraints after it, and make each clause verifiable by looking "
+        "at the workspace. Overlap with the draft is intended (the rewrite REPLACES it); "
+        "add nothing the draft or the context does not support — no new features, names, "
+        "paths or numbers."
+        " One paragraph, at most two." + _BARE
     ),
     "plan.input": (
-        "You write a single plan step for this session's task graph. Use the chat's "
-        "context and the steps already present: the step must be one concrete action "
-        "that is not already listed, phrased so its completion can be checked against "
-        "an artefact. One line." + _BARE
+        "You write ONE step of this session's task graph. The CURRENT CONTENT OF THE FIELD "
+        "decides the job."
+        " EMPTY field: use the chat's context and the steps already present — the step "
+        "must be ONE concrete action that is not already listed, phrased so its completion "
+        "can be checked against an artefact."
+        " FILLED field: REORGANIZE that text into ONE step — keep its intent and every "
+        "fact it states, fix spelling and grammar, drop what is not actionable, and put "
+        "the checkable result on the same line. Overlap is intended (the rewrite REPLACES "
+        "it); never split it into several steps and never add a fact the draft does not "
+        "have."
+        " One line." + _BARE
     ),
     "rules.global": (
         "You write one paragraph of the operator's GLOBAL rules for this harness — "
