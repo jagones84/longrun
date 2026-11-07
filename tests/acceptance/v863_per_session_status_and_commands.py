@@ -96,6 +96,8 @@ check("C4 a command keeps position 0 (attachments go after it)",
 check("C5 the rail marker is per session, not a global busy flag",
       "row.classList.toggle(\"naming\", !!on)" in src
       and "namingSessions[sid] = true" in src)
+check("C6 an attachment never displaces a command on the IMMEDIATE path",
+      'msg.startsWith("/") ? msg + "\\n\\n" + _attBlock' in src)
 
 print("---")
 passed = sum(results)

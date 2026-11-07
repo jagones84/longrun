@@ -6092,7 +6092,12 @@ function send(text, display, atts) {
     return;
   }
   const _disp = (display !== undefined ? display : msg);
-  if (_attBlock) msg = _attBlock + "\n\n" + msg;   // the model reads attachments first
+  // v863b: the SAME rule on the immediate path (queued messages were fixed above):
+  // an attachment block must never displace a leading `/`, or the server never
+  // resolves the command. Checked on `msg`, not on `_isCmd`: `/goal` is stripped
+  // into `mode` and is no longer a command by the time it reaches the server.
+  if (_attBlock) msg = msg.startsWith("/") ? msg + "\n\n" + _attBlock
+                                          : _attBlock + "\n\n" + msg;
   inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
   const _uNode = who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote);
   if (_attSnap.length) {
