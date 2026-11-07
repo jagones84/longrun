@@ -2502,6 +2502,53 @@ def _note_chat_mutation(sess, tool, args=None, state=None):
         pass
 
 
+def _claim_step(sess, on_event=None):
+    """v857: the harness itself owns the `doing` claim for the step it works.
+
+    `doing` used to exist only if the MODEL remembered a `todo.update` — measured
+    on 2026-11-07 over 20 000 non-delta feed rows: of 45 turn windows that ran
+    real tools, **11 published ZERO `doing`** (one ran 509 s / 16 tools, another
+    51 tools), so the plan showed a flat grey list while work was happening. The
+    harness already decides WHICH step it is working: `_cur_node()` is the node
+    every card of the turn is nested under. Promoting THAT node (`todo` ->
+    `doing`) when real work starts makes the yellow marker a fact of the turn,
+    and `turn_end` (v811) demotes it back when the turn ends — the same one
+    truth the run state uses.
+
+    Never invents work: a claim the model already made wins (exactly one `doing`),
+    a `blocked` step is left alone (it is waiting on something), an empty CURRENT
+    plan is not filled from an older one, and no plan means nothing to claim.
+    Returns the node id, or None when there is nothing to claim.
+    """
+    try:
+        graph = taskgraph.load(sess["id"])
+    except Exception:  # noqa: BLE001 — claiming must never break a call
+        return None
+    if not graph or not graph.get("nodes"):
+        return None
+    current = None
+    for node in taskgraph.plan_nodes(graph):
+        if node.get("status") == "doing":
+            return node.get("id")       # the model's own claim wins
+        if current is None and node.get("status") == "todo":
+            current = node
+    if current is None:
+        return None
+    try:
+        node = taskgraph.update_node(graph, current["id"], status="doing",
+                                     source="harness:work-start")
+    except (KeyError, ValueError):      # noqa: BLE001
+        return None
+    if on_event:
+        try:
+            on_event("graph.node.updated", session=sess["id"], node=node,
+                     index=graph["nodes"].index(node), total=len(graph["nodes"]),
+                     changes=["status"])
+        except Exception:  # noqa: BLE001 — a render failure must not stop the work
+            pass
+    return node.get("id")
+
+
 def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=None,
                       state=None):
     """Run the calls of a `batch` action (JAG-533).
@@ -2568,6 +2615,11 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
         return {"tool": tool, "ok": ok, "obs": obs}
 
     tool_items, sub_items, dispatch_items = _split_batch_items(_batch_items(act))
+    if tool_items:
+        # v857: a batch of real tool calls IS work — the step it runs for is `doing`
+        # even when the model did not say so, so the plan never shows a flat list
+        # while the turn is executing (one claim, not one per parallel item).
+        _claim_step(sess, on_event)
     results = []
     if tool_items:
         results.extend(_map_tools(tool_items, _parallel_tool_cap(), _one_tool))
@@ -3244,6 +3296,36 @@ def _is_explicit_finish(act):
                    for k in _FINISH_SUMMARY_KEYS)
     except Exception:  # noqa: BLE001
         return False
+
+
+def _request_thread(sess, current="", older=3, chars=600):
+    """The operator's request THREAD: the original ask plus later user messages.
+
+    v859: the closure verdict used to quote the CURRENT turn's message only, so a
+    session where the operator refined the task over several turns was graded on
+    the last sentence — "ho finito" against the wrong request. The thread is read
+    from the stored transcript (role `user`), skipping harness injections (they
+    carry the `[harness] ` mark), so what the check quotes is what the operator
+    actually asked, in order.
+    """
+    asks = []
+    for m in list((sess or {}).get("messages") or []):
+        if not isinstance(m, dict) or m.get("role") != "user":
+            continue
+        t = str(m.get("content") or "").strip()
+        if not t or t.startswith(HARNESS_MARK):
+            continue
+        asks.append(t)
+    cur = str(current or "").strip()
+    if cur and (not asks or asks[-1] != cur):
+        asks.append(cur)
+    if not asks:
+        return ""
+    if len(asks) == 1:
+        return asks[0][:chars]
+    tail = asks[1:][-older:]
+    return (asks[0][:chars] + "\n\nLATER user message(s) in this session:\n"
+            + "\n".join("- " + a[:chars] for a in tail))
 
 
 def _closure_check_prompt(request=""):
@@ -4664,6 +4746,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     _failed_checked = False   # one failed-call verdict per turn (never a loop)
     _evidence_used = False    # one evidence-gate round per turn (never a loop)
     _intent_used = False      # one closing-check round when the reply ends on a plan
+    # v859: the close is graded against the operator's request THREAD (the original
+    # ask plus the follow-ups), never only the current sentence, and once per turn
+    # even when every step is closed and no artefact was written.
+    _request_thread_text = _request_thread(sess, message)
+    _request_verified = False
     _goal_close_used = False  # JAG-504: one goal-closure round per /goal turn
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
     _think_action_used = False  # one round when the action hides in the reasoning
@@ -5020,6 +5107,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             work_steps += 1
             _total_work_steps += 1
             used_tools.append("subagent")
+            _claim_step(sess, on_event)   # v857: the step a delegation works is `doing`
             _th = str(act.get("thought") or "").strip()
             if _th:
                 _think_buf["t"] += _th + "\n"
@@ -5049,6 +5137,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             work_steps += 1
             _total_work_steps += 1
             used_tools.append("dispatch")
+            _claim_step(sess, on_event)   # v857: the step being delegated is `doing`
             _th = str(act.get("thought") or "").strip()
             if _th:
                 _think_buf["t"] += _th + "\n"
@@ -5243,6 +5332,11 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _deliv_state["after_review"] = True
             tool = _card_tool_name(_raw_tool, args)
             used_tools.append(tool)
+            # v857: a real (non-plan) tool call is WORK — the step it runs for is
+            # `doing` even when the model forgot to say so. `todo.*` is excluded:
+            # those actions move the plan themselves.
+            if not str(_raw_tool or "").startswith("todo."):
+                _claim_step(sess, on_event)
             on_event("tool.call", session=sess["id"], tool=tool,
                      args=_card_args(_raw_tool, args), inline=True)   # JAG-536: no echo action
             try:
@@ -5456,6 +5550,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_verify_gate_text(), "closure-check")
                 continue
+            if (not _request_verified and _total_work_steps
+                    and not _is_aborted(sess["id"])):
+                # v859: "I am done" is a CLAIM. Before the turn closes, the harness
+                # asks ONCE for a verdict against the operator's OWN request thread
+                # — even when every step is closed and no artefact was written
+                # (that close used to be accepted with no check at all).
+                _request_verified = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_closure_check_prompt(_request_thread_text), "closure-check")
+                continue
             _finished_cleanly = True
             final_answer = next(
                 (act[k].strip() for k in _FINISH_SUMMARY_KEYS
@@ -5481,8 +5585,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     # Premature stop: work is still open — let the SAME agent
                     # verdict its own last response before accepting it.
                     _selfcheck_left -= 1
+                    _request_verified = True   # v859: one verdict per turn
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_closure_check_prompt(message), "closure-check")
+                    _inject(_closure_check_prompt(_request_thread_text), "closure-check")
                     continue
                 _drv = _deliverable_review_text(sess, message, _deliv_since,
                                                 _deliv_state)
@@ -5509,6 +5614,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_evidence_gate_text(), "closure-check")
                     continue
+                if (not _request_verified and _total_work_steps
+                        and not _is_aborted(sess["id"])):
+                    # v859: the same request-anchored verdict before this close.
+                    _request_verified = True
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_closure_check_prompt(_request_thread_text), "closure-check")
+                    continue
                 final_answer = _txt
                 on_delta("answer", _txt)
                 break
@@ -5529,8 +5641,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     continue
                 if _selfcheck_left > 0 and _turn_unfinished(sess, goal_mode):
                     _selfcheck_left -= 1
+                    _request_verified = True   # v859: one verdict per turn
                     msgs.append({"role": "assistant", "content": answer})
-                    _inject(_closure_check_prompt(message), "closure-check")
+                    _inject(_closure_check_prompt(_request_thread_text), "closure-check")
                     continue
                 _drv = _deliverable_review_text(sess, message, _deliv_since,
                                                 _deliv_state)
@@ -5542,6 +5655,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 if _cite:
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_cite, "closure-check")
+                    continue
+                if (not _request_verified and _total_work_steps
+                        and not _is_aborted(sess["id"])):
+                    # v859: the same request-anchored verdict before this close.
+                    _request_verified = True
+                    msgs.append({"role": "assistant", "content": answer})
+                    _inject(_closure_check_prompt(_request_thread_text), "closure-check")
                     continue
                 final_answer = answer
                 _final_is_artifact = True
@@ -5762,6 +5882,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _selfcheck_left -= 1
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_failed_call_check_prompt(_last_failed_err), "closure-check")
+                continue
+            if (not _request_verified and _total_work_steps
+                    and not _is_aborted(sess["id"])):
+                # v859: the last close path. A prose "done" after real work faces
+                # ONE verdict against the operator's request thread — never only
+                # against the last sentence.
+                _request_verified = True
+                msgs.append({"role": "assistant", "content": answer})
+                _inject(_closure_check_prompt(_request_thread_text), "closure-check")
                 continue
             # DELIVERY FLOOR: the same one named round the budget path grants, so a
             # stop here cannot be silent about an empty workspace either. The
