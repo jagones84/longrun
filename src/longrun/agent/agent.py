@@ -1870,6 +1870,22 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
                         _ev = (list(ev) + [_obs_entry] if isinstance(ev, list)
                                else ([{"ts": round(time.time(), 3), "text": str(ev)},
                                       _obs_entry] if ev else [_obs_entry]))
+                    elif _rep.get("unavailable") or _rep.get("tainted"):
+                        # v861: the step closes on the model's claim, and the plan
+                        # SAYS so. A silent close here is how "done" stopped meaning
+                        # anything; an entry with `observed: False` is the honest
+                        # third state between verified and refused.
+                        _why = ("no test command could be resolved for this workspace"
+                                if _rep.get("unavailable") else
+                                "the step changed the TEST setup itself (%s), so its "
+                                "own suite is not independent evidence"
+                                % ", ".join((_rep.get("paths") or [])[:3]))
+                        _unv = {"ts": round(time.time(), 3), "observed": False,
+                                "unverified": True,
+                                "text": "closeout UNVERIFIED — %s" % _why}
+                        _ev = (list(ev) + [_unv] if isinstance(ev, list)
+                               else ([{"ts": round(time.time(), 3), "text": str(ev)},
+                                      _unv] if ev else [_unv]))
                     _nd = taskgraph.complete_node(
                         graph, node_id=_nd["id"], evidence=_ev, source="model:update_todos",
                         sources=(step.get("sources") or step.get("source_refs")))
@@ -3328,7 +3344,26 @@ def _request_thread(sess, current="", older=3, chars=600):
             + "\n".join("- " + a[:chars] for a in tail))
 
 
-def _closure_check_prompt(request=""):
+def _with_known_gaps(text, known):
+    """Append the harness's OWN findings to a closure verdict (v861).
+
+    One wording, one place: the verdict of every close path (`closure-check` and
+    the forced `final`) is built from this, so a read-back that found a concrete
+    defect can never be delivered as "check it yourself" to the same model that
+    produced the work. Measured on terminal agents, an un-aimed self-check
+    detects 61 % of wrong candidates; naming the defect is the part that moves
+    the number.
+    """
+    body = str(text or "")
+    gaps = str(known or "").strip()
+    if not gaps or "THE HARNESS ALREADY CHECKED" in body:
+        return body
+    return body + ("\n\nTHE HARNESS ALREADY CHECKED THE ARTEFACT and found:\n%s\n"
+                   "Fix it, or name every item above as still open — never close as if "
+                   "it were done." % gaps[:900])
+
+
+def _closure_check_prompt(request="", known=""):
     """The fixed harness verdict prompt: complete (finish) or keep working.
 
     `request` (JAG-504) is the operator's ORIGINAL message for this turn. When it
@@ -3336,6 +3371,12 @@ def _closure_check_prompt(request=""):
     plan: closing every step is the agent's claim, and the turn is graded on
     whether the answer satisfies what was ASKED. Called with no argument it keeps
     the original wording byte-for-byte (v584 pins it).
+
+    `known` (v861) is what the harness itself ALREADY found in the artefacts
+    (the read-back's concrete gaps). A verdict that only says "check it" leaves
+    the detection to the same model that produced the work — measured on
+    terminal agents, that catches 61 % of wrong candidates. Naming the defect is
+    the part of verification that actually moves the number.
     """
     base = ("Closure check (harness — do not skip): is your last response the "
             "COMPLETE and final answer with the work fully done? If YES, emit "
@@ -3345,7 +3386,7 @@ def _closure_check_prompt(request=""):
     req = str(request or "").strip()
     if not req:
         return base
-    return ("Closure check (harness — do not skip). Closing every step is your CLAIM; "
+    body = ("Closure check (harness — do not skip). Closing every step is your CLAIM; "
             "the turn is graded on the ORIGINAL request:\n%s\n\n"
             "Does your last response actually ANSWER it (everything asked for, nothing "
             "contradicting it)? If YES, emit ONLY "
@@ -3353,9 +3394,10 @@ def _closure_check_prompt(request=""):
             "closes. If NO, do the missing work NOW — make the next tool call in this "
             "message, or reopen/write the step that is still needed — instead of "
             "closing." % req[:1200])
+    return _with_known_gaps(body, known)
 
 
-def _forced_close_verify_text(request):
+def _forced_close_verify_text(request, known=""):
     """The verdict a FORCED close owes when the turn already did real work.
 
     Measured 2026-11-07 on the durable event log (3 days, 62 turns): 12 of the 40
@@ -3365,16 +3407,20 @@ def _forced_close_verify_text(request):
     offer the `finish` action (the loop is over, an envelope here would be
     delivered verbatim as the answer): it asks for the CHECK, and the forced-final
     instruction right after it asks for the reply.
+
+    `known` (v861) carries the harness's own read-back findings, so the check
+    names the defect instead of asking for an opinion on it.
     """
     req = str(request or "").strip()
     if not req:
         return ""
-    return ("Closure check (harness — do not skip). This turn did real work, so the "
+    body = ("Closure check (harness — do not skip). This turn did real work, so the "
             "answer you are about to give is graded against the ORIGINAL request:\n%s"
             "\n\nCheck every item that was asked for against what you actually did, "
             "and name plainly anything that is missing or unfinished. Never report a "
             "step as done when you did not see the result. Answer in plain prose."
             % req[:1200])
+    return _with_known_gaps(body, known)
 
 
 def _goal_closure_prompt(request, objective):
@@ -4591,6 +4637,10 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # while the same nudge on the NEXT turn is a fresh push after the model has
     # replied and must go through.
     _inject_seen = {}
+    # v861: what each gate injected this turn, and the work step it fired on. At
+    # the close it becomes ONE `harness.gates` event, so "is a gate worth its
+    # tokens?" is a number the product can report instead of an opinion.
+    _gate_fired = []
 
     def _inject(content, kind, persist=True):
         """JAG-166: add a synthetic message to the LLM context AND surface it.
@@ -4608,6 +4658,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         transcript (a background job that finished while no turn was running):
         the model still gets it, the UI keeps one copy instead of two.
         """
+        # v861: the read-back REMEMBERS itself and every later verdict CARRIES it,
+        # so a close that follows a read-back names the defect the harness already
+        # found instead of asking the same model for another opinion. One place,
+        # every call site.
+        nonlocal _review_known
+        if kind == "review":
+            _review_known = str(content or "")
+        elif kind == "closure-check":
+            content = _with_known_gaps(content, _review_known)
         # I-2: a byte-identical REPEAT of the same (kind, text) tells the model
         # nothing new (it already holds those bytes), so it is not re-charged to
         # the context. It is still ANNOUNCED (`repeat: true`) so nothing is
@@ -4617,6 +4676,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             on_event("harness.inject", session=sess["id"], inject_kind=kind,
                      text=content, repeat=True)
             return
+        _gate_fired.append({"kind": kind, "work": _total_work_steps})
         msgs.append(harness_wrap(content))  # JAG-266: tag harness turns
         wire = msgs[-1]
         # NOTE: the payload key must NOT be `kind` — the SSE emitters take the
@@ -4773,6 +4833,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # even when every step is closed and no artefact was written.
     _request_thread_text = _request_thread(sess, message)
     _request_verified = False
+    # v861: the LAST read-back text the harness produced this turn. It is what
+    # turns the closure verdict from "check it yourself" into "you missed THIS".
+    _review_known = ""
     _goal_close_used = False  # JAG-504: one goal-closure round per /goal turn
     _empty_streak = 0         # bounded retries for an EMPTY model message (max 2)
     _think_action_used = False  # one round when the action hides in the reasoning
@@ -6155,6 +6218,18 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         publish("run.metrics", session=sess["id"], metrics=runmetrics.get(sess["id"]))
     except Exception:  # noqa: BLE001 — metrics must never break a turn
         pass
+    if _gate_fired:
+        try:
+            # v861: ONE event per turn with the gates that fired and whether real
+            # work followed each. `GET /api/harness/cycle` aggregates it, so the
+            # operator sees whether a gate earns its tokens instead of trusting it.
+            on_event("harness.gates", session=sess["id"],
+                     work_steps=_total_work_steps,
+                     fired=[{"kind": g["kind"],
+                             "work_after": _total_work_steps > g["work"]}
+                            for g in _gate_fired])
+        except Exception:  # noqa: BLE001 — a measurement must never break a turn
+            pass
     publish("chat.done", session=sess["id"], message_id=len(sess["messages"]),
             model=model, think_chars=len(think), error=bool(meta.get("error")))
     try:  # JAG-133: records the turn's tool sequence for skill mining

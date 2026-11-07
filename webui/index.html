@@ -10104,6 +10104,17 @@ async function loadHarnessCycle() {
     const n = (d.library || {}).entries || 0;
     lib.innerHTML = "library: <b>" + esc(String(n)) + "</b> " + (n === 1 ? "entry" : "entries") +
       (keys.length ? " · " + keys.map(k => esc(k) + " (" + esc(String(dom[k])) + ")").join(" · ") : " · empty");
+    // v861: does each gate earn its tokens? Measured, not assumed — one
+    // `harness.gates` event per gated turn, aggregated over `days`. `observation`
+    // and `system` are not interventions (one is a tool result, one the prompt).
+    const g = d.gates || {};
+    const gk = (g.kinds || []).filter(k => k.kind !== "observation" && k.kind !== "system");
+    if (gk.length) {
+      lib.innerHTML += " · gates " + esc(String(g.days)) + "d: " + gk.map(k =>
+        esc(k.kind) + " " + esc(String(k.fired)) + "×" +
+        (k.fired ? " (" + Math.round(100 * k.changed / k.fired) + "% → work)" : "")
+      ).join(" · ");
+    }
   }
   const last = $("hcLast");
   if (last) {

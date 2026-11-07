@@ -59,6 +59,48 @@ def last():
         return None
 
 
+def gate_stats(days=7):
+    """How the harness's own interventions behave, read from the durable log.
+
+    v861: every turn that met at least one gate publishes ONE `harness.gates`
+    event, and each entry carries whether REAL work followed that gate. `changed`
+    counts those, so the panel answers "does this gate earn its tokens?" with a
+    measured ratio instead of an opinion — the co-evolution the papers ask for
+    (`2606.26300`: no fixed verifier stays valid as capability grows).
+
+    Read-only and fail-open: an unreadable event log reports nothing.
+    """
+    out = {"days": days, "turns": 0, "kinds": []}
+    try:
+        from longrun.core import events as _ev
+        cutoff = time.time() - float(days) * 86400
+        rows = _ev.db().execute(
+            "SELECT data FROM events WHERE kind = 'harness.gates' AND ts >= ? "
+            "ORDER BY id DESC LIMIT 5000", (cutoff,)).fetchall()
+    except Exception:  # noqa: BLE001 — a report must never break the panel
+        return out
+    agg = {}
+    for row in rows:
+        try:
+            d = json.loads((row[0] if isinstance(row, (list, tuple)) else row) or "{}")
+        except Exception:
+            continue
+        fired = d.get("fired") or []
+        if not fired:
+            continue
+        out["turns"] += 1
+        for f in fired:
+            if not isinstance(f, dict):
+                continue
+            k = str(f.get("kind") or "?")
+            rec = agg.setdefault(k, {"kind": k, "fired": 0, "changed": 0})
+            rec["fired"] += 1
+            if f.get("work_after"):
+                rec["changed"] += 1
+    out["kinds"] = sorted(agg.values(), key=lambda r: -r["fired"])
+    return out
+
+
 def status():
     """Everything the panel needs, read from real state (no constants)."""
     c = probe_mod.cfg()
@@ -84,6 +126,7 @@ def status():
         "data_dir": paths.DATA_DIR,
         "cycle_dir": _cycle_dir(),
         "last": last(),
+        "gates": gate_stats(),
     }
 
 

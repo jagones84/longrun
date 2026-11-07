@@ -30,8 +30,19 @@ DEFAULTS = {
     "timeout_secs": 120,
     "paths": [],
     # F1: verify ONCE at closeout (not per edit) when the step changed the
-    # environment. Off = today's behaviour; it needs `command` to be useful.
-    "closeout": False,
+    # environment. THREE states (v861):
+    #   false  — off.
+    #   true   — STRICT: on with no resolvable command REFUSES the close.
+    #   "auto" — DEFAULT: run it when a command resolves; when none does, the step
+    #            closes UNVERIFIED and the plan says so. Closing is never blocked
+    #            by a workspace that ships no test runner (that made `true` the
+    #            default a trap: every step in a bare directory was unclosable).
+    "closeout": "auto",
+    # Resolve the project's OWN test command from its markers (pytest/npm/make)
+    # only when `command: "auto"` asks for it: auto-detection on an empty command
+    # would run a full suite once per closed step on every repository that has a
+    # `tests/` directory.
+    "closeout_autodetect": False,
 }
 
 TARGET_TOOLS = ("fs.write", "fs.edit")
@@ -224,30 +235,80 @@ def run_check(workspace=None, c=None, run_id=None):
     return green, out
 
 
+#: Files that ARE the test setup. A step that touched one of these cannot be
+#: verified by that same suite: a green run the agent could have written is not
+#: independent evidence (SpecBench: agents saturate the VISIBLE suite while the
+#: held-out gap grows with the size of the change).
+_TEST_SETUP_NAMES = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini",
+                     "conftest.py", "Makefile", "package.json"}
+_TEST_DIRS = ("/tests/", "/test/", "/spec/", "/__tests__/")
+
+
+def touches_tests(node):
+    """Paths this step changed that belong to the TEST setup ([] when none)."""
+    out = []
+    for p in (node or {}).get("paths") or []:
+        s = str(p or "").replace("\\", "/")
+        if not s:
+            continue
+        base = s.rsplit("/", 1)[-1]
+        if (base in _TEST_SETUP_NAMES
+                or base.startswith("test_") or base.endswith("_test.py")
+                or base.endswith(".test.js") or base.endswith(".spec.ts")
+                or any(d in ("/" + s) for d in _TEST_DIRS)):
+            out.append(s)
+    return out[:8]
+
+
 def closeout_gate(node, workspace=None, run_id=None, c=None, check=None):
     """F1: verify a step ONCE, when it is closed, if it changed the environment.
 
     A node may be closed on a text claim only when it performed no mutating
-    action (`taskgraph.note_mutation` marks it). When it did, and
-    `verifier.closeout` is on, the configured command runs here: green adds an
-    OBSERVED evidence entry, red keeps the step open. Returns
-    `(ok, report, observed)`.
+    action (`taskgraph.note_mutation` marks it). When it did and closeout is on,
+    the configured command runs here: green adds an OBSERVED evidence entry, red
+    keeps the step open. Returns `(ok, report, observed)`.
 
-    Fail-closed: closeout on with no `command` refuses the close instead of
-    pretending it observed anything.
+    Three states of `verifier.closeout` (v861):
+      * `false` — off, today's behaviour.
+      * `true`  — STRICT, fail-closed: on with no `command` REFUSES the close
+                  instead of pretending it observed anything.
+      * `"auto"` (default) — run the check when a command resolves; when none
+                  does, the step closes with `unavailable` in the report and the
+                  caller records that it closed UNVERIFIED. Making `true` the
+                  default would leave every workspace without a test runner
+                  unable to close a single step.
+
+    A step that edited the TEST SETUP itself is `tainted`: its own suite cannot
+    prove it, so it closes unverified (like `unavailable`) and never green.
     """
     c = c or cfg()
     node = node or {}
+    mode = c.get("closeout")
     observed_already = bool([e for e in (node.get("evidence") or [])
                              if e.get("observed")])
-    if not c.get("closeout") or not node.get("mutated") or observed_already:
+    if not mode or not node.get("mutated") or observed_already:
         return True, {"ran": False}, False
-    cmd = resolve_command(workspace, c)
+    auto = str(mode).strip().lower() == "auto"
+    cmd = resolve_command(
+        workspace, c,
+        auto_when_empty=bool(c.get("closeout_autodetect"))
+        or (auto and str(c.get("command") or "").strip().lower() == "auto"))
     if not cmd:
+        if auto:
+            return True, {"ran": False, "unavailable": True,
+                          "error": "closeout: no test command could be resolved for "
+                                   "this workspace, so the step closes UNVERIFIED "
+                                   "(set verifier.command to change that)"}, False
         return False, {"ran": False, "green": False,
                        "error": "closeout verification is on but no test command "
                                 "could be resolved (verifier.command=%r)"
                                 % (c.get("command") or "")}, False
+    tainted = touches_tests(node)
+    if tainted:
+        return True, {"ran": False, "tainted": True, "paths": tainted,
+                      "error": "closeout: this step changed the TEST setup (%s), so a "
+                               "green run would not be independent evidence — the step "
+                               "closes UNVERIFIED" % ", ".join(tainted[:4])}, False
     # BOUNDED REPAIR: one external pass/fail plus ONE repair round. The first
     # red is handed to the model with the output; a second `done` that changed
     # nothing since that failure is a re-claim, not a repair — refuse it WITHOUT
@@ -271,6 +332,20 @@ def closeout_gate(node, workspace=None, run_id=None, c=None, check=None):
               "attempts": int(prev.get("attempts", 0)) + 1,
               "duration_ms": int((time.time() - t0) * 1000),
               "output": str(out or "")[-1200:]}
+    if not green and auto:
+        # A suite that hits its own budget proves nothing: in `auto` that is
+        # "unavailable", never a red that keeps a step open forever. Strict mode
+        # (`true`) keeps the red, because there the operator asked for a verdict.
+        try:
+            budget = int(float(c.get("timeout_secs") or 120) * 1000 * 0.95)
+        except (TypeError, ValueError):
+            budget = 114000
+        if report["duration_ms"] >= budget:
+            report["unavailable"] = True
+            report["error"] = ("closeout: the check used its whole %ss budget without "
+                               "a verdict — the step closes UNVERIFIED"
+                               % c.get("timeout_secs"))
+            return True, report, False
     _CLOSEOUT_MEMO[memo_key] = {"green": bool(green), "mutated": stamp,
                                 "attempts": report["attempts"],
                                 "ts": round(time.time(), 3)}
