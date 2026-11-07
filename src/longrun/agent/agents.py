@@ -23,7 +23,7 @@ import threading
 import time
 
 from longrun.util import paths
-from longrun.util.fswrite import read_registry, retract_seq, write_json
+from longrun.util.fswrite import read_registry, retract_seq, safe_id, write_json
 from longrun.util.paths import REPO_ROOT as REPO
 
 _LOCK = threading.RLock()
@@ -44,6 +44,29 @@ def _load():
 
 def _save(d):
     write_json(AGENTS_FILE, d)
+
+
+def _free_number(d, exclude=None):
+    """The LOWEST positive agent number no live record holds (A1 is pinned).
+
+    v858: `designate` used to draw `seq + 1`, so a deleted session never gave its
+    number back — measured 2026-11-07 on the live store: `seq` 299, 204 records
+    for 150 sessions, 95 holes nobody could reuse. The operator rule is "IDs reset
+    after resets/deletes — agent numbers, todos, jobs, every object", so a new
+    agent takes the first free number; `seq` stays the highest one in use.
+    """
+    used = set(PINNED_AGENT_IDS.values())
+    for sid, rec in (d.get("agents") or {}).items():
+        if exclude and sid == exclude:
+            continue
+        try:
+            used.add(int((rec or {}).get("n") or 0))
+        except (TypeError, ValueError):
+            continue
+    n = 2                     # A1 is the harness supervisor, reserved
+    while n in used:
+        n += 1
+    return n
 
 
 class AgentRegistry:
@@ -276,7 +299,10 @@ class AgentRegistry:
             pin = PINNED_AGENT_IDS.get(sid)
             if not a:
                 if pin is None:
-                    d["seq"] += 1
+                    # v858: a new agent takes the LOWEST free number, never
+                    # `seq + 1` — deleting a session must give its number back
+                    # (the operator rule "IDs reset after resets/deletes").
+                    d["seq"] = _free_number(d)
                 a = {"id": "A%d" % (pin or d["seq"]), "n": pin or d["seq"],
                      "session": sid, "created": round(time.time(), 3)}
                 d["agents"][sid] = a
@@ -287,12 +313,17 @@ class AgentRegistry:
                 # next free numbers, then take the slot.
                 for other_sid, other in d["agents"].items():
                     if other_sid != sid and other.get("id") == pid:
-                        d["seq"] += 1
+                        # v858: the displaced record takes the lowest free number —
+                        # `seq + 1` collided once the counter stopped being monotonic.
+                        d["seq"] = _free_number(d)
                         other["id"], other["n"] = "A%d" % d["seq"], d["seq"]
                 a["id"], a["n"] = pid, pin
                 # The pinned number is a FLOOR for the counter, so a retract after
                 # deleting everything can never re-issue `A1` to a new session.
                 d["seq"] = max(int(d.get("seq") or 0), pin)
+            # v858: `seq` is the HIGHEST number in use (what `retract_seq` keeps),
+            # never "one past the last allocation" — the free-list does the picking.
+            retract_seq(d, "agents")
             if name:
                 nm = str(name)[:80].strip()
                 # JAG-294: names are unique across agents AND sessions. Reusing a
@@ -513,6 +544,41 @@ class AgentRegistry:
         except Exception:  # noqa: BLE001
             pass
         return {"ok": True, "released": released}
+
+    def reconcile(self):
+        """Forget agent records whose session no longer exists (v858).
+
+        A record can outlive its session — a session removed by an older build, a
+        driver/test script deleting the file, a reset. Left alone it keeps a
+        number reserved and the counter drifts from reality: measured 2026-11-07,
+        54 dead records (all `kind="session"`) for 150 live sessions, the highest
+        being A296. The removal goes through `release()` on purpose: jobs,
+        routines and teams are scrubbed by the SAME cascade a normal delete uses,
+        so there is one cleanup rule, not two.
+
+        The pinned system session is never pruned. Returns the released agent ids.
+        """
+        gone = []
+        try:
+            with _LOCK:
+                d = _load()
+                for sid in list(d.get("agents") or {}):
+                    if sid in PINNED_AGENT_IDS:
+                        continue
+                    path = os.path.join(paths.SESSIONS_DIR, safe_id(sid) + ".json")
+                    if not os.path.isfile(path):
+                        gone.append(sid)
+        except Exception:  # noqa: BLE001 — the sweep never breaks startup
+            return []
+        out = []
+        for sid in gone:
+            try:
+                rel = self.release(sid)
+            except Exception:  # noqa: BLE001
+                continue
+            if rel.get("released"):
+                out.append(rel["released"])
+        return out
 
     def tree(self):
         with _LOCK:

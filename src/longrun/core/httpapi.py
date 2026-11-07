@@ -3265,6 +3265,14 @@ def main():
         providers.warm()  # JAG-72: fetch remote model windows off the request path
     except Exception:  # noqa: BLE001 — provider metadata is optional
         pass
+    try:
+        from longrun.agent import agents as _agents_boot
+        # v858: an agent record for a session that no longer exists reserves a
+        # number for a dead object (54 of them on 2026-11-07). The sweep goes
+        # through `release()`, the same cascade a delete uses.
+        _agents_boot.REGISTRY.reconcile()
+    except Exception:  # noqa: BLE001 — the sweep is best-effort
+        pass
     backfill_session_workspaces()  # JAG-117: every session gets a folder
     backfill_agents()              # EV-30: every session gets its A<n> identity record
     reconcile_agent_models()       # JAG-309: agent model == its session's model
