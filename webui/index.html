@@ -4214,16 +4214,10 @@ async function nameThreads() {
   try {
     const r = await api("POST", "/api/sessions/" + sessionId + "/chapters/autoname", {});
     if (r && r.error) { toast("title failed: " + r.error, "err"); return; }
-    loadThreadTitles(sessionId).then(applyThreadTitles);
-    const left = (r && r.remaining) || 0;
-    if (left) {   // no copy is ever stored: a model that only reprinted the prompt leaves the group unnamed
-      toast("🏷 " + left + " group(s) still untitled — the model returned no summary"
-            + (r.titled ? " (" + r.titled + " named)" : ""), "warn");
-      return;
-    }
-    if (!r || !r.titled) { toast("no untitled Free.* groups to name", "warn"); return; }
-    toast("🏷 named " + r.titled + " Free.* group(s)"
-          + (r.model ? " · " + String(r.model).split("/").pop() : ""), "ok");
+    if (r && r.started === false) { toast("🏷 already naming this chat", "warn"); return; }
+    // The naming call runs in the BACKGROUND (minutes on a local model): the labels
+    // arrive one by one through `threads.updated`, and `threads.named` closes the run.
+    toast("🏷 naming… the labels appear as they are written", "ok");
   } catch (e) {
     toast("title failed: " + ((e && e.message) || e), "err");
   } finally {
@@ -11339,6 +11333,18 @@ function connectFeed() {
   es.addEventListener("threads.updated", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
     if (d.session && sessionId && d.session !== sessionId) return;
     loadThreadTitles(d.session || sessionId).then(applyThreadTitles); });
+  // The background 🏷 run closes here: totals (or the honest "the model summarised
+  // nothing" — a copy of the prompt is never stored).
+  es.addEventListener("threads.named", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    if (d.session && sessionId && d.session !== sessionId) return;
+    loadThreadTitles(d.session || sessionId).then(applyThreadTitles);
+    if (d.error) { toast("🏷 naming failed: " + d.error, "err"); return; }
+    if (d.remaining > 0) {
+      toast("🏷 named " + (d.titled || 0) + " · " + d.remaining
+            + " still untitled (the model returned no summary)", "warn"); return;
+    }
+    toast("🏷 named " + (d.titled || 0) + " Free.* group(s)"
+          + (d.model ? " · " + String(d.model).split("/").pop() : ""), "ok"); });
   es.addEventListener("context.built", e => { const d = JSON.parse(e.data);
     push(`📊 context: ${d.final_tokens}/${d.budget_tokens} tok`); loadCtxSoon(); });
   es.addEventListener("session.created", e => { const d = JSON.parse(e.data); push("🗂 session created"); loadSessions(); });

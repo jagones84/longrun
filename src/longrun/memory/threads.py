@@ -100,10 +100,10 @@ def _cap(doc):
 # A free-group title is a SUMMARY of the user's request, never a copy of it. Two
 # defects lived at this boundary: the legacy "request to " prefix (JAG-431m/JAG-451,
 # RH-25) and a deterministic fallback that titled a group with the request's own
-# first words — the rail filled with truncated prompts (operator, 2026-11-07). ONE
-# rule, applied at every title boundary: on the way in (`set_title`) and on the way
-# out (`_normalise_titles`, so a ledger written by the old code is repaired and
-# persisted — otherwise the ledger and the UI would spell one group two ways).
+# first words — the rail filled with truncated prompts (operator, 2026-11-07: "just a
+# copy"). ONE rule, applied at every title boundary: on the way in (`set_title`) and
+# on the way out (`_normalise_titles`, so a ledger written by the old code is repaired
+# and persisted — otherwise the ledger and the UI would spell one group two ways).
 _LEGACY_PREFIX = re.compile(r"^\s*request\s+to\s*:?\s*", re.I)
 
 

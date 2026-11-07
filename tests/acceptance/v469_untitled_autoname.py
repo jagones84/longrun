@@ -179,6 +179,38 @@ check("3e the copy never reached the ledger (title AND summary)",
 check("3f a refused round is retried ONCE with a stricter instruction, not looped",
       res.get("rounds") == 2, res.get("rounds"))
 
+# ---- 3g. the 🏷 route answers AT ONCE; the model call runs in the background ----
+# The call takes minutes on a local reasoning model. Holding the HTTP request open
+# made the button look dead (the operator clicked and saw no model start at all,
+# 2026-11-07). The labels arrive through `threads.updated`, the run closes with
+# `threads.named`.
+sid7 = "v469-async"
+_grow(sid7, 1)
+_events = []
+httpapi.publish = lambda kind, **kw: _events.append(dict(kind=kind, **kw))
+
+
+def _slow_name(sess, model=None):
+    time.sleep(0.5)
+    return {"ok": True, "session": (sess or {}).get("id"), "titled": 1,
+            "remaining": 0, "model": "fake/chat"}
+
+
+httpapi.autoname_untitled = _slow_name
+_t0 = time.time()
+res = httpapi.autoname_async(stores.load_session(sid7))
+_took = time.time() - _t0
+check("3g the 🏷 route answers AT ONCE — the model call runs in the background",
+      res.get("started") is True and _took < 0.25, _took)
+check("3h a second click while the run is in flight starts nothing",
+      httpapi.autoname_async(stores.load_session(sid7)).get("started") is False, "")
+time.sleep(1.2)
+_named = [e for e in _events if e.get("kind") == "threads.named"]
+check("3i the run closes with `threads.named` (titled/remaining totals)",
+      len(_named) == 1 and _named[0].get("titled") == 1
+      and _named[0].get("remaining") == 0,
+      _events[-1] if _events else None)
+
 # ---- 4. the agent-facing `chapters action=untitled` view is unchanged (paged) --
 sid5 = "v469-page"
 _grow(sid5, 10)
@@ -198,8 +230,12 @@ check("5b the 🏷 button POSTs the subroutine instead of prompting the agent",
       "/chapters/autoname" in nt and "send(" not in nt, nt[:120])
 check("5c the naming prompt asks for a PARAPHRASE, never a copy of the request",
       "PARAPHRASE" in API and "Never reuse the request" in API, "")
-check("5d the button reports the groups it could NOT name (no silent copy)",
-      "still untitled" in nt and "r.remaining" in nt, nt[-240:])
+check("5d the button answers AT ONCE (the naming model runs in the background)",
+      "r.started" in nt and "naming" in nt, nt[-240:])
+check("5e the route hands the work to `autoname_async` (a background thread)",
+      "autoname_async(sess" in API and "Thread(target=_run" in API, "")
+check("5f the finished run reports its totals on the feed (`threads.named`)",
+      '"threads.named"' in API and "threads.named" in HTML, "")
 
 # ---- 6. the labels actually REPAINT after the batch (JAG-474) ------------------
 # The button once reported "named 11" while NO label changed: the rendered groups

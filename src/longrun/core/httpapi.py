@@ -1198,7 +1198,7 @@ def prepare_session_for_turn(sess, model=None):
             return sess
         # NOTE (2026-11-07): a free group used to be "titled" here, deterministically,
         # from its own request before compaction — i.e. the prompt was copied onto the
-        # rail. That is not a title (operator: "e solo una copia"); naming is a model
+        # rail. That is not a title (the operator's words: it is just a copy); naming is a model
         # job (the 🏷 subroutine or `chapters action=title`) and a group that is still
         # unnamed simply stays unnamed. The ledger keeps req+digest, so nothing is lost.
         # JAG-99: shrink to TARGET% (not the full budget) so the prompt lands back
@@ -1459,15 +1459,15 @@ _NAME_INSTRUCTION = (
     "language as that item's request. Never reuse the request's own wording or a slice "
     "of it: a reprinted prompt tells the operator nothing they cannot read above. No "
     "lead-in (\"request to\", \"the user asks\", \"please\") and no trailing "
-    "confirmation (\"o va bene\", \"ok?\").\n"
-    "  e.g. request \"quindi proponi di modificare qualcosa o va bene cosi longrun?\" -> "
-    "title \"Proporre modifiche o confermare\"\n"
+    "confirmation (\"ok?\", \"or is that fine?\").\n"
+    "  e.g. request \"so should we change something or is it fine as it is?\" -> "
+    "title \"Decide: change it or keep it\"\n"
     "SUMMARY: one line — what was asked and what the answer delivered. Never a copy of "
     "the request.\n"
     "An item with no captured request: title what that harness output was about.\n"
     "Use ONLY the item's own request/context; never invent facts you were not given.\n"
     "Reply with ONLY a JSON array (no prose, no code fence), one object per id:\n"
-    '[{"id":"g51","title":"Proporre modifiche o confermare","summary":"…"}]\n\n'
+    '[{"id":"g51","title":"Decide: change it or keep it","summary":"…"}]\n\n'
     "ITEMS:\n")
 
 # Appended to a RETRY when the model only reprinted the requests: `set_title` refuses
@@ -1599,6 +1599,56 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
     remaining = len(th.untitled_free(sid))
     return {"ok": True, "session": sid, "titled": titled,
             "remaining": remaining, "model": used, "rounds": rounds}
+
+
+#: Sessions with a naming run IN FLIGHT — a second 🏷 click must not start a second
+#: model call for the same session.
+_NAMING_IN_FLIGHT = set()
+_NAMING_LOCK = threading.Lock()
+
+
+def autoname_async(session, model=None):
+    """Start `autoname_untitled` in the BACKGROUND and answer AT ONCE.
+
+    Naming is ONE model call that takes minutes on a local reasoning model (measured
+    on dgx:nex-n25: >45 s before the first JSON token, ~9k characters of thinking for
+    12 groups). The route used to hold the HTTP request open for the whole call, so
+    the operator clicked 🏷 and saw the button spin with nothing happening. The
+    labels arrive through the `threads.updated` feed as each title is written, and
+    `threads.named` reports the totals when the run ends (including "the model
+    summarised nothing", which the UI must say instead of storing a copy of the
+    prompt). Returns {"ok", "started", "session", ...}.
+    """
+    if isinstance(session, dict):
+        sid = str(session.get("id") or "").strip()
+        sess = session
+    else:
+        sid = str(session or "").strip()
+        sess = None
+    if not sid:
+        return {"ok": False, "error": "session required"}
+    with _NAMING_LOCK:
+        if sid in _NAMING_IN_FLIGHT:
+            return {"ok": True, "started": False, "session": sid,
+                    "reason": "already naming this session"}
+        _NAMING_IN_FLIGHT.add(sid)
+    if sess is None:
+        sess = load_session(sid)
+
+    def _run():
+        try:
+            res = autoname_untitled(sess, model=model)
+            publish("threads.named", session=sid, titled=res.get("titled", 0),
+                    remaining=res.get("remaining", 0), model=res.get("model"))
+        except Exception as e:  # noqa: BLE001 — naming must never break the feed
+            publish("threads.named", session=sid, titled=0, remaining=-1,
+                    error=str(e)[:200])
+        finally:
+            with _NAMING_LOCK:
+                _NAMING_IN_FLIGHT.discard(sid)
+
+    threading.Thread(target=_run, name="autoname:%s" % sid, daemon=True).start()
+    return {"ok": True, "started": True, "session": sid}
 
 
 def compact_session(session, budget_tokens=None, keep_recent=None, origin=None):
@@ -2881,13 +2931,15 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/sessions/") and path.endswith("/chapters/autoname"):
             # 🏷 → name EVERY untitled Free.* group with the chat model, in ONE
             # subroutine (no tool-call budget) — see autoname_untitled (JAG-473).
+            # The call runs in the BACKGROUND: it takes minutes on a local reasoning
+            # model and holding the request open made the button look dead.
             sid = path[len("/api/sessions/"):-len("/chapters/autoname")].strip("/")
             if not sid or "/" in sid or ".." in sid:
                 return self._send(404, {"error": "session not found"})
             sess = load_session(sid)
             if not sess:
                 return self._send(404, {"error": "session not found"})
-            res = autoname_untitled(sess, model=body.get("model"))
+            res = autoname_async(sess, model=body.get("model"))
             return self._send(200 if res.get("ok") else 400, res)
         if path == "/api/sessions":
             sess = get_or_create_session(None, body.get("title"))
