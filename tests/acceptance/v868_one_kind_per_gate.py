@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v865 — ONE kind per gate: the chip and the metric must name WHICH gate fired.
+"""v868 — ONE kind per gate: the chip and the metric must name WHICH gate fired.
 
 Live report 2026-11-07 (session `765d2ea340a1`): two `closure-check` chips a few
 seconds apart with DIFFERENT texts, "non mi torna". They were two different gates —
@@ -19,7 +19,7 @@ import tempfile
 import atexit
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-TMP = tempfile.mkdtemp(prefix="sf-v865-")
+TMP = tempfile.mkdtemp(prefix="sf-v868-")
 atexit.register(lambda: shutil.rmtree(TMP, ignore_errors=True))
 os.environ["LONGRUN_CONFIG_DIR"] = os.path.join(TMP, "cfg")
 os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(TMP, "sessions")
@@ -80,7 +80,7 @@ check("B2 a gate that is NOT a close verdict does not get them",
       'elif kind == "closure-check":' not in SRC)
 
 # ---- C. the metric separates the gates ---------------------------------------
-EV.publish("harness.gates", session="v865", work_steps=3,
+EV.publish("harness.gates", session="v868", work_steps=3,
            fired=[{"kind": "evidence-gate", "work_after": True},
                   {"kind": "verify-gate", "work_after": True},
                   {"kind": "final", "work_after": False}])
@@ -94,5 +94,5 @@ check("C2 a merge into one bucket is gone",
 
 print("---")
 okc = sum(results)
-print("\nv865: %d/%d PASS" % (okc, len(results)))
+print("\nv868: %d/%d PASS" % (okc, len(results)))
 sys.exit(0 if okc == len(results) else 1)
