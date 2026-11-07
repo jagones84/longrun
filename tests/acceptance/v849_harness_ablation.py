@@ -82,11 +82,46 @@ check("D4 cost per arm", (cmp["usd_a"], cmp["usd_b"]) == (0.3, 0.34),
 check("E1 the one-arm sample is listed, not averaged",
       cmp["only_b"] == ["t3"] and cmp["only_a"] == [], (cmp["only_a"], cmp["only_b"]))
 import io
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 with redirect_stdout(io.StringIO()):
     _rc = AB.main(["--check"])
 check("F1 --check exits 0", _rc == 0, _rc)
+
+# ------------------------------------------------------------ execute both arms ---
+# A fake benchmark that reads the ARM MARKER and the layer env: proves the runner
+# really launches two processes that differ by exactly the layer, offline.
+helper = os.path.join(root, "emit.py")
+with open(helper, "w", encoding="utf-8") as fh:
+    fh.write(
+        "import json, os, sys\n"
+        "out = sys.argv[1]\n"
+        "arm = os.environ.get('LONGRUN_ABLATION_ARM')\n"
+        "score = 60.0 if arm == 'arm_without' else 40.0\n"
+        "d = os.path.join(out, 't1')\n"
+        "os.makedirs(d, exist_ok=True)\n"
+        "json.dump({'task': 't1', 'score': {'score': score, 'max': 100.0,\n"
+        "           'all_pass': score > 50}, 'usage': {'total_usd': 0.1},\n"
+        "           'skills_dir': os.environ.get('LONGRUN_SKILLS_DIR')},\n"
+        "          open(os.path.join(d, 'result.json'), 'w'))\n")
+cmd = "%s %s {out}" % (sys.executable, helper)
+ran = AB.run("skills", cmd)
+check("G1 both arms executed successfully",
+      all(a["rc"] == 0 for a in ran["arms"].values()),
+      {k: v["rc"] for k, v in ran["arms"].items()})
+check("G2 the two arms produced a real delta",
+      ran["compare"]["samples"] == 1 and ran["compare"]["delta_score"] == 20.0,
+      ran["compare"]["delta_score"])
+base_env = json.load(open(os.path.join(ran["arms"]["arm_base"]["out"], "t1", "result.json")))
+without_env = json.load(open(os.path.join(ran["arms"]["arm_without"]["out"], "t1", "result.json")))
+check("G3 only the without-arm ran without the skills layer",
+      base_env.get("skills_dir") != without_env.get("skills_dir")
+      and without_env.get("skills_dir")
+      and not os.listdir(without_env["skills_dir"]),
+      (base_env.get("skills_dir"), without_env.get("skills_dir")))
+with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+    _rc2 = AB.main(["--run", "--plan", "skills", "--command", "true"])
+check("G4 --run without {out} is refused", _rc2 == 2, _rc2)
 
 print("---")
 passed = sum(results)

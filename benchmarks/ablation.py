@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -145,6 +146,36 @@ def compare(dir_a, dir_b):
     }
 
 
+def run(layer, command, root=None, timeout=None):
+    """EXECUTE the two arms of one ablation, then compare them (HA-3).
+
+    `command` is the operator's own benchmark command; `{out}` is replaced by that
+    arm's output directory (the arm marker is also exported as
+    `LONGRUN_ABLATION_ARM`). Both arms run the SAME command: the only difference is
+    the layer's env overlay. Timeouts propagate (a hung arm is reported, not
+    silently compared as a zero).
+    """
+    root = root or tempfile.mkdtemp(prefix="longrun-ablation-")
+    arms = plan(layer, command, root=root)
+    executed = {}
+    for name in ("arm_base", "arm_without"):
+        out = os.path.join(root, "out_" + name)
+        os.makedirs(out, exist_ok=True)
+        env = dict(os.environ)
+        env.update(arms[name]["env"])
+        env["LONGRUN_ABLATION_ARM"] = name
+        cmd = arms[name]["command"].replace("{out}", out)
+        proc = subprocess.run(cmd, shell=True, env=env, timeout=timeout)
+        executed[name] = {"out": out, "rc": proc.returncode, "command": cmd}
+    return {
+        "layer": layer,
+        "root": root,
+        "arms": executed,
+        "compare": compare(executed["arm_base"]["out"],
+                           executed["arm_without"]["out"]),
+    }
+
+
 def check():
     """Offline proof of the instrument: (name, ok, detail) triples."""
     out = []
@@ -177,8 +208,22 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="harness ablation planner")
     ap.add_argument("--check", action="store_true", help="offline proof only")
     ap.add_argument("--plan", metavar="LAYER", help="print the two arms as JSON")
+    ap.add_argument("--run", action="store_true",
+                    help="execute both arms (the command must contain {out})")
     ap.add_argument("--command", default="python3 -m benchmarks.run --help")
     args = ap.parse_args(argv)
+    if args.run:
+        if not args.plan or "{out}" not in args.command:
+            print("error: --run needs --plan LAYER and a --command containing {out}",
+                  file=sys.stderr)
+            return 2
+        try:
+            res = run(args.plan, args.command)
+        except ValueError as exc:
+            print("error: %s" % exc, file=sys.stderr)
+            return 2
+        print(json.dumps(res, indent=2, default=str))
+        return 0 if all(a["rc"] == 0 for a in res["arms"].values()) else 1
     if args.check or not args.plan:
         results = check()
         bad = 0
