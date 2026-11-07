@@ -95,9 +95,13 @@ for needle, why in DOTS:
 # with `git show 310b3db:webui/index.html`; the 2026-11-05 todo-lifecycle lot adds
 # only U+2298/U+2192 text glyphs, zero astral characters). The ratchet is raised to
 # the MEASURED value so it keeps forbidding growth from here — it is not a licence.
+# 2026-11-07: raised to 129 — the only growth is 6 x U+1F3F7 (the 🏷 label control the
+# operator asked for in `017e1fd` +2 and `0c6b50e` +4; nothing was removed, and no
+# other astral character was added). Measured with `git show 310b3db:webui/index.html`
+# against HEAD, character by character. The ratchet still forbids the next one.
 astral = [ch for ch in ui if ord(ch) >= 0x1F000]
-check("D1 the remaining emoji inventory does not grow (ratchet 123, measured 310b3db)",
-      len(astral) <= 123, "%d found" % len(astral))
+check("D1 the remaining emoji inventory does not grow (ratchet 129, 6 of them the"
+      " operator's 🏷 control)", len(astral) <= 129, "%d found" % len(astral))
 check("D2 an error toast leads with the cross, not with a word",
       'toast("\u2715 " + r.error)' in ui
       and 'push("\u2715 blocked "' in ui
