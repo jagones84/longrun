@@ -20,12 +20,20 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     --mono:ui-monospace,"JetBrains Mono","Cascadia Code",SFMono-Regular,Menlo,Consolas,monospace;
     --bg:#0b0d11; --panel:#12151b; --panel2:#171b23; --line:#23272f; --line2:#2d323b;
     --txt:#e7e9ee; --dim:#9aa1ae; --acc:#cf8a4a; --acc2:#93b3c9;
+    /* axe (2026-11-07): the text colour ON the accent. `#fff` was 2.05:1 on haze and
+       1.76:1 on dark; this token is the accent's own inverse and each theme below picks
+       the side that clears 4.5:1 (measured: 5.28 … 11.02). */
+    --onacc:#0b0d11;
     --ok:#5fbf8a; --warn:#d9a441; --err:#dd6f63; --ice:#e7e9ee;
     --r:12px; --r-sm:8px;
     --shadow1:0 1px 2px rgba(0,0,0,.30),0 10px 26px rgba(0,0,0,.26);
     --shadow2:0 18px 48px rgba(0,0,0,.46);
   }
   *{box-sizing:border-box}
+  /* axe (2026-11-07): a column header must carry text a screen reader can announce —
+     `aria-label` alone is not enough for `empty-table-header`. */
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+    clip:rect(0 0 0 0);white-space:nowrap;border:0}
   html,body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;margin:0;height:100%}
   body{background:linear-gradient(180deg,var(--ga,#0e1116) 0%,var(--bg) 240px);
     color:var(--txt);font:13px/1.5 var(--sans);font-variant-numeric:tabular-nums;
@@ -49,7 +57,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .led.on{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 16%,transparent)}
   /* JAG-416: top-level section tabs (Sessions / Control), matching the Sessions view. */
   .logo{font-size:14px;letter-spacing:.02em;text-transform:none;color:var(--txt);font-weight:700;
-    display:inline-flex;align-items:center;gap:8px}
+    margin:0;display:inline-flex;align-items:center;gap:8px}
   .logo svg{color:var(--acc)}
   .topTabs{display:inline-flex;align-items:stretch;gap:2px;padding:0;border:0;border-radius:0;background:transparent;height:52px}
   .topTabs .ttab{display:inline-flex;align-items:center;height:52px;padding:0 14px;border-radius:0;
@@ -61,7 +69,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     padding:6px 11px;cursor:pointer;font-size:12px;font-weight:600;color:var(--txt);
     transition:background .12s,border-color .12s,color .12s}
   .btn:hover{border-color:var(--line2);background:color-mix(in srgb,var(--panel2) 80%,#ffffff);color:var(--txt)}
-  .btn.primary{background:var(--acc);border-color:var(--acc);color:#1b1206}
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:var(--onacc)}
   .btn.ghost{background:transparent}
   .btn.no{border-color:color-mix(in srgb,var(--err) 50%,transparent);color:var(--err)}
   .inp{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-sm);padding:7px 10px;width:100%;outline:none}
@@ -144,7 +152,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      primary is a single solid accent, so the row does not look like boxed 2010 pills. */
   .toolbar>.btn.ghost{background:transparent;border-color:transparent;color:var(--dim)}
   .toolbar>.btn.ghost:hover{background:var(--panel2);color:var(--txt)}
-  .toolbar>.btn.primary{background:var(--acc);border-color:var(--acc);color:#1b1206;font-weight:600}
+  .toolbar>.btn.primary{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:600}
   .toolbar>.lbl{font-size:11px;color:var(--dim);flex:none}
   .toolbar>.sp{flex:1}
   /* I-8: the "only empty ROLE.md" checkbox STACKS under the ⚡ automate (Teamorg)
@@ -214,7 +222,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     color:var(--txt);border-radius:var(--r-sm);padding:6px 9px;margin:0 0 7px}
   .haswarn{color:var(--warn)}
   /* JAG-2.8: the group header is Tab-reachable now, so it needs a focus ring. */
-  .grp-h:focus-visible{outline:1px solid var(--acc);outline-offset:-2px;border-radius:6px}
+  .grp-toggle:focus-visible{outline:1px solid var(--acc);outline-offset:-2px;border-radius:6px}
   .grp-h .caret{color:var(--dim)}
   .grp-h .gc{color:var(--dim);font-size:11px;font-weight:400}
   .aid{font-family:ui-monospace,monospace;color:var(--acc2);font-size:11px}
@@ -290,6 +298,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      group header rows (the separate "table / by team" views are gone). */
   tr.grp-head td{padding:0;border-bottom:1px solid var(--line);background:var(--brief)}
   tr.grp-head .grp-h{display:flex;align-items:center;gap:7px;padding:7px 10px;font-size:12px;font-weight:600;cursor:grab;color:var(--txt);user-select:none}
+  /* axe `nested-interactive` (2026-11-07): the disclosure used to CONTAIN the assign and
+     kebab buttons. The toggle is now its own control and the actions are siblings; the
+     accessible name is its own text (no aria-label to disagree with it). */
+  tr.grp-head .grp-toggle{display:flex;align-items:center;gap:7px;flex:1;min-width:0;
+    background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:grab;text-align:left}
   tr.grp-head .grp-h:hover{background:rgba(108,140,255,.05)}
   tr.grp-head .grp-h:active{cursor:grabbing}
   tr.grp-head.dragging{opacity:.45}
@@ -381,52 +394,52 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
          --cjob-f:#241c12; --csub-f:#122028; --cagent-f:#14211c;
          --hover:rgba(255,255,255,.045); --sel:rgba(207,138,74,.14); color-scheme:dark; }
   html[data-theme="dark"]{ --bg:#0c0d10; --panel:#14161b; --panel2:#181b21; --line:#262a31; --line2:#333841;
-    --txt:#e9eaee; --dim:#a0a6b0; --acc:#b8c4d6; --acc2:#8fa7c0; --ice:#e9eaee;
+    --txt:#e9eaee; --dim:#a0a6b0; --acc:#b8c4d6; --acc2:#8fa7c0; --ice:#e9eaee; --onacc:#0c0d10;
     --ga:#171a20; --hdr:#14161b; --cbody:#0c0d10; --brief:#181b21;
     --cjob-f:#1f1c16; --csub-f:#141b1e; --cagent-f:#151c17;
     --hover:rgba(255,255,255,.05); --sel:rgba(184,196,214,.14); color-scheme:dark; }
   html[data-theme="midnight"]{ --bg:#081019; --panel:#0e1926; --panel2:#111e2d; --line:#24313f; --line2:#2d3c4c;
-    --txt:#dbe3ec; --dim:#93a0b0; --acc:#7fa6cc; --acc2:#86c3b8; --ice:#dbe3ec;
+    --txt:#dbe3ec; --dim:#93a0b0; --acc:#7fa6cc; --acc2:#86c3b8; --ice:#dbe3ec; --onacc:#081019;
     --ga:#111f30; --hdr:#0e1926; --cbody:#081019; --brief:#111e2d;
     --cjob-f:#1f1a12; --csub-f:#102129; --cagent-f:#13211c;
     --hover:rgba(255,255,255,.05); --sel:rgba(127,166,204,.14); color-scheme:dark; }
   html[data-theme="sand"]{ --bg:#d9d1c0; --panel:#e6dfcf; --panel2:#ded5c3; --line:#b4a992; --line2:#a2967c;
-    --txt:#2f2b23; --dim:#574f3f; --acc:#8a5a2b; --acc2:#7d6a3f; --ice:#2f2b23;
+    --txt:#2f2b23; --dim:#574f3f; --acc:#8a5a2b; --acc2:#7d6a3f; --ice:#2f2b23; --onacc:#ffffff;
     --ga:#e2dbcb; --hdr:#e6dfcf; --cbody:#ded5c3; --linktext:#2f2b23;
     --link:rgba(90,72,44,.45); --brief:#ded5c3;
     --cjob-f:#e8dcc4; --csub-f:#d9e2e6; --cagent-f:#dbe4d6;
     --hover:rgba(90,72,44,.08); --sel:rgba(138,90,43,.12);
     --ok:#2f6b45; --warn:#7a5408; --err:#96382a; color-scheme:light; }
   html[data-theme="sepia"]{ --bg:#16120c; --panel:#221c14; --panel2:#2a2218; --line:#3a2e1f; --line2:#463726;
-    --txt:#e9dcc6; --dim:#a99a7e; --acc:#c89a63; --acc2:#d7bb84; --ice:#e9dcc6;
+    --txt:#e9dcc6; --dim:#a99a7e; --acc:#c89a63; --acc2:#d7bb84; --ice:#e9dcc6; --onacc:#16120c;
     --ga:#2a2117; --hdr:#221c14; --cbody:#16120c; --linktext:#e9dcc6;
     --link:rgba(120,96,62,.5); --brief:#2a2218;
     --cjob-f:#2a2115; --csub-f:#182023; --cagent-f:#1a2017;
     --hover:rgba(255,255,255,.045); --sel:rgba(200,154,99,.14);
     --ok:#6fb98a; --warn:#d9b45c; --err:#de8a6f; color-scheme:dark; }
   html[data-theme="forest"]{ --bg:#0d1310; --panel:#141d18; --panel2:#18231c; --line:#253329; --line2:#2f4034;
-    --txt:#dde8e0; --dim:#96a89a; --acc:#7fb694; --acc2:#9ccfae; --ice:#dde8e0;
+    --txt:#dde8e0; --dim:#96a89a; --acc:#7fb694; --acc2:#9ccfae; --ice:#dde8e0; --onacc:#0d1310;
     --ga:#17241c; --hdr:#141d18; --cbody:#0d1310; --linktext:#dde8e0;
     --link:rgba(90,120,100,.5); --brief:#18231c;
     --cjob-f:#1b2317; --csub-f:#142224; --cagent-f:#16261d;
     --hover:rgba(255,255,255,.045); --sel:rgba(127,182,148,.14);
     --ok:#5fbf8a; --warn:#d9a441; --err:#dd7d6b; color-scheme:dark; }
   html[data-theme="celestial"]{ --bg:#dfe6ef; --panel:#eaf0f7; --panel2:#e2e9f2; --line:#b6c3d3; --line2:#a6b6c9;
-    --txt:#24303f; --dim:#4e5f74; --acc:#3b6a9a; --acc2:#4d7fb5; --ice:#24303f;
+    --txt:#24303f; --dim:#4e5f74; --acc:#3b6a9a; --acc2:#4d7fb5; --ice:#24303f; --onacc:#ffffff;
     --ga:#e5ecf4; --hdr:#eaf0f7; --cbody:#e2e9f2; --linktext:#24303f;
     --link:rgba(59,106,154,.45); --brief:#e2e9f2;
     --cjob-f:#e9e3cf; --csub-f:#d8e4ea; --cagent-f:#dbe5dc;
     --hover:rgba(59,106,154,.08); --sel:rgba(59,106,154,.12);
     --ok:#1f6b45; --warn:#6b4d08; --err:#8f2f1e; color-scheme:light; }
   html[data-theme="sakura"]{ --bg:#ece0e3; --panel:#f4eaec; --panel2:#ecdfe2; --line:#cdaeb6; --line2:#bd9ba4;
-    --txt:#3b2c30; --dim:#6b4d55; --acc:#9d5573; --acc2:#8f5f6e; --ice:#3b2c30;
+    --txt:#3b2c30; --dim:#6b4d55; --acc:#9d5573; --acc2:#8f5f6e; --ice:#3b2c30; --onacc:#ffffff;
     --ga:#f0e5e8; --hdr:#f4eaec; --cbody:#ecdfe2; --linktext:#3b2c30;
     --link:rgba(120,80,95,.45); --brief:#ecdfe2;
     --cjob-f:#efe1d9; --csub-f:#e3e3e6; --cagent-f:#e4e2da;
     --hover:rgba(157,85,115,.08); --sel:rgba(157,85,115,.12);
     --ok:#2f6b45; --warn:#6b4d08; --err:#8f2f1e; color-scheme:light; }
   html[data-theme="haze"]{ --bg:#1a1f27; --panel:#222832; --panel2:#272e39; --line:#343c49; --line2:#3f4857;
-    --txt:#d6dee8; --dim:#9aa6b6; --acc:#a9b6cd; --acc2:#9fd4cb; --ice:#d6dee8;
+    --txt:#d6dee8; --dim:#a4b0c0; --acc:#a9b6cd; --acc2:#9fd4cb; --ice:#d6dee8; --onacc:#1a1f27;
     --ga:#262d38; --hdr:#222832; --cbody:#1a1f27; --linktext:#d6dee8;
     --link:rgba(140,155,180,.45); --brief:#272e39;
     --cjob-f:#2a2620; --csub-f:#1e2a30; --cagent-f:#1f2a25;
@@ -452,7 +465,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at tr.brief td{background:var(--brief)}
   .cjob{fill:var(--cjob-f)} .csub{fill:var(--csub-f)} .cagent{fill:var(--cagent-f)}
   .btn:hover{color:var(--txt)}
-  .btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+  /* 2026-11-07: this block re-declared `.btn.primary` with `color:#fff` (2.05:1 on haze);
+     the ONE declaration is at the top of the sheet and uses `--onacc`. */
   .btn.on{background:var(--brief);color:var(--txt)}
   /* JAG-420: embedded in the Sessions view (Control tab) — hide the deck's own banner so the
      parent page's single banner is the only one. */
@@ -627,7 +641,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
 <body>
 <script>if(window.self!==window.top||/[?&]embed=1/.test(location.search))document.documentElement.classList.add("embed");</script>
 <header>
-  <span class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</span>
+  <h1 class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="14.9" cy="3.7" r="2.4" fill="currentColor" stroke="none"/><path d="M13.1 6.9 10.5 13.3"/><path d="M13.1 7.2 16.9 8.6 18.9 6.2"/><path d="M13.1 7.2 9.5 9.5 6.0 7.4"/><path d="M10.5 13.3 15.2 13.6 17.1 17.8"/><path d="M10.5 13.3 6.1 16.6 2.4 14.1"/></svg> LONGRUN</h1>
   <nav class="topTabs" aria-label="top-level sections">
     <a class="ttab" href="/">Sessions</a>
     <span class="ttab active" aria-current="page">Control</span>
@@ -741,7 +755,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
             <col class="c-id"><col class="c-name"><col class="c-role">
             <col class="c-model"><col class="c-rep"><col class="c-teams"><col class="c-file"><col class="c-act">
           </colgroup>
-          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Teams</th><th>Role.md</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Teams</th><th>Role.md</th><th scope="col"><span class="sr-only">row actions</span></th></tr></thead>
           <tbody id="agBody"></tbody>
         </table>
       </div>
@@ -1192,7 +1206,7 @@ class AgentsView {
       if (tr) this.focusAgent(tr.dataset.sid, true);
     }; });
     // JAG-2.1: collapsible group header rows inside the SAME table.
-    body.querySelectorAll("tr.grp-head .grp-h").forEach(h => {
+    body.querySelectorAll("tr.grp-head .grp-toggle").forEach(h => {
       const toggleGroup = (ev) => {
         // v625: a header drag ends here too — swallow its tail click.
         if (ev && window.DragSort && DragSort.consumeClick(ev)) return;
@@ -1550,12 +1564,16 @@ class AgentsView {
       // v625: the header is ALSO the team drag handle (Sessions sidebar parity —
       // its .t label drags the team). Grip shows it; the engine moves the whole
       // group, the SAME kind=team store both pages share.
-      '<div class="grp-h" tabindex="0" role="button" aria-expanded="' + (closed ? "false" : "true") +
-      '" aria-label="' + esc(g.name) + ' team group">' +
+      '<div class="grp-h">' +
+      // axe (2026-11-07): the toggle no longer CONTAINS the two actions (that was
+      // `nested-interactive`), and it carries no aria-label — its own text IS its name,
+      // so `label-content-name-mismatch` cannot fire on the glyphs/count.
+      '<div class="grp-toggle" tabindex="0" role="button" aria-expanded="' + (closed ? "false" : "true") + '">' +
       '<span class="rowgrip" title="drag to reorder this team">⋮⋮</span>' +
       '<span class="caret">' + (closed ? '▸' : '▾') + '</span>' +
       (g.symbol ? '<span>' + esc(g.symbol) + '</span>' : '') +
       '<span>' + esc(g.name) + '</span><span class="gc">' + (g.ms || []).length + '</span>' +
+      '</div>' +
       // JAG-2.3: assign ANY agent to THIS team from the header — before this the only
       // picker lived on an agent row, so an empty team (or a scoped view) had nothing
       // to click: you could not add an agent to a new team at all.
@@ -1580,7 +1598,7 @@ class AgentsView {
       const c = head.querySelector(".caret"); if (c) c.textContent = closed ? "▸" : "▾";
       // JAG-2.8: keep the a11y state truthful on an in-place toggle (the attribute is
       // only rendered at build time, so without this it lagged one interaction behind).
-      const h = head.querySelector(".grp-h"); if (h) h.setAttribute("aria-expanded", closed ? "false" : "true");
+      const h = head.querySelector(".grp-toggle"); if (h) h.setAttribute("aria-expanded", closed ? "false" : "true");
     }
     [...body.querySelectorAll("tr[data-grp]")].forEach(tr => {
       if (tr !== head && tr.getAttribute("data-grp") === id) tr.hidden = closed;

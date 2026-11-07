@@ -260,5 +260,59 @@ check("G1 the Control deck names every static control (%d controls)" % len(deck_
 check("G2 the Control deck has no anonymous icon button (%d)" % len(deck_audit.buttons),
       not deck_anon, ", ".join(deck_anon[:6]))
 
+# ---- H: the Settings window, the plan-id chips, the deck's primary button ----
+# All five below come from axe runs on 2026-11-07 that the static questions above
+# could not ask: `region` inside Settings, `color-contrast` on the .tcid chips and
+# on the deck's primary button, `page-has-heading-one`, `empty-table-header`.
+check("H1 the Settings window is a named dialog",
+      'id="settingsWin" role="dialog" aria-labelledby="settingsTitle"' in html
+      and 'id="settingsTitle"' in html)
+_tids = re.search(r"#inspector \.task \.tids \{ opacity: \.(\d+)", html)
+check("H2 the plan-id chips use the quiet text token, and stay readable at rest",
+      ".task .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--dim)" in html
+      and ".tctree .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--dim)" in html
+      and _tids is not None and float("0." + _tids.group(1)) >= 0.9,
+      _tids.group(0) if _tids else "no .tids opacity")
+
+DROOT = _vars(re.search(r":root\{(.*?)\}", DECK, re.S).group(1))
+DTHEMES = {n: _vars(b) for n, b in
+           re.findall(r'html\[data-theme="([a-z0-9-]+)"\]\{([^}]*)\}', DECK, re.S)}
+check("H3 the deck has ONE primary-button rule and its text is --onacc",
+      # `.toolbar>.btn.primary` is a separate, scoped rule; the BASE one must exist once.
+      len(re.findall(r"(?m)^\s*\.btn\.primary\{", DECK)) == 1
+      and ".btn.primary{background:var(--acc);border-color:var(--acc);color:var(--onacc)}" in DECK
+      and ".toolbar>.btn.primary{background:var(--acc);border-color:var(--acc);color:var(--onacc)" in DECK,
+      len(re.findall(r"(?m)^\s*\.btn\.primary\{", DECK)))
+check("H4 --onacc is defined for the deck root and all %d themes" % len(DTHEMES),
+      "onacc" in DROOT and len(DTHEMES) >= 6
+      and all("onacc" in v for v in DTHEMES.values()),
+      sorted(DTHEMES))
+
+deck_contrast = []
+for name in sorted(DTHEMES):
+    merged = dict(DROOT)
+    merged.update(DTHEMES[name])
+    if not ("onacc" in merged and "acc" in merged):
+        deck_contrast.append("%s missing token" % name)
+        continue
+    ratio = _contrast(_rgb(merged["onacc"]), _rgb(merged["acc"]))
+    if ratio < 4.5:
+        deck_contrast.append("%s %.2f:1" % (name, ratio))
+check("H5 --onacc reaches 4.5:1 on --acc in every deck theme",
+      not deck_contrast, ", ".join(deck_contrast))
+check("H6 the deck has a level-one heading and no empty column header",
+      '<h1 class="logo"' in DECK and "<th></th>" not in DECK)
+# axe `nested-interactive` + `label-content-name-mismatch` on the team group header
+# (live, 2026-11-07): the disclosure contained the assign/kebab buttons and carried an
+# aria-label that disagreed with its own glyphs. The toggle is now a leaf control whose
+# own text is its name, and the actions are its siblings.
+check("H7 the group disclosure is a control that CONTAINS no action button",
+      '<div class="grp-toggle" tabindex="0" role="button" aria-expanded="' in DECK
+      and '<div class="grp-h" tabindex' not in DECK
+      and 0 < DECK.index("</div>' +") < DECK.index("data-tmadd"))
+check("H8 the actions column header carries text a screen reader can announce",
+      '<th scope="col"><span class="sr-only">row actions</span></th>' in DECK
+      and ".sr-only{" in DECK)
+
 print("\nv851: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

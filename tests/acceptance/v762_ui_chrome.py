@@ -60,9 +60,11 @@ check("A4 the placement runs with the other settled geometry",
 
 # ---- B. the topbar ------------------------------------------------------------
 check("B1 settings is a monochrome SVG button, not the ⚙ glyph",
+      # 2026-11-07: the title span carries `id="settingsTitle"` — it is the accessible
+      # name of the Settings dialog (`role="dialog" aria-labelledby`), not just a label.
       'id="settingsBtn" title="settings" aria-label="settings"' in UI
       and 'data-call="toggleSettings">⚙</button>' not in UI
-      and '<span class="sw-title">Settings</span>' in UI)
+      and '<span class="sw-title" id="settingsTitle">Settings</span>' in UI)
 check("B2 the palette is an icon with the shortcut in the tooltip",
       'id="palette-open" title="search &amp; commands (Ctrl/⌘ K)"' in UI
       and ">⌘K<" not in UI)

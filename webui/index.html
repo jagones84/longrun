@@ -311,7 +311,10 @@
   .task .st.superseded { color: var(--dim); text-decoration: line-through; opacity: .7; }
   .task .dep { font-size: 9px; color: var(--dim); }
   .task .ev { font-size: 9px; color: var(--ok); }
-  .task .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); flex-shrink: 0; }
+  /* axe (2026-11-07): the node-id chips are DATA, and `--acc2` is a decorative accent —
+     on the light themes it never reaches 4.5:1 even at 100% opacity (sand 3.95,
+     celestial 3.65, sakura 4.42), so the chips use the quiet text token instead. */
+  .task .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--dim); flex-shrink: 0; }
   /* JAG-431k -> v630: meta vs body halves of a todo row. The STATUS badge is the
      anchor and every ID (agent.todo, job, subjob) stacks UNDER it, so the label
      owns the full width instead of losing ~110px to an inline preamble. */
@@ -858,7 +861,7 @@
   .tctree .st.superseded { color: var(--dim); text-decoration: line-through; opacity: .7; }
   .tctree .tc-kids { margin: 6px 0 6px 16px; padding-left: 10px; border-left: 1px solid var(--line-2); }
   /* JAG-169: the todo id AX.nY, monospaced and visible in chat + panel. */
-  .tctree .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--acc2); margin-right: 0; }
+  .tctree .tcid { font-family: ui-monospace, monospace; font-size: 10px; color: var(--dim); margin-right: 0; }
   /* JAG-278 -> v629: a todo's JUSTIFICATION is a full-width line UNDER the row
      (never a squeezed suffix beside it) and is shown for EVERY group — done,
      doing, open, superseded — so a closed step is never unexplained. Muted +
@@ -2485,7 +2488,9 @@
      rewind button only exists on hover/focus, and the single remaining chip is
      the actionable one (a claims-without-source warning, else the evidence count). */
   #inspector .task { padding: 4px 6px; gap: 6px; }
-  #inspector .task .tids { opacity: .45; font-size: 10px; }
+  /* axe (2026-11-07): .45 opacity put the ids at 2.99:1 on haze; .9 is the `.mts` floor
+     and `v851` E2 recomputes it for every theme. Hover/focus still brings them to 1. */
+  #inspector .task .tids { opacity: .9; font-size: 10px; }
   #inspector .task:hover .tids, #inspector .task:focus-within .tids { opacity: 1; }
   #inspector .task .task-rw { opacity: 0; margin-left: 4px; }
   #inspector .task:hover .task-rw, #inspector .task:focus-within .task-rw { opacity: 1; }
@@ -3529,9 +3534,9 @@
   </aside>
 </main>
 <div class="backdrop" id="backdrop" data-call="closeAside"></div>
-<div id="settingsWin" hidden>
+<div id="settingsWin" role="dialog" aria-labelledby="settingsTitle" hidden>
   <div class="sw-head">
-    <span class="grip">⠿</span><span class="sw-title">Settings</span>
+    <span class="grip">⠿</span><span class="sw-title" id="settingsTitle">Settings</span>
     <span class="remaining sw-legend" title="live: the config is written the moment you change the control. save: the value is only written when you press the save button of that card."><span class="set-chip live">live</span> applies on change · <span class="set-chip save">save</span> needs the save button</span>
     <span class="sp"></span>
     <button class="ghost" data-call="closeSettings" title="close (Esc)">✕</button>
@@ -4450,7 +4455,10 @@ function _setRailBadge(btnId, n) {
   const chip = btn.querySelector(".tb-badge");
   const base = btn.dataset.label || btn.getAttribute("aria-label") || "";
   if (chip) { chip.textContent = n > 99 ? "99+" : String(n || 0); chip.hidden = !n; }
-  btn.setAttribute("aria-label", n ? base + " (" + n + " pending)" : base);
+  // axe (2026-11-07): the count must NOT sit in parentheses — `label-content-name-mismatch`
+  // strips parenthetical text before comparing, so "(5 pending)" read as a mismatch while
+  // the visible chip said 5. A comma form keeps the number in the name.
+  btn.setAttribute("aria-label", n ? base + ", " + n + " pending" : base);
 }
 /* Open one inspector section ON SCREEN — the drawer rules live in CSS, so the class is
    what makes it visible on a narrow viewport; on desktop the panel is only collapsed. */

@@ -94,8 +94,11 @@ check("C4 the setter is called with the BUTTON id, never with the chip id",
 SETTER = ui[ui.find("function _setRailBadge"):]
 SETTER = SETTER[:SETTER.find("\n}\n")]
 check("D1 the setter writes the count into aria-label and collapses the chip at 0",
+      # 2026-11-07: the comma form replaced "(N pending)" — axe's
+      # label-content-name-mismatch strips parenthetical text before comparing, so the
+      # badge (visible "5") was not found in the name and the button failed live.
       'btn.dataset.label' in SETTER and 'chip.hidden = !n' in SETTER
-      and '" (" + n + " pending)"' in SETTER, SETTER[:120])
+      and '", " + n + " pending"' in SETTER, SETTER[:120])
 
 # ---------------- E: the click lands on the surface that owns the data ----------------
 OC = ui[ui.find("function openChanges"):]
