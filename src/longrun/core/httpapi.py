@@ -1581,6 +1581,11 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
     rounds = 0
     retried = False
     while rounds < int(rounds_max):
+        if cancel is not None and cancel():
+            # v862: Stop must not leave the naming loop running. Without this the
+            # cancelled call returned "", the copy-retry fired, and the loop paid
+            # another (cancelled) generation — the "rename loop" the operator hit.
+            break
         groups = th.untitled_free(sid)
         if not groups:
             break
@@ -1615,6 +1620,8 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
                 answer, think, used_one = _call(prompt, max(1200, min(6000, budget * 3)))
         except Exception:  # noqa: BLE001 — naming must never break the button
             answer, used_one = None, None
+        if cancel is not None and cancel():
+            break
         used = used_one or used
         applied = 0
         for item in _parse_name_json(answer):
@@ -1670,7 +1677,14 @@ def autoname_async(session, model=None):
 
     def _run():
         try:
-            res = autoname_untitled(sess, model=model)
+            # v862: naming is a MODEL CALL like any other, so it holds the session's
+            # turn lock — a 🏷 clicked while a compaction or a chat turn was running
+            # used to put TWO generations on the same session (measured live
+            # 2026-11-07: compact + label + a queued message, all in flight) — and it
+            # honours Stop instead of running its rounds to the end.
+            with _turn_lock(sid):
+                res = autoname_untitled(sess, model=model,
+                                        cancel=lambda: _is_aborted(sid))
             publish("threads.named", session=sid, titled=res.get("titled", 0),
                     remaining=res.get("remaining", 0), model=res.get("model"))
         except Exception as e:  # noqa: BLE001 — naming must never break the feed

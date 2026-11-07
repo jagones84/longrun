@@ -309,6 +309,16 @@ def closeout_gate(node, workspace=None, run_id=None, c=None, check=None):
                       "error": "closeout: this step changed the TEST setup (%s), so a "
                                "green run would not be independent evidence — the step "
                                "closes UNVERIFIED" % ", ".join(tainted[:4])}, False
+    if auto:
+        # THE MODEL ACTS, THE HARNESS SUGGESTS (operator rule, 2026-11-07: "solo il
+        # modello può eseguire azioni, l'harness può dare suggerimenti"). `auto`
+        # therefore NEVER runs the suite by itself: it hands the model the exact
+        # command and records the step as UNVERIFIED until the model runs it and
+        # reports the output. Only the opt-in `closeout: true` executes.
+        return True, {"ran": False, "unavailable": True, "suggest": cmd,
+                      "error": "closeout: nothing was verified — run `%s` and report "
+                               "the result; the step is closed UNVERIFIED until you "
+                               "do" % cmd}, False
     # BOUNDED REPAIR: one external pass/fail plus ONE repair round. The first
     # red is handed to the model with the output; a second `done` that changed
     # nothing since that failure is a re-claim, not a repair — refuse it WITHOUT

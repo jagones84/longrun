@@ -190,7 +190,10 @@ _events = []
 httpapi.publish = lambda kind, **kw: _events.append(dict(kind=kind, **kw))
 
 
-def _slow_name(sess, model=None):
+def _slow_name(sess, model=None, cancel=None):
+    # v862: `autoname_async` now passes a Stop-aware cancel — the fake mirrors the
+    # real signature, otherwise the call raises inside the background thread and
+    # the run reports `threads.named` with an error instead of its totals.
     time.sleep(0.5)
     return {"ok": True, "session": (sess or {}).get("id"), "titled": 1,
             "remaining": 0, "model": "fake/chat"}

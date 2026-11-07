@@ -80,23 +80,22 @@ check("A3 strict keeps the old fail-closed refusal",
 
 ok, rep, obs = V.closeout_gate(node, workspace=os.path.join(tmp, "bare"),
                                c={"closeout": "auto", "command": "true"}, check=green)
-check("A4 auto runs the check when a command resolves",
-      ok is True and obs is True and rep.get("green") is True, rep)
+check("A4 auto NEVER runs the command itself: it hands it to the model",
+      ok is True and obs is False and rep.get("ran") is False
+      and rep.get("suggest") == "true", rep)
 
 ok, rep, obs = V.closeout_gate(node, workspace=os.path.join(tmp, "bare"),
                                c={"closeout": False, "command": "true"}, check=green)
 check("A5 off stays off", ok is True and rep.get("ran") is False and obs is False, rep)
 
-# a check that burns its whole budget proves nothing: auto says UNVERIFIED,
-# strict keeps the red (there the operator asked for a verdict).
+# strict is the ONLY mode that executes; it is opt-in.
 _slow = lambda **k: (False, "still running")  # noqa: E731
 V.reset_closeout_memo()
 ok, rep, obs = V.closeout_gate({"id": "n4", "mutated": 5, "paths": ["src/a.py"]},
                                workspace=os.path.join(tmp, "bare"),
-                               c={"closeout": "auto", "command": "true",
-                                  "timeout_secs": 0.001}, check=_slow)
-check("A6 auto treats a budget-exhausted check as UNVERIFIED, not a permanent red",
-      ok is True and obs is False and rep.get("unavailable") is True, rep)
+                               c={"closeout": True, "command": "true"}, check=green)
+check("A6 strict is the only mode that runs the check (opt-in)",
+      ok is True and obs is True and rep.get("ran") is True, rep)
 V.reset_closeout_memo()
 ok, rep, obs = V.closeout_gate({"id": "n5", "mutated": 6, "paths": ["src/a.py"]},
                                workspace=os.path.join(tmp, "bare"),
@@ -118,8 +117,8 @@ check("B2 tainting does not block the close (it reports, it does not refuse)", o
 plain = {"id": "n3", "mutated": 4, "paths": ["src/app.py", "docs/readme.md"]}
 ok, rep, obs = V.closeout_gate(plain, workspace=os.path.join(tmp, "bare"),
                                c={"closeout": "auto", "command": "true"}, check=green)
-check("B3 a step that touched only source is verified normally",
-      ok is True and obs is True and not rep.get("tainted"), rep)
+check("B3 a step that touched only source is not tainted: the check applies",
+      ok is True and not rep.get("tainted") and rep.get("suggest") == "true", rep)
 
 # --------------------------------------------- C: the verdict carries findings
 gap = "gap: output/report.csv has 3 rows, the request asked for 40"

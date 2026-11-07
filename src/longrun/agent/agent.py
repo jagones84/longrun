@@ -1875,14 +1875,11 @@ def _apply_chat_todo_updates(sess, act, on_event, node=None, after=None):
                         # SAYS so. A silent close here is how "done" stopped meaning
                         # anything; an entry with `observed: False` is the honest
                         # third state between verified and refused.
-                        _why = ("no test command could be resolved for this workspace"
-                                if _rep.get("unavailable") else
-                                "the step changed the TEST setup itself (%s), so its "
-                                "own suite is not independent evidence"
-                                % ", ".join((_rep.get("paths") or [])[:3]))
                         _unv = {"ts": round(time.time(), 3), "observed": False,
                                 "unverified": True,
-                                "text": "closeout UNVERIFIED — %s" % _why}
+                                "text": "UNVERIFIED — %s" % (
+                                    _rep.get("error")
+                                    or "no verification was possible")}
                         _ev = (list(ev) + [_unv] if isinstance(ev, list)
                                else ([{"ts": round(time.time(), 3), "text": str(ev)},
                                       _unv] if ev else [_unv]))
