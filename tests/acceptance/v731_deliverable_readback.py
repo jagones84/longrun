@@ -251,7 +251,11 @@ check("D9 a workbook that HAS the chart satisfies the request",
 # E ----------------------------------------------------------------------
 SRC = open(os.path.join(REPO, "src", "longrun", "agent", "agent.py"), encoding="utf-8").read()
 check("E1 every floor that accepts a final answer runs the read-back first",
-      SRC.count("_drv = _deliverable_review_text(") >= 4, SRC.count("_drv = _deliverable_review_text("))
+      # v870: the call sites go through `_review_for_effort`, the tier gate that
+      # CHOOSES the read-back (full) or the mechanical gap audit that escalates to
+      # it — the read-back still runs on every close, it is no longer always paid.
+      SRC.count("_drv, _effort = _review_for_effort(") >= 4,
+      SRC.count("_drv, _effort = _review_for_effort("))
 check("E2 it is resolved on the session's OWN workspace",
       "_chat_workspace(sess)" in SRC.split("def _deliverable_review_text")[1][:1400],
       "workspace resolver")

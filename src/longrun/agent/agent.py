@@ -3774,6 +3774,75 @@ def _delegated_review_text(state):
     return "\n".join(lines)
 
 
+#: An artefact the request NAMES: a code span or a filename with an extension. Two
+#: different ones on the same request is work that deserves the full scaffolding.
+_EFFORT_ARTEFACT = re.compile(r"`[^`\n]+`|\b[\w./-]+\.(?:json|csv|md|py|txt|xlsx|pdf|html|yaml|yml)\b", re.I)
+
+
+def _turn_effort(sess, message, goal_mode=False, autonomous=False, plan_only=False):
+    """'full' or 'lite' — how much scaffolding THIS turn earns.
+
+    The decision is MECHANICAL on purpose: an agent asked to judge its own work
+    praises it, so "is this task easy?" must never be a model opinion. Facts:
+
+      * goal / autonomous / plan-only turn      -> full (the goal contract owns the turn)
+      * more than two steps still OPEN in the plan -> full (unfinished work)
+      * the request names 2+ artefacts           -> full (a real delivery)
+      * a long request (> 60 words)              -> full
+
+    Anything else is 'lite': a short, single-artefact turn. It keeps every MECHANICAL
+    check (gap audit, citation existence, evidence gate) and loses only the
+    conversational rounds that re-ask a model something the harness can see for
+    itself. Escalation is in `_review_for_effort`: a mechanical gap turns the turn
+    back into 'full' on the spot.
+
+    Sources: arXiv 2610.34491 (start minimal, escalate after a VERIFIED failure —
+    it matches or beats a fixed top effort at lower cost, and higher effort mostly
+    buys more self-verification, not better outcomes) and arXiv 2610.35767 (a
+    harness that prescribes fewer model calls is more accurate than hand-crafted
+    SOPs; more effort changed accuracy by a few points while multiplying time).
+    """
+    try:
+        if goal_mode or autonomous or plan_only:
+            return "full"
+        graph = taskgraph.load(sess["id"]) or {}
+        open_n = sum(1 for n in taskgraph.plan_nodes(graph)
+                     if n.get("status") in taskgraph.OPEN_STATUSES)
+        if open_n > 2:
+            return "full"
+        text = str(message or "")
+        if len(text.split()) > 60:
+            return "full"
+        if len(set(_EFFORT_ARTEFACT.findall(text))) >= 2:
+            return "full"
+        return "lite"
+    except Exception:  # noqa: BLE001 — the tier must never break a turn: fail scrupulous
+        return "full"
+
+
+def _review_for_effort(sess, request, since, state, effort):
+    """The deliverable read-back, gated by the turn's effort tier. -> (text, effort).
+
+    'full' behaves exactly as before. 'lite' runs the MECHANICAL gap audit instead
+    (`plan.artifacts.gaps` — it looks at the files, no model) and escalates the whole
+    turn to 'full' the moment it finds one, so the read-back, the close verdict and
+    the verify gate are then all available again. Never raises.
+    """
+    if effort == "full":
+        return _deliverable_review_text(sess, request, since, state), effort
+    try:
+        from longrun.plan import artifacts as _art
+        found = _art.gaps(_chat_workspace(sess), request=request, since=since,
+                          exclude=_harness_state_roots() + _other_session_roots(sess),
+                          own_paths=state.get("paths"),
+                          opaque=bool(state.get("opaque", True)))
+    except Exception:  # noqa: BLE001 — an audit may slow a turn, never break it
+        return _deliverable_review_text(sess, request, since, state), "full"
+    if found:
+        return _deliverable_review_text(sess, request, since, state), "full"
+    return None, "lite"
+
+
 def _deliverable_review_text(sess, request, since, state):
     """Mechanical read-back of what this turn WROTE, once per turn (or None).
 
@@ -4653,6 +4722,16 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     "cite_left": 1, "since": _deliv_since}
     _verify_gate_used = False   # one round when the turn closes without opening its output
     _delivery_floor_used = False  # one extra round when a stop leaves nothing written
+    # L-2 (2026-11-07): how much SCAFFOLDING this turn earns. 'full' is every gate
+    # this harness has (goal/autonomous turns, unfinished plans, long or multi-artefact
+    # requests); 'lite' is a short, single-artefact turn with no open work, where the
+    # conversational rounds (read-back, close verdict, verify gate) buy nothing.
+    # Mechanical audits still run in 'lite' and ESCALATE the turn when they find a gap,
+    # so a real defect always gets the full treatment. Sources: arXiv 2610.34491
+    # (escalate after a verified failure beats a fixed top effort) and 2610.35767
+    # (a harness that prescribes fewer model calls is more accurate).
+    _effort = _turn_effort(sess, message, goal_mode=goal_mode,
+                           autonomous=autonomous, plan_only=plan_only)
     _fail_streak = 0        # JAG-178: consecutive failing tool calls
     _fail_streak_tool = None
     _last_tool_hash = None  # JAG-178: detect a repeated identical call
@@ -5737,7 +5816,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_evidence_gate_text(), "evidence-gate")
                 continue
-            _drv = _deliverable_review_text(sess, message, _deliv_since, _deliv_state)
+            _drv, _effort = _review_for_effort(sess, message, _deliv_since, _deliv_state,
+                                               _effort)
             if _drv:
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
@@ -5747,15 +5827,15 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_cite, "citation-check")
                 continue
-            if (_review_action_owed(_deliv_state) and not _verify_gate_used
-                    and not _is_aborted(sess["id"])):
+            if (_effort == "full" and _review_action_owed(_deliv_state)
+                    and not _verify_gate_used and not _is_aborted(sess["id"])):
                 # The read-back was sent and NOTHING was opened since: the answer
                 # would be a claim. One round, then the normal stop applies.
                 _verify_gate_used = True
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_verify_gate_text(), "verify-gate")
                 continue
-            if (not _request_verified and _total_work_steps
+            if (_effort == "full" and not _request_verified and _total_work_steps
                     and not _is_aborted(sess["id"])):
                 # v859: "I am done" is a CLAIM. Before the turn closes, the harness
                 # asks ONCE for a verdict against the operator's OWN request thread
@@ -5794,8 +5874,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_closure_check_prompt(_request_thread_text), "closure-check")
                     continue
-                _drv = _deliverable_review_text(sess, message, _deliv_since,
-                                                _deliv_state)
+                _drv, _effort = _review_for_effort(sess, message, _deliv_since,
+                                                   _deliv_state, _effort)
                 if _drv:
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_drv, "review")
@@ -5850,8 +5930,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_closure_check_prompt(_request_thread_text), "closure-check")
                     continue
-                _drv = _deliverable_review_text(sess, message, _deliv_since,
-                                                _deliv_state)
+                _drv, _effort = _review_for_effort(sess, message, _deliv_since,
+                                                   _deliv_state, _effort)
                 if _drv:
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_drv, "review")
@@ -5861,7 +5941,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(_cite, "citation-check")
                     continue
-                if (not _request_verified and _total_work_steps
+                if (_effort == "full" and not _request_verified and _total_work_steps
                         and not _is_aborted(sess["id"])):
                     # v859: the same request-anchored verdict before this close.
                     _request_verified = True
@@ -6054,7 +6134,8 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         "already marked [x]. Open now:\n%s"
                         % (len(_open), _open_todo_brief(sess)[1]), "continue")
                 continue
-            _drv = _deliverable_review_text(sess, message, _deliv_since, _deliv_state)
+            _drv, _effort = _review_for_effort(sess, message, _deliv_since, _deliv_state,
+                                               _effort)
             if _drv:
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_drv, "review")
@@ -6088,7 +6169,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 msgs.append({"role": "assistant", "content": answer})
                 _inject(_failed_call_check_prompt(_last_failed_err), "failed-call")
                 continue
-            if (not _request_verified and _total_work_steps
+            if (_effort == "full" and not _request_verified and _total_work_steps
                     and not _is_aborted(sess["id"])):
                 # v859: the last close path. A prose "done" after real work faces
                 # ONE verdict against the operator's request thread — never only
