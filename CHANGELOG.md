@@ -88,6 +88,21 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **A free-group label is a SUMMARY, never a copy of the prompt (extends `v469` / `v453`, no new
+  number).** The rail showed `FREE.6 · QUINDI PROPONI DI MODIFICARE QUALCOSA O VA BENE` beside the
+  same prompt again as a "summary": a deterministic fallback titled every group with the first words
+  of its own request (`req[:240]` as the summary) and ran before every auto-compaction, so it claimed
+  each group before any model could name it — and the 🏷 button only renames UNTITLED groups, so those
+  copies were permanent. It is gone. Naming is a model job only; `threads._is_copy` (the label's tokens
+  are a prefix of the request's) lets `set_title` REFUSE a copy at the one write point, `_normalise_titles`
+  repairs already-stored copies on read (prefix or copy → dropped, persisted), the naming prompt asks for
+  a 3-7 word paraphrase in the request's language with a worked example, and a round that applied nothing
+  gets one stricter retry. Root cause measured live on `b7329cccf94c`/`dgx:nex-n25`: the naming call was
+  budgeted 800 tokens, the reasoning model spent ALL of them thinking and answered 0 characters (the
+  JAG-487 pattern, now handled here too); at 4000 tokens the same model names 12/12 groups with real
+  paraphrases and zero copies. A group that no model can summarise stays untitled (honest), and the
+  button's toast reports how many are left. The WebUI also lets the LEDGER win over a stale chapter, so
+  a rename repaints and a purged copy disappears.
 - **One version string, so an agent cannot carry a false self-image (`v852`).** The self-knowledge
   block injected into every system prompt said *"you are Longrun v0.6"* while `/api/self` answered
   `1.0.0` — found live in A54's context, then traced to a hand-typed literal in `agent.py` and a

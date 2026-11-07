@@ -97,12 +97,13 @@ def _cap(doc):
         doc["groups"] = groups[-MAX_GROUPS:]
 
 
-# The auto-namer used to prefix every free-group title with "request to " (JAG-431m,
-# JAG-451). The prefix said nothing the title did not already say and cost rail width,
-# so a title is now the ask ITSELF. ONE rule, applied at every title boundary: on the
-# way in (the model's habit, `set_title`), on derivation (`autotitle_untitled`) and on
-# the way out (a ledger written before this change is normalised, not just rendered
-# clean — otherwise the ledger and the UI would spell one title two ways).
+# A free-group title is a SUMMARY of the user's request, never a copy of it. Two
+# defects lived at this boundary: the legacy "request to " prefix (JAG-431m/JAG-451,
+# RH-25) and a deterministic fallback that titled a group with the request's own
+# first words — the rail filled with truncated prompts (operator, 2026-11-07). ONE
+# rule, applied at every title boundary: on the way in (`set_title`) and on the way
+# out (`_normalise_titles`, so a ledger written by the old code is repaired and
+# persisted — otherwise the ledger and the UI would spell one group two ways).
 _LEGACY_PREFIX = re.compile(r"^\s*request\s+to\s*:?\s*", re.I)
 
 
@@ -111,16 +112,57 @@ def _clean_title(text):
     return _LEGACY_PREFIX.sub("", str(text or "")).strip()
 
 
-def _strip_legacy_titles(doc):
-    """Erase the legacy prefix from every STORED title of a ledger, once."""
+# Words that carry no meaning for a free-group label.
+_STOP = {"the", "a", "an", "please", "can", "you", "could", "would", "i", "me",
+         "my", "to", "of", "and", "or", "for", "is", "are", "it", "this", "that",
+         "with", "in", "on", "at", "do", "does", "make", "let", "us", "we"}
+
+
+def _tokens(text):
+    return [t.lower() for t in re.findall(r"[\w']+", str(text or ""))]
+
+
+def _is_copy(text, src):
+    """True when `text` is only the HEAD of `src` — the request's own words.
+
+    A label that reprints the prompt (truncated, stopwords dropped, trailing
+    "…") says nothing the operator cannot read in the prompt itself, so it is
+    not a title. Compared as token streams with the stopwords removed, which is
+    exactly the shape the old deterministic fallback produced.
+    """
+    t = [x for x in _tokens(text) if x not in _STOP]
+    s = [x for x in _tokens(src) if x not in _STOP]
+    return bool(t) and s[:len(t)] == t
+
+
+def _is_copy_summary(text, src):
+    """True when a summary is the request itself (`req[:240]`), not a line about it."""
+    a, b = re.sub(r"\s+", " ", str(text or "")).strip().lower(), \
+        re.sub(r"\s+", " ", str(src or "")).strip().lower()
+    return bool(a) and bool(b) and b.startswith(a)
+
+
+def _normalise_titles(doc):
+    """Repair every STORED title/summary of a ledger, once, in place.
+
+    The legacy prefix is erased, and a title or summary that is only the group's
+    own request is dropped: an unnamed group is honest, a copied prompt is not.
+    """
     n = 0
     for g in (doc.get("groups") or []):
+        src = g.get("req") or g.get("digest") or ""
         t = g.get("title")
-        if not t:
-            continue
-        clean = _clean_title(t)
-        if clean != t:
-            g["title"] = clean
+        if t:
+            clean = _clean_title(t)
+            if clean != t:
+                g["title"] = clean
+                n += 1
+            if g.get("title") and _is_copy(g["title"], src):
+                g["title"] = None
+                n += 1
+        s = g.get("summary")
+        if s and _is_copy_summary(s, src):
+            g["summary"] = None
             n += 1
     if n:
         _save(doc)
@@ -254,7 +296,7 @@ def _doc_for(sid, sess=None):
     """
     doc = _load(sid)
     if doc is not None and doc.get("v") == VERSION:
-        _strip_legacy_titles(doc)
+        _normalise_titles(doc)
         return doc
     if sess is None:
         try:
@@ -267,7 +309,7 @@ def _doc_for(sid, sess=None):
     old = doc
     doc = _backfill(sess)
     _carry_meta(old, doc)
-    _strip_legacy_titles(doc)
+    _normalise_titles(doc)
     _save(doc)
     return doc
 
@@ -325,7 +367,9 @@ def set_title(sid, gid, title, summary=None):
 
     `summary` is the free-group equivalent of a todo's evidence: a short "what/why it
     was about" note — stored in the durable ledger, so the agent can recollect it after
-    any number of compactions. Returns (ok, group|error).
+    any number of compactions. A title that only reprints the group's request is
+    REFUSED here (the ONE write point every namer goes through) with the reason, so
+    the caller can write a paraphrase instead. Returns (ok, group|error).
     """
     title = _clean_title(title)[:200]
     summ = None if summary is None else str(summary).strip()[:600]
@@ -339,10 +383,16 @@ def set_title(sid, gid, title, summary=None):
                     return False, ("group %s is a TASK group — a todo already carries "
                                    "its node label + evidence; only free groups take a "
                                    "title/summary" % gid)
+                src = g.get("req") or g.get("digest") or ""
+                if title and _is_copy(title, src):
+                    return False, ("title %r is only the request's own words — a free "
+                                   "group is labelled with a SUMMARY of what the user "
+                                   "wanted (3-7 words, a paraphrase), never a copy of "
+                                   "the prompt" % title)
                 if title:
                     g["title"] = title
                 if summary is not None:
-                    g["summary"] = summ or None
+                    g["summary"] = None if (summ and _is_copy_summary(summ, src)) else (summ or None)
                 _save(doc)
                 # JAG-431r8: tell the feed so any open WebUI repaints the Free.N
                 # label/summary live (only for the session that changed).
@@ -354,19 +404,6 @@ def set_title(sid, gid, title, summary=None):
 
 def _norm(s):
     return re.sub(r"\s+", " ", str(s or "")).strip()
-
-
-# Words that carry no meaning for a free-group label.
-_STOP = {"the", "a", "an", "please", "can", "you", "could", "would", "i", "me",
-         "my", "to", "of", "and", "or", "for", "is", "are", "it", "this", "that",
-         "with", "in", "on", "at", "do", "does", "make", "let", "us", "we"}
-
-
-def _short_ask(text, words=8):
-    """A <=`words`-word paraphrase of a user request, for an auto title."""
-    toks = [t for t in re.split(r"[^\w'./-]+", _norm(text)) if t]
-    keep = [t for t in toks if t.lower() not in _STOP] or toks
-    return " ".join(keep[:words]).strip(".,;:!? ")
 
 
 def untitled_free(sid):
@@ -413,44 +450,13 @@ def render_untitled(sid, limit=8):
     return "\n".join(lines)
 
 
-def autotitle_untitled(sid, only_missing=True):
-    """Give every UNTITLED free group a deterministic title + summary (JAG-451).
-
-    The `chapters` tool (the 🏷 button) asks the MODEL to name free groups, but
-    that is a full turn: it may never run, and a compaction can then fold a
-    still-unnamed group into the summary and the chat loses its "Free.N · title"
-    label. This is the cheap, deterministic safety net the harness runs BEFORE an
-    auto-compaction (and on demand): it derives the title from the group's own
-    captured user REQUEST (``req``) and the summary from its digest — no model,
-    no network, so it can never stall a turn. Groups the model already named are
-    left untouched. Returns the number of groups titled.
-    """
-    sid = str(sid or "").strip()
-    if not sid:
-        return 0
-    n = 0
-    with LOCK:
-        doc = _doc_for(sid)
-        if doc is None:
-            return 0
-        for g in (doc.get("groups") or []):
-            if g.get("kind") != "free":
-                continue
-            if only_missing and g.get("title"):
-                continue
-            src = _norm(g.get("req") or g.get("digest") or "")
-            if not src:
-                continue
-            ask = _clean_title(_short_ask(src))
-            if ask and not g.get("title"):
-                g["title"] = ask[:160]
-            if not g.get("summary"):
-                g["summary"] = src[:240]
-            n += 1
-        if n:
-            _save(doc)
-    return n
-
+# NOTE (2026-11-07): `autotitle_untitled` used to give every untitled free group a
+# deterministic "title" built from the first words of its request (JAG-451's safety
+# net). That is a COPY of the prompt, not a summary — the operator's rail filled with
+# truncated prompts. A free group is now named ONLY by a model (`autoname_untitled`,
+# the 🏷 button, or the agent's `chapters action=title`); when no model answer is
+# usable the group stays UNTITLED, which is honest, and the ledger keeps `req` +
+# `digest` so it can be named later.
 
 def _anchor_index(msgs, g):
     """Message index that STARTS a free group (its first USER request, else its first
@@ -629,6 +635,8 @@ def render(sid, limit=200):
     lines.append("Every group carries its justification (a task's evidence / a free "
                  "group's summary). Use action=read id=<gN> for the full record. A free "
                  "group marked [UNTITLED] has no name yet: title it with action=title "
-                 "id=<gN> title=\"<short ask>\" summary=\"<what/why, one line>\" "
-                 "\u2014 one action=title call per [UNTITLED] group, until none remain.")
+                 "id=<gN> title=\"<3-7 word SUMMARY of the ask>\" "
+                 "summary=\"<what/why, one line>\" \u2014 a paraphrase, NEVER a copy of "
+                 "the request text (a copy is refused) \u2014 one action=title call per "
+                 "[UNTITLED] group, until none remain.")
     return "\n".join(lines)

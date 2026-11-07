@@ -10,8 +10,10 @@ open nodes and returns `goal_reached`.
 Now the button POSTs /api/sessions/<id>/chapters/autoname, which runs a SUBROUTINE
 (`httpapi.autoname_untitled`): one direct call to the session's chat model that names
 ALL untitled groups at once, applied server-side, repeated until none remain — no
-tool-call budget and no page cap. A deterministic fallback finishes the job when the
-model is unavailable.
+tool-call budget and no page cap. A label is a SUMMARY of the request: a model answer
+that only reprints the prompt is refused (`threads.set_title`), retried once with a
+stricter instruction, and otherwise the group stays untitled — the old deterministic
+fallback filled the rail with copied prompts (operator, 2026-11-07).
 
 Deterministic, no network (the model is stubbed). Run:
     python3 tests/acceptance/v469_untitled_autoname.py
@@ -122,21 +124,24 @@ check("2a naming all groups in ONE call needs exactly one model call",
       state["calls"] == 1 and res.get("titled") == 4 and res.get("remaining") == 0,
       (state["calls"], res))
 
-# ---- 3. deterministic fallback when the model is unusable ---------------------
+# ---- 3. no copy is ever stored: the model is the ONLY namer -------------------
+# A "title" built from the request's first words is the prompt again (operator,
+# 2026-11-07: "fa schifo e solo una copia"). The old deterministic fallback is gone:
+# when no usable model answer arrives the group stays UNTITLED and the button says so.
 sid3 = "v469-fallback"
 _grow(sid3, 3)
 fake, state = _stream_returning(["GARBAGE"])
 httpapi.stream_with_fallback = fake
 res = httpapi.autoname_untitled(sid3)
-check("3a an unusable model reply falls back so the button still names everything",
-      res.get("remaining") == 0 and len(th.untitled_free(sid3)) == 0, res)
-check("3b the fallback titles come from the group's own request (JAG-451) and carry no prefix",
-      all((g.get("title") or "").startswith("thing number")
-          and not (g.get("title") or "").lower().startswith("request to")
+check("3a an unusable model reply stores NOTHING and reports the untitled groups",
+      res.get("ok") and res.get("titled") == 0 and res.get("remaining") == 3
+      and len(th.untitled_free(sid3)) == 3, res)
+check("3b no title was derived from the request text (the old fallback)",
+      all(not g.get("title") and not g.get("summary")
           for g in th.outline(sid3) if g["kind"] == "free"),
-      [g.get("title") for g in th.outline(sid3) if g["kind"] == "free"])
+      [(g.get("title"), g.get("summary")) for g in th.outline(sid3) if g["kind"] == "free"])
 
-# a raised model call must ALSO fall back (never break the button)
+# a raised model call must never break the button (and never invent a copy)
 sid4 = "v469-down"
 _grow(sid4, 2)
 
@@ -147,8 +152,32 @@ def _boom(*a, **k):
 
 httpapi.stream_with_fallback = _boom
 res = httpapi.autoname_untitled(sid4)
-check("3c the model raising never breaks the button (fallback still names all)",
-      res.get("ok") and res.get("remaining") == 0, res)
+check("3c the model raising never breaks the button (nothing named, nothing broken)",
+      res.get("ok") and res.get("titled") == 0 and res.get("remaining") == 2, res)
+
+# a model that only REPRINTS the requests is refused (twice), then leaves them unnamed
+sid6 = "v469-echo"
+_grow(sid6, 2)
+
+
+def _echo(messages, model, role, on_delta, timeout=None, **kw):
+    body = messages[0]["content"]
+    reqs = dict(re.findall(r'id=(g\d+) request="([^"]*)"', body))
+    arr = [{"id": gid, "title": (reqs.get(gid) or "")[:40],
+            "summary": reqs.get(gid) or ""} for gid in re.findall(r"id=(g\d+)", body)]
+    return (json.dumps(arr), "", "fake/chat")
+
+
+httpapi.stream_with_fallback = _echo
+res = httpapi.autoname_untitled(sid6)
+check("3d a model that copies the request text is refused — the groups stay untitled",
+      res.get("titled") == 0 and res.get("remaining") == 2, res)
+check("3e the copy never reached the ledger (title AND summary)",
+      all(not g.get("title") and not g.get("summary")
+          for g in th.outline(sid6) if g["kind"] == "free"),
+      [(g.get("title"), g.get("summary")) for g in th.outline(sid6) if g["kind"] == "free"])
+check("3f a refused round is retried ONCE with a stricter instruction, not looped",
+      res.get("rounds") == 2, res.get("rounds"))
 
 # ---- 4. the agent-facing `chapters action=untitled` view is unchanged (paged) --
 sid5 = "v469-page"
@@ -167,6 +196,10 @@ nt = HTML[HTML.index("async function nameThreads("):]
 nt = nt[:nt.index("\n}") + 2]
 check("5b the 🏷 button POSTs the subroutine instead of prompting the agent",
       "/chapters/autoname" in nt and "send(" not in nt, nt[:120])
+check("5c the naming prompt asks for a PARAPHRASE, never a copy of the request",
+      "PARAPHRASE" in API and "Never reuse the request" in API, "")
+check("5d the button reports the groups it could NOT name (no silent copy)",
+      "still untitled" in nt and "r.remaining" in nt, nt[-240:])
 
 # ---- 6. the labels actually REPAINT after the batch (JAG-474) ------------------
 # The button once reported "named 11" while NO label changed: the rendered groups
@@ -181,6 +214,8 @@ check("6b the request match does not need the counts to be identical",
       "if (!lg && same" in _at, "")
 check("6c a ledger group is never stamped onto two rendered groups",
       "used[lg.id] = true" in _at and "used[c.g.id]" in _at, "")
+check("6d for a MATCHED group the LEDGER wins over its chapter (a rename must repaint)",
+      "lg.id ? (lg.title" in _at and "lg.id ? (lg.summary" in _at, "")
 
 # ---- 7. a ledger written BEFORE RH-25 is normalised on READ (not just rendered) --
 # Cleaning only the rendered value would leave the ledger and the UI spelling one
@@ -201,6 +236,18 @@ with open(_p, encoding="utf-8") as f:
     _after = f.read()
 check("7b the cleanup is PERSISTED (one truth: the ledger spells it clean too)",
       "request to" not in _after, _after[:120])
+
+# ---- 8. the copy rule has ONE owner and no deterministic titler survives ------
+_TH = _read("src", "longrun", "memory", "threads.py")
+check("8a the deterministic copy titler is gone from the ledger module",
+      "def autotitle_untitled" not in _TH and "def _short_ask" not in _TH, "")
+check("8b the copy detector + the read-time ledger repair are the one rule",
+      "def _is_copy(" in _TH and "def _is_copy_summary(" in _TH
+      and "def _normalise_titles(" in _TH, "")
+check("8c the title write point REFUSES a copy (every namer goes through it)",
+      "_is_copy(title, src)" in _TH and "is only the request's own words" in _TH, "")
+check("8d no runtime path re-introduces a pre-compaction copy title",
+      "autotitle_untitled" not in API and "_short_ask" not in API, "")
 
 print("---")
 okc = sum(results)

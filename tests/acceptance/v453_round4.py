@@ -20,6 +20,7 @@ Three operator points, each pinned deterministically (no model, no network):
 
 Run: python3 tests/acceptance/v453_round4.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -108,11 +109,11 @@ out = T.execute("chapters", {"session": sid, "action": "list"}, run_id=sid).get(
 check("B2 untitled free groups are flagged [UNTITLED] in list",
       out.count("free [UNTITLED]") == 2, out[:140])
 T.execute("chapters", {"session": sid, "action": "title", "id": groups[0]["id"],
-                       "title": "request to first"}, run_id=sid)   # RH-25: prefix is stripped
+                       "title": "request to label the opener"}, run_id=sid)   # RH-25: prefix stripped
 out = T.execute("chapters", {"session": sid, "action": "list"}, run_id=sid).get("stdout", "")
 check("B3 after titling one, exactly one [UNTITLED] remains", out.count("free [UNTITLED]") == 1)
 check("B3b a title written through the tool drops the legacy 'request to ' prefix (RH-25)",
-      (th.get(sid, groups[0]["id"]) or {}).get("title") == "first",
+      (th.get(sid, groups[0]["id"]) or {}).get("title") == "label the opener",
       (th.get(sid, groups[0]["id"]) or {}).get("title"))
 desc = (registry.TOOL_SCHEMAS.get("chapters") or {}).get("description", "")
 check("B4 the chapters schema teaches the [UNTITLED] marker", "[UNTITLED]" in desc)
@@ -145,7 +146,8 @@ finally:
     cc._LOCAL_PATH = _orig_cc_local
     cc.reset_cache()
 
-# the safety net: every untitled free group gets a deterministic name + summary
+# a free-group label is a SUMMARY of the request, never a copy of the prompt
+# (operator, 2026-11-07: "e solo una copia"). The deterministic titler is gone.
 sid4 = "v453-titles"
 stores.save_session({"id": sid4, "title": "t", "created": time.time(), "messages": []})
 s4 = stores.load_session(sid4)
@@ -155,23 +157,42 @@ stores.append_message(s4, "user", "now summarise the book report")
 stores.append_message(s4, "assistant", "done")
 untitled = [g for g in th.outline(sid4) if g["kind"] == "free" and not g.get("title")]
 check("D3 two free groups start untitled", len(untitled) == 2, len(untitled))
-n_named = th.autotitle_untitled(sid4)
-check("D4 autotitle_untitled names every untitled free group", n_named == 2, n_named)
-titles = [g.get("title") or "" for g in th.outline(sid4) if g["kind"] == "free"]
-check("D5 the derived title is the ask ITSELF — no 'request to ' prefix (RH-25)",
-      len(titles) == 2 and all(t and not t.lower().startswith("request to") for t in titles)
-      and "audit" in titles[0] and "summarise" in titles[1], titles)
-check("D6 it is idempotent (a second pass names nothing new)",
-      th.autotitle_untitled(sid4) == 0)
-check("D7 a model-set title is never overwritten",
-      (th.set_title(sid4, th.outline(sid4)[0]["id"], "keep me")[0],
-       th.autotitle_untitled(sid4),
-       th.outline(sid4)[0]["title"])[2] == "keep me")
-# prepare_session_for_turn names BEFORE compacting
+_ok4, _err4 = th.set_title(sid4, untitled[0]["id"],
+                           "please audit the longrun codebase")
+check("D4 a title that only reprints the request is REFUSED (it says what to do instead)",
+      _ok4 is False and "summary" in str(_err4).lower() and "copy" in str(_err4).lower(),
+      _err4)
+_ok5, _g5 = th.set_title(sid4, untitled[0]["id"], "Audit the codebase for bugs")
+check("D5 a paraphrase is stored as the title",
+      _ok5 is True and (th.get(sid4, untitled[0]["id"]) or {}).get("title")
+      == "Audit the codebase for bugs", (th.get(sid4, untitled[0]["id"]) or {}).get("title"))
+# a ledger written by the OLD deterministic fallback is repaired on read
+_thp = th.path_for(sid4)
+with open(_thp, encoding="utf-8") as f:
+    _doc4 = json.load(f)
+_free4 = [g for g in _doc4["groups"] if g["kind"] == "free"]
+_free4[1]["title"] = "now summarise the book report"          # a COPY of its own request
+_free4[1]["summary"] = "now summarise the book report"
+with open(_thp, "w", encoding="utf-8") as f:
+    json.dump(_doc4, f)
+_g4 = [g for g in th.outline(sid4) if g["kind"] == "free"]
+check("D6 a stored COPY title+summary is dropped when the ledger is read",
+      not _g4[1].get("title") and not _g4[1].get("summary"),
+      (_g4[1].get("title"), _g4[1].get("summary")))
+with open(_thp, encoding="utf-8") as f:
+    _disk4 = [g for g in json.load(f)["groups"] if g["kind"] == "free"]
+check("D6b the repair is PERSISTED (one truth: the ledger file spells it too)",
+      not _disk4[1].get("title") and not _disk4[1].get("summary"),
+      (_disk4[1].get("title"), _disk4[1].get("summary")))
+_g4b = [g for g in th.outline(sid4) if g["kind"] == "free"]
+check("D7 the normaliser is idempotent (a second read changes nothing)",
+      _g4b[1].get("title") is None and (_g4b[0].get("title") or "") == "Audit the codebase for bugs")
+# nothing names a group from its own request any more
 _api = _read("src", "longrun", "core", "httpapi.py")
-check("D8 prepare_session_for_turn auto-titles before it compacts",
-      _api.index("autotitle_untitled") < _api.index("compact_session(sess[\"id\"], target"),
-      "")
+_th = _read("src", "longrun", "memory", "threads.py")
+check("D8 the pre-compaction copy titler is gone (naming is a model job only)",
+      "autotitle_untitled" not in _api and "def autotitle_untitled" not in _th
+      and "def _short_ask" not in _th, "")
 check("D9 an auto-compaction drops a user-visible card at the tail of the chat",
       '{"kind": "compact", "text": sys_marker' in _api)
 

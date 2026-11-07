@@ -4176,10 +4176,14 @@ function applyThreadTitles() {
     if (!lg && same && _threadGroups[i] && !used[_threadGroups[i].id]) lg = _threadGroups[i];
     if (!lg) lg = {};
     if (lg.id) used[lg.id] = true;
+    /* The LEDGER is the one truth for a MATCHED group: a chapter written before a
+       rename (or before the copy titles were purged, 2026-11-07) must not win over
+       it, otherwise pressing 🏷 repaints nothing and a copied prompt survives a fix.
+       An unmatched rendered group still falls back to its own chapter. */
     det._chapter = {
       gid: ch.gid || lg.id || "",
-      title: ch.title || lg.title || "",
-      summary: ch.summary || lg.summary || "",
+      title: lg.id ? (lg.title || "") : (ch.title || ""),
+      summary: lg.id ? (lg.summary || "") : (ch.summary || ""),
       req_from: (ch.req_from != null ? ch.req_from
                 : (lg.req_from != null ? lg.req_from : null)),
     };
@@ -4211,6 +4215,12 @@ async function nameThreads() {
     const r = await api("POST", "/api/sessions/" + sessionId + "/chapters/autoname", {});
     if (r && r.error) { toast("title failed: " + r.error, "err"); return; }
     loadThreadTitles(sessionId).then(applyThreadTitles);
+    const left = (r && r.remaining) || 0;
+    if (left) {   // no copy is ever stored: a model that only reprinted the prompt leaves the group unnamed
+      toast("🏷 " + left + " group(s) still untitled — the model returned no summary"
+            + (r.titled ? " (" + r.titled + " named)" : ""), "warn");
+      return;
+    }
     if (!r || !r.titled) { toast("no untitled Free.* groups to name", "warn"); return; }
     toast("🏷 named " + r.titled + " Free.* group(s)"
           + (r.model ? " · " + String(r.model).split("/").pop() : ""), "ok");

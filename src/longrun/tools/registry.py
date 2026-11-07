@@ -459,8 +459,10 @@ _LEGACY_SCHEMAS = {
                         "can find every one that still needs a name; "
                         "read id=<gN> -> a group's full record; title id=<gN> "
                         "title=\"…\" summary=\"…\" -> name a FREE group (it is a user "
-                        "request + its answer, so title it \"<short ask>\" — the ask "
-                        "itself, no \"request to\" prefix — and give a one-line summary). "
+                        "request + its answer, so title it with a 3-7 word SUMMARY of "
+                        "the ask — a paraphrase in the request's language, never a copy "
+                        "of the request text, no \"request to\" prefix, and no copied "
+                        "trailing confirmation — and give a one-line summary). "
                         "Read-only except title."),
         "type": "object",
         "properties": {

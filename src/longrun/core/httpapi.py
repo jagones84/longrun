@@ -1196,14 +1196,11 @@ def prepare_session_for_turn(sess, model=None):
         usage = context_usage(sess["id"], model=model)
         if not usage.get("available") or not usage.get("over_threshold"):
             return sess
-        # JAG-451: name every still-untitled Free.* group BEFORE compaction can fold
-        # it into the summary — the same intent as the 🏷 button, but deterministic
-        # (derived from each group's captured user request) so it never stalls a turn.
-        try:
-            from longrun.memory import threads as _th
-            _th.autotitle_untitled(sess["id"])
-        except Exception:  # noqa: BLE001 — naming must never block a compaction
-            pass
+        # NOTE (2026-11-07): a free group used to be "titled" here, deterministically,
+        # from its own request before compaction — i.e. the prompt was copied onto the
+        # rail. That is not a title (operator: "e solo una copia"); naming is a model
+        # job (the 🏷 subroutine or `chapters action=title`) and a group that is still
+        # unnamed simply stays unnamed. The ledger keeps req+digest, so nothing is lost.
         # JAG-99: shrink to TARGET% (not the full budget) so the prompt lands back
         # under the trigger with headroom; the system prompt is accounted for.
         target = int(usage["budget_tokens"] * rllm.AUTOCOMPACT_TARGET_PCT / 100.0)
@@ -1458,13 +1455,26 @@ _NAME_INSTRUCTION = (
     "You are labelling the CHAPTERS of a coding-assistant chat. Each item below is a "
     "FREE group: a user request and the answer that followed. For EVERY item, produce a "
     "short TITLE and a one-line SUMMARY.\n"
-    "TITLE: the user's ask in at most 8 English words — the ask ITSELF, with no "
-    "\"request to\" prefix (e.g. \"swap the embeddings model\").\n"
-    "SUMMARY: one line — what was asked and what was done.\n"
+    "TITLE: a PARAPHRASE, 3-7 words, of what the user wanted DONE — written in the SAME "
+    "language as that item's request. Never reuse the request's own wording or a slice "
+    "of it: a reprinted prompt tells the operator nothing they cannot read above. No "
+    "lead-in (\"request to\", \"the user asks\", \"please\") and no trailing "
+    "confirmation (\"o va bene\", \"ok?\").\n"
+    "  e.g. request \"quindi proponi di modificare qualcosa o va bene cosi longrun?\" -> "
+    "title \"Proporre modifiche o confermare\"\n"
+    "SUMMARY: one line — what was asked and what the answer delivered. Never a copy of "
+    "the request.\n"
+    "An item with no captured request: title what that harness output was about.\n"
     "Use ONLY the item's own request/context; never invent facts you were not given.\n"
     "Reply with ONLY a JSON array (no prose, no code fence), one object per id:\n"
-    '[{"id":"g51","title":"swap the embeddings model","summary":"…"}]\n\n'
+    '[{"id":"g51","title":"Proporre modifiche o confermare","summary":"…"}]\n\n'
     "ITEMS:\n")
+
+# Appended to a RETRY when the model only reprinted the requests: `set_title` refuses
+# a copy, so the round applied nothing and one stricter attempt is worth spending.
+_NAME_STRICT = (
+    "\nRETRY: the previous answer copied the request text. Write a SUMMARY in your own "
+    "words — what the operator wanted — never a slice of the request.\n")
 
 
 def _parse_name_json(text):
@@ -1512,10 +1522,14 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
     This is a SUBROUTINE, like the compaction summarizer: one direct call to the
     SESSION's OWN chat model that returns a title+summary for all untitled groups
     at once, applied server-side, repeated until none remain — no per-call tool
-    budget and no page cap. When the model is unavailable (or names nothing) it
-    falls back to the deterministic `autotitle_untitled`, so the button always
-    does something. Returns {"ok", "session", "titled", "remaining", "model",
-    "rounds"}.
+    budget and no page cap.
+
+    A title is a SUMMARY of the request; `threads.set_title` refuses one that only
+    reprints the prompt, so a lazy answer applies nothing. In that case the model
+    is asked ONCE more with an explicit warning; if it still only copies, the
+    groups stay UNTITLED — the old deterministic fallback filled the rail with
+    truncated prompts (operator, 2026-11-07). Returns {"ok", "session", "titled",
+    "remaining", "model", "rounds"}.
     """
     from longrun.memory import threads as th
     if isinstance(session, dict):
@@ -1532,6 +1546,7 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
     titled = 0
     used = None
     rounds = 0
+    retried = False
     while rounds < int(rounds_max):
         groups = th.untitled_free(sid)
         if not groups:
@@ -1542,16 +1557,29 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
             req = str(g.get("req") or "").replace("\n", " ")[:160] or "(not captured)"
             ctx = str(g.get("digest") or "").replace("\n", " ")[:160] or "(not captured)"
             items.append('id=%s request="%s" context="%s"' % (g.get("id"), req, ctx))
-        prompt = _NAME_INSTRUCTION + "\n".join(items)
-        try:
+        prompt = _NAME_INSTRUCTION + (_NAME_STRICT if retried else "") + "\n".join(items)
+        # Room for the JSON answer AND for a reasoning model's thinking: measured on
+        # dgx:nex-n25 (~9k chars of think + 2k of JSON for 12 groups), 80+60/g was
+        # 800 tokens — the whole budget went to the think block and the answer was "".
+        budget = max(1200, min(8000, 400 + 300 * len(groups)))
+
+        def _call(ask, mt):
             _u = {}
-            answer, _think, used_one = stream_with_fallback(
-                [{"role": "user", "content": prompt}], ref, "chat",
-                lambda ch, t: None, timeout=180,
-                max_tokens=max(400, min(4000, 80 + 60 * len(groups))),
-                usage=_u,
-                cancel=cancel)
+            ans, think, used_one = stream_with_fallback(
+                [{"role": "user", "content": ask}], ref, "chat",
+                lambda ch, t: None, timeout=180, max_tokens=mt,
+                usage=_u, cancel=cancel)
             _record_llm_cost(sid, used_one or ref, _u, "title")
+            return ans, think, used_one
+
+        try:
+            answer, think, used_one = _call(prompt, budget)
+            # JAG-487 pattern: a REASONING model can spend the whole budget thinking
+            # and emit no answer at all — then the button "succeeds" naming nothing
+            # (measured live on this session: 800 tokens -> 0 chars of JSON). Retry
+            # ONCE with room for the answer itself.
+            if not (answer or "").strip() and (think or "").strip():
+                answer, think, used_one = _call(prompt, max(1200, min(6000, budget * 3)))
         except Exception:  # noqa: BLE001 — naming must never break the button
             answer, used_one = None, None
         used = used_one or used
@@ -1562,16 +1590,13 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
             if ok:
                 applied += 1
         titled += applied
-        if not applied:
-            # The model named none (down, or unparseable): stop rather than spin,
-            # then let the deterministic fallback below finish the job.
-            break
+        if applied:
+            retried = False
+            continue
+        if retried:
+            break          # two copies in a row: leave the groups untitled
+        retried = True     # the model only reprinted the prompt — ask once, stricter
     remaining = len(th.untitled_free(sid))
-    if remaining:
-        # JAG-451 deterministic safety net (the same one the harness runs before an
-        # auto-compaction) — the button must never leave groups unnamed.
-        titled += th.autotitle_untitled(sid)
-        remaining = len(th.untitled_free(sid))
     return {"ok": True, "session": sid, "titled": titled,
             "remaining": remaining, "model": used, "rounds": rounds}
 
