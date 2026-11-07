@@ -1509,12 +1509,54 @@ _NAME_STRICT = (
     "\nRETRY: the previous answer copied the request text. Write a SUMMARY in your own "
     "words — what the operator wanted — never a slice of the request.\n")
 
+#: Items per naming call. ONE call for every group spent the whole completion budget on
+#: the model's thinking and returned "" (measured 2026-11-07 on the 144-group `Master`
+#: chat: completion 8000/8000 = reasoning, answer 0 chars; at 24 items the JSON still
+#: came back cut mid-array). Batching keeps the answer inside the cap, and the parser
+#: salvages the complete objects when a reply is cut anyway.
+_NAME_BATCH = 24
+_NAME_BATCH_MIN = 4
+
+
+def _salvage_objects(text):
+    """Every COMPLETE top-level `{…}` object in `text`, tolerating a truncated array.
+
+    A reasoning model can spend the whole completion budget thinking and then hit the
+    cap in the middle of its JSON (measured 2026-11-07 on the 144-group `Master` chat:
+    24 items -> 25571 chars of thinking, the array cut at 4812 chars with no closing
+    `]`). The objects written BEFORE the cut are complete and perfectly usable, and
+    the all-or-nothing `json.loads` threw them all away.
+    """
+    out, depth, start, in_str, esc = [], 0, -1, False, False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    out.append(text[start:i + 1])
+                    start = -1
+    return out
+
 
 def _parse_name_json(text):
     """Parse the autoname reply into [{"id","title","summary"}].
 
-    Tolerant of a ```code fence``` or surrounding prose; returns [] when nothing
-    usable is found (the caller then falls back to deterministic naming).
+    Tolerant of a ```code fence``` or surrounding prose AND of a reply cut mid-array
+    (the complete objects survive). Returns [] when nothing usable is found.
     """
     if not text:
         return []
@@ -1524,15 +1566,29 @@ def _parse_name_json(text):
             if "[" in part and "]" in part:
                 s = part
                 break
-    i, j = s.find("["), s.rfind("]")
-    if i < 0 or j < 0 or j < i:
+    i = s.find("[")
+    if i < 0:
         return []
+    j = s.rfind("]")
+    body = s[i:j + 1] if j > i else s[i:]
+    data = None
     try:
-        data = json.loads(s[i:j + 1])
+        parsed = json.loads(body)
+        if isinstance(parsed, list):
+            data = parsed
     except Exception:  # noqa: BLE001
-        return []
-    if not isinstance(data, list):
-        return []
+        data = None
+    if data is None:
+        data = []
+        for frag in _salvage_objects(body):
+            try:
+                it = json.loads(frag)
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(it, dict) and str(it.get("id") or "").strip():
+                data.append(it)
+        if not data:
+            return []
     out = []
     for it in data:
         if isinstance(it, dict) and str(it.get("id") or "").strip():
@@ -1542,7 +1598,7 @@ def _parse_name_json(text):
     return out
 
 
-def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
+def autoname_untitled(session, model=None, cancel=None, rounds_max=40):
     """Name EVERY untitled FREE group with the chat model — no tool-call budget.
 
     The 🏷 button used to just PROMPT the agent ("use `chapters` action=untitled…"),
@@ -1552,10 +1608,10 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
     `keepgoing.decide` sees zero open nodes and returns `goal_reached`. Naming is
     bookkeeping, not work, so it must not ride the work budget.
 
-    This is a SUBROUTINE, like the compaction summarizer: one direct call to the
-    SESSION's OWN chat model that returns a title+summary for all untitled groups
-    at once, applied server-side, repeated until none remain — no per-call tool
-    budget and no page cap.
+    This is a SUBROUTINE, like the compaction summarizer: direct calls to the
+    SESSION's OWN chat model that return a title+summary for the untitled groups
+    (`_NAME_BATCH` per call), applied server-side, repeated until none remain — no
+    per-call tool budget and no page cap.
 
     A title is a SUMMARY of the request; `threads.set_title` refuses one that only
     reprints the prompt, so a lazy answer applies nothing. In that case the model
@@ -1580,6 +1636,7 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
     used = None
     rounds = 0
     retried = False
+    batch = _NAME_BATCH
     while rounds < int(rounds_max):
         if cancel is not None and cancel():
             # v862: Stop must not leave the naming loop running. Without this the
@@ -1589,9 +1646,10 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
         groups = th.untitled_free(sid)
         if not groups:
             break
+        chunk = groups[:max(1, min(batch, len(groups)))]
         rounds += 1
         items = []
-        for g in groups:
+        for g in chunk:
             req = str(g.get("req") or "").replace("\n", " ")[:160] or "(not captured)"
             ctx = str(g.get("digest") or "").replace("\n", " ")[:160] or "(not captured)"
             items.append('id=%s request="%s" context="%s"' % (g.get("id"), req, ctx))
@@ -1599,7 +1657,7 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
         # Room for the JSON answer AND for a reasoning model's thinking: measured on
         # dgx:nex-n25 (~9k chars of think + 2k of JSON for 12 groups), 80+60/g was
         # 800 tokens — the whole budget went to the think block and the answer was "".
-        budget = max(1200, min(8000, 400 + 300 * len(groups)))
+        budget = max(1600, min(8000, 700 + 320 * len(chunk)))
 
         def _call(ask, mt):
             _u = {}
@@ -1612,14 +1670,8 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
 
         try:
             answer, think, used_one = _call(prompt, budget)
-            # JAG-487 pattern: a REASONING model can spend the whole budget thinking
-            # and emit no answer at all — then the button "succeeds" naming nothing
-            # (measured live on this session: 800 tokens -> 0 chars of JSON). Retry
-            # ONCE with room for the answer itself.
-            if not (answer or "").strip() and (think or "").strip():
-                answer, think, used_one = _call(prompt, max(1200, min(6000, budget * 3)))
         except Exception:  # noqa: BLE001 — naming must never break the button
-            answer, used_one = None, None
+            answer, think, used_one = None, None, None
         if cancel is not None and cancel():
             break
         used = used_one or used
@@ -1631,6 +1683,16 @@ def autoname_untitled(session, model=None, cancel=None, rounds_max=20):
                 applied += 1
         titled += applied
         if applied:
+            retried = False
+            batch = _NAME_BATCH      # a usable answer: back to full batches
+            continue
+        if (not (answer or "").strip() and (think or "").strip()
+                and len(chunk) > _NAME_BATCH_MIN):
+            # The think block ate the whole completion budget (measured 2026-11-07 on
+            # the 144-group `Master` chat: 8000/8000 was reasoning, answer ""). Ask for
+            # FEWER items with the same room — the old "retry with more room" asked for
+            # LESS than the first attempt (min(6000, budget*3)) and failed identically.
+            batch = max(_NAME_BATCH_MIN, len(chunk) // 2)
             retried = False
             continue
         if retried:
