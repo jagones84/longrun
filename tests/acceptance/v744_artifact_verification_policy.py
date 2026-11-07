@@ -72,6 +72,8 @@ CHECKS = [
     ("B7 visual output is visible", "visual output is visible"),
     ("B8 nothing fabricated", "nothing fabricated"),
     ("B9 delivery is named", "delivery is named"),
+    ("B10 delegated work is read at its source",
+     "delegated work is read at its source"),
 ]
 for _name, _needle in CHECKS:
     check(_name, _needle in LOW, repr(_needle))

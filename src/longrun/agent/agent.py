@@ -868,6 +868,11 @@ VERIFY_POLICY = (
     "file-exists check].\n"
     "- Nothing fabricated: every id, name, figure, filename and citation traces back to an "
     "input or to a command you ran; where you inferred it, say so next to it.\n"
+    "- Delegated work is read at its SOURCE: an agent you handed work to answers with a "
+    "DIGEST (a length-capped summary), not with the deliverable. Before you quote, judge or "
+    "report a delegated result, open that agent's own record/transcript/file — the call "
+    "names it — and read the deliverable in FULL; a summary you did not re-open is a claim, "
+    "not proof.\n"
     "- Delivery is named: your answer says where each result lives, and never claims a "
     "result the artefact does not contain.\n"
     "A failed check means fix the artefact and check again — never explain the failure "
@@ -1969,7 +1974,7 @@ def _apply_chat_replan(sess, act, on_event, node=None, after=None):
         return 0
 
 
-def _apply_chat_subagent(sess, act, on_event, node=None, after=None):
+def _apply_chat_subagent(sess, act, on_event, node=None, after=None, state=None):
     """Harness action `subagent` (JAG-189): delegate ONE subtask to a child run.
 
     The chat loop spawns a subagent (isolated transcript, its own task list, the
@@ -2028,6 +2033,10 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None):
             except Exception:  # noqa: BLE001
                 pass
         out = summary or json.dumps(res, ensure_ascii=False, default=str)[:1500]
+        if ok:
+            # The caller only ever receives this length-capped digest. Record the
+            # child's durable record so the close-out read-back can name the SOURCE.
+            _record_delegated(state, "subagent", goal, sid, out[:4000])
         on_event("tool.result", session=sess["id"], tool="subagent", ok=ok,
                  exit_code=0 if ok else 1, backend="subagent",
                  args={"goal": goal, "max_steps": max_steps, "subagent_id": sid},
@@ -2040,8 +2049,10 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None):
                           result=out[:4000], exit_code=0 if ok else 1,
                           backend="subagent", node=node, after=after)
         if ok:
-            return ("Subagent %s finished (goal: %s).\nResult:\n%s"
-                    % (sid, goal[:120], out[:4000]))
+            # The digest is capped; the durable child record is the full deliverable.
+            return ("Subagent %s finished (goal: %s).\nFull record: %s\nResult "
+                    "(digest):\n%s"
+                    % (sid, goal[:120], _sub._rec_path(sid), out[:4000]))
         # JAG-320: say FAILED plainly (the old text said "finished" even on
         # failure) and forbid closing the delegated step on the back of it.
         return ("Subagent %s FAILED: %s. This delegated step is NOT done — retry "
@@ -2059,7 +2070,7 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None):
         return "subagent error: %s" % e
 
 
-def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
+def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None):
     """Harness action `dispatch` (JAG-450): hand a subtask to a TEAMMATE agent's
     OWN session (the org chart), not a fresh anonymous child run.
 
@@ -2187,6 +2198,10 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
             return _fail("teammate turn failed: %s" % str(e)[:200])
         ok = bool(reply)
         out = reply[:4000]
+        if ok:
+            # `out` is the banner the caller sees; the full turn lives in the
+            # teammate's session, so name that source in the read-back.
+            _record_delegated(state, "dispatch", member.get("id"), sid2, out)
         on_event("tool.result", session=sess["id"], tool="dispatch", ok=ok,
                  exit_code=0 if ok else 1, backend="harness",
                  args={"agent": member.get("id"), "goal": goal, "session": sid2}, output=out,
@@ -2197,8 +2212,13 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None):
                           result=out, exit_code=0 if ok else 1, backend="harness",
                           node=node, after=after)
         if ok:
-            return ("Teammate %s (%s) replied:\n%s"
-                    % (member.get("id"), member.get("name") or "", out))
+            # The caller sees a capped digest; name the authoritative source in the
+            # same observation so "read it in full" is one call away, not a guess.
+            _src = os.path.join(SESSIONS_DIR, sid2 + ".json")
+            return ("Teammate %s (%s) replied [full reply: %s — %d chars; banner "
+                    "shows %d]:\n%s"
+                    % (member.get("id"), member.get("name") or "", _src,
+                       len(reply), len(out), out))
         return "Teammate %s produced no reply." % member.get("id")
     except Exception as e:  # noqa: BLE001 — dispatch must never break chat
         try:
@@ -2576,6 +2596,9 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
                     return
                 _ok = spec.get("status") == "done"
                 _out = str(spec.get("result") or spec.get("error") or "")[:4000]
+                if _ok:
+                    _record_delegated(state, "subagent", spec.get("label"),
+                                      spec.get("subagent_id"), _out)
                 on_event("tool.result", session=sess["id"], tool="subagent", ok=_ok,
                          exit_code=0 if _ok else 1, backend="subagent",
                          args={"sj": spec.get("id"),
@@ -2617,7 +2640,8 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
             _i, _it = pair
             try:
                 _dobs = str(_apply_chat_dispatch(sess, _it, on_event,
-                                                 node=node, after=after) or "")
+                                                 node=node, after=after,
+                                                 state=state) or "")
                 _dok = not _dobs.startswith("dispatch error")
             except Exception as e:  # noqa: BLE001 — one item must not sink the batch
                 _dobs, _dok = "dispatch raised: %s" % str(e)[:200], False
@@ -3444,6 +3468,52 @@ def _stop_floor_text(sess, since, floor_used, reason, open_count, state=None):
             % (reason, open_count))
 
 
+def _record_delegated(state, kind, label, sid, text):
+    """Remember one completed delegation for the close-out read-back.
+
+    The caller only ever receives a length-capped DIGEST of a child's work
+    (`subagent` returns 4000 chars, `dispatch` 4000). The read-back names the
+    primary source so the model can open it before reporting; the note lives in
+    the turn's state, so it never touches the persisted transcript.
+    """
+    if state is None or not str(sid or "").strip():
+        return
+    try:
+        items = state.setdefault("delegated", [])
+        item = {"kind": str(kind), "label": str(label or "")[:80],
+                "session": str(sid), "chars": len(str(text or ""))}
+        if item not in items:
+            items.append(item)
+    except Exception:  # noqa: BLE001 — bookkeeping must never break a turn
+        pass
+
+
+def _delegated_review_text(state):
+    """Close-out block naming every delegated deliverable of this turn (or None)."""
+    items = [i for i in ((state or {}).get("delegated") or []) if isinstance(i, dict)]
+    if not items:
+        return None
+    lines = ["DELEGATED DELIVERABLES THIS TURN — the banner is a DIGEST, not the "
+             "deliverable:"]
+    for it in items[:8]:
+        sid = str(it.get("session") or "")
+        if it.get("kind") == "dispatch":
+            src = os.path.join(SESSIONS_DIR, sid + ".json")
+            lines.append("  * dispatch %s -> session %s; full reply in %s (banner: %d chars)"
+                         % (it.get("label") or "?", sid, src, int(it.get("chars") or 0)))
+        else:
+            try:
+                from longrun.agent import subagent as _sub
+                src = _sub._rec_path(sid)
+            except Exception:  # noqa: BLE001
+                src = os.path.join(DATA_DIR, "subagents", sid + ".json")
+            lines.append("  * subagent %s; full record in %s (banner: %d chars)"
+                         % (sid, src, int(it.get("chars") or 0)))
+    lines.append("Open every source above and read the deliverable in FULL before you "
+                 "report or reuse it: a summary is a claim, not proof.")
+    return "\n".join(lines)
+
+
 def _deliverable_review_text(sess, request, since, state):
     """Mechanical read-back of what this turn WROTE, once per turn (or None).
 
@@ -3486,9 +3556,9 @@ def _deliverable_review_text(sess, request, since, state):
                          "value or the command output that backs it (`todo.update` with "
                          "`sources`), or reopen the step." % (len(_claims),
                                                              ", ".join(_claims[:8])))
-    except Exception:  # noqa: BLE001
-        state["left"] = 0
-        return None
+    except Exception:  # noqa: BLE001 — the delegated block must still be shown
+        text = ""
+    delegated = _delegated_review_text(state)
     if not text:
         # A turn that wrote NOTHING is not "nothing to say" when the request asked
         # for a file: measured 2026-10-31 (JobBench `5757c9eb681c`) the model's
@@ -3501,17 +3571,21 @@ def _deliverable_review_text(sess, request, since, state):
                 exclude=_harness_state_roots() + _other_session_roots(sess))
         except Exception:  # noqa: BLE001
             text = None
-        if not text:
+        if not text and not delegated:
             state["left"] = 0
             return None
+    if delegated:
+        text = (text + "\n\n" + delegated) if text else delegated
     state["left"] = int(state.get("left") or 1) - 1
-    if had_files:
+    if had_files or delegated:
         # The read-back is a GATE, not a courtesy: from here the turn may not close
         # until it used a real tool again. Measured 2026-10-31 (JobBench dispatch,
         # session da08393e): the read-back fired at 19:53:46, the model answered
         # "All four deliverables are complete, verified by read-back" at 19:54:01
         # having run NOTHING in between — the only call was `todo.update`, which is
         # bookkeeping and never counts as work. `_review_action_owed` catches that.
+        # It also applies to a DELEGATED deliverable: the banner is a digest, so
+        # opening the child's own source is the work that discharges the gate.
         state["review_sent"] = True
         state["after_review"] = False
     # ONE more cycle when the delivery is mechanically incomplete — granted at
@@ -4951,7 +5025,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _think_buf["t"] += _th + "\n"
                 on_delta("think", _th + "\n")
             obs = _apply_chat_subagent(sess, act, on_event, node=_cur_node(),
-                                       after=_after())
+                                       after=_after(), state=_deliv_state)
             msgs.append({"role": "assistant", "content": answer})
             _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                     "observation")
@@ -4980,7 +5054,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 _think_buf["t"] += _th + "\n"
                 on_delta("think", _th + "\n")
             obs = _apply_chat_dispatch(sess, act, on_event, node=_cur_node(),
-                                       after=_after())
+                                       after=_after(), state=_deliv_state)
             msgs.append({"role": "assistant", "content": answer})
             _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                     "observation")
@@ -5067,7 +5141,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         on_delta("think", _th + "\n")
                     obs = _apply_chat_dispatch(sess, act, on_event,
                                                node=_cur_node(),
-                                               after=_after())
+                                               after=_after(), state=_deliv_state)
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                             "observation")
@@ -5082,7 +5156,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                         on_delta("think", _th + "\n")
                     obs = _apply_chat_subagent(sess, act, on_event,
                                                node=_cur_node(),
-                                               after=_after())
+                                               after=_after(), state=_deliv_state)
                     msgs.append({"role": "assistant", "content": answer})
                     _inject(obs + "\n\nContinue: call the next tool, or report the result.",
                             "observation")

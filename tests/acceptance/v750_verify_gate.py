@@ -78,5 +78,33 @@ agent._deliverable_review_text({"id": "v750-empty", "messages": [], "workspace":
 check("C1 nothing written -> no artifact read-back",
       state2.get("review_sent") is not True, state2)
 
+# ---- D. a DELEGATED deliverable arms the gate and names its SOURCE --------
+# The caller only ever receives a length-capped digest of a child's work. A
+# summary read from the banner was treated as proof (measured on A54: a subagent
+# report was accepted from a truncation), so the read-back must name the source.
+stateD = {"left": 1}
+agent._record_delegated(stateD, "dispatch", "A52", "48c6e90156c5", "circle code " * 40)
+blk = agent._delegated_review_text(stateD) or ""
+check("D1 the delegated block names the teammate's session file",
+      "48c6e90156c5.json" in blk, blk[:160])
+check("D2 it says the banner is a digest, not the deliverable",
+      "DIGEST" in blk and "FULL" in blk, blk[:200])
+ws3 = tempfile.mkdtemp(prefix="v750-deleg-")
+stateD2 = {"left": 1, "delegated": list(stateD["delegated"])}
+txtD = agent._deliverable_review_text(
+    {"id": "v750-deleg", "messages": [], "workspace": ws3},
+    "report what the teammate produced", since=0.0, state=stateD2) or ""
+check("D3 a turn that wrote NOTHING still gets the delegated read-back",
+      "DELEGATED DELIVERABLES" in txtD, txtD[:200])
+check("D4 the delegated read-back arms the gate", stateD2.get("review_sent") is True, stateD2)
+stateS = {"left": 1}
+agent._record_delegated(stateS, "subagent", "audit", "sub-123", "short")
+blkS = agent._delegated_review_text(stateS) or ""
+check("D5 a subagent names its durable record", "sub-123.json" in blkS, blkS[:160])
+check("D6 no delegation -> no block", agent._delegated_review_text({}) is None)
+agent._record_delegated(stateS, "subagent", "audit", "sub-123", "short")
+check("D7 a recorded delegation is never duplicated",
+      len(stateS["delegated"]) == 1, stateS["delegated"])
+
 print("%d/%d checks" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

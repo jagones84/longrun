@@ -114,7 +114,7 @@ else:
 if _split is not None:
     _seen = []
     _orig_dispatch = A._apply_chat_dispatch
-    A._apply_chat_dispatch = lambda sess, it, on_event, node=None, after=None: (
+    A._apply_chat_dispatch = lambda sess, it, on_event, node=None, after=None, state=None: (
         _seen.append(it) or "Teammate A9 replied: done")
     _orig_persist = A.persist_tool_card
     A.persist_tool_card = lambda *a, **k: None
