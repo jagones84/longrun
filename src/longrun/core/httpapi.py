@@ -1139,11 +1139,17 @@ def context_usage(session_id=None, message=None, model=None):
     # JAG-276: the live task list is injected into the user turn (see assemble_turn).
     # Mirror that here so the meter counts what is REALLY sent.
     aug_message = (message or "") + "\n\n" + state_block(session_id=session_id)
-    # JAG-72: mirror `chat_once` EXACTLY — same model-aware budget and the same
-    # memory-retrieval block — so `compacted_tokens` is the size that WILL be sent.
+    # 2026-11-07: NO memory retrieval here. `retrieve_memory=True` made the meter
+    # pay the cross-encoder re-rank — a PAID network call, measured 390 ms — whose
+    # only product was `compacted_tokens`, and NOTHING reads that field (grep: it is
+    # assigned here and nowhere else; `final_messages` is read only from
+    # /api/context/preview). It was paid TWICE per session switch, because
+    # `context_items` calls this function to fill `used_tokens`/`cached_tokens`.
+    # The meter shows what the session CARRIES (`raw`, below), which never came
+    # from this build; the real turn still retrieves (agent.py, chat_once).
     msgs, stats = context_engine.build(
         sysp, sess.get("messages", []), aug_message,
-        budget_tokens=budget, retrieve_memory=True)
+        budget_tokens=budget, retrieve_memory=False)
     compacted = int(stats.get("final_tokens") or 0)
     sysp_tokens = context_engine.count_tokens(sysp)
     transcript = sum(context_engine.count_tokens(m.get("content", ""))

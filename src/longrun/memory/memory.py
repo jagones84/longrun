@@ -575,17 +575,33 @@ def _norm(content):
     return re.sub(r"\W+", " ", str(content).lower()).strip()
 
 
-def dedupe(records, threshold=0.85):
-    """Drop near-duplicate records by token-overlap (Jaccard-like)."""
+def dedupe(records, threshold=0.85, limit=None):
+    """Drop near-duplicate records by token-overlap (Jaccard-like).
+
+    `limit` bounds the walk: the scan stops as soon as `limit` survivors are
+    accepted. Because a record is only ever dropped against the survivors
+    already ACCEPTED (never against the ones dropped), stopping early cannot
+    change which records are the first `limit` survivors — so
+    `dedupe(records, limit=k) == dedupe(records)[:k]`. A caller that only needs
+    the top few rows (the prompt's memory section, `governed_query(limit=4)`)
+    therefore never pays the quadratic cost over the whole store, which is what
+    froze the WebUI once `agent_notes.md` grew past a few hundred records.
+
+    Each survivor's token set is computed once and reused; the previous version
+    re-tokenised every survivor on every comparison, an extra factor of N.
+    """
     seen = []
+    seen_tokens = []
     for r in records:
+        if limit is not None and len(seen) >= limit:
+            break
         rt = set(filter(None, _norm(r.get("content", "")).split()))
         if not rt:
             seen.append(r)
+            seen_tokens.append(rt)
             continue
         dup = False
-        for s in seen:
-            st = set(filter(None, _norm(s.get("content", "")).split()))
+        for st in seen_tokens:
             if not st:
                 continue
             inter = len(rt & st)
@@ -594,6 +610,7 @@ def dedupe(records, threshold=0.85):
                 break
         if not dup:
             seen.append(r)
+            seen_tokens.append(rt)
     return seen
 
 
@@ -782,7 +799,7 @@ def governed_query(kind=None, limit=6, halflife=None, threshold=0.85,
         bad = invalid_targets()
         now = time.time()
         recs = [r for r in recs if is_valid(r, now=now, invalid=bad)]
-    base = dedupe(rank(recs, halflife=halflife), threshold)[:limit]
+    base = dedupe(rank(recs, halflife=halflife), threshold, limit=limit)
     return _augment(kind, base, limit)
 
 
