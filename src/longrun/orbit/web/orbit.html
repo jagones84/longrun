@@ -170,6 +170,18 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .panel > h2{margin:0;padding:9px 12px;font-size:12px;letter-spacing:0;text-transform:none;color:var(--txt);font-weight:600;
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
   .panel > h2 .n{margin-left:auto;color:var(--dim);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums}
+  /* v881 (operator: "control sheet page is horrible … correct movement of objects,
+     more elegant and ordered and no space wasting"): ONE head anatomy for every
+     panel — a 34px line whose title never wraps, a 24px icon cluster on the right,
+     and a hairline before the view controls. The text button "reset layout" was
+     the widest thing in a 12px row. */
+  .panel > h2{min-height:34px;padding:6px 8px 6px 12px;white-space:nowrap;overflow:hidden}
+  .panel > h2 .hint{flex:1 1 auto;min-width:0}
+  .panel > h2 .ctools,.panel > h2 .vcols{margin-left:auto;flex-shrink:0}
+  .panel > h2 .btn.mini{height:24px;min-height:24px;padding:0 7px;border-radius:7px;font-size:11px}
+  .panel > h2 .btn.ictl{padding:0;width:24px;justify-content:center}
+  .panel > h2 .n{flex-shrink:0}
+  .panel > h2 .led{flex-shrink:0}
   .pad{padding:8px}
   /* JAG-424f: the Routines/Jobs create rows must keep the ＋ button IN the frame — a
      full-width <select> with long options (agent names) would otherwise refuse to shrink
@@ -320,6 +332,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .csvg{display:block;width:100%;height:100%}
   .ctools{display:flex;gap:5px;margin-left:auto}
   .btn.mini{padding:2px 8px;font-size:11px}
+  /* v881: same fold vocabulary as the WebUI rails — chevrons apart = expanded. */
+  .fold-tg svg{display:block;transition:transform .15s ease}
+  .fold-tg.is-open svg{transform:rotate(180deg)}
+  @media (prefers-reduced-motion: reduce){.fold-tg svg{transition:none}}
   /* RH-5 (2026-11-03): the SAME rule as the Nucleus composer (.gen-bar) — a STATE is
      an ICON, never a sentence, and an in-flight ✨ pulses IN PLACE instead of swapping
      its label for a longer one (that reflowed the row). One product, one rule:
@@ -530,7 +546,18 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      of a half-empty partial line. Narrow screens stack (1100px rule). */
   /* the view bar is a full-width row ABOVE the columns, not a column itself. */
   main.view-cols #viewBar{flex:1 1 100%;margin-bottom:0}
-  main.view-cols section.panel[data-panel]{flex:1 1 0;min-width:280px;display:flex;flex-direction:column}
+  /* v881: columns were all `1 1 0` — the agents table and the two graphs got the
+     same ~280px, so the org chart was unreadable and the jobs text wrapped on
+     every word. The basis now follows the CONTENT (a table needs more than a
+     graph), the row still grows/shrinks, and a narrow window wraps a panel to
+     the next line instead of clipping it. */
+  main.view-cols section.panel[data-panel]{flex:1 1 320px;min-width:280px;max-width:100%;
+    display:flex;flex-direction:column}
+  main.view-cols section.panel[data-panel="agents"]{flex:1.7 1 420px}
+  main.view-cols section.panel[data-panel="org"]{flex:1 1 330px}
+  main.view-cols section.panel[data-panel="jobs"]{flex:1 1 320px}
+  main.view-cols section.panel[data-panel="const"]{flex:1.1 1 350px}
+  main.view-cols section.panel[data-panel="feed"]{flex:1 1 320px}
   /* the stacked board pins the jobs panel to `flex:1 1 auto` (fills the right
      column) — in a view every column shares equally, so outrank it here. */
   main.view-cols .grid2.ab .col > section.panel:last-child{flex:1 1 0;min-width:0}
@@ -578,12 +605,17 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* v622: per-column move/remove controls live in each panel header, visible
      only in a custom view. The view bar (name/rename/+panel/delete) sits
      above the deck. */
-  .vcols{display:none;gap:2px;margin-left:6px}
+  .vcols{display:none;gap:1px;margin-left:8px;padding-left:8px;
+    border-left:1px solid var(--line);opacity:.55;transition:opacity .12s}
   main.view-cols .vcols{display:inline-flex}
-  .vcols button{background:transparent;border:1px solid transparent;border-radius:6px;
-    color:var(--dim);font-size:11px;line-height:1;padding:2px 6px;cursor:pointer}
+  .panel:hover > h2 .vcols,.vcols:focus-within{opacity:1}
+  .vcols button{width:22px;height:22px;display:inline-flex;align-items:center;
+    justify-content:center;background:transparent;border:1px solid transparent;border-radius:6px;
+    color:var(--dim);font-size:11px;line-height:1;padding:0;cursor:pointer}
   .vcols button:hover{color:var(--txt);border-color:var(--acc)}
+  .vcols button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   .vcols button:disabled{opacity:.3;cursor:default}
+  @media (prefers-reduced-motion: reduce){.vcols{transition:none}}
   #viewBar{display:none;align-items:center;gap:8px;padding:7px 10px;margin-bottom:8px;
     border:1px solid var(--line);border-radius:10px;background:var(--panel)}
   main.view-cols #viewBar{display:flex}
@@ -695,9 +727,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
              so "my agent is missing" is answered in place instead of looking broken. -->
         <span class="hint" id="agHint"></span>
         <span class="ctools">
-          <button class="btn ghost mini" id="rzReset" title="reset panel sizes">reset layout</button>
-          <button class="btn ghost mini" id="agCollapseAll" title="collapse all groups">▲</button>
-          <button class="btn ghost mini" id="agExpandAll" title="expand all groups">▼</button>
+          <button class="btn ghost mini ictl" id="rzReset" title="reset panel sizes"
+                  aria-label="reset panel sizes">↺</button>
+          <button class="btn ghost mini ictl fold-tg" id="agToggleAll" data-tree="agents"
+                  title="collapse all groups" aria-label="collapse all groups"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button>
         </span></h2>
       <div class="toolbar">
         <!-- v752: ONE filter+sort control — the SAME shared panel the Sessions rail
@@ -1018,6 +1051,7 @@ class AgentsView {
     // the identical rule webui/index.html applies via DragSort.orderByIds.
     const groups = this.groupsOf(this._sorted(this.agents));
     this._groupIds = groups.map(g => g.id);
+    this._paintToggle();   // v881: the fold glyph follows the real groups
     this._ensureOrder();
     // v752: the stored drag order is the "manual" SORT MODE, never a silent override —
     // under any other key the rank list is empty so the chosen sort reaches every row
@@ -1604,8 +1638,20 @@ class AgentsView {
       if (tr !== head && tr.getAttribute("data-grp") === id) tr.hidden = closed;
     });
   }
-  collapseAll(){ this._groupIds.forEach(id => this.closed.add(id)); this._groupIds.forEach(id => this._applyGroupState(id)); }
-  expandAll(){ this._groupIds.forEach(id => this.closed.delete(id)); this._groupIds.forEach(id => this._applyGroupState(id)); }
+  collapseAll(){ this._groupIds.forEach(id => this.closed.add(id)); this._groupIds.forEach(id => this._applyGroupState(id)); this._paintToggle(); }
+  expandAll(){ this._groupIds.forEach(id => this.closed.delete(id)); this._groupIds.forEach(id => this._applyGroupState(id)); this._paintToggle(); }
+  /* v881: one control — if ANY group is closed the click opens them all. */
+  toggleAll(){
+    if (this._groupIds.some(id => this.closed.has(id))) this.expandAll();
+    else this.collapseAll();
+  }
+  _paintToggle(){
+    const b = document.getElementById("agToggleAll"); if (!b) return;
+    const anyClosed = this._groupIds.some(id => this.closed.has(id));
+    b.classList.toggle("is-open", !anyClosed && this._groupIds.length > 0);
+    const l = anyClosed ? "expand all groups" : "collapse all groups";
+    b.title = l; b.setAttribute("aria-label", l);
+  }
   /* JAG-2.0: checkbox popover that adds/removes the agent from teams one by one. */
   openTeamPicker(ev, a){
     const m = openPopover(ev, (this.teams && this.teams.length)
@@ -2792,8 +2838,8 @@ class OrbitApp {
     $("agNew").onclick = () => this.agents.create();
     $("agPolicy").onclick = () => this.applyModelPolicy();
     $("tmNew").onclick = () => this.createTeam();
-    $("agCollapseAll").onclick = () => this.agents.collapseAll();
-    $("agExpandAll").onclick = () => this.agents.expandAll();
+    // v881: ONE fold control, glyph = state (two arrows were the same job twice).
+    if ($("agToggleAll")) $("agToggleAll").onclick = () => this.agents.toggleAll();
     // v752: the ONE filter+sort control of this page — the same module, spec and
     // persisted state shape the Sessions rail mounts (webui/assets/filtersort.js).
     // The panel owns the state; the board only reads it back, so no second truth.
