@@ -76,7 +76,10 @@ with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), en
     ui = f.read()
 check("the agents table has a model + reports-to control (v890: compact value buttons)",
       'id="agBody"' in ui and 'data-aedit="model"' in ui and 'data-aedit="reports_to"' in ui)
-check("agents are creatable with +", 'id="agNew"' in ui and '＋ new agent' in ui)
+check("agents are creatable with +",
+      # 2026-11-08: the label is short now ("＋ agent") so the Agents bar fits ONE row
+      # in a narrow panel; the accessible name and the form handler are unchanged.
+      'id="agNew"' in ui and '＋ agent' in ui and 'aria-label="new agent"' in ui)
 check("the job form is goal + assignee",
       'id="jobGoal"' in ui and 'id="jobTo"' in ui and "{goal, assignee}" in ui)
 check("routines + feed are kept", 'id="rtCreate"' in ui and 'id="feed"' in ui)
