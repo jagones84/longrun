@@ -353,6 +353,13 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .ctxmenu{position:fixed;z-index:90;background:var(--panel2);border:1px solid var(--line);
     border-radius:9px;padding:4px;min-width:186px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px}
   .ctxmenu div{padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt);white-space:nowrap}
+  /* v894 (operator: "open dialog for editing shall have the x to close them also"): ONE
+     close affordance for every popover, added by `openPopover` itself. */
+  .ctxmenu .pop-top{display:flex;justify-content:flex-end;padding:0;cursor:default;height:16px}
+  .ctxmenu .pop-top:hover{background:none}
+  .ctxmenu .pop-x{border:0;background:transparent;color:var(--dim);cursor:pointer;padding:0;
+    width:18px;height:16px;font-size:11px;line-height:1;border-radius:4px}
+  .ctxmenu .pop-x:hover{color:var(--txt);background:var(--brief)}
   .ctxmenu div:hover{background:var(--brief);color:var(--txt)}
   .ctxmenu .sep{height:1px;background:var(--line);margin:4px 2px;padding:0}
   /* JAG-2.0: agents grouped by team + per-agent team picker + org-chart hint/tools. */
@@ -411,6 +418,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      its label for a longer one (that reflowed the row). One product, one rule:
      `.trae/rules/project_rules.md` § "WebUI graphics — GENERAL rules". */
   /* v888: the automation record is a one-word disclosure */
+  /* v894 (operator: "the automate part of the agent panel shall be scrollable and occupy
+     at most half the height available"): the bar is a bounded scroller — the ledger can
+     hold many runs without pushing the table out of the panel. */
+  #lraAutoBar{max-height:min(50%,46vh);overflow:auto;align-items:flex-start}
+  #lraRep{max-height:none;overflow:visible}
   .replog>summary{cursor:pointer;padding:4px 0 2px;list-style:none}
   .replog>summary::-webkit-details-marker{display:none}
   .replog>summary::before{content:"\25B8 ";color:var(--dim)}
@@ -679,6 +691,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* v626: explicit rows × columns layout (see _layoutViewCols). Each row is a
      full-width flex line, so a panel that wraps fills its row; column widths
      are % of the row (reversible), row heights resize per ROW via .rz-vrow. */
+  /* v894 (operator: "see image still the right panel goes beyond border why the fuck"):
+     the PANEL box clips its own X overflow (`clip`, which — unlike `hidden` — neither
+     creates a scroll container nor touches the Y axis), so a header/table wider than the
+     panel stops at the panel border instead of painting past the deck. */
+  main.view-cols section.panel[data-panel],
+  main.view-one section.panel[data-panel]{overflow-x:clip}
   main.view-cols .deckBody{min-width:0}
   /* v891: the deck is the frame — a child that cannot shrink is clipped, never a
      page-level horizontal scrollbar that hides the right-most panel. */
@@ -1089,6 +1107,15 @@ function openPopover(ev, html, opts){
   closePopover();
   const m = document.createElement("div"); m.className = "ctxmenu" + (o.cls ? " " + o.cls : "");
   m.innerHTML = html;
+  // v894: every dialog/menu opened through here can be DISMISSED with an ✕, not only by
+  // clicking outside or pressing Escape.
+  if (o.closable !== false){
+    const top = document.createElement("div");
+    top.className = "pop-top";
+    top.innerHTML = '<button type="button" class="pop-x" aria-label="close" title="close">\u2715</button>';
+    top.querySelector(".pop-x").onclick = (ev) => { ev.stopPropagation(); closePopover(); };
+    m.insertBefore(top, m.firstChild);
+  }
   document.body.appendChild(m);
   m.style.left = Math.max(4, Math.min(ev.clientX, window.innerWidth - (o.w || 224))) + "px";
   m.style.top = Math.max(4, Math.min(ev.clientY, window.innerHeight - (o.h || 150))) + "px";
