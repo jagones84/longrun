@@ -215,10 +215,24 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      different columns … remove the team belonging icon, it occupies too much horiz
      space"). The TEAMS column is GONE (its picker moved into the row menu), the A-id is a
      tight 58px gutter, and NAME carries no width: in a fixed layout it takes the rest. */
-  table.at col.c-id{width:58px} table.at col.c-role{width:16%}
-  table.at col.c-model{width:16%} table.at col.c-rep{width:11%}
-  table.at col.c-file{width:8%}
+  table.at col.c-id{width:58px}
+  table.at col.c-model{width:18%}
+  table.at col.c-file{width:10%}
   table.at col.c-act{width:26px}
+  /* v893 (operator: "too much void space between columns still too much in the agents
+     panel"): role and reports moved INTO the agent cell as a second line (the jobs'
+     jstack pattern), so the table has no spare column to leave empty and the name owns
+     every pixel that is left. */
+  table.at td.acell{padding:2px 3px;min-width:0}
+  table.at td.acell .linklike{display:block;width:100%;min-width:0;border:0;background:none;
+    padding:0;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.at td.acell .linklike:hover .aname{color:var(--acc)}
+  table.at td.acell .aname{font-size:12px;font-weight:600;color:var(--txt)}
+  table.at td.acell .asub{display:flex;align-items:center;gap:4px;min-width:0;margin-top:1px;
+    font-size:10px;color:var(--dim)}
+  table.at td.acell .arole{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.at td.acell .rep{flex:0 0 auto;width:auto;font-size:10px;color:var(--acc2)}
+  table.at td.acell .rep:hover{color:var(--acc)}
   /* v892: a ⋮ is a GLYPH, not a framed button — the frame cost ~6px on every row. */
   .btn.ghost.mini.dots{border:0;background:transparent;padding:0;width:20px;min-width:20px;height:22px;
     display:inline-flex;align-items:center;justify-content:center;color:var(--dim)}
@@ -448,7 +462,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* jobs + routines + feed */
   .job-item{border-bottom:1px solid var(--line);min-width:0}
   .job{display:flex;gap:6px;align-items:center;padding:6px 8px;font-size:12px;cursor:pointer;min-width:0}
-  .job-meta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 8px 5px 48px;font-size:10px;min-width:0}
+  .job-meta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 8px 5px 8px;font-size:10px;min-width:0}
   .job-meta .rl{max-width:100%}
   .job-goal{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
     -webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
@@ -737,7 +751,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .cdetail{padding:8px 12px}
   .clegend{padding:8px 12px;gap:12px}
   .job{padding:7px 10px}
-  .job-meta{padding:0 10px 6px 46px}
+  .job-meta{padding:0 10px 6px 10px}
   .runrow{padding:6px 12px}
   .orgrow{padding:6px 12px}
   .empty{padding:16px;color:var(--dim)}
@@ -893,10 +907,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <div class="scroll" id="agTableWrap">
         <table class="at">
           <colgroup>
-            <col class="c-id"><col class="c-name"><col class="c-role">
-            <col class="c-model"><col class="c-rep"><col class="c-file"><col class="c-act">
+            <col class="c-id"><col class="c-name">
+            <col class="c-model"><col class="c-file"><col class="c-act">
           </colgroup>
-          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Role.md</th><th scope="col"><span class="sr-only">row actions</span></th></tr></thead>
+          <thead><tr><th>ID</th><th>Agent</th><th>Model</th><th>Role.md</th><th scope="col"><span class="sr-only">row actions</span></th></tr></thead>
           <tbody id="agBody"></tbody>
         </table>
       </div>
@@ -1203,7 +1217,7 @@ class AgentsView {
     if (editing || roleDirty || body.querySelector(".dragging")) return;
     body.innerHTML = groups.length
       ? groups.map(g => this.groupHtml(g)).join("")
-      : '<tr><td colspan="7" class="empty">no agents — create one with ＋ above.</td></tr>';
+      : '<tr><td colspan="5" class="empty">no agents — create one with ＋ above.</td></tr>';
     this.bind();
     // JAG-2.4: these two selects hand an id to the JOBS layer, so they only ever list
     // DESIGNATED agents — a plain session has no A-id to schedule yet.
@@ -1266,7 +1280,7 @@ class AgentsView {
     // an agent runs on the bare system prompt. Say so on the button itself.
     const voidP = (a.prompt_chars === 0);
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
-    const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="6">' +
+    const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="4">' +
       (voidP ? '<div class="small warnbox">This prompt is <b>EMPTY</b> — the agent runs on the bare ' +
         'system prompt with no role of its own. Write two or three lines and save.</div>' : "") +
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the Sessions tab (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
@@ -1289,10 +1303,12 @@ class AgentsView {
       : '';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid"><span class="aidbox"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</span></td>' +
-      '<td><button class="btn ghost mini cbtn' + (a.name ? '' : ' empty') + '" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit name and role" aria-label="edit name and role"><span class="cv">' + esc(a.name || "\u2014") + '</span></button></td>' +
-      '<td><button class="btn ghost mini cbtn' + (a.role ? '' : ' empty') + '" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit role" aria-label="edit role"><span class="cv">' + esc(a.role || "\u2014") + '</span></button></td>' +
+      '<td class="acell">' +
+        '<button type="button" class="linklike" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit name and role" aria-label="edit name and role"><span class="aname">' + esc(a.name || "\u2014") + '</span></button>' +
+        '<span class="asub"><span class="arole">' + esc(a.role || "") + '</span>' +
+          '<button type="button" class="linklike rep" data-aedit="reports_to" data-sid="' + esc(a.session) + '" title="reports to ' + esc(a.reports_to || "nobody") + '" aria-label="edit reports to">' + esc(repLabel) + '</button></span>' +
+      '</td>' +
       '<td><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv">' + esc(modelLabel) + '</span></button></td>' +
-      '<td><button class="btn ghost mini cbtn' + (a.reports_to ? '' : ' empty') + '" data-aedit="reports_to" data-sid="' + esc(a.session) + '" title="reports to ' + esc(a.reports_to || "nobody") + '" aria-label="edit reports to"><span class="cv">' + esc(repLabel) + '</span></button></td>' +
       '<td><button class="btn ghost mini pbtn' + (voidP ? ' missing' : '') + '" data-brief="1" aria-label="prompt (ROLE.md)" title="' +
         (voidP ? "EMPTY prompt — this agent runs on the bare system prompt; click to write its ROLE.md"
                : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
@@ -1704,7 +1720,7 @@ class AgentsView {
     // JAG-482: only a REAL team (one the deck knows) gets the bulk kebab; the
     // "No team" bucket and unknown/stray group ids have no team to act on.
     const isTeam = !!this.teamById(g.id);
-    const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="7">' +
+    const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="5">' +
       // JAG-2.8: the header is a real control — groups start COLLAPSED, so without
       // tabindex/Enter a keyboard-only operator could not open a single group.
       // v625: the header is ALSO the team drag handle (Sessions sidebar parity —
@@ -1732,7 +1748,7 @@ class AgentsView {
       '</div></td></tr>';
     const rows = (g.ms || []).length
       ? (g.ms || []).map(a => this.row(a, g.id)).join("")
-      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="7" class="empty">' +
+      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="5" class="empty">' +
         (isTeam ? 'no agents in this team yet — use ＋ assign (or the Teams cell of any agent).'
                 : 'no agents in this group.') + '</td></tr>';
     return head + rows;
@@ -2154,7 +2170,11 @@ class OrgChartView {
         if (right - left > 1){
           edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + busY.toFixed(1));
           edges.push("M" + left.toFixed(1) + " " + busY.toFixed(1) + " H" + right.toFixed(1));
-          rows[0].cs.forEach(c => { if (Math.abs(c.cx - cx) > 1)
+          // v893 (operator: "there are org links not made"): the drop was SKIPPED for the
+          // child sitting directly under its parent (same centre), so an odd fan-out drew
+          // one node with no connector. Every child gets its drop now; where it overlaps
+          // the parent's own stem the two segments simply coincide.
+          rows[0].cs.forEach(c => {
             edges.push("M" + c.cx.toFixed(1) + " " + busY.toFixed(1) + " V" + childTop.toFixed(1)); });
         } else {
           edges.push("M" + cx.toFixed(1) + " " + (top + NH) + " V" + childTop.toFixed(1));
@@ -2759,10 +2779,12 @@ class JobsView {
       }).join("");
       const runHtml = (this.open === j.id) ? subHtml : "";
       const canRun = (j.status !== "running" && j.status !== "blocked");
-      const team = (j.agents || []).join(",");
-      const relHtml = (j.coordinator || team
-        ? '<span class="rl" title="coordinator ' + esc(j.coordinator || "") + ' · team ' + esc(team) + '">' +
-          esc(j.coordinator || "unassigned") + ' ⇢ ' + esc(team || "no agents") + '</span>' : "") +
+      // v893 (operator: "no sense A12->A12, it's a self giving work"): the coordinator is
+      // named ONCE, and the arrow appears only when there is a DISTINCT crew to hand to.
+      const crew = (j.agents || []).filter(a => a && a !== j.coordinator);
+      const relHtml = (j.coordinator || crew.length
+        ? '<span class="rl" title="coordinator ' + esc(j.coordinator || "") + ' · team ' + esc(crew.join(",")) + '">' +
+          esc(j.coordinator || "unassigned") + (crew.length ? ' ⇢ ' + esc(crew.join(",")) : "") + '</span>' : "") +
         (j.blocked_by && j.blocked_by.length
           ? '<span class="rl" title="job dependencies">blocked by ' + esc(j.blocked_by.join(", ")) + '</span>' : "") +
         /* I-7: one path written by two of this job's agents — one overwrite may

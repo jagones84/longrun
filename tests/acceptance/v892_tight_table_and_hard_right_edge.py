@@ -32,9 +32,9 @@ check("A1 no Teams column in the table",
 check("A2 the teams picker lives in the row menu",
       'data-amenu="teams"' in ORBIT
       and 'm.querySelector(\'[data-amenu="teams"]\').onclick = () => { closePopover(); this.openTeamPicker(ev, a); };' in ORBIT)
-check("A3 the table still has eight cells' worth of structure (7 columns now)",
-      '<td colspan="7">' in ORBIT and '<td colspan="6">' in ORBIT
-      and 'colspan="8"' not in ORBIT)
+check("A3 the table still has eight cells' worth of structure (5 columns since v893)",
+      '<td colspan="5">' in ORBIT and '<td colspan="4">' in ORBIT
+      and 'colspan="8"' not in ORBIT and 'colspan="7"' not in ORBIT)
 
 # ---------------- B: the width goes to the values ----------------------------------
 check("B1 a tight id gutter, a narrow action column, small padding",

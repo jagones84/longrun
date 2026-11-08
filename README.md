@@ -9,7 +9,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![deps](https://img.shields.io/badge/deps-stdlib%20%2B%20PyYAML-brightgreen.svg)](#quick-start-windows)
-[![tests](https://img.shields.io/badge/battery-583%2F583%20tests-blue.svg)](#tests)
+[![tests](https://img.shields.io/badge/battery-584%2F584%20tests-blue.svg)](#tests)
 
 **Longrun is the self-hosted AI agent harness that drives the LLM — teams of
 agents, real tools, and verification, on your own machine.** One Python process
@@ -481,7 +481,7 @@ proven on its own tests first (`tests/battery_tmp.sh`, rewritten per fix); the f
 suite runs on request. The fast run skips six heavy indexing and
 document-ingestion tests:
 
-The suite is 583/583 tests — every acceptance file under `tests/acceptance/` is
+The suite is 584/584 tests — every acceptance file under `tests/acceptance/` is
 counted, and the badge above is the same number (one truth, pinned by `v354`).
 
 ```bash
