@@ -149,7 +149,11 @@ def _constellation(team=None):
         if not sid:
             continue
         g = _tg.load(sid) or {}
-        graphs[sid] = {"nodes": g.get("nodes", []), "run_id": g.get("run_id")}
+        # 2026-11-08: the deck must know WHICH plan is current — a job opens a fresh plan
+        # per agent, and drawing the current one together with the older history read
+        # as one plan that never existed. `plan` is the same number the rail groups by.
+        graphs[sid] = {"nodes": g.get("nodes", []), "run_id": g.get("run_id"),
+                       "plan": g.get("plan")}
     out_payload = {
         "team": team or "ALL",
         "teams": [{"id": t.get("id"), "name": t.get("name"), "symbol": t.get("symbol"),

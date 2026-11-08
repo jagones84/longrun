@@ -493,6 +493,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .node{min-width:78px;max-width:128px;padding:5px 9px}
   .cnode{cursor:pointer}
   .cnode text{font:11px ui-monospace,monospace;fill:#dbe3f4;pointer-events:none}
+  /* 2026-11-08: a step of an OLDER plan, drawn only because the current plan depends on it
+     — the prerequisite chain stays visible, the history reads as secondary. */
+  .cnode.cold circle{fill-opacity:.38}
+  .cnode.cold text{opacity:.55}
   .clink{stroke:rgba(120,160,220,.45);stroke-width:1.1;fill:none;stroke-linecap:round}
   .clink.dep{stroke-dasharray:4 3}
   .clink.job{stroke:var(--acc);stroke-width:2.2}
@@ -898,10 +902,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     <!-- Agents: available agents, creatable with +, each with a model + reports-to -->
     <section class="panel ag" data-panel="agents">
       <h2><span class="led" id="led" title="feed connected"></span> Agents <span class="n" id="agCount">—</span>
-        <!-- JAG-2.3: this panel lists DESIGNATED agents (a session becomes one when it
-             is designated), never every chat session. The hint states that gap out loud
-             so "my agent is missing" is answered in place instead of looking broken. -->
-        <span class="hint" id="agHint"></span>
+        <!-- 2026-11-08 (operator): the "N sessions · M not in the org chart (give one a
+             name or a team…) · K with an EMPTY prompt" sentence was a whole line of
+             counters that wasted the panel head — the row carries that truth already
+             (the NO TEAM group, the * on an empty prompt). It is gone. -->
         <span class="ctools">
           <!-- v885: the model policy is an action of the WHOLE table, so it lives in the
                panel's own action cluster (one 30px named icon) instead of a text button in
@@ -1068,7 +1072,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <span><i style="background:#9aa1ae"></i>todo</span>
         <span><i style="background:#dd6f63"></i>blocked</span>
         <span><i style="background:#4a5568"></i>superseded</span>
-        <span><s></s>assigned to (job/subjob → agent)</span>
+        <!-- 2026-11-08: the legend describes what is DRAWN in this mode, nothing more:
+             "·N" is the tasks a subjob holds, the faded node is a prerequisite of an
+             older plan kept on purpose, the solid link is job → subjob (and, in ALL,
+             subjob → agent cluster). -->
+        <span><i style="background:#5fbf8a;opacity:.38"></i>step of an older plan (prerequisite)</span>
+        <span><s></s>job → subjob (ALL: subjob → agent cluster)</span>
         <span><s class="dash"></s>depends on (prereq → task)</span>
         <span>click a task · job · subjob for details · double-click opens it</span>
       </div>
@@ -2571,13 +2580,15 @@ class Constellation {
     '<marker id="mJob" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--acc)"/></marker>' +
     '<marker id="mAsg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="rgba(108,140,255,.8)"/></marker>' +
     '</defs>'; }
-  _nodesSvg(a, nodes, pos, small){
+  _nodesSvg(a, nodes, pos, small, cold){
     const r0 = small ? 7 : 9;
     return nodes.map(n => { const p = pos[n.id]; if (!p) return "";
       const c = STC[n.status] || "#7f9ac0"; const y = String(n.id).replace(/\D+/g, "");
       const r = n.status === "doing" ? r0 + 2 : r0;
       const stroke = n.status === "doing" ? ' stroke="#bfe3ff" stroke-width="1.6"' : "";
-      return '<g class="cnode" data-sid="' + esc(a.session) + '" data-id="' + esc(n.id) + '">' +
+      // 2026-11-08: a step of an OLDER plan kept only because the current plan depends on it
+      const dim = (cold && cold.has(n.id)) ? " cold" : "";
+      return '<g class="cnode' + dim + '" data-sid="' + esc(a.session) + '" data-id="' + esc(n.id) + '">' +
         '<circle cx="' + p.x + '" cy="' + p.y + '" r="' + r + '" fill="' + c + '" fill-opacity=".92"' + stroke + '/>' +
         '<text x="' + p.x + '" y="' + (p.y + r + 11) + '" text-anchor="middle">' + esc(a.id) + '.n' + esc(y) + '</text></g>';
     }).join("");
@@ -2678,15 +2689,52 @@ class Constellation {
     svg.addEventListener("touchcancel", () => { tG = null; });
     svg.style.cursor = "grab";
   }
+  /* 2026-11-08: a PLAN is the unit of work — a job opens a FRESH plan per agent
+     (`_scope_graph`), so a session graph holds the CURRENT plan plus the older ones
+     as history. Drawing them as one plan (A179's n1..n3 of a previous chat turn next
+     to the job's n4..n8) read as work that never happened that way.
+
+     But the older steps are not decoration: measured on A179, the job's n5/n6/n7
+     DEPEND on n1/n2/n3 (the previous turn's steps). So the diagram draws the CURRENT
+     plan PLUS the older steps it depends on, faded — the prerequisite chain is a real
+     relation and dropping it would silently delete three arrows. Older steps that are
+     NOT prerequisites are left out and counted in the footer. */
+  _planOf(sid){
+    const g = (((this.data || {}).graphs) || {})[sid] || {};
+    const all = g.nodes || [];
+    if (!all.length) return {nodes: [], cur: null, older: 0, prereq: 0, cold: new Set()};
+    // The graph's `plan` can be AHEAD of its nodes (a fresh plan opened by a turn
+    // that wrote no step yet — measured on A84: plan 4, newest steps in plan 3).
+    // Showing nothing there would claim the agent has no work; the honest unit is
+    // the newest plan that HAS steps.
+    const plans = all.map(n => (n.plan == null ? 1 : n.plan));
+    const newest = Math.max.apply(null, plans);
+    const cur = (g.plan != null && plans.indexOf(g.plan) >= 0) ? g.plan : newest;
+    const byId = new Map(all.map(n => [n.id, n]));
+    const isCur = n => (n.plan == null ? 1 : n.plan) === cur;
+    const keep = new Set(all.filter(isCur).map(n => n.id));
+    const frontier = [...keep];
+    while (frontier.length){
+      const n = byId.get(frontier.pop()); if (!n) continue;
+      (n.deps || []).forEach(d => {
+        if (byId.has(d) && !keep.has(d)) { keep.add(d); frontier.push(d); }
+      });
+    }
+    const nodes = all.filter(n => keep.has(n.id));
+    const cold = new Set(nodes.filter(n => !isCur(n)).map(n => n.id));
+    return {nodes: nodes, cur: cur, older: all.length - nodes.length,
+            prereq: cold.size, cold: cold};
+  }
   _drawAgent(){
     const a = this.focus || (this.data.agents || [])[0];
     if (!a){ $("constWho").textContent = "—"; $("constDetail").textContent = "no agents yet"; return null; }
-    this.focus = a; const nodes = this.nodesOf(a.session).slice(0, 60);
+    this.focus = a;
+    const plan = this._planOf(a.session); const nodes = plan.nodes.slice(0, 60);
     // v905 (operator: "non vedo in constellation i jobs, solo i tasks"): ONE agent
     // focused used to drop the whole JOB -> SUBJOB level, although the legend under
     // the diagram promised it. The payload always carried it — only ALL mode drew
     // it. The lanes below are the SAME object model as ALL mode: amber = job,
-    // blue = subjob, and a subjob is linked to the tasks it embraces.
+    // blue = subjob.
     const normJ = x => "J" + String(x || "").replace(/^J/i, "");
     const subs = (((this.data || {}).subjobs) || []).filter(s => s.agent === a.id);
     const jids = new Set(subs.map(s => s.parent)
@@ -2711,30 +2759,47 @@ class Constellation {
       const base = jpos[jid] ? jpos[jid].x : w / 2;
       list.forEach((s, i) => { spos[s.id] = {x: base + (i - (list.length - 1) / 2) * 86, y: 56}; }); });
     let body = this._defs();
+    // JOB contains its SUBJOBS (one solid edge each) — the job->coordinator link and
+    // the subjob->agent link are carried by the labels (`·coord`, `J30.1→A179`),
+    // because in this view the agent IS the frame: a third arrow would say nothing.
     subs.forEach(s => { const p = spos[s.id], q = jpos[s.parent]; if (!p || !q) return;
       body += '<line class="clink job" x1="' + q.x + '" y1="' + (q.y + 15) + '" x2="' + p.x + '" y2="' + (p.y - 12) + '"/>'; });
-    // the subjob EMBRACES the tasks it created (its `todos`): one dashed assign edge each.
-    subs.forEach(s => (s.todos || []).forEach(t => { if (!pos[t] || !spos[s.id]) return;
-      const g = this._seg(spos[s.id], pos[t], 26, 12);
-      body += '<line class="clink assign" marker-end="url(#mAsg)" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>'; }));
-    body += this._edges(nodes, pos) + this._nodesSvg(a, nodes, pos, false);
-    body += this._pills(jobs, subs, jpos, spos);
-    $("constDetail").textContent = nodes.length + " step(s) · ids are " + a.id + ".nY"
-      + (jobs.length ? " · amber = JOB · blue = SUBJOB → the tasks it embraces" : "")
-      + " · dashed arrow = dependency";
+    // SUBJOB deps / nesting, when this agent holds more than one.
+    subs.forEach(s => (s.deps || []).forEach(d => { if (!spos[d] || !spos[s.id]) return;
+      const g = this._seg(spos[d], spos[s.id], 52, 52);
+      body += '<line class="clink dep" marker-end="url(#mDep)" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>'; }));
+    // SUBJOB -> its tasks is a CONTAINMENT (N tasks), carried ONCE by the count in the
+    // pill; N crossing arrows said the same thing and buried the dependency chain.
+    body += this._edges(nodes, pos) + this._nodesSvg(a, nodes, pos, false, plan.cold);
+    body += this._pills(jobs, subs, jpos, spos, {owner: a.id, counts: true});
+    $("constDetail").textContent = nodes.length + " step(s)"
+      + (plan.cur == null ? "" : " of plan " + plan.cur)
+      + (plan.prereq ? " (+" + plan.prereq + " faded prerequisite(s) from an older plan)" : "")
+      + " · ids are " + a.id + ".nY"
+      + (jobs.length ? " · amber = JOB (·coord = this agent owns it) · blue = SUBJOB, ·N = the tasks it holds" : "")
+      + " · dashed = dependency"
+      + (plan.older ? " · " + plan.older + " older step(s) not drawn" : "");
     return {w: w, h: Math.max(h, 96 + lane), body: body};
   }
   /* v905: the PILLS of the job/subjob level — ONE drawing for both modes (an amber
      job, a blue subjob). Positions and edges are per-mode: ALL spreads them over the
-     board, AGENT pins them above one agent's grid. */
-  _pills(jobs, subs, jpos, spos){
+     board, AGENT pins them above one agent's grid. `opts.owner` marks the job this
+     agent coordinates; `opts.counts` prints how many tasks a subjob holds (the AGENT
+     view's replacement for one arrow per task). */
+  _pills(jobs, subs, jpos, spos, opts){
+    opts = opts || {};
     let s = "";
     (jobs || []).forEach(j => { const p = jpos[j.id]; if (!p) return;
-      s += '<g class="cjobg" data-job="' + esc(j.id) + '"><rect class="cjob" x="' + (p.x - 48) + '" y="' + (p.y - 15) + '" width="96" height="30" rx="15"/>' +
-        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="#ffe6b0">' + esc(j.id) + '</text></g>'; });
+      const lbl = j.id + (opts.owner && j.coordinator === opts.owner ? " ·coord" : "");
+      const w = Math.max(96, lbl.length * 7 + 18);
+      s += '<g class="cjobg" data-job="' + esc(j.id) + '"><rect class="cjob" x="' + (p.x - w / 2) + '" y="' + (p.y - 15) + '" width="' + w + '" height="30" rx="15"/>' +
+        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="#ffe6b0">' + esc(lbl) + '</text></g>'; });
     (subs || []).forEach(q => { const p = spos[q.id]; if (!p) return;
-      s += '<g class="csubg" data-sub="' + esc(q.id) + '"><rect class="csub" x="' + (p.x - 40) + '" y="' + (p.y - 12) + '" width="80" height="24" rx="12"/>' +
-        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#bfe9ff">' + esc(q.id) + '\u2192' + esc(q.agent) + '</text></g>'; });
+      const n = (q.todos || []).length;
+      const lbl = q.id + '\u2192' + q.agent + (opts.counts && n ? " \u00b7" + n : "");
+      const w = Math.max(80, lbl.length * 6.6 + 16);
+      s += '<g class="csubg" data-sub="' + esc(q.id) + '"><rect class="csub" x="' + (p.x - w / 2) + '" y="' + (p.y - 12) + '" width="' + w + '" height="24" rx="12"/>' +
+        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#bfe9ff">' + esc(lbl) + '</text></g>'; });
     return s;
   }
   _drawAll(){
@@ -2743,14 +2808,18 @@ class Constellation {
     const subs = this.data.subjobs || [];   // JAG-324: job -> subjob -> agent/todos
     const grouped = this.byAgent();
     const PAD = 20, GAPX = 18, GAPY = 18, TOP = subs.length ? 108 : (jobs.length ? 78 : 20), TARGETW = 1000, CW = 94, RH = 52;
-    const box = {}; let x = PAD, y = TOP, rowH = 0;
+    const box = {}; let x = PAD, y = TOP, rowH = 0, older = 0, prereq = 0;
     agents.forEach(a => {
-      const nodes = (grouped[a.session] || []).slice(0, 40);
+      // 2026-11-08: each cluster shows that agent's CURRENT plan plus the older steps it
+      // depends on (faded); the footer counts what is left out.
+      const plan = this._planOf(a.session); older += plan.older; prereq += plan.prereq;
+      const keep = new Set(plan.nodes.map(n => n.id));
+      const nodes = (grouped[a.session] || []).filter(n => keep.has(n.id)).slice(0, 40);
       const sh = this._shape(nodes);
       const w = Math.max(176, 40 + Math.max(1, sh.keys.length) * CW);
       const h = 34 + sh.maxRows * RH + 16;
       if (x + w > PAD + TARGETW && x > PAD){ x = PAD; y += rowH + GAPY; rowH = 0; }
-      box[a.session] = {x: x, y: y, w: w, h: h, nodes: nodes, sh: sh};
+      box[a.session] = {x: x, y: y, w: w, h: h, nodes: nodes, sh: sh, cold: plan.cold};
       x += w + GAPX; rowH = Math.max(rowH, h);
     });
     const contentW = PAD + TARGETW + PAD, contentH = Math.max(y + rowH + PAD, TOP + 120);
@@ -2830,13 +2899,15 @@ class Constellation {
       const cw = (b.w - 28) / Math.max(1, sh.keys.length), ch = (b.h - 48) / sh.maxRows;
       const pos = {}; sh.keys.forEach((k, i) => { sh.cols[k].forEach((n, j) => {
         pos[n.id] = {x: innerX + (i + 0.5) * cw, y: innerY + (j + 0.5) * ch}; }); });
-      body += this._edges(nodes, pos) + this._nodesSvg(a, nodes, pos, true);
+      body += this._edges(nodes, pos) + this._nodesSvg(a, nodes, pos, true, b.cold);
     });
     // JAG-324: job + subjob pills on their lanes — ONE drawing shared with AGENT mode
     // (v905 `_pills`), so the two views can never drift apart.
     body += this._pills(jobs, subs, jpos, spos);
     $("constWho").textContent = agents.length + " agents \u00b7 " + jobs.length + " jobs \u00b7 " + subs.length + " subjobs";
-    $("constDetail").textContent = "one cluster per AGENT \u00b7 amber = JOB \u00b7 blue = SUBJOB JN.j \u2192 agent (dashed = deps/assigns)";
+    $("constDetail").textContent = "one cluster per AGENT \u00b7 amber = JOB \u00b7 blue = SUBJOB JN.j \u2192 agent (dashed = deps/assigns)"
+      + (prereq ? " \u00b7 " + prereq + " faded step(s) are prerequisites from an older plan" : "")
+      + (older ? " \u00b7 " + older + " older step(s) not drawn" : "");
     return {w: contentW, h: Math.max(contentH, TOP + 120 + _maxDep * 34), body: body};
   }
   _wire(svg){
@@ -3524,13 +3595,19 @@ class OrbitApp {
   }
   loadViews(){
     let vs = this._storedViews();
-    if (!vs) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org"]}];
+    if (!vs) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org", "const"]}];
     vs = vs.map(v => ({
       id: String((v && v.id) || ("v-" + Math.floor(Math.random() * 1e9))),
       name: String((v && v.name) || "View").slice(0, 40),
       panels: ((v && v.panels) || []).filter(p => this.PANELS.includes(p)).slice(0, 6)
-    })).filter(v => v.panels.length);
-    if (!vs.length) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org"]}];
+    })).filter(v => v.panels.length)
+      /* 2026-11-08 (operator): "the attached shall be the default format of the Desk
+         view" — Agents | Jobs | Org chart | Constellation in ONE row. A Desk view that
+         is still the untouched three-panel seed is upgraded; a view the operator built
+         by hand is left alone. */
+      .map(v => (v.id === "v-desk" && v.panels.join(",") === "agents,jobs,org")
+        ? Object.assign({}, v, {panels: ["agents", "jobs", "org", "const"]}) : v);
+    if (!vs.length) vs = [{id: "v-desk", name: "Desk", panels: ["agents", "jobs", "org", "const"]}];
     return vs;
   }
   /* 2026-11-01: the views are SERVER state (`/api/orbit/views` → data/orbit_views.json).
@@ -3542,15 +3619,23 @@ class OrbitApp {
     let doc = null;
     try { doc = await this.api.get("/api/orbit/views"); } catch (e) { return; }
     if (!doc || !Array.isArray(doc.views) || !doc.views.length) return;
+    const seed = (doc.views[0].panels || []).join(",");
     const virgin = !doc.revision && doc.views.length === 1 && doc.views[0].id === "v-desk"
-      && (doc.views[0].panels || []).join(",") === "agents,jobs,org";
+      && (seed === "agents,jobs,org" || seed === "agents,jobs,org,const");
     const local = this._storedViews();
     if (virgin && local) { this.saveViews(); return; }   // first run after this change
+    const before = (doc.views || []).map(v => (v.panels || []).join(",")).join("|");
     const views = doc.views.map(v => ({id: String(v.id), name: String(v.name || "View").slice(0, 40),
       panels: (v.panels || []).filter(p => this.PANELS.includes(p)).slice(0, 6)}))
-      .filter(v => v.panels.length);
+      .filter(v => v.panels.length)
+      // 2026-11-08: same upgrade as loadViews — the stored seed gains Constellation.
+      .map(v => (v.id === "v-desk" && v.panels.join(",") === "agents,jobs,org")
+        ? Object.assign({}, v, {panels: ["agents", "jobs", "org", "const"]}) : v);
     if (!views.length) return;
     this.views = views;
+    // the 4-panel Desk seed replaced the 3-panel one: write the upgrade back once, so
+    // every entry point (LAN, Tailscale, https) opens the same Desk.
+    if (before !== views.map(v => v.panels.join(",")).join("|")) this.saveViews();
     this.renderViewList();
     this._markSync(true);
     const want = String(doc.active || "");
@@ -3982,24 +4067,9 @@ class OrbitApp {
     const list = models ? ((models.providers) || []).reduce((acc, p) =>
       acc.concat((p.models || []).map(m => { const ref = m.ref || (p.id + ":" + m.id);
         return {ref: ref, label: ref}; })), []) : [];
-    // JAG-2.4: state the roster in full. The panel mirrors the Sessions page, so the
-    // hint reports the ONE real gap left: chats that are not part of the ORG CHART yet
-    // (they are rows, and they DO carry their own A-id — see the ID column).
-    // JAG-2.8: and the SECOND real gap — rows whose prompt (ROLE.md) is VOID.
-    if (sess && tree){
-      const voidN = pool.filter(a => a.prompt_chars === 0).length;
-      $("agHint").textContent = pool.length + " sessions · " + extras.length +
-        " not in the org chart (give one a name or a team to designate it)" +
-        (voidN ? " · " + voidN + " with an EMPTY prompt" : "");
-      $("agHint").title = extras.length
-        ? "Every session is listed here, like in the Sessions page.\n" +
-          "Not in the org chart yet: " + extras.slice(0, 12).map(a => a.name).join(" · ")
-        : "Every session is a designated agent.";
-      if (voidN) $("agHint").title += "\n" +
-        "EMPTY prompt (runs on the bare system prompt, marked *): " +
-        pool.filter(a => a.prompt_chars === 0).slice(0, 12).map(a => a.name).join(" · ");
-      $("agHint").classList.toggle("haswarn", voidN > 0);
-    }
+    // 2026-11-08 (operator): the roster sentence that used to print here ("N sessions ·
+    // M not in the org chart · K with an EMPTY prompt") is REMOVED — it cost a whole row
+    // of the panel head to restate what the NO TEAM group and the prompt asterisk show.
     if (fTree) this.lastAgents = fTree.agents || [];
     this.agents.scope = team;
     if (fTree) this.agents.render(fTree, list, running, tms ? tms.teams : null, designated, pool);

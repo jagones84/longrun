@@ -204,7 +204,10 @@ check("E16 the ids nest to ANY depth (3 levels: J8.1.1.1)",
 check("E17 the Plan panel chip accepts/prints a full dotted id at any depth",
       r'if (/^\d+(\.\d+)*$/.test(s)) return "J" + s;' in UI
       and r'const m = s.match(/^[jJ](\d+(\.\d+)*)$/);' in UI
-      and "${esc(_nodeSub(n))}</span>" in UI)
+      # v906: ONE chip builder serves the rail and the chat card; it is fed the
+      # subjob id through _nodeSub and prints it verbatim (escaped).
+      and 'chip(_nodeSub(n), "var(--info)"' in UI
+      and '>${esc(id)}</span>' in UI)
 
 # ---- F. jobs -> session centers the rail --------------------------------------
 check("F1 the bridge handler reaches the SAME reveal procedure (no duplicate)",

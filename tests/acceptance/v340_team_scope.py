@@ -94,11 +94,14 @@ check("D3 the assign picker stays open for a multi-select",
       and "keepOpen" in orbit)
 check("D4 an empty team says HOW to fill it instead of a blank panel",
       "no agents in this team yet" in orbit)
-check("D5 the panel states the roster in full (sessions not in the org chart)",
-      # RH-20: the sentence used to read "without an agent id". That became FALSE once
-      # every session was born with its A<n> (stores.ensure_agent) and the deck started
-      # showing it: the gap is ORG MEMBERSHIP, not an id. The pin now states the fact.
-      'id="agHint"' in orbit and "not in the org chart" in orbit)
+check("D5 the sessions outside the org chart are their OWN group, not a counter line",
+      # RH-20: the sentence in the panel head used to state the roster gap, and it read
+      # "without an agent id" until every session was born with its A<n>.
+      # 2026-11-08 (operator): that counter line cost a whole row of the panel head to
+      # restate what the table already says, so it is GONE — every session without a
+      # team is LISTED under "No team". The pin asserts the row is the truth now.
+      'id: "__none__", name: "No team"' in orbit
+      and '$("agHint")' not in orbit)
 
 # --- E: a PLAIN session is listed and assignable (live complaint, 2026-10-22) --
 # Operator: "in agents no teams ... non ci sono delle sessioni del sessions page ...
@@ -187,8 +190,12 @@ check("G3 the deck marks an empty prompt (red asterisk with a title + the warnin
       'const voidP = (a.prompt_chars === 0);' in orbit
       and 'class="req"' in orbit and "EMPTY ROLE.md" in orbit
       and "This prompt is <b>EMPTY</b>" in orbit)
-check("G4 the header counts the rows whose prompt is empty",
-      '" with an EMPTY prompt"' in orbit and "haswarn" in orbit)
+check("G4 an empty prompt is marked on its ROW, not counted in a panel-head line",
+      # 2026-11-08 (operator): the "… · K with an EMPTY prompt" counter was part of the
+      # roster sentence removed from the head — the `*` on the row (G3) and the expanded
+      # brief's warning say it in place, so no head line may count it again.
+      'const voidP = (a.prompt_chars === 0);' in orbit
+      and '" with an EMPTY prompt"' not in orbit)
 # v752: the mode ids now come from the shared filter panel (webui/assets/filtersort.js);
 # "org" was renamed "leader" (same walk) and the inline <option> list moved there.
 check("G5 leadership first is the DEFAULT order (flat id mode still offered)",
