@@ -146,6 +146,21 @@ check("D3 a stale list cannot erase a just-arrived start",
 check("D4 the server flag is published on the list route",
       'annotate_naming(list_sessions())' in api)
 
+# ---- E: the 🏷 CONTROL animates in place and follows the same lifecycle -----
+# Operator, second report: "i intended the icon in the sidebar … it remains changed,
+# i have to refresh page" — `nameThreads` wrote `btn.textContent`, which destroyed the
+# SVG and left a text glyph until a reload.
+_name_body = src.split("async function nameThreads()", 1)[1].split("\nfunction ", 1)[0]
+check("E1 the click NEVER rewrites the control's glyph",
+      "textContent" not in _name_body and "_namingBtn(sessionId, true)" in _name_body)
+check("E2 the in-flight look is a class + animation on the SAME icon",
+      "button.is-busy svg { animation: sfspin" in src
+      and "prefers-reduced-motion: reduce" in src)
+check("E3 ONE painter: the run's close clears the control (threads.named → setNaming)",
+      "_namingBtn(sid, !!on);" in src and "function _namingBtn(sid, on)" in src)
+check("E4 a re-list repaints it from the server flag, not from a lucky event",
+      "_namingBtn(sessionId, !!namingSessions[sessionId]);" in src)
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

@@ -780,6 +780,14 @@
     color: var(--txt); transition: color .12s, border-color .12s; }
   #toolsBar button:hover { color: var(--accent); border-color: var(--acc); }
   #toolsBar button svg { display: block; }
+  /* v878: an in-flight action ANIMATES IN PLACE — the icon spins and the glyph is
+     never replaced (the old code wrote `textContent`, which destroyed the SVG and
+     left a text "🏷" in the rail until a page reload). */
+  #toolsBar button.is-busy { color: var(--acc); border-color: var(--acc); }
+  #toolsBar button.is-busy svg { animation: sfspin 1.1s linear infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    #toolsBar button.is-busy svg { animation: none; opacity: .55; }
+  }
   #toolsBar button[hidden] { display: none; }
   /* 2026-11-03: a rail control may carry a live COUNT (files this session changed,
      decisions waiting for you). A count is a STATE, so it is a corner chip on the
@@ -4292,19 +4300,20 @@ function rewindFreeGroup(n) {
    feed (and we also force a refresh here as a belt-and-braces). */
 async function nameThreads() {
   if (!sessionId) return;
-  const btn = document.querySelector('[data-call="nameThreads"]');
-  if (btn) { btn.disabled = true; btn.textContent = "🏷…"; }
+  // v878: the control's state is the BACKEND's: it animates in place while the run
+  // is in flight and is cleared by that run's own close (`threads.named`, or a list
+  // that no longer reports `naming`). Nothing here writes the glyph.
+  _namingBtn(sessionId, true);
   try {
     const r = await api("POST", "/api/sessions/" + sessionId + "/chapters/autoname", {});
-    if (r && r.error) { toast("title failed: " + r.error, "err"); return; }
+    if (r && r.error) { _namingBtn(sessionId, false); toast("title failed: " + r.error, "err"); return; }
     if (r && r.started === false) { toast("🏷 already naming this chat", "warn"); return; }
     // The naming call runs in the BACKGROUND (minutes on a local model): the labels
     // arrive one by one through `threads.updated`, and `threads.named` closes the run.
     toast("🏷 naming… the labels appear as they are written", "ok");
   } catch (e) {
+    _namingBtn(sessionId, false);
     toast("title failed: " + ((e && e.message) || e), "err");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "🏷"; }
   }
 }
 function _scope() { return _activeScope || _freeKids() || $("log"); }
@@ -6966,6 +6975,7 @@ async function loadSessions() {
   modelLabel();   // JAG-157: reflect the active session's model once the cache is filled
   _ensureAvailableModel();   // a retired/removed model must not strand this chat
   renderRuns();   // JAG-479: the rail's count + panel rows follow the REAL payload
+  _namingBtn(sessionId, !!namingSessions[sessionId]);   // v878: the icon follows the backend
 }
 /* JAG-117: creating a session asks which local folder to open it in. */
 async function newSession() {
@@ -10736,6 +10746,18 @@ function setNaming(sid, on) {
   _namingSeen[sid] = ++_namingEpoch;   // the epoch decides which render wins
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
     row => row.classList.toggle("naming", !!on));
+  _namingBtn(sid, !!on);
+}
+/* v878: the 🏷 control's in-flight look. It is a class on the SAME button — the
+   SVG keeps its place and spins — so a finished run leaves the rail exactly as it
+   was. Only the OPEN chat owns the control (another chat's run is its row's
+   business, like every other per-session marker). */
+function _namingBtn(sid, on) {
+  const b = document.querySelector('[data-call="nameThreads"]');
+  if (!b) return;
+  if (sid && sessionId && sid !== sessionId) return;
+  b.classList.toggle("is-busy", !!on);
+  if (on) b.setAttribute("aria-busy", "true"); else b.removeAttribute("aria-busy");
 }
 /* JAG-479: reading state is genuinely the CLIENT's (the server cannot know which
    browser looked at a chat), so it lives in localStorage and is pruned against the
