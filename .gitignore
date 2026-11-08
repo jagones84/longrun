@@ -40,6 +40,10 @@ trash/
 # as long as a run needs them.
 reports/
 
+# Benchmark/eval environments produced by one research run (builder script +
+# generated workspace, scoring output and logs). Local artifact, never shipped.
+envs/
+
 # JAG-108: user-added external MCP clients are persisted here (commands, headers
 # and tokens must never reach the tracked repo).
 config/mcp_clients.local.yaml

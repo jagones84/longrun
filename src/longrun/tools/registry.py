@@ -958,6 +958,11 @@ _SUBTOOL_GUIDANCE = {
         "Search persistent memory by required `query`. This uses keyword search "
         "by default; set `semantic=true` only to request embedding search."
     ),
+    "memory.store": (
+        "Remember a durable fact/preference/decision for later turns — `content` "
+        "is required; optional `kind`, `source` (provenance) and `ttl_secs` "
+        "(expiry). Find it again with memory.recall."
+    ),
     "memory.recent": "List recent memory records, newest first; optional `kind` and `limit` filters.",
     "memory.invalidate": "Soft-retire a memory by `target` ID or search `query`; provide one.",
     "memory.set_core": (

@@ -850,6 +850,14 @@
   .tc-toggle { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0;
     padding: 0; margin: 0; border: 0; background: none; font: inherit; color: inherit;
     text-align: left; cursor: pointer; }
+  .toolcard .tc-action { display: inline-flex; flex: 0 0 28px; align-items: center; justify-content: center;
+    width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0;
+    border: 1px solid var(--line-2); border-radius: 7px; background: transparent;
+    color: var(--dim); line-height: 1; }
+  .toolcard .tc-action svg { display: block; width: 15px; height: 15px; fill: none;
+    stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .toolcard .tc-action:hover { background: var(--hover); border-color: var(--acc); color: var(--acc); }
+  .toolcard .tc-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .toolcard .tc-name { font-weight: 600; color: var(--txt); }
   .toolcard .tc-meta { color: var(--dim); font-size: 11px; margin-left: auto; }
   .toolcard.pending { opacity: .7; }
@@ -4902,7 +4910,10 @@ function updateToolCard(data) {
   const _fp = _toolFilePath(data);
   if (_fp && !card.querySelector(".tcdiff")) {
     const _b = document.createElement("button");
-    _b.className = "ghost tcdiff"; _b.textContent = "± diff"; _b.style.fontSize = "10px";
+    _b.type = "button";
+    _b.className = "ghost tc-action tcdiff";
+    _b.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.5 2.75H5.75a1 1 0 0 0-1 1v12.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V6.5z"/><path d="M11.5 2.75V6.5h3.75M8 10h5M10.5 8.5v3M8 14h5"/></svg>';
+    _b.setAttribute("aria-label", "Show diff for " + _fp);
     _b.title = "show the diff for " + _fp;
     _b.onclick = e => { e.stopPropagation(); showDiff(_fp); };
     card.querySelector(".toolcard-head").appendChild(_b);
@@ -4910,7 +4921,10 @@ function updateToolCard(data) {
   // JAG-127: a readable (non-code) file gets a one-click "open in editor".
   if (_fp && _readable(_fp) && !card.querySelector(".tcopen")) {
     const _o = document.createElement("button");
-    _o.className = "ghost tcopen"; _o.textContent = "📂 open"; _o.style.fontSize = "10px";
+    _o.type = "button";
+    _o.className = "ghost tc-action tcopen";
+    _o.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11.5 2.75H5.75a1 1 0 0 0-1 1v12.5a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V6.5z"/><path d="M11.5 2.75V6.5h3.75M9 14.5l4.5-4.5 1.75 1.75-4.5 4.5L8.5 17z"/></svg>';
+    _o.setAttribute("aria-label", "Open " + _fp + " in the editor");
     _o.title = "open " + _fp + " in the editor";
     _o.onclick = e => { e.stopPropagation(); openInEditor(_fp); };
     card.querySelector(".toolcard-head").appendChild(_o);

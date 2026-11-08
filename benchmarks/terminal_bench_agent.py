@@ -35,9 +35,13 @@ The wrapper `scripts/bench-terminal-bench.sh` is the supported entry point.
 import io
 import json
 import os
+import re
 import tarfile
 import time
 from pathlib import Path
+from typing import Any, Mapping
+
+from benchmarks.terminal_bench_forensics import longrun_trace, write_forensic
 
 try:  # the real run happens inside the terminal-bench venv
     from terminal_bench.agents.base_agent import AgentResult, BaseAgent
@@ -186,6 +190,50 @@ class _Container:
             return status, {"raw": rest[:600]}
 
 
+def _capture_longrun_forensic(
+    box: Any,
+    session_id: str,
+    costs: Mapping[str, Any],
+    logging_dir: str | os.PathLike[str] | None,
+    api_key: str,
+) -> None:
+    """Export the non-system session trace before the benchmark container is stopped."""
+    if not logging_dir:
+        return
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", str(session_id or "")):
+        trace = {
+            "schema": "longrun.terminal-bench.forensic.v1",
+            "session": session_id,
+            "capture_error": "no valid session id was returned",
+        }
+    else:
+        try:
+            rc, raw = box.sh("cat /tmp/lr/sessions/%s.json" % session_id)
+            if rc != 0:
+                raise RuntimeError("session record is unavailable")
+            session = json.loads(raw)
+            _, plan = box.api("GET", "/api/sessions/%s/graph" % session_id)
+            trace = longrun_trace(
+                session,
+                costs=costs,
+                plan=plan,
+                secrets=(api_key,) if api_key else (),
+            )
+        except Exception as exc:  # noqa: BLE001 — forensic capture never grades the task
+            trace = {
+                "schema": "longrun.terminal-bench.forensic.v1",
+                "session": session_id,
+                "capture_error": str(exc),
+            }
+    try:
+        write_forensic(
+            logging_dir, "longrun-forensic.json", trace,
+            secrets=(api_key,) if api_key else (),
+        )
+    except Exception:  # noqa: BLE001 — evidence failure must not fail a solved task
+        pass
+
+
 class LongrunAgent(BaseAgent):
     """`tb run --agent-import-path benchmarks.terminal_bench_agent:LongrunAgent`."""
 
@@ -327,6 +375,7 @@ class LongrunAgent(BaseAgent):
         key = _dotenv_key("OPENROUTER_API_KEY")
         t0 = time.time()
         sid = ""
+        costs = {}
         tokens_in = tokens_out = 0
         try:
             rc, ws = box.sh("pwd")
@@ -360,6 +409,7 @@ class LongrunAgent(BaseAgent):
             print("LongrunAgent failed: %r" % (exc,), flush=True)
             return AgentResult(failure_mode=FailureMode.UNKNOWN)
         finally:
+            _capture_longrun_forensic(box, sid, costs, logging_dir, key)
             try:
                 box.sh("kill $(cat /tmp/lr/pid) 2>/dev/null; true")
             except Exception:  # noqa: BLE001

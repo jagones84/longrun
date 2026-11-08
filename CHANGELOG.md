@@ -104,6 +104,7 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **`fs.edit` diffs now resolve the file shown by the tool card.** The edit journal stores absolute paths while the card supplies workspace-relative paths; a unique relative suffix now resolves safely, while ambiguous suffixes are rejected. The card uses compact, theme-aware SVG diff/editor buttons with accessible names and visible keyboard focus (`v872`).
 - **A free-group label is a SUMMARY, never a copy of the prompt, and the 🏷 button no longer looks dead
   (extends `v469` / `v453`, no new number).** The rail showed a group's "title" AND its "summary" as two
   slices of the user's own prompt: a deterministic fallback titled every group with the first words of

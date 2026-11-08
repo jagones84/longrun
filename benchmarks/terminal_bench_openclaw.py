@@ -23,9 +23,20 @@ import base64
 import io
 import json
 import os
+import posixpath
+import shlex
 import tarfile
 import time
 from pathlib import Path
+from typing import Any, Mapping
+
+from benchmarks.terminal_bench_forensics import (
+    MAX_TRACE_ITEMS,
+    is_openclaw_trajectory_path,
+    openclaw_trace,
+    session_key_for_id,
+    write_forensic,
+)
 
 try:  # inside the terminal-bench venv
     from terminal_bench.agents.base_agent import AgentResult, BaseAgent
@@ -119,6 +130,108 @@ class _Container:
         return r.exit_code, out
 
 
+def _capture_openclaw_forensic(
+    box: Any,
+    envelope: Mapping[str, Any],
+    raw: str,
+    logging_dir: str | os.PathLike[str] | None,
+    api_key: str,
+) -> None:
+    """Export OpenClaw's redacted trajectory before its task container is removed."""
+    if not logging_dir:
+        return
+    trajectory_files = {}
+    trajectory_files_truncated = False
+    stderr = ""
+    capture_error = ""
+    phase = "stderr-read"
+    try:
+        _, stderr = box.sh("cat /tmp/oc/err.log")
+        session_id = str(envelope.get("sessionId") or "")
+        if not session_id:
+            phase = "session-id"
+            raise RuntimeError("OpenClaw did not return a sessionId")
+
+        # OpenClaw stores trajectory events in per-agent SQLite. The supported
+        # exporter materializes a redacted bundle; JSONL sidecars are not the store.
+        # Source: https://docs.openclaw.ai/tools/trajectory#capture-storage
+        # Session key/ID mapping: https://docs.openclaw.ai/reference/session-management-compaction/schema#session-keys-(sessionkey)
+        cli = ("%s/node" % DEST, "%s/openclaw/openclaw.mjs" % DEST)
+        cli_cmd = " ".join(shlex.quote(part) for part in cli)
+        env_prefix = "HOME=/tmp/oc OPENCLAW_STATE_DIR=/tmp/oc/state"
+        phase = "session-list"
+        rc, session_raw = box.sh(
+            "cd /tmp/oc && %s %s sessions --json" % (env_prefix, cli_cmd)
+        )
+        if rc != 0:
+            raise RuntimeError("OpenClaw session listing failed")
+        session_key = session_key_for_id(json.loads(session_raw), session_id)
+        if not session_key:
+            raise RuntimeError("OpenClaw sessionId has no unique sessionKey")
+
+        export_name = "terminal-bench-session"
+        phase = "trajectory-export"
+        export_cmd = " ".join(shlex.quote(part) for part in (
+            *cli,
+            "sessions",
+            "export-trajectory",
+            "--session-key",
+            session_key,
+            "--workspace",
+            "/tmp/oc",
+            "--output",
+            export_name,
+            "--json",
+        ))
+        rc, export_result = box.sh(
+            "cd /tmp/oc && %s %s" % (env_prefix, export_cmd)
+        )
+        if rc != 0:
+            raise RuntimeError(
+                "OpenClaw trajectory export failed (exit %s): %s"
+                % (rc, (export_result or "").strip()[-300:])
+            )
+
+        export_root = posixpath.join(
+            "/tmp/oc", ".openclaw", "trajectory-exports", export_name
+        )
+        phase = "bundle-list"
+        rc, listing = box.sh("find %s -type f" % shlex.quote(export_root))
+        if rc != 0:
+            raise RuntimeError("OpenClaw trajectory bundle is unavailable")
+        paths = [path for path in (listing or "").splitlines()
+                 if is_openclaw_trajectory_path(path)]
+        trajectory_files_truncated = len(paths) > MAX_TRACE_ITEMS
+        phase = "bundle-read"
+        for path in paths[:MAX_TRACE_ITEMS]:
+            rc, content = box.sh("cat " + shlex.quote(path))
+            if rc == 0:
+                name = posixpath.relpath(path.replace("\\", "/"), export_root)
+                trajectory_files[name] = content
+    except Exception as exc:  # noqa: BLE001 — forensic capture never grades the task
+        detail = str(exc).strip()
+        capture_error = "%s: %s%s" % (
+            phase,
+            type(exc).__name__,
+            (": " + detail[:300]) if detail else "",
+        )
+    trace = openclaw_trace(
+        envelope or {"raw_output": raw or ""},
+        stderr=stderr or "",
+        trajectory_files=trajectory_files,
+        secrets=(api_key,) if api_key else (),
+        trajectory_files_truncated=trajectory_files_truncated,
+        capture_error=capture_error,
+    )
+    try:
+        write_forensic(
+            logging_dir, "openclaw-forensic.json", trace,
+            secrets=(api_key,) if api_key else (),
+        )
+    except Exception:  # noqa: BLE001 — evidence failure must not fail a solved task
+        pass
+
+
 class OpenClawAgent(BaseAgent):
     def __init__(self, model_name="openrouter:z-ai/glm-5.3-flash", timeout=1800, **kwargs):
         super().__init__(**kwargs)
@@ -144,12 +257,13 @@ class OpenClawAgent(BaseAgent):
 
     def _run(self, box, workspace, instruction, key):
         """One headless embedded turn, detached: a blocking exec has no cancellation."""
-        box.sh("mkdir -p /tmp/oc")
+        box.sh("mkdir -p /tmp/oc/state")
         # base64 → the prompt cannot collide with a heredoc sentinel or carry a quote.
         b64 = base64.b64encode(instruction.encode("utf-8")).decode("ascii")
         box.sh("echo %s | base64 -d > /tmp/oc/task.txt" % b64)
         cmd = ["%s/node" % DEST, "%s/openclaw/openclaw.mjs" % DEST, "agent", "exec",
-               "--isolated", "--auth-env-only", "--model", openclaw_model(self.model_name),
+               "--isolated", "--state-dir", "/tmp/oc/state", "--auth-env-only",
+               "--model", openclaw_model(self.model_name),
                "--cwd", workspace, "--timeout", str(int(self.timeout)), "--json",
                "--message-file", "/tmp/oc/task.txt"]
         line = ("cd %s && OPENROUTER_API_KEY=%s HOME=/tmp/oc nohup %s "
@@ -175,6 +289,8 @@ class OpenClawAgent(BaseAgent):
         key = _dotenv_key("OPENROUTER_API_KEY")
         t0 = time.time()
         tokens_in = tokens_out = 0
+        raw = ""
+        env = {}
         try:
             _, ws = box.sh("pwd")
             workspace = (ws or "/app").strip().splitlines()[-1] or "/app"
@@ -182,11 +298,12 @@ class OpenClawAgent(BaseAgent):
             self._check(box)
             self._run(box, workspace, instruction, key)
             res = self._wait(box)
+            raw = res.get("raw") or ""
             env = {}
             try:
-                env = json.loads(res.get("raw") or "{}")
+                env = json.loads(raw or "{}")
             except ValueError:
-                env = {}
+                env = {"parse_error": "invalid JSON", "raw_output": raw}
             usage = env.get("usage") or {}
             tokens_in = int(usage.get("input") or 0)
             tokens_out = int(usage.get("output") or 0)
@@ -208,3 +325,7 @@ class OpenClawAgent(BaseAgent):
         except Exception as exc:  # noqa: BLE001 — a harness fault is an agent failure
             print("OpenClawAgent failed: %r" % (exc,), flush=True)
             return AgentResult(failure_mode=FailureMode.UNKNOWN)
+        finally:
+            _capture_openclaw_forensic(
+                box, env, raw, logging_dir, key,
+            )

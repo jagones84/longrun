@@ -1825,6 +1825,7 @@ def _memory(args, run_id):
                               h["invalidated"], h["no_source"])),
                 "backend": "host", "sandboxed": False}
     include_invalid = bool(args.get("include_invalid"))
+    sem_flag = False
     try:
         if action in ("recent", "list"):
             hits = [(1.0, r) for r in mem.query("", args.get("kind"), limit)]
@@ -1860,8 +1861,19 @@ def _memory(args, run_id):
     lines = ["- (%s, %s) %s" % (r.get("kind"), ("%.2f" % s) if s is not None else "—",
                                 (r.get("content") or "")[:200])
              for s, r in hits]
-    return {"ok": True, "count": len(hits), "stdout": "\n".join(lines) or "(no memories)",
-            "backend": "host", "sandboxed": False}
+    out = {"ok": True, "count": len(hits), "stdout": "\n".join(lines) or "(no memories)",
+           "backend": "host", "sandboxed": False}
+    # 2026-11-08: a 4-word query against 5 records that each hold ONE of the words
+    # came back as five rows at 0.25 with `ok:true` and no verdict — the caller
+    # read "I remembered" while no record contained the query. The score was
+    # visible, the meaning was not; say it. Semantic scores are cosine distances
+    # with a different scale, so this note is keyword-only.
+    _scores = [s for s, _r in hits if s is not None]
+    if _scores and not sem_flag and max(_scores) <= 0.5:
+        out["weak"] = True
+        out["stdout"] += ("\n(weak matches: no memory contains all the query words — "
+                          "treat these as hints, not evidence)")
+    return out
 
 
 def _diff(args, run_id):
@@ -2306,8 +2318,6 @@ def _sessions(args, run_id):
                 if rec.get("active_token") is None:
                     rec["active_token"] = active_token
             tail = msgs[int(rec.get("before_messages") or 0):]
-            replies = [str(m.get("content") or "").strip() for m in tail
-                       if m.get("role") == "assistant" and str(m.get("content") or "").strip()]
             if rec.get("mode") == "turn":
                 completed = job_info.get("state") == "done"
             else:
@@ -2319,7 +2329,14 @@ def _sessions(args, run_id):
                 rec["state"] = "done"
                 rec["ended"] = (rec.get("ended") or
                                 (job_info or {}).get("ended") or time.time())
-                reply = replies[-1] if replies else ""
+                # 2026-11-08: this read `replies[-1]`, so the PEER's turn and the
+                # same session read through `stores.turn_reply` could answer
+                # differently — a finish envelope followed by a closure-gate round
+                # gave the caller the round, not the declared result (reproduced
+                # live on a dispatched turn: `Result computed` vs the raw marker).
+                # ONE reader for one session.
+                from longrun.memory.stores import turn_reply
+                reply = turn_reply(tail)
                 rec["reply"] = reply
                 with _SESSION_SENDS_LOCK:
                     _SESSION_SENDS[message_id] = rec
@@ -3328,6 +3345,14 @@ def _shape_notes(tool: str, args: Any) -> list[tuple[str, str]]:
                           "%r must be a %s, you sent %s%s"
                           % (key, ptype, shape,
                              " — this tool takes ONE value per call" if n > 1 else "")))
+        elif ptype == "string" and isinstance(value, (int, float, bool)):
+            # 2026-11-08: `fs.read {"path": 12345}` passed every check and the
+            # handler's `str(...)` turned the model's mistake into the string
+            # "12345", so the answer read "no such file: .../12345" — a bad path
+            # blamed on the filesystem. A declared string is a string; a number
+            # here is a programming error the gate must name (exit 64).
+            notes.append(("type", "%r must be a string, you sent %s %r — quote it"
+                          % (key, type(value).__name__, value)))
     return notes
 
 
@@ -3387,12 +3412,14 @@ def _dispatch_execute_raw(tool, args, run_id=None):
     missing_any = _missing_any_of(tool, args)
     if missing or empty or missing_any:
         return _missing_args_reply(tool, missing, empty, missing_any, args=args)
-    # A value the tool CANNOT use (a list where the schema declares one value) is
-    # a broken call even when every required NAME is present: without this the
-    # handler received the raw list and failed later with a nonsense message
-    # ("no such file: ['/tmp/a', '/tmp/b']") the model cannot act on.
-    _scalar = [text for kind, text in _shape_notes(tool, args) if kind == "scalar"]
-    if _scalar:
+    # A value the tool CANNOT use (a list where the schema declares one value, a
+    # number where it declares a string) is a broken call even when every required
+    # NAME is present: without this the handler received the raw value and failed
+    # later with a nonsense message ("no such file: ['/tmp/a', '/tmp/b']", "no such
+    # file: .../12345") the model cannot act on.
+    _broken = [text for kind, text in _shape_notes(tool, args)
+               if kind in ("scalar", "type")]
+    if _broken:
         return _missing_args_reply(tool, [], [], [], args=args)
     fn = _DISPATCH.get(tool)
     injected_action = None
@@ -3454,6 +3481,14 @@ def _dispatch_execute_raw(tool, args, run_id=None):
         res = {"ok": False, "error": "tool error: %s" % e}
     res["tool"] = tool
     res["args"] = args
+    # 2026-11-08: an UNDECLARED argument was dropped in silence when the call
+    # otherwise succeeded, so a typo ("startline" for "start_line") read the whole
+    # file and looked correct. The call DID run, so it stays non-fatal; the model
+    # is told which key was ignored and what the tool accepts.
+    if res.get("ok"):
+        _ignored = [text for kind, text in _shape_notes(tool, args) if kind == "unknown"]
+        if _ignored:
+            res["warning"] = "; ".join(_ignored) + " — ignored"
     return res
 
 

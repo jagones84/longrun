@@ -371,6 +371,20 @@ TOOL_QUERY_LIMIT = 12
 TOOL_INDEX_LIMIT = 60
 TOOL_DESC_CHARS = 160
 
+#: English function words a task phrase carries but a tool catalogue does not
+#: answer to. Measured 2026-11-08: "show me the memory" scored EVERY tool whose
+#: description says "the", so `memory.recall` sat at the cap edge (12 of 12);
+#: "how much did this cost" spent three words on noise. Only words that are never
+#: a tool verb or name are listed — `get`, `run`, `set`, `list` stay.
+TOOL_QUERY_STOP = frozenset((
+    "the", "and", "for", "with", "this", "that", "these", "those", "from", "into",
+    "than", "then", "them", "they", "you", "your", "are", "was", "were", "has",
+    "have", "had", "not", "but", "its", "our", "their", "can", "should", "would",
+    "could", "will", "about", "when", "where", "which", "who", "whom", "whose",
+    "how", "what", "why", "also", "just", "only", "very", "some", "any", "all",
+    "each", "both", "more", "most", "other", "such", "does", "did", "doing",
+))
+
 
 def tools_report(tool=None, query=None) -> dict:
     """What the harness can do right now: native tools + their policy + MCP.
@@ -458,34 +472,68 @@ def tools_report(tool=None, query=None) -> dict:
         # best matches come back first; the exact phrase still wins outright.
         import re
         words = list(dict.fromkeys(
-            [w for w in re.split(r"\W+", str(query).lower()) if len(w) > 2]))
+            [w for w in re.split(r"\W+", str(query).lower())
+             if len(w) > 2 and w not in TOOL_QUERY_STOP]))
         phrase = str(query).strip().lower()
+
+        def _tier(w, tokens):
+            """3 = whole token, 2 = token prefix, 1 = inside a token, 0 = absent.
+
+            v873: the match was a flat `w in hay`, so "now" scored a FULL point
+            inside "knowledge" and "date" inside "update": `query:"time date now"`
+            filled the 12-slot cap with knowledge/update tools and dropped every
+            `time__*` tool (measured live 2026-11-08: 65 candidates, the time tools
+            at 15-17). Presence is unchanged — a substring still counts, so no
+            query loses a hit — only its WEIGHT differs: `time` (token) ranks above
+            `timeout` (prefix) above `knowledge` holding "now" (mid-word).
+            """
+            best = 0
+            for t in tokens:
+                if not t:
+                    continue
+                if t == w:
+                    return 3
+                if t.startswith(w):
+                    best = max(best, 2)
+                elif w in t:
+                    best = max(best, 1)
+            return best
+
         hits, exact = {}, {}
         for n, e in index.items():
             hay = (n + " " + (e.get("description") or "")).lower()
-            score = sum(1 for w in words if w in hay)
+            score = sum(_tier(w, set(re.split(r"\W+", hay))) for w in words)
             if not score:
                 continue
-            if phrase and phrase in hay:
+            if phrase and phrase in n.lower():
                 exact[n] = score
             hits[n] = score
         # v647: a FULL-phrase hit is the answer, not one candidate among many.
         # `query:"diff.text"` scores both words on dozens of tools ("text"),
-        # so ranking alone flooded the result; when one name/description holds
-        # the whole phrase, those are the only hits returned.
+        # so ranking alone flooded the result; when one NAME holds the whole
+        # phrase, those are the only hits returned.
+        # v873: a phrase found only in a DESCRIPTION is not that answer —
+        # `query:"search the web"` matched knowledge.discover's prose ("search the
+        # web for sources") and collapsed the reply to that ONE tool, dropping
+        # `web.search`, whose name carries both words (measured 2026-11-08).
         if exact:
             hits = exact
 
         def _rank(name):
             # A NAME hit outranks a description hit: the cap below must never drop
             # `web.search` because a dozen unrelated descriptions mention "web".
+            # v873: same three tiers as the score — a NAME that carries the word as
+            # a whole token (3) beats a prefix (2) beats a mid-word accident (1).
+            # The boost is SUMMED over the query words found in the name, not the
+            # best one: `web.search` and `web.fetch` share one namespace
+            # description, so a max() made them tie and the alphabetical order
+            # answered "search the web" with `fetch` (measured live 2026-11-08).
             low = name.lower()
             if phrase and phrase in low:
                 boost = 4
-            elif any(w in low for w in words):
-                boost = 2
             else:
-                boost = 0
+                ntoks = set(re.split(r"\W+", low))
+                boost = sum(_tier(w, ntoks) for w in words)
             return (-(hits[name] + boost), name)
 
         index = {n: index[n] for n in sorted(hits, key=_rank)}

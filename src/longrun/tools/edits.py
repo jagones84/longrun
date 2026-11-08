@@ -17,9 +17,11 @@ LONGRUN_EDITS_DIR (tests).
 import difflib
 import json
 import os
+import posixpath
 import re
 import threading
 import time
+from typing import Any
 
 from longrun.util import paths
 from longrun.util.fswrite import write_json
@@ -174,15 +176,49 @@ def _rows(a, b):
     return rows
 
 
-def diff(key, path):
+def _canonical_path(path: str) -> str:
+    """Normalize a journal path's separators and dot segments."""
+    return posixpath.normpath(str(path or "").replace("\\", "/"))
+
+
+def _is_absolute_path(path: str) -> bool:
+    """Recognize POSIX and Windows absolute paths after separator normalization."""
+    return path.startswith("/") or bool(re.match(r"^[A-Za-z]:/", path))
+
+
+def diff(key: str, path: str) -> dict[str, Any]:
     """The full before→after view for one file (first pre-image vs last post-image)."""
+    requested_path = str(path or "")
+    canonical_request = _canonical_path(requested_path)
     with _lock:
-        entries = [_x for _x in _load(key) if _x["path"] == path]
+        journal = _load(key)
+        entries = [
+            item for item in journal
+            if _canonical_path(item.get("path", "")) == canonical_request
+        ]
+        if not entries and not _is_absolute_path(canonical_request):
+            relative_path = canonical_request
+            parts = relative_path.split("/")
+            if "/" in relative_path and ".." not in parts:
+                suffix = "/" + relative_path
+                matches = [
+                    item for item in journal
+                    if _canonical_path(item.get("path", "")).endswith(suffix)
+                ]
+                matched_paths = {
+                    _canonical_path(item.get("path", "")) for item in matches
+                }
+                if len(matched_paths) > 1:
+                    return {
+                        "error": "ambiguous edit path %s (%d journal paths)"
+                        % (requested_path, len(matched_paths))
+                    }
+                entries = matches
     if not entries:
-        return {"error": "no edits recorded for %s" % path}
+        return {"error": "no edits recorded for %s" % requested_path}
     before, after = entries[0]["before"], entries[-1]["after"]
     add, dele = _counts(before, after)
-    return {"key": key, "path": path, "action": entries[0]["action"],
+    return {"key": key, "path": requested_path, "action": entries[0]["action"],
             "add": add, "del": dele, "edits": len(entries),
             "truncated": any(e.get("truncated") for e in entries),
             "rows": _rows(before, after)}
@@ -250,4 +286,3 @@ def clear(key):
     with _lock:
         _save(key, [])
     return {"ok": True}
-
