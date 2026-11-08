@@ -46,7 +46,7 @@ check("A4 the click reads the groups, not a remembered flag",
 
 # ---- B: one head anatomy ---------------------------------------------------
 check("B1 the head is a fixed-height, single-line row",
-      ".panel > h2{min-height:34px;padding:6px 8px 6px 12px;white-space:nowrap;overflow:hidden}"
+      ".panel > h2{height:36px;min-height:36px;box-sizing:border-box;padding:6px 8px 6px 12px;"
       in HTML)
 check("B2 its actions are 24px icons with a name",
       '.panel > h2 .btn.ictl{padding:0;width:24px;justify-content:center}' in HTML

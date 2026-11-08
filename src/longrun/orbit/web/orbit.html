@@ -201,7 +201,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      panel — a 34px line whose title never wraps, a 24px icon cluster on the right,
      and a hairline before the view controls. The text button "reset layout" was
      the widest thing in a 12px row. */
-  .panel > h2{min-height:34px;padding:6px 8px 6px 12px;white-space:nowrap;overflow:hidden}
+  /* v897 (operator: "there are misalignment of the headers of the panel see the lines
+     edge not aligned"): a header holding 24px controls grew to 36px while a text-only
+     header stayed at 34px, so the rule under the title sat 2px higher on one panel than
+     on its neighbour. ONE height for every header, whatever it contains. */
+  .panel > h2{height:36px;min-height:36px;box-sizing:border-box;padding:6px 8px 6px 12px;
+    white-space:nowrap;overflow:hidden}
   .panel > h2 .hint{flex:1 1 auto;min-width:0}
   .panel > h2 .ctools,.panel > h2 .vcols{margin-left:auto;flex-shrink:0}
   .panel > h2 .btn.mini{height:24px;min-height:24px;padding:0 7px;border-radius:7px;font-size:11px}
@@ -603,7 +608,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   @media (max-width:640px){
     .wrap{padding:4px}
     .panel{border-radius:9px}
-    .panel > h2{flex-wrap:wrap;row-gap:5px;padding:7px 9px}
+    .panel > h2{height:auto;min-height:36px;flex-wrap:wrap;row-gap:5px;padding:7px 9px}
     .panel > h2 .hint{flex:1 1 100%;margin-left:0}
     .ctools{gap:4px}
     .btn.mini{padding:4px 8px;font-size:11px}
@@ -938,7 +943,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <div class="toolbar addbar" id="tmAddBar" hidden>
         <span class="lbl">new team</span>
         <input class="inp" id="tmNewName" aria-label="new team name" placeholder="new team — name…" style="width:180px;flex:none">
-        <input class="inp" id="tmNewDesc" aria-label="new team description" placeholder="what is this team for? (also steers the icon)" style="width:260px;flex:none">
+        <input class="inp" id="tmNewDesc" aria-label="new team ROLE.md" placeholder="ROLE.md — what is this team for? (also steers the icon)" style="width:260px;flex:none">
         <button type="button" class="btn ghost" data-genfield="team.description" data-gen-target="#tmNewDesc" data-genstatus="team.description" title="draft this team description with AI — the harness knows the name, the existing teams and who would be in it">✨</button>
         <select class="inp" id="tmNewIcon" aria-label="new team icon" title="icon + colour from the palette — 'auto' lets Architect pick the one that matches the name and the description" style="width:180px;flex:none"></select>
         <!-- v890 (operator: "user new team manual creation can select the color"): the
@@ -2040,19 +2045,30 @@ class AgentsView {
       '<input class="inp" data-f="' + k + '" value="' + esc(val || "") + '">';
     const form =
       '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:5px;' +
-      'padding:4px 2px;white-space:normal;min-width:290px">' +
+      'padding:4px 2px;white-space:normal;min-width:320px;max-height:min(72vh,540px);overflow:auto">' +
       fld("name", "name", t.name) +
       '<span class="lbl" style="padding:0">icon · colour</span>' +
       '<select class="inp" data-f="symbol">' + this.iconOptions(t.symbol) + '</select>' +
       '<input class="inp" data-f="color" type="color" value="' + esc(t.color || "#3B82F6") +
         '" title="the colour of this team\'s boxes in the org chart" style="width:52px;height:30px;padding:2px">' +
-      fld("description", "description", t.description) +
+      '<span class="lbl" style="padding:0" title="this team\'s ROLE.md — the Architect reads it when it designs the team\'s agents and jobs; it also steers the icon">ROLE.md</span>' +
+      '<textarea class="inp" data-f="description" rows="4" aria-label="team ROLE.md" placeholder="what this team is for, who it serves, and how it works with the other teams" style="min-height:76px;max-height:260px;resize:none;line-height:1.45">' + esc(t.description || "") + '</textarea>' +
       '<div style="display:flex;gap:6px;margin-top:4px">' +
       '<button class="btn ghost" data-a="gen" type="button" title="ask Architect for the icon that matches the name + description">✨ generate icon</button>' +
       '<button class="btn primary" data-a="save" type="button">save</button>' +
       '</div></form>';
-    const m = openPopover(ev, form, {w: 320, h: 290});
+    const m = openPopover(ev, form, {w: 372, h: 430});
     const gv = k => (m.querySelector('[data-f="' + k + '"]').value || "").trim();
+    // v897 (operator: "description box shall be named ROLE.md and be expand with text
+    // not a line, a box wider"): the box GROWS with its text up to a cap, so a team's
+    // role is readable while it is being written instead of scrolling one line.
+    const descBox = m.querySelector('[data-f="description"]');
+    const growDesc = () => {
+      if (!descBox) return;
+      descBox.style.height = "auto";
+      descBox.style.height = Math.min(260, Math.max(76, descBox.scrollHeight + 2)) + "px";
+    };
+    if (descBox){ descBox.addEventListener("input", growDesc); growDesc(); }
     const selI = m.querySelector('[data-f="symbol"]'), colI = m.querySelector('[data-f="color"]');
     if (selI && colI) selI.onchange = () => {
       const o = selI.selectedOptions && selI.selectedOptions[0];

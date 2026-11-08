@@ -215,7 +215,8 @@ check("D2 the team edit form posts to the team-update route",
 check("D3 the team delete calls DELETE /api/teams/<tid>",
       'this.api.del("/api/teams/" + encodeURIComponent(tid))' in deck)
 check("D4 the team edit offers every editable property",
-      all(('fld("%s"' % k) in deck for k in ("name", "description"))
+      # v897: the description became a ROLE.md textarea; the FIELD is the same (`data-f`).
+      'fld("name"' in deck and 'data-f="description"' in deck
       and 'data-f="symbol"' in deck and 'data-f="color"' in deck)
 check("D5 the routine row has an edit button", 'data-edit="' in deck)
 check("D6 the routine edit posts to the routine-update route",
