@@ -202,8 +202,13 @@
       active = state;
       state.holdTimer = setTimeout(function () {
         if (active !== state) return;
+        /* v886 (operator: "i can't expand a team by mouse click — it's only
+           grabbable"): the long press exists to ARM a TOUCH drag. For a mouse a slow
+           click is still a CLICK, and arming the suppression here swallowed every
+           deliberate click on a draggable header — the team rows never toggled. */
+        if (pointerType !== "touch") return;
         state.suppressClick = true;
-        if (pointerType === "touch") state.armed = true;
+        state.armed = true;
       }, HOLD_MS);
       return state;
     };

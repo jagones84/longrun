@@ -313,8 +313,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* axe `nested-interactive` (2026-11-07): the disclosure used to CONTAIN the assign and
      kebab buttons. The toggle is now its own control and the actions are siblings; the
      accessible name is its own text (no aria-label to disagree with it). */
+  /* v886: the header is a DISCLOSURE that also happens to be draggable — the cursor
+     says which is which (pointer on the row, grab on the grip), so a click reads as
+     "open this team" instead of "this is only a drag handle". */
   tr.grp-head .grp-toggle{display:flex;align-items:center;gap:7px;flex:1;min-width:0;
-    background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:grab;text-align:left}
+    background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
   tr.grp-head .grp-h:hover{background:rgba(108,140,255,.05)}
   tr.grp-head .grp-h:active{cursor:grabbing}
   tr.grp-head.dragging{opacity:.45}
@@ -2999,10 +3002,17 @@ class OrbitApp {
     if (!instruction){ if (st) st.textContent = "enter an instruction"; return; }
     const onlyEmpty = !($("lraAutoEmpty") && $("lraAutoEmpty").checked === false);
     if (btn) btn.disabled = true;
+    // v886 (operator: "the autogenerate icon shall animate when running the LLM"):
+    // the same in-place pulse every other ✨ uses — the state is the glyph, never a word.
+    const spark = $("lraAutoBtn");
+    if (spark){ spark.classList.add("gen-busy"); spark.setAttribute("aria-busy", "true"); }
     if (st) st.textContent = "longrunAgent running…";
     try {
       const r = await this.api.post("/api/longrun-agent/automate", {
         section: "teamorg", instruction,
+        // v886: one team.create + one agent.create per agent + one verification is
+        // already more than 6 calls — the first live run died at max_steps=6.
+        max_steps: 10,
         context: {
           team_scope: this.team,
           scope_agents: (this.lastAgents || []).filter(a => a.id).map(a => a.id),
@@ -3021,6 +3031,7 @@ class OrbitApp {
       }
     } finally {
       if (btn) btn.disabled = false;
+      if (spark){ spark.classList.remove("gen-busy"); spark.removeAttribute("aria-busy"); }
     }
   }
   /* I-9: the record of what longrunAgent wrote — the ONLY surface that survives a

@@ -200,7 +200,7 @@ check("D7 the Rules fields and the ROLE.md/subagent briefs are covered too",
       '["rulesGlobalCard", "rulesGlobalText", "rules.global"]' in UI
       and '"agent.role"' in UI and '"subagent.brief"' in UI)
 check("D8 the Orbit deck uses the same glyph and the same server surface",
-      "✨ automate (Teamorg)" in ORBIT and '"/api/generate"' in ORBIT
+      'class="btn gen-only" id="lraAutoBtn"' in ORBIT and '"/api/generate"' in ORBIT
       and 'surface: "agent.role"' in ORBIT)
 check("D9 the ✨ is the documented glyph (no ⚡ left as the generate affordance)",
       "⚡ Automate</button>" not in UI)
