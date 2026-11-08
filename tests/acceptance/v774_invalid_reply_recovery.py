@@ -160,7 +160,8 @@ check("E3 the CONTINUE inject still owns the open list + the discipline",
       "CONTINUE — %d task(s) are still OPEN" in SRC)
 
 # ============================================================================
-# F — the running state says WHAT it is waiting for (an idle GPU is not a hang)
+# F — the chat says WHEN it is compacting (the composer's "waiting for the model"
+#     sentence was removed by the operator on 2026-11-08 — see F4/F5)
 # ============================================================================
 _evs = []
 A._phase(lambda kind, **d: _evs.append((kind, d)), "sid1", "model", model="local:big")
@@ -172,15 +173,19 @@ check("F2 a broken event sink cannot break the turn",
 check("F3 every model call is bracketed by the phase (3 sites, one helper)",
       SRC.count('_phase(on_event, sess["id"], "model"') == 3
       and SRC.count('_phase(on_event, sess["id"], "idle")') == 3)
-check("F4 the composer carries the phase line with its own styles",
-      '<div id="turnPhase" hidden></div>' in HTML
-      and "#turnPhase .tp-dot" in HTML and "@keyframes tpPulse" in HTML)
-check("F5 the UI draws it from the event and clears it when the tokens arrive",
-      'es.addEventListener("chat.phase"' in HTML
-      and "turnPhaseShow(d.session, d.model" in HTML
-      and "turnPhaseClear(d.session)" in HTML)
-check("F6 a finished turn cannot leave the phase on screen",
-      "delete runningSessions[sid]; turnPhaseClear(sid);" in HTML)
+check("F4 the composer carries no phase sentence; the CHAT carries a compaction row",
+      '<div id="turnPhase" hidden></div>' not in HTML
+      and "between you and the provider" not in HTML
+      and '<div id="compactBar" hidden role="status" aria-live="polite"></div>' in HTML
+      and "#compactBar .cb-dot" in HTML and "@keyframes cbPulse" in HTML)
+check("F5 the row is drawn only from real compaction facts (manual request in flight, "
+      "or a turn starting over the server's own over_threshold)",
+      'compactBarShow(sessionId, "compacting context")' in HTML
+      and "if (_ctxOver) compactBarShow(" in HTML
+      and "_ctxOver = !!c.over_threshold;" in HTML
+      and "compactBarClear(d.session)" in HTML)
+check("F6 a finished turn cannot leave the row on screen",
+      "delete runningSessions[sid]; compactBarClear(sid);" in HTML)
 check("F7 the phase is LIVE-only: a replayed feed event never claims a stale wait",
       "chat.phase" not in HTML.split("function _feedReplay(")[1].split("function _resyncDurable(")[0])
 

@@ -52,6 +52,13 @@ check("A3 the control says both directions",
 check("A4 the open mark covers BOTH groups",
       "#toolsBar #inspJump button.is-current," in UI
       and "#toolsBar #inspJumpRuntime button.is-current { color: var(--acc); }" in UI)
+check("A5 on a phone collapsing the last open section closes the inspector drawer",
+      'if (_vw() <= 1100 && document.body.classList.contains("show-right")' in UI
+      and '&& !document.querySelector("#inspector section.insp-open")) {' in UI
+      and '_toggleMobileDrawer("right");' in UI)
+check("A6 the mobile rail tightens its tiers (operator: reduce the spacing)",
+      "#toolsBar .tb-mid { gap: 4px; }" in UI
+      and "#toolsBar .tb-sec + .tb-sec { margin-top: 4px; padding-top: 6px; }" in UI)
 
 # ---------------- B: four groups, each by what it acts on -------------------
 check("B1 the rail reads objects | chat | panel jumps | runtime",

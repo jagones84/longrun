@@ -1264,17 +1264,24 @@
   /* JAG-127b: queued/steer messages typed while a turn is still running */
   #queueBar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px 0; }
   #queueBar[hidden] { display: none; }
-  /* 2026-11-02: WHAT the running turn is waiting for. A long model wait — a 38 GB
-     local model being loaded/swapped by the router takes minutes, with the GPU idle —
-     was invisible: the UI said "running" and nothing else, so it read as a stuck
-     indicator (operator report). This line comes from the server's own phase event. */
-  #turnPhase { display: flex; align-items: center; gap: 6px; padding: 6px 4px 0;
-    font-size: 11px; color: var(--dim); }
-  #turnPhase[hidden] { display: none; }
-  #turnPhase .tp-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--warn); animation: tpPulse 1.4s ease-in-out infinite; }
-  #turnPhase .tp-el { color: var(--txt); font-variant-numeric: tabular-nums; }
-  @keyframes tpPulse { 0%, 100% { opacity: .3 } 50% { opacity: 1 } }
+  /* 2026-11-08 (operator): the "waiting for the model … the harness is between you
+     and the provider" line lived INSIDE the composer and was rejected ("remove i dont
+     like them"). What is kept is the ONE wait that is not obvious and that the
+     operator asked for: a COMPACTION. It is a slim row in the CHAT column — between
+     the transcript and the composer, never inside the message box, so the composer's
+     geometry never changes — and it exists only while the server really is compacting
+     (a manual compact request in flight, or a turn that starts over the auto-compact
+     threshold the server itself uses). */
+  #compactBar { display: flex; align-items: center; gap: 7px; padding: 6px 14px;
+    font-size: 11px; color: var(--txt); background: var(--bg-2);
+    border-top: 1px solid var(--line); }
+  #compactBar[hidden] { display: none; }
+  #compactBar .cb-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--acc); animation: cbPulse 1.2s ease-in-out infinite; }
+  #compactBar .cb-el { color: var(--dim); font-variant-numeric: tabular-nums; }
+  @keyframes cbPulse { 0%, 100% { opacity: .35 } 50% { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) {
+    #compactBar .cb-dot { animation: none; opacity: .8; } }
   .qchip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
     background: var(--sel); border: 1px solid var(--line); border-radius: 999px;
     padding: 3px 6px 3px 10px; font-size: 11px; color: var(--txt); }
@@ -1426,6 +1433,14 @@
     body.show-right #resize-right { display: block !important; position: fixed; top: 52px; bottom: var(--sf-bottombar, 0px);
       width: 16px; z-index: 16; background: transparent; touch-action: none; }
     body.show-right #resize-right.active { background: var(--accent); }
+    /* 2026-11-08 (operator): "in mobile view sidebar is too high reduce the spacing
+       between" — on a phone the rail is a strip, so its tiers breathe less: 4px inside
+       a section, 4/6px between sections, 6px at the top. Desktop keeps its rhythm. */
+    #toolsBar { padding-top: 6px; }
+    #toolsBar .tb-mid { gap: 4px; }
+    #toolsBar .tb-sec { gap: 4px; }
+    #toolsBar .tb-sec + .tb-sec { margin-top: 4px; padding-top: 6px; }
+    #toolsBar .tb-foot { gap: 4px; padding-top: 6px; }
   }
   /* JAG-358: the sessions drawer must cover the SAME range the fixed #aside uses
      (<=900) — it stopped at 820, so between 821-900 the left arrow toggled a class
@@ -2867,6 +2882,7 @@
     <div id="log"></div>
     <nav id="dotrail" aria-label="jump to your messages" hidden></nav>
     <button id="jumpBtn" hidden title="jump to latest message" aria-label="jump to latest message">↓</button>
+    <div id="compactBar" hidden role="status" aria-live="polite"></div>
     <div id="nowbar" hidden></div>
     <div id="composer">
       <div id="slashMenu" class="card" hidden style="position:absolute;bottom:100%;left:22px;right:22px;max-height:220px;overflow-y:auto;padding:4px 0;margin-bottom:4px"></div>
@@ -2912,7 +2928,6 @@
       </div>
       <input aria-label="attach files" type="file" id="attachInput" multiple hidden>
       <textarea aria-label="message" id="inp" rows="1" placeholder="Message…" autofocus></textarea>
-      <div id="turnPhase" hidden></div>
       <div id="queueBar" hidden></div>
       <div id="composerBar">
         <div class="cb-left">
@@ -6283,6 +6298,11 @@ function send(text, display, atts) {
   const url = "/api/chat/stream?message=" + encodeURIComponent(msg) + (turnSession ? "&session=" + turnSession : "") + mode + (currentModel() ? "&model=" + encodeURIComponent(currentModel()) : "") + (authQS() ? "&" + authQS() : "");
   const es = new EventSource(url);
   if (turnSession) { es._lrSid = turnSession; turnSSE[turnSession] = es; setRunning(turnSession, true); }
+  // 2026-11-08: the server auto-compacts at the START of a turn when the prompt is over
+  // its threshold (`prepare_session_for_turn`), and `over_threshold` is the same fact
+  // the Context panel reads from /api/context — so the row appears for exactly that
+  // condition and closes on the first token, the phase, or the compaction event.
+  if (_ctxOver) compactBarShow(turnSession || sessionId, "compacting the context before the turn");
   const live = () => !!turnSession && turnSession === sessionId;
   const adopt = (s) => {  // very first message with no session: the server names it
     if (turnSession || !s) return;
@@ -6365,12 +6385,11 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); adopt(d.session);
     setRunning(d.session, true); if (!live()) return; setRun(d.run_id);
     _activeScope = null; _activeNodeId = null; _nowLast = ""; _sysInjectEl = null; _updateNowBar(); });
-  // 2026-11-02: the turn's own phase — the server says what it is waiting for, so the
-  // running state is never an unexplained dot. Live-only on purpose: the FEED replays
-  // old events, and a replayed "waiting for the model" would be a stale claim.
+  // 2026-11-08 (operator): the "waiting for the model — the harness is between you and
+  // the provider" sentence is GONE. The event still carries a real fact: once the
+  // provider call starts, any compaction that ran before it is over.
   es.addEventListener("chat.phase", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
-    if (d.phase === "model") turnPhaseShow(d.session, d.model, d.at ? d.at * 1000 : 0);
-    else turnPhaseClear(d.session); });
+    compactBarClear(d.session); });
   // JAG-465: a turn triggered by ANOTHER agent (a `dispatch` from a coordinator) is
   // announced by `chat.user`; the receiver's own chat must show the ASSIGNMENT as it
   // starts, not only after a reload. The bubble is attributed to the sender and
@@ -6390,7 +6409,7 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("harness.drop", e => { if (live()) harnessDrop(JSON.parse(e.data)); });
   es.addEventListener("cost.usage", e => { if (live()) costLive(JSON.parse(e.data).call); });
   es.addEventListener("chat.delta", e => { const d = JSON.parse(e.data); adopt(d.session);
-    turnPhaseClear(d.session);      // tokens are arriving: it is NOT waiting any more
+    compactBarClear(d.session);     // tokens are arriving: no compaction is running
     if (!live()) return;
     if (d.channel === "think") { pushThink(d.text); } else { appendAnswer(d.text); }
     scroll(); });
@@ -6443,6 +6462,7 @@ function selectSession(s) {
   _syncAttachmentBusyUI();
   _forceExpandActive = true;   // JAG-415: reveal this session's team group in the rail
   clearDone(s.id);   // JAG-218: opening a session clears its "finished" bell
+  compactBarClear();  // 2026-11-08: another session's compaction row must not carry over
   curJob = _agentNum(s) || null;   // EV-30: the agent id IS the session's number
   _sessModel[s.id] = s.model || _sessModel[s.id] || "";
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
@@ -7679,7 +7699,7 @@ async function saveRuleSource(kind) {
 }
 
 async function loadCtx() {
-  if (!sessionId) { ctxNa("no session"); loadCtxItems(); return; }
+  if (!sessionId) { _ctxOver = false; ctxNa("no session"); loadCtxItems(); return; }
   const sid = sessionId;   // JAG-214: guard against an out-of-order response
   loadCtxItems();          // JAG-267: keep the category breakdown in sync
   const params = new URLSearchParams();
@@ -7695,8 +7715,9 @@ async function loadCtx() {
     // JAG-431r4: `api()` resolves 4xx/5xx as {error} (it does NOT throw), so an
     // errored context read must reset the meter here too — otherwise the PREVIOUS
     // session's % stayed on screen (the same failure the catch block guards).
-    if (c.error) { ctxNa("n/d"); return; }
-    if (c.available === false) { ctxNa("session not found"); return; }
+    if (c.error) { _ctxOver = false; ctxNa("n/d"); return; }
+    if (c.available === false) { _ctxOver = false; ctxNa("session not found"); return; }
+    _ctxOver = !!c.over_threshold;
     const d = c.display || {};
     const state = d.state || "na";
     // JAG-415: the Context inspector section was removed (the % now lives only in
@@ -8675,9 +8696,15 @@ async function compactNow() {
   if (!sessionId) { toast("no active session", "warn"); return; }
   const btn = $("compactBtn");
   if (btn) { btn.textContent = "compacting…"; btn.classList.add("busy"); }
+  // 2026-11-08: the chat row is shown for the WHOLE request — the POST returns only
+  // when the server has finished compacting, so the row is the real run, not a timer.
+  compactBarShow(sessionId, "compacting context");
   let r = {};
   try { r = await api("POST", "/api/context/compact", { session: sessionId }); }
-  finally { if (btn) { btn.textContent = "compact"; btn.classList.remove("busy"); } }
+  finally {
+    compactBarClear(sessionId);
+    if (btn) { btn.textContent = "compact"; btn.classList.remove("busy"); }
+  }
   // JAG-461: Stop aborts a running compaction server-side -> the transcript is
   // UNCHANGED. Say so instead of pretending a compaction happened.
   if (r && r.aborted) { toast("compaction aborted — context unchanged", "warn"); return; }
@@ -10853,7 +10880,7 @@ let doneSessions = _loadUnread();  // JAG-218/479: finished while you were on an
 function setRunning(sid, on) {
   if (!sid) return;
   if (on) { runningSessions[sid] = true; clearDone(sid); }
-  else { delete runningSessions[sid]; turnPhaseClear(sid); }
+  else { delete runningSessions[sid]; compactBarClear(sid); }
   // JAG-414: update every row of this session (v652 draws it once, but the
   // selector stays so a future grouping change cannot leave a stale copy).
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
@@ -10869,35 +10896,35 @@ function setRunning(sid, on) {
    decides what happens to it) and becomes the red ■ when the box is empty. There is
    no second stop control: with a draft typed, Esc (caret in the composer) stops the
    turn — the operator saw the old left chip as a duplicate button. */
-/* 2026-11-02: WHAT the running turn is waiting for. The server publishes `chat.phase`
-   (`model` before it calls the provider, `idle` after) precisely because a long wait
-   is otherwise indistinguishable from a stuck turn: a local 38 GB model can spend
-   minutes loading/swapping in the router with the GPU idle, and the operator — who
-   can see the GPU — read the running dot as a lie. The elapsed time is drawn from the
-   event's own timestamp, so a reload cannot invent one. */
-let _tpSince = 0, _tpModel = "", _tpTimer = null;
-function _tpPaint() {
-  const el = $("turnPhase"); if (!el || el.hidden) return;
-  const s = Math.max(0, Math.round((Date.now() - _tpSince) / 1000));
+/* 2026-11-08 (operator): "during compactions the webui chat session shall show that
+   the compaction is in progress running. sync with real compaction running".
+   ONE wait is drawn, and only while the server really is compacting: a manual
+   /api/context/compact request in flight, or a turn that starts OVER the auto-compact
+   threshold — `over_threshold` from /api/context is the same condition
+   `prepare_session_for_turn` uses. The provider call starting (`chat.phase`) and the
+   first token (`chat.delta`), plus the compaction events, all close it. */
+let _cbSince = 0, _cbTimer = null, _ctxOver = false;
+function _cbPaint() {
+  const el = $("compactBar"); if (!el || el.hidden) return;
+  const s = Math.max(0, Math.round((Date.now() - _cbSince) / 1000));
   const txt = s < 60 ? (s + "s") : (Math.floor(s / 60) + "m" + (s % 60) + "s");
-  const e = el.querySelector(".tp-el"); if (e) e.textContent = txt;
+  const e = el.querySelector(".cb-el"); if (e) e.textContent = txt;
 }
-function turnPhaseShow(sid, model, atMs) {
-  const el = $("turnPhase"); if (!el) return;
-  if (sid && sid !== sessionId) return;      // another session's turn is its row's business
-  _tpSince = atMs || Date.now(); _tpModel = String(model || "");
+function compactBarShow(sid, why) {
+  const el = $("compactBar"); if (!el) return;
+  if (sid && sid !== sessionId) return;   // another session's compaction is not on screen
+  _cbSince = Date.now();
   el.hidden = false;
-  el.innerHTML = '<span class="tp-dot"></span>'
-    + '<span>waiting for the model' + (_tpModel ? " " + _modelShort(_tpModel) : "") + "</span>"
-    + '<span class="tp-el"></span>'
-    + '<span>— the harness is between you and the provider</span>';
-  _tpPaint();
-  if (!_tpTimer) _tpTimer = setInterval(_tpPaint, 1000);
+  el.innerHTML = '<span class="cb-dot"></span><span>' + esc(why || "compacting context")
+    + '</span><span class="cb-el"></span>';
+  _cbPaint();
+  if (!_cbTimer) _cbTimer = setInterval(_cbPaint, 1000);
 }
-function turnPhaseClear(sid) {
+function compactBarClear(sid) {
   if (sid && sid !== sessionId) return;
-  const el = $("turnPhase"); if (el) { el.hidden = true; el.innerHTML = ""; }
-  if (_tpTimer) { clearInterval(_tpTimer); _tpTimer = null; }
+  const el = $("compactBar"); if (el) { el.hidden = true; el.innerHTML = ""; }
+  if (_cbTimer) { clearInterval(_cbTimer); _cbTimer = null; }
+  _cbSince = 0;
 }
 function composerBusy() { return !!(sessionId && runningSessions[sessionId]); }
 function composerDraft() {
@@ -11582,6 +11609,7 @@ function connectFeed() {
     if (d.action) push(`🎛 run ${d.run || ""} → ${d.action} (${d.status || ""})`); });
   es.addEventListener("context.compact", e => { const d = JSON.parse(e.data);
     if (d.session && sessionId && d.session !== sessionId) return;
+    compactBarClear(d.session);
     const kind = d.summary === "llm" ? ("llm:" + (d.summarizer || "?")) : (d.summary || "—");
     const org = d.origin ? (" · " + d.origin) : "";
     push(`🗜 compact (${d.origin || "auto"}): ${d.compacted} msgs · ${kind} · ${d.tokens_after} tok${org}`);
@@ -11589,6 +11617,7 @@ function connectFeed() {
     $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx(); });
   es.addEventListener("context.auto_compact", e => { const d = JSON.parse(e.data);
     if (d.session && sessionId && d.session !== sessionId) return;
+    compactBarClear(d.session);
     push(`🗜 auto-compact: trigger ${d.pct}% (target ${d.target_pct}%) · ${d.compacted} msgs`);
     // JAG-431q: same — an AUTO-compaction used to duplicate the rendered chat.
     $("log").innerHTML = ""; _resetChatTree(); loadHistory(); loadCtx(); });
@@ -15102,6 +15131,14 @@ function _inspJumpToggle(name) {
   if (!sec || !body) return;
   if (body.hidden) { _railOpenInsp(name); return; }
   toggleInsp(name);
+  // 2026-11-08 (operator): "clicking those sidebar buttons shall also expand/collapse
+  // the relevant linked menu". On a phone the inspector IS a drawer: collapsing its
+  // last open section used to leave the drawer on screen showing nothing, so the
+  // button looked one-way. Close it — the section is the drawer's content.
+  if (_vw() <= 1100 && document.body.classList.contains("show-right")
+      && !document.querySelector("#inspector section.insp-open")) {
+    _toggleMobileDrawer("right");
+  }
 }
 function _paintInspJump() {
   _inspJumpBoxes().forEach(box => {

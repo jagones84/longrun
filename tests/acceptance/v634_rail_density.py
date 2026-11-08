@@ -74,12 +74,17 @@ check("B4 the full model name stays reachable (row tooltip)",
 
 # ---- C. Plan: two input rows + inline actions --------------------------------
 check("C1 the caps title is gone", "TASK LIST (persistent)" not in UI)
-check("C2 the goal field and its action share one row",
+check("C2 the goal field comes first; its actions follow on their own row",
       UI.index('id="planInp"') < UI.index('data-call="planGoal"')
       and UI.index('data-call="planGoal"') < UI.index('data-call="replanGraph"'))
-check("C3 the node verb and replan sit beside the same field (v636 merged them)",
+check("C3 the node verb and replan share that row, frameless (v636 merged them; "
+      "2026-11-08 the field kept the full width and the icons moved under it)",
       'data-call="addTask"' in UI and 'data-call="replanGraph"' in UI
-      and ">↻</button>" in UI and 'id="taskInp"' not in UI)
+      and ">↻</button>" in UI and 'id="taskInp"' not in UI
+      and 'id="planActs"' in UI
+      and "#planInp { display: block; width: 100%; box-sizing: border-box;" in UI
+      and "#inspector .plan-acts { display: flex; align-items: center;" in UI
+      and "#inspector .plan-acts .plan-act {" in UI)
 check("C4 maintenance actions are inline links, not a button wall",
       # v651 re-pin: `reset graph` and `reset list` were two buttons for ONE store
       # (a chat run id IS its session id), so the duplicate is gone on purpose.
