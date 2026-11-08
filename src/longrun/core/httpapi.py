@@ -1709,6 +1709,30 @@ _NAMING_IN_FLIGHT = set()
 _NAMING_LOCK = threading.Lock()
 
 
+def annotate_naming(rows):
+    """v878: say WHICH of these sessions is naming right now (backend truth).
+
+    The rail painted the 🏷 marker from a start/close event pair only, so a run
+    whose `threads.named` never reached the browser (a hidden tab, an SSE gap, a
+    service restart that killed the daemon thread — measured live: `threads.naming`
+    at 09:15:30 with no close, restart at 09:17:00) left the row busy forever, and
+    every other render dropped the marker while the run was still going.
+    `_NAMING_IN_FLIGHT` already IS that truth; this puts it on `/api/sessions` so
+    the WebUI can reconcile instead of waiting for an event that never comes.
+    """
+    try:
+        with _NAMING_LOCK:
+            naming = set(_NAMING_IN_FLIGHT)
+    except Exception:  # noqa: BLE001 — a status flag must never break the list
+        return rows
+    for r in rows:
+        try:
+            r["naming"] = r.get("id") in naming
+        except Exception:  # noqa: BLE001
+            continue
+    return rows
+
+
 def autoname_async(session, model=None):
     """Start `autoname_untitled` in the BACKGROUND and answer AT ONCE.
 
@@ -1729,13 +1753,16 @@ def autoname_async(session, model=None):
         sess = None
     if not sid:
         return {"ok": False, "error": "session required"}
+    # v878: resolve the session BEFORE the in-flight guard is taken. A raise here
+    # used to leave `sid` in `_NAMING_IN_FLIGHT` forever, so every later 🏷 answered
+    # "already naming this session" and nothing ever ran again (measured).
+    if sess is None:
+        sess = load_session(sid)
     with _NAMING_LOCK:
         if sid in _NAMING_IN_FLIGHT:
             return {"ok": True, "started": False, "session": sid,
                     "reason": "already naming this session"}
         _NAMING_IN_FLIGHT.add(sid)
-    if sess is None:
-        sess = load_session(sid)
 
     def _run():
         try:
@@ -1753,6 +1780,14 @@ def autoname_async(session, model=None):
             publish("threads.named", session=sid, titled=0, remaining=-1,
                     error=str(e)[:200])
         finally:
+            # v878: this run OWNS the session's turn (it held the lock), so the Stop
+            # it consumed must not survive. A leftover flag made the NEXT 🏷 break at
+            # round 0 — the click answered "naming…" and labelled nothing.
+            try:
+                if _is_aborted(sid):
+                    clear_abort(sid)
+            except Exception:  # noqa: BLE001
+                pass
             with _NAMING_LOCK:
                 _NAMING_IN_FLIGHT.discard(sid)
 
@@ -1760,7 +1795,14 @@ def autoname_async(session, model=None):
     # naming (the run used to be invisible until it closed, and the operator could
     # not tell a busy session from an idle one). `threads.named` still closes it.
     publish("threads.naming", session=sid, started=True)
-    threading.Thread(target=_run, name="autoname:%s" % sid, daemon=True).start()
+    try:
+        threading.Thread(target=_run, name="autoname:%s" % sid, daemon=True).start()
+    except Exception as e:  # noqa: BLE001 — a thread that never starts has no guard
+        with _NAMING_LOCK:
+            _NAMING_IN_FLIGHT.discard(sid)
+        publish("threads.named", session=sid, titled=0, remaining=-1,
+                error=str(e)[:200])
+        return {"ok": False, "started": False, "session": sid, "error": str(e)[:200]}
     return {"ok": True, "started": True, "session": sid}
 
 
@@ -2455,7 +2497,7 @@ class Handler(BaseHTTPRequestHandler):
                 _lra.ensure_system_session()
             except Exception:  # noqa: BLE001
                 pass
-            return self._send(200, {"sessions": list_sessions()})
+            return self._send(200, {"sessions": annotate_naming(list_sessions())})
         if path == "/api/sessions/new":
             # JAG-127: an explicitly requested folder must be honored — never silently
             # fall back to the default (that made a Z:/wrong path look like the

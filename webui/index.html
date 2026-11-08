@@ -6649,7 +6649,7 @@ function _repaintCtx() {
 /* One rail row for a session. Called once PER GROUP the session belongs to. */
 function _sessRowEl(s, pinnedIds, ag, groupKey, orderContainer) {
   const d = document.createElement("div");
-  d.className = "sess" + (pinnedIds.includes(s.id) ? " pinned" : "") + (s.id === sessionId ? " active" : "") + (runningSessions[s.id] ? " running" : "") + (doneSessions[s.id] && s.id !== sessionId ? " done" : "");
+  d.className = "sess" + (pinnedIds.includes(s.id) ? " pinned" : "") + (s.id === sessionId ? " active" : "") + (runningSessions[s.id] ? " running" : "") + (namingSessions[s.id] ? " naming" : "") + (doneSessions[s.id] && s.id !== sessionId ? " done" : "");
   d.dataset.sid = s.id;   // JAG-168: lets setRunning() toggle the busy marker (ALL copies)
   d.dataset.sessionOrderId = s.id;
   d.dataset.groupKey = groupKey || "__none__";
@@ -6724,6 +6724,10 @@ function sessionErrorCard(error) {
 }
 async function loadSessions() {
   let out;
+  // v878: naming IS backend state, so a render reconciles it. The epoch is
+  // read BEFORE the request: a list that left the server before a just-arrived
+  // start must not erase the marker the event just painted.
+  const _namingReqEpoch = _namingEpoch;
   try {
     [out] = await Promise.all([
       api("GET", "/api/sessions"),
@@ -6771,7 +6775,19 @@ async function loadSessions() {
     // announced. Never clobber a turn this browser is itself streaming.
     if (s.running) runningSessions[s.id] = true;
     else if (!turnSSE[s.id]) delete runningSessions[s.id];
+    // v878: the 🏷 marker follows the SERVER flag (`/api/sessions` → `naming`),
+    // exactly like `running` — reconciled only when no naming event arrived
+    // after this list was requested. Before, the marker existed only as an
+    // event pair, so a lost `threads.named` (hidden tab, SSE gap, a restart
+    // that killed the job) left the row busy until a reload, and every
+    // re-render dropped it while the run was still going.
+    if ((_namingSeen[s.id] || 0) <= _namingReqEpoch) {
+      if (s.naming) namingSessions[s.id] = true; else delete namingSessions[s.id];
+    }
   });
+  // v878: a deleted session must not keep a naming marker (or its epoch) forever.
+  Object.keys(namingSessions).forEach(id => { if (!_IDs.has(id)) delete namingSessions[id]; });
+  Object.keys(_namingSeen).forEach(id => { if (!_IDs.has(id)) delete _namingSeen[id]; });
   // JAG-479: a session that no longer EXISTS must not leave a ghost "unread" row —
   // nor a permanent "(1) bell" in the tab title.
   if (Object.keys(doneSessions).some(id => !_IDs.has(id))) {
@@ -10709,9 +10725,15 @@ let runningSessions = {};        // sessionId -> true while its chat turn stream
    looked idle and two of them could not be told apart. Per SESSION on purpose: the
    status of a chat must follow that chat, never "something is running somewhere". */
 let namingSessions = Object.create(null);
+/* v878: the epoch of the last naming EVENT per session, so `loadSessions` can
+   tell a stale list (requested before the event) from a real "no longer naming".
+   Without it a render would erase the marker a start event had just painted. */
+let _namingEpoch = 0;
+let _namingSeen = Object.create(null);
 function setNaming(sid, on) {
   if (!sid) return;
   if (on) namingSessions[sid] = true; else delete namingSessions[sid];
+  _namingSeen[sid] = ++_namingEpoch;   // the epoch decides which render wins
   document.querySelectorAll('.sess[data-sid="' + sid + '"]').forEach(
     row => row.classList.toggle("naming", !!on));
 }
