@@ -332,6 +332,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .csvg{display:block;width:100%;height:100%}
   .ctools{display:flex;gap:5px;margin-left:auto}
   .btn.mini{padding:2px 8px;font-size:11px}
+  /* v882: the ✨ is ONE frameless glyph with a name (the general WebUI rule); the
+     toolbar stops spending ~150px on a sentence that repeated its own tooltip. */
+  .btn.gen-only{width:30px;min-width:30px;height:30px;padding:0;border:0;background:transparent;
+    color:var(--acc);font-size:14px;display:inline-flex;align-items:center;justify-content:center}
+  .btn.gen-only:hover{background:var(--hover);border:0}
+  .btn.gen-only:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
   /* v881: same fold vocabulary as the WebUI rails — chevrons apart = expanded. */
   .fold-tg svg{display:block;transition:transform .15s ease}
   .fold-tg.is-open svg{transform:rotate(180deg)}
@@ -749,10 +755,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <button class="btn primary" id="agNewBtn" aria-expanded="false">＋ new agent</button>
         <button class="btn" id="tmNewBtn" aria-expanded="false">＋ new team</button>
         <span class="stack">
-          <button class="btn" id="lraAutoBtn" aria-expanded="false" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">✨ automate (Teamorg)</button>
-          <label class="chk" for="lraAutoEmpty" title="checked: only the agents whose ROLE.md is EMPTY are written. Unchecked: longrunAgent MAY rewrite the prompt of every agent in scope.">
-            <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
-          </label>
+          <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team and agent setup with longrunAgent" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">✨</button>
         </span>
         <button class="btn ghost" id="lraRepBtn" aria-expanded="false" title="What longrunAgent wrote, and to whom. The run is STATELESS: it erases its own session, plan graph and chat, so this ledger is the only record of its effect.">report</button>
         <button class="btn ghost" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
@@ -760,6 +763,9 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
         <span class="lbl">longrunAgent · Teamorg</span>
+          <label class="chk" for="lraAutoEmpty" title="checked: only the agents whose ROLE.md is EMPTY are written. Unchecked: longrunAgent MAY rewrite the prompt of every agent in scope.">
+            <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
+          </label>
         <input class="inp" id="lraAutoInp" aria-label="Teamorg automation goal" placeholder="e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
         <button class="btn primary" id="lraAutoRun">run Teamorg</button>
         <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
@@ -3063,20 +3069,46 @@ class OrbitApp {
     this.fs.refreshTeams();
     this.team = this.fs.get().team;
   }
+  /* v883 (operator: "model policy not working"): the policy is SERVER state and it
+     already exists — `POST /api/teams/<id>/models` -> `teams.assign_models()`, whose
+     lead/member refs come from config/routing.yaml (`roles.team_lead` / `team_member`,
+     at most `limits.team_local_slots` local model per machine). The deck must NOT
+     re-decide models on the client: the v882 draft did exactly that and picked
+     `openrouter:spotcheck/fake-model-xyz` (a zero-context probe entry) as the worker.
+     What the deck adds is the honest REPORT — the models the server says it used, and
+     the per-agent before -> after the table now shows. Scope = the filter's team. */
   async applyModelPolicy(){
-    if (this.team === "__none__"){ alert("'No team' is not a team — pick a team or ALL"); return; }
-    const ids = this.team === "ALL" ? this.teams.map(t => t.id) : [this.team];
-    if (!ids.length){ alert("no team selected"); return; }
+    const scope = this.team || "ALL";
+    if (scope === "__none__"){ alert("'No team' is not a team — pick a team or ALL"); return; }
+    const ids = scope === "ALL" ? (this.teams || []).map(t => t.id) : [scope];
+    if (!ids.length){ alert("model policy: no team to apply it to"); return; }
+    const before = {};
+    (this.agents || []).forEach(a => { if (a.session) before[a.session] = a.model || ""; });
     const msg = [];
     for (const tid of ids){
       const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/models", {});
       if (r && r.ok){
-        msg.push(tid + ": " + r.assigned + " set, " + ((r.local_kept || []).length) + " local kept");
+        msg.push(tid + ": " + r.assigned + " set · lead " + (r.lead_model || "?")
+                 + " · member " + (r.member_model || "?")
+                 + " · " + ((r.local_kept || []).length) + " local kept");
       } else { msg.push(tid + ": " + ((r && r.error) || "failed")); }
     }
-    alert("model policy\n" + msg.join("\n"));
+    const tree = await this.api.get("/api/agents/tree").catch(() => null);
+    const short = ref => (String(ref || "").split(/[:/]/).pop() || "default");
+    const changed = [];
+    ((tree && tree.agents) || []).forEach(a => {
+      if (!a.session || before[a.session] === undefined) return;
+      const was = before[a.session], now = a.model || "";
+      if (was !== now) changed.push(a.id + "  " + short(was) + " → " + short(now));
+    });
+    alert("model policy\n" + msg.join("\n") + "\n\n"
+      + (changed.length
+          ? (changed.length + " agent(s) changed:\n" + changed.slice(0, 15).join("\n")
+             + (changed.length > 15 ? "\n… " + (changed.length - 15) + " more" : ""))
+          : "no agent needed a change — every agent in scope already follows the policy"));
     this.refresh();
   }
+
   /* v622: ref is a single panel key (alone, full height) or "view:<id>"
      (up to 3 panels side by side). The stacked "All" board is gone. */
   _storedViews(){

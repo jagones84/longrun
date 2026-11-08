@@ -79,6 +79,26 @@ check("E1 reduced motion keeps the glyphs still",
       "@media (prefers-reduced-motion: reduce){.fold-tg svg{transition:none}}" in HTML
       and "@media (prefers-reduced-motion: reduce){.vcols{transition:none}}" in HTML)
 
+# ---- F: the toolbar loses its clutter (operator, same day) -----------------
+check("F1 the ✨ is ONE frameless glyph, not a sentence",
+      'class="btn gen-only" id="lraAutoBtn"' in HTML
+      and ">✨</button>" in HTML
+      and "automate (Teamorg)</button>" not in HTML)
+check("F2 it is still named for a screen reader",
+      'aria-label="automate team and agent setup with longrunAgent"' in HTML)
+check("F3 the ROLE.md scope checkbox lives in the automation bar it belongs to",
+      HTML.index('id="lraAutoEmpty"') > HTML.index('id="lraAutoBar"'))
+_policy = HTML[HTML.index("async applyModelPolicy(){"):]
+_policy = _policy[:_policy.index("\n  /* v622:")]
+check("F4 model policy is the SERVER policy, not a second rule in the browser",
+      '"/api/teams/" + encodeURIComponent(tid) + "/models"' in _policy
+      and 'this.api.post("/api/agents"' not in _policy
+      and "/api/orbit/models" not in _policy
+      and "cloud[0]" not in _policy)
+check("F5 it reports the refs the server used and the agents that really changed",
+      "r.lead_model" in _policy and "r.member_model" in _policy
+      and "changed.length" in _policy)
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

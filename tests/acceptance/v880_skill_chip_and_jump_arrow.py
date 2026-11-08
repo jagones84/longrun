@@ -65,6 +65,13 @@ check("B4 every chat re-render re-measures it",
       in fn("function buildDotRail() {"))
 check("B5 the scroll listener still tracks the bottom pin",
       '$("log").addEventListener("scroll"' in HTML and "_stick = _nearBottom(); updateJump();" in HTML)
+check("B6 any scroller in the page re-measures it (capture phase)",
+      'document.addEventListener("scroll", () => updateJump(), true);' in HTML)
+check("B7 every DOM change re-measures it, coalesced to one frame",
+      "function _scheduleJump()" in HTML
+      and "new MutationObserver(_scheduleJump)" in HTML
+      and "{ childList: true, subtree: true, characterData: true }" in HTML
+      and "_scheduleJump();   // v883" in HTML)
 
 print("---")
 passed = sum(results)

@@ -4785,6 +4785,7 @@ function buildDotRail() {
   rail.innerHTML = "";
   rail.hidden = msgs.length < 2;
   updateJump();   // v880: a re-render is also a reason to re-measure the arrow
+  _scheduleJump();   // v883: the DOM changed — re-measure once this frame paints
   msgs.forEach((m, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -17674,6 +17675,26 @@ $("log").addEventListener("scroll", () => {
    recomputed on a resize and on any change of the log's box, not only when a
    scroll event happens to fire. */
 window.addEventListener("resize", () => updateJump());
+/* v882: and on ANY scroll anywhere (capture) — the transcript is not always the
+   element that scrolls (a nested pane can own the gesture). */
+document.addEventListener("scroll", () => updateJump(), true);
+/* v883 (operator: "the arrow is not there when the scrollbar is not at the bottom").
+   An IntersectionObserver only fires when the observed node's intersection CHANGES, so
+   a state that was already stale when it was armed (a restored reading position, a
+   transcript re-rendered under the same last node) stayed stale. The log's own DOM is
+   the one signal every path goes through — render, stream, restore, image load — so it
+   re-measures once per frame (coalesced, not once per token). */
+let _jumpRaf = 0;
+function _scheduleJump() {
+  if (_jumpRaf) return;
+  _jumpRaf = requestAnimationFrame(() => { _jumpRaf = 0; updateJump(); });
+}
+if (window.MutationObserver) {
+  try {
+    new MutationObserver(_scheduleJump).observe($("log"),
+      { childList: true, subtree: true, characterData: true });
+  } catch (e) {}
+}
 if (window.ResizeObserver) {
   try {
     const _jro = new ResizeObserver(() => updateJump());
