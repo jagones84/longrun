@@ -34,7 +34,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      `aria-label` alone is not enough for `empty-table-header`. */
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
     clip:rect(0 0 0 0);white-space:nowrap;border:0}
-  html,body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;margin:0;height:100%}
+  html,body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;margin:0;height:100%;
+    overflow-x:hidden}
   body{background:linear-gradient(180deg,var(--ga,#0e1116) 0%,var(--bg) 240px);
     color:var(--txt);font:13px/1.5 var(--sans);font-variant-numeric:tabular-nums;
     /* v621: standalone PWA on a notched phone — keep content out from under the notch. */
@@ -86,7 +87,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* v617: LEFT RAIL layout — the rail names every pane, the click shows that
      pane ALONE in the center-RH area. Narrow screens: the rail becomes a
      horizontal strip on top (same buttons, same applyView truth). */
-  .wrap.deck{flex-direction:row;gap:8px;align-items:stretch;flex:1 1 auto;min-height:0}
+  /* v892 (operator: "last right panel still go out beyond of right border not fixed"):
+     the deck is the window — nothing inside may create a page-level horizontal scroll.
+     X is clipped here, Y still scrolls if a stacked (mobile) layout needs it. */
+  .wrap.deck{flex-direction:row;gap:8px;align-items:stretch;flex:1 1 auto;min-height:0;
+    min-width:0;overflow-x:hidden;overflow-y:auto}
   #deckRail{display:flex;flex-direction:column;gap:2px;flex:0 0 auto;min-width:144px;max-width:184px;
     position:sticky;top:6px;align-self:flex-start;max-height:calc(100vh - 12px);overflow-y:auto;
     padding:8px 6px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
@@ -101,7 +106,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   #deckRail button:hover{color:var(--txt);background:var(--hover,rgba(255,255,255,.045))}
   #deckRail button[aria-current="page"]{color:var(--txt);background:var(--sel,rgba(207,138,74,.14));box-shadow:inset 2px 0 0 var(--acc);border-color:transparent}
   #deckRail button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
-  .deckBody{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column}
+  .deckBody{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;
+    overflow-x:hidden}
   @media (max-width:1100px){
     .wrap.deck{flex-direction:column}
     #deckRail{flex-direction:row;align-items:center;overflow-x:auto;overflow-y:hidden;
@@ -205,13 +211,25 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      eye must not have to re-find the columns on every scroll. */
   table.at{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
   /* Reserve more width for editable values than for icon actions. */
-  /* v891 (operator: "still it's unreadable due to overlap"): the A-id had a % width, so
-     a narrow table clipped it INTO the name cell. It is a fixed gutter now, and the row
-     actions are one ⋮ button, so the last columns keep their room. */
-  table.at col.c-id{width:66px} table.at col.c-name{width:23%} table.at col.c-role{width:14%}
-  table.at col.c-model{width:13%} table.at col.c-rep{width:9%} table.at col.c-teams{width:10%}
-  table.at col.c-file{width:6%}
-  table.at col.c-act{width:30px}
+  /* v892 (operator: "too much space between AX code and the rest, also between the
+     different columns … remove the team belonging icon, it occupies too much horiz
+     space"). The TEAMS column is GONE (its picker moved into the row menu), the A-id is a
+     tight 58px gutter, and NAME carries no width: in a fixed layout it takes the rest. */
+  table.at col.c-id{width:58px} table.at col.c-role{width:16%}
+  table.at col.c-model{width:16%} table.at col.c-rep{width:11%}
+  table.at col.c-file{width:8%}
+  table.at col.c-act{width:26px}
+  /* v892: a ⋮ is a GLYPH, not a framed button — the frame cost ~6px on every row. */
+  .btn.ghost.mini.dots{border:0;background:transparent;padding:0;width:20px;min-width:20px;height:22px;
+    display:inline-flex;align-items:center;justify-content:center;color:var(--dim)}
+  .btn.ghost.mini.dots:hover{color:var(--txt);background:transparent}
+  tr.grp-head .btn.tmadd{border:0;background:none;padding:0 3px;color:var(--dim);font-size:14px}
+  tr.grp-head .btn.tmadd:hover{color:var(--txt);background:none}
+  /* v892: the job left cell stacks status over id, so the goal keeps the width. */
+  .job .jstack{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    flex:0 0 auto;line-height:1.1}
+  .job .jstack .st{font-size:9px}
+  .job .jstack .aid{font-size:9px;color:var(--dim)}
   table.at td .aidbox{display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden}
   /* v890 (operator: "find a way to make the agents panel not be so orrible when
      compressed in width … make icons that open other edit windows so you can make
@@ -233,7 +251,8 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     box-shadow:0 1px 0 var(--line)}
   table.at th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
     text-align:left;padding:6px 5px;font-weight:600;white-space:normal;line-height:1.25}
-  table.at td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.at td{padding:3px 3px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.at td.aid{padding-left:2px}
   table.at tbody tr:nth-child(even) td{background:rgba(255,255,255,.018)}
   table.at tbody tr:hover td{background:color-mix(in srgb,var(--acc) 7%,transparent)}
   /* JAG-451: an agent picked from the org chart is highlighted here so the user
@@ -875,9 +894,9 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <table class="at">
           <colgroup>
             <col class="c-id"><col class="c-name"><col class="c-role">
-            <col class="c-model"><col class="c-rep"><col class="c-teams"><col class="c-file"><col class="c-act">
+            <col class="c-model"><col class="c-rep"><col class="c-file"><col class="c-act">
           </colgroup>
-          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Teams</th><th>Role.md</th><th scope="col"><span class="sr-only">row actions</span></th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Model</th><th>Reports to</th><th>Role.md</th><th scope="col"><span class="sr-only">row actions</span></th></tr></thead>
           <tbody id="agBody"></tbody>
         </table>
       </div>
@@ -1184,7 +1203,7 @@ class AgentsView {
     if (editing || roleDirty || body.querySelector(".dragging")) return;
     body.innerHTML = groups.length
       ? groups.map(g => this.groupHtml(g)).join("")
-      : '<tr><td colspan="8" class="empty">no agents — create one with ＋ above.</td></tr>';
+      : '<tr><td colspan="7" class="empty">no agents — create one with ＋ above.</td></tr>';
     this.bind();
     // JAG-2.4: these two selects hand an id to the JOBS layer, so they only ever list
     // DESIGNATED agents — a plain session has no A-id to schedule yet.
@@ -1222,16 +1241,6 @@ class AgentsView {
     try { tr.scrollIntoView({block: "center", behavior: "smooth"}); }
     catch (e) { try { tr.scrollIntoView(); } catch (e2) {} }
   }
-  teamCell(a){
-    const ids = a.teams || [];
-    if (!ids.length) return '<span class="muted">+ teams</span>';
-    return ids.map(id => { const t = this.teamById(id); return t ? esc(t.symbol || t.name) : esc(id); }).join(" ") +
-      ' <span class="muted small">(' + ids.length + ')</span>';
-  }
-  teamCellTitle(a){
-    const ids = a.teams || [];
-    return ids.map(id => { const t = this.teamById(id); return t ? (t.name || id) : id; }).join(", ") || "assign to teams";
-  }
   row(a, grp){
     const hid = (grp != null && this.closed.has(grp)) ? ' hidden' : '';
     // v890: the values are READ here; the editors live in the popover (`openAgentEditor`).
@@ -1257,7 +1266,7 @@ class AgentsView {
     // an agent runs on the bare system prompt. Say so on the button itself.
     const voidP = (a.prompt_chars === 0);
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
-    const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="7">' +
+    const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="6">' +
       (voidP ? '<div class="small warnbox">This prompt is <b>EMPTY</b> — the agent runs on the bare ' +
         'system prompt with no role of its own. Write two or three lines and save.</div>' : "") +
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the Sessions tab (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
@@ -1284,13 +1293,12 @@ class AgentsView {
       '<td><button class="btn ghost mini cbtn' + (a.role ? '' : ' empty') + '" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit role" aria-label="edit role"><span class="cv">' + esc(a.role || "\u2014") + '</span></button></td>' +
       '<td><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv">' + esc(modelLabel) + '</span></button></td>' +
       '<td><button class="btn ghost mini cbtn' + (a.reports_to ? '' : ' empty') + '" data-aedit="reports_to" data-sid="' + esc(a.session) + '" title="reports to ' + esc(a.reports_to || "nobody") + '" aria-label="edit reports to"><span class="cv">' + esc(repLabel) + '</span></button></td>' +
-      '<td><button class="btn ghost mini tmbtn" data-sid="' + esc(a.session) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
       '<td><button class="btn ghost mini pbtn' + (voidP ? ' missing' : '') + '" data-brief="1" aria-label="prompt (ROLE.md)" title="' +
         (voidP ? "EMPTY prompt — this agent runs on the bare system prompt; click to write its ROLE.md"
                : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
                                  : "role + behaviour notes (ROLE.md)")) + '">✎' +
         (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button>' + aiBadge + '</td>' +
-      '<td class="c-act"><button class="btn ghost mini" data-amore="' + esc(a.session) + '" data-aid="' + esc(aid || "") + '"' +
+      '<td class="c-act"><button class="btn ghost mini dots" data-amore="' + esc(a.session) + '" data-aid="' + esc(aid || "") + '"' +
       ' aria-haspopup="menu" aria-label="agent actions for ' + esc(aid || "this session") + '"' +
       ' title="agent actions for ' + esc(aid || "this session") + '">⋮</button></td></tr>' + brief;
   }
@@ -1334,11 +1342,14 @@ class AgentsView {
   openAgentMenu(ev, a, aid){
     const box = '<div style="display:flex;flex-direction:column;gap:2px;min-width:190px">' +
       (aid ? '<button type="button" class="btn ghost mi" data-amenu="go">↗ open ' + esc(aid) + '\u2019s session</button>' : '') +
+      '<button type="button" class="btn ghost mi" data-amenu="teams">⊞ teams…</button>' +
       '<button type="button" class="btn ghost mi" data-amenu="clear">↺ clear chat + tasks</button>' +
       '<button type="button" class="btn ghost mi" data-amenu="del">× release agent</button></div>';
     const m = openPopover(ev, box, {w: 220, h: 130});
     const go = m.querySelector('[data-amenu="go"]');
     if (go) go.onclick = () => { closePopover(); if (this.onOpenAgent) this.onOpenAgent(aid); };
+    // v892: the Teams picker that used to be its own column lives here now.
+    m.querySelector('[data-amenu="teams"]').onclick = () => { closePopover(); this.openTeamPicker(ev, a); };
     m.querySelector('[data-amenu="clear"]').onclick = async () => {
       closePopover();
       if (!confirm("Clear this session? It wipes the chat history and task list (the agent + its role stay).")) return;
@@ -1693,7 +1704,7 @@ class AgentsView {
     // JAG-482: only a REAL team (one the deck knows) gets the bulk kebab; the
     // "No team" bucket and unknown/stray group ids have no team to act on.
     const isTeam = !!this.teamById(g.id);
-    const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="8">' +
+    const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="7">' +
       // JAG-2.8: the header is a real control — groups start COLLAPSED, so without
       // tabindex/Enter a keyboard-only operator could not open a single group.
       // v625: the header is ALSO the team drag handle (Sessions sidebar parity —
@@ -1721,7 +1732,7 @@ class AgentsView {
       '</div></td></tr>';
     const rows = (g.ms || []).length
       ? (g.ms || []).map(a => this.row(a, g.id)).join("")
-      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="8" class="empty">' +
+      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="7" class="empty">' +
         (isTeam ? 'no agents in this team yet — use ＋ assign (or the Teams cell of any agent).'
                 : 'no agents in this group.') + '</td></tr>';
     return head + rows;
@@ -2760,11 +2771,12 @@ class JobsView {
           ? '<span class="rl bad" title="written by more than one agent of this job — one write may have overwritten the other">⚠ ' +
             esc(j.conflicts.map(c => c.path + " (" + (c.agents || []).join(", ") + ")").join("; ")) + '</span>' : "");
       const relationHtml = relHtml ? '<div class="job-meta">' + relHtml + '</div>' : "";
-      return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
-        '<span class="aid">' + esc(j.id) + '</span>' +
+      return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '">' +
+        '<span class="jstack"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
+        '<span class="aid">' + esc(j.id) + '</span></span>' +
         '<span class="muted job-goal" title="' + esc(j.goal) + '">' + esc(j.goal) + '</span>' +
         /* v891: run/delete are ONE vertical menu, so the goal keeps the row's width. */
-        '<button class="btn ghost mini icon-action" data-jmore="' + esc(j.id) + '" data-canrun="' + (canRun ? "1" : "0") + '"' +
+        '<button class="btn ghost mini icon-action dots" data-jmore="' + esc(j.id) + '" data-canrun="' + (canRun ? "1" : "0") + '"' +
         ' aria-haspopup="menu" aria-label="job actions for ' + esc(j.id) + '" title="job actions for ' + esc(j.id) + '">⋮</button></div>' +
         relationHtml + runHtml + '</div>'; }).join("") ||
       '<div class="empty">no jobs yet — write a goal and pick who to give it to.</div>';

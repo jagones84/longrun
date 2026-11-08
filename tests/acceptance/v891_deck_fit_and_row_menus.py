@@ -69,11 +69,11 @@ check("B5 the job menu keeps dispatch + delete",
 
 # ---------------- C: the narrow table does not overlap --------------------------
 check("C1 the A-id has a fixed gutter and its own clipping box",
-      "table.at col.c-id{width:66px}" in ORBIT
+      "table.at col.c-id{width:58px}" in ORBIT
       and 'table.at td .aidbox{display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden}' in ORBIT
       and '<td class="aid"><span class="aidbox">' in ORBIT)
-check("C2 the action column is one 22px button wide",
-      "table.at col.c-act{width:30px}" in ORBIT)
+check("C2 the action column is one glyph wide",
+      "table.at col.c-act{width:26px}" in ORBIT)
 
 # ---------------- D: the rest of the squeeze -----------------------------------
 check("D1 a job goal clamps to two lines and the picker keeps a width",
