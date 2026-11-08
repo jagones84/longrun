@@ -71,7 +71,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     transition:background .12s,border-color .12s,color .12s}
   .btn:hover{border-color:var(--line2);background:color-mix(in srgb,var(--panel2) 80%,#ffffff);color:var(--txt)}
   .btn.primary{background:var(--acc);border-color:var(--acc);color:var(--onacc)}
-  .btn.ghost{background:transparent}
+  /* v899 (operator: "remove frames from buttons"): a GHOST control is the glyph —
+     `.btn` still drew its 1px frame, so every header icon sat in a box. The frame is
+     gone; hover paints the surface instead, focus keeps its ring. */
+  .btn.ghost{background:transparent;border-color:transparent}
   .btn.no{border-color:color-mix(in srgb,var(--err) 50%,transparent);color:var(--err)}
   .inp{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r-sm);padding:7px 10px;width:100%;outline:none}
   .inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 16%,transparent)}
@@ -209,7 +212,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     white-space:nowrap;overflow:hidden}
   .panel > h2 .hint{flex:1 1 auto;min-width:0}
   .panel > h2 .ctools,.panel > h2 .vcols{margin-left:auto;flex-shrink:0}
-  .panel > h2 .btn.mini{height:24px;min-height:24px;padding:0 7px;border-radius:7px;font-size:11px}
+  .panel > h2 .btn.mini{height:24px;min-height:24px;padding:0 7px;border-radius:7px;font-size:11px;
+    border-color:transparent;background:transparent}
+  .panel > h2 .btn.mini:hover{background:var(--hover);color:var(--txt)}
+  /* the icon cluster reads as ONE object: tight, and the view controls keep their
+     hairline separator (`.vcols`). */
+  .panel > h2 .ctools{display:inline-flex;align-items:center;gap:2px}
   .panel > h2 .btn.ictl{padding:0;width:24px;justify-content:center}
   .panel > h2 .n{flex-shrink:0}
   .panel > h2 .led{flex-shrink:0}
@@ -457,6 +465,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .gen-ic{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
     border:0;background:transparent;border-radius:6px;color:var(--dim);font-size:12px;line-height:1}
   .gen-ic.ok{color:var(--acc)}
+  .gen-ic.same{color:var(--dim)}
   .gen-ic.warn{color:var(--err)}
   .btn.on{border-color:var(--acc);color:var(--txt);background:color-mix(in srgb,var(--acc) 14%,transparent)}
   .cdetail{padding:7px 11px;border-top:1px solid var(--line);font-size:11px;color:var(--dim);min-height:18px}
@@ -883,6 +892,9 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
           <button class="btn ghost mini ictl" id="agPolicy"
                   title="apply the team model policy to the agents in the filter's scope: leads → the strong cloud model, members → the cheap cloud model, at most one local model per machine"
                   aria-label="apply the team model policy to the agents in scope">⚙</button>
+          <!-- v899: the result of the policy is a GLYPH next to the gear (✓ changed /
+               = already compliant), never a modal sentence. -->
+          <span id="agPolicySt"></span>
           <button class="btn ghost mini ictl" id="rzReset" title="reset panel sizes"
                   aria-label="reset panel sizes">↺</button>
           <button class="btn ghost mini ictl fold-tg" id="agToggleAll" data-tree="agents"
@@ -1082,7 +1094,7 @@ function genState(host, kind, why){
   if (!kind) return;
   const s = document.createElement("span");
   s.className = "gen-ic " + kind;
-  s.textContent = (kind === "warn") ? "✗" : "✓";
+  s.textContent = (kind === "warn") ? "✗" : (kind === "same" ? "=" : "✓");
   const t = why || "";
   s.title = t; s.setAttribute("role", "img"); s.setAttribute("aria-label", t);
   host.append(s);
@@ -3405,29 +3417,41 @@ class OrbitApp {
     if (!ids.length){ alert("model policy: no team to apply it to"); return; }
     const before = {};
     (this.agents || []).forEach(a => { if (a.session) before[a.session] = a.model || ""; });
-    const msg = [];
-    for (const tid of ids){
-      const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/models", {});
-      if (r && r.ok){
-        msg.push(tid + ": " + r.assigned + " set · lead " + (r.lead_model || "?")
-                 + " · member " + (r.member_model || "?")
-                 + " · " + ((r.local_kept || []).length) + " local kept");
-      } else { msg.push(tid + ": " + ((r && r.error) || "failed")); }
+    // v899 (operator: "the model policy button does nothing"): under ALL this fires one
+    // request per team, so the control now shows an IN-FLIGHT state and a RESULT state
+    // instead of one modal at the end. `=` means "every agent already follows it" —
+    // which is the normal case and used to read as a dead button.
+    const btn = $("agPolicy"), st = $("agPolicySt");
+    if (btn){ btn.disabled = true; btn.classList.add("gen-busy"); btn.setAttribute("aria-busy", "true"); }
+    genState(st, "");
+    try {
+      const msg = [];
+      for (const tid of ids){
+        const r = await this.api.post("/api/teams/" + encodeURIComponent(tid) + "/models", {});
+        if (r && r.ok){
+          msg.push(tid + ": " + r.assigned + " set · lead " + (r.lead_model || "?")
+                   + " · member " + (r.member_model || "?")
+                   + " · " + ((r.local_kept || []).length) + " local kept");
+        } else { msg.push(tid + ": " + ((r && r.error) || "failed")); }
+      }
+      const tree = await this.api.get("/api/agents/tree").catch(() => null);
+      const short = ref => (String(ref || "").split(/[:/]/).pop() || "default");
+      const changed = [];
+      ((tree && tree.agents) || []).forEach(a => {
+        if (!a.session || before[a.session] === undefined) return;
+        const was = before[a.session], now = a.model || "";
+        if (was !== now) changed.push(a.id + "  " + short(was) + " → " + short(now));
+      });
+      const why = (changed.length
+          ? (changed.length + " agent(s) changed · " + changed.slice(0, 8).join(" · ")
+             + (changed.length > 8 ? " · …" : ""))
+          : "already compliant — every agent in scope follows the policy")
+        + "  ||  " + msg.join(" · ");
+      genState(st, changed.length ? "ok" : "same", why);
+      this.refresh();
+    } finally {
+      if (btn){ btn.disabled = false; btn.classList.remove("gen-busy"); btn.removeAttribute("aria-busy"); }
     }
-    const tree = await this.api.get("/api/agents/tree").catch(() => null);
-    const short = ref => (String(ref || "").split(/[:/]/).pop() || "default");
-    const changed = [];
-    ((tree && tree.agents) || []).forEach(a => {
-      if (!a.session || before[a.session] === undefined) return;
-      const was = before[a.session], now = a.model || "";
-      if (was !== now) changed.push(a.id + "  " + short(was) + " → " + short(now));
-    });
-    alert("model policy\n" + msg.join("\n") + "\n\n"
-      + (changed.length
-          ? (changed.length + " agent(s) changed:\n" + changed.slice(0, 15).join("\n")
-             + (changed.length > 15 ? "\n… " + (changed.length - 15) + " more" : ""))
-          : "no agent needed a change — every agent in scope already follows the policy"));
-    this.refresh();
   }
 
   /* v622: ref is a single panel key (alone, full height) or "view:<id>"
