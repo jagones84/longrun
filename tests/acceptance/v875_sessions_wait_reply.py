@@ -9,6 +9,9 @@ closure-gate round therefore handed the CALLER the round, not the result.
 A1 a turn closed by an explicit finish answers with the FINISH summary
 A2 the message AFTER the finish does not win
 A3 a turn with no finish envelope still answers with its last reply
+A4 a BOOKKEEPING action after the finish (todo.update) does not turn the reply
+   back into its raw JSON envelope
+A5 same for a READ the closure gate asked for (fs.read), with no prose after it
 
 Run: python3 tests/acceptance/v875_sessions_wait_reply.py
 """
@@ -76,6 +79,24 @@ plain = [{"role": "user", "content": "go"},
 out2 = wait_once(plain)
 check("A3 a turn with no finish envelope still answers with its last reply",
       out2.get("reply") == "final answer", out2.get("reply"))
+
+# D8: the round after a finish can be an ACTION, not prose.
+bookkeeping = [{"role": "user", "content": "go"},
+               {"role": "assistant", "content": FINISH},
+               {"role": "assistant",
+                "content": '{"action":"tool","tool":"todo.update",'
+                           '"args":{"id":"1","status":"done"}}'}]
+out3 = wait_once(bookkeeping)
+check("A4 a todo.update after the finish does not revert the reply to raw JSON",
+      out3.get("reply") == "Result computed", out3.get("reply"))
+
+reading = [{"role": "user", "content": "go"},
+           {"role": "assistant", "content": FINISH},
+           {"role": "assistant",
+            "content": '{"action":"tool","tool":"fs.read","args":{"path":"x"}}'}]
+out4 = wait_once(reading)
+check("A5 a read after the finish does not revert the reply to raw JSON",
+      out4.get("reply") == "Result computed", out4.get("reply"))
 
 print("---")
 okc = sum(results)

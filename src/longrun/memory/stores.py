@@ -1065,6 +1065,7 @@ def turn_reply(messages, longest=False):
         f = finish_summary(m.get("content"))
         if f:
             finish_i, fin = i, f
+    declared = fin
     if finish_i >= 0 and any(_starts_work(m.get("content"))
                              for m in msgs[finish_i + 1:]):
         finish_i, fin = -1, ""
@@ -1072,10 +1073,21 @@ def turn_reply(messages, longest=False):
         contents = [str(m.get("content") or "").strip()
                     for m in msgs[:finish_i]] + [fin]
     else:
-        contents = [str(m.get("content") or "").strip() for m in msgs]
+        # 2026-11-08: the round after a finish can itself be an ACTION
+        # (`todo.update` bookkeeping, a `fs.read` the closure gate asked for) —
+        # that envelope is not a reply, and returning it made the banner revert
+        # to raw JSON. Select PROSE only; when the turn produced none, the
+        # declared finish is still the best answer it gave.
+        contents = [str(m.get("content") or "").strip() for m in msgs
+                    if not _starts_work(m.get("content"))]
     contents = [c for c in contents if c]
     if not contents:
-        return ""
+        if declared:
+            return declared
+        # no prose and no declared summary: show SOMETHING rather than nothing
+        # (v303 pins this for a bare `{"action":"finish"}`).
+        raw = [str(m.get("content") or "").strip() for m in msgs]
+        return ([c for c in raw if c] or [""])[-1]
     return max(contents, key=len) if longest else contents[-1]
 
 

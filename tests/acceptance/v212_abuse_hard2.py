@@ -78,6 +78,13 @@ check("B2 embedded 'kind:' does NOT hijack the record kind",
       repr(rec[0].get("kind")) if rec else "none")
 
 # ---- C: bulk store + index rebuild ------------------------------------------
+# 2026-11-08: this test checks STORE integrity, not embeddings. Left to itself the
+# rebuild loaded a sentence-transformer (63 threads, 159 s warm and a Hub download
+# on a cold cache), so the FAST gate depended on the network and on the model
+# cache. Pin the lexical path: the assertion is about the records, not the vectors.
+mem._EMBEDDER = None
+mem._EMBEDDER_READY = True
+mem._ENDPOINT_DISABLED = True
 for i in range(500):
     tools._memory({"action": "store", "content": "bulk note %d" % i}, "run-c")
 mem._rebuild_index()

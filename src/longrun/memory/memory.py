@@ -393,6 +393,14 @@ def _get_embedder():
     of work (and, on a cold cache, a possible multi-minute model download) per
     turn. That is the main reason the agent looked "inactive". Now it is loaded a
     single time; if it is unavailable we remember that and never retry.
+
+    2026-11-08: `local_files_only=True` — a turn must never FETCH model weights.
+    Measured on this host: a cold HF cache made `v212_abuse_hard2.py` (one
+    `_rebuild_index()` over 500 records) download from the Hub with
+    "unauthenticated requests" warnings and run >90 s (warm cache: 159 s); the
+    FAST battery's duration and result therefore depended on the NETWORK, not on
+    the code. With the flag, a cached model is used and a missing one falls back
+    to the local endpoint / bag-of-words exactly as before.
     """
     global _EMBEDDER, _EMBEDDER_READY
     if _EMBEDDER_READY:
@@ -401,7 +409,8 @@ def _get_embedder():
         if not _EMBEDDER_READY:
             try:
                 from sentence_transformers import SentenceTransformer
-                _EMBEDDER = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+                _EMBEDDER = SentenceTransformer("all-MiniLM-L6-v2", device="cpu",
+                                                local_files_only=True)
             except Exception:
                 _EMBEDDER = None
             _EMBEDDER_READY = True
