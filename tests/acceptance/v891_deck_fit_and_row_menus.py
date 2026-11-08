@@ -40,7 +40,9 @@ check("A4 the lone-panel view is a flex chain to the bottom (no vh arithmetic)",
       and "main.view-one .col{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}" in ORBIT
       and "main.view-one section.panel[data-panel]{min-height:0;flex:1 1 auto}" in ORBIT
       and "main.view-one .orgwrap{min-height:0;flex:1 1 auto}" in ORBIT
-      and "main.view-one .panel.cpanel .cbody{height:auto;min-height:0;flex:1 1 auto}" in ORBIT)
+      and "main.view-one .panel.cpanel .cbody{height:auto;min-height:0;flex:1 1 auto}" in ORBIT
+      and "main.view-one .grid2:not(:has(section.panel:not([hidden]))){display:none !important}" in ORBIT
+      and "main.view-one .col:not(:has(section.panel:not([hidden]))){display:none !important}" in ORBIT)
 check("A5 a saved row height is pinned, an unsaved row shares the rest",
       'if (h) { row.style.height = h + "px"; row.style.flex = "0 0 auto"; }' in ORBIT)
 check("A6 the row resizer pins the same way",

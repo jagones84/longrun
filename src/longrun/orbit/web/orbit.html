@@ -574,6 +574,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      Body is a column and the deck owns the viewport, so the lone panel takes the whole
      free box and its own lists scroll. */
   main.view-one .grid2{height:100% !important;min-height:0;grid-template-rows:minmax(0,1fr)}
+  /* v891: three grids are stacked in the markup; in a one-panel view only the one that
+     HOLDS the visible panel may claim the height (three 100% grids = a 3x page). */
+  main.view-one .grid2:not(:has(section.panel:not([hidden]))){display:none !important}
+  main.view-one .col:not(:has(section.panel:not([hidden]))){display:none !important}
   main.view-one section.panel[data-panel]{min-height:0;flex:1 1 auto}
   main.view-one .panel.ag .scroll{max-height:none}
   main.view-one #routines{max-height:none !important}
