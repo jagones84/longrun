@@ -58,10 +58,14 @@ def read(*parts):
 
 
 # ---- fixtures: the three dialects + prose ----------------------------------
+BRIEF = "# Assignment brief — the real text the coordinator wrote for its team"
 DSML = ('<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="fs.write">\n'
         '<｜｜DSML｜｜ parameter name="args" string="false">'
-        '{"path": "notes/brief.md", "content": "# Assignment brief"}\n'
-        '</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>')
+        '{"path": "notes/brief.md", "content": "%s"}\n'
+        '</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>') % BRIEF
+SHELL = ('<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="shell.exec">\n'
+         '<｜｜DSML｜｜ parameter name="args" string="false">{"command": "pwd && ls -la"}\n'
+         '</｜｜DSML｜｜ parameter>\n</｜｜DSML｜｜ invoke>\n</｜｜DSML｜｜ calls>')
 ONE_BAR = '<|DSML| invoke name="fs.read">\n<|DSML| parameter name="path">a</|DSML| parameter>'
 HERMES = '<tool_call><function=fs.write><parameter=path>a.py</parameter></function></tool_call>'
 ARGKV = ('<tool_call>action</arg_key><arg_value>fs.write</arg_value>'
@@ -128,23 +132,28 @@ check("C6 plan_subjobs records the per-agent bullet",
       subs2["J31.1"]["assignment"].startswith("- **A87**"),
       subs2["J31.1"]["assignment"][:40])
 
-# ---- D) what the UIs print: legacy rows are LABELLED, not leaked -----------
-check("D1 readable_text labels markup",
-      J.readable_text(DSML).startswith("(a raw tool call"), J.readable_text(DSML))
+# ---- D) what the UIs print: the WRITTEN text is recovered, never the envelope
+check("D1 the prose a write call carried is recovered",
+      J.readable_text(DSML) == BRIEF, J.readable_text(DSML)[:60])
 check("D2 readable_text leaves prose untouched", J.readable_text(PLAN) == PLAN)
+check("D3 a call with NO written payload is labelled honestly",
+      J.readable_text(SHELL).startswith("(a raw tool call"), J.readable_text(SHELL))
 RAW = {"id": "J30", "runs": {"A88": {"state": "done", "result": DSML}},
        "subjobs": {"J30.3": {"id": "J30.3", "agent": "A88", "assignment": DSML,
                             "result": DSML, "status": "done"}}}
 VIEW = J.readable_job(RAW)
-check("D3 the view's subjob brief is readable",
-      VIEW["subjobs"]["J30.3"]["assignment"].startswith("(a raw tool call"))
-check("D4 the view's run result is readable",
-      VIEW["runs"]["A88"]["result"].startswith("(a raw tool call"))
-check("D5 the STORE is untouched (the runner still reads the real data)",
+check("D4 the view's subjob brief is the REAL brief",
+      VIEW["subjobs"]["J30.3"]["assignment"] == BRIEF)
+check("D5 the view's run result is the REAL text",
+      VIEW["runs"]["A88"]["result"] == BRIEF)
+check("D6 the STORE is untouched (the runner still reads the real data)",
       RAW["subjobs"]["J30.3"]["assignment"] == DSML and RAW["runs"]["A88"]["result"] == DSML)
-check("D6 list() and detail() print through the view",
+check("D7 list() and detail() print through the view",
       "readable_job(j)" in read("src", "longrun", "orchestrate/jobs.py")
       and "readable_text(s.get(\"assignment\"))" in read("src", "longrun", "orchestrate/jobs.py"))
+check("D8 one recovery helper in the text layer",
+      "def markup_text(text)" in read("src", "longrun", "util/textkit.py")
+      and "markup_text(text) or" in read("src", "longrun", "orchestrate/jobs.py"))
 
 # ---- source locks ----------------------------------------------------------
 src_stores = read("src", "longrun", "memory", "stores.py")

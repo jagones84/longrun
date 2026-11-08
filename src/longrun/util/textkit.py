@@ -174,3 +174,43 @@ def extract_json(text):
     objs = _iter_json_objects(text)
     return objs[0] if objs else None
 
+
+#: The argument names a call uses for the text a HUMAN will read. A write carries
+#: the file body in `content`; a message/send in `text`/`body`/`message`.
+_WRITTEN_KEYS = ("content", "text", "body", "message", "summary")
+
+
+def markup_text(text):
+    """The WRITTEN text a native tool call carried, or "" when it carried none.
+
+    Measured on job J30 (2026-11-08): the coordinator's per-agent plan and A88's
+    report were stored as `<｜｜DSML｜｜ invoke name="fs.write"><｜｜DSML｜｜ parameter
+    name="args" …>{"path": …, "content": "# Assignment brief …"}`. The prose
+    existed — INSIDE the call — so a panel can show the real brief instead of
+    reporting an empty row. A call with no written payload (a shell command, a
+    read) honestly returns "".
+    """
+    t = str(text or "")
+    if not t or not is_tool_markup(t):
+        return ""
+    for obj in _iter_json_objects(t):
+        if not isinstance(obj, dict):
+            continue
+        found = _written_in(obj)
+        if found:
+            return found
+        args = obj.get("args")
+        if isinstance(args, dict):
+            found = _written_in(args)
+            if found:
+                return found
+    return ""
+
+
+def _written_in(obj):
+    for k in _WRITTEN_KEYS:
+        v = obj.get(k)
+        if isinstance(v, str) and len(v.strip()) >= 40:
+            return v.strip()
+    return ""
+

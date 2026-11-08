@@ -469,12 +469,17 @@ def readable_text(text):
     its NATIVE tool-call markup instead of prose (measured on J30: the same 2.8 KB
     `<｜｜DSML｜｜ parameter …>` envelope was stored as ALL THREE subjobs'
     assignment). That markup is a call the harness already executed, never a
-    brief. It is LABELLED rather than paraphrased: inventing a summary would be a
-    second truth about what the worker was told.
+    brief.
+
+    The PROSE is usually still there, inside the call's `content` argument (the
+    coordinator's per-agent brief, A88's report): it is RECOVERED and shown, since
+    that is what the person who wrote the call meant to say. Only a call with no
+    written payload (a shell command, a read) is labelled as such.
     """
-    from longrun.util.textkit import is_tool_markup
-    return ("(a raw tool call was recorded here — no written text)"
-            if is_tool_markup(text) else text)
+    from longrun.util.textkit import is_tool_markup, markup_text
+    if not is_tool_markup(text):
+        return text
+    return markup_text(text) or "(a raw tool call was recorded here — no written text)"
 
 
 def readable_job(job):
