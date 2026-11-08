@@ -39,9 +39,10 @@ check("A3 the backend refuses a self-link / cycle (the data side of the same err
       and 'target == a["id"]' in AGENTS)
 
 # ---------------- B: the agent cell stacks identity (no spare column) ----------
-check("B1 five columns: id | agent | model | role.md | menu",
-      '<col class="c-id"><col class="c-name">\n            <col class="c-model"><col class="c-file"><col class="c-act">' in ORBIT
-      and "<th>Agent</th>" in ORBIT and "<th>Role</th>" not in ORBIT and "<th>Reports to</th>" not in ORBIT)
+check("B1 four columns: id | agent | model | menu (v895 moved ROLE.md into the menu)",
+      '<col class="c-id"><col class="c-name">\n            <col class="c-model"><col class="c-act">' in ORBIT
+      and "<th>Agent</th>" in ORBIT and "<th>Role</th>" not in ORBIT
+      and "<th>Reports to</th>" not in ORBIT and "<th>Role.md</th>" not in ORBIT)
 check("B2 the cell carries name over role + manager",
       '<td class="acell">' in ORBIT and 'class="aname"' in ORBIT
       and 'class="asub"' in ORBIT and 'class="arole"' in ORBIT

@@ -38,8 +38,8 @@ check("A1 panels chunk into full-width rows of N fitting columns",
       and 'row.className = "vrow"' in ORBIT
       and "deck.clientWidth - 12) / minCol" in ORBIT)
 check("A2 a wrapped row fills the row width (rows are full-width lines)",
-      "main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;gap:0}" in ORBIT
-      and "main.view-cols .vrow{display:flex;flex-direction:row;gap:8px;width:100%;" in ORBIT)
+      "main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;gap:0;overflow:hidden}" in ORBIT
+      and "main.view-cols .vrow{display:flex;flex-direction:row;gap:0;width:100%;" in ORBIT)
 check("B1 column widths persist as per-row RATIOS, not px",
       # v644 re-pin: the share is taken over the columns' own total (the row also
       # holds gaps + splitters), so the saved ratios always sum to 1.

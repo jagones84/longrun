@@ -38,7 +38,7 @@ check("A3 the deck frame clips instead of a page-level horizontal scroll",
 check("A4 the lone-panel view is a flex chain to the bottom (no vh arithmetic)",
       "main.view-one .grid2{height:100% !important;min-height:0" in ORBIT
       and "main.view-one .col{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}" in ORBIT
-      and "main.view-one section.panel[data-panel]{min-height:0;flex:1 1 auto}" in ORBIT
+      and "main.view-one section.panel[data-panel]{min-height:0;flex:1 1 auto;border-radius:var(--r)}" in ORBIT
       and "main.view-one .orgwrap{min-height:0;flex:1 1 auto}" in ORBIT
       and "main.view-one .panel.cpanel .cbody{height:auto;min-height:0;flex:1 1 auto}" in ORBIT
       and "main.view-one .grid2:not(:has(section.panel:not([hidden]))){display:none !important}" in ORBIT

@@ -123,7 +123,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* JAG-2.3: two resizable two-column rows (Agents|Job/Routines, Org|Constellation),
      anchored edge-to-edge. Middle splitter drags the widths; --cA/--cB persist.
      Stacks into one column on narrow screens. */
-  .grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax(0,1.38fr)) 5px var(--cB,minmax(0,1fr));gap:4px;align-items:stretch}
+  /* v895 (operator: "too much space between panes shall be continuous attached"):
+     the board columns TOUCH. The 4px gap + the splitter's own 5px track was a band
+     of page background between two panels; the splitter is now a zero-width overlay
+     whose ::before keeps the drag hit-area. */
+  .grid2.ab,.grid2.oc{display:grid;grid-template-columns:var(--cA,minmax(0,1.38fr)) 0 var(--cB,minmax(0,1fr));gap:0;align-items:stretch}
   .grid2.ab{flex:1 1 auto;min-height:0}
   .grid2.ab .panel,.grid2.oc .panel{display:flex;flex-direction:column;min-height:0}
   .grid2.ab .panel>.scroll,.grid2.oc .panel>.scroll{flex:1 1 auto;max-height:none;min-height:0}
@@ -142,7 +146,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     .rz-row{display:none} .grid2{height:auto !important} }
   .panel{position:relative}
   .rz-cols,.rz-b{touch-action:none}
-  .rz-cols{align-self:stretch;cursor:ew-resize;border-radius:3px;background:var(--line)}
+  /* v895: the splitter costs NO column — zero width, a 8px ::before keeps the drag. */
+  .rz-cols{align-self:stretch;justify-self:center;width:0;position:relative;z-index:6;
+    cursor:ew-resize;border-radius:0;background:transparent}
+  .rz-cols::before{content:"";position:absolute;top:0;bottom:0;left:-4px;right:-4px}
+  .grid2.ab > .rz-cols + .col > .panel,
+  .grid2.oc > .rz-cols + section.panel{border-left:0}
   .rz-cols:hover,.rz-cols:active{background:var(--acc)}
   .rz-b{position:absolute;left:0;right:0;bottom:0;height:7px;cursor:ns-resize;z-index:15}
   .rz-b:hover,.rz-b:active{background:linear-gradient(transparent,rgba(124,140,255,.4))}
@@ -150,7 +159,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .grid2{position:relative}
   .rz-row{position:absolute;left:0;right:0;bottom:-3px;height:7px;cursor:ns-resize;z-index:16;touch-action:none}
   .rz-row:hover,.rz-row:active{background:linear-gradient(transparent,rgba(124,140,255,.55))}
-  .col{display:flex;flex-direction:column;gap:6px;min-width:0}
+  /* v895: stacked panes in one column share their edges too (6px of page was between). */
+  .col{display:flex;flex-direction:column;gap:0;min-width:0}
+  .col > .panel + .panel{border-top:0}
+  .grid2.ab section.panel,.grid2.oc section.panel{border-radius:0}
   .row{display:flex;align-items:center;gap:8px}
   /* JAG-424: one uniform toolbar row (compact controls, aligned height) so the agent
      panel does not look like mismatched oversized pills. */
@@ -176,8 +188,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .toolbar>.stack>label.chk input{margin:0;width:12px;height:12px}
   /* the "AI" provenance badge: this prompt was written by Architect, not typed
      by the operator. Reads the one automation ledger (see agent/automation_log.py). */
-  .aibadge{display:inline-block;margin-left:3px;padding:0 4px;border-radius:5px;font-size:9px;
-    letter-spacing:.04em;background:var(--acc);color:#1b1206;vertical-align:middle;cursor:help}
+  /* v895 (operator: "the AI made shall be put with a symbol"): a glyph, not a boxed
+     "AI" chip — same tooltip, no box, no width. */
+  .aibadge{display:inline-block;margin:0;padding:0;border-radius:0;font-size:10px;line-height:1;
+    background:none;color:var(--acc);vertical-align:middle;cursor:help}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
   .panel > h2{margin:0;padding:9px 12px;font-size:12px;letter-spacing:0;text-transform:none;color:var(--txt);font-weight:600;
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
@@ -216,8 +230,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      space"). The TEAMS column is GONE (its picker moved into the row menu), the A-id is a
      tight 58px gutter, and NAME carries no width: in a fixed layout it takes the rest. */
   table.at col.c-id{width:58px}
+  /* v895: this percentage is only the fallback before the first paint; `_fitModelCol`
+     writes the width of the longest visible ref (px) so the WHOLE model shows until
+     the panel is genuinely too narrow. */
   table.at col.c-model{width:18%}
-  table.at col.c-file{width:10%}
   table.at col.c-act{width:26px}
   /* v893 (operator: "too much void space between columns still too much in the agents
      panel"): role and reports moved INTO the agent cell as a second line (the jobs'
@@ -278,13 +294,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   table.at select.inp.mini{max-width:100%;min-width:0}
   table.at tr.brief td{background:rgba(9,14,26,.6);padding:9px}
   table.at tr.brief textarea{min-height:190px;font-size:12px;font-family:ui-monospace,monospace;resize:vertical}
-  /* JAG-2.8: the two row buttons read as compact pills with a fixed box, so the
-     "prompt" cell stops jumping when the label gains the empty-prompt marker. */
-  table.at .tmbtn,table.at .pbtn{border-radius:999px;padding:2px 6px;line-height:1.5;
+  /* JAG-2.8: the team row button reads as a compact pill with a fixed box. */
+  table.at .tmbtn{border-radius:999px;padding:2px 6px;line-height:1.5;
     min-height:22px;min-width:0;justify-content:center}
-  table.at .pbtn.missing{border-color:rgba(224,106,106,.55);color:var(--err)}
-  table.at .pbtn.missing:hover{border-color:var(--err);background:rgba(224,106,106,.10)}
-  .req{color:var(--err);font-weight:700;margin-left:3px;font-size:13px;line-height:1}
+  /* v895: the "this ROLE.md is empty" star is a 10px glyph on the row's SECOND line —
+     it no longer costs a column and nothing is pushed aside for it. */
+  .req{color:var(--err);font-weight:700;margin-left:0;font-size:10px;line-height:1}
   .warnbox{border:1px solid color-mix(in srgb,var(--err) 45%,transparent);background:color-mix(in srgb,var(--err) 9%,transparent);
     color:var(--txt);border-radius:var(--r-sm);padding:6px 9px;margin:0 0 7px}
   .haswarn{color:var(--warn)}
@@ -623,7 +638,9 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      HOLDS the visible panel may claim the height (three 100% grids = a 3x page). */
   main.view-one .grid2:not(:has(section.panel:not([hidden]))){display:none !important}
   main.view-one .col:not(:has(section.panel:not([hidden]))){display:none !important}
-  main.view-one section.panel[data-panel]{min-height:0;flex:1 1 auto}
+  /* v895: a LONE panel keeps its rounded frame (the deck's single-pane mode). */
+  main.view-one section.panel[data-panel]{min-height:0;flex:1 1 auto;border-radius:var(--r)}
+  main.view-one .col > .panel + .panel{border-top:1px solid var(--line)}
   main.view-one .panel.ag .scroll{max-height:none}
   main.view-one #routines{max-height:none !important}
   main.view-one #feed{max-height:none}
@@ -705,7 +722,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      `100vh - 150px` guess — one row and the panels end on the bottom edge; two rows
      and the second one no longer overflows the page. A saved/resized row sets its own
      pixel height in JS and pins `flex:0 0 auto`. */
-  main.view-cols .vrow{display:flex;flex-direction:row;gap:8px;width:100%;
+  /* v895 (operator: "too much space between panes shall be continuous attached"):
+     the row has NO gap and the column splitter takes NO width, so two panels share
+     one hairline instead of floating on 8px + 5px + 8px of page background. */
+  main.view-cols .vrow{display:flex;flex-direction:row;gap:0;width:100%;
     flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
   /* v891 (operator: "the latest right panel in view is not right anchored, it
      disappears beyond the right border"): an 180px floor × N columns can exceed the
@@ -713,9 +733,16 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      decided by `_layoutViewCols` (ncols), so nothing may escape the deck border. */
   main.view-cols .vrow > section.panel[data-panel]{min-width:0;max-width:100%;min-height:0}
   main.view-cols .vrow > section.panel[data-panel] > .scroll{max-height:none;min-height:0;flex:1 1 auto}
-  .rz-vrow{width:100%;height:6px;flex:0 0 auto;cursor:ns-resize;border-radius:3px;
+  /* v895: attached panes — no rounding, one hairline, the splitter costs no width. */
+  main.view-cols section.panel[data-panel]{border-radius:0}
+  main.view-cols .vrow > section.panel[data-panel] + .rz-vcol + section.panel[data-panel]{border-left:0}
+  main.view-cols .vrow > .rz-vcol{flex:0 0 0;width:0;min-width:0;position:relative;z-index:6}
+  main.view-cols .vrow > .rz-vcol::before{content:"";position:absolute;top:0;bottom:0;left:-4px;right:-4px}
+  /* v895: same as the column splitter — zero height, an overlay hit-area, so two
+     stacked ROWS touch instead of leaving a 6px band of page background. */
+  .rz-vrow{width:100%;height:0;flex:0 0 0;position:relative;z-index:6;cursor:ns-resize;
     background:transparent;touch-action:none}
-  .rz-vrow:hover,.rz-vrow:active{background:var(--acc)}
+  .rz-vrow::before{content:"";position:absolute;left:0;right:0;top:-4px;bottom:-4px}
   @media (max-width:1100px){ .rz-vrow{display:none} .vrow{height:auto} }
   /* v622: per-column move/remove controls live in each panel header, visible
      only in a custom view. The view bar (name/rename/+panel/delete) sits
@@ -776,11 +803,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .rl{border-color:var(--line);padding:1px 8px}
   .aid,.aidbtn{font-family:var(--mono);color:var(--acc2)}
   .rowgrip{color:var(--dim)}
-  .rz-cols{background:transparent;border-left:1px solid var(--line)}
-  .rz-cols:hover,.rz-cols:active{background:var(--acc)}
+  .rz-cols{background:transparent;border-left:0}
+  .rz-cols:hover::before,.rz-cols:active::before{background:var(--acc)}
   #viewBar{border-radius:var(--r);background:var(--panel)}
-  .rz-vcol:hover,.rz-vcol:active,.rz-vrow:hover,.rz-vrow:active{background:var(--acc)}
-  .pbtn.missing:hover{background:color-mix(in srgb,var(--err) 10%,transparent)}
+  .rz-vcol:hover::before,.rz-vcol:active::before,
+  .rz-vrow:hover::before,.rz-vrow:active::before{background:var(--acc)}
   .cbody{background:var(--cbody)}
   @media (prefers-reduced-motion: reduce){
     .cnode.focusring circle,.job.focusring,.runrow.focusring,.clink.focusring{animation:none}
@@ -925,10 +952,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <div class="scroll" id="agTableWrap">
         <table class="at">
           <colgroup>
+            <!-- v895: FOUR columns. The ROLE.md pencil is an item of the row's ⋮ menu
+                 now, so its cell (and its header) are gone. -->
             <col class="c-id"><col class="c-name">
-            <col class="c-model"><col class="c-file"><col class="c-act">
+            <col class="c-model"><col class="c-act">
           </colgroup>
-          <thead><tr><th>ID</th><th>Agent</th><th>Model</th><th>Role.md</th><th scope="col"><span class="sr-only">row actions</span></th></tr></thead>
+          <thead><tr><th>ID</th><th>Agent</th><th>Model</th><th scope="col"><span class="sr-only">row actions</span></th></tr></thead>
           <tbody id="agBody"></tbody>
         </table>
       </div>
@@ -1244,7 +1273,7 @@ class AgentsView {
     if (editing || roleDirty || body.querySelector(".dragging")) return;
     body.innerHTML = groups.length
       ? groups.map(g => this.groupHtml(g)).join("")
-      : '<tr><td colspan="5" class="empty">no agents — create one with ＋ above.</td></tr>';
+      : '<tr><td colspan="4" class="empty">no agents — create one with ＋ above.</td></tr>';
     this.bind();
     // JAG-2.4: these two selects hand an id to the JOBS layer, so they only ever list
     // DESIGNATED agents — a plain session has no A-id to schedule yet.
@@ -1252,6 +1281,7 @@ class AgentsView {
     fillSelect($("jobTo"), withId, "assign to…");
     fillSelect($("rtAgent"), withId, "agent…");
     this._applyFocus();
+    this._fitModelCol();
   }
   /* JAG-451: highlight the agent picked elsewhere (e.g. the org chart).
      v615: selection NEVER moves a camera by default — scroll=true is ONLY for
@@ -1282,10 +1312,40 @@ class AgentsView {
     try { tr.scrollIntoView({block: "center", behavior: "smooth"}); }
     catch (e) { try { tr.scrollIntoView(); } catch (e2) {} }
   }
+  /* v895 (operator: "the llm model shall be all visible if there is space and squeeze
+     only if stretched and no more space available"): the Model column is as wide as
+     the longest ref ON SCREEN, capped at 55% of the table; past that the cell keeps
+     its ellipsis. Measured with a canvas — a box already wider than its text reports
+     the BOX, not the text. Runs once per render and on every width change. */
+  _fitModelCol(){
+    const tbl = document.querySelector("#agTableWrap table.at");
+    const col = tbl && tbl.querySelector("col.c-model");
+    const first = tbl && tbl.querySelector("td.mcell .cv");
+    if (!tbl || !col || !first) return;
+    const cs = getComputedStyle(first);
+    const ctx = this._mctx || (this._mctx = document.createElement("canvas").getContext("2d"));
+    if (!ctx) return;
+    ctx.font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+    const seen = {};
+    let w = 0;
+    tbl.querySelectorAll("td.mcell .cv").forEach(el => {
+      const t = el.textContent || "";
+      if (seen[t]) return;
+      seen[t] = 1;
+      w = Math.max(w, ctx.measureText(t).width);
+    });
+    const wrap = tbl.parentElement;
+    const avail = (wrap ? wrap.clientWidth : tbl.clientWidth) || 0;
+    if (!w || !avail) return;
+    col.style.width = Math.min(Math.ceil(w) + 14, Math.round(avail * 0.55)) + "px";
+  }
   row(a, grp){
     const hid = (grp != null && this.closed.has(grp)) ? ' hidden' : '';
     // v890: the values are READ here; the editors live in the popover (`openAgentEditor`).
-    const modelLabel = a.model ? String(a.model).split("/").slice(-1)[0] : "default";
+    // v895 (operator: "the llm model shall be all visible if there is space and
+    // squeeze only if stretched"): show the WHOLE ref. `_fitModelCol` sizes the
+    // column to it and the cell ellipsizes only when the panel runs out of room.
+    const modelLabel = a.model ? String(a.model) : "default";
     const repLabel = a.reports_to ? ("\u21b3 " + a.reports_to) : "\u21b3 \u2014";
     // JAG-2.4: a plain session has no agent id yet — show a dash that says so.
     // JAG-2.9: the id is a button: clicking it selects the agent (row + org node).
@@ -1307,7 +1367,7 @@ class AgentsView {
     // an agent runs on the bare system prompt. Say so on the button itself.
     const voidP = (a.prompt_chars === 0);
     const roleText = open ? esc(this.openText == null ? "" : this.openText) : "";
-    const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="4">' +
+    const brief = open ? '<tr class="brief" data-grp="' + esc(grp) + '"' + hid + '><td></td><td colspan="3">' +
       (voidP ? '<div class="small warnbox">This prompt is <b>EMPTY</b> — the agent runs on the bare ' +
         'system prompt with no role of its own. Write two or three lines and save.</div>' : "") +
       '<div class="small muted">Prompt — the role and a few behaviour notes for this session. It is the SAME <b>ROLE.md</b> you edit in the Sessions tab (Inspector &sect; Role): it is merged into the system prompt, never replaces it.</div>' +
@@ -1326,21 +1386,19 @@ class AgentsView {
     const aiBadge = w
       ? '<span class="aibadge" title="ROLE.md written by Architect (section: ' +
         esc(w.section || "?") + ", " + esc(when) + ")" + (w.chars ? ", " + w.chars + " chars" : "") +
-        ' — run ' + esc(String(w.run_id || "").slice(0, 40)) + '">AI</span>'
+        ' — run ' + esc(String(w.run_id || "").slice(0, 40)) + '">\u2726</span>'
       : '';
+    // v895: an EMPTY ROLE.md stays visible as a tiny mark on the row's SECOND line
+    // (vertical space that was already there) instead of a red pill in a column.
+    const voidMark = voidP ? '<span class="req" title="EMPTY ROLE.md - this agent runs on the bare system prompt">*</span>' : '';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid"><span class="aidbox"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</span></td>' +
       '<td class="acell">' +
         '<button type="button" class="linklike" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit name and role" aria-label="edit name and role"><span class="aname">' + esc(a.name || "\u2014") + '</span></button>' +
-        '<span class="asub"><span class="arole">' + esc(a.role || "") + '</span>' +
+        '<span class="asub">' + aiBadge + voidMark + '<span class="arole">' + esc(a.role || "") + '</span>' +
           '<button type="button" class="linklike rep" data-aedit="reports_to" data-sid="' + esc(a.session) + '" title="reports to ' + esc(a.reports_to || "nobody") + '" aria-label="edit reports to">' + esc(repLabel) + '</button></span>' +
       '</td>' +
-      '<td><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv">' + esc(modelLabel) + '</span></button></td>' +
-      '<td><button class="btn ghost mini pbtn' + (voidP ? ' missing' : '') + '" data-brief="1" aria-label="prompt (ROLE.md)" title="' +
-        (voidP ? "EMPTY prompt — this agent runs on the bare system prompt; click to write its ROLE.md"
-               : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
-                                 : "role + behaviour notes (ROLE.md)")) + '">✎' +
-        (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button>' + aiBadge + '</td>' +
+      '<td class="mcell"><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv">' + esc(modelLabel) + '</span></button></td>' +
       '<td class="c-act"><button class="btn ghost mini dots" data-amore="' + esc(a.session) + '" data-aid="' + esc(aid || "") + '"' +
       ' aria-haspopup="menu" aria-label="agent actions for ' + esc(aid || "this session") + '"' +
       ' title="agent actions for ' + esc(aid || "this session") + '">⋮</button></td></tr>' + brief;
@@ -1381,14 +1439,52 @@ class AgentsView {
       this.save(sid, patch);
     };
   }
+  /* v895 (operator: "the edit button shall be placed in the three dot menu inside
+     edit prompt"): the ROLE.md editor lives here, and the org chart's own menu calls
+     the SAME `openPrompt`, so both doors behave identically. */
+  openPrompt(a){
+    if (!a) return;
+    const row = document.querySelector('#agBody tr[data-sid="' + a.session + '"]');
+    if (!row) return;
+    // JAG-431r4: team groups start COLLAPSED (JAG-424e), so the brief row is hidden
+    // and "edit prompt" appeared to do nothing. Expand the group that owns it first.
+    const grp = row.dataset.grp;
+    const head = [...document.querySelectorAll("#agBody tr.grp-head")].find(tr => tr.getAttribute("data-grp") === grp);
+    const h = head && head.querySelector(".grp-h");
+    if (h && row.hidden) h.click();
+    this.togglePrompt(a.session);
+    const again = document.querySelector('#agBody tr[data-sid="' + a.session + '"]');
+    if (again){ try { again.scrollIntoView({block: "center"}); } catch (_) {} }
+  }
+  togglePrompt(sid){
+    if (this.open === sid){ this.open = null; this.openText = null; this.render(null, null); return; }
+    // JAG-431r4: set openText to null (NOT "") before re-rendering. With "" the
+    // render() dirty-guard (roleTA.value !== openText) saw the PREVIOUS agent's
+    // still-mounted textarea as dirty, aborted the rebuild, and the async fetch
+    // then wrote agent Y's ROLE.md into agent X's row.
+    this.open = sid; this.openText = null; this.render(null, null);
+    this.api.get("/api/roles?session=" + encodeURIComponent(sid)).then(r => {
+      if (this.open !== sid) return;
+      // JAG-367: the role loads ASYNC; write it straight into the textarea so the
+      // dirty-guard cannot keep the box VOID after the fetch lands.
+      this.openText = (r && r.text) || "";
+      const ta = $("agBody").querySelector('textarea[data-p="role"]');
+      if (ta) ta.value = this.openText;
+    });
+  }
   /* v891: the row's own menu. Same three actions the buttons did, same endpoints. */
   openAgentMenu(ev, a, aid){
     const box = '<div style="display:flex;flex-direction:column;gap:2px;min-width:190px">' +
+      '<button type="button" class="btn ghost mi" data-amenu="prompt">\u270E edit prompt (ROLE.md)' +
+        ((a.prompt_chars === 0) ? ' \u2731' : '') + '</button>' +
       (aid ? '<button type="button" class="btn ghost mi" data-amenu="go">↗ open ' + esc(aid) + '\u2019s session</button>' : '') +
       '<button type="button" class="btn ghost mi" data-amenu="teams">⊞ teams…</button>' +
       '<button type="button" class="btn ghost mi" data-amenu="clear">↺ clear chat + tasks</button>' +
       '<button type="button" class="btn ghost mi" data-amenu="del">× release agent</button></div>';
-    const m = openPopover(ev, box, {w: 220, h: 130});
+    const m = openPopover(ev, box, {w: 232, h: 160});
+    // v895 (operator: "the edit button shall be placed in the three dot menu inside
+    // edit prompt"): the ROLE.md editor is this item — the row has no pencil cell.
+    m.querySelector('[data-amenu="prompt"]').onclick = () => { closePopover(); this.openPrompt(a); };
     const go = m.querySelector('[data-amenu="go"]');
     if (go) go.onclick = () => { closePopover(); if (this.onOpenAgent) this.onOpenAgent(aid); };
     // v892: the Teams picker that used to be its own column lives here now.
@@ -1409,6 +1505,12 @@ class AgentsView {
     };
   }
   bind(){
+    // v895: the Model column re-fits whenever the panel changes width (window resize
+    // or a splitter drag) — one observer, created once.
+    if (window.ResizeObserver && !this._mcolRO){
+      const wrap = $("agTableWrap");
+      if (wrap){ this._mcolRO = new ResizeObserver(() => this._fitModelCol()); this._mcolRO.observe(wrap); }
+    }
     const body = $("agBody");
     this._bindRowDrag(body);
     // JAG-484 (agents table): the row's own session button — same shared opener
@@ -1473,26 +1575,6 @@ class AgentsView {
       ev.stopPropagation();
       const a = this.agents.find(x => x.session === b.dataset.sid);
       if (a) this.openTeamPicker(ev, a);
-    }; });
-    body.querySelectorAll("[data-brief]").forEach(b => { b.onclick = async () => {
-      const sid = b.closest("tr").dataset.sid;
-      if (this.open === sid){ this.open = null; this.openText = null; this.render(null, null); return; }
-      // JAG-431r4: set openText to null (NOT "") before re-rendering. With "" the
-      // render() dirty-guard (roleTA.value !== openText) saw the PREVIOUS agent's
-      // still-mounted textarea as dirty, aborted the rebuild, and the async fetch
-      // then wrote agent Y's ROLE.md into agent X's row — whose "save prompt"
-      // button (data-save="<X>") persisted it to the WRONG file.
-      this.open = sid; this.openText = null; this.render(null, null);
-      const r = await this.api.get("/api/roles?session=" + encodeURIComponent(sid));
-      if (this.open !== sid) return;
-      // JAG-367: the ROLE.md loads ASYNC, but render()'s dirty-guard (meant to protect
-      // an in-progress edit from the 5s poll) blocked THIS render too: the textarea
-      // still held "" while openText became the fetched text, so roleDirty was true and
-      // the box stayed VOID even though the SAME ROLE.md the Sessions view shows had content.
-      // Write the fetched role straight into the textarea instead of re-rendering.
-      this.openText = (r && r.text) || "";
-      const ta = $("agBody").querySelector('textarea[data-p="role"]');
-      if (ta) ta.value = this.openText;
     }; });
     body.querySelectorAll("[data-close]").forEach(b => { b.onclick = () => { this.open = null; this.openText = null; this.render(null, null); }; });
     body.querySelectorAll("[data-save]").forEach(b => { b.onclick = async () => {
@@ -1747,7 +1829,7 @@ class AgentsView {
     // JAG-482: only a REAL team (one the deck knows) gets the bulk kebab; the
     // "No team" bucket and unknown/stray group ids have no team to act on.
     const isTeam = !!this.teamById(g.id);
-    const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="5">' +
+    const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="4">' +
       // JAG-2.8: the header is a real control — groups start COLLAPSED, so without
       // tabindex/Enter a keyboard-only operator could not open a single group.
       // v625: the header is ALSO the team drag handle (Sessions sidebar parity —
@@ -1775,7 +1857,7 @@ class AgentsView {
       '</div></td></tr>';
     const rows = (g.ms || []).length
       ? (g.ms || []).map(a => this.row(a, g.id)).join("")
-      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="5" class="empty">' +
+      : '<tr class="grp-empty" data-grp="' + esc(g.id) + '"' + hid + '><td colspan="4" class="empty">' +
         (isTeam ? 'no agents in this team yet — use ＋ assign (or the Teams cell of any agent).'
                 : 'no agents in this group.') + '</td></tr>';
     return head + rows;
@@ -2021,7 +2103,8 @@ class AgentsView {
 
 /* ------------------------------------------------------ Org chart -------- */
 class OrgChartView {
-  constructor(onPick, onGoTo){ this.onPick = onPick; this.onGoTo = onGoTo; this.bySid = {};
+  constructor(onPick, onGoTo, onPrompt){ this.onPick = onPick; this.onGoTo = onGoTo;
+    this.onPrompt = onPrompt; this.bySid = {};
     this.box = $("orgtree"); this.canvas = null; this.k = 1; this.tx = 0; this.ty = 0;
     this.teams = [];   // v890: the live team list (each team carries its colour)
     this.selSid = null;   // JAG-2.9: the selected node SURVIVES the 5s re-render
@@ -2286,24 +2369,13 @@ class OrgChartView {
       '<div data-a="reset">\u21BA Reset session\u2026</div>', {w: 208, h: 150});
     m.querySelector('[data-a="const"]').onclick = () => { closePopover(); if (this.onPick) this.onPick(a); };
     m.querySelector('[data-a="open"]').onclick = () => { closePopover(); if (this.onGoTo) this.onGoTo(a); };
-    m.querySelector('[data-a="prompt"]').onclick = () => { closePopover(); this.openPrompt(a); };
+    m.querySelector('[data-a="prompt"]').onclick = () => { closePopover(); if (this.onPrompt) this.onPrompt(a); };
     m.querySelector('[data-a="reset"]').onclick = () => { closePopover();
       if (confirm("Reset " + a.id + " " + (a.name || "") + " \u2014 wipe its chat and task list (the agent stays)?"))
         clearOrbitSession(a.session); };
   }
   /* The menu itself is the deck's shared .ctxmenu popover (see openPopover). */
   closeMenu(){ closePopover(); }
-  openPrompt(a){ const row = document.querySelector('#agBody tr[data-sid="' + a.session + '"]');
-    if (!row) return;
-    // JAG-431r4: team groups start COLLAPSED (JAG-424e), so the brief row is hidden
-    // and clicking "Edit prompt (ROLE.md)" appeared to do nothing. Expand the group
-    // that owns this agent before opening the editor.
-    const grp = row.dataset.grp;
-    const head = [...document.querySelectorAll("#agBody tr.grp-head")].find(tr => tr.getAttribute("data-grp") === grp);
-    const h = head && head.querySelector(".grp-h");
-    if (h && row.hidden) h.click();
-    const btn = row.querySelector("[data-brief]");
-    if (btn){ btn.click(); row.scrollIntoView({block: "center"}); } }
 }
 
 /* ----------------------------------------------- Constellation (JAG-296) --- */
@@ -3021,7 +3093,7 @@ class OrbitApp {
     this.team = "ALL";        // JAG-339: the selected team scopes the whole board
     this.teams = [];
     this.tac = new Constellation(this.api);
-    this.org = new OrgChartView((a) => { this.tac.open(a, "agent"); if (this.agents && a) this.agents.focusAgent(a.session); }, (a) => this.tac.gotoAgent(a));
+    this.org = new OrgChartView((a) => { this.tac.open(a, "agent"); if (this.agents && a) this.agents.focusAgent(a.session); }, (a) => this.tac.gotoAgent(a), (a) => this.agents.openPrompt(a));
     // JAG-2.9: picking a row's A-id selects the matching node in the organigram, and
     // the selection is REMEMBERED (org.selSid) so the 5s poll cannot drop it.
     // 2026-11-01: the SAME selection also focuses the constellation — the operator

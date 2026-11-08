@@ -73,11 +73,11 @@ check("C3 AX click scrolls the org node into view",
       "this.focusAgent(tr.dataset.sid, true)" in ORBIT)
 
 # ---------------- D: roomier table, live sync ----------------------
-check("D1 compact table cells attached, actions are icon-only",
-      "col.c-name{width:23%}" in ORBIT and "col.c-role{width:15%}" in ORBIT
-      and "col.c-file{width:8%}" in ORBIT and "col.c-act{width:11%}" in ORBIT
+check("D1 compact table cells, actions are icons (4 columns since v895)",
+      "col.c-id{width:58px}" in ORBIT and "col.c-model{width:18%" in ORBIT
+      and "col.c-act{width:26px}" in ORBIT
       and "table.at{width:100%;table-layout:fixed" in ORBIT
-      and '\u270e' in ORBIT and '\u21ba' in ORBIT
+      and "\\u270E edit prompt (ROLE.md)" in ORBIT
       and "\u270e prompt" not in ORBIT and "\u21ba reset" not in ORBIT)
 check("D2 Sessions repaints on every rename/release event",
       all(k in INDEX for k in ('"agent.updated"', '"agent.released"',

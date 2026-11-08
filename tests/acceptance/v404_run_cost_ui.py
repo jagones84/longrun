@@ -90,8 +90,10 @@ check("B2 the table declares explicit proportional column widths",
       '<col class="c-id">' in ORBIT and '<col class="c-model">' in ORBIT
       # JAG-2.8 restyled the board; the CONTRACT is that every column width is
       # declared explicitly (a magic number in the test only froze the old skin).
+      # v895: the table has FOUR columns — ID, Agent (no width: it takes the rest),
+      # Model (fitted to its own refs) and the ⋮ action gutter.
       and all(("table.at col.c-%s{width:" % _c) in ORBIT
-              for _c in ("id", "name", "role", "model", "rep", "teams", "file", "act")))
+              for _c in ("id", "model", "act")))
 check("B3 the new-agent inputs are no longer full-width",
       # v851 (accessibility) put an aria-label on the same tag, so pin the ELEMENT's
       # contract (its placeholder + its fixed width), not one attribute order.
@@ -111,7 +113,7 @@ check("C3 right-click opens a quick-action menu on the node",
 check("C3b the menu is built + torn down safely",
       "closeMenu(){" in ORBIT and 'm.className = "ctxmenu"' in ORBIT)
 check("C4 the menu REUSES existing stores/endpoints (no new data entry)",
-      "this.openPrompt(a);" in ORBIT and 'row.querySelector("[data-brief]")' in ORBIT
+      "this.togglePrompt(a.session);" in ORBIT and "openPrompt(a){" in ORBIT
       and "clearOrbitSession(a.session);" in ORBIT)
 check("C5 the org-chart header documents the three gestures",
       "click = preview" in ORBIT and "dbl-click = open" in ORBIT and "right-click = actions" in ORBIT)
