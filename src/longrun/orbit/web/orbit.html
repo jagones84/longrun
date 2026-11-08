@@ -521,6 +521,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     -webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
   /* v891: the assignee picker keeps a usable width in a narrow column. */
   #jobTo{flex:1 1 120px;min-width:110px}
+  /* 2026-11-08 (operator: "the same for job panel too, waste of space"): the create
+     form is two COMPACT rows like the Agents bar — a one-line goal field and one
+     control row — and the "team = …" hint lives in the picker's tooltip instead of
+     its own text line (it is an explanation, not a value to act on). */
+  #jobGoal{min-height:30px;height:30px;max-height:110px;resize:vertical;
+    padding:5px 9px;font-size:12px;line-height:18px}
   .job .icon-action{flex:0 0 22px;width:22px;height:22px;padding:0;justify-content:center}
   .job .st{font-size:9px;text-transform:uppercase;border-radius:999px;padding:1px 7px;border:1px solid var(--line)}
   .job .st.created{color:var(--dim)} .job .st.running{color:var(--warn);border-color:rgba(224,164,88,.5)}
@@ -1016,14 +1022,15 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     <section class="panel" data-panel="jobs">
       <h2>Jobs <span class="n" id="jobsCount">—</span></h2>
       <div class="pad" style="border-bottom:1px solid var(--line)">
-        <textarea class="inp" id="jobGoal" aria-label="job goal" placeholder="job goal — the coordinator decomposes it and its team executes…" style="min-height:52px;max-height:120px;resize:vertical"></textarea>
+        <textarea class="inp" id="jobGoal" aria-label="job goal" placeholder="job goal — the coordinator decomposes it and its team executes…"></textarea>
         <div class="row" style="gap:6px;margin-top:6px">
-          <select class="inp" id="jobTo" aria-label="job assignee"><option value="">assign to…</option></select>
-          <button class="btn primary" id="jobCreate">＋ create job</button>
+          <select class="inp" id="jobTo" aria-label="job assignee"
+                  title="team = assignee + org reports · double-click opens the coordinator"><option value="">assign to…</option></select>
+          <button class="btn primary" id="jobCreate" aria-label="create job"
+                  title="create the job — its coordinator decomposes the goal and its team executes">＋ job</button>
           <button type="button" class="btn ghost" data-genfield="job.goal" data-gen-target="#jobGoal" data-genstatus="job.goal" title="draft this job goal with AI — the harness knows who the coordinator is and which team would execute it">✨</button>
           <span class="small muted" data-genstatus="job.goal"></span>
         </div>
-        <div class="small muted" style="margin-top:6px">team = assignee + org reports · double-click opens the coordinator</div>
       </div>
       <div class="scroll" id="jobs"></div>
     </section>
