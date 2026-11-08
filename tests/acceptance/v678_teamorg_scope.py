@@ -47,36 +47,35 @@ def read(*parts):
 
 
 ORBIT = read("src", "longrun", "orbit", "web", "orbit.html")
-LRA = read("src", "longrun", "agent", "longrun_agent.py")
+LRA = read("src", "longrun", "agent", "architect.py")
 
 from longrun.agent import agents as agents_mod  # noqa: E402
-from longrun.agent import longrun_agent as lra  # noqa: E402
+from longrun.agent import architect as lra  # noqa: E402
 from longrun.orchestrate import roles as roles_mod  # noqa: E402
 
 # ---- A: the control itself -------------------------------------------------
-# v884: the ✨ is icon-only, so the checkbox belongs to the RUN BAR it scopes — it is
-# one row with the goal ("what should it do?" → "may it overwrite prompts?" → run).
-# v882 had stacked it under the button in the toolbar, which cost a second row.
+# v889: the prompt policy is a two-value CHOICE in the run bar ("fill empty" |
+# "rewrite all"), not a checkbox whose unchecked state silently widened the run.
 toolbar_btn = ORBIT.find('id="lraAutoBtn"')
-chk_i = ORBIT.find('id="lraAutoEmpty"')
+chk_i = ORBIT.find('id="lraAutoPrompts"')
 bar_i = ORBIT.find('id="lraAutoBar"')
 inp_i = ORBIT.find('id="lraAutoInp"')
-check("A1 the checkbox lives inside the run bar it scopes",
+check("A1 the choice lives inside the run bar it scopes",
       -1 < toolbar_btn < bar_i < chk_i,
       "btn=%d bar=%d chk=%d" % (toolbar_btn, bar_i, chk_i))
 check("A2 it comes AFTER the goal input (state the goal, then the option)",
       inp_i < chk_i, "inp=%d chk=%d" % (inp_i, chk_i))
-check("A3 exactly ONE such checkbox exists (no second control, no duplicate truth)",
-      ORBIT.count('id="lraAutoEmpty"') == 1, str(ORBIT.count('id="lraAutoEmpty"')))
-check("A4 the toolbar itself carries NO checkbox (no second row under the ✨)",
-      'id="lraAutoEmpty"' not in ORBIT[toolbar_btn:bar_i])
-check("A5 it is checked by default (empty-only is the safe default)",
-      'id="lraAutoEmpty" checked' in ORBIT)
+check("A3 exactly ONE such choice exists (no second control, no duplicate truth)",
+      ORBIT.count('id="lraAutoPrompts"') == 1, str(ORBIT.count('id="lraAutoPrompts"')))
+check("A4 the toolbar itself carries NO such control (no second row under the ✨)",
+      'id="lraAutoPrompts"' not in ORBIT[toolbar_btn:bar_i])
+check("A5 the safe option is the default",
+      '<option value="empty" selected>fill empty ROLE.md</option>' in ORBIT)
 check("A6 the toolbar stack is a COLUMN (under, never beside)",
       ".toolbar>.stack{display:inline-flex;flex-direction:column" in ORBIT)
-check("A7 the box is labelled with what it does, both ways",
-      "empty ROLE.md" in ORBIT
-      and "unchecked" in ORBIT.lower() and "may rewrite the prompt" in ORBIT)
+check("A7 the choice states both branches",
+      "fill empty ROLE.md" in ORBIT and "rewrite all ROLE.md" in ORBIT
+      and "may also rewrite an existing prompt" in ORBIT)
 scope_src = ORBIT[ORBIT.find("labelTeamorgScope"):ORBIT.find("async runTeamorgAutomate")]
 check("A8 the scope is stated (team name + how many agents, how many have no ROLE.md)",
       "scope: " in scope_src and "without ROLE.md" in scope_src
@@ -85,8 +84,8 @@ post_src = ORBIT[ORBIT.find("async runTeamorgAutomate"):ORBIT.find("renderTeams"
 check("A9 the run sends the scope AND the empty-only flag",
       "team_scope: this.team" in post_src and "only_empty: onlyEmpty" in post_src
       and "scope_agents:" in post_src)
-check("A10 the flag is read from the toolbar checkbox (unchecked = may rewrite every prompt)",
-      'const onlyEmpty = !($("lraAutoEmpty")' in post_src and ".checked === false" in post_src)
+check("A10 the flag is read from the choice (all = may rewrite every prompt)",
+      'const onlyEmpty = (($("lraAutoPrompts") || {}).value || "empty") !== "all";' in post_src)
 
 # ---- B: the section prompt carries the rules -------------------------------
 # Read the EVALUATED prompt (the source splits it across string literals, so a

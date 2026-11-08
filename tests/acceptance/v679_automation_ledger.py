@@ -27,7 +27,7 @@ os.environ["LONGRUN_AUTOMATION_LEDGER"] = os.path.join(TMP, "data", "automation"
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from longrun.agent import automation_log as AL  # noqa: E402
-from longrun.agent import longrun_agent as LRA  # noqa: E402
+from longrun.agent import architect as LRA  # noqa: E402
 
 results = []
 
@@ -46,7 +46,7 @@ def read_src(*parts):
 UI = read_src("webui", "index.html")
 ORBIT = read_src("src", "longrun", "orbit", "web", "orbit.html")
 API = read_src("src", "longrun", "core", "api_v02.py")
-LRA_SRC = read_src("src", "longrun", "agent", "longrun_agent.py")
+LRA_SRC = read_src("src", "longrun", "agent", "architect.py")
 
 # ---------------------------------------------------------------- A: derivation
 AL.clear()

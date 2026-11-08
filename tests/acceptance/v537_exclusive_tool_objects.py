@@ -45,7 +45,7 @@ for _k in ("DATA_DIR", "CONFIG_DIR", "SESSIONS_DIR", "ROLES_DIR", "DB",
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.agent import agents as A                  # noqa: E402
-from longrun.agent import longrun_agent as LRA         # noqa: E402
+from longrun.agent import architect as LRA         # noqa: E402
 from longrun.memory import stores                      # noqa: E402
 from longrun.orchestrate import jobs as J              # noqa: E402
 from longrun.orchestrate import roles as R             # noqa: E402

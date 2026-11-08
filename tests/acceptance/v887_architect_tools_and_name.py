@@ -53,7 +53,7 @@ def check(name, ok, detail=""):
 
 from longrun.orchestrate import jobs as jobs_mod          # noqa: E402
 from longrun.agent import agents as agents_mod           # noqa: E402
-from longrun.agent import longrun_agent as lra           # noqa: E402
+from longrun.agent import architect as lra           # noqa: E402
 from longrun.gen import surfaces                         # noqa: E402
 from longrun.memory import stores                        # noqa: E402
 

@@ -73,8 +73,9 @@ check("A4 a real drag still swallows its tail click",
       "state.live = true;\n    state.suppressClick = true;" in DRAG)
 
 # ---- B: the deck stops growing --------------------------------------------
-check("B1 the ROLE.md scope checkbox is two words",
-      '<input type="checkbox" id="lraAutoEmpty" checked> empty ROLE.md' in ORBIT)
+check("B1 the ROLE.md policy is a two-value choice, safe default selected",
+      'id="lraAutoPrompts"' in ORBIT
+      and '<option value="empty" selected>fill empty ROLE.md</option>' in ORBIT)
 check("B2 the record is ONE disclosure a single word opens",
       '<details class="replog"><summary class="small muted">what Architect wrote · ' in ORBIT
       and ".replog>summary{cursor:pointer" in ORBIT)
@@ -86,7 +87,7 @@ check("B4 the bar stops waiting instead of spinning forever",
       "Promise.race([" in ORBIT and "no answer after 4 minutes" in ORBIT)
 
 # ---- C: an automation turn is never local ---------------------------------
-from longrun.agent import longrun_agent as lra          # noqa: E402
+from longrun.agent import architect as lra          # noqa: E402
 from longrun.memory import stores                       # noqa: E402
 from longrun.orchestrate import teams as teams_mod      # noqa: E402
 

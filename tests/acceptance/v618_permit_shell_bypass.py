@@ -39,7 +39,7 @@ def _read(*parts):
 
 
 from longrun.tools import registry as REG  # noqa: E402
-from longrun.agent import longrun_agent as LRA  # noqa: E402
+from longrun.agent import architect as LRA  # noqa: E402
 from longrun.memory import stores as STORES  # noqa: E402
 
 results = []

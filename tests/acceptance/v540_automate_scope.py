@@ -17,7 +17,7 @@ os.environ["LONGRUN_DATA_DIR"] = os.path.join(TMP, "data")
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from longrun.agent import longrun_agent as LRA  # noqa: E402
+from longrun.agent import architect as LRA  # noqa: E402
 
 results = []
 
@@ -54,7 +54,7 @@ check("A5 the Settings mapping keeps the codebase and is now a TEXT-FIELD map",
       "const SETTINGS_GEN = {" in UI and "async function mountStaticSparkles()" in UI
       and '["chat.prompt", "#inp"' in UI and '["goal.objective", "#goalEditBox"' in UI)
 check("A6 Orbit keeps the Teamorg control, now with the ✨ glyph",
-      'id="lraAutoBtn"' in ORBIT and "✨ automate (Teamorg)" in ORBIT
+      'id="lraAutoBtn"' in ORBIT and "automate with Architect" in ORBIT
       and "teamorg" in LRA.SECTION_PROMPTS)
 check("A7 the server allowlist is unchanged (the operator's safety rule)",
       LRA.AUTOMATE_ALLOWED_SECTIONS == ("rules", "teamorg", "agents", "teams", "orbit"))

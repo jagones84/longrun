@@ -1634,7 +1634,7 @@ def handle(handler, method, path, qs, body):
         # JAG-491: structured (object) editors for the config files — every field
         # is a checkbox/number/select/row, never hand-typed YAML.
         if path == "/api/longrun-agent/status":
-            from longrun.agent import longrun_agent as _lra
+            from longrun.agent import architect as _lra
             sess = _lra.ensure_system_session()
             sid = qs.get("session") or ""
             return _r(handler, 200, {
@@ -2516,14 +2516,14 @@ def handle(handler, method, path, qs, body):
             res = workspace_set(body)
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/longrun-agent/access":
-            from longrun.agent import longrun_agent as _lra
+            from longrun.agent import architect as _lra
             res = _lra.set_session_access(
                 (body or {}).get("session"),
                 bool((body or {}).get("allow_longrun_agent", (body or {}).get("allowed", False))),
             )
             return _r(handler, 200 if res.get("ok") else 400, res)
         if path == "/api/longrun-agent/automate":
-            from longrun.agent import longrun_agent as _lra
+            from longrun.agent import architect as _lra
             b = body or {}
             res = _lra.automate(
                 section=b.get("section") or "teamorg",

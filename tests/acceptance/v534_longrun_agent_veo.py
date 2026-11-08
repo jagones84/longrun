@@ -91,7 +91,7 @@ def _restore_routing():
 atexit.register(_restore_routing)
 
 from longrun.tools import registry, tools as T       # noqa: E402
-from longrun.agent import longrun_agent as LRA       # noqa: E402
+from longrun.agent import architect as LRA       # noqa: E402
 from longrun.memory import stores                    # noqa: E402
 from longrun.orchestrate import roles as R, teams    # noqa: E402
 from longrun.core import events as E                 # noqa: E402

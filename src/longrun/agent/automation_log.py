@@ -57,7 +57,7 @@ def mutating_tools():
     import would be circular.
     """
     try:
-        from longrun.agent import longrun_agent as lra
+        from longrun.agent import architect as lra
         schemas = getattr(lra, "TOOL_SCHEMAS", {}) or {}
     except Exception:  # noqa: BLE001 — an empty ledger beats a broken automation
         return frozenset()

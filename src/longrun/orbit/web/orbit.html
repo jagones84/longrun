@@ -789,9 +789,16 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <div class="toolbar addbar" id="lraAutoBar" hidden>
         <span class="lbl" title="Architect writes the ROLE.md files, the reporting lines and the jobs of the objects in scope. The run is stateless: it keeps no chat and no memory between runs; everything it wrote stays in the report log.">automate with Architect</span>
         <input class="inp" id="lraAutoInp" aria-label="what Architect should do" placeholder="what should it do? e.g. write the missing ROLE.md…" style="flex:1;min-width:200px">
-        <label class="chk" for="lraAutoEmpty" title="checked: Architect only writes the agents whose ROLE.md is EMPTY. unchecked: it may rewrite the prompt of every agent in scope.">
-          <input type="checkbox" id="lraAutoEmpty" checked> empty ROLE.md
-        </label>
+        <!-- v889 (operator: "for the role checkbox I don't know … decide by your own"):
+             a two-value CHOICE instead of a boolean whose UNCHECKED state silently widened
+             the run to every prompt in scope. Reporting lines are independent — the prompt
+             always requires them — so "empty vs all" is the only dimension left to pick. -->
+        <select class="inp" id="lraAutoPrompts" aria-label="which ROLE.md the Architect may write"
+                title="fill = write only the agents with no ROLE.md (safe default). all = the Architect may also rewrite an existing prompt in scope. Reporting lines and jobs are fixed either way."
+                style="width:auto;flex:none">
+          <option value="empty" selected>fill empty ROLE.md</option>
+          <option value="all">rewrite all ROLE.md</option>
+        </select>
         <button class="btn primary" id="lraAutoRun" title="send this instruction to Architect: it designs teams, agents and jobs, then its own session is wiped (the run leaves no chat)">send</button>
         <button class="btn ghost" id="lraAutoCancel" type="button" title="close this bar — nothing is sent" aria-label="close the automation bar">✕</button>
         <span class="small muted" id="lraAutoScope" title="the team filter in the filter panel decides the scope: ALL teams or No team included"></span>
@@ -3011,7 +3018,8 @@ class OrbitApp {
     const inp = $("lraAutoInp"), btn = $("lraAutoRun"), st = $("lraAutoStatus");
     const instruction = (inp && inp.value || "").trim();
     if (!instruction){ if (st) st.textContent = "enter an instruction"; return; }
-    const onlyEmpty = !($("lraAutoEmpty") && $("lraAutoEmpty").checked === false);
+    // v889: the choice reads as a word, not as the absence of a tick.
+    const onlyEmpty = (($("lraAutoPrompts") || {}).value || "empty") !== "all";
     if (btn) btn.disabled = true;
     // v886 (operator: "the autogenerate icon shall animate when running the LLM"):
     // the same in-place pulse every other ✨ uses — the state is the glyph, never a word.

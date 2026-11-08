@@ -2,7 +2,7 @@
 """The ONE registry of WebUI surfaces an agent may write text for (K-1).
 
 Before this module the per-surface prompt data lived in three dicts buried inside
-`agent/longrun_agent.py` (`SECTION_PROMPTS`, `AUTOMATE_INSPECT_SECTIONS`,
+`agent/architect.py` (`SECTION_PROMPTS`, `AUTOMATE_INSPECT_SECTIONS`,
 `AUTOMATE_ALLOWED_SECTIONS`) and the *frontend* kept a second, narrower copy of the
 allowlist. One fact lived in two places and the UI could drift from the server.
 

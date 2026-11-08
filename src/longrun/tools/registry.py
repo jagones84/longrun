@@ -1175,7 +1175,7 @@ def _build_canonical_schemas():
             if alternatives:
                 out[cname]["anyOf"] = [dict(item) for item in alternatives]
     try:
-        from longrun.agent import longrun_agent as _lra
+        from longrun.agent import architect as _lra
         for cname, csch in (_lra.TOOL_SCHEMAS or {}).items():
             out[cname] = dict(csch)
     except Exception:  # noqa: BLE001
@@ -1664,8 +1664,22 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     if entry is None and is_mtx_family:
         entry = {"enabled": True, "approval": (mtx or prom or {}).get("approval", "auto")}
     is_exclusive = bool((schema or {}).get("_origin") == "exclusive")
-    if entry is None and is_exclusive:
-        entry = {"enabled": True, "approval": "auto"}
+    if is_exclusive:
+        # v889 (operator: "by default only the risky tools shall require approval").
+        # `config/tools.yaml` ships NAMESPACE defaults (`agent: {approval: auto}`) so a
+        # new verb is usable without editing the file — but a namespace default must not
+        # declare `agent.delete` or `provider.remove` safe. The risk class of the TOOL
+        # decides the default; only an entry written FOR THIS TOOL (file or overlay)
+        # overrides it, and an explicit `approval: auto` there is still honoured.
+        _explicit = tools_cfg.get(name)
+        _ap = (_explicit or {}).get("approval") if isinstance(_explicit, dict) else None
+        if not _ap:
+            try:
+                from longrun.agent import architect as _arch
+                _ap = _arch.exclusive_default_approval(name)
+            except Exception:  # noqa: BLE001 — policy defaults must never break the registry
+                _ap = "auto"
+        entry = {**(entry if isinstance(entry, dict) else {}), "enabled": True, "approval": _ap}
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
     # server is NOT connected has no schema — the tool does not exist. Return None
     # so a clone without pmcp never advertises (nor tries) a tool it lacks; the
@@ -2211,7 +2225,7 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     if (spec.get("schema") or {}).get("_origin") == "exclusive":
         sess_ref = (args or {}).get("_session") or (args or {}).get("run_id")
         if sess_ref is not None:
-            from longrun.agent import longrun_agent as _lra
+            from longrun.agent import architect as _lra
             _ok, _why = _lra.check_dual_permission(tool, sess_ref)
             if not _ok:
                 return "denied", _why

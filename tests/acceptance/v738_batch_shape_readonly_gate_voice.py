@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.core import server as _srv  # noqa: E402,F401 — import first: agent<->server cycle
 from longrun.agent import agent as A  # noqa: E402
-from longrun.agent import longrun_agent as LRA  # noqa: E402
+from longrun.agent import architect as LRA  # noqa: E402
 from longrun.memory import stores as STORES  # noqa: E402
 
 results = []

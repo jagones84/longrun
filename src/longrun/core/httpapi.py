@@ -2493,7 +2493,7 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/sessions":
             try:
-                from longrun.agent import longrun_agent as _lra
+                from longrun.agent import architect as _lra
                 _lra.ensure_system_session()
             except Exception:  # noqa: BLE001
                 pass

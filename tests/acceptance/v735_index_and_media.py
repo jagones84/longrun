@@ -207,7 +207,7 @@ stores.ensure_agent({"id": "longrunAgent", "title": "longrunAgent · VEO"})
 check("C7 a session born as the supervisor is pinned at birth",
       (reg.get("longrunAgent") or {}).get("id") == "A1", reg.get("longrunAgent"))
 
-from longrun.agent import longrun_agent as LA  # noqa: E402
+from longrun.agent import architect as LA  # noqa: E402
 
 reg.release("longrunAgent")
 check("C8 a registry that lost the supervisor has no A1",

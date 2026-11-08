@@ -171,7 +171,7 @@ check("E13 jobs.yaml is a Settings > Harness form with a real writer (no dead kn
 # v629.1: the PANEL job and the TOOL job ("Teamorg automation" → jobs.create) must
 # build the SAME team from the SAME org chart, or a tool job stays flat forever.
 JOBS_SRC = src("src", "longrun", "orchestrate", "jobs.py")
-TOOL_SRC = src("src", "longrun", "agent", "longrun_agent.py")
+TOOL_SRC = src("src", "longrun", "agent", "architect.py")
 check("E14 the org team has ONE derivation and the tool uses it too",
       JOBS_SRC.count("def org_agents(") == 1
       and "jobs_mod.org_agents(coordinator)" in TOOL_SRC)

@@ -69,7 +69,7 @@ def choose_icon(name, description="", symbol=None, color=None):
     to `symbol_for_name(name)` instead of raising.
     """
     try:
-        from longrun.agent import longrun_agent as _lra
+        from longrun.agent import architect as _lra
         return _lra.choose_team_symbol(name, description or "",
                                        explicit_symbol=symbol, explicit_color=color)
     except Exception:  # noqa: BLE001 — an icon is never worth a failed write

@@ -86,8 +86,8 @@ check("F1 the ✨ is ONE frameless glyph, not a sentence",
       and "automate (Teamorg)</button>" not in HTML)
 check("F2 it is still named for a screen reader",
       'aria-label="automate team, agent and job setup with Architect"' in HTML)
-check("F3 the ROLE.md scope checkbox lives in the automation bar it belongs to",
-      HTML.index('id="lraAutoEmpty"') > HTML.index('id="lraAutoBar"'))
+check("F3 the ROLE.md scope choice lives in the automation bar it belongs to",
+      HTML.index('id="lraAutoPrompts"') > HTML.index('id="lraAutoBar"'))
 _policy = HTML[HTML.index("async applyModelPolicy(){"):]
 _policy = _policy[:_policy.index("\n  /* v622:")]
 check("F4 model policy is the SERVER policy, not a second rule in the browser",

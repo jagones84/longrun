@@ -365,7 +365,7 @@ def _provider_longrun_agent(sess, ws, ctx):
     `allow_longrun_agent`, so the surface is explicit and never drifts.
     """
     try:
-        from longrun.agent import longrun_agent as lra
+        from longrun.agent import architect as lra
     except Exception:  # noqa: BLE001
         return ""
     sid = (sess or {}).get("id") if isinstance(sess, dict) else sess

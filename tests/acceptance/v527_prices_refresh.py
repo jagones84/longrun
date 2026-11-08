@@ -108,7 +108,7 @@ with open(os.path.join(REPO, "config", "routing.yaml"), encoding="utf-8") as _f:
 check("A5c shipped longrun-agent fallback uses active DeepSeek Flash",
       "- deepseek:deepseek-flash" in _routing_yaml
       and "- deepseek:deepseek-reasoner" not in _routing_yaml, "")
-with open(os.path.join(REPO, "src", "longrun", "agent", "longrun_agent.py"),
+with open(os.path.join(REPO, "src", "longrun", "agent", "architect.py"),
           encoding="utf-8") as _f:
     _lra_source = _f.read()
 _preferred = _lra_source.split("PREFERRED_CHEAP_MODELS = (", 1)[1].split(")", 1)[0]

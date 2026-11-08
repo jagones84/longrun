@@ -2924,7 +2924,7 @@ def _longrun_agent(args, run_id=None):
 
 def _exclusive_tool(tool, args, run_id=None):
     """Run one exclusive tool (`_origin: exclusive` in the registry schema)."""
-    from longrun.agent import longrun_agent as _lra
+    from longrun.agent import architect as _lra
     res = _lra.execute(tool, args, run_id=run_id)
     res.setdefault("backend", "host")
     res.setdefault("sandboxed", False)
@@ -2981,7 +2981,7 @@ def _workspace(args, run_id):
         return _err("agent not found: %s" % target_ref)
 
     try:
-        from longrun.agent import longrun_agent as lra
+        from longrun.agent import architect as lra
         privileged = lra.session_has_access(caller)
     except Exception:  # noqa: BLE001 — a gate failure must not grant access
         privileged = False

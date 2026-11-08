@@ -307,7 +307,7 @@ def _model_for(surface, session):
     except Exception:  # noqa: BLE001
         pass
     try:
-        from longrun.agent import longrun_agent as lra
+        from longrun.agent import architect as lra
         return lra.resolve_automation_model(active_session_id=session)
     except Exception:  # noqa: BLE001
         return None

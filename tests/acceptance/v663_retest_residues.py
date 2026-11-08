@@ -37,7 +37,7 @@ for _var, _tail in (
     os.environ[_var] = os.path.join(TMP, _tail)
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.agent import longrun_agent as L  # noqa: E402
+from longrun.agent import architect as L  # noqa: E402
 from longrun.orchestrate import routines as routines_mod  # noqa: E402
 from longrun.memory import skills  # noqa: E402
 

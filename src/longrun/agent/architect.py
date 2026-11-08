@@ -969,6 +969,33 @@ READ_ONLY_EXCLUSIVE = frozenset({
     "agent.get", "agent.list",
     "team.get", "team.list",
 })
+#: v889 (operator: "by default only the risky tools shall be required approval … the FULL
+#: unlock everything except permissions"). Designing the org is ORDINARY work and runs
+#: without a prompt; what DESTROYS data or REWRITES the harness configuration asks first.
+#: `approvals.mode=full` still lifts every `required` (that is a POLICY), while the
+#: permission switches (`approvals.allow_*`) are hard rules no mode can lift.
+EXCLUSIVE_NEEDS_APPROVAL = frozenset({
+    # data loss
+    "agent.delete", "team.delete", "job.delete", "routine.delete", "session.delete",
+    "agent.prompt_clear", "kb.notebook_delete", "kb.source_remove",
+    # harness configuration / credentials
+    "provider.upsert", "provider.remove", "provider.add_model", "provider.remove_model",
+    "provider.set_default", "provider.reload",
+    "mcp.upsert", "mcp.remove", "mcp.reload",
+    "skill.remove", "kb.reembed", "webui.configure",
+})
+
+
+def exclusive_default_approval(tool):
+    """The DEFAULT approval class of one exclusive tool (`required` = ask first).
+
+    The operator may override any row in `config/tools.yaml`; this is only the shipped
+    default, so a fresh install does not prompt for "create an agent" but does prompt
+    before it deletes one or rewires a provider.
+    """
+    return "required" if str(tool or "").strip() in EXCLUSIVE_NEEDS_APPROVAL else "auto"
+
+
 
 
 def check_dual_permission(tool, run_id=None):

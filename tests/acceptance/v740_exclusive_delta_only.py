@@ -48,7 +48,7 @@ os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(REPO, "src"))
 
-from longrun.agent import longrun_agent as LRA   # noqa: E402
+from longrun.agent import architect as LRA   # noqa: E402
 from longrun.tools import registry               # noqa: E402
 
 registry._external_tools = lambda: {}
@@ -67,7 +67,7 @@ DELTA = {
     "agent.prompt_set", "agent.prompt_get", "agent.prompt_clear",
     "team.create", "team.update", "team.delete", "team.get", "team.list",
     "team.member_add", "team.member_remove",
-    "job.create", "job.dispatch", "job.get", "job.list", "job.delete",
+    "job.create", "job.update", "job.wake", "job.dispatch", "job.get", "job.list", "job.delete",
     "routine.create", "routine.update", "routine.get", "routine.list",
     "routine.delete",
     "session.create", "session.rename", "session.delete",
