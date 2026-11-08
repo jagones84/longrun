@@ -2682,16 +2682,60 @@ class Constellation {
     const a = this.focus || (this.data.agents || [])[0];
     if (!a){ $("constWho").textContent = "—"; $("constDetail").textContent = "no agents yet"; return null; }
     this.focus = a; const nodes = this.nodesOf(a.session).slice(0, 60);
-    $("constWho").textContent = a.id + (a.name ? (" " + a.name) : "") + " · " + nodes.length + " task(s)";
-    if (!nodes.length){ $("constDetail").textContent = "no task list yet for " + a.id; return null; }
+    // v905 (operator: "non vedo in constellation i jobs, solo i tasks"): ONE agent
+    // focused used to drop the whole JOB -> SUBJOB level, although the legend under
+    // the diagram promised it. The payload always carried it — only ALL mode drew
+    // it. The lanes below are the SAME object model as ALL mode: amber = job,
+    // blue = subjob, and a subjob is linked to the tasks it embraces.
+    const normJ = x => "J" + String(x || "").replace(/^J/i, "");
+    const subs = (((this.data || {}).subjobs) || []).filter(s => s.agent === a.id);
+    const jids = new Set(subs.map(s => s.parent)
+      .concat(nodes.map(n => (n.jid ? normJ(n.jid) : ""))).filter(Boolean));
+    const jobs = (((this.data || {}).jobs) || []).filter(j => jids.has(j.id));
+    const lane = subs.length ? 52 : (jobs.length ? 44 : 0);
+    $("constWho").textContent = a.id + (a.name ? (" " + a.name) : "") + " · " + nodes.length + " task(s)"
+      + (jobs.length ? (" · " + jobs.length + " job" + (jobs.length > 1 ? "s" : "")) : "")
+      + (subs.length ? (" · " + subs.length + " subjob" + (subs.length > 1 ? "s" : "")) : "");
+    if (!nodes.length && !subs.length){
+      $("constDetail").textContent = "no task list yet for " + a.id; return null; }
     const sh = this._shape(nodes), PAD = 46, CW = 100, RH = 56;
     const w = PAD * 2 + Math.max(1, sh.keys.length) * CW;
-    const h = PAD + sh.maxRows * RH + 16;
+    const h = PAD + lane + sh.maxRows * RH + 16;
     const pos = {}; sh.keys.forEach((k, i) => { sh.cols[k].forEach((n, j) => {
-      pos[n.id] = {x: PAD + (i + 0.5) * CW, y: 46 + (j + 0.5) * RH}; }); });
-    const body = this._defs() + this._edges(nodes, pos) + this._nodesSvg(a, nodes, pos, false);
-    $("constDetail").textContent = nodes.length + " step(s) · ids are " + a.id + ".nY · dashed arrow = dependency";
-    return {w: w, h: h, body: body};
+      pos[n.id] = {x: PAD + (i + 0.5) * CW, y: 46 + lane + (j + 0.5) * RH}; }); });
+    const jpos = {}; jobs.forEach((j, i) => {
+      jpos[j.id] = {x: (w / (jobs.length + 1)) * (i + 1), y: 18}; });
+    const spos = {}; const byJob = {};
+    subs.forEach(s => { (byJob[s.parent] = byJob[s.parent] || []).push(s); });
+    Object.keys(byJob).forEach(jid => { const list = byJob[jid];
+      const base = jpos[jid] ? jpos[jid].x : w / 2;
+      list.forEach((s, i) => { spos[s.id] = {x: base + (i - (list.length - 1) / 2) * 86, y: 56}; }); });
+    let body = this._defs();
+    subs.forEach(s => { const p = spos[s.id], q = jpos[s.parent]; if (!p || !q) return;
+      body += '<line class="clink job" x1="' + q.x + '" y1="' + (q.y + 15) + '" x2="' + p.x + '" y2="' + (p.y - 12) + '"/>'; });
+    // the subjob EMBRACES the tasks it created (its `todos`): one dashed assign edge each.
+    subs.forEach(s => (s.todos || []).forEach(t => { if (!pos[t] || !spos[s.id]) return;
+      const g = this._seg(spos[s.id], pos[t], 26, 12);
+      body += '<line class="clink assign" marker-end="url(#mAsg)" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>'; }));
+    body += this._edges(nodes, pos) + this._nodesSvg(a, nodes, pos, false);
+    body += this._pills(jobs, subs, jpos, spos);
+    $("constDetail").textContent = nodes.length + " step(s) · ids are " + a.id + ".nY"
+      + (jobs.length ? " · amber = JOB · blue = SUBJOB → the tasks it embraces" : "")
+      + " · dashed arrow = dependency";
+    return {w: w, h: Math.max(h, 96 + lane), body: body};
+  }
+  /* v905: the PILLS of the job/subjob level — ONE drawing for both modes (an amber
+     job, a blue subjob). Positions and edges are per-mode: ALL spreads them over the
+     board, AGENT pins them above one agent's grid. */
+  _pills(jobs, subs, jpos, spos){
+    let s = "";
+    (jobs || []).forEach(j => { const p = jpos[j.id]; if (!p) return;
+      s += '<g class="cjobg" data-job="' + esc(j.id) + '"><rect class="cjob" x="' + (p.x - 48) + '" y="' + (p.y - 15) + '" width="96" height="30" rx="15"/>' +
+        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="#ffe6b0">' + esc(j.id) + '</text></g>'; });
+    (subs || []).forEach(q => { const p = spos[q.id]; if (!p) return;
+      s += '<g class="csubg" data-sub="' + esc(q.id) + '"><rect class="csub" x="' + (p.x - 40) + '" y="' + (p.y - 12) + '" width="80" height="24" rx="12"/>' +
+        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#bfe9ff">' + esc(q.id) + '\u2192' + esc(q.agent) + '</text></g>'; });
+    return s;
   }
   _drawAll(){
     const agents = (this.data.agents || []).filter(a => a.session);
@@ -2788,13 +2832,9 @@ class Constellation {
         pos[n.id] = {x: innerX + (i + 0.5) * cw, y: innerY + (j + 0.5) * ch}; }); });
       body += this._edges(nodes, pos) + this._nodesSvg(a, nodes, pos, true);
     });
-    jobs.forEach(j => { const p = jpos[j.id];
-      body += '<g class="cjobg" data-job="' + esc(j.id) + '"><rect class="cjob" x="' + (p.x - 48) + '" y="' + (p.y - 15) + '" width="96" height="30" rx="15"/>' +
-        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="#ffe6b0">' + esc(j.id) + '</text></g>'; });
-    // JAG-324: subjob pills (JN.j -> agent) on their lane, above the agent clusters.
-    subs.forEach(s => { const p = spos[s.id]; if (!p) return;
-      body += '<g class="csubg" data-sub="' + esc(s.id) + '"><rect class="csub" x="' + (p.x - 40) + '" y="' + (p.y - 12) + '" width="80" height="24" rx="12"/>' +
-        '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#bfe9ff">' + esc(s.id) + '\u2192' + esc(s.agent) + '</text></g>'; });
+    // JAG-324: job + subjob pills on their lanes — ONE drawing shared with AGENT mode
+    // (v905 `_pills`), so the two views can never drift apart.
+    body += this._pills(jobs, subs, jpos, spos);
     $("constWho").textContent = agents.length + " agents \u00b7 " + jobs.length + " jobs \u00b7 " + subs.length + " subjobs";
     $("constDetail").textContent = "one cluster per AGENT \u00b7 amber = JOB \u00b7 blue = SUBJOB JN.j \u2192 agent (dashed = deps/assigns)";
     return {w: contentW, h: Math.max(contentH, TOP + 120 + _maxDep * 34), body: body};
