@@ -139,7 +139,10 @@ check("the worker is told its part is ONLY its own", "Your assignment (yours onl
 check("the worker is told not to do the others' parts", "NOT do the other agents' parts" in j)
 check("the reply extractor exists", "def _best_reply(messages)" in j)
 check("_run_agent keeps the turn's substantial reply",
-      '_best_reply(s.get("messages", [])[before:])' in j)
+      # 2026-11-08: the slice is anchored on this turn's own user message
+      # (`_turn_tail`) instead of the raw `[before:]` count — same guarantee, and
+      # it survives a turn that started while the worker waited for the lock.
+      '_best_reply(self._turn_tail(s.get("messages") or [], before,' in j)
 check("the turn boundary is captured",
       'before = len((srv.load_session(sid) or {}).get("messages", []))' in j)
 check("the open-todo closer exists", "def _close_open_todos(sid)" in j)
