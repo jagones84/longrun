@@ -510,6 +510,11 @@
   @media (prefers-reduced-motion: reduce) {
     .fold-tg svg, #toolsBar button .ic-slash { transition: none; }
   }
+  /* v880 (operator): the skill pill in the composer is a DOOR — clicking it
+     opens that skill in the file editor, the same door the Skills panel uses. */
+  #cmdChips button { cursor: pointer; }
+  #cmdChips button:hover { border-color: var(--acc) !important; filter: brightness(1.12); }
+  #cmdChips button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
   /* JAG-218: toast shown when a background session finishes while you're away. */
   .done-toast { position: fixed; right: 16px; bottom: 16px; z-index: 9999;
     background: var(--menubg); color: var(--txt);
@@ -4779,6 +4784,7 @@ function buildDotRail() {
   const msgs = _userMsgs();
   rail.innerHTML = "";
   rail.hidden = msgs.length < 2;
+  updateJump();   // v880: a re-render is also a reason to re-measure the arrow
   msgs.forEach((m, i) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -17608,12 +17614,20 @@ function _renderCmdChips() {
   const names = {};
   try { (_skillsCache || []).forEach(s => { if (s && s.name) names[String(s.name).toLowerCase()] = s.name; }); } catch (e) {}
   const seen = {}, chips = [];
-  const push = (icon, label, tip, accent) => {
-    chips.push('<span title="' + esc(tip) + '" style="display:inline-flex;align-items:center;gap:5px;'
+  /* v880: a REAL skill is a button (it opens the skill in the editor); a UI
+     command / unknown token stays a plain pill — it has no file to show. */
+  const push = (icon, label, tip, accent, skill) => {
+    const tag = skill ? 'button' : 'span';
+    chips.push('<' + tag + (skill
+        ? ' type="button" data-skill="' + esc(label) + '" aria-label="'
+          + esc('open the ' + label + ' skill in the editor') + '"'
+        : '')
+      + ' title="' + esc(tip) + '" style="display:inline-flex;align-items:center;gap:5px;'
       + 'border:1px solid ' + (accent ? 'var(--acc,#4f8cff)' : 'var(--line,#3a3f4a)') + ';'
       + 'border-radius:999px;padding:2px 10px;font-size:12px;'
+      + (skill ? 'background:transparent;color:inherit;font:inherit;letter-spacing:inherit;' : '')
       + (accent ? 'background:color-mix(in srgb,var(--acc,#4f8cff) 16%,transparent);' : 'opacity:.85;') + '">'
-      + '<span style="font-size:13px">' + icon + '</span><b>' + esc(label) + '</b></span>');
+      + '<span style="font-size:13px">' + icon + '</span><b>' + esc(label) + '</b></' + tag + '>');
   };
   let m;
   const _goalCmd = SLASH_BY_ID.goal;
@@ -17629,13 +17643,24 @@ function _renderCmdChips() {
     // for the same token — exactly what the server does (`_apply_skill_slash`
     // resolves `/<name>` for every token but `goal`), so the chip cannot lie.
     const _cmd = SLASH_BY_ID[t];
-    if (names[t]) push("📖", names[t], "skill reference", true);
+    if (names[t]) push("📖", names[t], "open the skill in the editor — /" + t
+                            + " rides along with the message", true, true);
     else if (_cmd) push(_cmd.icon, _cmd.id, _cmd.hint, false);
     else push("/", m[2], "unknown command — sent as plain text", false);
   }
   box.innerHTML = chips.join("");
    box.style.display = chips.length ? "flex" : "none";
    box.hidden = !chips.length;
+   // v880: one delegated door — the pills are rebuilt on every keystroke.
+   if (!box._skillDoor) {
+     box._skillDoor = true;
+     box.addEventListener("click", e => {
+       const b = e.target.closest && e.target.closest("[data-skill]");
+       if (!b) return;
+       e.preventDefault();
+       openSkillInEditor(b.getAttribute("data-skill"));
+     });
+   }
  }
 $("inp").addEventListener("input", () => { skillsAutocomplete(); _renderCmdChips(); refreshSendBtn(); });
 /* JAG-116/JAG-458: track the bottom pin and save each session's reading position. */
@@ -17644,6 +17669,18 @@ $("log").addEventListener("scroll", () => {
   _stick = _nearBottom(); updateJump();
   if (_historyReplaySession !== sessionId) _saveChatScrollState(sessionId, log.scrollTop);
 });
+/* v880 (operator): "the arrow does not appear always, only if moving the wheel".
+   Its visibility IS a state — "this chat is not at the bottom" — so it is
+   recomputed on a resize and on any change of the log's box, not only when a
+   scroll event happens to fire. */
+window.addEventListener("resize", () => updateJump());
+if (window.ResizeObserver) {
+  try {
+    const _jro = new ResizeObserver(() => updateJump());
+    _jro.observe($("log"));
+    const _chatBox = $("chat"); if (_chatBox) _jro.observe(_chatBox);
+  } catch (e) {}
+}
 $("jumpBtn").onclick = () => { _stick = true; const l = $("log"); l.scrollTop = l.scrollHeight; updateJump(); };
 ["nsTitle", "nsWs"].forEach(id => { const el = $(id); if (el) el.addEventListener("keydown", e => { if (e.key === "Enter") createNewSession(); }); });
 $("inp").addEventListener("keydown", e => {
