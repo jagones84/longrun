@@ -1060,8 +1060,20 @@ def resolve_automation_model(active_session_id=None, explicit_model=None):
         if active_session_id:
             sess = stores.load_session(active_session_id)
             if sess and sess.get("model") and not routing.is_dynamic_ref(sess.get("model")):
-                return sess["model"]
-        return pick_cheap_remote_model()
+                ref = sess["model"]
+        if not ref:
+            return pick_cheap_remote_model()
+    # v888 (operator: "the architect is never finishing … its LLM model set in the
+    # session chatbox is not working (it's a local model)"). An automation turn is a
+    # LONG tool loop — the worst possible fit for a local GGUF (slow, and its tool
+    # calling is what stalls). A local ref therefore never runs: it falls back to the
+    # cheap remote cloud model, which is also what the section prompt asks for.
+    try:
+        from longrun.orchestrate import teams as teams_mod
+        if teams_mod.machine_of(ref) is not None:
+            return pick_cheap_remote_model() or pick_cheap_remote_model()
+    except Exception:  # noqa: BLE001 — a resolver hiccup must not block the run
+        pass
     return ref
 
 

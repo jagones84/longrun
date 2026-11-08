@@ -225,20 +225,29 @@
           t.closest("button,a,input,select,textarea,label,[contenteditable='true']")) return;
       var state = begin(e.pointerId, e.pointerType, e.clientX, e.clientY);
       if (!state) return;
-      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      /* v888 (operator: "still i can't manually expand a team in the Agents panel").
+         Capturing the pointer on POINTERDOWN retargets the compatibility `click` to
+         the capture element, so a click on a control INSIDE the drag handle never
+         fires — the team header's own disclosure (`.grp-toggle`) is exactly that, and
+         v886 only fixed the suppression, not the retargeting. Capture now happens
+         when the drag really starts (past MOVE_PX); a plain click keeps its target. */
       var move = function (ev) {
         if (active !== state || !state.armed) return;
+        if (!state.live) {
+          if (Math.hypot(ev.clientX - state.startX, ev.clientY - state.startY) < MOVE_PX) return;
+          try { handle.setPointerCapture(state.pointerId); } catch (_) {}
+        }
         moveDrag(o, state, ev.clientX, ev.clientY);
       };
       var up = function () { finishDrag(o, state); };
       var cancel = function () { if (active === state) clearState(state); };
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", up);
-      handle.addEventListener("pointercancel", cancel);
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up, true);
+      window.addEventListener("pointercancel", cancel, true);
       state.cleanup = function () {
-        handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", up);
-        handle.removeEventListener("pointercancel", cancel);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up, true);
+        window.removeEventListener("pointercancel", cancel, true);
       };
     });
     handle.addEventListener("touchstart", function (e) {

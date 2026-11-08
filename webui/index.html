@@ -644,8 +644,14 @@
   button.ghost { background: transparent; border: 1px solid var(--line-2); color: var(--dim); font-weight: 500; padding: 6px 11px; }
   button.ghost:hover { color: var(--txt); border-color: var(--acc); }
   /* JAG-159: the settings gear gets an accent (copper) border so it stands out. */
-  #settingsBtn { border-color: var(--line-2); color: var(--dim); }
-  #settingsBtn:hover { color: var(--acc); border-color: var(--acc); }
+  /* v888 (operator: "make a bit smaller the setting gear and remove that frame"):
+     the gear is a frameless glyph like the other icon controls — 26px, no border, a
+     hover surface, and the accent only while it is open. */
+  #settingsBtn { width: 26px; height: 26px; padding: 0; border: 0; background: transparent;
+    color: var(--dim); }
+  #settingsBtn svg { width: 16px; height: 16px; }
+  #settingsBtn:hover { background: var(--hover); color: var(--txt); }
+  #settingsBtn[aria-expanded="true"] { color: var(--acc); }
   .feed-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
   .feed-dot.off { background: var(--dim); }
 

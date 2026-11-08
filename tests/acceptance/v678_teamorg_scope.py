@@ -75,7 +75,7 @@ check("A5 it is checked by default (empty-only is the safe default)",
 check("A6 the toolbar stack is a COLUMN (under, never beside)",
       ".toolbar>.stack{display:inline-flex;flex-direction:column" in ORBIT)
 check("A7 the box is labelled with what it does, both ways",
-      "only agents without ROLE.md" in ORBIT
+      "empty ROLE.md" in ORBIT
       and "unchecked" in ORBIT.lower() and "may rewrite the prompt" in ORBIT)
 scope_src = ORBIT[ORBIT.find("labelTeamorgScope"):ORBIT.find("async runTeamorgAutomate")]
 check("A8 the scope is stated (team name + how many agents, how many have no ROLE.md)",
