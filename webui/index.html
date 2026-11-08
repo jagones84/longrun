@@ -799,6 +799,8 @@
   /* v878: an in-flight action ANIMATES IN PLACE — the icon spins and the glyph is
      never replaced (the old code wrote `textContent`, which destroyed the SVG and
      left a text "🏷" in the rail until a page reload). */
+  /* v885: a jump icon is lit when its section is the one open */
+  #toolsBar #inspJump button.is-current { color: var(--acc); }
   #toolsBar button.is-busy { color: var(--acc); border-color: var(--acc); }
   #toolsBar button.is-busy svg { animation: sfspin 1.1s linear infinite; }
   @media (prefers-reduced-motion: reduce) {
@@ -2965,6 +2967,14 @@
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
             aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>
     </div>
+    <!-- v885 (operator: "add the icons to open and center all the RH panel menus, in
+         correct separations"). Each icon is a JUMP to one Inspector section: it
+         un-collapses the right column, opens that section and CENTERS it in the panel's
+         own scroller. The list is built from the REAL sections at runtime
+         (`_buildInspJump`), so it follows your drag order and cannot drift; a section
+         that already owns a badged object button above (Approvals, Workspace) is not
+         repeated here. Same 30x30 / 17px anatomy as the rest of the rail. -->
+    <div class="tb-sec" id="inspJump" aria-label="inspector sections"></div>
     <!-- 2026-11-07 (operator): section 2 — the VIEW controls (how the transcript is
          read), separated from the objects by one hairline. -->
     <div class="tb-sec">
@@ -4594,7 +4604,7 @@ function _railOpenInsp(name) {
   if (!sec) return null;
   const body = sec.querySelector(".insp-body");
   if (body && body.hidden) toggleInsp(name);
-  sec.scrollIntoView({ block: "nearest" });
+  sec.scrollIntoView({ block: "center" });   // v885: center, not "just visible"
   return sec;
 }
 function openChanges() {
@@ -14992,6 +15002,63 @@ function moveSettingsCats() {
   document.querySelectorAll("#inspector .sw-cat").forEach(el => main.appendChild(el));
 }
 moveSettingsCats();
+/* v885 (operator: "add the icons to open and center all the RH panel menus"). The
+   Inspector is a long, user-ordered list; these are its jumps. Order and presence come
+   from the DOM (`#inspector section[data-insp]`), never from a second list; the open
+   section is painted from the real `.insp-open` class, so the rail cannot lie. */
+const INSP_JUMP_SKIP = ["approvals", "files"];   // already own a badged object button
+const INSP_JUMP_ICONS = {
+  cost: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.2v9.6"/><path d="M14.7 9.8h-3.3a1.8 1.8 0 0 0 0 3.6h1.2a1.8 1.8 0 0 1 0 3.6H9.3"/>',
+  context: '<path d="M3.5 20h17"/><path d="M7 20v-6M12 20V7.5M17 20v-9.5"/>',
+  plan: '<path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.6 6 1.3 1.3L7.4 4.7"/><path d="m3.6 12 1.3 1.3 2.5-2.6"/><path d="m3.6 18 1.3 1.3 2.5-2.6"/>',
+  rules: '<path d="M6 3.5h9l4 4V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20Z"/><path d="M15 3.5V8h4.5"/><path d="M9 12h6M9 15.5h6"/>',
+  codebase: '<path d="m8.5 8-4.5 4 4.5 4"/><path d="m15.5 8 4.5 4-4.5 4"/>',
+  terminal: '<rect x="3.2" y="4.5" width="17.6" height="15" rx="2.2"/><path d="m7 9.6 2.5 2.4L7 14.4"/><path d="M12.6 15h4"/>',
+  feed: '<circle cx="12" cy="12" r="2"/><path d="M8.7 8.7a4.7 4.7 0 0 0 0 6.6M15.3 15.3a4.7 4.7 0 0 0 0-6.6M5.7 5.7a9 9 0 0 0 0 12.6M18.3 18.3a9 9 0 0 0 0-12.6"/>'
+};
+function _inspSecOf(key) {
+  return document.querySelector('#inspector section[data-insp="' + key + '"]');
+}
+/* The header's own first text node IS the section's name ("Approvals", "Workspace"…) —
+   read it instead of copying the labels into a second table. */
+function _inspLabel(sec) {
+  const hd = sec.querySelector(".insp-hd");
+  const first = hd && hd.firstChild;
+  const t = (first && first.nodeType === 3) ? first.textContent : (hd ? hd.textContent : "");
+  return String(t || "").replace(/\s+/g, " ").trim() || sec.dataset.insp;
+}
+function _buildInspJump() {
+  const box = $("inspJump");
+  if (!box) return;
+  box.innerHTML = "";
+  _inspSections().forEach(sec => {
+    const key = sec.dataset.insp;
+    if (!key || INSP_JUMP_SKIP.indexOf(key) >= 0) return;
+    const label = _inspLabel(sec);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ghost";
+    b.dataset.inspJump = key;
+    b.title = "open and center the " + label + " panel";
+    b.setAttribute("aria-label", "open and center the " + label + " panel");
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" '
+      + 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + (INSP_JUMP_ICONS[key] || INSP_JUMP_ICONS.plan) + "</svg>";
+    b.onclick = () => { _railOpenInsp(key); _paintInspJump(); };
+    box.appendChild(b);
+  });
+  _paintInspJump();
+}
+function _paintInspJump() {
+  const box = $("inspJump");
+  if (!box) return;
+  Array.prototype.forEach.call(box.children, b => {
+    const sec = _inspSecOf(b.dataset.inspJump);
+    const on = !!(sec && sec.classList.contains("insp-open"));
+    b.classList.toggle("is-current", on);
+    if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+  });
+}
 function toggleInsp(name) {
   const sec = document.querySelector('#inspector section[data-insp="' + name + '"]');
   if (!sec) return;
@@ -15001,6 +15068,7 @@ function toggleInsp(name) {
   localStorage.setItem("sf_insp_" + name, body.hidden ? "0" : "1");
   if (!body.hidden) _loadInspector(name);   // populate on open (no manual ↻)
   _paintInspToggle();   // v879: one section changed -> the aggregate glyph follows
+  _paintInspJump();   // v885: so does the jump list's current-section mark
 }
 function _setAllInspector(open) {
   document.querySelectorAll("#inspector section[data-insp]").forEach(section => {
@@ -15013,6 +15081,7 @@ function _setAllInspector(open) {
     if (open && wasHidden) _loadInspector(section.dataset.insp);
   });
   _paintInspToggle();   // v879: one control, its glyph is the state
+  _paintInspJump();   // v885
 }
 function _loadInspector(name) {
   const key = ({ graph: "plan", plan: "plan" })[name] || name;
@@ -15135,6 +15204,7 @@ function _initInspectorChrome() {
         const next = DragSort.moveItem(_inspSections().map(s => s.dataset.insp), me, targetId, after);
         localStorage.setItem(INSP_ORDER_KEY, JSON.stringify(next));
         _applyInspOrder();
+        _buildInspJump();   // v885: the jumps follow the new order
       };
       grip.addEventListener("pointermove", onMove);
       grip.addEventListener("pointerup", onUp);
@@ -15144,6 +15214,7 @@ function _initInspectorChrome() {
 }
 restoreInspector();
 _initInspectorChrome();
+_buildInspJump();   // v885: the rail's jump list
 function openPanel(name, opts) { focusInsp(name, opts); }
 
 /* ---- JAG-400: CODEBASE index — PER WORKSPACE (like project rules) ---- */

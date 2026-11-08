@@ -733,6 +733,13 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
              so "my agent is missing" is answered in place instead of looking broken. -->
         <span class="hint" id="agHint"></span>
         <span class="ctools">
+          <!-- v885: the model policy is an action of the WHOLE table, so it lives in the
+               panel's own action cluster (one 30px named icon) instead of a text button in
+               the toolbar. Same id, same handler: the policy itself stays server-side
+               (POST /api/teams/<id>/models, refs from config/routing.yaml). -->
+          <button class="btn ghost mini ictl" id="agPolicy"
+                  title="apply the team model policy to the agents in the filter's scope: leads → the strong cloud model, members → the cheap cloud model, at most one local model per machine"
+                  aria-label="apply the team model policy to the agents in scope">⚙</button>
           <button class="btn ghost mini ictl" id="rzReset" title="reset panel sizes"
                   aria-label="reset panel sizes">↺</button>
           <button class="btn ghost mini ictl fold-tg" id="agToggleAll" data-tree="agents"
@@ -757,8 +764,6 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <span class="stack">
           <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team and agent setup with longrunAgent" title="longrunAgent writes the ROLE.md files and the reporting lines of the agents in scope. The run is stateless: it keeps no chat and no memory between runs — open it and the goal is the only input.">✨</button>
         </span>
-        <button class="btn ghost" id="lraRepBtn" aria-expanded="false" title="What longrunAgent wrote, and to whom. The run is STATELESS: it erases its own session, plan graph and chat, so this ledger is the only record of its effect.">what it wrote</button>
-        <button class="btn ghost" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
       <!-- v884: the ✨ is icon-only, so THIS bar is the only place the action can be read.
@@ -769,12 +774,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
            snapshot of this section plus the scope below and calls the team/agent tools. -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
         <span class="lbl" title="longrunAgent writes the ROLE.md files and the reporting lines of the agents in scope. The run is stateless: it keeps no chat and no memory between runs; everything it wrote stays in the report log.">automate with longrunAgent</span>
-        <input class="inp" id="lraAutoInp" aria-label="what longrunAgent should do" placeholder="what should it do? e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
+        <input class="inp" id="lraAutoInp" aria-label="what longrunAgent should do" placeholder="what should it do? e.g. write the missing ROLE.md…" style="flex:1;min-width:200px">
         <label class="chk" for="lraAutoEmpty" title="checked: longrunAgent only writes the agents whose ROLE.md is EMPTY. unchecked: it may rewrite the prompt of every agent in scope.">
           <input type="checkbox" id="lraAutoEmpty" checked> only agents without ROLE.md
         </label>
-        <button class="btn primary" id="lraAutoRun">run</button>
-        <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
+        <button class="btn primary" id="lraAutoRun" title="send this instruction to longrunAgent: it edits ROLE.md files and reporting lines, then its own session is wiped (the run leaves no chat)">send</button>
+        <button class="btn ghost" id="lraAutoCancel" type="button" title="close this bar — nothing is sent" aria-label="close the automation bar">✕</button>
         <span class="small muted" id="lraAutoScope" title="the team filter in the filter panel decides the scope: ALL teams or No team included"></span>
         <span class="small muted" id="lraAutoStatus"></span>
         <div id="lraRep" style="flex-basis:100%;display:none"></div>
@@ -2964,18 +2969,13 @@ class OrbitApp {
       // still open (it did not, because a label bug ate the click).
       try { this.labelTeamorgScope(); } catch (_) {}
       addBar("lraAutoBar", "lraAutoBtn", "lraAutoInp");
+      this.loadReport(true);   // v885: the record rides with the bar it belongs to
     };
     if ($("lraAutoCancel")) $("lraAutoCancel").onclick = () => addBar("lraAutoBar", "lraAutoBtn");
     if ($("lraAutoRun")) $("lraAutoRun").onclick = () => this.runTeamorgAutomate();
-    // I-9: the ledger toggle sits in the toolbar (next to ⚡ automate) because the
-    // addbar is hidden until a run is started — the record must be reachable without
-    // one. It never CLOSES the bar (that is ⚡ automate's toggle): it only reveals
-    // the bar if needed and flips its OWN block, so the two controls cannot fight.
-    if ($("lraRepBtn")) $("lraRepBtn").onclick = () => {
-      const b = $("lraAutoBar");
-      if (b && b.hidden) b.hidden = false;
-      this.loadReport(!this.repOpen);
-    };
+    // v885 (operator: "remove what it wrote … it occupies space"): the ledger has no
+    // button of its own any more — the ✨ opens the bar and the bar SHOWS the record
+    // (`loadReport(true)`, collapsed to nothing when the ledger is empty).
   }
   /* I-8: the automate scope is the Team filter, so SAY it (and how many agents it
      holds) instead of letting the operator guess what "Teamorg" will touch.
@@ -3029,10 +3029,9 @@ class OrbitApp {
      backend appends to (`GET /api/longrun-agent/reports`), so the panel can never
      show a run the backend did not record. */
   async loadReport(open){
-    const box = $("lraRep"), btn = $("lraRepBtn");
+    const box = $("lraRep");
     if (!box) return;
     if (open !== undefined) this.repOpen = !!open;
-    if (btn) btn.setAttribute("aria-expanded", this.repOpen ? "true" : "false");
     if (!this.repOpen){ box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "";
     const r = await this.api.get("/api/longrun-agent/reports?limit=8").catch(() => null);
@@ -3057,7 +3056,8 @@ class OrbitApp {
               esc(String(run.summary).slice(0, 240)) + "</div>" : "") +
             "</div>";
         }).join("")
-      : '<div class="small muted" style="padding:4px 0">no automation recorded yet</div>';
+      : '';
+    if (!runs.length) box.style.display = "none";   // v885: an empty ledger costs no row
   }
   /* v752: the scope list is the SHARED filter panel's team select — the panel
      generates it (id #teamSel) from teamOptions(), so the option list has ONE

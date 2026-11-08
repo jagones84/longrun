@@ -177,9 +177,9 @@ check("E2 GET /api/longrun-agent/writes returns the per-target badge map",
       and "_al.last_write_by_target()" in API and '"targets":' in API)
 
 # ---------------------------------------------------------------------- F: UI
-check("F1 the deck has a report toggle that survives a reload",
-      'id="lraRepBtn"' in ORBIT and 'id="lraRep"' in ORBIT
-      and 'if ($("lraRepBtn")) $("lraRepBtn").onclick' in ORBIT)
+check("F1 the ledger rides with the automation bar (no button of its own)",
+      'id="lraRep"' in ORBIT and 'id="lraRepBtn"' not in ORBIT
+      and "this.loadReport(true);   // v885" in ORBIT)
 check("F2 the report reads the SAME route the backend serves",
       '"/api/longrun-agent/reports?limit=' in ORBIT)
 check("F3 the badge map is fetched from the backend route",
