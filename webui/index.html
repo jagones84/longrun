@@ -806,7 +806,10 @@
      never replaced (the old code wrote `textContent`, which destroyed the SVG and
      left a text "🏷" in the rail until a page reload). */
   /* v885: a jump icon is lit when its section is the one open */
-  #toolsBar #inspJump button.is-current { color: var(--acc); }
+  #toolsBar #inspJump button.is-current,
+  #toolsBar #inspJumpRuntime button.is-current { color: var(--acc); }
+  /* v890: a jump group with nothing in it takes no space (no empty hairline gap). */
+  #toolsBar #inspJumpRuntime:empty { display: none; }
   #toolsBar button.is-busy { color: var(--acc); border-color: var(--acc); }
   #toolsBar button.is-busy svg { animation: sfspin 1.1s linear infinite; }
   @media (prefers-reduced-motion: reduce) {
@@ -2973,17 +2976,13 @@
             title="open this session's knowledge notebook (Settings ▸ Knowledge)"
             aria-label="open this session's knowledge notebook"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v14.5H6.5A2.5 2.5 0 0 0 4 20V5.5Z"/><path d="M4 20a2.5 2.5 0 0 1 2.5-2.5H20V21H6.5A2.5 2.5 0 0 1 4 20Z"/></svg></button>
     </div>
-    <!-- v885 (operator: "add the icons to open and center all the RH panel menus, in
-         correct separations"). Each icon is a JUMP to one Inspector section: it
-         un-collapses the right column, opens that section and CENTERS it in the panel's
-         own scroller. The list is built from the REAL sections at runtime
-         (`_buildInspJump`), so it follows your drag order and cannot drift; a section
-         that already owns a badged object button above (Approvals, Workspace) is not
-         repeated here. Same 30x30 / 17px anatomy as the rest of the rail. -->
-    <div class="tb-sec" id="inspJump" aria-label="inspector sections"></div>
     <!-- 2026-11-07 (operator): section 2 — the VIEW controls (how the transcript is
          read), separated from the objects by one hairline. -->
-    <div class="tb-sec">
+    <!-- v890 (operator: "the one impacting the chat session shall be put together as
+         collapse the todos … the one relevant to RH panel together"). Group 2 is the
+         CHAT's own controls; the ✨ (optimize the draft) now rides here instead of the
+         foot, because it acts on the text you are about to send. -->
+    <div class="tb-sec" id="chatViewSec">
     <button class="ghost" type="button" id="chatReloadBtn"
             title="refresh this chat and rebuild its transcript in chronological order"
             aria-label="refresh this chat"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.4V9h-4.6"/></svg></button>
@@ -2994,15 +2993,24 @@
     <button class="ghost" data-tree-thoughts data-call="toggleThoughts" title="show every chain-of-thought block" aria-label="show every chain-of-thought block"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 12C4.6 7.6 8.1 5.4 12 5.4s7.4 2.2 9.4 6.6c-2 4.4-5.5 6.6-9.4 6.6S4.6 16.4 2.6 12Z"/><circle cx="12" cy="12" r="2.6"/><path class="ic-slash" d="M3.4 3.4 20.6 20.6"/></svg></button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.2A1.2 1.2 0 0 1 4 3h7.8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.4Z"/><circle cx="7.6" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
     </div>
+    <!-- v885/v890: each icon points at ONE Inspector section and TOGGLES it —
+         collapse if open, expand (and centre) if collapsed. Two groups: the PANEL
+         jumps, and the RUNTIME panels (terminal, feed) on their own, because they are
+         not what the right column is about. Both lists are built from the REAL
+         sections at runtime (`_buildInspJump`), so they follow your drag order and
+         cannot drift; Approvals/Workspace keep their own badged buttons. -->
+    <div class="tb-sec" id="inspJump" aria-label="inspector sections"></div>
+    <div class="tb-sec" id="inspJumpRuntime" aria-label="runtime panels"></div>
     </div>
     <!-- RH-27 (operator, 2026-11-03): the rail's FOOT pins the composer-level controls
          level with the send button.
 
-         2026-11-07 (operator): "i tre puntini devono stare in basso nella sidebar, il
-         autogenerate portalo sempre nella sidebar appena sopra". The ⋯ and its menu
-         moved here FROM the composer — the row's width belongs to the message box — and
-         the ✨ is mounted directly ABOVE it by `mountStaticSparkles()`. The settings gear
-         left the foot for the topbar ("il gear di settings mettilo in ALTO nella GUI"). -->
+         2026-11-07 (operator): "i tre puntini devono stare in basso nella sidebar". The ⋯
+         and its menu moved here FROM the composer — the row's width belongs to the
+         message box — and it stays the rail's LAST control: it holds reset/new, which
+         must stay out of the way of a click. v890: the ✨ left the foot for the chat
+         group, where the draft it rewrites lives. The settings gear left the foot for
+         the topbar ("il gear di settings mettilo in ALTO nella GUI"). -->
     <div class="tb-foot">
       <div class="more-wrap">
         <button class="ghost" id="moreBtn" title="more actions: compact · reset · new session"
@@ -12053,15 +12061,14 @@ function renderTools(el, d) {
     // never removable, so the button is rendered from the registry's own origin.
     const isMatrix = String(t.origin || "") === "matrix";
     const apColor = approvalColor(ap);
-    // v616: the "FULL ⇒ auto" badge lied on exclusive rows — FULL never
-    // bypasses the dual-permission gate, so an exclusive tool on FULL still
-    // answers 126 without the per-session Teamorg grant. Say so outright.
+    // v890 (operator: "it's useless you leave 'grant still required' if it's not true in
+    // the tool — remove please; there's already the per-tool box auto/required"). The
+    // per-tool policy below IS the state; the dual-permission fact lives ONCE in the
+    // `exclusive` origin badge's tooltip instead of a warning repeated on every row.
     const isExcl = String(t.origin || "") === "exclusive";
     const eff = (globalAuto && ap !== "auto" && !isExcl)
       ? '<span class="remaining" style="color:var(--err)" title="global approval mode is FULL: this tool is auto-approved no matter what is stored here">FULL ⇒ auto</span>'
-      : (isExcl
-        ? '<span class="remaining" style="color:var(--warn)" title="even on FULL this tool answers permission-denied (exit 126) without the per-session Teamorg grant — toggle it in the session menu">grant still required</span>'
-        : "");
+      : "";
     return `<div class="card tool-row">` +
       `<span class="tool-on" style="color:${on ? "var(--ok)" : "var(--dim)"}">${on ? "●" : "○"}</span>` +
       `<span class="tool-name" title="${nmRaw}">${nm}</span>${originBadge(t)}${eff}` +
@@ -14671,14 +14678,13 @@ async function mountStaticSparkles() {
   const pairs = [
     // [surface, the field to fill, the row to host the ✨, insert before which child,
     //  the name when the field ALREADY holds text (RH-29: optimize the draft)]
-    // RH-27 (operator, 2026-11-03): the chat ✨ moved OUT of the composer row into the
-    // tool rail's FOOT, level with the send button — it ate the horizontal space the
-    // message box needed.
-    // 2026-11-07 (operator): "il autogenerate portalo sempre nella sidebar appena
-    // sopra" [i tre puntini] — the ✨ is inserted BEFORE the ⋯ wrapper, so the ⋯ stays
-    // the last control of the rail's foot. The anchor is the wrapper itself: the ✨'s
-    // host and its `before` target must be PARENT and CHILD, or insertBefore throws.
-    ["chat.prompt", "#inp", "#toolsBar .tb-foot", ".more-wrap",
+    // RH-27 (operator, 2026-11-03): the chat ✨ moved OUT of the composer row — it ate
+    // the horizontal space the message box needed.
+    // v890 (operator: "you can also place somewhere else in the sidebar the tree dot and
+    // the automate icon … choose by reasoning"): the ✨ acts on the DRAFT, so it belongs
+    // in the chat group; the ⋯ stays the rail's last control (it holds reset/new, which
+    // must stay out of the way of a click).
+    ["chat.prompt", "#inp", "#toolsBar #chatViewSec", null,
      "optimize what I typed — same intent, clearer and more complete"],
     ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint",
      "reorganize this objective — same intent, one checkable outcome"],
@@ -15013,6 +15019,10 @@ moveSettingsCats();
    from the DOM (`#inspector section[data-insp]`), never from a second list; the open
    section is painted from the real `.insp-open` class, so the rail cannot lie. */
 const INSP_JUMP_SKIP = ["approvals", "files"];   // already own a badged object button
+/* v890: the runtime panels are a group of their own, not Inspector sections of the
+   session (operator: "feed and terminal shall not be put there, they shall be put in
+   other sidebar groups separated"). */
+const INSP_JUMP_RUNTIME = ["terminal", "feed"];
 const INSP_JUMP_ICONS = {
   cost: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.2v9.6"/><path d="M14.7 9.8h-3.3a1.8 1.8 0 0 0 0 3.6h1.2a1.8 1.8 0 0 1 0 3.6H9.3"/>',
   context: '<path d="M3.5 20h17"/><path d="M7 20v-6M12 20V7.5M17 20v-9.5"/>',
@@ -15033,10 +15043,13 @@ function _inspLabel(sec) {
   const t = (first && first.nodeType === 3) ? first.textContent : (hd ? hd.textContent : "");
   return String(t || "").replace(/\s+/g, " ").trim() || sec.dataset.insp;
 }
+function _inspJumpBoxes() {
+  return ["inspJump", "inspJumpRuntime"].map(id => $(id)).filter(Boolean);
+}
 function _buildInspJump() {
-  const box = $("inspJump");
-  if (!box) return;
-  box.innerHTML = "";
+  const main = $("inspJump"), runt = $("inspJumpRuntime");
+  if (!main || !runt) return;
+  main.innerHTML = ""; runt.innerHTML = "";
   _inspSections().forEach(sec => {
     const key = sec.dataset.insp;
     if (!key || INSP_JUMP_SKIP.indexOf(key) >= 0) return;
@@ -15045,24 +15058,33 @@ function _buildInspJump() {
     b.type = "button";
     b.className = "ghost";
     b.dataset.inspJump = key;
-    b.title = "open and center the " + label + " panel";
-    b.setAttribute("aria-label", "open and center the " + label + " panel");
+    b.title = "expand or collapse the " + label + " panel";
+    b.setAttribute("aria-label", "expand or collapse the " + label + " panel");
     b.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" '
       + 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
       + (INSP_JUMP_ICONS[key] || INSP_JUMP_ICONS.plan) + "</svg>";
-    b.onclick = () => { _railOpenInsp(key); _paintInspJump(); };
-    box.appendChild(b);
+    b.onclick = () => { _inspJumpToggle(key); _paintInspJump(); };
+    (INSP_JUMP_RUNTIME.indexOf(key) >= 0 ? runt : main).appendChild(b);
   });
   _paintInspJump();
 }
+/* ONE jump, two directions: a collapsed section expands (the rail opens and the
+   section is centred); an open one collapses in place. */
+function _inspJumpToggle(name) {
+  const sec = _inspSecOf(name);
+  const body = sec && sec.querySelector(".insp-body");
+  if (!sec || !body) return;
+  if (body.hidden) { _railOpenInsp(name); return; }
+  toggleInsp(name);
+}
 function _paintInspJump() {
-  const box = $("inspJump");
-  if (!box) return;
-  Array.prototype.forEach.call(box.children, b => {
-    const sec = _inspSecOf(b.dataset.inspJump);
-    const on = !!(sec && sec.classList.contains("insp-open"));
-    b.classList.toggle("is-current", on);
-    if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+  _inspJumpBoxes().forEach(box => {
+    Array.prototype.forEach.call(box.children, b => {
+      const sec = _inspSecOf(b.dataset.inspJump);
+      const on = !!(sec && sec.classList.contains("insp-open"));
+      b.classList.toggle("is-current", on);
+      if (on) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+    });
   });
 }
 function toggleInsp(name) {

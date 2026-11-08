@@ -74,10 +74,10 @@ check("B1 the ⋯ and its menu live in the rail",
 check("B2 the ⋯ is the rail's LAST control (the foot), not a mid-cluster tool",
       RAIL.index('class="tb-foot"') < RAIL.index('id="moreBtn"')
       and RAIL.index('id="moreBtn"') < RAIL.index("</aside>"), "")
-check("B3 the ✨ is mounted directly ABOVE the ⋯ (before its wrapper)",
-      '"chat.prompt", "#inp", "#toolsBar .tb-foot", ".more-wrap"' in UI, "")
-check("B4 the rail's tools are two SECTIONS with one hairline between",
-      RAIL.count('class="tb-sec"') == 2
+check("B3 the ✨ acts on the draft: it rides the chat group (v890)",
+      '"chat.prompt", "#inp", "#toolsBar #chatViewSec", null,' in UI, "")
+check("B4 the rail's tools are FOUR SECTIONS with one hairline between",
+      RAIL.count('class="tb-sec"') == 4
       and "#toolsBar .tb-sec + .tb-sec { margin-top: 8px; padding-top: 10px;" in UI, "")
 check("B5 the foot stays at the rail's BOTTOM even with no session cluster",
       "#toolsBar .tb-foot {" in UI and "margin-top: auto;" in UI, "")

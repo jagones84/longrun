@@ -32,8 +32,8 @@ check("A3 the rebuild is still deferred while a control is live",
       "if (editing || roleDirty" in o)
 check("A4 the 5s auto-poll that this guards still exists",
       "setInterval(() => this.refresh(), 5000)" in o)
-check("A5 the model select is really a <select> in the table",
-      '<select class="inp mini"' in o and 'data-f="model">' in o)
+check("A5 the model editor is the popover's own <select> (v890: no inline control)",
+      'data-aedit-f="model"' in o and "openAgentEditor(ev, a, kind){" in o)
 
 print("---")
 ok = sum(1 for r in results if r)

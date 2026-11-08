@@ -44,10 +44,10 @@ check("A2 it is built from the REAL inspector sections, in their order",
       "function _buildInspJump()" in HTML
       and "_inspSections().forEach(sec => {" in HTML
       and 'document.querySelectorAll("#inspector section[data-insp]")' in HTML)
-check("A3 every jump is a named 30px icon that opens AND centers",
-      'b.title = "open and center the " + label + " panel";' in HTML
-      and 'b.setAttribute("aria-label", "open and center the " + label + " panel")' in HTML
-      and "b.onclick = () => { _railOpenInsp(key); _paintInspJump(); };" in HTML)
+check("A3 every jump is a named 30px icon that TOGGLES its panel",
+      'b.title = "expand or collapse the " + label + " panel";' in HTML
+      and 'b.setAttribute("aria-label", "expand or collapse the " + label + " panel")' in HTML
+      and "b.onclick = () => { _inspJumpToggle(key); _paintInspJump(); };" in HTML)
 check("A4 centering is real (the panel is the scroller, block: center)",
       'sec.scrollIntoView({ block: "center" });   // v885' in HTML
       and 'block: "nearest"' not in HTML.split("function _railOpenInsp")[1].split("}")[0])
@@ -58,13 +58,14 @@ check("A6 the list follows a drag-reorder instead of keeping a stale order",
 check("A7 the open section is marked from the real class, and lit in CSS",
       '_paintInspJump();   // v885' in HTML
       and 'const on = !!(sec && sec.classList.contains("insp-open"));' in HTML
-      and "#toolsBar #inspJump button.is-current { color: var(--acc); }" in HTML)
+      and "#toolsBar #inspJump button.is-current," in HTML
+      and "#toolsBar #inspJumpRuntime button.is-current { color: var(--acc); }" in HTML)
 
 # ---- B: correct separations, no duplicate control --------------------------
-check("B1 one group per job: objects | jumps | view controls",
-      HTML.count('<div class="tb-sec"') >= 3
-      and HTML.index('id="inspJump"') > HTML.index('id="kbSessionBtn"')
-      and HTML.index('id="inspJump"') < HTML.index('id="chatReloadBtn"'))
+check("B1 one group per job: objects | chat | panel jumps | runtime",
+      HTML.count('<div class="tb-sec"') >= 4
+      and HTML.index('id="inspJump"') > HTML.index('id="chatViewSec"')
+      and HTML.index('id="inspJump"') < HTML.index('id="inspJumpRuntime"'))
 check("B2 the sections that already own a badged object button are not repeated",
       'const INSP_JUMP_SKIP = ["approvals", "files"];' in HTML
       and 'if (!key || INSP_JUMP_SKIP.indexOf(key) >= 0) return;' in HTML)

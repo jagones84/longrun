@@ -74,8 +74,8 @@ check("a job for an unknown agent is refused", ok and fh.sent["obj"]["ok"] is Fa
 # --- UI wiring -------------------------------------------------------------
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as f:
     ui = f.read()
-check("the agents table has a model + reports-to control",
-      'id="agBody"' in ui and 'data-f="model"' in ui and 'data-f="reports_to"' in ui)
+check("the agents table has a model + reports-to control (v890: compact value buttons)",
+      'id="agBody"' in ui and 'data-aedit="model"' in ui and 'data-aedit="reports_to"' in ui)
 check("agents are creatable with +", 'id="agNew"' in ui and '＋ new agent' in ui)
 check("the job form is goal + assignee",
       'id="jobGoal"' in ui and 'id="jobTo"' in ui and "{goal, assignee}" in ui)

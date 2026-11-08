@@ -111,9 +111,10 @@ check("C1 FULL no longer claims anything-goes",
       "anything goes, anywhere" not in HTML
       and "Three things stay locked even on FULL" in HTML
       and "per-session Teamorg grant" in HTML)
-check("C2 exclusive rows say grant-required, never FULL-auto",
-      "grant still required" in HTML
-      and 'const isExcl = String(t.origin || "") === "exclusive"' in HTML)
+check("C2 the per-tool policy is the only per-row state (v890: no repeated grant badge)",
+      'title="even on FULL this tool answers permission-denied' not in HTML
+      and 'const isExcl = String(t.origin || "") === "exclusive"' in HTML
+      and 'data-ap="${nmRaw}" data-cur="${ap}"' in HTML)
 
 # ---------------- D: the prompt card is display-only ----------------------
 check("D1 the prompt still goes to the model every turn (dedup is display)",

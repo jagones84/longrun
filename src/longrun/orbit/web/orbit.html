@@ -205,10 +205,22 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      eye must not have to re-find the columns on every scroll. */
   table.at{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
   /* Reserve more width for editable values than for icon actions. */
-  table.at col.c-id{width:6%} table.at col.c-name{width:23%} table.at col.c-role{width:15%}
-  table.at col.c-model{width:14%} table.at col.c-rep{width:14%} table.at col.c-teams{width:9%}
-  table.at col.c-file{width:8%}
-  table.at col.c-act{width:11%}
+  table.at col.c-id{width:6.5%} table.at col.c-name{width:22%} table.at col.c-role{width:14%}
+  table.at col.c-model{width:14%} table.at col.c-rep{width:11%} table.at col.c-teams{width:10%}
+  table.at col.c-file{width:7%}
+  table.at col.c-act{width:12%}
+  /* v890 (operator: "find a way to make the agents panel not be so orrible when
+     compressed in width … make icons that open other edit windows so you can make
+     them very small with almost no width"). Every editable cell is ONE compact value
+     button: it reads the current value and opens its editor in a popover, so no cell
+     needs a full input's width and the column can shrink to its content. */
+  table.at td .cbtn{max-width:100%;min-width:0;height:22px;padding:0 3px;display:inline-flex;
+    align-items:center;border:1px solid transparent;overflow:hidden;border-radius:5px}
+  table.at td .cbtn .cv{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:11.5px;color:var(--txt)}
+  table.at td .cbtn:hover{border-color:var(--acc)}
+  table.at td .cbtn.empty .cv{color:var(--dim)}
+  table.at td.aid{white-space:nowrap}
   /* JAG-424: keep the row actions (reset · delete) on ONE line — they wrapped and the
      × stacked under reset, wasting a whole row of height per agent. */
   table.at td.c-act{white-space:nowrap}
@@ -284,6 +296,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     padding:6px 11px;background:var(--panel2);cursor:pointer;min-width:98px}
   .node:hover{border-color:var(--acc)}
   .node.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+  /* v890 (operator: "the org chart shall be colored the box by team, light pastel
+     colours, editable as a further team property"). The tint comes from the team's
+     own `color` (set inline as `--tc` from /api/teams) — one palette, no second copy. */
+  .node[data-team]{background:color-mix(in srgb, var(--tc) 16%, var(--panel2));
+    border-color:color-mix(in srgb, var(--tc) 45%, var(--line))}
+  .node[data-team].sel{border-color:var(--acc)}
   .node .nid{font-family:ui-monospace,monospace;color:var(--acc2);font-size:10px}
   .node .nnm{font-size:12px;line-height:1.15;white-space:normal;overflow-wrap:anywhere}
   .node .nrl{font-size:9px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
@@ -565,7 +583,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      user-widened columns that overflow) wraps into clean full rows instead
      of a half-empty partial line. Narrow screens stack (1100px rule). */
   /* the view bar is a full-width row ABOVE the columns, not a column itself. */
-  main.view-cols #viewBar{flex:1 1 100%;margin-bottom:0}
+  /* v890 (operator: "why the top bar in control of view is so BIH so height?"):
+     `.deckBody` is a COLUMN flex container, so `flex:1 1 100%` made this row GROW
+     to fill the page height. It is a bar: take only its content height. */
+  main.view-cols #viewBar{flex:0 0 auto;width:100%;margin-bottom:0}
   /* v881: columns were all `1 1 0` — the agents table and the two graphs got the
      same ~280px, so the org chart was unreadable and the jobs text wrapped on
      every word. The basis now follows the CONTENT (a table needs more than a
@@ -817,6 +838,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <input class="inp" id="tmNewDesc" aria-label="new team description" placeholder="what is this team for? (also steers the icon)" style="width:260px;flex:none">
         <button type="button" class="btn ghost" data-genfield="team.description" data-gen-target="#tmNewDesc" data-genstatus="team.description" title="draft this team description with AI — the harness knows the name, the existing teams and who would be in it">✨</button>
         <select class="inp" id="tmNewIcon" aria-label="new team icon" title="icon + colour from the palette — 'auto' lets Architect pick the one that matches the name and the description" style="width:180px;flex:none"></select>
+        <!-- v890 (operator: "user new team manual creation can select the color"): the
+             palette sets it; this swatch overrides it before the team exists. -->
+        <input class="inp" type="color" id="tmNewColor" aria-label="new team colour"
+               title="the colour of this team's boxes in the org chart"
+               style="width:38px;height:32px;padding:2px;flex:none">
         <button class="btn" id="tmNew">create team</button>
         <button class="btn ghost" id="tmAddCancel" type="button">cancel</button>
       </div>
@@ -1183,15 +1209,9 @@ class AgentsView {
   }
   row(a, grp){
     const hid = (grp != null && this.closed.has(grp)) ? ' hidden' : '';
-    const mopts = '<option value=""' + (a.model ? "" : " selected") + '>default</option>' +
-      this.models.map(m => '<option value="' + esc(m.ref) + '"' + (a.model === m.ref ? " selected" : "") + '>' + esc(m.label) + '</option>').join("");
-    const roster = (this.roster && this.roster.length) ? this.roster : this.agents;
-    // JAG-2.4: only a DESIGNATED agent can be a manager (reports_to is an agent id).
-    // JAG-2.6: the option TEXT is the searchable part — the browser's type-ahead
-    // matches the prefix of the text only, so the NAME must lead and the A-id follow
-    // ("Master · A8"). Typing "ma" now finds Master; with "A8 Master" nothing matched.
-    const ropts = '<option value="">— none —</option>' +
-      roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.name || x.id) + ' · ' + esc(x.id) + '</option>').join("");
+    // v890: the values are READ here; the editors live in the popover (`openAgentEditor`).
+    const modelLabel = a.model ? String(a.model).split("/").slice(-1)[0] : "default";
+    const repLabel = a.reports_to ? ("\u21b3 " + a.reports_to) : "\u21b3 \u2014";
     // JAG-2.4: a plain session has no agent id yet — show a dash that says so.
     // JAG-2.9: the id is a button: clicking it selects the agent (row + org node).
     // RH-20: every session IS an agent (stores.ensure_agent), so the roster carries
@@ -1242,10 +1262,10 @@ class AgentsView {
       : '';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
       '<td class="aid"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</td>' +
-      '<td><input class="inp mini" name="agent-name" aria-label="agent name" data-f="name" value="' + esc(a.name||"") + '"></td>' +
-      '<td><input class="inp mini" name="agent-role" aria-label="agent role" data-f="role" value="' + esc(a.role||"") + '"></td>' +
-      '<td><select class="inp mini" name="agent-model" aria-label="agent model" data-f="model">' + mopts + '</select></td>' +
-      '<td><select class="inp mini" name="agent-reports-to" aria-label="agent reports to" data-f="reports_to">' + ropts + '</select></td>' +
+      '<td><button class="btn ghost mini cbtn' + (a.name ? '' : ' empty') + '" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit name and role" aria-label="edit name and role"><span class="cv">' + esc(a.name || "\u2014") + '</span></button></td>' +
+      '<td><button class="btn ghost mini cbtn' + (a.role ? '' : ' empty') + '" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit role" aria-label="edit role"><span class="cv">' + esc(a.role || "\u2014") + '</span></button></td>' +
+      '<td><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv">' + esc(modelLabel) + '</span></button></td>' +
+      '<td><button class="btn ghost mini cbtn' + (a.reports_to ? '' : ' empty') + '" data-aedit="reports_to" data-sid="' + esc(a.session) + '" title="reports to ' + esc(a.reports_to || "nobody") + '" aria-label="edit reports to"><span class="cv">' + esc(repLabel) + '</span></button></td>' +
       '<td><button class="btn ghost mini tmbtn" data-sid="' + esc(a.session) + '" data-tm="1" title="' + esc(this.teamCellTitle(a)) + '">' + this.teamCell(a) + '</button></td>' +
       '<td><button class="btn ghost mini pbtn' + (voidP ? ' missing' : '') + '" data-brief="1" aria-label="prompt (ROLE.md)" title="' +
         (voidP ? "EMPTY prompt — this agent runs on the bare system prompt; click to write its ROLE.md"
@@ -1255,6 +1275,42 @@ class AgentsView {
       '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)" aria-label="clear session">↺</button>' +
       goBtn +
       '<button class="btn ghost mini no" data-del="1" title="release agent" aria-label="release agent">×</button></td></tr>' + brief;
+  }
+  /* v890: ONE editor per compact cell — same `POST /api/agents` the inline controls
+     used, so nothing moved in the backend; only the door got smaller. */
+  openAgentEditor(ev, a, kind){
+    const sid = a.session;
+    let form = "";
+    if (kind === "model"){
+      const mopts = '<option value=""' + (a.model ? "" : " selected") + '>router default</option>' +
+        this.models.map(m => '<option value="' + esc(m.ref) + '"' + (a.model === m.ref ? " selected" : "") + '>' + esc(m.label) + '</option>').join("");
+      form = '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;min-width:250px;white-space:normal">' +
+        '<span class="lbl" style="padding:0">model</span>' +
+        '<select class="inp" data-aedit-f="model">' + mopts + '</select>' +
+        '<div style="display:flex;justify-content:flex-end"><button class="btn primary" data-aedit-save type="button">save</button></div></form>';
+    } else if (kind === "reports_to"){
+      const roster = (this.roster && this.roster.length) ? this.roster : this.agents;
+      const ropts = '<option value="">\u2014 none \u2014</option>' +
+        roster.filter(x => x.id && x.id !== a.id).map(x => '<option value="' + esc(x.id) + '"' + (a.reports_to === x.id ? " selected" : "") + '>' + esc(x.name || x.id) + ' \u00b7 ' + esc(x.id) + '</option>').join("");
+      form = '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;min-width:250px;white-space:normal">' +
+        '<span class="lbl" style="padding:0">reports to</span>' +
+        '<select class="inp" data-aedit-f="reports_to">' + ropts + '</select>' +
+        '<div style="display:flex;justify-content:flex-end"><button class="btn primary" data-aedit-save type="button">save</button></div></form>';
+    } else {
+      form = '<form onsubmit="return false" style="display:flex;flex-direction:column;gap:5px;padding:4px 2px;min-width:270px;white-space:normal">' +
+        '<span class="lbl" style="padding:0">name</span>' +
+        '<input class="inp" data-aedit-f="name" value="' + esc(a.name || "") + '" aria-label="agent name">' +
+        '<span class="lbl" style="padding:0">role</span>' +
+        '<input class="inp" data-aedit-f="role" value="' + esc(a.role || "") + '" aria-label="agent role">' +
+        '<div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn primary" data-aedit-save type="button">save</button></div></form>';
+    }
+    const m = openPopover(ev, form, {w: 300, h: kind === "name" ? 200 : 150});
+    m.querySelector('[data-aedit-save]').onclick = () => {
+      const patch = {};
+      m.querySelectorAll('[data-aedit-f]').forEach(el => { patch[el.dataset.aeditF] = (el.value || "").trim(); });
+      closePopover();
+      this.save(sid, patch);
+    };
   }
   bind(){
     const body = $("agBody");
@@ -1303,40 +1359,19 @@ class AgentsView {
       ev.stopPropagation();
       this.openAssignPicker(ev, b.dataset.tmadd);
     }; });
-    body.querySelectorAll("select[data-f]").forEach(el => {
-      // JAG-2.6: a <select> COMMITS on every change, and the browser's own type-ahead
-      // fires a change per keystroke — so typing "m" to FIND a model immediately WROTE
-      // that model, and the team's local-model guard answered with an alert ("typing in
-      // the Model menu shows an error instead of navigating"). Navigate freely now: a
-      // keyboard change (type-ahead or arrows) is browsing and is written ONCE, on
-      // Enter or when the control loses focus; a MOUSE pick still saves at once.
-      el.dataset.saved = el.value;
-      el.__browse = false;
-      el.onkeydown = (e) => {
-        if (e.key === "Enter"){ e.preventDefault(); el.__browse = false; el.blur(); return; }
-        if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key.length === 1) el.__browse = true;
-      };
-      el.onchange = () => {
-        if (el.__browse) return;                    // keyboard browsing: not a pick yet
-        const tr = el.closest("tr");
-        if (!tr) return;
-        el.dataset.saved = el.value;
-        this.save(tr.dataset.sid, {[el.dataset.f]: el.value});
-      };
-      el.onblur = () => {
-        if (!el.__browse) return;
-        el.__browse = false;
-        const tr = el.closest("tr");
-        if (!tr || el.value === el.dataset.saved) return;
-        el.dataset.saved = el.value;
-        this.save(tr.dataset.sid, {[el.dataset.f]: el.value});
-      };
-    });
-    body.querySelectorAll("input[data-f]").forEach(el => {
-      el.onchange = () => { const sid = el.closest("tr").dataset.sid; this.save(sid, {[el.dataset.f]: el.value}); };
-    });
+    /* v890: the table holds no editable form control any more — name, role, model and
+       reports-to open in `openAgentEditor`, which commits ONCE on its own save button.
+       The JAG-2.6 typing story (a type-ahead keystroke must not write) is structural
+       now: browsing the <select> in the popover writes nothing until you press save. */
     // JAG-2.0: the Teams cell opens a checkbox picker (one or more teams per agent).
     // JAG-2.4: addressed by SESSION, so a plain (not yet designated) session works too.
+    // v890: every compact cell opens its editor (the value stays visible in the row).
+    body.querySelectorAll("[data-aedit]").forEach(b => { b.onclick = (ev) => {
+      if (window.DragSort && DragSort.consumeClick(ev)) return;
+      ev.stopPropagation();
+      const a = this.agents.find(x => x.session === b.dataset.sid);
+      if (a) this.openAgentEditor(ev, a, b.dataset.aedit);
+    }; });
     body.querySelectorAll("[data-tm]").forEach(b => { b.onclick = (ev) => {
       ev.stopPropagation();
       const a = this.agents.find(x => x.session === b.dataset.sid);
@@ -1797,6 +1832,21 @@ class AgentsView {
   fillIconPicker(){
     const sel = $("tmNewIcon");
     if (sel) sel.innerHTML = this.iconOptions(sel.value);
+    // v890: the palette option carries its colour; the swatch follows it until the
+    // operator picks one by hand (then it wins, and is sent as the team's property).
+    const c = $("tmNewColor");
+    if (c && !c.__bound){
+      c.__bound = true;
+      c.addEventListener("input", () => { c.dataset.touched = "1"; });
+    }
+    if (sel && c && !c.dataset.touched){
+      const o = sel.selectedOptions && sel.selectedOptions[0];
+      c.value = (o && o.dataset.color) || ((this.palette || [])[0] || {}).color || c.value;
+      sel.onchange = () => {
+        const op = sel.selectedOptions && sel.selectedOptions[0];
+        if (op && op.dataset.color && !c.dataset.touched) c.value = op.dataset.color;
+      };
+    }
   }
   openTeamEdit(ev, tid){
     const t = this.teamById(tid); if (!t) return;
@@ -1809,7 +1859,8 @@ class AgentsView {
       fld("name", "name", t.name) +
       '<span class="lbl" style="padding:0">icon · colour</span>' +
       '<select class="inp" data-f="symbol">' + this.iconOptions(t.symbol) + '</select>' +
-      '<input class="inp" data-f="color" value="' + esc(t.color || "") + '" title="colour hex — follows the icon unless you override it">' +
+      '<input class="inp" data-f="color" type="color" value="' + esc(t.color || "#3B82F6") +
+        '" title="the colour of this team\'s boxes in the org chart" style="width:52px;height:30px;padding:2px">' +
       fld("description", "description", t.description) +
       '<div style="display:flex;gap:6px;margin-top:4px">' +
       '<button class="btn ghost" data-a="gen" type="button" title="ask Architect for the icon that matches the name + description">✨ generate icon</button>' +
@@ -1888,6 +1939,7 @@ class AgentsView {
 class OrgChartView {
   constructor(onPick, onGoTo){ this.onPick = onPick; this.onGoTo = onGoTo; this.bySid = {};
     this.box = $("orgtree"); this.canvas = null; this.k = 1; this.tx = 0; this.ty = 0;
+    this.teams = [];   // v890: the live team list (each team carries its colour)
     this.selSid = null;   // JAG-2.9: the selected node SURVIVES the 5s re-render
     this.auto = true;   // true while in "fit" mode; a manual zoom/pan turns it off
     this._sig = null; this.drag = null; this._bindControls(); }
@@ -1993,6 +2045,12 @@ class OrgChartView {
     "translate(" + this.tx + "px," + this.ty + "px) scale(" + this.k + ")"; }
   render(tree){
     const agents = (tree && tree.agents) || [];
+    // v890: the box tint is the agent's TEAM colour — the team's own property.
+    const teamCol = {};
+    (this.teams || []).forEach(t => { if (t && t.id && t.color) teamCol[t.id] = String(t.color); });
+    const colorOf = a => { const ids = a.teams || [];
+      for (let i = 0; i < ids.length; i++) if (teamCol[ids[i]]) return teamCol[ids[i]];
+      return ""; };
     const box = this.box;
     this.bySid = {};
     if (!agents.length){ this.canvas = null; box.innerHTML = '<div class="empty">no agents yet.</div>'; return; }
@@ -2096,7 +2154,11 @@ class OrgChartView {
       const cut = cutOf[a.id];
       const tip = "click = preview this agent\u2019s constellation \u00b7 double-click = open its session in the Sessions tab \u00b7 right-click = more actions" +
         (cut ? "\nreports to " + cut + " — outside this scope, so the chain is cut here" : "");
-      nodes += '<div class="node' + (cut ? " cut" : "") + '" data-sid="' + esc(a.session) + '" style="left:' + p.cx.toFixed(1) + 'px;top:' + p.top.toFixed(1) + 'px" title="' + esc(tip) + '"><span class="nid">' + esc(a.id) + '</span>' +
+      const tc = colorOf(a);
+      nodes += '<div class="node' + (cut ? " cut" : "") + '" data-sid="' + esc(a.session) + '"' +
+        (tc ? ' data-team="1"' : '') +
+        ' style="left:' + p.cx.toFixed(1) + 'px;top:' + p.top.toFixed(1) + 'px' +
+        (tc ? ';--tc:' + esc(tc) : '') + '" title="' + esc(tip) + '"><span class="nid">' + esc(a.id) + '</span>' +
         '<span class="nnm">' + esc(a.name||"") + '</span>' + (a.role ? '<span class="nrl">' + esc(a.role) + '</span>' : '') +
         (cut ? '<span class="ncut">\u21e1' + esc(cut) + '</span>' : '') + '</div>'; });
     edges.forEach(d => { links += '<path class="oedge" d="' + d + '"/>'; });
@@ -3530,7 +3592,11 @@ class OrbitApp {
     const sel = $("tmNewIcon");
     const symbol = sel ? (sel.value || "") : "";
     const opt = (sel && sel.selectedOptions && sel.selectedOptions[0]) || null;
-    const color = (symbol && opt && opt.dataset.color) || "";
+    // v890: only an OPERATOR-chosen swatch is explicit — an untouched one only mirrors the
+    // palette and would override the colour Architect picks from the name/purpose.
+    const sw = $("tmNewColor");
+    const color = ((sw && sw.dataset.touched && sw.value) || "")
+      || ((symbol && opt && opt.dataset.color) || "");
     const r = await this.api.post("/api/teams", { name,
       description: description || undefined,
       symbol: symbol || undefined, color: color || undefined });
@@ -3568,6 +3634,7 @@ class OrbitApp {
     ]);
     this.agents.written = (wrote && wrote.targets) || {};
     if (tms) this.teams = tms.teams || [];
+    if (this.org) this.org.teams = this.teams;   // v890: the org chart tints by team
     // JAG-536: the palette lives on the VIEW (it owns the picker), and it is the
     // palette the backend publishes — never a copy hardcoded in the browser.
     if (tms && tms.palette && tms.palette.length) this.agents.palette = tms.palette;
