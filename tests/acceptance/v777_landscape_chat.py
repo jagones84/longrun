@@ -62,8 +62,8 @@ check("A4 everything below the rail starts at its right edge",
 check("A5 the BOTTOM tab bar is no longer part of this block (RH-21 moved it to a rail)",
       "#tabbar { height: 44px; min-height: 44px; }" not in _BLK
       and "#tabbar button > span { display: none; }" not in _BLK)
-check("A6 the two floating edge handles are hidden (the rail and the tabs do their job)",
-      ".edge-handle { display: none !important; }" in _BLK)
+check("A6 the pane toggles are out of this layout (the rail and the tabs do their job)",
+      ".pane-tog-grp { display: none !important; }" in _BLK)
 check("A7 the composer and the transcript get the reclaimed pixels",
       "#composer { padding-top: 4px; padding-bottom: 4px; gap: 4px; }" in _BLK
       and "#goalBar { height: 26px; min-height: 26px; }" in _BLK

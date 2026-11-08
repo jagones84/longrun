@@ -61,8 +61,10 @@ check("A1 the chat summary is a two-column grid (badge column | label)",
       "display: grid" in sum_css and "grid-template-columns: auto minmax(0, 1fr)" in sum_css,
       sum_css.strip()[:120])
 check("A2 the agent/todo id sits in a COLUMN under the status badge",
+      # v906: the second meta item is the ids LINE (todo + job + subjob), not the
+      # bare todo id — same position, same column (A3 pins the direction).
       "function _mkSection(" in UI
-      and '<summary><span class="tcmeta"><span class="st"></span><span class="tcid"></span></span>'
+      and '<summary><span class="tcmeta"><span class="st"></span><span class="tids"></span></span>'
       in UI)
 meta_css = block(".tctree .tcmeta")
 check("A3 .tcmeta stacks badge then id (no inline preamble)",
@@ -94,13 +96,18 @@ check("B6 the stacked (long-label) variant keeps the same column meta",
 
 # ---- C. nothing lost -----------------------------------------------------------
 check("C1 the chat id is still painted live after a status change",
-      'const idEl = det.querySelector(".tcid");' in UI
-      and "idEl.textContent = _todoid(node);" in UI)
+      # v906: the id LINE (.tids) now carries todo + job + subjob from `_nodeIds`,
+      # so a status change repaints all of them, not the bare todo id.
+      'const idEl = det.querySelector(".tids");' in UI
+      and "idEl.innerHTML = _nodeIds(node);" in UI)
 check("C2 the plan chip still prints the todo id",
-      'class="tcid" title="node id ${esc(n.id)}">${_todoid(n)}' in UI)
+      'class="tcid" title="node id ${_attr(n.id)}">${esc(_todoid(n))}' in UI)
 check("C3 the job/subjob chips are still clickable bridges",
-      UI.count('class="jt jt-job"') == 2
-      and 'el.querySelectorAll(".jt-job")' in UI)
+      # v906: ONE builder (`_nodeIds`) and ONE wiring (`_wireJobChips`) serve both
+      # the rail and the chat card, so the chips cannot exist in one and not the other.
+      UI.count('class="jt jt-job"') == 1
+      and "function _wireJobChips(box, n)" in UI
+      and "_wireJobChips(el, n);" in UI)
 
 print("\nv630: %d/%d PASS" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

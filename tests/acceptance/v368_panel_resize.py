@@ -44,8 +44,9 @@ check("A1 the border grip runs on POINTER events (mouse + finger + pen)",
       and 'document.addEventListener("pointercancel", up);' in HTML, "")
 check("A2 the grip turns off browser touch scrolling on itself",
       'position: relative; z-index: 31; touch-action: none;' in HTML, "")
-check("A3 the grip out-stacks the circular collapse handle (no swallowed press)",
-      '.edge-handle { position: fixed; top: 50%; z-index: 30;' in HTML, "")
+check("A3 the removable edge arrows are gone, so the grip owns its border",
+      ".edge-handle { position: fixed; top: 50%; z-index: 30;" not in HTML
+      and "body.collapsed-left #resize-left, body.collapsed-right #resize-right { display: none; }" in HTML, "")
 check("A4 the press is captured so a fast drag off the 5px border still tracks",
       'handle.setPointerCapture(e.pointerId)' in HTML, "")
 

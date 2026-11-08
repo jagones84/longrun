@@ -45,16 +45,18 @@ check("A3 those surfaces now resolve through theme tokens",
 check("A4 the settings window itself paints with the theme token",
       "#settingsWin { position: fixed" in HTML and "background: var(--menubg);" in HTML, "")
 
-# --- B: a click-proof handle -------------------------------------------------
-check("B1 the handle toggles on pointer UP with a movement guard",
-      'h.addEventListener("pointerup", e => {' in HTML
-      and "Math.abs(e.clientX - x0) + Math.abs(e.clientY - y0) <= 8" in HTML, "")
-check("B2 the pointer-up path calls the same toggles",
-      '(id === "handle-left" ? toggleLeftPanel : toggleRightPanel)();' in HTML, "")
-check("B3 the fragile native onclick is gone",
-      '$("handle-left").onclick' not in HTML and '$("handle-right").onclick' not in HTML, "")
-check("B4 the press guard against the resize grip is kept",
-      'h.onmousedown = e => { e.preventDefault(); e.stopPropagation(); };' in HTML, "")
+# --- B: one click, no press dance (2026-11-08: the pane toggles are topbar buttons)
+check("B1 a pane toggle is an ordinary button — no pointer-up dance is needed",
+      'h.addEventListener("pointerup", e => {' not in HTML
+      and '$("paneLeftBtn").onclick = () => toggleLeftPanel();' in HTML, "")
+check("B2 each toggle calls its OWN pane's toggle",
+      '$("paneRightBtn").onclick = () => toggleRightPanel();' in HTML, "")
+check("B3 the removed floating handles leave no dead binding behind",
+      '["handle-left", "handle-right"].forEach' not in HTML
+      and 'id="handle-left"' not in HTML, "")
+check("B4 the Ctrl/Cmd+B shortcut mirrors the sessions toggle",
+      'String(e.key || "").toLowerCase() !== "b"' in HTML
+      and "toggleLeftPanel();" in HTML, "")
 check("B5 the resize border ignores a click (no shift on a 1-px wobble)",
       "if (Math.abs(dx) < 4) return;" in HTML and "let dragging = false;" in HTML, "")
 check("B6 a click never persists a width (only a real drag does)",

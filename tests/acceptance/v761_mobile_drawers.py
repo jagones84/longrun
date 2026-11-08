@@ -45,27 +45,27 @@ def src(*parts):
 UI = src("webui", "index.html")
 ED = src("webui", "assets", "editor.js")
 
-# ---- A. clamped ---------------------------------------------------------------
-check("A1 the arrows keep a 22px inset from both screen edges",
-      "const inset = 22;" in UI
-      and "const clamp = x => Math.min(Math.max(x, inset), vw - inset);" in UI)
-check("A2 both positions go through the clamp",
-      "const lx = clamp(lOpen ? ls.getBoundingClientRect().right : gap);" in UI
-      and "const rx = clamp(rOpen ? rc.getBoundingClientRect().left : vw - gap);" in UI)
+# ---- A. the tap target that could land on the OTHER panel is gone --------------
+check("A1 no edge arrow is parked near the screen edge any more",
+      "const inset = 22;" not in UI
+      and 'id="handle-left"' not in UI and 'id="handle-right"' not in UI)
+check("A2 the pane toggles are real buttons and the Control view hides them",
+      "body.control-on .pane-tog-grp { display: none !important; }" in UI
+      and 'aria-controls="aside"' in UI and 'aria-controls="inspector"' in UI)
 
-# ---- B. one arrow at a time ---------------------------------------------------
-check("B1 an open overlay drawer hides the OTHER arrow",
-      "const leftDrawer = lOpen && _overlayLeft();" in UI
-      and "const rightDrawer = rOpen && _overlayRight();" in UI
-      and "L.hidden = rightDrawer && !leftDrawer;" in UI
-      and "R.hidden = leftDrawer && !rightDrawer;" in UI)
+# ---- B. one pane per button, never two states in one glyph ---------------------
+check("B1 each topbar toggle reads ONLY its own pane (they cannot fight)",
+      "function _paintPaneState() {" in UI
+      and "L.setAttribute(\"aria-pressed\", _panelShown('[data-col=\"sessions\"]')" in UI
+      and "R.setAttribute(\"aria-pressed\", _panelShown('[data-col=\"context\"]')" in UI)
 
-# ---- C. the rule can actually hide it -----------------------------------------
-check("C1 a hidden edge handle is really hidden (the button is display:flex)",
-      ".edge-handle[hidden] { display: none !important; }" in UI)
-check("C2 both arrows exist and keep their pointer handler",
-      'id="handle-left"' in UI and 'id="handle-right"' in UI
-      and '["handle-left", "handle-right"].forEach(id => {' in UI)
+# ---- C. the rule can actually hide them ---------------------------------------
+check("C1 the pane toggles are hidden on a phone (the tab bar owns it)",
+      "@media (max-width: 900px) { .pane-tog-grp { display: none; } }" in UI)
+check("C2 both toggles exist as ordinary buttons with their own handler",
+      'id="paneLeftBtn"' in UI and 'id="paneRightBtn"' in UI
+      and '$("paneLeftBtn").onclick = () => toggleLeftPanel();' in UI
+      and '$("paneRightBtn").onclick = () => toggleRightPanel();' in UI)
 
 # ---- D. the left drawer grip --------------------------------------------------
 check("D1 the duplicate rule that killed the left grip is gone",

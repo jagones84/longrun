@@ -87,20 +87,36 @@ check("E2 selecting a model in compact mode pins the summarizer",
 check("E3 the current compaction ref is loaded at boot",
       "function loadCompactionRef" in HTML and "loadSkills(); loadCompactionRef();" in HTML, "")
 
-# --- F: panel handles replace the topbar buttons ----------------------------
-check("F1 the topbar toggle buttons are gone",
+# --- F: pane toggles live in the TOPBAR (2026-11-08: the floating edge arrows are
+#     gone — the operator asked for Trae-style toggles "on top") --------------------
+check("F1 there is no legacy toggle pair from the first shell",
       'id="toggle-left"' not in HTML and 'id="toggle-right"' not in HTML, "")
-check("F2 circular edge handles exist",
-      'id="handle-left"' in HTML and 'id="handle-right"' in HTML
-      and ".edge-handle" in HTML, "")
-check("F3 handles are positioned from the panel rect + flip their arrow",
-      "function positionHandles" in HTML and 'L.textContent = lOpen ? "◀" : "▶"' in HTML
-      and 'R.textContent = rOpen ? "▶" : "◀"' in HTML, "")
-check("F5 the resize grip cannot steal the handle press",
-      'h.onmousedown = e => { e.preventDefault(); e.stopPropagation(); }' in HTML, "")
-check("F4 the toggle behaviour is preserved (collapsed/show + resize)",
+check("F2 the two pane toggles are topbar buttons, one per pane",
+      'id="paneLeftBtn"' in HTML and 'id="paneRightBtn"' in HTML
+      and '<button class="ghost pane-tog" id="paneLeftBtn"' in HTML
+      and '<button class="ghost pane-tog" id="paneRightBtn"' in HTML
+      and '<span class="pane-tog-grp">' in HTML, "")
+check("F3 each toggle reports its OWN pane through aria-pressed",
+      'L.setAttribute("aria-pressed", _panelShown(\'[data-col="sessions"]\') ? "true" : "false")' in HTML
+      and 'R.setAttribute("aria-pressed", _panelShown(\'[data-col="context"]\') ? "true" : "false")' in HTML, "")
+check("F3b the toggles are FRAMELESS (Trae look: bare glyph, no box, filled side)",
+      "#topbar .pane-tog { width: 26px; height: 26px; min-height: 26px; padding: 0;" in HTML
+      and "border: 0; background: transparent; box-shadow: none;" in HTML
+      and '#topbar .pane-tog[aria-pressed="true"] .pt-pane { opacity: .95; }' in HTML
+      and '<span class="pane-tog-grp">' in HTML
+      and "padding-right: 6px; border-right: 1px solid var(--line);" in HTML, "")
+check("F4 the floating edge arrows are gone for good",
+      'id="handle-left"' not in HTML and 'id="handle-right"' not in HTML
+      and ".edge-handle {" not in HTML, "")
+check("F5 the toggle behaviour is preserved (collapsed/show + resize)",
       "function toggleLeftPanel" in HTML and "function toggleRightPanel" in HTML
       and "collapsed-left" in HTML and "collapsed-right" in HTML, "")
+check("F6 the collapsed panes are remembered across a reload",
+      "function _persistPanes" in HTML and 'localStorage.setItem("sf_panes"' in HTML
+      and "function _restorePanes" in HTML and "_restorePanes();" in HTML, "")
+check("F7 an ordinary button needs no press guard",
+      '$("paneLeftBtn").onclick = () => toggleLeftPanel();' in HTML
+      and '$("paneRightBtn").onclick = () => toggleRightPanel();' in HTML, "")
 
 # --- G: composer contrast ---------------------------------------------------
 check("G1 the composer background is token-driven",
@@ -143,18 +159,18 @@ check("J3 bolder text really bumps the whole app (body + chat + inputs)",
       and "html.bold-text input," in HTML and "font-weight: 600" in HTML, "")
 
 # --- K: handles stay glued + the collapsed session name (JAG-357/358) --------
-check("K1 the handles reposition while the panel is being resized",
-      "positionHandles();   // JAG-357: keep the handle glued to the border we move" in HTML
-      and "new ResizeObserver(() => positionHandles())" in HTML, "")
+check("K1 the pane state is repainted while a panel is being resized",
+      "_paintPaneState();   // keep the pane toggles honest while the width moves" in HTML
+      and "new ResizeObserver(() => _paintPaneState())" in HTML, "")
 check("K2 a collapsed panel drops its resize grip",
       "body.collapsed-left #resize-left, body.collapsed-right #resize-right { display: none; }" in HTML, "")
 check("K3 the active session name shows in the topbar whenever the panel is off screen",
       'id="sessBadge"' in HTML and "function updateSessBadge" in HTML
       and "!_panelShown('[data-col=\"sessions\"]')" in HTML, "")
-check("K4 the handle position compensates the real page scale (engine-agnostic)",
+check("K4 the drawer grips compensate the real page scale (engine-agnostic)",
       "function _pageScale" in HTML and "p.getBoundingClientRect().left / 100" in HTML
-      and "L.style.left = (lx / s)" in HTML, "")
-check("K5 a zoom change re-glues the handles",
+      and "const z = _pageScale();" in HTML, "")
+check("K5 a zoom change re-glues the grips",
       "_settleHandles();    // JAG-358: a zoom change rescales the page" in HTML, "")
 check("K6 a panel parked off screen is not treated as shown",
       "r.right > 1 && r.left < _vw() - 1" in HTML, "")
