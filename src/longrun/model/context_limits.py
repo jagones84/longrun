@@ -51,10 +51,10 @@ DEFAULTS = {
     "acceptance_max_predicate_len": 200,
     "acceptance_missing_items": 6,
     "acceptance_missing_chars": 300,
-    "chat_tool_steps": 8,
-    "chat_tool_iters": 64,
+    "chat_tool_steps": 12,
+    "chat_tool_iters": 96,
     "plan_tool_steps": 3,
-    "subagent_wait_secs": 180,
+    "subagent_wait_secs": 600,
 }
 
 #: Env overrides kept for tests / one-off runs. A name absent here has no env

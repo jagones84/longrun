@@ -310,7 +310,7 @@ class Coordinator:
         ]
         return {"goal_entry": entry, "subgoal_entries": subgoals}
 
-    def run_swarm(self, goal, n_workers=3, max_steps_per_worker=4, model=None):
+    def run_swarm(self, goal, n_workers=3, max_steps_per_worker=None, model=None):
         """Decompose, spawn workers via subagent, collect results, synthesise.
 
         Returns a report with all entries.

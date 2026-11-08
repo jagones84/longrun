@@ -1840,6 +1840,9 @@ def handle(handler, method, path, qs, body):
                     "max_depth": int((_kg.cfg() or {}).get("subagent_max_depth", 2)),
                     "max_parallel": int(_cfg.get("max_parallel") or 0),
                     "max_per_run": int(_cfg.get("max_per_run", 6) or 0),
+                    # The step cap every spawn path defaults to (v900) — shown so the
+                    # panel/CLI can read it instead of guessing a number.
+                    "max_steps": _sub.default_steps(),
                     "roles": _cfg.get("roles") or {},
                     "running": _sub._running_count(),
                     "context": "isolated",
@@ -2317,7 +2320,7 @@ def handle(handler, method, path, qs, body):
             goal = body.get("goal", "")
             if not goal:
                 return _r(handler, 400, {"error": "goal required"})
-            max_steps = _int(body.get("max_steps", 4), 4)
+            max_steps = _int(body.get("max_steps", 0), 0) or _SUBAGENT.default_steps()
             result = _SUBAGENT.spawn(goal, parent_run_id=body.get("run_id"),
                                      max_steps=max_steps, model=body.get("model"))
             return _r(handler, 200, result)
@@ -2383,7 +2386,8 @@ def handle(handler, method, path, qs, body):
             if not goal:
                 return _r(handler, 400, {"error": "goal required"})
             n_workers = _int(body.get("n_workers", 3), 3)
-            max_steps = _int(body.get("max_steps", 4), 4)
+            from longrun.agent import subagent as _sub
+            max_steps = _int(body.get("max_steps", 0), 0) or _sub.default_steps()
             coord = _SWARM.Coordinator()
             report = coord.run_swarm(goal, n_workers, max_steps, body.get("model"))
             return _r(handler, 200, report)

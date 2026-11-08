@@ -2017,9 +2017,10 @@ def _apply_chat_subagent(sess, act, on_event, node=None, after=None, state=None)
                               backend="harness", node=node, after=after)
             return "subagent error: goal required"
         try:
-            max_steps = int(_act.get("max_steps", _args.get("max_steps", 4)))
+            max_steps = int(_act.get("max_steps", _args.get("max_steps",
+                                                        _sub.default_steps())))
         except (TypeError, ValueError):
-            max_steps = 4
+            max_steps = _sub.default_steps()
         model = _act.get("model") or _args.get("model") or None
         # JAG-451: an optional named role brief (config/subagents.yaml).
         role = str(_act.get("role") or _args.get("role") or "").strip() or None
@@ -6565,11 +6566,11 @@ def apply_agent_action(act, run_id=None, session=None):
         goal = str(act.get("goal") or act.get("detail") or "").strip()
         if not goal:
             return "subagent error: goal required"
-        try:
-            max_steps = int(act.get("max_steps", 4))
-        except (TypeError, ValueError):
-            max_steps = 4
         from longrun.agent import subagent as _sub
+        try:
+            max_steps = int(act.get("max_steps", _sub.default_steps()))
+        except (TypeError, ValueError):
+            max_steps = _sub.default_steps()
         result = _sub.spawn(goal, parent_run_id=run_id, max_steps=max_steps,
                             model=act.get("model"),
                             depth=_sub.depth_of(run_id) + 1)

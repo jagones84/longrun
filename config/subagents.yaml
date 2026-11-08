@@ -2,6 +2,12 @@ version: '1'
 max_parallel: 4
 # M8: per-run spawn budget (DeerFlow max_total_per_run parity, default 6).
 max_per_run: 6
+# Real tool steps a child run may take before it stops (`termination: max_steps`).
+# This is the step cap ONLY; the spawn/subjob/MCP/HTTP call paths that used to
+# default to a literal 4 read this row. 4 cut a research child off before its
+# final-answer turn (2026-11-07 SJ1.1: `steps: 5, max_steps: 4`), so the shipped
+# value leaves room for connect -> search -> filter -> compose -> answer.
+max_steps: 8
 # I-1: a role may carry `tools`, the ONLY thing that limits what its agent can
 # call. Exact names ("fs.read") or a whole namespace ("fs" = every fs.* tool).
 # NO `tools` key = unrestricted (the pre-I-1 behaviour), so a role that was never

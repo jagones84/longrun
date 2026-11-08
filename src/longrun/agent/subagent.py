@@ -56,6 +56,9 @@ DEFAULT_CFG = {
     # unbounded serial subagents (each a paid model run) while staying under
     # the parallel cap and the depth bound. 0 = no cap.
     "max_per_run": 6,
+    # Step cap for a child run; `config/subagents.yaml` ships the same row and is
+    # the source of truth (this dict is only the broken/missing-file fallback).
+    "max_steps": 8,
     "roles": {
         "researcher": ("Investigate a question against primary sources. Return a "
                        "compact, cited summary (max ~400 words). Do NOT modify files."),
@@ -97,6 +100,21 @@ def save_cfg(cfg):
         f.write(text)
     load_cfg._cache = cfg
     return CFG_PATH
+
+
+def default_steps():
+    """The configured step cap for one child run (`max_steps` in subagents.yaml).
+
+    ONE reader: every call path that used to default to a literal `4` (the model's
+    `subagent` action, the run-loop action, a Session Job subjob, the MCP tool, the
+    HTTP endpoints, the swarm workers and the schema repair) resolves through here,
+    so raising the budget is a config edit and cannot drift between entry points.
+    """
+    try:
+        n = int(load_cfg().get("max_steps") or DEFAULT_CFG["max_steps"])
+    except (TypeError, ValueError):
+        n = int(DEFAULT_CFG["max_steps"])
+    return max(1, n)
 
 
 def _role_spec(role):
@@ -287,7 +305,7 @@ def depth_allowed(depth, max_depth=None):
     return int(depth) < md
 
 
-def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, depth=0,
+def spawn(goal, parent_run_id=None, max_steps=None, model=None, on_event=None, depth=0,
           role=None, output_schema=None, acceptance_criteria=None, session=None):
     """Spawn a subagent run and return its id.
 
@@ -309,6 +327,16 @@ def spawn(goal, parent_run_id=None, max_steps=4, model=None, on_event=None, dept
 
     Returns a dict with subagent_id (caller should store it).
     """
+    # `max_steps=None` means "the configured child budget" (`max_steps` in
+    # config/subagents.yaml), never a literal here: the call paths that forgot the
+    # argument all inherited 4 and a research child stopped before its answer.
+    if max_steps is None:
+        max_steps = default_steps()
+    else:
+        try:
+            max_steps = max(1, int(max_steps))
+        except (TypeError, ValueError):
+            max_steps = default_steps()
     # M1: reject a malformed contract before the run exists.
     schema, schema_error = None, None
     if output_schema is not None:
@@ -476,7 +504,7 @@ def _repair_once(entry, errors, timeout):
                     + str(entry.get("goal") or ""))
         st = entry.get("state")
         rep = spawn(rep_goal, parent_run_id=entry.get("parent_run_id"),
-                    max_steps=entry.get("max_steps") or 4,
+                    max_steps=entry.get("max_steps") or default_steps(),
                     model=entry.get("model"),
                     depth=_DEPTH.get(st.id, 0) if st is not None else 0,
                     role=entry.get("role"))

@@ -353,7 +353,10 @@ def cmd_memory(args):
 
 def cmd_subagent(args):
     if args.action == "spawn":
-        out = req("POST", "/api/subagent/spawn", {"goal": args.value, "max_steps": args.max_steps})
+        body = {"goal": args.value}
+        if args.max_steps:
+            body["max_steps"] = args.max_steps   # omitted -> config/subagents.yaml
+        out = req("POST", "/api/subagent/spawn", body)
         print(json.dumps(out, indent=2, ensure_ascii=False))
     elif args.action == "collect":
         out = req("POST", "/api/subagent/collect", {"id": args.value, "timeout": 120})
@@ -426,8 +429,10 @@ def cmd_acp(args):
 
 
 def cmd_swarm(args):
-    out = req("POST", "/api/swarm/run", {"goal": args.goal, "n_workers": args.n_workers,
-                                          "max_steps": args.max_steps})
+    body = {"goal": args.goal, "n_workers": args.n_workers}
+    if args.max_steps:
+        body["max_steps"] = args.max_steps   # omitted -> config/subagents.yaml
+    out = req("POST", "/api/swarm/run", body)
     print("Goal id: %s" % out.get("goal_id"))
     print("Subgoal ids: %s" % out.get("subgoal_ids"))
     print("Synthesis id: %s" % out.get("synthesis_id"))
@@ -1011,7 +1016,7 @@ def main():
         p.add_argument("--kind"); p.add_argument("--semantic", action="store_true"); \
         p.add_argument("--limit", type=int, default=10); p.set_defaults(fn=cmd_memory)
     p = sub.add_parser("subagent"); p.add_argument("action", choices=["spawn", "collect", "status"]); \
-        p.add_argument("value", nargs="?"); p.add_argument("--max-steps", type=int, default=4); \
+        p.add_argument("value", nargs="?"); p.add_argument("--max-steps", type=int, default=None); \
         p.set_defaults(fn=cmd_subagent)
     p = sub.add_parser("meta"); p.add_argument("action", choices=["run", "status", "best"]); \
         p.add_argument("--n-candidates", type=int, default=8); p.set_defaults(fn=cmd_meta)
@@ -1024,7 +1029,7 @@ def main():
         p.add_argument("value", nargs="?"); p.add_argument("value2", nargs="?"); \
         p.add_argument("--token"); p.set_defaults(fn=cmd_acp)
     p = sub.add_parser("swarm"); p.add_argument("goal"); p.add_argument("--n-workers", type=int, default=3); \
-        p.add_argument("--max-steps", type=int, default=4); p.set_defaults(fn=cmd_swarm)
+        p.add_argument("--max-steps", type=int, default=None); p.set_defaults(fn=cmd_swarm)
     sub.add_parser("paperclip-bot").set_defaults(fn=cmd_paperclip_bot)
     p = sub.add_parser("sessions"); p.add_argument("action", choices=["ls", "new", "rm", "history", "graph", "reset", "clear", "model"]); \
         p.add_argument("value", nargs="?"); p.set_defaults(fn=cmd_sessions)

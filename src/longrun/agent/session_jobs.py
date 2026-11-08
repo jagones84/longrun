@@ -166,10 +166,12 @@ def create(sid, goal, subjobs, mode="parallel"):
 
 
 def _steps(raw):
+    """The subjob's step cap: its own value, else the configured child budget."""
     try:
         n = int(raw)
     except (TypeError, ValueError):
-        return 4
+        from longrun.agent import subagent as _sub
+        return max(1, min(_sub.default_steps(), 32))
     return max(1, min(n, 32))
 
 
@@ -277,7 +279,7 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
                     hook("start", dict(spec, goal_prompt=goal))
                 try:
                     spawned = spawn_fn(goal, parent_run_id=sid,
-                                       max_steps=spec.get("max_steps") or 4,
+                                       max_steps=spec.get("max_steps") or _steps(None),
                                        model=spec.get("model"),
                                        depth=_depth(sid) + 1,
                                        role=spec.get("role")) or {}

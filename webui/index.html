@@ -2541,8 +2541,20 @@
      (operator: "doesn't expand where a lot of text is inside") — it shares the row
      height until the text needs more, then scrolls at 132px. The goal objective
      editor grows the same way, capped against the panel's height. */
-  #planInp { resize: none; min-height: 28px; max-height: 132px; overflow-y: hidden;
+  #planInp { display: block; width: 100%; box-sizing: border-box;
+    resize: none; min-height: 28px; max-height: 132px; overflow-y: hidden;
     padding: 6px 10px; line-height: 1.4; }
+  /* 2026-11-08 (operator): the Plan verbs sit UNDER the field and are FRAMELESS —
+     the field owns the card's width instead of losing a column to three boxes, and
+     the ✨ of `plan.input` mounts into this same row. */
+  #inspector .plan-acts { display: flex; align-items: center; flex-wrap: wrap;
+    gap: 2px; margin-top: 6px; }
+  #inspector .plan-acts .plan-act {
+    flex: 0 0 auto; width: 24px; height: 24px; min-height: 24px; padding: 0; margin: 0;
+    border: 0; background: transparent; border-radius: 8px; box-shadow: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; line-height: 1; color: var(--dim); cursor: pointer; }
+  #inspector .plan-acts .plan-act:hover { color: var(--txt); background: rgba(127,127,127,.14); }
   #goalEditBox { resize: none; max-height: 42vh; overflow-y: auto; }
   #inspector button.ghost { height: 28px; min-height: 28px; padding: 0 10px;
     font-size: 11.5px; line-height: 1; border-radius: 8px; }
@@ -3126,13 +3138,17 @@
         <div class="card">
           <!-- v636: ONE field for both verbs — ▶ runs the text as the session goal,
                + adds it as a graph node, ↻ replans. Two stacked inputs with their own
-               buttons were eating a third of the panel. -->
-          <div class="u-df u-g6 u-aic">
-            <textarea aria-label="goal or plan node" id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal or node…" rows="1"
-                   data-key="Enter" data-key-fn="planGoal"></textarea>
-            <button class="ghost" data-call="planGoal" title="run this text as the session goal (same as /goal)">▶</button>
-            <button class="ghost" data-call="addTask" title="add this text as a graph node">+</button>
-            <button class="ghost" data-call="replanGraph" title="incremental re-plan">↻</button>
+               buttons were eating a third of the panel.
+               2026-11-08 (operator: "remove frames from the buttons, place below the text
+               box, not occupying space"): the three verbs are FRAMELESS icons on their
+               own row UNDER the field, so the text gets the card's full width. The ✨
+               (surface `plan.input`) mounts into the same row. -->
+          <textarea aria-label="goal or plan node" id="planInp" class="inp u-f1 u-p610 u-fs12" placeholder="goal or node…" rows="1"
+                 data-key="Enter" data-key-fn="planGoal"></textarea>
+          <div class="plan-acts" id="planActs">
+            <button class="ghost plan-act" data-call="planGoal" title="run this text as the session goal (same as /goal)" aria-label="run as the session goal">▶</button>
+            <button class="ghost plan-act" data-call="addTask" title="add this text as a graph node" aria-label="add as a graph node">+</button>
+            <button class="ghost plan-act" data-call="replanGraph" title="incremental re-plan" aria-label="incremental re-plan">↻</button>
           </div>
           <div id="graphHead" class="remaining"></div>
           <div id="tasks"></div>
@@ -3885,7 +3901,7 @@
           <div class="u-df u-g6 u-aic u-mt6 u-fww">
             <input aria-label="goal to decompose" id="swGoal" class="inp u-f1 u-p610 u-fs12" placeholder="the goal to decompose…">
             <label class="remaining u-df u-g6 u-aic">workers<input id="swWorkers" type="number" min="1" max="8" value="3" class="inp u-p610 u-fs12" style="width:56px"></label>
-            <label class="remaining u-df u-g6 u-aic">max steps<input id="swSteps" type="number" min="1" max="12" value="4" class="inp u-p610 u-fs12" style="width:56px"></label>
+            <label class="remaining u-df u-g6 u-aic">max steps<input id="swSteps" type="number" min="1" max="12" placeholder="auto" class="inp u-p610 u-fs12" style="width:56px"></label>
             <button class="ghost" id="swRun" data-call="runSwarm" title="POST /api/swarm/run — spawns real subagents">▶ run</button>
             <span class="remaining">costs N+1 model calls</span>
           </div>
@@ -14688,7 +14704,7 @@ async function mountStaticSparkles() {
      "optimize what I typed — same intent, clearer and more complete"],
     ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint",
      "reorganize this objective — same intent, one checkable outcome"],
-    ["plan.input", "#planInp", null, null,
+    ["plan.input", "#planInp", "#planActs", null,
      "reorganize this step — same intent, one concrete checkable action"],
     ["memory.content", "#memContent", null, null, ""],
     ["blackboard.topic", "#bbContent", null, null, ""],
@@ -14777,10 +14793,14 @@ async function runSwarm() {
   if (btn) btn.disabled = true;
   let r = {};
   try {
-    r = await api("POST", "/api/swarm/run", {
+    const body = {
       goal: goal,
-      n_workers: parseInt(($("swWorkers") || {}).value, 10) || 3,
-      max_steps: parseInt(($("swSteps") || {}).value, 10) || 4 });
+      n_workers: parseInt(($("swWorkers") || {}).value, 10) || 3 };
+    // Blank = the configured child budget (config/subagents.yaml max_steps);
+    // the panel must not ship a second default of its own.
+    const steps = parseInt(($("swSteps") || {}).value, 10);
+    if (steps > 0) body.max_steps = steps;
+    r = await api("POST", "/api/swarm/run", body);
   } catch (e) { r = { error: String(e) }; }
   finally { if (btn) btn.disabled = false; }
   if (r && r.error) { if (msg) msg.textContent = "✕ " + r.error; return; }

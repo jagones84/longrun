@@ -288,7 +288,8 @@ def _subagent_call(a):
             goal = a.get("goal", "")
             if not goal:
                 return _error_text("goal required")
-            return _text(sub.spawn(goal, max_steps=int(a.get("max_steps", 4)),
+            return _text(sub.spawn(goal, max_steps=int(a.get("max_steps")
+                                                       or sub.default_steps()),
                                    model=a.get("model")))
         if action == "collect":
             return _text(sub.collect(a.get("id", ""), timeout=int(a.get("timeout", 120))))
@@ -357,8 +358,10 @@ def _swarm_call(a):
         if not goal:
             return _error_text("goal required")
         coord = sw.Coordinator()
+        from longrun.agent import subagent as _sub
         report = coord.run_swarm(goal, int(a.get("n_workers", 3)),
-                                  int(a.get("max_steps", 4)), a.get("model"))
+                                  int(a.get("max_steps") or _sub.default_steps()),
+                                  a.get("model"))
         return _text(report)
     except Exception as e:
         return _error_text("swarm error: %s" % e)

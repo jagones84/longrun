@@ -125,10 +125,18 @@ context:
   acceptance_missing_chars: 300
   # A chat turn's real tool calls, its total model iterations, and the narrower
   # budget of a PLAN-ONLY turn; plus how long a delegated subagent is awaited.
-  chat_tool_steps: 8
-  chat_tool_iters: 64
+  # A dispatched teammate runs a REAL chat turn under these two numbers: 12 real
+  # tool calls per keepgoing round (8 used to cut a research/check turn before it
+  # reported), and `chat_tool_iters` must stay >= steps x keepgoing_max (12 x 8)
+  # or the iterations backstop preempts the continuation loop.
+  chat_tool_steps: 12
+  chat_tool_iters: 96
   plan_tool_steps: 3
-  subagent_wait_secs: 180
+  # 180 s was shorter than a legitimately long child (connect -> 5 searches ->
+  # compose); the parent reported "subagent timeout" while the child was still
+  # working and re-spawned it. Must stay comfortably above one child at the
+  # `max_steps` budget in config/subagents.yaml.
+  subagent_wait_secs: 600
 
 # ---- limits (2026-11-05) ----------------------------------------------------
 # Every value that used to be `int(os.environ.get("LONGRUN_…", <literal>))` in
