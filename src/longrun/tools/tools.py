@@ -2359,24 +2359,18 @@ def _sessions(args, run_id):
         # JAG-532/534: send never waits. A running peer gets a steer; an idle
         # peer gets a real server-side turn. `sessions.wait` is a separate call,
         # so the sender can continue other work while the peer responds.
+        # 2026-11-08: the branch itself belongs to `util.inbox.deliver` — the job
+        # runner delivers a completion notice through the SAME rule, so a copy
+        # here would be a second truth for "busy vs idle".
         target = str(args.get("session") or args.get("to") or "").strip()
         text = str(args.get("message") or args.get("text") or "").strip()
         if not target or not text:
             return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
                     "error": "session and message required for action=send",
                     "backend": "host", "sandboxed": False}
-        if not server.load_session(target):
-            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
-                    "error": "no such session: %s (use action=list to find it, "
-                             "action=read to check the reply)" % target,
-                    "backend": "host", "sandboxed": False}
-        if run_id and target == run_id:
-            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
-                    "error": "refusing to send a message to the calling session",
-                    "backend": "host", "sandboxed": False}
         # I-3: a retried send must not deliver twice. The lookup happens BEFORE
-        # the steer/dispatch branch, so a duplicate costs neither a queue slot nor
-        # a peer turn — it returns the id of the message that already went out.
+        # the delivery, so a duplicate costs neither a queue slot nor a peer
+        # turn — it returns the id of the message that already went out.
         idem_key = str(args.get("idempotency_key") or "").strip()
         sender = run_id or "unknown"
         if idem_key:
@@ -2393,36 +2387,36 @@ def _sessions(args, run_id):
                                    "work; call sessions.wait with message_id=%s to read "
                                    "the reply." % (idem_key, target, seen, seen)),
                         "stderr": "", "backend": "host", "sandboxed": False}
-        message_id = "%s:%d:%s" % (target, time.time_ns(), os.urandom(4).hex())
-        rec = {"message_id": message_id, "session": target,
-               "from_session": run_id or "unknown", "before_messages":
-                   len(server.load_session(target).get("messages") or []),
-               "state": "running", "created": time.time()}
-        with server._ACTIVE_CHAT_LOCK:
-            active_info = server._ACTIVE_CHAT.get(target)
-        if active_info:
-            rec["active_token"] = active_info.get("tok")
-            rec["observed_active"] = True
         payload = ("[message from session %s]\n%s\n\n"
                    "Reply to this message in your next assistant response. "
                    "The sender can inspect this chat with sessions.read and wait "
                    "for your turn with sessions.wait."
                    % (run_id or "unknown", text))
-        if active_info:
-            from longrun.util import steering
-            depth = steering.push_steer(target, payload)
-            rec["mode"] = "steer"
-            rec["queue_depth"] = depth
+        from longrun.util import inbox as inbox_mod
+        res = inbox_mod.deliver(target, payload, from_session=run_id)
+        if not res.get("ok"):
+            err = str(res.get("error") or "delivery failed")
+            if "no such session" in err:
+                err += " (use action=list to find it, action=read to check the reply)"
+            return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
+                    "error": err, "backend": "host", "sandboxed": False}
+        message_id = "%s:%d:%s" % (target, time.time_ns(), os.urandom(4).hex())
+        rec = {"message_id": message_id, "session": target,
+               "from_session": run_id or "unknown",
+               "before_messages": int(res.get("messages") or 0),
+               "state": "running", "created": time.time(),
+               "mode": res.get("mode") or "turn"}
+        if rec["mode"] == "turn":
+            rec["job"] = res.get("job")
         else:
-            from longrun.orbit import api as orbit_api
-            res = orbit_api.dispatch_message(target, payload)
-            if not res.get("ok"):
-                return {"ok": False, "exit_code": 1, "stdout": "", "stderr": "",
-                        "error": res.get("error") or "dispatch failed",
-                        "backend": "host", "sandboxed": False}
-            job = (res.get("jobs") or [{}])[0]
-            rec["mode"] = "turn"
-            rec["job"] = job.get("job")
+            rec["queue_depth"] = int(res.get("queue_depth") or 0)
+        # The token is `sessions.wait`'s completion signal (not the delivery
+        # decision), so it is still read here — from the async peer's registry.
+        with server._ACTIVE_CHAT_LOCK:
+            active_info = server._ACTIVE_CHAT.get(target)
+        if active_info:
+            rec["active_token"] = active_info.get("tok")
+            rec["observed_active"] = True
         with _SESSION_SENDS_LOCK:
             _SESSION_SENDS[message_id] = rec
             if len(_SESSION_SENDS) > _SESSION_SENDS_KEEP:

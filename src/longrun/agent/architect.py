@@ -379,7 +379,10 @@ TOOL_SCHEMAS = {
             "coordinator": {"type": "string", "description": "Coordinator agent ID/name (optional)."},
             "agents": {"type": "array", "description": "Worker agent IDs/names (optional)."},
             "deps": {"type": "array", "description": "Optional dependency list."},
-            "mode": {"type": "string", "description": "'coordinator' (default) or 'swarm'."},
+            "mode": {"type": "string",
+                     "description": "'coordinator' (default: the coordinator plans, then "
+                                    "aggregates) or 'run' (every worker gets the goal "
+                                    "directly, no planning turn)."},
             "blocked_by": {"type": "array", "description": "Optional list of job IDs that must finish first."},
         },
         "required": ["goal"],
@@ -401,7 +404,9 @@ TOOL_SCHEMAS = {
             "coordinator": {"type": "string", "description": "New coordinator agent ID/name."},
             "agents": {"type": "array", "description": "New worker list (agent IDs/names)."},
             "deps": {"type": "object", "description": "Worker dependency map {agent: [agents]}."},
-            "mode": {"type": "string", "description": "'coordinator' (default) or 'swarm'."},
+            "mode": {"type": "string",
+                     "description": "'coordinator' (default: plan + aggregate) or 'run' "
+                                    "(workers get the goal directly)."},
             "blocked_by": {"type": "array", "description": "Job IDs that must finish first."},
         },
         "required": ["job"],
@@ -1815,9 +1820,19 @@ def _job_create(args, caller=None):
         return {"ok": False,
                 "error": "at least one worker agent required in 'agents' "
                          "(or a coordinator with reports in the org chart)"}
+    # 2026-11-08: the ASSIGNER is recorded, so the job can tell it when it ends
+    # (queued if busy, a turn if idle — `util.inbox.deliver`). A raw REST/job
+    # created without an agent caller has no assigner and notifies nobody.
+    assigned_by = ""
+    try:
+        from longrun.agent import agents as _agents_mod
+        assigned_by = str((_agents_mod.REGISTRY.get(caller) or {}).get("id") or "")
+    except Exception:  # noqa: BLE001 — bookkeeping must never block a create
+        assigned_by = ""
     res = jobs_mod.JOBS.create(
         goal, coordinator=coordinator, agents=workers, deps=args.get("deps"),
-        mode=str(args.get("mode") or "coordinator"), blocked_by=args.get("blocked_by"))
+        mode=str(args.get("mode") or "coordinator"), blocked_by=args.get("blocked_by"),
+        assigned_by=assigned_by)
     if res.get("ok"):
         job = res["job"]
         res["stdout"] = "created job %s [%s, coordinator=%s, workers=%d]" % (

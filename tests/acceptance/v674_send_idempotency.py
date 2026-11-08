@@ -99,7 +99,10 @@ _orig_dispatch = orbit_api.dispatch_message
 r1 = r2 = r3 = r4 = r5 = r6 = r7 = r8 = r9 = r_nokey1 = r_nokey2 = None
 try:
     server.load_session = lambda sid: FAKE.get(sid)
-    server._ACTIVE_CHAT = {}
+    # 2026-11-08: mark "busy" where the owner reads it. Rebinding
+    # `server._ACTIVE_CHAT` left `events.turn_active` (the single owner) looking at
+    # the real dict, so the peer read as idle.
+    server._ACTIVE_CHAT.clear()
     orbit_api.dispatch_message = fake_dispatch
     steering.STEER_INBOX.clear()
 
@@ -123,7 +126,8 @@ try:
           _map(ME).get("K1", {}).get("message_id") == r1.get("message_id"), _map(ME))
 
     # C: running peer -> one steer slot, then nothing
-    server._ACTIVE_CHAT = {PEER: {"tok": object()}}
+    server._ACTIVE_CHAT.clear()
+    server._ACTIVE_CHAT[PEER] = {"tok": object()}
     steering.STEER_INBOX.clear()
     r3 = tools._sessions({"action": "send", "session": PEER, "message": "steer me",
                           "idempotency_key": "K2"}, ME)
@@ -140,7 +144,7 @@ try:
           (r4.get("idempotent"), _inbox2, r4.get("mode")))
 
     # D: different keys are different messages
-    server._ACTIVE_CHAT = {}
+    server._ACTIVE_CHAT.clear()
     _n0 = len(calls)
     r5 = tools._sessions({"action": "send", "session": PEER, "message": "one",
                           "idempotency_key": "K3"}, ME)

@@ -6,7 +6,8 @@ mode:
 
   * ``coordinator`` (default): the coordinator decomposes the goal, every worker runs
     its slice, then the coordinator aggregates the team's results.
-  * ``fanout``: every agent receives the same goal independently.
+  * ``run``: every agent receives the goal directly, with no planning turn (a
+    detached dispatch is one of these: one agent, `assigned_by` = the dispatcher).
 
 Execution reuses the normal per-session turn machinery (``server.chat_stream_gen``),
 so each agent turn is a real, persisted turn with its own task list. Independent agents
@@ -540,7 +541,7 @@ class JobRegistry:
             return changed
 
     def create(self, goal, coordinator=None, agents=None, deps=None, mode="coordinator",
-               blocked_by=None):
+               blocked_by=None, assigned_by=None):
         goal = (goal or "").strip()
         agents = [a for a in (agents or []) if a]
         if not goal:
@@ -562,6 +563,11 @@ class JobRegistry:
             job = {"id": jid, "n": d["seq"], "goal": goal, "mode": mode,
                    "coordinator": coordinator or agents[0], "agents": agents,
                    "deps": clean_deps, "blocked_by": blockers,
+                   # 2026-11-08: WHO assigned the job. When it ends, this agent is
+                   # told (the same rule an agent message uses: queued if busy, a
+                   # turn if idle) — `assigned_to` is `agents`, `assigned_by` is
+                   # this field. Empty = an operator/REST job, nothing to tell.
+                   "assigned_by": str(assigned_by or ""),
                    "status": "blocked" if unresolved else "created",
                    "created": round(time.time(), 3), "runs": {}}
             d["jobs"][jid] = job
@@ -791,16 +797,33 @@ class JobRegistry:
 
     def reconcile(self):
         """Close jobs left 'running' by a previous process (a restart kills the
-        in-process worker thread). Mirrors `reconcile_orphan_turns` for sessions."""
+        in-process worker thread). Mirrors `reconcile_orphan_turns` for sessions.
+
+        2026-11-08: the job's CHILDREN are closed with it. Before, the job ended
+        `error` while `runs[<agent>].state` and `subjobs[<id>].status` stayed
+        `running`/`retrying` forever — the panel showed a spinner on work nobody
+        was doing and `subjob_todos` reported it as live.
+        """
         n = 0
         with _LOCK:
             d = _load()
             for job in d["jobs"].values():
-                if job.get("status") == "running":
-                    job["status"] = "error"
-                    job["error"] = "interrupted by restart"
-                    job["ended"] = round(time.time(), 3)
-                    n += 1
+                if job.get("status") != "running":
+                    continue
+                job["status"] = "error"
+                job["error"] = "interrupted by restart"
+                job["ended"] = round(time.time(), 3)
+                for run in (job.get("runs") or {}).values():
+                    if str((run or {}).get("state")) == "running":
+                        run.update({"state": "failed",
+                                    "error": "interrupted by restart",
+                                    "ended": job["ended"]})
+                for sub in (job.get("subjobs") or {}).values():
+                    if str((sub or {}).get("status")) in ("running", "retrying"):
+                        sub.update({"status": "failed",
+                                    "error": "interrupted by restart",
+                                    "ended": job["ended"]})
+                n += 1
             if n:
                 _save(d)
         if n:
@@ -966,6 +989,11 @@ class JobRegistry:
         """
         srv = _srv()
         sess = srv.get_or_create_session(sid)
+        # 2026-11-08: the turn is NOT wrapped in the session turn lock here.
+        # `chat_stream_gen` runs the turn in its own WORKER thread and that worker
+        # acquires the lock (httpapi.chat_stream_gen:431) — holding it in this
+        # thread deadlocked the worker. Two jobs for one teammate still never
+        # interleave: the second worker simply waits on that same lock.
         if jid:
             self._scope_graph(sid, jid, message)
         before = len((srv.load_session(sid) or {}).get("messages", []))
@@ -979,7 +1007,29 @@ class JobRegistry:
         # `done` with a stale/duplicate "reply" — the coordinator looked like it
         # had answered a report it never answered. If this turn produced nothing,
         # return nothing and let the job fail loudly.
-        return self._best_reply(s.get("messages", [])[before:])
+        #
+        # 2026-11-08: the slice is anchored on the USER MESSAGE this turn wrote
+        # (`meta.subjob` / `meta.sender`, httpapi.py:470), not on a message count
+        # captured before the worker took the lock. With a detached dispatch the
+        # teammate may be in the middle of an operator turn when the job starts,
+        # so that count landed BEFORE the other turn's reply and the job would
+        # report someone else's work as its own.
+        return self._best_reply(self._turn_tail(s.get("messages") or [], before,
+                                                sender, subjob))
+
+    @staticmethod
+    def _turn_tail(messages, before, sender, subjob):
+        """This turn's messages: from ITS OWN user message, else from `before`."""
+        for i in range(len(messages) - 1, -1, -1):
+            m = messages[i] or {}
+            if m.get("role") != "user":
+                continue
+            meta = m.get("meta") or {}
+            if subjob and meta.get("subjob") == subjob:
+                return messages[i:]
+            if not subjob and sender and meta.get("sender") == sender:
+                return messages[i:]
+        return messages[before:]
 
     def _run(self, jid):
         from longrun.agent import agents as agents_mod
@@ -1053,6 +1103,13 @@ class JobRegistry:
             _coord_mode = job.get("mode") == "coordinator"
             coord_label = (("%s (%s)" % (coord, roster.get(coord, {}).get("name") or coord))
                            if (_coord_mode and coord) else None)
+            # 2026-11-08: a job can also be assigned by an AGENT (a detached
+            # dispatch, or a coordinator handing work down). The assigner's name
+            # rides the delegation message and the turn's `sender`, so the worker
+            # always knows who asked — not only in coordinator mode.
+            _by = str(job.get("assigned_by") or "")
+            sender_label = coord_label or (
+                ("%s (%s)" % (_by, roster.get(_by, {}).get("name") or _by)) if _by else None)
             # v629: the ORG tree of this job's team drives the subjob numbering.
             # Only links whose BOTH ends are on this job's team are used, so an
             # explicit `agents` list never invents a parent outside the job.
@@ -1091,12 +1148,16 @@ class JobRegistry:
                         continue
                     sub = next((s for s in subs.values() if s["agent"] == aid), None)
                     mine = ((sub or {}).get("assignment")
-                            or (self._assignment_for(plan, aid) if plan else ""))
-                    msg = self._delegation_msg(jid, coord_label, sub, job["goal"], mine)
+                            or (self._assignment_for(plan, aid) if plan else "")
+                            # A non-coordinator job (a detached dispatch) has no
+                            # plan: the job's goal IS the assignment, so the worker
+                            # never receives an empty brief.
+                            or (job["goal"] if not _coord_mode else ""))
+                    msg = self._delegation_msg(jid, sender_label, sub, job["goal"], mine)
                     t = threading.Thread(
                         target=self._one,
                         args=(jid, aid, sid, msg, roster.get(aid, {}).get("model"),
-                              (sub or {}).get("id"), coord_label),
+                              (sub or {}).get("id"), sender_label),
                         daemon=True)
                     t.start()
                     threads.append(t)
@@ -1142,15 +1203,106 @@ class JobRegistry:
                  [a for a, _, _ in _f], "ended": round(time.time(), 3)}))
             self.wake()   # JAG-292: release jobs that were blocked on this one
             _report_jobs(True)
+            self._notify(jid)
         except Exception as _e:  # noqa: BLE001
             _err = str(_e)
             self._update(jid, lambda j, _err=_err: j.update(
                 {"status": "error", "error": _err, "ended": round(time.time(), 3)}))
             self.wake()   # a failed blocker must still sweep its dependents
             _report_jobs(False, "job %s: %s" % (jid, _err))
+            self._notify(jid)
+
+    def _notify(self, jid):
+        """Tell the AGENT that assigned this job that it ended (2026-11-08).
+
+        Operator: *"when the delegated agent has finished he shall send the
+        message to the delegating agent even if it is busy (that command is put
+        on queue automatically)"*. So the notice goes through `util.inbox.deliver`
+        — the same busy → queue / idle → turn rule `sessions.send` uses — and the
+        job RECORD stays the source of truth: the notice names it, and `job.get`
+        still answers in full. Delivered once (`notified` guards a re-run); never
+        raises, because a notice must not turn a finished job into an error.
+        """
+        try:
+            job = self.get(jid) or {}
+            target = str(job.get("assigned_by") or "").strip()
+            state = dict(job.get("notified") or {})
+            if not target or state.get("at"):
+                return state
+            if target == str(job.get("coordinator") or "") and job.get("mode") == "coordinator":
+                # Its own synthesis turn already wrote the deliverable into its
+                # chat — a second copy would be noise.
+                state = {"at": round(time.time(), 3), "mode": "self", "ok": True}
+            else:
+                sid = self._session_of(target)
+                if not sid:
+                    state = {"at": round(time.time(), 3), "mode": "", "ok": False,
+                             "error": "agent %s has no session" % target}
+                else:
+                    from longrun.util import inbox as inbox_mod
+                    res = inbox_mod.deliver(sid, self._notice_text(job))
+                    state = {"at": round(time.time(), 3),
+                             "ok": bool(res.get("ok")),
+                             "mode": str(res.get("mode") or ""),
+                             "error": str(res.get("error") or "")[:200]}
+            self._update(jid, lambda j, _s=state: j.update(notified=dict(_s)))
+            try:
+                from longrun.core.events import publish
+                publish("job.finished", session=self._session_of(target), job=jid,
+                        status=job.get("status"), mode=state.get("mode"),
+                        ok=state.get("ok"))
+            except Exception:  # noqa: BLE001 — the feed is not worth a crash
+                pass
+            return state
+        except Exception as e:  # noqa: BLE001 — a notice must never fail a job
+            return {"ok": False, "error": str(e)[:200]}
 
     @staticmethod
-    def _delegation_msg(jid, coord_label, sub, goal, mine):
+    def _notice_text(job):
+        """The completion message a job sends to its assigner (bounded, one block)."""
+        jid = job.get("id") or "?"
+        status = str(job.get("status") or "")
+        head = ("[tasks] job %s FINISHED — status: %s" % (jid, status)
+                if status in ("done", "partial")
+                else "[tasks] job %s ENDED — status: %s" % (jid, status))
+        lines = [head, "Goal: %s" % str(job.get("goal") or "")[:200]]
+        failed = [str(a) for a in (job.get("failed_subjobs") or [])]
+        if failed:
+            lines.append("Workers that did NOT deliver: %s" % ", ".join(failed[:8]))
+        for aid, run in list((job.get("runs") or {}).items())[:6]:
+            run = run or {}
+            if str(run.get("state")) not in ("done", "failed"):
+                continue
+            body = str(run.get("result") or run.get("error") or "")
+            if body:
+                lines.append("%s (%s): %s" % (aid, run.get("state"), body[:600]))
+        if job.get("error"):
+            lines.append("Error: %s" % str(job.get("error"))[:300])
+        lines.append('Full record: call job.get {"job":"%s"} — or read a worker\'s '
+                     "chat with sessions.read." % jid)
+        return "\n".join(lines)[:1800]
+
+    @staticmethod
+    def _session_of(ref):
+        """The session for an agent id/name, or `ref` itself when it is a session id."""
+        ref = str(ref or "").strip()
+        if not ref:
+            return ""
+        try:
+            from longrun.agent import agents as agents_mod
+            ag = agents_mod.REGISTRY.resolve(ref) or {}
+            if ag.get("session"):
+                return str(ag["session"])
+        except Exception:  # noqa: BLE001 — fall through to the session lookup
+            pass
+        try:
+            return ref if _srv().load_session(ref) else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+
+    @staticmethod
+    def _delegation_msg(jid, by_label, sub, goal, mine):
         """The message a worker receives for a delegated subjob (JAG-322/330/331).
 
         JAG-331: a subjob is WORK TO DO, not a paragraph to write. The old text ended
@@ -1158,10 +1310,13 @@ class JobRegistry:
         with a PLAN and "this turn exposes no callable tools" instead of executing
         (the SEVERE "deployment is pending" report). It now tells the worker to DO its
         assignment end to end with its tools and skills, then report the RESULT.
+
+        `by_label` is the agent that handed the work over — the coordinator in
+        coordinator mode, the ASSIGNER for a run-mode job (a detached dispatch).
         """
         sub_id = (sub or {}).get("id") or "-"
-        if coord_label:
-            head = "Delegation from %s — subjob %s (job %s)." % (coord_label, sub_id, jid)
+        if by_label:
+            head = "Delegation from %s — subjob %s (job %s)." % (by_label, sub_id, jid)
         else:
             head = "Subjob %s (job %s)." % (sub_id, jid)
         # JAG-330: the worker is told what it WAITS FOR (the scheduler already enforces

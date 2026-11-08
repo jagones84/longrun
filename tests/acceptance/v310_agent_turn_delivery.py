@@ -114,7 +114,11 @@ check("a job IS accepted when the coordinator answers", st2 == "done", "st=%r" %
 # ------------------------------------------------------------------ source locks
 j = read("src", "longrun", "orchestrate/jobs.py")
 check("the reply is extracted from THIS turn only",
-      '_best_reply(s.get("messages", [])[before:])' in j)
+      # 2026-11-08: the slice is anchored on this turn's own user message
+      # (`_turn_tail`), which is stronger than the raw count `[before:]` — it
+      # survives a turn that started while the worker waited for the lock.
+      '_best_reply(self._turn_tail(s.get("messages") or [], before,' in j
+      and "def _turn_tail(" in j)
 check("the whole-session stale fallback is gone",
       'for m in reversed(s.get("messages", [])):' not in j
       and "for m in reversed(turn):" not in j)

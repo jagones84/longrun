@@ -76,6 +76,11 @@ class Orchestrator:
 
         def _run():
             try:
+                # The busy probe above is a hint, not a lock — but the serialising
+                # itself already happens INSIDE the turn: `chat_stream_gen` runs the
+                # turn in a worker thread that acquires the session's turn lock
+                # (httpapi.py:431). Taking that lock here would deadlock that
+                # worker, so this thread only pumps the stream.
                 gen = srv.chat_stream_gen(sess, goal, model, None,
                                           autonomous=(mode == "goal"))
                 for _ in gen:      # drain the SSE generator: runs the whole turn

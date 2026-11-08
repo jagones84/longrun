@@ -165,7 +165,12 @@ r_send_missing = r_send_self = r_send_empty = None
 r_wait = r_wait_error = r_wait_poll = r_wait_poll_retry = None
 try:
     server.load_session = lambda sid: fake_sessions.get(sid)
-    server._ACTIVE_CHAT = {"peer-run": {"ev0": 0, "ts": 0, "tok": object()}}
+    # 2026-11-08: mark the peer busy in the dict the BUSY OWNER reads. Rebinding
+    # `server._ACTIVE_CHAT` replaced the name in this module only, so
+    # `events.turn_active` (the single owner of "is a turn running") kept looking
+    # at the real dict and saw an idle peer.
+    server._ACTIVE_CHAT.clear()
+    server._ACTIVE_CHAT["peer-run"] = {"ev0": 0, "ts": 0, "tok": object()}
     orbit_api.dispatch_message = _fake_dispatch
     orbit_api.job_status = _fake_job_status
     steering.STEER_INBOX.clear()
@@ -184,7 +189,7 @@ try:
     steered = steering.drain_steer("peer-run")
     fake_sessions["peer-run"]["messages"].append(
         {"role": "assistant", "content": "pong", "ts": 99})
-    server._ACTIVE_CHAT = {}
+    server._ACTIVE_CHAT.clear()
     r_wait = tools._sessions(
         {"action": "wait", "message_id": r_send_run.get("message_id"),
          "timeout_secs": 0}, "me-1")

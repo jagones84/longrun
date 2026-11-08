@@ -82,6 +82,23 @@ state from its nodes (`n done` / `n open`): it is never stored twice.
      are explicitly flagged) and produces the final deliverable.
 3. Bounded retry: a BLOCKED subjob is retried a bounded number of times, then marked
    **failed**; the job becomes **partial** and the failure is surfaced, never hidden.
+4. **Who assigned it, who is told.** A job records `assigned_by` (an agent that handed
+   it over) next to `agents` (the agents it is assigned TO). When the job reaches a
+   terminal state, ONE notice goes back to that agent through `util.inbox.deliver` —
+   the single rule `sessions.send` also uses: **queued** when the agent is in a turn
+   (the loop drains it at its next boundary), a **real turn** when it is idle. The job
+   record stays the source of truth; the notice names it and `job.get` still answers in
+   full. Delivery is recorded in `notified` (one attempt, never a second copy).
+5. **A dispatch is a run-mode job.** The `dispatch` harness action (a teammate turn)
+   creates a one-worker job with `assigned_by` = the dispatcher and returns its id in
+   the same second, so the delegating turn never parks behind the teammate; the reply
+   arrives as the completion notice above. `{"action":"dispatch",…,"wait":true}` keeps
+   the inline turn (and fails fast on a busy teammate). `chat_stream_gen` runs each
+   turn in its own worker thread, which owns the per-session turn lock — callers pump
+   the stream, and a worker identifies its own reply by the user message it wrote
+   (`meta.subjob` / `meta.sender`), never by a message count taken before the lock.
+   A restart (`reconcile`) closes a running job **and its** still-`running` runs and
+   subjobs, so nothing spins on work that died with the process.
 
 ## Request / turn lifecycle (one chat turn)
 
