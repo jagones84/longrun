@@ -40,17 +40,16 @@ check("A6 the collapsed body is just the subjob rows",
 check("A7 coordinator and dependency relations render on a separate row",
       'class="job-item"' in o and 'class="job-meta"' in o
       and "j.blocked_by" in o)
-check("A8 run and delete actions are compact, labeled icons",
-      'data-run="' in o and 'title="Run job ' in o and 'aria-label="Run job ' in o
-      and 'data-jdel="' in o and 'title="Delete job ' in o
-      and 'aria-label="Delete job ' in o
-      and ">▶ run</button>" not in o)
+check("A8 run and delete are ONE vertical menu per job (v891)",
+      'data-jmore="' in o and 'aria-label="job actions for ' in o
+      and 'data-jmenu="run"' in o and 'data-jmenu="del"' in o
+      and '>▶ run</button>' not in o)
 check("A9 subjob session action is an icon with an explanation",
-      'data-go="' in o and 'aria-label="open ' in o
+      'data-go="' in o and 'aria-label="Open ' in o
       and '">↗</button>' in o)
-check("A10 the job goal can wrap to three readable lines",
+check("A10 the job goal can clamp to two readable lines",
       'class="muted job-goal"' in o and ".job-goal{" in o
-      and "-webkit-line-clamp:3" in o and "white-space:normal" in o)
+      and "-webkit-line-clamp:2" in o and "white-space:normal" in o)
 
 print("---")
 ok = sum(1 for r in results if r)

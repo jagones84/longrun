@@ -231,7 +231,7 @@ check("D9 create posts the description and the picked icon + colour",
 check("D10 the picker renders from the palette the backend publishes",
       "this.agents.palette = tms.palette" in deck and "this.agents.fillIconPicker()" in deck
       and "iconOptions(sel){" in deck
-      and 'data-color="' in deck and "longrunAgent picks" in deck)
+      and 'data-color="' in deck and "Architect picks" in deck)
 check("D11 the edit form can REGENERATE the icon through longrunAgent",
       "✨ generate icon" in deck and "regenerate_icon: true" in deck)
 

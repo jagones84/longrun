@@ -51,18 +51,24 @@ for label, frag in [
     ("agents scroll cap lifted", "main.view-one .panel.ag .scroll{max-height:none}"),
     ("routines cap lifted", "main.view-one #routines{max-height:none !important}"),
     ("feed cap lifted", "main.view-one #feed{max-height:none}"),
-    ("org canvas fills", "main.view-one .orgwrap{min-height:calc(100vh - 230px)}"),
-    ("constellation body fills", "main.view-one .panel.cpanel .cbody{height:calc(100vh - 270px)"),
-    ("saved row heights ignored alone", "main.view-one .grid2{height:auto !important}"),
+    ("org canvas fills", "main.view-one .orgwrap{min-height:0;flex:1 1 auto}"),
+    ("constellation body fills", "main.view-one .panel.cpanel .cbody{height:auto;min-height:0;flex:1 1 auto}"),
+    ("saved row heights ignored alone", "main.view-one .grid2{height:100% !important;min-height:0"),
 ]:
     check("B " + label, frag in ORBIT)
 check("B charts refit after every view switch",
       'window.dispatchEvent(new Event("resize"))' in ORBIT)
 
 # ---------------- C: ordered stack + grips ----------------------
-panels = [m for m in ['data-panel="agents"', 'data-panel="routines"',
-                      'data-panel="jobs"', 'data-panel="org"',
-                      'data-panel="const"', 'data-panel="feed"']]
+# v891: compare the SECTION markup, not any CSS mention of the same data-panel (the
+# view-cols width rules name agents/org/jobs/const/feed near the top of the file, which
+# made a raw first-occurrence comparison meaningless).
+panels = ['<section class="panel ag" data-panel="agents"',
+          '<section class="panel" data-panel="routines"',
+          '<section class="panel" data-panel="jobs"',
+          '<section class="panel" data-panel="org"',
+          '<section class="panel cpanel" id="constPanel" data-panel="const"',
+          '<section class="panel" data-panel="feed"']
 pos = [ORBIT.index(m) for m in panels]
 check("C1 stacked order agents, routines, jobs, org, const, feed",
       pos == sorted(pos), pos)

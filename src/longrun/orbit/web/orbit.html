@@ -205,10 +205,14 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      eye must not have to re-find the columns on every scroll. */
   table.at{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
   /* Reserve more width for editable values than for icon actions. */
-  table.at col.c-id{width:6.5%} table.at col.c-name{width:22%} table.at col.c-role{width:14%}
-  table.at col.c-model{width:14%} table.at col.c-rep{width:11%} table.at col.c-teams{width:10%}
-  table.at col.c-file{width:7%}
-  table.at col.c-act{width:12%}
+  /* v891 (operator: "still it's unreadable due to overlap"): the A-id had a % width, so
+     a narrow table clipped it INTO the name cell. It is a fixed gutter now, and the row
+     actions are one ⋮ button, so the last columns keep their room. */
+  table.at col.c-id{width:66px} table.at col.c-name{width:23%} table.at col.c-role{width:14%}
+  table.at col.c-model{width:13%} table.at col.c-rep{width:9%} table.at col.c-teams{width:10%}
+  table.at col.c-file{width:6%}
+  table.at col.c-act{width:30px}
+  table.at td .aidbox{display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden}
   /* v890 (operator: "find a way to make the agents panel not be so orrible when
      compressed in width … make icons that open other edit windows so you can make
      them very small with almost no width"). Every editable cell is ONE compact value
@@ -427,8 +431,10 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .job{display:flex;gap:6px;align-items:center;padding:6px 8px;font-size:12px;cursor:pointer;min-width:0}
   .job-meta{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 8px 5px 48px;font-size:10px;min-width:0}
   .job-meta .rl{max-width:100%}
-  .job-goal{flex:1;min-width:60px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
-    -webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+  .job-goal{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+    -webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+  /* v891: the assignee picker keeps a usable width in a narrow column. */
+  #jobTo{flex:1 1 120px;min-width:110px}
   .job .icon-action{flex:0 0 22px;width:22px;height:22px;padding:0;justify-content:center}
   .job .st{font-size:9px;text-transform:uppercase;border-radius:999px;padding:1px 7px;border:1px solid var(--line)}
   .job .st.created{color:var(--dim)} .job .st.running{color:var(--warn);border-color:rgba(224,164,88,.5)}
@@ -556,20 +562,24 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
      so the hide MUST be declared here (same reason as `html.embed header`). */
   main.view-one .grid2{grid-template-columns:1fr !important}
   main.view-one .rz-cols{display:none}
-  main.view-one .col{display:block}
+  main.view-one .col{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
   main.view-one .panel[hidden]{display:none !important}
   main .grid2[hidden]{display:none !important}
   /* v619: ONE panel alone fills the page — the stacked-board height caps
      (48vh agents, 24vh feed, 48vh constellation, 240px org) would leave a
      tall void under a lone diagram. Lift them all in single view. */
   main.view-one .deckBody{gap:6px}
-  main.view-one .grid2{height:auto !important}
-  main.view-one section.panel[data-panel]{min-height:calc(100vh - 150px)}
+  /* v891 (operator: "the control panels shall be bottom anchored to the bottom"):
+     the page-height guesses (100vh - 150/230/270px) left a dead band under the fold.
+     Body is a column and the deck owns the viewport, so the lone panel takes the whole
+     free box and its own lists scroll. */
+  main.view-one .grid2{height:100% !important;min-height:0;grid-template-rows:minmax(0,1fr)}
+  main.view-one section.panel[data-panel]{min-height:0;flex:1 1 auto}
   main.view-one .panel.ag .scroll{max-height:none}
   main.view-one #routines{max-height:none !important}
   main.view-one #feed{max-height:none}
-  main.view-one .orgwrap{min-height:calc(100vh - 230px)}
-  main.view-one .panel.cpanel .cbody{height:calc(100vh - 270px);min-height:420px}
+  main.view-one .orgwrap{min-height:0;flex:1 1 auto}
+  main.view-one .panel.cpanel .cbody{height:auto;min-height:0;flex:1 1 auto}
   /* v619: lone-panel scroll areas grow with the page instead of nesting a
      short inner scrollbar under a tall void. */
   main.view-one .panel.ag .scroll,
@@ -619,12 +629,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
     background:transparent;touch-action:none}
   .rz-vcol:hover,.rz-vcol:active{background:var(--acc)}
   @media (max-width:1100px){ .rz-vcol{display:none} }
-  main.view-cols section.panel[data-panel]{min-height:calc(100vh - 150px)}
+  main.view-cols section.panel[data-panel]{min-height:0}
   main.view-cols .panel.ag .scroll{max-height:none}
   main.view-cols #routines{max-height:none !important}
   main.view-cols #feed{max-height:none}
-  main.view-cols .orgwrap{min-height:calc(100vh - 230px);flex:1 1 auto}
-  main.view-cols .panel.cpanel .cbody{height:calc(100vh - 270px);min-height:420px;flex:1 1 auto}
+  main.view-cols .orgwrap{min-height:0;flex:1 1 auto}
+  main.view-cols .panel.cpanel .cbody{height:auto;min-height:0;flex:1 1 auto}
   @media (max-width:1100px){
     main.view-cols .deckBody{flex-direction:column}
     main.view-cols section.panel[data-panel]{flex:none;width:100%}
@@ -632,12 +642,21 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* v626: explicit rows × columns layout (see _layoutViewCols). Each row is a
      full-width flex line, so a panel that wraps fills its row; column widths
      are % of the row (reversible), row heights resize per ROW via .rz-vrow. */
-  main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;gap:0}
+  main.view-cols .deckBody{min-width:0}
+  /* v891: the deck is the frame — a child that cannot shrink is clipped, never a
+     page-level horizontal scrollbar that hides the right-most panel. */
+  main.view-cols .deckBody.vrows{flex-direction:column;flex-wrap:nowrap;gap:0;overflow:hidden}
+  /* v891: rows SHARE the deck height (flex:1 1 0) instead of each claiming a
+     `100vh - 150px` guess — one row and the panels end on the bottom edge; two rows
+     and the second one no longer overflows the page. A saved/resized row sets its own
+     pixel height in JS and pins `flex:0 0 auto`. */
   main.view-cols .vrow{display:flex;flex-direction:row;gap:8px;width:100%;
-    flex:0 0 auto;min-height:0;height:calc(100vh - 150px)}
-  /* v644: a view column never collapses below a readable width — the rows are
-     sized so n × 280px already fits, so 180px can never overflow the row. */
-  main.view-cols .vrow > section.panel[data-panel]{min-width:180px;min-height:0}
+    flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
+  /* v891 (operator: "the latest right panel in view is not right anchored, it
+     disappears beyond the right border"): an 180px floor × N columns can exceed the
+     row. The row CLIPS and a column may shrink to its share — how many fit is already
+     decided by `_layoutViewCols` (ncols), so nothing may escape the deck border. */
+  main.view-cols .vrow > section.panel[data-panel]{min-width:0;max-width:100%;min-height:0}
   main.view-cols .vrow > section.panel[data-panel] > .scroll{max-height:none;min-height:0;flex:1 1 auto}
   .rz-vrow{width:100%;height:6px;flex:0 0 auto;cursor:ns-resize;border-radius:3px;
     background:transparent;touch-action:none}
@@ -658,10 +677,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .vcols button:disabled{opacity:.3;cursor:default}
   @media (prefers-reduced-motion: reduce){.vcols{transition:none}}
   #viewBar{display:none;align-items:center;gap:8px;padding:7px 10px;margin-bottom:8px;
+    min-width:0;
     border:1px solid var(--line);border-radius:10px;background:var(--panel)}
   main.view-cols #viewBar{display:flex}
   #viewBar[hidden]{display:none}
-  #viewBar .vname{font-weight:700;font-size:12px}
+  #viewBar .vname{font-weight:700;font-size:12px;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
   /* 2026-11-01: says where the view lives, and turns red the moment the server copy
      is not the one being edited (then the browser is the only copy). */
   #viewBar .vsync{font-size:10px;letter-spacing:.04em;color:var(--dim);white-space:nowrap}
@@ -1241,15 +1262,8 @@ class AgentsView {
       '<button class="btn ghost" data-genrole="' + esc(a.session) + '" title="draft this ROLE.md with AI — the harness knows this agent\u2019s name, team, model and reporting line">✨ generate</button>' +
       '<span class="small muted" data-genrole-st=""></span>' +
       '<button class="btn ghost" data-close="1">close</button></div></td></tr>' : "";
-    // JAG-484 (agents table): the same explicit "go to chat session" button the
-    // jobs list has — one click opens the agent's chat. Plain sessions have no
-    // A-id (nothing to resolve), so only designated rows get the button. The
-    // navigation itself is the deck's SHARED onOpenAgent callback (JAG-335/484:
-    // no duplicated open logic — the button only carries the id).
-    // RH-20: an identity-only record still HAS its A<n>, so it gets the button too.
-    const goBtn = aid
-      ? '<button class="btn ghost mini" data-go="' + esc(aid) + '" title="open ' + esc(aid) + '\u2019s session in the Sessions tab" aria-label="open ' + esc(aid) + '\u2019s session">↗</button>'
-      : '';
+    // v891: the row's three actions (open / clear / release) live in ONE ⋮ menu
+    // (`openAgentMenu`) instead of three 22px buttons on every row.
     // I-9: provenance for a prompt an AUTOMATION wrote. Without it a ROLE.md
     // Architect produced is indistinguishable from one the operator typed.
     const w = (aid && this.written) ? this.written[aid] : null;
@@ -1261,7 +1275,7 @@ class AgentsView {
         ' — run ' + esc(String(w.run_id || "").slice(0, 40)) + '">AI</span>'
       : '';
     return '<tr data-sid="' + esc(a.session) + '" data-grp="' + esc(grp) + '"' + hid + '>' +
-      '<td class="aid"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</td>' +
+      '<td class="aid"><span class="aidbox"><span class="rowgrip" title="drag to reorder this agent">⋮⋮</span>' + idCell + run + '</span></td>' +
       '<td><button class="btn ghost mini cbtn' + (a.name ? '' : ' empty') + '" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit name and role" aria-label="edit name and role"><span class="cv">' + esc(a.name || "\u2014") + '</span></button></td>' +
       '<td><button class="btn ghost mini cbtn' + (a.role ? '' : ' empty') + '" data-aedit="name" data-sid="' + esc(a.session) + '" title="edit role" aria-label="edit role"><span class="cv">' + esc(a.role || "\u2014") + '</span></button></td>' +
       '<td><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv">' + esc(modelLabel) + '</span></button></td>' +
@@ -1272,9 +1286,9 @@ class AgentsView {
                : (a.prompt_chars ? "role + behaviour notes (ROLE.md) — " + a.prompt_chars + " chars"
                                  : "role + behaviour notes (ROLE.md)")) + '">✎' +
         (voidP ? '<span class="req" title="empty">*</span>' : "") + '</button>' + aiBadge + '</td>' +
-      '<td class="c-act"><button class="btn ghost mini" data-clear="' + esc(a.session) + '" title="clear this session (chat + tasks)" aria-label="clear session">↺</button>' +
-      goBtn +
-      '<button class="btn ghost mini no" data-del="1" title="release agent" aria-label="release agent">×</button></td></tr>' + brief;
+      '<td class="c-act"><button class="btn ghost mini" data-amore="' + esc(a.session) + '" data-aid="' + esc(aid || "") + '"' +
+      ' aria-haspopup="menu" aria-label="agent actions for ' + esc(aid || "this session") + '"' +
+      ' title="agent actions for ' + esc(aid || "this session") + '">⋮</button></td></tr>' + brief;
   }
   /* v890: ONE editor per compact cell — same `POST /api/agents` the inline controls
      used, so nothing moved in the backend; only the door got smaller. */
@@ -1312,15 +1326,40 @@ class AgentsView {
       this.save(sid, patch);
     };
   }
+  /* v891: the row's own menu. Same three actions the buttons did, same endpoints. */
+  openAgentMenu(ev, a, aid){
+    const box = '<div style="display:flex;flex-direction:column;gap:2px;min-width:190px">' +
+      (aid ? '<button type="button" class="btn ghost mi" data-amenu="go">↗ open ' + esc(aid) + '\u2019s session</button>' : '') +
+      '<button type="button" class="btn ghost mi" data-amenu="clear">↺ clear chat + tasks</button>' +
+      '<button type="button" class="btn ghost mi" data-amenu="del">× release agent</button></div>';
+    const m = openPopover(ev, box, {w: 220, h: 130});
+    const go = m.querySelector('[data-amenu="go"]');
+    if (go) go.onclick = () => { closePopover(); if (this.onOpenAgent) this.onOpenAgent(aid); };
+    m.querySelector('[data-amenu="clear"]').onclick = async () => {
+      closePopover();
+      if (!confirm("Clear this session? It wipes the chat history and task list (the agent + its role stay).")) return;
+      const r = await this.api.post("/api/sessions/" + encodeURIComponent(a.session) + "/clear", {});
+      if (!r || r.ok === false){ alert((r && r.error) || "clear failed"); return; }
+      if (this.onChanged) this.onChanged();
+    };
+    m.querySelector('[data-amenu="del"]').onclick = async () => {
+      closePopover();
+      if (!confirm("Release this agent? The session stays but loses the agent badge.")) return;
+      const r = await this.api.del("/api/agents/" + encodeURIComponent(a.session));
+      if (!r || !r.ok){ alert((r && r.error) || "release refused"); return; }
+      if (this.onChanged) this.onChanged();
+    };
+  }
   bind(){
     const body = $("agBody");
     this._bindRowDrag(body);
     // JAG-484 (agents table): the row's own session button — same shared opener
     // the jobs list uses. Stop the row click so it selects nothing else.
-    body.querySelectorAll("[data-go]").forEach(b => { b.onclick = (ev) => {
-      if (window.DragSort && DragSort.consumeClick(ev)) return;
+    body.querySelectorAll("[data-amore]").forEach(b => { b.onclick = (ev) => {
       ev.stopPropagation();
-      if (this.onOpenAgent) this.onOpenAgent(b.dataset.go); }; });
+      const a = this.agents.find(x => x.session === b.dataset.amore);
+      if (a) this.openAgentMenu(ev, a, b.dataset.aid || "");
+    }; });
     // JAG-2.9: the A-id is the row's handle — click it to select this agent in BOTH
     // the table (persistent .rowsel) and the org chart node (.sel, survives polling).
     // v615: select ONLY — neither camera moves (scroll defaults to false).
@@ -1423,21 +1462,6 @@ class AgentsView {
       if (!r || !r.ok){ genState(st, "warn", "AI draft failed — " + ((r && r.error) || "unknown error")); return; }
       if (ta) ta.value = r.text;
       genState(st, "ok", "AI draft is in the field — press save prompt to keep it");
-    }; });
-    body.querySelectorAll("[data-clear]").forEach(b => { b.onclick = async () => {
-      const sid = b.dataset.clear;
-      if (!sid) return;
-      if (!confirm("Clear this session? It wipes the chat history and task list (the agent + its role stay).")) return;
-      const r = await this.api.post("/api/sessions/" + encodeURIComponent(sid) + "/clear", {});
-      if (!r || r.ok === false){ alert((r && r.error) || "clear failed"); return; }
-      if (this.onChanged) this.onChanged();
-    }; });
-    body.querySelectorAll("[data-del]").forEach(b => { b.onclick = async () => {
-      const sid = b.closest("tr").dataset.sid;
-      if (!confirm("Release this agent? The session stays but loses the agent badge.")) return;
-      const r = await this.api.del("/api/agents/" + encodeURIComponent(sid));
-      if (!r || !r.ok){ alert((r && r.error) || "release refused"); return; }
-      if (this.onChanged) this.onChanged();
     }; });
   }
   /* v623: row drag-and-drop runs on the SHARED DragSort engine
@@ -1684,10 +1708,12 @@ class AgentsView {
       // JAG-2.3: assign ANY agent to THIS team from the header — before this the only
       // picker lived on an agent row, so an empty team (or a scoped view) had nothing
       // to click: you could not add an agent to a new team at all.
+      /* v891: the header's two controls are ICONS now — "assign" and a VERTICAL
+         dots menu — so a narrow column keeps the team name on one line. */
       (isTeam ? '<button class="btn ghost mini tmadd" data-tmadd="' + esc(g.id) + '" ' +
-        'title="assign agents to ' + esc(g.name) + '">＋ assign</button>' : '') +
+        'title="assign agents to ' + esc(g.name) + '" aria-label="assign agents to ' + esc(g.name) + '">⊕</button>' : '') +
       (isTeam ? '<button class="kebab" data-tmbulk="' + esc(g.id) + '" aria-label="team actions" ' +
-        'aria-haspopup="menu" title="team actions — all sessions of this team">\u22EF</button>' : '') +
+        'aria-haspopup="menu" title="team actions — all sessions of this team">\u22EE</button>' : '') +
       '</div></td></tr>';
     const rows = (g.ms || []).length
       ? (g.ms || []).map(a => this.row(a, g.id)).join("")
@@ -2733,17 +2759,27 @@ class JobsView {
       return '<div class="job-item"><div class="job" data-id="' + esc(j.id) + '"><span class="st ' + esc(j.status) + '">' + esc(j.status) + '</span>' +
         '<span class="aid">' + esc(j.id) + '</span>' +
         '<span class="muted job-goal" title="' + esc(j.goal) + '">' + esc(j.goal) + '</span>' +
-        (canRun ? '<button class="btn ghost mini icon-action" data-run="' + esc(j.id) + '" title="Run job ' + esc(j.id) + '" aria-label="Run job ' + esc(j.id) + '">▶</button>' : '') +
-        '<button class="btn ghost no mini icon-action" data-jdel="' + esc(j.id) + '" title="Delete job ' + esc(j.id) + '" aria-label="Delete job ' + esc(j.id) + '">×</button></div>' +
+        /* v891: run/delete are ONE vertical menu, so the goal keeps the row's width. */
+        '<button class="btn ghost mini icon-action" data-jmore="' + esc(j.id) + '" data-canrun="' + (canRun ? "1" : "0") + '"' +
+        ' aria-haspopup="menu" aria-label="job actions for ' + esc(j.id) + '" title="job actions for ' + esc(j.id) + '">⋮</button></div>' +
         relationHtml + runHtml + '</div>'; }).join("") ||
       '<div class="empty">no jobs yet — write a goal and pick who to give it to.</div>';
-    $("jobs").querySelectorAll("[data-run]").forEach(b => { b.onclick = (e) => { e.stopPropagation(); this.dispatch(b.dataset.run); }; });
-    $("jobs").querySelectorAll("[data-jdel]").forEach(b => { b.onclick = async (e) => { e.stopPropagation();
-      const jid = b.dataset.jdel;
-      if (!confirm("Delete job " + jid + "?")) return;
-      const r = await this.api.del("/api/jobs/" + encodeURIComponent(jid));
-      if (!r || r.ok === false){ alert((r && r.error) || "delete failed"); return; }
-      if (this.onChanged) this.onChanged();
+    $("jobs").querySelectorAll("[data-jmore]").forEach(b => { b.onclick = (e) => {
+      e.stopPropagation();
+      const jid = b.dataset.jmore, canRun = b.dataset.canrun === "1";
+      const m = openPopover(e, '<div style="display:flex;flex-direction:column;gap:2px;min-width:170px">' +
+        (canRun ? '<button type="button" class="btn ghost mi" data-jmenu="run">▶ run job</button>' : '') +
+        '<button type="button" class="btn ghost mi" data-jmenu="del">× delete job</button></div>',
+        {w: 190, h: 120});
+      const run = m.querySelector('[data-jmenu="run"]');
+      if (run) run.onclick = () => { closePopover(); this.dispatch(jid); };
+      m.querySelector('[data-jmenu="del"]').onclick = async () => {
+        closePopover();
+        if (!confirm("Delete job " + jid + "?")) return;
+        const r = await this.api.del("/api/jobs/" + encodeURIComponent(jid));
+        if (!r || r.ok === false){ alert((r && r.error) || "delete failed"); return; }
+        if (this.onChanged) this.onChanged();
+      };
     }; });
     // JAG-335 / JAG-484: a subjob row is NOT a second "open the agent" click (that
     // is the ORG chart's job) — it only swallows the click so it cannot collapse the
@@ -3450,7 +3486,7 @@ class OrbitApp {
       const row = document.createElement("div");
       row.className = "vrow";
       const h = saved["vrowh:" + this.view + ":" + r];
-      if (h) row.style.height = h + "px";
+      if (h) { row.style.height = h + "px"; row.style.flex = "0 0 auto"; }
       // v644: a ratio set written by the OLD drag math does not add up to 1
       // (measured: 16.6 + 15.7 + 18.3 + 83.3 = 133.8%), so it is corrupt, not a
       // shape anybody chose — fall back to equal shares instead of reproducing
@@ -3532,6 +3568,7 @@ class OrbitApp {
         const h0 = rowA.getBoundingClientRect().height, y0 = e.clientY;
         const move = (ev) => {
           const h = Math.max(220, Math.min(3000, h0 + (ev.clientY - y0)));
+          rowA.style.flex = "0 0 auto";   // v891: an explicit height beats the share
           rowA.style.height = h + "px";
         };
         const up = () => {

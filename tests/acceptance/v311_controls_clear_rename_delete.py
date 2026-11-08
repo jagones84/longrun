@@ -118,9 +118,9 @@ check("Edit role opens ROLE.md in the editor's CODE mode (not render)",
 
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as f:
     orb = f.read()
-check("Orbit agent row has a clear button", 'data-clear' in orb)
+check("Orbit agent row has a clear action (v891: in its ⋮ menu)", 'data-amenu="clear"' in orb)
 check("Orbit clear calls /clear", "/clear" in orb)
-check("Orbit job row has a delete button", 'data-jdel' in orb)
+check("Orbit job row has a delete action (v891: in its ⋮ menu)", 'data-jmenu="del"' in orb)
 check("Orbit delete calls /api/jobs/", '"/api/jobs/" + encodeURIComponent(jid)' in orb)
 check("constellation supports zoom/pan", "_zoomPan" in orb)
 # JAG-342: the org chart pan (transform) was removed — it fought the panel scrollbar
