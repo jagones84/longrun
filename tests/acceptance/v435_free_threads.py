@@ -74,11 +74,10 @@ check("2e reset clears the free groups",
 # --- the ⊞/⊟ controls also drive free groups --------------------------------
 ag = _fn(HTML, "function _allGroups(")
 check("3a the group selector includes details.fgroup", "details.fgroup" in ag, "")
-check("3b expand/collapse-all operate on _allGroups()",
-      "_allGroups()" in _fn(HTML, "function expandAllTodos(")
-      and "_allGroups()" in _fn(HTML, "function collapseAllTodos("), "")
+check("3b the one fold toggle operates on _allGroups()",
+      "_allGroups()" in _fn(HTML, "function toggleGroups("), "")
 check("3c the controls show when any group exists",
-      "_allGroups().length > 0" in _fn(HTML, "function _updateTreeTools("), "")
+      "_allGroups()" in _fn(HTML, "function _updateTreeTools("), "")
 
 print("---")
 ok = sum(results)

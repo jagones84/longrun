@@ -8,9 +8,10 @@ Three user-reported issues, pinned as static guards:
   2. naming a not-yet-existing workspace refused with "no such folder"; naming a
      folder expresses the intent to use it, so it must be CREATED (`mkdir -p`),
      including missing parents.
-  3. the chat cluster's collapse-all (⊟) must ALSO close the chain-of-thought
-     blocks, but expand-all (⊞) must NEVER re-open them (deliberately one-way so
-     the user's chosen tuck-away stays tucked).
+  3. the chat rail has ONE toggle per job (v879): a single fold control opens and
+     closes the task/free-thread groups, and the eye toggles the chain-of-thought
+     blocks. Collapsing groups no longer hides the reasoning — the eye owns that,
+     so neither control acts behind the other's back.
 
 Deterministic (no model, no network).
 
@@ -81,27 +82,27 @@ check("2e then falls back to ensure_dir (create it) — never refuse silently",
 check("2f it only errors if creation truly failed",
       "cannot create folder" in nw, "")
 
-# --- 3: collapse-all also hides CoT, one-way --------------------------------
-# JAG-431g: the ⊞/⊟ buttons now act on _allGroups() (task groups + free threads).
+# --- 3: one toggle per job (v879) -------------------------------------------
+# JAG-431g: the fold toggle acts on _allGroups() (task groups + free threads).
 check("3a the group selector covers the task groups (details.tctree)",
       "details.tctree" in _fn(HTML, "function _allGroups("), "")
-cbody = _fn(HTML, "function collapseAllTodos(")
-check("3b collapseAllTodos closes the groups",
-      "_allGroups()" in cbody and "d.open = false" in cbody, "")
-check("3c collapseAllTodos ALSO closes chain-of-thought",
-      "collapseThoughts()" in cbody, "")
-# JAG-513: the CoT has its own one-way control, so the groups can stay open.
-tbody = _fn(HTML, "function collapseThoughts(")
-check("3f a dedicated control collapses every chain-of-thought",
-      "details.think" in tbody and "d.open = false" in tbody, "")
-check("3g the CoT control is wired in the chat sidebar",
-      'data-call="collapseThoughts"' in HTML, "")
-
-ebody = _fn(HTML, "function expandAllTodos(")
-check("3d expandAllTodos re-opens the groups",
-      "_allGroups()" in ebody and "d.open = true" in ebody, "")
-check("3e expandAllTodos does NOT touch chain-of-thought (one-way)",
-      "think" not in ebody, "")
+gbody = _fn(HTML, "function toggleGroups(")
+check("3b ONE fold control opens AND closes the groups",
+      "_allGroups()" in gbody and "d.open = !open" in gbody, "")
+check("3c collapsing groups no longer hides the reasoning (the eye owns it)",
+      "think" not in gbody, "")
+check("3d the two-button pair is gone",
+      'data-call="expandAllTodos"' not in HTML
+      and 'data-call="collapseAllTodos"' not in HTML, "")
+check("3e the toggle paints its glyph from the real state",
+      'classList.toggle("is-open", gOpen)' in _fn(HTML, "function _updateTreeTools("), "")
+# JAG-513 / v879: the CoT has its own toggle, so the groups can stay open.
+tbody = _fn(HTML, "function toggleThoughts(")
+check("3f the eye toggles every chain-of-thought block",
+      "details.think" in tbody and "d.open = !open" in tbody, "")
+check("3g the CoT control is wired in the chat sidebar (one control, not a pair)",
+      'data-call="toggleThoughts"' in HTML
+      and 'data-call="collapseThoughts"' not in HTML, "")
 
 print("---")
 ok = sum(results)

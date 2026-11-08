@@ -499,6 +499,17 @@
   .srail-tools button { background: transparent; border: 1px solid transparent; color: var(--dim);
     border-radius: 6px; padding: 0 5px; font-size: 10px; line-height: 16px; cursor: pointer; }
   .srail-tools button:hover { color: var(--txt); border-color: var(--acc); }
+  /* v879 (operator): ONE control per job. Two arrows (▲/▼, ⊞/⊟) said the same
+     thing twice; a single fold toggle now carries the STATE on its glyph —
+     chevrons apart while something can be opened, together when all is open —
+     and the eye gains a slash while the reasoning is hidden. */
+  .fold-tg svg { display: block; transition: transform .15s ease; }
+  .fold-tg.is-open svg { transform: rotate(180deg); }
+  #toolsBar button .ic-slash { opacity: 0; transition: opacity .12s; }
+  #toolsBar button.is-off .ic-slash { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .fold-tg svg, #toolsBar button .ic-slash { transition: none; }
+  }
   /* JAG-218: toast shown when a background session finishes while you're away. */
   .done-toast { position: fixed; right: 16px; bottom: 16px; z-index: 9999;
     background: var(--menubg); color: var(--txt);
@@ -2755,7 +2766,7 @@
   <aside id="aside" data-col="sessions" aria-label="sessions rail">
     <section class="rail">
       <header class="rail-head">
-        <h2>Sessions<span class="srail-tools"><button type="button" id="railCollapseAll" title="collapse all groups" aria-label="collapse all groups">▲</button><button type="button" id="railExpandAll" title="expand all groups" aria-label="expand all groups">▼</button></span></h2>
+        <h2>Sessions<span class="srail-tools"><button type="button" id="railToggleAll" class="fold-tg" title="expand all groups" aria-label="expand all groups"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button></span></h2>
       </header>
       <div class="rail-tools" role="toolbar" aria-label="session tools">
         <button type="button" class="rail-btn" id="railNew" data-call="newSession"
@@ -2958,9 +2969,8 @@
     <button class="ghost" id="revealSessionBtn" data-call="revealActiveSession"
             title="reveal this session in the sessions panel — expand its group and center it"
             aria-label="reveal the current session in the sessions panel"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg></button>
-    <button class="ghost" data-tree-todos data-call="expandAllTodos" title="expand all groups (tasks + free threads)" aria-label="expand all groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M12 8.2v7.6M8.2 12h7.6"/></svg></button>
-    <button class="ghost" data-tree-todos data-call="collapseAllTodos" title="collapse all groups (tasks + free threads) and hide chain-of-thought" aria-label="collapse all groups and chain-of-thought"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M8.2 12h7.6"/></svg></button>
-    <button class="ghost" data-call="collapseThoughts" title="collapse every chain-of-thought block — they stay closed until you open one" aria-label="collapse all chain-of-thought blocks"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3 21 21"/><path d="M10.7 6.3A9.8 9.8 0 0 1 21.4 12a14 14 0 0 1-2.3 3"/><path d="M6.4 8A14 14 0 0 0 2.6 12 9.8 9.8 0 0 0 15.1 16.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
+    <button class="ghost fold-tg" data-tree-todos data-call="toggleGroups" title="expand all groups (tasks + free threads)" aria-label="expand all groups (tasks + free threads)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button>
+    <button class="ghost" data-tree-thoughts data-call="toggleThoughts" title="show every chain-of-thought block" aria-label="show every chain-of-thought block"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 12C4.6 7.6 8.1 5.4 12 5.4s7.4 2.2 9.4 6.6c-2 4.4-5.5 6.6-9.4 6.6S4.6 16.4 2.6 12Z"/><circle cx="12" cy="12" r="2.6"/><path class="ic-slash" d="M3.4 3.4 20.6 20.6"/></svg></button>
     <button class="ghost" data-tree-todos data-call="nameThreads" title="name every untitled Free.* group with one LLM subroutine (the chat model; no step limit)" aria-label="title the free thread groups"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.2A1.2 1.2 0 0 1 4 3h7.8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.4Z"/><circle cx="7.6" cy="7.6" r="1.2" fill="currentColor" stroke="none"/></svg></button>
     </div>
     </div>
@@ -2993,10 +3003,8 @@
       <div class="insp-tools">
         <h2>Inspector</h2>
         <span class="srail-tools">
-          <button type="button" id="inspCollapseAll" title="collapse all inspector sections"
-                  aria-label="collapse all inspector sections">▲</button>
-          <button type="button" id="inspExpandAll" title="expand all inspector sections"
-                  aria-label="expand all inspector sections">▼</button>
+          <button type="button" id="inspToggleAll" class="fold-tg" title="expand all inspector sections"
+                  aria-label="expand all inspector sections"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 9.5 12 5l4.5 4.5"/><path d="m7.5 14.5 4.5 4.5 4.5-4.5"/></svg></button>
         </span>
       </div>
       <!-- RH-1: the ONE scrolling list of the inspector — the head above stays put.
@@ -4501,21 +4509,24 @@ function _updateNowBar() {
 function _allTodos() { const l = $("log"); return l ? [...l.querySelectorAll("details.tctree")] : []; }
 /* JAG-431g: ⊞/⊟ also drive the "Free.N" free-thread groups, not just the task groups. */
 function _allGroups() { const l = $("log"); return l ? [...l.querySelectorAll("details.tctree, details.fgroup")] : []; }
-function expandAllTodos() { _allGroups().forEach(d => { d.open = true; }); _updateTreeTools(); }
-function collapseAllTodos() {
-  _allGroups().forEach(d => { d.open = false; });
-  // JAG-428: collapsing also tucks away the chain-of-thought blocks (the reasoning
-  // noise). Deliberately ONE-WAY: ⊞ expands the GROUPS only and never re-opens the
-  // CoT the user chose to hide.
-  collapseThoughts();
+/* v879 (operator): ONE control per job. ⊞/⊟ were the same meaning twice and the eye
+   could only CLOSE the reasoning. A single fold toggle and a single eye toggle now
+   carry their STATE on the glyph, and `_updateTreeTools` paints both from the real
+   DOM — opening ONE group (or one CoT) by hand is reflected at once. The two
+   concerns are separate again: collapsing groups no longer hides the reasoning,
+   the eye owns that. */
+function toggleGroups() {
+  const all = _allGroups();
+  const open = all.some(d => d.open);
+  all.forEach(d => { d.open = !open; });
   _updateTreeTools();
 }
-/* JAG-513: the reasoning noise has its OWN control, so a user who keeps the task
-   groups open can still tuck the chain-of-thought away. One-way on purpose: CoT
-   blocks are collapsed by default (live included) and only the user opens one. */
-function collapseThoughts() {
+function toggleThoughts() {
   const l = $("log");
-  if (l) [...l.querySelectorAll("details.think")].forEach(d => { d.open = false; });
+  const all = l ? [...l.querySelectorAll("details.think")] : [];
+  const open = all.some(d => d.open);
+  all.forEach(d => { d.open = !open; });
+  _updateTreeTools();
 }
 /* JAG-457: the vertical tools bar holds the reveal-session control (visible with an
    open session) plus the todo expand/collapse/title buttons (shown only when groups
@@ -4529,8 +4540,27 @@ function _updateTreeTools() {
   const mid = t.querySelector(".tb-mid");
   if (mid) mid.hidden = !sessionId;
   t.hidden = false;
-  const hasTodos = _allGroups().length > 0;
-  t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !hasTodos; });
+  const groups = _allGroups();
+  t.querySelectorAll("[data-tree-todos]").forEach(b => { b.hidden = !groups.length; });
+  // v879: the glyph is the STATE, the name is the ACTION (one control, one name).
+  const gOpen = groups.some(d => d.open);
+  const gBtn = t.querySelector('[data-call="toggleGroups"]');
+  if (gBtn) {
+    gBtn.classList.toggle("is-open", gOpen);
+    const gl = gOpen ? "collapse all groups (tasks + free threads)"
+                     : "expand all groups (tasks + free threads)";
+    gBtn.title = gl; gBtn.setAttribute("aria-label", gl);
+  }
+  const thinks = $("log") ? [...$("log").querySelectorAll("details.think")] : [];
+  const tShown = thinks.some(d => d.open);
+  const tBtn = t.querySelector('[data-call="toggleThoughts"]');
+  if (tBtn) {
+    tBtn.hidden = !thinks.length;
+    tBtn.classList.toggle("is-off", !tShown);
+    const tl = tShown ? "hide every chain-of-thought block"
+                      : "show every chain-of-thought block";
+    tBtn.title = tl; tBtn.setAttribute("aria-label", tl);
+  }
 }
 /* 2026-11-03 (operator): the rail shows the two PENDING STATES that otherwise require
    hunting through panels. `_setRailBadge` is the one place a rail count is painted:
@@ -6973,6 +7003,7 @@ async function loadSessions() {
   renderChatHead();   // JAG-480: the chat header names the session you are reading
   _repaintCtx();   // JAG-424g: re-apply the context ring on the freshly rendered active row
   modelLabel();   // JAG-157: reflect the active session's model once the cache is filled
+  _paintRailToggle();   // v879: the rail's one fold control follows the real groups
   _ensureAvailableModel();   // a retired/removed model must not strand this chat
   renderRuns();   // JAG-479: the rail's count + panel rows follow the REAL payload
   _namingBtn(sessionId, !!namingSessions[sessionId]);   // v878: the icon follows the backend
@@ -14962,6 +14993,7 @@ function toggleInsp(name) {
   sec.classList.toggle("insp-open", !body.hidden);
   localStorage.setItem("sf_insp_" + name, body.hidden ? "0" : "1");
   if (!body.hidden) _loadInspector(name);   // populate on open (no manual ↻)
+  _paintInspToggle();   // v879: one section changed -> the aggregate glyph follows
 }
 function _setAllInspector(open) {
   document.querySelectorAll("#inspector section[data-insp]").forEach(section => {
@@ -14973,6 +15005,7 @@ function _setAllInspector(open) {
     localStorage.setItem("sf_insp_" + section.dataset.insp, open ? "1" : "0");
     if (open && wasHidden) _loadInspector(section.dataset.insp);
   });
+  _paintInspToggle();   // v879: one control, its glyph is the state
 }
 function _loadInspector(name) {
   const key = ({ graph: "plan", plan: "plan" })[name] || name;
@@ -15015,6 +15048,7 @@ function restoreInspector() {
     if (v === "0") { s.querySelector(".insp-body").hidden = true; s.classList.remove("insp-open"); }
     else if (v === "1") { s.querySelector(".insp-body").hidden = false; s.classList.add("insp-open"); }
   });
+  _paintInspToggle();   // v879
 }
 /* 2026-11-01: the Inspector became a list of VIEWS, like the sessions rail —
    every section is a row you can collapse and DRAG to reorder, and the order is
@@ -17427,10 +17461,36 @@ $("chatSearchInput").addEventListener("keydown", e => {
   else if (e.key === "Enter") { e.preventDefault(); _chatSearchMove(e.shiftKey ? -1 : 1); }
 });
 $("chatReloadBtn").onclick = () => reloadChat();
-$("railCollapseAll").onclick = () => _setAllGroups(true);
-$("railExpandAll").onclick = () => _setAllGroups(false);
-$("inspCollapseAll").onclick = () => _setAllInspector(false);
-$("inspExpandAll").onclick = () => _setAllInspector(true);
+/* v879: one toggle per rail head — the click reads the DOM for the direction, the
+   glyph carries the state, the name says what the click WILL do. */
+function _railGroupsOpen() {
+  const open = _openGroups() || [];
+  return (_lastGroupKeys || []).some(k => open.indexOf(k) >= 0);
+}
+function _paintRailToggle() {
+  const b = $("railToggleAll"); if (!b) return;
+  const isOpen = _railGroupsOpen();
+  b.classList.toggle("is-open", isOpen);
+  const l = isOpen ? "collapse all groups" : "expand all groups";
+  b.title = l; b.setAttribute("aria-label", l);
+}
+function _anyInspOpen() {
+  return [...document.querySelectorAll("#inspector section[data-insp] .insp-body")]
+    .some(x => !x.hidden);
+}
+function _paintInspToggle() {
+  const b = $("inspToggleAll"); if (!b) return;
+  const isOpen = _anyInspOpen();
+  b.classList.toggle("is-open", isOpen);
+  const l = isOpen ? "collapse all inspector sections" : "expand all inspector sections";
+  b.title = l; b.setAttribute("aria-label", l);
+}
+$("railToggleAll").onclick = () => _setAllGroups(_railGroupsOpen());
+$("inspToggleAll").onclick = () => _setAllInspector(!_anyInspOpen());
+/* A manual open/close of ONE group or one CoT repaints the aggregate toggle, so the
+   icon can never claim a state the page is not in (`toggle` does not bubble, hence
+   the capture phase). */
+if ($("log")) $("log").addEventListener("toggle", () => _updateTreeTools(), true);
 /* 2026-11-07 (operator): the queue/steer mode is ONE icon button with a two-item
    popup — the native <select> spent ~60px of the composer row to say one word. The
    glyph IS the current mode (queue = a list that waits, steer = an aim), the popup is

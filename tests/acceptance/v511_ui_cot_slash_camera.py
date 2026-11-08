@@ -91,11 +91,12 @@ check("C2 a LIVE chain-of-thought is created collapsed",
       'details class="think"' in ensure and " open>" not in ensure, "")
 check("C3 ending a CoT (tool card) CLOSES it, never re-opens it",
       'const _t = curThink.querySelector("details"); if (_t) _t.open = false;' in HTML, "")
-thead = _fn(HTML, "function collapseThoughts() {")
-check("C4 one control collapses every CoT (one-way: nothing re-opens it)",
-      "details.think" in thead and "d.open = false" in thead, "")
-check("C5 the control is in the chat sidebar",
-      'data-call="collapseThoughts"' in HTML, "")
+thead = _fn(HTML, "function toggleThoughts() {")
+check("C4 ONE control toggles every CoT (v879: no longer one-way)",
+      "details.think" in thead and "d.open = !open" in thead, "")
+check("C5 the control is in the chat sidebar (one eye, not a pair)",
+      'data-call="toggleThoughts"' in HTML
+      and 'data-call="collapseThoughts"' not in HTML, "")
 # RH-26: a live CoT keeps the WHOLE thought. It used to drop the head beyond 40000
 # chars, so a long monologue started mid-sentence while the persisted block was full.
 _wt = _fn(HTML, "function _writeThink() {")

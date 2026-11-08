@@ -46,9 +46,11 @@ check("1d the right group no longer wraps at <=920px",
 
 # --- 2: the chat todo-group controls -----------------------------------------
 check("2a the control markup exists", 'id="toolsBar"' in HTML, "")
-check("2b both data-call hooks are present",
-      'data-call="expandAllTodos"' in HTML and 'data-call="collapseAllTodos"' in HTML, "")
-for fn in ("expandAllTodos", "collapseAllTodos", "_updateTreeTools", "_allTodos"):
+check("2b ONE toggle drives the groups (v879: no second button for the same job)",
+      'data-call="toggleGroups"' in HTML
+      and 'data-call="expandAllTodos"' not in HTML
+      and 'data-call="collapseAllTodos"' not in HTML, "")
+for fn in ("toggleGroups", "toggleThoughts", "_updateTreeTools", "_allTodos"):
     check("2c the %s() function is defined" % fn, ("function " + fn + "(") in HTML, "")
 check("2d the functions target the chat's <details.tctree> groups",
       'querySelectorAll("details.tctree")' in HTML, "")
