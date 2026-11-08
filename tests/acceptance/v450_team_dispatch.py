@@ -83,9 +83,13 @@ check("A1 the master's team lists its direct report",
       A.REGISTRY.team_of(M["id"]) == [M["id"], C["id"]], A.REGISTRY.team_of(M["id"]))
 
 # ---- A) dispatch to a teammate runs a real turn in THEIR session ------------
+# 2026-11-08: a dispatch is DETACHED by default (it becomes a job and the reply
+# arrives as a message — v903 covers that). This test pins the INLINE path, which
+# is now the explicit `wait:true` mode.
 ev.clear()
 out = S._apply_chat_dispatch(master_sess,
-                             {"action": "dispatch", "agent": C["id"], "goal": "write the parser"},
+                             {"action": "dispatch", "agent": C["id"], "goal": "write the parser",
+                              "wait": True},
                              on_event)
 check("A2 dispatch returns the teammate's reply", "ACK from sess_coder1" in out, out[:120])
 check("A3 the teammate's OWN session received the turn",

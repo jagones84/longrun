@@ -586,7 +586,10 @@ def tool_context():
         '{"action":"subagent","goal":"..."}, or '
         '{"action":"dispatch","agent":"<A-id>","goal":"..."}. At most `runtime.max_parallel_tools` '
         "tools run at once (config/tools.yaml); subagents are capped by "
-        "`max_parallel` (config/subagents.yaml). Dispatch items run grouped "
+        "`max_parallel` (config/subagents.yaml). A dispatch is DETACHED: it returns "
+        "a job id at once and the teammate's reply arrives back as a message when "
+        'the job ends (read it with job.get); add "wait":true to get the reply '
+        "inside this turn. Dispatch items run grouped "
         "per teammate (different concurrently, same sequentially); never a "
         "spawn, never on the subagent budget. Give a tool-using subagent "
         "max_steps>=3 (2 steps leave no turn for the answer). `job.*` belongs to a "

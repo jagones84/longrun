@@ -773,9 +773,13 @@ CHAT_TOOL_PROMPT = (
     "task. One delegate per subtask. Give max_steps>=3 when the child must call "
     "tools (2 steps leave no turn for the answer). "
     'If your role prompt lists a TEAM (the org chart), DISTRIBUTE work to it: emit ONLY '
-    '{"action":"dispatch","agent":"<A-id>","goal":"<the subtask>"} to run a real turn '
-    "in that teammate's own session (their role and model) and get their reply back. "
-    "Prefer dispatching independent work to teammates over doing everything yourself. "
+    '{"action":"dispatch","agent":"<A-id>","goal":"<the subtask>"} to start a real '
+    "turn in that teammate's own session (their role and model). It is DETACHED: the "
+    "call returns a job id at once (e.g. J7), the teammate works while YOUR turn goes "
+    "on, and its reply is delivered back to you as a message when the job ends — "
+    "queued if you are busy, readable any time with job.get. Prefer dispatching "
+    "independent work to teammates over doing everything yourself; add "
+    '"wait":true only when you must have the answer inside THIS turn. '
     "Several independent dispatches MAY go in one batch call (items with action "
     "dispatch in `calls`); different teammates run concurrently, same-teammate "
     "items sequentially. If you have teammates below you in the org chart, the "
@@ -2100,10 +2104,15 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
     Unlike `subagent` (a private child that reports back), `dispatch` runs a real
     turn IN the teammate's session — its ROLE.md, its model, its transcript — so an
     orchestrator ("Master") actually DISTRIBUTES work across its team and the
-    teammate's own chat shows the delegated work. The teammate's reply comes back as
-    the observation. Only a DIRECT REPORT of the current agent may be targeted, and
-    only a NON-delegated turn may dispatch (a dispatched turn cannot dispatch
-    again) — that prevents A->B->A recursion.
+    teammate's own chat shows the delegated work. Only a DIRECT REPORT of the
+    current agent may be targeted, and only a NON-delegated turn may dispatch (a
+    dispatched turn cannot dispatch again) — that prevents A->B->A recursion.
+
+    DETACHED by default (2026-11-08): the delegation becomes a JOB and this call
+    returns its id at once, so the delegating turn never parks behind the teammate
+    and the operator can keep talking to it. The teammate's reply is delivered
+    back here when the job ends — queued if this agent is busy, a real turn if it
+    is idle (`util.inbox.deliver`). Pass `wait:true` for the old inline turn.
     """
     try:
         from longrun.agent import agents as agents_mod
@@ -2137,15 +2146,26 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
         sid2 = member.get("session")
         if not sid2:
             return _fail("teammate %s has no session" % member.get("id"))
-        # Fix2: never silently queue behind (or pile onto) a running teammate
-        # turn. The old code blocked this whole turn on the teammate's turn
-        # lock with no signal — a stuck teammate killed the caller's step
+        # 2026-11-08 (operator): "if during a dispatch I ask something else to the
+        # agent making the dispatch, it goes on queue however it's wrong since a
+        # dispatch can be done independently". So a dispatch is DETACHED by
+        # default: it becomes a job, this call returns its handle in the same
+        # second, and the teammate's reply is delivered BACK to this agent when
+        # the job ends (queued if busy, a turn if idle). `wait:true` keeps the
+        # old inline turn for a caller that needs the reply in THIS turn.
+        if not (_act.get("wait") or _args.get("wait")):
+            return _dispatch_detached(sess, me, member, goal, on_event,
+                                      node=node, after=after)
+        # INLINE path only: never silently queue behind (or pile onto) a running
+        # teammate turn. The old code blocked this whole turn on the teammate's
+        # turn lock with no signal — a stuck teammate killed the caller's step
         # budget and the delegation was lost. Fail fast; the model retries.
         try:
             from longrun.core import events as _events
             if _events.turn_active(sid2):
                 return _fail("teammate %s is busy (turn running) — retry later, "
-                             "or steer the running turn via sessions.send"
+                             "steer the running turn via sessions.send, or drop "
+                             "wait:true and let the reply arrive as a message"
                              % member.get("id"))
         except Exception:
             pass
@@ -2253,6 +2273,62 @@ def _apply_chat_dispatch(sess, act, on_event, node=None, after=None, state=None)
         except Exception:  # noqa: BLE001
             pass
         return "dispatch error: %s" % e
+
+
+def _dispatch_detached(sess, me, member, goal, on_event, node=None, after=None):
+    """Start a dispatch as a JOB and hand back its handle (2026-11-08).
+
+    Operator: *"dispatch can be done independently so it may be a direct call …
+    when the delegated agent has finished he shall send the message to the
+    delegating agent even if it is busy (that command is put on queue
+    automatically)"*. The job IS the delegation: it carries `assigned_by` (the
+    agent that dispatched), runs the teammate's turn in the background, and when
+    it ends `jobs._notify` delivers ONE message to this agent through
+    `util.inbox.deliver` — queued while it is busy, a real turn when it is idle.
+    The reply is never lost and the delegating turn never parks.
+    """
+    from longrun.orchestrate import jobs as jobs_mod
+
+    def _fail(msg):
+        on_event("tool.result", session=sess["id"], tool="dispatch", ok=False,
+                 backend="harness", exit_code=1, summary="dispatch: " + msg)
+        persist_tool_card(sess, "dispatch", False, error=msg, backend="harness",
+                          node=node, after=after)
+        return "dispatch error: %s" % msg
+
+    try:
+        res = jobs_mod.JOBS.create(goal, coordinator=member["id"],
+                                   agents=[member["id"]], mode="run",
+                                   assigned_by=me.get("id"))
+    except Exception as e:  # noqa: BLE001 — delegation must never break chat
+        return _fail("job create failed: %s" % str(e)[:200])
+    if not res.get("ok"):
+        return _fail(str(res.get("error") or "job create failed"))
+    job = res.get("job") or {}
+    jid = str(job.get("id") or "")
+    started = jobs_mod.JOBS.dispatch(jid)
+    if not started.get("ok"):
+        return _fail("job %s could not start: %s"
+                     % (jid, str(started.get("error") or "unknown")))
+    out = ("Dispatched to %s (%s) as job %s — its turn runs now in session %s, "
+           "independently of this one. Its reply will arrive here as a message "
+           "when the job ends (queued if you are busy); read it any time with "
+           'job.get {"job":"%s"}, or read the teammate\'s chat with sessions.read. '
+           "Continue your own work and do NOT re-dispatch the same goal."
+           % (member.get("id"), member.get("name") or "", jid,
+              member.get("session"), jid))
+    on_event("tool.call", session=sess["id"], tool="dispatch",
+             args={"agent": member.get("id"), "goal": goal, "job": jid}, inline=True)
+    on_event("tool.result", session=sess["id"], tool="dispatch", ok=True,
+             exit_code=0, backend="harness",
+             args={"agent": member.get("id"), "goal": goal, "job": jid},
+             output=out, summary="dispatch %s: job %s started"
+                                 % (member.get("id"), jid))
+    persist_tool_card(sess, "dispatch", True,
+                      args={"agent": member.get("id"), "goal": goal, "job": jid,
+                            "session": member.get("session")},
+                      result=out, exit_code=0, backend="harness", node=node, after=after)
+    return out
 
 
 # ---------------------------------------------------------------- JAG-533 ----
