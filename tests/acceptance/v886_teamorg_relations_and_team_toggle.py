@@ -94,6 +94,8 @@ check("E4 the old guards survive (models / cycles / scope / empty-only)",
       and "context.only_empty" in PROMPT)
 check("E5 the budget rule tells it what to do first",
       "do the WRITES FIRST" in PROMPT and "one `team.create`" in PROMPT)
+check("E6 a new team of N agents means N NEW agents (no borrowing from another team)",
+      "never pad the count with" in PROMPT and "borrowed from another team" in PROMPT)
 
 print("---")
 passed = sum(results)
