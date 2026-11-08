@@ -1312,32 +1312,51 @@ class AgentsView {
     try { tr.scrollIntoView({block: "center", behavior: "smooth"}); }
     catch (e) { try { tr.scrollIntoView(); } catch (e2) {} }
   }
-  /* v895 (operator: "the llm model shall be all visible if there is space and squeeze
-     only if stretched and no more space available"): the Model column is as wide as
-     the longest ref ON SCREEN, capped at 55% of the table; past that the cell keeps
-     its ellipsis. Measured with a canvas — a box already wider than its text reports
-     the BOX, not the text. Runs once per render and on every width change. */
+  /* v896 (operator: "the LLM model shall not overlap the agent name … the prefix
+     openrouter can disappear in case of need, squeeze just the initial model name"):
+     the NAME is never the one that pays. The model column may take only what is left
+     after a readable name, and its LABEL degrades in steps as room shrinks:
+       0  the whole ref          openrouter:z-ai/glm-5.3-flash
+       1  without the provider   z-ai/glm-5.3-flash
+       2  the model name only    glm-5.3-flash
+       3  the same, ellipsized by CSS (when even 2 does not fit)
+     The full ref is kept in the cell's tooltip and in `data-m`, so nothing is lost. */
+  _modelLabel(ref, level){
+    const r = String(ref || "default");
+    const noProv = r.replace(/^[a-z0-9_-]+:/i, "");
+    const last = noProv.split("/").slice(-1)[0] || noProv;
+    return level <= 0 ? r : (level === 1 ? noProv : last);
+  }
   _fitModelCol(){
     const tbl = document.querySelector("#agTableWrap table.at");
     const col = tbl && tbl.querySelector("col.c-model");
     const first = tbl && tbl.querySelector("td.mcell .cv");
     if (!tbl || !col || !first) return;
+    const wrap = tbl.parentElement;
+    const avail = (wrap ? wrap.clientWidth : tbl.clientWidth) || 0;
+    const cells = [...tbl.querySelectorAll("td.mcell .cv")];
+    if (!avail || !cells.length) return;
     const cs = getComputedStyle(first);
     const ctx = this._mctx || (this._mctx = document.createElement("canvas").getContext("2d"));
     if (!ctx) return;
     ctx.font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
-    const seen = {};
-    let w = 0;
-    tbl.querySelectorAll("td.mcell .cv").forEach(el => {
-      const t = el.textContent || "";
-      if (seen[t]) return;
-      seen[t] = 1;
-      w = Math.max(w, ctx.measureText(t).width);
+    const PAD = 14;        // the value button + the cell padding
+    const ID_W = 58;       // the A-id gutter (col.c-id)
+    const ACT_W = 26;      // the ⋮ column (col.c-act)
+    const MIN_NAME = 110;  // the agent name never goes below a readable width
+    const room = Math.max(56, avail - ID_W - ACT_W - MIN_NAME);
+    const widest = (lvl) => cells.reduce((m, el) =>
+      Math.max(m, ctx.measureText(this._modelLabel(el.getAttribute("data-m"), lvl)).width), 0);
+    let level = 3, w = room;
+    for (let l = 0; l <= 2; l++){
+      const need = widest(l) + PAD;
+      if (need <= room){ level = l; w = Math.ceil(need); break; }
+    }
+    col.style.width = Math.min(w, room) + "px";
+    cells.forEach(el => {
+      const t = this._modelLabel(el.getAttribute("data-m"), Math.min(level, 2));
+      if (el.textContent !== t) el.textContent = t;
     });
-    const wrap = tbl.parentElement;
-    const avail = (wrap ? wrap.clientWidth : tbl.clientWidth) || 0;
-    if (!w || !avail) return;
-    col.style.width = Math.min(Math.ceil(w) + 14, Math.round(avail * 0.55)) + "px";
   }
   row(a, grp){
     const hid = (grp != null && this.closed.has(grp)) ? ' hidden' : '';
@@ -1398,7 +1417,7 @@ class AgentsView {
         '<span class="asub">' + aiBadge + voidMark + '<span class="arole">' + esc(a.role || "") + '</span>' +
           '<button type="button" class="linklike rep" data-aedit="reports_to" data-sid="' + esc(a.session) + '" title="reports to ' + esc(a.reports_to || "nobody") + '" aria-label="edit reports to">' + esc(repLabel) + '</button></span>' +
       '</td>' +
-      '<td class="mcell"><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv">' + esc(modelLabel) + '</span></button></td>' +
+      '<td class="mcell"><button class="btn ghost mini cbtn' + (a.model ? '' : ' empty') + '" data-aedit="model" data-sid="' + esc(a.session) + '" title="model: ' + esc(a.model || "router default") + '" aria-label="edit model"><span class="cv" data-m="' + esc(a.model || "default") + '">' + esc(modelLabel) + '</span></button></td>' +
       '<td class="c-act"><button class="btn ghost mini dots" data-amore="' + esc(a.session) + '" data-aid="' + esc(aid || "") + '"' +
       ' aria-haspopup="menu" aria-label="agent actions for ' + esc(aid || "this session") + '"' +
       ' title="agent actions for ' + esc(aid || "this session") + '">⋮</button></td></tr>' + brief;

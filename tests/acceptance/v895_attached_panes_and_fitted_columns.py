@@ -85,9 +85,9 @@ check("D1 the cell shows the WHOLE model ref (no last-segment truncation)",
       and 'String(a.model).split("/").slice(-1)[0]' not in ORBIT)
 check("D2 the cell is a .mcell so the fitter can find it",
       '\'<td class="mcell">' in ORBIT)
-check("D3 the width is measured from the rendered text, capped at 55%",
+check("D3 the width is measured from the rendered text, never past the table",
       'document.createElement("canvas").getContext("2d")' in ORBIT
-      and "col.style.width = Math.min(Math.ceil(w) + 14, Math.round(avail * 0.55)) + \"px\";" in ORBIT)
+      and 'col.style.width = Math.min(w, room) + "px";' in ORBIT)
 check("D4 it re-fits after every render AND on every panel width change",
       "this._applyFocus();\n    this._fitModelCol();" in ORBIT
       and "this._mcolRO = new ResizeObserver(() => this._fitModelCol()); this._mcolRO.observe(wrap);" in ORBIT)
