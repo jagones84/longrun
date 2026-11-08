@@ -55,6 +55,15 @@ PREFERRED_CHEAP_MODELS = (
     "deepseek:deepseek-v4-pro",
 )
 
+# v898: the Teamorg automation snapshot is BUILT to this budget, not cut to it.
+# Measured 2026-11-08: the `agents` section was 32,162 chars for 94 agents and the
+# model received its first 6,000 — invalid JSON, no teams, a fifth of the org.
+# 24k holds the WHOLE 94-agent roster (measured 17,095 chars) and still leaves
+# room for the in-scope ROLE.md heads; a scope of one team costs ~4k.
+AUTOMATE_SNAPSHOT_MAX_CHARS = 24000
+AUTOMATE_PROMPT_HEAD_CHARS = 400     # how much of one ROLE.md a snapshot may carry
+TEAM_ROLE_HEAD_CHARS = 300           # how much of a team ROLE.md the snapshot may carry
+
 # Safety boundary: keys that longrunAgent is strictly forbidden from mutating.
 FORBIDDEN_SAFETY_KEYS = frozenset({
     "allow_nucleus_write",
@@ -1997,8 +2006,121 @@ def _webui_inspect(args):
         ks = keys_mod.keys_status()
         out["keys"] = sorted([str(k.get("env")) for k in (ks.get("keys") or [])])
         out["keys_note"] = "secret values are operator-only and never exposed to longrunAgent"
+    if section == "teamorg":
+        # v898: the ONE compact, budgeted view of the org the automation reads
+        # (teams + roster + the in-scope ROLE.md heads). It never needs a slice.
+        out.update(_teamorg_snapshot(args.get("scope") or {}))
     out["stdout"] = "inspected WebUI substrate section=%s" % section
     return out
+
+
+def _teamorg_snapshot(scope=None, budget=None):
+    """v898 — the Teamorg automation's snapshot, BUILT to a budget.
+
+    The model used to receive the first 6,000 characters of a 32,162-character
+    `agents` dump: a truncated JSON, no teams, and no ROLE.md text to decide who
+    should get a job. This builder returns a COMPLETE object instead:
+
+      1. the teams (name + its ROLE.md head) and the agents IN SCOPE (the whole
+         roster when no explicit scope was sent) as
+         {id, name, role, model, manager, teams, prompt_chars};
+      2. the room that is left funds the ROLE.md heads (`prompts[id]`, at most
+         AUTOMATE_PROMPT_HEAD_CHARS each) and `prompt_head_chars` states how much
+         each one actually carries (0 = none fit — the org is too big for one);
+      3. a fallback chain (team text, then team list, then a one-line-per-agent
+         roster) keeps the JSON whole on a pathological org.
+
+    The result serializes within `budget`, so nothing is ever cut mid-structure.
+    """
+    from longrun.agent import agents as agents_mod
+    from longrun.orchestrate import roles as roles_mod
+    from longrun.orchestrate import teams as teams_mod
+
+    budget = int(budget or AUTOMATE_SNAPSHOT_MAX_CHARS)
+    scope = scope if isinstance(scope, dict) else {}
+    wanted = {str(x) for x in (scope.get("scope_agents") or []) if x}
+
+    teams = []
+    try:
+        # `list()` returns a WRAPPER: {"teams": [...], "seq": n, "count": n}.
+        for t in ((teams_mod.REGISTRY.list() or {}).get("teams") or []):
+            teams.append({"id": t.get("id"), "name": t.get("name"),
+                          "role_md": str(t.get("description") or "")[:TEAM_ROLE_HEAD_CHARS]})
+    except Exception:  # noqa: BLE001 — an unreadable team list must not kill the run
+        teams = []
+
+    rows = []   # (row, session, prompt text) — ONE read per in-scope agent
+    total = 0
+    try:
+        tree = agents_mod.REGISTRY.tree() or {}
+    except Exception:  # noqa: BLE001
+        tree = {}
+    for a in (tree.get("agents") or []):
+        total += 1
+        if wanted and a.get("id") not in wanted:
+            continue
+        sid = a.get("session")
+        try:
+            text = (roles_mod.read(sid) or "") if sid else ""
+        except Exception:  # noqa: BLE001 — one unreadable prompt, not all
+            text = ""
+        rows.append(({"id": a.get("id"), "name": a.get("name"), "role": a.get("role"),
+                      "model": a.get("model"), "manager": a.get("manager"),
+                      "teams": a.get("teams") or [],
+                      # I-8: "write only the EMPTY ROLE.md" stays DECIDABLE.
+                      "prompt_chars": len(text)}, sid, text))
+
+    def _pack(agent_rows, heads):
+        p = {"section": "teamorg",
+             "scope": {"team_scope": scope.get("team_scope") or "ALL",
+                       "only_empty": bool(scope.get("only_empty")),
+                       "agents_in_scope": len(rows)},
+             "teams": teams,
+             "agents": agent_rows}
+        if heads:
+            p["prompts"] = heads
+        return p
+
+    def _size(p):
+        return len(json.dumps(p, ensure_ascii=False, default=str))
+
+    packed = _pack([r for r, _sid, _t in rows], None)
+    if wanted:
+        packed["agents_total"] = total
+    room = budget - _size(packed) - 300     # 300 = the `prompts` key and its framing
+    cap = 0
+    if rows and room > 800:
+        cap = max(0, min(AUTOMATE_PROMPT_HEAD_CHARS, room // len(rows)))
+    heads = {}
+    if cap >= 80:
+        for r, sid, text in rows:
+            if text:
+                heads[r.get("id") or sid or ""] = text[:cap]
+    packed = _pack(packed["agents"], heads)
+    if wanted:
+        packed["agents_total"] = total
+    packed["prompt_head_chars"] = cap if heads else 0
+    if not heads and rows:
+        packed["prompts_note"] = ("ROLE.md heads omitted: the %d agents in scope do not "
+                                  "fit the %d-character snapshot budget"
+                                  % (len(rows), budget))
+
+    # Fallback chain — the structure the model reads is never cut in the middle.
+    if _size(packed) > budget:
+        for t in (packed.get("teams") or []):
+            t.pop("role_md", None)
+    if _size(packed) > budget:
+        packed["teams"] = [{"id": t.get("id"), "name": t.get("name")}
+                           for t in (packed.get("teams") or [])]
+    if _size(packed) > budget:
+        packed["agents"] = [
+            " · ".join(x for x in (
+                str(r.get("id") or ""), str(r.get("name") or ""), str(r.get("role") or ""),
+                ",".join(r.get("teams") or []), ("↳" + str(r.get("manager"))) if r.get("manager") else "",
+                ("role %dch" % int(r.get("prompt_chars") or 0))) if x)
+            for r in packed["agents"]]
+        packed["agents_compact"] = True
+    return packed
 
 
 def _contains_forbidden_safety_key(obj, prefix=""):
@@ -2466,10 +2588,15 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
     reset_stateless_session()
     resolved_model = resolve_automation_model(active_session_id=session, explicit_model=model)
     sec_prompt = SECTION_PROMPTS.get(section, SECTION_PROMPTS["settings"])
-    snap = _webui_inspect({"section": AUTOMATE_INSPECT_SECTIONS.get(section, "all"),
-                           "session": session})
+    # v898: the Teamorg snapshot is BUILT to the budget (teams + the in-scope ROLE.md
+    # heads), so its JSON arrives WHOLE; the slice below is the belt for the other
+    # sections, which keep their historical cap.
+    inspect_section = AUTOMATE_INSPECT_SECTIONS.get(section, "all")
+    snap = _webui_inspect({"section": inspect_section,
+                           "session": session,
+                           "scope": context if inspect_section == "teamorg" else None})
     snap_json = json.dumps({k: v for k, v in snap.items() if k not in ("ok", "stdout")},
-                           ensure_ascii=False, default=str)[:6000]
+                           ensure_ascii=False, default=str)[:AUTOMATE_SNAPSHOT_MAX_CHARS]
     ctx_json = json.dumps(context or {}, ensure_ascii=False, default=str)[:2000]
 
     full_goal = (

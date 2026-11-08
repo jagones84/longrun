@@ -1679,7 +1679,15 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
                 _ap = _arch.exclusive_default_approval(name)
             except Exception:  # noqa: BLE001 — policy defaults must never break the registry
                 _ap = "auto"
-        entry = {**(entry if isinstance(entry, dict) else {}), "enabled": True, "approval": _ap}
+        # v898b: the risk class decides the APPROVAL default — never the ENABLED flag.
+        # Forcing `enabled: True` here bypassed an operator's `enabled: false` on the
+        # tool or on its namespace (`config/tools.yaml`): a global kill switch that did
+        # not kill (v534 B5). A verb with NO entry at all is still usable by default.
+        _base = entry if isinstance(entry, dict) else {}
+        _base = {**_base, "approval": _ap}
+        if "enabled" not in _base:
+            _base["enabled"] = True
+        entry = _base
     # JAG-254: a config entry for an external MCP tool (`<client>__<tool>`) whose
     # server is NOT connected has no schema — the tool does not exist. Return None
     # so a clone without pmcp never advertises (nor tries) a tool it lacks; the

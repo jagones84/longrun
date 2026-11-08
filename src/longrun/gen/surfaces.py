@@ -96,6 +96,13 @@ _AUTOMATE_PROMPTS = {
         "job with no worker is not a job, and a job parked on the wrong agent is worse "
         "than no job. Use `job.update` to re-assign or re-scope an existing job instead "
         "of deleting and recreating it.\n"
+        "C2. THE SNAPSHOT TELLS YOU WHO DOES WHAT: `teams[].role_md` is each team's "
+        "ROLE.md and `prompts[<agent id>]` holds the first `prompt_head_chars` "
+        "characters of an in-scope agent's ROLE.md — read them BEFORE you assign a "
+        "job: it belongs to the agent whose ROLE.md names that work. "
+        "`prompt_head_chars: 0` means the heads did not fit the snapshot budget; "
+        "`agents_total` is the size of the whole org, while `agents` lists the agents "
+        "IN SCOPE only. The snapshot never widens what you may WRITE.\n"
         "D. ROUTINES — `routine.create` only for work that must repeat on a cadence.\n"
         "E. VERIFY — one `team.get` (plus `job.list` when you created jobs), then stop.\n"
         "THE RULES BELOW GOVERN WHAT YOU MAY TOUCH (the UI sends them in the context "
@@ -223,7 +230,9 @@ _AUTOMATE_PROMPTS = {
 # AUTOMATE section -> `webui.inspect` section, so the snapshot injected into the goal
 # is never empty for a valid request.
 _AUTOMATE_INSPECT = {
-    "teamorg": "agents",
+    # v898: its OWN compact section — teams + roster + ROLE.md heads, built to the
+    # snapshot budget (the raw `agents` dump was 32k chars and arrived cut at 6k).
+    "teamorg": "teamorg",
     "models": "models",
     "routing": "models",
     "team_policy": "teams",

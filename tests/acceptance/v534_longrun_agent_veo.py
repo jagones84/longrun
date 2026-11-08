@@ -318,8 +318,8 @@ with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as f:
     ORBIT = f.read()
 
-check("D3 Tools panel segregates Exclusive built-in · longrunAgent origin dropdown",
-      '"exclusive", "Exclusive built-in · longrunAgent"' in HTML)
+check("D3 Tools panel segregates Exclusive built-in · Architect (v887 rename)",
+      '"exclusive", "Exclusive built-in · Architect"' in HTML)
 check("D4 Models panel exposes longrunAgentModel selector + @chat dynamic option",
       'id="longrunAgentModel"' in HTML and "saveLongrunAgentModel" in HTML)
 check("D5 Shared makeAutomateWidget and Orbit Teamorg automate bar are wired to /api/longrun-agent/automate",
@@ -425,7 +425,7 @@ check("E8 every configure target has its own context-specific system prompt",
       targets.issubset(set(LRA.SECTION_PROMPTS)), sorted(targets - set(LRA.SECTION_PROMPTS)))
 check("E8b every automate section injects a NON-empty substrate snapshot from a real inspect section",
       set(LRA.SECTION_PROMPTS).issubset(set(LRA.AUTOMATE_INSPECT_SECTIONS))
-      and set(LRA.AUTOMATE_INSPECT_SECTIONS.values()).issubset(set(INS_SECTIONS + ["all", "agents", "teams", "models", "compaction", "settings", "rules"])),
+      and set(LRA.AUTOMATE_INSPECT_SECTIONS.values()).issubset(set(INS_SECTIONS + ["all", "agents", "teams", "models", "compaction", "settings", "rules", "teamorg"])),
       sorted(set(LRA.SECTION_PROMPTS) - set(LRA.AUTOMATE_INSPECT_SECTIONS)))
 # E9 (2026-11-02): the WebUI no longer HOLDS the allowlist. Every Automate/Generate
 # control is mounted from the ONE backend registry (`GET /api/generate/surfaces`), so
@@ -488,7 +488,7 @@ check("G1 the permanent system session derives its pin from the SERVER flag, not
 check("G2 _togglePin refuses to unpin a system session and can never store it",
       "function _togglePin(sid) {" in HTML
       and "if (_systemPinnedIds().includes(sid))" in HTML
-      and 'toast("longrunAgent is a permanent system session' in HTML)
+      and 'toast("Architect is a permanent system session' in HTML)
 check("G3 the row menu shows a DISABLED permanent pin instead of an Unpin toggle",
       'data-a="pin-sys" disabled' in HTML and "📌 Pinned (permanent)" in HTML)
 # v752: the fallback comparator is now the shared sort (_sessSort), which keeps the
