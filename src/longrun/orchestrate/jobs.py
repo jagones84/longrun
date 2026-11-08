@@ -462,6 +462,46 @@ def job_retries():
     return ctx_limits.limit("job_retries")
 
 
+def readable_text(text):
+    """A brief / result as the OPERATOR can read it (2026-11-08).
+
+    A job's free-text fields are written by a model, and a model can answer with
+    its NATIVE tool-call markup instead of prose (measured on J30: the same 2.8 KB
+    `<｜｜DSML｜｜ parameter …>` envelope was stored as ALL THREE subjobs'
+    assignment). That markup is a call the harness already executed, never a
+    brief. It is LABELLED rather than paraphrased: inventing a summary would be a
+    second truth about what the worker was told.
+    """
+    from longrun.util.textkit import is_tool_markup
+    return ("(a raw tool call was recorded here — no written text)"
+            if is_tool_markup(text) else text)
+
+
+def readable_job(job):
+    """A COPY of `job` whose briefs and results are readable — the store is untouched.
+
+    The registry's in-memory job dicts are handed out by `list()` / `detail()`, so
+    sanitising in place would rewrite the DATA (the runner reads the same objects).
+    Every surface that PRINTS a job — the Jobs panel, the constellation popover,
+    the chat's job detail — reads it through here.
+    """
+    if not isinstance(job, dict):
+        return job
+    out = dict(job)
+    runs = job.get("runs")
+    if isinstance(runs, dict):
+        out["runs"] = {k: (dict(v, result=readable_text(v.get("result")))
+                           if isinstance(v, dict) else v)
+                       for k, v in runs.items()}
+    subs = job.get("subjobs")
+    if isinstance(subs, dict):
+        out["subjobs"] = {k: (dict(v, assignment=readable_text(v.get("assignment")),
+                                   result=readable_text(v.get("result")))
+                              if isinstance(v, dict) else v)
+                          for k, v in subs.items()}
+    return out
+
+
 class JobRegistry:
     """Create, inspect and run jobs (JN)."""
 
@@ -471,6 +511,9 @@ class JobRegistry:
         jobs = sorted(d["jobs"].values(), key=lambda j: j.get("n", 0), reverse=True)
         for j in jobs:                          # JAG-292: uniform contract for old jobs
             j.setdefault("blocked_by", [])
+        # 2026-11-08: what every UI prints is `readable_job`, so a brief recorded
+        # as raw tool markup (legacy rows) never reaches the operator verbatim.
+        jobs = [readable_job(j) for j in jobs]
         out = {"jobs": jobs, "seq": d["seq"], "count": len(jobs)}
         try:
             from longrun.core import matrix as _mtx
@@ -785,10 +828,13 @@ class JobRegistry:
         job = self.get(jid)
         if not job:
             return None
-        j = dict(job)
+        j = readable_job(job)
         todos = self.subjob_todos(jid)
         subs = job.get("subjobs") or {}
-        j["subjobs"] = {sid: dict(s, todos=todos.get(sid, []),
+        j["subjobs"] = {sid: dict(s,
+                                  assignment=readable_text(s.get("assignment")),
+                                  result=readable_text(s.get("result")),
+                                  todos=todos.get(sid, []),
                                   depth=subjob_depth(sid),
                                   children=subjob_children(subs, sid))
                         for sid, s in subs.items()}
@@ -912,8 +958,17 @@ class JobRegistry:
         the old "first line containing the id" matched that line for EVERY agent, so
         all workers were handed the same assignment. Prefer a line whose FIRST agent
         id is this one and that names the FEWEST other agents.
+
+        2026-11-08 (job J30): a plan that is a TOOL CALL — the DSML/JSON markup
+        of a write the coordinator attempted instead of answering — is not an
+        assignment: no worker can read it, and all three were handed the same
+        2.8 KB envelope. Such a plan is refused (""), so the caller falls back to
+        the job's goal.
         """
+        from longrun.util.textkit import is_tool_markup
         text = str(plan or "").strip()
+        if not text or is_tool_markup(text):
+            return ""
         best, best_score = "", None
         for line in text.splitlines():
             s = line.strip()
@@ -1149,10 +1204,11 @@ class JobRegistry:
                     sub = next((s for s in subs.values() if s["agent"] == aid), None)
                     mine = ((sub or {}).get("assignment")
                             or (self._assignment_for(plan, aid) if plan else "")
-                            # A non-coordinator job (a detached dispatch) has no
-                            # plan: the job's goal IS the assignment, so the worker
-                            # never receives an empty brief.
-                            or (job["goal"] if not _coord_mode else ""))
+                            # The GOAL is always a usable brief: a non-coordinator
+                            # job (a detached dispatch) has no plan, and a plan that
+                            # carried no readable line for this agent (2026-11-08)
+                            # must not leave the worker with an empty assignment.
+                            or job["goal"])
                     msg = self._delegation_msg(jid, sender_label, sub, job["goal"], mine)
                     t = threading.Thread(
                         target=self._one,

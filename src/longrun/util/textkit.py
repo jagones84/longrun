@@ -122,6 +122,41 @@ def extract_action_json(text):
     return objs[-1]
 
 
+#: The marker a model's NATIVE tool-call dialect wraps its tags in — full-width
+#: bars on DeepSeek V4 (`<｜｜DSML｜｜ invoke ...>`), one bar or none on drifting
+#: builds (JAG-534). It lives here, in the pure text layer, because TWO readers
+#: must agree on it: the agent loop (is this message a call?) and reply selection
+#: (is this message an ANSWER?) — `memory.stores.turn_reply` 2026-11-08.
+DSML_MARK = r"[|｜]{1,3}\s*DSML\s*[|｜]{1,3}"
+
+
+def is_dsml(text):
+    """True when `text` carries the model's native (DSML) tool-call markup."""
+    return bool(re.search(r"<\s*" + DSML_MARK, str(text or ""), re.I))
+
+
+def is_tool_markup(text):
+    """True for any NATIVE tool-call envelope a model emits instead of JSON.
+
+    Three dialects, all machine text: the DSML/Hermes wrapper (`<｜｜DSML｜｜
+    invoke name="X">`, `<tool_call><function=…>`), the `<arg_key>K</arg_key>
+    <arg_value>V</arg_value>` template (JAG-… 2026-10-31), and the bare
+    `<parameter name="x">…` fragment a truncated call leaves behind. Never a
+    reply: it is a call the harness already parsed and executed.
+    """
+    t = str(text or "")
+    if not t or "<" not in t:
+        return False
+    if is_dsml(t):
+        return True
+    if re.search(r"<tool_call\b", t, re.I) and re.search(r"<function\s*=", t, re.I):
+        return True
+    if "<arg_value>" in t and "</arg_key>" in t:
+        return True
+    return bool(re.search(r"<parameter\s+name\s*=", t, re.I)
+                and re.search(r"</?invoke\b", t, re.I))
+
+
 def extract_json(text):
     """First JSON value in `text` (prose-tolerant, multi-object safe).
 

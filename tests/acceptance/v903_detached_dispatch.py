@@ -148,8 +148,9 @@ check("D3 a goal is still required", "goal required" in out, out)
 # ---- E) the brief a run-mode worker receives is never empty ----------------
 JOBS_SRC = open(os.path.join(REPO, "src", "longrun", "orchestrate", "jobs.py"),
                 encoding="utf-8").read()
-check("E1 a run-mode job hands the GOAL as the worker's assignment",
-      'or (job["goal"] if not _coord_mode else "")' in JOBS_SRC)
+check("E1 a run-mode job hands the GOAL as the worker's assignment (v904: so does "
+      "a coordinator job whose plan gave this agent no readable line)",
+      'or job["goal"])' in JOBS_SRC)
 check("E2 the assigner's name rides the delegation message in run mode",
       "sender_label = coord_label or (" in JOBS_SRC
       and "_delegation_msg(jid, sender_label" in JOBS_SRC)

@@ -44,7 +44,8 @@ from longrun.memory.stores import (FINISH_SUMMARY_KEYS as _FINISH_SUMMARY_KEYS,
                      append_message, drop_inject, load_plan, load_tasks,
                      persist_inject, persist_tool_card, save_plan, save_session,
                      save_tasks)
-from longrun.util.textkit import extract_action_json, extract_json
+from longrun.util.textkit import (DSML_MARK, extract_action_json, extract_json,
+                                  is_dsml, is_tool_markup)
 from longrun.util.tracing import RunTrace, _REAL_CACHED_TOKENS, _REAL_PROMPT_TOKENS
 
 
@@ -1018,7 +1019,7 @@ def _next_stale(prev_stale, prev_hash, cur_hash, worked):
 # and the turn ended mid-work (session 18c103e0d9a1, 2026-10-23 — "gli agenti
 # muoiono"). Detection is therefore a tolerant regex, and the tag regexes below
 # accept the marker as OPTIONAL.
-_DSML_MARK = r"[|｜]{1,3}\s*DSML\s*[|｜]{1,3}"
+_DSML_MARK = DSML_MARK
 # `<｜DSML｜ invoke …>` / `<invoke …>` / `<parameter …>`
 _DSML_TAG = r"<\s*(?:" + _DSML_MARK + r")?\s*"
 # The same, but ALSO admitting a tag spelled as a CLOSE: the live shape
@@ -1032,8 +1033,12 @@ _DSML_WRAPPERS = ("", "tool", "tools", "action", "call", "calls", "tool_call",
 
 
 def _looks_like_dsml(text):
-    """True when `text` carries the model's native (DSML) tool-call markup."""
-    return bool(re.search(r"<\s*" + _DSML_MARK, str(text or ""), re.I))
+    """True when `text` carries the model's native (DSML) tool-call markup.
+
+    The regex has ONE owner (`textkit.DSML_MARK`): reply selection must ask the
+    same question, or a parsed-and-executed call is handed back as the answer.
+    """
+    return is_dsml(text)
 
 
 def _dsml_coerce(act):
@@ -1091,9 +1096,7 @@ def _json_prefix(text):
 
 def _looks_like_tool_markup(text):
     """True for the XML-like Hermes tool-call wrapper used by some local models."""
-    t = str(text or "")
-    return bool(re.search(r"<tool_call\b", t, re.I)
-                and re.search(r"<function\s*=", t, re.I))
+    return is_tool_markup(text)
 
 
 def _argkv_action(text):

@@ -1042,12 +1042,21 @@ def _starts_work(content):
     {…} — here is the result" was discarded as if the turn had resumed. The
     envelope must be the bulk of the message (>= half of it, whitespace ignored);
     a quoted example inside a long answer is prose.
+
+    2026-11-08 (measured on job J30): a model that answers with its NATIVE
+    tool-call markup (`<｜｜DSML｜｜ invoke name="fs.write">`) was counted as prose.
+    The longest such message won `turn_reply`, so a job's `assignment` and
+    `runs[*].result` were 2.8 KB of raw markup instead of the plan — every worker
+    was handed the envelope as its brief. Markup is a CALL the loop already
+    parsed and executed, never an answer.
     """
     import re as _re
     text = str(content or "").strip()
     if not text:
         return False
-    from longrun.util.textkit import extract_action_json
+    from longrun.util.textkit import extract_action_json, is_tool_markup
+    if is_tool_markup(text):
+        return True
     act = extract_action_json(text)
     if not isinstance(act, dict) or not (act.get("action") or act.get("tool")):
         return False
@@ -1090,8 +1099,8 @@ def turn_reply(messages, longest=False):
                              for m in msgs[finish_i + 1:]):
         finish_i, fin = -1, ""
     if finish_i >= 0:
-        contents = [str(m.get("content") or "").strip()
-                    for m in msgs[:finish_i]] + [fin]
+        contents = [str(m.get("content") or "").strip() for m in msgs[:finish_i]
+                    if not _starts_work(m.get("content"))] + [fin]
     else:
         # 2026-11-08: the round after a finish can itself be an ACTION
         # (`todo.update` bookkeeping, a `fs.read` the closure gate asked for) —
@@ -1105,9 +1114,13 @@ def turn_reply(messages, longest=False):
         if declared:
             return declared
         # no prose and no declared summary: show SOMETHING rather than nothing
-        # (v303 pins this for a bare `{"action":"finish"}`).
+        # (v303 pins this for a bare `{"action":"finish"}`) — but native tool-call
+        # markup is never that something: the loop already executed it, so the
+        # turn has no answer and "" says so.
+        from longrun.util.textkit import is_tool_markup
         raw = [str(m.get("content") or "").strip() for m in msgs]
-        return ([c for c in raw if c] or [""])[-1]
+        raw = [c for c in raw if c and not is_tool_markup(c)]
+        return (raw or [""])[-1]
     return max(contents, key=len) if longest else contents[-1]
 
 
