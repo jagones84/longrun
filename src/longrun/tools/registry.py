@@ -1664,13 +1664,16 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     if entry is None and is_mtx_family:
         entry = {"enabled": True, "approval": (mtx or prom or {}).get("approval", "auto")}
     is_exclusive = bool((schema or {}).get("_origin") == "exclusive")
-    if is_exclusive:
+    is_delegation = bool((schema or {}).get("_origin") == "delegation")
+    if is_exclusive or is_delegation:
         # v889 (operator: "by default only the risky tools shall require approval").
         # `config/tools.yaml` ships NAMESPACE defaults (`agent: {approval: auto}`) so a
         # new verb is usable without editing the file — but a namespace default must not
         # declare `agent.delete` or `provider.remove` safe. The risk class of the TOOL
         # decides the default; only an entry written FOR THIS TOOL (file or overlay)
         # overrides it, and an explicit `approval: auto` there is still honoured.
+        # v901: a DELEGATION tool (`job.*`) follows the same risk class (job.delete
+        # still asks first) — only its PERMISSION differs, and that lives in `classify`.
         _explicit = tools_cfg.get(name)
         _ap = (_explicit or {}).get("approval") if isinstance(_explicit, dict) else None
         if not _ap:
@@ -1699,7 +1702,9 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     entry = entry or {}
     return {
         "name": name,
-        "origin": "exclusive" if is_exclusive else ("matrix" if mtx else ("mcp" if ext else "nucleus")),
+        "origin": ("delegation" if is_delegation else
+                   "exclusive" if is_exclusive else
+                   ("matrix" if mtx else ("mcp" if ext else "nucleus"))),
         # JAG-80: external MCP tools (the pmcp gateway) are OPT-IN. Shipping 26
         # gateway tools (23 of them approval-gated) into the chat prompt made the
         # model call `pmcp__gateway.request_capability` instead of its own
@@ -2235,6 +2240,16 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
         if sess_ref is not None:
             from longrun.agent import architect as _lra
             _ok, _why = _lra.check_dual_permission(tool, sess_ref)
+            if not _ok:
+                return "denied", _why
+    # v901: a DELEGATION tool (`job.*`) is gated by ORG POSITION, not by a grant —
+    # enabled + the caller is a coordinator (an agent with direct reports). Same
+    # one-source rule: the verdict comes from the module that owns the tool.
+    if (spec.get("schema") or {}).get("_origin") == "delegation":
+        sess_ref = (args or {}).get("_session") or (args or {}).get("run_id")
+        if sess_ref is not None:
+            from longrun.agent import architect as _lra
+            _ok, _why = _lra.check_delegation(tool, sess_ref)
             if not _ok:
                 return "denied", _why
     # F4 (Cline plan-before-act direction): a session locked in plan mode may

@@ -68,8 +68,11 @@ the current plan, chats and agents are never touched — wiping everything
 is the session reset (v614).
 2.6 Permits are two systems, and FULL is only one of them: approval mode
 FULL never bypasses the dual-permission gate — exclusive tools
-(job/team/agent/session/webui/kb) need the per-session Teamorg grant
-(session menu), decided AND worded by the ONE function both paths call.
+(team/agent/session/webui/kb) need the per-session Teamorg grant
+(session menu), while the DELEGATION tools (`job.*`) need org position
+instead: any agent with at least one direct report runs dependent team
+jobs over its own subtree, at any level (v901). Each class is decided AND
+worded by the ONE function both paths call.
 Operator secret VALUES never reach the model: one scrub at the tool
 execute choke point redacts them from every observation, so a stolen
 token can't curl around the gate (v616). The gate itself is closed too:

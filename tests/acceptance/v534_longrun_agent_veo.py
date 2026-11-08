@@ -8,10 +8,12 @@ Locks:
      - `DELETE /api/sessions/longrunAgent` is refused with 403;
      - `reset_stateless_session()` wipes messages, tool_cards, injects, and graph.
   B  Exclusive built-in tools & Dual-Permission Gate:
-     - the exclusive tools (`agent.*`, `team.*`, `job.*`, `routine.*`,
+     - the exclusive tools (`agent.*`, `team.*`, `routine.*`,
        `session.*`, `webui.*`, `provider.*`, `mcp.*`, `skill.*`, `kb.*`) are
        registered with `origin == "exclusive"` and segregated under the
        `Exclusive built-in` origin dropdown in `webui/index.html`;
+     - v901: `job.*` is NOT exclusive any more — it is `origin == "delegation"`
+       (any agent with a direct report may run team jobs over its own subtree);
      - calling an exclusive tool from an ungranted session is denied (exit 126);
      - granting `allow_longrun_agent` on a session unlocks it ONLY when the tool
        is also enabled in the global registry (dual-permission).
@@ -171,10 +173,14 @@ expected_tools = {
     "webui.configure",
     "webui.inspect",
 }
+# v901: `job.*` moved to the DELEGATION class (coordinator-gated, no Teamorg
+# grant) — the exclusivity assertion therefore covers only the granted set.
+_DELEGATION = {"job.create", "job.dispatch", "job.get", "job.list", "job.delete"}
 check("B1 all longrunAgent subtools are registered in registry.catalog()",
       expected_tools.issubset(set(cat)), sorted(expected_tools - set(cat)))
-check("B2 every longrunAgent tool has origin='exclusive'",
-      all(cat[n].get("origin") == "exclusive" for n in expected_tools))
+check("B2 granted tools are origin='exclusive'; job.* is origin='delegation'",
+      all(cat[n].get("origin") == "exclusive" for n in expected_tools - _DELEGATION)
+      and all(cat[n].get("origin") == "delegation" for n in expected_tools & _DELEGATION))
 
 # Create a normal session WITHOUT access
 user_sess = stores.get_or_create_session("normal-user", "Normal Chat")

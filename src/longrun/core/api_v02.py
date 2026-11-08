@@ -228,7 +228,8 @@ def _workspace_is_object_field(tool):
         schema = (registry.tool_spec(str(tool)) or {}).get("schema") or {}
     except Exception:  # noqa: BLE001 — an unknown tool keeps the old injection
         return False
-    return schema.get("_origin") == "exclusive" or str(tool).startswith("workspace.")
+    return (schema.get("_origin") in ("exclusive", "delegation")
+            or str(tool).startswith("workspace."))
 
 
 def tool_action(st, tool, args, on_event, workspace=None, hist=None):
@@ -588,9 +589,11 @@ def tool_context():
         "`max_parallel` (config/subagents.yaml). Dispatch items run grouped "
         "per teammate (different concurrently, same sequentially); never a "
         "spawn, never on the subagent budget. Give a tool-using subagent "
-        "max_steps>=3 (2 steps leave no turn for the answer). job.* need the "
-        "Teamorg grant (permission_denied without it) — then use "
-        "batch+dispatch or ask the operator. Never "
+        "max_steps>=3 (2 steps leave no turn for the answer). `job.*` belongs to a "
+        "coordinator: an agent with a direct report runs dependency-wave jobs over "
+        "its own subtree (no grant); a session with nobody below it, or a name "
+        "outside that subtree, answers permission_denied (exit 126, even on FULL). "
+        "Never "
         "batch an approval-gated mutation with a read that depends on it.",
         "A SUBAGENT item may declare ORDER over other subagent items of the same "
         "batch, and the whole batch becomes one Session Job (SJ) you can inspect "

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
 set -u
-TESTS="v900_subagent_step_budget v451_subagents_panel v563_subagent_run_budget v577_spawn_budget_dispatch v672_subagent_tool_scope v569_acceptance_predicates v529_session_jobs v140_subagent_todos v827_context_limits_config v528_parallel_batch v488_config_editor v728_jobbench_external_arms v886_teamorg_relations_and_team_toggle v647_meta_tools_truth"
+TESTS="v504_webui_script_balance v536_ui_edit_parity v534_longrun_agent_veo v616_permit_gate_and_secrets v901_team_jobs_for_coordinators v618_permit_shell_bypass"
 cd /home/jagones/Repositories/longrun || exit 1
 fail=0
 for t in $TESTS; do

@@ -51,7 +51,11 @@ _TARGET_KEYS = ("agent", "team", "job", "routine", "session", "id", "name", "slu
 
 
 def mutating_tools():
-    """The exclusive tools that CHANGE the substrate, from `TOOL_SCHEMAS`.
+    """The GATED tools that CHANGE the substrate, from `TOOL_SCHEMAS`.
+
+    v901: both gated classes count — `exclusive` (grant) and `delegation`
+    (coordinator): `job.create`/`job.dispatch` rewrite the job ledger wherever
+    they are called from, so an automation run that creates a job must record it.
 
     Imported lazily: `longrun_agent` imports this module, so a module-level
     import would be circular.
@@ -63,7 +67,8 @@ def mutating_tools():
         return frozenset()
     out = set()
     for name, spec in schemas.items():
-        if not isinstance(spec, dict) or spec.get("_origin") != "exclusive":
+        if (not isinstance(spec, dict)
+                or spec.get("_origin") not in ("exclusive", "delegation")):
             continue
         sub = str(spec.get("_subtool") or "").strip().lower()
         if sub in _READ_ONLY_SUBTOOLS:

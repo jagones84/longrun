@@ -44,6 +44,7 @@ SECTIONS = [
     {"id": "self-summary",  "order": 50, "kind": "dynamic"},
     {"id": "agent-role",    "order": 52, "kind": "dynamic"},
     {"id": "longrun-agent", "order": 53, "kind": "dynamic"},
+    {"id": "delegation",    "order": 54, "kind": "dynamic"},
     {"id": "tools",         "order": 55, "kind": "dynamic"},
     {"id": "rules",         "order": 60, "kind": "dynamic"},
     {"id": "matrix",        "order": 62, "kind": "dynamic"},
@@ -323,6 +324,21 @@ def _provider_role(sess, ws, ctx):
     return out
 
 
+def _provider_delegation(sess, ws, ctx):
+    """`job.*` for a COORDINATOR (v901) — one reader, in the module that owns the gate.
+
+    An agent with at least one direct report may run dependent team jobs over its
+    own subtree without an operator grant, at every level of the organigram. The
+    section is generated from the LIVE chart (who is in scope, which verbs exist),
+    so it cannot advertise a job tool the gate would refuse.
+    """
+    try:
+        from longrun.agent import architect as lra
+        return lra.delegation_section(sess)
+    except Exception:  # noqa: BLE001 — the prompt must never break the chat
+        return ""
+
+
 def _provider_tools(sess, ws, ctx):
     if ctx:
         return ctx
@@ -341,7 +357,10 @@ def _longrun_agent_tool_lines():
     """
     try:
         from longrun.tools import registry
-        rows = [t for t in registry.catalog() if str(t.get("origin") or "") == "exclusive"]
+        # v901: both gated classes belong here — `job.*` moved to "delegation"
+        # (coordinator-gated) but the Architect still owns and uses it.
+        rows = [t for t in registry.catalog()
+                if str(t.get("origin") or "") in ("exclusive", "delegation")]
     except Exception:  # noqa: BLE001 — the prompt must never break the chat
         return []
     out = []
@@ -538,6 +557,7 @@ _PROVIDERS = {
     "self-summary": _provider_self_summary,
     "agent-role": _provider_role,
     "longrun-agent": _provider_longrun_agent,
+    "delegation": _provider_delegation,
     "tools": _provider_tools,
     "rules": _provider_rules,
     "matrix": _provider_matrix,

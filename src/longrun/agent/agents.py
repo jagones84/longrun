@@ -205,6 +205,22 @@ class AgentRegistry:
             expand -= 1
         return out
 
+    def reports_of(self, ref):
+        """The A-ids that report DIRECTLY to `ref` ([] when unknown).
+
+        v901: this is the "is a coordinator" test the `job.*` gate uses — an
+        agent with nobody below it in the organigram may not create team jobs,
+        and every manager at every level may (the cascade is the org chart).
+        """
+        a = self.resolve(ref)
+        if not a:
+            return []
+        with _LOCK:
+            d = _load()
+        aid = a.get("id")
+        return sorted(x["id"] for x in d["agents"].values()
+                      if x.get("reports_to") == aid and x["id"] != aid)
+
     def team_of(self, ref, depth=1):
         """The agent plus its reports — the team a job assigned to it runs with.
 

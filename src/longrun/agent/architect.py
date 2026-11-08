@@ -823,14 +823,27 @@ TOOL_SCHEMAS = {
     },
 }
 
+# v901 (operator: "job tools shall be allowed to all the agents that have other
+# agents reporting to them … cascade level … not an exclusive tool"): `job.*` is
+# a DELEGATION tool, not an exclusive one. Every coordinator — an agent with at
+# least one direct report, at ANY level of the organigram — may create and run
+# dependent jobs over its own subtree. The origin drives the gate (`check_delegation`)
+# and the router (`tools._gated_tool`), so the class is declared here, once.
+for _job_name in [k for k in TOOL_SCHEMAS if k.startswith("job.")]:
+    TOOL_SCHEMAS[_job_name]["_origin"] = "delegation"
+
 # The dual-permission gate and the SAFETY_GUARD both key off this set: every
 # exclusive tool lives in one of these namespaces, so protecting the namespace
 # protects the whole surface even when a caller sends a bare namespace key.
 EXCLUSIVE_NAMESPACES = frozenset(k.split(".", 1)[0] for k in TOOL_SCHEMAS)
+#: The namespaces whose gate is ORG POSITION instead of a session grant.
+DELEGATION_NAMESPACES = frozenset(
+    k.split(".", 1)[0] for k, v in TOOL_SCHEMAS.items()
+    if v.get("_origin") == "delegation")
 
 
 def is_exclusive_name(name):
-    """True when `name` is an exclusive tool or one of its namespaces."""
+    """True when `name` is a GATED tool (exclusive or delegation) or its namespace."""
     return str(name or "").split(".", 1)[0] in EXCLUSIVE_NAMESPACES
 
 
@@ -1026,10 +1039,145 @@ def check_dual_permission(tool, run_id=None):
             "bypass this gate. Operator: grant via POST /api/longrun-agent/access "
             "{\"session\": \"<sid>\", \"allow_longrun_agent\": true} or the session "
             "menu Teamorg grant; agent: use `dispatch` (teammate turn, no grant) "
-            "instead of `job.*`, never shell/curl around the gate"
+            "or, for a coordinated team, the `job.*` delegation tools — never "
+            "shell/curl around the gate"
             % (run_id or "anonymous", tool)
         )
     return True, "authorized (dual-permission: tool enabled + session privileged)"
+
+
+def check_delegation(tool, run_id=None):
+    """Gate for a DELEGATION tool (`job.*`): the caller must BE a coordinator.
+
+    v901: a team job is ordinary work for anyone who already has teammates, so the
+    requirement is the ORG CHART, not an operator grant — an agent with at least one
+    direct report may run dependent jobs over its own subtree, at every level.
+    The Architect / a granted session keeps the unrestricted path (it may organise
+    jobs across the whole org). Returns `(ok, reason)` like the dual gate.
+    """
+    from longrun.tools import registry
+    spec = registry.tool_spec(tool)
+    if spec is None:
+        return False, "unknown tool %r" % tool
+    if not spec.get("enabled"):
+        return False, "tool %r is disabled in the global Tool panel" % tool
+    if session_has_access(run_id):
+        return True, "authorized (Architect / granted session: whole org)"
+    try:
+        from longrun.agent import agents as agents_mod
+        me = agents_mod.REGISTRY.resolve(run_id) if run_id else None
+    except Exception:  # noqa: BLE001 — a broken registry must deny, not crash
+        me = None
+    if not me:
+        return False, (
+            "session %r is not an org agent — `%s` needs a coordinator: designate "
+            "this session as an agent that has at least one teammate reporting to "
+            "it (Agents & Teams), or use `dispatch` for a teammate turn"
+            % (run_id or "anonymous", tool))
+    reports = agents_mod.REGISTRY.reports_of(me.get("id"))
+    if not reports:
+        return False, (
+            "agent %s (%s) is not a coordinator — it has nobody reporting to it, so "
+            "there is no team job to run: give it a direct report in the org chart "
+            "first, or delegate to a teammate with `dispatch`"
+            % (me.get("id"), me.get("name") or ""))
+    return True, "authorized (coordinator of %d direct report(s))" % len(reports)
+
+
+def coordinator_scope(run_id):
+    """The agents a `job.*` caller may act on: None = unrestricted, else A-ids.
+
+    v901 (cascade): an unrestricted caller (Architect / granted session) keeps the
+    whole org. A coordinator gets its ENTIRE subtree — the cascade the operator
+    asked for: a dispatched lead may create dependent jobs for its own reports,
+    and each of them may do the same below itself. An empty set means "not a
+    coordinator": every mutation is refused.
+    """
+    try:
+        if not run_id or session_has_access(run_id):
+            return None
+        from longrun.agent import agents as agents_mod
+        me = agents_mod.REGISTRY.resolve(run_id)
+        if not me or not agents_mod.REGISTRY.reports_of(me.get("id")):
+            return set()
+        return set(agents_mod.REGISTRY.subtree(me.get("id")))
+    except Exception:  # noqa: BLE001 — a broken registry must deny, not widen
+        return set()
+
+
+def _scope_denied(tool, detail):
+    return {"ok": False, "exit_code": 126, "permission_denied": True,
+            "error": "%s refused: %s" % (tool, detail)}
+
+
+def delegation_section(sess):
+    """The `job.*` brief for a COORDINATOR session ("" for anyone else).
+
+    v901: the tool is baseline for a manager, so the manager must be told — and
+    told WHO is inside its scope, from the live org chart, not from a prompt list
+    that would go stale. The Architect keeps its own full namespace section.
+    """
+    sid = str((sess or {}).get("id") if isinstance(sess, dict) else (sess or "")).strip()
+    if not sid or is_system_session(sid):
+        return ""
+    try:
+        from longrun.agent import agents as agents_mod
+        reg = agents_mod.REGISTRY
+        me = reg.resolve(sid)
+        if not me:
+            return ""
+        reports = reg.reports_of(me.get("id"))
+        if not reports:
+            return ""
+        scope = reg.subtree(me.get("id"))
+    except Exception:  # noqa: BLE001 — the prompt must never break the chat
+        return ""
+    names = []
+    for aid in scope:
+        try:
+            rec = reg.by_id(aid) or {}
+        except Exception:  # noqa: BLE001
+            rec = {}
+        names.append("%s %s" % (aid, rec.get("name") or ""))
+    shown = ", ".join(n.strip() for n in names[:20])
+    if len(names) > 20:
+        shown += " (+%d more)" % (len(names) - 20)
+    tools = [k for k, v in TOOL_SCHEMAS.items() if v.get("_origin") == "delegation"]
+    return (
+        "## Your team jobs (`job.*`)\n"
+        "%d teammate(s) report to you, so dependent TEAM JOBS are yours — no "
+        "operator grant is needed, and every manager below you has the same tools "
+        "for its own subtree.\n"
+        "- `job.create {goal, agents?, coordinator?, deps?, blocked_by?}` — CREATE a "
+        "job (it does not run until you dispatch it). `agents` defaults to your "
+        "subtree and `coordinator` to you.\n"
+        "- `job.dispatch {job}` — run it in dependency waves (this spends real model "
+        "calls). `job.wake` releases YOUR blocked jobs whose blockers finished.\n"
+        "- `job.get {job}` · `job.list` — read them. `job.update {job, …}` edits one "
+        "in place while it is not running; `job.delete {job}` removes one (asks "
+        "approval).\n"
+        "- ORDER: `blocked_by: [\"<job id>\", …]` makes one JOB wait for another; "
+        "`deps: {agent: [agents]}` orders the WORKERS inside one job. Prefer ONE job "
+        "with `blocked_by` over sequential dispatches whenever a piece of work must "
+        "wait for another — the dependency (and its failure) is then managed instead "
+        "of improvised.\n"
+        "- SCOPE: you may name ONLY agents inside your own subtree — %s. Anything "
+        "outside is refused (exit 126).\n"
+        "- Available verbs now: %s.\n"
+        % (len(reports), shown or "none", ", ".join("`%s`" % t for t in sorted(tools)))
+    )
+
+
+def _job_in_scope(job, scope, mutate=False):
+    """Whether a `job.*` caller may touch `job` (read: any member; write: coordinator)."""
+    if scope is None:
+        return True
+    if not isinstance(job, dict):
+        return False
+    if mutate:
+        return str(job.get("coordinator") or "") in scope
+    members = list(job.get("agents") or []) + [job.get("coordinator") or ""]
+    return any(str(m) in scope for m in members if m)
 
 
 # -------------------------------------------------------- model resolution ---
@@ -1615,12 +1763,24 @@ def _team_membership(args, remove):
     }
 
 
-def _job_create(args):
+def _job_create(args, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
     goal = str(args.get("goal") or "").strip()
     if not goal:
         return {"ok": False, "error": "goal required"}
+    # v901: a coordinator's job may only name agents BELOW it; the Architect (no
+    # scope) keeps the whole org. The coordinator defaults to the caller, so a lead
+    # cannot accidentally assign its job to an unrelated manager.
+    scope = coordinator_scope(caller)
+    me = None
+    if scope is not None:
+        if not scope:
+            return _scope_denied("job.create",
+                                 "only a coordinator (an agent with direct reports) "
+                                 "may create a team job")
+        from longrun.agent import agents as agents_mod
+        me = agents_mod.REGISTRY.resolve(caller) or {}
     workers = []
     for item in (args.get("agents") or []):
         sid, ag = _resolve_agent_session(item)
@@ -1629,6 +1789,17 @@ def _job_create(args):
     if coordinator:
         sid, ag = _resolve_agent_session(coordinator)
         coordinator = (ag or {}).get("id") or sid or str(coordinator)
+    elif me:
+        coordinator = me.get("id")
+    if scope is not None:
+        outside = [w for w in workers if w not in scope]
+        if outside:
+            return _scope_denied(
+                "job.create", "agents outside your org subtree: %s (yours: %s)"
+                % (", ".join(outside[:6]), ", ".join(sorted(scope)[:12])))
+        if coordinator and coordinator not in scope:
+            return _scope_denied("job.create",
+                                 "coordinator %s is outside your org subtree" % coordinator)
     if coordinator:
         # v629.1: the TEAM is org-driven for the tool too. The panel derives it
         # from the assignee; a tool-created job used to keep only the hand-listed
@@ -1655,12 +1826,18 @@ def _job_create(args):
 
 
 
-def _job_update(args):
+def _job_update(args, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
     jid = str(args.get("job") or "").strip()
     if not jid:
         return {"ok": False, "error": "job required"}
+    scope = coordinator_scope(caller)
+    if scope is not None:
+        job = jobs_mod.JOBS.get(jid)
+        if not _job_in_scope(job, scope, mutate=True):
+            return _scope_denied("job.update",
+                                 "job %s is not coordinated by you" % jid)
     workers = None
     if args.get("agents") is not None:
         workers = []
@@ -1669,10 +1846,19 @@ def _job_update(args):
             workers.append((ag or {}).get("id") or sid or str(item))
         if not workers:
             return {"ok": False, "error": "at least one worker agent required"}
+        if scope is not None:
+            outside = [w for w in workers if w not in scope]
+            if outside:
+                return _scope_denied(
+                    "job.update", "agents outside your org subtree: %s"
+                    % ", ".join(outside[:6]))
     coordinator = None
     if args.get("coordinator") is not None:
         sid, ag = _resolve_agent_session(args.get("coordinator"))
         coordinator = (ag or {}).get("id") or sid or str(args.get("coordinator") or "")
+        if scope is not None and coordinator not in scope:
+            return _scope_denied("job.update",
+                                 "coordinator %s is outside your org subtree" % coordinator)
     res = jobs_mod.JOBS.update(
         jid, goal=args.get("goal"), coordinator=coordinator, agents=workers,
         deps=args.get("deps"), mode=args.get("mode"), blocked_by=args.get("blocked_by"))
@@ -1684,21 +1870,39 @@ def _job_update(args):
     return res
 
 
-def _job_wake(_args=None):
+def _job_wake(_args=None, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
-    res = jobs_mod.JOBS.wake()
+    scope = coordinator_scope(caller)
+    if scope is None:
+        res = jobs_mod.JOBS.wake()
+    else:
+        # v901: a coordinator wakes only the blocked jobs it coordinates; the sweep
+        # itself is global, so it is handed the ids it may act on.
+        if not scope:
+            return _scope_denied("job.wake",
+                                 "only a coordinator may release blocked jobs")
+        mine = [j["id"] for j in jobs_mod.JOBS.list().get("jobs") or []
+                if j.get("status") == "blocked"
+                and _job_in_scope(j, scope, mutate=True)]
+        res = jobs_mod.JOBS.wake(only=mine)
     res.setdefault("ok", True)
     res["stdout"] = "%d released, %d failed" % (
         len(res.get("released") or []), len(res.get("failed") or []))
     return res
 
-def _job_dispatch(args):
+
+def _job_dispatch(args, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
     jid = str(args.get("job") or "").strip()
     if not jid:
         return {"ok": False, "error": "job required"}
+    scope = coordinator_scope(caller)
+    if scope is not None and not _job_in_scope(jobs_mod.JOBS.get(jid), scope,
+                                               mutate=True):
+        return _scope_denied("job.dispatch",
+                             "job %s is not coordinated by you" % jid)
     res = jobs_mod.JOBS.dispatch(jid)
     res.setdefault("ok", True)
     if res.get("ok"):
@@ -1706,31 +1910,44 @@ def _job_dispatch(args):
     return res
 
 
-def _job_get(args):
+def _job_get(args, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
     jid = str(args.get("job") or "").strip()
     job = jobs_mod.JOBS.detail(jid) if jid else None
     if not job:
         return {"ok": False, "error": "job not found: %s" % jid}
+    scope = coordinator_scope(caller)
+    if scope is not None and not _job_in_scope(job, scope):
+        return _scope_denied("job.get",
+                             "job %s has none of your team in it" % jid)
     return {"ok": True, "job": job}
 
 
-def _job_list(_args=None):
+def _job_list(_args=None, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
     out = jobs_mod.JOBS.list()
+    scope = coordinator_scope(caller)
+    if scope is not None:
+        out["jobs"] = [j for j in out.get("jobs") or [] if _job_in_scope(j, scope)]
+        out["count"] = len(out["jobs"])
     out["ok"] = True
     out["stdout"] = "%d job(s)" % len(out.get("jobs") or [])
     return out
 
 
-def _job_delete(args):
+def _job_delete(args, caller=None):
     from longrun.orchestrate import jobs as jobs_mod
 
     jid = str(args.get("job") or "").strip()
     if not jid:
         return {"ok": False, "error": "job required"}
+    scope = coordinator_scope(caller)
+    if scope is not None and not _job_in_scope(jobs_mod.JOBS.get(jid), scope,
+                                               mutate=True):
+        return _scope_denied("job.delete",
+                             "job %s is not coordinated by you" % jid)
     res = jobs_mod.JOBS.delete(jid)
     res.setdefault("ok", True)
     if res.get("ok"):
@@ -2510,13 +2727,23 @@ _SUBTOOL_MAP = {
 
 
 def execute(tool, args, run_id=None):
-    """Execute ONE `namespace.tool` exclusive tool after the dual-permission gate."""
+    """Execute ONE gated `namespace.tool` after its own gate.
+
+    Two classes, one dispatcher: an EXCLUSIVE tool needs the dual permission
+    (enabled + privileged session); a DELEGATION tool (`job.*`, v901) needs the
+    caller to be a coordinator, and its handlers then restrict the work to that
+    coordinator's org subtree.
+    """
     args = dict(args or {})
     # `action` is RESERVED: no schema carries it, and the dispatcher already
     # resolved the verb from the tool NAME (`team.member_add`), never from args.
     args.pop("action", None)
     tool = str(tool or "").strip()
-    ok, reason = check_dual_permission(tool, run_id=run_id)
+    _origin = (TOOL_SCHEMAS.get(tool) or {}).get("_origin")
+    if _origin == "delegation":
+        ok, reason = check_delegation(tool, run_id=run_id)
+    else:
+        ok, reason = check_dual_permission(tool, run_id=run_id)
     if not ok:
         return {
             "ok": False,
@@ -2534,6 +2761,8 @@ def execute(tool, args, run_id=None):
             "error": "unknown exclusive tool %r — available: %s"
                      % (tool, ", ".join(sorted(_SUBTOOL_MAP))),
         }
+    if _origin == "delegation":
+        return fn(args, caller=run_id)
     return fn(args)
 
 

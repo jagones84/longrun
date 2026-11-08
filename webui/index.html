@@ -11930,7 +11930,7 @@ function renderTools(el, d) {
     return `<button class="ghost" data-pol="${k}" data-val="${v}" aria-pressed="${on}" style="${c}">${extra || v}</button>`; };
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
-       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: exclusive tools (job · team · agent · session · webui · kb — need the per-session Teamorg grant in the session menu), matrix.promote_to_nucleus (needs its own checkbox below), nucleus writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
+       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: exclusive tools (team · agent · session · webui · kb — need the per-session Teamorg grant in the session menu; job.* is NOT one of them: any agent with at least one direct report may run dependent team jobs over its own subtree), matrix.promote_to_nucleus (needs its own checkbox below), nucleus writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
          <span style="font-size:11px;color:var(--dim);min-width:126px">Approval mode</span>
          ${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}
@@ -12064,6 +12064,9 @@ function renderTools(el, d) {
   const ORIGIN_BADGE = {
     nucleus: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
     exclusive: '<span class="sk-badge sk-core" title="exclusive built-in tool — dual-permission gated (Architect / granted sessions only)">exclusive</span>',
+    // v901: `job.*` is available to every COORDINATOR — an agent with at least one
+    // direct report — over its own org subtree. No grant, no FULL bypass.
+    delegation: '<span class="sk-badge sk-core" title="delegation tool — any agent with at least one direct report may use it on its own org subtree (no Teamorg grant)">delegation</span>',
     mcp: '<span class="sk-badge sk-mcp" title="discovered from a configured MCP server">MCP</span>',
     matrix: '<span class="sk-badge sk-matrix" title="Matrix zone — editable, outside the Nucleus">matrix</span>'
   };
@@ -12082,7 +12085,10 @@ function renderTools(el, d) {
     // per-tool policy below IS the state; the dual-permission fact lives ONCE in the
     // `exclusive` origin badge's tooltip instead of a warning repeated on every row.
     const isExcl = String(t.origin || "") === "exclusive";
-    const eff = (globalAuto && ap !== "auto" && !isExcl)
+    // v901: a DELEGATION tool's permission is org position, so FULL lifts only its
+    // approval class — the same reason the "FULL ⇒ auto" note must not promise more.
+    const isGated = isExcl || String(t.origin || "") === "delegation";
+    const eff = (globalAuto && ap !== "auto" && !isGated)
       ? '<span class="remaining" style="color:var(--err)" title="global approval mode is FULL: this tool is auto-approved no matter what is stored here">FULL ⇒ auto</span>'
       : "";
     return `<div class="card tool-row">` +

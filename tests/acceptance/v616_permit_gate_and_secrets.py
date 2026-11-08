@@ -62,8 +62,11 @@ SID = "v616-gate-probe"
 STORES.get_or_create_session(SID)
 
 # ---------------- A: one gate, one message ----------------------
-_d, _r = REG.classify("job.get", {"run_id": SID})
-_ok, _why = LRA.check_dual_permission("job.get", SID)
+# v901: `job.*` is no longer an EXCLUSIVE tool (it is delegation-gated by org
+# position), so the one-truth pair is pinned on a tool that is still exclusive.
+_GATED = "team.member_add"
+_d, _r = REG.classify(_GATED, {"run_id": SID})
+_ok, _why = LRA.check_dual_permission(_GATED, SID)
 check("A1 classify and check_dual_permission deny identically (one truth)",
       _d == "denied" and _r == _why and "dual-permission gate" in _why, _r)
 check("A2 no second inline copy of the denial survives in the registry",
@@ -71,10 +74,10 @@ check("A2 no second inline copy of the denial survives in the registry",
       and "system session or allow_longrun_agent grant)" not in REG_SRC
       and "check_dual_permission(tool, sess_ref)" in REG_SRC)
 LRA.set_session_access(SID, True)
-_d2, _r2 = REG.classify("job.get", {"run_id": SID})
+_d2, _r2 = REG.classify(_GATED, {"run_id": SID})
 check("A3 the Teamorg grant opens the gate on BOTH paths",
       LRA.session_has_access(SID) is True
-      and LRA.check_dual_permission("job.get", SID)[0] is True
+      and LRA.check_dual_permission(_GATED, SID)[0] is True
       and "dual-permission" not in str(_r2), (_d2, _r2))
 LRA.set_session_access(SID, False)
 

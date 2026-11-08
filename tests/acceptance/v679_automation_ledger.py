@@ -147,8 +147,10 @@ check("C1 mutating_tools marks writes and spares reads",
       "agent.prompt_set" in mut and "team.member_add" in mut
       and "agent.get" not in mut and "agent.list" not in mut and "agent.prompt_get" not in mut,
       sorted(mut))
+# v901: `job.*` is a DELEGATION tool (coordinator-gated), not an exclusive one —
+# it still rewrites the job ledger, so the derived set is every GATED class.
 excl = {k for k, v in LRA.TOOL_SCHEMAS.items()
-        if isinstance(v, dict) and v.get("_origin") == "exclusive"}
+        if isinstance(v, dict) and v.get("_origin") in ("exclusive", "delegation")}
 check("C2 mutating_tools is DERIVED from TOOL_SCHEMAS (no second hand-kept list)",
       mut <= excl and len(mut) > 5)
 

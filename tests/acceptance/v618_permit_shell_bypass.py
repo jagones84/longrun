@@ -8,13 +8,14 @@ the token from observations but did NOT stop the bypass itself.
 
 Fixes pinned:
   E1 denial message names FULL as non-bypass + tells operator the exact
-     grant and tells the agent the no-grant alternative (dispatch, not
-     job.*) and never shell/curl.
+     grant and tells the agent the no-grant alternative (dispatch) and never
+     shell/curl. v901: `job.*` is a DELEGATION gate now (org position, not a
+     grant) — its own one-truth pair is pinned separately (E1e).
   E2 shell hard-deny blocks the bypass ingredients: LONGRUN_TOKEN,
      grep of .env, curl to the local API jobs/agents/teams/longrun-agent
      (both 127.0.0.1 and localhost).
   E3 prompt copy disambiguates `dispatch` (teammate turn, no grant) from
-     `job.dispatch` (waves, grant needed, no shell needed).
+     `job.dispatch` (waves, coordinator-owned, no shell needed).
 
 Deterministic: temp dirs, no server, no model, no network.
 Run: python3 tests/acceptance/v618_permit_shell_bypass.py
@@ -55,16 +56,23 @@ STORES.get_or_create_session(SID)
 LRA.set_session_access(SID, False)
 
 # E1: denial is actionable (FULL named, grant path, alternative, no shell)
-_ok, _why = LRA.check_dual_permission("job.get", SID)
+_ok, _why = LRA.check_dual_permission("team.member_add", SID)
 check("E1a denial names FULL as non-bypass",
       _ok is False and "approvals.mode=full does NOT" in _why, _why)
 check("E1b denial gives the exact grant call",
       "/api/longrun-agent/access" in _why and "allow_longrun_agent" in _why)
 check("E1c denial names the no-grant alternative and forbids shell/curl",
       "`dispatch`" in _why and "never shell/curl" in _why)
-_d, _r = REG.classify("job.get", {"run_id": SID})
+_d, _r = REG.classify("team.member_add", {"run_id": SID})
 check("E1d classify and execute paths deny identically (one truth)",
       _d == "denied" and _r == _why)
+# v901: `job.*` is a DELEGATION tool now (org position, not a grant), so its gate
+# is its own function — pinned here so the two classes cannot drift either.
+_ok2, _why2 = LRA.check_delegation("job.get", SID)
+_d2, _r2 = REG.classify("job.get", {"run_id": SID})
+check("E1e the delegation gate is one truth too (job.get)",
+      _ok2 is False and _d2 == "denied" and _r2 == _why2
+      and "coordinator" in _why2, _why2)
 
 # E2: shell bypass ingredients are hard-denied
 J22_CMD = ("cd /home/jagones/Repositories/longrun && TOK=$(grep -oP "

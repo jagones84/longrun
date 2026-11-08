@@ -2922,8 +2922,8 @@ def _longrun_agent(args, run_id=None):
                       "`team.member_add`, `kb.notebook_rename`)")}
 
 
-def _exclusive_tool(tool, args, run_id=None):
-    """Run one exclusive tool (`_origin: exclusive` in the registry schema)."""
+def _gated_tool(tool, args, run_id=None):
+    """Run one GATED tool (`_origin` exclusive or delegation) through its gate."""
     from longrun.agent import architect as _lra
     res = _lra.execute(tool, args, run_id=run_id)
     res.setdefault("backend", "host")
@@ -3429,15 +3429,16 @@ def _dispatch_execute_raw(tool, args, run_id=None):
             fn = _DISPATCH[ns]
             injected_action = sub
     if fn is None:
-        # JAG-538: exclusive tools are `namespace.tool` with no prefix to key on,
-        # so the registry schema's own `_origin` is the routing contract.
+        # JAG-538: gated tools are `namespace.tool` with no prefix to key on, so the
+        # registry schema's own `_origin` is the routing contract (v901: `job.*`
+        # routes here too, with the delegation gate instead of the dual one).
         try:
             from longrun.tools import registry as _registry
             _sch = ((_registry.tool_spec(tool) or {}).get("schema") or {})
         except Exception:  # noqa: BLE001
             _sch = {}
-        if _sch.get("_origin") == "exclusive":
-            res = _exclusive_tool(tool, args, run_id=run_id)
+        if _sch.get("_origin") in ("exclusive", "delegation"):
+            res = _gated_tool(tool, args, run_id=run_id)
             res["tool"] = tool
             res["args"] = args or {}
             return res

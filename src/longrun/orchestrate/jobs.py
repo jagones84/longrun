@@ -810,7 +810,7 @@ class JobRegistry:
             self.wake()
         return n
 
-    def wake(self):
+    def wake(self, only=None):
         """Level-triggered sweep over blocked jobs (never a busy poll).
 
         Called whenever ANY job ends. A ``blocked`` job whose blockers ALL finished
@@ -818,12 +818,17 @@ class JobRegistry:
         blocker can never resolve, so it is failed too (``dependency failed``) —
         mirroring paperclip's "cancelled blockers never unblock" without a deadlock.
 
+        `only` (v901): restrict the sweep to these job ids — a coordinator's
+        `job.wake` releases its own blocked jobs, never a sibling's.
+
         Returns ``{"released": [...], "failed": [...]}``.
         """
         released, failed = [], []
+        _only = None if only is None else {str(x) for x in only}
         with _LOCK:
             pending = [j["id"] for j in _load()["jobs"].values()
-                       if j.get("status") == "blocked"]
+                       if j.get("status") == "blocked"
+                       and (_only is None or j["id"] in _only)]
         for jid in pending:
             with _LOCK:
                 d = _load()
