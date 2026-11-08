@@ -50,7 +50,7 @@ def check(name, ok, detail=""):
 
 
 # ------------------------------------------------------ A) order + anatomy ----
-_pick = ["Thinking effort", "Compaction model", "longrunAgent · VEO automation model",
+_pick = ["Thinking effort", "Compaction model", "Architect · automation model",
          "Research model · web → notebook", "Embedding · knowledge index",
          "Re-ranker model", ">Providers</h2>"]
 _pos = [SEC.find(h) for h in _pick]

@@ -37,7 +37,12 @@ from longrun.util import paths
 from longrun.util.fswrite import safe_id
 
 LONGRUN_AGENT_SESSION_ID = "longrunAgent"
-LONGRUN_AGENT_TITLE = "longrunAgent · VEO"
+# v887 (operator: "longrun agent is architect. replace its name please everywhere"):
+# the NAME the operator reads is `Architect`. The stable machine ids (the session
+# id, /api/longrun-agent/*, roles.longrun_agent, allow_longrun_agent) do not change:
+# they are contracts, not names, and renaming them would break every client.
+LONGRUN_AGENT_TITLE = "Architect"
+LONGRUN_AGENT_OLD_TITLE = "longrunAgent · VEO"
 
 # Prefer cheap remote cloud models by default; never a heavy local GGUF unless
 # the operator explicitly selects one.
@@ -373,6 +378,28 @@ TOOL_SCHEMAS = {
         "_namespace": "job",
         "_subtool": "create",
     },
+    "job.update": {
+        "description": (
+            "job.update — Edit an EXISTING job in place: goal, coordinator, workers, "
+            "mode, worker deps, blocked_by. Only the fields you pass are touched; a "
+            "running job cannot be edited. Use it to re-assign a job to the right "
+            "agents instead of deleting and recreating it."
+        ),
+        "type": "object",
+        "properties": {
+            "job": {"type": "string", "description": "Job ID ('J2')."},
+            "goal": {"type": "string", "description": "New goal, in plain language."},
+            "coordinator": {"type": "string", "description": "New coordinator agent ID/name."},
+            "agents": {"type": "array", "description": "New worker list (agent IDs/names)."},
+            "deps": {"type": "object", "description": "Worker dependency map {agent: [agents]}."},
+            "mode": {"type": "string", "description": "'coordinator' (default) or 'swarm'."},
+            "blocked_by": {"type": "array", "description": "Job IDs that must finish first."},
+        },
+        "required": ["job"],
+        "_origin": "exclusive",
+        "_namespace": "job",
+        "_subtool": "update",
+    },
     "job.dispatch": {
         "description": (
             "job.dispatch — Run an existing job (coordinator + workers in dependency "
@@ -386,6 +413,19 @@ TOOL_SCHEMAS = {
         "_origin": "exclusive",
         "_namespace": "job",
         "_subtool": "dispatch",
+    },
+    "job.wake": {
+        "description": (
+            "job.wake — Release every blocked job whose blockers are all done, and RUN "
+            "it (this spends real model calls). A blocked job with a failed blocker is "
+            "failed instead of waiting forever."
+        ),
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "_origin": "exclusive",
+        "_namespace": "job",
+        "_subtool": "wake",
     },
     "job.get": {
         "description": (
@@ -828,9 +868,19 @@ def ensure_system_session():
             if sess.get(k) is not v:
                 sess[k] = v
                 changed = True
-        if not sess.get("title"):
+        # v887: one-time rename for an existing store (old label only, never a title
+        # the operator typed).
+        if not sess.get("title") or sess.get("title") == LONGRUN_AGENT_OLD_TITLE:
             sess["title"] = LONGRUN_AGENT_TITLE
             changed = True
+    # v887: the agent record's display name follows the title, same one-time rule.
+    try:
+        from longrun.agent import agents as agents_mod
+        _rec = agents_mod.REGISTRY.get(LONGRUN_AGENT_SESSION_ID) or {}
+        if _rec.get("name") in (LONGRUN_AGENT_OLD_TITLE, "longrunAgent"):
+            agents_mod.REGISTRY.set_name(LONGRUN_AGENT_SESSION_ID, LONGRUN_AGENT_TITLE)
+    except Exception:  # noqa: BLE001 — a rename must never stop the service booting
+        pass
     # EV-40: the supervisor owns the FIRST agent number. The pin lives in
     # `agents.PINNED_AGENT_IDS`, so a registry written before the reservation
     # (or a reset that emptied it) still shows `A1` for this session.
@@ -1556,6 +1606,45 @@ def _job_create(args):
     return res
 
 
+
+def _job_update(args):
+    from longrun.orchestrate import jobs as jobs_mod
+
+    jid = str(args.get("job") or "").strip()
+    if not jid:
+        return {"ok": False, "error": "job required"}
+    workers = None
+    if args.get("agents") is not None:
+        workers = []
+        for item in (args.get("agents") or []):
+            sid, ag = _resolve_agent_session(item)
+            workers.append((ag or {}).get("id") or sid or str(item))
+        if not workers:
+            return {"ok": False, "error": "at least one worker agent required"}
+    coordinator = None
+    if args.get("coordinator") is not None:
+        sid, ag = _resolve_agent_session(args.get("coordinator"))
+        coordinator = (ag or {}).get("id") or sid or str(args.get("coordinator") or "")
+    res = jobs_mod.JOBS.update(
+        jid, goal=args.get("goal"), coordinator=coordinator, agents=workers,
+        deps=args.get("deps"), mode=args.get("mode"), blocked_by=args.get("blocked_by"))
+    if res.get("ok"):
+        job = res["job"]
+        res["stdout"] = "updated job %s [%s, coordinator=%s, workers=%d]" % (
+            job["id"], job.get("status"), job.get("coordinator"),
+            len(job.get("agents") or []))
+    return res
+
+
+def _job_wake(_args=None):
+    from longrun.orchestrate import jobs as jobs_mod
+
+    res = jobs_mod.JOBS.wake()
+    res.setdefault("ok", True)
+    res["stdout"] = "%d released, %d failed" % (
+        len(res.get("released") or []), len(res.get("failed") or []))
+    return res
+
 def _job_dispatch(args):
     from longrun.orchestrate import jobs as jobs_mod
 
@@ -2223,7 +2312,9 @@ _SUBTOOL_MAP = {
     "team.member_add": _team_member_add,
     "team.member_remove": _team_member_remove,
     "job.create": _job_create,
+    "job.update": _job_update,
     "job.dispatch": _job_dispatch,
+    "job.wake": _job_wake,
     "job.get": _job_get,
     "job.list": _job_list,
     "job.delete": _job_delete,

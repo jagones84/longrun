@@ -92,13 +92,13 @@ bar = ORBIT[ORBIT.index('id="lraAutoBar"'):ORBIT.index('id="agAddBar"')]
 check("D1 the bar is a single row: no block children of its own",
       bar.count("flex-basis:100%") == 1)   # only the ledger container
 check("D2 the send button explains the effect and the cost",
-      'id="lraAutoRun" title="send this instruction to longrunAgent:' in ORBIT
+      'id="lraAutoRun" title="send this instruction to Architect:' in ORBIT
       and "its own session is wiped" in ORBIT)
 check("D3 cancel is one named icon, not a word",
       'id="lraAutoCancel" type="button" title="close this bar' in ORBIT
       and 'aria-label="close the automation bar">✕</button>' in ORBIT)
 check("D4 the actor is still named (the ✨ has no text of its own)",
-      ">automate with longrunAgent</span>" in ORBIT)
+      ">automate with Architect</span>" in ORBIT)
 
 print("---")
 passed = sum(results)

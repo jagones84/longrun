@@ -552,7 +552,7 @@ class JobRegistry:
             d["seq"] += 1
             jid = "J%d" % d["seq"]
             clean_deps = {k: [x for x in (v or []) if x in agents]
-                          for k, v in (deps or {}).items()}
+                          for k, v in (deps if isinstance(deps, dict) else {}).items()}
             # JAG-292: inter-job dependencies. A job may declare `blocked_by` — a
             # set of OTHER jobs (paperclip issue_blockers / ruflo Task.resolveExecutionOrder).
             # It stays "blocked" until every blocker is done, then wake() releases it.
@@ -565,6 +565,55 @@ class JobRegistry:
                    "status": "blocked" if unresolved else "created",
                    "created": round(time.time(), 3), "runs": {}}
             d["jobs"][jid] = job
+            _save(d)
+        return {"ok": True, "job": job}
+
+    def update(self, jid, goal=None, coordinator=None, agents=None, deps=None,
+               mode=None, blocked_by=None):
+        """v887: edit a job IN PLACE — the architect's `job.update` door.
+
+        Only the fields you pass are touched. A RUNNING job cannot be edited (its
+        workers are executing the old plan) — abort it first. Re-deriving `blocked_by`
+        keeps the dependency graph honest: a blocker that does not exist is dropped
+        (same rule as create), so an edit cannot invent a cycle or a dead edge.
+        """
+        jid = str(jid or "").strip()
+        with _LOCK:
+            d = _load()
+            job = d["jobs"].get(jid)
+            if not job:
+                return {"ok": False, "error": "job not found: %s" % jid}
+            if job.get("status") == "running":
+                return {"ok": False, "error": "job %s is running — abort it first" % jid}
+            if goal is not None:
+                g = str(goal).strip()
+                if not g:
+                    return {"ok": False, "error": "goal cannot be empty"}
+                job["goal"] = g
+            if agents is not None:
+                al = [a for a in (agents or []) if a]
+                if not al:
+                    return {"ok": False, "error": "at least one agent required"}
+                job["agents"] = al
+                job["deps"] = {k: [x for x in (v or []) if x in al]
+                               for k, v in (job.get("deps") or {}).items()}
+                if job.get("coordinator") not in al:
+                    job["coordinator"] = al[0]
+            if coordinator is not None:
+                job["coordinator"] = (str(coordinator or "").strip()
+                                      or (job.get("agents") or [None])[0])
+            if mode is not None:
+                job["mode"] = str(mode or "coordinator")
+            if isinstance(deps, dict):
+                al = job.get("agents") or []
+                job["deps"] = {k: [x for x in (v or []) if x in al] for k, v in deps.items()}
+            if blocked_by is not None:
+                job["blocked_by"] = self._clean_blockers(d, jid, blocked_by)
+                done, _failed = self._blockers_state(job, d)
+                if not done:
+                    job["status"] = "blocked"
+                elif job.get("status") == "blocked":
+                    job["status"] = "created"
             _save(d)
         return {"ok": True, "job": job}
 

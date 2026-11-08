@@ -3692,7 +3692,7 @@
           <select aria-label="compaction model" id="compactionModel" data-change="saveCompactionModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="compactionResult"></div>
         </div>
-        <h2 title="Stateless system automation agent (longrunAgent) for Teamorg and WebUI section automation. Prefers lightweight, cost-effective cloud models (or follows the active session's model).">longrunAgent · VEO automation model <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
+        <h2 title="Stateless system automation agent (Architect) for Teamorg and WebUI section automation. Prefers lightweight, cost-effective cloud models (or follows the active session's model).">Architect · automation model <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
           <select aria-label="longrun agent model" id="longrunAgentModel" data-change="saveLongrunAgentModel" class="inp u-w100 u-p610 u-fs12"></select>
           <div class="remaining u-mt6" id="longrunAgentResult"></div>
@@ -6572,7 +6572,7 @@ function _pinned(list) {
 }
 function _togglePin(sid) {
   if (_systemPinnedIds().includes(sid)) {
-    if (typeof toast === "function") toast("longrunAgent is a permanent system session — it stays pinned", "warn");
+    if (typeof toast === "function") toast("Architect is a permanent system session — it stays pinned", "warn");
     return;
   }
   let p = _pinned(); p = p.includes(sid) ? p.filter(x => x !== sid) : [sid].concat(p);
@@ -6590,7 +6590,7 @@ async function openSessMenu(row, s, ag) {
   const pinned = _pinned().includes(s.id);
   const isSys = _isSystemSess(s);
   const hasLra = !!(s.allow_longrun_agent || isSys);
-  const lraBtn = isSys ? "" : `<button data-a="lra">${hasLra ? "✓ Revoke Teamorg / longrunAgent" : "⚡ Grant Teamorg / longrunAgent"}</button>`;
+  const lraBtn = isSys ? "" : `<button data-a="lra">${hasLra ? "✓ Revoke Teamorg / Architect" : "⚡ Grant Teamorg / Architect"}</button>`;
   const delBtn = isSys ? "" : `<button data-a="del" class="danger">Delete session</button>`;
   // JAG-535: a system session cannot be unpinned — show the state, not a toggle.
   const pinBtn = isSys
@@ -6606,7 +6606,7 @@ async function openSessMenu(row, s, ag) {
     if (a === "lra") {
       closeSessMenu();
       await api("POST", "/api/longrun-agent/access", { session: s.id, allow_longrun_agent: !hasLra });
-      toast((!hasLra ? "granted" : "revoked") + " Teamorg / longrunAgent access for " + (s.title || s.id));
+      toast((!hasLra ? "granted" : "revoked") + " Teamorg / Architect access for " + (s.title || s.id));
       loadSessions();
       return;
     }
@@ -8405,7 +8405,7 @@ function _setSectionEl(sec, merged) {
    fallbacks. */
 const RT_PICKER_OWNED = {
   summarizer: "set with the Compaction model picker above — live, one writer",
-  longrun_agent: "set with the longrunAgent picker above — live, one writer",
+  longrun_agent: "set with the Architect picker above — live, one writer",
 };
 function _setRoutingFields(box, sec) {
   const vals = sec.values || {};
@@ -12033,7 +12033,7 @@ function renderTools(el, d) {
   // it, so a native harness tool and a third-party MCP tool looked identical.
   const ORIGIN_BADGE = {
     nucleus: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
-    exclusive: '<span class="sk-badge sk-core" title="exclusive built-in tool — dual-permission gated (longrunAgent / granted sessions only)">exclusive</span>',
+    exclusive: '<span class="sk-badge sk-core" title="exclusive built-in tool — dual-permission gated (Architect / granted sessions only)">exclusive</span>',
     mcp: '<span class="sk-badge sk-mcp" title="discovered from a configured MCP server">MCP</span>',
     matrix: '<span class="sk-badge sk-matrix" title="Matrix zone — editable, outside the Nucleus">matrix</span>'
   };
@@ -12114,7 +12114,7 @@ function renderTools(el, d) {
   catch (_e) { _openO = {}; }
   const ORIGIN_SECTIONS = [
     ["nucleus", "Built-in", "shipped with the harness — the registry's own tool schemas"],
-    ["exclusive", "Exclusive built-in · longrunAgent", "dual-permission gated — callable only by longrunAgent or explicitly granted sessions when enabled here"],
+    ["exclusive", "Exclusive built-in · Architect", "dual-permission gated — callable only by Architect or explicitly granted sessions when enabled here"],
     ["mcp", "MCP · external servers", "discovered from the configured MCP clients; opt-in"],
     ["matrix", "Matrix", "live zone outside the Nucleus — promote to make it permanent"],
   ];
@@ -14435,7 +14435,7 @@ async function saveLongrunAgentModel() {
   const r = await api("POST", "/api/routing", { roles: { longrun_agent: { model: m } } });
   const el = $("longrunAgentResult");
   if (el) el.textContent = r.error ? ("error: " + r.error)
-    : (m === "@chat" ? "saved: longrunAgent follows the active session model"
+    : (m === "@chat" ? "saved: Architect follows the active session model"
                      : ("saved: longrun_agent = " + m));
 }
 /* K-4/K-5 (2026-11-02): ONE ✨ control for every editable text surface, driven by the
@@ -14601,8 +14601,8 @@ function makeAutomateWidget(section, getContext) {
   bar.dataset.automateSection = section;
   bar.style.cssText = "display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap";
   bar.innerHTML =
-    '<button type="button" class="ghost lra-auto-toggle" title="Automate this section with longrunAgent (VEO — stateless system automation)">✨ Automate</button>' +
-    '<input type="text" class="inp lra-auto-inp" placeholder="Ask longrunAgent to configure this section…" hidden style="flex:1;min-width:200px;padding:5px 8px;font-size:12px">' +
+    '<button type="button" class="ghost lra-auto-toggle" title="Automate this section with Architect (stateless system automation)">✨ Automate</button>' +
+    '<input type="text" class="inp lra-auto-inp" placeholder="Ask Architect to configure this section…" hidden style="flex:1;min-width:200px;padding:5px 8px;font-size:12px">' +
     '<button type="button" class="ghost lra-auto-run" hidden>Run</button>' +
     '<span class="remaining lra-auto-status" role="status" aria-live="polite"></span>';
   const toggleBtn = bar.querySelector(".lra-auto-toggle");
@@ -14619,7 +14619,7 @@ function makeAutomateWidget(section, getContext) {
     const instruction = (inp.value || "").trim();
     if (!instruction) { st.textContent = "enter an instruction"; return; }
     runBtn.disabled = true;
-    st.textContent = "longrunAgent running…";
+    st.textContent = "Architect is working…";
     try {
       const ctx = typeof getContext === "function" ? (getContext() || {}) : (getContext || {});
       const r = await api("POST", "/api/longrun-agent/automate", {

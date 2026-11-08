@@ -69,8 +69,8 @@ check("A4 the automate aliases resolve to the same surface (not a second button)
       S.resolve("orbit").id == "orbit"
       and S.resolve("orbit").system == S.SURFACES["teamorg"].system
       and all(r["id"] != "orbit" for r in S.registry()))
-check("A5 the automate prompt TEXT is unchanged by the move (it was moved, not rewritten)",
-      "VEO, the burattino of agents" in S.SECTION_PROMPTS["teamorg"]
+check("A5 the automate prompt still carries the identity and the section briefs",
+      "the org architect of this harness" in S.SECTION_PROMPTS["teamorg"]
       and "write updated rules" in S.SECTION_PROMPTS["rules"]
       and "operator-only safety switches" in S.SECTION_PROMPTS["config"])
 check("A6 the UI registry ships no prompt text (prompts stay server-side)",
@@ -215,7 +215,7 @@ for dp, _d, names in os.walk(os.path.join(REPO, "src", "longrun")):
             PY.append(open(os.path.join(dp, n), encoding="utf-8").read())
 BLOB = "\n".join(PY)
 check("E1 the automate prompt data is defined ONCE in the python source",
-      BLOB.count("VEO, the burattino of agents") == 1
+      BLOB.count("the org architect of this harness") == 1
       and BLOB.count('_AUTOMATE_ALLOWED = (') == 1
       and BLOB.count('("rules", "teamorg", "agents", "teams", "orbit")') == 1)
 check("E2 the allowlist literal is not duplicated in the UI",

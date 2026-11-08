@@ -162,7 +162,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .toolbar>.stack>label.chk{display:inline-flex;align-items:center;gap:5px;font-size:10px;
     color:var(--dim);cursor:pointer;white-space:nowrap;padding-left:2px}
   .toolbar>.stack>label.chk input{margin:0;width:12px;height:12px}
-  /* the "AI" provenance badge: this prompt was written by longrunAgent, not typed
+  /* the "AI" provenance badge: this prompt was written by Architect, not typed
      by the operator. Reads the one automation ledger (see agent/automation_log.py). */
   .aibadge{display:inline-block;margin-left:3px;padding:0 4px;border-radius:5px;font-size:9px;
     letter-spacing:.04em;background:var(--acc);color:#1b1206;vertical-align:middle;cursor:help}
@@ -765,23 +765,23 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <button class="btn primary" id="agNewBtn" aria-expanded="false">＋ new agent</button>
         <button class="btn" id="tmNewBtn" aria-expanded="false">＋ new team</button>
         <span class="stack">
-          <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team and agent setup with longrunAgent" title="longrunAgent writes the ROLE.md files and the reporting lines of the agents in scope. The run is stateless: it keeps no chat and no memory between runs — open it and the goal is the only input.">✨</button>
+          <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team, agent and job setup with Architect" title="Architect writes the ROLE.md files, the reporting lines and the jobs of the objects in scope. The run is stateless: it keeps no chat and no memory between runs — open it and the goal is the only input.">✨</button>
         </span>
       </div>
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
       <!-- v884: the ✨ is icon-only, so THIS bar is the only place the action can be read.
            It says what happens in the operator's words, in the order you fill it: what
-           should longrunAgent do → may it overwrite existing prompts → run.
+           should Architect do → may it overwrite existing prompts → run.
            Backend: POST /api/longrun-agent/automate {section:"teamorg"} → a STATELESS
-           longrunAgent turn (its session is reset before and after) that sees a live
+           Architect turn (its session is reset before and after) that sees a live
            snapshot of this section plus the scope below and calls the team/agent tools. -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
-        <span class="lbl" title="longrunAgent writes the ROLE.md files and the reporting lines of the agents in scope. The run is stateless: it keeps no chat and no memory between runs; everything it wrote stays in the report log.">automate with longrunAgent</span>
-        <input class="inp" id="lraAutoInp" aria-label="what longrunAgent should do" placeholder="what should it do? e.g. write the missing ROLE.md…" style="flex:1;min-width:200px">
-        <label class="chk" for="lraAutoEmpty" title="checked: longrunAgent only writes the agents whose ROLE.md is EMPTY. unchecked: it may rewrite the prompt of every agent in scope.">
+        <span class="lbl" title="Architect writes the ROLE.md files, the reporting lines and the jobs of the objects in scope. The run is stateless: it keeps no chat and no memory between runs; everything it wrote stays in the report log.">automate with Architect</span>
+        <input class="inp" id="lraAutoInp" aria-label="what Architect should do" placeholder="what should it do? e.g. write the missing ROLE.md…" style="flex:1;min-width:200px">
+        <label class="chk" for="lraAutoEmpty" title="checked: Architect only writes the agents whose ROLE.md is EMPTY. unchecked: it may rewrite the prompt of every agent in scope.">
           <input type="checkbox" id="lraAutoEmpty" checked> only agents without ROLE.md
         </label>
-        <button class="btn primary" id="lraAutoRun" title="send this instruction to longrunAgent: it edits ROLE.md files and reporting lines, then its own session is wiped (the run leaves no chat)">send</button>
+        <button class="btn primary" id="lraAutoRun" title="send this instruction to Architect: it designs teams, agents and jobs, then its own session is wiped (the run leaves no chat)">send</button>
         <button class="btn ghost" id="lraAutoCancel" type="button" title="close this bar — nothing is sent" aria-label="close the automation bar">✕</button>
         <span class="small muted" id="lraAutoScope" title="the team filter in the filter panel decides the scope: ALL teams or No team included"></span>
         <span class="small muted" id="lraAutoStatus"></span>
@@ -798,7 +798,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <input class="inp" id="tmNewName" aria-label="new team name" placeholder="new team — name…" style="width:180px;flex:none">
         <input class="inp" id="tmNewDesc" aria-label="new team description" placeholder="what is this team for? (also steers the icon)" style="width:260px;flex:none">
         <button type="button" class="btn ghost" data-genfield="team.description" data-gen-target="#tmNewDesc" data-genstatus="team.description" title="draft this team description with AI — the harness knows the name, the existing teams and who would be in it">✨</button>
-        <select class="inp" id="tmNewIcon" aria-label="new team icon" title="icon + colour from the palette — 'auto' lets longrunAgent pick the one that matches the name and the description" style="width:180px;flex:none"></select>
+        <select class="inp" id="tmNewIcon" aria-label="new team icon" title="icon + colour from the palette — 'auto' lets Architect pick the one that matches the name and the description" style="width:180px;flex:none"></select>
         <button class="btn" id="tmNew">create team</button>
         <button class="btn ghost" id="tmAddCancel" type="button">cancel</button>
       </div>
@@ -1019,7 +1019,7 @@ class AgentsView {
     this.roster = [];
     // JAG-2.4: every SESSION (designated agents + plain sessions) — the assign pool.
     this.pool = [];
-    // I-9: `{agentId: {at, run_id, section, tool}}` — the newest longrunAgent write per
+    // I-9: `{agentId: {at, run_id, section, tool}}` — the newest Architect write per
     // agent, from the ONE automation ledger (`GET /api/longrun-agent/writes`). Empty =
     // no prompt on this board was written by an automation, and no badge renders.
     this.written = {};
@@ -1213,12 +1213,12 @@ class AgentsView {
       ? '<button class="btn ghost mini" data-go="' + esc(aid) + '" title="open ' + esc(aid) + '\u2019s session in the Sessions tab" aria-label="open ' + esc(aid) + '\u2019s session">↗</button>'
       : '';
     // I-9: provenance for a prompt an AUTOMATION wrote. Without it a ROLE.md
-    // longrunAgent produced is indistinguishable from one the operator typed.
+    // Architect produced is indistinguishable from one the operator typed.
     const w = (aid && this.written) ? this.written[aid] : null;
     let when = "";
     if (w){ try { when = new Date((w.at || 0) * 1000).toLocaleString(); } catch (_) { when = ""; } }
     const aiBadge = w
-      ? '<span class="aibadge" title="ROLE.md written by longrunAgent (section: ' +
+      ? '<span class="aibadge" title="ROLE.md written by Architect (section: ' +
         esc(w.section || "?") + ", " + esc(when) + ")" + (w.chars ? ", " + w.chars + " chars" : "") +
         ' — run ' + esc(String(w.run_id || "").slice(0, 40)) + '">AI</span>'
       : '';
@@ -1768,9 +1768,9 @@ class AgentsView {
      description); this form is its only UI door. */
   /* JAG-536: the icon was free text in the ONLY form that could set it, while every
      SAVED team shows a palette icon. Create and edit now share ONE picker rendered
-     from the palette the backend itself chooses from; "auto" asks longrunAgent. */
+     from the palette the backend itself chooses from; "auto" asks Architect. */
   iconOptions(sel){
-    return '<option value=""' + (sel ? "" : " selected") + '>auto · longrunAgent picks</option>' +
+    return '<option value=""' + (sel ? "" : " selected") + '>auto · Architect picks</option>' +
       (this.palette || []).map(p =>
         '<option value="' + esc(p.symbol) + '" data-color="' + esc(p.color) + '"' +
         (p.symbol === sel ? " selected" : "") + '>' + esc(p.symbol) + '  ' + esc(p.color) +
@@ -1794,7 +1794,7 @@ class AgentsView {
       '<input class="inp" data-f="color" value="' + esc(t.color || "") + '" title="colour hex — follows the icon unless you override it">' +
       fld("description", "description", t.description) +
       '<div style="display:flex;gap:6px;margin-top:4px">' +
-      '<button class="btn ghost" data-a="gen" type="button" title="ask longrunAgent for the icon that matches the name + description">✨ generate icon</button>' +
+      '<button class="btn ghost" data-a="gen" type="button" title="ask Architect for the icon that matches the name + description">✨ generate icon</button>' +
       '<button class="btn primary" data-a="save" type="button">save</button>' +
       '</div></form>';
     const m = openPopover(ev, form, {w: 320, h: 290});
@@ -3006,7 +3006,7 @@ class OrbitApp {
     // the same in-place pulse every other ✨ uses — the state is the glyph, never a word.
     const spark = $("lraAutoBtn");
     if (spark){ spark.classList.add("gen-busy"); spark.setAttribute("aria-busy", "true"); }
-    if (st) st.textContent = "longrunAgent running…";
+    if (st) st.textContent = "Architect is working…";
     try {
       const r = await this.api.post("/api/longrun-agent/automate", {
         section: "teamorg", instruction,
@@ -3034,7 +3034,7 @@ class OrbitApp {
       if (spark){ spark.classList.remove("gen-busy"); spark.removeAttribute("aria-busy"); }
     }
   }
-  /* I-9: the record of what longrunAgent wrote — the ONLY surface that survives a
+  /* I-9: the record of what Architect wrote — the ONLY surface that survives a
      stateless run (it wipes messages, tool cards, injects and the task graph before
      AND after: `longrun_agent.reset_stateless_session`). Reads the single ledger the
      backend appends to (`GET /api/longrun-agent/reports`), so the panel can never
@@ -3050,7 +3050,7 @@ class OrbitApp {
     const when = (t) => { try { return new Date((t || 0) * 1000).toLocaleTimeString(); }
                           catch (_) { return ""; } };
     box.innerHTML = runs.length
-      ? '<div class="small muted" style="padding:4px 0 2px">what longrunAgent wrote, newest first' +
+      ? '<div class="small muted" style="padding:4px 0 2px">what Architect wrote, newest first' +
         ' (its own session is wiped by design, so this is the record)</div>' +
         runs.map(run => {
           const writes = (run.detail || []).map(w =>
@@ -3488,7 +3488,7 @@ class OrbitApp {
   }
   async createTeam(){
     // JAG-2.0: create a team from the deck, persisted via the teams backend.
-    // JAG-536: the description is now a first-class field — longrunAgent reads it
+    // JAG-536: the description is now a first-class field — Architect reads it
     // together with the name to pick the icon, and it was unreachable from here.
     const name = $("tmNewName").value.trim();
     if (!name){ alert("give the team a name"); return; }

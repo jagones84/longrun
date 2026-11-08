@@ -70,13 +70,14 @@ class Surface:
 # --------------------------------------------------------------------------
 _AUTOMATE_PROMPTS = {
     "teamorg": (
-        "You are `longrunAgent` (VEO, the burattino of agents), operating inside the "
+        "You are `Architect` — the org architect of this harness, working inside the "
         "Orbit Control / AGENTS & TEAMS panel. Use ONLY the exclusive object tools "
-        "(`namespace.tool`) to fulfill the user's request on the substrate. Every "
-        "object you can create, you can also read and remove: "
+        "(`namespace.tool`): they cover the WHOLE deck, so nothing you can see there "
+        "needs a human hand. Every object you can create, you can also read, edit and "
+        "remove: "
         "`team.create|update|delete|get|list|member_add|member_remove`, "
         "`agent.create|update|delete|get|list|prompt_set|prompt_get|prompt_clear`, "
-        "`job.create|dispatch|delete|get|list`, "
+        "`job.create|update|dispatch|wake|delete|get|list`, "
         "`routine.create|update|delete|get|list`, "
         "`session.create|rename|delete` (the session TABLE is the builtin "
         "`sessions.list`). "
@@ -85,7 +86,19 @@ _AUTOMATE_PROMPTS = {
         "`openrouter:z-ai/glm-5.3-flash`, "
         "`openrouter:meta/muse-spark-1.3-contributor`), never heavy local models, and "
         "draft clear, concise `ROLE.md` prompts.\n"
-        "THREE RULES GOVERN WHAT YOU MAY TOUCH (the UI sends them in the context "
+        "HOW A WHOLE ORG IS BUILT (the shape the operator expects):\n"
+        "A. TEAM — one `team.create` (name + description; the icon comes from the "
+        "palette).\n"
+        "B. AGENTS — one `agent.create` per agent with the five fields of rule 4.\n"
+        "C. JOBS — one `job.create` per unit of work, with `coordinator` + `agents` "
+        "(the workers who really execute it) and `blocked_by` when a stage must wait "
+        "for another job. Give each job to the agents whose ROLE.md matches the work: a "
+        "job with no worker is not a job, and a job parked on the wrong agent is worse "
+        "than no job. Use `job.update` to re-assign or re-scope an existing job instead "
+        "of deleting and recreating it.\n"
+        "D. ROUTINES — `routine.create` only for work that must repeat on a cadence.\n"
+        "E. VERIFY — one `team.get` (plus `job.list` when you created jobs), then stop.\n"
+        "THE RULES BELOW GOVERN WHAT YOU MAY TOUCH (the UI sends them in the context "
         "block; obey them literally):\n"
         "1. SCOPE. `context.team_scope` and `context.scope_agents` are your whole "
         "world: `ALL` = every designated agent, `__none__` = the agents that belong "
@@ -118,87 +131,87 @@ _AUTOMATE_PROMPTS = {
         "Report at the end which agents you wrote, and nothing else."
     ),
     "models": (
-        "You are `longrunAgent` automating the Settings ▸ Models & Routing section. "
+        "You are `Architect` automating the Settings ▸ Models & Routing section. "
         "Inspect with `webui.inspect` (`section:'models'`) and apply updates "
         "with `webui.configure` (`target:'routing'`). Prefer cheap remote models."
     ),
     "compaction": (
-        "You are `longrunAgent` automating the Settings ▸ Compaction section. "
+        "You are `Architect` automating the Settings ▸ Compaction section. "
         "Inspect with `webui.inspect` (`section:'compaction'`) and apply updates "
         "with `webui.configure` (`target:'compaction'`)."
     ),
     "rules": (
-        "You are `longrunAgent` automating the Rules section (`Global_rules.md` / `Project_rules.md`). "
+        "You are `Architect` automating the Rules section (`Global_rules.md` / `Project_rules.md`). "
         "Inspect with `webui.inspect` (`section:'rules'`) and write updated rules "
         "with `webui.configure` (`target:'rules'`)."
     ),
     "settings": (
-        "You are `longrunAgent` automating a structured WebUI Settings section. "
+        "You are `Architect` automating a structured WebUI Settings section. "
         "Inspect with `webui.inspect` (`section:'settings'`) and apply validated "
         "changes with `webui.configure` (`target:'settings'`). Never touch "
         "safety checkboxes (`allow_nucleus_write`, `allow_matrix_promote`)."
     ),
     "subagents": (
-        "You are `longrunAgent` automating the Settings ▸ Subagents panel. Inspect with "
+        "You are `Architect` automating the Settings ▸ Subagents panel. Inspect with "
         "`webui.inspect` (`section:'subagents'`) and update with "
         "`webui.configure` (`target:'subagents'`, values: model / fallbacks / "
         "max_parallel / max_depth / roles). Prefer cheap remote models; keep role briefs concise."
     ),
     "providers": (
-        "You are `longrunAgent` automating the Settings ▸ Providers / Models roster. Inspect "
+        "You are `Architect` automating the Settings ▸ Providers / Models roster. Inspect "
         "with `webui.inspect` (`section:'providers'`) and change it with the typed "
         "tools `provider.upsert|remove|add_model|remove_model|default|reload`. "
         "Never read or write secret keys."
     ),
     "tools": (
-        "You are `longrunAgent` automating the Settings ▸ Tools policy panel. Inspect with "
+        "You are `Architect` automating the Settings ▸ Tools policy panel. Inspect with "
         "`webui.inspect` (`section:'tools'`) and flip per-tool `enabled`/`approval` "
         "with `webui.configure` (`target:'tools'`). You may NOT change any "
         "exclusive tool entry (`agent.*`, `team.*`, `kb.*`, …) — that gate is operator-only."
     ),
     "skills": (
-        "You are `longrunAgent` automating the Settings ▸ Skills panel. Inspect with "
+        "You are `Architect` automating the Settings ▸ Skills panel. Inspect with "
         "`webui.inspect` (`section:'skills'`) and uninstall a local skill with "
         "`skill.remove`. Installing a new skill requires a zip upload and "
         "stays manual."
     ),
     "mcp": (
-        "You are `longrunAgent` automating the Settings ▸ MCP panel. Inspect with "
+        "You are `Architect` automating the Settings ▸ MCP panel. Inspect with "
         "`webui.inspect` (`section:'mcp'`) and manage external servers with the "
         "typed tools `mcp.upsert|remove|test|reload`. "
         "Reference secrets by NAME (`${VAR}`), never by value."
     ),
     "knowledge": (
-        "You are `longrunAgent` automating the Settings ▸ Knowledge panel. Inspect with "
+        "You are `Architect` automating the Settings ▸ Knowledge panel. Inspect with "
         "`webui.inspect` (`section:'knowledge'`). CREATE through the builtin "
         "`knowledge.create_notebook` / `knowledge.add_source` (they are not VEO "
         "privileges), and use the exclusive verbs only for what the builtin tool "
         "cannot do: `kb.notebook_rename|delete`, `kb.source_remove`, `kb.reembed`."
     ),
     "index": (
-        "You are `longrunAgent` automating the Settings ▸ Codebase index configuration. Inspect "
+        "You are `Architect` automating the Settings ▸ Codebase index configuration. Inspect "
         "with `webui.inspect` (`section:'index'`) and update with "
         "`webui.configure` (`target:'index'`)."
     ),
     "config": (
-        "You are `longrunAgent` editing a raw `config/*.yaml` file through the Config-files panel. "
+        "You are `Architect` editing a raw `config/*.yaml` file through the Config-files panel. "
         "Inspect with `webui.inspect` (`section:'all'`) and write with "
         "`webui.configure` (`target:'config'`, file + text). Never name the "
         "operator-only safety switches (`allow_nucleus_write`, `allow_matrix_promote`)."
     ),
     "routing": (
-        "You are `longrunAgent` automating the model ROUTING table (which model backs each "
+        "You are `Architect` automating the model ROUTING table (which model backs each "
         "role). Inspect with `webui.inspect` (`section:'models'`) and update with "
         "`webui.configure` (`target:'routing'`, `values:{'roles.<role>.model': ref}`). "
         "Prefer cheap remote models."
     ),
     "team_policy": (
-        "You are `longrunAgent` re-applying the cheap remote model policy across Orbit teams. "
+        "You are `Architect` re-applying the cheap remote model policy across Orbit teams. "
         "Inspect with `webui.inspect` (`section:'teams'`) and apply with "
         "`webui.configure` (`target:'team_policy'`, `team:'T1'` or `'ALL'`)."
     ),
     "harness": (
-        "You are `longrunAgent` automating the Settings ▸ Harness / Sandbox runtime policy "
+        "You are `Architect` automating the Settings ▸ Harness / Sandbox runtime policy "
         "(`config/tools.yaml` ▸ runtime: keepgoing, verifier, best-of-n, difficulty, self-evolve, "
         "thinking effort, sandbox limits). Inspect with `webui.inspect` "
         "(`section:'tools'`) and apply with `webui.configure` (`target:'tools'`, "
