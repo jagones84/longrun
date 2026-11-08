@@ -59,27 +59,28 @@ d3 = {"x": 1}
 FW.retract_seq(d3, "missing-key")
 check("U3 unknown key leaves the doc alone", d3 == {"x": 1, "seq": 0} or d3.get("seq") == 0, d3)
 
-# ---- agents: full wipe restarts at A1 ----
+# ---- agents: full wipe restarts at A2 (A1 is the reserved supervisor) ----
 sids = ["v620-s%d" % i for i in range(3)]
 for i, s in enumerate(sids):
     r = AG.REGISTRY.designate(s, name="V620-%d" % i)
     assert r.get("ok"), r
 ids = sorted(a["id"] for a in AG.REGISTRY.list()["agents"])
-check("A1 three designates mint A1..A3", ids == ["A1", "A2", "A3"], ids)
+check("A1 three designates mint A2..A4 (A1 is reserved for the supervisor)",
+      ids == ["A2", "A3", "A4"], ids)
 AG.REGISTRY.release(sids[2])
 r = AG.REGISTRY.designate("v620-s3", name="V620-3")
-check("A2 deleting the top reuses the number (A3, not A4)",
-      r.get("agent", {}).get("id") == "A3", r.get("agent", {}).get("id"))
+check("A2 deleting the top gives the number back (A4)",
+      r.get("agent", {}).get("id") == "A4", r.get("agent", {}).get("id"))
 AG.REGISTRY.release(sids[0])
 r = AG.REGISTRY.designate("v620-s4", name="V620-4")
-check("A3 deleting from the middle does NOT reuse (next is A4, history stays dead)",
-      r.get("agent", {}).get("id") == "A4", r.get("agent", {}).get("id"))
+check("A3 the LOWEST free number is reused (A2), never a new one",
+      r.get("agent", {}).get("id") == "A2", r.get("agent", {}).get("id"))
 for s in ("v620-s1", "v620-s3", "v620-s4"):
     AG.REGISTRY.release(s)
 live = [a["id"] for a in AG.REGISTRY.list()["agents"]]
 r = AG.REGISTRY.designate("v620-s5", name="V620-5")
-check("A4 wiping everything restarts at A1",
-      live == [] and r.get("agent", {}).get("id") == "A1",
+check("A4 wiping everything restarts at A2 (A1 stays the supervisor's)",
+      live == [] and r.get("agent", {}).get("id") == "A2",
       (live, r.get("agent", {}).get("id")))
 AG.REGISTRY.release("v620-s5")
 

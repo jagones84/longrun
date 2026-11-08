@@ -74,12 +74,13 @@ check("B2 a todo with no active subjob is left untagged",
       n2.get("subjob") is None and n2.get("jid") == "J7")
 
 # ---- C: a subjob embraces the subset of its agent's todos -----------------
-agents.REGISTRY.designate("sessA", name="Worker A")
-made = jobs.JOBS.create("hierarchy goal", coordinator="A1", agents=["A1"])
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted id.
+W = agents.REGISTRY.designate("sessA", name="Worker A")["agent"]["id"]
+made = jobs.JOBS.create("hierarchy goal", coordinator=W, agents=[W])
 JID = made["job"]["id"]
 SUB = JID + ".1"
 jobs.JOBS._update(JID, lambda j: j.update({"subjobs": {
-    SUB: {"id": SUB, "parent": JID, "agent": "A1", "deps": [], "status": "done"}}}))
+    SUB: {"id": SUB, "parent": JID, "agent": W, "deps": [], "status": "done"}}}))
 # a todo this agent creates while working that subjob carries its id
 g = tg.load("sessA")
 g["jid"] = JID

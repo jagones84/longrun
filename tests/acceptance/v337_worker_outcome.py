@@ -71,14 +71,16 @@ check("C1 the worker is told to end with STATUS: DONE", "STATUS: DONE" in MSG)
 check("C2 the worker can declare BLOCKED with a reason", "STATUS: BLOCKED" in MSG)
 
 # ---- D: _one RETRIES then ESCALATES in BOTH chats -------------------------
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted ids.
 server.get_or_create_session("sessM", "Master")
 server.get_or_create_session("sessW", "Worker")
-agents.REGISTRY.designate("sessM", name="Master", role="Head")
-agents.REGISTRY.designate("sessW", name="Worker", role="Coder", reports_to="A1")
+M = agents.REGISTRY.designate("sessM", name="Master", role="Head")["agent"]["id"]
+W = agents.REGISTRY.designate("sessW", name="Worker", role="Coder",
+                              reports_to=M)["agent"]["id"]
 
-jid = jobs.JOBS.create("build the app", coordinator="A1", agents=["A1", "A2"])["job"]["id"]
+jid = jobs.JOBS.create("build the app", coordinator=M, agents=[M, W])["job"]["id"]
 jobs.JOBS._update(jid, lambda j: j.update({"subjobs": {
-    jid + ".1": {"id": jid + ".1", "agent": "A2", "status": "running"}}}))
+    jid + ".1": {"id": jid + ".1", "agent": W, "status": "running"}}}))
 
 attempts = {"n": 0}
 
@@ -89,10 +91,11 @@ def _always_blocked(sid, message, model=None, jid=None, sender=None, subjob=None
 
 
 jobs.JOBS._run_agent = _always_blocked
-jobs.JOBS._one(jid, "A2", "sessW", "do it", None, sub_id=jid + ".1", sender="A1 (Master)")
+jobs.JOBS._one(jid, W, "sessW", "do it", None, sub_id=jid + ".1",
+               sender="%s (Master)" % M)
 
 _sub = (jobs.JOBS.get(jid).get("subjobs") or {}).get(jid + ".1") or {}
-_run = (jobs.JOBS.get(jid).get("runs") or {}).get("A2") or {}
+_run = (jobs.JOBS.get(jid).get("runs") or {}).get(W) or {}
 check("D1 a non-DONE worker is RETRIED (1 + 1 = 2 attempts)", attempts["n"] == 2, str(attempts["n"]))
 check("D2 the subjob is marked FAILED, never done", _sub.get("status") == "failed", str(_sub))
 check("D3 the run is marked FAILED with the reason",
@@ -107,9 +110,9 @@ check("D5 the COORDINATOR chat records that it came back",
       str(cinj[-1:]))
 
 # ---- E: a DONE worker is not retried and succeeds -------------------------
-jid2 = jobs.JOBS.create("build the app 2", coordinator="A1", agents=["A1", "A2"])["job"]["id"]
+jid2 = jobs.JOBS.create("build the app 2", coordinator=M, agents=[M, W])["job"]["id"]
 jobs.JOBS._update(jid2, lambda j: j.update({"subjobs": {
-    jid2 + ".1": {"id": jid2 + ".1", "agent": "A2", "status": "running"}}}))
+    jid2 + ".1": {"id": jid2 + ".1", "agent": W, "status": "running"}}}))
 done_n = {"n": 0}
 
 
@@ -119,9 +122,10 @@ def _one_done(sid, message, model=None, jid=None, sender=None, subjob=None):
 
 
 jobs.JOBS._run_agent = _one_done
-jobs.JOBS._one(jid2, "A2", "sessW", "do it", None, sub_id=jid2 + ".1", sender="A1 (Master)")
+jobs.JOBS._one(jid2, W, "sessW", "do it", None, sub_id=jid2 + ".1",
+               sender="%s (Master)" % M)
 _sub2 = (jobs.JOBS.get(jid2).get("subjobs") or {}).get(jid2 + ".1") or {}
-_run2 = (jobs.JOBS.get(jid2).get("runs") or {}).get("A2") or {}
+_run2 = (jobs.JOBS.get(jid2).get("runs") or {}).get(W) or {}
 check("E1 a DONE worker runs exactly once", done_n["n"] == 1, str(done_n["n"]))
 check("E2 its subjob is done", _sub2.get("status") == "done", str(_sub2))
 check("E3 its run is done", _run2.get("state") == "done", str(_run2))
@@ -145,9 +149,9 @@ check("G1 the harness error record is recognised as an error turn",
       and not jobs._error_turn("built it. STATUS: DONE")
       and jobs._error_reason(stores.ERROR_PREFIX + "boom") == "boom")
 
-jid3 = jobs.JOBS.create("build the app 3", coordinator="A1", agents=["A1", "A2"])["job"]["id"]
+jid3 = jobs.JOBS.create("build the app 3", coordinator=M, agents=[M, W])["job"]["id"]
 jobs.JOBS._update(jid3, lambda j: j.update({"subjobs": {
-    jid3 + ".1": {"id": jid3 + ".1", "agent": "A2", "status": "running"}}}))
+    jid3 + ".1": {"id": jid3 + ".1", "agent": W, "status": "running"}}}))
 err_n = {"n": 0}
 
 
@@ -157,9 +161,10 @@ def _provider_error(sid, message, model=None, jid=None, sender=None, subjob=None
 
 
 jobs.JOBS._run_agent = _provider_error
-jobs.JOBS._one(jid3, "A2", "sessW", "do it", None, sub_id=jid3 + ".1", sender="A1 (Master)")
+jobs.JOBS._one(jid3, W, "sessW", "do it", None, sub_id=jid3 + ".1",
+               sender="%s (Master)" % M)
 _sub3 = (jobs.JOBS.get(jid3).get("subjobs") or {}).get(jid3 + ".1") or {}
-_run3 = (jobs.JOBS.get(jid3).get("runs") or {}).get("A2") or {}
+_run3 = (jobs.JOBS.get(jid3).get("runs") or {}).get(W) or {}
 check("G2 a provider-error turn is retried like any other non-DONE outcome",
       err_n["n"] == 2, str(err_n["n"]))
 check("G3 the subjob is marked failed with the provider reason (never done)",

@@ -133,8 +133,9 @@ check("H12 a broken probe degrades instead of raising",
       _mem.get("ok") is False and "blew up" in str(_mem.get("detail")), _mem)
 
 # ----------------------------------------------------------------- no secret
-agents_mod.REGISTRY.designate("sess-v830", name="tester")
-_made = WH.save_hook({"id": "gh", "agent": "A1", "goal": "Watch the repo."})
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted id.
+_agent = agents_mod.REGISTRY.designate("sess-v830", name="tester")["agent"]["id"]
+_made = WH.save_hook({"id": "gh", "agent": _agent, "goal": "Watch the repo."})
 _secret = _made.get("secret") or ""
 _full = json.dumps(health.collect(probe=False))
 check("H13 the health report never carries a webhook secret",

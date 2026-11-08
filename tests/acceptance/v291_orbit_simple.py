@@ -33,14 +33,15 @@ from longrun.agent import agents  # noqa: E402
 from longrun.orchestrate import orchestration  # noqa: E402
 
 AR = agents.REGISTRY
-AR.designate("sess-a", name="Ana", role="analyst")
-AR.designate("sess-b", name="Bob", reports_to="sess-a")
-AR.designate("sess-c", name="Cy", reports_to="sess-a")
-AR.designate("sess-d", name="Dee", reports_to="sess-b")
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted ids.
+A1 = AR.designate("sess-a", name="Ana", role="analyst")["agent"]["id"]
+A2 = AR.designate("sess-b", name="Bob", reports_to=A1)["agent"]["id"]
+A3 = AR.designate("sess-c", name="Cy", reports_to=A1)["agent"]["id"]
+A4 = AR.designate("sess-d", name="Dee", reports_to=A2)["agent"]["id"]
 
 # --- team_of = self + direct reports ---------------------------------------
-check("team_of is the agent plus its DIRECT reports", AR.team_of("A1") == ["A1", "A2", "A3"])
-check("team_of of a leaf is just itself", AR.team_of("A4") == ["A4"])
+check("team_of is the agent plus its DIRECT reports", AR.team_of(A1) == [A1, A2, A3])
+check("team_of of a leaf is just itself", AR.team_of(A4) == [A4])
 check("team_of of an unknown agent is empty", AR.team_of("A999") == [])
 
 
@@ -55,14 +56,14 @@ class FakeHandler:
 
 # --- API: a job assigned to an agent derives its team ----------------------
 fh = FakeHandler()
-ok = orchestration.handle(fh, "POST", "/api/jobs", {}, {"goal": "build it", "assignee": "A1"})
+ok = orchestration.handle(fh, "POST", "/api/jobs", {}, {"goal": "build it", "assignee": A1})
 job = fh.sent["obj"]["job"]
 # v629: the derived team is the assignee's ORG SUBTREE, not only its direct
 # reports — `subjob_depth` (config/jobs.yaml, default 3) decides how deep. The
 # fixture has A4 (Dee) reporting to A2 (Bob), so the job now covers her too and
 # her subjob nests as JN.2.1.
 check("POST /api/jobs with assignee derives the org subtree + coordinator",
-      ok and job["agents"] == ["A1", "A2", "A3", "A4"] and job["coordinator"] == "A1",
+      ok and job["agents"] == [A1, A2, A3, A4] and job["coordinator"] == A1,
       str(job["agents"]))
 check("the derived job is coordinator mode", job["mode"] == "coordinator")
 

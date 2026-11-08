@@ -105,17 +105,18 @@ check("W6 an unknown webhook limit fails loudly",
       _raises(KeyError, lambda: CL.webhook("nope")))
 
 # ------------------------------------------------------------------- the CRUD
-agents_mod.REGISTRY.designate("sess-v829", name="tester")
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted id.
+_agent = agents_mod.REGISTRY.designate("sess-v829", name="tester")["agent"]["id"]
 _bad = [
-    WH.save_hook({"id": "Bad Id", "agent": "A1", "goal": "x"}),
-    WH.save_hook({"id": "ok", "agent": "A1"}),
+    WH.save_hook({"id": "Bad Id", "agent": _agent, "goal": "x"}),
+    WH.save_hook({"id": "ok", "agent": _agent}),
     WH.save_hook({"id": "ok", "agent": "A999", "goal": "x"}),
-    WH.save_hook({"id": "ok", "agent": "A1", "goal": "x", "mode": "sometimes"}),
+    WH.save_hook({"id": "ok", "agent": _agent, "goal": "x", "mode": "sometimes"}),
 ]
 check("W7 create refuses a bad id, a missing goal, an unknown agent and a bad mode",
       all(r.get("ok") is False for r in _bad), _bad)
 
-_created = WH.save_hook({"id": "gh", "agent": "A1", "goal": "Review the issue.",
+_created = WH.save_hook({"id": "gh", "agent": _agent, "goal": "Review the issue.",
                          "mode": "observe", "event_field": "action",
                          "match_any": ["opened", "reopened"]})
 check("W8 create returns the secret ONCE",
@@ -131,18 +132,18 @@ check("W10 the store file exists outside the repo",
       and os.path.abspath(os.environ["LONGRUN_WEBHOOKS"]).startswith(os.path.abspath(TMP)))
 
 # Pause, then edit without `enabled`: the edit must not re-enable the inlet.
-WH.save_hook({"id": "gh", "agent": "A1", "goal": "Review the issue.",
+WH.save_hook({"id": "gh", "agent": _agent, "goal": "Review the issue.",
               "mode": "observe", "event_field": "action",
               "match_any": ["opened", "reopened"], "enabled": False})
-WH.save_hook({"id": "gh", "agent": "A1", "goal": "Review the issue (edited).",
+WH.save_hook({"id": "gh", "agent": _agent, "goal": "Review the issue (edited).",
               "mode": "observe", "event_field": "action",
               "match_any": ["opened", "reopened"]})
 check("W11 an edit without `enabled` keeps a paused inlet paused",
       WH.list_hooks()["hooks"][0].get("enabled") is False)
-WH.save_hook({"id": "gh", "agent": "A1", "goal": "Review the issue (edited).",
+WH.save_hook({"id": "gh", "agent": _agent, "goal": "Review the issue (edited).",
               "mode": "observe", "event_field": "action",
               "match_any": ["opened", "reopened"], "enabled": True})
-_rot = WH.save_hook({"id": "gh", "agent": "A1", "goal": "Review the issue (edited).",
+_rot = WH.save_hook({"id": "gh", "agent": _agent, "goal": "Review the issue (edited).",
                      "mode": "observe", "event_field": "action",
                      "match_any": ["opened", "reopened"], "rotate": True})
 check("W12 rotate changes the secret", _rot.get("secret") and _rot["secret"] != _secret)
@@ -210,7 +211,7 @@ check("W22 a body past the cap is a 413",
                         "X-GitHub-Delivery": "d-6"}, _big)[0] == 413)
 
 # run mode: one job, framed payload, the agent from the inlet.
-WH.save_hook({"id": "gh", "agent": "A1", "goal": "Review the issue (edited).",
+WH.save_hook({"id": "gh", "agent": _agent, "goal": "Review the issue (edited).",
               "mode": "run", "event_field": "action",
               "match_any": ["opened", "reopened"], "enabled": True})
 _code, _body = deliver("gh", {"action": "reopened", "issue": {"number": 9}},
@@ -218,7 +219,7 @@ _code, _body = deliver("gh", {"action": "reopened", "issue": {"number": 9}},
 check("W23 run dispatches ONE job for the inlet's agent",
       _code == 202 and _body.get("job") == "J1"
       and _calls["created"] == 1 and _calls["dispatched"] == 1
-      and _calls["agents"] == ["A1"] and _calls["mode"] == "run",
+      and _calls["agents"] == [_agent] and _calls["mode"] == "run",
       (_code, _body, _calls))
 check("W24 the payload is fenced and labelled as data",
       "External event from webhook `gh`" in _calls["goal"]
@@ -239,8 +240,8 @@ check("W25 a refused dispatch is a 500, a recorded error and a health failure",
 jobs_mod.JOBS.create = _fake_create
 
 # A second inlet for the per-minute limit (fresh counters).
-WH.save_hook({"id": "rate", "agent": "A1", "goal": "Count me.", "mode": "observe"})
-_rate_secret = WH.save_hook({"id": "rate", "agent": "A1", "goal": "Count me.",
+WH.save_hook({"id": "rate", "agent": _agent, "goal": "Count me.", "mode": "observe"})
+_rate_secret = WH.save_hook({"id": "rate", "agent": _agent, "goal": "Count me.",
                              "mode": "observe", "rotate": True})["secret"]
 _codes = [deliver("rate", {"event": "x"}, headers={"X-GitHub-Delivery": "r-%d" % i},
                   hook_secret=_rate_secret)[0] for i in range(CL.webhook("max_per_minute") + 1)]

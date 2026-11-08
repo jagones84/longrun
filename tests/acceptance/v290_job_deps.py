@@ -82,19 +82,20 @@ check("a fresh job with an already-done blocker is created (not blocked)",
 
 # --- org chart: cycle guard + chain of command -----------------------------
 AR = agents.REGISTRY
-AR.designate("s1", name="Chief")
-AR.designate("s2", name="Manager")
-AR.designate("s3", name="Worker")
-AR.designate("s2", reports_to="A1")
-AR.designate("s3", reports_to="A2")
-check("a valid reports_to chain is accepted", AR.get("s3").get("reports_to") == "A2")
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted ids.
+A1 = AR.designate("s1", name="Chief")["agent"]["id"]
+A2 = AR.designate("s2", name="Manager")["agent"]["id"]
+A3 = AR.designate("s3", name="Worker")["agent"]["id"]
+AR.designate("s2", reports_to=A1)
+AR.designate("s3", reports_to=A2)
+check("a valid reports_to chain is accepted", AR.get("s3").get("reports_to") == A2)
 check("chain_of_command walks agent -> manager -> root",
-      AR.chain_of_command("s3") == ["A3", "A2", "A1"])
+      AR.chain_of_command("s3") == [A3, A2, A1])
 
-bad = AR.designate("s1", reports_to="A3")   # A1 -> A3 -> A2 -> A1
+bad = AR.designate("s1", reports_to=A3)   # A1 -> A3 -> A2 -> A1
 check("a reports_to cycle is refused", bad["ok"] is False and "cycle" in bad["error"])
 check("the refused cycle was not stored", AR.get("s1").get("reports_to") is None)
-check("a self-link is refused", AR.designate("s2", reports_to="A2")["ok"] is False)
+check("a self-link is refused", AR.designate("s2", reports_to=A2)["ok"] is False)
 check("chain_of_command on an unknown agent is empty", AR.chain_of_command("A999") == [])
 
 # --- API routing ------------------------------------------------------------
@@ -120,7 +121,7 @@ check("POST /api/jobs forwards blocked_by", ok and "blocked_by" in fh.sent["obj"
 fh = FakeHandler()
 ok = orchestration.handle(fh, "GET", "/api/agents/s3/chain", {}, None)
 check("GET /api/agents/<sid>/chain answers the chain",
-      ok and fh.sent["obj"]["chain"] == ["A3", "A2", "A1"])
+      ok and fh.sent["obj"]["chain"] == [A3, A2, A1])
 
 # --- UI wiring --------------------------------------------------------------
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as fh2:

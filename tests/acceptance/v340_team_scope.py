@@ -181,9 +181,11 @@ check("G5 leadership first is the DEFAULT order (flat id mode still offered)",
 check("G6 the deck's default sort ranks by the reports_to tree (orchestrator first)",
       "const r = this._orgRank(list);" in orbit and "depth-first reports_to walk" in orbit)
 check("G7 a team group header is keyboard-operable (groups start collapsed)",
-      'class="grp-h" tabindex="0" role="button" aria-expanded="' in orbit
+      # 2026-11-08: the disclosure is its own `.grp-toggle` (axe nested-interactive),
+      # so the pin follows the control that actually carries the role.
+      'class="grp-toggle" tabindex="0" role="button" aria-expanded="' in orbit
       and 'if (e.key === "Enter" || e.key === " "){ e.preventDefault(); toggleGroup(); }' in orbit
-      and ".grp-h:focus-visible{outline:1px solid var(--acc)" in orbit)
+      and ".grp-toggle:focus-visible{outline:1px solid var(--acc)" in orbit)
 check("G8 an in-place toggle keeps the caret and aria-expanded in sync",
       'h.setAttribute("aria-expanded", closed ? "false" : "true");' in orbit)
 

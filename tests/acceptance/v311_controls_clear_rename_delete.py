@@ -105,7 +105,10 @@ check("the main app clears the log on a remote clear", 'es.addEventListener("ses
 check("a compaction notice is shown in the chat feed", 'es.addEventListener("context.compact"' in gui and 'es.addEventListener("context.auto_compact"' in gui)
 check("reset lives in the composer ⋯ menu, not as a bar button (JAG-415)",
       # JAG-425: the binding moved to a delegated data-call attribute.
-      'id="resetBtn"' not in gui and '↺ reset session' in gui and 'data-call="clearSession"' in gui)
+      # 2026-11-08: the ↺ glyph became an SVG icon with the same label; the
+      # contract is the delegated binding + visible text, not the character.
+      'id="resetBtn"' not in gui and 'aria-label="reset session"' in gui
+      and "reset session" in gui and 'data-call="clearSession"' in gui)
 check("the overflow menu offers reset session", "reset session" in gui)
 # JAG-395: right-click opens that row's own menu; Edit role opens code mode.
 check("right-click on ANY session row opens its own ⋯ menu",

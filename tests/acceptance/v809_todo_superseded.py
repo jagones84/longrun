@@ -94,8 +94,12 @@ UI = os.path.join(REPO, "webui", "index.html")
 ui = open(UI, encoding="utf-8").read()
 check("D1 the detail panel offers superseded", 'data-a="superseded"' in ui)
 check("D2 the button asks WHY before sending",
-      'why is' in ui and "no longer needed? (required)" in ui)
-check("D3 the action sends the reason field", 'body.reason = why.trim()' in ui)
+      # 2026-11-08: the ask moved to the shared uiAsk dialog; the contract is the
+      # question + the "required" hint, not the old window.prompt wording.
+      "no longer needed?" in ui
+      and "a superseded step carries its reason" in ui)
+check("D3 the action sends the reason field",
+      'body.status = "superseded"; body.reason = String(why).trim()' in ui)
 check("D4 an empty why is refused in the panel, not silently cancelled",
       "a superseded step needs a why" in ui)
 check("D5 the six states are explained where they are shown",

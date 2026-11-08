@@ -176,14 +176,16 @@ from longrun.agent import agents as agents_mod  # noqa: E402
 
 reg = agents_mod.REGISTRY
 _first = reg.designate("s-first", name="First worker")
-check("C1 a normal session takes the first free number",
-      _first.get("agent", {}).get("id") == "A1", _first)
+# 2026-11-08: A1 is RESERVED for the supervisor, so the first normal session
+# takes A2 — the pin does not depend on being displaced any more.
+check("C1 a normal session takes the first number the pin leaves free",
+      _first.get("agent", {}).get("id") == "A2", _first)
 
 _pin = reg.designate("longrunAgent", kind="session")
-check("C2 the pinned supervisor takes A1 even when it is already issued",
+check("C2 the pinned supervisor takes A1 (reserved for it, never drawn)",
       _pin.get("agent", {}).get("id") == "A1", _pin)
 _moved = reg.get("s-first")
-check("C3 the displaced record is renumbered, never duplicated as A1",
+check("C3 the normal record sits beside the pin, never on A1",
       _moved.get("id") == "A2", _moved)
 check("C4 exactly one live record holds A1",
       [a["id"] for a in reg.list()["agents"]].count("A1") == 1,

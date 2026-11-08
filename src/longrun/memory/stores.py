@@ -1034,10 +1034,30 @@ def finish_summary(content):
 
 
 def _starts_work(content):
-    """True when an assistant message is an ACTION (the turn kept working)."""
+    """True when an assistant message is an ACTION (the turn kept working).
+
+    2026-11-08: `extract_action_json` finds an action-shaped object ANYWHERE in
+    the text, by design (the loop must act on `prose + {"tool": ...}`). For reply
+    SELECTION that is too eager: a dense answer that EXPLAINS "the command was
+    {…} — here is the result" was discarded as if the turn had resumed. The
+    envelope must be the bulk of the message (>= half of it, whitespace ignored);
+    a quoted example inside a long answer is prose.
+    """
+    import re as _re
+    text = str(content or "").strip()
+    if not text:
+        return False
     from longrun.util.textkit import extract_action_json
-    act = extract_action_json(str(content or ""))
-    return isinstance(act, dict) and bool(act.get("action") or act.get("tool"))
+    act = extract_action_json(text)
+    if not isinstance(act, dict) or not (act.get("action") or act.get("tool")):
+        return False
+    try:
+        envelope = json.dumps(act, ensure_ascii=False, sort_keys=True)
+    except Exception:  # noqa: BLE001 — a non-serializable object is not an envelope
+        return False
+    compact = len(_re.sub(r"\s+", "", envelope))
+    body = len(_re.sub(r"\s+", "", text))
+    return bool(compact) and compact * 2 >= body
 
 
 def turn_reply(messages, longest=False):

@@ -59,26 +59,28 @@ def _fake_stream(sess, message, model, mark=None, autonomous=False, jid=None,
 
 server.chat_stream_gen = _fake_stream
 
-# ---- two agents: A1 master, A2 reports to A1 ------------------------------
+# ---- two agents: the master, and one worker reporting to it ---------------
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted ids.
 server.get_or_create_session("sessM", "Master")
 server.get_or_create_session("sessW", "Slave")
-agents.REGISTRY.designate("sessM", name="Master", role="Head")
-agents.REGISTRY.designate("sessW", name="Slave", role="Practical", reports_to="A1")
+M = agents.REGISTRY.designate("sessM", name="Master", role="Head")["agent"]["id"]
+W = agents.REGISTRY.designate("sessW", name="Slave", role="Practical",
+                              reports_to=M)["agent"]["id"]
 
 # ---- pure splitter --------------------------------------------------------
-subs = jobs.plan_subjobs("J9", ["A1", "A2", "A3"], "A1",
-                         "- A2: gather sources\n- A3: draft report", {})
+subs = jobs.plan_subjobs("J9", [M, W, "A99"], M,
+                         "- %s: gather sources\n- A99: draft report" % W, {})
 check("A1 the coordinator is NOT a subjob", "J9.1" in subs and all(
-    s["agent"] != "A1" for s in subs.values()))
+    s["agent"] != M for s in subs.values()))
 check("A2 subjobs are numbered and bound to one agent each",
-      subs.get("J9.1", {}).get("agent") == "A2" and subs.get("J9.2", {}).get("agent") == "A3",
+      subs.get("J9.1", {}).get("agent") == W and subs.get("J9.2", {}).get("agent") == "A99",
       str(sorted(subs)))
 check("A3 the assignment comes from the plan line",
       "gather sources" in (subs.get("J9.1", {}).get("assignment") or ""))
 
 # ---- run a real job synchronously -----------------------------------------
-res = jobs.JOBS.create("produce a small report", coordinator="A1",
-                       agents=agents.REGISTRY.team_of("A1"))
+res = jobs.JOBS.create("produce a small report", coordinator=M,
+                       agents=agents.REGISTRY.team_of(M))
 check("B0 the job was created", res.get("ok") and res.get("job", {}).get("id"))
 JID = res["job"]["id"]
 jobs.JOBS._run(JID)
@@ -87,7 +89,7 @@ job = jobs.JOBS.get(JID)
 check("B1 the job finished", job.get("status") == "done", str(job.get("status")))
 sj = job.get("subjobs") or {}
 check("B2 the run produced one subjob for the worker",
-      len(sj) == 1 and sj.get(JID + ".1", {}).get("agent") == "A2", str(sj))
+      len(sj) == 1 and sj.get(JID + ".1", {}).get("agent") == W, str(sj))
 _s1 = sj.get(JID + ".1", {})
 check("B3 the subjob is done and TIMED", _s1.get("status") == "done"
       and _s1.get("started") is not None and _s1.get("ended") is not None, str(_s1))
@@ -95,11 +97,11 @@ check("B3 the subjob is done and TIMED", _s1.get("status") == "done"
 wmsgs = server.load_session("sessW").get("messages") or []
 wuser = [m for m in wmsgs if m.get("role") == "user" and m.get("subjob")]
 check("C1 the worker's turn is attributed to the coordinator, not YOU",
-      bool(wuser) and wuser[0].get("sender") == "A1 (Master)", str(wuser[:1]))
+      bool(wuser) and wuser[0].get("sender") == "%s (Master)" % M, str(wuser[:1]))
 check("C2 the worker's turn carries the subjob id",
       bool(wuser) and wuser[0].get("subjob") == JID + ".1")
 check("C3 the worker's message names the delegation",
-      bool(wuser) and "Delegation from A1 (Master)" in wuser[0].get("content", ""))
+      bool(wuser) and ("Delegation from %s (Master)" % M) in wuser[0].get("content", ""))
 
 cinj = server.load_session("sessM").get("injects") or []
 check("D1 the coordinator's chat records the delegation",

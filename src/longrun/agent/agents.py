@@ -473,6 +473,12 @@ class AgentRegistry:
             sess = stores.load_session(sid) if sid else None
             if sess is not None:
                 session_previous = sess.get("workspace")
+                # 2026-11-08: record the live value BEFORE the save. `save_session`
+                # re-applies `_LIVE` (adopt_live_choices), so recording AFTER the
+                # write made it persist the PREVIOUS value and silently drop this
+                # one — the org table moved, the runtime did not (measured: the
+                # second `set_workspace` on one agent, v767 F2).
+                stores.live_fields_changed(sid, workspace=p)
                 if session_previous != p:
                     sess["workspace"] = p
                     stores.save_session(sess)
@@ -483,7 +489,6 @@ class AgentRegistry:
                     # A12's record said `Repositories/longrun`, its session said
                     # `Repositories/TESTS/Jago`, and its links pointed nowhere).
                     # `live_fields_changed` re-applies the value on every write.
-                    stores.live_fields_changed(sid, workspace=p)
         except Exception:  # noqa: BLE001 — the registry write already succeeded
             pass
         try:

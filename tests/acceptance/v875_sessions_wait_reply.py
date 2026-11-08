@@ -12,6 +12,7 @@ A3 a turn with no finish envelope still answers with its last reply
 A4 a BOOKKEEPING action after the finish (todo.update) does not turn the reply
    back into its raw JSON envelope
 A5 same for a READ the closure gate asked for (fs.read), with no prose after it
+A6 a long PROSE answer that only QUOTES an action envelope is prose, not work
 
 Run: python3 tests/acceptance/v875_sessions_wait_reply.py
 """
@@ -97,6 +98,18 @@ reading = [{"role": "user", "content": "go"},
 out4 = wait_once(reading)
 check("A5 a read after the finish does not revert the reply to raw JSON",
       out4.get("reply") == "Result computed", out4.get("reply"))
+
+quoted = [{"role": "user", "content": "go"},
+          {"role": "assistant", "content": FINISH},
+          {"role": "assistant", "content":
+           'The command was {"action":"tool","tool":"fs.read","args":{"path":"x"}} '
+           'and it printed the whole README, so the answer below is grounded in it: '
+           'the file documents the CLI in 38 subcommands, shows how to drive an '
+           'agent session over SSE, and lists the REST routes the WebUI uses. '
+           'Nothing else in the repository contradicts that reading.'}]
+out5 = wait_once(quoted)
+check("A6 a long prose answer that QUOTES an action is not 'the turn kept working'",
+      out5.get("reply") == "Result computed", str(out5.get("reply"))[:80])
 
 print("---")
 okc = sum(results)

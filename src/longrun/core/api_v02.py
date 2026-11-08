@@ -4043,14 +4043,17 @@ def workspace_set(body):
             if not sess:
                 return {"ok": False, "error": "no such session: %s" % sid}
             sess["workspace"] = real
-            _srv().save_session(sess)
-            # The workspace of THIS session changed live: defend it against a copy
-            # the running turn loaded before this write.
+            # 2026-11-08: record the live value BEFORE the save — `save_session`
+            # re-applies `_LIVE`, so recording after it persisted the PREVIOUS
+            # folder (same defect as agents.set_workspace, v767 F2).
             try:
                 from longrun.memory import stores as _stores
                 _stores.live_fields_changed(sid, workspace=real)
-            except Exception:  # noqa: BLE001 — the write already happened
+            except Exception:  # noqa: BLE001 — the write still happens
                 pass
+            _srv().save_session(sess)
+            # The workspace of THIS session changed live: defend it against a copy
+            # the running turn loaded before this write.
         try:
             _RULES.remember_workspace(real)  # JAG-126: next new session defaults here
         except Exception:  # noqa: BLE001 — convenience only

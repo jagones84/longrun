@@ -40,39 +40,44 @@ from longrun.orchestrate import orchestration  # noqa: E402
 reg = agents.REGISTRY
 
 # --- agents -----------------------------------------------------------------
+# 2026-11-08: A1 is RESERVED for the harness supervisor (`longrunAgent`), so a
+# fresh store mints A2 first. The ids are read from the calls, never assumed.
 a1 = reg.designate("sess-1", name="CEO", role="coordinator")
 a2 = reg.designate("sess-2", name="Dev", role="engineer", reports_to="sess-1")
+A1 = a1["agent"]["id"]
+A2 = a2["agent"]["id"]
 check("designate assigns stable AX ids",
-      a1["ok"] and a1["agent"]["id"] == "A1" and a2["agent"]["id"] == "A2")
-check("reports_to resolves a session id to an agent id", a2["agent"]["reports_to"] == "A1")
+      a1["ok"] and A1.startswith("A") and A2.startswith("A") and A1 != A2,
+      "%s/%s" % (A1, A2))
+check("reports_to resolves a session id to an agent id", a2["agent"]["reports_to"] == A1)
 a1b = reg.designate("sess-1", role="boss")
 check("designate is idempotent (same id, keeps name)",
-      a1b["agent"]["id"] == "A1" and a1b["agent"]["name"] == "CEO" and a1b["agent"]["role"] == "boss")
+      a1b["agent"]["id"] == A1 and a1b["agent"]["name"] == "CEO" and a1b["agent"]["role"] == "boss")
 check("is_agent / get work", reg.is_agent("sess-1") and reg.get("sess-2")["name"] == "Dev")
 
 tree = reg.tree()
 check("the org tree exposes roots + children",
-      tree["roots"] == ["A1"] and "A2" in tree["agents"][0]["children"])
+      tree["roots"] == [A1] and A2 in tree["agents"][0]["children"])
 
 g = reg.guards("sess-1")
 check("guards flag an agent managing reports (delete-blocked)",
-      g["is_agent"] and g["blocked"] and g["reports"] == ["A2"])
+      g["is_agent"] and g["blocked"] and g["reports"] == [A2])
 check("guards for a non-agent are inert", reg.guards("nope")["is_agent"] is False)
 
 # --- jobs -------------------------------------------------------------------
 J = jobs.JOBS
-check("create refuses an empty goal", J.create("", agents=["A1"])["ok"] is False)
+check("create refuses an empty goal", J.create("", agents=[A1])["ok"] is False)
 check("create refuses no agents", J.create("do it", agents=[])["ok"] is False)
-made = J.create("ship it", coordinator="A1", agents=["A1", "A2"], deps={"A2": ["A1"]})
+made = J.create("ship it", coordinator=A1, agents=[A1, A2], deps={A2: [A1]})
 check("create allocates a JN id (J reserved for jobs)",
       made["ok"] and made["job"]["id"] == "J1")
-check("deps keep only member agents", made["job"]["deps"]["A2"] == ["A1"])
+check("deps keep only member agents", made["job"]["deps"][A2] == [A1])
 
-check("waves order by dependency", jobs.waves(["A1", "A2"], {"A2": ["A1"]}) == [["A1"], ["A2"]])
+check("waves order by dependency", jobs.waves([A1, A2], {A2: [A1]}) == [[A1], [A2]])
 check("waves parallelise independent agents",
-      sorted(jobs.waves(["A1", "A2"], {})[0]) == ["A1", "A2"])
+      sorted(jobs.waves([A1, A2], {})[0]) == sorted([A1, A2]))
 check("waves break a cycle instead of hanging",
-      len(jobs.waves(["A1", "A2"], {"A1": ["A2"], "A2": ["A1"]})) == 2)
+      len(jobs.waves([A1, A2], {A1: [A2], A2: [A1]})) == 2)
 check("dispatch of an unknown job is refused", J.dispatch("J999")["ok"] is False)
 
 # --- API routing ------------------------------------------------------------

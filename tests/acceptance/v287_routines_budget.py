@@ -43,17 +43,18 @@ calls = []
 routines._run_agent = lambda sid, goal, model=None: calls.append((sid, goal)) or "ok"
 
 reg = agents.REGISTRY
-reg.designate("sess-x", name="Worker")
-reg.designate("sess-b", name="Bee", daily_budget=1)
+# 2026-11-08: A1 is RESERVED for the harness supervisor; read the minted ids.
+worker = reg.designate("sess-x", name="Worker")["agent"]["id"]
+bee = reg.designate("sess-b", name="Bee", daily_budget=1)["agent"]["id"]
 
 R = routines.REGISTRY
 
 # --- create validation ------------------------------------------------------
 check("create refuses no agent", R.create("", "g", 60)["ok"] is False)
-check("create refuses no goal", R.create("A1", "", 60)["ok"] is False)
-check("create refuses a cadence below the floor", R.create("A1", "g", 5)["ok"] is False)
+check("create refuses no goal", R.create(worker, "", 60)["ok"] is False)
+check("create refuses a cadence below the floor", R.create(worker, "g", 5)["ok"] is False)
 check("create refuses an unknown agent", R.create("A9", "g", 60)["ok"] is False)
-made = R.create("A1", "keep the lights on", 60)
+made = R.create(worker, "keep the lights on", 60)
 check("create allocates an RN id and schedules next_run",
       made["ok"] and made["routine"]["id"] == "R1" and made["routine"]["next_run"] > made["routine"]["created"])
 check("the routine starts enabled", made["routine"]["enabled"] is True)
@@ -77,8 +78,8 @@ check("re-enabling reschedules it", R.get("R1")["enabled"] is True)
 
 # --- per-agent daily budget -------------------------------------------------
 check("charge consumes the daily budget then refuses",
-      reg.charge("A2") is True and reg.charge("A2") is False)
-R.create("A2", "ping", 30)
+      reg.charge(bee) is True and reg.charge(bee) is False)
+R.create(bee, "ping", 30)
 fired2 = R.tick(now=time.time() + 200000)
 check("a routine over budget is skipped (not fired)",
       any(x.get("state") == "budget-skip" for x in fired2)
