@@ -755,19 +755,25 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
         <button class="btn primary" id="agNewBtn" aria-expanded="false">＋ new agent</button>
         <button class="btn" id="tmNewBtn" aria-expanded="false">＋ new team</button>
         <span class="stack">
-          <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team and agent setup with longrunAgent" title="Automate team &amp; agent setup with longrunAgent (VEO — stateless Teamorg automation)">✨</button>
+          <button class="btn gen-only" id="lraAutoBtn" aria-expanded="false" aria-label="automate team and agent setup with longrunAgent" title="longrunAgent writes the ROLE.md files and the reporting lines of the agents in scope. The run is stateless: it keeps no chat and no memory between runs — open it and the goal is the only input.">✨</button>
         </span>
-        <button class="btn ghost" id="lraRepBtn" aria-expanded="false" title="What longrunAgent wrote, and to whom. The run is STATELESS: it erases its own session, plan graph and chat, so this ledger is the only record of its effect.">report</button>
+        <button class="btn ghost" id="lraRepBtn" aria-expanded="false" title="What longrunAgent wrote, and to whom. The run is STATELESS: it erases its own session, plan graph and chat, so this ledger is the only record of its effect.">what it wrote</button>
         <button class="btn ghost" id="agPolicy" title="Apply the team model policy: leads → strongest cheap cloud, others → cheap cloud, at most ONE local model per machine (dgx / win).">⚙ model policy</button>
       </div>
       <!-- create forms: hidden until the matching ＋ button is pressed (keeps the toolbar tidy). -->
+      <!-- v884: the ✨ is icon-only, so THIS bar is the only place the action can be read.
+           It says what happens in the operator's words, in the order you fill it: what
+           should longrunAgent do → may it overwrite existing prompts → run.
+           Backend: POST /api/longrun-agent/automate {section:"teamorg"} → a STATELESS
+           longrunAgent turn (its session is reset before and after) that sees a live
+           snapshot of this section plus the scope below and calls the team/agent tools. -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
-        <span class="lbl">longrunAgent · Teamorg</span>
-          <label class="chk" for="lraAutoEmpty" title="checked: only the agents whose ROLE.md is EMPTY are written. Unchecked: longrunAgent MAY rewrite the prompt of every agent in scope.">
-            <input type="checkbox" id="lraAutoEmpty" checked> only empty ROLE.md
-          </label>
-        <input class="inp" id="lraAutoInp" aria-label="Teamorg automation goal" placeholder="e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
-        <button class="btn primary" id="lraAutoRun">run Teamorg</button>
+        <span class="lbl" title="longrunAgent writes the ROLE.md files and the reporting lines of the agents in scope. The run is stateless: it keeps no chat and no memory between runs; everything it wrote stays in the report log.">automate with longrunAgent</span>
+        <input class="inp" id="lraAutoInp" aria-label="what longrunAgent should do" placeholder="what should it do? e.g. write the missing ROLE.md of this team, then fix its reporting lines…" style="flex:1;min-width:260px">
+        <label class="chk" for="lraAutoEmpty" title="checked: longrunAgent only writes the agents whose ROLE.md is EMPTY. unchecked: it may rewrite the prompt of every agent in scope.">
+          <input type="checkbox" id="lraAutoEmpty" checked> only agents without ROLE.md
+        </label>
+        <button class="btn primary" id="lraAutoRun">run</button>
         <button class="btn ghost" id="lraAutoCancel" type="button">cancel</button>
         <span class="small muted" id="lraAutoScope" title="the team filter in the filter panel decides the scope: ALL teams or No team included"></span>
         <span class="small muted" id="lraAutoStatus"></span>

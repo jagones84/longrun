@@ -54,28 +54,29 @@ from longrun.agent import longrun_agent as lra  # noqa: E402
 from longrun.orchestrate import roles as roles_mod  # noqa: E402
 
 # ---- A: the control itself -------------------------------------------------
-# The checkbox lives in the AGENTS toolbar, stacked under the ⚡ button, so the
-# mode reads before the run bar is opened (and there is exactly ONE of it).
-result_btn = ORBIT.find('id="agPolicy"')
+# v884: the ✨ is icon-only, so the checkbox belongs to the RUN BAR it scopes — it is
+# one row with the goal ("what should it do?" → "may it overwrite prompts?" → run).
+# v882 had stacked it under the button in the toolbar, which cost a second row.
 toolbar_btn = ORBIT.find('id="lraAutoBtn"')
 chk_i = ORBIT.find('id="lraAutoEmpty"')
 bar_i = ORBIT.find('id="lraAutoBar"')
-stack_i = ORBIT.rfind('<span class="stack">', 0, toolbar_btn)
-check("A1 the checkbox is in the toolbar stack that holds the ⚡ button",
-      -1 < stack_i < toolbar_btn < chk_i < result_btn, "stack=%d btn=%d chk=%d" % (stack_i, toolbar_btn, chk_i))
-check("A2 it comes AFTER the button in the markup (so it renders under it)",
-      toolbar_btn < chk_i, "btn=%d chk=%d" % (toolbar_btn, chk_i))
+inp_i = ORBIT.find('id="lraAutoInp"')
+check("A1 the checkbox lives inside the run bar it scopes",
+      -1 < toolbar_btn < bar_i < chk_i,
+      "btn=%d bar=%d chk=%d" % (toolbar_btn, bar_i, chk_i))
+check("A2 it comes AFTER the goal input (state the goal, then the option)",
+      inp_i < chk_i, "inp=%d chk=%d" % (inp_i, chk_i))
 check("A3 exactly ONE such checkbox exists (no second control, no duplicate truth)",
       ORBIT.count('id="lraAutoEmpty"') == 1, str(ORBIT.count('id="lraAutoEmpty"')))
-check("A4 the run bar no longer carries a checkbox of its own",
-      'id="lraAutoEmpty"' not in ORBIT[bar_i:ORBIT.find("</div>", bar_i)])
+check("A4 the toolbar itself carries NO checkbox (no second row under the ✨)",
+      'id="lraAutoEmpty"' not in ORBIT[toolbar_btn:bar_i])
 check("A5 it is checked by default (empty-only is the safe default)",
       'id="lraAutoEmpty" checked' in ORBIT)
-check("A6 the stack is a COLUMN (under, never beside)",
+check("A6 the toolbar stack is a COLUMN (under, never beside)",
       ".toolbar>.stack{display:inline-flex;flex-direction:column" in ORBIT)
 check("A7 the box is labelled with what it does, both ways",
-      "only empty ROLE.md" in ORBIT
-      and "unchecked" in ORBIT.lower() and "MAY rewrite the prompt" in ORBIT)
+      "only agents without ROLE.md" in ORBIT
+      and "unchecked" in ORBIT.lower() and "may rewrite the prompt" in ORBIT)
 scope_src = ORBIT[ORBIT.find("labelTeamorgScope"):ORBIT.find("async runTeamorgAutomate")]
 check("A8 the scope is stated (team name + how many agents, how many have no ROLE.md)",
       "scope: " in scope_src and "without ROLE.md" in scope_src
