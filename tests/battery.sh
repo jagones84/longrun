@@ -4,7 +4,8 @@
 #   bash tests/battery.sh          # fast gate: heavy tests skipped, tests run in PARALLEL
 #   LONGRUN_BATTERY_FULL=1 bash tests/battery.sh   # full suite (adds the heavy tests)
 #   LONGRUN_BATTERY_JOBS=1 bash tests/battery.sh   # force sequential (debugging)
-#   LONGRUN_BATTERY_TESTS="v753_stop_kills_work" bash tests/battery.sh  # only these
+#   LONGRUN_BATTERY_TESTS="v753_stop_kills_work" bash tests/battery.sh  # only these (+ UI guard)
+#   LONGRUN_BATTERY_UI=0 bash tests/battery.sh     # drop the UI guard from a targeted run
 #   bash tests/battery_tmp.sh      # the targeted launcher (overwritten per fix)
 #
 # JAG-449: the heavy tests (real vector-index builds / doc ingestion) are ~50s
@@ -51,10 +52,22 @@ export PROGRESS
 # Heavy tests skipped unless LONGRUN_BATTERY_FULL=1
 SLOW_TESTS="v408_doc_ingest v399_codebase_index v431r5_pdf_kb v400_knowledge_notebooks v409_embed_providers v402_research"
 
+# UI GUARD (2026-11-09): commit `23d4528` brought real deck work in `orbit.html` but wrote
+# `webui/index.html` from a base OLDER than the approved UI, so the pane toggles, the
+# remembered panes, Ctrl/Cmd+B, the phone rail density and the drawer-closing jump vanished
+# while the in-flight gate carried only that stream's tests (restored in `c07f212`). A
+# TARGETED run therefore always adds these shell/rail/pane pins: a file replaced by an
+# older copy fails on the spot. `LONGRUN_BATTERY_UI=0` opts out for a deliberate rewrite.
+UI_GUARD="v352_appearance_theme v360_shell_fixes v368_panel_resize v497_inspector_bulk_toggle
+v600_agents_session_button v644_view_cols_fit v655_single_writer_test_chips v758_rail_grammar
+v761_mobile_drawers v763_ui_icons v774_invalid_reply_recovery v777_landscape_chat
+v778_session_ids_and_sparkle_cache v851_ui_a11y_gate v888_team_click_and_page_fit
+v890_rail_groups_team_colour_and_compact_rows v891_deck_fit_and_row_menus v910_no_team_bulk"
+
 # TARGETED run (the fix under test): `LONGRUN_BATTERY_TESTS="v753_x v750_y"` runs
-# ONLY those files. The launcher is tests/battery_tmp.sh, overwritten on every fix.
-# A name that does not exist is an ERROR (exit 2): an empty battery would print
-# GREEN and prove nothing.
+# ONLY those files (plus the UI guard below). The launcher is tests/battery_tmp.sh,
+# overwritten on every fix. A name that does not exist is an ERROR (exit 2): an empty
+# battery would print GREEN and prove nothing.
 ONLY="${LONGRUN_BATTERY_TESTS:-}"
 LIST=""
 SKIP=0
@@ -68,6 +81,18 @@ if [ -n "$ONLY" ]; then
   if [ -n "$MISSING" ]; then
     echo "=== battery: unknown test(s):$MISSING (see tests/acceptance/) ==="
     exit 2
+  fi
+  if [ "${LONGRUN_BATTERY_UI:-1}" != "0" ]; then
+    ADDED=0
+    for name in $UI_GUARD; do
+      case " $ONLY " in *" $name "*) continue ;; esac
+      t="tests/acceptance/$name.py"
+      [ -f "$t" ] || { echo "=== battery: UI guard test missing: $name ==="; exit 2; }
+      LIST="$LIST $t"
+      ADDED=$((ADDED + 1))
+    done
+    [ "$ADDED" -gt 0 ] && \
+      echo "=== battery: + $ADDED UI guard test(s) (LONGRUN_BATTERY_UI=0 to skip) ==="
   fi
 else
   for t in tests/acceptance/v*.py; do
