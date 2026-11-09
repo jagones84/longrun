@@ -6739,16 +6739,22 @@ function openNoTeamMenu(head, g) {
     const a = e.target.dataset && e.target.dataset.a;
     if (!a) return;
     closeSessMenu();
+    // v772 I6: every dialog in the app is the app's OWN (`uiConfirm`), never the
+    // browser's — the v910 bucket menu shipped with `confirm`/`alert` and the a11y
+    // gate caught it. Same copy, same four items, same one route.
     if (a === "reset") {
-      if (confirm("Reset all " + n + " no-team session(s)?\n\nTheir chat history and task list are wiped — the agents, their names and their ROLE.md stay. Nothing is deleted."))
+      if (await uiConfirm("Reset all " + n + " no-team session(s)?",
+          "Their chat history and task list are wiped — the agents, their names and their ROLE.md stay. Nothing is deleted."))
         await _noTeamBulk("reset");
     }
     if (a === "compact") {
-      if (confirm("Compact all " + n + " no-team session(s)?\n\nThe older half of each transcript is summarised so the context shrinks."))
+      if (await uiConfirm("Compact all " + n + " no-team session(s)?",
+          "The older half of each transcript is summarised so the context shrinks."))
         await _noTeamBulk("compact");
     }
     if (a === "dropold") {
-      if (confirm("Drop ALL old plans in every session of the No-team bucket (" + n + " session(s))?\n\nOnly plans below each session's current one are deleted — current work, chats and agents stay."))
+      if (await uiConfirm("Drop ALL old plans in every session of the No-team bucket (" + n + " session(s))?",
+          "Only plans below each session's current one are deleted — current work, chats and agents stay."))
         await _noTeamBulk("drop-old-plans");
     }
     if (a === "delall") {
@@ -6762,9 +6768,10 @@ async function _noTeamBulk(action) {
   const r = await api("POST", "/api/teams/__none__/" + action, {});
   if (!r || r.ok === false) { toast((r && r.error) || (action + " failed"), "err"); return; }
   const bad = (r.results || []).filter(x => x.error || (x.result && x.result.error));
-  if (bad.length) alert(bad.length + " of " + r.count + " session(s) failed:\n"
-    + bad.slice(0, 12).map(x => "  " + x.session + " — " + (x.error || (x.result && x.result.error))).join("\n")
-    + (bad.length > 12 ? "\n  … and " + (bad.length - 12) + " more" : ""));
+  if (bad.length)
+    await uiConfirm(bad.length + " of " + r.count + " session(s) failed",
+      bad.slice(0, 12).map(x => x.session + " — " + (x.error || (x.result && x.result.error))).join("\n")
+      + (bad.length > 12 ? "\n… and " + (bad.length - 12) + " more" : ""));
   toast((action === "delete-sessions" ? "deleted " + (r.deleted || 0) : action.replace(/-/g, " "))
     + " · " + (r.count || 0) + " session(s)");
   loadSessions();
