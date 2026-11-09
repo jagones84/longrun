@@ -474,8 +474,13 @@
   .sgroup-h { display: flex; align-items: center; gap: 6px; padding: 4px 8px;
     border-radius: 8px; cursor: pointer; user-select: none; font-size: 10.5px;
     font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--dim); }
+    color: var(--dim); position: relative; }
   .sgroup-h:hover { background: var(--hover); color: var(--txt); }
+  /* v910: the No-team header carries the SAME bulk kebab as the Control deck's
+     team headers — glyph control, no frame (rule 9), named for a11y (rule 2). */
+  .sgroup-h .gkebab { border: 0; background: none; color: var(--dim); cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 1px 4px; border-radius: 6px; flex: none; }
+  .sgroup-h .gkebab:hover { background: var(--hover); color: var(--txt); }
   .sgroup-h .chev { font-size: 11px; width: 11px; text-align: center; opacity: .75; }
   .sgroup-h .gsym { font-size: 13px; line-height: 1; color: var(--tcol, var(--dim)); }
   .sgroup-h .gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -6692,6 +6697,54 @@ async function openSessMenu(row, s, ag) {
   };
   setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
 }
+/* v910: the No-team bucket's bulk menu — the SAME items and copy as the Control
+   deck's team kebab (v910 extension), served by the SAME one backend route
+   (POST /api/teams/__none__/<action>). No per-session loop in the browser, no
+   second engine: the server resolves the bucket and walks its own cascade. */
+function openNoTeamMenu(head, g) {
+  closeSessMenu();
+  const m = document.createElement("div");
+  m.className = "sess-menu";
+  const n = (g.sessions || []).length;
+  m.innerHTML = '<button data-a="reset">↺ Reset all sessions…</button>'
+    + '<button data-a="compact">≡ Compact all sessions…</button>'
+    + '<button data-a="dropold">✕ Drop OLD plans…</button>'
+    + '<button data-a="delall" class="danger">✖ Delete ALL sessions…</button>';
+  head.appendChild(m);
+  m.onclick = async (e) => {
+    const a = e.target.dataset && e.target.dataset.a;
+    if (!a) return;
+    closeSessMenu();
+    if (a === "reset") {
+      if (confirm("Reset all " + n + " no-team session(s)?\n\nTheir chat history and task list are wiped — the agents, their names and their ROLE.md stay. Nothing is deleted."))
+        await _noTeamBulk("reset");
+    }
+    if (a === "compact") {
+      if (confirm("Compact all " + n + " no-team session(s)?\n\nThe older half of each transcript is summarised so the context shrinks."))
+        await _noTeamBulk("compact");
+    }
+    if (a === "dropold") {
+      if (confirm("Drop ALL old plans in every session of the No-team bucket (" + n + " session(s))?\n\nOnly plans below each session's current one are deleted — current work, chats and agents stay."))
+        await _noTeamBulk("drop-old-plans");
+    }
+    if (a === "delall") {
+      if (!(await confirmDelete("⚠ Delete ALL " + n + " no-team session(s) and their agents?\n\nThe REAL delete: every chat, task list and agent record in scope goes. Jobs and routines that name them are scrubbed; an agent with reports re-points them to nobody. This cannot be undone."))) return;
+      await _noTeamBulk("delete-sessions");
+    }
+  };
+  setTimeout(() => document.addEventListener("click", closeSessMenu, { once: true }), 0);
+}
+async function _noTeamBulk(action) {
+  const r = await api("POST", "/api/teams/__none__/" + action, {});
+  if (!r || r.ok === false) { toast((r && r.error) || (action + " failed"), "err"); return; }
+  const bad = (r.results || []).filter(x => x.error || (x.result && x.result.error));
+  if (bad.length) alert(bad.length + " of " + r.count + " session(s) failed:\n"
+    + bad.slice(0, 12).map(x => "  " + x.session + " — " + (x.error || (x.result && x.result.error))).join("\n")
+    + (bad.length > 12 ? "\n  … and " + (bad.length - 12) + " more" : ""));
+  toast((action === "delete-sessions" ? "deleted " + (r.deleted || 0) : action.replace(/-/g, " "))
+    + " · " + (r.count || 0) + " session(s)");
+  loadSessions();
+}
 /* JAG-414: the session rail groups rows by TEAM (collapsible). v652: a session
    belongs to ONE row — the first group that claims it (Pinned → No team → team),
    because the same object listed twice reads as duplicate data. A session in
@@ -7049,9 +7102,14 @@ async function loadSessions() {
       head.innerHTML = `<span class="chev">${isCol ? "▸" : "▾"}</span>`
         + `<span class="gsym">${esc(g.symbol)}</span>`
         + `<span class="gname">${esc(g.name)}${g.id ? ` <span class="gid">${esc(g.id)}</span>` : ""}</span>`
-        + `<span class="gcount">${g.sessions.length}</span>`;
+        + `<span class="gcount">${g.sessions.length}</span>`
+        // v910: the No-team bucket carries the SAME bulk menu as the Control
+        // deck's team headers — one route (/api/teams/__none__/…), no second engine.
+        + (g.key === "__none__" ? '<button class="gkebab" aria-label="no-team actions" aria-haspopup="menu" title="no-team actions — every session without a team">⋮</button>' : "");
       head.onclick = e => {
         if (DragSort.consumeClick(e)) return;
+        // v910: the kebab opens the bulk menu — it must not toggle the group.
+        if (e.target.closest && e.target.closest(".gkebab")) { openNoTeamMenu(head, g); return; }
         _toggleGroup(g.key);
       };
       sec.appendChild(head);

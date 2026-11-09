@@ -7,6 +7,19 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The "No team" bucket gets the team bulk menu — and a real delete-all (`v910`).** The rail's
+  No-team pile (live: 103 sessions) had no bulk actions: the Control deck's kebab (JAG-482) was
+  real-teams-only and the Sessions rail had none at all. One backend scope now serves BOTH surfaces:
+  `POST /api/teams/__none__/{reset,compact,drop-old-plans,delete-sessions}` resolves the SAME set the
+  two UIs group under `__none__` (no agent record or no team membership; the pinned system session is
+  never in scope) and runs the ONE per-session engine (`_bulk_apply`, extracted from the team route, so
+  the two routes cannot drift). The new `delete-sessions` action — on the bucket AND on real teams — is
+  the REAL delete: every session goes through `httpapi.delete_session`, so jobs are scrubbed, routines
+  deleted, reports re-parented and a running turn is aborted, exactly like deleting each session by
+  hand from the rail. The deck's team header kebab now covers the bucket too; the rail's No-team header
+  carries the same four items with the same copy; every bulk alert caps at 12 lines instead of printing
+  a 100-line wall. (Locked by `v910` 35/35; `v482` 23/23 with its E2 evolved — the kebab contract now
+  names the bucket; targeted battery 8 green, service restarted, live scope verified.)
 - **The UI is measured for accessibility, not assumed (`v851`).** axe-core 4.14.0, injected into the
   running page, found five violations: the haze theme's muted text at 4.16:1 on a selected row,
   `#runsBar` whose accessible name did not contain its visible text, a title-only `#qmode`, two

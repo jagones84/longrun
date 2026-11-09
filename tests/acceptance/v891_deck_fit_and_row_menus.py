@@ -56,9 +56,10 @@ check("B1 an agent row has ONE ⋮ menu, not three action buttons",
 check("B2 the agent menu keeps the same endpoints",
       '"/api/sessions/" + encodeURIComponent(a.session) + "/clear"' in ORBIT
       and 'this.api.del("/api/agents/" + encodeURIComponent(a.session))' in ORBIT)
-check("B3 the team header is two icons: assign ⊕ and a VERTICAL dots menu",
-      'title="assign agents to \' + esc(g.name) + \'" aria-label="assign agents to \' + esc(g.name) + \'">\u2295</button>' in ORBIT
-      and 'title="team actions \u2014 all sessions of this team">\\u22EE</button>' in ORBIT
+check("B3 the team header is two icons: assign ⊕ and a VERTICAL dots menu (v910: the No-team bucket carries the same kebab)",
+      'title="assign agents to \' + esc(g.name) + \'" aria-label="assign agents to \' + esc(g.name) + \'">⊕</button>' in ORBIT
+      and "team actions — all sessions of this team" in ORBIT
+      and "no-team actions — every session without a team" in ORBIT
       and '>＋ assign</button>' not in ORBIT)
 check("B4 a job row has ONE ⋮ menu with run + delete",
       'data-jmore="' in ORBIT and 'data-jmenu="run"' in ORBIT and 'data-jmenu="del"' in ORBIT

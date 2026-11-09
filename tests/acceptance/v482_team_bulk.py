@@ -6,8 +6,10 @@ delete) but reset, as compact all to compact all content of each session, but th
 for teams. With a 3-dot menu in the Control AGENTS pane right of the TEAM name."
 
 Locked:
-  * the team header row carries a kebab (``data-tmbulk``) ONLY for a real team
-    (the "No team" bucket and unknown group ids have no team to act on);
+  * the team header row carries a kebab (``data-tmbulk``) for a real team
+    (v910 amended: the "No team" bucket carries the SAME kebab on its own
+    __none__ scope route — see v910_no_team_bulk.py; unknown group ids still
+    have nothing to act on);
   * ``POST /api/teams/<tid>/reset``   wipes EVERY member session (chat + tool
     cards + injects + task graph) and DELETES nothing;
   * ``POST /api/teams/<tid>/compact`` runs the MANUAL compaction on EVERY member
@@ -145,8 +147,9 @@ with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), en
     deck = f.read()
 check("E1 the team header renders a kebab bound to the team id",
       'data-tmbulk="' in deck and 'this.teamById(g.id)' in deck)
-check("E2 the kebab is rendered ONLY for a real team",
-      "const isTeam = !!this.teamById(g.id);" in deck)
+check("E2 the kebab is rendered for a real team AND the No-team bucket (v910), never for a stray id",
+      "const isTeam = !!this.teamById(g.id);" in deck
+      and 'const hasKebab = isTeam || g.id === "__none__";' in deck)
 check("E3 the kebab does not toggle the group (event stopped)",
       "ev.stopPropagation();" in deck and "openTeamMenu(ev," in deck)
 check("E4 the menu offers reset-all and compact-all",

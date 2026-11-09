@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
+# v910: the No-team bucket bulk actions (+ the shared bulk engine refactor).
 set -u
-TESTS="v909_approval_trim_keeps_pending v565_taint_standing_approval v567_consumable_approval v593_run_bound_approval v618_permit_shell_bypass v668_chat_taint v846_approval_fatigue v806_permissions_split v318_ckpt_approvals_delete v195_hard v386_shell_cwd v419_api_parity"
+# NOTE: v758/v890/v851 are EXCLUDED — they fail on the inspector surface for
+# reasons that predate v910 (verified: the asserted strings are absent from the
+# pre-change tree too). They are reported to the operator, not silently skipped.
+TESTS="v910_no_team_bulk v482_team_bulk v614_drop_old_plans v314_cascade_delete v315_session_delete_final v891_deck_fit_and_row_menus v752_filtersort v617_deck_rail"
 cd /home/jagones/Repositories/longrun || exit 1
 fail=0
 for t in $TESTS; do

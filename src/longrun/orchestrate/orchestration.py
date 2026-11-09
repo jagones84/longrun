@@ -21,6 +21,12 @@ server. Routes:
   POST   /api/teams/<tid>/compact  team bulk: compact every member session
   POST   /api/teams/<tid>/drop-old-plans  team bulk: delete every plan below
          the current one in every member session (transcripts untouched)
+  POST   /api/teams/<tid>/delete-sessions  v910: REAL delete of every member
+         session AND its agent (the one delete cascade)
+  POST   /api/teams/__none__/<action>  v910: the SAME bulk engine over the
+         "No team" bucket (every session with no team membership): reset,
+         compact, drop-old-plans — plus delete-sessions, the REAL delete of
+         every bucket session AND its agent through the full cascade
 """
 from longrun.agent import agents as agents_mod
 from longrun.orchestrate import teams as teams_mod
@@ -93,8 +99,8 @@ def _team_payload(t, reg):
     return out
 
 
-def _team_bulk(tid, action, reg):
-    """JAG-482: apply ONE action to EVERY session (= agent) of a team.
+def _bulk_apply(sids, action):
+    """Apply ONE bulk action to an EXPLICIT list of sessions (JAG-482 engine).
 
     `reset`   -> ``stores.clear_session``: wipe the transcript, the tool cards,
                  the harness injects and the task graph. The session, its agent
@@ -107,16 +113,10 @@ def _team_bulk(tid, action, reg):
                  untouched. "Everything" stays `reset`.
 
     The sessions are ACTUAL backend sessions; one session failing never aborts
-    the batch, it is reported per session in ``results``.
+    the batch, it is reported per session in ``results``. v910: this is the ONE
+    engine — a team route and the "No team" bucket route both resolve their
+    session list first and land here, so the two surfaces cannot drift.
     """
-    if not teams_mod.REGISTRY.get(tid):
-        return {"ok": False, "error": "team not found"}
-    sids, seen = [], set()
-    for a in reg.agents_of_team(tid):
-        sid = a.get("session")
-        if sid and sid not in seen:
-            seen.add(sid)
-            sids.append(sid)
     from longrun.core import httpapi as httpapi_mod
     from longrun.memory import stores as stores_mod
     from longrun.plan import taskgraph as taskgraph_mod
@@ -132,10 +132,77 @@ def _team_bulk(tid, action, reg):
             else:
                 stores_mod.clear_session(sid)
                 results.append({"session": sid, "ok": True})
-        except Exception as exc:  # noqa: BLE001 — one bad session must not abort the team
+        except Exception as exc:  # noqa: BLE001 — one bad session must not abort the batch
             results.append({"session": sid, "error": str(exc)})
-    return {"ok": True, "team": tid, "action": action,
+    return {"ok": True, "action": action,
             "sessions": sids, "count": len(sids), "results": results}
+
+
+def _no_team_sessions(reg):
+    """v910: the session ids of the "No team" bucket — the SAME set the Sessions
+    rail and the Control deck group under ``__none__``.
+
+    A session is in the bucket when its agent record is missing or carries no
+    team membership (``teams_for`` resolves memberships from the teams registry,
+    so a deleted team never counts). The pinned system sessions are never in
+    scope: ``longrunAgent`` is permanent and ``delete_session`` refuses it anyway.
+    """
+    skip = set(agents_mod.PINNED_AGENT_IDS)
+    have_team = set()
+    for a in reg.list().get("agents", []):
+        sid = a.get("session")
+        if sid and (a.get("teams") or []):
+            have_team.add(sid)
+    from longrun.memory import stores as stores_mod
+    out = []
+    for s in stores_mod.list_sessions():
+        sid = (s or {}).get("id")
+        if sid and sid not in skip and sid not in have_team:
+            out.append(sid)
+    return sorted(out)
+
+
+def _bulk_delete_sessions(sids):
+    """v910: DELETE every listed session through the ONE cascade
+    (``httpapi.delete_session``): abort a running turn, purge the artifacts,
+    release the agent — jobs scrubbed, routines deleted, team links dropped,
+    reports re-parented to nobody. The same end state as deleting each session
+    by hand from the rail; one session failing never aborts the batch."""
+    from longrun.core import httpapi as httpapi_mod
+    results, deleted = [], 0
+    for sid in sids:
+        try:
+            res = httpapi_mod.delete_session(sid)
+            if res.get("ok"):
+                deleted += 1
+                results.append({"session": sid, "ok": True})
+            else:
+                results.append({"session": sid,
+                                "error": res.get("error") or "delete failed"})
+        except Exception as exc:  # noqa: BLE001 — one bad session must not abort the batch
+            results.append({"session": sid, "error": str(exc)})
+    return {"ok": True, "action": "delete-sessions", "sessions": sids,
+            "count": len(sids), "deleted": deleted, "results": results}
+
+
+def _team_bulk(tid, action, reg):
+    """JAG-482: apply ONE action to EVERY session (= agent) of a team.
+
+    v910: the per-session engine lives in ``_bulk_apply`` (shared with the
+    "No team" bucket route); this wrapper only resolves the team's members.
+    """
+    if not teams_mod.REGISTRY.get(tid):
+        return {"ok": False, "error": "team not found"}
+    sids, seen = [], set()
+    for a in reg.agents_of_team(tid):
+        sid = a.get("session")
+        if sid and sid not in seen:
+            seen.add(sid)
+            sids.append(sid)
+    out = (_bulk_delete_sessions(sids) if action == "delete-sessions"
+           else _bulk_apply(sids, action))
+    out["team"] = tid
+    return out
 
 
 def _teams(handler, method, path, qs, body, reg):
@@ -163,6 +230,12 @@ def _teams(handler, method, path, qs, body, reg):
                 description=data.get("description")))
         parts = path[len("/api/teams/"):].split("/")
         tid = parts[0]
+        if tid == "__none__":   # v910: the No-team bucket is a SCOPE, not a team
+            if len(parts) >= 2 and parts[1] == "delete-sessions":
+                return _json(handler, 200, _bulk_delete_sessions(_no_team_sessions(reg)))
+            if len(parts) >= 2 and parts[1] in ("reset", "compact", "drop-old-plans"):
+                return _json(handler, 200, _bulk_apply(_no_team_sessions(reg), parts[1]))
+            return _json(handler, 404, {"ok": False, "error": "unknown no-team action"})
         if len(parts) >= 2 and parts[1] == "members":
             # JAG-2.4: a plain session is designated on the spot (see member_aid).
             aid, err = member_aid(reg, data.get("agent") or data.get("session"))
@@ -176,11 +249,13 @@ def _teams(handler, method, path, qs, body, reg):
                 tid, lead_model=data.get("lead_model"),
                 member_model=data.get("member_model"),
                 local_slots_n=data.get("local_slots")))
-        if len(parts) >= 2 and parts[1] in ("reset", "compact", "drop-old-plans"):
+        if len(parts) >= 2 and parts[1] in ("reset", "compact", "drop-old-plans", "delete-sessions"):
             # JAG-482/v614: TEAM-WIDE bulk action over the team's member sessions.
             # "reset" wipes each session (chat + tasks), "compact" shrinks each
             # transcript, "drop-old-plans" deletes every plan below the current
-            # one in each session — NEVER deletes a session or its agent.
+            # one in each session — those three NEVER delete a session or its
+            # agent. v910: "delete-sessions" is the REAL delete of every member
+            # session AND its agent, through the one delete cascade.
             res = _team_bulk(tid, parts[1], reg)
             return _json(handler, 404 if res.get("error") else 200, res)
         return _json(handler, 200, R.update(

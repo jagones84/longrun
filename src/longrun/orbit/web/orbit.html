@@ -1892,9 +1892,13 @@ class AgentsView {
   groupHtml(g){
     const closed = this.closed.has(g.id);
     const hid = closed ? ' hidden' : '';
-    // JAG-482: only a REAL team (one the deck knows) gets the bulk kebab; the
-    // "No team" bucket and unknown/stray group ids have no team to act on.
+    // JAG-482: only a REAL team (one the deck knows) gets the bulk kebab;
+    // unknown/stray group ids have no team to act on. v910: EXCEPT the "No team"
+    // bucket — it is a SCOPE, not a team, and it gets the SAME kebab bound to
+    // the shared __none__ route (the Sessions rail renders the same menu), so
+    // a pile of stray sessions is cleanable in one move.
     const isTeam = !!this.teamById(g.id);
+    const hasKebab = isTeam || g.id === "__none__";
     const head = '<tr class="grp-head" data-grp="' + esc(g.id) + '"><td colspan="4">' +
       // JAG-2.8: the header is a real control — groups start COLLAPSED, so without
       // tabindex/Enter a keyboard-only operator could not open a single group.
@@ -1918,8 +1922,10 @@ class AgentsView {
          dots menu — so a narrow column keeps the team name on one line. */
       (isTeam ? '<button class="btn ghost mini tmadd" data-tmadd="' + esc(g.id) + '" ' +
         'title="assign agents to ' + esc(g.name) + '" aria-label="assign agents to ' + esc(g.name) + '">⊕</button>' : '') +
-      (isTeam ? '<button class="kebab" data-tmbulk="' + esc(g.id) + '" aria-label="team actions" ' +
-        'aria-haspopup="menu" title="team actions — all sessions of this team">\u22EE</button>' : '') +
+      (hasKebab ? '<button class="kebab" data-tmbulk="' + esc(g.id) + '" aria-label="' +
+        (isTeam ? "team actions" : "no-team actions") + '" aria-haspopup="menu" title="' +
+        (isTeam ? "team actions — all sessions of this team"
+                : "no-team actions — every session without a team") + '">\u22EE</button>' : '') +
       '</div></td></tr>';
     const rows = (g.ms || []).length
       ? (g.ms || []).map(a => this.row(a, g.id)).join("")
@@ -2011,20 +2017,32 @@ class AgentsView {
     });
   }
   /* JAG-482: TEAM-wide bulk actions. The kebab on a team header row opens this
-     menu; both actions hit ONE server route that walks the team's member
-     sessions — no per-session loop in the browser, no third data source. */
+     menu; the actions hit ONE server route that walks the team's member
+     sessions — no per-session loop in the browser, no third data source.
+     v910: the "No team" bucket (__none__) opens the SAME menu minus the two
+     team-only items (Edit team / Delete team) plus "Delete ALL sessions…" —
+     the real delete, served by the SAME __none__ route the Sessions rail uses. */
   openTeamMenu(ev, tid){
-    const t = this.teamById(tid); if (!t) return;
-    const n = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
+    const none = tid === "__none__";
+    const t = none ? null : this.teamById(tid);
+    if (!t && !none) return;
+    const n = none
+      ? (this.agents || []).filter(a => !(a.teams || []).length).length
+      : ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
+    const subj = none ? ("all " + n + " no-team session(s)")
+                      : ("all " + n + " session(s) of " + (t.name || tid));
     const m = openPopover(ev,
-      '<div data-a="edit">\u270E Edit team\u2026</div>' +
+      (none ? '' : '<div data-a="edit">\u270E Edit team\u2026</div>') +
       '<div data-a="reset">\u21BA Reset all sessions\u2026</div>' +
       '<div data-a="compact">\u2261 Compact all sessions\u2026</div>' +
       '<div data-a="dropold">\u2715 Drop OLD plans\u2026</div>' +
       '<div class="sep"></div>' +
-      '<div data-a="del">\u2716 Delete team\u2026</div>', {w: 224, h: 214});
-    m.querySelector('[data-a="edit"]').onclick = () => this.openTeamEdit(ev, tid);
-    m.querySelector('[data-a="del"]').onclick = async () => { closePopover();
+      (none ? '' : '<div data-a="del">\u2716 Delete team\u2026</div>') +
+      '<div data-a="delall">\u2716 Delete ALL sessions\u2026</div>', {w: 224, h: 214});
+    const edit = m.querySelector('[data-a="edit"]');
+    if (edit) edit.onclick = () => this.openTeamEdit(ev, tid);
+    const del = m.querySelector('[data-a="del"]');
+    if (del) del.onclick = async () => { closePopover();
       const members = ((this.agents || []).filter(a => (a.teams || []).includes(tid))).length;
       if (!confirm("Delete team \"" + (t.name || tid) + "\"?\n\n" +
         (members ? members + " agent(s) stay \u2014 only the team link disappears.\n" : "") +
@@ -2034,19 +2052,26 @@ class AgentsView {
       if (this.onChanged) this.onChanged();
     };
     m.querySelector('[data-a="reset"]').onclick = () => { closePopover();
-      if (confirm("Reset all " + n + " session(s) of " + (t.name || tid) +
+      if (confirm("Reset " + subj +
         "?\n\nTheir chat history and task list are wiped — the agents, their names and " +
         "their ROLE.md stay. Nothing is deleted."))
         this.teamBulk(tid, "reset"); };
     m.querySelector('[data-a="compact"]').onclick = () => { closePopover();
-      if (confirm("Compact all " + n + " session(s) of " + (t.name || tid) +
+      if (confirm("Compact " + subj +
         "?\n\nThe older half of each transcript is summarised so the context shrinks."))
         this.teamBulk(tid, "compact"); };
     m.querySelector('[data-a="dropold"]').onclick = () => { closePopover();
-      if (confirm("Drop ALL old plans in every session of " + (t.name || tid) +
+      if (confirm("Drop ALL old plans in every session of " + (none ? "the No-team bucket" : (t.name || tid)) +
         " (" + n + " session(s))?\n\nOnly plans below each session's current one are deleted — " +
         "current work, chats and agents stay."))
         this.teamBulk(tid, "drop-old-plans"); };
+    const delall = m.querySelector('[data-a="delall"]');
+    if (delall) delall.onclick = () => { closePopover();
+      if (confirm("Delete " + subj + " and their agents?\n\n" +
+        "The REAL delete: every chat, task list and agent record in scope goes. " +
+        "Jobs and routines that name them are scrubbed; an agent with reports " +
+        "re-points them to nobody. This cannot be undone."))
+        this.teamBulk(tid, "delete-sessions"); };
   }
   /* JAG-536: a team was create-and-forget — every property was frozen at birth.
      The server has always supported POST /api/teams/<tid> (name/symbol/colour/
@@ -2153,10 +2178,18 @@ class AgentsView {
         return "  " + x.session + " — dropped " + (q.plans || []).join(", ") +
           " (" + (q.removed || 0) + " step(s), current " + (q.current != null ? q.current : "?") + ")";
       }
+      if (action === "delete-sessions"){
+        return "  " + x.session + " — deleted";
+      }
       return "  " + x.session + " — reset";
     });
-    alert(action + ": " + (r.count || 0) + " session(s) of this team" +
-      (bad.length ? " \u2014 " + bad.length + " issue(s)" : "") + "\n" + lines.join("\n"));
+    // v910: a bucket can hold 100+ sessions — the alert lists the first lines
+    // and counts the rest instead of becoming unreadable.
+    const shown = lines.slice(0, 12).join("\n") +
+      (lines.length > 12 ? "\n  … and " + (lines.length - 12) + " more" : "");
+    alert(action + ": " + (r.count || 0) + " session(s)" +
+      (r.deleted != null ? " \u2014 " + r.deleted + " deleted" : "") +
+      (bad.length ? " \u2014 " + bad.length + " issue(s)" : "") + "\n" + shown);
     if (this.onChanged) this.onChanged();
   }
   async save(sid, patch){
