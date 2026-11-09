@@ -54,6 +54,16 @@ check("B3 panels restore home via slot markers BEFORE rows are dropped (re-entra
       'p._vmark.parentElement.insertBefore(p, p._vmark)' in ORBIT
       and 'p._vmark = document.createComment("vslot:" + (p.dataset.panel || ""))' in ORBIT
       and ORBIT.index("p._vmark.parentElement.insertBefore") < ORBIT.index('".vrow,.rz-vcol,.rz-vrow"'))
+check("B4 a panel list change drops the view's index-keyed ratios",
+      # 2026-11-08 (operator): "the attached shall be the default format of the Desk
+      # view" — the Desk view gained Constellation, but the saved ratios stayed keyed
+      # by INDEX, so they described the OLD columns and Jobs rendered at 32px (header
+      # only). A panel added/removed/moved invalidates the view's shape; a column
+      # below 5% is repaired to an even share.
+      "  _dropRatios(vid){" in ORBIT
+      and "v.panels.push(key); this._dropRatios();" in ORBIT
+      and ORBIT.count("this._dropRatios(); this.saveViews(); this.applyView(this.view);") >= 2
+      and "saved[k] < 0.05" in ORBIT)
 check("C1 a horizontal splitter resizes the whole ROW above, per row",
       'sp.className = "rz-vrow"; sp.title = "drag to resize this row"' in ORBIT
       and '"vrowh:" + this.view + ":" + r' in ORBIT

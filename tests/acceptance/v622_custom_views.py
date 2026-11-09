@@ -65,7 +65,9 @@ check("B5 at least one view kept, empty view refills",
       "keep at least one view" in ORBIT
       and 'if (!v.panels.length) v.panels = ["agents"]' in ORBIT)
 check("B6 seeded Desk view replaces the board",
-      '"v-desk", name: "Desk", panels: ["agents", "jobs", "org"]' in ORBIT)
+      # 2026-11-08 (operator): "the attached shall be the default format of the Desk
+      # view" — the seed is Agents | Jobs | Org chart | Constellation in ONE row.
+      '"v-desk", name: "Desk", panels: ["agents", "jobs", "org", "const"]' in ORBIT)
 
 # ---------------- C: layout + bridges ----------------------
 check("C1 view-cols flex row, rows transparent, narrow stacks",

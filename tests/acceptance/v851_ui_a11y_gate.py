@@ -239,6 +239,13 @@ check("F3 every role=button is keyboard-reachable, and the chip's ✕ is a real 
       and bool(re.search(r'<button[^>]*class="x"[^>]*data-i=', html)),
       "%d role=button tag(s)" % len(_ROLE_BUTTONS))
 
+# axe `aria-prohibited-attr` (live, 2026-11-08): a generic <div> may not carry an
+# aria-label. The two rail jump groups name themselves, so they declare role=group.
+check("F4 a rail group that names itself declares role=group",
+      all('role="group"' in _el(cid) and "aria-label=" in _el(cid)
+          for cid in ("inspJump", "inspJumpRuntime")),
+      " | ".join(_el(cid)[:60] for cid in ("inspJump", "inspJumpRuntime")))
+
 # ---- G: the Control deck is the SAME product, so it is the same contract ----
 # Measured 2026-11-07: 12 of its 13 static controls were named by `title` or a
 # placeholder only (a title is not a name); its JS-built table inputs were already

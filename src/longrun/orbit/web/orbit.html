@@ -3728,24 +3728,42 @@ class OrbitApp {
     this.saveViews(); this.renderViewList();
     this.applyView("view:" + this.views[0].id);
   }
+  /* 2026-11-08: the column ratios are keyed by INDEX (`vrat:<view>:<row>:<col>`), so
+     adding, removing or reordering a panel re-points them at a different panel — after
+     the Desk view gained Constellation the saved 0.02 put the FIRST panelled column
+     out of shape and squeezed Jobs to 32px (header only). Drop the view's saved shape
+     with its panel list; the layout falls back to an even share, the same rule a
+     freshly created view uses. */
+  _dropRatios(vid){
+    const pre = "vrat:" + (vid ? ("view:" + vid) : this.view) + ":";
+    const preH = "vrowh:" + (vid ? ("view:" + vid) : this.view) + ":";
+    try {
+      const s = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}");
+      let hit = false;
+      Object.keys(s).forEach(k => {
+        if (k.indexOf(pre) === 0 || k.indexOf(preH) === 0){ delete s[k]; hit = true; }
+      });
+      if (hit) localStorage.setItem("orbit_layout_v2", JSON.stringify(s));
+    } catch (e){ /* private mode */ }
+  }
   viewAddPanel(key){
     const v = this.activeView(); if (!v || !key) return;
     if (v.panels.includes(key)) return;
     if (v.panels.length >= 6){ alert("a view holds at most 6 panels side by side"); return; }
-    v.panels.push(key); this.saveViews(); this.applyView(this.view);
+    v.panels.push(key); this._dropRatios(); this.saveViews(); this.applyView(this.view);
   }
   viewRemove(key){
     const v = this.activeView(); if (!v) return;
     v.panels = v.panels.filter(p => p !== key);
     if (!v.panels.length) v.panels = ["agents"];
-    this.saveViews(); this.applyView(this.view);
+    this._dropRatios(); this.saveViews(); this.applyView(this.view);
   }
   viewMove(key, dir){
     const v = this.activeView(); if (!v) return;
     const i = v.panels.indexOf(key), j = i + dir;
     if (i < 0 || j < 0 || j >= v.panels.length) return;
     const t = v.panels[i]; v.panels[i] = v.panels[j]; v.panels[j] = t;
-    this.saveViews(); this.applyView(this.view);
+    this._dropRatios(); this.saveViews(); this.applyView(this.view);
   }
   applyView(name){
     let view = String(name || ""), v = null;
@@ -3818,6 +3836,14 @@ class OrbitApp {
     if (vcur) vis.sort((a, b) => vcur.panels.indexOf(a.dataset.panel) - vcur.panels.indexOf(b.dataset.panel));
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}"); } catch (_) {}
+    /* 2026-11-08: a column below 5% is not a layout — it is a panel squeezed by ratios
+       that were saved for a DIFFERENT panel list (see `_dropRatios`). Drop the view's
+       shape so every column shares the row again. */
+    const _pre = "vrat:" + this.view + ":";
+    if (Object.keys(saved).some(k => k.indexOf(_pre) === 0 && saved[k] < 0.05)){
+      Object.keys(saved).forEach(k => { if (k.indexOf(_pre) === 0) delete saved[k]; });
+      try { localStorage.setItem("orbit_layout_v2", JSON.stringify(saved)); } catch (_) {}
+    }
     const minCol = 280;
     const ncols = Math.max(1, Math.min(vis.length, Math.floor(Math.max(minCol, deck.clientWidth - 12) / minCol) || 1));
     this._vlastNCols = ncols;
