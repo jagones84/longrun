@@ -117,6 +117,22 @@ All notable changes to Longrun are documented here. The format follows
   old shortcut say the new one.
 
 ### Fixed
+- **A truncated subagent is a FAILURE, and the plan shows a run's real ending (`v924`/`v925`).**
+  A child stopped at its step budget still ended `status: done`, so the Session-Job scheduler marked
+  the subjob `done` and handed the sentinel text to every dependent as input — a dependent then worked
+  "based on" a truncation (live SJ19, 2026-11-09). Any non-`completed` termination is now recorded as
+  a subjob error, the sentinel names the run's evidence file (`data/graphs/<run>.json`, one builder
+  for both run loops), and run-finalize closes a `max_steps`/`error` run's open nodes as `cancelled`
+  with honest evidence instead of a fabricated "run completed" (an `aborted` run is still finalized
+  by nobody, JAG-462). Pinned by `v924` (7/7), `v925` (7/7); `v459` J1's source pin follows the new
+  call shape.
+- **A restart no longer fails the dependents of an in-flight job (`v926`).** At boot the jobs sweep
+  marked every still-`running` job `error: "interrupted by restart"` and then `wake()` treated that
+  marker like any failed blocker, so waiting dependents got `error: "dependency failed: J<N>"` even
+  though the blocker never failed — observed on every restart (J25<-J24, J35<-J34; both blockers
+  later completed normally). The marker is now distinct: the dependent stays `blocked` and is
+  released the moment the blocker really ends; a genuinely failed blocker still fails its dependent
+  loudly. Pinned by `v926` (5/5); `v348` C2 revised to the new semantics (+C3 release proof).
 - **`fs.edit` diffs now resolve the file shown by the tool card.** The edit journal stores absolute paths while the card supplies workspace-relative paths; a unique relative suffix now resolves safely, while ambiguous suffixes are rejected. The card uses compact, theme-aware SVG diff/editor buttons with accessible names and visible keyboard focus (`v872`).
 - **A free-group label is a SUMMARY, never a copy of the prompt, and the 🏷 button no longer looks dead
   (extends `v469` / `v453`, no new number).** The rail showed a group's "title" AND its "summary" as two
