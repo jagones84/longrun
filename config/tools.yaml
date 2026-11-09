@@ -28,6 +28,10 @@ sandbox:
 # ---- approvals ---------------------------------------------------------------
 approvals:
   timeout_secs: 300             # how long a run waits for a human decision
+  # DR-O: how many DECIDED approval records the store keeps. A pending request
+  # is a question the operator has not answered yet: it does not count towards
+  # this cap and is never evicted — the store grows instead.
+  max_records: 500
   # JAG-510 — DANGEROUS, leave it false. When true it unlocks writes into the
   # immutable Nucleus (`src/longrun/`, `webui/`, `config/`, `deploy/`, `tests/`,
   # `docs/`, project state (the data home's `projects/`), `Global_rules.md` / `Project_rules.md`, `AGENTS.md`, ...) for EVERY tool: the shell

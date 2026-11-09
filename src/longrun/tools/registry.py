@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
         "network": False, "memory_mb": 256, "pids_limit": 128, "cpus": "1.0",
         "workspace": "sandbox",
     },
-    "approvals": {"timeout_secs": 300},
+    "approvals": {"timeout_secs": 300, "max_records": 500},
     "runtime": {},
     "verifier": {},
     "goal_verify": {},

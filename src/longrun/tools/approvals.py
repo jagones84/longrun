@@ -32,6 +32,57 @@ _lock = threading.RLock()
 _events = {}      # id -> threading.Event (wake a waiting run on decision)
 _store = None     # {"approvals": [...]}
 
+#: DR-O: how many DECIDED records the store keeps (`approvals.max_records`).
+#: Pending records do not count — a pending one is a human still being asked and
+#: is never evicted (see `_trim`).
+DEFAULT_MAX_RECORDS = 500
+
+
+def _max_records():
+    """The store cap, read from config; a bad value falls back, never crashes."""
+    try:
+        cap = int((registry.load_config().get("approvals") or {}).get("max_records")
+                  or DEFAULT_MAX_RECORDS)
+    except (TypeError, ValueError, AttributeError):
+        return DEFAULT_MAX_RECORDS
+    return cap if cap > 0 else DEFAULT_MAX_RECORDS
+
+
+def _trim(store, cap):
+    """Bound the store WITHOUT ever dropping a pending request (DR-O).
+
+    A pending record is a human still being asked: dropping it sets no event, so
+    the caller waits until its timeout and the operator has nothing left to
+    decide. The cap therefore bounds the DECIDED history only: those go first,
+    oldest first, and when every record is pending the store grows past the cap
+    instead (`clear()` and a decision are what shrink it). Returns the ids it
+    dropped.
+    """
+    items = store["approvals"]
+    overflow = sum(1 for r in items if r.get("status") != "pending") - int(cap)
+    if overflow <= 0:
+        return []
+    dropped, keep = [], []
+    for rec in items:
+        if overflow > 0 and rec.get("status") != "pending":
+            overflow -= 1
+            if rec.get("id"):
+                dropped.append(rec["id"])
+            continue
+        keep.append(rec)
+    store["approvals"] = keep
+    return dropped
+
+
+def _note_trim(dropped, kept):
+    """One event per trim: the history shrank, nothing live was lost."""
+    try:
+        from longrun.core import events
+
+        events.publish("approvals.trimmed", dropped=dropped, kept=kept)
+    except Exception:  # noqa: BLE001 — a log must never break the gate
+        pass
+
 
 def _load():
     global _store
@@ -91,7 +142,12 @@ def create(tool, args, run_id=None, decision="pending", reason="",
     binds the grant to the run that requested it: multi-use inside that run
     IS the remember-for-this-turn semantic (via `uses_left`); another run
     cannot spend it. Extra fields are inert for old readers.
+
+    DR-O: the store is bounded by `approvals.max_records`, but only DECIDED
+    records are evicted — see `_trim`. The cap is read before the lock so the
+    config lock and this lock are never nested.
     """
+    cap = _max_records()
     with _lock:
         store = _load()
         rec = {
@@ -111,10 +167,15 @@ def create(tool, args, run_id=None, decision="pending", reason="",
             "digest": _digest(tool, args),
         }
         store["approvals"].append(rec)
-        store["approvals"] = store["approvals"][-500:]
+        dropped = _trim(store, cap)
         _persist()
         _events.setdefault(rec["id"], threading.Event())
-        return rec
+        for _aid in dropped:
+            _events.pop(_aid, None)   # no leaked Event for a record that is gone
+        kept = len(store["approvals"])
+    if dropped:
+        _note_trim(len(dropped), kept)
+    return rec
 
 
 def consume(aid, tool, args, run_id=None):

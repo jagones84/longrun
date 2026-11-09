@@ -403,7 +403,7 @@ Lifecycle and retention — every store has an owner and an end:
 | Graph | the owner's delete, or the startup orphan sweep | owner-less graphs older than 14 days move to `trash/` |
 | Goal | delete (the record is removed, so a stale client cannot resume it) | per session |
 | Job / subjob | manual `job rm` | `jobs.json` has NO automatic retention |
-| Approval | decided, or expired by `approvals.timeout_secs` | newest 500 rows only |
+| Approval | decided, or expired by `approvals.timeout_secs` | newest `approvals.max_records` DECIDED rows; a PENDING request is never evicted (`v909`) |
 | Checkpoint | manual delete / prune | 100 snapshots + 30 turn anchors per session |
 | Memory record | invalidate / supersede / expire → tombstone (last entry wins), restore | `purge_invalidated` removes the dead ones |
 | Event | `prune_events` | newest 200 000 rows, every 15 minutes |
