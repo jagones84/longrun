@@ -1015,6 +1015,11 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                             break
                         except Exception as _e:  # noqa: BLE001
                             last_err = _e
+                            # DR-R: a hop that already reported tokens before it
+                            # died (5xx mid-stream, dropped connection, router
+                            # swap) was PAID for. Accounting it only on success
+                            # made every failover under-report the run's cost.
+                            _account_call(st, _call_usage, session=session)
                             on_event("model.failover", run=st.id, failed=cand,
                                      next_model=None)
                     else:
