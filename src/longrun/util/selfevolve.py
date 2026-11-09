@@ -1059,6 +1059,32 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
                          "while LONGRUN_EVOLVE_CASES=1" % len(_cases)}
     else:
         evidence = "single-case" if len(_cases) < 2 else "cases-no-baseline"
+    name = prop.get("name") or os.path.basename(proposal_dir)
+    # The skills root is a PATH, not a constant: a test (or a different install)
+    # points it elsewhere with LONGRUN_SKILLS_DIR instead of writing into the
+    # checkout. Default stays the repo's skills/ library.
+    root = (skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
+            or os.path.join(REPO, "skills"))
+    category = str(c.get("category") or "created")
+    target = os.path.join(root, category, name)
+    # JAG-426 safety boundary 1: the built-in library is IMMUTABLE — an auto skill
+    # may never land in (or overwrite) skills/core/**.
+    if _under(target, os.path.join(root, "core")):
+        return {"ok": False, "error": "refusing to write into skills/core (built-in skills are immutable)"}
+    # JAG-426 safety boundary 2: a machine-generated skill may ONLY live under
+    # skills/created/, and only within the quota. DR-M: the QUOTA is a hard cap, so
+    # it is answered BEFORE the cost heuristic — at the cap nothing can be released
+    # whatever its price, and the old order reported "cost gate" for an artifact
+    # that was never going to fit (v416).
+    if prop.get("origin") == "auto":
+        box = os.path.join(root, "created")
+        if not _under(target, box):
+            return {"ok": False,
+                    "error": "an auto-generated skill must be promoted under skills/created (got category %r)" % category}
+        existing = [d for d in os.listdir(box)] if os.path.isdir(box) else []
+        if len(existing) >= AUTO_SKILL_CAP:
+            return {"ok": False,
+                    "error": "skills/created quota reached (%d) — prune before promoting" % AUTO_SKILL_CAP}
     # COST GATE (HarnessPro 2610.26770, Harmony 2610.15150): quality and cost are
     # one objective. The skill's own markdown is what enters the prompt on every
     # turn, so a candidate that is an OUTLIER against the installed set may not
@@ -1078,7 +1104,14 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     except (TypeError, ValueError):
         _ratio = 2.0
     _skipped = []
-    if _median is not None and _cost > _median * _ratio:
+    # DR-M: a median from fewer than three samples is a weak baseline in BOTH
+    # directions — it used to fail OPEN (no gate at all). It must not fail CLOSED
+    # on a stub corpus either: v598 archives two 55-token stubs and a real 209-token
+    # skill (3.8x) was refused. A weak median therefore needs TWICE the normal
+    # deviation before it refuses; the gate still fires on a true outlier (v919 A/B
+    # are 33-40x).
+    _eff_ratio = _ratio if _samples >= 3 else _ratio * 2.0
+    if _median is not None and _cost > _median * _eff_ratio:
         if human:
             _skipped.append("cost")
         else:
@@ -1087,7 +1120,7 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
                     "error": "cost gate: %d prompt tokens against a %d-token median "
                              "across installed artifacts (> x%.1f) — release it as the "
                              "operator if it is worth the prompt budget"
-                             % (_cost, _median, _ratio)}
+                             % (_cost, _median, _eff_ratio)}
     # RDD point 2: sealed held-out gate (fail-closed). The local verifier
     # (check.py) is NOT enough: promotion requires the external judge suite.
     from longrun.plan import heldout
@@ -1106,29 +1139,6 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
                     "pin it before promoting a skill") if why == "no_manifest" else ""
             return {"ok": False, "gate": g,
                     "error": "held-out gate not green (%s)%s" % (why, hint)}
-    name = prop.get("name") or os.path.basename(proposal_dir)
-    # The skills root is a PATH, not a constant: a test (or a different install)
-    # points it elsewhere with LONGRUN_SKILLS_DIR instead of writing into the
-    # checkout. Default stays the repo's skills/ library.
-    root = (skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
-            or os.path.join(REPO, "skills"))
-    category = str(c.get("category") or "created")
-    target = os.path.join(root, category, name)
-    # JAG-426 safety boundary 1: the built-in library is IMMUTABLE — an auto skill
-    # may never land in (or overwrite) skills/core/**.
-    if _under(target, os.path.join(root, "core")):
-        return {"ok": False, "error": "refusing to write into skills/core (built-in skills are immutable)"}
-    # JAG-426 safety boundary 2: a machine-generated skill may ONLY live under
-    # skills/created/, and only within the quota.
-    if prop.get("origin") == "auto":
-        box = os.path.join(root, "created")
-        if not _under(target, box):
-            return {"ok": False,
-                    "error": "an auto-generated skill must be promoted under skills/created (got category %r)" % category}
-        existing = [d for d in os.listdir(box)] if os.path.isdir(box) else []
-        if len(existing) >= AUTO_SKILL_CAP:
-            return {"ok": False,
-                    "error": "skills/created quota reached (%d) — prune before promoting" % AUTO_SKILL_CAP}
     superseded = None
     _collides = os.path.exists(target)
     if _collides and not supersede:
