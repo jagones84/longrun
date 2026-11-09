@@ -57,11 +57,17 @@ check("B2 view columns resizable with persistence and reset",
       and '"vrat:" + this.view + ":" + r + ":" + c' in ORBIT
       and "this._layoutViewCols();" in ORBIT
       and "min-width:280px" in ORBIT)
-check("B3 Agents gets a readable share in the active custom view",
-      'rowPanels.findIndex(p => p.dataset.panel === "agents")' in ORBIT
-      and "rowPanels.length > 2 ? 0.4 : 0.58" in ORBIT
-      and "ratios[ai] < target" in ORBIT
-      and 'saved["vrat:" + this.view + ":" + r + ":" + c] = ratios[c]' in ORBIT)
+check("B3 the default Desk keeps the operator-approved proportions (no agents bias)",
+      # 2026-11-09 (operator, screenshot): Agents 25 - Jobs 15 - Org chart 36 -
+      # Constellation 24 is the official default Desk shape. The old "agents >= 40%"
+      # bias is gone, the inherited ratios are dropped once (orbit_desk_def_v1) and
+      # the fallback lives in _deskDefault; the operator's own drags still save.
+      "rowPanels.length > 2 ? 0.4 : 0.58" not in ORBIT
+      and "ratios[ai] < target" not in ORBIT
+      and "_deskDefault" in ORBIT
+      and "[0.25, 0.15, 0.36, 0.24]" in ORBIT
+      and 'orbit_desk_def_v1' in ORBIT
+      and 'vrat:view:v-desk:' in ORBIT)
 
 # ---------------- C: grabbable rows, org scroll ----------------------
 check("C1 agent rows show a grip with grab affordance",

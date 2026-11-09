@@ -3965,6 +3965,19 @@ class OrbitApp {
     if (vcur) vis.sort((a, b) => vcur.panels.indexOf(a.dataset.panel) - vcur.panels.indexOf(b.dataset.panel));
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem("orbit_layout_v2") || "{}"); } catch (_) {}
+    /* 2026-11-09: the official default Desk keeps the operator-approved proportions
+       (Agents 25 · Jobs 15 · Org chart 36 · Constellation 24). Both earlier defaults —
+       the "agents ≥ 40%" bias and the one-day equal split — wrote THEIR ratios into
+       this store, so an inherited shape survived the rule change. Drop the saved desk
+       ratios ONCE (one flag, not per view) and WRITE the trimmed store back, so the
+       official default applies; the operator's own drags still save. The eq_v1 flag
+       of the equal day is dead weight — remove it too. */
+    if (!localStorage.getItem("orbit_desk_def_v1")){
+      Object.keys(saved).forEach(k => { if (k.indexOf("vrat:view:v-desk:") === 0) delete saved[k]; });
+      try { localStorage.removeItem("orbit_desk_eq_v1");
+        localStorage.setItem("orbit_desk_def_v1", "1");
+        localStorage.setItem("orbit_layout_v2", JSON.stringify(saved)); } catch (_) {}
+    }
     /* 2026-11-08: a column below 5% is not a layout — it is a panel squeezed by ratios
        that were saved for a DIFFERENT panel list (see `_dropRatios`). Drop the view's
        shape so every column shares the row again. */
@@ -3988,17 +4001,12 @@ class OrbitApp {
       // (measured: 16.6 + 15.7 + 18.3 + 83.3 = 133.8%), so it is corrupt, not a
       // shape anybody chose — fall back to equal shares instead of reproducing
       // it. A valid set is kept as it is.
-      let ratios = rowPanels.map((p, c) => this._vcolRatio(saved, r, c, rowPanels.length));
+      let ratios = rowPanels.map((p, c) => this._vcolRatio(saved, r, c, rowPanels));
       const rsum = ratios.reduce((a, b) => a + b, 0);
-      if (rsum < 0.9 || rsum > 1.1) ratios = rowPanels.map(() => 1 / rowPanels.length);
-      const ai = rowPanels.findIndex(p => p.dataset.panel === "agents");
-      const target = rowPanels.length > 2 ? 0.4 : 0.58;
-      if (ai >= 0 && rowPanels.length > 1 && ratios[ai] < target) {
-        const others = ratios.reduce((sum, value, c) => sum + (c === ai ? 0 : value), 0) || 1;
-        ratios = ratios.map((value, c) => c === ai ? target : value * (1 - target) / others);
-        rowPanels.forEach((_, c) => { saved["vrat:" + this.view + ":" + r + ":" + c] = ratios[c]; });
-        try { localStorage.setItem("orbit_layout_v2", JSON.stringify(saved)); } catch (_) {}
-      }
+      if (rsum < 0.9 || rsum > 1.1) ratios = this._deskDefault(rowPanels);
+      // 2026-11-09 (operator, with screenshot): the fallback shape of the official
+      // Desk is the operator-approved proportions (_deskDefault) — not 1/n and not
+      // the old "agents ≥ 40%" bias; the operator's own drags still save their ratios.
       rowPanels.forEach((p, c) => {
         if (!p._vmark){
           p._vmark = document.createComment("vslot:" + (p.dataset.panel || ""));
@@ -4098,9 +4106,25 @@ class OrbitApp {
       });
     }
   }
-  _vcolRatio(saved, r, c, n){
+  /* 2026-11-09 (operator, with screenshot: "queste devono essere il layout della desk
+     view ufficiale di default … con queste proporzioni di width tra le 4 panel"): the
+     official default Desk keeps THESE proportions — Agents 25 · Jobs 15 · Org chart 36 ·
+     Constellation 24 — measured off the operator's screenshot (the dragged shape the
+     operator approved; a board needs a wide Org chart and a slim Jobs rail). It is the
+     FALLBACK only: a saved drag always wins, any other row shape or view keeps the
+     equal share 1/n. The previous defaults — the "agents ≥ 40%" bias (809e302) and the
+     one-day equal split — are both gone. */
+  _deskDefault(rowPanels){
+    if (rowPanels.length === 4 &&
+        rowPanels.map(p => p.dataset.panel).join(",") === "agents,jobs,org,const"){
+      return [0.25, 0.15, 0.36, 0.24];
+    }
+    return rowPanels.map(() => 1 / rowPanels.length);
+  }
+  _vcolRatio(saved, r, c, rowPanels){
     const v = saved["vrat:" + this.view + ":" + r + ":" + c];
-    return (typeof v === "number" && v > 0 && v < 1) ? v : 1 / n;
+    if (typeof v === "number" && v > 0 && v < 1) return v;
+    return this._deskDefault(rowPanels)[c];
   }
   _saveRowRatios(r, rowPanels, row){
     try {

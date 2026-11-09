@@ -50,8 +50,9 @@ check("A1 view columns are sized with GROW factors",
 check("A2 no percentage basis is left in the view layout",
       '"0 0 " + (this._vcolRatio' not in ORBIT
       and 'p.style.flex = "0 0 "' not in ORBIT)
-check("C2 a corrupt saved set (old drag math, sum != 1) falls back to equal shares",
-      "if (rsum < 0.9 || rsum > 1.1) ratios = rowPanels.map(() => 1 / rowPanels.length);" in ORBIT)
+check("C2 a corrupt saved set (old drag math, sum != 1) falls back to the default shape "
+      "(official desk proportions on the desk row, equal shares elsewhere)",
+      "if (rsum < 0.9 || rsum > 1.1) ratios = this._deskDefault(rowPanels);" in ORBIT)
 check("B1 a drag rewrites the two dragged panels in pixels",
       "A.style.flex = a + \" 1 0\";" in ORBIT and "B.style.flex = b + \" 1 0\";" in ORBIT)
 check("B2 the untouched panels freeze at their current width during a drag",

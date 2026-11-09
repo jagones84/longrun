@@ -30,7 +30,11 @@ MAX_PANELS = 6
 MAX_NAME = 40
 MAX_ID = 60
 
-DEFAULT_VIEW = {"id": "v-desk", "name": "Desk", "panels": ["agents", "jobs", "org"]}
+#: 2026-11-09 (operator): the official default Desk is FOUR equal-width panels —
+#: Agents | Jobs | Org chart | Constellation in one row. The client already upgrades
+#: the old three-panel seed (`loadViews` / `hydrateViews`); the server seed matches
+#: so a fresh install never draws the 3-panel desk.
+DEFAULT_VIEW = {"id": "v-desk", "name": "Desk", "panels": ["agents", "jobs", "org", "const"]}
 
 
 def _empty():
