@@ -75,7 +75,7 @@ for _p in ["agents", "routines", "jobs", "org", "const", "feed"]:
 check("C7 create/automate controls survive",
       all(_id in ORBIT for _id in (
           'id="agNewBtn"', 'id="tmNewBtn"', 'id="jobCreate"', 'id="rtCreate"',
-          'id="lraAutoRun"', 'id="orgFit"', 'id="constAll"')))
+          'id="lraAutoRun"', 'id="orgFit"', 'id="constMode"')))
 check("C8 team bulk + job bridges survive",
       "openTeamMenu" in ORBIT and "teamBulk" in ORBIT
       and "focusJob" in ORBIT and "longrun-focus-job" in ORBIT

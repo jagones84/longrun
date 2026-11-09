@@ -201,6 +201,19 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* one control height in this bar: the ✨ stack keeps 28px too, so the row has no
      stray 2px step between the create buttons and the automation glyph. */
   .toolbar.ag-bar>.stack>.btn{height:28px;min-height:28px}
+  /* 2026-11-09 (operator: "squeeze jobs → make the autogenerate icon disappear"):
+     when a column is dragged narrow the ✨ Architect call is the first thing to go —
+     container queries remove it CLEANLY below the threshold instead of clipping it
+     half-drawn at the panel edge, and the labelled controls keep the room. The
+     controls and their wiring are unchanged (v772 / v881 still match the markup). */
+  .panel[data-panel="agents"]{container-type:inline-size}
+  .panel[data-panel="jobs"]{container-type:inline-size}
+  .panel[data-panel="routines"]{container-type:inline-size}
+  @container (max-width: 339px){ .toolbar.ag-bar>.stack{display:none} }
+  @container (max-width: 299px){
+    [data-genfield="job.goal"], [data-genstatus="job.goal"],
+    [data-genfield="routine.goal"], [data-genstatus="routine.goal"]{display:none}
+  }
   /* the "AI" provenance badge: this prompt was written by Architect, not typed
      by the operator. Reads the one automation ledger (see agent/automation_log.py). */
   /* v895 (operator: "the AI made shall be put with a symbol"): a glyph, not a boxed
@@ -227,6 +240,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .panel > h2 .btn.mini{height:24px;min-height:24px;padding:0 7px;border-radius:7px;font-size:11px;
     border-color:transparent;background:transparent}
   .panel > h2 .btn.mini:hover{background:var(--hover);color:var(--txt)}
+  /* 2026-11-09: the constellation scope is ONE select (was AGENT + ALL buttons) —
+     same 24px mini grammar, frameless like the header buttons it replaced. */
+  .panel > h2 select.mini{height:24px;min-height:24px;padding:0 2px;border-radius:7px;font-size:11px;
+    width:auto;background:transparent;border-color:transparent;color:var(--dim);cursor:pointer}
+  .panel > h2 select.mini:hover{background:var(--hover);color:var(--txt)}
   /* the icon cluster reads as ONE object: tight, and the view controls keep their
      hairline separator (`.vcols`). */
   .panel > h2 .ctools{display:inline-flex;align-items:center;gap:2px}
@@ -1055,12 +1073,17 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
 
     <div class="rz-cols" title="drag to resize columns"></div>
 
-    <!-- Constellation: DOCKED panel (AGENT = one agent, ALL = every agent + jobs) -->
+    <!-- Constellation: DOCKED panel (AGENT = one agent, ALL = every agent + jobs).
+         2026-11-09 (operator: the AGENT/ALL pair spent too much header width):
+         ONE scope menu — a compact select whose value IS the mode. -->
     <section class="panel cpanel" id="constPanel" data-panel="const">
       <h2>Constellation <span class="n" id="constWho">—</span>
         <span class="ctools">
-          <button class="btn ghost mini" id="constAgent">AGENT</button>
-          <button class="btn ghost mini" id="constAll">ALL</button>
+          <select class="inp mini" id="constMode" aria-label="constellation scope"
+                  title="AGENT = the focused agent's tasks · ALL = every agent with its jobs">
+            <option value="agent">AGENT</option>
+            <option value="all">ALL</option>
+          </select>
         </span></h2>
       <div class="cbody" id="constBody">
         <svg class="csvg" id="constSvg" role="img" aria-label="Dependency constellation"></svg>
@@ -2505,8 +2528,9 @@ class Constellation {
     if (typeof v === "object" && "text" in v) return String(v.text);
     try { return JSON.stringify(v); } catch (e) { return String(v); } }
   mount(){
-    $("constAgent").onclick = () => this.setMode("agent");
-    $("constAll").onclick = () => this.setMode("all");
+    // 2026-11-09: ONE scope menu (was the AGENT/ALL button pair) — the select owns
+    // the mode, setMode keeps the select in sync when code switches it.
+    $("constMode").onchange = (e) => this.setMode(e.target.value);
     $("constBody").addEventListener("click", () => this._pop());
   }
   async load(force, team){ if (team !== undefined) this._team = team;
@@ -2571,8 +2595,8 @@ class Constellation {
       if (b) this.open(b, "agent");
     }).catch(() => {});
   }
-  setMode(m){ this.mode = m; $("constAgent").classList.toggle("on", m === "agent");
-    $("constAll").classList.toggle("on", m === "all"); this.draw(); }
+  setMode(m){ this.mode = m; const s = $("constMode"); if (s && s.value !== m) s.value = m;
+    this.draw(); }
   agentBySid(sid){ return ((this.data && this.data.agents) || []).find(a => a.session === sid) || null; }
   nodesOf(sid){ return (((this.data || {}).graphs || {})[sid] || {}).nodes || []; }
   byAgent(){ const out = {};
@@ -4295,7 +4319,8 @@ function focusConstellationNode(id, tries, sid){
   if (!g && tries < 6){
     // the node may live in another agent's cluster — switch to the ALL view, retry.
     // v703: never do that when the session is known (it would show the team board).
-    if (tries === 0 && !sid){ const b = document.getElementById("constAll"); if (b) b.click(); }
+    if (tries === 0 && !sid){ const s = document.getElementById("constMode");
+      if (s){ s.value = "all"; s.dispatchEvent(new Event("change")); } }
     setTimeout(() => focusConstellationNode(key, tries + 1, sid), 500);
     return;
   }

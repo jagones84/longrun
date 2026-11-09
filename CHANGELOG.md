@@ -6,6 +6,19 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **The Constellation scope is one menu, and a squeezed column drops its ✨ first.** The deck header
+  carried two buttons (AGENT / ALL) that spent ~90px of a panel the operator keeps narrow; they are
+  ONE compact select (`#constMode`) whose value is the mode — `setMode` keeps it in sync and the
+  deep-link fallback switches it by `change` event. And when a column of the Desk is dragged narrow
+  the Architect sparkle is the first thing to go: container queries on the agents/jobs/routines
+  panels remove the ✨ cleanly below the threshold (agents < 340px, jobs/routines < 300px) instead
+  of clipping it half-drawn at the panel edge, while ＋ agent / ＋ team / ＋ job keep the room. The
+  controls and their wiring are unchanged. (Locked by re-pointed `v294`/`v617`/`v703` + `v772`/
+  `v881`/`v678`; targeted battery 24/24 green incl. the UI guard; verified live on `/orbit`: the
+  select switches agent ↔ ALL, the sparkles hide at 183/179px panels and return at 415/311px;
+  live axe: 0 violations, no static-file restart needed.)
+
 ### Added
 - **The "No team" bucket gets the team bulk menu — and a real delete-all (`v910`).** The rail's
   No-team pile (live: 103 sessions) had no bulk actions: the Control deck's kebab (JAG-482) was

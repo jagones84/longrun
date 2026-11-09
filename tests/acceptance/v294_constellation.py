@@ -5,7 +5,7 @@ Locked here:
   * `longrun.orbit.api._constellation()` aggregates agents + jobs + every agent's graph;
   * `GET /api/orbit/constellation` is registered;
   * the Orbit deck has ONE floating, NON-modal window (no backdrop), an AGENT/ALL
-    toggle, clusters per agent, and builds deep-links with session+node;
+    scope menu, clusters per agent, and builds deep-links with session+node;
   * the main WebUI honours `?session=` and `?node=`.
 
 Deterministic, no live model. Run: python3 tests/v294_constellation.py
@@ -47,7 +47,8 @@ check("NO modal backdrop / old modal gone",
       'class="modal"' not in ui and "tacModal" not in ui)
 check("page grid reorganized (AGENTS|JOB, ORG|CONSTELLATION, ROUTINES|FEED)",
       "grid2 ab" in ui and "grid2 oc" in ui and "grid2 rf" in ui)
-check("AGENT/ALL toggle", 'id="constAgent"' in ui and 'id="constAll"' in ui)
+check("AGENT/ALL is ONE scope menu (2026-11-09)", 'id="constMode"' in ui
+      and 'value="all"' in ui and 'id="constAgent"' not in ui)
 check("clusters per agent", "byAgent" in ui)
 check("directed arrows (markers)", "mJob" in ui and "marker-end" in ui)
 check("deep-link carries session+node", "session=" in ui and "node=" in ui)

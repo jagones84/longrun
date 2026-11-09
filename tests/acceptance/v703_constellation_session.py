@@ -44,7 +44,8 @@ check("B2 the node lookup is scoped by data-sid",
 check("B3 the label fallback filters on the same session",
       'if (sidEsc && el.getAttribute("data-sid") !== String(sid)) return false;' in DECK)
 check("B4 no ALL-board fallback when the session is known",
-      "if (tries === 0 && !sid){ const b = document.getElementById(\"constAll\")" in DECK)
+      'if (tries === 0 && !sid){ const s = document.getElementById("constMode")' in DECK
+      and 's.dispatchEvent(new Event("change"))' in DECK)
 
 # --- deck: a plain chat session can be shown at all -----------------------
 check("C1 the deck pins the session across its 5 s refresh",

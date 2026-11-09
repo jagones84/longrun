@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # battery_tmp.sh — the fix in flight. Overwritten every round; tests/battery.sh is the gate.
-# v924/v925/v926: the termination-truth family (truncated subjob, honest run finalize,
-# restart keeps dependents blocked) + their neighbours (SJ engine, JAG-462 finalize/abort,
-# jobs wake/dependency semantics, run termination contracts).
+# 2026-11-09 UI round: the constellation AGENT/ALL pair became ONE scope menu
+# (constMode select) and the squeezed Agents|Jobs row drops the ✨ Architect
+# autogen icon (container query). Pins re-pointed: v294, v617, v703; markup pins
+# v772/v881 and the .toolbar>.stack pin v678 re-run to prove no collateral.
 set -u
-TESTS="v924_truncated_subjob_not_dependency v925_run_graph_completion_truth v926_restart_keeps_dependents_blocked v529_session_jobs v459_jag462_sweep v289_job_ops v290_job_deps v348_job_dep_no_deadlock v901_team_jobs_for_coordinators v902_job_completion_notice v903_detached_dispatch v464_paperclip_run_outcome v590_interrupt_classify v325_phantom_run_all_paths v471_run_session_model_truth v664_run_manifest"
+TESTS="v294_constellation v617_deck_rail v703_constellation_session v772_generate_surfaces v881_control_deck_layout v678_teamorg_scope"
 cd /home/jagones/Repositories/longrun || exit 1
 fail=0
 for t in $TESTS; do
