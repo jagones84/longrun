@@ -7,6 +7,20 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's
+  screenshot set the official shape: Agents 25 · Jobs 15 · Org chart 36 · Constellation 24 — measured
+  off the screenshot (the dragged shape the operator approved; a board needs a wide Org chart and a
+  slim Jobs rail). Two earlier defaults are gone: the "agents ≥ 40%" bias (`809e302`) that forced
+  agents wider than every neighbour on every fresh desk AND wrote its ratios into the layout store so
+  the inherited shape survived, and the one-day equal split that answered it. The proportions live in
+  `_deskDefault` as the FALLBACK only — a saved drag always wins, any other view keeps 1/n — and a
+  one-shot migration (`orbit_desk_def_v1`) drops the inherited desk ratios ONCE with a real write-back
+  of the trimmed store (the first cut forgot the `setItem`, caught live: widths [751, 184, 164, 778]
+  survived a reload) and removes the dead `orbit_desk_eq_v1` flag. The default view itself is four
+  panels (Agents | Jobs | Org chart | Constellation) via `deck_views.DEFAULT_VIEW`. (Locked by
+  re-pointed `v624` B3 + `v644` C2; targeted battery 27/27 incl. the UI guard; service restarted for
+  `deck_views.py`; verified live: measured ratios 0.2504/0.1502/0.3596/0.2397 against target
+  0.25/0.15/0.36/0.24, console clean.)
 - **The ALL constellation is bands, not a pile-up (`12b72e2` round).** The operator's screenshot was
   an honest "orrore": 21 job pills squeezed onto ONE evenly spaced row overlapped into an unreadable
   sausage (~47px per pill), the subjob lane sat at a fixed y=68 so its deeper rows drew OVER the
