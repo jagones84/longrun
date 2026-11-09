@@ -201,19 +201,14 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   /* one control height in this bar: the ✨ stack keeps 28px too, so the row has no
      stray 2px step between the create buttons and the automation glyph. */
   .toolbar.ag-bar>.stack>.btn{height:28px;min-height:28px}
-  /* 2026-11-09 (operator: "squeeze jobs → make the autogenerate icon disappear"):
-     when a column is dragged narrow the ✨ Architect call is the first thing to go —
-     container queries remove it CLEANLY below the threshold instead of clipping it
-     half-drawn at the panel edge, and the labelled controls keep the room. The
-     controls and their wiring are unchanged (v772 / v881 still match the markup). */
-  .panel[data-panel="agents"]{container-type:inline-size}
-  .panel[data-panel="jobs"]{container-type:inline-size}
-  .panel[data-panel="routines"]{container-type:inline-size}
-  @container (max-width: 339px){ .toolbar.ag-bar>.stack{display:none} }
-  @container (max-width: 299px){
-    [data-genfield="job.goal"], [data-genstatus="job.goal"],
-    [data-genfield="routine.goal"], [data-genstatus="routine.goal"]{display:none}
-  }
+  /* 2026-11-09 (operator: "ho stretto e non si vede il bottone dell'icona
+     autogenerate"): the ✨ Architect call must stay VISIBLE at every width. The
+     composer rows give the room to the ASSIGNEE select instead: it flexes to the
+     leftover and shrinks first, while ＋ job / ＋ add and the ✨ keep their size —
+     they used to be pushed out of the row and clipped at the panel edge. */
+  #jobTo, #rtAgent{flex:1 1 0;min-width:0;width:auto}
+  #jobCreate, #rtCreate, [data-genfield]{flex:none}
+  [data-genstatus]{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* the "AI" provenance badge: this prompt was written by Architect, not typed
      by the operator. Reads the one automation ledger (see agent/automation_log.py). */
   /* v895 (operator: "the AI made shall be put with a symbol"): a glyph, not a boxed
