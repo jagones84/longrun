@@ -20,6 +20,7 @@ order the patterns appear. `pick()` returns None only if the roster itself is
 unreachable — callers then keep their current default behaviour.
 """
 
+import copy
 import os
 import re
 import threading
@@ -27,6 +28,7 @@ import time
 
 from longrun.tools import registry
 from longrun.util.dataio import dump_yaml as _yaml_dump, load_yaml
+from longrun.util.fswrite import write_text
 
 REPO = registry.REPO
 CONFIG_PATH = os.path.join(REPO, "config", "routing.yaml")
@@ -75,10 +77,17 @@ def _yaml_load(text):
 
 
 def load_config(reload=False):
+    """Return the routing config as a deep COPY (DR-N).
+
+    This used to hand out `_cache` itself: any caller that mutated what it
+    received silently changed the live routing for every later turn — a second
+    writer with no save, no audit row and no way to see who did it. A caller that
+    wants a change to persist passes its copy to `save_config`.
+    """
     global _cache
     with _lock:
         if _cache is not None and not reload:
-            return _cache
+            return copy.deepcopy(_cache)
         if os.path.isfile(CONFIG_PATH):
             with open(CONFIG_PATH, encoding="utf-8") as _f:
                 cfg = _yaml_load(_f.read()) or {}
@@ -86,7 +95,7 @@ def load_config(reload=False):
             cfg = dict(DEFAULT_CONFIG)
             save_config(cfg)
         _cache = cfg
-        return cfg
+        return copy.deepcopy(_cache)
 
 
 _COMMENT_ANCHOR = re.compile(r"^(\s*)([A-Za-z0-9_.-]+):")
@@ -134,6 +143,14 @@ def _preserve_comments(old_text, new_text):
 
 
 def save_config(cfg):
+    """Persist the routing config atomically, and keep a COPY as the cache (DR-N).
+
+    The write goes through `fswrite.write_text` (tmp file + `os.replace`), so an
+    interrupted save — a crash, a full disk, a kill — leaves the previous
+    `routing.yaml` readable instead of half a file the next start cannot parse.
+    The cache is a copy of the caller's dict, so a reference kept by the caller
+    cannot mutate the live config after the save.
+    """
     global _cache
     with _lock:
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
@@ -143,9 +160,8 @@ def save_config(cfg):
                 old = f.read()
         except OSError:
             old = ""
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            f.write(_preserve_comments(old, new) if old else new)
-        _cache = cfg
+        write_text(CONFIG_PATH, _preserve_comments(old, new) if old else new)
+        _cache = copy.deepcopy(cfg)
 
 
 def _roster():
