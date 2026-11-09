@@ -160,7 +160,7 @@ check("E11 the Jobs panel sorts by numeric PATH, not the trailing number",
       "const _path = s => String(s).split(\".\").slice(1)" in ORBIT
       and "Object.keys(subs).sort(_cmp)" in ORBIT)
 check("E12 the constellation offsets a nested subjob one lane lower",
-      "y: 68 + dep * 34" in ORBIT and "s.parent_sub && spos[s.parent_sub]" in ORBIT)
+      "y: subTop + (i + dep) * 30 + 12" in ORBIT and "s.parent_sub && spos[s.parent_sub]" in ORBIT)
 SETTINGS_SRC = src("src", "longrun", "core", "settings.py")
 check("E13 jobs.yaml is a Settings > Harness form with a real writer (no dead knob)",
       '"file": "jobs.yaml", "id": "jobs", "panel": "harness"' in SETTINGS_SRC

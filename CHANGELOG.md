@@ -7,6 +7,18 @@ All notable changes to Longrun are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **The ALL constellation is bands, not a pile-up (`12b72e2` round).** The operator's screenshot was
+  an honest "orrore": 21 job pills squeezed onto ONE evenly spaced row overlapped into an unreadable
+  sausage (~47px per pill), the subjob lane sat at a fixed y=68 so its deeper rows drew OVER the
+  agent boxes, empty agents were full-height boxes, and a 1040×~8000 board fitted height-first
+  rendered as a ~100px-wide microscopic strip. `_drawAll` is structured now: job SLOTS (104px) wrap
+  into rows; each job's subjobs stack in ITS OWN slot below it, one 30px lane per subjob with a
+  nested one still one lane lower (v629 kept); agent clusters start BELOW the whole subjob band, so
+  pills and boxes never overlap; a task-less agent is a compact 44px chip; and the default fit is
+  WIDTH-first — the visible window is the top slice at full scale, wheel/drag reveals the rest
+  (short graphs untouched). (Locked by `v629` E12 re-pointed + targeted battery 25/25 incl. the UI
+  guard; verified live on `/orbit` in ALL mode at 95 agents · 21 jobs · 33 subjobs: three readable
+  job rows, subjob columns under their jobs, console clean.)
 - **The Constellation scope is one menu, and the ✨ Architect call stays visible at every width.**
   The deck header carried two buttons (AGENT / ALL) that spent ~90px of a panel the operator keeps
   narrow; they are ONE compact select (`#constMode`) whose value is the mode — `setMode` keeps it in

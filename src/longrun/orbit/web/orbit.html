@@ -2663,7 +2663,15 @@ class Constellation {
     if (!this.data){ svg.innerHTML = ""; $("constDetail").textContent = "no data yet"; return; }
     const vb = (this.mode === "all") ? this._drawAll() : this._drawAgent();
     if (!vb){ svg.innerHTML = ""; return; }
-    const base = "0 0 " + vb.w + " " + vb.h;
+    // 2026-11-09: a tall board fitted HEIGHT-first became a microscopic strip (95 agents
+    // -> a 1040x~8000 viewBox in a wide panel renders ~100px wide). Fit the WIDTH at the
+    // default zoom: the visible window is the top slice at full scale and wheel/drag
+    // (JAG-424f) reveals the rest. A short graph is untouched (the clamp only shrinks).
+    let visH = vb.h;
+    const bodyEl = $("constBody");
+    if (bodyEl){ const r = bodyEl.getBoundingClientRect();
+      if (r.width > 4 && r.height > 4) visH = Math.min(visH, vb.w * r.height / r.width); }
+    const base = "0 0 " + vb.w + " " + visH;
     // JAG-424f: keep the user's zoom/pan across a plain redraw (the 5s poll) — re-fit ONLY
     // when the CONTENT box really changed (mode switch, or a different graph size).
     const prevBase = svg.__baseVB;
@@ -2864,7 +2872,39 @@ class Constellation {
     const jobs = this.data.jobs || [];
     const subs = this.data.subjobs || [];   // JAG-324: job -> subjob -> agent/todos
     const grouped = this.byAgent();
-    const PAD = 20, GAPX = 18, GAPY = 18, TOP = subs.length ? 108 : (jobs.length ? 78 : 20), TARGETW = 1000, CW = 94, RH = 52;
+    const PAD = 20, GAPX = 18, GAPY = 18, TARGETW = 1000, CW = 94, RH = 52;
+    // 2026-11-09 (operator: the ALL board was "un orrore"): 21 job pills squeezed onto
+    // ONE evenly spaced row overlapped into an unreadable sausage (47px per pill), the
+    // subjob lane sat at a fixed y=68 so its deeper rows drew OVER the agent boxes, and
+    // every task-less agent was a full-height box. The top is BANDS now:
+    //   job slots (104px) wrap into rows -> each job's subjobs stack in ITS OWN slot
+    //   (one 30px lane per subjob, a nested one still one lane lower per v629) ->
+    //   the agent clusters start BELOW the whole subjob band. Nothing overlaps.
+    // An agent with no tasks is a compact 44px chip, not a full box.
+    const SLOT = 104, JOB_ROW_H = 46;
+    const perRow = Math.max(1, Math.floor(TARGETW / SLOT));
+    const jobRow = {}, slotX = {}, jpos = {};
+    jobs.forEach((j, i) => { const r = Math.floor(i / perRow), s = i % perRow;
+      jobRow[j.id] = r; slotX[j.id] = PAD + (s + 0.5) * (TARGETW / perRow);
+      jpos[j.id] = {x: slotX[j.id], y: 30 + r * JOB_ROW_H}; });
+    const jobRows = Math.max(1, Math.ceil(jobs.length / perRow));
+    const subTop = 30 + jobRows * JOB_ROW_H + 12;
+    const spos = {}; const byJob = {}; const orphans = [];
+    subs.forEach(s => { (jobRow[s.parent] !== undefined ? (byJob[s.parent] = byJob[s.parent] || []) : orphans).push(s); });
+    // JAG-324: one pill per subjob, grouped under their job. v629: a nested subjob
+    // (J8.1.1) sits ONE LANE LOWER than its parent — nesting keeps its depth cue.
+    let bandRows = 0;
+    Object.keys(byJob).forEach(jid => { const list = byJob[jid], cx = slotX[jid];
+      list.forEach((s, i) => { const dep = Math.max(0, Number(s.depth) || 0);
+        spos[s.id] = {x: cx, y: subTop + (i + dep) * 30 + 12};
+        bandRows = Math.max(bandRows, i + dep + 1); }); });
+    // subjobs whose parent job is out of scope: their own rows under the grouped ones
+    orphans.forEach((s, i) => { const dep = Math.max(0, Number(s.depth) || 0);
+      const row = bandRows + Math.floor(i / perRow);
+      spos[s.id] = {x: PAD + ((i % perRow) + 0.5) * (TARGETW / perRow), y: subTop + (row + dep) * 30 + 12};
+      bandRows = Math.max(bandRows, row + dep + 1); });
+    const subH = subs.length ? (bandRows * 30 + 16) : 0;
+    const TOP = subs.length ? (subTop + subH + 24) : (jobs.length ? (30 + jobRows * JOB_ROW_H + 30) : 20);
     const box = {}; let x = PAD, y = TOP, rowH = 0, older = 0, prereq = 0;
     agents.forEach(a => {
       // 2026-11-08: each cluster shows that agent's CURRENT plan plus the older steps it
@@ -2874,25 +2914,14 @@ class Constellation {
       const nodes = (grouped[a.session] || []).filter(n => keep.has(n.id)).slice(0, 40);
       const sh = this._shape(nodes);
       const w = Math.max(176, 40 + Math.max(1, sh.keys.length) * CW);
-      const h = 34 + sh.maxRows * RH + 16;
+      // 2026-11-09: a task-less agent is a compact chip — a full box wasted ~100px per
+      // empty agent and the board grew rows of hollow frames.
+      const h = nodes.length ? (34 + sh.maxRows * RH + 16) : 44;
       if (x + w > PAD + TARGETW && x > PAD){ x = PAD; y += rowH + GAPY; rowH = 0; }
       box[a.session] = {x: x, y: y, w: w, h: h, nodes: nodes, sh: sh, cold: plan.cold};
       x += w + GAPX; rowH = Math.max(rowH, h);
     });
     const contentW = PAD + TARGETW + PAD, contentH = Math.max(y + rowH + PAD, TOP + 120);
-    const jpos = {}; jobs.forEach((j, i) => { jpos[j.id] = {x: (contentW / (jobs.length + 1)) * (i + 1), y: 36}; });
-    // JAG-324: subjobs (JN.j) on their own lane — one pill per subjob, grouped under
-    // their job, linked to their agent and to each other by subjob deps.
-    const spos = {}; const byJob = {};
-    subs.forEach(s => { (byJob[s.parent] = byJob[s.parent] || []).push(s); });
-    // v629: a nested subjob (J8.1.1) sits ONE LANE LOWER than its parent, so the
-    // constellation shows the ORG DEPTH instead of a flat pill row.
-    let _maxDep = 0;
-    Object.keys(byJob).forEach(jid => { const list = byJob[jid];
-      const base = jpos[jid] ? jpos[jid].x : contentW / 2;
-      list.forEach((s, i) => { const dep = Math.max(0, Number(s.depth) || 0);
-        _maxDep = Math.max(_maxDep, dep);
-        spos[s.id] = {x: base + (i - (list.length - 1) / 2) * 86, y: 68 + dep * 34}; }); });
     let body = this._defs();
     // v658: which jobs already carry a relation — the member-edge fallback below
     // is drawn ONLY for a job that has none, so no edge is ever duplicated.
@@ -2951,7 +2980,7 @@ class Constellation {
       const jids = [...new Set(nodes.map(n => n.jid).filter(Boolean))];
       const jtag = jids.length ? ' \u00b7 ' + esc(jids.join(",")) : "";
       body += '<text x="' + (b.x + 10) + '" y="' + (b.y + 18) + '" font-size="11" font-family="ui-monospace,monospace" fill="#9fe6ff">' + esc(a.id) + ' ' + esc(a.name || "") + jtag + '</text>';
-      if (!nodes.length){ body += '<text x="' + (b.x + 10) + '" y="' + (b.y + 40) + '" font-size="10" fill="#8291ad">no tasks</text>'; return; }
+      if (!nodes.length){ body += '<text x="' + (b.x + 10) + '" y="' + (b.y + 36) + '" font-size="10" fill="#8291ad">no tasks</text>'; return; }
       const sh = b.sh, innerX = b.x + 14, innerY = b.y + 32;
       const cw = (b.w - 28) / Math.max(1, sh.keys.length), ch = (b.h - 48) / sh.maxRows;
       const pos = {}; sh.keys.forEach((k, i) => { sh.cols[k].forEach((n, j) => {
@@ -2965,7 +2994,7 @@ class Constellation {
     $("constDetail").textContent = "one cluster per AGENT \u00b7 amber = JOB \u00b7 blue = SUBJOB JN.j \u2192 agent (dashed = deps/assigns)"
       + (prereq ? " \u00b7 " + prereq + " faded step(s) are prerequisites from an older plan" : "")
       + (older ? " \u00b7 " + older + " older step(s) not drawn" : "");
-    return {w: contentW, h: Math.max(contentH, TOP + 120 + _maxDep * 34), body: body};
+    return {w: contentW, h: contentH, body: body};
   }
   _wire(svg){
     svg.querySelectorAll(".cnode").forEach(gEl => {

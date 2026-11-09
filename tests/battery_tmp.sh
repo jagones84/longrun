@@ -5,7 +5,7 @@
 # autogen icon (container query). Pins re-pointed: v294, v617, v703; markup pins
 # v772/v881 and the .toolbar>.stack pin v678 re-run to prove no collateral.
 set -u
-TESTS="v294_constellation v617_deck_rail v703_constellation_session v772_generate_surfaces v881_control_deck_layout v678_teamorg_scope v891_deck_fit_and_row_menus"
+TESTS="v294_constellation v617_deck_rail v703_constellation_session v772_generate_surfaces v881_control_deck_layout v678_teamorg_scope v891_deck_fit_and_row_menus v629_ui_rail_jobs_nesting"
 cd /home/jagones/Repositories/longrun || exit 1
 fail=0
 for t in $TESTS; do
