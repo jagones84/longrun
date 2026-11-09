@@ -46,8 +46,10 @@ check("T4 backend detail() hits on bare digits too",
 
 HTML = open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8").read()
 check("T5 chips carry FULL store ids (the stripped-id bug is gone)",
-      'data-job="${_attr(_fullJ(n.jid))}"' in HTML
-      and 'data-job="${_attr(_fullJ(n.subjob))}"' in HTML
+      # v906 moved both chips into ONE `_nodeIds` builder, so the id is normalised by
+      # `_fullJ` at the single place the chip is drawn — same contract, one writer.
+      'data-job="${_attr(_fullJ(id))}"' in HTML
+      and "chip(_nodeJob(n), " in HTML and "chip(_nodeSub(n), " in HTML
       and 'replace(/^J/i, ""))" style=' not in HTML, "data-job")
 check("T6 _showJobDetail splits parent/subjob and renders the subjob row",
       "const parent = dot < 0 ? full : full.slice(0, dot)" in HTML
