@@ -70,17 +70,18 @@ check("A5 the bar keeps the theme token for its own background",
 # foot (level with the send button), so the static rail markup carries one more SVG.
 # 2026-11-03 (later): 11 — the editor toggle (v779) plus the two pending-state controls
 # (v780: changes / approvals), all wearing exactly this anatomy.
-check("B1 every rail control is an SVG (11 controls + the 3 ⋯ rows)",
+check("B1 every rail control is an SVG (9 session/view controls + the 3 menu rows)",
       # 2026-11-07 (operator): the ⋯ and its menu moved INTO the rail's foot (the gear
-      # left it for the topbar): 10 session/view controls + ⋯ + 3 menu rows = 14, and
-      # every one of them is an SVG (the menu's rows used to carry a colour emoji).
-      TOOLSBAR.count("<button") == 14 and TOOLSBAR.count("<svg") == 14)
+      # left it for the topbar): 6 session controls + 3 tree controls + ⋯ + 3 menu
+      # rows = 13, and every one of them is an SVG (the menu's rows used to carry a
+      # colour emoji).
+      TOOLSBAR.count("<button") == 13 and TOOLSBAR.count("<svg") == 13)
 check("B2 no colour emoji and no box-drawing glyph left in the rail",
       not re.search("[📖🎯🧠🏷⊞⊟↻]", TOOLSBAR), "")
 check("B3 the painted diagonal bar is gone (the icon carries the meaning)",
       "#toolsBar button.slashed" not in ui and 'class="ghost slashed"' not in ui)
 check("B4 each rail control keeps its accessible name",
-      len(re.findall(r"<button[^>]*>", TOOLSBAR)) == 14
+      len(re.findall(r"<button[^>]*>", TOOLSBAR)) == 13
       and all("aria-label=" in b and "title=" in b
               for b in re.findall(r"<button[^>]*>", TOOLSBAR)))
 

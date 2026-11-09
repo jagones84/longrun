@@ -81,7 +81,10 @@ check("B2 the record is ONE disclosure a single word opens",
       and ".replog>summary{cursor:pointer" in ORBIT)
 check("B3 the page is a column and the agent grid takes the free height",
       "body{display:flex;flex-direction:column;height:100%}" in ORBIT
-      and ".wrap.deck{flex-direction:row;gap:8px;align-items:stretch;flex:1 1 auto;min-height:0}" in ORBIT
+      # v891 added the clipping half: the deck body clips instead of producing a
+      # page-level horizontal scrollbar (the row spread is unchanged).
+      and ".wrap.deck{flex-direction:row;gap:8px;align-items:stretch;flex:1 1 auto;min-height:0;" in ORBIT
+      and "min-width:0;overflow-x:hidden;overflow-y:auto}" in ORBIT
       and ".grid2.ab{flex:1 1 auto;min-height:0}" in ORBIT)
 check("B4 the bar stops waiting instead of spinning forever",
       "Promise.race([" in ORBIT and "no answer after 4 minutes" in ORBIT)

@@ -98,9 +98,9 @@ check("E1 the rail markup keeps its named blocks",
       '<section class="rail">' in UI and 'class="rail-head"' in UI
       and 'class="rail-tools" role="toolbar"' in UI and 'class="card rail-list"' in UI
       and '<h2>Sessions<span class="srail-tools">' in UI)
-check("E2 the inspector bulk controls survive",
-      'id="inspCollapseAll"' in UI and 'id="inspExpandAll"' in UI
-      and '$("inspCollapseAll").onclick = () => _setAllInspector(false);' in UI)
+check("E2 the inspector bulk control survives as ONE stateful toggle",
+      'id="inspToggleAll"' in UI
+      and '$("inspToggleAll").onclick = () => _setAllInspector(!_anyInspOpen());' in UI)
 check("E3 the pinned flex declaration of .insp-hd is untouched",
       "#inspector .insp-hd { display: flex; align-items: center; flex-wrap: wrap;" in UI)
 

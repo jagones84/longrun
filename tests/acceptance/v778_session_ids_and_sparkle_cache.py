@@ -82,8 +82,9 @@ check("C5 the id cell falls back to that id instead of printing a dash",
 check("C6 the dash now means 'no record at all', not 'not designated'",
       'title="no agent record for this session"' in DECK
       and "plain session — not designated as an agent yet" not in DECK)
-check("C7 the ↗ opener and the AI badge follow the same id",
-      "const goBtn = aid" in DECK and "(aid && this.written)" in DECK)
+check("C7 the ⋮ opener and the AI badge follow the same id",
+      'data-aid="' in DECK and 'esc(aid || "")' in DECK
+      and "(aid && this.written)" in DECK)
 check("C8 the shared opener resolves an identity-only row",
       "x.id === aid || x.agent === aid" in DECK)
 

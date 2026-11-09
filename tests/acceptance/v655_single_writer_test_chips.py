@@ -58,7 +58,7 @@ check("A1 the model of summarizer/longrun_agent is declared picker-owned",
       # the const lives above the table builder, so it is checked in the whole UI
       "const RT_PICKER_OWNED = {" in UI
       and 'summarizer: "set with the Compaction model picker above' in UI
-      and 'longrun_agent: "set with the longrunAgent picker above' in UI)
+      and 'longrun_agent: "set with the Architect picker above' in UI)
 check("A2 that cell is a DISABLED input that still carries data-path",
       # a bare span would make the save round-trip the value as EMPTY — the
       # disabled input keeps the value and is un-editable.

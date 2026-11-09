@@ -47,15 +47,16 @@ dock_max = re.search(
     flags=re.DOTALL,
 )
 
-check("A inspector header has accessible collapse and expand controls",
+# v879 (operator): "+ / − button to expand collapse why shall be two icons? one is
+# enough that changes appearance based on expand/collapsed state" — the pair became
+# ONE toggle whose accessible name follows the state it would produce.
+check("A inspector header has ONE bulk control that names both states",
       bool(toolbar)
-      and 'id="inspCollapseAll"' in toolbar.group(1)
-      and 'id="inspExpandAll"' in toolbar.group(1)
-      and 'aria-label="collapse all inspector sections"' in toolbar.group(1)
-      and 'aria-label="expand all inspector sections"' in toolbar.group(1))
-check("B both controls call the shared all-sections handler",
-      '$("inspCollapseAll").onclick = () => _setAllInspector(false);' in HTML
-      and '$("inspExpandAll").onclick = () => _setAllInspector(true);' in HTML)
+      and 'id="inspToggleAll"' in toolbar.group(1)
+      and 'aria-label="expand all inspector sections"' in toolbar.group(1)
+      and 'const l = isOpen ? "collapse all inspector sections" : "expand all inspector sections";' in HTML)
+check("B the control flips the shared all-sections handler",
+      '$("inspToggleAll").onclick = () => _setAllInspector(!_anyInspOpen());' in HTML)
 check("C bulk toggle updates every inspector accordion and persists its state",
       bool(bulk)
       # RH-1: the sections live inside `#inspector .insp-list` (the scrolling list

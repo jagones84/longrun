@@ -61,8 +61,8 @@ check("B3 no percentage basis is written by the drag either",
 check("C1 ratios are shares of the columns' own total (they sum to 1)",
       "const total = widths.reduce((a, b) => a + b, 0) || 1;" in ORBIT
       and "widths[c] / total" in ORBIT)
-check("D1 a column keeps a readable minimum width",
-      "main.view-cols .vrow > section.panel[data-panel]{min-width:180px;min-height:0}" in ORBIT)
+check("D1 a column may shrink to its share, so the last one never passes the right border",
+      "main.view-cols .vrow > section.panel[data-panel]{min-width:0;max-width:100%;min-height:0}" in ORBIT)
 check("D2 the rows still fit, so that minimum can never overflow the deck",
       'const minCol = 280;' in ORBIT
       and "Math.floor(Math.max(minCol, deck.clientWidth - 12) / minCol)" in ORBIT)
