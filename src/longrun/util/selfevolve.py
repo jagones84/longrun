@@ -769,23 +769,31 @@ def _skill_cost(proposal_dir):
     return {"tokens": max(1, total // 4), "bytes": total}
 
 
-def _installed_cost_median(category="created", skills_dir=None):
-    """Median prompt cost of the installed auto artifacts (0 with < 3 samples)."""
+def _installed_cost_baseline(category="created", skills_dir=None):
+    """(median prompt tokens | None, samples) for one category's installed set.
+
+    DR-M: this used to be `_installed_cost_median`, which answered **0** with
+    fewer than three samples — and `promote` read 0 as falsy, so a category
+    holding one or two artifacts had NO cost gate at all. One or two samples are
+    a weak baseline, not the absence of one; `None` means nothing is installed,
+    which is the only case where the gate genuinely cannot judge. Returning the
+    pair keeps the listing to one pass (no second truth).
+    """
     root = os.path.join(skills_dir or os.environ.get("LONGRUN_SKILLS_DIR")
                         or os.path.join(REPO, "skills"), str(category or "created"))
     try:
         names = sorted(os.listdir(root))
     except OSError:
-        return 0
+        return None, 0
     costs = []
     for name in names:
         cost = _skill_cost(os.path.join(root, name))
         if cost["bytes"]:
             costs.append(cost["tokens"])
-    if len(costs) < 3:
-        return 0
+    if not costs:
+        return None, 0
     costs.sort()
-    return costs[len(costs) // 2]
+    return costs[len(costs) // 2], len(costs)
 
 
 def verify(proposal_dir, runner=None, c=None, cases=None, baseline=None,
@@ -1056,21 +1064,37 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     # turn, so a candidate that is an OUTLIER against the installed set may not
     # be promoted automatically — the operator can still release it.
     _cost = int((_verify.get("cost_tokens") or {}).get("tokens") or 0)
-    _median = _installed_cost_median(str(c.get("category") or "created"), skills_dir)
+    _median, _samples = _installed_cost_baseline(str(c.get("category") or "created"),
+                                                 skills_dir)
+    # DR-M: the basis is WRITTEN on the artifact, so a promotion never hides which
+    # of these three happened. `None` is not "cheap": it is "nothing installed to
+    # compare against", and refusing it would make the first install — the one
+    # that CREATES the baseline — impossible.
+    _cost_basis = ("no-baseline" if _median is None
+                   else ("weak-median(n=%d)" % _samples if _samples < 3
+                         else "median(n=%d)" % _samples))
     try:
         _ratio = float(c.get("max_cost_ratio") or 2.0)
     except (TypeError, ValueError):
         _ratio = 2.0
-    if _median and _cost > _median * _ratio and not human:
-        return {"ok": False, "cost_tokens": _cost, "median_tokens": _median,
-                "error": "cost gate: %d prompt tokens against a %d-token median "
-                         "across installed artifacts (> x%.1f) — release it as the "
-                         "operator if it is worth the prompt budget"
-                         % (_cost, _median, _ratio)}
+    _skipped = []
+    if _median is not None and _cost > _median * _ratio:
+        if human:
+            _skipped.append("cost")
+        else:
+            return {"ok": False, "cost_tokens": _cost, "median_tokens": _median,
+                    "cost_basis": _cost_basis,
+                    "error": "cost gate: %d prompt tokens against a %d-token median "
+                             "across installed artifacts (> x%.1f) — release it as the "
+                             "operator if it is worth the prompt budget"
+                             % (_cost, _median, _ratio)}
     # RDD point 2: sealed held-out gate (fail-closed). The local verifier
     # (check.py) is NOT enough: promotion requires the external judge suite.
     from longrun.plan import heldout
-    if heldout.require_enabled() and not human:
+    _heldout_required = heldout.require_enabled()
+    if _heldout_required and human:
+        _skipped.append("heldout")
+    if _heldout_required and not human:
         g = heldout.gate(proposal_dir, c=c)
         if not g.get("green"):
             why = str(g.get("reason") or "")
@@ -1163,10 +1187,13 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     prop["status"] = "archived"
     prop["evidence"] = evidence
     prop["cost_tokens"] = _cost
+    # DR-M: which bar judged the cost, and which bars an operator release skipped.
+    prop["cost_basis"] = _cost_basis
     if human:
         prop["released_by"] = "operator"
         prop["released_ts"] = round(time.time(), 3)
         prop["released_reason"] = _rel_reason[:300]
+        prop["release_skipped"] = list(_skipped)
     _under_repo = os.path.abspath(target).startswith(os.path.abspath(REPO) + os.sep)
     prop["archived_to"] = (os.path.relpath(target, REPO) if _under_repo else target)
     if superseded:
@@ -1192,7 +1219,7 @@ def promote(proposal_dir, skills_dir=None, c=None, human=False, purpose="",
     attr = attribute(target, runner=runner, c=c)
     out = {"ok": True, "name": name, "path": target,
            "rel": prop["archived_to"], "evidence": evidence,
-           "cost_tokens": _cost, "attribution": attr}
+           "cost_tokens": _cost, "cost_basis": _cost_basis, "attribution": attr}
     if superseded:
         out["superseded"] = superseded
     return out

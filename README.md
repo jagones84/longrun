@@ -481,7 +481,7 @@ proven on its own tests first (`tests/battery_tmp.sh`, rewritten per fix); the f
 suite runs on request. The fast run skips six heavy indexing and
 document-ingestion tests:
 
-The suite is 597/597 tests — every acceptance file under `tests/acceptance/` is
+The suite is 599/599 tests — every acceptance file under `tests/acceptance/` is
 counted, and the badge above is the same number (one truth, pinned by `v354`).
 
 ```bash
