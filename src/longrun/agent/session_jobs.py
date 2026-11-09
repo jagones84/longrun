@@ -341,6 +341,15 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
             ok = False
             res = dict(res, error="no progress: the subagent spun and produced no "
                                   "usable output (keep child goals short and literal)")
+        # v924: ANY non-completed termination is the same defect family. A child
+        # stopped at max_steps (or aborted) ends status "done" with a sentinel
+        # summary, which used to be handed to every dependent as if it were input
+        # (live 2026-11-09: a dependent worked "based on" a truncation). Record it
+        # as a FAILURE so the dependency rule blocks the dependents loudly.
+        if ok and str((res.get("result") or {}).get("termination") or "") not in ("", "completed"):
+            ok = False
+            res = dict(res, error="subagent truncated: termination=%s"
+                                  % (res.get("result") or {}).get("termination"))
         with _LOCK:
             doc = _load(sid)
             spec = doc["subjobs"][sub_id]

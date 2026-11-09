@@ -1112,14 +1112,19 @@ def enforce_single_doing(graph, keep_id=None):
     return demoted
 
 
-def finalize(graph, evidence, only_open=True):
-    """At run end, close every open node with evidence (acceptance: all done)."""
+def finalize(graph, evidence, only_open=True, status="done"):
+    """At run end, close every open node with evidence (acceptance: all done).
+
+    v925: `status` defaults to the historical `done`, but a run that did NOT
+    complete closes its open nodes `cancelled` instead — closing them `done`
+    with fabricated completion evidence overstated the run.
+    """
     closed = []
     for n in list(graph.get("nodes", [])):
         if only_open and n.get("status") not in OPEN_STATUSES:
             continue
         try:
-            closed.append(update_node(graph, n["id"], status="done",
+            closed.append(update_node(graph, n["id"], status=status,
                                       evidence=evidence, source="run-finalize"))
         except (KeyError, ValueError):
             continue

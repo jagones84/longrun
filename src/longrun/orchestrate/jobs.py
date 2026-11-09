@@ -34,6 +34,13 @@ _LOCK = threading.RLock()
 JOBS_FILE = os.environ.get("LONGRUN_JOBS_FILE") or os.path.join(
     paths.DATA_DIR, "jobs.json")
 
+# v926: the marker the boot sweep (`reconcile`) leaves on a job the previous
+# process was still running. NOT a failure: that work may be re-armed and
+# complete, so a blocked dependent of such a job stays `blocked` instead of
+# being failed with a false "dependency failed" (observed on every restart,
+# 2026-11-09: J25 <- J24 and J35 <- J34, both blockers later done).
+INTERRUPTED_BY_RESTART = "interrupted by restart"
+
 # v629: team-job policy (config/jobs.yaml). Missing file / bad value = shipped
 # defaults, so an old checkout keeps working untouched.
 JOBS_YAML = os.path.join(REPO, "config", "jobs.yaml")
@@ -692,11 +699,23 @@ class JobRegistry:
         (open loop). Terminal-and-not-done must fail the dependent loudly.
         A blocker that no longer EXISTS is satisfied (JAG-314), never a wedge.
         JAG-533/SJ: the evaluation itself is the shared ``util.dag`` helper.
+        v926: a blocker carrying the boot sweep's ``interrupted by restart``
+        marker is NOT failed work — it may be re-armed and complete. Such a
+        blocker keeps the dependent `blocked` (never a false "dependency
+        failed"); only a blocker that genuinely ended `error` fails it.
         """
-        status = {k: (v or {}).get("status")
-                  for k, v in (d.get("jobs") or {}).items()}
-        return _dag_blockers_state(job.get("blocked_by") or [], status,
-                                   missing_ok=True)
+        jobs = d.get("jobs") or {}
+        blocked_by = job.get("blocked_by") or []
+        interrupted = [b for b in blocked_by
+                       if str((jobs.get(b) or {}).get("error") or "")
+                       == INTERRUPTED_BY_RESTART]
+        status = {k: (v or {}).get("status") for k, v in jobs.items()}
+        all_done, failed = _dag_blockers_state(
+            [b for b in blocked_by if b not in interrupted], status,
+            missing_ok=True)
+        if interrupted:
+            all_done = False  # waiting on a blocker that may still finish
+        return all_done, failed
 
     def _update(self, jid, fn):
         with _LOCK:
@@ -862,25 +881,27 @@ class JobRegistry:
                 if job.get("status") != "running":
                     continue
                 job["status"] = "error"
-                job["error"] = "interrupted by restart"
+                job["error"] = INTERRUPTED_BY_RESTART
                 job["ended"] = round(time.time(), 3)
                 for run in (job.get("runs") or {}).values():
                     if str((run or {}).get("state")) == "running":
                         run.update({"state": "failed",
-                                    "error": "interrupted by restart",
+                                    "error": INTERRUPTED_BY_RESTART,
                                     "ended": job["ended"]})
                 for sub in (job.get("subjobs") or {}).values():
                     if str((sub or {}).get("status")) in ("running", "retrying"):
                         sub.update({"status": "failed",
-                                    "error": "interrupted by restart",
+                                    "error": INTERRUPTED_BY_RESTART,
                                     "ended": job["ended"]})
                 n += 1
             if n:
                 _save(d)
         if n:
-            # JAG-348: an interrupted blocker now ends `error` (not `running`);
-            # its dependents must be swept (failed) instead of waiting forever
-            # for a job that will never finish.
+            # JAG-348: the sweep must re-evaluate the blocked dependents. Since
+            # v926 a blocker interrupted by the restart is NOT a failure:
+            # _blockers_state keeps such dependents `blocked` (the job may be
+            # re-armed and finish), while genuinely failed blockers still fail
+            # their dependents loudly.
             self.wake()
         return n
 
@@ -891,6 +912,8 @@ class JobRegistry:
         is released (status -> created) and dispatched. A blocked job with a FAILED
         blocker can never resolve, so it is failed too (``dependency failed``) —
         mirroring paperclip's "cancelled blockers never unblock" without a deadlock.
+        A blocker that only carries the boot sweep's ``interrupted by restart``
+        marker (v926) is NOT failed work: its dependent stays blocked.
 
         `only` (v901): restrict the sweep to these job ids — a coordinator's
         `job.wake` releases its own blocked jobs, never a sibling's.

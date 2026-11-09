@@ -176,7 +176,10 @@ check("I3 deleting a session drops its browser-side caches",
 _ag = _read("src/longrun/agent/agent.py")
 check("J1 an ABORTED run is never finalized into fake 'done'",
       "if not aborted:" in _ag
-      and "finish_run_graph(trace.id, None, goal, on_event=on_event)" in _ag)
+      # v925 threads the run's real termination into the call; abort still
+      # finalizes NOTHING (the guard is unchanged, and finish_run_graph now
+      # also refuses an `aborted` termination from the api_v02 loop).
+      and "finish_run_graph(trace.id, None, goal, on_event=on_event, termination=term)" in _ag)
 check("J2 the close-todos override is skipped for plan_only/autonomous turns",
       "not plan_only and not autonomous" in _ag)
 check("J3 the `self` report exposes the EFFECTIVE MCP clients",

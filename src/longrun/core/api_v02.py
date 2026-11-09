@@ -1204,7 +1204,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
             if len(hist) > 30:
                 del hist[:-30]
         else:
-            summary = "stopped at max_steps=%d; see trace" % max_steps
+            summary = max_steps_summary(max_steps, st.id)
             st.summary, st.status, st.termination = summary, "done", "max_steps"
             on_event("agent.finish", run=st.id, summary=summary,
                      termination=st.termination)
@@ -1226,6 +1226,17 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     return _result(st, goal, model)
 
 
+def max_steps_summary(max_steps, run_id):
+    """The summary a step-budget-exhausted run leaves behind (v924).
+
+    A dependent that ever sees this text must be able to FIND the evidence:
+    name the run's graph file instead of an unresolvable "see trace". ONE
+    builder for BOTH run loops (agent.agent_run and the loop below) so the
+    locator shape cannot drift.
+    """
+    return "stopped at max_steps=%d; trace: data/graphs/%s.json" % (max_steps, run_id)
+
+
 def _result(st, goal, model):
     if st.status in ("running", "paused", "aborting"):
         st.status = "done"
@@ -1236,7 +1247,7 @@ def _result(st, goal, model):
             st.status, "error")
     # v0.6: run end — close every still-open graph node with evidence.
     try:
-        _srv().finish_run_graph(st.id, None, goal)
+        _srv().finish_run_graph(st.id, None, goal, termination=st.termination or "")
     except Exception:  # noqa: BLE001
         pass
     try:  # JAG-69: deterministic Stop hooks at the end of the run

@@ -613,13 +613,29 @@ def start_run_graph(run_id, goal, session_id=None, model=None, on_event=None,
         return taskgraph.ensure(run_id, session_id, goal), []
 
 
-def finish_run_graph(run_id, session_id, goal, on_event=None):
-    """Run end — close every still-open node with evidence (acceptance: all done)."""
+def finish_run_graph(run_id, session_id, goal, on_event=None, termination=""):
+    """Run end — close every still-open node with evidence.
+
+    v925: only a run that COMPLETED may close its open nodes as `done`. A run
+    that ended at `max_steps` / crashed (`error`) closes them `cancelled` with
+    honest evidence — "run completed" was a fabricated claim for those endings
+    (the run record said `termination: max_steps` while the plan said all done).
+    """
     try:
         g = taskgraph.load(run_id)
         if not g or not g.get("nodes"):
             return None
-        closed = taskgraph.finalize(g, "run %s completed: %s" % (run_id, str(goal)[:200]))
+        term = str(termination or "").strip()
+        if term == "aborted":
+            # JAG-462 (letter, now BOTH loops): an operator-aborted run is
+            # finalized by NOBODY — its open nodes stay open (a resume expects
+            # them), unlike max_steps/error which are closed `cancelled`.
+            return None
+        if term and term != "completed":
+            closed = taskgraph.finalize(g, "run ended at %s — not completed" % term,
+                                        status="cancelled")
+        else:
+            closed = taskgraph.finalize(g, "run %s completed: %s" % (run_id, str(goal)[:200]))
         payload = {"run": run_id, "session": session_id,
                    "nodes": len(g.get("nodes", [])), "closed": len(closed)}
         (on_event or publish)("graph.finalized", **payload)
@@ -6731,6 +6747,7 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
 
     actions = []
     aborted = False
+    term = "completed"  # v925: how the run ACTUALLY ended (finish / max_steps / error)
     rb = rules_context(ws=workspace)  # JAG-114/115: the agent loop honours the same rules
     mx = matrix_context(ws=workspace)  # JAG-497: …and the Matrix dynamic rules too
     from longrun.model import prompt as prompt_mod  # JAG-128A: prompt-map + capability in the agent loop too
@@ -6770,11 +6787,13 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
             on_event("agent.observation", i=i + 1, observation=obs)
             actions.append({"i": i + 1, "thought": thought, "action": action, "observation": obs})
         else:
-            summary = "stopped at max_steps=%d; see trace" % max_steps
-            on_event("agent.finish", summary=summary)
+            summary = api_v02.max_steps_summary(max_steps, trace.id)
+            term = "max_steps"
+            on_event("agent.finish", summary=summary, termination=term)
             actions.append({"action": "finish", "summary": summary})
             st.status = "done"
             st.summary = summary
+            st.termination = term
     except api_v02.AbortRun:
         aborted = True
         summary = "aborted by operator"
@@ -6788,6 +6807,7 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
                 # forever (the WebUI/control deck then showed a stuck run until
                 # manual /api/agent/control). Always finalize the RunState.
         aborted = False
+        term = "error"
         summary = "agent crashed: %s" % _exc
         try:
             publish("graph.error", run=trace.id, kind="agent.crash", error=str(_exc))
@@ -6797,13 +6817,14 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
         actions.append({"action": "finish", "summary": summary})
         st.status = "error"
         st.summary = summary
+        st.termination = term
     st.trace = actions
     # JAG-462: an ABORTED run must NOT be "finalized". `finish_run_graph` closes every
     # OPEN node as `done` with a fabricated "run completed" evidence string — so
     # pressing Stop marked the remaining work as DONE with a fake claim. Only a run
     # that actually reached its end may finalize.
     if not aborted:
-        finish_run_graph(trace.id, None, goal, on_event=on_event)
+        finish_run_graph(trace.id, None, goal, on_event=on_event, termination=term)
     trace.finish("aborted" if aborted else "done")
     return {"goal": goal, "model": model, "trace": actions, "run_id": trace.id,
             "aborted": aborted}

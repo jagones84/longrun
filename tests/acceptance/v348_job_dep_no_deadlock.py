@@ -63,6 +63,11 @@ res = J.wake()
 check("B1 an error blocker fails the dependent too", "J4" in res.get("failed", []), str(res))
 
 # ---- C: reconcile() sweeps dependents of a restart-killed job ---------------
+# v926 revision (live 2026-11-09, J25<-J24 / J35<-J34): a restart is NOT a
+# failure of the blocker — the job may be re-armed and complete (it did, both
+# times). Failing the dependent with a false "dependency failed" was the harm;
+# the dependent now stays `blocked` and moves the moment the blocker REALLY
+# ends (wake() fires on every job end), so the no-deadlock property holds.
 jobs._save({"seq": 6, "jobs": {
     "J5": job("J5", 5, "running"),                 # killed by a hard restart
     "J6": job("J6", 6, "blocked", blocked_by=["J5"]),
@@ -71,8 +76,17 @@ n = J.reconcile()
 check("C1 reconcile marks the interrupted job error",
       n == 1 and (J.get("J5") or {}).get("status") == "error",
       "n=%s J5=%s" % (n, (J.get("J5") or {}).get("status")))
-check("C2 ...and its dependent is swept, not wedged",
-      (J.get("J6") or {}).get("status") == "error", str((J.get("J6") or {}).get("status")))
+check("C2 ...its dependent stays `blocked`, never a false 'dependency failed'",
+      (J.get("J6") or {}).get("status") == "blocked"
+      and "dependency failed" not in ((J.get("J6") or {}).get("error") or ""),
+      str((J.get("J6") or {}).get("status")))
+jobs._save({"seq": 7, "jobs": {
+    "J5": dict(job("J5", 5, "done"), error=""),
+    "J6": job("J6", 6, "blocked", blocked_by=["J5"], agents=[]),
+}})
+_rel_c3 = J.wake()
+check("C3 once the re-armed blocker really ends, the dependent moves again",
+      any(r.get("job") == "J6" for r in _rel_c3.get("released", [])), str(_rel_c3))
 
 # ---- D: a `done` blocker still releases (unchanged) -------------------------
 jobs._save({"seq": 8, "jobs": {
