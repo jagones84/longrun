@@ -159,8 +159,9 @@ check("E10 the deck payload carries parent_sub + depth",
 check("E11 the Jobs panel sorts by numeric PATH, not the trailing number",
       "const _path = s => String(s).split(\".\").slice(1)" in ORBIT
       and "Object.keys(subs).sort(_cmp)" in ORBIT)
-check("E12 the constellation offsets a nested subjob one lane lower",
-      "y: subTop + (i + dep) * 30 + 12" in ORBIT and "s.parent_sub && spos[s.parent_sub]" in ORBIT)
+check("E12 the constellation offsets a nested subjob one lane lower (ONE shared _pillLanes for both modes)",
+      "_pillLanes(jobs, subs" in ORBIT and "spos[s.id] = {x: cx, y: jobY + 42 + rr * LANE}" in ORBIT
+      and "s.parent_sub && spos[s.parent_sub]" in ORBIT)
 SETTINGS_SRC = src("src", "longrun", "core", "settings.py")
 check("E13 jobs.yaml is a Settings > Harness form with a real writer (no dead knob)",
       '"file": "jobs.yaml", "id": "jobs", "panel": "harness"' in SETTINGS_SRC

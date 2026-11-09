@@ -2664,12 +2664,14 @@ class Constellation {
     const vb = (this.mode === "all") ? this._drawAll() : this._drawAgent();
     if (!vb){ svg.innerHTML = ""; return; }
     // 2026-11-09: a tall board fitted HEIGHT-first became a microscopic strip (95 agents
-    // -> a 1040x~8000 viewBox in a wide panel renders ~100px wide). Fit the WIDTH at the
-    // default zoom: the visible window is the top slice at full scale and wheel/drag
-    // (JAG-424f) reveals the rest. A short graph is untouched (the clamp only shrinks).
+    // -> a 1040x~8000 viewBox in a wide panel renders ~100px wide). When the board is
+    // far taller than wide (1.6x), fit the WIDTH instead: the visible window is the top
+    // slice at full scale and wheel/drag (JAG-424f) reveals the rest. A compact graph —
+    // e.g. one agent's tasks under its pills — fits WHOLE: the clamp only ever shrinks
+    // the window of an extreme board, never hides a small one's content.
     let visH = vb.h;
     const bodyEl = $("constBody");
-    if (bodyEl){ const r = bodyEl.getBoundingClientRect();
+    if (vb.h > vb.w * 1.6 && bodyEl){ const r = bodyEl.getBoundingClientRect();
       if (r.width > 4 && r.height > 4) visH = Math.min(visH, vb.w * r.height / r.width); }
     const base = "0 0 " + vb.w + " " + visH;
     // JAG-424f: keep the user's zoom/pan across a plain redraw (the 5s poll) — re-fit ONLY
@@ -2805,24 +2807,23 @@ class Constellation {
     const jids = new Set(subs.map(s => s.parent)
       .concat(nodes.map(n => (n.jid ? normJ(n.jid) : ""))).filter(Boolean));
     const jobs = (((this.data || {}).jobs) || []).filter(j => jids.has(j.id));
-    const lane = subs.length ? 52 : (jobs.length ? 44 : 0);
     $("constWho").textContent = a.id + (a.name ? (" " + a.name) : "") + " · " + nodes.length + " task(s)"
       + (jobs.length ? (" · " + jobs.length + " job" + (jobs.length > 1 ? "s" : "")) : "")
       + (subs.length ? (" · " + subs.length + " subjob" + (subs.length > 1 ? "s" : "")) : "");
     if (!nodes.length && !subs.length){
       $("constDetail").textContent = "no task list yet for " + a.id; return null; }
     const sh = this._shape(nodes), PAD = 46, CW = 100, RH = 56;
-    const w = PAD * 2 + Math.max(1, sh.keys.length) * CW;
-    const h = PAD + lane + sh.maxRows * RH + 16;
+    // 2026-11-09 (operator: "ndovevi farlo per una sola scheda — deve essere una regola
+    // generale"): this view computed its OWN pill positions (evenly spread jobs,
+    // subjobs ±86px) — the SAME overlap the ALL board had. The lanes are ONE shared
+    // layout now (_pillLanes); the canvas widens to fit four job slots so a multi-job
+    // agent's pills wrap into rows instead of piling up.
+    const w = Math.max(PAD * 2 + Math.max(1, sh.keys.length) * CW, 480);
+    const lanes = this._pillLanes(jobs, subs, {w: w, owner: a.id, counts: true});
+    const h = lanes.top + sh.maxRows * RH + 16;
     const pos = {}; sh.keys.forEach((k, i) => { sh.cols[k].forEach((n, j) => {
-      pos[n.id] = {x: PAD + (i + 0.5) * CW, y: 46 + lane + (j + 0.5) * RH}; }); });
-    const jpos = {}; jobs.forEach((j, i) => {
-      jpos[j.id] = {x: (w / (jobs.length + 1)) * (i + 1), y: 18}; });
-    const spos = {}; const byJob = {};
-    subs.forEach(s => { (byJob[s.parent] = byJob[s.parent] || []).push(s); });
-    Object.keys(byJob).forEach(jid => { const list = byJob[jid];
-      const base = jpos[jid] ? jpos[jid].x : w / 2;
-      list.forEach((s, i) => { spos[s.id] = {x: base + (i - (list.length - 1) / 2) * 86, y: 56}; }); });
+      pos[n.id] = {x: PAD + (i + 0.5) * CW, y: lanes.top + (j + 0.5) * RH}; }); });
+    const jpos = lanes.jpos, spos = lanes.spos;
     let body = this._defs();
     // JOB contains its SUBJOBS (one solid edge each) — the job->coordinator link and
     // the subjob->agent link are carried by the labels (`·coord`, `J30.1→A179`),
@@ -2844,24 +2845,90 @@ class Constellation {
       + (jobs.length ? " · amber = JOB (·coord = this agent owns it) · blue = SUBJOB, ·N = the tasks it holds" : "")
       + " · dashed = dependency"
       + (plan.older ? " · " + plan.older + " older step(s) not drawn" : "");
-    return {w: w, h: Math.max(h, 96 + lane), body: body};
+    return {w: w, h: Math.max(h, lanes.top + 40), body: body};
   }
+  /* 2026-11-09 (operator: "ndovevi farlo per una sola scheda costellation — doveva
+     essere una regola generale"): ONE pill-lane layout for BOTH modes — the band rule
+     lives HERE, not in a view. Pills are MEASURED, never overlapped: each job owns a
+     ZONE as wide as its widest pill (the job label or any of its subjob labels — a
+     fixed 104px slot collided with the real 144px pills measured on the live board).
+     Zones wrap into rows; the job sits on top of its zone; its subjobs stack UNDER
+     that zone row (shallowest first, a nested one at least one lane below its parent's
+     depth — v629), and the NEXT zone row starts below the tallest stack — rows can
+     never run into each other. Subjobs whose parent job is out of scope get wrapped
+     rows of their own below. Returns {jpos, spos, top}: `top` is the first y BELOW
+     the whole band, so any caller places its content there. opts.w = the wrap width;
+     opts.owner/opts.counts = the SAME label options _pills draws with, so the
+     measurement matches what is rendered. */
+  _pillLanes(jobs, subs, opts){
+    opts = opts || {};
+    const W = opts.w || 1000, PAD = 20, GAP = 10, LANE = 30;
+    const jobW = j => Math.max(96, this._jobLbl(j, opts).length * 7 + 18);
+    const subW = s => Math.max(80, this._subLbl(s, opts).length * 6.6 + 16);
+    const jpos = {}, spos = {};
+    const inJobs = new Set(jobs.map(j => j.id));
+    const orphans = subs.filter(s => !inJobs.has(String(s.parent)));
+    const zones = jobs.map(j => { const list = subs.filter(s => String(s.parent) === j.id);
+      let zw = jobW(j); list.forEach(s => { zw = Math.max(zw, subW(s)); });
+      return { j: j, subs: list, w: zw + GAP }; });
+    // pass 1 — wrap the zones into rows
+    const rows = []; let cur = null;
+    zones.forEach(z => {
+      if (!cur || cur.x + z.w > W - PAD){ cur = { x: PAD, zones: [] }; rows.push(cur); }
+      z.x = cur.x; cur.x += z.w; cur.zones.push(z);
+    });
+    // pass 2 — place; a zone row is as tall as its tallest subjob stack
+    let bandBottom = 0;
+    rows.forEach((rw, k) => {
+      const jobY = (k === 0) ? 30 : bandBottom + 33;
+      let maxRows = 0;
+      rw.zones.forEach(z => {
+        const cx = z.x + z.w / 2;
+        jpos[z.j.id] = {x: cx, y: jobY};
+        let r = 0;
+        z.subs.slice().sort((a, b) => (Number(a.depth) || 0) - (Number(b.depth) || 0)).forEach(s => {
+          const dep = Math.max(0, Number(s.depth) || 0);
+          const rr = Math.max(r, dep);
+          spos[s.id] = {x: cx, y: jobY + 42 + rr * LANE};
+          r = rr + 1;
+        });
+        maxRows = Math.max(maxRows, r);
+      });
+      bandBottom = Math.max(jobY + 15, maxRows ? (jobY + 42 + (maxRows - 1) * LANE + 12) : 0);
+    });
+    // subjobs whose parent job is out of scope: wrapped rows of their own below
+    if (orphans.length){
+      const oTop = bandBottom + 24; let ox = PAD, orow = 0;
+      orphans.forEach(s => { const ow = subW(s) + GAP;
+        if (ox + ow > W - PAD && ox > PAD){ ox = PAD; orow++; }
+        spos[s.id] = {x: ox + ow / 2 - GAP / 2, y: oTop + orow * LANE + 12};
+        ox += ow; });
+      bandBottom = oTop + orow * LANE + 24;
+    }
+    const top = (jobs.length || subs.length) ? (bandBottom + 24) : 20;
+    return {jpos: jpos, spos: spos, top: top};
+  }
+  /* the pill LABEL builders — ONE truth for the text and for the width the lanes
+     measure against (2026-11-09). */
+  _jobLbl(j, opts){ opts = opts || {};
+    return j.id + (opts.owner && j.coordinator === opts.owner ? " \u00b7coord" : ""); }
+  _subLbl(s, opts){ opts = opts || {}; const n = (s.todos || []).length;
+    return s.id + "\u2192" + s.agent + (opts.counts && n ? " \u00b7" + n : ""); }
   /* v905: the PILLS of the job/subjob level — ONE drawing for both modes (an amber
-     job, a blue subjob). Positions and edges are per-mode: ALL spreads them over the
-     board, AGENT pins them above one agent's grid. `opts.owner` marks the job this
-     agent coordinates; `opts.counts` prints how many tasks a subjob holds (the AGENT
-     view's replacement for one arrow per task). */
+     job, a blue subjob). Positions are the SHARED `_pillLanes` layout (2026-11-09);
+     only the edges stay per-mode. `opts.owner` marks the job this agent coordinates;
+     `opts.counts` prints how many tasks a subjob holds (the AGENT view's replacement
+     for one arrow per task). */
   _pills(jobs, subs, jpos, spos, opts){
     opts = opts || {};
     let s = "";
     (jobs || []).forEach(j => { const p = jpos[j.id]; if (!p) return;
-      const lbl = j.id + (opts.owner && j.coordinator === opts.owner ? " ·coord" : "");
+      const lbl = this._jobLbl(j, opts);
       const w = Math.max(96, lbl.length * 7 + 18);
       s += '<g class="cjobg" data-job="' + esc(j.id) + '"><rect class="cjob" x="' + (p.x - w / 2) + '" y="' + (p.y - 15) + '" width="' + w + '" height="30" rx="15"/>' +
         '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="11" font-family="ui-monospace,monospace" fill="#ffe6b0">' + esc(lbl) + '</text></g>'; });
     (subs || []).forEach(q => { const p = spos[q.id]; if (!p) return;
-      const n = (q.todos || []).length;
-      const lbl = q.id + '\u2192' + q.agent + (opts.counts && n ? " \u00b7" + n : "");
+      const lbl = this._subLbl(q, opts);
       const w = Math.max(80, lbl.length * 6.6 + 16);
       s += '<g class="csubg" data-sub="' + esc(q.id) + '"><rect class="csub" x="' + (p.x - w / 2) + '" y="' + (p.y - 12) + '" width="' + w + '" height="24" rx="12"/>' +
         '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#bfe9ff">' + esc(lbl) + '</text></g>'; });
@@ -2873,38 +2940,13 @@ class Constellation {
     const subs = this.data.subjobs || [];   // JAG-324: job -> subjob -> agent/todos
     const grouped = this.byAgent();
     const PAD = 20, GAPX = 18, GAPY = 18, TARGETW = 1000, CW = 94, RH = 52;
-    // 2026-11-09 (operator: the ALL board was "un orrore"): 21 job pills squeezed onto
-    // ONE evenly spaced row overlapped into an unreadable sausage (47px per pill), the
-    // subjob lane sat at a fixed y=68 so its deeper rows drew OVER the agent boxes, and
-    // every task-less agent was a full-height box. The top is BANDS now:
-    //   job slots (104px) wrap into rows -> each job's subjobs stack in ITS OWN slot
-    //   (one 30px lane per subjob, a nested one still one lane lower per v629) ->
-    //   the agent clusters start BELOW the whole subjob band. Nothing overlaps.
-    // An agent with no tasks is a compact 44px chip, not a full box.
-    const SLOT = 104, JOB_ROW_H = 46;
-    const perRow = Math.max(1, Math.floor(TARGETW / SLOT));
-    const jobRow = {}, slotX = {}, jpos = {};
-    jobs.forEach((j, i) => { const r = Math.floor(i / perRow), s = i % perRow;
-      jobRow[j.id] = r; slotX[j.id] = PAD + (s + 0.5) * (TARGETW / perRow);
-      jpos[j.id] = {x: slotX[j.id], y: 30 + r * JOB_ROW_H}; });
-    const jobRows = Math.max(1, Math.ceil(jobs.length / perRow));
-    const subTop = 30 + jobRows * JOB_ROW_H + 12;
-    const spos = {}; const byJob = {}; const orphans = [];
-    subs.forEach(s => { (jobRow[s.parent] !== undefined ? (byJob[s.parent] = byJob[s.parent] || []) : orphans).push(s); });
-    // JAG-324: one pill per subjob, grouped under their job. v629: a nested subjob
-    // (J8.1.1) sits ONE LANE LOWER than its parent — nesting keeps its depth cue.
-    let bandRows = 0;
-    Object.keys(byJob).forEach(jid => { const list = byJob[jid], cx = slotX[jid];
-      list.forEach((s, i) => { const dep = Math.max(0, Number(s.depth) || 0);
-        spos[s.id] = {x: cx, y: subTop + (i + dep) * 30 + 12};
-        bandRows = Math.max(bandRows, i + dep + 1); }); });
-    // subjobs whose parent job is out of scope: their own rows under the grouped ones
-    orphans.forEach((s, i) => { const dep = Math.max(0, Number(s.depth) || 0);
-      const row = bandRows + Math.floor(i / perRow);
-      spos[s.id] = {x: PAD + ((i % perRow) + 0.5) * (TARGETW / perRow), y: subTop + (row + dep) * 30 + 12};
-      bandRows = Math.max(bandRows, row + dep + 1); });
-    const subH = subs.length ? (bandRows * 30 + 16) : 0;
-    const TOP = subs.length ? (subTop + subH + 24) : (jobs.length ? (30 + jobRows * JOB_ROW_H + 30) : 20);
+    // 2026-11-09 (operator: the ALL board was "un orrore" — and then "doveva essere
+    // una regola GENERALE, non per una scheda"): the pill band is ONE shared layout
+    // (_pillLanes) used by BOTH modes — slots wrap, subjobs stack under their job,
+    // clusters start below the band, nothing overlaps. An agent with no tasks is a
+    // compact 44px chip, not a full box.
+    const lanes = this._pillLanes(jobs, subs, {w: TARGETW});
+    const jpos = lanes.jpos, spos = lanes.spos, TOP = lanes.top;
     const box = {}; let x = PAD, y = TOP, rowH = 0, older = 0, prereq = 0;
     agents.forEach(a => {
       // 2026-11-08: each cluster shows that agent's CURRENT plan plus the older steps it
@@ -2930,7 +2972,8 @@ class Constellation {
       const p = jpos[b], q = jpos[j.id], g = this._seg(p, q, 50, 50);
       linked.add(j.id);
       body += '<line class="clink job" marker-end="url(#mJob)" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>';
-      body += '<text x="' + ((p.x + q.x) / 2) + '" y="' + ((p.y + q.y) / 2 - 7) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#9fb0e8">' + esc(b) + '\u2192' + esc(j.id) + '</text>';
+      // the label floats ABOVE the pills: on the centre line the pills covered its ends
+      body += '<text x="' + ((p.x + q.x) / 2) + '" y="' + (Math.min(p.y, q.y) - 22) + '" text-anchor="middle" font-size="10" font-family="ui-monospace,monospace" fill="#9fb0e8">' + esc(b) + '\u2192' + esc(j.id) + '</text>';
     }));
     // JAG-324: subjob edges — subjob->subjob deps, job->subjob (parent), subjob->agent.
     subs.forEach(s => (s.deps || []).forEach(d => { if (!spos[d] || !spos[s.id]) return;
