@@ -203,10 +203,11 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .toolbar.ag-bar>.stack>.btn{height:28px;min-height:28px}
   /* 2026-11-09 (operator: "ho stretto e non si vede il bottone dell'icona
      autogenerate"): the ✨ Architect call must stay VISIBLE at every width. The
-     composer rows give the room to the ASSIGNEE select instead: it flexes to the
-     leftover and shrinks first, while ＋ job / ＋ add and the ✨ keep their size —
-     they used to be pushed out of the row and clipped at the panel edge. */
-  #jobTo, #rtAgent{flex:1 1 0;min-width:0;width:auto}
+     composer rows give the room to the pickers instead — they shrink first; the
+     create buttons and the sparkle keep their size (#jobTo's own rule below is the
+     ONE place its floor lives). #rtEvery yields after the picker. */
+  #rtAgent{flex:1 1 0;min-width:0;width:auto}
+  #rtEvery{flex:0 1 80px;min-width:0}
   #jobCreate, #rtCreate, [data-genfield]{flex:none}
   [data-genstatus]{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* the "AI" provenance badge: this prompt was written by Architect, not typed
@@ -536,8 +537,12 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
   .job-meta .rl{max-width:100%}
   .job-goal{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
     -webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
-  /* v891: the assignee picker keeps a usable width in a narrow column. */
-  #jobTo{flex:1 1 120px;min-width:110px}
+  /* v891 gave the assignee picker a 110px floor — but at a squeezed column that floor
+     ate the row and pushed ＋ job and the ✨ Architect call out of the panel (operator,
+     2026-11-09: "ho stretto e non si vede il bottone dell'icona autogenerate"). The
+     picker now yields FIRST (grows to the leftover when there is room, shrinks to 0
+     when there is not); the buttons and the sparkle keep their size. */
+  #jobTo{flex:1 1 0;min-width:0}
   /* 2026-11-08 (operator: "the same for job panel too, waste of space"): the create
      form is two COMPACT rows like the Agents bar — a one-line goal field and one
      control row — and the "team = …" hint lives in the picker's tooltip instead of

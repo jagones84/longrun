@@ -77,8 +77,8 @@ check("C2 the action column is one glyph wide",
       "table.at col.c-act{width:26px}" in ORBIT)
 
 # ---------------- D: the rest of the squeeze -----------------------------------
-check("D1 a job goal clamps to two lines and the picker keeps a width",
-      "-webkit-line-clamp:2" in ORBIT and "#jobTo{flex:1 1 120px;min-width:110px}" in ORBIT)
+check("D1 a job goal clamps to two lines and the picker yields (2026-11-09: the floor starved the row and pushed the sparkle out)",
+      "-webkit-line-clamp:2" in ORBIT and "#jobTo{flex:1 1 0;min-width:0}" in ORBIT)
 check("D2 the view bar can shrink and its name truncates",
       "min-width:0;\n    border:1px solid var(--line);border-radius:10px;background:var(--panel)}" in ORBIT
       and "#viewBar .vname{font-weight:700;font-size:12px;min-width:0;overflow:hidden;" in ORBIT)

@@ -11,13 +11,14 @@ All notable changes to Longrun are documented here. The format follows
   The deck header carried two buttons (AGENT / ALL) that spent ~90px of a panel the operator keeps
   narrow; they are ONE compact select (`#constMode`) whose value is the mode — `setMode` keeps it in
   sync and the deep-link fallback switches it by `change` event. And the composer rows no longer push
-  the ✨ out of the row when a column is squeezed: the assignee select (`#jobTo` / `#rtAgent`) flexes
-  to the leftover and shrinks first, while ＋ job / ＋ add and the ✨ keep their size (previously the
-  select's `width:100%` basis ate the row and the sparkle was clipped away at the panel edge — the
-  operator's actual complaint). The controls and their wiring are unchanged. (Locked by re-pointed
-  `v294`/`v617`/`v703` + `v772`/`v881`/`v678`; targeted battery 24/24 green incl. the UI guard;
-  verified live on `/orbit`: the select switches agent ↔ ALL and the ✨ stays next to ＋ job on a
-  ~240px panel; live axe: 0 violations, no static-file restart needed.)
+  the ✨ out of the row when a column is squeezed: the v891 110px floor on the assignee picker
+  (`#jobTo{flex:1 1 120px;min-width:110px}`) ate the row and shoved ＋ job and the sparkle past the
+  panel edge; the picker now yields first (`flex:1 1 0; min-width:0` — same for `#rtAgent`,
+  `#rtEvery` yields after it), while ＋ job / ＋ add and the ✨ keep their size. At a 160px column the
+  row still holds all three controls (picker sliver ≈ 25px); the controls and their wiring are
+  unchanged. (Locked by re-pointed `v294`/`v617`/`v703`/`v891` + `v772`/`v881`/`v678`; targeted
+  battery 24/24 green incl. the UI guard; verified live on `/orbit` at 245px and 160px columns; live
+  axe: 0 violations, no static-file restart needed.)
 
 ### Added
 - **The "No team" bucket gets the team bulk menu — and a real delete-all (`v910`).** The rail's
