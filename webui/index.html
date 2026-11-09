@@ -1261,8 +1261,8 @@
     background: var(--bg); display: none; }
   #controlView.on { display: block; }
   #controlView iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
-  /* the session/inspector edge handles make no sense on the Control view */
-  body.control-on .edge-handle { display: none !important; }
+  /* the session/inspector toggles make no sense on the Control view */
+  body.control-on .pane-tog-grp { display: none !important; }
   #composer #inp { width: 100%; }
   #inp, .inp { background: var(--bg-2); border: 1px solid var(--line-2); color: var(--txt);
     border-radius: var(--r-sm); padding: 11px 14px; font: inherit; outline: none; }
@@ -1271,11 +1271,14 @@
   /* JAG-127b: queued/steer messages typed while a turn is still running */
   #queueBar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px 0; }
   #queueBar[hidden] { display: none; }
-  /* 2026-11-08 (operator): "during compactions the webui chat session shall show that
-     the compaction is in progress running. sync with real compaction running".
-     ONE wait is drawn, and only while the server really is compacting: a manual
-     /api/context/compact request in flight, or a turn that starts OVER the auto-compact
-     threshold the server itself uses. */
+  /* 2026-11-08 (operator): the "waiting for the model … the harness is between you
+     and the provider" line lived INSIDE the composer and was rejected ("remove i dont
+     like them"). What is kept is the ONE wait that is not obvious and that the
+     operator asked for: a COMPACTION. It is a slim row in the CHAT column — between
+     the transcript and the composer, never inside the message box, so the composer's
+     geometry never changes — and it exists only while the server really is compacting
+     (a manual compact request in flight, or a turn that starts over the auto-compact
+     threshold the server itself uses). */
   #compactBar { display: flex; align-items: center; gap: 7px; padding: 6px 14px;
     font-size: 11px; color: var(--txt); background: var(--bg-2);
     border-top: 1px solid var(--line); }
@@ -1437,6 +1440,14 @@
     body.show-right #resize-right { display: block !important; position: fixed; top: 52px; bottom: var(--sf-bottombar, 0px);
       width: 16px; z-index: 16; background: transparent; touch-action: none; }
     body.show-right #resize-right.active { background: var(--accent); }
+    /* 2026-11-08 (operator): "in mobile view sidebar is too high reduce the spacing
+       between" — on a phone the rail is a strip, so its tiers breathe less: 4px inside
+       a section, 4/6px between sections, 6px at the top. Desktop keeps its rhythm. */
+    #toolsBar { padding-top: 6px; }
+    #toolsBar .tb-mid { gap: 4px; }
+    #toolsBar .tb-sec { gap: 4px; }
+    #toolsBar .tb-sec + .tb-sec { margin-top: 4px; padding-top: 6px; }
+    #toolsBar .tb-foot { gap: 4px; padding-top: 6px; }
   }
   /* JAG-358: the sessions drawer must cover the SAME range the fixed #aside uses
      (<=900) — it stopped at 820, so between 821-900 the left arrow toggled a class
@@ -2118,22 +2129,21 @@
   aside { background: var(--aside); }
   .step:hover, .task:hover { background: var(--hover); }
   #composer { background: var(--composer); }
-  /* JAG-353/JAG-356: panel toggles are circular handles ON the panel's inner border
-     (the topbar icon buttons are gone). The arrow points the way the panel MOVES:
-     left panel = ◀ open / ▶ closed; right panel = ▶ open / ◀ closed.
-     Positioned by JS from the panel rect. A high z-index + a mousedown guard stop the
-     resize grip on the SAME border from stealing the press. */
-  .edge-handle { position: fixed; top: 50%; z-index: 30; width: 24px; height: 24px; padding: 0;
-    display: flex; align-items: center; justify-content: center; border-radius: 50%;
-    background: var(--panel2); color: var(--accent); border: 1px solid var(--line);
-    font: inherit; font-size: 12px; line-height: 1; cursor: pointer; opacity: .85;
-    box-shadow: 0 2px 10px rgba(0,0,0,.28); transform: translate(-50%, -50%);
-    touch-action: manipulation; pointer-events: auto;
-    transition: opacity .12s, background .12s, border-color .12s; }
-  .edge-handle:hover, .edge-handle:focus-visible { opacity: 1; background: var(--sel); border-color: var(--accent); }
-  /* 2026-11-01: the button is display:flex, so [hidden] needs its own rule — while an
-     overlay drawer is open only the arrow that can close it stays on screen. */
-  .edge-handle[hidden] { display: none !important; }
+  /* 2026-11-08 (operator): "i dont like the graphic and the excessive horizontal space
+     and the frame around the expand panel icon — see Trae's ones". One tight cluster of
+     BARE glyphs (the ghost border/pill is removed), a hairline after it, and the pane
+     side FILLED while that pane is on screen: the glyph IS the state. */
+  .pane-tog-grp { display: inline-flex; align-items: center; gap: 0; margin: 0 2px;
+    padding-right: 6px; border-right: 1px solid var(--line); }
+  #topbar .pane-tog { width: 26px; height: 26px; min-height: 26px; padding: 0;
+    border: 0; background: transparent; box-shadow: none; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center; color: var(--dim); }
+  #topbar .pane-tog:hover { background: var(--hover); color: var(--txt); }
+  #topbar .pane-tog .pt-pane { opacity: 0; transition: opacity .12s; }
+  #topbar .pane-tog[aria-pressed="true"] .pt-pane { opacity: .95; }
+  #topbar .pane-tog[aria-pressed="false"] { color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { #topbar .pane-tog .pt-pane { transition: none; } }
+  @media (max-width: 900px) { .pane-tog-grp { display: none; } }   /* the tab bar owns it */
   * { scrollbar-color: var(--scroll) transparent; }
   ::-webkit-scrollbar-thumb { background: var(--scroll); background-clip: padding-box; }
   .model-btn { border-color: var(--menuline); background: var(--chipbg); }
@@ -2448,9 +2458,6 @@
   #palette { background: rgba(0,0,0,.6); }
   #sfToast .sf-toast, .sf-toast, .done-toast { border-radius: 10px;
     border-color: var(--line-2); box-shadow: var(--shadow-2); }
-  .edge-handle { border-color: var(--line-2); background: var(--panel2);
-    box-shadow: var(--shadow-1); }
-  .edge-handle:hover { background: var(--panel2); border-color: var(--acc); }
   .resizer:hover, .resizer.active { background: var(--acc); }
   /* 2026-11-01: the bar itself is tuned here; its BUTTONS are declared once, in the
      phone block above (icon over label). Two truths about the same control is how the
@@ -2674,10 +2681,9 @@
       max-width: calc(100vw / var(--zoom, 1) - 88px); }
     body.show-right [data-col="context"] { top: 0; }
     body.show-left #resize-left, body.show-right #resize-right { top: 0; }
-    /* the two floating edge handles are the desktop way to show/hide a panel; on a
-       phone the tab bar (sessions / context) already does it, and in landscape the
-       left one would float ON TOP of the new rail. */
-    .edge-handle { display: none !important; }
+    /* the pane toggles are the desktop way to show/hide a panel; on a phone the tab
+       bar (sessions / context) already does it, and a landscape phone has no room. */
+    .pane-tog-grp { display: none !important; }
 
     /* the session header keeps the title, drops the duplicated hash and the height */
     #chatHead { height: 26px; min-height: 26px; padding: 0 8px; }
@@ -2778,6 +2784,22 @@
        "⌘K", which is a keyboard hint, not a control. The shortcut stays in the tooltip. -->
   <button class="ghost diag-badge" id="settingsDiagBadge" data-call="openSettings"
           data-args='["diagnostics"]' aria-label="settings diagnostics" title="configuration diagnostics" hidden></button>
+  <!-- 2026-11-08 (operator): the pane toggles, drawn like Trae's: ONE tight cluster of
+       bare glyphs (no frame, no pill), a hairline after it, and the pane side FILLED when
+       that pane is on screen — the glyph IS the state, so no extra words.
+       Each button reads its OWN pane; hiding the left can never show the right. -->
+  <span class="pane-tog-grp">
+    <button class="ghost pane-tog" id="paneLeftBtn" aria-pressed="true" aria-controls="aside"
+            title="hide or show the sessions panel (Ctrl/⌘ B)" aria-label="toggle sessions panel">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path class="pt-pane" d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4Z" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button class="ghost pane-tog" id="paneRightBtn" aria-pressed="true" aria-controls="inspector"
+            title="hide or show the inspector panel" aria-label="toggle inspector panel">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path class="pt-pane" d="M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4Z" fill="currentColor" stroke="none"/></svg>
+    </button>
+  </span>
   <!-- JAG-533: the command palette is a DIRECT button — the top-right "☰" app
        menu that used to hold it was a wrapper around a single item. -->
   <button class="ghost" id="palette-open" title="search &amp; commands (Ctrl/⌘ K)" aria-label="search and commands">
@@ -2797,10 +2819,6 @@
   </button>
 </header>
 <div id="controlView" aria-hidden="true"><iframe id="controlFrame" title="Control deck"></iframe></div>
-<button class="edge-handle" id="handle-left" type="button"
-        title="collapse / expand the sessions panel" aria-label="toggle sessions panel">◀</button>
-<button class="edge-handle" id="handle-right" type="button"
-        title="collapse / expand the inspector" aria-label="toggle inspector panel">▶</button>
 <main id="app">
   <aside id="aside" data-col="sessions" aria-label="sessions rail">
     <section class="rail">
@@ -5305,9 +5323,6 @@ function _mkSection(node) {
   const det = document.createElement("details");
   det.className = "tctree"; det.dataset.id = node.id;
   det.style.marginLeft = (_nodeDepth(node.id) * 14) + "px";
-  // v906: the card carries the SAME ids the rail shows (todo · job · subjob), from
-  // the same `_nodeIds` builder — the chat used to print only `A88.n2`, so the job
-  // a step belonged to was invisible in the transcript.
   det.innerHTML = '<summary><span class="tcmeta"><span class="st"></span><span class="tids"></span></span><span class="tclabel"></span></summary><button class="tc-rw" data-rw="' + _attr(node.id) + '" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button><div class="tc-kids"></div>';
   $("log").appendChild(det);
   (_chatSections[node.id] = _chatSections[node.id] || []).push(det);
@@ -6321,8 +6336,10 @@ function send(text, display, atts) {
   const url = "/api/chat/stream?message=" + encodeURIComponent(msg) + (turnSession ? "&session=" + turnSession : "") + mode + (currentModel() ? "&model=" + encodeURIComponent(currentModel()) : "") + (authQS() ? "&" + authQS() : "");
   const es = new EventSource(url);
   if (turnSession) { es._lrSid = turnSession; turnSSE[turnSession] = es; setRunning(turnSession, true); }
-  // 2026-11-08: the chat row is shown for the WHOLE compaction — the backend prepares the
-  // session before the turn, and `over_threshold` is that same fact from /api/context.
+  // 2026-11-08: the server auto-compacts at the START of a turn when the prompt is over
+  // its threshold (`prepare_session_for_turn`), and `over_threshold` is the same fact
+  // the Context panel reads from /api/context — so the row appears for exactly that
+  // condition and closes on the first token, the phase, or the compaction event.
   if (_ctxOver) compactBarShow(turnSession || sessionId, "compacting the context before the turn");
   const live = () => !!turnSession && turnSession === sessionId;
   const adopt = (s) => {  // very first message with no session: the server names it
@@ -6406,9 +6423,9 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("chat.run", e => { const d = JSON.parse(e.data); adopt(d.session);
     setRunning(d.session, true); if (!live()) return; setRun(d.run_id);
     _activeScope = null; _activeNodeId = null; _nowLast = ""; _sysInjectEl = null; _updateNowBar(); });
-  // 2026-11-08 (operator): the composer no longer narrates the model wait (the old
-  // "waiting for the model" sentence was removed). The event still carries a real
-  // fact: once the provider call starts, any compaction that ran before it is over.
+  // 2026-11-08 (operator): the "waiting for the model — the harness is between you and
+  // the provider" sentence is GONE. The event still carries a real fact: once the
+  // provider call starts, any compaction that ran before it is over.
   es.addEventListener("chat.phase", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
     compactBarClear(d.session); });
   // JAG-465: a turn triggered by ANOTHER agent (a `dispatch` from a coordinator) is
@@ -9266,8 +9283,7 @@ function renderGraph() {
     // so the two never fight). Single shared bridge: taskDetail renders the
     // job (same GET /api/jobs/<id> the deck uses), _showJobInControl opens the
     // deck and hands it the job id via postMessage (same pattern as
-    // _showInConstellation/_showAgentInOrganigram). v906: the wiring is shared
-    // with the chat card, so a chip behaves the same wherever it is rendered.
+    // _showInConstellation/_showAgentInOrganigram).
     _wireJobChips(el, n);
     if (n && n.id === graphFresh) el.classList.add("fresh");
     // JAG-465: pulse ONLY the step of a REAL live turn on THIS session. A persisted
@@ -10149,8 +10165,7 @@ function taskTree(nodes) {
     // the job chip opens the job, the subjob chip opens the parent focused
     // on that subjob's own row (_showJobDetail splits them).
     // v630: the badge is the anchor; the ids (todo + job + subjob) sit in ONE
-    // wrapping line UNDER it, so the label keeps the full width. v906: the chips
-    // themselves come from `_nodeIds`, shared with the chat card.
+    // wrapping line UNDER it, so the label keeps the full width.
     const ids = `<span class="tids">${_nodeIds(n)}</span>`;
     const meta = `<span class="st ${n.status}" title="${_attr(ST_WHY[n.status] || "")}">${n.status}</span>${ids}`;
     const body = `<span class="tlabel">${mark[n.status] || "☐"} ${esc(n.label)}</span>${deps}${ev}<button class="task-rw" data-rw="${_attr(n.id)}" title="rewind to just before this todo — undo it and everything done after" aria-label="rewind to before this todo">⏮</button>`;
@@ -15205,6 +15220,14 @@ function _inspJumpToggle(name) {
   if (!sec || !body) return;
   if (body.hidden) { _railOpenInsp(name); return; }
   toggleInsp(name);
+  // 2026-11-08 (operator): "clicking those sidebar buttons shall also expand/collapse
+  // the relevant linked menu". On a phone the inspector IS a drawer: collapsing its
+  // last open section used to leave the drawer on screen showing nothing, so the
+  // button looked one-way. Close it — the section is the drawer's content.
+  if (_vw() <= 1100 && document.body.classList.contains("show-right")
+      && !document.querySelector("#inspector section.insp-open")) {
+    _toggleMobileDrawer("right");
+  }
 }
 function _paintInspJump() {
   _inspJumpBoxes().forEach(box => {
@@ -17341,7 +17364,7 @@ function _fitPanels() {
     if (tag === "l") lw = w; else rw = w;
     over -= take;
   }
-  positionHandles();
+  _paintPaneState();
 }
 /* JAG-368: a panel is either a real flex COLUMN (wide layouts) or a fixed DRAWER
    (narrow layouts). The same grip resizes whichever it currently is — and it now runs
@@ -17423,7 +17446,7 @@ function bindResizer(handle, colSel, sign, key) {
         // growing at the floor instead of being redistributed by the flex algorithm.
         const w = Math.max(150, Math.min(room, startW + sign * dx / z));
         col.style.width = w + "px"; col.style.flex = "0 0 " + w + "px";
-        positionHandles();   // JAG-357: keep the handle glued to the border we move
+        _paintPaneState();   // keep the pane toggles honest while the width moves
       }
     };
     const up = () => {
@@ -17434,7 +17457,7 @@ function bindResizer(handle, colSel, sign, key) {
       if (!dragging) { try { handle.releasePointerCapture(e.pointerId); } catch (_) {} return; }
       if (!drawer) localStorage.setItem(key, String(Math.round(col.getBoundingClientRect().width / _pageScale())));
       positionDrawerResizers();
-      positionHandles();
+      _paintPaneState();
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
@@ -17443,10 +17466,7 @@ function bindResizer(handle, colSel, sign, key) {
 }
 bindResizer($("resize-left"), '[data-col="sessions"]', 1, "sf_w_left");
 bindResizer($("resize-right"), '[data-col="context"]', -1, "sf_w_right");
-/* JAG-353: the two topbar icon buttons are gone — each panel collapses from a
-   circular handle on its inner border (fixed, re-positioned from the panel rect).
-   The arrow points the way the panel MOVES: left = ◀ open / ▶ closed;
-   right = ▶ open / ◀ closed. */
+/* 2026-11-08: each pane has ONE topbar toggle that reports only its own pane. */
 /* JAG-358: which side is an OVERLAY (a fixed drawer) vs a real layout column.
    The thresholds must match the CSS exactly — the sessions panel is a drawer at
    <=900, the inspector at <=1100 — otherwise the arrow toggles a class that has
@@ -17476,14 +17496,34 @@ function _toggleMobileDrawer(side) {
   }
   _settleHandles();
 }
+/* 2026-11-08: the collapsed panes are remembered — hiding the inspector is a working
+   setup, not a per-session accident, so it must survive a reload. */
+function _persistPanes() {
+  try {
+    localStorage.setItem("sf_panes", JSON.stringify({
+      l: document.body.classList.contains("collapsed-left") ? 1 : 0,
+      r: document.body.classList.contains("collapsed-right") ? 1 : 0 }));
+  } catch (e) {}
+}
+function _restorePanes() {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem("sf_panes") || "null"); } catch (e) { v = null; }
+  if (!v) return;
+  // A DRAWER class is transient (a phone overlay) and is never stored: only the
+  // desktop column state comes back, and only as far as the layout has a column.
+  document.body.classList.toggle("collapsed-left", !!v.l);
+  document.body.classList.toggle("collapsed-right", !!v.r);
+}
 function toggleLeftPanel() {
   if (_vw() <= 900) return _toggleMobileDrawer("left");
   else document.body.classList.toggle(_overlayLeft() ? "show-left" : "collapsed-left");
+  _persistPanes();
   _settleHandles();
 }
 function toggleRightPanel() {
   if (_vw() <= 900) return _toggleMobileDrawer("right");
   else document.body.classList.toggle(_overlayRight() ? "show-right" : "collapsed-right");
+  _persistPanes();
   _settleHandles();
 }
 /* JAG-358: a panel counts as shown only when it is really VISIBLE ON SCREEN — not
@@ -17588,34 +17628,13 @@ function _pageScale() {
   const s = p.getBoundingClientRect().left / 100;
   return (s && isFinite(s) && s > 0) ? s : 1;
 }
-function positionHandles() {
-  const L = $("handle-left"), R = $("handle-right");
-  if (!L || !R) return;
+function _paintPaneState() {
   updateSessBadge();
-  const s = _pageScale();
-  const gap = 13;   // resting distance from the screen edge, in visual px
-  const ls = document.querySelector('[data-col="sessions"]');
-  const rc = document.querySelector('[data-col="context"]');
-  const lOpen = _panelShown('[data-col="sessions"]');
-  const rOpen = _panelShown('[data-col="context"]');
-  const vw = document.documentElement.getBoundingClientRect().right;
-  // 2026-11-01: an arrow whose CENTRE is the last pixel of the viewport cannot be
-  // tapped. A full-width phone drawer parks its own close arrow exactly there and the
-  // opposite arrow lands 13px away, so the tap went to the other panel (operator:
-  // "se collasso una si espande l'altra ... non vedo mai la chat"). Clamp both and
-  // keep only the arrow that can actually act while an overlay drawer is up.
-  const inset = 22;
-  const clamp = x => Math.min(Math.max(x, inset), vw - inset);
-  const lx = clamp(lOpen ? ls.getBoundingClientRect().right : gap);
-  const rx = clamp(rOpen ? rc.getBoundingClientRect().left : vw - gap);
-  const leftDrawer = lOpen && _overlayLeft();
-  const rightDrawer = rOpen && _overlayRight();
-  L.hidden = rightDrawer && !leftDrawer;
-  R.hidden = leftDrawer && !rightDrawer;
-  L.style.left = (lx / s) + "px";
-  L.textContent = lOpen ? "◀" : "▶";
-  R.style.left = (rx / s) + "px";
-  R.textContent = rOpen ? "▶" : "◀";
+  // ONE button per pane: it reports its own panel and nothing else, so the two states
+  // can never fight (the edge arrows used to swap side + glyph).
+  const L = $("paneLeftBtn"), R = $("paneRightBtn");
+  if (L) L.setAttribute("aria-pressed", _panelShown('[data-col="sessions"]') ? "true" : "false");
+  if (R) R.setAttribute("aria-pressed", _panelShown('[data-col="context"]') ? "true" : "false");
   positionDrawerResizers();   // JAG-368: keep a drawer's inner grip glued to its edge
 }
 /* JAG-358: re-glue for a few frames after anything that can move a panel (a
@@ -17624,40 +17643,29 @@ function _settleHandles() {
   _fitPanels();   // JAG-361: the panels must fit before the handles are glued
   updateJump();   // 2026-11-01: the jump control is measured from the log's bottom edge
   let n = 0;
-  const tick = () => { positionHandles(); if (++n < 24) requestAnimationFrame(tick); };
+  const tick = () => { _paintPaneState(); if (++n < 24) requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
 }
-// JAG-356/JAG-360: the resize grip shares this border. Never let it (or a stray
-// text selection) steal the press, and toggle on POINTER UP with a small movement
-// guard — so a press-and-hold behaves EXACTLY like a tap (holding changes nothing)
-// and a 1-2 px wobble can no longer cancel the click.
-["handle-left", "handle-right"].forEach(id => {
-  const h = $(id);
-  let down = false, x0 = 0, y0 = 0;
-  h.onmousedown = e => { e.preventDefault(); e.stopPropagation(); };
-  h.ontouchstart = e => { e.stopPropagation(); };
-  h.addEventListener("pointerdown", e => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    down = true; x0 = e.clientX; y0 = e.clientY;
-    try { h.setPointerCapture(e.pointerId); } catch (_) {}
-  });
-  h.addEventListener("pointerup", e => {
-    if (!down) return;
-    down = false;
-    if (Math.abs(e.clientX - x0) + Math.abs(e.clientY - y0) <= 8) {
-      (id === "handle-left" ? toggleLeftPanel : toggleRightPanel)();
-    }
-  });
-  h.addEventListener("pointercancel", () => { down = false; });
+// 2026-11-08: ordinary buttons now — no shared border with the resize grip, no
+// pointer-up dance needed. Ctrl/⌘ B mirrors the IDE shortcut for the sessions pane.
+$("paneLeftBtn").onclick = () => toggleLeftPanel();
+$("paneRightBtn").onclick = () => toggleRightPanel();
+addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (String(e.key || "").toLowerCase() !== "b") return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  e.preventDefault();
+  toggleLeftPanel();
 });
 addEventListener("resize", _settleHandles);
 addEventListener("load", _settleHandles);
 // JAG-358: a drawer slides in with a transform transition — re-glue when it ends.
-document.addEventListener("transitionend", positionHandles, true);
+document.addEventListener("transitionend", _paintPaneState, true);
 // JAG-357/JAG-358: re-glue the handles on ANY layout change of the shell (a
 // programmatic width, a flex re-flow, a font swap), not only on a window resize.
 if (window.ResizeObserver) {
-  const _ro = new ResizeObserver(() => positionHandles());
+  const _ro = new ResizeObserver(() => _paintPaneState());
   const _sl = document.querySelector('[data-col="sessions"]');
   const _sr = document.querySelector('[data-col="context"]');
   const _ap = document.getElementById("app");
@@ -17677,6 +17685,7 @@ if (window.ResizeObserver && $("tasks")) {
     _markWrappedTasks(_tb);
   }).observe(_tb);
 }
+_restorePanes();
 _settleHandles();
 $("palette-input").addEventListener("input", e => { _palHi = 0; renderPalette(e.target.value); });
 $("palette-input").addEventListener("keydown", paletteKey);
