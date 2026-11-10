@@ -47,6 +47,15 @@ All notable changes to Longrun are documented here. The format follows
   axe: 0 violations, no static-file restart needed.)
 
 ### Added
+- **A turn interrupted by a RESTART resumes itself (`v938`).** The running turns were only in memory, so
+  a restart erased them and the operator had to send the continuation by hand. `core/inflight.py` now
+  mirrors every turn to `data/inflight_turns.json` at `turn_begin`/`turn_end` (the one bracket every
+  turn uses: stream, sync, agent run, MCP). On boot the file is read and each session whose turn never
+  ended gets a `[Harness restart] … continue from where it stopped` message — but only when the exit
+  looks like a restart: no marker (crash/kill -9) or a fresh SIGTERM marker (systemctl restart). A
+  deliberate stop followed by a later start is NOT resumed. SIGTERM now runs a clean exit so the marker
+  exists; `runtime.restart_resume_window_secs` / `restart_resume_max` are config. (Locked by `v938`
+  16/16; live: a real turn was cut by `systemctl restart`, the boot resumed it and the model answered.)
 - **An evaluation never writes the live configuration (`v937`).** The meta-harness saved the candidate
   into the policy overlay and restored the old one in a `finally`, so a crash or kill between the two
   left the candidate installed and a concurrent turn ran under it. The candidate now applies to a copy

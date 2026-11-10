@@ -320,6 +320,13 @@ def turn_begin(sid):
     ev0 = feed_seq()
     with _ACTIVE_CHAT_LOCK:
         _ACTIVE_CHAT[sid] = {"ev0": ev0, "ts": time.time(), "tok": tok}
+    # 2026-11-10: mirror the in-memory registry to disk at REAL TIME, so a restart
+    # knows which sessions were mid-turn when the process died (core/inflight.py).
+    try:
+        from longrun.core import inflight as _inflight
+        _inflight.begin(sid, tok)
+    except Exception:  # noqa: BLE001 — a bookkeeping write must not break a turn
+        pass
     publish("chat.run", session=sid)
     return tok
 
@@ -347,6 +354,12 @@ def turn_end(sid, tok=None, publish_done=True):
         still_running = sid in _ACTIVE_CHAT
     if released and not still_running:
         _release_doing_todos(sid)
+    if released:
+        try:
+            from longrun.core import inflight as _inflight
+            _inflight.end(sid, tok)
+        except Exception:  # noqa: BLE001 — a bookkeeping write must not break a turn
+            pass
     if publish_done:
         publish("chat.done", session=sid)
 

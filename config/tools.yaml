@@ -71,6 +71,15 @@ runtime:
   # "still working" at 300s while A49 was still going). 3600 = one hour.
   # `LONGRUN_DISPATCH_WAIT` still overrides it (tests / one-off run); 30 is the floor.
   dispatch_wait_secs: 3600
+  # 2026-11-10: a turn that was RUNNING when the process went away is recorded in
+  # data/inflight_turns.json at REAL TIME (core/inflight.py). On boot it is
+  # resumed ONLY when the exit looks like a restart: no stop marker (crash or
+  # kill -9), or the new process came up within `restart_resume_window_secs` after
+  # SIGTERM (systemctl restart). A deliberate stop followed by a later start is
+  # NOT resumed. `restart_resume_max` caps how many sessions one boot resumes;
+  # 0 windows the marker out (only crashes are resumed).
+  restart_resume_window_secs: 60
+  restart_resume_max: 10
   # I-1: how many unexecutable replies in a row the harness RETRIES before it
   # switches strategy (one bounded self-check round, then plain prose) instead of
   # ending the turn. It is a safety valve, not a stop: the goal stays open and

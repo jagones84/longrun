@@ -15,6 +15,7 @@ import os
 import queue
 import re
 import select
+import signal
 import socket
 import ssl
 import subprocess
@@ -403,6 +404,13 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     _turn_tok = object()
     with _ACTIVE_CHAT_LOCK:
         _ACTIVE_CHAT[sess["id"]] = {"ev0": feed_seq(), "ts": time.time(), "tok": _turn_tok}
+    # 2026-11-10: the streaming path registers here directly (not via turn_begin),
+    # so the durable inflight mirror is written here too (core/inflight.py).
+    try:
+        from longrun.core import inflight as _inflight
+        _inflight.begin(sess["id"], _turn_tok)
+    except Exception:  # noqa: BLE001 — bookkeeping must not break a turn
+        pass
     # JAG-431q: drop any stale abort LEFT OVER from a previous turn AT TURN START —
     # before the planner/graph/answer emit their own model calls. It used to be cleared
     # inside `chat_once`, i.e. AFTER the planner had already run: a Stop pressed during
@@ -3423,6 +3431,21 @@ def main():
         _mtx_boot.resume_after_restart()
     except Exception:  # noqa: BLE001
         pass
+    # 2026-11-10: a turn that was RUNNING when the process went away is resumed —
+    # only when the stop looks like a restart (no marker = crash/kill, or a fresh
+    # SIGTERM marker = systemctl restart). A deliberate stop is never resumed.
+    try:
+        from longrun.core import inflight as _inflight
+        _rt = (registry.load_config() or {}).get("runtime") or {}
+        _rep = _inflight.recover(
+            window_secs=float(_rt.get("restart_resume_window_secs", 60) or 0),
+            max_sessions=int(_rt.get("restart_resume_max", 10) or 0))
+        if _rep.get("running"):
+            publish("service.resume", running=_rep.get("running"),
+                    resumed=_rep.get("resumed"), skipped=_rep.get("skipped"),
+                    stopped=bool(_rep.get("stopped")))
+    except Exception:  # noqa: BLE001 — recovery must never block startup
+        pass
     publish("service.start", host=args.host, port=args.port, router=ROUTER_BASE)
     try:
         from longrun.orchestrate import jobs as _jobs
@@ -3472,4 +3495,28 @@ def main():
     # (its env override is resolved inside context_limits.limitb).
     if args.tls or ctx_limits.limitb("tls_enabled"):
         _start_tls(args)
-    server.serve_forever()
+
+    # 2026-11-10: SIGTERM must run a CLEAN exit so the stop marker is written
+    # (core/inflight.py). Without a handler the default action kills the process
+    # immediately, the marker is missing, and the next boot would read a deliberate
+    # `systemctl stop` as a crash and resume work the operator wanted stopped.
+    def _on_stop(signum, _frame):
+        try:
+            from longrun.core import inflight as _inflight
+            _inflight.note_stop("signal:%d" % signum)
+        finally:
+            raise SystemExit(0)
+
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(_sig, _on_stop)
+        except (ValueError, OSError):  # not the main thread — keep the default
+            pass
+    try:
+        server.serve_forever()
+    finally:
+        try:
+            from longrun.core import inflight as _inflight
+            _inflight.note_stop("exit")
+        except Exception:  # noqa: BLE001 — shutdown must never fail
+            pass
