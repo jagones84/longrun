@@ -427,10 +427,11 @@ _LEGACY_SCHEMAS = {
                        "enum": ["list", "read", "send", "wait", "compact", "reset"],
                        "default": "list"},
             "session": {"type": "string",
-                        "description": ("the agent's NAME as written in action=list "
-                                        "('Architect'), its A-id ('A1'), or the raw "
-                                        "session id — all three work "
-                                        "(action=read|send|compact|reset)")},
+                        "description": ("the target agent's NAME exactly as "
+                                        "action=list writes it (e.g. 'coder 1'), its "
+                                        "A-id (e.g. 'A48'), or the raw session id — all "
+                                        "three work, for ANY session in your reporting "
+                                        "line (action=read|send|compact|reset)")},
             "to": {"type": "string",
                    "description": "alias for session (action=send|compact|reset)"},
             "message": {"type": "string",

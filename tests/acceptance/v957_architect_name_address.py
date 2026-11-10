@@ -140,9 +140,11 @@ check("E5 the header teaches the accepted spellings",
 # --- F: the schema teaches the model the same word ---------------------------
 _sch = REG.TOOL_SCHEMAS.get("sessions") or {}
 _sdesc = str(((_sch.get("properties") or {}).get("session") or {}).get("description") or "")
-check("F1 the `session` field says the NAME works", "NAME" in _sdesc and "Architect" in _sdesc,
-      _sdesc[:120])
+check("F1 the `session` field says the NAME works, for ANY session",
+      "NAME" in _sdesc and "for ANY session" in _sdesc, _sdesc[:160])
 check("F2 ... and still lists the A-id and the raw id", "A-id" in _sdesc and "session id" in _sdesc)
+check("F3 ... and never narrows the tool to one agent",
+      "Architect" not in _sdesc and "longrunAgent" not in _sdesc, _sdesc[:160])
 
 # --- G: the Architect's OWN prompt introduces it by name ---------------------
 from longrun.model import prompt as P            # noqa: E402
