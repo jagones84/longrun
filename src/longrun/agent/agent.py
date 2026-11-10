@@ -89,10 +89,23 @@ PMCP_PROMPT = (
 
 
 def system_prompt():
-    """Base system prompt, plus the PMCP block only if a `pmcp` client exists."""
+    """Base system prompt, plus the PMCP block only when the gateway can answer.
+
+    JAG-159: the client name is whatever the config spells it (`PMCP` in the
+    tracked config, lowercase in old ones), so the match ignores case — a presence
+    check on a lowercase literal silently dropped the block for every uppercase
+    client (verified live 2026-11-10: `connected=true, tools=26`, prompt without
+    it). Presence is not usability either: a disabled, disconnected or tool-less
+    gateway advertises nothing, or the model burns turns on a `catalog_search`
+    that cannot return anything (R5).
+    """
     try:
         from longrun.interop import mcp_client
-        if "pmcp" in (mcp_client.get_manager().status().get("clients") or {}):
+        clients = mcp_client.get_manager().status().get("clients") or {}
+        info = next((v for k, v in clients.items()
+                     if str(k).strip().lower() == "pmcp"), None) or {}
+        if (info.get("enabled", True) and info.get("connected")
+                and int(info.get("tools") or 0) > 0):
             return SYSTEM_PROMPT + PMCP_PROMPT
     except Exception:  # noqa: BLE001 — never break the prompt
         pass
