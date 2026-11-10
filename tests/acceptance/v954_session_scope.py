@@ -102,6 +102,16 @@ check("C2 a chief keeps the reporting-line rule (never sideways)",
       T._may_manage("s-lead", "s-worker")[0] is True
       and T._may_manage("s-lead", "s-outside")[0] is False)
 
+# ---- D) every agent may report UP to the Architect (the root of every line)
+_arch_aid = reg.designate("longrunAgent", name="Architect")["agent"]["id"]
+check("D1 an agent may message the Architect by session id AND by A-id",
+      T._may_message("s-worker", "longrunAgent")[0] is True
+      and T._may_message("s-worker", _arch_aid)[0] is True)
+check("D2 an agent may read the Architect too (same upward line)",
+      T._may_message("s-lead", "longrunAgent")[0] is True)
+check("D3 the root exception opens no sideways door",
+      T._may_message("s-sub", "s-outside")[0] is False)
+
 print("---")
 passed = sum(results)
 print("%d/%d PASS" % (passed, len(results)))

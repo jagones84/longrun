@@ -2286,6 +2286,11 @@ def _may_message(caller, target):
         from longrun.agent import architect as _arch
         if _arch.is_architect_session(caller):
             return True, ""
+        if _arch.is_architect_session(target):
+            # The Architect is the ROOT of every line: any agent may report up to
+            # it (operator, 2026-11-10). Below, the same is true when the target
+            # was named by its A-id.
+            return True, ""
         from longrun.agent import agents as _agents
         me = _agents.REGISTRY.resolve(caller)
         if not me:
@@ -2297,6 +2302,8 @@ def _may_message(caller, target):
             return False, (
                 "target session %r is not in the org chart — an agent may only "
                 "reach its own team" % target)
+        if _arch.is_architect_session(str(tgt.get("session") or "")):
+            return True, ""
         if tgt["id"] in _agents.REGISTRY.subtree(me["id"]):
             return True, ""
         if me["id"] in _agents.REGISTRY.subtree(tgt["id"]):
