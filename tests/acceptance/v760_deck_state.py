@@ -53,8 +53,10 @@ ORBIT = src("src", "longrun", "orbit", "web", "orbit.html")
 # ---- A. the store -------------------------------------------------------------
 check("A1 an absent file answers the shipped default",
       DV.get() == {"revision": 0,
+                   # 368201b: the operator-approved official desk is four panels
+                   # (Agents | Jobs | Org chart | Constellation), not the old three.
                    "views": [{"id": "v-desk", "name": "Desk",
-                              "panels": ["agents", "jobs", "org"]}],
+                              "panels": ["agents", "jobs", "org", "const"]}],
                    "active": "view:v-desk"})
 saved = DV.save({"views": [{"id": "v-a", "name": "Ops", "panels": ["agents", "const"]},
                            {"id": "v-b", "name": "Flow", "panels": ["jobs", "feed"]}],

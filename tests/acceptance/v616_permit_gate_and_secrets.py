@@ -123,7 +123,9 @@ check("C2 the per-tool policy is the only per-row state (v890: no repeated grant
 check("D1 the prompt still goes to the model every turn (dedup is display)",
       "display rule, not a context change" in AGENT_SRC
       and 'inject_kind="system"' in AGENT_SRC
-      and "text=_sys_txt, role=\"system\"" in AGENT_SRC
+      # v928 moved the prompt from an injected system TEXT to the assembled turn's
+      # real system message; the contract is the same: it is sent on every request.
+      and 'msgs = [{"role": "system", "content": sys}]' in AGENT_SRC
       and "system-delta" not in AGENT_SRC)
 
 print("---")
