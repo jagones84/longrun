@@ -5221,6 +5221,102 @@ function _pruneChatScrollState(sessions) {
     try { localStorage.setItem(_chatScrollStorageKey, JSON.stringify(map)); } catch (e) {}
   }
 }
+/* ---- composer drafts: the UNSENT text belongs to the SESSION ----------------
+   2026-11-10 (operator): "se scrivo un draft e non lo invio, poi cambio sessione
+   devo ritrovare il draft che c'era nell'altra sessione". A draft is not part of
+   the transcript (the agent never sees it), so it is VIEW state, exactly like the
+   reading position above — keyed by the session id, pruned against the live
+   sessions, never a field of the backend session record. The session still owns
+   it: created with it, gone when it is deleted.
+   - saved while typing (debounced) + on blur + on page hide, so a fast switch
+     right after a keystroke cannot lose the last word;
+   - restored only into an EMPTY box: text just typed is never overwritten;
+   - cleared when the text leaves the box (send / queue), so a sent message
+     never comes back;
+   - a paste over _DRAFT_MAX chars is not stored (the box keeps it; nothing is
+     silently truncated, which would restore a partial message). */
+const _draftStorageKey = "sf_drafts";
+const _DRAFT_MAX = 100000;
+let _draftTimer = null;
+let _draftPending = null;   // {sid, text} captured at type time (sessionId may move)
+function _draftMap() {
+  try {
+    const map = JSON.parse(localStorage.getItem(_draftStorageKey) || "{}");
+    return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+  } catch (e) { return {}; }
+}
+function _draftSave(sid, text) {
+  if (!sid) return;
+  const map = _draftMap();
+  const v = String(text == null ? "" : text);
+  if (v.trim() && v.length <= _DRAFT_MAX) map[sid] = v;
+  else delete map[sid];
+  try { localStorage.setItem(_draftStorageKey, JSON.stringify(map)); } catch (e) {}
+}
+function _draftSaveSoon(sid) {
+  const inp = $("inp");
+  _draftPending = { sid: sid || sessionId, text: inp ? String(inp.value || "") : "" };
+  if (_draftTimer) return;
+  _draftTimer = setTimeout(() => { _draftTimer = null; _draftFlush(); }, 250);
+}
+function _draftFlush() {
+  const p = _draftPending;
+  _draftPending = null;
+  if (_draftTimer) { clearTimeout(_draftTimer); _draftTimer = null; }
+  if (p) _draftSave(p.sid, p.text);
+}
+function _draftClear(sid) {
+  if (!sid) return;
+  if (_draftPending && _draftPending.sid === sid) _draftPending = null;
+  _draftSave(sid, "");
+}
+function _draftRestore(sid) {
+  const inp = $("inp");
+  if (!inp || !sid) return false;
+  if (String(inp.value || "").trim()) return false;   // never overwrite what is being typed
+  const map = _draftMap();
+  if (!Object.prototype.hasOwnProperty.call(map, sid)) return false;
+  const text = String(map[sid] == null ? "" : map[sid]);
+  if (!text) return false;
+  inp.value = text;
+  if (inp.style) inp.style.height = "";
+  try { _growInp(); _renderCmdChips(); refreshSendBtn(); } catch (e) {}
+  return true;
+}
+function _draftSwap(fromSid, toSid) {
+  /* A session switch: the OUTGOING text was typed for the outgoing session, so it
+     is flushed there and the box is then set to the INCOMING session's draft —
+     empty when that session has none. Without the clear, the next keystroke in the
+     new session would be appended to the old session's paragraph and saved under
+     the new id. */
+  const inp = $("inp");
+  if (fromSid) { _draftSaveSoon(fromSid); _draftFlush(); }
+  if (!inp) return;
+  inp.value = "";
+  if (inp.style) inp.style.height = "";
+  if (toSid) {
+    const map = _draftMap();
+    if (Object.prototype.hasOwnProperty.call(map, toSid)) inp.value = String(map[toSid] || "");
+  }
+  try { _growInp(); _renderCmdChips(); refreshSendBtn(); } catch (e) {}
+}
+function _pruneDraftState(sessions) {
+  const map = _draftMap();
+  const live = new Set(sessions.map(s => s && s.id).filter(Boolean).map(String));
+  let changed = false;
+  Object.keys(map).forEach(sid => {
+    if (!live.has(sid)) { delete map[sid]; changed = true; }
+  });
+  if (changed) {
+    try { localStorage.setItem(_draftStorageKey, JSON.stringify(map)); } catch (e) {}
+  }
+}
+/* A tab that is closed, backgrounded or reloaded flushes the pending keystrokes. */
+window.addEventListener("pagehide", () => { _draftSaveSoon(sessionId); _draftFlush(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { _draftSaveSoon(sessionId); _draftFlush(); }
+});
+/* ---- end composer drafts ---- */
 function _todoOpenMap() {
   try {
     const map = JSON.parse(localStorage.getItem(_todoOpenStorageKey) || "{}");
@@ -6286,6 +6382,7 @@ function send(text, display, atts) {
     const _ownSkill = (_skillsCache || []).some(s => String(s.name || "").toLowerCase() === _tok);
     if (_c && _c.run && !_ownSkill) {
       inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+      _draftClear(sessionId);   // it left the box: never restore it
       _c.run(); return;
     }
   }
@@ -6322,7 +6419,7 @@ function send(text, display, atts) {
       // send(raw, text) and send() re-prepends "🎯 /goal ", which doubled the prefix.
       enqueueMsg({ raw: _rawMsg, text: raw.replace(/^\/goal[\s:]*/i, "").trim(), atts: _attSnap });
     }
-    inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips(); return;
+    inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips(); _draftClear(sessionId); return;
   }
   let msg = raw;
   // JAG-92: "/goal <..." runs the SAME chat loop in autonomous mode (JAG-78) —
@@ -6342,7 +6439,7 @@ function send(text, display, atts) {
   // into `mode` and is no longer a command by the time it reaches the server.
   if (_attBlock) msg = msg.startsWith("/") ? msg + "\n\n" + _attBlock
                                           : _attBlock + "\n\n" + msg;
-  inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+  inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips(); _draftClear(sessionId);
   const _uNode = who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote);
   if (_attSnap.length) {
     const _bub = _uNode && _uNode.querySelector(".bubble");
@@ -6516,6 +6613,7 @@ async function api(method, path, body) {
 function selectSession(s) {
   if (!s || !s.id) return;
   _saveChatScrollState(sessionId, $("log").scrollTop);
+  const _fromSid = sessionId;   // 2026-11-10: the unsent text moves with its session
   sessionId = s.id; localStorage.setItem("sf_session", sessionId);
   _syncAttachmentBusyUI();
   _forceExpandActive = true;   // JAG-415: reveal this session's team group in the rail
@@ -6525,6 +6623,7 @@ function selectSession(s) {
   _sessModel[s.id] = s.model || _sessModel[s.id] || "";
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
   renderQueue();   // JAG-174: show THIS session's queued messages, not the last one's
+  _draftSwap(_fromSid, s.id);   // 2026-11-10: each session keeps its own unsent text
   // JAG-167: never carry another session's run graph into this one.
   curRunId = null; localStorage.removeItem("sf_run"); graph = null;
   if (window.SparkEditor && SparkEditor.onSessionChange) SparkEditor.onSessionChange();
@@ -6969,6 +7068,7 @@ async function loadSessions() {
   if (out && Array.isArray(out.sessions)) {
     _pruneTodoOpenState(out.sessions);
     _pruneChatScrollState(out.sessions);
+    _pruneDraftState(out.sessions);
   }
   const box = $("sessions"); box.innerHTML = "";
   // v752: ONE filter+sort state for the rail, the same spec the Control AGENTS
@@ -7356,7 +7456,9 @@ async function createNewSession() {
   if (TOKEN) p.set("token", TOKEN);
   const s = await api("GET", "/api/sessions/new?" + p.toString());
   if (s.error) { $("nsResult").textContent = "error: " + s.error; return; }
+  const _prevSid = sessionId;   // 2026-11-10: a new chat starts with an EMPTY box, never the old draft
   sessionId = s.id; localStorage.setItem("sf_session", sessionId);
+  _draftSwap(_prevSid, s.id);
   _syncAttachmentBusyUI();
   _sessModel[s.id] = "";
   $("log").innerHTML = ""; curThink = curAns = null; _resetChatTree();
@@ -17927,7 +18029,11 @@ function _renderCmdChips() {
      });
    }
  }
-$("inp").addEventListener("input", () => { skillsAutocomplete(); _renderCmdChips(); refreshSendBtn(); });
+$("inp").addEventListener("input", () => { skillsAutocomplete(); _renderCmdChips(); refreshSendBtn(); _draftSaveSoon(sessionId); });
+/* Leaving the box (a click on another session in the rail, the palette, the
+   new-chat dialog) flushes the last keystrokes BEFORE that handler runs, so a
+   switch can never lose the word typed in the 250 ms window. */
+$("inp").addEventListener("blur", () => { _draftSaveSoon(sessionId); _draftFlush(); });
 /* JAG-116/JAG-458: track the bottom pin and save each session's reading position. */
 $("log").addEventListener("scroll", () => {
   const log = $("log");
@@ -18094,7 +18200,7 @@ ensureToken().then(() => {
       setTimeout(() => { try { micToggle(); } catch (e) {} }, 350);
     },
     () => {
-      loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn();
+      loadSessions(); loadPlan(); loadGraph(); loadStatus(); loadModels(); loadApprovals(); loadImprovement(); loadCtx(); loadRole(); loadHistory(); connectFeed(); loadSkills(); loadCompactionRef(); loadCosts(); loadRules(); cbStatus(); loadIndexCfg(); loadDiagnostics(); _syncAttachmentBusyUI(); refreshSendBtn(); _draftRestore(sessionId);
     },
   ];
   for (const step of _boot) {

@@ -62,7 +62,8 @@ UI_GUARD="v352_appearance_theme v360_shell_fixes v368_panel_resize v497_inspecto
 v600_agents_session_button v644_view_cols_fit v655_single_writer_test_chips v758_rail_grammar
 v761_mobile_drawers v763_ui_icons v774_invalid_reply_recovery v777_landscape_chat
 v778_session_ids_and_sparkle_cache v851_ui_a11y_gate v888_team_click_and_page_fit
-v890_rail_groups_team_colour_and_compact_rows v891_deck_fit_and_row_menus v910_no_team_bulk"
+v890_rail_groups_team_colour_and_compact_rows v891_deck_fit_and_row_menus v910_no_team_bulk
+v934_composer_session_drafts"
 
 # TARGETED run (the fix under test): `LONGRUN_BATTERY_TESTS="v753_x v750_y"` runs
 # ONLY those files (plus the UI guard below). The launcher is tests/battery_tmp.sh,
