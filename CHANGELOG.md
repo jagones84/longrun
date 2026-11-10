@@ -47,6 +47,11 @@ All notable changes to Longrun are documented here. The format follows
   axe: 0 violations, no static-file restart needed.)
 
 ### Added
+- **A batch accounts for every item it accepted (`v935`).** The Session Job scheduler could return
+  fewer subjobs than it created (observed 2026-11-03: two items in, one result out, turn green), so the
+  lost work never appeared as a failure. The batch assembler now compares the ids it created with the
+  ids the scheduler returned and reports each missing one as an explicit `FAILED ... no outcome was
+  recorded` block — the check is the COUNT, not the message. (Locked by `v935` 6/6.)
 - **The "No team" bucket gets the team bulk menu — and a real delete-all (`v910`).** The rail's
   No-team pile (live: 103 sessions) had no bulk actions: the Control deck's kebab (JAG-482) was
   real-teams-only and the Sessions rail had none at all. One backend scope now serves BOTH surfaces:

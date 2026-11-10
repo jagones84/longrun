@@ -2872,13 +2872,32 @@ def _apply_chat_batch(sess, act, on_event, av02, node=None, after=None, hist=Non
                     pass
             ran = _sj.run(sess["id"], created["job"], hook=_sj_hook,
                           timeout=SUBAGENT_WAIT)
+            _got_ids = set()
             for s in ran.get("subjobs") or []:
+                _got_ids.add(str(s.get("id") or ""))
                 results.append({"tool": "subagent",
                                 "ok": s.get("status") == "done",
                                 "obs": "SJ %s (%s) %s\n%s"
                                        % (s.get("id"), s.get("label"),
                                           s.get("status"),
                                           s.get("result") or s.get("error") or "")})
+            # F3 (frontier upgrade round 2): the scheduler ACCEPTED every subjob at
+            # create time, so every one must come back with an outcome. A batch that
+            # silently returns fewer (D1, 2026-11-03: 2 in, 1 out, exit 0) hides lost
+            # work behind a green turn. Name the missing subjob as a FAILURE instead
+            # of dropping it from the observation; the check is the COUNT, never the
+            # message.
+            for _sid in (created.get("subjobs") or []):
+                _sid = str(_sid)
+                if _sid in _got_ids:
+                    continue
+                _label = (created.get("labels") or {}).get(_sid) or ""
+                results.append({"tool": "subagent", "ok": False,
+                                "obs": ("SJ %s%s: no outcome was recorded — the "
+                                        "scheduler returned nothing for this subjob, "
+                                        "so it is reported as FAILED instead of "
+                                        "silently dropped"
+                                        % (_sid, (" (%s)" % _label) if _label else ""))})
     if dispatch_items:
         # P1: teammate turns to DIFFERENT teammates run CONCURRENTLY (each is
         # a real turn in its own session); items for the SAME teammate stay
