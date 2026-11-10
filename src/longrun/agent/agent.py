@@ -2996,7 +2996,8 @@ def maybe_reflect(sess, message, answer, used_tools, model=None, evidence=None):
         # 3-value unpack always raised ValueError, which the `except` swallowed, so
         # post-turn reflection (JAG-93) was silently dead. Unpack 2.
         lesson, _think = _router_stream(
-            msgs, model or default_model(), lambda ch, t: None, timeout=60)
+            msgs, model or default_model(), lambda ch, t: None, timeout=60,
+            cancel=lambda: _is_aborted(sess["id"]))
         lesson = (lesson or "").strip().strip('"').strip()
         if len(lesson) < 6 or len(lesson) > 400:
             return None
@@ -6900,7 +6901,8 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
     # v0.6: the run's FIRST action is a model-generated write_todos call, which
     # seeds the per-run task graph that the agent loop then advances.
     try:
-        start_run_graph(trace.id, goal, None, model, on_event=on_event)
+        start_run_graph(trace.id, goal, None, model, on_event=on_event,
+                        cancel=api_v02.cancel_of(st))
     except Exception as e:  # noqa: BLE001
         publish("graph.error", run=trace.id, error=str(e))
 
@@ -6926,8 +6928,10 @@ def agent_run(goal, max_steps=6, model=None, on_event=None, trace=None, run_stat
                      % (goal, i + 1, max_steps, state_block(graph_key=trace.id),
                         _agent_history(actions))}]
             on_event("agent.iteration", i=i + 1, of=max_steps)
-            answer, think = _router_stream(msgs, model, lambda ch, t: on_event("agent.think", channel=ch, text=t))
+            answer, think = _router_stream(msgs, model, lambda ch, t: on_event("agent.think", channel=ch, text=t),
+                                           cancel=api_v02.cancel_of(st))
             _llm(msgs, answer + think)
+            api_v02.checkpoint(st)  # JAG-932: never act on a cancelled half-stream
             act = _normalize_action(extract_action_json(answer)) or {}
             if not isinstance(act, dict) or not act.get("action"):
                 act = {"thought": answer[:200], "action": "note", "detail": answer[:400]}

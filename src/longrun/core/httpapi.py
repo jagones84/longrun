@@ -2908,21 +2908,27 @@ class Handler(BaseHTTPRequestHandler):
             # panic button, and with agents running in parallel a single-session abort
             # left the others decoding (a single-slot router then kept the GPU busy, so
             # "stop" looked like a no-op).
+            # JAG-932: the same Stop also aborts every live RUN (jobs, subagents): a
+            # background run was not in `_ACTIVE_CHAT`, so the button stopped the turn
+            # while that run kept decoding — the reported "Stop does nothing".
             if body.get("all") or qs.get("all"):
                 with _ACTIVE_CHAT_LOCK:
                     sids = list(_ACTIVE_CHAT.keys())
                 for _s in sids:
                     push_abort(_s)
                     abort_session_processes(_s)
-                publish("chat.abort", session=None, all=len(sids))
-                return self._send(200, {"ok": True, "aborted": sids})
+                runs = api_v02.abort_all_runs()
+                publish("chat.abort", session=None, all=len(sids), runs=runs)
+                return self._send(200, {"ok": True, "aborted": sids, "runs": runs})
             sid = body.get("session") or qs.get("session")
             if not sid:
                 return self._send(400, {"error": "session required"})
             push_abort(sid)
             stopped = abort_session_processes(sid)
-            publish("chat.abort", session=sid, stopped=stopped)
-            return self._send(200, {"ok": True, "aborted": sid, "stopped": stopped})
+            runs = api_v02.abort_all_runs(only_session=sid)
+            publish("chat.abort", session=sid, stopped=stopped, runs=runs)
+            return self._send(200, {"ok": True, "aborted": sid, "stopped": stopped,
+                                    "runs": runs})
         if path == "/api/improve":
             # JAG-128B: approve/reject a self-improvement proposal.
             from longrun.util import improve as improve_mod

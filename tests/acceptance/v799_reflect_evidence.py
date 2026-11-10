@@ -87,7 +87,7 @@ except Exception as exc:  # noqa: BLE001
 _seen = []
 
 
-def _fake_stream(msgs, model, on_delta, timeout=60):
+def _fake_stream(msgs, model, on_delta, timeout=60, cancel=None):
     _seen.append([dict(m) for m in msgs])
     return "prefer the narrow grep before a full read", None
 

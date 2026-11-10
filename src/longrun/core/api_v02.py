@@ -105,6 +105,14 @@ class RunState:
         self.created = round(time.time(), 3)
         self.paused = False
         self.abort = False
+        # JAG-932: the Stop button must reach THIS run's generation, not only the
+        # chat turn's. `abort_all_runs` sets this event and `cancel_of()` hands it
+        # to every model call, so a background run closes its socket at the next
+        # 0.5 s poll instead of finishing the generation it already started.
+        self.cancel_ev = threading.Event()
+        # JAG-932: the chat session that owns this run (None for a bare
+        # /api/agent/run), so a session-scoped Stop can find the run.
+        self.session = None
         self.pause_notified = False
         self.resume_ev = threading.Event()
         self.resume_ev.set()
@@ -169,17 +177,58 @@ def run_control(rid, action):
         st.resume_ev.set()
     elif action == "abort" and not terminal:
         st.abort = True
+        st.cancel_ev.set()  # JAG-932: unblocks the generation already in flight
         st.status = "aborting"
         st.resume_ev.set()
     _publish("agent.control", run=rid, action=action, status=st.status, terminal=terminal)
     return st
 
 
+def abort_all_runs(only_session=None):
+    """Operator Stop: abort every LIVE run, not only the streaming chat turn.
+
+    The UI Stop stopped the turn but a background run (job, subagent) kept
+    decoding, because it only looks at `RunState.abort` and only
+    `/api/agent/control` raised that. Idempotent — a terminal run is skipped, so
+    a double click is harmless. Returns the ids that were aborted.
+    """
+    aborted = []
+    for rid, st in list(RUNS.items()):
+        if st.status in ("done", "aborted", "error") or st.cancel_ev.is_set():
+            continue
+        if only_session and st.session != only_session:
+            continue
+        if run_control(rid, "abort") is not None:
+            aborted.append(rid)
+    return aborted
+
+
+def _session_stopped(st):
+    """True when the operator pressed Stop on the session that owns `st`."""
+    sid = getattr(st, "session", None)
+    if not sid:
+        return False
+    from longrun.util.steering import _is_aborted
+    return bool(_is_aborted(sid))
+
+
+def cancel_of(st):
+    """Hard-cancel predicate for ONE run, for `_router_stream(cancel=...)`.
+
+    Three doors lead to the same run — its own abort (`/api/agent/control`),
+    `abort_all_runs` (the UI Stop) and the session flag (`/api/chat/abort`) — and
+    each must close the socket of the generation in flight, not wait for it.
+    """
+    if st is None:
+        return None
+    return lambda: bool(st.cancel_ev.is_set() or st.abort or _session_stopped(st))
+
+
 def checkpoint(st):
     """Honour pause/abort. Called at every step and while waiting for approvals."""
     if st is None:
         return
-    if st.abort:
+    if st.abort or st.cancel_ev.is_set() or _session_stopped(st):
         if st.status != "aborted":
             st.status = "aborting"
         raise AbortRun()
@@ -189,7 +238,7 @@ def checkpoint(st):
             _publish("agent.paused", run=st.id)
         st.resume_ev.wait()
         st.pause_notified = False
-        if st.abort:
+        if st.abort or st.cancel_ev.is_set() or _session_stopped(st):
             raise AbortRun()
 
 
@@ -896,6 +945,8 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     # the session resolves it the SAME way and passes it in explicitly.
     model = model or _routed_agent_model(goal)
     st.model = model
+    if session:
+        st.session = session  # JAG-932: lets a session-scoped Stop find this run
     # JAG-448: the subagent (and any caller passing `fallbacks`) gets a real
     # failover chain of literal model refs. `model` stays PRIMARY; on a stream
     # failure the loop walks `candidates` instead of dying at the first error.
@@ -929,7 +980,8 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
     # write_todos call → the per-run task graph, streamed live as nodes land.
     if script is None:
         try:
-            srv.start_run_graph(st.id, goal, None, model, on_event=on_event)
+            srv.start_run_graph(st.id, goal, None, model, on_event=on_event,
+                                cancel=cancel_of(st))
         except Exception as e:  # noqa: BLE001 — graph must never break the run
             _publish("graph.error", run=st.id, error=str(e))
     last_sig, repeated = None, 0
@@ -1002,7 +1054,7 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                             answer, think = srv._router_stream(
                                 msgs, cand, lambda ch, t: on_event("agent.think",
                                                                    channel=ch, text=t),
-                                usage=_call_usage)
+                                usage=_call_usage, cancel=cancel_of(st))
                             _account_call(st, _call_usage, session=session)
                             if cand != model:
                                 on_event("model.fallback", run=st.id, from_model=model,
@@ -1030,6 +1082,9 @@ def agent_run_v2(goal, max_steps=6, model=None, on_event=None, script=None, run_
                             continue
                         raise last_err if last_err else RuntimeError("no model available")
                     break
+                # JAG-932: a cancelled stream comes back with HALF an answer — never
+                # parse and execute an action out of it. `checkpoint` raises AbortRun.
+                checkpoint(st)
                 # JAG-534: use the SAME parser as the chat loop. `extract_json`
                 # alone sees no action in the model's native DSML markup, so a
                 # subagent whose model emitted it turned every iteration into a
