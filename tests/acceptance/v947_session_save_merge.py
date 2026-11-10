@@ -120,6 +120,26 @@ disk = S.load_session(SID)
 check("E1 a tool card written by another thread is not dropped",
       [c.get("id") for c in disk.get("tool_cards") or []] == ["c1"], disk.get("tool_cards"))
 
+# ---- G. a WIPE is not a prefix (v534 A2 red since v947) ---------------------
+SID = "v947g"
+fresh(SID, [msg("one"), msg("two")])
+wiped = S.load_session(SID)
+wiped["messages"] = []
+wiped["tool_cards"] = []
+with S._turn_lock(SID):
+    S.save_session(wiped, truncate=True)
+disk = S.load_session(SID)
+check("G1 a truncating save really empties the transcript",
+      (disk.get("messages") or []) == [], disk.get("messages"))
+
+SID = "v947h"
+fresh(SID, [msg("one")])
+S.persist_inject(S.load_session(SID), "handoff", "x")
+S.clear_session(SID)
+disk = S.load_session(SID)
+check("G2 clear_session really clears messages, cards and injects",
+      not (disk.get("messages") or disk.get("tool_cards") or disk.get("injects")), disk)
+
 # ---- F. the lock is per session (one writer id does not block another) -----
 check("F1 the same session id yields the same lock object",
       S._save_lock("x") is S._save_lock("x"))

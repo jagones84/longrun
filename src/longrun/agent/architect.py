@@ -932,7 +932,9 @@ def reset_stateless_session():
     sess["messages"] = []
     sess["tool_cards"] = []
     sess["injects"] = []
-    stores.save_session(sess)
+    # A deliberate wipe: `truncate=True` keeps v947's tail merge from putting the
+    # cleared transcript back (the v534 A2 pin was red because of exactly that).
+    stores.save_session(sess, truncate=True)
     try:
         taskgraph.reset(LONGRUN_AGENT_SESSION_ID)
     except Exception:  # noqa: BLE001

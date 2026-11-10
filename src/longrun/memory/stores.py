@@ -207,7 +207,15 @@ def _adopt_disk_tail(sess, field):
         return
 
 
-def save_session(sess):
+def save_session(sess, truncate=False):
+    """Persist one session, merging records another writer appended (v947).
+
+    `truncate=True` is for a DELIBERATE wipe (`clear_session`,
+    `reset_stateless_session`): an empty list is indistinguishable from "a side
+    writer that never held these records", so the tail adoption must be skipped
+    or the wipe is undone on the next save (the v534 A2 pin was red because of
+    exactly that). Every other writer keeps the merge.
+    """
     sid = sess.get("id")
     if not _valid_sid(sid):
         return  # JAG-230: never write a transcript to a path from an unsafe id
@@ -225,17 +233,18 @@ def save_session(sess):
         # stale copy) must not come back: re-apply the live value the owner endpoint
         # recorded. No-op for a session nobody changed live.
         adopt_live_choices(sess)
-        if not _owns_turn(sid):
-            # A side writer (handoff/escalation) must not rewind the turn's
-            # messages. The turn itself is the authority on its own transcript.
-            _adopt_disk_tail(sess, "messages")
-        # These two are append-only by design: even the turn must not drop a
-        # record another thread wrote while it was running.
-        _adopt_disk_tail(sess, "injects")
-        _adopt_disk_tail(sess, "tool_cards")
-        # JAG-796: a mid-run steer is a REAL user message; whichever writer saves
-        # first must carry it, or the operator's own words vanish from the chat.
-        adopt_live_steers(sess)
+        if not truncate:
+            if not _owns_turn(sid):
+                # A side writer (handoff/escalation) must not rewind the turn's
+                # messages. The turn itself is the authority on its own transcript.
+                _adopt_disk_tail(sess, "messages")
+            # These two are append-only by design: even the turn must not drop a
+            # record another thread wrote while it was running.
+            _adopt_disk_tail(sess, "injects")
+            _adopt_disk_tail(sess, "tool_cards")
+            # JAG-796: a mid-run steer is a REAL user message; whichever writer saves
+            # first must carry it, or the operator's own words vanish from the chat.
+            adopt_live_steers(sess)
         # JAG-431p: carry each TITLED free group's title/summary onto the message that
         # STARTS it, so the WebUI labels groups by data that rides the transcript (and
         # therefore survives compaction) instead of by an ordinal. Best-effort.
@@ -396,7 +405,7 @@ def clear_session(sid):
         sess["messages"] = []
         sess["tool_cards"] = []
         sess["injects"] = []
-        save_session(sess)
+        save_session(sess, truncate=True)
     try:
         taskgraph.reset(sid)
     except Exception:  # noqa: BLE001 — a missing graph must not block the clear
