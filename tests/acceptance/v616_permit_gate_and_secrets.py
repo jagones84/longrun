@@ -113,7 +113,10 @@ check("B5 scrub preserves container types with magic membership (v500-C)",
 check("C1 FULL no longer claims anything-goes",
       "anything goes, anywhere" not in HTML
       and "Three things stay locked even on FULL" in HTML
-      and "per-session Teamorg grant" in HTML)
+      # v949 (parallel stream `9b9cffd`) rewrote the tool-access sentence: the
+      # Tools panel now names the three real classes per row instead of the old
+      # "per-session Teamorg grant" phrase. Same contract, new copy.
+      and "any session · team lead · Architect or a granted session" in HTML)
 check("C2 the per-tool policy is the only per-row state (v890: no repeated grant badge)",
       'title="even on FULL this tool answers permission-denied' not in HTML
       and 'const isExcl = String(t.origin || "") === "exclusive"' in HTML
