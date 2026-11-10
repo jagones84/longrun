@@ -108,9 +108,10 @@ check("C1 turn 2 re-sends turn 1's user message BYTE FOR BYTE (the cacheable pre
        len(str(msgs1[1].get("content")))])
 check("C2 the system prompt is unchanged between the two turns",
       msgs2[0] == msgs1[0])
-check("C3 the NEW turn is still the operator's text plus the volatile blocks",
+check("C3 the NEW turn carries the operator's text, and an UNCHANGED volatile block is not repeated",
       (msgs2[-1].get("content") or "").startswith("second ask")
-      and STATE_MARK in (msgs2[-1].get("content") or ""))
+      and STATE_MARK not in (msgs2[-1].get("content") or ""),
+      (msgs2[-1].get("content") or "")[:80])
 check("C4 only USER turns carry a wire — an assistant turn is never rewritten",
       all("wire" not in m for m in sess["messages"] if m.get("role") == "assistant")
       and "wire" in sess["messages"][0])

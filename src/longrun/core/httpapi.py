@@ -1173,9 +1173,11 @@ def context_usage(session_id=None, message=None, model=None,
     sysp = _system_prompt(sess, sections=sections)
     # JAG-276 / 2026-11-10: the live task list AND the memory index are injected
     # into the user turn (see agent.assemble_turn / user_turn_context). Mirror that
-    # here — ONE owner — so the meter counts what is REALLY sent.
-    aug_message = (message or "") + "\n\n" + user_turn_context(
-        session_id=session_id, sess=sess)
+    # here — ONE owner — so the meter counts what is REALLY sent, including the
+    # rule that a block already in the history is not repeated.
+    _extra = user_turn_context(session_id=session_id, sess=sess,
+                               history=sess.get("messages") or [])
+    aug_message = (message or "") + (("\n\n" + _extra) if _extra else "")
     # 2026-11-07: NO memory retrieval here. `retrieve_memory=True` made the meter
     # pay the cross-encoder re-rank — a PAID network call, measured 390 ms — whose
     # only product was `compacted_tokens`, and NOTHING reads that field (grep: it is

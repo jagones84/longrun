@@ -3419,6 +3419,14 @@ def user_turn_context(session_id=None, sess=None):
     across turns, so the provider's prefix cache survives and the chat does not
     re-publish the whole prompt on every memory write (2026-11-10).
 
+    2026-11-10 (second pass): the history is append-only now (`wire`), so a block
+    that is ALREADY in it byte-identically does not need to be sent again — the
+    model still sees it, and repeating it only grows the window (~1.7k tokens per
+    turn measured). `history` is the transcript the turn builds on; a block is
+    skipped only when its EXACT text is already there, so a changed list or a new
+    memory is always sent, and a compaction (which removes the old copy) brings it
+    back by itself. No memo, no second truth.
+
     ONE owner: `assemble_turn` and the context meter (`httpapi.context_usage`) both
     call this, so what is measured is what is sent.
     """
@@ -3436,6 +3444,14 @@ def user_turn_context(session_id=None, sess=None):
             parts.append(_state)
     except Exception:  # noqa: BLE001
         pass
+    if history and parts:
+        try:
+            from longrun.model import context_engine as _ce
+            _blob = "\n".join(str(_ce.wire_content(m) or "") for m in history
+                              if isinstance(m, dict))
+            parts = [p for p in parts if p not in _blob]
+        except Exception:  # noqa: BLE001 — never drop a block on a bad history
+            pass
     return "\n\n".join(parts)
 
 
@@ -3474,9 +3490,12 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
         transcript = transcript[:-1]
     # JAG-276 / 2026-11-10: the live task list AND the memory index ride in the
     # CURRENT user turn (not the system prompt) so the whole system prompt + the
-    # committed transcript stay cache-safe.
-    eff_message = eff_message + "\n\n" + user_turn_context(
-        session_id=(sess or {}).get("id"), sess=sess)
+    # committed transcript stay cache-safe. A block already present in the history
+    # is not repeated (see `user_turn_context`).
+    _extra = user_turn_context(session_id=(sess or {}).get("id"), sess=sess,
+                               history=transcript)
+    if _extra:
+        eff_message = eff_message + "\n\n" + _extra
     try:
         from longrun.model import context_engine
         msgs, ctx_stats = context_engine.build(
