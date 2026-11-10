@@ -1119,19 +1119,26 @@ def check_delegation(tool, run_id=None):
 
 
 def coordinator_scope(run_id):
-    """The agents a `job.*` caller may act on: None = unrestricted, else A-ids.
+    """The agents a `job.*` caller may act on: None = the whole org, else A-ids.
 
-    v901 (cascade): an unrestricted caller (Architect / granted session) keeps the
-    whole org. A coordinator gets its ENTIRE subtree — the cascade the operator
-    asked for: a dispatched lead may create dependent jobs for its own reports,
-    and each of them may do the same below itself. An empty set means "not a
-    coordinator": every mutation is refused.
+    The rule, in three words — ALL · SUBTREE · NOTHING:
+      all      the Architect session (`longrunAgent`, `longrunAgent_*`) and a call
+               with no caller (the operator's CLI / REST hand);
+      subtree  a coordinator (an agent with at least one direct report), at every
+               level below it (v901 cascade);
+      nothing  everyone else — a leaf delegates nothing.
+
+    A Teamorg grant (`allow_longrun_agent`) is NOT an identity: it unlocks the
+    CONFIG tools (agent/team/provider/webui/kb/skill/mcp/routine), never work on
+    another team. It used to return None here, so a granted lead could create a
+    job for any agent (case J38, 2026-11-10) while its prompt said exit 126.
     """
+    sid = str(run_id or "").strip()
+    if not sid or sid == LONGRUN_AGENT_SESSION_ID or sid.startswith(LONGRUN_AGENT_SESSION_ID + "_"):
+        return None
     try:
-        if not run_id or session_has_access(run_id):
-            return None
         from longrun.agent import agents as agents_mod
-        me = agents_mod.REGISTRY.resolve(run_id)
+        me = agents_mod.REGISTRY.resolve(sid)
         if not me or not agents_mod.REGISTRY.reports_of(me.get("id")):
             return set()
         return set(agents_mod.REGISTRY.subtree(me.get("id")))
@@ -1196,7 +1203,7 @@ def delegation_section(sess):
         "wait for another — the dependency (and its failure) is then managed instead "
         "of improvised.\n"
         "- SCOPE: you may name ONLY agents inside your own subtree — %s. Anything "
-        "outside is refused (exit 126).\n"
+        "outside is refused (exit 126); a Teamorg grant does not widen this.\n"
         "- Available verbs now: %s.\n"
         % (len(reports), shown or "none", ", ".join("`%s`" % t for t in sorted(tools)))
     )
