@@ -24,7 +24,7 @@ Two kinds, because there are two genuinely different jobs:
 * ``generate`` — ONE non-agentic completion returns TEXT for one field. It never
   writes: the operator reviews the draft in the field and saves (or sends). This is
   what an editable field needs, and it is why the composer can be served at all.
-* ``automate`` — `longrun_agent.automate()` runs a stateless VEO turn that CHANGES
+* ``automate`` — `architect.automate()` runs a stateless VEO turn that CHANGES
   the substrate through exclusive `namespace.tool` calls. Only surfaces the operator
   already edits by hand are allowed (`AUTOMATE_ALLOWED_SECTIONS`); runtime config is
   refused on purpose.
@@ -65,7 +65,7 @@ class Surface:
 
 # --------------------------------------------------------------------------
 # AUTOMATE — stateless VEO turns that WRITE the substrate. The prompt text is
-# carried over verbatim from `longrun_agent.SECTION_PROMPTS` so the behaviour of
+# carried over verbatim from `architect.SECTION_PROMPTS` so the behaviour of
 # the existing control is unchanged; only its OWNER moved here.
 # --------------------------------------------------------------------------
 _AUTOMATE_PROMPTS = {
@@ -452,7 +452,7 @@ SURFACES = _build()
 
 # ---------------------------------------------------------------- compat views --
 #
-# `longrun_agent` and its tests read these three names. They are DERIVED from the
+# `architect` and its tests read these three names. They are DERIVED from the
 # registry above, so the prompt data and the gating have exactly one owner; the
 # names stay valid for their callers.
 SECTION_PROMPTS = {sid: s.system for sid, s in SURFACES.items() if s.kind == AUTOMATE}

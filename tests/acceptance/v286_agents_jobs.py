@@ -40,7 +40,7 @@ from longrun.orchestrate import orchestration  # noqa: E402
 reg = agents.REGISTRY
 
 # --- agents -----------------------------------------------------------------
-# 2026-11-08: A1 is RESERVED for the harness supervisor (`longrunAgent`), so a
+# 2026-11-08: A1 is RESERVED for the harness supervisor (`architect`), so a
 # fresh store mints A2 first. The ids are read from the calls, never assumed.
 a1 = reg.designate("sess-1", name="CEO", role="coordinator")
 a2 = reg.designate("sess-2", name="Dev", role="engineer", reports_to="sess-1")

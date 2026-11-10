@@ -61,7 +61,7 @@ check("A2 the automate views are DERIVED, not a second copy",
       S.SECTION_PROMPTS["rules"] is S.SURFACES["rules"].system
       and S.AUTOMATE_INSPECT_SECTIONS["teamorg"] == "teamorg")
 from longrun.agent import architect as LRA             # noqa: E402
-check("A3 longrun_agent reads the SAME objects (owner moved, no duplicate)",
+check("A3 architect reads the SAME objects (owner moved, no duplicate)",
       LRA.SECTION_PROMPTS is S.SECTION_PROMPTS
       and LRA.AUTOMATE_ALLOWED_SECTIONS is S.AUTOMATE_ALLOWED_SECTIONS
       and LRA.AUTOMATE_ALLOWED_SECTIONS == ("rules", "teamorg", "agents", "teams", "orbit"))

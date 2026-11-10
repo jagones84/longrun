@@ -7,7 +7,7 @@ dependent jobs … its not an exclusive tool, remove from there and put in the
 baseline tools"*.
 
 Before this, `job.*` was an EXCLUSIVE tool: only the Architect or a session the
-operator granted `allow_longrun_agent` could touch it, and `approvals.mode=full`
+operator granted `allow_architect` could touch it, and `approvals.mode=full`
 did not lift it. A dispatched lead therefore had to improvise dependencies with
 sequential dispatches.
 
@@ -75,7 +75,7 @@ check("A3 every manager below is a coordinator too (cascade)",
       LRA.check_delegation("job.create", "s-sub")[0] is True)
 check("A4 a non-agent session may not", LRA.check_delegation("job.create", "s-nobody")[0] is False)
 check("A5 the Architect keeps the whole org",
-      LRA.check_delegation("job.create", "longrunAgent")[0] is True)
+      LRA.check_delegation("job.create", "architect")[0] is True)
 _d, _r = REG.classify("job.delete", {"run_id": "s-solo"})
 _d2, _r2 = REG.classify("job.delete", {"run_id": "s-lead"})
 check("A6 classify() carries the same verdict (one gate, two entry points)",
@@ -90,7 +90,7 @@ check("B2 the top lead sees the whole cascade",
 check("B3 a leaf has an empty scope (not 'everything')",
       LRA.coordinator_scope("s-solo") == set())
 check("B4 the Architect / a grant is unrestricted",
-      LRA.coordinator_scope("longrunAgent") is None and LRA.coordinator_scope(None) is None)
+      LRA.coordinator_scope("architect") is None and LRA.coordinator_scope(None) is None)
 
 # ---- C) create / read / mutate inside the subtree -------------------------
 _lead = LRA.execute("job.create", {"goal": "lead job", "agents": [SUB]}, run_id="s-lead")
@@ -119,7 +119,7 @@ check("C6 a job coordinated by someone else cannot be deleted",
       LRA.execute("job.delete", {"job": J_LEAD}, run_id="s-sub")
       .get("permission_denied") is True)
 _other = LRA.execute("job.create", {"goal": "other team job", "agents": [OTHER]},
-                     run_id="longrunAgent")
+                     run_id="architect")
 J_OTHER = (_other.get("job") or {}).get("id")
 _listed = LRA.execute("job.list", {}, run_id="s-sub")
 _ids = {j.get("id") for j in _listed.get("jobs") or []}
@@ -169,7 +169,7 @@ check("F1 a coordinator is TOLD it owns job.* and who is in scope",
       and (SUB in _sec and WORKER in _sec) and LEAD not in _sec, _sec[:200])
 check("F2 a leaf agent gets no section (it would be a lie)",
       LRA.delegation_section({"id": "s-solo"}) == "")
-check("F3 the Architect uses its own section", LRA.delegation_section({"id": "longrunAgent"}) == "")
+check("F3 the Architect uses its own section", LRA.delegation_section({"id": "architect"}) == "")
 check("F4 the section is wired into the prompt registry",
       any(s["id"] == "delegation" for s in P.SECTIONS)
       and P._PROVIDERS.get("delegation") is not None)

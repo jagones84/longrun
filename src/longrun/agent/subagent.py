@@ -151,7 +151,7 @@ def role_tools(role):
 def merge_roles(current, incoming):
     """Assign the roles map WITHOUT destroying a role's tool scope (I-1).
 
-    The writers (POST /api/subagents, the longrunAgent settings tool) used to
+    The writers (POST /api/subagents, the architect settings tool) used to
     coerce every value with `str()`, which flattened `{brief, tools}` into
     "{'brief': …}" and silently dropped the scope. One implementation, used by
     both writers, so a panel edit can never delete what it does not render.

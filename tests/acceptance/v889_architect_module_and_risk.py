@@ -11,10 +11,10 @@ Operator, 2026-11-08:
   *"for the role checkbox I don't know … decide by your own."*
 
 Pinned here:
-  A) the module is `src/longrun/agent/architect.py`; no `longrun_agent` module import is
-     left anywhere in `src/` or `tests/`, and the module still imports;
-  B) the machine contracts did NOT move (session id, /api/longrun-agent/*, roles key,
-     `allow_longrun_agent`, event names) — renaming a contract would break clients;
+  A) the module is `src/longrun/agent/architect.py`; no import of the retired
+     module name is left anywhere in `src/` or `tests/`, and the module still imports;
+  B) the identity is ONE word everywhere: session id, /api/architect/*, roles key,
+     `allow_architect`, event names;
   C) the DEFAULT approval class of every exclusive tool is risk-based: designing the org
      is `auto`, deleting data or rewiring the harness is `required`;
   D) an explicit entry in config/tools.yaml still overrides the default, and
@@ -50,29 +50,32 @@ def check(name, ok, detail=""):
 
 
 # ---- A: one module, one name ----------------------------------------------
+_OLD_MODULE = "longrun_agent"     # the retired FILE name (the id is `architect` now)
 check("A1 the module is architect.py",
       os.path.exists(os.path.join(REPO, "src", "longrun", "agent", "architect.py"))
-      and not os.path.exists(os.path.join(REPO, "src", "longrun", "agent", "longrun_agent.py")))
+      and not os.path.exists(os.path.join(
+          REPO, "src", "longrun", "agent", _OLD_MODULE + ".py")))
 
 _importers = []
 for base in ("src", "tests"):
     for p in glob.glob(os.path.join(REPO, base, "**", "*.py"), recursive=True):
         t = open(p, encoding="utf-8").read()
-        if re.search(r"from longrun\.agent import longrun_agent\b", t):
+        if re.search(r"import\s+" + _OLD_MODULE + r"\b", t) or re.search(
+                r"from\s+longrun\.agent\s+import\s+" + _OLD_MODULE + r"\b", t):
             _importers.append(os.path.relpath(p, REPO))
-check("A2 no import of the old module name is left", not _importers, _importers)
+check("A2 no import of the retired module name is left", not _importers, _importers)
 
 from longrun.agent import architect as A                       # noqa: E402
 check("A3 the new module imports and owns the same surface",
       callable(A.automate) and callable(A.execute) and "teamorg" in A.SECTION_PROMPTS)
 
-# ---- B: the contracts stay put --------------------------------------------
-check("B1 the stored session id and the HTTP route are unchanged",
-      A.LONGRUN_AGENT_SESSION_ID == "longrunAgent" and A.LONGRUN_AGENT_TITLE == "Architect")
+# ---- B: ONE spelling for the identity -------------------------------------
+check("B1 the stored session id and the title are the canonical ones",
+      A.ARCHITECT_SESSION_ID == "architect" and A.ARCHITECT_TITLE == "Architect")
 _src = open(os.path.join(REPO, "src", "longrun", "agent", "architect.py"), encoding="utf-8").read()
-check("B2 the grant flag, the routing role key and the event names are contracts",
-      "allow_longrun_agent" in _src and '"longrun_agent"' in _src
-      and '"longrun_agent.start"' in _src and '"longrun_agent.done"' in _src)
+check("B2 the grant flag, the routing role key and the event names share that word",
+      "allow_architect" in _src and '"architect"' in _src
+      and '"architect.start"' in _src and '"architect.done"' in _src)
 
 # ---- C: only risky tools ask ----------------------------------------------
 from longrun.tools import registry                              # noqa: E402

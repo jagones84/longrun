@@ -11,7 +11,7 @@ agreeing with itself; 14 review files existed from that path.
 Contract locked here:
   * `config/routing.yaml` carries a `reviewer` role with an explicit `model`;
   * that model is NOT the model of any role that produces work (chat/agent/
-    subagent/longrun_agent) and NOT the providers default — so the review is a
+    subagent/architect) and NOT the providers default — so the review is a
     second opinion, not a repeat;
   * `single_shot` PASSES the role pin as the primary model (before this, the pin
     was reachable only as a failover candidate);
@@ -49,7 +49,7 @@ def check(name, ok, detail=""):
     print(("PASS " if ok else "FAIL ") + name + ((" :: " + str(detail)) if detail else ""))
 
 
-PRODUCERS = ("chat", "agent", "subagent", "longrun_agent")
+PRODUCERS = ("chat", "agent", "subagent", "architect")
 
 
 def _providers_default():

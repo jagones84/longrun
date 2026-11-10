@@ -4,7 +4,7 @@
 Measured on the DGX (2026-11-07, `.agent/trash/prof_catalog.py`): `registry.catalog()`
 cost 16.7 ms, of which **13.6 ms was `shipped_tools()` -> `_load_raw()` re-reading and
 re-parsing `config/tools.yaml``. `catalog()` runs on EVERY system-prompt render — twice
-per render, because the `tools` section and the `longrun-agent` subtool list both ask
+per render, because the `tools` section and the `architect` subtool list both ask
 for it — so ~27 ms of a 42 ms prompt build was literally reparsing the same bytes,
 on every session switch, every panel refresh and every turn.
 

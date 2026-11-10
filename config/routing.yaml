@@ -17,7 +17,7 @@ roles:
     model: openrouter:z-ai/glm-5.3-flash
   team_member:
     model: openrouter:deepseek/deepseek-v4-flash-0731
-  longrun_agent:
+  architect:
     model: openrouter:z-ai/glm-5.3-flash
     fallbacks:
     - openrouter:meta/muse-spark-1.3-contributor

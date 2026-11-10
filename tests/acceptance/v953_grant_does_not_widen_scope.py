@@ -2,17 +2,17 @@
 """v953 — a Teamorg grant unlocks CONFIG tools, never work across teams.
 
 Operator case `J38` (2026-11-10): a lead (A54) whose session carries
-`allow_longrun_agent` created `job.create {agents:[A1]}` for the Architect,
+`allow_architect` created `job.create {agents:[A1]}` for the Architect,
 exit 0 — while its prompt said "only your subtree, anything outside is refused
 (exit 126)". The handler's subtree check was there; the scope VALUE was wrong:
 `coordinator_scope` returned None (the whole org) for any granted session.
 
 The rule this pin fixes, in three words: **all · subtree · nothing**.
-  all      — the Architect session (`longrunAgent*`) and an operator call with
+  all      — the Architect session (`architect*`) and an operator call with
              no caller (CLI / REST hand).
   subtree  — a coordinator (an agent with at least one direct report), all levels.
   nothing  — everyone else: a leaf delegates nothing, even with the grant.
-A grant (`allow_longrun_agent`) unlocks the config tools (`agent.*`, `team.*`,
+A grant (`allow_architect`) unlocks the config tools (`agent.*`, `team.*`,
 `provider.*` …). It does NOT widen the work scope.
 
 Deterministic: temp stores, no server, no model, no network.
@@ -76,7 +76,7 @@ _leaf = LRA.coordinator_scope("s-granted-leaf")
 check("A2 a granted LEAF has an empty scope (the grant is not a team)",
       _leaf == set(), _leaf)
 check("A3 the Architect and the operator (no caller) keep the whole org",
-      LRA.coordinator_scope("longrunAgent") is None
+      LRA.coordinator_scope("architect") is None
       and LRA.coordinator_scope(None) is None)
 check("A4 a plain coordinator is unchanged",
       LRA.coordinator_scope("s-sub") == {SUB, WORKER},

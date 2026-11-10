@@ -92,9 +92,9 @@ T.add_member("T1", a2["id"])
 M = agents.REGISTRY.designate(s4, name="Boss")["agent"]   # org agent, NO team
 agents.REGISTRY.release(s5)                               # -> a true orphan file
 # the pinned system session: a file, never a bucket member
-with open(os.path.join(os.environ["LONGRUN_SESSIONS_DIR"], "longrunAgent.json"), "w",
+with open(os.path.join(os.environ["LONGRUN_SESSIONS_DIR"], "architect.json"), "w",
           encoding="utf-8") as f:
-    json.dump({"id": "longrunAgent", "title": "Architect", "messages": [],
+    json.dump({"id": "architect", "title": "Architect", "messages": [],
                "system": True, "undeletable": True}, f)
 bucket = orchestration._no_team_sessions(agents.REGISTRY)
 check("A1 the bucket is exactly the no-team sessions (stray + boss + orphan)",
@@ -102,7 +102,7 @@ check("A1 the bucket is exactly the no-team sessions (stray + boss + orphan)",
 check("A2 team members are never in the bucket",
       s1 not in bucket and s2 not in bucket, str(bucket))
 check("A3 the pinned system session is never in the bucket",
-      "longrunAgent" not in bucket, str(bucket))
+      "architect" not in bucket, str(bucket))
 
 # --- B: RESET ALL over the bucket (wipe, never delete) -----------------------
 res = call("POST", "/api/teams/__none__/reset")
@@ -171,7 +171,7 @@ check("D7 the team member survived and was re-parented to nobody",
 check("D8 the team sessions were NOT touched",
       stores.load_session(s1) is not None and stores.load_session(s2) is not None)
 check("D9 the pinned system session was NOT touched",
-      os.path.isfile(os.path.join(os.environ["LONGRUN_SESSIONS_DIR"], "longrunAgent.json")))
+      os.path.isfile(os.path.join(os.environ["LONGRUN_SESSIONS_DIR"], "architect.json")))
 
 # --- E: the REAL delete also exists for a real team (same engine) ------------
 res = call("POST", "/api/teams/T1/delete-sessions")

@@ -8,7 +8,7 @@ Transport-agnostic: `handle(message, api)` takes a JSON-RPC 2.0 message and an
   * server.py      — POST /mcp (streamable-HTTP style), `LocalApi` -> in-process
 
 MCP tools exposed: longrun_status, longrun_chat, longrun_plan,
-longrun_tasks, longrun_agent_run, longrun_feed, longrun_tools,
+longrun_tasks, longrun_turn, longrun_feed, longrun_tools,
 longrun_approvals + Sperimentale tools (memory, subagent, meta, blackboard,
 acp, swarm) + v0.3 tools (checkpoint, context, routing).
 """
@@ -61,7 +61,7 @@ MCP_TOOLS = [
             "status": {"type": "string", "enum": ["todo", "doing", "done"]}}},
     },
     {
-        "name": "longrun_agent_run",
+        "name": "longrun_turn",
         "description": ("Run the sense-think-act agent loop toward a goal. Actions that "
                         "touch the world go through the approval gate; the result contains "
                         "the full thought/action/observation trace."),
@@ -193,7 +193,7 @@ def call_tool(name, args, api):
         return _text(api.plan(a.get("goal")))
     if name == "longrun_tasks":
         return _text(api.tasks(a))
-    if name == "longrun_agent_run":
+    if name == "longrun_turn":
         if not a.get("goal"):
             return _error_text("goal is required")
         return _text(api.agent_run(a["goal"], int(a.get("max_steps", 6)), a.get("model")))

@@ -12,7 +12,7 @@ don't want that."*
   B  `always_ask` is a real policy field: it reaches a human even with
      approvals.mode=full, it round-trips through POST /api/tools, and the shipped
      git tool protects `push` with it;
-  C  the SYSTEM agent (longrunAgent / A1) gets the "nobody is attached" nudge
+  C  the SYSTEM agent (architect / A1) gets the "nobody is attached" nudge
      instead of a card — the automatic-looking block the operator reported;
   D  the mobile layout rules exist and are declared after the base ones (a media
      query earlier in the sheet would lose to them).

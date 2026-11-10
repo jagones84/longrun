@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v537 — longrunAgent (VEO) exclusive tools are COMPLETE objects (JAG-537).
+"""v537 — architect (VEO) exclusive tools are COMPLETE objects (JAG-537).
 
 Locks:
   A  Completeness contract for the exclusive namespaces:
@@ -17,7 +17,7 @@ Locks:
   D  JOBS: create -> get/list -> delete, on the real registry.
   E  ROUTINES: create -> update -> get/list -> delete, on the real registry.
   F  SESSIONS: create -> rename -> list -> delete (cascade) and the guards
-     (permanent `longrunAgent` session, unknown ids).
+     (permanent `architect` session, unknown ids).
   G  Destructive paths are bounded: a workspace folder outside the workspaces
      root is NEVER removed.
   H  Typed webui tools reach the real writers (providers / skills / knowledge /
@@ -65,7 +65,7 @@ def check(name, cond, detail=""):
 
 
 def call(tool, args):
-    return LRA.execute(tool, args, run_id="longrunAgent")
+    return LRA.execute(tool, args, run_id="architect")
 
 
 LRA.ensure_system_session()
@@ -106,7 +106,7 @@ check("A3b naming contract: every exclusive tool is EXACTLY `namespace.tool`",
       and LRA.EXCLUSIVE_NAMESPACES == {"agent", "team", "job", "routine",
                                        "session", "webui", "provider", "mcp",
                                        "skill", "kb"}
-      and not any(k.startswith("longrunAgent.") for k in handlers),
+      and not any(k.startswith("architect.") for k in handlers),
       sorted(handlers))
 check("A4 no exclusive tool takes an `op` sub-operation string any more",
       not any("op" in (s.get("properties") or {})
@@ -130,7 +130,7 @@ check("B1 teams.create stores the description and picks the matching palette ico
 t_upd = call("team.update",
              {"team": tid, "description": "security incident triage and red team"})
 t_regen = call("team.update", {"team": tid, "regenerate_icon": True})
-check("B2 teams.update edits name/description and re-asks longrunAgent for the icon",
+check("B2 teams.update edits name/description and re-asks architect for the icon",
       t_upd.get("ok") is True
       and "security" in (TE.REGISTRY.get(tid) or {}).get("description", "")
       and t_regen.get("ok") is True
@@ -209,8 +209,8 @@ check("C6 agents.delete cascades: designation + session + workspace folder all g
       and A.REGISTRY.get(asid) is None
       and stores.load_session(asid) is None
       and not os.path.exists(ws), a_del)
-check("C7 agents.delete never removes the permanent longrunAgent session",
-      call("agent.delete", {"agent": "longrunAgent"}).get("ok") is False)
+check("C7 agents.delete never removes the permanent architect session",
+      call("agent.delete", {"agent": "architect"}).get("ok") is False)
 
 # --- D: jobs -----------------------------------------------------------------
 boss = call("agent.create", {"name": "Job Boss", "role": "lead"})
@@ -283,8 +283,8 @@ check("F1 sessions.create/rename operate on the real store (the TABLE is builtin
 s_del = call("session.delete", {"session": psid})
 check("F2 sessions.delete removes the session file",
       s_del.get("ok") is True and stores.load_session(psid) is None, s_del)
-check("F3 sessions.delete refuses the permanent longrunAgent session and unknown ids",
-      call("session.delete", {"session": "longrunAgent"}).get("ok") is False
+check("F3 sessions.delete refuses the permanent architect session and unknown ids",
+      call("session.delete", {"session": "architect"}).get("ok") is False
       and call("session.delete", {"session": "no-such-session"}).get("ok") is False)
 
 # --- G: bounded destructive paths -------------------------------------------

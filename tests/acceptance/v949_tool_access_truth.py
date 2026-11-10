@@ -13,7 +13,7 @@ The fix emits ONE access class per tool, computed from the gate's own sets, and
 renders it on the row:
   everyone    — read-only org/observation lookups, no grant
   coordinator — team jobs, org position decides
-  architect   — needs the Architect session or `allow_longrun_agent`
+  architect   — needs the Architect session or `allow_architect`
 
 Pinned here: the class the catalogue advertises IS the class the gate applies
 (no second list), and the panel renders it instead of the "exclusive" wording.

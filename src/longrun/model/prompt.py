@@ -45,7 +45,7 @@ SECTIONS = [
     {"id": "verify-policy", "order": 47, "kind": "static"},
     {"id": "self-summary",  "order": 50, "kind": "dynamic"},
     {"id": "agent-role",    "order": 52, "kind": "dynamic"},
-    {"id": "longrun-agent", "order": 53, "kind": "dynamic"},
+    {"id": "architect", "order": 53, "kind": "dynamic"},
     {"id": "delegation",    "order": 54, "kind": "dynamic"},
     {"id": "tools",         "order": 55, "kind": "dynamic"},
     {"id": "rules",         "order": 60, "kind": "dynamic"},
@@ -350,7 +350,7 @@ def _provider_tools(sess, ws, ctx):
         return ""
 
 
-def _longrun_agent_tool_lines():
+def _architect_tool_lines():
     """One `- name — first sentence` line per EXCLUSIVE subtool, from LIVE state.
 
     Read from the registry, never hardcoded: a new subtool shows up in the prompt
@@ -375,14 +375,14 @@ def _longrun_agent_tool_lines():
     return out
 
 
-def _provider_longrun_agent(sess, ws, ctx):
-    """The `longrun-agent` section — longrunAgent's OWN namespace + hard rules.
+def _provider_architect(sess, ws, ctx):
+    """The `architect` section — the Architect's OWN namespace + hard rules.
 
     JAG-535: the permanent system agent had no idea it was the VEO or which
     exclusive subtools it owned (the generic Tool registry block is
     summarised and truncated). This section is generated from the live registry and
     injected only for the system session or for a session that was GRANTED
-    `allow_longrun_agent`, so the surface is explicit and never drifts.
+    `allow_architect`, so the surface is explicit and never drifts.
     """
     try:
         from longrun.agent import architect as lra
@@ -390,25 +390,25 @@ def _provider_longrun_agent(sess, ws, ctx):
         return ""
     sid = (sess or {}).get("id") if isinstance(sess, dict) else sess
     sid = str(sid or "").strip()
-    is_system = sid == lra.LONGRUN_AGENT_SESSION_ID
-    granted = bool(isinstance(sess, dict) and sess.get("allow_longrun_agent"))
+    is_system = sid == lra.ARCHITECT_SESSION_ID
+    granted = bool(isinstance(sess, dict) and sess.get("allow_architect"))
     if not is_system and not granted:
         return ""
-    lines = _longrun_agent_tool_lines()
+    lines = _architect_tool_lines()
     if not lines:
         return ""
 
     if is_system:
         intro = (
-            # 2026-11-11 (operator: "la sessione Architect va chiamata con Architect …
-            # no longrunAgent"): the Architect's OWN prompt introduced it as the legacy
-            # session id, so every report it wrote repeated that word. The NAME is the
-            # identity; the id is a machine key (file, API path) and says so once.
+            # 2026-11-11 (operator: "la sessione Architect va chiamata con Architect dai
+            # tool send message etcetera", then "longrunagent deve sparire dalla faccia
+            # della terra"): the identity and the machine key are the SAME word now, so
+            # the prompt states it once and never explains a retired name.
             "## You are Architect (the VEO \u2014 \u201cburattinaio of agents\u201d)\n"
             "You are the harness's PERMANENT, UNDELETABLE, STATELESS system automation "
-            "agent. Your name is Architect, in every report and every message; "
-            "`longrunAgent` is only the legacy machine key of this session (a file name "
-            "and an API path), never your name. You own the substrate: you act on the "
+            "agent. Your name is Architect, and `architect` is also this session's id "
+            "\u2014 the same word in the rail, in the API and in every report. You own "
+            "the substrate: you act on the "
             "backend state, never on the "
             "graphical objects \u2014 the WebUI re-paints itself from the events your "
             "calls emit, so never try to \u201cclick\u201d or scrape the UI.\n"
@@ -442,8 +442,8 @@ def _provider_longrun_agent(sess, ws, ctx):
         "`kb.source_add`: they do not exist, because the builtin tool is the one "
         "truth.\n"
         "- Dual permission: an exclusive call runs only when the tool is enabled "
-        "in the global registry AND the calling session is `longrunAgent*` or carries "
-        "`allow_longrun_agent`. Both halves are checked outside you \u2014 do not try to "
+        "in the global registry AND the calling session is `architect*` or carries "
+        "`allow_architect`. Both halves are checked outside you \u2014 do not try to "
         "grant yourself access.\n"
         "- REFUSED, always: `allow_nucleus_write` / `allow_matrix_promote` (the human "
         "operator alone owns those checkboxes), any change to your own exclusive "
@@ -580,7 +580,7 @@ def memory_block(sess=None, ws=None, ctx=None):
 _PROVIDERS = {
     "self-summary": _provider_self_summary,
     "agent-role": _provider_role,
-    "longrun-agent": _provider_longrun_agent,
+    "architect": _provider_architect,
     "delegation": _provider_delegation,
     "tools": _provider_tools,
     "rules": _provider_rules,

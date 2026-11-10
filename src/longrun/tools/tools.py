@@ -443,7 +443,7 @@ _PLACEHOLDER_QUESTIONS = frozenset((
 def human_question_problem(question):
     """Why a `human.ask` question cannot become a card, or "" when it can.
 
-    HITL-BATCH (2026-11-05): measured on session `longrunAgent` msg 138, a model
+    HITL-BATCH (2026-11-05): measured on session `architect` msg 138, a model
     emitted a batch whose last item was `human.ask {"question":"placeholder"}`;
     the harness opened a card with that word as the question and dropped the
     other three calls. A placeholder is not a decision, so it must be refused
@@ -2272,7 +2272,7 @@ def _session_id(ref):
     """Canonical session id for a target written as a NAME, an A-id or a session id.
 
     2026-11-11 (operator): "la sessione Architect va chiamata con Architect dai tool
-    send message etcetera, non longrunAgent". The name is what the model reads in
+    send message etcetera". The name is what the model reads in
     `sessions.list` and what the operator says; the session id is a machine key, so a
     target is resolved HERE once, before any gate or delivery. An unknown ref is
     returned unchanged, so the caller's own error still names it.
@@ -2704,7 +2704,7 @@ def _sessions(args, run_id):
     try:
         from longrun.agent import agents as agents_mod
         # 2026-11-11 (operator): the ADDRESS an agent reads is its NAME ("Architect"),
-        # never the legacy session id ("longrunAgent"). The A-id rides beside it, so
+        # never the legacy session id ("architect"). The A-id rides beside it, so
         # both spellings a caller may know are on the line — and `_session_id` accepts
         # every one of them.
         amap = {a.get("session"): (a.get("name") or a.get("id"), a.get("id"))
@@ -3132,15 +3132,6 @@ def _matrix(args, run_id):
     return {"ok": False, "error": "unknown matrix action %r" % action}
 
 
-def _longrun_agent(args, run_id=None):
-    """Legacy meta entry point (`longrunAgent` + action) — kept only so an old
-    persisted call fails with a clear name instead of 'no implementation'."""
-    return {"ok": False, "exit_code": 127,
-            "error": ("the `longrunAgent` meta tool is gone: exclusive tools are "
-                      "called by their own two-segment name (`agent.prompt_set`, "
-                      "`team.member_add`, `kb.notebook_rename`)")}
-
-
 def _gated_tool(tool, args, run_id=None):
     """Run one GATED tool (`_origin` exclusive or delegation) through its gate."""
     from longrun.agent import architect as _lra
@@ -3171,7 +3162,7 @@ def _workspace(args, run_id):
     """`workspace.set` — re-root ONE agent or its WHOLE org subtree.
 
     Authority model: the harness supervisor (or a session granted
-    `allow_longrun_agent`) may target any agent; every other caller may only
+    `allow_architect`) may target any agent; every other caller may only
     re-root itself or an agent BELOW it in the `reports_to` chain, so a teammate
     can never hijack a peer's folder. The write goes through the single writer
     `AgentRegistry.set_workspace`, which keeps the org record and the session
@@ -3307,8 +3298,7 @@ _DISPATCH = {"shell": _shell_hinted, "shell.exec": _shell_hinted,
              "python": _python, "python.run": _python,
              "process": _process,
              "glob": _glob, "glob.list": _glob,
-             "matrix": _matrix,
-             "longrunAgent": _longrun_agent}
+             "matrix": _matrix}
 
 
 def normalize_args(tool: str, args: Any) -> Any:

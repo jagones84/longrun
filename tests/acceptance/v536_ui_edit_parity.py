@@ -116,7 +116,7 @@ res = call("POST", "/api/teams/T404", {"name": "ghost"})
 check("A10 an unknown team refuses the edit",
       res["obj"].get("ok") is False and "not found" in (res["obj"].get("error") or ""), str(res))
 
-# --- A2: the ICON — a palette choice longrunAgent makes, not free text -------
+# --- A2: the ICON — a palette choice architect makes, not free text -------
 from longrun.orchestrate import teams as _teams                        # noqa: E402
 
 _pal = _teams.palette()
@@ -128,12 +128,12 @@ check("A12 GET /api/teams publishes the palette the picker renders from",
 _made = call("POST", "/api/teams", {"name": "Finance Watch",
                                     "description": "budget, cost and billing for the platform"})
 _fin = (_made["obj"].get("team") or {})
-check("A13 create() lets longrunAgent pick the icon from name + description",
+check("A13 create() lets architect pick the icon from name + description",
       _fin.get("symbol") == "\U0001f4b0" and _fin.get("color") == "#22C55E", _fin)
 check("A14 the description is stored at create time",
       _fin.get("description") == "budget, cost and billing for the platform", _fin)
 _res = call("POST", "/api/teams/T1", {"regenerate_icon": True})
-check("A15 regenerate_icon asks longrunAgent again and keeps the team",
+check("A15 regenerate_icon asks architect again and keeps the team",
       _res["obj"].get("ok") is True
       and (_res["obj"].get("team") or {}).get("id") == "T1"
       and (_res["obj"].get("team") or {}).get("symbol") in [p["symbol"] for p in _pal],
@@ -233,7 +233,7 @@ check("D10 the picker renders from the palette the backend publishes",
       "this.agents.palette = tms.palette" in deck and "this.agents.fillIconPicker()" in deck
       and "iconOptions(sel){" in deck
       and 'data-color="' in deck and "Architect picks" in deck)
-check("D11 the edit form can REGENERATE the icon through longrunAgent",
+check("D11 the edit form can REGENERATE the icon through architect",
       "✨ generate icon" in deck and "regenerate_icon: true" in deck)
 
 # --- E: the other write routes that had no UI door ---------------------------

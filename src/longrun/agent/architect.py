@@ -1,4 +1,4 @@
-"""longrunAgent (VEO — the burattinaio of agents) — JAG-535.
+"""architect (VEO — the burattinaio of agents) — JAG-535.
 
 Permanent, undeletable, stateless system automation agent that manages the
 substrate (Layer 2) of the Longrun harness:
@@ -15,16 +15,16 @@ substrate (Layer 2) of the Longrun harness:
   - Naming: every exclusive tool is exactly `namespace.tool` (two segments, one
     object namespace, one explicative verb: `agent.prompt_set`, `team.member_add`,
     `kb.notebook_rename`). No deeper dotted paths: they produced unreadable names
-    (`longrunAgent.teamorg.agents.prompt.set`) and unordered panels.
+    (`architect.teamorg.agents.prompt.set`) and unordered panels.
   - Dual-permission gate: an exclusive tool can execute ONLY when:
       1) the tool is enabled in the global Tool registry (`config/tools.yaml` /
          overlay), AND
-      2) the calling session is either the permanent `longrunAgent` system
-         session itself or a session explicitly granted `allow_longrun_agent`
+      2) the calling session is either the permanent `architect` system
+         session itself or a session explicitly granted `allow_architect`
          access.
-  - Stateless execution: every automation invocation clears the `longrunAgent`
+  - Stateless execution: every automation invocation clears the `architect`
     session history before and after running, injects a section-specific system
-    prompt, and uses the configured `roles.longrun_agent.model` (or `@chat` to
+    prompt, and uses the configured `roles.architect.model` (or `@chat` to
     follow the active session's model, preferring cheap cloud models).
 """
 import json
@@ -36,13 +36,27 @@ from longrun.agent import automation_log
 from longrun.util import paths
 from longrun.util.fswrite import safe_id
 
-LONGRUN_AGENT_SESSION_ID = "longrunAgent"
-# v887 (operator: "longrun agent is architect. replace its name please everywhere"):
-# the NAME the operator reads is `Architect`. The stable machine ids (the session
-# id, /api/longrun-agent/*, roles.longrun_agent, allow_longrun_agent) do not change:
-# they are contracts, not names, and renaming them would break every client.
-LONGRUN_AGENT_TITLE = "Architect"
-LONGRUN_AGENT_OLD_TITLE = "longrunAgent · VEO"
+ARCHITECT_SESSION_ID = "architect"
+ARCHITECT_TITLE = "Architect"
+# 2026-11-11 (operator: "longrunagent deve sparire dalla faccia della terra"):
+# the identity is `architect` in every surface — session id and file name,
+# /api/architect/*, roles.architect, allow_architect, the prompt section and the
+# event kinds. The retired name survives in ONE place only, `_LEGACY_*` below,
+# because the migration must recognise the files and fields it renames.
+_LEGACY_SESSION_ID = "longrunAgent"
+_LEGACY_FIELD = "allow_longrun_agent"
+_LEGACY_KIND = "longrun_agent."
+_LEGACY_TITLE = "longrunAgent · VEO"
+_MIGRATED = False
+
+# Identifier-bearing JSON keys: only these carry a session/run id, so only these
+# are rewritten by the migration. Prose (a message body, a note) is never touched.
+_IDENT_KEYS = frozenset({
+    "id", "session", "sessions", "session_id", "sid", "run", "run_id",
+    "agent", "agent_id", "by", "from", "to", "sender", "target", "owner",
+    "workspace", "path", "source", "deleted", "allow_architect",
+})
+
 
 # Prefer cheap remote cloud models by default; never a heavy local GGUF unless
 # the operator explicitly selects one.
@@ -64,7 +78,7 @@ AUTOMATE_SNAPSHOT_MAX_CHARS = 24000
 AUTOMATE_PROMPT_HEAD_CHARS = 400     # how much of one ROLE.md a snapshot may carry
 TEAM_ROLE_HEAD_CHARS = 300           # how much of a team ROLE.md the snapshot may carry
 
-# Safety boundary: keys that longrunAgent is strictly forbidden from mutating.
+# Safety boundary: keys that architect is strictly forbidden from mutating.
 FORBIDDEN_SAFETY_KEYS = frozenset({
     "allow_nucleus_write",
     "allow_matrix_promote",
@@ -72,7 +86,7 @@ FORBIDDEN_SAFETY_KEYS = frozenset({
     "approvals.allow_matrix_promote",
 })
 
-# Semantic keyword map over teams._PALETTE so longrunAgent picks an icon+colour
+# Semantic keyword map over teams._PALETTE so architect picks an icon+colour
 # that matches the team's domain/meaning from the palette, falling back to
 # teams.symbol_for_name(name) when no keyword matches.
 _SEMANTIC_PALETTE_KEYWORDS = (
@@ -98,7 +112,7 @@ _SEMANTIC_PALETTE_KEYWORDS = (
 def choose_team_symbol(name, description="", explicit_symbol=None, explicit_color=None):
     """Pick `(symbol, color)` from `teams._PALETTE` based on semantic meaning of `name`/`description`.
 
-    An explicit symbol or colour always wins. Otherwise longrunAgent matches the
+    An explicit symbol or colour always wins. Otherwise architect matches the
     team name/description against the semantic domain map over `_PALETTE`, and
     falls back to `teams.symbol_for_name(name)` so the choice is always from the
     official palette and deterministic.
@@ -259,7 +273,7 @@ TOOL_SCHEMAS = {
     "team.create": {
         "description": (
             "team.create — Spin up a new team (`TN`) with a semantic icon and colour "
-            "selected by longrunAgent from the official palette based on the team name/purpose, plus a dedicated "
+            "selected by architect from the official palette based on the team name/purpose, plus a dedicated "
             "team workspace directory, and optionally provision or assign member agents in one call."
         ),
         "type": "object",
@@ -281,7 +295,7 @@ TOOL_SCHEMAS = {
     "team.update": {
         "description": (
             "team.update — Edit a team's own properties: name, description, symbol, "
-            "colour, and (with `regenerate_icon`) re-ask longrunAgent for the palette icon that matches the "
+            "colour, and (with `regenerate_icon`) re-ask architect for the palette icon that matches the "
             "current name + description. Members are NOT touched here."
         ),
         "type": "object",
@@ -291,7 +305,7 @@ TOOL_SCHEMAS = {
             "description": {"type": "string", "description": "New team mission / description."},
             "symbol": {"type": "string", "description": "Explicit symbol from the palette."},
             "color": {"type": "string", "description": "Explicit hex colour."},
-            "regenerate_icon": {"type": "boolean", "description": "Ask longrunAgent to pick the symbol+colour that matches the name and description."},
+            "regenerate_icon": {"type": "boolean", "description": "Ask architect to pick the symbol+colour that matches the name and description."},
         },
         "required": ["team"],
         "_origin": "exclusive",
@@ -581,7 +595,7 @@ TOOL_SCHEMAS = {
         "description": (
             "session.delete — Delete a session with its full cascade: running turn "
             "aborted, graph, run metrics, edit journal and its knowledge notebook removed. The permanent "
-            "`longrunAgent` session itself can never be deleted."
+            "`architect` session itself can never be deleted."
         ),
         "type": "object",
         "properties": {
@@ -596,7 +610,7 @@ TOOL_SCHEMAS = {
         "description": (
             "webui.inspect — Read the current live substrate state of ANY WebUI "
             "section (`agents`, `teams`, `models`, `subagents`, `providers`, `settings`, `rules`, "
-            "`compaction`, `tools`, `skills`, `mcp`, `knowledge`, `index`, `keys`) so longrunAgent "
+            "`compaction`, `tools`, `skills`, `mcp`, `knowledge`, `index`, `keys`) so architect "
             "has exact ground truth before applying an automation update."
         ),
         "type": "object",
@@ -855,46 +869,239 @@ def is_exclusive_name(name):
 # --------------------------------------------------- session & access gate ---
 
 def is_system_session(sid):
-    """True when `sid` is the permanent undeletable `longrunAgent` session."""
-    return str(sid or "").strip() == LONGRUN_AGENT_SESSION_ID
+    """True when `sid` is the permanent undeletable `architect` session."""
+    return str(sid or "").strip() == ARCHITECT_SESSION_ID
 
 
 def is_architect_session(sid):
-    """True for the Architect itself and its stateless run ids (`longrunAgent_*`).
+    """True for the Architect itself and its stateless run ids (`architect_*`).
 
     ONE owner for “this caller is the operator's own hand”: the work scope
     (`coordinator_scope`) and the session rules (`tools._may_message`,
     `tools._may_manage`) all ask this, so they cannot drift apart.
     """
     sid = str(sid or "").strip()
-    return bool(sid) and (sid == LONGRUN_AGENT_SESSION_ID
-                          or sid.startswith(LONGRUN_AGENT_SESSION_ID + "_"))
+    return bool(sid) and (sid == ARCHITECT_SESSION_ID
+                          or sid.startswith(ARCHITECT_SESSION_ID + "_"))
+
+
+def _legacy_value(v):
+    """Rewrite ONE identifier string; prose never matches (values are compared)."""
+    if not isinstance(v, str):
+        return v
+    if v == _LEGACY_SESSION_ID:
+        return ARCHITECT_SESSION_ID
+    if v.startswith(_LEGACY_SESSION_ID + "_"):
+        return ARCHITECT_SESSION_ID + v[len(_LEGACY_SESSION_ID):]
+    if "/" in v or "\\" in v:
+        return v.replace(_LEGACY_SESSION_ID, ARCHITECT_SESSION_ID)
+    return v
+
+
+def _legacy_obj(obj):
+    """Rewrite identifier FIELDS of a decoded JSON value, recursively."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            nk = "allow_architect" if k == _LEGACY_FIELD else k
+            if isinstance(v, (dict, list)):
+                out[nk] = _legacy_obj(v)
+            elif isinstance(v, str) and (k in _IDENT_KEYS or k == _LEGACY_FIELD):
+                out[nk] = _legacy_value(v)
+            else:
+                out[nk] = v
+        return out
+    if isinstance(obj, list):
+        return [_legacy_obj(v) for v in obj]
+    return obj
+
+
+def _legacy_rename(root):
+    """Rename every entry under `root` whose NAME starts with the retired id.
+
+    Returns the destination paths so the caller can rewrite their identifier
+    fields (a renamed file still carries the old id inside).
+    """
+    if not root or not os.path.isdir(root):
+        return []
+    moved = []
+    for dirpath, dirnames, filenames in os.walk(root.rstrip(os.sep)):
+        for name in list(dirnames) + list(filenames):
+            if not name.startswith(_LEGACY_SESSION_ID):
+                continue
+            src = os.path.join(dirpath, name)
+            dst = os.path.join(dirpath, ARCHITECT_SESSION_ID
+                               + name[len(_LEGACY_SESSION_ID):])
+            if os.path.exists(dst):
+                continue
+            try:
+                os.replace(src, dst)
+                moved.append(dst)
+            except OSError:
+                continue
+    return moved
+
+
+def _legacy_rewrite_json(path):
+    """Rewrite the identifier fields of ONE JSON file; returns True when it changed."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return False
+    new = _legacy_obj(data)
+    if new == data:
+        return False
+    try:
+        tmp = path + ".legacytmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(new, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        return False
+    return True
+
+
+def _legacy_events(conn_path):
+    """Rename the retired id inside the event log (kind + identifier fields).
+
+    Returns the rewritten row count, or -1 when the DB could not be read/written
+    (the caller then leaves the one-shot marker unwritten, so the next boot retries).
+    """
+    import sqlite3
+    if not os.path.exists(conn_path):
+        return 0
+    try:
+        conn = sqlite3.connect(conn_path, timeout=5.0)
+    except sqlite3.Error:
+        return -1
+    rows = 0
+    try:
+        cur = conn.execute(
+            "SELECT id, kind, data FROM events WHERE kind LIKE ? OR data LIKE ?",
+            (_LEGACY_KIND + "%", "%" + _LEGACY_SESSION_ID + "%"))
+        todo = []
+        for rid, kind, data in cur.fetchall():
+            nkind = kind.replace(_LEGACY_KIND, ARCHITECT_SESSION_ID + ".",
+                                 1) if kind.startswith(_LEGACY_KIND) else kind
+            try:
+                ndata = json.dumps(_legacy_obj(json.loads(data)), ensure_ascii=False)
+            except (TypeError, ValueError):
+                ndata = data
+            if (nkind, ndata) != (kind, data):
+                todo.append((nkind, ndata, rid))
+        for nkind, ndata, rid in todo:
+            conn.execute("UPDATE events SET kind=?, data=? WHERE id=?",
+                         (nkind, ndata, rid))
+        conn.commit()
+        rows = len(todo)
+    except sqlite3.Error:
+        rows = -1
+    finally:
+        conn.close()
+    return rows
+
+
+def migrate_legacy_identity():
+    """Rename the retired identity to `architect` across the data home — idempotent.
+
+    Runs once per process (boot, or the first `ensure_system_session`): files and
+    directories named after it, identifier fields inside their JSON, the agent
+    registry key, the tombstone list and the event log. Message prose is never
+    rewritten — only identifier fields are.
+    """
+    global _MIGRATED
+    marker = os.path.join(paths.DATA_DIR, ".identity-migrated")
+    if _MIGRATED or os.path.exists(marker):
+        _MIGRATED = True
+        return {"moved": 0, "rewritten": False, "events": 0, "skipped": True}
+    moved = _legacy_rename(paths.DATA_DIR) + _legacy_rename(paths.WORKSPACES_DIR)
+    for path in moved:
+        if path.endswith(".json"):
+            _legacy_rewrite_json(path)
+    sess_path = os.path.join(paths.SESSIONS_DIR, ARCHITECT_SESSION_ID + ".json")
+    rewrote = _legacy_rewrite_json(sess_path) or bool(moved)
+    agents_path = os.environ.get("LONGRUN_AGENTS_FILE") or os.path.join(
+        paths.DATA_DIR, "agents.json")
+    try:
+        with open(agents_path, encoding="utf-8") as f:
+            store = json.load(f)
+        recs = store.get("agents") or {}
+        if _LEGACY_SESSION_ID in recs or any(
+                isinstance(r, dict) and (
+                    r.get("session") == _LEGACY_SESSION_ID
+                    or r.get("id") == _LEGACY_SESSION_ID)
+                for r in recs.values()):
+            rec = recs.pop(_LEGACY_SESSION_ID, None)
+            if isinstance(rec, dict):
+                recs[ARCHITECT_SESSION_ID] = _legacy_obj(rec)
+            store["agents"] = {(_legacy_value(k)): _legacy_obj(v)
+                               for k, v in recs.items()}
+            tmp = agents_path + ".legacytmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(store, f, ensure_ascii=False, indent=1)
+            os.replace(tmp, agents_path)
+            rewrote = True
+    except (OSError, ValueError):
+        pass
+    tomb = os.path.join(paths.SESSIONS_DIR, ".deleted")
+    try:
+        with open(tomb, encoding="utf-8") as f:
+            lines = f.read()
+        if _LEGACY_SESSION_ID in lines:
+            with open(tomb, "w", encoding="utf-8") as f:
+                f.write(lines.replace(_LEGACY_SESSION_ID, ARCHITECT_SESSION_ID))
+            rewrote = True
+    except OSError:
+        pass
+    from longrun.core import events as events_mod
+    rows = _legacy_events(events_mod.DB_PATH)
+    _MIGRATED = True
+    if rows >= 0:
+        try:
+            with open(marker, "w", encoding="utf-8") as f:
+                f.write(ARCHITECT_SESSION_ID + "\n")
+        except OSError:
+            pass
+    moved_n = len(moved)
+    if moved_n or rewrote or rows > 0:
+        try:
+            from longrun.core.events import publish
+            publish("identity.migrated", moved=moved_n, rewritten=bool(rewrote),
+                    events=rows, id=ARCHITECT_SESSION_ID)
+        except Exception:  # noqa: BLE001 — logging never blocks the boot
+            pass
+    return {"moved": moved_n, "rewritten": rewrote, "events": rows}
 
 
 def ensure_system_session():
-    """Ensure the permanent `longrunAgent` session exists on disk and is never tombstoned."""
+    """Ensure the permanent `architect` session exists on disk and is never tombstoned."""
     from longrun.memory import stores
+    try:
+        migrate_legacy_identity()
+    except Exception:  # noqa: BLE001 — a migration bug must never stop the boot
+        pass
     with stores._deleted_lock:
-        if LONGRUN_AGENT_SESSION_ID in stores._DELETED_SESSIONS:
-            stores._DELETED_SESSIONS.discard(LONGRUN_AGENT_SESSION_ID)
+        if ARCHITECT_SESSION_ID in stores._DELETED_SESSIONS:
+            stores._DELETED_SESSIONS.discard(ARCHITECT_SESSION_ID)
             stores._persist_tombstones()
-    sess = stores.load_session(LONGRUN_AGENT_SESSION_ID)
+    sess = stores.load_session(ARCHITECT_SESSION_ID)
     changed = False
     if not isinstance(sess, dict):
-        ws = os.path.join(paths.WORKSPACES_DIR, LONGRUN_AGENT_SESSION_ID)
+        ws = os.path.join(paths.WORKSPACES_DIR, ARCHITECT_SESSION_ID)
         try:
             os.makedirs(ws, exist_ok=True)
         except OSError:
             ws = paths.REPO_ROOT
         sess = {
-            "id": LONGRUN_AGENT_SESSION_ID,
-            "title": LONGRUN_AGENT_TITLE,
+            "id": ARCHITECT_SESSION_ID,
+            "title": ARCHITECT_TITLE,
             "created": round(time.time(), 3),
             "workspace": ws,
             "system": True,
             "undeletable": True,
             "stateless": True,
-            "allow_longrun_agent": True,
+            "allow_architect": True,
             "messages": [],
             "tool_cards": [],
             "injects": [],
@@ -903,21 +1110,21 @@ def ensure_system_session():
         changed = True
     else:
         for k, v in (("system", True), ("undeletable", True),
-                     ("stateless", True), ("allow_longrun_agent", True)):
+                     ("stateless", True), ("allow_architect", True)):
             if sess.get(k) is not v:
                 sess[k] = v
                 changed = True
-        # v887: one-time rename for an existing store (old label only, never a title
-        # the operator typed).
-        if not sess.get("title") or sess.get("title") == LONGRUN_AGENT_OLD_TITLE:
-            sess["title"] = LONGRUN_AGENT_TITLE
+        # 2026-11-11: one-time rename for an existing store (old label only, never a
+        # title the operator typed).
+        if not sess.get("title") or sess.get("title") == _LEGACY_TITLE:
+            sess["title"] = ARCHITECT_TITLE
             changed = True
-    # v887: the agent record's display name follows the title, same one-time rule.
+    # the agent record's display name follows the title, same one-time rule.
     try:
         from longrun.agent import agents as agents_mod
-        _rec = agents_mod.REGISTRY.get(LONGRUN_AGENT_SESSION_ID) or {}
-        if _rec.get("name") in (LONGRUN_AGENT_OLD_TITLE, "longrunAgent"):
-            agents_mod.REGISTRY.set_name(LONGRUN_AGENT_SESSION_ID, LONGRUN_AGENT_TITLE)
+        _rec = agents_mod.REGISTRY.get(ARCHITECT_SESSION_ID) or {}
+        if _rec.get("name") in (_LEGACY_TITLE, _LEGACY_SESSION_ID, "architect"):
+            agents_mod.REGISTRY.set_name(ARCHITECT_SESSION_ID, ARCHITECT_TITLE)
     except Exception:  # noqa: BLE001 — a rename must never stop the service booting
         pass
     # EV-40: the supervisor owns the FIRST agent number. The pin lives in
@@ -925,9 +1132,9 @@ def ensure_system_session():
     # (or a reset that emptied it) still shows `A1` for this session.
     try:
         from longrun.agent import agents as agents_mod
-        rec = agents_mod.REGISTRY.get(LONGRUN_AGENT_SESSION_ID)
+        rec = agents_mod.REGISTRY.get(ARCHITECT_SESSION_ID)
         if not rec or rec.get("id") != "A1":
-            agents_mod.REGISTRY.designate(LONGRUN_AGENT_SESSION_ID, kind="session")
+            agents_mod.REGISTRY.designate(ARCHITECT_SESSION_ID, kind="session")
     except Exception:  # noqa: BLE001 — the session must exist even if the registry is broken
         pass
     if changed:
@@ -936,7 +1143,7 @@ def ensure_system_session():
 
 
 def reset_stateless_session():
-    """Wipe `longrunAgent` messages, tool cards, injects, and taskgraph before/after a run."""
+    """Wipe `architect` messages, tool cards, injects, and taskgraph before/after a run."""
     from longrun.memory import stores
     from longrun.memory import threads as threads_mod
     from longrun.plan import taskgraph
@@ -946,11 +1153,11 @@ def reset_stateless_session():
     sess["injects"] = []
     stores.save_session(sess, truncate=True)
     try:
-        taskgraph.reset(LONGRUN_AGENT_SESSION_ID)
+        taskgraph.reset(ARCHITECT_SESSION_ID)
     except Exception:  # noqa: BLE001
         pass
     try:
-        threads_mod.clear(LONGRUN_AGENT_SESSION_ID)
+        threads_mod.clear(ARCHITECT_SESSION_ID)
     except Exception:  # noqa: BLE001
         pass
     return sess
@@ -960,36 +1167,36 @@ def session_has_access(sid):
     """True when `sid` is permitted to invoke the exclusive (`namespace.tool`) tools.
 
     Dual-permission model:
-      1) `longrunAgent` itself (or a stateless `longrunAgent` run id
-         `longrunAgent*`) always has session privilege;
-      2) any other session must have `allow_longrun_agent: True` on its session record.
+      1) `architect` itself (or a stateless `architect` run id
+         `architect*`) always has session privilege;
+      2) any other session must have `allow_architect: True` on its session record.
     """
     sid = str(sid or "").strip()
     if not sid:
         return False
-    if sid == LONGRUN_AGENT_SESSION_ID or sid.startswith(LONGRUN_AGENT_SESSION_ID + "_"):
+    if sid == ARCHITECT_SESSION_ID or sid.startswith(ARCHITECT_SESSION_ID + "_"):
         return True
     from longrun.memory import stores
     sess = stores.load_session(sid)
-    return bool(isinstance(sess, dict) and sess.get("allow_longrun_agent") is True)
+    return bool(isinstance(sess, dict) and sess.get("allow_architect") is True)
 
 
 def set_session_access(sid, allowed):
-    """Grant or revoke `allow_longrun_agent` privilege on a session."""
+    """Grant or revoke `allow_architect` privilege on a session."""
     from longrun.memory import stores
     from longrun.core.events import publish
     sid = str(sid or "").strip()
     if not sid:
         return {"ok": False, "error": "session required"}
-    if sid == LONGRUN_AGENT_SESSION_ID and not allowed:
-        return {"ok": False, "error": "cannot revoke longrunAgent access from the system session itself"}
+    if sid == ARCHITECT_SESSION_ID and not allowed:
+        return {"ok": False, "error": "cannot revoke architect access from the system session itself"}
     sess = stores.load_session(sid)
     if not sess:
         return {"ok": False, "error": "session not found: %s" % sid}
-    sess["allow_longrun_agent"] = bool(allowed)
+    sess["allow_architect"] = bool(allowed)
     stores.save_session(sess)
-    publish("session.updated", session=sid, allow_longrun_agent=bool(allowed))
-    return {"ok": True, "session": sid, "allow_longrun_agent": bool(allowed)}
+    publish("session.updated", session=sid, allow_architect=bool(allowed))
+    return {"ok": True, "session": sid, "allow_architect": bool(allowed)}
 
 
 #: Exclusive tools that only OBSERVE the substrate. Everything else in the
@@ -1021,7 +1228,7 @@ def access_class(name):
     `coordinator` — a delegation tool (`job.*`): any agent with at least one
                     direct report, over its own subtree (`check_delegation`).
     `architect`   — the Architect session or a session granted
-                    `allow_longrun_agent` (`check_dual_permission`).
+                    `allow_architect` (`check_dual_permission`).
     None          — not a gated built-in tool: its policy row is the whole gate.
 
     The catalogue and the Tools panel read THIS, so the label the operator sees
@@ -1076,14 +1283,14 @@ def check_dual_permission(tool, run_id=None):
     if spec is None:
         return False, "unknown tool %r" % tool
     if not spec.get("enabled"):
-        return False, "tool %r is disabled in the global Tool panel (enable longrunAgent tools first)" % tool
+        return False, "tool %r is disabled in the global Tool panel (enable architect tools first)" % tool
     if access_class(tool) != "everyone" and not session_has_access(run_id):
         return False, (
             "session %r is not authorized to use %r — dual-permission gate requires "
-            "either the permanent 'longrunAgent' system session or explicit session "
-            "grant (`allow_longrun_agent: true`). approvals.mode=full does NOT "
-            "bypass this gate. Operator: grant via POST /api/longrun-agent/access "
-            "{\"session\": \"<sid>\", \"allow_longrun_agent\": true} or the session "
+            "either the permanent 'architect' system session or explicit session "
+            "grant (`allow_architect: true`). approvals.mode=full does NOT "
+            "bypass this gate. Operator: grant via POST /api/architect/access "
+            "{\"session\": \"<sid>\", \"allow_architect\": true} or the session "
             "menu Teamorg grant; agent: use `dispatch` (teammate turn, no grant) "
             "or, for a coordinated team, the `job.*` delegation tools — never "
             "shell/curl around the gate"
@@ -1134,13 +1341,13 @@ def coordinator_scope(run_id):
     """The agents a `job.*` caller may act on: None = the whole org, else A-ids.
 
     The rule, in three words — ALL · SUBTREE · NOTHING:
-      all      the Architect session (`longrunAgent`, `longrunAgent_*`) and a call
+      all      the Architect session (`architect`, `architect_*`) and a call
                with no caller (the operator's CLI / REST hand);
       subtree  a coordinator (an agent with at least one direct report), at every
                level below it (v901 cascade);
       nothing  everyone else — a leaf delegates nothing.
 
-    A Teamorg grant (`allow_longrun_agent`) is NOT an identity: it unlocks the
+    A Teamorg grant (`allow_architect`) is NOT an identity: it unlocks the
     CONFIG tools (agent/team/provider/webui/kb/skill/mcp/routine), never work on
     another team. It used to return None here, so a granted lead could create a
     job for any agent (case J38, 2026-11-10) while its prompt said exit 126.
@@ -1243,7 +1450,7 @@ def pick_cheap_remote_model():
         cfg = routing.load_config() or {}
         roles = cfg.get("roles") or {}
         # Check team_lead / subagent / summarizer roles first if they point to cloud
-        for rname in ("longrun_agent", "team_lead", "subagent", "summarizer", "team_member"):
+        for rname in ("architect", "team_lead", "subagent", "summarizer", "team_member"):
             m = (roles.get(rname) or {}).get("model") or ""
             if m and not routing.is_dynamic_ref(m) and teams_mod.machine_of(m) is None:
                 return m
@@ -1278,11 +1485,11 @@ def pick_cheap_remote_model():
 
 
 def resolve_automation_model(active_session_id=None, explicit_model=None):
-    """Resolve the model `longrunAgent` uses for an automation run.
+    """Resolve the model `architect` uses for an automation run.
 
     Precedence:
       1. `explicit_model` (if non-empty and not `@chat`);
-      2. `roles.longrun_agent.model` in `config/routing.yaml`;
+      2. `roles.architect.model` in `config/routing.yaml`;
       3. when `@chat` (or dynamic), the active session's model (if cloud) or
          the harness chat model;
       4. `pick_cheap_remote_model()`.
@@ -1292,7 +1499,7 @@ def resolve_automation_model(active_session_id=None, explicit_model=None):
     ref = str(explicit_model or "").strip()
     if not ref:
         cfg = routing.load_config() or {}
-        ref = str(((cfg.get("roles") or {}).get("longrun_agent") or {}).get("model") or "").strip()
+        ref = str(((cfg.get("roles") or {}).get("architect") or {}).get("model") or "").strip()
     if not ref or routing.is_dynamic_ref(ref):
         if active_session_id:
             sess = stores.load_session(active_session_id)
@@ -1607,9 +1814,9 @@ def _agent_delete(args):
     sid, ag = _resolve_agent_session(args.get("agent"))
     if not sid:
         return {"ok": False, "error": "agent not found: %s" % args.get("agent")}
-    if sid == LONGRUN_AGENT_SESSION_ID:
+    if sid == ARCHITECT_SESSION_ID:
         return {"ok": False,
-                "error": "longrunAgent is a permanent system session and cannot be deleted"}
+                "error": "architect is a permanent system session and cannot be deleted"}
     aid = (ag or {}).get("id")
     workspace = (ag or {}).get("workspace") or ""
 
@@ -2132,7 +2339,7 @@ def _session_rename(args):
     stores.save_session(sess)
     try:
         from longrun.core.events import publish
-        publish("session.renamed", session=sid, title=title, by="longrunAgent")
+        publish("session.renamed", session=sid, title=title, by="architect")
     except Exception:  # noqa: BLE001
         pass
     return {"ok": True, "session": sid, "title": title,
@@ -2281,11 +2488,11 @@ def _webui_inspect(args):
         from longrun.core import api_v02
         out["index"] = api_v02.index_config_get()
     if section in ("keys", "all"):
-        # Names only — longrunAgent never reads or writes secret VALUES.
+        # Names only — architect never reads or writes secret VALUES.
         from longrun.model import keys as keys_mod
         ks = keys_mod.keys_status()
         out["keys"] = sorted([str(k.get("env")) for k in (ks.get("keys") or [])])
-        out["keys_note"] = "secret values are operator-only and never exposed to longrunAgent"
+        out["keys_note"] = "secret values are operator-only and never exposed to architect"
     if section == "teamorg":
         # v898: the ONE compact, budgeted view of the org the automation reads
         # (teams + roster + the in-scope ROLE.md heads). It never needs a slice.
@@ -2440,7 +2647,7 @@ def _webui_configure(args):
         return {
             "ok": False,
             "error": (
-                "SAFETY_GUARD: longrunAgent is forbidden from modifying %r "
+                "SAFETY_GUARD: architect is forbidden from modifying %r "
                 "(Nucleus write and Matrix promotion checkboxes may only be "
                 "changed manually by the human operator)." % hit
             ),
@@ -2459,7 +2666,7 @@ def _webui_configure(args):
             return {
                 "ok": False,
                 "error": (
-                    "SAFETY_GUARD: longrunAgent is forbidden from naming %r in a persisted "
+                    "SAFETY_GUARD: architect is forbidden from naming %r in a persisted "
                     "config payload (operator-only safety switch)." % hit_text
                 ),
             }
@@ -2471,7 +2678,7 @@ def _webui_configure(args):
             return {"ok": False, "error": "file required for target='settings'"}
         res = settings_mod.update({"file": fname, "values": values})
         if res.get("ok"):
-            publish("settings.changed", file=fname, by="longrunAgent")
+            publish("settings.changed", file=fname, by="architect")
             res["stdout"] = "updated settings %s (%s)" % (fname, ", ".join(sorted(values)))
         return res
 
@@ -2483,7 +2690,7 @@ def _webui_configure(args):
             return {"ok": False, "error": "content required for target='rules'"}
         res = rules_mod.save(scope, str(content))
         if res.get("ok"):
-            publish("rules.update", scope=scope, chars=res.get("chars", 0), by="longrunAgent")
+            publish("rules.update", scope=scope, chars=res.get("chars", 0), by="architect")
             res["stdout"] = "updated %s rules (%d chars)" % (scope, res.get("chars", 0))
         return res
 
@@ -2501,7 +2708,7 @@ def _webui_configure(args):
             keep_recent=values.get("keep_recent"),
             patch=patch or None,
         )
-        publish("settings.changed", file="compaction.yaml", by="longrunAgent")
+        publish("settings.changed", file="compaction.yaml", by="architect")
         return {
             "ok": True,
             "compaction": saved,
@@ -2520,7 +2727,7 @@ def _webui_configure(args):
             elif isinstance(v, dict):
                 roles.setdefault(k, {}).update(v)
         routing.save_config(cfg)
-        publish("settings.changed", file="routing.yaml", by="longrunAgent")
+        publish("settings.changed", file="routing.yaml", by="architect")
         return {
             "ok": True,
             "routing": cfg,
@@ -2553,7 +2760,7 @@ def _webui_configure(args):
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         if res.get("ok"):
-            publish("config.saved", name=name, ok=True, by="longrunAgent")
+            publish("config.saved", name=name, ok=True, by="architect")
             res["stdout"] = "wrote config file %s" % name
         return res
 
@@ -2585,7 +2792,7 @@ def _webui_configure(args):
             if not res.get("ok", True):
                 return res
         sub_mod.save_cfg(cfg)
-        publish("settings.changed", file="subagents.yaml", by="longrunAgent")
+        publish("settings.changed", file="subagents.yaml", by="architect")
         return {
             "ok": True,
             "subagents": sub_mod.load_cfg(),
@@ -2606,13 +2813,13 @@ def _webui_configure(args):
             return {
                 "ok": False,
                 "error": (
-                    "SAFETY_GUARD: longrunAgent may not change its own tool policy "
+                    "SAFETY_GUARD: architect may not change its own tool policy "
                     "(%r) — the dual-permission gate is operator-only." % self_hit
                 ),
             }
         res = api_v02.update_policy(body)
         if res.get("ok"):
-            publish("tools.policy", by="longrunAgent")
+            publish("tools.policy", by="architect")
             # The writer answers with the FULL catalog (one schema per tool); that is
             # noise in an agent observation, so report counts + what changed instead.
             tools = res.pop("tools", None)
@@ -2627,7 +2834,7 @@ def _webui_configure(args):
         if "ok" not in res:
             res = {"ok": True, "config": res}
         if res.get("ok"):
-            publish("settings.changed", file="index.yaml", by="longrunAgent")
+            publish("settings.changed", file="index.yaml", by="architect")
             res["stdout"] = "updated index config (%s)" % ", ".join(sorted(values))
         return res
 
@@ -2646,7 +2853,7 @@ def _webui_providers(args, op):
     pid = str(args.get("id") or args.get("provider") or "").strip()
     if op == "reload":
         api_v02.provider_reload()
-        publish("providers.update", action="reload", by="longrunAgent")
+        publish("providers.update", action="reload", by="architect")
         return {"ok": True, "stdout": "providers reloaded"}
     if not pid:
         return {"ok": False, "error": "id required"}
@@ -2679,7 +2886,7 @@ def _webui_skills_remove(args):
     res = skills_mod.remove(nm)
     res.setdefault("ok", False)
     if res.get("ok"):
-        publish("skills.remove", name=nm, ok=True, by="longrunAgent")
+        publish("skills.remove", name=nm, ok=True, by="architect")
         res["stdout"] = "removed skill %s" % nm
     return res
 
@@ -2691,7 +2898,7 @@ def _webui_mcp(args, op):
     nm = str(args.get("name") or "").strip()
     if op == "reload":
         mcp_client_mod.reload()
-        publish("mcp.clients", action="reload", ok=True, by="longrunAgent")
+        publish("mcp.clients", action="reload", ok=True, by="architect")
         return {"ok": True, "stdout": "reloaded MCP clients"}
     if not nm:
         return {"ok": False, "error": "name required"}
@@ -2730,7 +2937,7 @@ def _webui_knowledge(args, op):
         from longrun.memory import knowledge as kb
         res = kb.reembed()
     res.setdefault("ok", "error" not in res)
-    publish("knowledge.docs", action=op, ok=bool(res.get("ok")), by="longrunAgent")
+    publish("knowledge.docs", action=op, ok=bool(res.get("ok")), by="architect")
     if res.get("ok"):
         res["stdout"] = "knowledge %s applied" % op
     return res
@@ -2843,14 +3050,14 @@ from longrun.gen.surfaces import (  # noqa: E402
 
 
 def automate(section, instruction, context=None, session=None, model=None, max_steps=6):
-    """Run a stateless `longrunAgent` automation turn for a WebUI section.
+    """Run a stateless `architect` automation turn for a WebUI section.
 
-    1. Resets the permanent `longrunAgent` session before starting (stateless);
-    2. Checks that `longrunAgent` tools are enabled in the global registry;
+    1. Resets the permanent `architect` session before starting (stateless);
+    2. Checks that `architect` tools are enabled in the global registry;
     3. Builds a section-specific goal + live substrate snapshot;
-    4. Runs `agent_run_v2` under `LONGRUN_AGENT_SESSION_ID` with the resolved
+    4. Runs `agent_run_v2` under `ARCHITECT_SESSION_ID` with the resolved
        cheap remote (or `@chat`) model;
-    5. Resets the `longrunAgent` session transcript afterwards so no residual
+    5. Resets the `architect` session transcript afterwards so no residual
        memory leaks into future runs.
     """
     from longrun.core import api_v02
@@ -2873,7 +3080,7 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
     probe_tool = ("team.create"
                   if section in ("teamorg", "agents", "teams", "orbit")
                   else "webui.configure")
-    ok_perm, reason = check_dual_permission(probe_tool, run_id=LONGRUN_AGENT_SESSION_ID)
+    ok_perm, reason = check_dual_permission(probe_tool, run_id=ARCHITECT_SESSION_ID)
     if not ok_perm:
         return {"ok": False, "error": reason, "permission_denied": True}
 
@@ -2892,7 +3099,7 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
     ctx_json = json.dumps(context or {}, ensure_ascii=False, default=str)[:2000]
 
     full_goal = (
-        "[LONGRUN_AGENT STATELESS AUTOMATION — SECTION: %s]\n"
+        "[ARCHITECT STATELESS AUTOMATION — SECTION: %s]\n"
         "%s\n\n"
         "Current section context from UI: %s\n"
         "Current substrate state: %s\n\n"
@@ -2901,13 +3108,13 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
         % (section, sec_prompt, ctx_json, snap_json, instruction)
     )
 
-    publish("longrun_agent.start", section=section, model=resolved_model,
-            session=LONGRUN_AGENT_SESSION_ID)
+    publish("architect.start", section=section, model=resolved_model,
+            session=ARCHITECT_SESSION_ID)
     st = None
     run_res = {}
     try:
         st = api_v02.new_run(full_goal, resolved_model, max(1, min(int(max_steps or 6), 12)))
-        st.id = "%s_%s" % (LONGRUN_AGENT_SESSION_ID, st.id)
+        st.id = "%s_%s" % (ARCHITECT_SESSION_ID, st.id)
         with api_v02.RUNS_LOCK:
             api_v02.RUNS[st.id] = st
         run_res = api_v02.agent_run_v2(
@@ -2915,7 +3122,7 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
             max_steps=max(1, min(int(max_steps or 6), 12)),
             model=resolved_model,
             run_id=st.id,
-            session=LONGRUN_AGENT_SESSION_ID,
+            session=ARCHITECT_SESSION_ID,
         )
     finally:
         # The ledger is written BEFORE the reset: the stateless wipe is exactly
@@ -2933,14 +3140,14 @@ def automate(section, instruction, context=None, session=None, model=None, max_s
         except Exception:  # noqa: BLE001 — a broken ledger must not fail the run
             pass
         reset_stateless_session()
-        publish("longrun_agent.done", section=section, model=resolved_model,
-                session=LONGRUN_AGENT_SESSION_ID)
+        publish("architect.done", section=section, model=resolved_model,
+                session=ARCHITECT_SESSION_ID)
 
     writes = automation_log.writes_from_trace(run_res.get("trace") or [])
     return {
         "ok": run_res.get("status") == "done",
         "section": section,
-        "session": LONGRUN_AGENT_SESSION_ID,
+        "session": ARCHITECT_SESSION_ID,
         "stateless": True,
         "model": resolved_model,
         # `result` is the run's summary text. It was read from a key this response

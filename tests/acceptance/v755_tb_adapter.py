@@ -47,7 +47,7 @@ if TB is None:
     print("0/1 checks")
     sys.exit(1)
 
-check("A0 the adapter defines the harness identity", TB.LongrunAgent.name() == "longrun")
+check("A0 the adapter defines the harness identity", TB.LongrunHarness.name() == "longrun")
 if not TB.HAS_TB:
     print("NOTE terminal_bench is not installed in this python: class stand-ins active")
 
@@ -62,8 +62,8 @@ check("A4 the method and path travel verbatim",
       "method='POST'" in code and "/api/sessions" in code)
 
 # ---- B. the agent identity and the knobs a run must state ---------------------
-check("B1 tb finds the arm by its name", TB.LongrunAgent.name() == "longrun")
-agent = TB.LongrunAgent(model_name="openrouter:z-ai/glm-5.3-flash", timeout=60, max_steps=7)
+check("B1 tb finds the arm by its name", TB.LongrunHarness.name() == "longrun")
+agent = TB.LongrunHarness(model_name="openrouter:z-ai/glm-5.3-flash", timeout=60, max_steps=7)
 check("B2 the model is an explicit argument", agent.model_name == "openrouter:z-ai/glm-5.3-flash")
 check("B3 timeout and step budget are honoured", (agent.timeout, agent.max_steps) == (60.0, 7))
 check("B4 a harness fault must never look like a solved task",
@@ -159,7 +159,7 @@ else:
 # ---- E. the launcher is the only entry point, and it refuses to overwrite ------
 launcher = open(os.path.join(REPO, "scripts/bench-terminal-bench.sh"), encoding="utf-8").read()
 check("E1 the launcher passes the adapter import path",
-      "benchmarks.terminal_bench_agent:LongrunAgent" in launcher)
+      "benchmarks.terminal_bench_agent:LongrunHarness" in launcher)
 check("E2 it refuses an existing run folder", "refusing to reuse" in launcher)
 check("E3 it exports the repo on PYTHONPATH so tb can import the adapter",
       'PYTHONPATH="$REPO"' in launcher)

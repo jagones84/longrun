@@ -66,7 +66,7 @@ def _num(sid):
     return (A.REGISTRY.get(sid) or {}).get("n")
 
 
-_put_store({"agents": {"longrunAgent": {"id": "A1", "n": 1, "session": "longrunAgent",
+_put_store({"agents": {"architect": {"id": "A1", "n": 1, "session": "architect",
                                         "kind": "session"}},
             "seq": 1})
 
@@ -92,14 +92,14 @@ check("C1 every live agent number is unique", len(nums) == len(set(nums)), nums)
 
 # ------------------------------- D. the pinned number is never lost ---------
 _put_store({"agents": {
-    "longrunAgent": {"id": "A1", "n": 1, "session": "longrunAgent", "kind": "session"},
+    "architect": {"id": "A1", "n": 1, "session": "architect", "kind": "session"},
     "squatter": {"id": "A1", "n": 1, "session": "squatter", "kind": "session"},
 }, "seq": 1})
-A.REGISTRY.designate("longrunAgent")
+A.REGISTRY.designate("architect")
 store = _store()["agents"]
 check("D1 the system session keeps A1",
-      (store.get("longrunAgent") or {}).get("id") == "A1",
-      (store.get("longrunAgent") or {}).get("id"))
+      (store.get("architect") or {}).get("id") == "A1",
+      (store.get("architect") or {}).get("id"))
 check("D2 the other record is moved to a FREE number, never a duplicate",
       (store.get("squatter") or {}).get("id") == "A2",
       (store.get("squatter") or {}).get("id"))
@@ -108,7 +108,7 @@ check("D2 the other record is moved to a FREE number, never a duplicate",
 _sess("live-one")
 _sess("live-two")
 _put_store({"agents": {
-    "longrunAgent": {"id": "A1", "n": 1, "session": "longrunAgent", "kind": "session"},
+    "architect": {"id": "A1", "n": 1, "session": "architect", "kind": "session"},
     "live-one": {"id": "A2", "n": 2, "session": "live-one", "kind": "session"},
     "live-two": {"id": "A3", "n": 3, "session": "live-two", "kind": "session"},
     "dead-one": {"id": "A9", "n": 9, "session": "dead-one", "kind": "session"},
@@ -118,9 +118,9 @@ released = A.REGISTRY.reconcile()
 store = _store()
 check("E1 both dead records are released", sorted(released) == ["A12", "A9"], released)
 check("E2 the live sessions keep their records",
-      set(store["agents"]) == {"longrunAgent", "live-one", "live-two"},
+      set(store["agents"]) == {"architect", "live-one", "live-two"},
       sorted(store["agents"]))
-check("E3 the system session is never pruned", "longrunAgent" in store["agents"])
+check("E3 the system session is never pruned", "architect" in store["agents"])
 check("E4 `seq` is retracted to the highest LIVE number", store.get("seq") == 3,
       store.get("seq"))
 

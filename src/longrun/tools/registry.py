@@ -1345,7 +1345,7 @@ def subtool_gate(tool, args):
 # 2026-11-07: one parse per FILE VERSION, not one per caller. The parse is a pure
 # function of the bytes, and `catalog()` asks for it on every system-prompt render
 # (`catalog -> shipped_tools -> _load_raw`), measured 13.7 ms per call and paid TWICE
-# per prompt (the `tools` section and the `longrun-agent` subtool list), i.e. ~27 ms
+# per prompt (the `tools` section and the `architect` subtool list), i.e. ~27 ms
 # of a 42 ms prompt build. The signature is (path, mtime_ns, size): an edit changes
 # it, so the memo can never serve a stale config. The stored object is never handed
 # out — callers merge it into their own structures and a shared dict would be
@@ -2333,13 +2333,13 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     if spec["approval"] == "denied":
         return "denied", "tool policy is 'denied'"
     # JAG-535/538: exclusive tools enforce a dual-permission model — the tool must
-    # be enabled here AND the calling session must be `longrunAgent` or have
-    # `allow_longrun_agent: true`. Even `approvals.mode=full` never bypasses the
+    # be enabled here AND the calling session must be `architect` or have
+    # `allow_architect: true`. Even `approvals.mode=full` never bypasses the
     # session privilege check when `run_id` / `session` is provided in `args`.
     # The marker is the schema's own `_origin`, not a name prefix: exclusive tools
     # are now named `namespace.tool` (`agent.prompt_set`), with no shared prefix.
     # v616: ONE source of truth — the verdict AND the reason come from
-    # `longrun_agent.check_dual_permission`, the same function the execute path
+    # `architect.check_dual_permission`, the same function the execute path
     # uses. A second inline copy of this message lived here and already drifted
     # once (different wording for the same denial).
     if (spec.get("schema") or {}).get("_origin") == "exclusive":

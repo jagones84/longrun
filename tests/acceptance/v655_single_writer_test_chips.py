@@ -11,13 +11,13 @@ Operator, on the same Models panel:
     ovunque" — the chips are derived from the DOM for every panel.
 
 What this locks:
-  A) routing: summarizer + longrun_agent model cells are read-only (disabled
+  A) routing: summarizer + architect model cells are read-only (disabled
      but still carrying data-path, so a save round-trips the value instead of
      wiping it); chat/agent keep their editable cells;
   B) probe_model: one REAL chat completion (max_tokens=1) on the ref, reusing
      the same reason mapper as the provider probe; POST /api/models/test;
   C) the UI: ONE test button builder shared by every LLM picker, mounted beside
-     compaction / longrunAgent / research, next to the embedding test;
+     compaction / architect / research, next to the embedding test;
   D) live/save chips are derived from the DOM for EVERY panel, not only Models.
 
 Stdlib only, deterministic, no browser, no network (the probe's offline paths
@@ -54,11 +54,11 @@ BTN = _fn(UI, "function _llmTestBtn(getRef, out)", "function initLlmTestBtns")
 INIT = _fn(UI, "function initLlmTestBtns()", "/* v654")
 
 # ---- A. routing keeps ONE writer per value -----------------------------------
-check("A1 the model of summarizer/longrun_agent is declared picker-owned",
+check("A1 the model of summarizer/architect is declared picker-owned",
       # the const lives above the table builder, so it is checked in the whole UI
       "const RT_PICKER_OWNED = {" in UI
       and 'summarizer: "set with the Compaction model picker above' in UI
-      and 'longrun_agent: "set with the Architect picker above' in UI)
+      and 'architect: "set with the Architect picker above' in UI)
 check("A2 that cell is a DISABLED input that still carries data-path",
       # a bare span would make the save round-trip the value as EMPTY — the
       # disabled input keeps the value and is un-editable.
@@ -100,8 +100,8 @@ check("C1 one builder, one handler — no duplicated wiring",
       # different surface. The pin is about THIS builder holding one POST, not
       # about the endpoint being called once in the whole file.
       and BTN.count('api("POST", "/api/models/test"') == 1)
-check("C2 the button is mounted beside compaction, longrunAgent and research",
-      '["compactionModel", "longrunAgentModel", "researchModelSettings"]' in INIT
+check("C2 the button is mounted beside compaction, architect and research",
+      '["compactionModel", "architectModel", "researchModelSettings"]' in INIT
       and 'btn.dataset.llmTest = id' in INIT)
 check("C3 the verdict line reads OK with the latency or the reason",
       "async function _modelTestText(ref)" in BTN

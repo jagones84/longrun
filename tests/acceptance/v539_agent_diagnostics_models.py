@@ -2,7 +2,7 @@
 """v539 — diagnosable failures, generic local models, no stray Automate.
 
 Covers the operator-facing gaps found live:
-  * the Codebase inspector must not carry a generic longrunAgent Automate bar;
+  * the Codebase inspector must not carry a generic architect Automate bar;
   * the chat model picker rejects retired/unknown refs and persists a fallback;
   * a local provider's catalogue is completed from its LIVE server roster;
   * `self action=diagnostics` exposes the SAME Settings report (no duplicate

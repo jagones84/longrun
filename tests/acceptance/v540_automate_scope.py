@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v540 — longrunAgent automation is scoped to text surfaces (Rules + Teamorg).
+"""v540 — architect automation is scoped to text surfaces (Rules + Teamorg).
 
 The operator's rule: an agent may help with prompts and rules, never rewrite
 runtime configuration on its own. The code stays in place, but every other

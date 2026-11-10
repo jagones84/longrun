@@ -2435,7 +2435,7 @@ def _batch_without_human(act):
 
     HITL-BATCH (2026-11-05): the card was opened BEFORE the batch ran, so every
     sibling call in the same batch was silently dropped — measured on session
-    `longrunAgent` msg 138 (`python.run` + `http.fetch` + `web.search` +
+    `architect` msg 138 (`python.run` + `http.fetch` + `web.search` +
     `human.ask {"question":"placeholder"}`: three calls never executed). The
     independent calls now run first and the card comes after them; the work is
     never paid for and thrown away.
@@ -5739,7 +5739,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                 # for a human would hang the run. The agent must decide itself.
                 # 2026-11-05 (operator: "the human in the loop page appeared in A1
                 # session … I don't want that"): the same is true for the SYSTEM
-                # agent (longrunAgent / A1) — it is the automation turn other
+                # agent (architect / A1) — it is the automation turn other
                 # agents and the WebUI dispatch into, and a card there parks a
                 # workflow with nobody guaranteed to answer it.
                 msgs.append({"role": "assistant", "content": answer})

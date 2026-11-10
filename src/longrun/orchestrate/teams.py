@@ -63,9 +63,9 @@ def palette():
 
 
 def choose_icon(name, description="", symbol=None, color=None):
-    """longrunAgent's semantic pick over `_PALETTE`, with the deterministic fallback.
+    """The Architect's semantic pick over `_PALETTE`, with the deterministic fallback.
 
-    An explicit symbol/colour always wins; a broken longrunAgent import falls back
+    An explicit symbol/colour always wins; a broken architect import falls back
     to `symbol_for_name(name)` instead of raising.
     """
     try:
@@ -214,7 +214,7 @@ class TeamRegistry:
                 return {"ok": False, "error": "team name already in use: %s" % nm}
             d["seq"] += 1
             n = d["seq"]
-            # JAG-535: longrunAgent picks the icon+colour semantically from the
+            # JAG-535: architect picks the icon+colour semantically from the
             # palette (falling back to deterministic SHA1 symbol_for_name).
             sym, col = choose_icon(nm, description or "", symbol, color)
             t = {"id": "T%d" % n, "n": n, "name": nm,
@@ -227,7 +227,7 @@ class TeamRegistry:
 
     def update(self, ref, name=None, symbol=None, color=None, description=None,
                regenerate_icon=False):
-        """Edit a team in place. `regenerate_icon` asks longrunAgent for a fresh
+        """Edit a team in place. `regenerate_icon` asks architect for a fresh
         icon+colour over the CURRENT name/description (JAG-536): the icon was the one
         property with no way back once the team existed."""
         with _LOCK:

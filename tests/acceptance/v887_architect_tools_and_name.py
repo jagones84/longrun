@@ -21,7 +21,7 @@ Pinned here:
   B) `job.update` + `job.wake` are real tools (schema + handler + dispatch map);
   C) the prompt states the whole-org shape and keeps every guard of v678/v886;
   D) the operator-facing NAME is `Architect` (session title, deck copy, Settings row),
-     while the machine ids stay stable (session id, /api/longrun-agent/*).
+     while the machine ids stay stable (session id, /api/architect/*).
 
 Deterministic: temp data dirs, no model, no network, no server.
 """
@@ -113,8 +113,9 @@ check("B3 both are registered as exclusive tools with a handler",
       and "job.update" in lra._SUBTOOL_MAP and "job.wake" in lra._SUBTOOL_MAP)
 
 # ---- C: the prompt describes the whole org --------------------------------
-check("C1 the identity is the architect",
-      "the org architect of this harness" in PROMPT and "longrunAgent" not in PROMPT)
+check("C1 the identity is Architect",
+      "the org architect of this harness" in PROMPT
+      and lra._LEGACY_SESSION_ID not in PROMPT)
 check("C2 the tool list covers jobs end to end",
       "`job.create|update|dispatch|wake|delete|get|list`" in PROMPT)
 check("C3 the shape is spelled out step by step",
@@ -132,28 +133,29 @@ check("C5 the guards of v678/v886 survive",
 
 # ---- D: the name the operator reads ---------------------------------------
 check("D1 the session/agent title is Architect",
-      lra.LONGRUN_AGENT_TITLE == "Architect")
+      lra.ARCHITECT_TITLE == "Architect")
 check("D2 the machine ids are contracts and did NOT move",
-      lra.LONGRUN_AGENT_SESSION_ID == "longrunAgent"
-      and '"/api/longrun-agent/automate"' in ORBIT)
+      lra.ARCHITECT_SESSION_ID == "architect"
+      and '"/api/architect/automate"' in ORBIT)
 check("D3 the deck copy says Architect and no longer the old name",
       ">automate with Architect</span>" in ORBIT
       and "what Architect wrote" in ORBIT
       and "Architect is working…" in ORBIT
-      and "automate with longrunAgent" not in ORBIT
-      and "what longrunAgent wrote" not in ORBIT)
+      and "automate with architect" not in ORBIT
+      and "what architect wrote" not in ORBIT)
 check("D4 the Sessions Settings row is renamed",
-      ">Architect · automation model " in INDEX and "longrunAgent · VEO automation model" not in INDEX)
+      ">Architect · automation model " in INDEX
+      and (lra._LEGACY_TITLE + " automation model") not in INDEX)
 
-stores.save_session({"id": "longrunAgent", "title": "longrunAgent · VEO", "messages": []})
+stores.save_session({"id": "architect", "title": lra._LEGACY_TITLE, "messages": []})
 lra.ensure_system_session()
-_migrated = (stores.load_session("longrunAgent") or {}).get("title")
+_migrated = (stores.load_session("architect") or {}).get("title")
 check("D5 an existing store migrates the OLD title once (and keeps a typed one)",
       _migrated == "Architect", _migrated)
-stores.save_session({"id": "longrunAgent", "title": "my own name", "messages": []})
+stores.save_session({"id": "architect", "title": "my own name", "messages": []})
 lra.ensure_system_session()
 check("D6 a title the operator typed is never overwritten",
-      (stores.load_session("longrunAgent") or {}).get("title") == "my own name")
+      (stores.load_session("architect") or {}).get("title") == "my own name")
 
 print("---")
 passed = sum(results)

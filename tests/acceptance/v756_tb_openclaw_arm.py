@@ -93,7 +93,7 @@ check("E2 tb's own FailureMode is used when terminal_bench is importable",
 # ---- F. the launcher selects the arm and refuses an unknown one --------------
 launcher = open(os.path.join(REPO, "scripts/bench-terminal-bench.sh"), encoding="utf-8").read()
 check("F1 the launcher knows both arms",
-      "benchmarks.terminal_bench_agent:LongrunAgent" in launcher
+      "benchmarks.terminal_bench_agent:LongrunHarness" in launcher
       and "benchmarks.terminal_bench_openclaw:OpenClawAgent" in launcher)
 check("F2 an unknown arm is refused by name", "unknown ARM=" in launcher)
 check("F3 the arm is a knob, not a separate script", "${ARM:-longrun}" in launcher)

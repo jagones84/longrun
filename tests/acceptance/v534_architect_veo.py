@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""v534 — longrunAgent (VEO — the burattinaio of agents) & Teamorg (JAG-535).
+"""v534 — architect (VEO — the burattinaio of agents) & Teamorg (JAG-535).
 
 Locks:
-  A  Permanent, undeletable, stateless system session (`longrunAgent`):
-     - `ensure_system_session()` creates `longrunAgent` with `system: true`,
-       `undeletable: true`, `stateless: true`, `allow_longrun_agent: true`;
-     - `DELETE /api/sessions/longrunAgent` is refused with 403;
+  A  Permanent, undeletable, stateless system session (`architect`):
+     - `ensure_system_session()` creates `architect` with `system: true`,
+       `undeletable: true`, `stateless: true`, `allow_architect: true`;
+     - `DELETE /api/sessions/architect` is refused with 403;
      - `reset_stateless_session()` wipes messages, tool_cards, injects, and graph.
   B  Exclusive built-in tools & Dual-Permission Gate:
      - the exclusive tools (`agent.*`, `team.*`, `routine.*`,
@@ -15,11 +15,11 @@ Locks:
      - v901: `job.*` is NOT exclusive any more — it is `origin == "delegation"`
        (any agent with a direct report may run team jobs over its own subtree);
      - calling an exclusive tool from an ungranted session is denied (exit 126);
-     - granting `allow_longrun_agent` on a session unlocks it ONLY when the tool
+     - granting `allow_architect` on a session unlocks it ONLY when the tool
        is also enabled in the global registry (dual-permission).
   C  Teamorg lifecycle (`agent.*` / `team.*`):
      - `team.create` picks a semantic icon+colour from `teams._PALETTE` via
-       `longrunAgent.choose_team_symbol` (e.g. Security -> 🚨, AI/ML -> 🧠,
+       `architect.choose_team_symbol` (e.g. Security -> 🚨, AI/ML -> 🧠,
        Finance -> 💰) while explicit symbol still wins;
      - `agent.create` + `agent.update` + `agent.prompt_set` + `team.member_add`
        update the substrate (`agents.json`, `teams.json`,
@@ -27,9 +27,9 @@ Locks:
   D  Safety boundary & WebUI automation:
      - `webui.configure` refuses `allow_nucleus_write` and
        `allow_matrix_promote` (operator-only safety checkboxes);
-     - Models panel offers `longrunAgentModel` (`roles.longrun_agent.model` + `@chat`);
+     - Models panel offers `architectModel` (`roles.architect.model` + `@chat`);
      - `makeAutomateWidget` and Orbit `lraAutoBtn` wire UI sections to
-       `POST /api/longrun-agent/automate`.
+       `POST /api/architect/automate`.
   E  Universal automation coverage (every manually editable section):
      - `webui.inspect` reaches subagents / providers / tools / skills / mcp /
        knowledge / index / keys with real substrate ground truth;
@@ -42,15 +42,15 @@ Locks:
        (`AUTOMATE_CATS` / `mountCategoryAutomate`); the Codebase inspector keeps
        only its explicit `auto_index` toggle (no free-form agent bar).
   F/G  The VEO aware of itself, and permanently pinned:
-     - the `longrun-agent` prompt section lists EVERY live exclusive subtool
+     - the `architect` prompt section lists EVERY live exclusive subtool
        (generated from the registry) plus the hard rules, and is injected only for
-       the system session or a session explicitly granted `allow_longrun_agent`;
-     - the `longrunAgent` session is ALWAYS pinned above the whole rail, its pin is
+       the system session or a session explicitly granted `allow_architect`;
+     - the `architect` session is ALWAYS pinned above the whole rail, its pin is
        derived from the server `system`/`undeletable` flag (not localStorage), it
        cannot be unpinned, and "hide empty" cannot hide it.
 
 Deterministic: temp dirs, no live model, no network.
-Run: python3 tests/acceptance/v534_longrun_agent_veo.py
+Run: python3 tests/acceptance/v534_architect_veo.py
 """
 import atexit
 import os
@@ -111,29 +111,29 @@ def check(name, cond, detail=""):
 
 # --- A: Permanent undeletable stateless system session -----------------------
 sys_sess = LRA.ensure_system_session()
-check("A1 longrunAgent system session is provisioned with system/undeletable/stateless flags",
-      sys_sess.get("id") == "longrunAgent"
+check("A1 architect system session is provisioned with system/undeletable/stateless flags",
+      sys_sess.get("id") == "architect"
       and sys_sess.get("system") is True
       and sys_sess.get("undeletable") is True
       and sys_sess.get("stateless") is True
-      and sys_sess.get("allow_longrun_agent") is True, sys_sess)
+      and sys_sess.get("allow_architect") is True, sys_sess)
 
 sys_sess["messages"] = [{"role": "user", "content": "leftover"}]
 sys_sess["tool_cards"] = [{"tool": "x"}]
 stores.save_session(sys_sess)
 LRA.reset_stateless_session()
-reloaded = stores.load_session("longrunAgent")
+reloaded = stores.load_session("architect")
 check("A2 reset_stateless_session wipes all prior execution context",
       reloaded.get("messages") == [] and reloaded.get("tool_cards") == [], reloaded)
 
-rev_self = LRA.set_session_access("longrunAgent", False)
-check("A3 revoking longrunAgent access from the system session itself is refused",
+rev_self = LRA.set_session_access("architect", False)
+check("A3 revoking architect access from the system session itself is refused",
       rev_self.get("ok") is False)
 
 with open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8") as f:
     HTTPAPI = f.read()
-check("A4 DELETE /api/sessions/longrunAgent is blocked at the HTTP layer with 403",
-      'if sid == "longrunAgent":' in HTTPAPI and "403" in HTTPAPI)
+check("A4 DELETE /api/sessions/architect is blocked at the HTTP layer with 403",
+      'if sid == "architect":' in HTTPAPI and "403" in HTTPAPI)
 
 # --- B: Exclusive built-in tools & Dual-Permission Gate ----------------------
 cat = {t["name"]: t for t in registry.catalog()}
@@ -176,7 +176,7 @@ expected_tools = {
 # v901: `job.*` moved to the DELEGATION class (coordinator-gated, no Teamorg
 # grant) — the exclusivity assertion therefore covers only the granted set.
 _DELEGATION = {"job.create", "job.dispatch", "job.get", "job.list", "job.delete"}
-check("B1 all longrunAgent subtools are registered in registry.catalog()",
+check("B1 all architect subtools are registered in registry.catalog()",
       expected_tools.issubset(set(cat)), sorted(expected_tools - set(cat)))
 check("B2 granted tools are origin='exclusive'; job.* is origin='delegation'",
       all(cat[n].get("origin") == "exclusive" for n in expected_tools - _DELEGATION)
@@ -196,10 +196,10 @@ check("B3 ungranted session is denied by dual-permission gate (exit 126)",
 
 # Grant session access -> succeeds while globally enabled
 LRA.set_session_access("normal-user", True)
-check("B4 set_session_access grants allow_longrun_agent on the session",
+check("B4 set_session_access grants allow_architect on the session",
       LRA.session_has_access("normal-user") is True)
 
-# Disable globally -> even longrunAgent session is denied (dual-permission)
+# Disable globally -> even architect session is denied (dual-permission)
 cfg = registry.load_config()
 orig_entry = dict((cfg.get("tools") or {}).get("team") or {"enabled": True, "approval": "auto"})
 try:
@@ -207,7 +207,7 @@ try:
     disabled_call = T.execute(
         "team.create",
         {"name": "Blocked When Globally Disabled"},
-        run_id="longrunAgent",
+        run_id="architect",
     )
     check("B5 disabling an exclusive namespace globally blocks even the privileged session",
           disabled_call.get("ok") is False and disabled_call.get("exit_code") == 126,
@@ -220,7 +220,7 @@ sym_sec, col_sec = LRA.choose_team_symbol("Security Red Team")
 sym_ai, col_ai = LRA.choose_team_symbol("Neural AI Planners")
 sym_fin, col_fin = LRA.choose_team_symbol("Quant Billing & Cost")
 sym_exp, col_exp = LRA.choose_team_symbol("Security Red Team", explicit_symbol="⚡")
-check("C1 longrunAgent chooses semantic team symbols from the palette (and honours explicit override)",
+check("C1 architect chooses semantic team symbols from the palette (and honours explicit override)",
       sym_sec == "\U0001f6a8" and sym_ai == "\U0001f9e0"
       and sym_fin == "\U0001f4b0" and sym_exp == "⚡",
       (sym_sec, sym_ai, sym_fin, sym_exp))
@@ -234,7 +234,7 @@ t_res = T.execute(
             {"name": "Sec Lead", "role": "security-lead", "prompt": "Lead the security audit."},
         ],
     },
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("C2 teamorg.teams.create creates team with semantic symbol + provisions member agent",
       t_res.get("ok") is True
@@ -250,7 +250,7 @@ a_res = T.execute(
         "role": "vuln-scanner",
         "reports_to": lead_id,
     },
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("C3 teamorg.agents.create provisions agent with cheap remote model + dedicated workspace",
       a_res.get("ok") is True
@@ -263,22 +263,22 @@ scanner_sid = a_res["session"]
 r_llm = T.execute(
     "agent.update",
     {"agent": scanner_id, "model": "openrouter:z-ai/glm-5.3-flash"},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 r_role = T.execute(
     "agent.update",
     {"agent": scanner_id, "role": "senior-vuln-scanner"},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 r_prompt = T.execute(
     "agent.prompt_set",
     {"agent": scanner_id, "prompt": "You are Senior Vuln Scanner. Check OWASP Top 10."},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 r_assign = T.execute(
     "team.member_add",
     {"agent": scanner_id, "team": tid},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("C4 agents.update (model+role), prompt.set and teams.member.add update substrate + ROLE.md + team",
       r_llm.get("ok") is True
@@ -298,12 +298,12 @@ check("C5 substrate mutations publish live-sync SSE events (teams.updated, agent
 bad_nuc = T.execute(
     "webui.configure",
     {"target": "settings", "file": "tools.yaml", "values": {"allow_nucleus_write": True}},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 bad_prom = T.execute(
     "webui.configure",
     {"target": "settings", "file": "tools.yaml", "values": {"approvals.allow_matrix_promote": True}},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("D1 safety guard deterministically blocks allow_nucleus_write and allow_matrix_promote",
       bad_nuc.get("ok") is False and "SAFETY_GUARD" in str(bad_nuc.get("error"))
@@ -313,7 +313,7 @@ check("D1 safety guard deterministically blocks allow_nucleus_write and allow_ma
 ok_rules = T.execute(
     "webui.configure",
     {"target": "rules", "scope": "global", "content": "# Automated Global Rule\nBe concise."},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("D2 webui.configure updates allowed substrate targets (rules) and publishes rules.update",
       ok_rules.get("ok") is True and "rules.update" in {e.get("kind") for e in E.events_since(0)},
@@ -327,16 +327,16 @@ with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), en
 check("D3 Tools panel separates gated built-ins from team-job tools (v949 access wording)",
       '"exclusive", "Built-in · gated"' in HTML
       and '"delegation", "Team jobs · coordinators"' in HTML)
-check("D4 Models panel exposes longrunAgentModel selector + @chat dynamic option",
-      'id="longrunAgentModel"' in HTML and "saveLongrunAgentModel" in HTML)
-check("D5 Shared makeAutomateWidget and Orbit Teamorg automate bar are wired to /api/longrun-agent/automate",
+check("D4 Models panel exposes architectModel selector + @chat dynamic option",
+      'id="architectModel"' in HTML and "saveArchitectModel" in HTML)
+check("D5 Shared makeAutomateWidget and Orbit Teamorg automate bar are wired to /api/architect/automate",
       "function makeAutomateWidget(" in HTML
-      and '"/api/longrun-agent/automate"' in HTML
+      and '"/api/architect/automate"' in HTML
       and 'id="lraAutoBtn"' in ORBIT
-      and '"/api/longrun-agent/automate"' in ORBIT)
+      and '"/api/architect/automate"' in ORBIT)
 
 # --- E: Universal WebUI automation coverage ----------------------------------
-# The spec demands longrunAgent reach EVERY manually editable substrate section,
+# The spec demands architect reach EVERY manually editable substrate section,
 # not just the first four. Each new section is proven through its real Layer-2
 # writer, and the WebUI must auto-generate a control for each of them.
 from longrun.agent import subagent as SUB                # noqa: E402
@@ -363,7 +363,7 @@ r_sub = T.execute(
     {"target": "subagents",
      "values": {"max_parallel": 3, "max_depth": 4,
                 "model": "openrouter:z-ai/glm-5.3-flash"}},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("E2 configure target='subagents' writes config/subagents.yaml + tools.yaml runtime + routing",
       r_sub.get("ok") is True
@@ -379,12 +379,12 @@ _restore_routing()
 r_tool = T.execute(
     "webui.configure",
     {"target": "tools", "values": {"tool": "grep", "approval": "required"}},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 self_pol = T.execute(
     "webui.configure",
     {"target": "tools", "values": {"tool": "team.create", "enabled": False}},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("E3 configure target='tools' flips real tool policy but refuses its own namespace",
       r_tool.get("ok") is True
@@ -395,7 +395,7 @@ check("E3 configure target='tools' flips real tool policy but refuses its own na
 r_idx = T.execute(
     "webui.configure",
     {"target": "index", "values": {"auto_index": False}},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("E4 configure target='index' writes the shared index configuration",
       r_idx.get("ok") is True
@@ -404,7 +404,7 @@ check("E4 configure target='index' writes the shared index configuration",
 r_kb = T.execute(
     "kb.notebook_rename",
     {"id": KB.create_notebook("veo-notebook")["id"], "name": "veo-notebook-2"},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("E5 kb.notebook_rename renames a real notebook",
       r_kb.get("ok") is True
@@ -413,7 +413,7 @@ check("E5 kb.notebook_rename renames a real notebook",
 r_mcp = T.execute(
     "mcp.upsert",
     {"name": "!!not-a-valid-name!!", "values": {"command": "true"}},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("E6 webui.mcp.upsert routes to the real mcp_client engine (rejects invalid specs)",
       r_mcp.get("ok") is False and "error" in r_mcp, r_mcp)
@@ -422,7 +422,7 @@ bad_cfg = T.execute(
     "webui.configure",
     {"target": "config", "file": "tools.yaml",
      "text": "approvals:\n  allow_matrix_promote: true\n"},
-    run_id="longrunAgent",
+    run_id="architect",
 )
 check("E7 raw config writes are text-scanned — the safety switches cannot be smuggled",
       bad_cfg.get("ok") is False and "SAFETY_GUARD" in str(bad_cfg.get("error")), bad_cfg)
@@ -447,22 +447,22 @@ check("E9 the WebUI derives every control from the backend registry (no local al
       and "function mountSectionAutomate(" not in HTML)
 
 # --- F: the agent's OWN namespace is declared in its system prompt -----------
-# The VEO must not have to guess which `longrunAgent.*` subtools it owns: the
-# `longrun-agent` prompt section lists them FROM THE LIVE REGISTRY, and is injected
+# The VEO must not have to guess which `architect.*` subtools it owns: the
+# `architect` prompt section lists them FROM THE LIVE REGISTRY, and is injected
 # only for the system session (or one explicitly granted access).
 from longrun.model import prompt as P                     # noqa: E402
 
-sec = next((s for s in P.SECTIONS if s["id"] == "longrun-agent"), None)
-check("F1 longrun-agent is a DYNAMIC prompt section in the cache-safe tail",
+sec = next((s for s in P.SECTIONS if s["id"] == "architect"), None)
+check("F1 architect is a DYNAMIC prompt section in the cache-safe tail",
       bool(sec) and sec["kind"] == "dynamic" and sec["order"] >= 50,
       sec)
 
-sys_text = P._provider_longrun_agent({"id": "longrunAgent", "system": True}, None, None)
-granted_text = P._provider_longrun_agent({"id": "normal-user", "allow_longrun_agent": True}, None, None)
-plain_text = P._provider_longrun_agent({"id": "normal-user"}, None, None)
+sys_text = P._provider_architect({"id": "architect", "system": True}, None, None)
+granted_text = P._provider_architect({"id": "normal-user", "allow_architect": True}, None, None)
+plain_text = P._provider_architect({"id": "normal-user"}, None, None)
 check("F2 the namespace section is gated: full VEO framing only for the system session",
       # 2026-11-11 (v957): the identity line now names the agent Architect — the legacy
-      # session id was the reason every report said "longrunAgent". Same gating.
+      # session id was the reason every report said "architect". Same gating.
       "webui.configure" in sys_text
       and "You are Architect" in sys_text
       and "webui.configure" in granted_text
@@ -479,7 +479,7 @@ expected_tools = [
     "session.delete",
     "webui.configure", "webui.inspect",
 ]
-check("F3 the section lists EVERY live longrunAgent subtool (generated, never hardcoded)",
+check("F3 the section lists EVERY live architect subtool (generated, never hardcoded)",
       all(("`%s`" % n) in sys_text for n in expected_tools), sys_text[:400])
 check("F4 the section states the hard rules: reserved `action`, dual permission, safety, stateless",
       "`action` is RESERVED" in sys_text

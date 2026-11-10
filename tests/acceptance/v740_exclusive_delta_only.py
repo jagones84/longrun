@@ -2,7 +2,7 @@
 """v740 — the exclusive catalog is the DELTA, never a second copy of the builtins.
 
 Operator (2026-10-30): *"exclusive builtin tools overlap the builtins, it makes no
-sense: there must be only the DELTA that longrunAgent can use, they must not be
+sense: there must be only the DELTA that architect can use, they must not be
 rebuilt. And there are similar tools — what are they for? do a complete audit and
 fix."*
 
@@ -103,7 +103,7 @@ check("A3 every builtin that replaced an exclusive copy still exists and is NOT 
 # Removing a duplicate must not blind A1: the prompt names the builtin owner.
 _prompt = open(os.path.join(REPO, "src", "longrun", "model", "prompt.py"),
                encoding="utf-8").read()
-check("A4 the longrunAgent prompt points at the builtin that now owns each verb",
+check("A4 the architect prompt points at the builtin that now owns each verb",
       "are ALL of them right now" in _prompt
       and "sessions.list" in _prompt and "knowledge.create_notebook" in _prompt
       and "knowledge.add_source" in _prompt

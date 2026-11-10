@@ -1710,7 +1710,7 @@ def handle(handler, method, path, qs, body):
             return _r(handler, 200 if res.get("ok") else 404, res)
         # JAG-491: structured (object) editors for the config files — every field
         # is a checkbox/number/select/row, never hand-typed YAML.
-        if path == "/api/longrun-agent/status":
+        if path == "/api/architect/status":
             from longrun.agent import architect as _lra
             sess = _lra.ensure_system_session()
             sid = qs.get("session") or ""
@@ -1725,12 +1725,12 @@ def handle(handler, method, path, qs, body):
             })
         # JAG-535 follow-up: the stateless wipe erases an automation run from the
         # session, the graph and the chat, so these two routes read the ONE
-        # persistent ledger of what longrunAgent actually wrote.
-        if path == "/api/longrun-agent/reports":
+        # persistent ledger of what architect actually wrote.
+        if path == "/api/architect/reports":
             from longrun.agent import automation_log as _al
             return _r(handler, 200, {"ok": True,
                                      "runs": _al.read_runs(_int(qs.get("limit"), 20))})
-        if path == "/api/longrun-agent/writes":
+        if path == "/api/architect/writes":
             from longrun.agent import automation_log as _al
             return _r(handler, 200, {"ok": True, "targets": _al.last_write_by_target()})
         if path == "/api/settings":
@@ -2597,14 +2597,14 @@ def handle(handler, method, path, qs, body):
         if path == "/api/workspace":
             res = workspace_set(body)
             return _r(handler, 200 if res.get("ok") else 400, res)
-        if path == "/api/longrun-agent/access":
+        if path == "/api/architect/access":
             from longrun.agent import architect as _lra
             res = _lra.set_session_access(
                 (body or {}).get("session"),
-                bool((body or {}).get("allow_longrun_agent", (body or {}).get("allowed", False))),
+                bool((body or {}).get("allow_architect", (body or {}).get("allowed", False))),
             )
             return _r(handler, 200 if res.get("ok") else 400, res)
-        if path == "/api/longrun-agent/automate":
+        if path == "/api/architect/automate":
             from longrun.agent import architect as _lra
             b = body or {}
             res = _lra.automate(

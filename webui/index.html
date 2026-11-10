@@ -3760,8 +3760,8 @@
         </div>
         <h2 title="Stateless system automation agent (Architect) for Teamorg and WebUI section automation. Prefers lightweight, cost-effective cloud models (or follows the active session's model).">Architect · automation model <span class="set-chip live" title="applies the moment you pick a model — no save button">live</span></h2>
         <div class="card">
-          <select aria-label="longrun agent model" id="longrunAgentModel" data-change="saveLongrunAgentModel" class="inp u-w100 u-p610 u-fs12"></select>
-          <div class="remaining u-mt6" id="longrunAgentResult"></div>
+          <select aria-label="Architect model" id="architectModel" data-change="saveArchitectModel" class="inp u-w100 u-p610 u-fs12"></select>
+          <div class="remaining u-mt6" id="architectResult"></div>
         </div>
         <!-- JAG-505: the subagent model + failover live in Settings ▸ Subagents —
              this card was a duplicate of it. -->
@@ -6863,14 +6863,14 @@ async function loadAgents() {
     (t.teams || []).forEach(x => { _teamsById[x.id] = x; });
   } catch (e) { _agents = {}; }
 }
-function _isSystemSess(s) { return !!(s && (s.system || s.undeletable || s.id === "longrunAgent")); }
+function _isSystemSess(s) { return !!(s && (s.system || s.undeletable || s.id === "architect")); }
 function _systemPinnedIds(list) {
   return ((list || _sessList || []).filter(_isSystemSess)).map(s => s.id);
 }
 function _pinned(list) {
   let stored = [];
   try { const p = JSON.parse(localStorage.getItem("sf_pinned") || "[]"); stored = Array.isArray(p) ? p : []; } catch (e) { stored = []; }
-  // JAG-535: the permanent system session (longrunAgent) is ALWAYS pinned ABOVE
+  // JAG-535: the permanent system session (architect) is ALWAYS pinned ABOVE
   // everything and can never be unpinned. The pin is derived from the SERVER flag
   // (`system`/`undeletable`), not from localStorage, so clearing browser storage or
   // hand-editing `sf_pinned` can neither depin it nor duplicate it.
@@ -6896,7 +6896,7 @@ async function openSessMenu(row, s, ag) {
   m.className = "sess-menu";
   const pinned = _pinned().includes(s.id);
   const isSys = _isSystemSess(s);
-  const hasLra = !!(s.allow_longrun_agent || isSys);
+  const hasLra = !!(s.allow_architect || isSys);
   const lraBtn = isSys ? "" : `<button data-a="lra">${hasLra ? "✓ Revoke Teamorg / Architect" : "⚡ Grant Teamorg / Architect"}</button>`;
   const delBtn = isSys ? "" : `<button data-a="del" class="danger">Delete session</button>`;
   // JAG-535: a system session cannot be unpinned — show the state, not a toggle.
@@ -6912,7 +6912,7 @@ async function openSessMenu(row, s, ag) {
     if (a === "org") { closeSessMenu(); _showAgentInOrganigram(s.id); return; }
     if (a === "lra") {
       closeSessMenu();
-      await api("POST", "/api/longrun-agent/access", { session: s.id, allow_longrun_agent: !hasLra });
+      await api("POST", "/api/architect/access", { session: s.id, allow_architect: !hasLra });
       toast((!hasLra ? "granted" : "revoked") + " Teamorg / Architect access for " + (s.title || s.id));
       loadSessions();
       return;
@@ -8774,13 +8774,13 @@ function _setSectionEl(sec, merged) {
    3-row textarea (operator: "routing è disordinatissima e non si capisce
    niente"). `subagent` keeps only `pattern`: its model + fallbacks are owned by
    Settings ▸ Subagents, so the row points there instead of duplicating them.
-   v655: the model of `summarizer` / `longrun_agent` is ALSO owned elsewhere —
+   v655: the model of `summarizer` / `architect` is ALSO owned elsewhere —
    by the live pickers at the top of this panel (one writer each) — so that cell
    is a read-only pointer, and the table stays the ONE place for pattern +
    fallbacks. */
 const RT_PICKER_OWNED = {
   summarizer: "set with the Compaction model picker above — live, one writer",
-  longrun_agent: "set with the Architect picker above — live, one writer",
+  architect: "set with the Architect picker above — live, one writer",
 };
 function _setRoutingFields(box, sec) {
   const vals = sec.values || {};
@@ -11646,7 +11646,7 @@ const _FEED_REFRESH = {
   // exactly the "the frontend must follow the backend" contract.
   "settings.changed": ev => { scheduleDiagnosticsRefresh(); subagentsSyncFromBackend(ev); },
   "config.saved": ev => { scheduleDiagnosticsRefresh(); subagentsSyncFromBackend(ev); },
-  "longrun_agent.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); loadRules(); subagentsSyncFromBackend({}); },
+  "architect.done": () => { loadSessions(); loadAgents(); loadSettingsForms(); loadRulesPanel(); loadRules(); subagentsSyncFromBackend({}); },
   "home.move": () => loadHome()
 };
 function _feedReplay(ev) {
@@ -12441,7 +12441,7 @@ function renderTools(el, d) {
   const ACCESS_BADGE = {
     everyone: '<span class="sk-badge sk-core" title="any session may call it — read-only lookup (org chart / MCP probe), no grant required">any session</span>',
     coordinator: '<span class="sk-badge sk-core" title="team lead — any agent with at least one direct report may run it over its own subtree; no grant required">team lead</span>',
-    architect: '<span class="sk-badge sk-core" title="needs the Architect session or a session granted allow_longrun_agent — approvals.mode=full does NOT bypass this">Architect / grant</span>'
+    architect: '<span class="sk-badge sk-core" title="needs the Architect session or a session granted allow_architect — approvals.mode=full does NOT bypass this">Architect / grant</span>'
   };
   const ORIGIN_BADGE = {
     nucleus: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
@@ -13720,7 +13720,7 @@ async function _modelTestText(ref) {
     : _probeVerdict(false, "", (t && t.error) || "no answer");
 }
 function initLlmTestBtns() {
-  ["compactionModel", "longrunAgentModel", "researchModelSettings"].forEach(id => {
+  ["compactionModel", "architectModel", "researchModelSettings"].forEach(id => {
     const sel = $(id);
     if (!sel || sel.parentNode.querySelector("[data-llm-test=" + id + "]")) return;
     const out = $(id + "Out") || $(id.replace("Model", "Result"));
@@ -14808,9 +14808,9 @@ async function loadRouting() {
       const match = models.find(m => m.ref.toLowerCase().includes(pat) || m.id.toLowerCase().includes(pat));
       if (match) sel.value = match.ref;
     }
-    const lraSel = $("longrunAgentModel");
+    const lraSel = $("architectModel");
     if (lraSel) {
-      const lraCur = (((d.config || {}).roles || {}).longrun_agent || {}).model || "";
+      const lraCur = (((d.config || {}).roles || {}).architect || {}).model || "";
       const cheapModels = models.filter(m => !m.local);
       if (lraCur && lraCur !== "@chat" && !cheapModels.some(m => m.ref === lraCur)) {
         cheapModels.unshift({ ref: lraCur, id: lraCur, provider: "configured", pname: "Configured", local: false, available: true });
@@ -14848,15 +14848,15 @@ async function saveCompactionModel() {
     : (m === "@chat" ? "saved: compaction follows the chat model"
                      : ("saved: summarizer = " + m));
 }
-async function saveLongrunAgentModel() {
-  const sel = $("longrunAgentModel");
+async function saveArchitectModel() {
+  const sel = $("architectModel");
   const m = sel ? sel.value : "";
   if (!m) return;
-  const r = await api("POST", "/api/routing", { roles: { longrun_agent: { model: m } } });
-  const el = $("longrunAgentResult");
+  const r = await api("POST", "/api/routing", { roles: { architect: { model: m } } });
+  const el = $("architectResult");
   if (el) el.textContent = r.error ? ("error: " + r.error)
     : (m === "@chat" ? "saved: Architect follows the active session model"
-                     : ("saved: longrun_agent = " + m));
+                     : ("saved: architect = " + m));
 }
 /* K-4/K-5 (2026-11-02): ONE ✨ control for every editable text surface, driven by the
    BACKEND registry (`GET /api/generate/surfaces`). The browser keeps NO list of its
@@ -15042,7 +15042,7 @@ function makeAutomateWidget(section, getContext) {
     st.textContent = "Architect is working…";
     try {
       const ctx = typeof getContext === "function" ? (getContext() || {}) : (getContext || {});
-      const r = await api("POST", "/api/longrun-agent/automate", {
+      const r = await api("POST", "/api/architect/automate", {
         section, instruction, context: ctx, session: sessionId || ""
       });
       if (r && r.ok) {
@@ -15051,7 +15051,7 @@ function makeAutomateWidget(section, getContext) {
         const nw = (r.writes || []).length;
         st.textContent = "✓ " + (r.result || "done").slice(0, 200) + (nw ? " · " + nw + " write(s)" : "");
         inp.value = "";
-        // Mirror of the `longrun_agent.done` handler: the widget refreshes its
+        // Mirror of the `architect.done` handler: the widget refreshes its
         // OWN panel even when the SSE feed is down. `loadRules()` was missing, so
         // an AI rewrite of the rules left the editor showing the old text.
         loadSettingsForms();

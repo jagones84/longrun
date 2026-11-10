@@ -105,7 +105,7 @@ check("A5b shipped DeepSeek provider offers current models, not retired IDs",
       and "deepseek-reasoner" not in _deepseek_cfg, "")
 with open(os.path.join(REPO, "config", "routing.yaml"), encoding="utf-8") as _f:
     _routing_yaml = _f.read()
-check("A5c shipped longrun-agent fallback uses active DeepSeek Flash",
+check("A5c shipped architect fallback uses active DeepSeek Flash",
       "- deepseek:deepseek-flash" in _routing_yaml
       and "- deepseek:deepseek-reasoner" not in _routing_yaml, "")
 with open(os.path.join(REPO, "src", "longrun", "agent", "architect.py"),
@@ -115,7 +115,7 @@ _preferred = _lra_source.split("PREFERRED_CHEAP_MODELS = (", 1)[1].split(")", 1)
 with open(os.path.join(REPO, "src", "longrun", "model", "prompt.py"),
           encoding="utf-8") as _f:
     _prompt_source = _f.read()
-check("A5d longrunAgent preference and prompt avoid retired models",
+check("A5d architect preference and prompt avoid retired models",
       "openrouter:deepseek/deepseek-v4.1-flash" in _preferred
       and "deepseek:deepseek-flash" in _preferred
       and "deepseek-reasoner" not in _preferred

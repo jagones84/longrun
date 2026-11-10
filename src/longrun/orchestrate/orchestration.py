@@ -145,7 +145,7 @@ def _no_team_sessions(reg):
     A session is in the bucket when its agent record is missing or carries no
     team membership (``teams_for`` resolves memberships from the teams registry,
     so a deleted team never counts). The pinned system sessions are never in
-    scope: ``longrunAgent`` is permanent and ``delete_session`` refuses it anyway.
+    scope: ``architect`` is permanent and ``delete_session`` refuses it anyway.
     """
     skip = set(agents_mod.PINNED_AGENT_IDS)
     have_team = set()

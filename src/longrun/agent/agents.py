@@ -31,11 +31,11 @@ AGENTS_FILE = os.environ.get("LONGRUN_AGENTS_FILE") or os.path.join(
     paths.DATA_DIR, "agents.json")
 
 #: Agent numbers that are RESERVED, not drawn from the sequence. The permanent
-#: system session (`longrunAgent`) is the harness's own supervisor: it exists
+#: system session (`architect`) is the harness's own supervisor: it exists
 #: before any operator session and cannot be deleted, so giving it the first
 #: number makes the label stable across resets instead of depending on which
 #: session happened to be born first. `seq` never goes below a pinned number.
-PINNED_AGENT_IDS = {"longrunAgent": 1}
+PINNED_AGENT_IDS = {"architect": 1}
 
 
 def _load():
@@ -119,9 +119,9 @@ class AgentRegistry:
 
         The name is what the operator and the model READ ("Architect"), the id is a
         machine key. 2026-11-11 (operator: "la sessione Architect va chiamata con
-        Architect … non longrunAgent"): a target written as a name resolves here, so
-        every caller (the `sessions` tool, the permission gates) accepts it and the
-        legacy session id is never the only address.
+        Architect dai tool send message etcetera"): a target written as a name
+        resolves here, so every caller (the `sessions` tool, the permission gates)
+        accepts it and the raw id is never the only address.
         """
         ref = str(ref or "")
         with _LOCK:

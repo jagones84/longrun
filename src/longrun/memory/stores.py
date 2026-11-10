@@ -461,7 +461,7 @@ def _session_summary_row(s):
         "system": bool(s.get("system")),
         "undeletable": bool(s.get("undeletable")),
         "stateless": bool(s.get("stateless")),
-        "allow_longrun_agent": bool(s.get("allow_longrun_agent")),
+        "allow_architect": bool(s.get("allow_architect")),
     }
 
 

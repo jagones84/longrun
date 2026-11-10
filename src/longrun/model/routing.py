@@ -44,7 +44,7 @@ DEFAULT_CONFIG = {
     # `glm` made a role silently match a LOCAL GGUF alias and the router autoloaded
     # it. Roles carry NO default here; config/routing.yaml is the single source of
     # truth, and an unconfigured role falls through to `default_model()` (cloud).
-    "roles": {"chat": {}, "agent": {}, "subagent": {}, "summarizer": {}, "longrun_agent": {}},
+    "roles": {"chat": {}, "agent": {}, "subagent": {}, "summarizer": {}, "architect": {}},
     "default_fallbacks": [],
 }
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""v957 — the Architect is addressed as "Architect", not by its legacy session id.
+"""v957 — the Architect is addressed as "Architect", not by its retired session id.
 
 Operator, 2026-11-11: *"la sessione Architect va chiamata con Architect dai tool send
-message etcetera, no longrunAgent"*.
+message etcetera"*, then *"longrunagent deve sparire dalla faccia della terra"*.
 
-Why it happened: the session id `longrunAgent` is a permanent machine key (the file,
-the API path, the roles key, the `allow_longrun_agent` flag) and it was also the ONLY
-spelling `sessions.*` accepted — while the name the operator and the model read is
-`Architect` (the session title and the agent record). An agent therefore had to write
-the machine id, and kept repeating it.
+Why it happened: the session id was a permanent machine key (the file, the API path,
+the roles key, the access flag) and it was also the ONLY spelling `sessions.*`
+accepted — while the name the operator and the model read is `Architect` (the
+session title and the agent record). An agent therefore had to write the machine id,
+and kept repeating it. The id itself is now `architect`, so the two agree.
 
 Locked here — ONE resolver, so no call site can drift:
   * `agents.REGISTRY.resolve` finds an agent by session id, by A-id OR by NAME
@@ -19,7 +19,8 @@ Locked here — ONE resolver, so no call site can drift:
   * `sessions.list` ADDRESSES an agent by its name + A-id, and falls back to the raw
     id only for a session with no agent record;
   * the tool schema says the name works, so the model is taught the right word;
-  * the reporting-line rule is unchanged (a worker still cannot reach the Architect).
+  * the reporting-line rule is unchanged (a worker still cannot reach the Architect);
+  * the retired spelling appears nowhere — not in the prompt, not in a schema.
 
 Deterministic: temp stores, no server, no model, no network, no delivery.
 Run: python3 tests/acceptance/v957_architect_name_address.py
@@ -41,6 +42,7 @@ os.makedirs(os.environ["LONGRUN_GRAPH_DIR"], exist_ok=True)
 sys.path.insert(0, os.path.join(REPO, "src"))
 
 from longrun.agent import agents as AG            # noqa: E402
+from longrun.agent import architect as LRA        # noqa: E402
 from longrun.memory import stores as STORES        # noqa: E402
 from longrun.tools import registry as REG          # noqa: E402
 from longrun.tools import tools as T               # noqa: E402
@@ -55,7 +57,7 @@ def check(name, ok, detail=""):
 
 
 reg = AG.REGISTRY
-ARCH_SID = "longrunAgent"
+ARCH_SID = "architect"
 ARCH = reg.designate(ARCH_SID, name="Architect")["agent"]["id"]          # A1, no manager
 LEAD = reg.designate("s-lead", name="Crew Lead")["agent"]["id"]          # top leader
 WORKER = reg.designate("s-worker", name="Writer", reports_to="s-lead")["agent"]["id"]
@@ -70,7 +72,7 @@ check("A1 a NAME resolves to the agent (what the operator asked for)",
 check("A2 the name is case-insensitive",
       (reg.resolve("architect") or {}).get("id") == ARCH)
 check("A3 the A-id still works", (reg.resolve(ARCH) or {}).get("id") == ARCH)
-check("A4 the legacy session id still works (no regression)",
+check("A4 the canonical session id still resolves (no regression)",
       (reg.resolve(ARCH_SID) or {}).get("id") == ARCH)
 check("A5 an unknown name resolves to nothing", reg.resolve("nobody-here") is None)
 
@@ -144,19 +146,19 @@ check("F1 the `session` field says the NAME works, for ANY session",
       "NAME" in _sdesc and "for ANY session" in _sdesc, _sdesc[:160])
 check("F2 ... and still lists the A-id and the raw id", "A-id" in _sdesc and "session id" in _sdesc)
 check("F3 ... and never narrows the tool to one agent",
-      "Architect" not in _sdesc and "longrunAgent" not in _sdesc, _sdesc[:160])
+      "Architect" not in _sdesc and LRA._LEGACY_SESSION_ID not in _sdesc, _sdesc[:160])
 
 # --- G: the Architect's OWN prompt introduces it by name ---------------------
 from longrun.model import prompt as P            # noqa: E402
 
-_txt = P._provider_longrun_agent({"id": ARCH_SID, "system": True}, None, None)
+_txt = P._provider_architect({"id": ARCH_SID, "system": True}, None, None)
 check("G1 the Architect's own prompt introduces it by NAME",
       "You are Architect" in _txt)
-check("G2 ... and never as the legacy session id",
-      "You are longrunAgent" not in _txt)
-check("G3 the legacy id is named once as a machine key, never as an identity",
-      "legacy machine key" in _txt)
-_g = P._provider_longrun_agent({"id": "granted-x", "allow_longrun_agent": True}, None, None)
+check("G2 ... and never as the machine key",
+      "You are architect" not in _txt)
+check("G3 the retired spelling appears nowhere in the prompt",
+      LRA._LEGACY_SESSION_ID not in _txt)
+_g = P._provider_architect({"id": "granted-x", "allow_architect": True}, None, None)
 check("G4 a granted session sees the Architect's namespace, not an identity",
       "The Architect's namespace" in _g and "You are Architect" not in _g)
 

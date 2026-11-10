@@ -12,7 +12,7 @@ Fixes pinned:
      shell/curl. v901: `job.*` is a DELEGATION gate now (org position, not a
      grant) — its own one-truth pair is pinned separately (E1e).
   E2 shell hard-deny blocks the bypass ingredients: LONGRUN_TOKEN,
-     grep of .env, curl to the local API jobs/agents/teams/longrun-agent
+     grep of .env, curl to the local API jobs/agents/teams/architect
      (both 127.0.0.1 and localhost).
   E3 prompt copy disambiguates `dispatch` (teammate turn, no grant) from
      `job.dispatch` (waves, coordinator-owned, no shell needed).
@@ -60,7 +60,7 @@ _ok, _why = LRA.check_dual_permission("team.member_add", SID)
 check("E1a denial names FULL as non-bypass",
       _ok is False and "approvals.mode=full does NOT" in _why, _why)
 check("E1b denial gives the exact grant call",
-      "/api/longrun-agent/access" in _why and "allow_longrun_agent" in _why)
+      "/api/architect/access" in _why and "allow_architect" in _why)
 check("E1c denial names the no-grant alternative and forbids shell/curl",
       "`dispatch`" in _why and "never shell/curl" in _why)
 _d, _r = REG.classify("team.member_add", {"run_id": SID})

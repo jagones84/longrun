@@ -57,7 +57,7 @@ def check(name, cond, detail=""):
 
 
 def agent(tool, args):
-    return LRA.execute(tool, args, run_id="longrunAgent")
+    return LRA.execute(tool, args, run_id="architect")
 
 
 def mk(name, reports_to=None):
@@ -147,7 +147,7 @@ check("D2 an INTERMEDIATE orchestrator re-roots its own subtree",
 
 res = T.execute("workspace.set",
                 {"agent": leaf2["agent"]["id"], "workspace": os.path.join(TMP, "ws", "peer-by-supervisor")},
-                run_id="longrunAgent")
+                run_id="architect")
 check("D3 the supervisor may re-root any agent", res.get("ok"), res.get("error"))
 
 # --- E: bad requests are refused -------------------------------------------

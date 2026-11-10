@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""v679 — the longrunAgent automation ledger: the record a stateless run leaves.
+"""v679 — the architect automation ledger: the record a stateless run leaves.
 
 I-9. `reset_stateless_session()` wipes the VEO session, its tool cards, its
 injects and its task graph before AND after every automation turn (by design).
 Nothing recorded WHAT the run wrote to the substrate: verified 2026-10-26 an
 operator clicked `⚡ automate (Teamorg)`, six `ROLE.md` files were written at
 22:56, and no surface in the product could show it — the archived run graph
-(`data/graphs/longrunAgent_run_<id>.json`) is read by nothing, and the agent
+(`data/graphs/architect_run_<id>.json`) is read by nothing, and the agent
 itself could only answer "my transcript resets".
 
 This test pins the ledger that closes the hole: the derivation from the run's OWN
@@ -171,11 +171,11 @@ check("D4 the response also carries the writes the run made",
       '"writes": writes,' in body)
 
 # ------------------------------------------------------------------ E: routes
-check("E1 GET /api/longrun-agent/reports reads the ledger (bounded by ?limit)",
-      'if path == "/api/longrun-agent/reports":' in API
+check("E1 GET /api/architect/reports reads the ledger (bounded by ?limit)",
+      'if path == "/api/architect/reports":' in API
       and '_al.read_runs(_int(qs.get("limit"), 20))' in API and '"runs":' in API)
-check("E2 GET /api/longrun-agent/writes returns the per-target badge map",
-      'if path == "/api/longrun-agent/writes":' in API
+check("E2 GET /api/architect/writes returns the per-target badge map",
+      'if path == "/api/architect/writes":' in API
       and "_al.last_write_by_target()" in API and '"targets":' in API)
 
 # ---------------------------------------------------------------------- F: UI
@@ -183,9 +183,9 @@ check("F1 the ledger rides with the automation bar (no button of its own)",
       'id="lraRep"' in ORBIT and 'id="lraRepBtn"' not in ORBIT
       and "this.loadReport(true);   // v885" in ORBIT)
 check("F2 the report reads the SAME route the backend serves",
-      '"/api/longrun-agent/reports?limit=' in ORBIT)
+      '"/api/architect/reports?limit=' in ORBIT)
 check("F3 the badge map is fetched from the backend route",
-      'this.api.get("/api/longrun-agent/writes")' in ORBIT
+      'this.api.get("/api/architect/writes")' in ORBIT
       and "this.agents.written = (wrote && wrote.targets) || {};" in ORBIT)
 check("F4 the badge renders real provenance and escaped model text",
       ".aibadge{" in ORBIT and "const aiBadge = w" in ORBIT

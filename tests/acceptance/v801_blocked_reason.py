@@ -3,7 +3,7 @@
 
 Live incident 2026-11-04 (operator: *"the shell is blocked … I am on full settings
 in tools e approval!! … nothing appeared in the approval menu RH panel very very
-grave"*). Session `longrunAgent` (agent A1) tried to shut the Windows PC down:
+grave"*). Session `architect` (agent A1) tried to shut the Windows PC down:
 
     result: "blocked"   error: ""   backend: "harness"   approval: None
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """v803 — a stray human.ask must not swallow a batch or park a placeholder card.
 
-Measured incident (2026-11-05, session `longrunAgent` msg 138): the model emitted
+Measured incident (2026-11-05, session `architect` msg 138): the model emitted
 ONE batch with four calls — `python.run`, `http.fetch`, `web.search` and
 `human.ask {"question":"placeholder"}`. The loop recognised the human.ask BEFORE
 running the batch, so the three real calls were never executed and the operator

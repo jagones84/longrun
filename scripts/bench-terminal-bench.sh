@@ -31,7 +31,7 @@ case "$MODEL" in
 esac
 
 case "${ARM:-longrun}" in
-  longrun)  AGENT="benchmarks.terminal_bench_agent:LongrunAgent" ;;
+  longrun)  AGENT="benchmarks.terminal_bench_agent:LongrunHarness" ;;
   openclaw) AGENT="benchmarks.terminal_bench_openclaw:OpenClawAgent" ;;
   *) echo "unknown ARM='${ARM}' (longrun|openclaw)" >&2; exit 2 ;;
 esac

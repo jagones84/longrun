@@ -8,7 +8,7 @@ lifted LONGRUN_TOKEN from the repo .env via shell and curled the HTTP API
 around the gate. Three fixes, each pinned:
 
   A  ONE gate: registry.classify() delegates verdict+reason to
-     longrun_agent.check_dual_permission (the execute path's function).
+     architect.check_dual_permission (the execute path's function).
      No second inline copy of the denial to drift.
   B  ONE choke point: tools.execute() scrubs operator secret VALUES from
      every model-bound result (shell/fs/python/…). Names stay, values go.
@@ -70,8 +70,8 @@ _ok, _why = LRA.check_dual_permission(_GATED, SID)
 check("A1 classify and check_dual_permission deny identically (one truth)",
       _d == "denied" and _r == _why and "dual-permission gate" in _why, _r)
 check("A2 no second inline copy of the denial survives in the registry",
-      "requires longrunAgent " not in REG_SRC
-      and "system session or allow_longrun_agent grant)" not in REG_SRC
+      "requires architect " not in REG_SRC
+      and "system session or allow_architect grant)" not in REG_SRC
       and "check_dual_permission(tool, sess_ref)" in REG_SRC)
 LRA.set_session_access(SID, True)
 _d2, _r2 = REG.classify(_GATED, {"run_id": SID})

@@ -10,7 +10,7 @@ EV-40. Three operator findings, one mechanism each:
      page furniture and none of the words. A video URL is now transcribed by an
      out-of-process transcriber; when none is installed the add FAILS with the
      reason (the Knowledge panel shows it) instead of storing silence
-  C  `longrunAgent` is the harness's own supervisor and owns the FIRST agent
+  C  `architect` is the harness's own supervisor and owns the FIRST agent
      number (`A1`), pinned so a reset/retrofit never renames it
 
 Deterministic and OFFLINE: temp dirs, a fake transcriber, no model, no network.
@@ -171,7 +171,7 @@ indexcfg.save_config({"media_transcriber_python": "", "media_transcriber_script"
                       "media_transcriber_model": "small"})
 C.DEFAULT_TRANSCRIBERS = _orig_disc
 
-# ---- C: `longrunAgent` owns A1 ----------------------------------------------
+# ---- C: `architect` owns A1 ----------------------------------------------
 from longrun.agent import agents as agents_mod  # noqa: E402
 
 reg = agents_mod.REGISTRY
@@ -181,7 +181,7 @@ _first = reg.designate("s-first", name="First worker")
 check("C1 a normal session takes the first number the pin leaves free",
       _first.get("agent", {}).get("id") == "A2", _first)
 
-_pin = reg.designate("longrunAgent", kind="session")
+_pin = reg.designate("architect", kind="session")
 check("C2 the pinned supervisor takes A1 (reserved for it, never drawn)",
       _pin.get("agent", {}).get("id") == "A1", _pin)
 _moved = reg.get("s-first")
@@ -197,26 +197,26 @@ check("C5 the sequence continues past the pin",
 reg.release("s-second")
 check("C6 a delete retracts the counter but never touches the pin",
       reg.list()["seq"] == 2
-      and (reg.get("longrunAgent") or {}).get("id") == "A1",
+      and (reg.get("architect") or {}).get("id") == "A1",
       reg.list()["seq"])
 
 from longrun.memory import stores  # noqa: E402
 
 os.remove(os.environ["LONGRUN_AGENTS_FILE"])
-stores.ensure_agent({"id": "longrunAgent", "title": "longrunAgent · VEO"})
+stores.ensure_agent({"id": "architect", "title": "Architect"})
 check("C7 a session born as the supervisor is pinned at birth",
-      (reg.get("longrunAgent") or {}).get("id") == "A1", reg.get("longrunAgent"))
+      (reg.get("architect") or {}).get("id") == "A1", reg.get("architect"))
 
 from longrun.agent import architect as LA  # noqa: E402
 
-reg.release("longrunAgent")
+reg.release("architect")
 check("C8 a registry that lost the supervisor has no A1",
-      reg.get("longrunAgent") is None
+      reg.get("architect") is None
       and [a["id"] for a in reg.list()["agents"]].count("A1") == 0,
       reg.list()["agents"])
 LA.ensure_system_session()
 check("C9 ensure_system_session restores the pinned A1",
-      (reg.get("longrunAgent") or {}).get("id") == "A1", reg.get("longrunAgent"))
+      (reg.get("architect") or {}).get("id") == "A1", reg.get("architect"))
 
 print("\n---")
 print("v735: %d/%d PASS" % (sum(results), len(results)))

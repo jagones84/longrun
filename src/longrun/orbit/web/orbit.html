@@ -966,7 +966,7 @@ try{(function(){var t="";try{t=localStorage.getItem("sf_token")||new URLSearchPa
       <!-- v884: the ✨ is icon-only, so THIS bar is the only place the action can be read.
            It says what happens in the operator's words, in the order you fill it: what
            should Architect do → may it overwrite existing prompts → run.
-           Backend: POST /api/longrun-agent/automate {section:"teamorg"} → a STATELESS
+           Backend: POST /api/architect/automate {section:"teamorg"} → a STATELESS
            Architect turn (its session is reset before and after) that sees a live
            snapshot of this section plus the scope below and calls the team/agent tools. -->
       <div class="toolbar addbar" id="lraAutoBar" hidden>
@@ -1248,7 +1248,7 @@ class AgentsView {
     // JAG-2.4: every SESSION (designated agents + plain sessions) — the assign pool.
     this.pool = [];
     // I-9: `{agentId: {at, run_id, section, tool}}` — the newest Architect write per
-    // agent, from the ONE automation ledger (`GET /api/longrun-agent/writes`). Empty =
+    // agent, from the ONE automation ledger (`GET /api/architect/writes`). Empty =
     // no prompt on this board was written by an automation, and no badge renders.
     this.written = {};
     // JAG-2.8: leadership first is the DEFAULT order — an orchestrator must sit at the
@@ -3370,7 +3370,7 @@ class FeedView {
     ["chat.run","chat.user","tool.call","tool.result","graph.node.added","graph.node.updated","graph.plan_dropped","plan.update","chat.done","error"].forEach(k => this.es.addEventListener(k, (e) => {
       let d = {}; try { d = JSON.parse(e.data); } catch(_){}
       this.line(k, d); }));
-    ["agent.updated","agent.released","teams.updated","roles.update","session.updated","session.renamed","session.created","session.deleted","longrun_agent.done"].forEach(k =>
+    ["agent.updated","agent.released","teams.updated","roles.update","session.updated","session.renamed","session.created","session.deleted","architect.done"].forEach(k =>
       this.es.addEventListener(k, () => { if (this.onSync) this.onSync(); }));
     this.es.onopen = () => $("led").classList.add("on");
     this.es.onerror = () => {
@@ -3574,7 +3574,7 @@ class OrbitApp {
       // runaway loop) could hold it for minutes. The run is bounded by `max_steps` on
       // the server; the UI stops WAITING after 4 minutes and says the run may continue.
       const r = await Promise.race([
-        this.api.post("/api/longrun-agent/automate", {
+        this.api.post("/api/architect/automate", {
         section: "teamorg", instruction,
         // v886: one team.create + one agent.create per agent + one verification is
         // already more than 6 calls — the first live run died at max_steps=6.
@@ -3608,8 +3608,8 @@ class OrbitApp {
   }
   /* I-9: the record of what Architect wrote — the ONLY surface that survives a
      stateless run (it wipes messages, tool cards, injects and the task graph before
-     AND after: `longrun_agent.reset_stateless_session`). Reads the single ledger the
-     backend appends to (`GET /api/longrun-agent/reports`), so the panel can never
+     AND after: `architect.reset_stateless_session`). Reads the single ledger the
+     backend appends to (`GET /api/architect/reports`), so the panel can never
      show a run the backend did not record. */
   async loadReport(open){
     const box = $("lraRep");
@@ -3617,7 +3617,7 @@ class OrbitApp {
     if (open !== undefined) this.repOpen = !!open;
     if (!this.repOpen){ box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "";
-    const r = await this.api.get("/api/longrun-agent/reports?limit=8").catch(() => null);
+    const r = await this.api.get("/api/architect/reports?limit=8").catch(() => null);
     const runs = (r && r.runs) || [];
     const when = (t) => { try { return new Date((t || 0) * 1000).toLocaleTimeString(); }
                           catch (_) { return ""; } };
@@ -4188,7 +4188,7 @@ class OrbitApp {
       this.api.get("/api/teams").catch(() => null),
       // I-9: WHO wrote each agent's prompt (the automation ledger). A missing route
       // renders no badge — never a guessed one.
-      this.api.get("/api/longrun-agent/writes").catch(() => null)
+      this.api.get("/api/architect/writes").catch(() => null)
     ]);
     this.agents.written = (wrote && wrote.targets) || {};
     if (tms) this.teams = tms.teams || [];

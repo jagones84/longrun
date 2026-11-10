@@ -347,8 +347,8 @@ def generate(surface, session=None, current="", hint="", extra=None, model=None)
         return {"ok": False, "error": "unknown surface %r" % (surface,)}
     if s.kind != S.GENERATE:
         return {"ok": False, "surface": s.id,
-                "error": ("surface %r is an automate surface: it runs `longrunAgent` "
-                          "through POST /api/longrun-agent/automate" % s.id)}
+                "error": ("surface %r is an automate surface: it runs `architect` "
+                          "through POST /api/architect/automate" % s.id)}
     sid = str(session or (extra or {}).get("session") or "")
     extra = dict(extra or {})
     if sid:

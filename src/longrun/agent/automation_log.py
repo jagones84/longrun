@@ -1,12 +1,12 @@
-"""Persistent ledger of `longrunAgent` (VEO) automation runs — visibility for a
+"""Persistent ledger of `architect` (VEO) automation runs — visibility for a
 stateless agent (JAG-535 follow-up).
 
-`longrunAgent` wipes its own transcript AND its task graph before and after every
-automation turn (`longrun_agent.reset_stateless_session`). That isolation is by
+`architect` wipes its own transcript AND its task graph before and after every
+automation turn (`architect.reset_stateless_session`). That isolation is by
 design — but it left NO record of what was written to the substrate. Verified
 2026-10-26: an operator clicked `⚡ automate (Teamorg)`, six `ROLE.md` files were
 written at 22:56, the run graph was archived as an orphan
-(`data/graphs/longrunAgent_run_<id>.json`), and the session, the plan panel and
+(`data/graphs/architect_run_<id>.json`), and the session, the plan panel and
 the chat showed nothing at all. Asking the agent "what did you do last time?"
 could only answer "my transcript resets" — true, and useless.
 
@@ -57,7 +57,7 @@ def mutating_tools():
     (coordinator): `job.create`/`job.dispatch` rewrite the job ledger wherever
     they are called from, so an automation run that creates a job must record it.
 
-    Imported lazily: `longrun_agent` imports this module, so a module-level
+    Imported lazily: `architect` imports this module, so a module-level
     import would be circular.
     """
     try:

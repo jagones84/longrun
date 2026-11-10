@@ -131,7 +131,7 @@ SECTIONS = [
             # 2026-11-05: the model is a MODEL CHOICE, so it is written by the live
             # picker above like every other picker on this panel. Here it is a
             # read-only pointer — ONE writer per value (the Routing card's
-            # summarizer/longrun_agent cells do exactly the same).
+            # summarizer/architect cells do exactly the same).
             _f("model", "re-ranker model", "text", wide=True, owned=True,
                placeholder="openrouter:voyageai/rerank-2.5-lite",
                help="Set with the Re-ranker model picker above — live, one writer. "

@@ -27,7 +27,7 @@ This agent (host side) therefore:
 Usage (from the terminal-bench checkout):
 
     .venv/bin/tb run -p original-tasks -t hello-world \
-        --agent-import-path benchmarks.terminal_bench_agent:LongrunAgent \
+        --agent-import-path benchmarks.terminal_bench_agent:LongrunHarness \
         --agent-kwarg model_name=openrouter:z-ai/glm-5.3-flash
 
 The wrapper `scripts/bench-terminal-bench.sh` is the supported entry point.
@@ -72,7 +72,7 @@ SRC = REPO / "src" / "longrun"
 SHIM = REPO / "server.py"
 PORT = 8791
 #: Where the harness lands inside the task container.
-DEST = "/opt/longrun-agent"
+DEST = "/opt/architect"
 #: Built once, then reused by every trial of a run (see `payload_tar`).
 PAYLOAD = Path("/tmp/longrun_tb_payload.tar")
 
@@ -234,8 +234,8 @@ def _capture_longrun_forensic(
         pass
 
 
-class LongrunAgent(BaseAgent):
-    """`tb run --agent-import-path benchmarks.terminal_bench_agent:LongrunAgent`."""
+class LongrunHarness(BaseAgent):
+    """`tb run --agent-import-path benchmarks.terminal_bench_agent:LongrunHarness`."""
 
     def __init__(self, model_name="openrouter:z-ai/glm-5.3-flash", timeout=1800,
                  max_steps=60, **kwargs):
@@ -406,7 +406,7 @@ class LongrunAgent(BaseAgent):
                 failure_mode=FailureMode.NONE if not failed else FailureMode.UNKNOWN,
             )
         except Exception as exc:  # noqa: BLE001 — a harness fault is an agent failure
-            print("LongrunAgent failed: %r" % (exc,), flush=True)
+            print("LongrunHarness failed: %r" % (exc,), flush=True)
             return AgentResult(failure_mode=FailureMode.UNKNOWN)
         finally:
             _capture_longrun_forensic(box, sid, costs, logging_dir, key)

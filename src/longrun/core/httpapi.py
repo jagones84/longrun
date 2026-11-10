@@ -3301,9 +3301,9 @@ def delete_session(sid):
     sid = str(sid or "")
     if not _valid_sid(sid):
         return {"ok": False, "status": 404, "error": "session not found"}
-    if sid == "longrunAgent":
+    if sid == "architect":
         return {"ok": False, "status": 403,
-                "error": "longrunAgent is a permanent system session and cannot be deleted"}
+                "error": "architect is a permanent system session and cannot be deleted"}
     fpath = os.path.join(SESSIONS_DIR, sid + ".json")
     if not os.path.isfile(fpath):
         return {"ok": False, "status": 404, "error": "session not found"}
@@ -3455,6 +3455,13 @@ def main():
         from longrun.model import providers
         providers.warm()  # JAG-72: fetch remote model windows off the request path
     except Exception:  # noqa: BLE001 — provider metadata is optional
+        pass
+    try:
+        from longrun.agent import architect as _arch_boot
+        # 2026-11-11: the retired session identity is renamed BEFORE any backfill
+        # reads the data home (session file, agent registry key, graphs, events).
+        _arch_boot.migrate_legacy_identity()
+    except Exception:  # noqa: BLE001 — a migration bug must never stop the boot
         pass
     try:
         from longrun.agent import agents as _agents_boot

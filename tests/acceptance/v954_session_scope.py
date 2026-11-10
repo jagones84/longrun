@@ -73,8 +73,8 @@ check("A4 a GRANT does not widen messaging",
 check("A5 an agent cannot open a session that is not in the org",
       T._may_message("s-lead", "s-plain")[0] is False)
 check("A6 the Architect and the operator's own chat are unrestricted",
-      T._may_message("longrunAgent", "s-outside")[0] is True
-      and T._may_message("longrunAgent_1", "s-outside")[0] is True
+      T._may_message("architect", "s-outside")[0] is True
+      and T._may_message("architect_1", "s-outside")[0] is True
       and T._may_message("", "s-outside")[0] is True
       and T._may_message("operator-chat", "s-outside")[0] is True)
 check("A7 a session cannot message itself through the tool",
@@ -92,27 +92,27 @@ check("B2 read of an unrelated agent's transcript is refused with 126",
 _own = T._sessions({"action": "read", "session": "s-sub"}, "s-lead")
 check("B3 read of your own report still works",
       _own.get("ok") is True and "session" in _own, _own.get("error"))
-_arb = T._sessions({"action": "read", "session": "s-outside"}, "longrunAgent")
+_arb = T._sessions({"action": "read", "session": "s-outside"}, "architect")
 check("B4 the Architect reads any session",
       _arb.get("ok") is True, _arb.get("error"))
 
 # ---- C) the Architect may tidy any chat -----------------------------------
 check("C1 the Architect may reset/compact any session",
-      T._may_manage("longrunAgent", "s-outside")[0] is True
-      and T._may_manage("longrunAgent_7", "s-outside")[0] is True)
+      T._may_manage("architect", "s-outside")[0] is True
+      and T._may_manage("architect_7", "s-outside")[0] is True)
 check("C2 a chief keeps the reporting-line rule (never sideways)",
       T._may_manage("s-lead", "s-worker")[0] is True
       and T._may_manage("s-lead", "s-outside")[0] is False)
 
 # ---- D) the Architect: TEAM TOP LEADERS only ------------------------------
-_arch_aid = reg.designate("longrunAgent", name="Architect")["agent"]["id"]
+_arch_aid = reg.designate("architect", name="Architect")["agent"]["id"]
 check("D1 a TOP leader reaches the Architect (by session id and by A-id)",
-      T._may_message("s-lead", "longrunAgent")[0] is True
+      T._may_message("s-lead", "architect")[0] is True
       and T._may_message("s-lead", _arch_aid)[0] is True)
 check("D2 a SECOND-level manager cannot reach the Architect",
-      T._may_message("s-sub", "longrunAgent")[0] is False)
+      T._may_message("s-sub", "architect")[0] is False)
 check("D3 a second independent top leader may too (a team can have two)",
-      T._may_message("s-granted", "longrunAgent")[0] is True)
+      T._may_message("s-granted", "architect")[0] is True)
 check("D4 the root rule opens no sideways door",
       T._may_message("s-sub", "s-outside")[0] is False)
 

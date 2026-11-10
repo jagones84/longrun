@@ -10,7 +10,7 @@ Operator, 2026-11-08:
     the automate agent to create teams/agents; make sure all fields are filled by the
     agents (are mentioned). improve that please in general."*
 
-The live ledger proved the report: run `longrunAgent_run_937b1769` wrote a team + three
+The live ledger proved the report: run `architect_run_937b1769` wrote a team + three
 agents with ROLE.md prompts and **no** `agent.update` at all — the prompt said the agent
 MAY set `reports_to`, so nothing forced it.
 
