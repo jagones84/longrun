@@ -221,6 +221,16 @@ class AgentRegistry:
         return sorted(x["id"] for x in d["agents"].values()
                       if x.get("reports_to") == aid and x["id"] != aid)
 
+    def is_top(self, ref):
+        """True when the agent has NO manager — the top of its own line.
+
+        A team may have more than one (two independent roots), and every one of
+        them is a top leader. Used by the session rule: only a top leader may
+        address the Architect.
+        """
+        a = self.resolve(ref)
+        return bool(a) and not str(a.get("reports_to") or "").strip()
+
     def team_of(self, ref, depth=1):
         """The agent plus its reports — the team a job assigned to it runs with.
 

@@ -2267,14 +2267,16 @@ def _render_transcript(sess, limit=30, tail=False):
 def _may_message(caller, target):
     """(ok, why): may `caller` message or READ `target`'s session?
 
-    The same org relationship `job.*` uses (v953), in both directions: DOWN your
-    own subtree, UP your own reporting chain, never sideways. The Architect
-    session (`longrunAgent*`) and a caller with no org record (the operator's own
-    chat) are unrestricted. An agent may not reach a session outside its org
-    relationship, and a Teamorg grant does NOT widen this.
-
-    `sessions.send` on an IDLE peer starts a real turn, so this predicate is a
-    work gate, not a privacy nicety.
+    The session rule (operator, 2026-11-10), in plain words:
+      · the same TEAM may always talk (siblings included) — a message is not a
+        job, and `job.*` keeps its own subtree rule;
+      · a manager and its reports may talk in both directions;
+      · the Architect is reachable ONLY by a team's TOP leader (an agent with no
+        manager); a team may have more than one, and each of them qualifies;
+      · sideways ACROSS teams is refused (`126`), and a Teamorg grant does not
+        widen any of this.
+    The Architect itself and a caller with no org record (the operator's own
+    chat) are unrestricted.
     """
     caller = str(caller or "").strip()
     target = str(target or "").strip()
@@ -2284,32 +2286,39 @@ def _may_message(caller, target):
         return True, ""   # no run id: the operator's CLI / REST hand
     try:
         from longrun.agent import architect as _arch
+        from longrun.agent import agents as _agents
         if _arch.is_architect_session(caller):
             return True, ""
-        if _arch.is_architect_session(target):
-            # The Architect is the ROOT of every line: any agent may report up to
-            # it (operator, 2026-11-10). Below, the same is true when the target
-            # was named by its A-id.
-            return True, ""
-        from longrun.agent import agents as _agents
         me = _agents.REGISTRY.resolve(caller)
         if not me:
             return True, ""   # a plain chat: the operator is the one typing in it
-        if me.get("id") == (_agents.REGISTRY.resolve(target) or {}).get("id"):
-            return False, "a session cannot message itself through this tool"
         tgt = _agents.REGISTRY.resolve(target)
+        if tgt and tgt["id"] == me["id"]:
+            return False, "a session cannot message itself through this tool"
+        # The Architect is the ROOT: only a team's top leader may address it.
+        _arch_target = (_arch.is_architect_session(target)
+                        or bool(tgt and _arch.is_architect_session(
+                            str(tgt.get("session") or ""))))
+        if _arch_target:
+            if _agents.REGISTRY.is_top(me["id"]):
+                return True, ""
+            return False, ("the Architect is reachable only by a team's top "
+                           "leader (an agent with no manager) — ask yours")
         if not tgt:
             return False, (
                 "target session %r is not in the org chart — an agent may only "
                 "reach its own team" % target)
-        if _arch.is_architect_session(str(tgt.get("session") or "")):
+        # Same team: messaging is free in both directions, siblings included.
+        if set(_agents.REGISTRY.teams_for(me["id"])) & set(
+                _agents.REGISTRY.teams_for(tgt["id"])):
             return True, ""
+        # Same reporting line: down to your subtree, up to your manager chain.
         if tgt["id"] in _agents.REGISTRY.subtree(me["id"]):
             return True, ""
         if me["id"] in _agents.REGISTRY.subtree(tgt["id"]):
             return True, ""
-        return False, ("%s and %s are not in the same reporting line — message "
-                       "down your subtree or up to your manager"
+        return False, ("%s and %s are in different teams — message inside your "
+                       "team, up to its top leader, or to the Architect"
                        % (me.get("id"), tgt.get("id")))
     except Exception as e:  # noqa: BLE001 — an org hiccup must not widen access
         return False, "org lookup failed: %s" % str(e)[:120]

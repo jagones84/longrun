@@ -7,12 +7,14 @@ starts a real turn, i.e. work with no job and no check — and `sessions.read`
 could open ANY transcript. The Architect was also refused when it tried to
 reset a team's chat, though it is the operator's own hand.
 
-Rule pinned here (the same relationship, both directions):
-  down   your subtree
-  up     your reporting chain
-  else   refused (exit 126) — a grant does NOT widen it
-  the Architect session (`longrunAgent*`) and a caller with no org record (the
-  operator's own chat) are unrestricted.
+Rule pinned here:
+  same TEAM  free (siblings included) — a message is not a job;
+  line       a manager and its reports, both directions;
+  Architect  ONLY a team's top leader (an agent with no manager; a team may have
+             more than one);
+  else       refused (exit 126) — a grant does NOT widen any of it;
+  the Architect itself and a caller with no org record (the operator's own chat)
+  are unrestricted.
 
 Deterministic: temp stores, no server, no model, no network, no delivery.
 Run: python3 tests/acceptance/v954_session_scope.py
@@ -102,15 +104,33 @@ check("C2 a chief keeps the reporting-line rule (never sideways)",
       T._may_manage("s-lead", "s-worker")[0] is True
       and T._may_manage("s-lead", "s-outside")[0] is False)
 
-# ---- D) every agent may report UP to the Architect (the root of every line)
+# ---- D) the Architect: TEAM TOP LEADERS only ------------------------------
 _arch_aid = reg.designate("longrunAgent", name="Architect")["agent"]["id"]
-check("D1 an agent may message the Architect by session id AND by A-id",
-      T._may_message("s-worker", "longrunAgent")[0] is True
-      and T._may_message("s-worker", _arch_aid)[0] is True)
-check("D2 an agent may read the Architect too (same upward line)",
-      T._may_message("s-lead", "longrunAgent")[0] is True)
-check("D3 the root exception opens no sideways door",
+check("D1 a TOP leader reaches the Architect (by session id and by A-id)",
+      T._may_message("s-lead", "longrunAgent")[0] is True
+      and T._may_message("s-lead", _arch_aid)[0] is True)
+check("D2 a SECOND-level manager cannot reach the Architect",
+      T._may_message("s-sub", "longrunAgent")[0] is False)
+check("D3 a second independent top leader may too (a team can have two)",
+      T._may_message("s-granted", "longrunAgent")[0] is True)
+check("D4 the root rule opens no sideways door",
       T._may_message("s-sub", "s-outside")[0] is False)
+
+# ---- E) the same team may talk; it does NOT become a job scope ------------
+from longrun.orchestrate import teams as TM  # noqa: E402
+_team = TM.REGISTRY.create("Scope Test Team")["team"]["id"]
+TM.REGISTRY.add_member(_team, SUB)
+TM.REGISTRY.add_member(_team, OUTSIDE)
+check("E1 two members of the same team may message each other (siblings)",
+      T._may_message("s-sub", "s-outside")[0] is True
+      and T._may_message("s-outside", "s-sub")[0] is True)
+_job = LRA.execute("job.create", {"goal": "a message is not a job",
+                                  "agents": ["s-outside"]}, run_id="s-sub")
+check("E2 the same team does NOT widen the job scope (126)",
+      _job.get("permission_denied") is True and _job.get("exit_code") == 126,
+      _job.get("error") or _job)
+check("E3 an agent outside that team is still refused",
+      T._may_message("s-lead", "s-outside")[0] is False)
 
 print("---")
 passed = sum(results)
