@@ -3685,7 +3685,26 @@ def _secret_values():
                 _take(_k.strip(), _v)
     except OSError:  # noqa: BLE001 — no .env, nothing to add
         pass
+    # v951: the webhook store's own secrets. `list_hooks` redacts them, but the
+    # file lives in the repo data home where `fs.read` is auto-approved, so a
+    # plain `fs.read data/webhooks.json` used to hand them to the model.
+    try:
+        from longrun.core import webhooks as _wh
+        for _v in _wh.secret_values():
+            if isinstance(_v, str) and len(_v) >= 8:
+                vals.add(_v)
+    except Exception:  # noqa: BLE001 — the scrubber must survive a broken store
+        pass
     return sorted(vals, key=len, reverse=True)
+
+
+# v951: a URL that carries a credential IN the userinfo (`https://user:token@host`)
+# is the shape a git remote, a `.git-credentials` line and a pasted clone URL all
+# share. It is redacted by PATTERN: the value is not ours to know in advance.
+# The COLON is required on purpose: `ssh://git@host` is a username, not a secret,
+# and redacting it would confuse a reader of a git config. Known gap: a
+# token-only userinfo (`https://<token>@host`) is not covered.
+_URL_USERINFO = re.compile(r"(?i)\b(https?|ftps?|ssh|git)://[^/\s:@]+:[^/\s@]+@")
 
 
 def _scrub_result_secrets(res):
@@ -3695,19 +3714,21 @@ def _scrub_result_secrets(res):
     to the model, so one scrub here covers shell, fs, git, python and every
     future tool. Names are kept (`LONGRUN_TOKEN=[redacted]`), values are not.
     Skips short values (avoid nuking ordinary words) and never touches keys.
+    v951: the webhook store's secrets are part of `_secret_values`, and a URL's
+    userinfo credential is redacted by pattern (see `_URL_USERINFO`).
     """
     try:
         vals = _secret_values()
     except Exception:  # noqa: BLE001 — scrub must never break a tool call
-        return res
-    if not vals or not isinstance(res, dict):
+        vals = []
+    if not isinstance(res, dict):
         return res
 
     def _scrub_str(text):
         for _v in vals:
             if _v in text:
                 text = text.replace(_v, "[redacted-secret]")
-        return text
+        return _URL_USERINFO.sub(lambda m: m.group(1) + "://[redacted]@", text)
 
     def _walk(node, _seen):
         if isinstance(node, str):

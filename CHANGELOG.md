@@ -94,6 +94,17 @@ All notable changes to Longrun are documented here. The format follows
   coordinator path). The turn's own user message carries the exact text the call sent, so that text now
   anchors the tail; the delegated `sender`/`subjob` anchor still wins. (Locked by `v950` 9/9; the
   length-3 slice WITHOUT the anchor is pinned as the defect.)
+- **A hook secret and a URL credential no longer reach the model through a file read (`v951`).** The
+  tool-result scrubber knew only the `.env` values. `list_hooks` redacts a webhook secret in every
+  payload it serves, but `webhooks.json` sits in the repo data home, where `fs.read` is auto-approved:
+  one plain read of that file handed every hook secret to the prompt. `webhooks.secret_values()` now
+  exposes them to the scrubber (the store format stays owned by that module — no second parser), and a
+  URL that carries a credential in its userinfo (`https://user:token@host`, the shape of a git remote
+  and of a pasted clone URL) is redacted by pattern, since its value is not ours to know in advance.
+  The colon is required on purpose: `ssh://git@host` is a username, not a secret. Known gap: a
+  token-only userinfo (`https://<token>@host`) is not covered. (Locked by `v951` 12/12; live: a
+  `git remote -v` through `POST /api/tools/call` returns `https://[redacted]@github.com/...` to the
+  model. The approval ledger still stores the raw args of the call it recorded — not model-bound.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's

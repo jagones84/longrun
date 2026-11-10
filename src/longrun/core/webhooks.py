@@ -199,6 +199,24 @@ def get_hook(hook_id: str) -> dict | None:
         return _load()["hooks"].get(str(hook_id or ""))
 
 
+def secret_values() -> list:
+    """Every hook secret, for the tool-result scrubber (v951). Server-side only.
+
+    `list_hooks` keeps the value out of every payload it serves, but the store
+    (`webhooks.json`) sits in the repo data home where `fs.read` is auto-approved:
+    the scrubber is the last door that keeps a secret out of a prompt. The store
+    format stays owned HERE, so the scrubber asks this module instead of parsing
+    the file itself.
+    """
+    try:
+        with _LOCK:
+            doc = _load()
+        return [str(h.get("secret") or "") for h in (doc.get("hooks") or {}).values()
+                if h.get("secret")]
+    except Exception:  # noqa: BLE001 — a broken store must not block a scrub
+        return []
+
+
 def save_hook(body: dict) -> dict:
     """Create or update one hook; returns the secret ONLY on create/rotate.
 
