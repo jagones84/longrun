@@ -84,6 +84,9 @@ def load_session(sid):
 _DELETED_SESSIONS = set()
 _deleted_lock = threading.Lock()
 _TOMBSTONE_FILE = os.path.join(SESSIONS_DIR, ".deleted")
+# v947: one write lock per session id — see `_save_lock`/`save_session`.
+_SAVE_LOCKS = {}
+_SAVE_GUARD = threading.Lock()
 
 
 def _load_tombstones():
@@ -148,6 +151,62 @@ def _prune_trash():
         pass
 
 
+def _save_lock(sid):
+    """The per-session write lock (v947).
+
+    A turn saves its own dict at the end; a handoff/escalation saves an inject
+    from a dict it read earlier. Two writers interleaving their read-merge-write
+    lost whichever list the other had (a deliverable disappeared from the
+    transcript). One short-held lock per session serialises the write; it is an
+    RLock because `persist_inject` → `save_session` nests inside a turn's save.
+    """
+    with _SAVE_GUARD:
+        lock = _SAVE_LOCKS.get(sid)
+        if lock is None:
+            lock = _SAVE_LOCKS[sid] = threading.RLock()
+        return lock
+
+
+def _owns_turn(sid):
+    """True when the CALLING thread is this session's turn worker (v947).
+
+    The turn holds `_turn_lock(sid)` for its whole life; every other writer
+    (a job handoff, an escalation, a REST call) does not. The distinction is what
+    makes the merge safe: the turn's list is the authority and may legitimately
+    SHRINK (a rewrite, a trim), while a side writer's list is an older copy that
+    must never rewind it.
+    """
+    try:
+        is_owned = getattr(_turn_lock(sid), "_is_owned", None)
+        return bool(is_owned and is_owned())
+    except Exception:  # noqa: BLE001 — no lock knowledge means "side writer"
+        return False
+
+
+def _adopt_disk_tail(sess, field):
+    """Carry the records another writer appended that this copy never saw (v947).
+
+    Only the PROVABLE case is merged: the in-memory `field` is a prefix of the
+    one on disk, i.e. this writer read an older copy and only ADDED to it, so
+    taking the disk list loses nothing. Anything else — a rewritten head, a
+    deletion — keeps the in-memory list: there the writer is the authority, and a
+    merge would resurrect records removed on purpose.
+    """
+    try:
+        sid = (sess or {}).get("id")
+        if not sid:
+            return
+        mine = sess.get(field) or []
+        theirs = (load_session(sid) or {}).get(field) or []
+        if len(theirs) <= len(mine):
+            return
+        if list(mine) != theirs[:len(mine)]:
+            return
+        sess[field] = list(theirs)
+    except Exception:  # noqa: BLE001 — a failed merge must never block a save
+        return
+
+
 def save_session(sess):
     sid = sess.get("id")
     if not _valid_sid(sid):
@@ -155,22 +214,37 @@ def save_session(sess):
     with _deleted_lock:
         if sid in _DELETED_SESSIONS:
             return  # JAG-222: the session was deleted — never resurrect it
-    # A field the operator changed WHILE this dict was being written (the turn's
-    # stale copy) must not come back: re-apply the live value the owner endpoint
-    # recorded. No-op for a session nobody changed live.
-    adopt_live_choices(sess)
-    # JAG-796: a mid-run steer is a REAL user message; whichever writer saves
-    # first must carry it, or the operator's own words vanish from the chat.
-    adopt_live_steers(sess)
-    # JAG-431p: carry each TITLED free group's title/summary onto the message that
-    # STARTS it, so the WebUI labels groups by data that rides the transcript (and
-    # therefore survives compaction) instead of by an ordinal. Best-effort.
-    try:
-        threads_mod.sync_chapters(sess)
-    except Exception:  # noqa: BLE001
-        pass
-    p = os.path.join(SESSIONS_DIR, sid + ".json")
-    write_json(p, sess)
+    # v947: read-merge-write under ONE lock per session. A turn and a handoff hold
+    # different snapshots of the same session; with the two interleaved, the last
+    # writer won the whole document and the other's list vanished (a coordinator's
+    # deliverable disappeared from the transcript while `runs[coord].result` still
+    # held it). The merge is a strict-prefix adoption: only records this copy
+    # never saw are taken.
+    with _save_lock(sid):
+        # A field the operator changed WHILE this dict was being written (the turn's
+        # stale copy) must not come back: re-apply the live value the owner endpoint
+        # recorded. No-op for a session nobody changed live.
+        adopt_live_choices(sess)
+        if not _owns_turn(sid):
+            # A side writer (handoff/escalation) must not rewind the turn's
+            # messages. The turn itself is the authority on its own transcript.
+            _adopt_disk_tail(sess, "messages")
+        # These two are append-only by design: even the turn must not drop a
+        # record another thread wrote while it was running.
+        _adopt_disk_tail(sess, "injects")
+        _adopt_disk_tail(sess, "tool_cards")
+        # JAG-796: a mid-run steer is a REAL user message; whichever writer saves
+        # first must carry it, or the operator's own words vanish from the chat.
+        adopt_live_steers(sess)
+        # JAG-431p: carry each TITLED free group's title/summary onto the message that
+        # STARTS it, so the WebUI labels groups by data that rides the transcript (and
+        # therefore survives compaction) instead of by an ordinal. Best-effort.
+        try:
+            threads_mod.sync_chapters(sess)
+        except Exception:  # noqa: BLE001
+            pass
+        p = os.path.join(SESSIONS_DIR, sid + ".json")
+        write_json(p, sess)
     try:
         st = os.stat(p)
         with _SESSION_SUMMARY_LOCK:
@@ -928,6 +1002,11 @@ def persist_inject(sess, kind, text, node=None, after=None):
     try:
         if isinstance(node, dict):
             node = node.get("id")
+        # v947: the `after` boundary must count the messages that are really on
+        # disk NOW. This dict may predate a turn that saved in between (a handoff
+        # is written from another thread), so adopt the unseen tail first.
+        if after is None:
+            _adopt_disk_tail(sess, "messages")
         rec = {"kind": str(kind or "inject"), "text": str(text or ""),
                "node": node,
                "after": (len(sess.get("messages", [])) if after is None else int(after)),

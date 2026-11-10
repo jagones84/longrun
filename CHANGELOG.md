@@ -65,6 +65,18 @@ All notable changes to Longrun are documented here. The format follows
   every hop and `_opener(check)` is the only way the fetch tools build an opener.
   (Locked by `v946` 10/10: loopback, private, link-local and non-http hops blocked, an allowed hop
   still builds the next request.)
+- **A stale writer can no longer erase the other writer's messages (`v947`).** A turn saves its own
+  session dict at the end; a job handoff/escalation writes an inject from a dict it read in another
+  thread. `save_session` wrote the WHOLE document from whichever copy arrived last, so the loser's list
+  vanished — a coordinator's deliverable disappeared from the transcript while `runs[coord].result`
+  still held it, and a handoff written before a turn's save was gone on reload. `save_session` now does
+  its read-merge-write under one lock per session and adopts the on-disk tail of `messages` / `injects`
+  / `tool_cards` ONLY when the in-memory list is a prefix of it (this copy read an older one and only
+  added); the turn itself — the thread that owns `_turn_lock` — stays the authority on its own
+  transcript, so a rewrite or a trim is never "completed" back. `persist_inject` takes the same tail
+  first, so the inject's `after` boundary counts the messages really on disk. (Locked by `v947` 10/10,
+  red at HEAD without the fix; live: a real turn persisted its messages, its tool card and the harness
+  entries after the change, scratch sessions removed.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's
