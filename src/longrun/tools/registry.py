@@ -1254,6 +1254,27 @@ TOOL_SCHEMAS = _NamespacedSchemasDict(_CANONICAL_SCHEMAS, _LEGACY_SCHEMAS)
 KNOWN_NAMESPACES = frozenset(k.split(".", 1)[0] for k in TOOL_SCHEMAS.keys()) | frozenset(_LEGACY_SCHEMAS.keys())
 
 
+# Action spellings the HANDLERS accept but the schema enum does not advertise.
+# They used to fall through to the plain namespace, whose policy row is
+# `approval: auto`, so the gated row was never looked up: `memory{action:"delete"}`
+# deleted a record, `memory{action:"write_core"}` rewrote the block injected into
+# every prompt, and `matrix{action:"uninstall"}` removed a module — each with no
+# card, while the canonical spelling asked. One table, consulted by
+# `canonical_name`, so the gate and the handler agree on what the call IS.
+_ACTION_ALIASES = {
+    "memory": {
+        "delete": "forget", "erase": "forget",
+        "write_core": "set_core", "core_write": "set_core",
+        "read_core": "core", "core_read": "core",
+        "retract": "invalidate", "list": "recent",
+    },
+    "matrix": {
+        "uninstall": "remove", "reload": "hotload",
+        "info": "status", "list_seams": "seams",
+    },
+}
+
+
 def canonical_name(name, args=None):
     """Canonicalise a LEGACY call onto its `<namespace>.<subtool>` tool name.
 
@@ -1271,6 +1292,8 @@ def canonical_name(name, args=None):
     act = ""
     if isinstance(args, dict):
         act = str(args.get("action") or "").strip()
+    if act:
+        act = _ACTION_ALIASES.get(n, {}).get(act, act)
     if act and ("%s.%s" % (n, act)) in _CANONICAL_SCHEMAS:
         return "%s.%s" % (n, act)
     if not act:
@@ -2034,7 +2057,7 @@ def catalog():
 
 
 _ENV_ASSIGN_RE = re.compile(
-    r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|\S*)\s+)+")
+    r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\"[^\"]*\"|[^\s;&|]*)\s+)+")
 
 
 def _subject(tool, args):
@@ -2260,6 +2283,10 @@ def classify(tool, args, workspace=None, hist=None, allow=None, scope_name=None)
     `denied` BEFORE every other rule, including `approvals.mode=full`, because
     the scope is the delegation contract, not a convenience gate.
     """
+    # The call is judged under the SAME name the execute door runs it as, so an
+    # action alias cannot reach a gated row through the plain namespace (see
+    # `_ACTION_ALIASES`). `canonical_name` is idempotent for dotted names.
+    tool = canonical_name(tool, args)
     spec = tool_spec(tool)
     if spec is None:
         return "denied", "unknown tool %r" % tool

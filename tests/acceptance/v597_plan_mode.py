@@ -117,7 +117,9 @@ if hasattr(registry, "PLAN_GATED_TOOLS"):
 
     def _fake_spec(name, ext_snapshot=None, mtx_snapshot=None):
         s = real_spec(name, ext_snapshot, mtx_snapshot)
-        if name == "shell" and isinstance(s, dict):
+        # classify() now canonicalises the call (v941), so the gate reads
+        # `shell.exec` for a legacy `shell` + action call.
+        if name in ("shell", "shell.exec") and isinstance(s, dict):
             s = dict(s, enabled=True, approval="auto", auto_approve=[],
                      deny=[])
         return s

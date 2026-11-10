@@ -15,6 +15,18 @@ All notable changes to Longrun are documented here. The format follows
   the value lives. `check_auth` now compares the `Authorization` header and the `?token=` fallback with
   `hmac.compare_digest` (`_same_secret`, on UTF-8 bytes so a unicode header is rejected, not a 500).
   (Locked by `v940` 20/20.)
+- **An action alias can no longer skip its gated policy row, and a `VAR=` prefix can no longer
+  hide a hard-denied command (`v941`).** `memory{action:"delete"}` (or `erase`, `write_core`,
+  `core_write`) and `matrix{action:"uninstall"}` resolved to the plain namespace — whose row is
+  `approval: auto` — so the `memory.forget` / `memory.set_core` / `matrix.remove` rows were never
+  consulted: a permanent memory delete or a rewrite of the CORE block injected into every prompt ran
+  with no card. One alias table (`registry._ACTION_ALIASES`) now feeds `canonical_name`, which
+  `classify` also applies, so the gate judges the call under the name the execute door runs.
+  `_ENV_ASSIGN_RE` stripped an assignment with `\S*`, so in `X=1;rm -rf /` the value swallowed the
+  rest of the command and the hard-deny regexes saw only `-rf /` — with `approvals.mode=full` the
+  command then ran. The value now stops at `;`, `&` and `|`. (Locked by `v941` 21/21; `v597`'s
+  fixture follows the canonical name; live: `matrix`+`info` records `matrix.status`, and
+  `X=1;curl …127.0.0.1/api/jobs` is blocked by the deny rule.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's
