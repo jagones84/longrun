@@ -23,13 +23,15 @@ GLOBAL_DDIR = os.path.join(paths.config_dir(), "prompt.d")
 #
 # JAG-271/273/276 — CACHE-SAFE ORDERING (prefix caching). The provider/llama.cpp
 # reuses the KV cache only up to the first byte that differs from the previous
-# request, so STABLE content must come first. The system prompt is now 100% STATIC
-# at the FRONT (JAG-276 moved the live task list OUT — it now rides in the last
-# USER turn, see `server.state_block` / `assemble_turn`), so a change to any
-# dynamic section (rules/skills/memory) only invalidates from that point on, and
-# the volatile task list no longer invalidates the whole transcript. Rule of thumb:
-# never put a timestamp / session id / live list in the EARLY sections — it would
-# invalidate the whole prefix every turn.
+# request, so STABLE content must come first. JAG-276 moved the live task list OUT
+# of the prompt (it rides the last USER turn, see `server.state_block` /
+# `assemble_turn`); 2026-11-10 moved the MEMORY index out too (`memory_block`),
+# because it was rewritten on ~40% of the turns and every rewrite re-published the
+# whole prompt and invalidated the prefix from that point on. The system prompt is
+# now the sections below only — changes to it come from the tool set, the skills
+# index or the rules files, which move rarely. Rule of thumb: never put a
+# timestamp / session id / live list in ANY section — put volatile text in the
+# user turn instead.
 SECTIONS = [
     {"id": "identity",      "order": 10, "kind": "static"},
     {"id": "prompt-map",    "order": 15, "kind": "static"},
@@ -49,7 +51,6 @@ SECTIONS = [
     {"id": "rules",         "order": 60, "kind": "dynamic"},
     {"id": "matrix",        "order": 62, "kind": "dynamic"},
     {"id": "skills",        "order": 65, "kind": "dynamic"},
-    {"id": "memory",        "order": 80, "kind": "dynamic"},
 ]
 
 # static sections whose defaults live in server.py (lazy import: no cycles)
@@ -553,6 +554,22 @@ def _provider_memory(sess, ws, ctx):
     return (core_part + "\n\n" + variable) if (core_part and variable) else (core_part or variable)
 
 
+def memory_block(sess=None, ws=None, ctx=None):
+    """The memory index as a block for the CURRENT USER TURN.
+
+    2026-11-10: it used to be section `order=80` of the system prompt, but it is
+    the most volatile text Longrun carries (45 of 63 measured prompt changes in 18
+    sessions were a memory line added, reordered or removed). Any system-prompt
+    change invalidates the provider prefix from that point on and re-publishes the
+    whole prompt in chat; in the user turn it costs one turn's tail and nothing
+    else — the same trade JAG-276 made for the live task list.
+
+    The renderer is UNCHANGED (`_provider_memory`): buckets, cap, order and the
+    "Core memory first" rule are the same bytes, only the carrier moved.
+    """
+    return _provider_memory(sess, ws, ctx)
+
+
 _PROVIDERS = {
     "self-summary": _provider_self_summary,
     "agent-role": _provider_role,
@@ -562,6 +579,5 @@ _PROVIDERS = {
     "rules": _provider_rules,
     "matrix": _provider_matrix,
     "skills": _provider_skills,
-    "memory": _provider_memory,
 }
 

@@ -294,7 +294,7 @@ def _forget_session_runtime(sid):
     # best-effort via a lazy import to avoid a circular import at module load.
     try:
         from longrun.agent import agent as _agent_mod
-        for _m in ("_OFFLOAD_SEQ", "_LAST_SYS_INJECT", "_REFLECT_LATEST"):
+        for _m in ("_OFFLOAD_SEQ", "_REFLECT_LATEST"):
             _d = getattr(_agent_mod, _m, None)
             if isinstance(_d, dict):
                 _d.pop(sid, None)

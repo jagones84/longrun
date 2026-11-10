@@ -100,13 +100,16 @@ stat = [s["order"] for s in P.SECTIONS if s["kind"] == "static"]
 dyn = [s["order"] for s in P.SECTIONS if s["kind"] == "dynamic"]
 check("EVERY static section precedes EVERY dynamic one",
       max(stat) < min(dyn), "static_max=%s dyn_min=%s" % (max(stat), min(dyn)))
-check("memory is the LAST cached section (the most volatile block left)",
-      by_id["memory"]["order"] == max(stat + dyn))
+check("memory is no longer a SYSTEM section — it rides the user turn (2026-11-10)",
+      "memory" not in by_id and hasattr(P, "memory_block"))
 check("the live task list is no longer a SYSTEM section (JAG-276)",
       "state" not in by_id)
 check("state_block injects the list into the user turn (JAG-276)",
       hasattr(S, "state_block")
       and S.state_block(session_id=None).startswith("Harness state"))
+check("user_turn_context is the ONE carrier of the volatile blocks (2026-11-10)",
+      hasattr(S, "user_turn_context")
+      and "Harness state" in S.user_turn_context(session_id=None))
 
 # --- 5) the removed junk is really gone --------------------------------------
 check("server.extract_actions removed", "def extract_actions" not in srv_src)

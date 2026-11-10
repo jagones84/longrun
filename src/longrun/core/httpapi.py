@@ -59,7 +59,7 @@ from longrun.core.server import (ASSET_CTYPES, ASSET_EXTS,
                      selfcheck_payload, session_mark, set_turn_sink, sse_pump,
                      sse_response, sse_tail,
                      start_run_graph, state_block, stream_with_fallback, system_prompt,
-                     turn_begin, turn_end, voice_status, voice_stt, voice_tts)
+                     turn_begin, turn_end, user_turn_context, voice_status, voice_stt, voice_tts)
 from longrun.orbit.api import WEB as ORBIT_WEB
 from longrun.model.keys import set_key as _set_key
 # JAG-796: the durable side of a mid-run steer (the real user message that must
@@ -1017,7 +1017,14 @@ def context_items(session_id=None):
     tok["tools"] = _stok("tools")
     tok["rules"] = _stok("rules") or rules_tokens
     tok["skills"] = _stok("skills")
-    tok["memory"] = _stok("memory")
+    # 2026-11-10: the memory index is no longer a system-prompt section — it rides
+    # the current user turn (agent.user_turn_context), so the panel must attribute
+    # it from the SAME renderer instead of from `_secs` (which would now report 0).
+    try:
+        from longrun.model import prompt as _pmem
+        tok["memory"] = context_engine.count_tokens(_pmem.memory_block(sess))
+    except Exception:  # noqa: BLE001 — the panel must never break
+        tok["memory"] = 0
     tok["plan"] = context_engine.count_tokens(state_block(session_id=session_id))
 
     _obs = re.compile(r"^(?:\[harness\]\s+)?Observation for tool\s+([A-Za-z0-9_.\-]+)\s*:")
@@ -1162,9 +1169,11 @@ def context_usage(session_id=None, message=None, model=None,
                 "display": context_display(available=False,
                                            reason="session not found")}
     sysp = _system_prompt(sess, sections=sections)
-    # JAG-276: the live task list is injected into the user turn (see assemble_turn).
-    # Mirror that here so the meter counts what is REALLY sent.
-    aug_message = (message or "") + "\n\n" + state_block(session_id=session_id)
+    # JAG-276 / 2026-11-10: the live task list AND the memory index are injected
+    # into the user turn (see agent.assemble_turn / user_turn_context). Mirror that
+    # here — ONE owner — so the meter counts what is REALLY sent.
+    aug_message = (message or "") + "\n\n" + user_turn_context(
+        session_id=session_id, sess=sess)
     # 2026-11-07: NO memory retrieval here. `retrieve_memory=True` made the meter
     # pay the cross-encoder re-rank — a PAID network call, measured 390 ms — whose
     # only product was `compacted_tokens`, and NOTHING reads that field (grep: it is

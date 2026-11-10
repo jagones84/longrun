@@ -14,6 +14,7 @@ object (``server.<name>``) so test monkeypatches on ``server.<name>`` keep takin
 effect. Everything else is stdlib or a sibling module.
 """
 import base64
+import hashlib
 import json
 import mimetypes
 import os
@@ -748,11 +749,6 @@ PLAN_ONLY_MAX_STEPS = ctx_limits.get("plan_tool_steps")
 # read the workspace and consult a skill to inform its plan but CANNOT execute the
 # teammates' work instead of delegating it (the SEVERE "master did the whole job").
 PLAN_ONLY_TOOLS = {"fs.read", "skills", "memory", "self"}
-# JAG-256: the assembled system prompt is published as a collapsed "system" inject
-# so the operator can read it. Publishing it EVERY turn spammed the transcript with
-# N identical blocks (reported as "the harness re-sends the system prompt ad
-# infinitum"). Keep the last hash per session; re-publish only when it changes.
-_LAST_SYS_INJECT = {}
 # JAG-88 (harness layer L2 — context budgeting): observations above this many
 # chars are offloaded to a file instead of being flooded into the context (and
 # instead of the old silent 4000-char truncation that LOST the rest).
@@ -3411,6 +3407,38 @@ def _inject_vision_blocks(msgs, model):
     return msgs
 
 
+def user_turn_context(session_id=None, sess=None):
+    """The per-turn blocks that ride the CURRENT user message, in send order.
+
+    Two kinds of text are VOLATILE — they change between turns by design — so they
+    never enter the system prompt (see `prompt.SECTIONS`):
+      * the memory index (`prompt.memory_block`), rewritten whenever a lesson or a
+        user fact is stored;
+      * the live task list (`state_block`, JAG-276).
+    Putting them here keeps the system prompt + committed transcript byte-stable
+    across turns, so the provider's prefix cache survives and the chat does not
+    re-publish the whole prompt on every memory write (2026-11-10).
+
+    ONE owner: `assemble_turn` and the context meter (`httpapi.context_usage`) both
+    call this, so what is measured is what is sent.
+    """
+    parts = []
+    try:
+        from longrun.model import prompt as _prompt
+        _mem = _prompt.memory_block(sess)
+        if _mem:
+            parts.append(_mem)
+    except Exception:  # noqa: BLE001 — a prompt block must never break a turn
+        pass
+    try:
+        _state = state_block(session_id=session_id)
+        if _state:
+            parts.append(_state)
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n\n".join(parts)
+
+
 def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     """Assemble the exact message list SENT to the router for one chat turn.
 
@@ -3437,9 +3465,11 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     transcript = list(sess.get("messages", []))
     if transcript and transcript[-1].get("role") == "user":
         transcript = transcript[:-1]
-    # JAG-276: the live task list rides in the CURRENT user turn (not the system
-    # prompt) so the whole system prompt + committed transcript stay cache-safe.
-    eff_message = eff_message + "\n\n" + state_block(session_id=(sess or {}).get("id"))
+    # JAG-276 / 2026-11-10: the live task list AND the memory index ride in the
+    # CURRENT user turn (not the system prompt) so the whole system prompt + the
+    # committed transcript stay cache-safe.
+    eff_message = eff_message + "\n\n" + user_turn_context(
+        session_id=(sess or {}).get("id"), sess=sess)
     try:
         from longrun.model import context_engine
         msgs, ctx_stats = context_engine.build(
@@ -3460,6 +3490,38 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
     except Exception:  # noqa: BLE001
         pass
     return msgs, ctx_stats
+
+
+def publish_system_prompt(sess, msgs, on_event):
+    """JAG-256/166: publish the assembled system prompt as ONE collapsed chip,
+    and only when its text CHANGES. Returns True when a chip was published.
+
+    The last published digest lives ON THE SESSION (`sess["sys_prompt_hash"]`),
+    not in a module map: a process map is empty after every restart, so the first
+    turn of each session re-announced a prompt the operator had already seen
+    (2026-11-09: session 55a29fae70cb published the same hash at 19:29:33,
+    19:30:36 and 19:31:48 across two restarts at 19:29:44 and 19:31:00). The
+    digest is a stable SHA-1 of the SENT text — `hash()` is salted per process
+    and would never match after a restart.
+
+    The prompt itself is still sent to the model on every request (the chat API
+    is stateless): this is a DISPLAY rule, never a context change.
+    """
+    try:
+        if not msgs or msgs[0].get("role") != "system":
+            return False
+        text = msgs[0].get("content") or ""
+        digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+        if sess.get("sys_prompt_hash") == digest:
+            return False
+        # Emit FIRST, remember second: if the publisher fails the digest is not
+        # stored, so the next turn retries instead of losing the chip for good.
+        on_event("harness.inject", session=sess.get("id"), inject_kind="system",
+                 text=text, role="system")
+        sess["sys_prompt_hash"] = digest
+        return True
+    except Exception:  # noqa: BLE001 — must never break the turn
+        return False
 
 
 def _sync_compacted_turn(sess, msgs, turn_base, message, tool_ctx, model,
@@ -5118,16 +5180,9 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
     # sent to the model on every request (the API is stateless): this is a display rule, not a context change.
     # 2026-11-05: the chip carries the prompt VERBATIM (never a "prompt updated"
     # summary — the label must show only what is sent).
-    try:
-        if msgs and msgs[0].get("role") == "system":
-            _sys_txt = msgs[0].get("content") or ""
-            _h = hash(_sys_txt)
-            if _LAST_SYS_INJECT.get(sess["id"]) != _h:
-                _LAST_SYS_INJECT[sess["id"]] = _h
-                on_event("harness.inject", session=sess["id"], inject_kind="system",
-                         text=_sys_txt, role="system")
-    except Exception:  # noqa: BLE001 — must never break the turn
-        pass
+    # 2026-11-10: the dedupe state is the SESSION field (`sys_prompt_hash`), so a
+    # restart no longer re-announces an unchanged prompt (see `publish_system_prompt`).
+    publish_system_prompt(sess, msgs, on_event)
     # JAG-170: buffer the live reasoning so each persisted tool card carries the
     # chain-of-thought that led to it — otherwise the COTs between tool calls
     # vanish on reload (they were only ever streamed, never stored).

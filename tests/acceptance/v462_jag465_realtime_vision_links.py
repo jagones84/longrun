@@ -135,13 +135,18 @@ check("A7 the live roster id is matched case-insensitively",
           "src", "longrun", "model", "rllm.py"))
 
 # ------------------------------------------------------- B: system card ------
+# 2026-11-10: the guard is now `publish_system_prompt`, keyed on the SESSION field
+# `sys_prompt_hash` (a stable SHA-1), so the rule survives a service restart. The
+# display contract is unchanged: one chip, only when the text changes, verbatim.
 check("B1 the full SYSTEM card is published once, and again only when the prompt CHANGES",
-      "_LAST_SYS_INJECT.get(sess[\"id\"]) != _h" in AGENT)
+      "def publish_system_prompt(" in AGENT
+      and 'sess.get("sys_prompt_hash") == digest' in AGENT
+      and "publish_system_prompt(sess, msgs, on_event)" in AGENT)
 check("B2 a change re-publishes the prompt VERBATIM, never a summary of it",
       'inject_kind="system"' in AGENT and "role=\"system\"" in AGENT
       and "system-delta" not in AGENT)
 check("B3 the system prompt is still sent to the model every turn (display rule only)",
-      "msgs[0].get(\"content\")" in AGENT and "text=_sys_txt" in AGENT)
+      "msgs[0].get(\"role\") != \"system\"" in AGENT and "text = msgs[0].get(\"content\")" in AGENT)
 
 # ------------------------------------------------- C: dispatch + links -------
 check("C1 chat_stream_gen accepts and persists the ORIGINATING session",

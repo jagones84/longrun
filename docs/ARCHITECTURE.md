@@ -108,7 +108,14 @@ through `self.tools` instead of dumping the registry into every prompt. The prov
 is called over an OpenAI-compatible stream; the model may answer **or** emit a
 harness action (`tool`, `todo.write`, `todo.update`, `todo.replan`, `subagent`).
 Tool calls go through the **approval gate** and the **sandbox**; observations are
-fed back. The **completion loop** (`keepgoing.py`) applies ordinary turn limits to
+fed back. One rule decides what may live in the system prompt: **only text that does
+not change between turns**. The two volatile blocks — the live task list
+(`state_block`) and the memory index (`prompt.memory_block`) — ride the current user
+message through `agent.user_turn_context`, and `httpapi.context_usage` calls the same
+function so the meter measures what is sent. A stable prompt prefix is what lets the
+provider reuse its cache, and it is also why the chat shows the `system` card only
+when the prompt really changed (`publish_system_prompt`, digest stored on the session).
+The **completion loop** (`keepgoing.py`) applies ordinary turn limits to
 chat and headless jobs. Explicit `/goal` continues past ordinary round/iteration
 limits until the current plan is evidence-backed complete, blocked/cancelled, or
 the configured wall-clock safety cap stops it incomplete. The goal itself is a
