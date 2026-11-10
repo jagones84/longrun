@@ -10,6 +10,7 @@ so the ``from .server import (...)`` below resolves against a fully-populated
 module and no import cycle forms.
 """
 import argparse
+import hmac
 import json
 import os
 import queue
@@ -19,6 +20,7 @@ import signal
 import socket
 import ssl
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -162,14 +164,42 @@ def _open_session(sid, title=None, workspace=None):
     return get_or_create_session(sid, title, workspace)
 
 
+def _same_secret(got, want):
+    """Constant-time comparison of two secrets (both encoded as UTF-8 bytes).
+
+    `hmac.compare_digest` on `str` raises on non-ASCII input, so a header with a
+    unicode byte would turn a failed auth into a 500; comparing bytes keeps the
+    rejection total and the timing flat.
+    """
+    return hmac.compare_digest((got or "").encode("utf-8", "replace"),
+                               (want or "").encode("utf-8", "replace"))
+
+
 def check_auth(headers, qs=None):
     if not AUTH_TOKEN:
         return True
-    h = headers.get("Authorization") or ""
-    if h == "Bearer " + AUTH_TOKEN:
+    if _same_secret(headers.get("Authorization") or "", "Bearer " + AUTH_TOKEN):
         return True
     # EventSource cannot set headers: allow ?token= as fallback
-    return bool(qs) and qs.get("token") == AUTH_TOKEN
+    return bool(qs) and _same_secret(qs.get("token"), AUTH_TOKEN)
+
+
+def boot_url(ip, port, token="", scheme="http", path="/"):
+    """The LAN URL printed at boot — the bearer never reaches the journal.
+
+    `systemctl --user restart longrun` captures stdout into the systemd journal,
+    so the tokenized URL this line used to print wrote the bearer on every
+    restart (any local `journalctl` reader could take it). The URL is always
+    printed plain; the `?token=` suffix appears only when stdout is an
+    interactive terminal (a developer run), where the secret cannot be
+    captured by the service manager.
+    """
+    base = "%s://%s:%d%s" % (scheme, ip, port, path)
+    if token and sys.stdout.isatty():
+        from urllib.parse import quote
+        sep = "&" if "?" in base else "?"
+        return base + sep + "token=" + quote(token)
+    return base
 
 
 def first_run_setup_available():
@@ -3341,10 +3371,11 @@ def _start_tls(args):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     print("Longrun: HTTPS (secure context — voice-ready) on https://%s:%d" % (args.host, port), flush=True)
     if args.host == "0.0.0.0":
-        from urllib.parse import quote
-        tok = ("?token=" + quote(args.token)) if args.token else ""
         for ip in _lan_ipv4s():
-            print("Voice-ready (accept the self-signed cert once): https://%s:%d/%s" % (ip, port, tok),
+            print("Voice-ready (accept the self-signed cert once): %s" %
+                  boot_url(ip, port, args.token, scheme="https"), flush=True)
+        if args.token and not sys.stdout.isatty():
+            print("Longrun: append ?token=<LONGRUN_TOKEN from the service EnvironmentFile> to that URL",
                   flush=True)
     return srv
 
@@ -3485,10 +3516,11 @@ def main():
     print("Longrun v%s on http://%s:%d  (router: %s)" % (
         VERSION, args.host, args.port, ROUTER_BASE), flush=True)
     if args.host == "0.0.0.0":
-        from urllib.parse import quote
-        tok = ("?token=" + quote(args.token)) if args.token else ""
         for ip in _lan_ipv4s():
-            print("Open on your phone: http://%s:%d/%s" % (ip, args.port, tok),
+            print("Open on your phone: %s" % boot_url(ip, args.port, args.token),
+                  flush=True)
+        if args.token and not sys.stdout.isatty():
+            print("Longrun: append ?token=<LONGRUN_TOKEN from the service EnvironmentFile> to that URL",
                   flush=True)
     # JAG-416: optionally bring up HTTPS (secure context → voice input works).
     # 2026-11-05: the default is `config/tools.yaml` -> `limits: tls_enabled`

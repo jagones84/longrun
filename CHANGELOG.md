@@ -6,6 +6,16 @@ All notable changes to Longrun are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- **The bearer token no longer lands in the systemd journal (`v940`).** `main()` printed
+  `http://<lan-ip>:8790/?token=<secret>` on boot, so every `systemctl --user restart longrun` wrote the
+  credential to a journal any local user can read (and every `journalctl` copy carried it). `boot_url()`
+  prints the plain URL; the `?token=` suffix appears only when stdout is an interactive terminal, where
+  the service manager captures nothing, and the piped banner names the service `EnvironmentFile` where
+  the value lives. `check_auth` now compares the `Authorization` header and the `?token=` fallback with
+  `hmac.compare_digest` (`_same_secret`, on UTF-8 bytes so a unicode header is rejected, not a 500).
+  (Locked by `v940` 20/20.)
+
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's
   screenshot set the official shape: Agents 25 · Jobs 15 · Org chart 36 · Constellation 24 — measured
