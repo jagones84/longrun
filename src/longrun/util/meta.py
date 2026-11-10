@@ -22,6 +22,7 @@ How it works:
      (no other candidate has both higher quality AND lower cost).
 """
 
+import copy
 import json
 import os
 import random
@@ -168,8 +169,9 @@ def evaluate_candidate(cand, label, eval_task_id=None):
     Returns dict: {label, config, quality, cost_tokens, cost_usd,
     duration_s, trace, error?}
     """
-    # Store current config to restore later
-    old_cfg = json.loads(json.dumps(registry.load_config()))
+    # RSI-H-2: the candidate is applied to a COPY and made visible through a
+    # context-scoped override. The live overlay is never written, so a crash or a
+    # kill mid-evaluation cannot leave the candidate installed for the next turn.
     result = {"label": label, "config": cand, "ts": time.time(),
               "quality": 0.0, "cost_tokens": 0, "cost_usd": 0.0,
               "duration_s": 0, "error": None}
@@ -177,8 +179,8 @@ def evaluate_candidate(cand, label, eval_task_id=None):
     try:
         t0 = time.time()
 
-        # Apply candidate config
-        cfg = registry.load_config(reload=True)
+        # Apply candidate config (on the copy, never on the cached object)
+        cfg = copy.deepcopy(registry.load_config(reload=True))
         # Model is selected per-run, not via registry
         # Sandbox backend
         cfg["sandbox"]["backend"] = cand.get("sandbox_backend", cfg["sandbox"]["backend"])
@@ -190,17 +192,16 @@ def evaluate_candidate(cand, label, eval_task_id=None):
                 policy["approval"] = "auto"
             else:
                 policy["approval"] = tool_key
-        registry.save_config(cfg)
-        registry.load_config(reload=True)
 
         # Run eval
         from longrun.core.server import eval_run
-        eval_result = eval_run(
-            model=cand.get("model"),
-            max_steps=cand.get("max_steps", 6),
-            task_id=eval_task_id,
-            save=False,
-        )
+        with registry.scoped_config(cfg):
+            eval_result = eval_run(
+                model=cand.get("model"),
+                max_steps=cand.get("max_steps", 6),
+                task_id=eval_task_id,
+                save=False,
+            )
 
         duration = time.time() - t0
         mean_score = eval_result.get("mean_score", 0.0)
@@ -235,13 +236,6 @@ def evaluate_candidate(cand, label, eval_task_id=None):
     except Exception as e:
         result["error"] = str(e)
         result["quality"] = 0.0
-    finally:
-        # Restore original config
-        try:
-            registry.save_config(old_cfg)
-            registry.load_config(reload=True)
-        except Exception:
-            pass
 
     return result
 

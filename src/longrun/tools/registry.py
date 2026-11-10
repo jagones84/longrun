@@ -9,6 +9,8 @@ Loads `config/tools.yaml` (falling back to `config/tools.json`) and answers:
 Stdlib + PyYAML. No tool is executed here — see tools.py / sandbox.py.
 """
 
+import contextlib
+import contextvars
 import copy
 import json
 import os
@@ -28,6 +30,30 @@ OVERLAY_JSON = os.path.join(APP_DATA_DIR, "tools.overlay.json")
 
 _lock = threading.RLock()
 _cfg = None
+
+# RSI-H-2 (2026-11-10): an evaluation must SEE a candidate configuration without
+# WRITING it. The old path saved the candidate into the live overlay and restored
+# the old one in a `finally`, so a crash (or a kill) between the two left the
+# candidate live and a concurrent turn ran under it. The override below is scoped
+# to the CALLING context: `load_config()` answers from it and the cache/disk are
+# never touched. A thread created inside the evaluation does not inherit it (it
+# reads the live config), which is the safe direction.
+_CFG_OVERRIDE = contextvars.ContextVar("longrun_cfg_override", default=None)
+
+
+@contextlib.contextmanager
+def scoped_config(cfg):
+    """Run a block under `cfg` without writing the live configuration.
+
+    `cfg` is a complete merged config (as returned by `load_config()`); while the
+    block runs, every `load_config()` in THIS context answers that value. Exit
+    restores the previous state by construction, including on an exception.
+    """
+    token = _CFG_OVERRIDE.set(copy.deepcopy(cfg) if isinstance(cfg, dict) else None)
+    try:
+        yield
+    finally:
+        _CFG_OVERRIDE.reset(token)
 
 # --------------------------------------------------------------- defaults ----
 
@@ -1352,9 +1378,16 @@ def _merged(base_data, overlay_data=None):
 
 
 def load_config(reload=False):
-    """Return the merged config (cached). reload=True re-reads from disk."""
+    """Return the merged config (cached). reload=True re-reads from disk.
+
+    Inside `scoped_config(cfg)` the scoped value wins and nothing is cached or
+    written (RSI-H-2: the evaluation path must not touch the live configuration).
+    """
     global _cfg
     with _lock:
+        override = _CFG_OVERRIDE.get()
+        if override is not None:
+            return copy.deepcopy(override)
         if _cfg is not None and not reload:
             return _cfg
         raw, _src = _load_raw()

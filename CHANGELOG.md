@@ -47,6 +47,11 @@ All notable changes to Longrun are documented here. The format follows
   axe: 0 violations, no static-file restart needed.)
 
 ### Added
+- **An evaluation never writes the live configuration (`v937`).** The meta-harness saved the candidate
+  into the policy overlay and restored the old one in a `finally`, so a crash or kill between the two
+  left the candidate installed and a concurrent turn ran under it. The candidate now applies to a copy
+  and is exposed through `registry.scoped_config()` (a context-scoped override): nothing is written,
+  nothing has to be restored, and the cached config is never mutated. (Locked by `v937` 7/7.)
 - **A skill that was shown is no longer counted as a skill that was opened (`v936`).** A search
   recorded the hit as injected AND used, so `uses == helped` always held and the retirement question
   ("was this skill ever reached?") had one degenerate answer. Search now records a RETRIEVAL and read
