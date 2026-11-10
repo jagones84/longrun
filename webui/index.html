@@ -5419,8 +5419,12 @@ function _userBubblePresent(text) {
 }
 function _reconcilePendingUser(sid) {
   if (!sid) return;
+  const _now = Date.now() / 1000;
   for (let i = _pendingUser.length - 1; i >= 0; i--) {
     const p = _pendingUser[i];
+    // A brand-new chat the server never named (a send that was refused) must not
+    // leak its bubble into ANOTHER session's transcript.
+    if (!p.sid && (_now - (p.ts || 0)) > 120) { _pendingUser.splice(i, 1); continue; }
     if (p.sid && p.sid !== sid) continue;
     if (_userBubblePresent(p.text)) { _pendingUser.splice(i, 1); continue; }
     p.sid = sid;
