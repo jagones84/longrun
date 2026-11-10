@@ -1129,11 +1129,21 @@ class JobRegistry:
         # so that count landed BEFORE the other turn's reply and the job would
         # report someone else's work as its own.
         return self._best_reply(self._turn_tail(s.get("messages") or [], before,
-                                                sender, subjob))
+                                                sender, subjob, sent=message))
 
     @staticmethod
-    def _turn_tail(messages, before, sender, subjob):
-        """This turn's messages: from ITS OWN user message, else from `before`."""
+    def _turn_tail(messages, before, sender, subjob, sent=None):
+        """This turn's messages: from ITS OWN user message, else from `before`.
+
+        v949: the coordinator's plan and synthesis turns carry NO `sender` /
+        `subjob` (they are not a delegation to a teammate), so they used to fall
+        back to `messages[before:]` — and `before` is captured BEFORE the worker
+        takes the turn lock. With an operator turn in flight on that session the
+        slice started inside the operator's turn, and the length-based reply pick
+        could record the operator's answer as the job's plan or deliverable.
+        The turn's own user message carries the EXACT text this call sent, so that
+        text is the anchor when nothing else identifies the turn.
+        """
         for i in range(len(messages) - 1, -1, -1):
             m = messages[i] or {}
             if m.get("role") != "user":
@@ -1142,6 +1152,8 @@ class JobRegistry:
             if subjob and meta.get("subjob") == subjob:
                 return messages[i:]
             if not subjob and sender and meta.get("sender") == sender:
+                return messages[i:]
+            if sent and m.get("content") == sent:
                 return messages[i:]
         return messages[before:]
 

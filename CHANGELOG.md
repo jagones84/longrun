@@ -86,6 +86,14 @@ All notable changes to Longrun are documented here. The format follows
   process's module load cannot have a worker here) and publishes `sj.subjob.done … failed` so the feed
   says so. (Locked by `v948` 10/10, red at HEAD: 7/10 with the dependent hanging on "dependency never
   satisfied".)
+- **A coordinator turn cannot report the operator's reply as its own (`v950`).** `_run_agent` captured
+  `before = len(messages)` before the turn took the session lock, and the coordinator's plan/synthesis
+  turns carry no `sender`/`subjob`, so they always took the `messages[before:]` fallback. With an
+  operator turn in flight on that session, the slice started inside it and `_best_reply(longest=True)`
+  could record the operator's answer as the job's plan or deliverable (JAG-310's shape on the
+  coordinator path). The turn's own user message carries the exact text the call sent, so that text now
+  anchors the tail; the delegated `sender`/`subjob` anchor still wins. (Locked by `v950` 9/9; the
+  length-3 slice WITHOUT the anchor is pinned as the defect.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's
