@@ -859,6 +859,18 @@ def is_system_session(sid):
     return str(sid or "").strip() == LONGRUN_AGENT_SESSION_ID
 
 
+def is_architect_session(sid):
+    """True for the Architect itself and its stateless run ids (`longrunAgent_*`).
+
+    ONE owner for “this caller is the operator's own hand”: the work scope
+    (`coordinator_scope`) and the session rules (`tools._may_message`,
+    `tools._may_manage`) all ask this, so they cannot drift apart.
+    """
+    sid = str(sid or "").strip()
+    return bool(sid) and (sid == LONGRUN_AGENT_SESSION_ID
+                          or sid.startswith(LONGRUN_AGENT_SESSION_ID + "_"))
+
+
 def ensure_system_session():
     """Ensure the permanent `longrunAgent` session exists on disk and is never tombstoned."""
     from longrun.memory import stores
@@ -1134,7 +1146,7 @@ def coordinator_scope(run_id):
     job for any agent (case J38, 2026-11-10) while its prompt said exit 126.
     """
     sid = str(run_id or "").strip()
-    if not sid or sid == LONGRUN_AGENT_SESSION_ID or sid.startswith(LONGRUN_AGENT_SESSION_ID + "_"):
+    if not sid or is_architect_session(sid):
         return None
     try:
         from longrun.agent import agents as agents_mod
