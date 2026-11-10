@@ -1384,6 +1384,9 @@ def _skills(args, run_id):
         except (TypeError, ValueError):
             limit = 10
         hits = skills_mod.search_skills(q, limit=limit)
+        # RSI-G-2: a search SHOWS these skills (injected, not used) — the other
+        # half of "opened != shown" in the shared attribution ledger.
+        skills_mod.note_retrieved([h.get("name") for h in hits])
         body = "\n".join("  %s :: %s" % (h["name"], (h["description"] or h["title"] or "")[:120])
                          for h in hits) or "  (no match — try action=list)"
         stdout = ("%d skill(s) matching %r (read one with action=read):\n%s"

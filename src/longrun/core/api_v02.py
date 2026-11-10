@@ -1803,7 +1803,8 @@ def handle(handler, method, path, qs, body):
             try:
                 disc = skills_mod.discovery(samples=_probes or None)
             except Exception:  # noqa: BLE001 — a report must never break the list
-                disc = {"skills": len(items), "opened": {}, "never_opened": [],
+                disc = {"skills": len(items), "opened": {}, "retrieved": {},
+                        "never_opened": [], "never_retrieved": [],
                         "missing_description": [], "probes": []}
             return _r(handler, 200, {"skills": items, "count": len(items),
                                      "local_dir": skills_mod._local_dir(),

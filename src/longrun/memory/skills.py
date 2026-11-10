@@ -490,10 +490,27 @@ def get_skill(name):
 
 
 #: HA-2 (lot H): namespace of a skill in the shared usage ledger. The ledger is
-#: `memory/attribution.py` (already used for "retrieved vs used" memories); a skill
-#: has one signal — it was OPENED — so opening records both counters. One ledger,
-#: no second store.
+#: `memory/attribution.py` (already used for "retrieved vs used" memories).
+#: RSI-G-1/G-2 (2026-11-10): the skill ledger used to write the same id as
+#: injected AND used on an open, so `uses == helped` always held and "was this
+#: skill ever reached?" could not be answered. Two facts now:
+#:   * a SEARCH shows the skill (`note_retrieved`) — uses only;
+#:   * a READ opens it (`note_opened`) — uses and helped.
 SKILL_ATTRIBUTION_PREFIX = "skill:"
+
+
+def note_retrieved(names):
+    """Record that these skills were SHOWN to the model (injected, not used)."""
+    ids = [SKILL_ATTRIBUTION_PREFIX + str(n).strip()
+           for n in (names or []) if str(n or "").strip()]
+    if not ids:
+        return False
+    try:
+        from longrun.memory import attribution
+        attribution.note(ids, [])
+        return True
+    except Exception:  # noqa: BLE001 — a ledger must never break a skill search
+        return False
 
 
 def note_opened(name):
@@ -515,8 +532,9 @@ def discovery(samples=None, limit=5):
 
     The one thing that decides whether a written procedure is used is its
     description: while a skill is idle, the description is all the model sees.
-    This reports, without a model call: which skills were never OPENED (the shared
-    attribution ledger), which have no description at all (same criterion as
+    This reports, without a model call: which skills were never OPENED and which
+    were never even RETRIEVED (the shared attribution ledger keeps the two apart),
+    which have no description at all (same criterion as
     `audit_skills`), and — when `samples` (plain-language tasks) are given —
     whether the library surfaces a skill for each, and which, using the SAME
     ranker the tool uses. Library hygiene (duplicates, oversized bodies) stays in
@@ -524,10 +542,15 @@ def discovery(samples=None, limit=5):
     """
     from longrun.memory import attribution
     sk = list_skills()
-    opened = {}
+    opened, retrieved = {}, {}
     for mid, rec in attribution.table(SKILL_ATTRIBUTION_PREFIX).items():
         name = str(mid)[len(SKILL_ATTRIBUTION_PREFIX):]
-        opened[name] = int((rec or {}).get("uses") or 0)
+        rec = rec or {}
+        # RSI-G-1/G-2: `uses` is "shown" (search), `helped` is "opened". A
+        # legacy row written before the split carries uses == helped, which
+        # still reads correctly as an open.
+        retrieved[name] = int(rec.get("uses") or 0)
+        opened[name] = int(rec.get("helped") or 0)
     probes = []
     for task in (samples or []):
         hits = [h.get("name") for h in search_skills(task, limit=limit)]
@@ -535,8 +558,11 @@ def discovery(samples=None, limit=5):
     return {
         "skills": len(sk),
         "opened": opened,
+        "retrieved": retrieved,
         "never_opened": sorted(s["name"] for s in sk
                                if s["name"] and not opened.get(s["name"])),
+        "never_retrieved": sorted(s["name"] for s in sk
+                                  if s["name"] and not retrieved.get(s["name"])),
         "missing_description": sorted(s["name"] for s in sk
                                       if not (s.get("description") or "").strip()),
         "probes": probes,

@@ -47,6 +47,11 @@ All notable changes to Longrun are documented here. The format follows
   axe: 0 violations, no static-file restart needed.)
 
 ### Added
+- **A skill that was shown is no longer counted as a skill that was opened (`v936`).** A search
+  recorded the hit as injected AND used, so `uses == helped` always held and the retirement question
+  ("was this skill ever reached?") had one degenerate answer. Search now records a RETRIEVAL and read
+  records an OPEN in the same attribution ledger; `discovery()` reports both maps (plus
+  `never_retrieved`) and its own probe stays read-only. (Locked by `v936` 12/12; `v848` unchanged.)
 - **A batch accounts for every item it accepted (`v935`).** The Session Job scheduler could return
   fewer subjobs than it created (observed 2026-11-03: two items in, one result out, turn green), so the
   lost work never appeared as a failure. The batch assembler now compares the ids it created with the
