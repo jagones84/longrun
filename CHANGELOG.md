@@ -50,6 +50,13 @@ All notable changes to Longrun are documented here. The format follows
   compare-and-set under one lock (the claim inside `dispatch`, `_release` for the sweep); the loser is
   told "job already running". (Locked by `v944` 10/10, red at HEAD without the fix: two winners and
   two runners.)
+- **The shell's working directory is part of the workspace boundary (`v945`).** `touches_outside`
+  scanned `cwd` and the path-like words of the command, but not `workspace` — which `_shell` uses as
+  the process working directory when `cwd` is absent. A command whose text names no path
+  (`grep -r SECRET .`, `find .`, `cat x`) therefore reached any directory by naming it as `workspace`
+  and still auto-approved, defeating JAG-388's "anything outside the session workspace needs
+  approval". (Locked by `v945` 9/9, red at HEAD without the fix: 4/9. The live service runs
+  `approvals.mode=full`, which bypasses the boundary BY DESIGN, so this one is proven by the battery.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's

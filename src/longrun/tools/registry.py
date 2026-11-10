@@ -2195,6 +2195,12 @@ def touches_outside(tool, args, workspace):
     elif tool in ("shell", "shell.exec"):
         if a.get("cwd"):
             paths.append(str(a["cwd"]))
+        # v945: `workspace` is the shell's working directory too (`_shell` uses it
+        # as `base` when `cwd` is absent). It was invisible to this scan, so a
+        # command whose TEXT carries no path (`grep -r SECRET .`) reached any
+        # directory by naming it as `workspace` and still auto-approved.
+        if a.get("workspace"):
+            paths.append(str(a["workspace"]))
         paths.extend(_shell_paths(str(a.get("command", ""))))
     else:
         return None
