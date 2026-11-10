@@ -3407,7 +3407,7 @@ def _inject_vision_blocks(msgs, model):
     return msgs
 
 
-def user_turn_context(session_id=None, sess=None):
+def user_turn_context(session_id=None, sess=None, history=None):
     """The per-turn blocks that ride the CURRENT user message, in send order.
 
     Two kinds of text are VOLATILE — they change between turns by design — so they
