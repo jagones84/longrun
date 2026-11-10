@@ -35,6 +35,13 @@ All notable changes to Longrun are documented here. The format follows
   workspace scan never sees (it reads the CWD, not git's own options), so it is now in `always_ask`,
   which survives `approvals.mode=full`. (Locked by `v942` 31/31; live: `git diff --output=…` sits in
   the approval queue as `git.run` pending and runs only if a human approves.)
+- **A `mode=run` job whose worker failed no longer closes as `done` (`v943`).** `_run` computed its
+  `failed` list only inside the coordinator branch, so a detached dispatch (`mode=run`) always closed
+  with `failed_subjobs: []` and status `done` — even when its only worker ended in a harness error
+  record. `wake()` then released the job's dependents on top of work that never happened (and, since
+  a `partial` blocker counts as failed, they now fail loudly instead). The verdict is the job's,
+  computed for every mode from both records (the subjob row, and `runs` for a job whose subjob row
+  was never created). (Locked by `v943` 10/10, red at HEAD without the fix: 5/10.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's

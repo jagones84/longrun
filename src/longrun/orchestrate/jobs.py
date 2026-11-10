@@ -1248,17 +1248,28 @@ class JobRegistry:
                 for t in threads:
                     t.join()
 
+            # v943: the failed list is the JOB's verdict, not the coordinator's.
+            # It used to be computed INSIDE the coordinator branch, so a
+            # `mode=run` job (a detached dispatch) whose only worker ended in an
+            # error record closed as `done` with `failed_subjobs: []` — and
+            # `wake()` then released its dependents on top of work that never
+            # happened. Read BOTH records: the subjob row is authoritative, and
+            # `runs` covers a job whose subjob row was never created.
+            cur = self.get(jid) or {}
+            failed = [(s.get("id"), s.get("agent"), s.get("error") or "")
+                      for s in (cur.get("subjobs") or {}).values()
+                      if s.get("status") == "failed"]
+            _seen = {a for _, a, _ in failed}
+            for _raid, _rrun in (cur.get("runs") or {}).items():
+                if ((_rrun or {}).get("state") == "failed") and _raid not in _seen:
+                    failed.append((None, _raid, (_rrun or {}).get("error") or ""))
             if job.get("mode") == "coordinator" and coord:
                 # JAG-303: the team has run — close the coordinator's decomposition
                 # steps, so the synthesis turn is not nagged by its own open todos.
                 self._close_open_todos(sessions[coord])
-                cur = self.get(jid) or {}
                 # JAG-337: the master must be TOLD which subjobs were NOT finished, so
                 # the "ball" never comes back silently. Failed subjobs are excluded from
                 # the team report and listed explicitly as OPEN work.
-                failed = [(s.get("id"), s.get("agent"), s.get("error") or "")
-                          for s in (cur.get("subjobs") or {}).values()
-                          if s.get("status") == "failed"]
                 res = "\n\n".join("%s: %s" % (aid, (cur.get("runs", {}).get(aid) or {}).get("result", ""))
                                   for aid in job["agents"] if aid != coord)
                 warn = ""
