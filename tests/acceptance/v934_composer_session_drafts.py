@@ -85,6 +85,8 @@ check("C3 the boot path restores the stored draft",
 # ---- D: the text left the box -> the entry is gone ---------------------------
 check("D1 every place that empties the composer clears its draft",
       UI.count("_draftClear(sessionId)") == 3, "%d sites" % UI.count("_draftClear(sessionId)"))
+check("D2 only a send FROM the box clears it (a flushed queue item must not delete the draft)",
+      "if (text === undefined) _draftClear(sessionId);" in UI)
 
 # ---- E/F: guards -------------------------------------------------------------
 check("E1 restoring refuses a non-empty box",

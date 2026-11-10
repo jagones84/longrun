@@ -6439,7 +6439,12 @@ function send(text, display, atts) {
   // into `mode` and is no longer a command by the time it reaches the server.
   if (_attBlock) msg = msg.startsWith("/") ? msg + "\n\n" + _attBlock
                                           : _attBlock + "\n\n" + msg;
-  inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips(); _draftClear(sessionId);
+  inp.value = ""; if (inp.style) inp.style.height = ""; _renderCmdChips();
+  // 2026-11-10: only a send that came FROM the box clears its draft. flushQueue
+  // calls send(raw, text) for a queued message while the operator may be typing a
+  // new paragraph in the box — that auto-send must not delete it (send() empties
+  // the box on every path, so the draft is the only copy left).
+  if (text === undefined) _draftClear(sessionId);
   const _uNode = who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote);
   if (_attSnap.length) {
     const _bub = _uNode && _uNode.querySelector(".bubble");
