@@ -25,6 +25,7 @@ plus PyYAML: no framework to learn, no lock-in to any provider.
 | **Self-evolution** | The Matrix zone lets the harness extend itself live (tools, hooks, skills, rules); proven artifacts graduate into the protected Nucleus through verification gates. |
 | **Memory that lasts** | Session memory, a per-workspace codebase index, a shared Knowledge Base, and one compaction policy for manual and automatic summarization. |
 | **Honest costs** | Per-session model costs as exact provider charges, token-rate estimates, or explicitly unpriced calls — cached input included, attempts included. |
+| **Instruction discipline** | Every closing report is one of two shapes — **RESULT** with the inputs actually opened, or **BLOCKED** naming the missing input — and the harness checks the mechanical part (a cited path that does not exist is reported back). Measured on GAIA level 1 — 12 attachment-free questions, one model for both arms, official scorer, two identical runs — it answered **15/24** against **10/24** for openclaw; the gap was answer format, not reasoning. |
 | **Deterministic quality** | Every behavior above is pinned by an isolated acceptance test (see the badge); the battery runs them all in seconds. |
 
 ---
@@ -56,6 +57,14 @@ plus PyYAML: no framework to learn, no lock-in to any provider.
   the proven ones into the Nucleus through gates, not rewrites.
 - **Honest about money.** Costs are exact charges where providers report them
   and labeled estimates everywhere else — never a silent "$0.00".
+- **Instruction following is enforced where it is mechanical.** The closing output
+  has a required shape — RESULT (the value plus the inputs that produced it) or
+  BLOCKED (the missing input, named) — and that shape is verified, so a confident
+  answer in the wrong shape is not the end of the turn. Measured, not
+  asserted: on GAIA level 1 (12 attachment-free questions, one model for both
+  arms, the official scorer, two identical runs) Longrun answered 15/24 where
+  openclaw answered 10/24, and the difference was answer discipline, not
+  reasoning.
 
 ---
 
