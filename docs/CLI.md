@@ -168,6 +168,8 @@ python3 forge.py tools call shell.exec '{"command":"ls -la"}'
 python3 forge.py tools policy shell.exec --approval always
 python3 forge.py approvals ls
 python3 forge.py approvals approve ap_123
+python3 forge.py hooks            # configured git/event hooks
+python3 forge.py sandbox          # sandbox backend + isolation state (force probe)
 ```
 
 ### Runs & observability
@@ -189,6 +191,9 @@ python3 forge.py runs summary
 python3 forge.py runs trace 4f503dc92a29
 python3 forge.py events --limit 20
 python3 forge.py feed
+python3 forge.py status           # service + router + model roster + telemetry
+python3 forge.py self             # this process's own identity/capabilities
+python3 forge.py selfcheck        # deterministic self-diagnosis
 ```
 
 ### Models & providers
@@ -246,6 +251,11 @@ python3 forge.py blackboard post idea "usare SQLite per i checkpoint" --tags db,
 python3 forge.py knowledge notebooks
 python3 forge.py knowledge research "llama.cpp server options" --depth shallow --limit 3
 python3 forge.py research ls
+python3 forge.py index status     # codebase index: files, chunks, last build
+python3 forge.py index build --force
+python3 forge.py index search "system_prompt" --limit 5
+python3 forge.py embedding models # ids, dims, local-vs-paid, active model
+python3 forge.py embedding costs   # spend log: total, by model, last 30 days
 ```
 
 ### Subagents, meta, swarm
@@ -315,7 +325,9 @@ python3 forge.py roles set --session A25 --text "You are the docs lead."
 | `voice status` | `GET /api/voice/status` |
 | `voice stt "text"` | `POST /api/voice/stt` |
 | `voice tts "text"` | `POST /api/voice/tts` |
-| `mcp` | `POST /mcp` (initialize + `tools/list`) |
+| `mcp tools` (default) | `POST /mcp` (initialize + `tools/list`) |
+| `mcp ls` / `mcp add <preset>\|--json '<spec>'` / `mcp remove <name>` | `GET`/`POST /api/mcp/clients` (+ `/remove`) |
+| `mcp reload` / `mcp local-file <path>` | `POST /api/mcp/reload` / `POST /api/mcp/local-file` |
 | `acp server <method> '[params]'` | `POST /api/acp` |
 | `acp connect <name> <url> [--token T]` | `POST /api/acp/connect` |
 | `acp list` | `GET /api/mcp/clients` |
@@ -326,6 +338,9 @@ python3 forge.py checkpoints rollback cp_71cf8545
 python3 forge.py routing show
 python3 forge.py eval tasks
 python3 forge.py voice tts "ciao dal DGX"
+python3 forge.py mcp ls           # configured MCP clients + live connection state
+python3 forge.py mcp tools        # tools the harness itself exposes over MCP
+python3 forge.py acp list         # ACP/MCP clients as the server sees them
 ```
 
 ---
