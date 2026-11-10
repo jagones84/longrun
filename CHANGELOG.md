@@ -370,6 +370,17 @@ All notable changes to Longrun are documented here. The format follows
   Windows keeps its PATHEXT resolution), and the availability probe, the `mcp.test`
   check and the spawn all use it — the panel can no longer disagree with the launch.
   Probed live: `/home/jagones/.local/bin/npx` → npm, node v22.11.0.
+- **A session deleted mid-turn no longer kills the turn's own exit (`v952`).** The streaming worker
+  released the turn lock through a FRESH `_turn_lock(sid)` lookup, and `delete_session` pops that lock
+  out of the registry: the lookup built a NEW, un-acquired lock, so `release()` raised
+  `RuntimeError: cannot release un-acquired lock` inside the worker's `finally` — a traceback from a
+  turn that was already over, on a lock nobody held. The worker now binds the lock object at acquire
+  and releases THAT. Its neighbour got the same treatment: `turn_end` publishes to the event store and
+  sat one line above the release, so a full/locked store (the RH-12 condition) would have left the
+  session's lock held by a DEAD worker and wedged every later turn — it is wrapped in its own `try`;
+  the release then runs unconditionally. (Locked by `v952` 11/11, red 7/9 before the fix — the
+  `RuntimeError` reproduced on the real delete door — and D2 red without the second guard; `v422` F3
+  re-pointed to the new, stronger shape; live: a real turn answered, its session deleted, journal clean.)
 
 ### Added
 - **Sidebar stops fabricating agent ids (phantom-A class closed, v606).**

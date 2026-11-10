@@ -151,10 +151,14 @@ _fin = http.index("_coalesce.flush()  # JAG-265")
 _block = http[_fin - 700:_fin + 1400]
 check("F2 the CoT flush is wrapped in its own try",
       "try:\n                _coalesce.flush()  # JAG-265" in _block)
-check("F3 the release is in the SAME unconditional finally as the queue close",
-      '_turn_lock(sess["id"]).release()  # JAG-201' in _block
-      and _block.index('finally:\n                done["flag"] = True')
-      > _block.index("try:\n                _coalesce.flush()  # JAG-265"))
+check("F3 the release is unconditional — it survives a raising cleanup AND a raising turn_end",
+      # v952: the release now targets the lock BOUND at acquire (a delete can pop the
+      # per-session lock from the registry), and it sits in a `finally` of its own so
+      # `turn_end` — which publishes too — cannot skip it.
+      "finally:\n                done[\"flag\"] = True" in _block
+      and "finally:\n                    _lock.release()  # JAG-201" in _block
+      and _block.index('try:\n                    turn_end(sess["id"], _turn_tok, publish_done=False)')
+      < _block.index("finally:\n                    _lock.release()  # JAG-201"))
 
 print("---")
 okc = sum(results)

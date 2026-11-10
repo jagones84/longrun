@@ -466,7 +466,13 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
     def worker():
         nonlocal sess, since
         # JAG-201: serialise turns on this session (see _turn_lock).
-        _turn_lock(sess["id"]).acquire()
+        # v952: BIND the lock object here. `delete_session` pops the per-session lock
+        # out of the registry, so releasing through a fresh `_turn_lock(sid)` lookup
+        # built a NEW, un-acquired lock and `release()` raised inside this worker's
+        # `finally` — a traceback from a turn that was already over, and a release
+        # that never ran on the object actually held.
+        _lock = _turn_lock(sess["id"])
+        _lock.acquire()
         target = model
 
         def _emit(kind, **d):
@@ -633,8 +639,13 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
                 # `publish_done=False`: this path already ships its own terminal
                 # frame, and a second `chat.done` on the feed would close the
                 # re-attach stream of a LATER turn early.
-                turn_end(sess["id"], _turn_tok, publish_done=False)
-                _turn_lock(sess["id"]).release()  # JAG-201: allow the next turn
+                # v952: `turn_end` publishes too, so it is wrapped like the cleanup
+                # above — a raising turn_end must not skip the release and leave the
+                # session wedged on a dead worker (the RH-12 failure, one line down).
+                try:
+                    turn_end(sess["id"], _turn_tok, publish_done=False)
+                finally:
+                    _lock.release()  # JAG-201: allow the next turn
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
