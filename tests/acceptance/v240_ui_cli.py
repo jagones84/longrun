@@ -49,8 +49,11 @@ fv = read("src", "longrun", "core/forge.py")
 sv = read("src", "longrun", "core/server.py")
 
 # ---- JAG-240: history render inserts the CoT BEFORE the answer -------------
+# 2026-11-11: the anchor is null-safe — a HITL stop renders its CARD instead of an
+# answer bubble, so the CoT has no `d` to sit before and is appended as its own
+# block. The rule this pin owns is unchanged: the CoT goes ABOVE the answer.
 check("JAG-240 loadHistory inserts the CoT before the answer",
-      "if (d.parentNode) d.parentNode.insertBefore(t, d);" in ui)
+      "d.parentNode.insertBefore(t, d)" in ui and "if (d && d.parentNode)" in ui)
 check("JAG-240 the CoT is no longer appended below the answer in loadHistory",
       'd.appendChild(det)' not in ui)
 
