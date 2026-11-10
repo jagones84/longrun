@@ -34,6 +34,7 @@ import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="sf-v537-")
+os.environ["LONGRUN_DATA_DIR"] = TMP
 atexit.register(lambda: shutil.rmtree(TMP, ignore_errors=True))
 for _k in ("DATA_DIR", "CONFIG_DIR", "SESSIONS_DIR", "ROLES_DIR", "DB",
            "COSTS_DIR", "EDITS_DIR", "RUNS_DIR", "GRAPH_DIR",

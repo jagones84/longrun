@@ -32,6 +32,7 @@ import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TMP = tempfile.mkdtemp(prefix="sf-887-")
+os.environ["LONGRUN_DATA_DIR"] = TMP
 os.environ["LONGRUN_SESSIONS_DIR"] = os.path.join(TMP, "sessions")
 os.environ["LONGRUN_GRAPH_DIR"] = os.path.join(TMP, "graphs")
 os.environ["LONGRUN_DB"] = os.path.join(TMP, "events.db")
