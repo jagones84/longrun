@@ -5761,9 +5761,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
             _hitl = {"reason": "asked", "question": _q, "open": _steps,
                      "open_total": len(_steps),
                      "options": [str(o) for o in (_ask.get("options") or [])][:6]}
+            # 2026-11-11: the card must carry the DECISION, not a generic form — the
+            # question and the options the agent proposed ride the event too (the
+            # synthesized reply that repeats them is persisted, never streamed).
             on_event("hitl.request", session=sess["id"], reason="asked",
                      question=_q, open=_steps, total=len(_steps),
-                     rounds=_kg_rounds)
+                     options=_hitl["options"], rounds=_kg_rounds)
             msgs.append({"role": "assistant", "content": answer})
             break
         _batch = _batch_items(act) if isinstance(act, dict) else []

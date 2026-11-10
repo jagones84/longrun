@@ -1016,6 +1016,13 @@
   /* JAG-171: HUMAN IN THE LOOP card. */
   .hitl { display: flex; flex-direction: column; gap: 6px; }
   .hitl-title { font-size: 12.5px; font-weight: 600; color: var(--warn); }
+  /* 2026-11-11: the card was a generic "how should I proceed?" while the agent's
+     QUESTION and the OPTIONS it proposed lived only in the persisted message — and
+     that synthesized reply is never streamed, so in the live chat the operator was
+     asked to decide without seeing what was asked. */
+  .hitl-q { white-space: pre-wrap; font-size: 12.5px; color: var(--txt); }
+  .hitl-q[hidden], .hitl-opts[hidden] { display: none; }
+  .hitl-opts { display: flex; gap: 6px; flex-wrap: wrap; }
   .hitl-open { white-space: pre-wrap; font-size: 11.5px; color: var(--dim); background: rgba(255,255,255,.03);
     border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin: 0; max-height: 160px; overflow: auto; }
   .hitl-row { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -5610,6 +5617,8 @@ function hitlCard(d) {
   card.innerHTML =
     '<div class="who">HUMAN IN THE LOOP</div><div class="bubble"><div class="hitl">' +
     '<div class="hitl-title">⏸ Stopped with ' + ((d.open || []).length) + ' open steps (' + esc(d.reason || "stop") + '). How should I proceed?</div>' +
+    '<div class="hitl-q" hidden></div>' +
+    '<div class="hitl-opts" hidden></div>' +
     '<pre class="hitl-open"></pre>' +
     '<div class="hitl-row">' +
       '<button class="ghost" data-a="continue">▶ Continue</button>' +
@@ -5621,9 +5630,31 @@ function hitlCard(d) {
     '<input class="hitl-note" name="hitl-note" aria-label="Additional info for the agent (optional)" placeholder="additional info for the agent (optional)">' +
     '<button class="hitl-send">send choice</button></div></div>';
   card.querySelector(".hitl-open").textContent = open;
+  // 2026-11-11 (operator: "quando esce la finestra human in the loop la domanda fatta
+  // scompare dalla chat history"): the QUESTION and the OPTIONS the agent proposed ARE
+  // the decision. The card showed neither — and the synthesized "⏸ Your decision is
+  // needed: …" reply is persisted, never streamed, so the live chat showed a generic
+  // form over a decision the operator could not read (it appeared only after a reload).
+  const _q = String(d.question || "").trim();
+  if (_q) {
+    const qe = card.querySelector(".hitl-q");
+    qe.textContent = _q; qe.hidden = false;
+  }
+  const _note = () => (card.querySelector(".hitl-note").value || "").trim();
+  const _opts = (d.options || []).map(o => String(o || "").trim()).filter(Boolean);
+  if (_opts.length) {
+    const ow = card.querySelector(".hitl-opts"); ow.hidden = false;
+    _opts.forEach(o => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "ghost"; b.textContent = o;
+      b.setAttribute("aria-label", "answer: " + o);
+      b.onclick = () => { const n = _note(); send(n ? o + " — " + n : o); };
+      ow.appendChild(b);
+    });
+  }
   const build = (a) => {
     const other = (card.querySelector(".hitl-other").value || "").trim();
-    const note = (card.querySelector(".hitl-note").value || "").trim();
+    const note = _note();
     let s;
     if (other) { s = other; }
     else if (a === "continue") s = "Continue: execute and close the open steps with concrete evidence.";
@@ -7775,19 +7806,24 @@ async function loadHistory() {
       // trailing "think: …" tail. The reply must stay the primary text.
       _activeNodeId = _nid(m.node); _activeScope = null;
       const [reply, tail] = splitThinkTail(m.content);
-      const d = who("ai", reply, m.ts, null, null, m.chapter);
-      // JAG-295: a HITL stop is a FORM, not just prose — rebuild the card from
-      // the persisted fields so a reload (or a headless job turn) still shows it.
-      // NOTE: `append_message` merges meta FLAT into the message (msg.update), so
-      // the keys live at top level (`m.hitl`), NOT under `m.meta`.
-      if (m.hitl) hitlCard({reason: m.reason, open: m.hitl_open || []});
+      // JAG-295 + 2026-11-11: a HITL stop is a FORM, not prose. The card carries the
+      // question, the proposed options and the open steps; the canned "⏸ Your decision
+      // is needed: …" text is the SAME decision in prose, so drawing both would say it
+      // twice (and it used to be the only copy the operator could read in the live chat).
+      let d = null;
+      if (m.hitl) {
+        hitlCard({reason: m.reason, open: m.hitl_open || [],
+                  question: m.question || "", options: m.options || []});
+      } else {
+        d = who("ai", reply, m.ts, null, null, m.chapter);
+      }
       const cot = m.reasoning || tail;
       if (cot) {
         // JAG-240: the CoT belongs ABOVE its answer, exactly like the live stream.
         const t = document.createElement("div"); t.className = "msg ai";
         t.innerHTML = `<div class="who">${esc(_aiLabel())}` + _tsSpan(m.ts) + `</div><details class="think"><summary>🧠 chain-of-thought</summary><div class="t"></div></details>`;
         t.querySelector(".t").textContent = cot;
-        if (d.parentNode) d.parentNode.insertBefore(t, d);
+        if (d && d.parentNode) d.parentNode.insertBefore(t, d); else _logAppend(t);
       }
       _activeNodeId = null; _activeScope = null;
       return;
