@@ -77,6 +77,15 @@ All notable changes to Longrun are documented here. The format follows
   first, so the inject's `after` boundary counts the messages really on disk. (Locked by `v947` 10/10,
   red at HEAD without the fix; live: a real turn persisted its messages, its tool card and the harness
   entries after the change, scratch sessions removed.)
+- **A subjob orphaned by a restart no longer hangs its batch (`v948`).** Session-Jobs had no restart
+  reconciliation (`jobs.reconcile` covers the job store, nothing repaired the SJ ledger). The scheduler
+  only schedules rows whose status is exactly `pending` and `running` comes from this process's
+  in-flight list, so a subjob persisted as `running` by a killed process was never re-spawned and never
+  failed: its dependents stayed pending and the deadlock breaker finally called them "dependency never
+  satisfied". `run()` reaps such a row at the start (status `running` with a `started` older than this
+  process's module load cannot have a worker here) and publishes `sj.subjob.done … failed` so the feed
+  says so. (Locked by `v948` 10/10, red at HEAD: 7/10 with the dependent hanging on "dependency never
+  satisfied".)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's

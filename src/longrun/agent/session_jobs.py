@@ -41,6 +41,12 @@ from longrun.util.paths import DATA_DIR
 STORE_DIR = os.environ.get("LONGRUN_SJ_DIR") or os.path.join(DATA_DIR, "session_jobs")
 TERMINAL = ("done", "error", "blocked")
 _LOCK = threading.RLock()
+# v948: the moment this process loaded the module. A subjob row already `running`
+# with a `started` older than this cannot have a worker HERE — the process that
+# ran it is gone (restart / crash). The scheduler only ever picks `pending` rows,
+# so such a row stayed `running` forever and its dependents sat until the deadlock
+# breaker called them "dependency never satisfied".
+_BOOT_TS = time.time()
 
 # Hard bounds: an SJ is a batch of SUBAGENTS, so the model cannot ask for an
 # unbounded fan-out by accident (a typo in `calls` would otherwise spawn 500
@@ -236,10 +242,31 @@ def run(sid, job_id=None, hook=None, spawn_fn=None, collect_fn=None,
         if not job:
             return {"ok": False, "error": "no SJ to run in this session"}
         job_id = job["id"]
+        # v948: reap the subjobs a DEAD process left `running`. They cannot have a
+        # worker here (nothing re-spawns a non-pending row), so mark them failed
+        # with the reason — the dependents then block loudly instead of hanging.
+        reaped = []
+        for _sid_row, _s in (doc.get("subjobs") or {}).items():
+            if _s.get("job") != job_id or _s.get("status") != "running":
+                continue
+            try:
+                _started = float(_s.get("started") or 0)
+            except (TypeError, ValueError):
+                _started = 0.0
+            if _started >= _BOOT_TS:
+                continue          # started by THIS process — a live worker
+            _s["status"] = "failed"
+            _s["error"] = ("interrupted by restart — this subjob was running when the "
+                           "service restarted; re-run the batch")
+            _s["ended"] = round(time.time(), 3)
+            reaped.append(_sid_row)
         job["status"] = "running"
         job["started"] = job.get("started") or round(time.time(), 3)
         _save(sid, doc)
     _publish("sj.running", session=sid, job=job_id)
+    for _rid in reaped:
+        # Visible in the feed: a subjob did not "finish", it was orphaned by a restart.
+        _publish("sj.subjob.done", session=sid, job=job_id, subjob=_rid, status="failed")
 
     running = []      # subjob ids currently in flight, FIFO
     while True:
