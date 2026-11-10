@@ -57,6 +57,14 @@ All notable changes to Longrun are documented here. The format follows
   and still auto-approved, defeating JAG-388's "anything outside the session workspace needs
   approval". (Locked by `v945` 9/9, red at HEAD without the fix: 4/9. The live service runs
   `approvals.mode=full`, which bypasses the boundary BY DESIGN, so this one is proven by the battery.)
+- **A redirect cannot hand the fetcher a private address (`v946`).** `web.fetch` checked `_public_host`
+  (DNS resolved, private/loopback/link-local rejected) and then called `urlopen`, whose default handler
+  follows a 3xx to ANY target — a public host could answer `302 Location: http://127.0.0.1:8080/…`
+  (the unauthenticated router) or any LAN address, and the guard never saw the second URL. `http.fetch`
+  had the same hole against its `allow_hosts`. `_CheckedRedirect` re-runs the per-tool predicate on
+  every hop and `_opener(check)` is the only way the fetch tools build an opener.
+  (Locked by `v946` 10/10: loopback, private, link-local and non-http hops blocked, an allowed hop
+  still builds the next request.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's

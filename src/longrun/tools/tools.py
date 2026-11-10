@@ -17,6 +17,7 @@ import shlex
 import socket
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -118,6 +119,33 @@ def _host_allowed(url, allow_hosts):
         except ValueError:
             continue
     return False, host
+
+
+class _CheckedRedirect(urllib.request.HTTPRedirectHandler):
+    """Re-run the guard on EVERY redirect hop (v946).
+
+    `urlopen` follows a 3xx to any target, so a public host could answer
+    `302 Location: http://127.0.0.1:8080/…` and hand the router's page back —
+    `_public_host` / `_host_allowed` only ever saw the FIRST url. `check` is the
+    per-tool predicate: `_public_host` for `web`/`browser`, the allow-list for
+    `http`.
+    """
+
+    def __init__(self, check):
+        super().__init__()
+        self._check = check
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        ok, why = self._check(newurl)
+        if not ok:
+            raise urllib.error.URLError(
+                "redirect to %s blocked (%s)" % (newurl, why))
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _opener(check):
+    """An opener whose redirects are re-checked by `check`."""
+    return urllib.request.build_opener(_CheckedRedirect(check))
 
 
 # ------------------------------------------------------------------ shell ----
@@ -998,7 +1026,7 @@ def _http_fetch(url, allow_hosts, max_bytes, method="GET"):
                                  headers={"User-Agent": "Longrun/0.2 (+harness)"})
     t0 = time.time()
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with _opener(lambda u: _host_allowed(u, allow_hosts)).open(req, timeout=15) as resp:
             body = resp.read(max_bytes).decode("utf-8", "replace")
             return {"status": resp.status, "body": body, "host": host,
                     "duration_ms": int((time.time() - t0) * 1000)}, None
@@ -1288,10 +1316,14 @@ def _web_fetch(url, max_bytes):
     ok, host = _public_host(url)
     if not ok:
         return None, host
+    # v946: every redirect hop is re-checked by the same guard — a public host
+    # could otherwise answer `302 Location: http://127.0.0.1:…` and the guard
+    # would never see the second URL.
+    _open = _opener(_public_host).open
     if _DATA_URL.search(url.split("?")[0].split("#")[0]):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": _WEB_UA})
-            with urllib.request.urlopen(req, timeout=25) as r:
+            with _open(req, timeout=25) as r:
                 raw = r.read(max_bytes).decode("utf-8", "replace")
             if raw.strip() and not raw.lstrip()[:15].lower().startswith(("<!doctype", "<html")):
                 return {"url": url, "text": raw, "via": "direct", "host": host}, None
@@ -1304,7 +1336,7 @@ def _web_fetch(url, max_bytes):
     try:
         req = urllib.request.Request("https://r.jina.ai/" + url,
                                      headers={"User-Agent": _WEB_UA})
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _open(req, timeout=30) as r:
             text = r.read(max_bytes).decode("utf-8", "replace")
         if text.strip():
             return {"url": url, "text": text, "via": "jina", "host": host}, None
@@ -1312,7 +1344,7 @@ def _web_fetch(url, max_bytes):
         pass
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _WEB_UA})
-        with urllib.request.urlopen(req, timeout=25) as r:
+        with _open(req, timeout=25) as r:
             raw = r.read(max_bytes).decode("utf-8", "replace")
         return {"url": url, "text": _strip_html(raw), "via": "direct", "host": host}, None
     except Exception as e:  # noqa: BLE001
