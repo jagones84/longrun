@@ -48,6 +48,10 @@ _LEGACY_FIELD = "allow_longrun_agent"
 _LEGACY_KIND = "longrun_agent."
 _LEGACY_TITLE = "longrunAgent · VEO"
 _MIGRATED = False
+#: The access GRANT lives on the sessions it was given to, whose file names never
+#: carried the retired id — so it needs its own pass and its own marker.
+_FLAGS_MIGRATED = False
+_FLAGS_MARKER = ".identity-flags-migrated"
 
 # Identifier-bearing JSON keys: only these carry a session/run id, so only these
 # are rewritten by the migration. Prose (a message body, a note) is never touched.
@@ -1002,19 +1006,75 @@ def _legacy_events(conn_path):
     return rows
 
 
+def _legacy_access_flag(path):
+    """Rename the retired ACCESS FIELD in ONE session record; True when it changed.
+
+    `_legacy_rename` rewrites the files it RENAMES — that is the Architect's own
+    record. A GRANT, though, lives on the sessions it was given to, whose file
+    names never carried the retired id: 2026-11-11 (verified live) session
+    `b7329cccf94c` kept `allow_longrun_agent: true` and no `allow_architect`, so
+    `session_has_access` refused it every exclusive tool. Only the flag is
+    rewritten here, so no transcript prose is touched.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict) or _LEGACY_FIELD not in data:
+        return False
+    data["allow_architect"] = bool(data.pop(_LEGACY_FIELD))
+    try:
+        tmp = path + ".legacytmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        return False
+    return True
+
+
+def _legacy_access_flags():
+    """Rewrite the retired access field on EVERY session record; returns the count.
+
+    Separate from `_legacy_rename` because the grant is data on records whose NAME
+    never matched the retired id. Guarded by its own marker, so a data home that
+    was already migrated by the previous code still gets repaired.
+    """
+    d = paths.SESSIONS_DIR
+    if not d or not os.path.isdir(d):
+        return 0
+    n = 0
+    for name in sorted(os.listdir(d)):
+        if name.endswith(".json") and _legacy_access_flag(os.path.join(d, name)):
+            n += 1
+    return n
+
+
 def migrate_legacy_identity():
     """Rename the retired identity to `architect` across the data home — idempotent.
 
     Runs once per process (boot, or the first `ensure_system_session`): files and
-    directories named after it, identifier fields inside their JSON, the agent
-    registry key, the tombstone list and the event log. Message prose is never
-    rewritten — only identifier fields are.
+    directories named after it, identifier fields inside their JSON, the access
+    GRANT on every session, the agent registry key, the tombstone list and the
+    event log. Message prose is never rewritten — only identifier fields are.
     """
-    global _MIGRATED
+    global _MIGRATED, _FLAGS_MIGRATED
     marker = os.path.join(paths.DATA_DIR, ".identity-migrated")
+    flags_marker = os.path.join(paths.DATA_DIR, _FLAGS_MARKER)
+    flags = 0
+    if not _FLAGS_MIGRATED and not os.path.exists(flags_marker):
+        flags = _legacy_access_flags()
+        _FLAGS_MIGRATED = True
+        try:
+            with open(flags_marker, "w", encoding="utf-8") as f:
+                f.write(ARCHITECT_SESSION_ID + "\n")
+        except OSError:
+            pass
     if _MIGRATED or os.path.exists(marker):
         _MIGRATED = True
-        return {"moved": 0, "rewritten": False, "events": 0, "skipped": True}
+        return {"moved": 0, "rewritten": False, "events": 0, "flags": flags,
+                "skipped": True}
     moved = _legacy_rename(paths.DATA_DIR) + _legacy_rename(paths.WORKSPACES_DIR)
     for path in moved:
         if path.endswith(".json"):
@@ -1064,14 +1124,14 @@ def migrate_legacy_identity():
         except OSError:
             pass
     moved_n = len(moved)
-    if moved_n or rewrote or rows > 0:
+    if moved_n or rewrote or rows > 0 or flags:
         try:
             from longrun.core.events import publish
             publish("identity.migrated", moved=moved_n, rewritten=bool(rewrote),
-                    events=rows, id=ARCHITECT_SESSION_ID)
+                    events=rows, flags=flags, id=ARCHITECT_SESSION_ID)
         except Exception:  # noqa: BLE001 — logging never blocks the boot
             pass
-    return {"moved": moved_n, "rewritten": rewrote, "events": rows}
+    return {"moved": moved_n, "rewritten": rewrote, "events": rows, "flags": flags}
 
 
 def ensure_system_session():
