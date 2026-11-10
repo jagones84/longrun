@@ -58,6 +58,11 @@ S.load_session = lambda sid: _store.get(sid)
 
 M = A.REGISTRY.designate("sess_owner", name="Owner", role="orchestrator")["agent"]
 A.REGISTRY.designate("sess_worker", name="Worker", role="builder", reports_to=M["id"])
+# 2026-11-11: `sessions.send` now follows the org rule (operator, 2026-11-10), so the
+# peer the owner steers must BE a peer in its line — a record is what a live session
+# always has (EV-30 / ensure_agent); without it the send is refused as "not in the
+# org chart", which is not what this pin is about.
+A.REGISTRY.designate("sess_peer", name="Peer", role="builder", reports_to=M["id"])
 owner_id, worker_id = M["id"], A.REGISTRY.team_of(M["id"])[-1]
 
 # ---- A) the one delivery rule ----------------------------------------------
@@ -129,7 +134,7 @@ check("B2 sessions.send still says 'no such session' with its hint",
       and "action=list" in s.get("error", ""), s)
 s = T._sessions({"action": "send", "session": "sess_owner", "message": "hi"}, "sess_owner")
 check("B3 sessions.send still refuses a self-send", s.get("ok") is False
-      and "calling session" in s.get("error", ""), s)
+      and "cannot message itself" in s.get("error", ""), s)
 busy["on"] = False
 
 # ---- C) a terminal job notifies its assigner --------------------------------

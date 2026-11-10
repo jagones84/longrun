@@ -108,16 +108,27 @@ from longrun.memory import stores as ST  # noqa: E402
 ST.get_or_create_session(SID)
 s = T._sessions({"action": "send", "session": SID, "message": "hi"}, SID)
 check("T8 self-send refused (a session never messages itself)",
-      s.get("ok") is False and "calling session" in s.get("error", ""), s.get("error"))
+      s.get("ok") is False and "cannot message itself" in s.get("error", ""), s.get("error"))
 s = T._sessions({"action": "read"}, SID)
 check("T9 read without session id is a clean usage error",
-      s.get("ok") is False and "session id required" in s.get("error", ""), "")
+      s.get("ok") is False and "session required" in s.get("error", ""), "")
 s = T._sessions({"action": "read", "session": "nope"}, SID)
 check("T10 read of unknown session is a clean error",
       s.get("ok") is False and "no such session" in s.get("error", ""), "")
 s = T._sessions({"action": "list"}, SID)
+# 2026-11-11: the list addresses an agent by its NAME ("Architect", "coder 1") with
+# the A-id beside it; the raw session id is a machine key and may not be printed.
+# The pin's subject is "only OUR session, no live leak" — accept either spelling.
+_am = None
+try:
+    from longrun.agent import agents as _A   # noqa: E402
+    _am = _A.REGISTRY.get(SID) or None
+except Exception:  # noqa: BLE001
+    _am = None
+_label = ("%s (%s)" % (_am.get("name") or _am.get("id"), _am.get("id"))) if _am else SID
 check("T11 list sees only isolated sessions (ours, no live leak)",
-      s.get("ok") and s.get("count") == 1 and "sess-v613-probe" in s.get("stdout", ""),
+      s.get("ok") and s.get("count") == 1
+      and (_label in s.get("stdout", "") or SID in s.get("stdout", "")),
       s.get("stdout").splitlines()[0] if s.get("stdout") else "")
 s = T._sessions({"action": "wait"}, SID)
 check("T12 wait without message_id refused (exit 64)",

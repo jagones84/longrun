@@ -125,7 +125,7 @@ class _CheckedRedirect(urllib.request.HTTPRedirectHandler):
     """Re-run the guard on EVERY redirect hop (v946).
 
     `urlopen` follows a 3xx to any target, so a public host could answer
-    `302 Location: http://127.0.0.1:8080/…` and hand the router's page back —
+    `302 Location: <the router's own base>/…` and hand the router's page back —
     `_public_host` / `_host_allowed` only ever saw the FIRST url. `check` is the
     per-tool predicate: `_public_host` for `web`/`browser`, the allow-list for
     `http`.
@@ -2331,6 +2331,19 @@ def _may_message(caller, target):
             return False, ("the Architect is reachable only by a team's top "
                            "leader (an agent with no manager) — ask yours")
         if not tgt:
+            # 2026-11-11: an UNKNOWN id deserves the truth, not a permission message
+            # (a typo that reads "you are not allowed" is a lie, and it hides the
+            # one hint that fixes it). A session that EXISTS but has no org record
+            # keeps the org refusal.
+            try:
+                from longrun.core import server as _server_lookup
+                _exists = bool(_server_lookup.load_session(target))
+            except Exception:  # noqa: BLE001 — a lookup failure stays a refusal
+                _exists = False
+            if not _exists:
+                return False, (
+                    "no such session: %s (use action=list to find it, action=read "
+                    "to check the reply)" % target)
             return False, (
                 "target session %r is not in the org chart — an agent may only "
                 "reach its own team" % target)
