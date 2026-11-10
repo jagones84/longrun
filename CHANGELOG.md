@@ -42,6 +42,14 @@ All notable changes to Longrun are documented here. The format follows
   a `partial` blocker counts as failed, they now fail loudly instead). The verdict is the job's,
   computed for every mode from both records (the subjob row, and `runs` for a job whose subjob row
   was never created). (Locked by `v943` 10/10, red at HEAD without the fix: 5/10.)
+- **Two dispatch paths can no longer start the same job twice (`v944`).** `dispatch` read the job,
+  tested `status == running` and wrote `running` several store calls later, with the lock taken per
+  call and never across the check and the act; `wake()` wrote `created` and only then dispatched. Two
+  blockers finishing together — or two `POST /api/jobs/dispatch` — both started a runner, so every
+  worker executed twice with the same subjob ids, side effects included. Both transitions are
+  compare-and-set under one lock (the claim inside `dispatch`, `_release` for the sweep); the loser is
+  told "job already running". (Locked by `v944` 10/10, red at HEAD without the fix: two winners and
+  two runners.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's

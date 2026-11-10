@@ -751,10 +751,38 @@ class JobRegistry:
             return {"ok": False,
                     "error": "no agents available for this job — its agent(s) were "
                              "deleted; re-assign the job before running it"}
-        self._update(jid, lambda j: j.update(
-            {"status": "running", "started": round(time.time(), 3), "error": "", "ended": None}))
+        # v944: this check and the write below used to be separate store calls, so
+        # two blockers finishing at the same instant (or two dispatch requests)
+        # both saw a free job, both wrote `running`, and TWO runners started —
+        # every worker ran twice with the same subjob ids. One `_LOCK` now covers
+        # the test and the write, so a loser is told instead of duplicating work.
+        with _LOCK:
+            d = _load()
+            fresh = d["jobs"].get(jid)
+            if not fresh:
+                return {"ok": False, "error": "job not found"}
+            if fresh.get("status") == "running":
+                return {"ok": False, "error": "job already running"}
+            fresh.update({"status": "running", "started": round(time.time(), 3),
+                          "error": "", "ended": None})
+            _save(d)
         threading.Thread(target=self._run, args=(jid,), name="job-" + str(jid), daemon=True).start()
         return {"ok": True, "job": jid, "status": "running"}
+
+    def _release(self, jid):
+        """Atomically flip a `blocked` job to `created`; False when beaten to it.
+
+        v944: two sweeps that read the same `blocked` snapshot must not both
+        release (and dispatch) the same dependent.
+        """
+        with _LOCK:
+            d = _load()
+            job = d["jobs"].get(jid)
+            if not job or job.get("status") != "blocked":
+                return False
+            job.update({"status": "created", "error": ""})
+            _save(d)
+            return True
 
     def _live_sessions(self, job):
         """{agent id -> session id} for the job's member agents that still exist.
@@ -934,7 +962,10 @@ class JobRegistry:
                     continue
                 done, bad = self._blockers_state(job, d)
             if done:
-                self._update(jid, lambda j: j.update({"status": "created", "error": ""}))
+                # v944: compare-and-set — a second sweep that read the same
+                # `blocked` snapshot must not overwrite a job already dispatched.
+                if not self._release(jid):
+                    continue
                 res = self.dispatch(jid)
                 released.append({"job": jid, "ok": bool(res.get("ok")),
                                  "error": res.get("error", "")})
