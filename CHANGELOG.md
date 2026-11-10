@@ -27,6 +27,14 @@ All notable changes to Longrun are documented here. The format follows
   command then ran. The value now stops at `;`, `&` and `|`. (Locked by `v941` 21/21; `v597`'s
   fixture follows the canonical name; live: `matrix`+`info` records `matrix.status`, and
   `X=1;curl …127.0.0.1/api/jobs` is blocked by the deny rule.)
+- **git's destructive flags are no longer auto-approved (`v942`).** `^branch(\s|$)`, `^tag(\s|$)` and
+  `^remote(\s|$)` matched any flag after the subcommand, so `git branch -D feature`, `git tag -d v1`
+  and `git remote set-url origin …` ran with no card while the tool description called those
+  subcommands read-only. Only the listing forms (`-a/-r/-v/--list/--show-current/…`, `tag -l`,
+  `remote -v|show|get-url`) stay automatic. `git diff|log|show --output=<path>` writes a file the
+  workspace scan never sees (it reads the CWD, not git's own options), so it is now in `always_ask`,
+  which survives `approvals.mode=full`. (Locked by `v942` 31/31; live: `git diff --output=…` sits in
+  the approval queue as `git.run` pending and runs only if a human approves.)
 
 ### Changed
 - **The official default Desk keeps the operator's proportions (`368201b` round).** The operator's

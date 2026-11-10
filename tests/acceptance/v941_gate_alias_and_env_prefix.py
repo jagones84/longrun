@@ -27,6 +27,9 @@ import sys
 import tempfile
 
 TMP = tempfile.mkdtemp(prefix="sf-v941-")
+# The policy OVERLAY lives under the data dir: without this the operator's own
+# `data/tools.overlay.yaml` would decide the test.
+os.environ["LONGRUN_DATA_DIR"] = TMP
 for _k in ("CONFIG_DIR", "SESSIONS_DIR", "EDITS_DIR", "RUNS_DIR", "GRAPH_DIR", "ROLES_DIR"):
     os.environ["LONGRUN_" + _k] = os.path.join(TMP, _k)
     os.makedirs(os.path.join(TMP, _k), exist_ok=True)

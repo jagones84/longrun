@@ -464,21 +464,28 @@ tools:
       - "/home/jagones/Repositories"
     auto_approve:
       - "^status(\\s|$)"
-      - "^log(\\s|$)"
-      - "^diff(\\s|$)"
-      - "^show(\\s|$)"
-      - "^branch(\\s|$)"
-      - "^remote(\\s|$)"
+      # 2026-11-10 (bug hunt): `^(log|diff|show)` alone auto-approved
+      # `git diff --output=/etc/evil HEAD` — git writes a file the workspace scan
+      # never sees (it reads the CWD, not git's own options). The read-only form
+      # stays automatic; `--output` is in `always_ask` below.
+      - "^(log|diff|show)(?!.*--output)(\\s|$)"
+      # Only the LISTING forms of branch/tag/remote are read-only. `branch -D`,
+      # `tag -d`, `remote set-url` used to match `^branch(\\s|$)` etc. and ran with
+      # no card while the tool description called these subcommands read-only.
+      - "^branch(\\s+(-a|-r|-v|-vv|--all|--remotes|--list|--verbose|--show-current|--contains|--merged|--no-merged|--points-at)\\b|$)"
+      - "^remote(\\s+(-v|--verbose|show|get-url)\\b|$)"
       - "^rev-parse(\\s|$)"
       - "^describe(\\s|$)"
       - "^ls-files(\\s|$)"
-      - "^tag(\\s|$)"
+      - "^tag(\\s+(-l|--list|-n[0-9]*|--contains|--merged|--points-at)\\b|$)"
     # 2026-11-05 (operator: "Git push in full does not ask for approval"): a
     # matcher here reaches a human even when approvals.mode is FULL — approving the
     # card still runs the command, so this is a brake, not a block. Managed from
     # Settings > Permissions (the "always ask" list).
     always_ask:
       - "^push(\\s|$)"
+      # 2026-11-10: a git option that WRITES a path the workspace scan cannot see.
+      - "^(log|diff|show)\\b.*--output"
     # 2026-11-05 (operator: "Yes agent may push"): `^push(\s|$)` was REMOVED from
     # this deny list. Push is now an ordinary mutating subcommand, so it follows the
     # tool's `approval` policy (the shipped default is `required`; an overlay that
