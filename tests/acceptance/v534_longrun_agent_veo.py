@@ -324,8 +324,9 @@ with open(os.path.join(REPO, "webui", "index.html"), encoding="utf-8") as f:
 with open(os.path.join(REPO, "src", "longrun", "orbit", "web", "orbit.html"), encoding="utf-8") as f:
     ORBIT = f.read()
 
-check("D3 Tools panel segregates Exclusive built-in · Architect (v887 rename)",
-      '"exclusive", "Exclusive built-in · Architect"' in HTML)
+check("D3 Tools panel separates gated built-ins from team-job tools (v949 access wording)",
+      '"exclusive", "Built-in · gated"' in HTML
+      and '"delegation", "Team jobs · coordinators"' in HTML)
 check("D4 Models panel exposes longrunAgentModel selector + @chat dynamic option",
       'id="longrunAgentModel"' in HTML and "saveLongrunAgentModel" in HTML)
 check("D5 Shared makeAutomateWidget and Orbit Teamorg automate bar are wired to /api/longrun-agent/automate",

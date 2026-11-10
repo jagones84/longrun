@@ -932,8 +932,6 @@ def reset_stateless_session():
     sess["messages"] = []
     sess["tool_cards"] = []
     sess["injects"] = []
-    # A deliberate wipe: `truncate=True` keeps v947's tail merge from putting the
-    # cleared transcript back (the v534 A2 pin was red because of exactly that).
     stores.save_session(sess, truncate=True)
     try:
         taskgraph.reset(LONGRUN_AGENT_SESSION_ID)
@@ -1003,6 +1001,35 @@ READ_ONLY_EXCLUSIVE = frozenset({
 #: without a prompt; what DESTROYS data or REWRITES the harness configuration asks first.
 #: `approvals.mode=full` still lifts every `required` (that is a POLICY), while the
 #: permission switches (`approvals.allow_*`) are hard rules no mode can lift.
+def access_class(name):
+    """WHO may call `name`, in operator terms — computed from the gate's own sets.
+
+    `everyone`    — a read-only observation lookup (`READ_ONLY_EXCLUSIVE`): any
+                    session, no grant (a probe cannot rewire anything).
+    `coordinator` — a delegation tool (`job.*`): any agent with at least one
+                    direct report, over its own subtree (`check_delegation`).
+    `architect`   — the Architect session or a session granted
+                    `allow_longrun_agent` (`check_dual_permission`).
+    None          — not a gated built-in tool: its policy row is the whole gate.
+
+    The catalogue and the Tools panel read THIS, so the label the operator sees
+    cannot drift from the decision the gate makes: the branches below are the
+    same `READ_ONLY_EXCLUSIVE` / `DELEGATION_NAMESPACES` / `EXCLUSIVE_NAMESPACES`
+    the two gates use (the page holds no list of its own).
+    """
+    nm = str(name or "").strip()
+    if not nm:
+        return None
+    if nm in READ_ONLY_EXCLUSIVE:
+        return "everyone"
+    ns = nm.split(".", 1)[0]
+    if ns in DELEGATION_NAMESPACES:
+        return "coordinator"
+    if ns in EXCLUSIVE_NAMESPACES:
+        return "architect"
+    return None
+
+
 EXCLUSIVE_NEEDS_APPROVAL = frozenset({
     # data loss
     "agent.delete", "team.delete", "job.delete", "routine.delete", "session.delete",
@@ -1038,7 +1065,7 @@ def check_dual_permission(tool, run_id=None):
         return False, "unknown tool %r" % tool
     if not spec.get("enabled"):
         return False, "tool %r is disabled in the global Tool panel (enable longrunAgent tools first)" % tool
-    if tool not in READ_ONLY_EXCLUSIVE and not session_has_access(run_id):
+    if access_class(tool) != "everyone" and not session_has_access(run_id):
         return False, (
             "session %r is not authorized to use %r — dual-permission gate requires "
             "either the permanent 'longrunAgent' system session or explicit session "

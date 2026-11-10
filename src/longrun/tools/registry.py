@@ -1667,6 +1667,20 @@ def tool_names():
                   | set(_promoted_tools()) | set(_matrix_tools()) | set(_external_tools()))
 
 
+def _access_class(name):
+    """The gate's own access class for a gated built-in tool (`architect.access_class`).
+
+    Lazy import: `architect` imports this module inside its handlers, so a
+    module-level import would close the cycle. A broken import must never hide a
+    tool from the catalogue, so it degrades to None (the old, origin-only view).
+    """
+    try:
+        from longrun.agent import architect as _arch
+        return _arch.access_class(name)
+    except Exception:  # noqa: BLE001 — the catalogue must survive a broken gate import
+        return None
+
+
 def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
     """Merged {name, enabled, approval, ...policy, schema} or None if unknown.
 
@@ -1778,6 +1792,10 @@ def tool_spec(name, ext_snapshot=None, mtx_snapshot=None):
         "origin": ("delegation" if is_delegation else
                    "exclusive" if is_exclusive else
                    ("matrix" if mtx else ("mcp" if ext else "nucleus"))),
+        # v949: WHO may call it, in operator terms (`everyone` / `coordinator` /
+        # `architect`), computed by the gate itself — the Tools panel renders this
+        # instead of guessing from `origin`. None = a non-gated tool.
+        "access": (_access_class(name) if (is_exclusive or is_delegation) else None),
         # JAG-80: external MCP tools (the pmcp gateway) are OPT-IN. Shipping 26
         # gateway tools (23 of them approval-gated) into the chat prompt made the
         # model call `pmcp__gateway.request_capability` instead of its own
@@ -2034,6 +2052,7 @@ def catalog():
         row = {
             "name": name,
             "origin": spec.get("origin", "nucleus"),
+            "access": spec.get("access"),
             "enabled": spec["enabled"],
             "approval": spec["approval"],
             "auto_approve": spec["auto_approve"],

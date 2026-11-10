@@ -126,9 +126,9 @@ check("F1 the per-row grant warning badge is gone (the per-tool box is the state
       and 'data-ap="${nmRaw}" data-cur="${ap}"' in UI)
 check("F2 the per-tool cycle still offers auto / required / denied",
       "Per-tool policy — click to cycle: <b>auto</b> · <b>required</b> · <b>denied</b>" in UI)
-check("F3 the dual-permission fact is stated ONCE, in the exclusive badge",
-      'exclusive: \'<span class="sk-badge sk-core" title="exclusive built-in tool' in UI
-      and "granted sessions" in UI)
+check("F3 who may call a tool is stated ONCE, in the access badge (v949)",
+      'architect: \'<span class="sk-badge sk-core" title="needs the Architect session or a session granted' in UI
+      and "does NOT bypass" in UI)
 
 print("---")
 passed = sum(results)

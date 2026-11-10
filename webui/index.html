@@ -12182,7 +12182,7 @@ function renderTools(el, d) {
     return `<button class="ghost" data-pol="${k}" data-val="${v}" aria-pressed="${on}" style="${c}">${extra || v}</button>`; };
   const policyCard =
     `<div class="card" style="margin-bottom:10px">
-       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: exclusive tools (team · agent · session · webui · kb — need the per-session Teamorg grant in the session menu; job.* is NOT one of them: any agent with at least one direct report may run dependent team jobs over its own subtree), matrix.promote_to_nucleus (needs its own checkbox below), nucleus writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
+       <div class="set-t" title="FULL = never ask for ordinary tools. Three things stay locked even on FULL, enforced in code: gated org/WebUI tools (the Tools panel's access badge on each row states who may call it — any session · team lead · Architect or a granted session), matrix.promote_to_nucleus (needs its own checkbox below), nucleus writes (needs the red DANGEROUS toggle). Otherwise ANY action that reaches outside the session workspace (file reads/writes, shell commands, git) needs approval.">🔓 Global approval policy</div>
        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
          <span style="font-size:11px;color:var(--dim);min-width:126px">Approval mode</span>
          ${mk("mode", "normal", mode)} ${mk("mode", "full", mode, "FULL — never ask")}
@@ -12313,16 +12313,27 @@ function renderTools(el, d) {
   // JAG-511: every row states WHERE the tool comes from. `origin` is already
   // emitted by registry.catalog() (nucleus | mcp | matrix) — the panel used to hide
   // it, so a native harness tool and a third-party MCP tool looked identical.
+  // v949 (operator: "tools nominati exclusive per architect ma non è vero — anche i
+  // capi dei team li usano"): the row states WHO may call the tool. The class comes
+  // from the server (`access`, computed by the gate itself in registry.catalog), so
+  // the page holds no list of its own; `origin` stays the SECTION key only.
+  const ACCESS_BADGE = {
+    everyone: '<span class="sk-badge sk-core" title="any session may call it — read-only lookup (org chart / MCP probe), no grant required">any session</span>',
+    coordinator: '<span class="sk-badge sk-core" title="team lead — any agent with at least one direct report may run it over its own subtree; no grant required">team lead</span>',
+    architect: '<span class="sk-badge sk-core" title="needs the Architect session or a session granted allow_longrun_agent — approvals.mode=full does NOT bypass this">Architect / grant</span>'
+  };
   const ORIGIN_BADGE = {
     nucleus: '<span class="sk-badge sk-core" title="ships with the harness (registry schemas)">built-in</span>',
-    exclusive: '<span class="sk-badge sk-core" title="exclusive built-in tool — dual-permission gated (Architect / granted sessions only)">exclusive</span>',
+    // A row without an `access` class is an older server: state the gate, not a guess.
+    exclusive: '<span class="sk-badge sk-core" title="gated built-in tool — the access badge states who may call it">gated</span>',
     // v901: `job.*` is available to every COORDINATOR — an agent with at least one
     // direct report — over its own org subtree. No grant, no FULL bypass.
     delegation: '<span class="sk-badge sk-core" title="delegation tool — any agent with at least one direct report may use it on its own org subtree (no Teamorg grant)">delegation</span>',
     mcp: '<span class="sk-badge sk-mcp" title="discovered from a configured MCP server">MCP</span>',
     matrix: '<span class="sk-badge sk-matrix" title="Matrix zone — editable, outside the Nucleus">matrix</span>'
   };
-  const originBadge = t => ORIGIN_BADGE[String(t.origin || "nucleus")] || ORIGIN_BADGE.nucleus;
+  const originBadge = t => ACCESS_BADGE[String(t.access || "")]
+    || ORIGIN_BADGE[String(t.origin || "nucleus")] || ORIGIN_BADGE.nucleus;
   const toolRow = t => {
     const on = t.enabled !== false;
     const ap = t.approval || "auto";
@@ -12371,7 +12382,7 @@ function renderTools(el, d) {
     const counts = {};
     list.forEach(t => { const o = String(t.origin || "nucleus"); counts[o] = (counts[o] || 0) + 1; });
     const best = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
-    return best === "exclusive" ? "exclusive" : (best === "mcp" ? "mcp" : (best === "matrix" ? "matrix" : "nucleus"));
+    return best === "delegation" ? "delegation" : (best === "exclusive" ? "exclusive" : (best === "mcp" ? "mcp" : (best === "matrix" ? "matrix" : "nucleus")));
   };
   const nsTree = names => names.map(g => {
     const list = groups.get(g);
@@ -12401,7 +12412,8 @@ function renderTools(el, d) {
   catch (_e) { _openO = {}; }
   const ORIGIN_SECTIONS = [
     ["nucleus", "Built-in", "shipped with the harness — the registry's own tool schemas"],
-    ["exclusive", "Exclusive built-in · Architect", "dual-permission gated — callable only by Architect or explicitly granted sessions when enabled here"],
+    ["exclusive", "Built-in · gated", "org and WebUI automation — the badge on each row states who may call it: any session · team lead · Architect or a granted session"],
+    ["delegation", "Team jobs · coordinators", "job.* — any agent with at least one direct report, over its own subtree; job.delete still asks first"],
     ["mcp", "MCP · external servers", "discovered from the configured MCP clients; opt-in"],
     ["matrix", "Matrix", "live zone outside the Nucleus — promote to make it permanent"],
   ];
