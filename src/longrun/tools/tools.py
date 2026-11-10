@@ -2264,6 +2264,50 @@ def _render_transcript(sess, limit=30, tail=False):
     return _truncate(head + body, 24000)
 
 
+def _may_message(caller, target):
+    """(ok, why): may `caller` message or READ `target`'s session?
+
+    The same org relationship `job.*` uses (v953), in both directions: DOWN your
+    own subtree, UP your own reporting chain, never sideways. The Architect
+    session (`longrunAgent*`) and a caller with no org record (the operator's own
+    chat) are unrestricted. An agent may not reach a session outside its org
+    relationship, and a Teamorg grant does NOT widen this.
+
+    `sessions.send` on an IDLE peer starts a real turn, so this predicate is a
+    work gate, not a privacy nicety.
+    """
+    caller = str(caller or "").strip()
+    target = str(target or "").strip()
+    if not target:
+        return False, "session required"
+    if not caller:
+        return True, ""   # no run id: the operator's CLI / REST hand
+    try:
+        from longrun.agent import architect as _arch
+        if _arch.is_architect_session(caller):
+            return True, ""
+        from longrun.agent import agents as _agents
+        me = _agents.REGISTRY.resolve(caller)
+        if not me:
+            return True, ""   # a plain chat: the operator is the one typing in it
+        if me.get("id") == (_agents.REGISTRY.resolve(target) or {}).get("id"):
+            return False, "a session cannot message itself through this tool"
+        tgt = _agents.REGISTRY.resolve(target)
+        if not tgt:
+            return False, (
+                "target session %r is not in the org chart — an agent may only "
+                "reach its own team" % target)
+        if tgt["id"] in _agents.REGISTRY.subtree(me["id"]):
+            return True, ""
+        if me["id"] in _agents.REGISTRY.subtree(tgt["id"]):
+            return True, ""
+        return False, ("%s and %s are not in the same reporting line — message "
+                       "down your subtree or up to your manager"
+                       % (me.get("id"), tgt.get("id")))
+    except Exception as e:  # noqa: BLE001 — an org hiccup must not widen access
+        return False, "org lookup failed: %s" % str(e)[:120]
+
+
 def _may_manage(caller, target):
     """(ok, why): may `caller` run a DESTRUCTIVE op on `target`'s session?
 
@@ -2278,6 +2322,14 @@ def _may_manage(caller, target):
         return False, "no calling session in scope"
     if caller == target:
         return False, "the calling session cannot reset/compact itself through this rule"
+    try:
+        from longrun.agent import architect as _arch
+        if _arch.is_architect_session(caller):
+            # The Architect is above every team and is the operator's own hand
+            # (v954). A Teamorg grant is NOT this: it unlocks config tools only.
+            return True, ""
+    except Exception:  # noqa: BLE001 — fall through to the org rule
+        pass
     try:
         from longrun.agent import agents as _agents
         if _agents.REGISTRY.can_manage(caller, target):
@@ -2492,6 +2544,14 @@ def _sessions(args, run_id):
             return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
                     "error": "session and message required for action=send",
                     "backend": "host", "sandboxed": False}
+        # v954: a send is a WORK command (an idle peer starts a turn), so it obeys
+        # the org relationship BEFORE any delivery or idempotency bookkeeping.
+        _ok, _why = _may_message(run_id, target)
+        if not _ok:
+            return {"ok": False, "exit_code": 126, "permission_denied": True,
+                    "session": target, "stdout": "", "stderr": "",
+                    "error": "send refused: %s" % _why,
+                    "backend": "host", "sandboxed": False}
         # I-3: a retried send must not deliver twice. The lookup happens BEFORE
         # the delivery, so a duplicate costs neither a queue slot nor a peer
         # turn — it returns the id of the message that already went out.
@@ -2575,6 +2635,13 @@ def _sessions(args, run_id):
             return {"ok": False, "stdout": "", "stderr": "",
                     "error": "session id required for action=read (use action=list "
                              "to find the session first)",
+                    "backend": "host", "sandboxed": False}
+        # v954: the same relationship as `send` — down your subtree, up your line.
+        _ok, _why = _may_message(run_id, sid)
+        if not _ok:
+            return {"ok": False, "exit_code": 126, "permission_denied": True,
+                    "session": sid, "stdout": "", "stderr": "",
+                    "error": "read refused: %s" % _why,
                     "backend": "host", "sandboxed": False}
         sess = server.load_session(sid)
         if not sess:
