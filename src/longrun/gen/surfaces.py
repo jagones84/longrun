@@ -273,14 +273,24 @@ _BARE = ("\nReply with ONLY the text for the field: no preamble, no explanation,
 
 _GENERATE_PROMPTS = {
     "chat.prompt": (
-        "You write the text of THIS chat's composer. The CURRENT CONTENT OF THE FIELD "
+        # 2026-11-11 (operator): the composer draft came back as the AGENT's question
+        # to the operator ("Hai la prova … Quale dei due vuoi come prossimo passo?").
+        # The old text said "write the NEXT message … ask for the missing decision"
+        # without ever naming whose message it is, so the model wrote the side that
+        # owns a question. The voice is now the first thing the prompt states.
+        "You write the text of THIS chat's composer: the message the OPERATOR sends to "
+        "the AGENT. Write it in the OPERATOR's voice, addressed to the agent — never in "
+        "the agent's voice, never as a question to the operator, and never a copy, "
+        "summary or rephrase of the agent's own words. The CURRENT CONTENT OF THE FIELD "
         "decides the job, and you never mix the two."
-        " EMPTY field and NO conversation yet: write a short OPENING message that asks "
-        "the operator what they want to work on — never assume or name a project, "
-        "folder or repository."
-        " EMPTY field but the conversation has turns: write the NEXT message that moves "
-        "the work forward — ask for the missing decision, or restate the next step "
-        "concretely. Keep it short (1-3 sentences) and specific to what is actually open."
+        " EMPTY field and NO conversation yet: write a short OPENING message in which the "
+        "operator states what they want done — one concrete request. Never assume or name "
+        "a project, folder or repository the context does not give."
+        " EMPTY field but the conversation has turns: write the operator's NEXT message. "
+        "If the agent ended on a question, the operator DECIDES it: answer it (pick the "
+        "option, give the missing fact) and state the constraint that choice implies; "
+        "otherwise give the next instruction. Keep it short (1-3 sentences) and specific "
+        "to what is actually open."
         " FILLED field: OPTIMIZE the operator's draft. That text is what the operator "
         "wants to say, so keep its intent, its language and every fact it states. Rewrite "
         "it as the COMPLETE, implementation-ready instruction behind it: fix spelling, "

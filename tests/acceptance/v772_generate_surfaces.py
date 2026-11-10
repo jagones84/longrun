@@ -283,10 +283,15 @@ _s2["workspace"] = TMP
 stores.save_session(_s2)
 check("G3 a chat that OWNS a folder still carries it in the composer context",
       GEN.context_for(CHAT, {"session": _nof}).get("workspace") == TMP)
-check("G4 an empty conversation is HANDLED, not invented: the prompt asks the operator",
+check("G4 an empty conversation is HANDLED, not invented: the OPERATOR states the request",
+      # 2026-11-11 (v956): the wording moved with the VOICE fix — the opening line is
+      # the OPERATOR's request, not a question put to the operator. The contract is
+      # unchanged (an empty conversation is handled without inventing a project), so
+      # the expectation follows the text instead of the old phrase.
       "NO conversation yet" in S.SURFACES["chat.prompt"].system
       and "OPENING message" in S.SURFACES["chat.prompt"].system
-      and "never assume" in S.SURFACES["chat.prompt"].system)
+      and "Never assume or name a project" in S.SURFACES["chat.prompt"].system
+      and "the operator states what they want done" in S.SURFACES["chat.prompt"].system)
 check("G5 only the composer passes own_workspace_only (one owner for the rule)",
       "own_workspace_only=True" in open(os.path.join(
           REPO, "src", "longrun", "gen", "generate.py"), encoding="utf-8").read()

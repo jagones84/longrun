@@ -15084,15 +15084,20 @@ async function mountStaticSparkles() {
   await loadGenSurfaces();
   const pairs = [
     // [surface, the field to fill, the row to host the ✨, insert before which child,
-    //  the name when the field ALREADY holds text (RH-29: optimize the draft)]
+    //  the name when the field ALREADY holds text (RH-29: optimize the draft),
+    //  the name when the field is EMPTY (K-5: say whose text the ✨ writes)]
     // RH-27 (operator, 2026-11-03): the chat ✨ moved OUT of the composer row — it ate
     // the horizontal space the message box needed.
     // v890 (operator: "you can also place somewhere else in the sidebar the tree dot and
     // the automate icon … choose by reasoning"): the ✨ acts on the DRAFT, so it belongs
     // in the chat group; the ⋯ stays the rail's last control (it holds reset/new, which
     // must stay out of the way of a click).
+    // 2026-11-11 (operator): the empty-state name said "write this field with AI", so a
+    // draft that came back as the AGENT's question looked like a prompt for the agent.
+    // The composer's ✨ writes the OPERATOR's next message — the name says so.
     ["chat.prompt", "#inp", "#toolsBar #chatViewSec", null,
-     "optimize what I typed — same intent, clearer and more complete"],
+     "optimize what I typed — same intent, clearer and more complete",
+     "draft MY next message to the agent — it answers the agent's open question, it never writes the agent's words"],
     ["goal.objective", "#goalEditBox", "#goalEditPanel .gb-editor-ft", ".gb-editor-hint",
      "reorganize this objective — same intent, one checkable outcome"],
     ["plan.input", "#planInp", "#planActs", null,
@@ -15101,12 +15106,13 @@ async function mountStaticSparkles() {
     ["blackboard.topic", "#bbContent", null, null, ""],
     ["kb.notebook", "#kbNewName", null, null, ""],
   ];
-  for (const [sid, fsel, hsel, bsel, filledTitle] of pairs) {
+  for (const [sid, fsel, hsel, bsel, filledTitle, emptyTitle] of pairs) {
     const f = document.querySelector(fsel);
     if (!f) continue;
     const host = hsel ? document.querySelector(hsel) : f.parentElement;
     if (!host) continue;
-    mountSparkle(host, sid, { field: f, before: bsel || null, filledTitle: filledTitle || "" });
+    mountSparkle(host, sid, { field: f, before: bsel || null, filledTitle: filledTitle || "",
+                              title: emptyTitle || "" });
   }
 }
 /* JAG-536 W4: Settings > Orchestration — the blackboard and the swarm runner.
