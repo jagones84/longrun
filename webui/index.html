@@ -4466,7 +4466,18 @@ function _openSection(nid) {
   const lg = $("log");
   const last = _chatNodes[nid];
   if (last && last.isConnected && last.parentNode === lg) {
-    if (last.nextElementSibling) lg.appendChild(last);
+    // 2026-11-11 (operator: "il messaggio non appare nella chat"): a USER message
+    // after this section is a turn boundary. Moving the section to the bottom used
+    // to drag it BELOW the operator's own message, so the message landed in the
+    // middle of the previous turn's work and was never where the reader looks.
+    // The section is history now: the new work lands after the boundary instead.
+    const _next = last.nextElementSibling;
+    const _boundary = _next && _next.classList
+      && (_next.classList.contains("msg") || _next.classList.contains("fgroup"));
+    if (_boundary) {
+      _activeNodeId = null; _activeScope = null; return lg;
+    }
+    if (_next) lg.appendChild(last);
     _activeNodeId = nid; _activeScope = last.querySelector(".tc-kids");
     return _activeScope;
   }
@@ -4981,8 +4992,12 @@ function who(role, text, ts, sender, subjob, chapter, senderSession) {
   if (sender && senderSession) _whoLink(d, senderSession);
   // JAG-166/JAG-431g: user turns start a NEW free thread group (top-level when a
   // task group is active); harness/agent output nests under the active todo node.
+  // 2026-11-11: a user turn is a BOUNDARY — it closes the task scope too, so the
+  // next event of the previous step cannot move that section BELOW the operator's
+  // own message (which buried it mid-transcript: "my message is not in the chat").
   if (role === "user") {
-    if (_activeScope) { $("log").appendChild(d); } else { _freeClose(); _freeAppend(d, chapter); }
+    _activeNodeId = null; _activeScope = null;
+    _freeClose(); _freeAppend(d, chapter);
     buildDotRail();
   } else { _logAppend(d, chapter); }
   _chatSearchScheduleRefresh();
@@ -5375,6 +5390,43 @@ document.addEventListener("toggle", e => {
 let _historyReplaySession = null;
 let _historySeq = 0;   // JAG-485: generation of the newest loadHistory() run
 let _historyGraphPending = new Map();
+/* 2026-11-11 (operator: "i messaggi non appaiono nella sessione, l'agente li vede
+   ma io no"): the bubble for a message THIS tab sent was painted by `send()`
+   alone, and the turn's OWN stream never carries `chat.user` (the server
+   generator publishes it to the feed only). So a transcript repaint that fetched
+   its snapshot BEFORE the server appended the message wiped the bubble and left
+   the operator's own words missing from a chat the agent was answering. These
+   entries are the messages this tab sent and whose bubble must survive any
+   repaint; `loadHistory` re-appends the ones the snapshot does not contain. */
+let _pendingUser = [];   // [{sid, text, ts}] newest last
+function _pendingUserAdd(sid, text, ts) {
+  text = String(text || "").trim();
+  if (!text) return;
+  _pendingUser.push({ sid: sid || null, text: text, ts: ts || (Date.now() / 1000) });
+  if (_pendingUser.length > 8) _pendingUser.shift();   // bounded: the last turns only
+}
+function _userBubblesText() {
+  return [...document.querySelectorAll("#log .msg.user .bubble")]
+    .map(b => (b.textContent || ""));
+}
+/* True when the transcript on screen already shows this text (a user bubble
+   CONTAINS it — a steer renders "🎯 steer: <text>", never the bare text). */
+function _userBubblePresent(text) {
+  const t = String(text || "").trim();
+  if (!t) return true;
+  const bubs = _userBubblesText();
+  return bubs.some(b => b.indexOf(t) >= 0);
+}
+function _reconcilePendingUser(sid) {
+  if (!sid) return;
+  for (let i = _pendingUser.length - 1; i >= 0; i--) {
+    const p = _pendingUser[i];
+    if (p.sid && p.sid !== sid) continue;
+    if (_userBubblePresent(p.text)) { _pendingUser.splice(i, 1); continue; }
+    p.sid = sid;
+    who("user", p.text, p.ts);   // the painted snapshot predates the send: keep it
+  }
+}
 function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _updateNowBar(); buildDotRail(); }
 function _nodeDepth(id, d) {
   // JAG-170: depth from the GRAPH hierarchy, independent of draw order, so the
@@ -5612,8 +5664,31 @@ function pushThink(text) {
  * turn ends. The "⇢" chip steers them into the RUNNING turn instead (injected
  * server-side at the next loop boundary — no second turn). */
 let msgQueue = {};   // JAG-174: sessionId -> [{raw,text,atts}] waiting for THAT session
-function _q(sid) { const k = sid || sessionId; return (msgQueue[k] = msgQueue[k] || []); }
-function enqueueMsg(m) { _q().push(m); renderQueue(); }
+/* 2026-11-11 (operator: "i messaggi in queue devono essere accumulabili"): the
+   queue used to live in this JS object only, so a reload, a tab switch or the
+   phone lost every message still waiting — the operator had typed them and they
+   were neither sent nor shown anywhere. The waiting list now belongs to the
+   SESSION (one localStorage slot per session, the same mechanism the composer
+   drafts already use), so it survives a reload and keeps accumulating. */
+function _qKey(sid) { return "sf_queue:" + (sid || ""); }
+function _q(sid) {
+  const k = (sid === undefined ? sessionId : sid) || "";
+  if (!msgQueue[k]) {
+    let v = [];
+    try { v = JSON.parse(localStorage.getItem(_qKey(k)) || "[]") || []; } catch (e) { v = []; }
+    msgQueue[k] = Array.isArray(v) ? v : [];
+  }
+  return msgQueue[k];
+}
+function _qSave(sid) {
+  const k = (sid === undefined ? sessionId : sid) || "";
+  try {
+    const v = msgQueue[k] || [];
+    if (v.length) localStorage.setItem(_qKey(k), JSON.stringify(v));
+    else localStorage.removeItem(_qKey(k));
+  } catch (e) { /* quota / private mode: the in-memory queue still works */ }
+}
+function enqueueMsg(m) { _q().push(m); _qSave(); renderQueue(); }
 /* JAG-364: a queued message is now {raw,text,atts} — `raw` is what the model gets
    (the attachment block + the text), `text` is what the user typed, `atts` the
    attachment snapshot. A bare string (older code paths) is tolerated. */
@@ -5663,7 +5738,7 @@ function renderQueue() {
     st.onclick = () => steerQueued(i);
     const x = document.createElement("button"); x.className = "ghost"; x.textContent = "×";
     x.title = "remove from queue";
-    x.onclick = () => { q.splice(i, 1); renderQueue(); };
+    x.onclick = () => { q.splice(i, 1); _qSave(); renderQueue(); };
     chip.appendChild(ed); chip.appendChild(st); chip.appendChild(x); bar.appendChild(chip);
   });
 }
@@ -5675,6 +5750,7 @@ function editQueued(i) {
   const q = _q();
   if (i < 0 || i >= q.length) return renderQueue();
   const it = _qNorm(q.splice(i, 1)[0]);
+  _qSave();
   renderQueue();
   const inp = $("inp");
   if (inp) {
@@ -5691,6 +5767,7 @@ function editQueued(i) {
 }
 function steerQueued(i) {
   const q = _q(); const it = _qNorm(q.splice(i, 1)[0]);
+  _qSave();
   if (!it.raw) return renderQueue();
   // JAG-431r4b: the chip was spliced out but the bar never re-rendered — the stale
   // chips kept their render-time indexes and the NEXT click spliced/sent the WRONG
@@ -5707,7 +5784,7 @@ function flushQueue(sid) {
   if (sessionId !== s || turnSSE[s]) return;
   const q = _q(s);
   if (!q.length) return;
-  const it = _qNorm(q.shift()); renderQueue();
+  const it = _qNorm(q.shift()); _qSave(s); renderQueue();
   if (it.raw) {
     // JAG-431r4b: `send(it.raw, it.text)` keeps the visible bubble and the
     // model-facing payload separate; `it.atts` carries the queue's attachment
@@ -6410,6 +6487,7 @@ function send(text, display, atts) {
     // a leading `/` — a command sent while a turn ran arrived as a plain string.
     // Commands are therefore always QUEUED: the next turn applies them.
     if (!_isCmd && (localStorage.getItem("sf_qmode") || "queue") === "steer") {
+      _pendingUserAdd(sessionId, (_splitAttBlock(_rawMsg).rest || "").trim());
       who("user", "🎯 steer: " + raw + _attNote);
       api("POST", "/api/chat/steer", { session: sessionId, message: _rawMsg }).catch(() => {});
     } else {
@@ -6445,6 +6523,9 @@ function send(text, display, atts) {
   // new paragraph in the box — that auto-send must not delete it (send() empties
   // the box on every path, so the draft is the only copy left).
   if (text === undefined) _draftClear(sessionId);
+  // 2026-11-11: this bubble must survive a transcript repaint whose snapshot was
+  // taken before the server appended the message (see `_pendingUser`).
+  _pendingUserAdd(sessionId, (_splitAttBlock(msg).rest || "").trim());
   const _uNode = who("user", (mode ? "🎯 /goal " : "") + _disp + _attNote);
   if (_attSnap.length) {
     const _bub = _uNode && _uNode.querySelector(".bubble");
@@ -6468,6 +6549,7 @@ function send(text, display, atts) {
     if (turnSession || !s) return;
     turnSession = s; es._lrSid = s; turnSSE[s] = es; setRunning(s, true);
     sessionId = s; localStorage.setItem("sf_session", sessionId);
+    _pendingUser.forEach(p => { if (!p.sid) p.sid = s; });   // 2026-11-11: it is THIS chat
     _kbSyncCurrent();   // JAG-526: a brand-new chat has its own (future) notebook
   };
   const end = (reload, flush) => {
@@ -6558,6 +6640,10 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("chat.user", e => { let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
     adopt(d.session);
     if (!live() || d.session !== sessionId) return;
+    // 2026-11-11: a STEER is announced by `chat.steer` (with its 🎯 label) and by
+    // `chat.user` (steer=True) right after it — one event owns the bubble, so it is
+    // never drawn twice (once labelled, once bare).
+    if (d.steer) return;
     const txt = String(d.text || "");
     const clean = (_splitAttBlock(txt).rest || "").trim();
     const last = [...document.querySelectorAll("#log .msg.user .bubble")].pop();
@@ -6644,6 +6730,11 @@ function selectSession(s) {
   refreshSendBtn();   // JAG-424: the button mirrors THIS session's running state
   _goalVerdictOpen = false;   // JAG-2: another session's open detail must not carry over
   loadGoal();         // G-1: the Active-goal bar follows the session, from the backend
+  // 2026-11-11: a message left in this session's queue while it was busy is
+  // delivered as soon as the operator is back on an IDLE session — it used to
+  // wait for some future turn to end, which looked like the queue had swallowed
+  // it. `flushQueue` is the one door: it re-checks the session + the live stream.
+  if (!turnSSE[s.id]) flushQueue(s.id);
 }
 let _agents = {};   // JAG-287: session id -> org-agent record (empty if none)
 let _teamsById = {};   // JAG-339: team id -> team record (symbol/name/colour)
@@ -7770,6 +7861,10 @@ async function loadHistory() {
   // no chapter (mixed/old data). Guarded internally: skipped when the rendered and
   // ledger free-group counts differ (a compaction), so it can never mislabel.
   applyThreadTitles();
+  // 2026-11-11: the snapshot just painted may predate a message this tab sent (the
+  // server appends it inside the turn's own worker). Put those back, so the operator
+  // never reads an answer to words the chat does not show.
+  if (sessionId === _historySid) _reconcilePendingUser(_historySid);
   if (_historyReplaySession === _historySid) _historyReplaySession = null;
   if (_historyReplaySession !== _historySid && sessionId === _historySid)
     _flushHistoryGraphEvents(_historySid);
@@ -11774,10 +11869,32 @@ function connectFeed() {
   // the user was stuck on the injected prompt with NO reply until a manual reload
   // ("the coordinator received a report but never replied"). Follow it like a turn
   // we started: attachIfRunning replays the turn from the durable feed and tails it.
+  // 2026-11-11 (operator: "il messaggio non appare nella sessione, l'agente lo
+  // vede"): `chat.user` is the DURABLE announcement of every user turn — the one
+  // event the turn's OWN stream never carries (the generator publishes it to the
+  // feed only). It used to do nothing but re-attach a running stream, so a message
+  // that reached the agent and not this transcript stayed invisible until a manual
+  // reload. Render it here, deduped: a bubble that already CONTAINS the text (the
+  // local echo, a steer with its "🎯" label) is not drawn twice.
   es.addEventListener("chat.user", e => {
     let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
     push("💬 user: " + (d.text || "").slice(0, 60));
-    if (d.session && d.session === sessionId) attachIfRunning(sessionId);
+    if (!d.session || d.session !== sessionId) return;
+    if (!d.steer) {
+      const clean = (_splitAttBlock(String(d.text || "")).rest || "").trim();
+      if (!_userBubblePresent(clean || d.text))
+        who("user", clean || d.text, null, d.sender, d.subjob, null, d.sender_session);
+    }
+    attachIfRunning(sessionId);
+  });
+  // The steer half of the same rule: its own event carries the "delivered into the
+  // running turn" label, so `chat.user` (steer=True, sent right after) skips it.
+  es.addEventListener("chat.steer", e => {
+    let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    if (!d.session || d.session !== sessionId) return;
+    const t = String(d.text || "").trim();
+    if (!t || _userBubblePresent(t)) return;
+    who("user", "🎯 steer: " + t);
   });
   es.addEventListener("chat.done", e => {
     let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
