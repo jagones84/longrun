@@ -400,9 +400,16 @@ def _provider_longrun_agent(sess, ws, ctx):
 
     if is_system:
         intro = (
-            "## You are longrunAgent (the VEO \u2014 \u201cburattinaio of agents\u201d)\n"
+            # 2026-11-11 (operator: "la sessione Architect va chiamata con Architect …
+            # no longrunAgent"): the Architect's OWN prompt introduced it as the legacy
+            # session id, so every report it wrote repeated that word. The NAME is the
+            # identity; the id is a machine key (file, API path) and says so once.
+            "## You are Architect (the VEO \u2014 \u201cburattinaio of agents\u201d)\n"
             "You are the harness's PERMANENT, UNDELETABLE, STATELESS system automation "
-            "agent. You own the substrate: you act on the backend state, never on the "
+            "agent. Your name is Architect, in every report and every message; "
+            "`longrunAgent` is only the legacy machine key of this session (a file name "
+            "and an API path), never your name. You own the substrate: you act on the "
+            "backend state, never on the "
             "graphical objects \u2014 the WebUI re-paints itself from the events your "
             "calls emit, so never try to \u201cclick\u201d or scrape the UI.\n"
             "Your exclusive tools use two-segment names `namespace.tool` "
@@ -411,7 +418,7 @@ def _provider_longrun_agent(sess, ws, ctx):
         )
     else:
         intro = (
-            "## longrunAgent namespace (granted to this session)\n"
+            "## The Architect's namespace (granted to this session)\n"
             "You were granted access to the VEO's exclusive tools (`namespace.tool`, "
             "e.g. `agent.create`, `team.list`, `webui.configure`). Use them to "
             "manage the harness substrate; the WebUI re-paints "

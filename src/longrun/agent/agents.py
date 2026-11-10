@@ -115,7 +115,14 @@ class AgentRegistry:
         return self.get(session_id) is not None
 
     def resolve(self, ref):
-        """Find an agent by session id OR by A-id; returns the record or None."""
+        """Find an agent by session id, by A-id, or by its NAME.
+
+        The name is what the operator and the model READ ("Architect"), the id is a
+        machine key. 2026-11-11 (operator: "la sessione Architect va chiamata con
+        Architect … non longrunAgent"): a target written as a name resolves here, so
+        every caller (the `sessions` tool, the permission gates) accepts it and the
+        legacy session id is never the only address.
+        """
         ref = str(ref or "")
         with _LOCK:
             d = _load()
@@ -124,6 +131,11 @@ class AgentRegistry:
         for a in d["agents"].values():
             if a["id"] == ref:
                 return a
+        low = ref.strip().lower()
+        if low:
+            for a in d["agents"].values():
+                if str(a.get("name") or "").strip().lower() == low:
+                    return a
         return None
 
     def by_id(self, aid):

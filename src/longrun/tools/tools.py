@@ -2215,15 +2215,6 @@ def _hms(ts):
         return "--:--:--"
 
 
-def _agent_id(session_id):
-    """EV-30: the session's own agent id (`A<n>`), or "" when the registry is down."""
-    try:
-        from longrun.agent import agents as _agents
-        return (_agents.REGISTRY.get(session_id) or {}).get("id") or ""
-    except Exception:  # noqa: BLE001 — a label must never break a transcript
-        return ""
-
-
 def _render_transcript(sess, limit=30, tail=False):
     """Flatten one session into an ordered, model-readable log.
 
@@ -2255,13 +2246,48 @@ def _render_transcript(sess, limit=30, tail=False):
                                          _truncate(str(j.get("text", "")).strip(), 600))))
     evs.sort(key=lambda x: x[0])
     evs = (evs[-limit:] if tail else evs[:limit])
-    head = ("session %s | agent=%s | workspace=%s | %d message(s), %d tool card(s), "
+    # 2026-11-11 (operator): the transcript header advertised the legacy session id,
+    # so every agent that read a teammate (or the Architect) learned that word instead
+    # of the agent's NAME. The name leads; the A-id rides in brackets; the raw id only
+    # when the session has no agent record at all.
+    _sid = sess.get("id")
+    try:
+        from longrun.agent import agents as _agents
+        _rec = _agents.REGISTRY.resolve(_sid) or {}
+    except Exception:  # noqa: BLE001 — a header must never break a transcript
+        _rec = {}
+    _who = _rec.get("name") or _sid
+    if _rec.get("id"):
+        _who = "%s (%s)" % (_who, _rec.get("id"))
+    head = ("agent %s | workspace=%s | %d message(s), %d tool card(s), "
             "%d harness note(s)\n"
-            % (sess.get("id"), _agent_id(sess.get("id")) or "-", sess.get("workspace") or "-",
+            % (_who, sess.get("workspace") or "-",
                len(sess.get("messages", []) or []), len(sess.get("tool_cards", []) or []),
                len(sess.get("injects", []) or [])))
     body = "\n".join("%s  %s" % (_hms(e[0]), e[1]) for e in evs) or "  (empty transcript)"
     return _truncate(head + body, 24000)
+
+
+def _session_id(ref):
+    """Canonical session id for a target written as a NAME, an A-id or a session id.
+
+    2026-11-11 (operator): "la sessione Architect va chiamata con Architect dai tool
+    send message etcetera, non longrunAgent". The name is what the model reads in
+    `sessions.list` and what the operator says; the session id is a machine key, so a
+    target is resolved HERE once, before any gate or delivery. An unknown ref is
+    returned unchanged, so the caller's own error still names it.
+    """
+    ref = str(ref or "").strip()
+    if not ref:
+        return ref
+    try:
+        from longrun.agent import agents as _agents
+        rec = _agents.REGISTRY.resolve(ref)
+        if rec and rec.get("session"):
+            return str(rec["session"])
+    except Exception:  # noqa: BLE001 — an org hiccup must not block a target
+        pass
+    return ref
 
 
 def _may_message(caller, target):
@@ -2520,7 +2546,7 @@ def _sessions(args, run_id):
     if action in ("reset", "clear", "wipe"):
         # 2026-11-10 (operator): a chief frees the context of its own team. The
         # permission is the reporting line, any level (agents.can_manage).
-        target = str(args.get("session") or args.get("to") or "").strip()
+        target = _session_id(args.get("session") or args.get("to") or "")
         ok, why = _may_manage(run_id, target)
         if not ok:
             return {"ok": False, "exit_code": 1, "session": target, "stdout": "",
@@ -2540,7 +2566,7 @@ def _sessions(args, run_id):
     if action == "compact":
         # Same permission; the compaction policy (threshold vs force) is the ONE
         # shared by context.compact, so the two doors cannot disagree.
-        target = str(args.get("session") or args.get("to") or "").strip()
+        target = _session_id(args.get("session") or args.get("to") or "")
         ok, why = _may_manage(run_id, target)
         if not ok:
             return {"ok": False, "exit_code": 1, "session": target, "stdout": "",
@@ -2554,7 +2580,7 @@ def _sessions(args, run_id):
         # 2026-11-08: the branch itself belongs to `util.inbox.deliver` — the job
         # runner delivers a completion notice through the SAME rule, so a copy
         # here would be a second truth for "busy vs idle".
-        target = str(args.get("session") or args.get("to") or "").strip()
+        target = _session_id(args.get("session") or args.get("to") or "")
         text = str(args.get("message") or args.get("text") or "").strip()
         if not target or not text:
             return {"ok": False, "exit_code": 64, "stdout": "", "stderr": "",
@@ -2646,11 +2672,12 @@ def _sessions(args, run_id):
                            % (rec.get("job"), message_id)),
                 "stderr": "", "backend": "host", "sandboxed": False}
     if action in ("read", "get", "show", "transcript"):
-        sid = str(args.get("session") or args.get("id") or "").strip()
+        sid = _session_id(args.get("session") or args.get("id") or "")
         if not sid:
             return {"ok": False, "stdout": "", "stderr": "",
-                    "error": "session id required for action=read (use action=list "
-                             "to find the session first)",
+                    "error": "session required for action=read (a session id, an A-id, "
+                             "or an agent name like 'Architect'; use action=list "
+                             "to find it)",
                     "backend": "host", "sandboxed": False}
         # v954: the same relationship as `send` — down your subtree, up your line.
         _ok, _why = _may_message(run_id, sid)
@@ -2676,7 +2703,11 @@ def _sessions(args, run_id):
     # action=list — every session, annotated with its agent name when it has one
     try:
         from longrun.agent import agents as agents_mod
-        amap = {a.get("session"): (a.get("name") or a.get("id"))
+        # 2026-11-11 (operator): the ADDRESS an agent reads is its NAME ("Architect"),
+        # never the legacy session id ("longrunAgent"). The A-id rides beside it, so
+        # both spellings a caller may know are on the line — and `_session_id` accepts
+        # every one of them.
+        amap = {a.get("session"): (a.get("name") or a.get("id"), a.get("id"))
                 for a in agents_mod.REGISTRY.list()["agents"] if a.get("session")}
     except Exception:  # noqa: BLE001 — the list must survive a registry hiccup
         amap = {}
@@ -2693,11 +2724,12 @@ def _sessions(args, run_id):
         limit = 30
     lines = []
     for r in rows[:max(1, limit)]:
-        lines.append("  %s | agent=%s | %s | msgs=%s | %s%s"
-                     % (r.get("id"), amap.get(r.get("id")) or "-",
-                        (r.get("title") or "")[:48], r.get("messages"),
+        _who = amap.get(r.get("id"))
+        _addr = ("%s (%s)" % _who) if _who else r.get("id")
+        lines.append("  %s | %s | msgs=%s | %s%s"
+                     % (_addr, (r.get("title") or "")[:48], r.get("messages"),
                         r.get("age") or "", " | RUNNING" if r.get("running") else ""))
-    stdout = ("%d session(s)%s (read one with action=read, session=<id>):\n%s"
+    stdout = ("%d session(s)%s (read one with action=read, session=<name, A-id or id>):\n%s"
               % (len(rows), (" matching %r" % q) if q else "",
                  "\n".join(lines) or "  (none)"))
     return {"ok": True, "exit_code": 0, "stdout": stdout, "stderr": "",

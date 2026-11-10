@@ -461,10 +461,12 @@ sys_text = P._provider_longrun_agent({"id": "longrunAgent", "system": True}, Non
 granted_text = P._provider_longrun_agent({"id": "normal-user", "allow_longrun_agent": True}, None, None)
 plain_text = P._provider_longrun_agent({"id": "normal-user"}, None, None)
 check("F2 the namespace section is gated: full VEO framing only for the system session",
+      # 2026-11-11 (v957): the identity line now names the agent Architect — the legacy
+      # session id was the reason every report said "longrunAgent". Same gating.
       "webui.configure" in sys_text
-      and "You are longrunAgent" in sys_text
+      and "You are Architect" in sys_text
       and "webui.configure" in granted_text
-      and "You are longrunAgent" not in granted_text
+      and "You are Architect" not in granted_text
       and plain_text == "",
       (plain_text, granted_text[:120]))
 

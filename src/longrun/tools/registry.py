@@ -405,8 +405,8 @@ _LEGACY_SCHEMAS = {
         "description": ("Inspect OTHER sessions' chats to understand why a "
                         "teammate (e.g. 'coder 1') is failing, and help it. "
                         "action=list -> sessions with agent name, title, age, "
-                        "running. action=read -> one session's FULL transcript "
-                        "(session=<id>): messages, tool calls + results, harness "
+                        "running. action=read -> one session's FULL transcript: "
+                        "messages, tool calls + results, harness "
                         "injections, in order. action=send -> asynchronously message "
                         "another session (session|to + message|text); it steers a "
                         "running peer or starts a turn for an idle peer, then returns "
@@ -427,8 +427,12 @@ _LEGACY_SCHEMAS = {
                        "enum": ["list", "read", "send", "wait", "compact", "reset"],
                        "default": "list"},
             "session": {"type": "string",
-                        "description": "session id (action=read|send|compact|reset)"},
-            "to": {"type": "string", "description": "alias for session (action=send|compact|reset)"},
+                        "description": ("the agent's NAME as written in action=list "
+                                        "('Architect'), its A-id ('A1'), or the raw "
+                                        "session id — all three work "
+                                        "(action=read|send|compact|reset)")},
+            "to": {"type": "string",
+                   "description": "alias for session (action=send|compact|reset)"},
             "message": {"type": "string",
                         "description": "text delivered to the peer (action=send)"},
             "text": {"type": "string",
