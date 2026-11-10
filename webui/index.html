@@ -5438,6 +5438,29 @@ function _reconcilePendingUser(sid) {
     who("user", p.text, p.ts);   // the painted snapshot predates the send: keep it
   }
 }
+/* 2026-11-11 (operator: "in sessione devo vedere tutto quello che succede"): the
+   answer deltas carry the MODEL's words; `chat.final` carries the reply the server
+   STORED — the same text a reload shows. They differ when the harness synthesises
+   the ending (goal incomplete, no answer, a JSON action replaced by a summary):
+   the live chat used to keep the model's draft while the session held the verdict.
+   One owner: replace the open answer's text in place; append a bubble only when
+   this turn produced no answer at all; a HITL stop is skipped because its card
+   (hitl.request) already carries the decision. */
+function _applyFinalReply(d) {
+  d = d || {};
+  if (!d.session || d.session !== sessionId) return;
+  if (d.hitl) return;
+  const t = String(d.text || "");
+  if (!t.trim()) return;
+  if (curAns) {
+    const b = curAns.querySelector(".bubble");
+    if (b) { b.dataset.raw = t; renderAnswerBubble(b); return; }
+  }
+  // The feed may echo a turn this tab already finalized: same text, no second bubble.
+  const last = [...document.querySelectorAll("#log .msg.ai .bubble")].pop();
+  if (last && String(last.dataset.raw || "").trim() === t.trim()) return;
+  who("ai", t, d.ts || null);
+}
 function _resetChatTree() { _chatNodes = {}; _chatSections = {}; _activeScope = null; _activeNodeId = null; _sysInjectEl = null; _freeGroup = null; _freeN = 0; _nowLast = ""; _updateNowBar(); buildDotRail(); }
 function _nodeDepth(id, d) {
   // JAG-170: depth from the GRAPH hierarchy, independent of draw order, so the
@@ -6717,6 +6740,13 @@ function _bindRenderStream(es, live, adopt) {
   es.addEventListener("plan.continuing", e => { if (live()) planContinuing(JSON.parse(e.data)); });
   es.addEventListener("plan.stopped", e => { if (live()) planStopped(JSON.parse(e.data)); });
   es.addEventListener("hitl.request", e => { if (live()) hitlCard(JSON.parse(e.data)); });
+  // 2026-11-11: the canonical reply of THIS turn (what a reload would show). The
+  // deltas carried the model's draft; a synthesised ending (goal incomplete, no
+  // answer, a JSON action replaced by a summary) differs from it and used to arrive
+  // only on a reload — "in sessione devo vedere tutto quello che succede".
+  es.addEventListener("chat.final", e => { if (!live()) return;
+    let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    _applyFinalReply(d); });
   es.addEventListener("verify.run", e => { if (!live()) return; const d = JSON.parse(e.data);
     if (d && d.ran) who("ai", (d.green ? "\u2705 verifier green" : "\u26d4 verifier RED \u2014 change reverted") + " \u00b7 " + (d.path || "").split("/").pop() + (d.duration_ms ? " \u00b7 " + d.duration_ms + "ms" : "")); });
   es.addEventListener("run.metrics", e => { if (live()) runFooter(JSON.parse(e.data).metrics); });
@@ -11935,6 +11965,15 @@ function connectFeed() {
     const t = String(d.text || "").trim();
     if (!t || _userBubblePresent(t)) return;
     who("user", "🎯 steer: " + t);
+  });
+  // 2026-11-11: the canonical reply of a turn this tab does not stream itself (a job,
+  // a routine, another tab). When this tab owns the turn stream, that stream's
+  // `chat.final` handler applies it — the same text once, never twice.
+  es.addEventListener("chat.final", e => {
+    let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}
+    if (!d.session || d.session !== sessionId) return;
+    if (turnSSE[sessionId]) return;   // the turn's own stream owns its bubble
+    _applyFinalReply(d);
   });
   es.addEventListener("chat.done", e => {
     let d = {}; try { d = JSON.parse(e.data) || {}; } catch (_) {}

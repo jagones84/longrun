@@ -4807,6 +4807,29 @@ def _turn_flags(autonomous=False, goal_mode=False, plan_only=False, headless=Fal
     return wrap, bool(autonomous or goal_mode or headless)
 
 
+def _emit_final_reply(on_event, sess, content, hitl=None, node=None, ts=None):
+    """Announce the CANONICAL reply of a turn — the one that was persisted.
+
+    ONE owner for "what the chat shows live". The streamed `chat.delta`s carry the
+    model's own words; this event carries the text that `append_message` stored,
+    which differs whenever the harness synthesised the ending: a `human.ask` stop
+    (the persisted reply IS the question), a goal that stopped incomplete, a JSON
+    action replaced by a summary, an empty turn. Without it the live chat and the
+    session disagreed until a reload — measured 2026-11-11 on session
+    `b7329cccf94c` msg 417, where the question existed in the transcript and no
+    answer-channel delta ever carried it.
+
+    `hitl=True` tells the client the HUMAN IN THE LOOP card already owns that stop
+    (it was announced by `hitl.request`), so the canned prose is not drawn twice.
+    """
+    try:
+        on_event("chat.final", session=(sess or {}).get("id"), text=content,
+                 hitl=bool(hitl), reason=(hitl or {}).get("reason") or "",
+                 node=node, ts=ts)
+    except Exception:  # noqa: BLE001 — the reply is persisted; the live echo is best-effort
+        pass
+
+
 def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=None,
               autonomous=False, plan_only=False, goal_mode=False, goal_started=None,
               max_steps=None, headless=False):
@@ -6668,6 +6691,13 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         publish("graph.error", kind="transcript.persist", error=str(_exc))
     reply = append_message(sess, "assistant", content, reasoning=think.strip() or None,
                            meta=meta)
+    # 2026-11-11 (operator: "in sessione devo vedere tutto quello che succede"): the
+    # deltas carry the MODEL's words; this event carries the reply that was STORED,
+    # which differs whenever the harness synthesised the ending (a HITL stop, a goal
+    # that stopped, a JSON action replaced by a summary, an empty turn). Without it
+    # the live chat showed one text and the session another until a reload.
+    _emit_final_reply(on_event, sess, content, _hitl, node=_cur_node(),
+                      ts=(reply or {}).get("ts") if isinstance(reply, dict) else None)
     # B-6 (v818): did the answer USE the memories the context engine injected?
     # Observability only — it never changes what was injected, and it is the only
     # signal that can tune the memory ranking by evidence instead of guesswork.

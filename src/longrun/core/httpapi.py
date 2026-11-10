@@ -668,7 +668,7 @@ def chat_stream_gen(sess, message, model, mark=None, autonomous=False, jid=None,
 # them live and rebuilds from the durable transcript on `done` (clear first), so
 # nothing is duplicated.
 _ATTACH_KINDS = (
-    "chat.run", "chat.delta", "chat.done", "chat.user",
+    "chat.run", "chat.delta", "chat.done", "chat.user", "chat.final",
     "harness.inject", "harness.drop", "tool.call", "tool.result", "tool.output", "approval.request",
     "graph.node.added", "graph.node.updated",
     "plan.incomplete", "plan.continuing", "plan.stopped", "hitl.request",
