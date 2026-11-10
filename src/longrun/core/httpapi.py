@@ -1030,7 +1030,9 @@ def context_items(session_id=None):
     _obs = re.compile(r"^(?:\[harness\]\s+)?Observation for tool\s+([A-Za-z0-9_.\-]+)\s*:")
     _tx_tokens = 0                      # the transcript total, accumulated in this loop
     for m in msgs:
-        c = m.get("content")
+        # 2026-11-10: count what was SENT (`wire`), not the raw text the chat shows —
+        # the transcript that the provider holds is the augmented one.
+        c = context_engine.wire_content(m)
         c = c if isinstance(c, str) else ("" if c is None else str(c))
         n = context_engine.count_tokens(c)
         _tx_tokens += n                 # SAME function the meter would run over the
@@ -1188,7 +1190,7 @@ def context_usage(session_id=None, message=None, model=None,
     compacted = int(stats.get("final_tokens") or 0)
     sysp_tokens = context_engine.count_tokens(sysp)
     transcript = (int(transcript_tokens) if transcript_tokens is not None
-                  else sum(context_engine.count_tokens(m.get("content", ""))
+                  else sum(context_engine.count_tokens(context_engine.wire_content(m))
                            for m in sess.get("messages", [])))
     # JAG-214: the meter must show what you are CARRYING (system prompt + the full
     # stored transcript + the pending message), NOT the post-compaction build size.

@@ -115,6 +115,12 @@ message through `agent.user_turn_context`, and `httpapi.context_usage` calls the
 function so the meter measures what is sent. A stable prompt prefix is what lets the
 provider reuse its cache, and it is also why the chat shows the `system` card only
 when the prompt really changed (`publish_system_prompt`, digest stored on the session).
+The history is therefore **append-only from the provider's point of view**: the exact
+text a user turn was sent with is stored beside the display text (`wire`, read through
+`context_engine.wire_content`), and the next turn rebuilds that message from it. Without
+it every turn rewrote the history and the provider re-prefilled the whole transcript
+(measured 2026-11-10: the first call of each turn was 100% uncached; after the fix a
+turn reuses ~85% of the prompt it already processed).
 The **completion loop** (`keepgoing.py`) applies ordinary turn limits to
 chat and headless jobs. Explicit `/goal` continues past ordinary round/iteration
 limits until the current plan is evidence-backed complete, blocked/cancelled, or

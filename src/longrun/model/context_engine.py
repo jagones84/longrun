@@ -390,6 +390,29 @@ def usage_signal(reply, memories, min_overlap=0.6):
             "used_ids": used}
 
 
+def wire_content(msg):
+    """The text this stored message actually carried when it was SENT (2026-11-10).
+
+    The chat turn is sent AUGMENTED — the user text plus the memory index, the live
+    task list and the retrieved memories — and stored RAW (the operator's own words,
+    which is what the chat shows). Rebuilding the next turn from the raw text made
+    the history differ from what the provider had already processed, so the prefix
+    cache missed and the WHOLE transcript was re-prefilled every turn (measured:
+    first call of a turn 100% uncached, vs 2.2% for the calls after it inside the
+    same turn). `agent.assemble_turn` records the sent text on the stored message as
+    `wire`, and every reader that needs the TRANSCRIPT uses this ONE accessor.
+
+    No `wire` (old session, or a turn that never finished) → the raw content, i.e.
+    exactly the previous behaviour.
+    """
+    if not isinstance(msg, dict):
+        return msg
+    wire = msg.get("wire")
+    if isinstance(wire, str) and wire:
+        return wire
+    return msg.get("content")
+
+
 def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
           keep_recent=DEFAULT_KEEP_RECENT, retrieve_memory=True, workspace=None):
     """Full pipeline: compaction + retrieval. Returns (msgs, stats).
@@ -436,7 +459,15 @@ def build(system_prompt, messages, message=None, budget_tokens=DEFAULT_BUDGET,
                 "- (%s, score %.2f) %s"
                 % (h["kind"], h.get("relevance", h["score"]), h["content"])
                 for h in hits)
-            msgs = [{"role": "system", "content": mem_block}] + msgs
+            # 2026-11-10 (prefix cache): this block changes with the QUERY, so as a
+            # SYSTEM message between the prompt and the transcript it invalidated the
+            # whole transcript prefix on every turn. It now rides the LAST user turn,
+            # with the memory index and the live task list (`user_turn_context`) —
+            # volatile text goes last, never in the middle of the stable prefix.
+            if message:
+                message = str(message) + "\n\n" + mem_block
+            else:
+                msgs = [{"role": "system", "content": mem_block}] + msgs
     msgs = [{"role": "system", "content": system_prompt}] + msgs
     if message:
         msgs.append({"role": "user", "content": message})
@@ -468,7 +499,9 @@ def preview(session, message=None, budget_tokens=DEFAULT_BUDGET, keep_recent=DEF
             eff_message = _apply_skill_slash(message)
         except Exception:  # noqa: BLE001 — a dry-run must never raise
             eff_message = message
-    msgs, stats = build(sysp, sess.get("messages", []), eff_message,
+    _hist = [dict(m, content=wire_content(m)) if isinstance(m, dict) else m
+             for m in sess.get("messages", [])]
+    msgs, stats = build(sysp, _hist, eff_message,
                         budget_tokens, keep_recent, retrieve_memory=False)
     stats["system_prompt_tokens"] = count_tokens(sysp)
     # retrieval is reported separately so the check can observe memory hits

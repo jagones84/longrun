@@ -3462,7 +3462,14 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
             "'done' with evidence, then finish with a short plain-text summary."
             "\n\nGOAL: " + str(message))
     # JAG-100: drop the just-stored user turn so it is never sent twice.
-    transcript = list(sess.get("messages", []))
+    # 2026-11-10 (prefix cache): a stored message that was SENT augmented carries
+    # its wire text (`wire`), and the history must be rebuilt from THAT — otherwise
+    # turn N's history differs from what turn N-1 sent and the provider re-prefills
+    # the whole transcript (measured: 100% uncached at the first call of a turn).
+    from longrun.model import context_engine as _ce
+    stored = list(sess.get("messages", []))
+    transcript = [dict(m, content=_ce.wire_content(m)) if isinstance(m, dict) else m
+                  for m in stored]
     if transcript and transcript[-1].get("role") == "user":
         transcript = transcript[:-1]
     # JAG-276 / 2026-11-10: the live task list AND the memory index ride in the
@@ -3488,6 +3495,22 @@ def assemble_turn(sess, message, tool_ctx=None, model=None, autonomous=False):
         if isinstance(t_msgs, list) and t_msgs:
             msgs = t_msgs
     except Exception:  # noqa: BLE001
+        pass
+    # 2026-11-10 (prefix cache): record the EXACT text this stored user turn was
+    # sent with, so the next turn can rebuild the same history byte for byte (see
+    # `context_engine.wire_content`). Only for the message the caller just appended
+    # — never a rewrite of an older turn — and only when the wire content is text
+    # (a vision turn sends content blocks, which a later turn cannot reproduce).
+    try:
+        if (stored and isinstance(stored[-1], dict)
+                and stored[-1].get("role") == "user"
+                and stored[-1].get("content") == message
+                and msgs and isinstance(msgs[-1], dict)
+                and msgs[-1].get("role") == "user"
+                and isinstance(msgs[-1].get("content"), str)
+                and msgs[-1].get("content")):
+            stored[-1]["wire"] = msgs[-1]["content"]
+    except Exception:  # noqa: BLE001 — bookkeeping must never break a turn
         pass
     return msgs, ctx_stats
 
