@@ -3301,9 +3301,12 @@ def delete_session(sid):
     sid = str(sid or "")
     if not _valid_sid(sid):
         return {"ok": False, "status": 404, "error": "session not found"}
-    if sid == "architect":
+    from longrun.agent import architect as _arch_guard
+    # One owner for the identity (`architect.ARCHITECT_SESSION_ID`), so a rename
+    # cannot leave this guard pointing at a session that no longer exists.
+    if _arch_guard.is_system_session(sid):
         return {"ok": False, "status": 403,
-                "error": "architect is a permanent system session and cannot be deleted"}
+                "error": "%s is a permanent system session and cannot be deleted" % sid}
     fpath = os.path.join(SESSIONS_DIR, sid + ".json")
     if not os.path.isfile(fpath):
         return {"ok": False, "status": 404, "error": "session not found"}
