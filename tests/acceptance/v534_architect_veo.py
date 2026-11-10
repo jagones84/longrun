@@ -133,8 +133,11 @@ check("A3 revoking architect access from the system session itself is refused",
 
 with open(os.path.join(REPO, "src", "longrun", "core", "httpapi.py"), encoding="utf-8") as f:
     HTTPAPI = f.read()
+# 2026-11-11 (`f2795a5`): the guard asks the identity's OWNER instead of comparing a
+# literal copy of the id — a further rename must not leave this guard pointing at a
+# session that no longer exists. Behaviour is unchanged (403), and the pin follows it.
 check("A4 DELETE /api/sessions/architect is blocked at the HTTP layer with 403",
-      'if sid == "architect":' in HTTPAPI and "403" in HTTPAPI)
+      "_arch_guard.is_system_session(sid)" in HTTPAPI and "403" in HTTPAPI)
 
 # --- B: Exclusive built-in tools & Dual-Permission Gate ----------------------
 cat = {t["name"]: t for t in registry.catalog()}
