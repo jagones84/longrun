@@ -1006,6 +1006,13 @@
      messages the harness did NOT re-send (no chip exists for those). */
   .hinj .hrole { font-size: 9px; letter-spacing: .08em; color: var(--dim); margin-left: 6px; }
   .hinj .hsupp { font-size: 9px; color: var(--warn); margin-left: 6px; }
+  /* 2026-11-10 (operator: "se si usa un modello di fallback deve apparire un
+     messaggio"): a NOTICE about the turn, not a harness→LLM chip — the model never
+     received this text. One visible line, same anatomy everywhere it appears. */
+  .hnote { margin: 6px 0; padding: 5px 10px; border-left: 3px solid var(--warn);
+    background: var(--chipbg, rgba(255, 255, 255, .06)); color: var(--warn); font-size: 11.5px;
+    border-radius: 0 6px 6px 0; }
+  .hnote[hidden] { display: none; }
   /* JAG-171: HUMAN IN THE LOOP card. */
   .hitl { display: flex; flex-direction: column; gap: 6px; }
   .hitl-title { font-size: 12.5px; font-weight: 600; color: var(--warn); }
@@ -5382,6 +5389,19 @@ function harnessInject(d) {
   if (!d) return;
   const kind = d.inject_kind || "inject";
   const text = d.text || "";
+  // 2026-11-10: a MODEL FALLBACK is not a message the model received — it says WHICH
+  // model answered. Render it as a visible notice line, never as the `harness → LLM`
+  // chip (that label promises the exact wire bytes). Same renderer for the live
+  // event and the reloaded record, so the two can never disagree.
+  if (kind === "model-fallback") {
+    const n = document.createElement("div");
+    n.className = "hnote";
+    n.setAttribute("role", "status");
+    n.textContent = "⚠ " + text;
+    _logAppend(n);
+    scroll();
+    return;
+  }
   if (d.repeat) {
     const prev = $("log") ? $("log").querySelectorAll(".hinj") : [];
     const last = prev.length ? prev[prev.length - 1] : null;

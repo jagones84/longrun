@@ -3524,6 +3524,32 @@ def publish_system_prompt(sess, msgs, on_event):
         return False
 
 
+def model_fallback_notice(intended, used, state=None):
+    """The ONE line that tells the operator the answering model is not the asked one.
+
+    `stream_with_fallback` walks the role's chain when the primary fails (2026-11-10:
+    `dgx:nex-n25-mini-uncensored-q8` failed twice and the turn silently continued on
+    `openrouter:z-ai/glm-5.3-flash`; the only trace was a global `model.fallback`
+    event with no session). A reply produced by a different model than the one the
+    session is configured with must be visible in THAT chat.
+
+    Returns "" when there is nothing to say: same model, or the same fallback was
+    already announced in this turn (`state["used"]`, a per-turn dict). `state` is
+    optional so the decision can be read without one.
+    """
+    try:
+        if not intended or not used or str(intended) == str(used):
+            return ""
+        if isinstance(state, dict):
+            if state.get("used") == used:
+                return ""
+            state["used"] = used
+        return ("Model fallback \u2014 %s did not answer; this turn continues on %s."
+                % (intended, used))
+    except Exception:  # noqa: BLE001 — a notice must never break a turn
+        return ""
+
+
 def _sync_compacted_turn(sess, msgs, turn_base, message, tool_ctx, model,
                          autonomous=False):
     """Adopt a manual compaction before the active turn next saves its history."""
@@ -5003,6 +5029,24 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
         """
         return len(sess.get("messages", [])) + (len(msgs) - _turn_base)
 
+    # 2026-11-10: the answers of THIS turn that came from a fallback model. Once per
+    # fallback, displayed as a notice (never as a harness→LLM chip: the model did not
+    # receive this text) and persisted so a reload still shows which model answered.
+    _fallback_state = {}
+
+    def _note_fallback(intended, used):
+        _txt = model_fallback_notice(intended, used, _fallback_state)
+        if not _txt:
+            return False
+        try:
+            on_event("harness.inject", session=sess["id"],
+                     inject_kind="model-fallback", text=_txt)
+            persist_inject(sess, "model-fallback", _txt,
+                           node=_cur_node(), after=_after())
+        except Exception:  # noqa: BLE001 — a notice must never break a turn
+            return False
+        return True
+
     # I-2: what this turn has already injected, keyed by (kind, text). PER TURN on
     # purpose: a nudge that is a repeat within one turn carries no new information,
     # while the same nudge on the NEXT turn is a fresh push after the model has
@@ -5344,10 +5388,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
 
         _t_model = time.time()
         _phase(on_event, sess["id"], "model", model=model)
+        _requested_model = model
         try:
             answer, think, model = server.stream_with_fallback(
                 msgs, model, "chat", _capture, timeout=_model_call_timeout(),
                 usage=chat_usage, cancel=_abort_now)
+            _note_fallback(_requested_model, model)
         except Exception as _e:  # noqa: BLE001 — record the attempt, then surface it
             _record_usage(latency_ms=int((time.time() - _t_model) * 1000),
                           status="failed",
@@ -5477,6 +5523,7 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
                     break
                 finally:
                     _phase(on_event, sess["id"], "idle")
+                _note_fallback(model, _m2)
                 _cands.append(_a2)
                 # JAG-431r4b: price THIS sample's usage and emit it.
                 # v838: the extra sample now carries its own latency and a persisted
@@ -6405,10 +6452,12 @@ def chat_once(sess, message, model=None, on_delta=None, trace=None, on_event=Non
 
             _t_model = time.time()
             _phase(on_event, sess["id"], "model", model=model)
+            _requested_model = model
             try:
                 final_answer, think, model = server.stream_with_fallback(
                     msgs, model, "chat", _cap_final, usage=chat_usage,
                     timeout=_model_call_timeout(), cancel=_abort_now)
+                _note_fallback(_requested_model, model)
             except Exception as _e:  # noqa: BLE001 — record the attempt, then surface it
                 _record_usage(latency_ms=int((time.time() - _t_model) * 1000),
                               status="failed",
