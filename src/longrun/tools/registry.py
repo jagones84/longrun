@@ -414,18 +414,30 @@ _LEGACY_SCHEMAS = {
                         "return that same message_id (idempotent=true) instead of "
                         "delivering the text twice. Continue other work. action=wait with that id "
                         "waits for the peer turn to finish and returns its reply; "
-                        "action=read can inspect the live transcript meanwhile."),
+                        "action=read can inspect the live transcript meanwhile. "
+                        "action=compact / action=reset -> free the context of a member "
+                        "BELOW you in the reporting line (any level, same team): "
+                        "compact shrinks the transcript (force=true bypasses the "
+                        "threshold when the operator asked), reset wipes messages, "
+                        "tool cards and injects and aborts a running turn. Never "
+                        "yourself, never upward or sideways."),
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "read", "send", "wait"],
+            "action": {"type": "string",
+                       "enum": ["list", "read", "send", "wait", "compact", "reset"],
                        "default": "list"},
             "session": {"type": "string",
-                        "description": "session id (action=read|send)"},
-            "to": {"type": "string", "description": "alias for session (action=send)"},
+                        "description": "session id (action=read|send|compact|reset)"},
+            "to": {"type": "string", "description": "alias for session (action=send|compact|reset)"},
             "message": {"type": "string",
                         "description": "text delivered to the peer (action=send)"},
             "text": {"type": "string",
                      "description": "alias for message (action=send)"},
+            "force": {"type": "boolean", "default": False,
+                      "description": ("action=compact only: compact even below the "
+                                      "policy threshold. Use it when the operator "
+                                      "explicitly asked to free context; it is "
+                                      "destructive and irreversible.")},
             "idempotency_key": {
                 "type": "string",
                 "description": ("action=send only: retry-safe key. Sending again to the "
@@ -516,7 +528,10 @@ _LEGACY_SCHEMAS = {
                         "action=compact -> compaction now (summarizer model, merges "
                         "old turns into one summary). It REFUSES below the policy "
                         "trigger; pass force=true only when the user explicitly asked "
-                        "to compact early. The harness auto-compacts at the trigger %."),
+                        "to compact early. The harness auto-compacts at the trigger %. "
+                        "`session` may name a member BELOW you in the reporting line "
+                        "(any level, same team); compacting another session is a team "
+                        "operation and is refused upward or sideways."),
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["status", "compact"], "default": "status"},
@@ -833,6 +848,8 @@ _SUBTOOL_FIELDS = {
         "list": ["query", "limit"], "read": ["session", "limit", "tail"],
         "send": ["session", "to", "message", "text", "idempotency_key"],
         "wait": ["message_id", "timeout_secs"],
+        "compact": ["session", "to", "force"],
+        "reset": ["session", "to"],
     },
     "workspace": {"set": ["agent", "workspace", "scope", "create"]},
     "chapters": {

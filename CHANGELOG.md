@@ -47,6 +47,12 @@ All notable changes to Longrun are documented here. The format follows
   axe: 0 violations, no static-file restart needed.)
 
 ### Added
+- **A chief can free its team's context (`v939`).** `sessions.compact` and `sessions.reset` now let any
+  manager act on a member BELOW it in the reporting line, at every level (transitive, same team when
+  teams exist) — and nothing else: never itself, never upward, never sideways. `context.compact` used
+  to accept ANY `session=` with no check; it now applies the same rule (the caller's own session is
+  still free). One compaction policy (`_compact_now`) serves both doors. (Locked by `v939` 20/20; live:
+  a scratch chief reset and compacted its child, and the child was refused when it tried the chief.)
 - **A turn interrupted by a RESTART resumes itself (`v938`).** The running turns were only in memory, so
   a restart erased them and the operator had to send the continuation by hand. `core/inflight.py` now
   mirrors every turn to `data/inflight_turns.json` at `turn_begin`/`turn_end` (the one bracket every

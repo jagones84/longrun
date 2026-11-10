@@ -240,6 +240,24 @@ class AgentRegistry:
         """
         return [a["id"] for a, _ in self._subtree(ref, 10 ** 6)]
 
+    def can_manage(self, manager_ref, target_ref):
+        """True when `target` is BELOW `manager` in the reporting line (any level).
+
+        2026-11-10 (operator): a chief may compact or reset the chat of any member
+        below it in the line of report — at every level, transitive, never itself
+        and never sideways/upward. When both carry team memberships they must
+        share at least one team; an org chart with no teams is judged by the line
+        alone. Cycle-safe through `subtree`.
+        """
+        mgr = self.resolve(manager_ref)
+        tgt = self.resolve(target_ref)
+        if not mgr or not tgt or mgr.get("id") == tgt.get("id"):
+            return False
+        if tgt["id"] not in self.subtree(mgr["id"]):
+            return False
+        mt, tt = set(self.teams_for(mgr["id"])), set(self.teams_for(tgt["id"]))
+        return not (mt and tt) or bool(mt & tt)
+
     def team_tree(self, ref, depth=1):
         """v629: {agent_id: parent_agent_id} for the subtree under `ref`.
 

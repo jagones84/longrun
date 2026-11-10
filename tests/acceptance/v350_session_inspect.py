@@ -45,12 +45,13 @@ def check(name, ok, detail=""):
 spec = registry.tool_spec("sessions")
 check("A1 the `sessions` schema exists", spec is not None, "")
 check("A2 it is ENABLED", bool(spec and spec.get("enabled")), "")
-check("A3 it is read-only (approval=auto)", (spec or {}).get("approval") == "auto",
+check("A3 the namespace approval is auto (the reporting-line gate is the guard)",
+      (spec or {}).get("approval") == "auto",
       str((spec or {}).get("approval")))
 sch = registry.TOOL_SCHEMAS.get("sessions") or {}
 _actions = set((sch.get("properties", {}).get("action", {}) or {}).get("enum", []))
-check("A4 it documents list + read + send + wait",
-      _actions == {"list", "read", "send", "wait"},
+check("A4 it documents list + read + send + wait (+ compact/reset, v939)",
+      _actions == {"list", "read", "send", "wait", "compact", "reset"},
       str(sorted(_actions)))
 
 # --- B: list — discovery (which session?) -----------------------------------

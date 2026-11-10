@@ -2232,6 +2232,65 @@ def _render_transcript(sess, limit=30, tail=False):
     return _truncate(head + body, 24000)
 
 
+def _may_manage(caller, target):
+    """(ok, why): may `caller` run a DESTRUCTIVE op on `target`'s session?
+
+    2026-11-10 (operator): every chief, at every level, over its whole reporting
+    line — never itself, never upward or sideways. Unknown agents are refused.
+    """
+    caller = str(caller or "").strip()
+    target = str(target or "").strip()
+    if not target:
+        return False, "session required"
+    if not caller:
+        return False, "no calling session in scope"
+    if caller == target:
+        return False, "the calling session cannot reset/compact itself through this rule"
+    try:
+        from longrun.agent import agents as _agents
+        if _agents.REGISTRY.can_manage(caller, target):
+            return True, ""
+        mgr = _agents.REGISTRY.resolve(caller)
+        tgt = _agents.REGISTRY.resolve(target)
+    except Exception as e:  # noqa: BLE001 — an org hiccup must not widen access
+        return False, "org lookup failed: %s" % str(e)[:120]
+    if mgr is None:
+        return False, "the calling session is not in the org chart"
+    if tgt is None:
+        return False, "the target session is not in the org chart"
+    return False, ("%s is not below %s in the reporting line"
+                   % (tgt.get("id"), mgr.get("id")))
+
+
+def _compact_now(sid, force=False):
+    """The ONE manual compaction of `sid` (context.compact and sessions.compact)."""
+    from longrun.core import httpapi
+    info = httpapi.context_usage(session_id=sid)
+    if info.get("error"):
+        return {"ok": False, "error": info["error"], "backend": "host",
+                "sandboxed": False}
+    if not force and not info.get("over_threshold"):
+        return {"ok": False, "exit_code": 0, "session": sid, "info": info,
+                "error": ("context is at %.1f%% (trigger %s%%) — below the policy "
+                          "threshold; refusing a destructive compaction. Pass "
+                          "force=true only when the user explicitly asked."
+                          % (float(info.get("pct") or 0),
+                             info.get("auto_compact_pct", 70))),
+                "backend": "host", "sandboxed": False}
+    stats = httpapi.compact_session(sid, origin="tool")
+    if stats.get("error"):
+        return {"ok": False, "error": stats["error"], "backend": "host",
+                "sandboxed": False}
+    out = ("compact[%s]: %d -> %d msgs | %d -> %d tokens | "
+           "compacted=%d kept=%d summary=%s"
+           % (sid, stats.get("input_messages", 0),
+              stats.get("input_messages", 0) - stats.get("compacted", 0) + stats.get("kept", 0),
+              stats.get("input_tokens", 0), stats.get("output_tokens", 0),
+              stats.get("compacted", 0), stats.get("kept", 0), stats.get("summary")))
+    return {"ok": True, "exit_code": 0, "session": sid, "stats": stats,
+            "stdout": out, "backend": "host", "sandboxed": False}
+
+
 def _sessions(args, run_id):
     """Inspect, message and await responses from another session.
 
@@ -2358,6 +2417,36 @@ def _sessions(args, run_id):
                                    "this message_id."),
                         "backend": "host", "sandboxed": False}
             time.sleep(0.25)
+    if action in ("reset", "clear", "wipe"):
+        # 2026-11-10 (operator): a chief frees the context of its own team. The
+        # permission is the reporting line, any level (agents.can_manage).
+        target = str(args.get("session") or args.get("to") or "").strip()
+        ok, why = _may_manage(run_id, target)
+        if not ok:
+            return {"ok": False, "exit_code": 1, "session": target, "stdout": "",
+                    "stderr": "", "error": "reset refused: %s" % why,
+                    "backend": "host", "sandboxed": False}
+        from longrun.memory.stores import clear_session
+        got = clear_session(target)
+        if got is None:
+            return {"ok": False, "exit_code": 1, "session": target, "stdout": "",
+                    "stderr": "", "error": "no such session: %s" % target,
+                    "backend": "host", "sandboxed": False}
+        return {"ok": True, "exit_code": 0, "session": target,
+                "stdout": ("reset[%s]: transcript, tool cards and harness injections "
+                           "wiped; a running turn in that session was aborted."
+                           % target),
+                "stderr": "", "backend": "host", "sandboxed": False}
+    if action == "compact":
+        # Same permission; the compaction policy (threshold vs force) is the ONE
+        # shared by context.compact, so the two doors cannot disagree.
+        target = str(args.get("session") or args.get("to") or "").strip()
+        ok, why = _may_manage(run_id, target)
+        if not ok:
+            return {"ok": False, "exit_code": 1, "session": target, "stdout": "",
+                    "stderr": "", "error": "compact refused: %s" % why,
+                    "backend": "host", "sandboxed": False}
+        return _compact_now(target, bool(args.get("force")))
     if action in ("send", "message", "tell", "ask"):
         # JAG-532/534: send never waits. A running peer gets a steer; an idle
         # peer gets a real server-side turn. `sessions.wait` is a separate call,
@@ -2603,34 +2692,20 @@ def _context(args, run_id):
         return {"ok": True, "exit_code": 0, "session": sid, "info": info,
                 "stdout": out, "backend": "host", "sandboxed": False}
     if action == "compact":
-        # JAG-528: the MODEL may call this tool. A compaction is destructive and
-        # irreversible, and the transcript is only worth shrinking once the
-        # policy trigger is reached. Live: the Tool Tests audit compacted
-        # 160 -> 16 messages at 16.2% (trigger 70) and lost its own context.
-        # The 🗜 button is a human decision and still forces; the tool does not.
-        info = httpapi.context_usage(session_id=sid)
-        if info.get("error"):
-            return {"ok": False, "error": info["error"], "backend": "host",
-                    "sandboxed": False}
-        if not bool(args.get("force")) and not info.get("over_threshold"):
-            return {"ok": False, "exit_code": 0, "session": sid, "info": info,
-                    "error": ("context is at %.1f%% (trigger %s%%) — below the policy "
-                              "threshold; refusing a destructive compaction. Pass "
-                              "force=true only when the user explicitly asked."
-                              % (float(info.get("pct") or 0),
-                                 info.get("auto_compact_pct", 70))),
-                    "backend": "host", "sandboxed": False}
-        stats = httpapi.compact_session(sid, origin="tool")
-        if stats.get("error"):
-            return {"ok": False, "error": stats["error"], "backend": "host",
-                    "sandboxed": False}
-        out = ("compact[%s]: %d -> %d msgs | %d -> %d tokens | "
-               "compacted=%d kept=%d summary=%s"
-               % (sid, stats.get("input_messages", 0), stats.get("input_messages", 0) - stats.get("compacted", 0) + stats.get("kept", 0),
-                  stats.get("input_tokens", 0), stats.get("output_tokens", 0),
-                  stats.get("compacted", 0), stats.get("kept", 0), stats.get("summary")))
-        return {"ok": True, "exit_code": 0, "session": sid, "stats": stats,
-                "stdout": out, "backend": "host", "sandboxed": False}
+        # 2026-11-10: targeting ANOTHER session is a team operation, not a free
+        # door — the caller must be a chief above the target (any level).
+        caller = str(run_id or "").strip()
+        if caller and sid != caller:
+            ok, why = _may_manage(caller, sid)
+            if not ok:
+                return {"ok": False, "exit_code": 1, "session": sid,
+                        "error": "not allowed to compact another session: %s" % why,
+                        "backend": "host", "sandboxed": False}
+        # JAG-528: a compaction is destructive and irreversible, and the transcript
+        # is only worth shrinking once the policy trigger is reached. The 🗜 button
+        # is a human decision and still forces; the tool does not. One policy, in
+        # `_compact_now`, shared with sessions.compact.
+        return _compact_now(sid, bool(args.get("force")))
     return {"ok": False, "error": "unknown action %r — use status|compact" % action}
 
 
